@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyfe4ai"
+version = "0.1.0"
+description = "Python-based functional encryption for AI security and privacy."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+  { name = "Spire Studio" }
+]
+keywords = [
+  "cryptography",
+  "functional encryption",
+  "inner product",
+  "ai security",
+  "privacy",
+  "privacy-preserving machine learning",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Topic :: Security :: Cryptography",
+]
+dependencies = [
+  "gmpy2",
+  "numpy",
+  "PyYAML",
+  "jsonpickle",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest",
+]
+pairing = [
+  "charm-crypto-framework",
+]
+dev = [
+  "pytest",
+]
+doc = [
+  "sphinx>=7",
+  "sphinx-rtd-theme>=2",
+  "sphinx-autodoc-typehints>=2",
+]
+
+[project.urls]
+Homepage = "https://github.com/spire-studio/pyfe4ai"
+Repository = "https://github.com/spire-studio/pyfe4ai"
+Issues = "https://github.com/spire-studio/pyfe4ai/issues"
+
+[tool.setuptools.packages.find]
+include = ["pyfe4ai*"]
+
+[tool.setuptools.package-data]
+pyfe4ai = ["config.yaml", "py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "core: core FE/IPFE coverage intended for the staged core-only release lane",
+  "extended: non-core pairing-heavy or quadratic FE coverage kept outside the core-only release lane",
+]

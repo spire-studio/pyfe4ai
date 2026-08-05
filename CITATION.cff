@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata from this file."
+title: "PyFE4AI"
+version: "0.1.0"
+date-released: "2026-08-05"
+type: software
+authors:
+  - name: "Spire Studio"
+repository-code: "https://github.com/spire-studio/pyfe4ai"
+license: "Apache-2.0"
+abstract: "Python-based functional encryption for AI security and privacy."
+keywords:
+  - functional encryption
+  - inner product
+  - cryptography
+  - ai security
+  - privacy
+  - privacy-preserving machine learning

@@ -1,0 +1,72 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  core-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Conda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          activate-environment: pyfe4ai
+          environment-file: environment.yml
+          auto-activate-base: false
+
+      - name: Run core release test suite
+        shell: bash -l {0}
+        run: |
+          python -m pytest -m core -q
+
+  full-research:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libgmp-dev \
+            libfl-dev \
+            libssl-dev \
+            flex \
+            bison \
+            wget \
+            m4
+
+      - name: Build and install PBC
+        run: |
+          wget -q https://crypto.stanford.edu/pbc/files/pbc-1.0.0.tar.gz
+          tar -xzf pbc-1.0.0.tar.gz
+          cd pbc-1.0.0
+          ./configure
+          make
+          sudo make install
+          sudo ldconfig
+
+      - name: Set up Conda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          activate-environment: pyfe4ai
+          environment-file: environment.yml
+          auto-activate-base: false
+
+      - name: Install project with test and pairing extras
+        shell: bash -l {0}
+        run: |
+          python -m pip install -e ".[test,pairing]"
+
+      - name: Run full research test suite
+        shell: bash -l {0}
+        run: |
+          python -m pytest -q

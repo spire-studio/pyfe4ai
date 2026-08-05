@@ -1,0 +1,11 @@
+# Core dependencies (must match pyproject.toml [project.dependencies])
+gmpy2
+numpy
+PyYAML
+jsonpickle
+
+# Optional: pairing-based schemes
+# charm-crypto-framework
+
+# Optional: development / testing
+# pytest

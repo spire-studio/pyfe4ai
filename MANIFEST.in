@@ -1,0 +1,6 @@
+include README.md
+include LICENSE
+include CITATION.cff
+recursive-include pyfe4ai *.yaml py.typed
+recursive-exclude * __pycache__
+recursive-exclude * *.pyc

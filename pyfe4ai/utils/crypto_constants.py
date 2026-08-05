@@ -1,0 +1,59 @@
+"""Scheme-type constants and default parameter values used across PyFE4AI."""
+
+
+class CryptoCONST(object):
+    TYPE_NONE = "None"
+    TYPE_SIFE = "SIFE"
+    TYPE_MIFE = "MIFE"
+    TYPE_MCFE = "MCFE"
+    TYPE_DMCFE = "dMCFE"
+    TYPE_DMCFE_LWE = "dMCFE_LWE"
+    TYPE_DMCFE_RING_LWE = "dMCFE_RING_LWE"
+    TYPE_DMCFE_FH_MULTI_IPE = "dMCFE_FH_MULTI_IPE"
+    TYPE_TMCFE = "tMCFE"
+    TYPE_TMCFE_LWE = "tMCFE_LWE"
+    TYPE_TMCFE_RING_LWE = "tMCFE_RING_LWE"
+    TYPE_TMCFE_FH_MULTI_IPE = "tMCFE_FH_MULTI_IPE"
+    TYPE_TMIFE = "tMIFE"
+    TYPE_TMIFE_LWE = "tMIFE_LWE"
+    TYPE_SIFE_PAILLIER = "SIFE_PAILLIER"
+    TYPE_SIFE_DAMGARD = "SIFE_DAMGARD"
+    TYPE_SIFE_LWE = "SIFE_LWE"
+    TYPE_SIFE_FULLYSEC_LWE = "SIFE_FULLYSEC_LWE"
+    TYPE_SIFE_RING_LWE = "SIFE_RING_LWE"
+    TYPE_SIFE_FH_IPE = "SIFE_FH_IPE"
+    TYPE_SIFE_PART_FH_IPE = "SIFE_PART_FH_IPE"
+    TYPE_QUADRATIC_SGP = "QUADRATIC_SGP"
+    TYPE_QUADRATIC_QUAD = "QUADRATIC_QUAD"
+    TYPE_MIFE_PAILLIER = "MIFE_PAILLIER"
+    TYPE_MIFE_DAMGARD = "MIFE_DAMGARD"
+    TYPE_MIFE_LWE = "MIFE_LWE"
+    TYPE_MIFE_FULLYSEC_LWE = "MIFE_FULLYSEC_LWE"
+    TYPE_MIFE_FH_IPE = "MIFE_FH_IPE"
+    TYPE_MIFE_FH_MULTI_IPE = "MIFE_FH_MULTI_IPE"
+    TYPE_MIFE_RING_LWE = "MIFE_RING_LWE"
+    TYPE_MCFE_PAILLIER = "MCFE_PAILLIER"
+    TYPE_MCFE_DAMGARD = "MCFE_DAMGARD"
+    TYPE_MCFE_LWE = "MCFE_LWE"
+    TYPE_MCFE_FULLYSEC_LWE = "MCFE_FULLYSEC_LWE"
+    TYPE_MCFE_RING_LWE = "MCFE_RING_LWE"
+    TYPE_MCFE_FH_MULTI_IPE = "MCFE_FH_MULTI_IPE"
+
+    DEC_STAGE_1 = "partial_decryption"
+    DEC_STAGE_2 = "final_decryption"
+    CT_STAGE_1 = "ct_original"
+    CT_STAGE_2 = "ct_prime"
+
+    SEC_PARAM = 128  # security level
+
+    SIFE_DEFAULT_ETA = 5
+
+    MIFE_ETA = 1
+    MCFE_ETA = 1
+
+    tMIFE_ETA = 1
+    tMIFE_T = 2
+    tMCFE_ETA = 1  # input size of each enc entity
+    tMCFE_N = 5  # counts of enc entities
+    tMCFE_S = 3  # counts of partial dec entities
+    tMCFE_T = 2  # threshold

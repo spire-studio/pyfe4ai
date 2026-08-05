@@ -1,0 +1,16 @@
+name: pyfe4ai
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pytest
+  - numpy
+  - gmpy2
+  - pyyaml
+  - jsonpickle
+#
+# Notes:
+# - This environment covers the core integer-group schemes and tests verified locally.
+# - Pairing-based schemes (e.g. fh_ipe_pairing.py, quadratic families)
+#   additionally require charm-crypto-framework and its system dependencies.

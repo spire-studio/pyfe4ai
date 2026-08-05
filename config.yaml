@@ -1,0 +1,42 @@
+version: 1
+disable_existing_loggers: False
+formatters:
+    formatter1:
+        format: "%(asctime)s | %(levelname)-8s | %(name)-45s | %(message)s"
+    formatter2:
+        format: "%(asctime)s | %(levelname)-8s | %(name)-25s |%(funcName)-30s | %(message)s"
+
+handlers:
+    console:
+        class: logging.StreamHandler
+        level: DEBUG
+        formatter: formatter2
+        stream: ext://sys.stdout
+
+    info_file_handler:
+        class: logging.handlers.RotatingFileHandler
+        level: INFO
+        formatter: formatter1
+        filename: logs/info.log
+        maxBytes: 10485760
+        backupCount: 10
+        encoding: utf8
+        
+    error_file_handler:
+        class: logging.handlers.RotatingFileHandler
+        level: ERROR
+        formatter: formatter1
+        filename: logs/error.log
+        maxBytes: 10485760 # 10MB
+        backupCount: 10
+        encoding: utf8
+
+loggers:
+    default:
+        level: DEBUG
+        handlers: [console, info_file_handler, error_file_handler]
+        propagate: no
+
+root:
+    level: DEBUG
+    handlers: [console, info_file_handler, error_file_handler]

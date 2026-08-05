@@ -1,0 +1,33 @@
+FROM continuumio/miniconda3
+
+WORKDIR /workspace
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libgmp-dev \
+    libfl-dev \
+    libssl-dev \
+    flex \
+    bison \
+    wget \
+    m4 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN wget -q https://crypto.stanford.edu/pbc/files/pbc-1.0.0.tar.gz \
+    && tar -xzf pbc-1.0.0.tar.gz \
+    && cd pbc-1.0.0 \
+    && ./configure \
+    && make \
+    && make install \
+    && ldconfig \
+    && cd /workspace \
+    && rm -rf pbc-1.0.0 pbc-1.0.0.tar.gz
+
+COPY environment.yml pyproject.toml README.md LICENSE ./
+COPY pyfe4ai ./pyfe4ai
+COPY tests ./tests
+
+RUN conda env create -f environment.yml && conda clean -afy
+RUN conda run -n pyfe4ai python -m pip install -e ".[test,pairing]"
+
+CMD ["conda", "run", "--no-capture-output", "-n", "pyfe4ai", "python", "-m", "pytest", "-q"]
