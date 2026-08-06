@@ -4,7 +4,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white" alt="Python 3.10+">
-  <img src="https://img.shields.io/badge/version-0.1.0-green" alt="Version 0.1.0">
+  <img src="https://img.shields.io/github/v/release/spire-studio/pyfe4ai?color=green" alt="Latest release">
   <img src="https://img.shields.io/badge/license-Apache%202.0-orange" alt="License Apache 2.0">
   <img src="https://github.com/spire-studio/pyfe4ai/actions/workflows/tests.yml/badge.svg" alt="Tests">
   <img src="https://img.shields.io/badge/docs-Sphinx-blueviolet?logo=readthedocs&logoColor=white" alt="Docs Sphinx">
@@ -30,11 +30,12 @@ multi-client, threshold, decentralized, and function-hiding settings.
 ```bash
 conda env create -f environment.yml
 conda activate pyfe4ai
-pip install -e ".[test]"   # editable with test extras
-python -m pytest -q         # run all tests
+pip install -e ".[test]"        # editable with test extras
+python -m pytest -m core -q     # run the core test suite
 ```
 
-For pairing-based FE families, additionally install:
+For pairing-based FE families (and the full test suite, `python -m pytest -q`),
+additionally install:
 
 ```bash
 pip install -e ".[test,pairing]"
@@ -202,7 +203,11 @@ For benchmark entry points, see `benchmarks/README.md`.
 
 ## API Documentation
 
-Full API reference is auto-generated from docstrings using Sphinx:
+Browse the full API reference online at
+**<https://spire-studio.github.io/pyfe4ai/docs/>** (rebuilt automatically on
+every merge to `main`).
+
+To build the docs locally instead:
 
 ```bash
 pip install -e ".[doc]"          # install Sphinx + theme
@@ -253,14 +258,34 @@ docker run --rm pyfe4ai-pairing
 > - Several schemes write generated public parameters into local `config/`
 >   subdirectories during setup.
 
+## Citing
+
+If you use PyFE4AI in your research, please cite it (a technical report is in
+preparation and will be added here once published):
+
+```bibtex
+@software{pyfe4ai2026,
+  author  = {{Spire Studio}},
+  title   = {{PyFE4AI}: Python-based Functional Encryption
+             for {AI} Security and Privacy},
+  year    = {2026},
+  version = {0.1.0},
+  license = {Apache-2.0},
+  url     = {https://github.com/spire-studio/pyfe4ai}
+}
+```
+
+Citation metadata is also available in [`CITATION.cff`](CITATION.cff) — use
+GitHub's **"Cite this repository"** button in the sidebar for APA/BibTeX.
+
 ## License
 
 This project is licensed under the Apache License 2.0. See the
-`LICENSE` file for details.
+[`LICENSE`](LICENSE) file for details.
 
 ## Project Policies
 
-- Contribution guide: `CONTRIBUTING.md`
-- Security reporting: `SECURITY.md`
-- Citation metadata: `CITATION.cff`
-- Code of conduct: `CODE_OF_CONDUCT.md`
+- Contribution guide: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- Security reporting: [`SECURITY.md`](SECURITY.md)
+- Citation metadata: [`CITATION.cff`](CITATION.cff)
+- Code of conduct: [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
