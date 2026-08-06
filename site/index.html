@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PyFE4AI — Functional Encryption for Trustworthy AI</title>
+<meta name="description" content="PyFE4AI is a research-oriented Python library of functional encryption schemes for AI security and privacy: SIFE, MIFE, MCFE, threshold, decentralized, and quadratic FE across DDH, Paillier, LWE, Ring-LWE, and pairing backends.">
+<link rel="icon" type="image/png" href="assets/branding/logo-simple.png">
+<style>
+  :root {
+    --blue:   #4d82c4;
+    --amber:  #f5a800;
+    --teal:   #2ec4a5;
+    --ink:    #24292f;
+    --muted:  #6a737d;
+    --line:   #e4e8ec;
+    --bg:     #ffffff;
+    --bg-alt: #f7f9fb;
+    --code-bg:#0f172a;
+    --radius: 12px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 "Helvetica Neue", Arial, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    line-height: 1.65;
+  }
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---------- top nav ---------- */
+  nav {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(255,255,255,.92);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav-inner {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 60px;
+  }
+  .nav-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; color: var(--ink); }
+  .nav-brand img { height: 34px; }
+  .nav-links { display: flex; gap: 22px; font-size: 15px; }
+  .nav-links a { color: var(--ink); font-weight: 500; }
+  .nav-links a:hover { color: var(--blue); text-decoration: none; }
+  .nav-links a.cta {
+    background: var(--blue); color: #fff; padding: 6px 16px;
+    border-radius: 8px; font-weight: 600;
+  }
+  .nav-links a.cta:hover { background: #3b6cab; }
+
+  /* ---------- hero ---------- */
+  header { padding: 84px 0 72px; text-align: center; background:
+    radial-gradient(1000px 420px at 50% -80px, #eaf1fa 0%, rgba(255,255,255,0) 60%); }
+  header img.logo { width: min(520px, 82vw); height: auto; }
+  header h1 { position: absolute; left: -9999px; } /* logo carries the name; keep h1 for SEO */
+  header p.tagline {
+    margin: 26px auto 8px; max-width: 720px;
+    font-size: 21px; color: var(--ink); font-weight: 500;
+  }
+  header p.sub {
+    margin: 0 auto; max-width: 680px; font-size: 16.5px; color: var(--muted);
+  }
+  .hero-actions { margin-top: 34px; display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 11px 26px; border-radius: 10px; font-size: 16px; font-weight: 600;
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .btn:hover { text-decoration: none; transform: translateY(-1px); }
+  .btn-primary { background: var(--blue); color: #fff; box-shadow: 0 2px 10px rgba(77,130,196,.35); }
+  .btn-primary:hover { background: #3b6cab; }
+  .btn-dark { background: var(--ink); color: #fff; }
+  .btn-dark:hover { background: #000; }
+  .btn-ghost { border: 1.5px solid var(--line); color: var(--ink); background: #fff; }
+  .btn-ghost:hover { border-color: var(--blue); color: var(--blue); }
+
+  .statbar {
+    margin: 58px auto 0; display: flex; justify-content: center; gap: 0;
+    flex-wrap: wrap; border: 1px solid var(--line); border-radius: var(--radius);
+    max-width: 860px; overflow: hidden; background: #fff;
+  }
+  .stat { flex: 1 1 160px; padding: 18px 12px; border-right: 1px solid var(--line); }
+  .stat:last-child { border-right: none; }
+  .stat b { display: block; font-size: 26px; font-weight: 800; }
+  .stat span { font-size: 13.5px; color: var(--muted); }
+  .stat:nth-child(1) b { color: var(--blue); }
+  .stat:nth-child(2) b { color: var(--amber); }
+  .stat:nth-child(3) b { color: var(--teal); }
+  .stat:nth-child(4) b { color: var(--ink); }
+
+  /* ---------- sections ---------- */
+  section { padding: 72px 0; }
+  section.alt { background: var(--bg-alt); }
+  h2.sec-title { font-size: 30px; text-align: center; margin-bottom: 10px; letter-spacing: -.3px; }
+  p.sec-sub { text-align: center; color: var(--muted); max-width: 640px; margin: 0 auto 46px; font-size: 16.5px; }
+  .accent-bar {
+    width: 64px; height: 5px; border-radius: 3px; margin: 0 auto 22px;
+    background: linear-gradient(90deg, var(--blue), var(--amber), var(--teal));
+  }
+
+  /* feature grid */
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 620px) { .grid { grid-template-columns: 1fr; } }
+  .card {
+    background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 26px 24px; transition: box-shadow .15s ease, transform .15s ease;
+  }
+  .card:hover { box-shadow: 0 8px 28px rgba(36,41,47,.08); transform: translateY(-2px); }
+  .card .ico {
+    width: 44px; height: 44px; border-radius: 10px; display: flex;
+    align-items: center; justify-content: center; font-size: 22px; margin-bottom: 14px;
+  }
+  .ico.b { background: #eaf1fa; } .ico.a { background: #fdf3dc; } .ico.t { background: #e4f7f2; }
+  .card h3 { font-size: 17.5px; margin-bottom: 8px; }
+  .card p { font-size: 14.5px; color: var(--muted); }
+  .card code { background: var(--bg-alt); padding: 1px 6px; border-radius: 5px; font-size: 13px; }
+
+  /* quickstart */
+  .qs-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: start; }
+  @media (max-width: 860px) { .qs-cols { grid-template-columns: 1fr; } }
+  .codebox {
+    background: var(--code-bg); border-radius: var(--radius); padding: 22px 24px;
+    overflow-x: auto; font-size: 13.5px; line-height: 1.7;
+  }
+  .codebox pre { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; color: #e2e8f0; }
+  .codebox .cm { color: #64748b; }
+  .codebox .kw { color: #93c5fd; }
+  .codebox .st { color: #fbbf24; }
+  .codebox .fn { color: #6ee7b7; }
+  .qs-note h3 { font-size: 19px; margin: 18px 0 8px; }
+  .qs-note h3:first-child { margin-top: 0; }
+  .qs-note p { color: var(--muted); font-size: 15px; margin-bottom: 10px; }
+
+  /* scheme matrix */
+  .matrix-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; }
+  table.matrix { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 14px; }
+  .matrix th, .matrix td { padding: 10px 14px; text-align: center; border-bottom: 1px solid var(--line); }
+  .matrix thead th { background: var(--bg-alt); font-weight: 700; font-size: 13.5px; }
+  .matrix td.fam { text-align: left; font-weight: 600; white-space: nowrap; }
+  .matrix td.fam small { display: block; font-weight: 400; color: var(--muted); }
+  .matrix .y  { color: var(--teal); font-weight: 700; }
+  .matrix .n  { color: #d0d7de; }
+  .matrix tbody tr:last-child td { border-bottom: none; }
+
+  /* use cases */
+  .uc { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  @media (max-width: 760px) { .uc { grid-template-columns: 1fr; } }
+  .uc .card h3 { display: flex; align-items: center; gap: 10px; }
+
+  /* citation */
+  .cite-box {
+    background: #fff; border: 1px solid var(--line); border-left: 5px solid var(--amber);
+    border-radius: var(--radius); padding: 24px 28px; max-width: 800px; margin: 0 auto;
+  }
+  .cite-box pre {
+    font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+    font-size: 13px; color: var(--ink); overflow-x: auto; line-height: 1.6;
+    background: var(--bg-alt); border-radius: 8px; padding: 16px 18px; margin-top: 12px;
+  }
+
+  /* footer */
+  footer { border-top: 1px solid var(--line); padding: 38px 0 46px; text-align: center; color: var(--muted); font-size: 14px; }
+  footer .flinks { margin-bottom: 10px; display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+  footer .flinks a { color: var(--ink); font-weight: 500; }
+  .badge-note {
+    display: inline-block; margin-left: 8px; padding: 2px 9px; border-radius: 999px;
+    background: #fdf3dc; color: #9a6b00; font-size: 12px; font-weight: 600; vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-inner">
+    <span class="nav-brand"><img src="assets/branding/logo-simple.png" alt="PyFE4AI logo">&nbsp;</span>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#quickstart">Quickstart</a>
+      <a href="#schemes">Schemes</a>
+      <a href="#citation">Cite</a>
+      <a href="https://github.com/spire-studio/pyfe4ai">GitHub</a>
+      <a class="cta" href="docs/">Docs</a>
+    </div>
+  </div>
+</nav>
+
+<header>
+  <div class="wrap">
+    <img class="logo" src="assets/branding/logo-simple.png" alt="PyFE4AI — Research-oriented Implementations of FE for Trustworthy AI">
+    <h1>PyFE4AI — Python Functional Encryption for Trustworthy AI</h1>
+    <p class="tagline">Compute on encrypted data. Reveal only the result.</p>
+    <p class="sub">
+      A research-oriented Python library of <strong>functional encryption</strong> (FE)
+      schemes for AI security and privacy — from single-input inner products to
+      multi-client, threshold, decentralized, and quadratic constructions.
+    </p>
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="docs/">📖 Documentation</a>
+      <a class="btn btn-dark" href="https://github.com/spire-studio/pyfe4ai">⭐ GitHub</a>
+      <a class="btn btn-ghost" href="#quickstart">🚀 Quickstart</a>
+    </div>
+
+    <div class="statbar">
+      <div class="stat"><b>39</b><span>scheme variants</span></div>
+      <div class="stat"><b>8</b><span>FE families</span></div>
+      <div class="stat"><b>5</b><span>crypto backends</span></div>
+      <div class="stat"><b>Apache-2.0</b><span>license</span></div>
+    </div>
+  </div>
+</header>
+
+<section id="features">
+  <div class="wrap">
+    <div class="accent-bar"></div>
+    <h2 class="sec-title">Why PyFE4AI</h2>
+    <p class="sec-sub">One consistent Python API — <code>setup / keygen / encrypt / decrypt</code> —
+       across the functional-encryption zoo, built for ML workloads.</p>
+    <div class="grid">
+      <div class="card">
+        <div class="ico b">🧩</div>
+        <h3>Complete FE family coverage</h3>
+        <p>SIFE, MIFE, MCFE, decentralized MCFE, threshold MIFE/MCFE, function-hiding
+           IPE / Multi-IPE, and quadratic FE (SGP &amp; Quad) — 39 (family, variant)
+           combinations under one roof.</p>
+      </div>
+      <div class="card">
+        <div class="ico a">🔐</div>
+        <h3>Five cryptographic backends</h3>
+        <p>DDH, Damgård-DDH, Paillier/DCR, LWE &amp; Ring-LWE (post-quantum lines), and
+           pairing-based constructions — pick the assumption that fits your
+           deployment.</p>
+      </div>
+      <div class="card">
+        <div class="ico t">🤖</div>
+        <h3>ML-native adapter</h3>
+        <p><code>ml_adapter</code> wraps any scheme for federated-learning gradient
+           aggregation and encrypted linear inference; a quantization toolkit handles
+           float ↔ integer precision.</p>
+      </div>
+      <div class="card">
+        <div class="ico t">⚡</div>
+        <h3>Engineered for speed</h3>
+        <p>NTT polynomial multiplication for Ring-LWE, O(√n) baby-step giant-step
+           discrete log with caching, CSPRNG batch sampling, and ndarray batch
+           helpers throughout.</p>
+      </div>
+      <div class="card">
+        <div class="ico b">🧪</div>
+        <h3>Tested &amp; typed</h3>
+        <p>150+ core tests in CI, typed public API (<code>py.typed</code>), TypedDict
+           config schemas, and a structured <code>FEError</code> exception
+           hierarchy.</p>
+      </div>
+      <div class="card">
+        <div class="ico a">📚</div>
+        <h3>Paper-faithful</h3>
+        <p>Every scheme cites its source construction (PKC'15, CRYPTO'16/'18,
+           ASIACRYPT'18, PKC'19, IEEE TDSC TAPFed, …) in the module docstring —
+           built for reproducible research.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="quickstart" class="alt">
+  <div class="wrap">
+    <div class="accent-bar"></div>
+    <h2 class="sec-title">Quickstart</h2>
+    <p class="sec-sub">Encrypt a vector, hand out a functional key, learn only the inner product.</p>
+    <div class="qs-cols">
+      <div class="codebox"><pre><span class="cm"># install</span>
+git clone https://github.com/spire-studio/pyfe4ai.git
+cd pyfe4ai
+conda env create -f environment.yml
+conda activate pyfe4ai
+pip install -e ".[test]"
+
+<span class="cm"># run the test suite</span>
+python -m pytest -m core -q</pre></div>
+      <div class="codebox"><pre><span class="kw">from</span> pyfe4ai <span class="kw">import</span> SIFE, SIFEKeyGenerator
+
+x, y = [<span class="st">2</span>, <span class="st">1</span>, <span class="st">3</span>], [<span class="st">4</span>, <span class="st">5</span>, <span class="st">6</span>]
+
+kg = SIFEKeyGenerator({<span class="st">"sec_param"</span>: <span class="st">128</span>, <span class="st">"eta"</span>: <span class="st">3</span>})
+kg.<span class="fn">setup</span>()
+pp, sk = kg.<span class="fn">get_public_parameters</span>(), kg.<span class="fn">get_private_keys</span>()
+dk = kg.<span class="fn">get_decryption_keys</span>(<span class="st">"sid_0"</span>,
+        credentials={<span class="st">"fusion_weight"</span>: y})
+
+ct = SIFE({<span class="st">"precision"</span>: <span class="st">3</span>, <span class="st">"keys"</span>: {<span class="st">"pp"</span>: pp, <span class="st">"sk"</span>: sk}}).<span class="fn">encrypt</span>(x)
+result = SIFE({<span class="st">"precision"</span>: <span class="st">3</span>, <span class="st">"keys"</span>: {<span class="st">"pp"</span>: pp}}).<span class="fn">decrypt</span>(ct, dk, y)
+<span class="fn">print</span>(result)  <span class="cm"># ⟨x, y⟩ = 31 — and nothing else is revealed</span></pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="schemes">
+  <div class="wrap">
+    <div class="accent-bar"></div>
+    <h2 class="sec-title">Scheme Matrix</h2>
+    <p class="sec-sub">Families × backends at a glance — see the
+       <a href="docs/">documentation</a> for per-scheme papers and parameters.</p>
+    <div class="matrix-scroll">
+      <table class="matrix">
+        <thead>
+          <tr>
+            <th style="text-align:left">Family</th>
+            <th>DDH</th><th>Damgård</th><th>Paillier</th>
+            <th>LWE</th><th>Ring-LWE</th><th>Pairing (FH)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="fam">SIFE <small>single-input</small></td>
+            <td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+          <tr><td class="fam">MIFE <small>multi-input</small></td>
+            <td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+          <tr><td class="fam">MCFE <small>multi-client, labeled</small></td>
+            <td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+          <tr><td class="fam">dMCFE <small>decentralized</small></td>
+            <td class="y">✓</td><td class="n">—</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+          <tr><td class="fam">tMIFE <small>threshold</small></td>
+            <td class="y">✓</td><td class="n">—</td><td class="n">—</td><td class="y">✓</td><td class="n">—</td><td class="n">—</td></tr>
+          <tr><td class="fam">tMCFE <small>threshold</small></td>
+            <td class="y">✓</td><td class="n">—</td><td class="n">—</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+          <tr><td class="fam">Quadratic <small>SGP · Quad</small></td>
+            <td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✓</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="alt">
+  <div class="wrap">
+    <div class="accent-bar"></div>
+    <h2 class="sec-title">Built for Privacy-Preserving ML</h2>
+    <p class="sec-sub">Functional encryption reveals a chosen function of the data — not the data itself.</p>
+    <div class="uc">
+      <div class="card">
+        <h3><span>🌐</span> Federated-learning secure aggregation</h3>
+        <p>Clients encrypt local gradients with MCFE; the aggregator decrypts only the
+           weighted sum — individual updates stay private. Threshold variants
+           (TAPFed-style) tolerate partial participation and curb single-aggregator
+           power.</p>
+        <p><a href="https://github.com/spire-studio/pyfe4ai/blob/main/examples/ml_fl_aggregation.py">examples/ml_fl_aggregation.py →</a></p>
+      </div>
+      <div class="card">
+        <h3><span>🔎</span> Encrypted inference</h3>
+        <p>Run linear scoring or bilinear-form classification (quadratic FE) directly
+           over ciphertexts — the model owner learns the prediction, never the raw
+           features.</p>
+        <p><a href="https://github.com/spire-studio/pyfe4ai/blob/main/examples/ml_encrypted_inference.py">examples/ml_encrypted_inference.py →</a></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="citation">
+  <div class="wrap">
+    <div class="accent-bar"></div>
+    <h2 class="sec-title">Citing PyFE4AI</h2>
+    <p class="sec-sub">A technical report is in preparation<span class="badge-note">coming soon</span></p>
+    <div class="cite-box">
+      <strong>BibTeX</strong>
+      <pre>@software{pyfe4ai2026,
+  author  = {{Spire Studio}},
+  title   = {{PyFE4AI}: Python-based Functional Encryption
+             for {AI} Security and Privacy},
+  year    = {2026},
+  version = {0.1.0},
+  license = {Apache-2.0},
+  url     = {https://github.com/spire-studio/pyfe4ai}
+}</pre>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="flinks">
+      <a href="docs/">Documentation</a>
+      <a href="https://github.com/spire-studio/pyfe4ai">GitHub</a>
+      <a href="https://github.com/spire-studio/pyfe4ai/issues">Issues</a>
+      <a href="https://github.com/spire-studio/pyfe4ai/blob/main/SECURITY.md">Security Policy</a>
+      <a href="https://github.com/spire-studio/pyfe4ai/blob/main/LICENSE">License</a>
+    </div>
+    <p>© 2026 <strong>Spire Studio</strong> · Research prototype — not production-audited cryptography.</p>
+  </div>
+</footer>
+
+</body>
+</html>
