@@ -54,10 +54,22 @@ intersphinx_mapping = {
     "numpy": ("https://numpy.org/doc/stable", None),
 }
 
+# -- Options for autodoc imports ---------------------------------------------
+# Pairing-based schemes import charm-crypto lazily; mock it so the docs build
+# does not require compiling PBC/charm in CI.
+autodoc_mock_imports = ["charm"]
+
 # -- Options for HTML output -------------------------------------------------
-html_theme = "sphinx_rtd_theme"
+html_theme = "furo"
 html_static_path = ["_static"]
+html_title = f"pyfe4ai {release}"
 html_theme_options = {
-    "navigation_depth": 4,
-    "collapse_navigation": False,
+    "light_css_variables": {
+        "color-brand-primary": "#4d82c4",
+        "color-brand-content": "#4d82c4",
+    },
+    "dark_css_variables": {
+        "color-brand-primary": "#6ea3e0",
+        "color-brand-content": "#6ea3e0",
+    },
 }
