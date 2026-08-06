@@ -11,6 +11,12 @@
   <img src="https://img.shields.io/badge/crypto-functional%20encryption-critical" alt="Functional Encryption">
 </p>
 
+<p align="center">
+  🌐 <a href="https://spire-studio.github.io/pyfe4ai/"><strong>Project Page</strong></a> ·
+  📖 <a href="https://spire-studio.github.io/pyfe4ai/docs/"><strong>Documentation</strong></a> ·
+  🐛 <a href="https://github.com/spire-studio/pyfe4ai/issues"><strong>Issues</strong></a>
+</p>
+
 # PyFE4AI
 
 PyFE4AI is a research-oriented Python library for functional encryption in

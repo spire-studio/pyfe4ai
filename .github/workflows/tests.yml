@@ -3,6 +3,7 @@ name: Tests
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   core-release:
@@ -24,7 +25,11 @@ jobs:
         run: |
           python -m pytest -m core -q
 
+  # Pairing-enabled full suite compiles PBC + charm-crypto from source and is
+  # slower/more fragile than the core lane, so it only runs on manual dispatch
+  # (Actions -> Tests -> Run workflow), typically before a release.
   full-research:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-22.04
 
     steps:
