@@ -47,12 +47,13 @@ dev = [
 ]
 doc = [
   "sphinx>=7",
-  "sphinx-rtd-theme>=2",
+  "furo",
   "sphinx-autodoc-typehints>=2",
 ]
 
 [project.urls]
-Homepage = "https://github.com/spire-studio/pyfe4ai"
+Homepage = "https://spire-studio.github.io/pyfe4ai/"
+Documentation = "https://spire-studio.github.io/pyfe4ai/docs/"
 Repository = "https://github.com/spire-studio/pyfe4ai"
 Issues = "https://github.com/spire-studio/pyfe4ai/issues"
 
