@@ -386,3 +386,14 @@ def test_invalid_threshold_rejected():
                 "t": 3,
             }
         )
+
+
+def test_duplicate_partial_decryption_rejected():
+    """A share submitted twice under another key used to pass validation
+    (contributors were compared as a set) and silently broke decryption."""
+    label = "test-label-dup"
+    kg, pp, clients, dct_ct, dct_y, _ = _setup_round(3, 3, 2, 1, label)
+    shares = _share_decrypt(kg, pp, dct_ct, dct_y, label, ["sid_0", "sid_1"])
+    shares["extra"] = shares["sid_0"]
+    with pytest.raises(FESchemeError):
+        clients["nid_0"].combine_decrypt(shares)

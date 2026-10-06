@@ -155,7 +155,8 @@ def validate_partial_decryptions(dict_ct_prime: dict, threshold: int) -> None:
 
     Each partial decryption carries the server id that produced it and the
     enrolled set its Lagrange coefficient was computed for; the contributors
-    must be exactly that enrolled set and number at least *threshold*.
+    must be exactly that enrolled set, each appearing once, and number at
+    least *threshold*.
 
     Args:
         dict_ct_prime: Mapping of server ids to partial decryptions.
@@ -172,6 +173,10 @@ def validate_partial_decryptions(dict_ct_prime: dict, threshold: int) -> None:
         if "sid" not in ct_prime or "lst_sid_enrolled" not in ct_prime:
             raise FESchemeError(
                 "partial decryption is missing its server id / enrolled set"
+            )
+        if ct_prime["sid"] in contributors:
+            raise FESchemeError(
+                "duplicate partial decryption from {}".format(ct_prime["sid"])
             )
         contributors.add(ct_prime["sid"])
         _enrolled = set(ct_prime["lst_sid_enrolled"])
