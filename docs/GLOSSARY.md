@@ -21,7 +21,7 @@
 
 | Name | Type | Meaning |
 |------|------|---------|
-| `sec_param` | `int` | Security parameter (bit length), default 128 |
+| `sec_param` | `int` | **Not a security level.** Bit length of the safe prime *p* in the DDH families (and default `modulus_length` for Damgård); κ in the Ring-LWE SIFE noise bounds; only recorded by the LWE families (hardness comes from `lwe_n`). Default 128 is for fast tests: use ≥ 2048 for ~112-bit DDH security. |
 | `eta` | `int` or `dict[str, int]` | Dimension of each client's input vector (slot count) |
 | `n` | `int` | Number of clients / input sources |
 | `s` | `int` | Number of sessions or functional-key slots |

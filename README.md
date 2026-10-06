@@ -49,7 +49,8 @@ from pyfe4ai import SIFE, SIFEKeyGenerator
 x = [2, 1, 3]
 y = [4, 5, 6]
 
-# Key generation
+# Key generation. sec_param is the bit length of the DDH modulus, not a
+# security level: 128 keeps the demo fast but is NOT secure (use >= 2048).
 kg = SIFEKeyGenerator({"sec_param": 128, "eta": len(x)})
 kg.setup()
 pp = kg.get_public_parameters()
