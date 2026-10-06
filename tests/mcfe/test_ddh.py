@@ -50,17 +50,16 @@ def test_key_generator(kg_config):
 
     for nid in lst_nid_expected:
         sk_nid = kg.get_private_keys(nid)
-        assert "w" in sk_nid
-        assert "u" in sk_nid
+        assert set(sk_nid) == {"s"}
+        assert len(sk_nid["s"]) == kg_config["eta"]
+        assert all(len(s_j) == 2 for s_j in sk_nid["s"])
 
     fusion_weight = {
         nid: [1 for _ in range(kg_config["eta"])] for nid in lst_nid_expected
     }
     dk = kg.get_decryption_keys(None, credentials={"fusion_weight": fusion_weight})
-    assert "d" in dk
-    assert "z" in dk
-    assert isinstance(dk["d"], dict)
-    assert isinstance(dk["z"], str)
+    assert set(dk) == {"d"}
+    assert isinstance(dk["d"], list) and len(dk["d"]) == 2
 
 
 def test_entire_process(kg_config):
@@ -95,7 +94,6 @@ def test_entire_process(kg_config):
         crypto_nid = MCFE(_config_nid)
         ct_nid = crypto_nid.encrypt(dct_x[nid], label)
         assert isinstance(ct_nid, dict)
-        assert "t" in ct_nid
         assert "c" in ct_nid
         dct_ct[nid] = ct_nid
 
@@ -159,3 +157,87 @@ def test_entire_process_full_length_vectors(n, eta):
     for _ in range(3):
         expected, computed = _run_full_vector_round(n, eta)
         assert computed == expected
+
+
+def test_client_keys_are_independent():
+    """Regression (N6): every client used to receive the same ``w`` / ``g_a``,
+    so one client could strip the mask of another client's ciphertext."""
+    lst_nid = ["nid_0", "nid_1", "nid_2"]
+    kg = MCFEKeyGenerator(
+        {"sec_param": 256, "lst_nid": lst_nid, "eta": 2, "n": 3, "s": 1}
+    )
+    kg.setup()
+    keys = [kg.get_private_keys(nid)["s"] for nid in lst_nid]
+    flat = [e for key in keys for s_j in key for e in s_j]
+    assert len(set(flat)) == len(flat)
+
+
+def test_decryption_key_is_aggregated():
+    """Regression (N2): the functional key used to contain one component per
+    client (``d[nid]``), which let its holder strip each client's mask and,
+    with two labels, solve for the client's plaintexts. The key must be a
+    single aggregated Z_q^2 element that is identical for any split of the
+    same weights into clients."""
+    lst_nid = ["nid_0", "nid_1"]
+    kg = MCFEKeyGenerator(
+        {"sec_param": 256, "lst_nid": lst_nid, "eta": 1, "n": 2, "s": 1}
+    )
+    kg.setup()
+    dk = kg.get_decryption_keys(
+        "sid_0", credentials={"fusion_weight": {"nid_0": [3], "nid_1": [5]}}
+    )
+    assert set(dk) == {"d"} and len(dk["d"]) == 2
+    s0 = [int(v) for v in kg.get_private_keys("nid_0")["s"][0]]
+    s1 = [int(v) for v in kg.get_private_keys("nid_1")["s"][0]]
+    q = int(kg.q)
+    assert [int(v) for v in dk["d"]] == [(3 * a + 5 * b) % q for a, b in zip(s0, s1)]
+
+
+def test_label_binding_and_label_mask_is_not_a_public_scalar():
+    """Regression (N2): ciphertexts must only decrypt under their own label,
+    and the label mask must not cancel by combining two labels' ciphertexts
+    with public exponents (the old ``u * MD5(label)`` mask did)."""
+    import gmpy2 as gp
+
+    from pyfe4ai.utils.crypto_utils import md5_hash
+
+    lst_nid = ["nid_0", "nid_1"]
+    kg = MCFEKeyGenerator(
+        {"sec_param": 256, "lst_nid": lst_nid, "eta": 1, "n": 2, "s": 1}
+    )
+    kg.setup()
+    pp = kg.get_public_parameters()
+    p = gp.mpz(pp["p"])
+    g = gp.mpz(pp["g"])
+    clients = {
+        nid: MCFE({"id": nid, "precision": 3, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
+        for nid in lst_nid
+    }
+    dct_y = {nid: [1] for nid in lst_nid}
+    dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
+    decryptor = MCFE({"id": "sid_0", "precision": 3, "keys": {"pp": pp}})
+
+    ct_a = {nid: clients[nid].encrypt([7], "label-a") for nid in lst_nid}
+    assert decryptor.decrypt(ct_a, dk, dct_y, "label-a") == 14
+    assert decryptor.decrypt(ct_a, dk, dct_y, "label-b") is None
+
+    # old attack: c_a^{H(b)} / c_b^{H(a)} = g^{x_a H(b) - x_b H(a)} for the
+    # client's own masks; with a group-element H(label) this no longer holds
+    c_a = gp.mpz(ct_a["nid_0"]["c"][0])
+    c_b = gp.mpz(clients["nid_0"].encrypt([7], "label-b")["c"][0])
+    h_a, h_b = md5_hash("label-a", p), md5_hash("label-b", p)
+    combined = gp.divm(gp.powmod(c_a, h_b, p), gp.powmod(c_b, h_a, p), p)
+    assert combined != gp.powmod(g, 7 * (h_b - h_a), p)
+
+
+def test_unknown_client_in_fusion_weight_rejected():
+    from pyfe4ai.utils.exceptions import FEValidationError
+
+    kg = MCFEKeyGenerator(
+        {"sec_param": 256, "lst_nid": ["nid_0", "nid_1"], "eta": 1, "n": 2, "s": 1}
+    )
+    kg.setup()
+    with pytest.raises(FEValidationError):
+        kg.get_decryption_keys(
+            "sid_0", credentials={"fusion_weight": {"nid_0": [1], "nid_9": [1]}}
+        )

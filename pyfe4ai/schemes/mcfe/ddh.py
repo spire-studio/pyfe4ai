@@ -1,10 +1,22 @@
 """
-Chotard, Jérémy, Edouard Dufour Sans, Romain Gay, Duong Hieu Phan, and David Pointcheval. 
-"Decentralized multi-client functional encryption for inner product." 
-In Advances in Cryptology ASIACRYPT 2018, Brisbane, QLD, Australia, December 2-6, pp. 703-732. 
+Chotard, Jérémy, Edouard Dufour Sans, Romain Gay, Duong Hieu Phan, and David Pointcheval.
+"Decentralized multi-client functional encryption for inner product."
+In Advances in Cryptology ASIACRYPT 2018, Brisbane, QLD, Australia, December 2-6, pp. 703-732.
 Springer International Publishing, 2018.
+| URL: https://eprint.iacr.org/2017/989
 
-* setting:  Integer based
+* type:     secret-key multi-client encryption (MCFE, DDH, random oracle)
+* setting:  Integer based (order-q subgroup of Z_p^*, p = 2q + 1)
+
+Construction (one coordinate j of client i's vector is one CDGPP18 slot):
+
+* Setup:    ``s_{i,j} <- Z_q^2`` for every client i and coordinate j.
+* Encrypt:  ``[u_l] = H(l) in G^2``;  ``c_{i,j} = g^{x_{i,j}} * [u_l]^{s_{i,j}}``.
+* KeyGen:   ``d = sum_{i,j} y_{i,j} * s_{i,j} in Z_q^2`` (one aggregated key).
+* Decrypt:  ``g^{<x,y>} = prod c_{i,j}^{y_{i,j}} / [u_l]^d``, then a bounded dlog.
+
+Each client must encrypt at most once per label: two ciphertexts of the same
+client under the same label reveal the difference of the plaintexts.
 
 """
 
@@ -21,12 +33,21 @@ from pyfe4ai.schemes.ddh_base import DDHKeyGeneratorBase
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import _random
-from pyfe4ai.utils.crypto_utils import md5_hash
+from pyfe4ai.utils.crypto_utils import hash_to_qr_group
 from pyfe4ai.utils.dlog_solver import load_or_build_dlog_table, dlog_table_solve
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 
 
 logger = logging.getLogger(__name__)
+
+_LABEL_HASH_DOMAIN = "pyfe4ai/mcfe/ddh/H(label)"
+
+
+def _hash_label(label: str, p: gp.mpz) -> list:
+    """Return ``[u_l] = H(label) in G^2`` (random oracle into the QR subgroup)."""
+    if not isinstance(label, str):
+        raise FEValidationError("label must be a string, got {!r}".format(label))
+    return [hash_to_qr_group(label, p, index=k, domain=_LABEL_HASH_DOMAIN) for k in (0, 1)]
 
 
 class MCFEKeyGenerator(DDHKeyGeneratorBase):
@@ -58,20 +79,17 @@ class MCFEKeyGenerator(DDHKeyGeneratorBase):
         return {"n": self.n, "s": self.s}
 
     def setup(self) -> None:
-        """Generate master secret key (``msk``) and master public key (``mpk``)."""
-        vec_a = [1, _random(self.p, self.sec_param)]
-        vec_w = [
-            [_random(self.p, self.sec_param), _random(self.p, self.sec_param)]
-            for _ in range(self.eta)
-        ]
-        dct_u = {
-            nid: [_random(self.p, self.sec_param) for _ in range(self.eta)]
-            for nid in self.lst_nid
+        """Generate one independent secret ``s_{i,j} in Z_q^2`` per client slot."""
+        self.msk = {
+            "s": {
+                nid: [
+                    [_random(self.q, self.sec_param) for _ in range(2)]
+                    for _ in range(self.dict_eta[nid])
+                ]
+                for nid in self.lst_nid
+            }
         }
-
-        g_a = [gp.powmod(self.g, a, self.p) for a in vec_a]
         self.mpk = {"g": self.g, "p": self.p}
-        self.msk = {"w": vec_w, "u": dct_u, "g_a": g_a}
         logger.info("MCFE setup - DONE.")
 
     def get_public_parameters(self) -> dict:
@@ -90,28 +108,26 @@ class MCFEKeyGenerator(DDHKeyGeneratorBase):
         }
 
     def get_private_keys(self, nid: str) -> dict | None:
-        """Return encryption keys for client *nid*.
+        """Return the encryption key of client *nid*.
 
         Args:
             nid: Client identifier, must be in ``lst_nid``.
 
         Returns:
-            Dict with ``g_a``, ``w``, ``u`` keys, or ``None`` if *nid* is invalid.
+            Dict with ``s`` (one ``Z_q^2`` pair per slot of *nid*), or ``None``
+            if *nid* is invalid.
         """
         logger.debug("generating private key(s)...")
         if nid is None or not isinstance(nid, str) or nid not in self.lst_nid:
             logger.error("no id or invalid id  provided.")
             return None
 
-        _keys = {
-            "g_a": [gp.digits(i) for i in self.msk["g_a"]],
-            "w": [[gp.digits(i[0]), gp.digits(i[1])] for i in self.msk["w"]],
-            "u": [gp.digits(i) for i in self.msk["u"][nid]],
+        return {
+            "s": [[gp.digits(e) for e in s_j] for s_j in self.msk["s"][nid]],
         }
-        return _keys
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
-        """Derive a functional decryption key for the given fusion weights.
+        """Derive the functional decryption key ``d = sum y_{i,j} s_{i,j}``.
 
         Args:
             sid: Session identifier.
@@ -119,30 +135,37 @@ class MCFEKeyGenerator(DDHKeyGeneratorBase):
                 (dict mapping client IDs to weight lists).
 
         Returns:
-            Dict with ``d`` (per-client keys) and ``z`` (aggregated secret).
+            Dict with ``d`` (a pair of integers mod q). The key is aggregated
+            over all clients, so it gives no per-client decryption capability.
 
         Raises:
             FEKeyError: If credentials are missing.
+            FEValidationError: If a client id is unknown or a weight list is
+                longer than that client's ``eta``.
         """
         _credentials = kwargs.get("credentials", None)
         if not _credentials:
             raise FEKeyError("need to provided credentials for MCFE")
         _fusion_weights = _credentials.get("fusion_weight")
-        d = {}
-        z = gp.mpz(0)
-        for nid, lst_fusion in _fusion_weights.items():
-            if nid in self.msk["u"]:
-                u_nid = self.msk["u"][nid]
-                w_fusion = gp.mpz(0)
-                for i in range(len(lst_fusion)):
-                    wi = self.msk["w"][i]
-                    w_fusion += gp.mul(wi[0] + wi[1], gp.mpz(lst_fusion[i]))
-                    z += gp.mul(u_nid[i], gp.mpz(lst_fusion[i]))
-                d[nid] = gp.digits(w_fusion)
-            else:
-                logger.error("invalid identifier in provided fusion weight.")
+        if not isinstance(_fusion_weights, dict) or not _fusion_weights:
+            raise FEValidationError("invalid fusion weights provided, need a dict")
 
-        return {"d": d, "z": gp.digits(z)}
+        d = [gp.mpz(0), gp.mpz(0)]
+        for nid, lst_fusion in _fusion_weights.items():
+            if nid not in self.msk["s"]:
+                raise FEValidationError(
+                    "invalid identifier in provided fusion weight: {}".format(nid)
+                )
+            s_nid = self.msk["s"][nid]
+            if len(lst_fusion) > len(s_nid):
+                raise FEValidationError(
+                    "fusion weight of {} is longer than eta".format(nid)
+                )
+            for y_j, s_j in zip(lst_fusion, s_nid):
+                d[0] += gp.mul(gp.mpz(y_j), s_j[0])
+                d[1] += gp.mul(gp.mpz(y_j), s_j[1])
+
+        return {"d": [gp.digits(d_k % self.q) for d_k in d]}
 
 
 class MCFE(IPFEAbsCrypto):
@@ -179,10 +202,11 @@ class MCFE(IPFEAbsCrypto):
 
         Args:
             lst_pt: Integer plaintext vector of length ≤ ``eta``.
-            label: Encryption label binding the ciphertext to a session.
+            label: Encryption label binding the ciphertext to a session. A
+                client must not encrypt twice under the same label.
 
         Returns:
-            Dict with ``t`` (group element pair) and ``c`` (ciphertext list).
+            Dict with ``c`` (one group element per plaintext slot).
 
         Raises:
             FEKeyError: If public parameters or private keys are missing.
@@ -192,41 +216,32 @@ class MCFE(IPFEAbsCrypto):
             raise FEKeyError("no public parameters provided for encryption")
         if not self._has_private_keys():
             raise FEKeyError("no private keys provided for encryption")
-        if len(lst_pt) > len(self.sk["u"]):
-            raise FEValidationError("invalid size of input plaintext:{}".format(lst_pt))
         if not isinstance(lst_pt, list):
             raise FEValidationError("invalid format of input plaintext:{}".format(lst_pt))
+        if len(lst_pt) > len(self.sk["s"]):
+            raise FEValidationError("invalid size of input plaintext:{}".format(lst_pt))
 
-        sec_param = self.pp["sec_param"]
         p = gp.mpz(self.pp["p"])
         g = gp.mpz(self.pp["g"])
-        lst_ga = [gp.mpz(i) for i in self.sk["g_a"]]
-        u = [gp.mpz(i) for i in self.sk["u"]]
-        w = [[gp.mpz(lst_wi[0]), gp.mpz(lst_wi[1])] for lst_wi in self.sk["w"]]
+        u_l = _hash_label(label, p)
 
-        r = _random(p, sec_param)
-        t = [gp.digits(gp.powmod(ga, r, p)) for ga in lst_ga]
-
-        _label = md5_hash(label, p)
         c = list()
-        for i in range(len(lst_pt)):
-            # slot i is masked with its own key component w[i] only, matching
-            # the per-slot d = sum_i y_i * (w_i0 + w_i1) used at decryption
-            _ga_w = gp.mpz(1)
-            for ga in lst_ga:
-                _ga_w = gp.mul(_ga_w, gp.powmod(ga, w[i][0] + w[i][1], p)) % p
-            _ptu = gp.powmod(g, gp.mpz(lst_pt[i]) + gp.mul(u[i], _label), p)
-            c.append(gp.digits(gp.mul(_ptu, gp.powmod(_ga_w, r, p)) % p))
+        for x_j, s_j in zip(lst_pt, self.sk["s"]):
+            c_j = gp.powmod(g, gp.mpz(x_j), p)
+            for u_k, s_jk in zip(u_l, s_j):
+                c_j = gp.mul(c_j, gp.powmod(u_k, gp.mpz(s_jk), p)) % p
+            c.append(gp.digits(c_j))
 
-        return {"t": t, "c": c}
+        return {"c": c}
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict, label: str):
         """Decrypt aggregated ciphertexts to recover the multi-client inner product.
 
         Args:
             dct_ct: Mapping of client IDs to their ciphertext dicts.
-            dk: Decryption key dict with ``d`` (per-client) and ``z``.
-            fusion_weight: Mapping of client IDs to weight lists.
+            dk: Decryption key dict with ``d`` (pair of integers mod q).
+            fusion_weight: Mapping of client IDs to weight lists; must be the
+                weights the key was derived for.
             label: The encryption label used during :meth:`encrypt`.
 
         Returns:
@@ -234,38 +249,32 @@ class MCFE(IPFEAbsCrypto):
 
         Raises:
             FEKeyError: If decryption key is missing.
-            FESchemeError: If inputs are inconsistent.
+            FESchemeError: If ciphertexts and fusion weights cover different clients.
         """
         if not dk:
             raise FEKeyError("no decryption key provided.")
-        if dct_ct.keys() != dk.keys() and dct_ct.keys() != fusion_weight.keys():
-            raise FESchemeError("inconsistent input among ct, dk, fusion wight")
+        if dct_ct.keys() != fusion_weight.keys():
+            raise FESchemeError("inconsistent input among ct and fusion weight")
 
         p = gp.mpz(self.pp["p"])
-        g = gp.mpz(self.pp["g"])
-        z = gp.mpz(dk["z"])
-        d = dk["d"]
+        u_l = _hash_label(label, p)
 
         _cf_prod = gp.mpz(1)
-        _td_prod = gp.mpz(1)
-        for nid in dct_ct.keys():
+        for nid, ct_nid in dct_ct.items():
             f_nid = fusion_weight[nid]
-            c_nid = dct_ct[nid]["c"]
-            t_nid = [gp.mpz(_t) for _t in dct_ct[nid]["t"]]
-            d_nid = gp.mpz(d[nid])
+            c_nid = ct_nid["c"]
+            if len(c_nid) != len(f_nid):
+                raise FESchemeError(
+                    "ciphertext and fusion weight of {} differ in length".format(nid)
+                )
+            for c_j, y_j in zip(c_nid, f_nid):
+                _cf_prod = gp.mul(_cf_prod, gp.powmod(gp.mpz(c_j), gp.mpz(y_j), p)) % p
 
-            for i in range(len(c_nid)):
-                _cf_prod *= gp.powmod(gp.mpz(c_nid[i]), gp.mpz(f_nid[i]), p)
-            for _t in t_nid:
-                _td_prod *= gp.powmod(_t, d_nid, p)
+        _ud_prod = gp.mpz(1)
+        for u_k, d_k in zip(u_l, dk["d"]):
+            _ud_prod = gp.mul(_ud_prod, gp.powmod(u_k, gp.mpz(d_k), p)) % p
 
-        gf = gp.divm(
-            gp.divm(_cf_prod, _td_prod, p),
-            gp.powmod(g, gp.mul(z, md5_hash(label, p)), p),
-            p,
-        )
-
-        return self._solve_dlog(gf)
+        return self._solve_dlog(gp.divm(_cf_prod, _ud_prod, p))
 
     def _solve_dlog(self, g_inner_prod) -> int | None:
         """Solve the discrete log using a cached dlog table."""
