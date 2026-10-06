@@ -43,6 +43,16 @@ logger = logging.getLogger(__name__)
 _LABEL_HASH_DOMAIN = "pyfe4ai/mcfe/ddh/H(label)"
 
 
+def _element_label(label: str, layer: int, index: tuple) -> str:
+    """Unambiguous per-element label for the ndarray helpers.
+
+    CDGPP18 ciphertexts are deterministic per (client slot, label), so every
+    array element must be encrypted under its own label; reusing one label
+    would let anyone compute ``c_i / c_j = g^{x_i - x_j}`` without a key.
+    """
+    return json.dumps([label, int(layer), [int(v) for v in index]])
+
+
 def _hash_label(label: str, p: gp.mpz) -> list:
     """Return ``[u_l] = H(label) in G^2`` (random oracle into the QR subgroup)."""
     if not isinstance(label, str):
@@ -253,6 +263,8 @@ class MCFE(IPFEAbsCrypto):
         """
         if not dk:
             raise FEKeyError("no decryption key provided.")
+        if not isinstance(dk.get("d"), (list, tuple)) or len(dk["d"]) != 2:
+            raise FEKeyError("malformed MCFE decryption key: expected d = [d0, d1]")
         if dct_ct.keys() != fusion_weight.keys():
             raise FESchemeError("inconsistent input among ct and fusion weight")
 
@@ -268,7 +280,10 @@ class MCFE(IPFEAbsCrypto):
                     "ciphertext and fusion weight of {} differ in length".format(nid)
                 )
             for c_j, y_j in zip(c_nid, f_nid):
-                _cf_prod = gp.mul(_cf_prod, gp.powmod(gp.mpz(c_j), gp.mpz(y_j), p)) % p
+                c_j = gp.mpz(c_j)
+                if not 0 < c_j < p:
+                    raise FEValidationError("ciphertext element of {} out of range".format(nid))
+                _cf_prod = gp.mul(_cf_prod, gp.powmod(c_j, gp.mpz(y_j), p)) % p
 
         _ud_prod = gp.mpz(1)
         for u_k, d_k in zip(u_l, dk["d"]):
@@ -290,9 +305,12 @@ class MCFE(IPFEAbsCrypto):
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
         """Encrypt a list of ndarrays element-wise with a label.
 
+        Each element is encrypted under its own label derived from ``label``,
+        the layer and the element index (see :func:`_element_label`).
+
         Args:
             lst_ndarray: List of numpy arrays to encrypt.
-            **kwargs: Must include ``label``.
+            **kwargs: Must include ``label`` (a string).
 
         Returns:
             List of object ndarrays containing per-element ciphertexts.
@@ -303,7 +321,7 @@ class MCFE(IPFEAbsCrypto):
             ary = (lst_ndarray[l].copy() * pow(10, self.precision)).astype(int)
             ary_ct = np.empty(ary.shape, dtype=object)
             for i, w in np.ndenumerate(ary):
-                ary_ct[i] = self.encrypt([w], _label)
+                ary_ct[i] = self.encrypt([w], _element_label(_label, l, i))
             lst_ndarray_ct.append(ary_ct)
         return lst_ndarray_ct
 
@@ -330,7 +348,9 @@ class MCFE(IPFEAbsCrypto):
                 dct_ct = {
                     nid: dict_ndarray_ct[nid][l][i] for nid in dict_ndarray_ct.keys()
                 }
-                ary_dec[i] = self.decrypt(dct_ct, dk, fusion_weight, label)
+                ary_dec[i] = self.decrypt(
+                    dct_ct, dk, fusion_weight, _element_label(label, l, i)
+                )
             lst_ndarray.append((ary_dec / pow(10, self.precision)).astype(float))
 
         return lst_ndarray
