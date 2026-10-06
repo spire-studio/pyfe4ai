@@ -77,7 +77,7 @@ See `examples/sife_minimal.py` for the full runnable version.
 - **Quadratic FE** — SGP (secret-key) and Quad (public-key) quadratic functional encryption
 - **ML adapter** — `utils/ml_adapter.py` for encrypted linear inference and federated gradient aggregation
 - **Precision toolkit** — `utils/quantization.py` for float ↔ integer quantization with configurable bit-width
-- **Discrete-log solvers** — cached dlog table (default) with on-the-fly BSGS as optional backup in `utils/dlog_solver.py`
+- **Discrete-log solvers** — in-memory dlog table (default) with on-the-fly BSGS as optional backup in `utils/dlog_solver.py`
 - **NTT acceleration** — number-theoretic transform for Ring-LWE polynomial multiplication in `utils/ring_lwe_utils.py`
 - **Structured exceptions** — `FEError` hierarchy in `utils/exceptions.py`
 
@@ -110,6 +110,10 @@ See `examples/sife_minimal.py` for the full runnable version.
 > corresponding MIFE or MCFE scheme; there is no separate standalone paper
 > for each combination.
 
+> **⚠️ Several of these schemes have known security issues.** Read
+> [Known Issues / Security Notice](#known-issues--security-notice) before
+> relying on any privacy property.
+
 ## Repository Layout
 
 - `pyfe4ai/`: installable Python package
@@ -121,7 +125,7 @@ See `examples/sife_minimal.py` for the full runnable version.
   - `utils/`: utility modules
     - `crypto_constants.py`, `crypto_utils.py`: group generation and constants
     - `lwe_utils.py`, `ring_lwe_utils.py`: LWE / Ring-LWE helpers with NTT
-    - `dlog_solver.py`: dlog table cache + BSGS discrete-log recovery
+    - `dlog_solver.py`: in-memory dlog table + BSGS discrete-log recovery
     - `ml_adapter.py`: ML integration (encrypted inference, FL aggregation)
     - `quantization.py`: float ↔ integer quantization toolkit
     - `exceptions.py`: `FEError` exception hierarchy
@@ -239,6 +243,30 @@ To run the pairing-enabled environment in Docker:
 docker build -f Dockerfile.pairing -t pyfe4ai-pairing .
 docker run --rm pyfe4ai-pairing
 ```
+
+## Known Issues / Security Notice
+
+The following problems are known and **not yet fixed**. The affected schemes
+compute correct results but do **not** provide the privacy their family name
+suggests; use them only for functionality and performance experiments.
+
+| Issue | Affected schemes | Consequence |
+|---|---|---|
+| Label enters only as a public scalar; per-client key components | MCFE `damgard_ddh`, `paillier`, `ddh_decentralized` (dMCFE-DDH), `ddh_threshold` (tMCFE-DDH) | The label mask is `u_i · H(ℓ)` with `H(ℓ)` a public MD5-derived scalar, and functional keys (for threshold: the combined partial decryptions) contain one component per client. Whoever holds a functional key can strip each client's mask and, from two ciphertexts of one client under two labels, solve for that client's plaintexts. |
+| LWE label masking cannot hide individual inputs | MCFE `lwe`, `lwe_decentralized`, `lwe_threshold`, `fullysec_lwe`, `ring_lwe`, `ring_lwe_decentralized`, `ring_lwe_threshold`, `fh_multi_ipe_pairing*` | Keys / partial decryptions are per client and an input is masked only by `u_i · ℓ` with a small fixed `u_i` and a public `ℓ`, so the key holder learns `x_i mod ℓ` exactly and `x_i` up to a few candidates per ciphertext. Labels no longer map to `ℓ = 0` (which revealed `x_i` outright), but **no value of `label_modulus` fixes this**: once `|ℓ| > 2·bound_x` a single ciphertext reveals `x_i` exactly. |
+| No noise flooding in LWE threshold decryption | tMCFE-LWE, tMIFE-LWE, tMCFE-Ring-LWE | Partial decryptions are exact linear functions of a server's key share: observing one server on about `lwe_n` ciphertexts recovers its share of `sk_y`. Combining also decodes each client separately, so the combiner learns per-client values. |
+| Toy default parameters | all | `sec_param` is a modulus bit length (default 128), not a security level; LWE dimensions default to 16–64. Both are far below any real security level. |
+| Unvalidated parameter cache in the working directory | all key generators | Parameters are written to and re-loaded from `./config/authority/...` without structural validation; a planted `param.json` (e.g. a 5-bit group) is accepted. Run only in a directory that nobody else can write to. The pairing dlog cache (`./config/crypto/...`) is likewise trusted if its generators match. |
+| Float fusion weights in `aggregate_gradients` | `utils/ml_adapter.py` | Float weights are quantised but the result is not rescaled (e.g. weights 0.5 give 100× the expected sum in decimal mode). Pass integer weights. |
+
+Fixed on the `fix/p0-crypto-correctness` branch (after v0.1.0): MCFE-DDH
+decryption for `eta ≥ 2`; MCFE-DDH re-implemented per CDGPP18 (group-element
+label hash, independent per-client keys, aggregated functional key);
+independent per-client keys in MIFE-DDH; DDH threshold sharing (1-based
+Shamir points over the group order, modular Lagrange coefficients, ≥ t share
+check, `eta ≥ 2`); `get_decryption_keys` of decentralized schemes raises
+instead of returning `NotImplementedError`; no more pickle-based dlog cache;
+pairing tests skip cleanly without charm-crypto.
 
 ## Disclaimer
 
