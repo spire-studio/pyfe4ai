@@ -115,3 +115,47 @@ def test_entire_process(kg_config):
         "<{},{}> computed inner-prod = {}".format(lst_x, lst_y, computed_inner_prod)
     )
     assert computed_inner_prod == expected_inner_prod
+
+
+def _run_full_vector_round(n, eta, precision=3, label="test-label-full"):
+    lst_nid = ["nid_{}".format(i) for i in range(n)]
+    kg = MCFEKeyGenerator(
+        {"sec_param": 256, "lst_nid": lst_nid, "eta": eta, "n": n, "s": 1}
+    )
+    kg.setup()
+    pp = kg.get_public_parameters()
+
+    dct_x = {nid: [random.randint(-10, 10) for _ in range(eta)] for nid in lst_nid}
+    dct_y = {nid: [random.randint(1, 5) for _ in range(eta)] for nid in lst_nid}
+    expected = sum(
+        x_i * y_i for nid in lst_nid for x_i, y_i in zip(dct_x[nid], dct_y[nid])
+    )
+
+    dct_ct = {}
+    for nid in lst_nid:
+        crypto_nid = MCFE(
+            {
+                "id": nid,
+                "precision": precision,
+                "keys": {"pp": pp, "sk": kg.get_private_keys(nid)},
+            }
+        )
+        dct_ct[nid] = crypto_nid.encrypt(dct_x[nid], label)
+        assert len(dct_ct[nid]["c"]) == eta
+
+    crypto_sid = MCFE({"id": "sid_0", "precision": precision, "keys": {"pp": pp}})
+    dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
+    return expected, crypto_sid.decrypt(dct_ct, dk, dct_y, label)
+
+
+@pytest.mark.parametrize("n, eta", [(2, 2), (3, 3), (2, 4)])
+def test_entire_process_full_length_vectors(n, eta):
+    """Regression (N1): eta-length plaintext vectors must decrypt for eta >= 2.
+
+    Before the fix every slot's ciphertext was masked with the product of all
+    ``w[i]`` components, so decryption returned ``None`` whenever more than
+    one slot was populated.
+    """
+    for _ in range(3):
+        expected, computed = _run_full_vector_round(n, eta)
+        assert computed == expected

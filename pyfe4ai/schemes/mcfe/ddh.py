@@ -207,20 +207,16 @@ class MCFE(IPFEAbsCrypto):
         r = _random(p, sec_param)
         t = [gp.digits(gp.powmod(ga, r, p)) for ga in lst_ga]
 
-        _ga_w = gp.mpz(1)
-        for i in range(len(lst_pt)):
-            for ga in lst_ga:
-                _ga_w *= gp.powmod(ga, w[i][0] + w[i][1], p)
         _label = md5_hash(label, p)
-        c = [
-            gp.digits(
-                gp.mul(
-                    gp.powmod(g, gp.mpz(lst_pt[i]) + gp.mul(u[i], _label), p),
-                    gp.powmod(_ga_w, r, p),
-                )
-            )
-            for i in range(len(lst_pt))
-        ]
+        c = list()
+        for i in range(len(lst_pt)):
+            # slot i is masked with its own key component w[i] only, matching
+            # the per-slot d = sum_i y_i * (w_i0 + w_i1) used at decryption
+            _ga_w = gp.mpz(1)
+            for ga in lst_ga:
+                _ga_w = gp.mul(_ga_w, gp.powmod(ga, w[i][0] + w[i][1], p)) % p
+            _ptu = gp.powmod(g, gp.mpz(lst_pt[i]) + gp.mul(u[i], _label), p)
+            c.append(gp.digits(gp.mul(_ptu, gp.powmod(_ga_w, r, p)) % p))
 
         return {"t": t, "c": c}
 
