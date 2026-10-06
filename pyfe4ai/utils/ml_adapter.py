@@ -229,6 +229,35 @@ _SCHEME_REGISTRY: dict[tuple[str, str], tuple[str, str, str]] = {
 _LABEL_SCHEMES = frozenset({"mcfe"})
 
 
+def _require_single_decryptor(wrapper: "FESchemeWrapper", api: str) -> None:
+    """Reject variants whose decryption is a multi-party protocol.
+
+    The high-level helpers derive one functional key from the key generator
+    and decrypt in one shot. Decentralized variants have no central key
+    derivation (each client contributes a key share) and threshold variants
+    need partial decryptions from at least ``t`` servers, so neither fits.
+    """
+    if wrapper.variant.endswith("_decentralized"):
+        raise NotImplementedError(
+            "{}() does not support '{}/{}': decentralized schemes have no "
+            "central decryption key. Derive the key with "
+            "derive_function_decryption_key_share() on every client and "
+            "combine_function_decryption_key_share() on the aggregator, then "
+            "call decrypt_lst_ndarray_ct() on the scheme class directly.".format(
+                api, wrapper.scheme_type, wrapper.variant
+            )
+        )
+    if wrapper.variant.endswith("_threshold"):
+        raise NotImplementedError(
+            "{}() does not support '{}/{}': threshold schemes need partial "
+            "decryptions from at least t servers (compute_lst_ndarray_ct() "
+            "on each server, then decrypt_lst_ndarray_ct() on the combiner). "
+            "Use the scheme classes directly.".format(
+                api, wrapper.scheme_type, wrapper.variant
+            )
+        )
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -508,6 +537,8 @@ def aggregate_gradients(
             sid: Session / decryption-key identifier.
             label: Encryption label for replay protection.
     """
+    _require_single_decryptor(wrapper, "aggregate_gradients")
+
     # Normalise weights to {nid: [w]} format for eta=1 schemes
     fusion_weight: dict[str, list] = {}
     for nid, w in weights.items():
@@ -615,6 +646,8 @@ def compute_linear(
             weights: Weight vector or dict.
             sid: Session / decryption-key identifier.
     """
+    _require_single_decryptor(wrapper, "compute_linear")
+
     w_arr = _to_numpy(weights).ravel().astype(np.float64)
     qcfg = wrapper.qconfig
     q_weights = qcfg.quantize_array(w_arr).tolist()

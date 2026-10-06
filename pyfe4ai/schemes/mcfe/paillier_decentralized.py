@@ -227,12 +227,22 @@ class DecentralizedMCFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheM
         }
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
-        """Not used — clients derive DK shares locally.
+        """Not supported: clients derive functional-key shares locally.
 
             Args:
                 sid: Session / decryption-key identifier.
+
+            Raises:
+                NotImplementedError: Always.
         """
-        return NotImplementedError
+        raise NotImplementedError(
+            "{} has no central decryption-key derivation: in decentralized "
+            "MCFE each client derives its key share with "
+            "derive_function_decryption_key_share() and the aggregator "
+            "combines them with combine_function_decryption_key_share()".format(
+                type(self).__name__
+            )
+        )
 
 
 class DecentralizedMCFEPaillier(IPFEAbsCrypto):

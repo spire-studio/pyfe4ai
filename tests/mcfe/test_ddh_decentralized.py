@@ -118,3 +118,11 @@ def test_entire_process(kg_config):
         "<{},{}> computed inner-prod = {}".format(lst_x, lst_y, computed_inner_prod)
     )
     assert computed_inner_prod == expected_inner_prod
+
+
+def test_get_decryption_keys_raises_not_implemented(kg_config):
+    """Regression (N12): the method used to *return* NotImplementedError."""
+    kg = DecentralizedMCFEKeyGenerator(kg_config)
+    kg.setup()
+    with pytest.raises(NotImplementedError, match="derive_function_decryption_key_share"):
+        kg.get_decryption_keys("sid_0", credentials={"fusion_weight": {}})
