@@ -87,18 +87,18 @@ See `examples/sife_minimal.py` for the full runnable version.
 |--------|---------------|----------|
 | **SIFE** (single-input) | DDH, DDH-Dynamic, LWE | [ABDP15](https://eprint.iacr.org/2015/017.pdf) (PKC '15) |
 | | Damgård-DDH, FullySec-LWE, Paillier | [ALS16](https://eprint.iacr.org/2016/011.pdf) (CRYPTO '16) |
-| | Ring-LWE | [BMMS21](https://eprint.iacr.org/2021/046.pdf) (ePrint) |
+| | Ring-LWE | [BMMS21](https://eprint.iacr.org/2021/046.pdf) (PKC '22) |
 | | FH-IPE *(pairing)* | [KLMMRW](https://eprint.iacr.org/2016/440.pdf) (SCN '18) |
-| | Partial-FH-IPE *(pairing)* | [Gay20](https://eprint.iacr.org/2020/093.pdf) (EUROCRYPT '20) |
+| | Partial-FH-IPE *(pairing)* | [Gay20](https://eprint.iacr.org/2020/093.pdf) (PKC '20) |
 | **MIFE** (multi-input) | DDH, DDH-Hybrid-α, Damgård-DDH, LWE, FullySec-LWE, Ring-LWE, Paillier, FH-IPE | [ACFGU18](https://eprint.iacr.org/2017/972.pdf) (CRYPTO '18) ¹ |
-| | FH-Multi-IPE *(pairing)* | [DOT18](https://eprint.iacr.org/2018/061.pdf) (ePrint) |
+| | FH-Multi-IPE *(pairing)* | [DOT18](https://eprint.iacr.org/2018/061.pdf) (PKC '18) |
 | **MCFE** (multi-client) | DDH, Damgård-DDH, LWE, FullySec-LWE, Ring-LWE, Paillier | [CDGPP18](https://eprint.iacr.org/2017/989.pdf) (ASIACRYPT '18) ¹ |
 | | FH-Multi-IPE *(pairing)* | CDGPP18 + [DOT18](https://eprint.iacr.org/2018/061.pdf) |
 | **Decentralized** | dMCFE-DDH | [ABKW19](https://eprint.iacr.org/2019/020.pdf) (PKC '19) |
 | | dMCFE-LWE, dMCFE-Ring-LWE, dMCFE-Paillier, dMCFE-FH-Multi-IPE | ABKW19 ¹ |
-| **Threshold** | tMIFE (DDH, LWE), tMCFE (DDH, LWE, Ring-LWE, FH-Multi-IPE) | [Xu+24](https://doi.org/10.1109/TDSC.2024.3354931) (IEEE TDSC '24) ² |
+| **Threshold** | tMIFE (DDH, LWE), tMCFE (DDH, LWE, Ring-LWE, FH-Multi-IPE) | [Xu+24](https://doi.org/10.1109/TDSC.2024.3350206) (IEEE TDSC '24) ² |
 | **Quadratic** | SGP (secret-key), Multi-Input SGP | [DSGPP18](https://eprint.iacr.org/2018/206.pdf) (ePrint) |
-| | Quad (public-key) | [Gay20](https://eprint.iacr.org/2020/093.pdf) (EUROCRYPT '20) |
+| | Quad (public-key) | [Gay20](https://eprint.iacr.org/2020/093.pdf) (PKC '20) |
 
 > ¹ Multi-input, multi-client, and decentralized schemes compose a
 > *framework paper* (ACFGU18 / CDGPP18 / ABKW19) with a per-slot
@@ -230,7 +230,11 @@ The schemes in the following files depend on
 - `pyfe4ai/schemes/mife/fh_ipe_pairing.py`
 - `pyfe4ai/schemes/mife/fh_multi_ipe_pairing.py`
 - `pyfe4ai/schemes/mcfe/fh_multi_ipe_pairing.py`
+- `pyfe4ai/schemes/mcfe/fh_multi_ipe_pairing_threshold.py`
+- `pyfe4ai/schemes/mcfe/fh_multi_ipe_pairing_decentralized.py`
 - `pyfe4ai/schemes/quadratic/sgp.py`
+- `pyfe4ai/schemes/quadratic/multi_input_sgp.py`
+- `pyfe4ai/schemes/quadratic/quad.py`
 
 `charm-crypto-framework` supports macOS, Linux, and Windows, but pairing-based
 setups may still require additional system libraries depending on the platform.
