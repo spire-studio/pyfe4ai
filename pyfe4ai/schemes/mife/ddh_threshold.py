@@ -11,10 +11,7 @@ from __future__ import annotations
 
 import os
 import json
-import random
 import logging
-
-_CSPRNG = random.SystemRandom()
 
 from functools import reduce
 import gmpy2 as gp
@@ -23,6 +20,12 @@ import numpy as np
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.ipfe import ParameterCacheMixin
+from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
+from pyfe4ai.schemes.threshold_utils import share_points
+from pyfe4ai.schemes.threshold_utils import share_secret
+from pyfe4ai.schemes.threshold_utils import validate_enrolled
+from pyfe4ai.schemes.threshold_utils import validate_partial_decryptions
+from pyfe4ai.schemes.threshold_utils import validate_threshold
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import group_generator_threshold_fe
 from pyfe4ai.utils.crypto_utils import _random
@@ -46,6 +49,7 @@ class ThresholdMIFEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.lst_sid = config.get(
             "lst_sid", ["sid_{}".format(i) for i in range(self.s)]
         )
+        validate_threshold(self.t, self.lst_sid)
 
         self._load_parameters()
 
@@ -58,6 +62,8 @@ class ThresholdMIFEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
     def _apply_parameters(self, param: dict) -> None:
         self.p = gp.mpz(param["group"]["p"])
         self.g = gp.mpz(param["group"]["g"])
+        # p = 2q + 1 is a safe prime and g generates the order-q subgroup
+        self.q = (self.p - 1) // 2
 
     def _param_verification(self, param: dict) -> bool:
         return (
@@ -70,6 +76,7 @@ class ThresholdMIFEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
     def _generate_and_save(self, param_file: str) -> None:
         self.p, self.g = group_generator_threshold_fe(self.lambd)
+        self.q = (self.p - 1) // 2
         param_dict = {
             "lambd": self.lambd,
             "group": {"p": gp.digits(self.p), "g": gp.digits(self.g)},
@@ -168,8 +175,10 @@ class ThresholdMIFEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         if len(credentials) > self.n:
             raise FEValidationError("invalid size of dk generation credentials.")
 
-        f = lambda a, u, m: sum([a[k] * (u**k) for k in range(m)])
-        sid_v = {v: k for k, v in enumerate(self.lst_sid)}
+        # Shamir shares live in Z_q (q = group order) at points 1..s; the
+        # secret is the polynomial value at 0
+        sid_v = share_points(self.lst_sid)
+        points = list(sid_v.values())
 
         sum_uy = gp.mpz(0)
         for nid in self.lst_nid:
@@ -177,18 +186,21 @@ class ThresholdMIFEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             u_i = self.msk["U"][nid]
             sum_uy += sum([gp.mul(cred[k], u_i[k]) for k in range(len(cred))])
 
-        a = [sum_uy] + [_CSPRNG.randint(1, self.p) for _ in range(1, self.t)]
+        a = share_secret(sum_uy, self.t, points, self.q)
 
-        v0 = {sid: f(a, sid_v[sid], self.t) for sid in self.lst_sid}
+        v0 = {sid: a[sid_v[sid]] for sid in self.lst_sid}
 
         v1 = {}
         for nid in self.lst_nid:
             cred = credentials[nid]
             w_i = self.msk["W"][nid]
-            b_i_0 = [sum([gp.mul(cred[k], w_i[k]) for k in range(len(cred))])] + [
-                _CSPRNG.randint(1, self.p) for _ in range(1, self.t)
-            ]
-            v1[nid] = {sid: f(b_i_0, sid_v[sid], self.t) for sid in self.lst_sid}
+            b_i_0 = share_secret(
+                sum([gp.mul(cred[k], w_i[k]) for k in range(len(cred))]),
+                self.t,
+                points,
+                self.q,
+            )
+            v1[nid] = {sid: b_i_0[sid_v[sid]] for sid in self.lst_sid}
 
         self.dict_dk[identifier] = {"v0": v0, "v1": v1}
 
@@ -262,12 +274,14 @@ class ThresholdMIFE(IPFEAbsCrypto):
             raise FEKeyError("no decryption keys provided.")
         p = gp.mpz(self.pp["p"])
         g = gp.mpz(self.pp["g"])
+        q = (p - 1) // 2
         lst_sid = dk["lst_sid"]
-        # lst_sid = ["sid_{}".format(i) for i in range(self.pp["s"])]
         if self.id not in lst_sid:
             raise FESchemeError("local id:{} is not supported".format(self.id))
+        validate_enrolled(self.id, lst_sid, lst_sid_enrolled, self.pp["t"])
 
-        sid_v = {v: k for k, v in enumerate(lst_sid)}
+        sid_v = share_points(lst_sid)
+        lagrange = self.L(self.id, sid_v, lst_sid_enrolled, q)
         gp_prod = lambda i, j: gp.mul(i, j) % p
 
         ct0_prime = list()
@@ -289,44 +303,51 @@ class ThresholdMIFE(IPFEAbsCrypto):
             ct1_prime.append(
                 gp.digits(
                     gp.powmod(
-                        ct1_nid,
-                        gp.mul(
-                            gp.mpz(dk["v1"][nid]),
-                            self.L(self.id, sid_v, lst_sid_enrolled),
-                        ),
-                        p,
+                        ct1_nid, gp.mul(gp.mpz(dk["v1"][nid]), lagrange) % q, p
                     )
                 )
             )
 
         ct0_prime = gp.digits(reduce(gp_prod, ct0_prime) % p)
         ct2_prime = gp.digits(
-            gp.powmod(
-                g,
-                gp.mul(gp.mpz(dk["v0"]), self.L(self.id, sid_v, lst_sid_enrolled)),
-                p,
-            )
+            gp.powmod(g, gp.mul(gp.mpz(dk["v0"]), lagrange) % q, p)
         )
 
-        return {"ct0_prime": ct0_prime, "ct1_prime": ct1_prime, "ct2_prime": ct2_prime}
+        return {
+            "ct0_prime": ct0_prime,
+            "ct1_prime": ct1_prime,
+            "ct2_prime": ct2_prime,
+            "sid": self.id,
+            "lst_sid_enrolled": list(lst_sid_enrolled),
+        }
 
     @staticmethod
-    def L(id: str, dct_id_v: dict, lst_sid_enrolled: list) -> int:
-        """Compute the Lagrange interpolation coefficient.
+    def L(id: str, dct_id_v: dict, lst_sid_enrolled: list, modulus) -> gp.mpz:
+        """Compute the Lagrange coefficient of *id* at 0 modulo the group order.
 
             Args:
-                id: Node identifier for Lagrange coefficient.
-                dct_id_v: Dict mapping node ids to values for interpolation.
-                lst_sid_enrolled: List of enrolled session / node identifiers.
+                id: Decryption-server identifier.
+                dct_id_v: Mapping of server ids to their (1-based) share points.
+                lst_sid_enrolled: List of enrolled server identifiers.
+                modulus: Group order ``q``.
         """
-        prod = 1
-        for id_prime in lst_sid_enrolled:
-            if dct_id_v[id] != dct_id_v[id_prime]:
-                prod = prod * (dct_id_v[id_prime] / (dct_id_v[id_prime] - dct_id_v[id]))
-        return int(prod)
+        return lagrange_coefficient_at_zero(
+            dct_id_v[id], [dct_id_v[s] for s in lst_sid_enrolled], modulus
+        )
 
     def combine_decrypt(self, dict_ct_prime: dict) -> float | None:
+        """Combine at least ``t`` partial decryptions into the inner product.
+
+            Args:
+                dict_ct_prime: Mapping of server ids to :meth:`share_decrypt` outputs.
+
+            Raises:
+                FESchemeError: If fewer than ``t`` shares are given or the shares
+                    do not match the enrolled set they were computed for.
+        """
+        validate_partial_decryptions(dict_ct_prime, self.pp["t"])
         p = gp.mpz(self.pp["p"])
+        q = (p - 1) // 2
         eta = self.pp["eta"]
 
         ct_prime = dict()
@@ -352,20 +373,18 @@ class ThresholdMIFE(IPFEAbsCrypto):
         prod_ct1_prime = reduce(gp_prod, ct_prime["ct1_prime"])
         prod_ct2_prime = reduce(gp_prod, ct_prime["ct2_prime"])
 
-        if eta == 1:
-            g_f = gp.divm(ct_const, (gp.mul(prod_ct1_prime, prod_ct2_prime) % p), p)
-            f = self._solve_dlog(gp.digits(g_f))
-        else:
-            g_f = gp.divm(
-                ct_const,
-                (gp.mul(prod_ct1_prime, gp.powmod(prod_ct2_prime, 2, p)) % p),
-                p,
-            )
-            f = self._solve_dlog(gp.digits(g_f))
-            if f is not None:
-                f = f / 2
-        f = float(f / pow(10, self.precision))
-        return f
+        # each of the eta rows of ct0 carries one copy of g^{<x,y> + <u,y>},
+        # so ct0' / (ct1' * ct2'^eta) = g^{eta * <x,y>}; strip eta in the exponent
+        g_eta_f = gp.divm(
+            ct_const,
+            gp.mul(prod_ct1_prime, gp.powmod(prod_ct2_prime, eta, p)) % p,
+            p,
+        )
+        g_f = gp.powmod(g_eta_f, gp.invert(eta, q), p)
+        f = self._solve_dlog(gp.digits(g_f))
+        if f is None:
+            return None
+        return float(f / pow(10, self.precision))
 
     def encrypt_lst_ndarray(self, lst_ndarray: list) -> list:
         lst_ndarray_ct = list()

@@ -1,4 +1,4 @@
-"""Threshold MCFE example with two decryption shares."""
+"""Threshold MCFE example: any 2 of 3 decryption servers can decrypt."""
 
 from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFE
 from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFEKeyGenerator
@@ -20,10 +20,10 @@ def main() -> None:
         "sec_param": 128,
         "eta": 1,
         "n": 3,
-        "s": 2,
+        "s": 3,
         "t": 2,
         "lst_nid": list(x.keys()),
-        "lst_sid": ["sid_0", "sid_1"],
+        "lst_sid": ["sid_0", "sid_1", "sid_2"],
     }
 
     kg = ThresholdMCFEKeyGenerator(config)
@@ -43,7 +43,7 @@ def main() -> None:
         ciphertexts[nid] = encryptor.encrypt(vec, label)
         decryptors[nid] = encryptor
 
-    share_ids = ["sid_0", "sid_1"]
+    share_ids = ["sid_1", "sid_2"]
     shared_results = {}
     for sid in share_ids:
         dk = kg.get_decryption_keys(
@@ -63,6 +63,7 @@ def main() -> None:
 
     print("x =", x)
     print("y =", y)
+    print("decryption servers used =", share_ids)
     print("sum_i <x_i, y_i> =", result)
 
 
