@@ -2,6 +2,8 @@ import random
 
 import pytest
 
+pytest.importorskip("charm", reason="charm-crypto not installed")
+
 from pyfe4ai.schemes.mife.fh_ipe_pairing import MIFEFHIPE
 from pyfe4ai.schemes.mife.fh_ipe_pairing import MIFEFHIPEKeyGenerator
 

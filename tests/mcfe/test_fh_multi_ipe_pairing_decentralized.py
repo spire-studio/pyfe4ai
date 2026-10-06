@@ -3,6 +3,8 @@ import random
 import numpy as np
 import pytest
 
+pytest.importorskip("charm", reason="charm-crypto not installed")
+
 from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import DecentralizedMCFEFHMultiIPE
 from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import DecentralizedMCFEFHMultiIPEKeyGenerator
 
