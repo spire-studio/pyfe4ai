@@ -56,7 +56,7 @@ from pyfe4ai.utils.sampling_utils import discrete_gaussian_bigint
 logger = logging.getLogger(__name__)
 
 _LABEL_HASH_DOMAIN = "pyfe4ai/mcfe/paillier/H(label)"
-_CONSTRUCTION = "abmpsw20-dcr/v1"
+_CONSTRUCTION = "abmpsw20-dcr/v2"  # v1 caches stored p and q
 _DEFAULT_STAT_PARAM = 64
 
 
@@ -114,8 +114,6 @@ class MCFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self._validate_bounds()
 
     def _apply_parameters(self, param: dict) -> None:
-        self.p = gp.mpz(param["p"])
-        self.q = gp.mpz(param["q"])
         self.n_mod = gp.mpz(param["n_mod"])
         self.n_square = self.n_mod * self.n_mod
 
@@ -126,20 +124,21 @@ class MCFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         )
 
     def _generate_and_save(self, param_file: str) -> None:
+        # the factorization is a decryption trapdoor (c^lambda reveals x given
+        # two ciphertexts of a slot): keep it local, never persist it
+        p, _ = generate_group_primes(self.bit_length)
         while True:
-            self.p, _ = generate_group_primes(self.bit_length)
-            self.q, _ = generate_group_primes(self.bit_length)
-            if self.p != self.q:
+            q, _ = generate_group_primes(self.bit_length)
+            if q != p:
                 break
-        self.n_mod = self.p * self.q
+        self.n_mod = p * q
+        del p, q
         self.n_square = self.n_mod * self.n_mod
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(
                 {
                     "construction": _CONSTRUCTION,
                     "bit_length": self.bit_length,
-                    "p": gp.digits(self.p),
-                    "q": gp.digits(self.q),
                     "n_mod": gp.digits(self.n_mod),
                 },
                 f,

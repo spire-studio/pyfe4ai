@@ -38,6 +38,9 @@ from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
 
 logger = logging.getLogger(__name__)
 
+# version <= 0.2.0 caches also stored p and q; they are regenerated
+_PARAM_FORMAT = "modulus-only/v1"
+
 class SIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
     """Key generator for Paillier-based single-input inner-product FE."""
 
@@ -58,15 +61,14 @@ class SIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self._validate_bounds()
 
     def _apply_parameters(self, param: dict) -> None:
-        self.p = gp.mpz(param["p"])
-        self.q = gp.mpz(param["q"])
         self.n = gp.mpz(param["n"])
         self.n_square = gp.mpz(param["n_square"])
         self.g = gp.mpz(param["g"])
 
     def _param_verification(self, param: dict) -> bool:
         return (
-            param.get("sec_param") == self.sec_param
+            param.get("param_format") == _PARAM_FORMAT
+            and param.get("sec_param") == self.sec_param
             and param.get("eta") == self.eta
             and param.get("bit_length") == self.bit_length
             and param.get("bound_x") == self.bound_x
@@ -74,9 +76,14 @@ class SIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         )
 
     def _generate_and_save(self, param_file: str) -> None:
-        self.p, _ = generate_group_primes(self.bit_length)
-        self.q, _ = generate_group_primes(self.bit_length)
-        self.n = self.p * self.q
+        # the factorization is a decryption trapdoor: keep it local, never persist it
+        p, _ = generate_group_primes(self.bit_length)
+        while True:
+            q, _ = generate_group_primes(self.bit_length)
+            if q != p:
+                break
+        self.n = p * q
+        del p, q
         self.n_square = self.n * self.n
         self._validate_bounds()
 
@@ -96,8 +103,7 @@ class SIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                     "bit_length": self.bit_length,
                     "bound_x": self.bound_x,
                     "bound_y": self.bound_y,
-                    "p": gp.digits(self.p),
-                    "q": gp.digits(self.q),
+                    "param_format": _PARAM_FORMAT,
                     "n": gp.digits(self.n),
                     "n_square": gp.digits(self.n_square),
                     "g": gp.digits(self.g),
