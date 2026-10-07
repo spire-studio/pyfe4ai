@@ -5,6 +5,80 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/) (pre-1.0: minor bumps may break
 compatibility).
 
+## [Unreleased]
+
+Privacy fixes: five multi-client schemes and SIFE-Paillier now implement
+published constructions, and every scheme carries a review status.
+**Keys, ciphertexts and partial decryptions of the affected schemes are not
+compatible with v0.2.0.** Read the README *Scheme Status* table and *Known
+Issues* before relying on any privacy property.
+
+### Security
+
+- **MCFE-Paillier** implements ABMPSW20 (Abdalla et al., SCN 2020) Fig. 3:
+  `c = (1 + N)^x H(l)^s mod N^2` with a full-domain hash into `Z_{N^2}^*`,
+  `s ~ D_{Z,sigma}` with `sigma > sqrt(kappa + 2n log2(2X)) N^{5/2}`, and the
+  single aggregated key `sum y s`. Previously a single ciphertext revealed a
+  client's `<x_i, y_i>` to the key holder, and keys were brute-forceable.
+- **MCFE-LWE / MCFE-FullySec-LWE** implement ABMPSW20 Fig. 4
+  (`c = round_q0(Z . H(l) + floor(q/K) x)`, aggregated key `sum y Z`) with
+  parameters derived from the Appendix C.3 constraints (selective and
+  adaptive choice of `m0` respectively). Previously the key holder learned
+  `x_i mod l` and `x_i` up to a few candidates.
+- **MCFE-Damgard** implements ABMPSW20 Fig. 2 (`D_k`-MDDH, `k = mddh_k`,
+  default 1, where it coincides with CDGPP18). Previously two ciphertexts of
+  one client under two labels revealed its plaintexts.
+- **tMCFE-DDH** is CDGPP18 with the aggregated key Shamir-shared over `Z_q`;
+  any `t` servers interpolate `[H(l)]^d` in the exponent. Previously the
+  combiner could strip each client's MD5-scalar label mask.
+- **tMCFE-LWE** is ABMPSW20 Fig. 4 with a Shamir-shared key and
+  noise-flooded partial decryptions (each is an LWE sample under the
+  server's share instead of an exact linear function of it).
+- **SIFE-Paillier** samples keys from `D_{Z,sigma}`, `sigma > sqrt(kappa)
+  N^{5/2}` (ALS16); keys used to be drawn from a range small enough to
+  brute-force from the public key.
+- Newly documented as known-insecure: MIFE `lwe`, `fullysec_lwe`,
+  `ring_lwe`, `damgard`, `paillier` and tMIFE-LWE omit ACFGU18's one-time
+  pad and reveal every client's `<x_i, y_i>` to the key holder; MIFE-Paillier
+  and dMCFE-Paillier keys are brute-forceable.
+
+### Added
+
+- `pyfe4ai.schemes.status` (`SchemeStatus`, `get_scheme_status`, exported
+  from `pyfe4ai`): status (`reviewed` / `unreviewed` / `known-insecure`),
+  fidelity, reference and issue for all 39 registered schemes; key
+  generators of known-insecure schemes emit `pyfe4ai.FESecurityWarning`;
+  `FESchemeWrapper.status`. A test keeps the README table in sync.
+- `discrete_gaussian_bigint` (arbitrary-width rounded Gaussian),
+  `hash_to_zn2_star`, `hash_to_zq_vector`, `abmpsw20_lwe_parameters`,
+  `round_to_q0`, `decode_rounded_inner_product`.
+- Config keys `stat_param` (ABMPSW20 schemes, SIFE-Paillier; default 64) and
+  `mddh_k` (MCFE-Damgard).
+
+### Changed (breaking)
+
+- MCFE-Paillier: `sk = {s}`, `dk = {k}`, `ct = {c}`. MCFE-LWE /
+  FullySec-LWE: `sk = {z}`, `dk = {sk_y}`, `ct = {c}`; the config keys
+  `bound_u` and `label_modulus` are ignored and parameters are no longer
+  cached in `./config`. MCFE-Damgard: `sk = {s}`, `dk = {d}`, `ct = {c}`, no
+  `h` in the public parameters.
+- tMCFE-DDH: `sk = {s}`, `dk = {d, sid, lst_sid}` (label-independent),
+  `ct = {c, label}`, partial decryption `{c_y, u_d, label, sid,
+  lst_sid_enrolled}`. tMCFE-LWE: `dk = {sk_y, sid, lst_sid}`, partial
+  decryption `{w, c_y, label, sid, lst_sid_enrolled}`, validated like the DDH
+  threshold scheme.
+- The ndarray helpers of all reviewed MCFE schemes encrypt each element
+  under its own derived label (one ciphertext per slot and label).
+- Decrypting under a wrong label returns `None` for MCFE-Paillier and
+  MCFE-Damgard and an arbitrary in-range value for the LWE schemes.
+
+### Documentation
+
+- README: *Scheme Status* table, rewritten *Known Issues*, scheme table cites
+  ABMPSW20; landing page matrix updated; the docs index no longer claims a
+  uniform `setup / keygen / encrypt / decrypt` API; known-insecure modules
+  carry a warning in their docstring.
+
 ## [0.2.0] — 2026-10-07
 
 Correctness and security fixes. **Not compatible with v0.1.0 keys or
@@ -90,5 +164,6 @@ before using them.
 
 Initial public release.
 
+[Unreleased]: https://github.com/spire-studio/pyfe4ai/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/spire-studio/pyfe4ai/releases/tag/v0.1.0

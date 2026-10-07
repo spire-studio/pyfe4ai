@@ -1,6 +1,16 @@
 Base Classes
 ============
 
+Scheme Status
+-------------
+
+.. automodule:: pyfe4ai.schemes.status
+   :members:
+   :undoc-members:
+
+Abstract Base Classes
+---------------------
+
 Abstract base classes shared by all IPFE schemes.
 
 .. automodule:: pyfe4ai.schemes.ipfe
