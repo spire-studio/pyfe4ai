@@ -1,15 +1,20 @@
 """
 Paillier-Based Single-Input Inner-Product Functional Encryption
-| Inspired by the fully secure Paillier instantiation exposed in CiFEr / GoFE
 | From "Fully Secure Functional Encryption for Inner Products,
 |       from Standard Assumptions"
 | By Shweta Agrawal, Benoit Libert, and Damien Stehle
-| Published in: CRYPTO 2016
+| Published in: CRYPTO 2016 (DCR instantiation; recalled as Fig. 9 of
+| ABMPSW20, https://eprint.iacr.org/2020/788, Appendix B.1)
 
 * type:     public-key encryption
-* setting:  Integer based
-* note:     research-oriented Python prototype aligned with the existing
-            crypto-ipfe API style
+* setting:  Integer based (Z_{N^2}^*, N = p q with safe primes)
+
+Construction: ``g = g'^{2N} mod N^2``; ``s <- D_{Z^eta, sigma}`` with
+``sigma > sqrt(kappa) * N^{5/2}``; ``h_i = g^{s_i}``; ``ct = (g^r,
+(1 + N)^{x_i} h_i^r)`` with ``r <- {0..N/4}``; ``sk_y = <s, y>`` over Z;
+``<x, y> = (prod ct_i^{y_i} ct_0^{-sk_y} - 1 mod N^2) / N``. The Gaussian
+is a rounded continuous Gaussian at ``bits(sigma) + 128`` bits of precision
+and ``kappa`` is the config key ``stat_param`` (default 64).
 
 """
 
@@ -18,11 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-import random
-
 import gmpy2 as gp
-
-_CSPRNG = random.SystemRandom()
 import numpy as np
 
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
@@ -31,6 +32,7 @@ from pyfe4ai.schemes.ipfe import ParameterCacheMixin
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import generate_group_primes
 from pyfe4ai.utils.modular_utils import pow_signed
+from pyfe4ai.utils.sampling_utils import discrete_gaussian_bigint
 from pyfe4ai.utils.sampling_utils import random_below
 from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
 
@@ -51,6 +53,7 @@ class SIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.bit_length = config.get("bit_length", 128)
         self.bound_x = config.get("bound_x", 100)
         self.bound_y = config.get("bound_y", 100)
+        self.stat_param = int(config.get("stat_param", 64))
         self._load_parameters()
         self._validate_bounds()
 
@@ -111,13 +114,15 @@ class SIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             raise ValueError("bound_y and eta are too large for the chosen bit_length")
 
     def setup(self) -> None:
-        # Prototype note: we use bounded centered integer sampling for secret
-        # keys to keep the Python implementation simple and reproducible.
-        sk_bound = max(self.sec_param, self.bound_y * self.eta)
-        sec = [
-            gp.mpz(_CSPRNG.randint(-sk_bound, sk_bound))
-            for _ in range(self.eta)
-        ]
+        """Sample ``s <- D_{Z^eta, sigma}`` with ``sigma > sqrt(kappa) N^{5/2}`` (ALS16).
+
+        Versions <= 0.2.0 drew ``|s_i| <= max(sec_param, bound_y * eta)``,
+        so ``s`` could be recovered from the public key by brute force.
+        """
+        self.sigma = (
+            (gp.isqrt(self.stat_param) + 1) * self.n * self.n * (gp.isqrt(self.n) + 1)
+        )
+        sec = discrete_gaussian_bigint(self.sigma, self.eta)
         pub = [pow_signed(self.g, s_i, self.n_square) for s_i in sec]
         self.msk = {"s": sec}
         self.mpk = {

@@ -126,3 +126,18 @@ def test_entire_process_lst_ndarray(kg_config):
 
     for idx in range(len(expected)):
         assert np.allclose(computed[idx], expected[idx], atol=1e-2)
+
+
+def test_secret_keys_are_not_brute_forceable(kg_config):
+    """ALS16: s ~ D_{Z,sigma}, sigma > sqrt(kappa) N^{5/2}.
+
+    Versions <= 0.2.0 drew |s| <= max(sec_param, bound_y * eta); h = g^s is
+    public, so s (and every plaintext) was recoverable by brute force.
+    """
+    import gmpy2 as gp
+
+    kg = SIFEPaillierKeyGenerator(kg_config)
+    kg.setup()
+    n_square = kg.n * kg.n
+    assert kg.sigma > n_square * gp.isqrt(kg.n)
+    assert all(abs(s) > n_square for s in kg.msk["s"])
