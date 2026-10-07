@@ -162,3 +162,49 @@ def hash_to_qr_group(v: str, p: gp.mpz, index: int = 0, domain: str = "") -> gp.
         if h > 1:
             return h
         counter += 1
+
+
+def _shake_expand(domain: str, index: int, counter: int, v: str, n_bytes: int) -> int:
+    """SHAKE-256 expansion of an unambiguous encoding of ``(domain, index, counter, v)``."""
+    material = "|".join([domain, str(index), str(counter), str(len(v)), v]).encode("utf-8")
+    return int.from_bytes(hashlib.shake_256(material).digest(n_bytes), "big")
+
+
+def hash_to_zn2_star(v: str, n_mod: gp.mpz, domain: str = "") -> gp.mpz:
+    """Full-domain hash of a string into ``Z_{N^2}^*`` (random oracle).
+
+    The digest is expanded to ``bits(N^2) + 128`` bits, so the reduction
+    mod ``N^2`` is statistically close to uniform; outputs not coprime to
+    ``N`` (which would factor ``N``) are re-hashed with a counter.
+
+        Args:
+            v: Input string.
+            n_mod: RSA modulus ``N``.
+            domain: Domain-separation tag.
+    """
+    n_mod = gp.mpz(n_mod)
+    n_square = n_mod * n_mod
+    n_bytes = (int(n_square).bit_length() + 128 + 7) // 8
+    counter = 0
+    while True:
+        h = gp.mpz(_shake_expand(domain, 0, counter, v, n_bytes)) % n_square
+        if h > 1 and gp.gcd(h, n_mod) == 1:
+            return h
+        counter += 1
+
+
+def hash_to_zq_vector(v: str, q: gp.mpz, length: int, domain: str = "") -> list:
+    """Hash a string to a vector of *length* elements of ``Z_q`` (random oracle).
+
+    Each coordinate is an independent SHAKE-256 output of ``bits(q) + 128``
+    bits reduced mod ``q``, hence statistically close to uniform.
+
+        Args:
+            v: Input string.
+            q: Modulus.
+            length: Number of coordinates.
+            domain: Domain-separation tag.
+    """
+    q = gp.mpz(q)
+    n_bytes = (int(q).bit_length() + 128 + 7) // 8
+    return [gp.mpz(_shake_expand(domain, k, 0, v, n_bytes)) % q for k in range(length)]

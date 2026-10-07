@@ -60,3 +60,34 @@ def discrete_gaussian_matrix(rows: int, cols: int, sigma: float) -> list[list[gp
         [gp.mpz(int(round(_CSPRNG.gauss(0.0, sigma)))) for _ in range(cols)]
         for _ in range(rows)
     ]
+
+
+def discrete_gaussian_bigint(sigma, count: int) -> list[gp.mpz]:
+    """Sample *count* integers from a rounded Gaussian of arbitrary width.
+
+    Unlike :func:`discrete_gaussian_matrix`, *sigma* may exceed the range of
+    a double (e.g. the ``sqrt(kappa) * N^{5/2}`` widths of the DCR schemes):
+    a Box-Muller sample is computed with ``gmpy2.mpfr`` at
+    ``bits(sigma) + 128`` bits of precision from CSPRNG uniforms and rounded
+    to the nearest integer. As with :func:`discrete_gaussian_matrix` this is
+    a rounded continuous Gaussian, not an exact discrete-Gaussian sampler,
+    and it is not constant-time.
+
+        Args:
+            sigma: Standard deviation (int, mpz, float or mpfr), > 0.
+            count: Number of samples.
+    """
+    if not sigma > 0:
+        raise ValueError("sigma must be positive")
+    prec = int(gp.ceil(gp.mpfr(sigma))).bit_length() + 128
+    samples = []
+    with gp.context(gp.get_context(), precision=prec):
+        two_pi = 2 * gp.const_pi()
+        sig = gp.mpfr(sigma)
+        scale = gp.mpfr(2) ** prec
+        for _ in range(count):
+            u1 = (gp.mpfr(_CSPRNG.getrandbits(prec)) + 1) / scale  # (0, 1]
+            u2 = gp.mpfr(_CSPRNG.getrandbits(prec)) / scale  # [0, 1)
+            z = gp.sqrt(-2 * gp.log(u1)) * gp.cos(two_pi * u2)
+            samples.append(gp.mpz(gp.rint(z * sig)))
+    return samples
