@@ -20,9 +20,11 @@ Construction (notation of :mod:`pyfe4ai.schemes.mcfe.lwe`):
              points ``1..s``; server ``k`` receives ``sk_y^(k)``.
 * ShareDec:  server ``k`` of an enrolled set ``E`` publishes
              ``w_k = lambda_k <sk_y^(k), H(l)> + e_k mod q`` with ``lambda_k``
-             its Lagrange coefficient for ``E`` and fresh flooding noise
+             its Lagrange coefficient for ``E`` and flooding noise
              ``e_k <- D_{Z, sigma_f}`` (truncated at 12 sigma_f), plus
-             ``sum y_{i,j} c_{i,j} mod q0`` for a consistency check.
+             ``sum y_{i,j} c_{i,j} mod q0`` for a consistency check. ``e_k`` is
+             derived from a per-server secret key and ``(l, E)``, so repeated
+             requests for the same label and enrolled set get the same answer.
 * Combine:   ``v = sum_{k in E} w_k = <sk_y, H(l)> + sum e_k mod q``;
              decode ``mu' = sum y c - round_q0(v)`` as in the MCFE.
 
@@ -30,10 +32,21 @@ Why the noise: without ``e_k`` a partial decryption is an exact linear
 function of the server's share, so ``n0 + m0`` partial decryptions of one
 server reveal its share and, with ``t`` shares, ``sk_y``; even the combined
 values ``<sk_y, H(l)>`` over ``n0 + m0`` labels reveal ``sk_y``. With the noise,
-each ``w_k`` is an LWE sample ``(H(l), <lambda_k sk_y^(k), H(l)> + e_k)`` under
-the (uniform) share, and the combined value one under ``sk_y``. This is an
-LWE-based (computational) argument for dimension ``n0 + m0``, modulus ``q``
-and width ``sigma_f``; it is our own and not covered by the cited papers.
+a server's answers are LWE samples ``(H(l), <lambda_k sk_y^(k), H(l)> + e_k)``.
+If fewer than ``t - 1`` shares are corrupted the share is uniform; once
+``t - 1`` are, an honest answer is equivalent to an LWE sample in ``sk_y``,
+whose last ``m0`` coordinates are small (Gaussian of width ``sigma_t``) rather
+than uniform. The combined values are LWE samples in ``sk_y`` as well. This is
+an LWE-based (computational) argument for dimension ``n0 + m0``, modulus
+``q`` and width ``sigma_f``; it is our own and not covered by the cited
+papers, which is why the scheme's status is *experimental*.
+
+Noise is derandomised because fresh noise per request would let a combiner
+average many answers to the same ``(l, E)``. Answers for different enrolled
+sets containing server ``k`` carry independent noise; since the Lagrange
+coefficients are small rationals, ``r`` such sets allow averaging that
+reduces the noise by at most ``sqrt(r)``.
+
 Statistical smudging in the usual sense (noise hiding a small ciphertext
 error) does not apply, because these ciphertexts carry no LWE error, only
 rounding. ``sigma_f`` is the largest width that keeps decryption correct:
@@ -47,6 +60,7 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 
 import gmpy2 as gp
 import numpy as np
@@ -56,6 +70,8 @@ from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.schemes.mcfe.lwe import MCFELWE
 from pyfe4ai.schemes.mcfe.lwe import MCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.lwe import dot_mod
+from pyfe4ai.schemes.threshold_utils import check_fusion_weight
+from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
 from pyfe4ai.schemes.threshold_utils import share_points
 from pyfe4ai.schemes.threshold_utils import share_secret
@@ -65,6 +81,7 @@ from pyfe4ai.schemes.threshold_utils import validate_threshold
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.utils.sampling_utils import XofRandom
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_bigint
 
 logger = logging.getLogger(__name__)
@@ -83,16 +100,21 @@ def flooding_sigma(params: dict, n_slots: int, bound_y: int, s: int) -> int:
     return int(budget // (s * GAUSSIAN_TAIL_CUT))
 
 
-def flooding_noise(sigma: int) -> int:
+def flooding_noise(sigma: int, rng=None) -> int:
     """Sample ``e <- D_{Z, sigma}`` truncated to ``|e| <= 12 sigma``.
 
     Uses the arbitrary-precision sampler: ``sigma`` is far wider than a
     double's mantissa, and scaling a 53-bit normal by it would leave the low
     bits of ``e`` deterministic.
+
+        Args:
+            sigma: Width.
+            rng: Bit source (default: OS CSPRNG); an :class:`XofRandom` makes
+                the sample a deterministic function of its seed.
     """
     bound = GAUSSIAN_TAIL_CUT * sigma
     while True:
-        e = discrete_gaussian_bigint(sigma, 1)[0]
+        e = discrete_gaussian_bigint(sigma, 1, rng=rng)[0]
         if abs(e) <= bound:
             return int(e)
 
@@ -154,8 +176,10 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
             **kwargs: Must include ``credentials`` with ``fusion_weight``.
 
         Returns:
-            Dict with ``sk_y`` (this server's share), ``sid`` and ``lst_sid``,
-            or ``None`` if *sid* is unknown.
+            Dict with ``sk_y`` (this server's share), ``sid``, ``lst_sid``,
+            ``weights_id`` (digest of the weights) and ``noise_key`` (this
+            server's secret key for deriving flooding noise), or ``None`` if
+            *sid* is unknown.
         """
         credentials = kwargs.get("credentials", None)
         if not credentials:
@@ -164,23 +188,26 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
         if sid not in self.lst_sid:
             logger.error("invalid sid: {}".format(sid))
             return None
-        identifier = json.dumps(
-            {nid: [int(y) for y in lst] for nid, lst in (fusion_weight or {}).items()},
-            sort_keys=True,
-        )
+        identifier = fusion_weight_id(fusion_weight)
         if identifier not in self.dict_dk:
             self.dict_dk[identifier] = self._share_key(self._aggregate_key(fusion_weight))
+        share, noise_key = self.dict_dk[identifier][sid]
         return {
-            "sk_y": [gp.digits(v) for v in self.dict_dk[identifier][sid]],
+            "sk_y": [gp.digits(v) for v in share],
             "sid": sid,
             "lst_sid": list(self.lst_sid),
+            "weights_id": identifier,
+            "noise_key": noise_key,
         }
 
     def _share_key(self, sk_y: list) -> dict:
         sid_v = share_points(self.lst_sid)
         points = list(sid_v.values())
         shares = [share_secret(v, self.t, points, self.q) for v in sk_y]
-        return {sid: [sh[sid_v[sid]] for sh in shares] for sid in self.lst_sid}
+        return {
+            sid: ([sh[sid_v[sid]] for sh in shares], secrets.token_hex(32))
+            for sid in self.lst_sid
+        }
 
 
 class ThresholdMCFELWE(MCFELWE):
@@ -201,6 +228,10 @@ class ThresholdMCFELWE(MCFELWE):
 
         Returns:
             Dict with ``w``, ``c_y``, ``label``, ``sid`` and ``lst_sid_enrolled``.
+
+        Raises:
+            FESchemeError: If the enrolled set is invalid or the weights are
+                not those the key share was derived for.
         """
         if not dk or "sk_y" not in dk:
             raise FEKeyError("no decryption keys provided")
@@ -212,13 +243,18 @@ class ThresholdMCFELWE(MCFELWE):
             raise FEKeyError("need fusion_weight and label for threshold share decryption")
         encoded = encode_label(label)
         validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
+        check_fusion_weight(dk, fusion_weight)
 
         sid_v = share_points(dk["lst_sid"])
         lagrange = lagrange_coefficient_at_zero(
             sid_v[self.id], [sid_v[s] for s in lst_sid_enrolled], self.q
         )
         share_term = dot_mod([gp.mpz(v) for v in dk["sk_y"]], self._hash_label(label), self.q)
-        e_k = flooding_noise(int(self.pp["sigma_f"]))
+        context = json.dumps([encoded, sorted(lst_sid_enrolled)]).encode("utf-8")
+        e_k = flooding_noise(
+            int(self.pp["sigma_f"]),
+            rng=XofRandom(bytes.fromhex(dk["noise_key"]) + context),
+        )
         w = (lagrange * share_term + e_k) % self.q
         return {
             "w": gp.digits(w),

@@ -55,7 +55,7 @@ def test_key_generator(kg_config):
         "sid_0", credentials={"fusion_weight": fusion_weight, "label": "test-label"}
     )
     # one share of the aggregated key, nothing per client
-    assert set(dk_sid) == {"sk_y", "sid", "lst_sid"}
+    assert set(dk_sid) == {"sk_y", "sid", "lst_sid", "weights_id", "noise_key"}
     assert len(dk_sid["sk_y"]) == kg.params["n0"] + kg.params["m0"]
 
 
@@ -204,11 +204,17 @@ def test_any_enrolled_set_decrypts_extreme_values(kg_config, s, t, enrolled):
 
 
 def test_partial_decryptions_are_noise_flooded(kg_config):
-    """Two partial decryptions of the same server and inputs differ.
+    """Partials carry noise, derandomised per (label, enrolled set).
 
-    Without flooding a partial decryption is an exact linear function of
-    the server's key share (v0.2.0 known issue).
+    Without noise a partial is an exact linear function of the key share
+    (v0.2.0 known issue); with fresh noise per request a combiner could
+    average repeated answers, so identical requests get identical answers.
     """
+    import gmpy2 as gp
+
+    from pyfe4ai.schemes.mcfe.lwe import dot_mod
+    from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
+
     dct_x = {nid: [1] for nid in kg_config["lst_nid"]}
     dct_y = {nid: [1] for nid in kg_config["lst_nid"]}
     enrolled = ["sid_0", "sid_1"]
@@ -216,11 +222,40 @@ def test_partial_decryptions_are_noise_flooded(kg_config):
     credentials = {"fusion_weight": dct_y, "label": "flood"}
     dk = kg.get_decryption_keys("sid_0", credentials=credentials)
     server = ThresholdMCFELWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
-    again = server.share_decrypt(dct_ct, credentials, dk, enrolled)
-    assert again["w"] != partials["sid_0"]["w"]
-    # both versions still combine correctly
+
+    # identical requests: identical answers (no averaging)
+    assert server.share_decrypt(dct_ct, credentials, dk, enrolled) == partials["sid_0"]
+
+    # the answer is not the exact linear value lambda <share, H(l)>
+    q = gp.mpz(pp["q"])
+    lam = lagrange_coefficient_at_zero(1, [1, 2], q)
+    exact = lam * dot_mod([gp.mpz(v) for v in dk["sk_y"]], server._hash_label("flood"), q) % q
+    noise = (gp.mpz(partials["sid_0"]["w"]) - exact) % q
+    assert noise != 0
+    assert min(noise, q - noise) <= 12 * int(pp["sigma_f"])
+
+    # another enrolled set gets independent noise and still decrypts
+    other = ["sid_0", "sid_2"]
+    w_other = server.share_decrypt(dct_ct, credentials, dk, other)
+    lam_o = lagrange_coefficient_at_zero(1, [1, 3], q)
+    exact_o = lam_o * dot_mod([gp.mpz(v) for v in dk["sk_y"]], server._hash_label("flood"), q) % q
+    assert (gp.mpz(w_other["w"]) - exact_o) % q != noise
+    dk2 = kg.get_decryption_keys("sid_2", credentials=credentials)
+    server2 = ThresholdMCFELWE({"id": "sid_2", "keys": {"pp": pp, "dk": dk2}})
+    partials_o = {"sid_0": w_other, "sid_2": server2.share_decrypt(dct_ct, credentials, dk2, other)}
     assert combiner.combine_decrypt(partials) == 3
-    assert combiner.combine_decrypt(dict(partials, sid_0=again)) == 3
+    assert combiner.combine_decrypt(partials_o) == 3
+
+
+def test_server_rejects_other_weights(kg_config):
+    dct_x = {nid: [1] for nid in kg_config["lst_nid"]}
+    dct_y = {nid: [1] for nid in kg_config["lst_nid"]}
+    kg, pp, dct_ct, _, _ = _round(kg_config, dct_x, dct_y, "weights", ["sid_0", "sid_1"])
+    dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
+    server = ThresholdMCFELWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
+    other = {"fusion_weight": {nid: [2] for nid in dct_y}, "label": "weights"}
+    with pytest.raises(FESchemeError):
+        server.share_decrypt(dct_ct, other, dk, ["sid_0", "sid_1"])
 
 
 def test_single_server_cannot_decrypt(kg_config):

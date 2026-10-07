@@ -178,8 +178,11 @@ class MCFE(IPFEAbsCrypto):
         Args:
             config: Must contain ``keys`` with ``pp`` (public parameters)
                 and either ``sk`` (encryption keys) or ``dk`` (decryption key).
+                ``dlog_bound`` (default ``10^(precision + 2)``) bounds
+                ``|<x, y>|`` for the final discrete log.
         """
         super().__init__(config)
+        self.dlog_bound = int(config.get("dlog_bound", pow(10, self.precision + 2)))
         self.pp = self.keys["pp"]
         if self._has_private_keys():
             self.sk = self.keys["sk"]
@@ -193,8 +196,7 @@ class MCFE(IPFEAbsCrypto):
         )
         self.dlog_table, self.bound, self._step_size, self._giant_step = (
             load_or_build_dlog_table(
-                _dlog_file, self.pp["g"], self.pp["p"],
-                pow(10, self.precision + 2),
+                _dlog_file, self.pp["g"], self.pp["p"], self.dlog_bound,
             )
         )
 

@@ -8,6 +8,8 @@ LWE and Ring-LWE threshold variants.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import random
 
 import gmpy2 as gp
@@ -206,3 +208,29 @@ def center_mod(value: gp.mpz, modulus: gp.mpz) -> gp.mpz:
     if value > half:
         value -= modulus
     return value
+
+
+def fusion_weight_id(fusion_weight: dict) -> str:
+    """Return a canonical digest of a fusion-weight dict.
+
+    Key shares record the digest of the weights they were derived for, so a
+    server can refuse to combine ciphertexts under different weights.
+
+        Args:
+            fusion_weight: Mapping of client IDs to integer weight lists.
+    """
+    if not isinstance(fusion_weight, dict) or not fusion_weight:
+        raise FEValidationError("invalid fusion weights provided, need a dict")
+    canonical = json.dumps(
+        {nid: [int(y) for y in lst] for nid, lst in fusion_weight.items()},
+        sort_keys=True,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def check_fusion_weight(dk: dict, fusion_weight: dict) -> None:
+    """Raise unless *fusion_weight* are the weights the key share *dk* is for."""
+    if dk.get("weights_id") != fusion_weight_id(fusion_weight):
+        raise FESchemeError(
+            "fusion weights differ from those the key share was derived for"
+        )

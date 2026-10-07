@@ -86,7 +86,7 @@ def test_key_generator(kg_config):
             sid, credentials={"fusion_weight": fusion_weight, "label": label}
         )
         # one aggregated share per server, nothing per client
-        assert set(dk_sid) == {"d", "sid", "lst_sid"}
+        assert set(dk_sid) == {"d", "sid", "lst_sid", "weights_id"}
         assert len(dk_sid["d"]) == 2
         assert dk_sid["sid"] == sid
 
@@ -446,3 +446,40 @@ def test_relabelled_ciphertexts_do_not_decrypt():
     forged = {nid: dict(ct, label="label-forged") for nid, ct in dct_ct.items()}
     shares = _share_decrypt(kg, pp, forged, dct_y, label, ["sid_0", "sid_1"])
     assert clients["nid_0"].combine_decrypt(shares) != expected
+
+
+def test_server_rejects_other_weights():
+    """A key share only combines ciphertexts under the weights it was made for."""
+    label = "weights"
+    kg, pp, clients, dct_ct, dct_y, _ = _setup_round(3, 3, 2, 1, label)
+    dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
+    server = ThresholdMCFE({"id": "sid_0", "precision": 0, "keys": {"pp": pp, "dk": dk}})
+    other = {nid: [y[0] + 1] for nid, y in dct_y.items()}
+    with pytest.raises(FESchemeError):
+        server.share_decrypt(dct_ct, other, dk, ["sid_0", "sid_1"])
+
+
+def test_dlog_bound_is_configurable():
+    """|<x, y>| above the default 10^(precision+2) needs a larger dlog_bound."""
+    lst_nid = ["nid_0", "nid_1", "nid_2"]
+    kg = ThresholdMCFEKeyGenerator(
+        {"sec_param": 128, "lst_nid": lst_nid, "lst_sid": ["sid_0", "sid_1"],
+         "eta": 2, "n": 3, "s": 2, "t": 2}
+    )
+    kg.setup()
+    pp = kg.get_public_parameters()
+    dct_x = {nid: [-9, -9] for nid in lst_nid}
+    dct_y = {nid: [9, 9] for nid in lst_nid}
+    dct_ct = {
+        nid: ThresholdMCFE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(dct_x[nid], "big")
+        for nid in lst_nid
+    }
+    enrolled = ["sid_0", "sid_1"]
+    shares = {}
+    for sid in enrolled:
+        dk = kg.get_decryption_keys(sid, credentials={"fusion_weight": dct_y})
+        server = ThresholdMCFE({"id": sid, "keys": {"pp": pp, "dk": dk}})
+        shares[sid] = server.share_decrypt(dct_ct, dct_y, dk, enrolled)
+    assert ThresholdMCFE({"id": "c", "keys": {"pp": pp}}).combine_decrypt(shares) is None
+    combiner = ThresholdMCFE({"id": "c", "dlog_bound": 500, "keys": {"pp": pp}})
+    assert combiner.combine_decrypt(shares) == -486

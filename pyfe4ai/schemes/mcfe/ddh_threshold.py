@@ -53,6 +53,8 @@ from pyfe4ai.schemes.ddh_base import DDHKeyGeneratorBase
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
 from pyfe4ai.schemes.mcfe.labels import encode_label
+from pyfe4ai.schemes.threshold_utils import check_fusion_weight
+from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
 from pyfe4ai.schemes.threshold_utils import share_points
 from pyfe4ai.schemes.threshold_utils import share_secret
@@ -176,8 +178,9 @@ class ThresholdMCFEKeyGenerator(DDHKeyGeneratorBase):
                 (dict mapping client IDs to integer weight lists).
 
         Returns:
-            Dict with ``d`` (this server's share, a pair mod q), ``sid`` and
-            ``lst_sid``, or ``None`` if *sid* is unknown.
+            Dict with ``d`` (this server's share, a pair mod q), ``sid``,
+            ``lst_sid`` and ``weights_id`` (digest of the weights), or
+            ``None`` if *sid* is unknown.
 
         Raises:
             FEKeyError: If credentials are missing.
@@ -201,6 +204,7 @@ class ThresholdMCFEKeyGenerator(DDHKeyGeneratorBase):
             "d": [gp.digits(e) for e in d_sid],
             "sid": sid,
             "lst_sid": list(self.lst_sid),
+            "weights_id": fusion_weight_id(fusion_weight),
         }
 
     def _share_functional_key(self, fusion_weight: dict) -> dict:
@@ -239,9 +243,12 @@ class ThresholdMCFE(IPFEAbsCrypto):
         Args:
             config: Must contain ``keys`` with ``pp`` and optionally ``sk`` or
                 ``dk``; ``id`` names the client / server; ``precision`` is the
-                number of decimal digits kept when encrypting floats.
+                number of decimal digits kept when encrypting floats;
+                ``dlog_bound`` (default ``10^(precision + 2)``) bounds
+                ``|<x, y>|`` (after scaling) for the final discrete log.
         """
         super().__init__(config)
+        self.dlog_bound = int(config.get("dlog_bound", pow(10, self.precision + 2)))
         self.pp = self.keys["pp"]
         if self._has_private_keys():
             self.sk = self.keys["sk"]
@@ -254,8 +261,7 @@ class ThresholdMCFE(IPFEAbsCrypto):
         )
         self.dlog_table, self.bound, self._step_size, self._giant_step = (
             load_or_build_dlog_table(
-                _dlog_file, self.pp["g"], self.pp["p"],
-                pow(10, self.precision + 2),
+                _dlog_file, self.pp["g"], self.pp["p"], self.dlog_bound,
             )
         )
 
@@ -332,6 +338,7 @@ class ThresholdMCFE(IPFEAbsCrypto):
         if self.id not in lst_sid:
             raise FESchemeError("local id:{} is not supported".format(self.id))
         validate_enrolled(self.id, lst_sid, lst_sid_enrolled, self.pp["t"])
+        check_fusion_weight(dk, credentials)
 
         label = self._common_label(dict_ct)
         c_y = self._weighted_product(dict_ct, credentials, p)
@@ -360,7 +367,7 @@ class ThresholdMCFE(IPFEAbsCrypto):
 
         Returns:
             ``<x, y>`` divided by ``10^precision``, or ``None`` if the servers
-            disagree on the ciphertexts or the result is out of the dlog bound.
+            disagree on the ciphertexts or ``|<x, y>|`` exceeds ``dlog_bound``.
 
         Raises:
             FESchemeError: If fewer than ``t`` shares are given or the shares

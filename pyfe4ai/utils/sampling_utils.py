@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import random
 
 import gmpy2 as gp
@@ -62,7 +63,28 @@ def discrete_gaussian_matrix(rows: int, cols: int, sigma: float) -> list[list[gp
     ]
 
 
-def discrete_gaussian_bigint(sigma, count: int) -> list[gp.mpz]:
+class XofRandom:
+    """Deterministic bit source: SHAKE-256 keyed by a secret seed.
+
+    Provides ``getrandbits`` for derandomised sampling (the same seed always
+    yields the same bits). The seed must be secret and unpredictable.
+
+        Args:
+            seed: Secret seed bytes (at least 32 bytes of entropy).
+    """
+
+    def __init__(self, seed: bytes) -> None:
+        self._seed = len(seed).to_bytes(8, "big") + seed
+        self._counter = 0
+
+    def getrandbits(self, k: int) -> int:
+        n_bytes = (k + 7) // 8
+        block = hashlib.shake_256(self._seed + self._counter.to_bytes(8, "big")).digest(n_bytes)
+        self._counter += 1
+        return int.from_bytes(block, "big") >> (8 * n_bytes - k)
+
+
+def discrete_gaussian_bigint(sigma, count: int, rng=None) -> list[gp.mpz]:
     """Sample *count* integers from a rounded Gaussian of arbitrary width.
 
     Unlike :func:`discrete_gaussian_matrix`, *sigma* may exceed the range of
@@ -76,18 +98,21 @@ def discrete_gaussian_bigint(sigma, count: int) -> list[gp.mpz]:
         Args:
             sigma: Standard deviation (int, mpz, float or mpfr), > 0.
             count: Number of samples.
+            rng: Bit source with ``getrandbits`` (default: the OS CSPRNG);
+                pass an :class:`XofRandom` for derandomised sampling.
     """
     if not sigma > 0:
         raise ValueError("sigma must be positive")
     prec = int(gp.ceil(gp.mpfr(sigma))).bit_length() + 128
+    rng = rng or _CSPRNG
     samples = []
     with gp.context(gp.get_context(), precision=prec):
         two_pi = 2 * gp.const_pi()
         sig = gp.mpfr(sigma)
         scale = gp.mpfr(2) ** prec
         for _ in range(count):
-            u1 = (gp.mpfr(_CSPRNG.getrandbits(prec)) + 1) / scale  # (0, 1]
-            u2 = gp.mpfr(_CSPRNG.getrandbits(prec)) / scale  # [0, 1)
+            u1 = (gp.mpfr(rng.getrandbits(prec)) + 1) / scale  # (0, 1]
+            u2 = gp.mpfr(rng.getrandbits(prec)) / scale  # [0, 1)
             z = gp.sqrt(-2 * gp.log(u1)) * gp.cos(two_pi * u2)
             samples.append(gp.mpz(gp.rint(z * sig)))
     return samples
