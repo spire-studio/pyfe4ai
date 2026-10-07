@@ -263,7 +263,7 @@ suggests; use them only for functionality and performance experiments.
 | Unvalidated parameter cache in the working directory | all key generators | Parameters are written to and re-loaded from `./config/authority/...` without structural validation; a planted `param.json` (e.g. a 5-bit group) is accepted. Run only in a directory that nobody else can write to. The pairing dlog cache (`./config/crypto/...`) is likewise trusted if its generators match: a planted table gives wrong results and an inflated bound makes decryption loop for a very long time. |
 | Float fusion weights in `aggregate_gradients` | `utils/ml_adapter.py` | Float weights are quantised but the result is not rescaled (e.g. weights 0.5 give 100× the expected sum in decimal mode). Pass integer weights. |
 
-Fixed on the `fix/p0-crypto-correctness` branch (after v0.1.0): MCFE-DDH
+Fixed in v0.2.0 (see [`CHANGELOG.md`](CHANGELOG.md)): MCFE-DDH
 decryption for `eta ≥ 2`; MCFE-DDH re-implemented per CDGPP18 (group-element
 label hash, independent per-client keys, aggregated functional key);
 independent per-client keys in MIFE-DDH; DDH threshold sharing (1-based
@@ -302,7 +302,7 @@ preparation and will be added here once published):
   title   = {{PyFE4AI}: Python-based Functional Encryption
              for {AI} Security and Privacy},
   year    = {2026},
-  version = {0.1.0},
+  version = {0.2.0},
   license = {Apache-2.0},
   url     = {https://github.com/spire-studio/pyfe4ai}
 }
