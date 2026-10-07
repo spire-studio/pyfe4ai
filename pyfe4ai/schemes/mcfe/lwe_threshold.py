@@ -51,7 +51,8 @@ import logging
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.schemes.mcfe.ddh import _element_label
+from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
+from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.schemes.mcfe.lwe import MCFELWE
 from pyfe4ai.schemes.mcfe.lwe import MCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.lwe import dot_mod
@@ -207,8 +208,9 @@ class ThresholdMCFELWE(MCFELWE):
             raise FESchemeError("local id:{} is not supported".format(self.id))
         fusion_weight = credentials.get("fusion_weight")
         label = credentials.get("label")
-        if fusion_weight is None or not isinstance(label, str):
+        if fusion_weight is None or label is None:
             raise FEKeyError("need fusion_weight and label for threshold share decryption")
+        encoded = encode_label(label)
         validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
 
         sid_v = share_points(dk["lst_sid"])
@@ -221,7 +223,7 @@ class ThresholdMCFELWE(MCFELWE):
         return {
             "w": gp.digits(w),
             "c_y": int(self._weighted_sum(dict_ct, fusion_weight)),
-            "label": label,
+            "label": encoded,
             "sid": self.id,
             "lst_sid_enrolled": list(lst_sid_enrolled),
         }

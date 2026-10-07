@@ -9,6 +9,7 @@ import gmpy2 as gp
 
 from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFE
 from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFEKeyGenerator
+from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
 from pyfe4ai.logger import init_logging_config
@@ -129,7 +130,7 @@ def test_entire_process(kg_config):
         ct_nid = tmife_nid.encrypt(dict_tmife_n_x[nid], label)
         assert isinstance(ct_nid, dict)
         assert set(ct_nid) == {"c", "label"}
-        assert ct_nid["label"] == label
+        assert ct_nid["label"] == encode_label(label)
         dict_tmife_n_ct[nid] = ct_nid
         dict_tmife_n[nid] = tmife_nid
 

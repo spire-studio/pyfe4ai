@@ -51,7 +51,8 @@ import numpy as np
 
 from pyfe4ai.schemes.ddh_base import DDHKeyGeneratorBase
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
-from pyfe4ai.schemes.mcfe.ddh import _element_label
+from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
+from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
 from pyfe4ai.schemes.threshold_utils import share_points
 from pyfe4ai.schemes.threshold_utils import share_secret
@@ -70,11 +71,9 @@ _LABEL_HASH_DOMAIN = "pyfe4ai/mcfe/ddh_threshold/H(label)"
 _CONSTRUCTION = "cdgpp18-shamir/v1"
 
 
-def _hash_label(label: str, p: gp.mpz) -> list:
-    """Return ``[u_l] = H(label) in G^2`` (random oracle into the QR subgroup)."""
-    if not isinstance(label, str):
-        raise FEValidationError("label must be a string, got {!r}".format(label))
-    return [hash_to_qr_group(label, p, index=k, domain=_LABEL_HASH_DOMAIN) for k in (0, 1)]
+def _hash_encoded(encoded: str, p: gp.mpz) -> list:
+    """Return ``[u_l] = H(l) in G^2`` for an encoded label (see :func:`encode_label`)."""
+    return [hash_to_qr_group(encoded, p, index=k, domain=_LABEL_HASH_DOMAIN) for k in (0, 1)]
 
 
 def _fusion_weight_id(fusion_weight: dict) -> str:
@@ -271,7 +270,8 @@ class ThresholdMCFE(IPFEAbsCrypto):
                 the same label.
 
         Returns:
-            Dict with ``c`` (one group element per slot) and ``label``.
+            Dict with ``c`` (one group element per slot) and ``label`` (the
+            encoded label, see :func:`pyfe4ai.schemes.mcfe.labels.encode_label`).
 
         Raises:
             FEKeyError: If public parameters or private keys are missing.
@@ -288,7 +288,8 @@ class ThresholdMCFE(IPFEAbsCrypto):
 
         p = gp.mpz(self.pp["p"])
         g = gp.mpz(self.pp["g"])
-        u_l = _hash_label(label, p)
+        encoded = encode_label(label)
+        u_l = _hash_encoded(encoded, p)
 
         c = []
         for v, s_j in zip(pt, self.sk["s"]):
@@ -297,7 +298,7 @@ class ThresholdMCFE(IPFEAbsCrypto):
             for u_k, s_jk in zip(u_l, s_j):
                 c_j = gp.mul(c_j, gp.powmod(u_k, gp.mpz(s_jk), p)) % p
             c.append(gp.digits(c_j))
-        return {"c": c, "label": label}
+        return {"c": c, "label": encoded}
 
     def share_decrypt(
         self, dict_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list
@@ -340,7 +341,7 @@ class ThresholdMCFE(IPFEAbsCrypto):
             sid_v[self.id], [sid_v[s] for s in lst_sid_enrolled], q
         )
         u_d = gp.mpz(1)
-        for u_k, d_k in zip(_hash_label(label, p), dk["d"]):
+        for u_k, d_k in zip(_hash_encoded(label, p), dk["d"]):
             u_d = gp.mul(u_d, gp.powmod(u_k, gp.mul(gp.mpz(d_k), lagrange) % q, p)) % p
 
         return {

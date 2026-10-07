@@ -47,7 +47,8 @@ import numpy as np
 
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
-from pyfe4ai.schemes.mcfe.ddh import _element_label
+from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
+from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import hash_to_zq_vector
 from pyfe4ai.utils.lwe_utils import abmpsw20_lwe_parameters
@@ -63,11 +64,9 @@ _LABEL_HASH_DOMAIN = "pyfe4ai/mcfe/lwe/H(label)"
 _DEFAULT_STAT_PARAM = 64
 
 
-def hash_label(label: str, q, length: int) -> list:
+def hash_label(label, q, length: int) -> list:
     """Return ``H(label) in Z_q^length`` (random oracle)."""
-    if not isinstance(label, str):
-        raise FEValidationError("label must be a string, got {!r}".format(label))
-    return hash_to_zq_vector(label, q, length, domain=_LABEL_HASH_DOMAIN)
+    return hash_to_zq_vector(encode_label(label), q, length, domain=_LABEL_HASH_DOMAIN)
 
 
 def dot_mod(left: list, right: list, q) -> gp.mpz:

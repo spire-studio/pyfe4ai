@@ -31,6 +31,8 @@ import gmpy2 as gp
 
 from pyfe4ai.schemes.ddh_base import DDHKeyGeneratorBase
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
+from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
+from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import _random
 from pyfe4ai.utils.crypto_utils import hash_to_qr_group
@@ -43,21 +45,10 @@ logger = logging.getLogger(__name__)
 _LABEL_HASH_DOMAIN = "pyfe4ai/mcfe/ddh/H(label)"
 
 
-def _element_label(label: str, layer: int, index: tuple) -> str:
-    """Unambiguous per-element label for the ndarray helpers.
-
-    CDGPP18 ciphertexts are deterministic per (client slot, label), so every
-    array element must be encrypted under its own label; reusing one label
-    would let anyone compute ``c_i / c_j = g^{x_i - x_j}`` without a key.
-    """
-    return json.dumps([label, int(layer), [int(v) for v in index]])
-
-
-def _hash_label(label: str, p: gp.mpz) -> list:
+def _hash_label(label, p: gp.mpz) -> list:
     """Return ``[u_l] = H(label) in G^2`` (random oracle into the QR subgroup)."""
-    if not isinstance(label, str):
-        raise FEValidationError("label must be a string, got {!r}".format(label))
-    return [hash_to_qr_group(label, p, index=k, domain=_LABEL_HASH_DOMAIN) for k in (0, 1)]
+    encoded = encode_label(label)
+    return [hash_to_qr_group(encoded, p, index=k, domain=_LABEL_HASH_DOMAIN) for k in (0, 1)]
 
 
 class MCFEKeyGenerator(DDHKeyGeneratorBase):
@@ -306,7 +297,8 @@ class MCFE(IPFEAbsCrypto):
         """Encrypt a list of ndarrays element-wise with a label.
 
         Each element is encrypted under its own label derived from ``label``,
-        the layer and the element index (see :func:`_element_label`).
+        the layer and the element index (see
+        :mod:`pyfe4ai.schemes.mcfe.labels`).
 
         Args:
             lst_ndarray: List of numpy arrays to encrypt.

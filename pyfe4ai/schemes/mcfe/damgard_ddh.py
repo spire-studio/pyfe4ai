@@ -44,7 +44,8 @@ import numpy as np
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.ipfe import ParameterCacheMixin
-from pyfe4ai.schemes.mcfe.ddh import _element_label
+from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
+from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import group_generator_fe
 from pyfe4ai.utils.crypto_utils import hash_to_qr_group
@@ -60,12 +61,11 @@ _LABEL_HASH_DOMAIN = "pyfe4ai/mcfe/mddh/H(label)"
 _CONSTRUCTION = "abmpsw20-mddh/v1"
 
 
-def _hash_label(label: str, p: gp.mpz, k: int) -> list:
+def _hash_label(label, p: gp.mpz, k: int) -> list:
     """Return ``[u_l] = H(label) in G^{k+1}`` (random oracle into the QR subgroup)."""
-    if not isinstance(label, str):
-        raise FEValidationError("label must be a string, got {!r}".format(label))
+    encoded = encode_label(label)
     return [
-        hash_to_qr_group(label, p, index=m, domain=_LABEL_HASH_DOMAIN) for m in range(k + 1)
+        hash_to_qr_group(encoded, p, index=m, domain=_LABEL_HASH_DOMAIN) for m in range(k + 1)
     ]
 
 

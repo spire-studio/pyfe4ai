@@ -45,7 +45,8 @@ import numpy as np
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.ipfe import ParameterCacheMixin
-from pyfe4ai.schemes.mcfe.ddh import _element_label
+from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
+from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import generate_group_primes
 from pyfe4ai.utils.crypto_utils import hash_to_zn2_star
@@ -60,10 +61,8 @@ _CONSTRUCTION = "abmpsw20-dcr/v2"  # v1 caches stored p and q
 _DEFAULT_STAT_PARAM = 64
 
 
-def _hash_label(label: str, n_mod: gp.mpz) -> gp.mpz:
-    if not isinstance(label, str):
-        raise FEValidationError("label must be a string, got {!r}".format(label))
-    return hash_to_zn2_star(label, n_mod, domain=_LABEL_HASH_DOMAIN)
+def _hash_label(label, n_mod: gp.mpz) -> gp.mpz:
+    return hash_to_zn2_star(encode_label(label), n_mod, domain=_LABEL_HASH_DOMAIN)
 
 
 def dcr_sigma(n_mod: gp.mpz, n_slots: int, bound_x: int, kappa: int) -> gp.mpz:
