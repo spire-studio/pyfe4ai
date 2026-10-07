@@ -62,10 +62,12 @@ class TestKeyGenerator:
         kg.setup()
         assert kg.get_private_keys("nonexistent") is None
 
-    def test_get_decryption_keys_returns_not_implemented(self, kg_config):
+    def test_get_decryption_keys_raises_not_implemented(self, kg_config):
+        """Regression (N12): the method used to *return* NotImplementedError."""
         kg = DecentralizedMCFEPaillierKeyGenerator(kg_config)
         kg.setup()
-        assert kg.get_decryption_keys("sid") is NotImplementedError
+        with pytest.raises(NotImplementedError, match="derive_function_decryption_key_share"):
+            kg.get_decryption_keys("sid")
 
 
 class TestEntireProcess:

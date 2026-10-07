@@ -2,10 +2,11 @@
 
 Provides two strategies:
 
-1. **Dlog table** (default): precompute a lookup table of size O(√n) and
-   persist it to a JSON cache file.  Subsequent solves are O(√n) lookups
-   against the cached table.  Best when the same group parameters are reused
-   across many decrypt calls.
+1. **Dlog table** (default): precompute a lookup table of size O(√n) once
+   per process (memoised in memory) and reuse it for every solve.  Tables are
+   never read from disk: a cache file in the working directory would let
+   anyone with write access to it run code (pickle) or silently corrupt
+   decryption results, and rebuilding is as cheap as verifying a cached copy.
 
 2. **Baby-step giant-step (BSGS)** (optional): compute baby-step and
    giant-step values on the fly without any disk cache.  O(√n) time and
@@ -15,11 +16,11 @@ Provides two strategies:
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import math
 import os
-import pickle
 
 import gmpy2 as gp
 
@@ -91,76 +92,29 @@ def dlog_table_solve(
     )
 
 
+@functools.lru_cache(maxsize=32)
+def _cached_dlog_table(g_str: str, p_str: str, bound: int) -> tuple[dict, int, gp.mpz]:
+    logger.debug("building dlog table in memory (bound=%d)", bound)
+    return dlog_build_table(g_str, p_str, bound)
+
+
 def load_or_build_dlog_table(
     filepath: str, g_str: str, p_str: str, bound: int,
 ) -> tuple[dict, int, int, gp.mpz]:
-    """Load a cached dlog table, or generate + save one if stale/missing.
+    """Return a dlog lookup table for ``g`` mod ``p`` covering ``[-bound, bound]``.
+
+    The table is built in memory and memoised per process. *filepath* is kept
+    for API compatibility and ignored: earlier versions loaded a pickle (and
+    a JSON fallback) from that location without any integrity check, which
+    allowed arbitrary code execution / wrong results via a planted file.
 
         Args:
-            filepath: Path to the cache file.
+            filepath: Ignored (legacy cache location).
             g_str: Group generator as a digit string.
             p_str: Prime modulus as a digit string.
             bound: Upper bound on absolute values.
     """
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
-    pkl_path = os.path.splitext(filepath)[0] + ".pkl"
-
-    # --- Try pickle cache first (fast) ---
-    if os.path.exists(pkl_path):
-        try:
-            with open(pkl_path, "rb") as f:
-                data = pickle.load(f)  # noqa: S301 — trusted local cache
-            if (
-                data.get("g") == g_str
-                and data.get("p") == p_str
-                and data.get("func_bound", 0) >= bound
-            ):
-                return (
-                    data["dlog_table"],
-                    data["func_bound"],
-                    data["step_size"],
-                    gp.mpz(data["giant_step"]),
-                )
-        except (pickle.UnpicklingError, EOFError, KeyError):
-            pass  # stale or corrupt — rebuild
-
-    # --- Fall back to legacy JSON cache ---
-    if os.path.exists(filepath) and filepath.endswith(".json"):
-        try:
-            with open(filepath, "r") as f:
-                data = json.load(f)
-            strategy = data.get("strategy", "")
-            if (
-                data.get("g") == g_str
-                and data.get("p") == p_str
-                and data.get("func_bound", 0) >= bound
-                and strategy in ("dlog_table", "bsgs")
-            ):
-                step_size = data.get("step_size", data.get("bsgs_m"))
-                giant_step = data.get("giant_step", data.get("bsgs_giant"))
-                return (
-                    data["dlog_table"],
-                    data["func_bound"],
-                    step_size,
-                    gp.mpz(giant_step),
-                )
-        except (json.JSONDecodeError, KeyError):
-            pass
-
-    # --- Build and persist as pickle ---
-    logger.debug("generating dlog table at %s (bound=%d)", pkl_path, bound)
-    table, m, giant = dlog_build_table(g_str, p_str, bound)
-    cache_data = {
-        "g": g_str,
-        "p": p_str,
-        "func_bound": bound,
-        "strategy": "dlog_table",
-        "step_size": m,
-        "giant_step": gp.digits(giant),
-        "dlog_table": table,
-    }
-    with open(pkl_path, "wb") as f:
-        pickle.dump(cache_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+    table, m, giant = _cached_dlog_table(str(g_str), str(p_str), int(bound))
     return table, bound, m, giant
 
 

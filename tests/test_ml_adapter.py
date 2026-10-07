@@ -209,6 +209,64 @@ class TestFLAggregationMCFE:
         np.testing.assert_allclose(result, [3.0, 7.0], atol=0.2)
 
 
+# ── Multi-party variants are rejected with a clear error ───────────
+
+
+class TestUnsupportedMultiPartyVariants:
+    """Regression (N12): used to fail with an opaque TypeError."""
+
+    NIDS = ["nid_0", "nid_1"]
+
+    def _encrypt_all(self, wrapper, label):
+        return {
+            nid: encrypt_gradient(np.array([1.0, 2.0]), wrapper, nid=nid, label=label)
+            for nid in self.NIDS
+        }
+
+    def test_decentralized_rejected(self):
+        wrapper = FESchemeWrapper(
+            "mcfe",
+            "lwe_decentralized",
+            {
+                "sec_param": 64,
+                "eta": 1,
+                "n": 2,
+                "lst_nid": self.NIDS,
+                "lwe_n": 16,
+                "bound_x": 6,
+                "bound_y": 6,
+                "bound_u": 2,
+            },
+        )
+        enc = self._encrypt_all(wrapper, "round-1")
+        with pytest.raises(NotImplementedError, match="decentralized"):
+            aggregate_gradients(
+                enc, wrapper, {nid: 1 for nid in self.NIDS}, label="round-1"
+            )
+        with pytest.raises(NotImplementedError, match="derive_function_decryption_key_share"):
+            wrapper.get_decryption_keys("sid_0", fusion_weight={nid: [1] for nid in self.NIDS})
+
+    def test_threshold_rejected(self):
+        wrapper = FESchemeWrapper(
+            "mcfe",
+            "ddh_threshold",
+            {
+                "sec_param": 128,
+                "eta": 1,
+                "n": 2,
+                "s": 2,
+                "t": 2,
+                "lst_nid": self.NIDS,
+                "lst_sid": ["sid_0", "sid_1"],
+            },
+        )
+        enc = self._encrypt_all(wrapper, "round-1")
+        with pytest.raises(NotImplementedError, match="threshold"):
+            aggregate_gradients(
+                enc, wrapper, {nid: 1 for nid in self.NIDS}, label="round-1"
+            )
+
+
 # ── EncryptedGradient serialization ───────────────────────────────
 
 

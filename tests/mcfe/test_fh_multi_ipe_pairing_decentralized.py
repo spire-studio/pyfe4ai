@@ -3,6 +3,8 @@ import random
 import numpy as np
 import pytest
 
+pytest.importorskip("charm", reason="charm-crypto not installed")
+
 from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import DecentralizedMCFEFHMultiIPE
 from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import DecentralizedMCFEFHMultiIPEKeyGenerator
 
@@ -112,3 +114,11 @@ def test_entire_process_lst_ndarray(kg_config):
 
     for idx in range(len(expected)):
         assert np.allclose(computed[idx], expected[idx], atol=1e-2)
+
+
+def test_get_decryption_keys_raises_not_implemented(kg_config):
+    """Regression (N12): the method used to *return* NotImplementedError."""
+    kg = DecentralizedMCFEFHMultiIPEKeyGenerator(kg_config)
+    kg.setup()
+    with pytest.raises(NotImplementedError, match="derive_function_decryption_key_share"):
+        kg.get_decryption_keys("sid_0", credentials={"fusion_weight": {}})

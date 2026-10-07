@@ -117,3 +117,40 @@ def test_entire_process(kg_config):
         "<{},{}> computed inner-prod = {}".format(lst_x, lst_y, computed_inner_prod)
     )
     assert computed_inner_prod == expected_inner_prod
+
+
+def test_client_keys_are_independent():
+    """Regression (N6): every client used to receive the same ``w``, so a
+    client could remove the mask of another client's ciphertext and learn
+    differences of that client's plaintexts."""
+    lst_nid = ["nid_0", "nid_1", "nid_2"]
+    kg = MIFEKeyGenerator(
+        {"sec_param": 256, "lst_nid": lst_nid, "eta": 2, "n": 3, "s": 1}
+    )
+    kg.setup()
+    keys = [kg.get_private_keys(nid)["w"] for nid in lst_nid]
+    flat = [e for key in keys for w_i in key for e in w_i]
+    assert len(set(flat)) == len(flat)
+
+
+def test_client_cannot_unmask_other_client():
+    """With its own key, client A must not be able to strip the IPFE mask
+    of client B's ciphertext (worked with the shared ``w``)."""
+    lst_nid = ["nid_0", "nid_1"]
+    kg = MIFEKeyGenerator(
+        {"sec_param": 256, "lst_nid": lst_nid, "eta": 1, "n": 2, "s": 1}
+    )
+    kg.setup()
+    pp = kg.get_public_parameters()
+    p = gp.mpz(pp["p"])
+    g = gp.mpz(pp["g"])
+    sk_a = kg.get_private_keys("nid_0")
+    sk_b = kg.get_private_keys("nid_1")
+    ct_b = MIFE({"id": "nid_1", "precision": 3, "keys": {"pp": pp, "sk": sk_b}}).encrypt([5])
+
+    w_a = gp.mpz(sk_a["w"][0][0]) + gp.mpz(sk_a["w"][0][1])
+    mask_guess = gp.mpz(1)
+    for t in ct_b["t"]:
+        mask_guess = mask_guess * gp.powmod(gp.mpz(t), w_a, p) % p
+    unmasked = gp.divm(gp.mpz(ct_b["c"][0]), mask_guess, p)
+    assert unmasked != gp.powmod(g, 5 + gp.mpz(sk_b["u"][0]), p)

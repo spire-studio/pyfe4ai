@@ -7,6 +7,8 @@ import random
 
 import gmpy2 as gp
 
+from pyfe4ai.utils.exceptions import FEValidationError
+
 _CSPRNG = random.SystemRandom()
 
 
@@ -157,13 +159,26 @@ def decode_lwe_inner_product(value: gp.mpz, p: gp.mpz, q: gp.mpz) -> int:
 
 
 def label_scalar_from_hash(hash_value: gp.mpz, label_modulus: int) -> gp.mpz:
-    """Convert a hash value to a centered label scalar.
+    """Convert a hash value to a non-zero centered label scalar.
+
+    The scalar lies in ``[-(M - 1 - M // 2), M // 2]`` excluding 0, for
+    ``M = label_modulus``. Zero is excluded because a zero scalar removes the
+    per-client label mask ``u * l`` altogether, letting any functional-key
+    holder decode each client's plaintext.
 
         Args:
             hash_value: Hash digest value.
-            label_modulus: Modulus for centering the label scalar.
+            label_modulus: Modulus for centering the label scalar (>= 2).
+
+        Raises:
+            FEValidationError: If ``label_modulus < 2``.
     """
-    raw = int(hash_value % gp.mpz(label_modulus))
+    label_modulus = int(label_modulus)
+    if label_modulus < 2:
+        raise FEValidationError(
+            "label_modulus must be >= 2, got {}".format(label_modulus)
+        )
+    raw = int(hash_value % gp.mpz(label_modulus - 1)) + 1
     half = label_modulus // 2
     if raw > half:
         raw -= label_modulus

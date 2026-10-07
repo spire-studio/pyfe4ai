@@ -148,6 +148,16 @@
   .matrix td.fam small { display: block; font-weight: 400; color: var(--muted); }
   .matrix .y  { color: var(--teal); font-weight: 700; }
   .matrix .n  { color: #d0d7de; }
+  .matrix .w  { color: #b7791f; font-weight: 700; }
+  p.matrix-legend { margin-top: 14px; font-size: 13.5px; color: var(--muted); text-align: center; }
+
+  /* known-issues notice */
+  .notice {
+    margin: 30px auto 0; max-width: 760px; padding: 12px 18px;
+    background: #fdf3dc; border: 1px solid #f3d27a; border-radius: 10px;
+    color: #6b4e00; font-size: 14.5px; text-align: left;
+  }
+  .notice a { color: #6b4e00; font-weight: 600; text-decoration: underline; }
   .matrix tbody tr:last-child td { border-bottom: none; }
 
   /* use cases */
@@ -208,6 +218,12 @@
       <a class="btn btn-ghost" href="#quickstart">🚀 Quickstart</a>
     </div>
 
+    <p class="notice">⚠️ <strong>Research prototype with known security limitations.</strong>
+      Several multi-client, decentralized and threshold variants do not yet provide the
+      privacy their family name suggests, and default parameters are toy-sized.
+      <a href="https://github.com/spire-studio/pyfe4ai#known-issues--security-notice">Read the Known Issues</a>
+      before using any scheme beyond experiments.</p>
+
     <div class="statbar">
       <div class="stat"><b>39</b><span>scheme variants</span></div>
       <div class="stat"><b>8</b><span>FE families</span></div>
@@ -254,17 +270,18 @@
       </div>
       <div class="card">
         <div class="ico b">🧪</div>
-        <h3>Tested &amp; typed</h3>
-        <p>150+ core tests in CI, typed public API (<code>py.typed</code>), TypedDict
-           config schemas, and a structured <code>FEError</code> exception
-           hierarchy.</p>
+        <h3>Tested</h3>
+        <p>200+ tests in CI, including regression tests for multi-element vectors
+           and t-of-s threshold subsets, plus TypedDict config schemas and a
+           structured <code>FEError</code> exception hierarchy.</p>
       </div>
       <div class="card">
         <div class="ico a">📚</div>
-        <h3>Paper-faithful</h3>
+        <h3>Paper-referenced</h3>
         <p>Every scheme cites its source construction (PKC'15, CRYPTO'16/'18,
-           ASIACRYPT'18, PKC'19, IEEE TDSC TAPFed, …) in the module docstring —
-           built for reproducible research.</p>
+           ASIACRYPT'18, PKC'19, IEEE TDSC TAPFed, …) in the module docstring.
+           Where an implementation still deviates from its paper, the deviation is
+           listed under Known Issues.</p>
       </div>
     </div>
   </div>
@@ -274,7 +291,9 @@
   <div class="wrap">
     <div class="accent-bar"></div>
     <h2 class="sec-title">Quickstart</h2>
-    <p class="sec-sub">Encrypt a vector, hand out a functional key, learn only the inner product.</p>
+    <p class="sec-sub">Encrypt a vector, hand out a functional key, learn only the inner product.
+       Demo parameters are toy-sized: <code>sec_param</code> is a modulus bit length,
+       not a security level.</p>
     <div class="qs-cols">
       <div class="codebox"><pre><span class="cm"># install</span>
 git clone https://github.com/spire-studio/pyfe4ai.git
@@ -297,7 +316,7 @@ dk = kg.<span class="fn">get_decryption_keys</span>(<span class="st">"sid_0"</sp
 
 ct = SIFE({<span class="st">"precision"</span>: <span class="st">3</span>, <span class="st">"keys"</span>: {<span class="st">"pp"</span>: pp, <span class="st">"sk"</span>: sk}}).<span class="fn">encrypt</span>(x)
 result = SIFE({<span class="st">"precision"</span>: <span class="st">3</span>, <span class="st">"keys"</span>: {<span class="st">"pp"</span>: pp}}).<span class="fn">decrypt</span>(ct, dk, y)
-<span class="fn">print</span>(result)  <span class="cm"># ⟨x, y⟩ = 31 — and nothing else is revealed</span></pre></div>
+<span class="fn">print</span>(result)  <span class="cm"># 31 = ⟨x, y⟩</span></pre></div>
     </div>
   </div>
 </section>
@@ -323,18 +342,23 @@ result = SIFE({<span class="st">"precision"</span>: <span class="st">3</span>, <
           <tr><td class="fam">MIFE <small>multi-input</small></td>
             <td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
           <tr><td class="fam">MCFE <small>multi-client, labeled</small></td>
-            <td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+            <td class="y">✓</td><td class="w">⚠</td><td class="w">⚠</td><td class="w">⚠</td><td class="w">⚠</td><td class="w">⚠</td></tr>
           <tr><td class="fam">dMCFE <small>decentralized</small></td>
-            <td class="y">✓</td><td class="n">—</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+            <td class="w">⚠</td><td class="n">—</td><td class="w">⚠</td><td class="w">⚠</td><td class="w">⚠</td><td class="w">⚠</td></tr>
           <tr><td class="fam">tMIFE <small>threshold</small></td>
-            <td class="y">✓</td><td class="n">—</td><td class="n">—</td><td class="y">✓</td><td class="n">—</td><td class="n">—</td></tr>
+            <td class="y">✓</td><td class="n">—</td><td class="n">—</td><td class="w">⚠</td><td class="n">—</td><td class="n">—</td></tr>
           <tr><td class="fam">tMCFE <small>threshold</small></td>
-            <td class="y">✓</td><td class="n">—</td><td class="n">—</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+            <td class="w">⚠</td><td class="n">—</td><td class="n">—</td><td class="w">⚠</td><td class="w">⚠</td><td class="w">⚠</td></tr>
           <tr><td class="fam">Quadratic <small>SGP · Quad</small></td>
             <td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✓</td></tr>
         </tbody>
       </table>
     </div>
+    <p class="matrix-legend"><b style="color:var(--teal)">✓</b> implemented ·
+       <b style="color:#b7791f">⚠</b> implemented, but with a known privacy issue —
+       see <a href="https://github.com/spire-studio/pyfe4ai#known-issues--security-notice">Known Issues</a> ·
+       — not implemented. Pairing-based and quadratic schemes need <code>charm-crypto</code>
+       and are not exercised in the default CI lane.</p>
   </div>
 </section>
 
@@ -346,10 +370,12 @@ result = SIFE({<span class="st">"precision"</span>: <span class="st">3</span>, <
     <div class="uc">
       <div class="card">
         <h3><span>🌐</span> Federated-learning secure aggregation</h3>
-        <p>Clients encrypt local gradients with MCFE; the aggregator decrypts only the
-           weighted sum — individual updates stay private. Threshold variants
-           (TAPFed-style) tolerate partial participation and curb single-aggregator
-           power.</p>
+        <p>Clients encrypt local gradients with MCFE-DDH (the CDGPP18 construction);
+           the aggregator's functional key decrypts only the weighted sum.
+           Threshold variants (TAPFed-style) split decryption across t-of-s servers.
+           Not every multi-client instantiation meets this yet — check
+           <a href="https://github.com/spire-studio/pyfe4ai#known-issues--security-notice">Known Issues</a>
+           before choosing one.</p>
         <p><a href="https://github.com/spire-studio/pyfe4ai/blob/main/examples/ml_fl_aggregation.py">examples/ml_fl_aggregation.py →</a></p>
       </div>
       <div class="card">
@@ -375,7 +401,7 @@ result = SIFE({<span class="st">"precision"</span>: <span class="st">3</span>, <
   title   = {{PyFE4AI}: Python-based Functional Encryption
              for {AI} Security and Privacy},
   year    = {2026},
-  version = {0.1.0},
+  version = {0.2.0},
   license = {Apache-2.0},
   url     = {https://github.com/spire-studio/pyfe4ai}
 }</pre>
@@ -389,6 +415,7 @@ result = SIFE({<span class="st">"precision"</span>: <span class="st">3</span>, <
       <a href="docs/">Documentation</a>
       <a href="https://github.com/spire-studio/pyfe4ai">GitHub</a>
       <a href="https://github.com/spire-studio/pyfe4ai/issues">Issues</a>
+      <a href="https://github.com/spire-studio/pyfe4ai#known-issues--security-notice">Known Issues</a>
       <a href="https://github.com/spire-studio/pyfe4ai/blob/main/SECURITY.md">Security Policy</a>
       <a href="https://github.com/spire-studio/pyfe4ai/blob/main/LICENSE">License</a>
     </div>

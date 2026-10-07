@@ -19,7 +19,15 @@ from typing import TypedDict
 
 
 class FEBaseConfig(TypedDict, total=False):
-    """Fields read by :class:`~pyfe4ai.schemes.ipfe.IPFEAbsKeyGenerator`."""
+    """Fields read by :class:`~pyfe4ai.schemes.ipfe.IPFEAbsKeyGenerator`.
+
+    ``sec_param`` is *not* a security level. DDH families use it as the bit
+    length of the safe prime ``p`` (and Damgard as the default
+    ``modulus_length``); Ring-LWE SIFE uses it as the statistical parameter
+    kappa in its noise bounds; LWE families only record it (their hardness is
+    set by ``lwe_n``), Paillier families use ``bit_length`` and pairing families
+    ``pairing_group_param``.
+    """
 
     sec_param: int
     n: int

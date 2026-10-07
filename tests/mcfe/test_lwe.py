@@ -115,3 +115,58 @@ def test_entire_process_lst_ndarray(kg_config):
 
     for idx in range(len(expected)):
         assert np.allclose(computed[idx], expected[idx], atol=1e-2)
+
+
+@pytest.mark.parametrize("label_modulus", [2, 3, 8, 17])
+def test_label_scalar_is_never_zero(label_modulus):
+    """Regression (N4): ~1/label_modulus of all labels used to map to 0.
+
+    A zero label scalar removes the per-client mask u * l entirely, so the
+    holder of any functional key could decode every client's plaintext.
+    """
+    import gmpy2 as gp
+
+    from pyfe4ai.utils.lwe_utils import label_scalar_from_hash
+
+    scalars = {
+        int(label_scalar_from_hash(gp.mpz(h), label_modulus))
+        for h in range(10 * label_modulus)
+    }
+    assert 0 not in scalars
+    assert len(scalars) == label_modulus - 1
+    assert all(abs(s) <= label_modulus // 2 for s in scalars)
+
+
+def test_labels_that_used_to_map_to_zero_still_decrypt(kg_config):
+    import gmpy2 as gp
+
+    from pyfe4ai.utils.crypto_utils import md5_hash
+
+    kg = MCFELWEKeyGenerator(kg_config)
+    kg.setup()
+    pp = kg.get_public_parameters()
+    p = gp.mpz(pp["p"])
+    # labels whose hash is 0 mod label_modulus were mapped to scalar 0 before
+    labels = [
+        lab
+        for lab in ("round-{}".format(i) for i in range(500))
+        if int(md5_hash(lab, p)) % kg_config["label_modulus"] == 0
+    ][:3]
+    assert labels
+
+    lst_nid = kg_config["lst_nid"]
+    dct_y = {nid: [1, 2] for nid in lst_nid}
+    dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
+    decryptor = MCFELWE({"id": "sid_0", "keys": {"pp": pp}})
+    for label in labels:
+        dct_x = {nid: [random.randint(-6, 6) for _ in range(2)] for nid in lst_nid}
+        dct_ct = {
+            nid: MCFELWE(
+                {"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}
+            ).encrypt(dct_x[nid], label)
+            for nid in lst_nid
+        }
+        expected = sum(
+            x * y for nid in lst_nid for x, y in zip(dct_x[nid], dct_y[nid])
+        )
+        assert decryptor.decrypt(dct_ct, dk, dct_y, label) == expected

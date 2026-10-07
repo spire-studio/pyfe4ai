@@ -132,3 +132,33 @@ def md5_hash(v: str, p: gp.mpz) -> gp.mpz:
             p: Prime modulus.
     """
     return gp.mpz(hashlib.md5(v.encode("utf-8")).hexdigest(), 16) % p
+
+
+def hash_to_qr_group(v: str, p: gp.mpz, index: int = 0, domain: str = "") -> gp.mpz:
+    """Hash a string into the subgroup of quadratic residues of ``Z_p^*``.
+
+    For a safe prime ``p = 2q + 1`` this is the prime-order-``q`` subgroup
+    used by the DDH schemes. The digest is expanded with SHAKE-256 to
+    ``bits(p) + 128`` bits (so the reduction mod ``p`` is statistically
+    close to uniform) and squared; the discrete logarithm of the result
+    with respect to any fixed generator is unknown, as required when the
+    hash is modelled as a random oracle into the group.
+
+        Args:
+            v: Input string.
+            p: Safe-prime modulus.
+            index: Output index, giving independent outputs for the same *v*.
+            domain: Domain-separation tag.
+    """
+    p = gp.mpz(p)
+    n_bytes = (int(p).bit_length() + 128 + 7) // 8
+    counter = 0
+    while True:
+        material = "|".join(
+            [domain, str(index), str(counter), str(len(v)), v]
+        ).encode("utf-8")
+        digest = hashlib.shake_256(material).digest(n_bytes)
+        h = gp.powmod(gp.mpz(int.from_bytes(digest, "big")) % p, 2, p)
+        if h > 1:
+            return h
+        counter += 1

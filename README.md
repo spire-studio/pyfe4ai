@@ -49,7 +49,8 @@ from pyfe4ai import SIFE, SIFEKeyGenerator
 x = [2, 1, 3]
 y = [4, 5, 6]
 
-# Key generation
+# Key generation. sec_param is the bit length of the DDH modulus, not a
+# security level: 128 keeps the demo fast but is NOT secure (use >= 2048).
 kg = SIFEKeyGenerator({"sec_param": 128, "eta": len(x)})
 kg.setup()
 pp = kg.get_public_parameters()
@@ -76,7 +77,7 @@ See `examples/sife_minimal.py` for the full runnable version.
 - **Quadratic FE** — SGP (secret-key) and Quad (public-key) quadratic functional encryption
 - **ML adapter** — `utils/ml_adapter.py` for encrypted linear inference and federated gradient aggregation
 - **Precision toolkit** — `utils/quantization.py` for float ↔ integer quantization with configurable bit-width
-- **Discrete-log solvers** — cached dlog table (default) with on-the-fly BSGS as optional backup in `utils/dlog_solver.py`
+- **Discrete-log solvers** — in-memory dlog table (default) with on-the-fly BSGS as optional backup in `utils/dlog_solver.py`
 - **NTT acceleration** — number-theoretic transform for Ring-LWE polynomial multiplication in `utils/ring_lwe_utils.py`
 - **Structured exceptions** — `FEError` hierarchy in `utils/exceptions.py`
 
@@ -86,18 +87,18 @@ See `examples/sife_minimal.py` for the full runnable version.
 |--------|---------------|----------|
 | **SIFE** (single-input) | DDH, DDH-Dynamic, LWE | [ABDP15](https://eprint.iacr.org/2015/017.pdf) (PKC '15) |
 | | Damgård-DDH, FullySec-LWE, Paillier | [ALS16](https://eprint.iacr.org/2016/011.pdf) (CRYPTO '16) |
-| | Ring-LWE | [BMMS21](https://eprint.iacr.org/2021/046.pdf) (ePrint) |
+| | Ring-LWE | [BMMS21](https://eprint.iacr.org/2021/046.pdf) (PKC '22) |
 | | FH-IPE *(pairing)* | [KLMMRW](https://eprint.iacr.org/2016/440.pdf) (SCN '18) |
-| | Partial-FH-IPE *(pairing)* | [Gay20](https://eprint.iacr.org/2020/093.pdf) (EUROCRYPT '20) |
+| | Partial-FH-IPE *(pairing)* | [Gay20](https://eprint.iacr.org/2020/093.pdf) (PKC '20) |
 | **MIFE** (multi-input) | DDH, DDH-Hybrid-α, Damgård-DDH, LWE, FullySec-LWE, Ring-LWE, Paillier, FH-IPE | [ACFGU18](https://eprint.iacr.org/2017/972.pdf) (CRYPTO '18) ¹ |
-| | FH-Multi-IPE *(pairing)* | [DOT18](https://eprint.iacr.org/2018/061.pdf) (ePrint) |
+| | FH-Multi-IPE *(pairing)* | [DOT18](https://eprint.iacr.org/2018/061.pdf) (PKC '18) |
 | **MCFE** (multi-client) | DDH, Damgård-DDH, LWE, FullySec-LWE, Ring-LWE, Paillier | [CDGPP18](https://eprint.iacr.org/2017/989.pdf) (ASIACRYPT '18) ¹ |
 | | FH-Multi-IPE *(pairing)* | CDGPP18 + [DOT18](https://eprint.iacr.org/2018/061.pdf) |
 | **Decentralized** | dMCFE-DDH | [ABKW19](https://eprint.iacr.org/2019/020.pdf) (PKC '19) |
 | | dMCFE-LWE, dMCFE-Ring-LWE, dMCFE-Paillier, dMCFE-FH-Multi-IPE | ABKW19 ¹ |
-| **Threshold** | tMIFE (DDH, LWE), tMCFE (DDH, LWE, Ring-LWE, FH-Multi-IPE) | [Xu+24](https://doi.org/10.1109/TDSC.2024.3354931) (IEEE TDSC '24) ² |
+| **Threshold** | tMIFE (DDH, LWE), tMCFE (DDH, LWE, Ring-LWE, FH-Multi-IPE) | [Xu+24](https://doi.org/10.1109/TDSC.2024.3350206) (IEEE TDSC '24) ² |
 | **Quadratic** | SGP (secret-key), Multi-Input SGP | [DSGPP18](https://eprint.iacr.org/2018/206.pdf) (ePrint) |
-| | Quad (public-key) | [Gay20](https://eprint.iacr.org/2020/093.pdf) (EUROCRYPT '20) |
+| | Quad (public-key) | [Gay20](https://eprint.iacr.org/2020/093.pdf) (PKC '20) |
 
 > ¹ Multi-input, multi-client, and decentralized schemes compose a
 > *framework paper* (ACFGU18 / CDGPP18 / ABKW19) with a per-slot
@@ -108,6 +109,10 @@ See `examples/sife_minimal.py` for the full runnable version.
 > ² Threshold variants add a Shamir secret-sharing layer on top of the
 > corresponding MIFE or MCFE scheme; there is no separate standalone paper
 > for each combination.
+
+> **⚠️ Several of these schemes have known security issues.** Read
+> [Known Issues / Security Notice](#known-issues--security-notice) before
+> relying on any privacy property.
 
 ## Repository Layout
 
@@ -120,7 +125,7 @@ See `examples/sife_minimal.py` for the full runnable version.
   - `utils/`: utility modules
     - `crypto_constants.py`, `crypto_utils.py`: group generation and constants
     - `lwe_utils.py`, `ring_lwe_utils.py`: LWE / Ring-LWE helpers with NTT
-    - `dlog_solver.py`: dlog table cache + BSGS discrete-log recovery
+    - `dlog_solver.py`: in-memory dlog table + BSGS discrete-log recovery
     - `ml_adapter.py`: ML integration (encrypted inference, FL aggregation)
     - `quantization.py`: float ↔ integer quantization toolkit
     - `exceptions.py`: `FEError` exception hierarchy
@@ -225,7 +230,11 @@ The schemes in the following files depend on
 - `pyfe4ai/schemes/mife/fh_ipe_pairing.py`
 - `pyfe4ai/schemes/mife/fh_multi_ipe_pairing.py`
 - `pyfe4ai/schemes/mcfe/fh_multi_ipe_pairing.py`
+- `pyfe4ai/schemes/mcfe/fh_multi_ipe_pairing_threshold.py`
+- `pyfe4ai/schemes/mcfe/fh_multi_ipe_pairing_decentralized.py`
 - `pyfe4ai/schemes/quadratic/sgp.py`
+- `pyfe4ai/schemes/quadratic/multi_input_sgp.py`
+- `pyfe4ai/schemes/quadratic/quad.py`
 
 `charm-crypto-framework` supports macOS, Linux, and Windows, but pairing-based
 setups may still require additional system libraries depending on the platform.
@@ -238,6 +247,30 @@ To run the pairing-enabled environment in Docker:
 docker build -f Dockerfile.pairing -t pyfe4ai-pairing .
 docker run --rm pyfe4ai-pairing
 ```
+
+## Known Issues / Security Notice
+
+The following problems are known and **not yet fixed**. The affected schemes
+compute correct results but do **not** provide the privacy their family name
+suggests; use them only for functionality and performance experiments.
+
+| Issue | Affected schemes | Consequence |
+|---|---|---|
+| Label enters only as a public scalar; per-client key components | MCFE `damgard_ddh`, `paillier`, `paillier_decentralized` (dMCFE-Paillier), `ddh_decentralized` (dMCFE-DDH), `ddh_threshold` (tMCFE-DDH) | The label mask is `u_i · H(ℓ)` with `H(ℓ)` a public MD5-derived scalar, and functional keys (for threshold: the combined partial decryptions) contain one component per client. Whoever holds a functional key can strip each client's mask and, from two ciphertexts of one client under two labels, solve for that client's plaintexts. For the Paillier variants (`paillier`, `paillier_decentralized`) the mask coefficient `u_i` is drawn from a small range (`\|u_i\| ≤ max(sec_param, bound_y·eta)`), so a single ciphertext suffices: the key holder recovers each client's `⟨x_i, y_i⟩` by brute-forcing `⟨u_i, y_i⟩`. |
+| LWE label masking cannot hide individual inputs | MCFE `lwe`, `lwe_decentralized`, `lwe_threshold`, `fullysec_lwe`, `ring_lwe`, `ring_lwe_decentralized`, `ring_lwe_threshold`, `fh_multi_ipe_pairing*` | Keys / partial decryptions are per client and an input is masked only by `u_i · ℓ` with a small fixed `u_i` and a public `ℓ`, so the key holder learns `x_i mod ℓ` exactly and `x_i` up to a few candidates per ciphertext. Labels no longer map to `ℓ = 0` (which revealed `x_i` outright), but **no value of `label_modulus` fixes this**: once `|ℓ| > 2·bound_x` a single ciphertext reveals `x_i` exactly. |
+| No noise flooding in LWE threshold decryption | tMCFE-LWE, tMIFE-LWE, tMCFE-Ring-LWE | Partial decryptions are exact linear functions of a server's key share: observing one server on about `lwe_n` ciphertexts recovers its share of `sk_y`. Combining also decodes each client separately, so the combiner learns per-client values. |
+| Toy default parameters | all | `sec_param` is a modulus bit length (default 128), not a security level; LWE dimensions default to 16–64. Both are far below any real security level. |
+| Unvalidated parameter cache in the working directory | all key generators | Parameters are written to and re-loaded from `./config/authority/...` without structural validation; a planted `param.json` (e.g. a 5-bit group) is accepted. Run only in a directory that nobody else can write to. The pairing dlog cache (`./config/crypto/...`) is likewise trusted if its generators match: a planted table gives wrong results and an inflated bound makes decryption loop for a very long time. |
+| Float fusion weights in `aggregate_gradients` | `utils/ml_adapter.py` | Float weights are quantised but the result is not rescaled (e.g. weights 0.5 give 100× the expected sum in decimal mode). Pass integer weights. |
+
+Fixed in v0.2.0 (see [`CHANGELOG.md`](CHANGELOG.md)): MCFE-DDH
+decryption for `eta ≥ 2`; MCFE-DDH re-implemented per CDGPP18 (group-element
+label hash, independent per-client keys, aggregated functional key);
+independent per-client keys in MIFE-DDH; DDH threshold sharing (1-based
+Shamir points over the group order, modular Lagrange coefficients, ≥ t share
+check, `eta ≥ 2`); `get_decryption_keys` of decentralized schemes raises
+instead of returning `NotImplementedError`; no more pickle-based dlog cache;
+pairing tests skip cleanly without charm-crypto.
 
 ## Disclaimer
 
@@ -269,7 +302,7 @@ preparation and will be added here once published):
   title   = {{PyFE4AI}: Python-based Functional Encryption
              for {AI} Security and Privacy},
   year    = {2026},
-  version = {0.1.0},
+  version = {0.2.0},
   license = {Apache-2.0},
   url     = {https://github.com/spire-studio/pyfe4ai}
 }

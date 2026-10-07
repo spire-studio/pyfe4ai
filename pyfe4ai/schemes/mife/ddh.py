@@ -61,18 +61,23 @@ class MIFEKeyGenerator(DDHKeyGeneratorBase):
     def setup(self) -> None:
         """Generate master secret key (``msk``) and master public key (``mpk``)."""
         vec_a = [1, _random(self.p, self.sec_param)]
-        vec_w = [
-            [_random(self.p, self.sec_param), _random(self.p, self.sec_param)]
-            for _ in range(self.eta)
-        ]
+        # every input slot (client) gets its own IPFE master key W_i, as in
+        # ACFGU18; a shared W would let one client unmask another's ciphertext
+        dct_w = {
+            nid: [
+                [_random(self.p, self.sec_param), _random(self.p, self.sec_param)]
+                for _ in range(self.dict_eta[nid])
+            ]
+            for nid in self.lst_nid
+        }
         dct_u = {
-            nid: [_random(self.p, self.sec_param) for _ in range(self.eta)]
+            nid: [_random(self.p, self.sec_param) for _ in range(self.dict_eta[nid])]
             for nid in self.lst_nid
         }
 
         g_a = [gp.powmod(self.g, a, self.p) for a in vec_a]
         self.mpk = {"g": self.g, "p": self.p}
-        self.msk = {"w": vec_w, "u": dct_u, "g_a": g_a}
+        self.msk = {"w": dct_w, "u": dct_u, "g_a": g_a}
 
         logger.info("MIFE setup - DONE.")
 
@@ -107,7 +112,7 @@ class MIFEKeyGenerator(DDHKeyGeneratorBase):
 
         _keys = {
             "g_a": [gp.digits(i) for i in self.msk["g_a"]],
-            "w": [[gp.digits(i[0]), gp.digits(i[1])] for i in self.msk["w"]],
+            "w": [[gp.digits(i[0]), gp.digits(i[1])] for i in self.msk["w"][nid]],
             "u": [gp.digits(i) for i in self.msk["u"][nid]],
         }
         return _keys
@@ -137,7 +142,7 @@ class MIFEKeyGenerator(DDHKeyGeneratorBase):
                 u_nid = self.msk["u"][nid]
                 w_fusion = gp.mpz(0)
                 for i in range(len(lst_fusion)):
-                    wi = self.msk["w"][i]
+                    wi = self.msk["w"][nid][i]
                     w_fusion += gp.mul(wi[0] + wi[1], gp.mpz(lst_fusion[i]))
                     z += gp.mul(u_nid[i], gp.mpz(lst_fusion[i]))
                 d[nid] = gp.digits(w_fusion)

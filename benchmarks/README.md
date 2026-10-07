@@ -26,6 +26,11 @@ scheme families in the repository.
   instantiations.
 - `benchmark_ndarray_helpers.py`: compares representative `ndarray` helper
   pipelines across `SIFE`, `FHMultiIPE`, and quadratic FE families.
+- `fl_path_coverage.py`: not a timing benchmark. Runs the ML-adapter FL path
+  (`encrypt_gradient` + `aggregate_gradients`) for every registry entry with
+  that variant's own test configuration and reports `usable` / `unusable`
+  (with the reason) / `unverified` (pairing entries without `charm-crypto`).
+  `--output json` for machine-readable output.
 
 ## Recommended Usage
 

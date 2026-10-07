@@ -4,6 +4,8 @@ import random
 import numpy as np
 import pytest
 
+pytest.importorskip("charm", reason="charm-crypto not installed")
+
 from pyfe4ai.schemes.quadratic.quad import QuadraticQuad
 from pyfe4ai.schemes.quadratic.quad import QuadraticQuadKeyGenerator
 from pyfe4ai.utils.crypto_constants import CryptoCONST

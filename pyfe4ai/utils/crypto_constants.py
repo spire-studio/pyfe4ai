@@ -44,7 +44,11 @@ class CryptoCONST(object):
     CT_STAGE_1 = "ct_original"
     CT_STAGE_2 = "ct_prime"
 
-    SEC_PARAM = 128  # security level
+    # Bit length of the generated group modulus for the DDH families (and the
+    # default Damgard ``modulus_length``). NOT a security level: a 128-bit
+    # prime offers no meaningful security; >= 2048 bits is needed for ~112-bit
+    # security. The small default keeps tests fast.
+    SEC_PARAM = 128
 
     SIFE_DEFAULT_ETA = 5
 

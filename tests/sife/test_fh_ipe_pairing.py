@@ -3,6 +3,8 @@ import random
 
 import pytest
 
+pytest.importorskip("charm", reason="charm-crypto not installed")
+
 from pyfe4ai.schemes.sife.fh_ipe_pairing import SIFEFHIPE
 from pyfe4ai.schemes.sife.fh_ipe_pairing import SIFEFHIPEKeyGenerator
 from pyfe4ai.utils.crypto_constants import CryptoCONST
