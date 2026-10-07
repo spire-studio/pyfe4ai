@@ -200,3 +200,130 @@ def decode_fullysec_lwe_inner_product(value: gp.mpz, k: gp.mpz, q: gp.mpz) -> in
     q_div_k = q // k
     q_div_2k = q // (k * 2)
     return int((d + q_div_2k) // q_div_k)
+
+
+#: Gaussian tail cut used in worst-case bounds: Pr[|N(0, s)| > 12 s] < 2^-100.
+GAUSSIAN_TAIL_CUT = 12
+
+_LOG2_4_3 = math.log2(4.0 / 3.0)
+
+
+def abmpsw20_lwe_parameters(
+    n_slots: int,
+    bound_x: int,
+    bound_y: int,
+    lwe_n: int,
+    stat_param: int,
+    security: str = "selective",
+) -> dict:
+    """Derive parameters of the ABMPSW20 LWE-based MCFE (SCN 2020, Fig. 4).
+
+    The paper's message and key spaces ``{0..P-1}`` and ``{0..V-1}`` are
+    replaced by the signed ranges ``|x| <= X`` and ``|y| <= Y``; the inner
+    product then lies in ``[-T, T]`` with ``T = n X Y`` and is encoded with
+    ``K = 2T + 1`` and decoded centred. The constraints of Appendix C.2/C.3
+    are then instantiated as:
+
+    * correctness, ``q0 > K (nV + 1)``: ``q0`` is the smallest power of two
+      ``>= 4 K (n Y + 1)`` (a factor 4 of slack, half of which is reserved
+      for the noise of threshold decryption);
+    * statistical step (Lemma 34/35), ``sigma >= 10 n P^2`` with
+      ``P = 2X + 1`` bounding ``||x^1 - x^0||``: ``sigma_t = 10 n P^2``;
+    * LWE noise of the proof, ``alpha' q >= sqrt(n0)``:
+      ``sigma_e = ceil(2 sqrt(n0))``;
+    * rounding absorbs ``t . e`` (Lemma 28 / game G2),
+      ``q >= q0 B n0^{omega(1)}``: ``B = m0 (c sigma_t)(c sigma_e)`` with the
+      tail cut ``c`` and ``n0^{omega(1)}`` instantiated as ``2^stat_param``;
+      ``q`` is the next prime;
+    * leftover hash lemma (Lemma 33), ``m0 log2(4/3) >= log2 q + 2 kappa``
+      (selective) or ``>= log2 q + 2 kappa + 4 n log2 P`` (adaptive).
+
+    ``m0`` and ``q`` depend on each other and are iterated to a fixed point.
+    The LWE dimension ``n0`` is taken as given; nothing here estimates the
+    concrete hardness of LWE(n0, q, sigma_e).
+
+        Args:
+            n_slots: Total number of slots ``n`` (clients x coordinates).
+            bound_x: Plaintext bound ``X``.
+            bound_y: Weight bound ``Y``.
+            lwe_n: LWE secret dimension ``n0``.
+            stat_param: Statistical security parameter ``kappa``.
+            security: ``"selective"`` or ``"adaptive"`` (choice of ``m0``).
+
+        Returns:
+            Dict with integer entries ``q``, ``q0``, ``K``, ``delta``
+            (``floor(q / K)``), ``bound_ip`` (``T``), ``n0``, ``m0``,
+            ``sigma_t``, ``sigma_e`` and ``B``.
+    """
+    if security not in ("selective", "adaptive"):
+        raise ValueError("security must be 'selective' or 'adaptive'")
+    if min(n_slots, bound_x, bound_y, lwe_n, stat_param) < 1:
+        raise ValueError("all parameters must be positive")
+    bound_ip = n_slots * bound_x * bound_y
+    k_mod = 2 * bound_ip + 1
+    p_range = 2 * bound_x + 1
+    q0 = 1 << (4 * k_mod * (n_slots * bound_y + 1) - 1).bit_length()
+    sigma_t = 10 * n_slots * p_range * p_range
+    sigma_e = math.ceil(2 * math.sqrt(lwe_n))
+    extra = 4 * n_slots * math.log2(p_range) if security == "adaptive" else 0.0
+
+    m0 = 1
+    while True:
+        b_bound = m0 * (GAUSSIAN_TAIL_CUT * sigma_t) * (GAUSSIAN_TAIL_CUT * sigma_e)
+        q = gp.next_prime(gp.mpz(q0) * b_bound << stat_param)
+        m0_req = math.ceil((int(q).bit_length() + 2 * stat_param + extra) / _LOG2_4_3)
+        if m0_req <= m0:
+            break
+        m0 = m0_req
+    assert q > n_slots * p_range * p_range  # Lemma 33: n P^2 < q
+    return {
+        "q": int(q),
+        "q0": q0,
+        "K": k_mod,
+        "delta": int(q) // k_mod,
+        "bound_ip": bound_ip,
+        "n0": lwe_n,
+        "m0": m0,
+        "sigma_t": sigma_t,
+        "sigma_e": sigma_e,
+        "B": b_bound,
+    }
+
+
+def round_to_q0(value, q, q0) -> gp.mpz:
+    """Rounding map ``Z_q -> Z_q0``: ``round((q0 / q) * (value mod q)) mod q0``.
+
+        Args:
+            value: Integer (reduced mod ``q`` first).
+            q: Large modulus.
+            q0: Small modulus.
+    """
+    q = gp.mpz(q)
+    q0 = gp.mpz(q0)
+    v = gp.mpz(value) % q
+    return ((2 * q0 * v + q) // (2 * q)) % q0
+
+
+def decode_rounded_inner_product(mu_prime, q, q0, delta, bound_ip) -> int | None:
+    """Decode ``mu' ~ (q0 / q) * delta * mu (mod q0)`` to the signed ``mu``.
+
+    Returns the integer ``mu`` closest to ``mu' q / (q0 delta)`` after
+    centring ``mu'`` modulo ``q0``, or ``None`` if ``|mu| > bound_ip``.
+
+        Args:
+            mu_prime: Value modulo ``q0``.
+            q: Large modulus.
+            q0: Small modulus.
+            delta: Encoding factor ``floor(q / K)``.
+            bound_ip: Bound ``T`` on ``|mu|``.
+    """
+    q0 = gp.mpz(q0)
+    mu_c = gp.mpz(mu_prime) % q0
+    if mu_c > q0 // 2:
+        mu_c -= q0
+    num = mu_c * gp.mpz(q)
+    den = q0 * gp.mpz(delta)
+    mu = (2 * num + den) // (2 * den)
+    if abs(mu) > bound_ip:
+        return None
+    return int(mu)
