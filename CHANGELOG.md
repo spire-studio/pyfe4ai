@@ -8,7 +8,9 @@ compatibility).
 ## [0.2.0] — 2026-10-07
 
 Correctness and security fixes. **Not compatible with v0.1.0 keys or
-ciphertexts for MCFE-DDH and the DDH threshold schemes.** Several multi-client
+ciphertexts for MCFE-DDH and the DDH threshold schemes; ciphertexts of the
+label-based LWE / Ring-LWE / FH-Multi-IPE MCFE schemes produced by v0.1.0 do
+not decrypt correctly with v0.2.0 (label scalar mapping changed).** Several multi-client
 schemes still have known privacy issues — read
 [Known Issues / Security Notice](README.md#known-issues--security-notice)
 before using them.
@@ -20,9 +22,9 @@ before using them.
   subgroup), every client slot has an independent key, and the functional key
   is the aggregate `d = Σ y_i · s_i`. Previously the label entered as a public
   MD5 scalar and keys carried per-client components, so a functional-key holder
-  could recover an individual client's plaintexts.
-- MCFE-DDH ndarray helpers derive a distinct label per element, so equal-label
-  ciphertexts no longer leak differences between elements.
+  could recover an individual client's plaintexts. Because CDGPP18 ciphertexts
+  are deterministic per label, the ndarray helpers derive a distinct label per
+  element.
 - **MIFE-DDH**: every input slot now has its own IPFE master key; previously all
   clients shared `w` / `g_a` and one client could unmask another's ciphertext.
 - **DDH threshold** (tMIFE-DDH, tMCFE-DDH): Shamir share points start at 1 and
@@ -33,16 +35,16 @@ before using them.
 - Discrete-log tables for integer groups are built in memory and no longer
   loaded from disk (the pickle-based cache in the working directory could run
   arbitrary code).
-- LWE-family label scalars never map to 0 (about 10% of labels used to remove
-  the mask entirely). The structural leakage of LWE label masking remains; see
+- LWE-family label scalars never map to 0 (about 1 in `label_modulus` labels,
+  12.5% with the default of 8, used to remove the mask entirely). The structural leakage of LWE label masking remains; see
   Known Issues.
 
 ### Fixed
 
 - MCFE-DDH decryption for `eta ≥ 2` (returned `None`).
 - DDH threshold Lagrange coefficients are computed modulo the group order
-  instead of with float division and truncation (subsets without `sid_0`
-  failed); `setup` no longer raises `IndexError` and combining no longer
+  instead of with float division and truncation (enrolled subsets with
+  non-integer coefficients, e.g. `{sid_1, sid_3}`, failed); `setup` no longer raises `IndexError` and combining no longer
   hard-codes divisors for `eta ≥ 2`.
 - `get_decryption_keys` of the five decentralized MCFE schemes raises
   `NotImplementedError` instead of returning the exception class; the ML
@@ -53,9 +55,20 @@ before using them.
 ### Changed (breaking)
 
 - MCFE-DDH formats: `sk = {"s"}`, `dk = {"d": [d0, d1]}`, `ct = {"c"}`.
-- MCFE-DDH ndarray helpers use per-element derived labels.
+- MCFE-DDH ndarray helpers use per-element derived labels
+  (`json.dumps([label, layer, index])`).
+- MCFE-DDH `get_decryption_keys` raises `FEValidationError` on an unknown
+  client id instead of silently skipping it; `decrypt` validates the length of
+  `d`, the ciphertext range, and that ciphertext and weight lengths match.
 - Threshold `L()` takes a `modulus` argument; partial decryptions carry `sid`
   and `lst_sid_enrolled`, which `combine_decrypt` validates.
+- LWE label scalar mapping changed from `h mod M` to `(h mod (M − 1)) + 1`
+  (centered, never 0), so v0.1.0 ciphertexts of the label-based LWE /
+  Ring-LWE / FH-Multi-IPE MCFE schemes no longer decrypt; keys are unaffected.
+  `label_modulus < 2` raises `FEValidationError`.
+- `dlog_solver.load_or_build_dlog_table` ignores its `filepath` argument:
+  integer-group tables are no longer read from or written to `./config/crypto`,
+  and existing cache files there are ignored.
 
 ### Added
 
