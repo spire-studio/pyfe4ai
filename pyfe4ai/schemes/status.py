@@ -65,7 +65,7 @@ _LABEL_MASK = (
     "can strip the mask and learn individual inputs"
 )
 _SMALL_DCR_KEYS = (
-    "; secret keys are drawn from |s| <= max(sec_param, bound_y * eta) and "
+    "; secret keys are drawn from [-B, B] with B = max(sec_param, bound_y * eta) and "
     "can be brute-forced from public data"
 )
 

@@ -35,8 +35,8 @@ Key simplifications relative to the papers:
     the label enters as a public scalar times a fixed per-client secret and
     keys / partial decryptions are per client: the functional-key holder can
     strip the mask and learn individual inputs; secret keys are drawn from
-    |s| <= max(sec_param, bound_y * eta) and can be brute-forced from public
-    data. Use only for functionality or performance experiments.
+    [-B, B] with B = max(sec_param, bound_y * eta) and can be brute-forced
+    from public data. Use only for functionality or performance experiments.
 """
 
 from __future__ import annotations

@@ -202,7 +202,8 @@ def decode_fullysec_lwe_inner_product(value: gp.mpz, k: gp.mpz, q: gp.mpz) -> in
     return int((d + q_div_2k) // q_div_k)
 
 
-#: Gaussian tail cut used in worst-case bounds: Pr[|N(0, s)| > 12 s] < 2^-100.
+#: Gaussian tail cut used in worst-case bounds: a Gaussian sample exceeds
+#: 12 standard deviations in absolute value with probability below 2^-100.
 GAUSSIAN_TAIL_CUT = 12
 
 _LOG2_4_3 = math.log2(4.0 / 3.0)
