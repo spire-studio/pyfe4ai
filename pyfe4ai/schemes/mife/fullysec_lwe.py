@@ -16,6 +16,11 @@ Fully Secure LWE-Based Multi-Input Inner-Product Functional Encryption
 * setting:  Integer based
 * note:     research-oriented Python prototype aligned with the crypto-ipfe API
 
+.. warning::
+    Known-insecure (mife/fullysec_lwe, see pyfe4ai.schemes.status): no ACFGU18
+    one-time pad and one key component per client: the functional-key holder
+    learns every client's <x_i, y_i>. Use only for functionality or
+    performance experiments.
 """
 
 from __future__ import annotations

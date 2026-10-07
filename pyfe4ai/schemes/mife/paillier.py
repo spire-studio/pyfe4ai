@@ -17,6 +17,12 @@ Paillier-Based Multi-Input Inner-Product Functional Encryption
 * note:     research-oriented Python prototype aligned with the existing
             crypto-ipfe API style
 
+.. warning::
+    Known-insecure (mife/paillier, see pyfe4ai.schemes.status): no ACFGU18 one-
+    time pad and one key component per client: the functional-key holder
+    learns every client's <x_i, y_i>; secret keys are drawn from |s| <=
+    max(sec_param, bound_y * eta) and can be brute-forced from public data.
+    Use only for functionality or performance experiments.
 """
 
 from __future__ import annotations

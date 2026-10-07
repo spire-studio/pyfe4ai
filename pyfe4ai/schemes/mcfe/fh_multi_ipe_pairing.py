@@ -18,6 +18,12 @@ Function-Hiding Multi-Client Inner-Product Encryption over Pairings
 * note:     research-oriented Python prototype aligned with the existing
             crypto-ipfe API style
 
+.. warning::
+    Known-insecure (mcfe/fh_multi_ipe_pairing, see pyfe4ai.schemes.status): the
+    label enters as a public scalar times a fixed per-client secret and keys
+    / partial decryptions are per client: the functional-key holder can
+    strip the mask and learn individual inputs. Use only for functionality
+    or performance experiments.
 """
 
 from __future__ import annotations

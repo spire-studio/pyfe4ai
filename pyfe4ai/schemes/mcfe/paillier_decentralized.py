@@ -30,6 +30,13 @@ Key simplifications relative to the papers:
 * type:     public-key encryption
 * setting:  Integer based
 
+.. warning::
+    Known-insecure (mcfe/paillier_decentralized, see pyfe4ai.schemes.status):
+    the label enters as a public scalar times a fixed per-client secret and
+    keys / partial decryptions are per client: the functional-key holder can
+    strip the mask and learn individual inputs; secret keys are drawn from
+    |s| <= max(sec_param, bound_y * eta) and can be brute-forced from public
+    data. Use only for functionality or performance experiments.
 """
 
 from __future__ import annotations

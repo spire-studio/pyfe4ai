@@ -15,6 +15,12 @@ Decentralized LWE-Based Multi-Client Inner-Product Functional Encryption
 * setting:  Integer based
 * note:     research prototype aligned with the existing crypto-ipfe API
 
+.. warning::
+    Known-insecure (mcfe/lwe_decentralized, see pyfe4ai.schemes.status): the
+    label enters as a public scalar times a fixed per-client secret and keys
+    / partial decryptions are per client: the functional-key holder can
+    strip the mask and learn individual inputs. Use only for functionality
+    or performance experiments.
 """
 
 from __future__ import annotations

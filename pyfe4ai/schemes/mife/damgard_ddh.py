@@ -17,6 +17,11 @@ Damgard-Based Multi-Input Inner-Product Functional Encryption
 * note:     research-oriented Python prototype aligned with the existing
             crypto-ipfe API style
 
+.. warning::
+    Known-insecure (mife/damgard, see pyfe4ai.schemes.status): no ACFGU18 one-
+    time pad and one key component per client: the functional-key holder
+    learns every client's <x_i, y_i>. Use only for functionality or
+    performance experiments.
 """
 
 from __future__ import annotations

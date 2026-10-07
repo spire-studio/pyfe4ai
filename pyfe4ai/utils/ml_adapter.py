@@ -30,6 +30,7 @@ from typing import Any
 
 import numpy as np
 
+from pyfe4ai.schemes.status import get_scheme_status
 from pyfe4ai.utils.quantization import QuantizationConfig
 
 logger = logging.getLogger(__name__)
@@ -343,6 +344,8 @@ class FESchemeWrapper:
         self.keygen_config = dict(keygen_config)
         self.qconfig = QuantizationConfig(precision=precision, mode=qmode)
         self.has_label = self.scheme_type in _LABEL_SCHEMES
+        #: Review status of the scheme (see :mod:`pyfe4ai.schemes.status`).
+        self.status = get_scheme_status(*key)
 
         mod_path, kg_cls_name, crypto_cls_name = _SCHEME_REGISTRY[key]
         mod = importlib.import_module(mod_path)

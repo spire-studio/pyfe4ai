@@ -12,6 +12,12 @@ Threshold Function-Hiding Multi-Client Inner-Product Encryption over Pairings
             The current threshold layer shares the label-correction component,
             while reusing the full FHMultiIPE inner decryption key per server.
 
+.. warning::
+    Known-insecure (mcfe/fh_multi_ipe_pairing_threshold, see
+    pyfe4ai.schemes.status): the label enters as a public scalar times a
+    fixed per-client secret and keys / partial decryptions are per client:
+    the functional-key holder can strip the mask and learn individual
+    inputs. Use only for functionality or performance experiments.
 """
 
 from __future__ import annotations

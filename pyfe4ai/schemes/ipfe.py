@@ -6,6 +6,7 @@ import os
 from abc import ABC, abstractmethod
 from os import path
 
+from pyfe4ai.schemes.status import warn_if_known_insecure
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.exceptions import FEKeyError
 
@@ -78,6 +79,7 @@ class IPFEAbsKeyGenerator(ABC):
                 config: Scheme configuration dict.
         """
         super().__init__()
+        warn_if_known_insecure(type(self).__module__)
         self.sec_param = config.get("sec_param", CryptoCONST.SEC_PARAM)
         self.n = config.get("n", None)
         self.s = config.get("s", None)

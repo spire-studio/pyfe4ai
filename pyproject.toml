@@ -65,6 +65,9 @@ pyfe4ai = ["config.yaml", "py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# known-insecure schemes warn on every key generator; tests/test_scheme_status.py
+# checks the warning itself
+filterwarnings = ["ignore::pyfe4ai.utils.exceptions.FESecurityWarning"]
 markers = [
   "core: core FE/IPFE coverage intended for the staged core-only release lane",
   "extended: non-core pairing-heavy or quadratic FE coverage kept outside the core-only release lane",

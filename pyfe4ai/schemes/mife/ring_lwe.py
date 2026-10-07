@@ -16,6 +16,11 @@ Ring-LWE-Based Multi-Input Inner-Product Functional Encryption
 * setting:  Integer based
 * note:     research prototype with SIMD-style matrix encryption
 
+.. warning::
+    Known-insecure (mife/ring_lwe, see pyfe4ai.schemes.status): no ACFGU18 one-
+    time pad and one key component per client: the functional-key holder
+    learns every client's <x_i, y_i>. Use only for functionality or
+    performance experiments.
 """
 
 from __future__ import annotations

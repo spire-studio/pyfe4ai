@@ -11,6 +11,12 @@ Threshold LWE-Based Multi-Input Inner-Product Functional Encryption
 * setting:  Integer based
 * note:     research prototype aligned with the existing crypto-ipfe API
 
+.. warning::
+    Known-insecure (mife/lwe_threshold, see pyfe4ai.schemes.status): no ACFGU18
+    one-time pad and one key component per client: the functional-key holder
+    learns every client's <x_i, y_i>; partial decryptions are exact linear
+    functions of the server's key share (no flooding). Use only for
+    functionality or performance experiments.
 """
 
 from __future__ import annotations

@@ -16,6 +16,12 @@ Ring-LWE-Based Multi-Client Inner-Product Functional Encryption
 * setting:  Integer based
 * note:     research prototype with SIMD-style matrix encryption and labels
 
+.. warning::
+    Known-insecure (mcfe/ring_lwe, see pyfe4ai.schemes.status): the label enters
+    as a public scalar times a fixed per-client secret and keys / partial
+    decryptions are per client: the functional-key holder can strip the mask
+    and learn individual inputs. Use only for functionality or performance
+    experiments.
 """
 
 from __future__ import annotations
