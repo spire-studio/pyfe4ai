@@ -109,8 +109,8 @@ def flooding_noise(sigma: int, rng=None) -> int:
 
         Args:
             sigma: Width.
-            rng: Bit source (default: OS CSPRNG); an :class:`XofRandom` makes
-                the sample a deterministic function of its seed.
+            rng: Bit source (default: OS CSPRNG).
+            An :class:`XofRandom` makes the sample a function of its seed.
     """
     bound = GAUSSIAN_TAIL_CUT * sigma
     while True:

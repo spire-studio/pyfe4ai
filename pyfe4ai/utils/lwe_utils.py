@@ -240,6 +240,10 @@ def abmpsw20_lwe_parameters(
       (selective) or ``>= log2 q + 2 kappa + 4 n log2 P`` (adaptive).
 
     ``m0`` and ``q`` depend on each other and are iterated to a fixed point.
+    In the adaptive setting ``m0`` grows linearly in ``n log2 P`` (about
+    4,600 for 100 slots with ``X = Y = 100``, ``kappa = 128``), and every
+    label costs ``n0 + m0`` hash outputs and inner-product terms, so large
+    ndarray workloads (one label per element) become slow.
     The LWE dimension ``n0`` is taken as given; nothing here estimates the
     concrete hardness of LWE(n0, q, sigma_e).
 
@@ -276,7 +280,8 @@ def abmpsw20_lwe_parameters(
         if m0_req <= m0:
             break
         m0 = m0_req
-    assert q > n_slots * p_range * p_range  # Lemma 33: n P^2 < q
+    if not q > n_slots * p_range * p_range:  # Lemma 33: n P^2 < q
+        raise ValueError("derived q violates n P^2 < q")
     return {
         "q": int(q),
         "q0": q0,

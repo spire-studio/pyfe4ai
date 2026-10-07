@@ -33,7 +33,20 @@ Issues* before relying on any privacy property.
   combiner could strip each client's MD5-scalar label mask.
 - **tMCFE-LWE** is ABMPSW20 Fig. 4 with a Shamir-shared key and
   noise-flooded partial decryptions (each is an LWE sample under the
-  server's share instead of an exact linear function of it).
+  server's share instead of an exact linear function of it). The noise is
+  derived from a per-server secret and `(label, enrolled set)`, so repeated
+  requests cannot be averaged. The threshold layer is our own, so the
+  scheme's status is *experimental*.
+- **Paillier parameter caches** (SIFE, MIFE, MCFE, dMCFE) no longer store
+  the primes `p, q`: the factorization decrypts SIFE ciphertexts directly
+  and MCFE ciphertexts from two labels. Caches written by earlier versions
+  are regenerated with a fresh `N`.
+- **Labels**: ndarray element labels were plain JSON strings, so a chosen
+  user label could reproduce an element's label (two ciphertexts under one
+  label leak `x - x'`); user and element labels are now hashed in disjoint
+  domains (`pyfe4ai.schemes.mcfe.labels`).
+- Threshold key shares record a digest of their fusion weights and servers
+  refuse ciphertexts presented under other weights.
 - **SIFE-Paillier** samples keys from `D_{Z,sigma}`, `sigma > sqrt(kappa)
   N^{5/2}` (ALS16); keys used to be drawn from a range small enough to
   brute-force from the public key.
@@ -45,10 +58,15 @@ Issues* before relying on any privacy property.
 ### Added
 
 - `pyfe4ai.schemes.status` (`SchemeStatus`, `get_scheme_status`, exported
-  from `pyfe4ai`): status (`reviewed` / `unreviewed` / `known-insecure`),
-  fidelity, reference and issue for all 39 registered schemes; key
-  generators of known-insecure schemes emit `pyfe4ai.FESecurityWarning`;
-  `FESchemeWrapper.status`. A test keeps the README table in sync.
+  from `pyfe4ai`): status (`reviewed` / `experimental` / `unreviewed` /
+  `known-insecure`), fidelity, reference and issue for all 39 registered
+  schemes; key generators and crypto objects of known-insecure schemes emit
+  `pyfe4ai.FESecurityWarning`; `FESchemeWrapper.status`;
+  `markdown_table()` renders the README table, which a test keeps in sync.
+- `dlog_bound` crypto option for MCFE-DDH and tMCFE-DDH (results beyond the
+  default `10^(precision + 2)` decrypted to `None`).
+- `XofRandom` (SHAKE-256 bit source for derandomised sampling) and an `rng`
+  argument for `discrete_gaussian_bigint`.
 - `discrete_gaussian_bigint` (arbitrary-width rounded Gaussian),
   `hash_to_zn2_star`, `hash_to_zq_vector`, `abmpsw20_lwe_parameters`,
   `round_to_q0`, `decode_rounded_inner_product`.
@@ -64,11 +82,14 @@ Issues* before relying on any privacy property.
   `h` in the public parameters.
 - tMCFE-DDH: `sk = {s}`, `dk = {d, sid, lst_sid}` (label-independent),
   `ct = {c, label}`, partial decryption `{c_y, u_d, label, sid,
-  lst_sid_enrolled}`. tMCFE-LWE: `dk = {sk_y, sid, lst_sid}`, partial
-  decryption `{w, c_y, label, sid, lst_sid_enrolled}`, validated like the DDH
-  threshold scheme.
-- The ndarray helpers of all reviewed MCFE schemes encrypt each element
-  under its own derived label (one ciphertext per slot and label).
+  lst_sid_enrolled}`; key shares also carry `weights_id`. tMCFE-LWE:
+  `dk = {sk_y, sid, lst_sid, weights_id, noise_key}`, partial decryption
+  `{w, c_y, label, sid, lst_sid_enrolled}`, validated like the DDH threshold
+  scheme. The `label` fields hold the encoded label.
+- The ndarray helpers of all rebuilt MCFE schemes encrypt each element
+  under its own `ElementLabel` (one ciphertext per slot and label); labels
+  are hashed through `encode_label`, which also changes MCFE-DDH
+  ciphertexts relative to v0.2.0.
 - Decrypting under a wrong label returns `None` for MCFE-Paillier and
   MCFE-Damgard and an arbitrary in-range value for the LWE schemes.
 

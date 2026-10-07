@@ -5,7 +5,10 @@ Each ``(family, variant)`` of the ML-adapter registry has a
 
 ``status``
     ``"reviewed"``: the implementation was checked against the cited
-    construction and no security defect is known. ``"unreviewed"``: not yet
+    construction and no security defect is known. ``"experimental"``:
+    implemented and checked here, but the construction or its security
+    argument is our own rather than a published one; no defect is known.
+    ``"unreviewed"``: not yet
     checked against its paper; no defect is known, but none was looked for
     systematically either. ``"known-insecure"``: a concrete privacy defect is
     known (see ``issue``); the scheme computes correct results but must only
@@ -32,6 +35,7 @@ from dataclasses import dataclass
 from pyfe4ai.utils.exceptions import FESecurityWarning
 
 REVIEWED = "reviewed"
+EXPERIMENTAL = "experimental"
 UNREVIEWED = "unreviewed"
 KNOWN_INSECURE = "known-insecure"
 
@@ -131,7 +135,8 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     ("mcfe", "ddh"): SchemeStatus(_S + "mcfe.ddh", REVIEWED, FAITHFUL, "CDGPP18"),
     ("mcfe", "lwe"): SchemeStatus(
         _S + "mcfe.lwe", REVIEWED, ADAPTED, "ABMPSW20 Fig. 4, selective parameters",
-        note="signed messages and weights (K = 2nXY + 1, centred decoding)",
+        note="signed messages and weights (K = 2nXY + 1, centred decoding); "
+        "t is a rounded continuous Gaussian",
     ),
     ("mcfe", "paillier"): SchemeStatus(
         _S + "mcfe.paillier", REVIEWED, FAITHFUL, "ABMPSW20 Fig. 3",
@@ -147,7 +152,8 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     ),
     ("mcfe", "fullysec_lwe"): SchemeStatus(
         _S + "mcfe.fullysec_lwe", REVIEWED, ADAPTED, "ABMPSW20 Fig. 4, adaptive parameters",
-        note="signed messages and weights (K = 2nXY + 1, centred decoding)",
+        note="signed messages and weights (K = 2nXY + 1, centred decoding); "
+        "t is a rounded continuous Gaussian; m0 grows with n log2(2X + 1)",
     ),
     ("mcfe", "fh_multi_ipe_pairing"): SchemeStatus(
         _S + "mcfe.fh_multi_ipe_pairing", KNOWN_INSECURE, AD_HOC, "CDGPP18-style + DOT18",
@@ -163,14 +169,16 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     ),
     ("mcfe", "ddh_threshold"): SchemeStatus(
         _S + "mcfe.ddh_threshold", REVIEWED, ADAPTED, "CDGPP18 + Shamir (TAPFed setting)",
-        note="the aggregated key is Shamir-shared; any t servers interpolate in the exponent",
+        note="the aggregated key is Shamir-shared; any t servers interpolate in the "
+        "exponent (threshold-ElGamal style)",
     ),
     ("mcfe", "ddh_decentralized"): SchemeStatus(
         _S + "mcfe.ddh_decentralized", KNOWN_INSECURE, AD_HOC, "ABKW19-style", issue=_LABEL_MASK
     ),
     ("mcfe", "lwe_threshold"): SchemeStatus(
-        _S + "mcfe.lwe_threshold", REVIEWED, ADAPTED, "ABMPSW20 Fig. 4 + Shamir + flooding",
-        note="the threshold layer and its LWE-based flooding argument are not from a paper",
+        _S + "mcfe.lwe_threshold", EXPERIMENTAL, AD_HOC, "ABMPSW20 Fig. 4 + Shamir + flooding",
+        note="MCFE layer as published; the threshold layer and its LWE-based "
+        "flooding argument are our own (see the module docstring)",
     ),
     ("mcfe", "lwe_decentralized"): SchemeStatus(
         _S + "mcfe.lwe_decentralized", KNOWN_INSECURE, AD_HOC, "ABKW19-style + LWE",
@@ -227,3 +235,23 @@ def warn_if_known_insecure(module: str, stacklevel: int = 3) -> None:
             FESecurityWarning,
             stacklevel=stacklevel,
         )
+
+
+def markdown_table() -> str:
+    """Render :data:`SCHEME_STATUS` as the README *Scheme Status* table."""
+    lines = [
+        "| Scheme | Status | Fidelity | Construction | Notes |",
+        "|---|---|---|---|---|",
+    ]
+    for (family, variant), entry in SCHEME_STATUS.items():
+        note = (
+            "see [Known Issues](#known-issues--security-notice)"
+            if entry.status == KNOWN_INSECURE
+            else entry.note
+        )
+        lines.append(
+            "| `{}/{}` | {} | {} | {} | {} |".format(
+                family, variant, entry.status, entry.fidelity, entry.reference, note
+            )
+        )
+    return "\n".join(lines)

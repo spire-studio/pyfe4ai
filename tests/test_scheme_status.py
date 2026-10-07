@@ -18,11 +18,13 @@ def test_every_registered_scheme_has_a_status():
     for key, (module, _, _) in _SCHEME_REGISTRY.items():
         entry = st.SCHEME_STATUS[key]
         assert entry.module == module
-        assert entry.status in (st.REVIEWED, st.UNREVIEWED, st.KNOWN_INSECURE)
+        assert entry.status in (st.REVIEWED, st.EXPERIMENTAL, st.UNREVIEWED, st.KNOWN_INSECURE)
         assert entry.fidelity in (st.FAITHFUL, st.ADAPTED, st.AD_HOC, st.UNKNOWN)
         assert bool(entry.issue) == (entry.status == st.KNOWN_INSECURE)
         if entry.status == st.REVIEWED:
             assert entry.fidelity in (st.FAITHFUL, st.ADAPTED)
+        if entry.status == st.EXPERIMENTAL:
+            assert entry.note
         if entry.fidelity == st.ADAPTED:
             assert entry.note
 
@@ -32,6 +34,13 @@ def test_known_insecure_key_generator_warns():
 
     with pytest.warns(FESecurityWarning, match="mife/lwe"):
         MIFELWEKeyGenerator({"n": 2, "lwe_n": 8, "bound_x": 2, "bound_y": 2})
+
+
+def test_known_insecure_crypto_object_warns():
+    from pyfe4ai.schemes.mife.lwe import MIFELWE
+
+    with pytest.warns(FESecurityWarning, match="mife/lwe"):
+        MIFELWE({"keys": {"pp": {"A": [["1"]]}}})
 
 
 def test_reviewed_key_generator_does_not_warn():

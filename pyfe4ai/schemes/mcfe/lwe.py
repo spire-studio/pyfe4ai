@@ -16,7 +16,9 @@ total number of slots, ``Delta = floor(q / K)``):
 
 * Setup:    ``H: labels -> Z_q^{n0 + m0}`` full-domain hash.
 * KeyGen:   ``Z_{i,j} = (s_{i,j}, t_{i,j})`` with ``s <- U(Z_q^{n0})`` and
-            ``t <- D_{Z^{m0}, sigma_t}``.
+            ``t <- D_{Z^{m0}, sigma_t}`` (realised as a rounded continuous
+            Gaussian; the statistical step of the proof, Lemma 34, is stated
+            for a true discrete Gaussian).
 * Encrypt:  ``c_{i,j} = round_q0( Z_{i,j} . H(l) + Delta * x_{i,j} )``.
 * KeyDer:   ``sk_y = sum y_{i,j} Z_{i,j}`` (one aggregated vector, kept mod q).
 * Decrypt:  ``mu' = sum y_{i,j} c_{i,j} - round_q0( sk_y . H(l) ) mod q0``;
@@ -97,8 +99,8 @@ class MCFELWEKeyGenerator(IPFEAbsKeyGenerator):
         super().__init__(config, **kwargs)
         self.eta = config.get("eta", CryptoCONST.MCFE_ETA)
         self.lwe_n = int(config.get("lwe_n", 32))
-        self.bound_x = int(config.get("bound_x", 8))
-        self.bound_y = int(config.get("bound_y", 8))
+        self.bound_x = int(config.get("bound_x", 20))
+        self.bound_y = int(config.get("bound_y", 20))
         self.stat_param = int(config.get("stat_param", _DEFAULT_STAT_PARAM))
         if not self.n:
             raise FEKeyError("need to provide number of clients")

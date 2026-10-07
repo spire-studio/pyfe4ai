@@ -152,6 +152,7 @@ class IPFEAbsCrypto(ABC):
                 config: Scheme configuration dict.
         """
         super().__init__()
+        warn_if_known_insecure(type(self).__module__)
         self.keys = config.get("keys", None)
         if not self.keys:
             raise FEKeyError("no keys provided to initialize crypto system")

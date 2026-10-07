@@ -124,20 +124,26 @@ See `examples/sife_minimal.py` for the full runnable version.
 Every registered scheme carries a review status, kept in
 [`pyfe4ai/schemes/status.py`](pyfe4ai/schemes/status.py) and available at
 runtime as `pyfe4ai.get_scheme_status(family, variant)` (and
-`FESchemeWrapper(...).status`). Instantiating the key generator of a
-known-insecure scheme emits a `pyfe4ai.FESecurityWarning`.
+`FESchemeWrapper(...).status`). Instantiating a key generator or crypto
+object of a known-insecure scheme emits a `pyfe4ai.FESecurityWarning`. The
+table below is rendered by `pyfe4ai.schemes.status.markdown_table()` and a
+test keeps it in sync.
 
 - **reviewed**: checked against the cited construction; no defect known.
   *faithful* = the published construction as written; *adapted* = the
   published construction with the documented deviation in the last column.
+- **experimental**: implemented and checked here, but the construction or
+  its security argument is our own (*ad-hoc*) rather than published; no
+  defect known.
 - **unreviewed**: not yet checked against its paper; no defect is known,
   but none was looked for systematically either.
 - **known-insecure**: a concrete privacy defect is known; the scheme computes
   correct results but provides no meaningful privacy. Use it only for
   functionality or performance experiments.
 
-Currently 8 reviewed, 16 unreviewed and
-15 known-insecure out of 39 registered schemes.
+Currently 7 reviewed, 1 experimental,
+16 unreviewed and 15 known-insecure out of
+39 registered schemes.
 
 | Scheme | Status | Fidelity | Construction | Notes |
 |---|---|---|---|---|
@@ -162,17 +168,17 @@ Currently 8 reviewed, 16 unreviewed and
 | `mife/lwe_threshold` | known-insecure | ad-hoc | MIFE-LWE + Shamir | see [Known Issues](#known-issues--security-notice) |
 | `mife/ddh_hybrid_alpha` | unreviewed | unknown | HybridAlpha (Xu+ AISec'19) |  |
 | `mcfe/ddh` | reviewed | faithful | CDGPP18 |  |
-| `mcfe/lwe` | reviewed | adapted | ABMPSW20 Fig. 4, selective parameters | signed messages and weights (K = 2nXY + 1, centred decoding) |
+| `mcfe/lwe` | reviewed | adapted | ABMPSW20 Fig. 4, selective parameters | signed messages and weights (K = 2nXY + 1, centred decoding); t is a rounded continuous Gaussian |
 | `mcfe/paillier` | reviewed | faithful | ABMPSW20 Fig. 3 | D_{Z,sigma} realised as a high-precision rounded Gaussian |
 | `mcfe/damgard` | reviewed | faithful | ABMPSW20 Fig. 2 (D_k-MDDH) | k = mddh_k (default 1, where it equals CDGPP18) |
 | `mcfe/ring_lwe` | known-insecure | ad-hoc | CDGPP18-style + BMMS21 | see [Known Issues](#known-issues--security-notice) |
-| `mcfe/fullysec_lwe` | reviewed | adapted | ABMPSW20 Fig. 4, adaptive parameters | signed messages and weights (K = 2nXY + 1, centred decoding) |
+| `mcfe/fullysec_lwe` | reviewed | adapted | ABMPSW20 Fig. 4, adaptive parameters | signed messages and weights (K = 2nXY + 1, centred decoding); t is a rounded continuous Gaussian; m0 grows with n log2(2X + 1) |
 | `mcfe/fh_multi_ipe_pairing` | known-insecure | ad-hoc | CDGPP18-style + DOT18 | see [Known Issues](#known-issues--security-notice) |
 | `mcfe/fh_multi_ipe_pairing_threshold` | known-insecure | ad-hoc | CDGPP18-style + DOT18 + Shamir | see [Known Issues](#known-issues--security-notice) |
 | `mcfe/fh_multi_ipe_pairing_decentralized` | known-insecure | ad-hoc | CDGPP18-style + DOT18 + ABKW19-style | see [Known Issues](#known-issues--security-notice) |
-| `mcfe/ddh_threshold` | reviewed | adapted | CDGPP18 + Shamir (TAPFed setting) | the aggregated key is Shamir-shared; any t servers interpolate in the exponent |
+| `mcfe/ddh_threshold` | reviewed | adapted | CDGPP18 + Shamir (TAPFed setting) | the aggregated key is Shamir-shared; any t servers interpolate in the exponent (threshold-ElGamal style) |
 | `mcfe/ddh_decentralized` | known-insecure | ad-hoc | ABKW19-style | see [Known Issues](#known-issues--security-notice) |
-| `mcfe/lwe_threshold` | reviewed | adapted | ABMPSW20 Fig. 4 + Shamir + flooding | the threshold layer and its LWE-based flooding argument are not from a paper |
+| `mcfe/lwe_threshold` | experimental | ad-hoc | ABMPSW20 Fig. 4 + Shamir + flooding | MCFE layer as published; the threshold layer and its LWE-based flooding argument are our own (see the module docstring) |
 | `mcfe/lwe_decentralized` | known-insecure | ad-hoc | ABKW19-style + LWE | see [Known Issues](#known-issues--security-notice) |
 | `mcfe/ring_lwe_threshold` | known-insecure | ad-hoc | Ring-LWE MCFE + Shamir | see [Known Issues](#known-issues--security-notice) |
 | `mcfe/ring_lwe_decentralized` | known-insecure | ad-hoc | ABKW19-style + Ring-LWE | see [Known Issues](#known-issues--security-notice) |
@@ -330,14 +336,17 @@ key generators emit a `pyfe4ai.FESecurityWarning`, and the
 | No noise flooding | tMIFE-LWE, tMCFE-Ring-LWE | Partial decryptions are exact linear functions of a server's key share: observing one server on about `lwe_n` ciphertexts recovers its share. |
 | Brute-forceable DCR keys | MIFE `paillier`, MCFE `paillier_decentralized` | Secret keys are drawn from `\|s\| ≤ max(sec_param, bound_y·eta)`; the published `g^s` reveals them by brute force. |
 | Toy default parameters | all | `sec_param` is a modulus bit length (default 128), not a security level; LWE dimensions default to 16–64; the statistical parameter `stat_param` of the ABMPSW20 schemes defaults to 64. All far below any real security level; nothing here estimates concrete hardness. |
-| Unvalidated parameter cache in the working directory | key generators that cache parameters (all except MCFE `lwe`, `fullysec_lwe`, `lwe_threshold`, whose parameters are derived deterministically) | Parameters are written to and re-loaded from `./config/authority/...` without structural validation; a planted `param.json` (e.g. a 5-bit group) is accepted. Run only in a directory that nobody else can write to. The pairing dlog cache (`./config/crypto/...`) is likewise trusted if its generators match: a planted table gives wrong results and an inflated bound makes decryption loop for a very long time. |
+| Unvalidated parameter cache in the working directory | key generators that cache parameters (all except MCFE `lwe`, `fullysec_lwe`, `lwe_threshold`, whose parameters are derived deterministically) | Parameters (public values only; no trapdoors since the Paillier fix) are written to and re-loaded from `./config/authority/...` without structural validation; a planted `param.json` (e.g. a 5-bit group) is accepted. Run only in a directory that nobody else can write to. The pairing dlog cache (`./config/crypto/...`) is likewise trusted if its generators match: a planted table gives wrong results and an inflated bound makes decryption loop for a very long time. |
 | Float fusion weights in `aggregate_gradients` | `utils/ml_adapter.py` | Float weights are quantised but the result is not rescaled (e.g. weights 0.5 give 100× the expected sum in decimal mode). Pass integer weights. |
 
 Fixed since v0.2.0 (unreleased, see [`CHANGELOG.md`](CHANGELOG.md)): MCFE
 `paillier`, `lwe`, `fullysec_lwe` and `damgard` re-implemented following
 ABMPSW20 (SCN 2020, Figs. 3, 4 and 2); tMCFE-DDH rebuilt on CDGPP18 with a
 Shamir-shared aggregated key; tMCFE-LWE rebuilt on ABMPSW20 with
-noise-flooded partial decryptions; SIFE `paillier` keys sampled as in ALS16.
+derandomised, noise-flooded partial decryptions (*experimental*); SIFE
+`paillier` keys sampled as in ALS16; Paillier parameter caches no longer
+store the factorization of `N` (a decryption trapdoor); user labels and
+ndarray element labels can no longer collide.
 
 Fixed in v0.2.0: MCFE-DDH re-implemented per CDGPP18; independent per-client
 keys in MIFE-DDH; DDH threshold sharing (1-based Shamir points over the group

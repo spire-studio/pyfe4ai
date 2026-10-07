@@ -98,8 +98,8 @@ def discrete_gaussian_bigint(sigma, count: int, rng=None) -> list[gp.mpz]:
         Args:
             sigma: Standard deviation (int, mpz, float or mpfr), > 0.
             count: Number of samples.
-            rng: Bit source with ``getrandbits`` (default: the OS CSPRNG);
-                pass an :class:`XofRandom` for derandomised sampling.
+            rng: Bit source with ``getrandbits`` (default: the OS CSPRNG).
+            An :class:`XofRandom` gives derandomised sampling.
     """
     if not sigma > 0:
         raise ValueError("sigma must be positive")
