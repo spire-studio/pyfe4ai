@@ -112,3 +112,54 @@ def test_entire_process_lst_ndarray(kg_config):
 
     for idx in range(len(expected)):
         assert np.allclose(computed[idx], expected[idx], atol=1e-2)
+
+
+def _round(cfg, dct_x, dct_y, label):
+    kg = MCFEDamgardKeyGenerator(cfg)
+    kg.setup()
+    pp = kg.get_public_parameters()
+    dct_ct = {
+        nid: MCFEDamgard(
+            {"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}
+        ).encrypt(dct_x[nid], label)
+        for nid in dct_x
+    }
+    dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
+    return kg, pp, dct_ct, dk
+
+
+@pytest.mark.parametrize("mddh_k", [1, 2, 3])
+def test_mddh_k_instantiations(kg_config, mddh_k):
+    """ABMPSW20 Fig. 2 for D_k-MDDH; k = 1 is CDGPP18 (DDH)."""
+    cfg = dict(kg_config, mddh_k=mddh_k)
+    b = cfg["bound"]
+    dct_x = {nid: [b, -b] for nid in cfg["lst_nid"]}
+    dct_y = {nid: [b, b] for nid in cfg["lst_nid"]}
+    kg, pp, dct_ct, dk = _round(cfg, dct_x, dct_y, "mddh-{}".format(mddh_k))
+    assert set(dk) == {"d"} and len(dk["d"]) == mddh_k + 1
+    assert all(len(s_j) == mddh_k + 1 for s_j in kg.get_private_keys("nid_0")["s"])
+    decryptor = MCFEDamgard({"id": "sid_0", "keys": {"pp": pp}})
+    assert decryptor.decrypt(dct_ct, dk, dct_y, "mddh-{}".format(mddh_k)) == 0
+    dct_y = {nid: [b, -b] for nid in cfg["lst_nid"]}
+    dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
+    expected = 2 * b * b * len(cfg["lst_nid"])
+    assert decryptor.decrypt(dct_ct, dk, dct_y, "mddh-{}".format(mddh_k)) == expected
+
+
+def test_wrong_label_fails(kg_config):
+    dct_x = {nid: [1, 2] for nid in kg_config["lst_nid"]}
+    dct_y = {nid: [1, 1] for nid in kg_config["lst_nid"]}
+    _, pp, dct_ct, dk = _round(kg_config, dct_x, dct_y, "label-a")
+    decryptor = MCFEDamgard({"id": "sid_0", "keys": {"pp": pp}})
+    assert decryptor.decrypt(dct_ct, dk, dct_y, "label-a") == 9
+    assert decryptor.decrypt(dct_ct, dk, dct_y, "label-b") is None
+
+
+def test_ndarray_elements_use_distinct_labels(kg_config):
+    cfg = dict(kg_config, eta=1)
+    kg = MCFEDamgardKeyGenerator(cfg)
+    kg.setup()
+    pp = kg.get_public_parameters()
+    client = MCFEDamgard({"id": "nid_0", "keys": {"pp": pp, "sk": kg.get_private_keys("nid_0")}})
+    ct = client.encrypt_lst_ndarray([np.zeros((2, 2))], label="round")
+    assert len({c["c"][0] for c in ct[0].flat}) == 4
