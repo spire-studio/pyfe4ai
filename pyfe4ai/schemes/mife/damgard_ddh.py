@@ -1,39 +1,41 @@
 """
-Damgard-Based Multi-Input Inner-Product Functional Encryption
-| Multi-input construction inspired by
-| "Multi-Input Functional Encryption for Inner Products:
-|  Function-Hiding Realizations and Constructions without Pairings"
-| By Michel Abdalla, Dario Catalano, Dario Fiore, Romain Gay, Bogdan Ursu
-| Published in: CRYPTO 2018
-|
-| Instantiated here with a Damgard/DDH-based single-input building block inspired by
-| Agrawal, Libert, Stehle:
-| "Fully Secure Functional Encryption for Inner Products, from Standard
-|  Assumptions"
-| Published in: CRYPTO 2016
+DDH (Damgard-style) multi-input inner-product FE.
 
-* type:     public-key encryption
-* setting:  Integer based
-* note:     research-oriented Python prototype aligned with the existing
-            crypto-ipfe API style
+| Abdalla, Catalano, Fiore, Gay, Ursu:
+| "Multi-Input Functional Encryption for Inner Products: Function-Hiding
+|  Realizations and Constructions without Pairings", CRYPTO 2018
+| (ePrint 2017/972) -- Fig. 4 (transformation for bounded-norm inner products)
+| instantiated with the DDH IPFE of Agrawal, Libert, Stehle (CRYPTO 2016),
+| recalled as Fig. 7 (D_k-MDDH, here k = 1) with its two-step decryption in
+| Section 4.1.
 
-.. warning::
-    Known-insecure (mife/damgard, see pyfe4ai.schemes.status): no ACFGU18 one-
-    time pad and one key component per client: the functional-key holder
-    learns every client's <x_i, y_i>. Use only for functionality or
-    performance experiments.
+* type:     private-key multi-input encryption (MIFE, DDH)
+* setting:  Integer based (order-q subgroup of Z_p^*, p = 2q + 1)
+
+Construction (slot ``i`` is client ``i``; ``[a] = g^a``, ``h = g^a``):
+
+* Setup:    ``W_i = (s_i, t_i) <- (Z_q^eta)^2``, ``pk_{i,j} = g^{s_{i,j}} h^{t_{i,j}}``,
+            one-time pad ``u_i <- Z_q^eta``; client ``i`` keeps ``(pk_i, u_i)``.
+* Encrypt:  ``w = x_i + u_i mod q``; ``C = g^r``, ``D = h^r``,
+            ``E_j = g^{w_j} pk_{i,j}^r``.
+* KeyGen:   per slot ``(<s_i, y_i>, <t_i, y_i>)`` and ``z = sum_i <u_i, y_i> mod q``.
+* Decrypt:  Dec1 per slot ``[<w_i, y_i>] = prod_j E_j^{y_j} / (C^{<s,y>} D^{<t,y>})``;
+            ``[<x, y>] = prod_i [<w_i, y_i>] / [z]``, then a bounded dlog (Dec2).
+
+The pad makes each slot's partial result ``[<x_i + u_i, y_i>]`` uniform, so
+the key holder learns only ``<x, y>``; versions <= 0.2.0 omitted it and
+revealed every ``<x_i, y_i>``. Deviation: all slots share the group and
+``h`` (the matrix ``A`` of Fig. 7) while ``W_i`` and ``u_i`` are independent
+per slot, instead of running Setup independently per slot. A decryption
+needs ciphertexts of every slot named in the key.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-import random
 
 import gmpy2 as gp
-
-_CSPRNG = random.SystemRandom()
 import numpy as np
 
 from pyfe4ai.schemes.ddh_base import DamgardDDHKeyGeneratorBase
@@ -42,21 +44,25 @@ from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import _random
 from pyfe4ai.utils.dlog_solver import load_or_build_dlog_table, dlog_table_solve
 from pyfe4ai.utils.modular_utils import pow_signed
-from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
+from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.utils.sampling_utils import rand_uniform_vector
 
 logger = logging.getLogger(__name__)
 
 class MIFEDamgardKeyGenerator(DamgardDDHKeyGeneratorBase):
-    """Key generator for Damgard DDH-based multi-input inner-product FE."""
+    """Key generator for DDH multi-input inner-product FE (ACFGU18 Fig. 4 + ALS16)."""
 
     _scheme_type = CryptoCONST.TYPE_MIFE_DAMGARD
     _verify_keys = ("sec_param", "eta", "n", "modulus_length", "bound")
 
     def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
+        """Initialise the key generator.
 
-            Args:
-                config: Scheme configuration dict.
+        Args:
+            config: Scheme configuration. Recognised keys: ``n`` (number of
+                slots), ``lst_nid``, ``eta`` (slot dimension),
+                ``modulus_length`` (bits of ``p``), ``bound`` (on ``|x|`` and
+                ``|y|``), ``sec_param``.
         """
         super().__init__(config, **kwargs)
         self.eta = config.get("eta", CryptoCONST.MIFE_ETA)
@@ -71,42 +77,34 @@ class MIFEDamgardKeyGenerator(DamgardDDHKeyGeneratorBase):
         return {"n": self.n}
 
     def _validate_bounds(self) -> None:
-        prod = gp.mpz(2 * self.eta * (self.bound**2))
-        if prod >= self.q:
-            raise ValueError(
-                "2 * eta * bound^2 should be smaller than the group order"
+        if 2 * self.n * self.eta * gp.mpz(self.bound) ** 2 >= self.q:
+            raise FEValidationError(
+                "2 * n * eta * bound^2 should be smaller than the group order"
             )
 
     def setup(self) -> None:
-        rand = _CSPRNG
-        s = {
-            nid: [gp.mpz(rand.randint(2, int(self.q - 1))) for _ in range(self.eta)]
-            for nid in self.lst_nid
-        }
-        t = {
-            nid: [gp.mpz(rand.randint(2, int(self.q - 1))) for _ in range(self.eta)]
-            for nid in self.lst_nid
-        }
+        """Sample ``W_i = (s_i, t_i)`` and the one-time pad ``u_i`` for every slot."""
+        s = {nid: rand_uniform_vector(self.eta, self.q) for nid in self.lst_nid}
+        t = {nid: rand_uniform_vector(self.eta, self.q) for nid in self.lst_nid}
+        u = {nid: rand_uniform_vector(self.eta, self.q) for nid in self.lst_nid}
         pk = {
             nid: [
-                gp.mod(
-                    gp.mul(gp.powmod(self.g, s_i, self.p), gp.powmod(self.h, t_i, self.p)),
-                    self.p,
-                )
-                for s_i, t_i in zip(s[nid], t[nid])
+                gp.powmod(self.g, s_j, self.p) * gp.powmod(self.h, t_j, self.p) % self.p
+                for s_j, t_j in zip(s[nid], t[nid])
             ]
             for nid in self.lst_nid
         }
-        self.msk = {"s": s, "t": t}
-        self.mpk = {"p": self.p, "q": self.q, "g": self.g, "h": self.h, "pk": pk}
-        logger.info("MIFE Damgard setup successfully")
+        self.msk = {"s": s, "t": t, "u": u}
+        self.mpk = {"pk": pk}
+        logger.info("MIFE Damgard (ACFGU18) setup successfully")
 
     def get_public_parameters(self) -> dict:
+        """Return serialisable public parameters."""
         return {
-            "p": gp.digits(self.mpk["p"]),
-            "q": gp.digits(self.mpk["q"]),
-            "g": gp.digits(self.mpk["g"]),
-            "h": gp.digits(self.mpk["h"]),
+            "p": gp.digits(self.p),
+            "q": gp.digits(self.q),
+            "g": gp.digits(self.g),
+            "h": gp.digits(self.h),
             "eta": self.eta,
             "n": self.n,
             "bound": self.bound,
@@ -115,20 +113,28 @@ class MIFEDamgardKeyGenerator(DamgardDDHKeyGeneratorBase):
         }
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
-        """Perform the get_private_keys operation.
+        """Return slot *nid*'s encryption key ``{pk, u}`` (``None`` if unknown).
 
-            Args:
-                nid: Node identifier.
+        The key includes the one-time pad and must stay with the client.
         """
         if nid not in self.mpk["pk"]:
             return None
-        return {"pk": [gp.digits(v) for v in self.mpk["pk"][nid]]}
+        return {
+            "pk": [gp.digits(v) for v in self.mpk["pk"][nid]],
+            "u": [gp.digits(v) for v in self.msk["u"][nid]],
+        }
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
-        """Perform the get_decryption_keys operation.
+        """Derive ``({(<s_i, y_i>, <t_i, y_i>)}_i, z = sum <u_i, y_i> mod q)``.
 
-            Args:
-                sid: Session / decryption-key identifier.
+        Args:
+            sid: Session identifier (unused).
+            **kwargs: Must include ``credentials`` with ``fusion_weight``
+                (dict mapping every client ID to an integer weight list).
+
+        Raises:
+            FEKeyError: If credentials are missing.
+            FEValidationError: If a client is missing or a weight is malformed.
         """
         credentials = kwargs.get("credentials", None)
         if not credentials:
@@ -137,8 +143,8 @@ class MIFEDamgardKeyGenerator(DamgardDDHKeyGeneratorBase):
         if not isinstance(fusion_weight, dict):
             raise FEValidationError("invalid fusion weights provided, need a dict")
 
-        k1 = {}
-        k2 = {}
+        k1, k2 = {}, {}
+        z = gp.mpz(0)
         for nid in self.lst_nid:
             if nid not in fusion_weight:
                 raise FEValidationError("fusion weight missing client {}".format(nid))
@@ -147,32 +153,23 @@ class MIFEDamgardKeyGenerator(DamgardDDHKeyGeneratorBase):
                 raise FEValidationError("invalid fusion weight length for client {}".format(nid))
             if any(abs(int(v)) > self.bound for v in weights):
                 raise FEValidationError("fusion weight exceeds configured bound")
-            acc1 = gp.mpz(0)
-            acc2 = gp.mpz(0)
-            for s_i, t_i, y_i in zip(self.msk["s"][nid], self.msk["t"][nid], weights):
-                y_mpz = gp.mpz(y_i)
-                acc1 += s_i * y_mpz
-                acc2 += t_i * y_mpz
-            k1[nid] = gp.digits(acc1 % self.q)
-            k2[nid] = gp.digits(acc2 % self.q)
-        return {"k1": k1, "k2": k2}
+            ys = [gp.mpz(int(v)) for v in weights]
+            k1[nid] = gp.digits(sum(a * b for a, b in zip(self.msk["s"][nid], ys)) % self.q)
+            k2[nid] = gp.digits(sum(a * b for a, b in zip(self.msk["t"][nid], ys)) % self.q)
+            z += sum(a * b for a, b in zip(self.msk["u"][nid], ys))
+        return {"k1": k1, "k2": k2, "z": gp.digits(z % self.q)}
 
 
 class MIFEDamgard(IPFEAbsCrypto):
-    """Crypto operations for Damgard DDH-based multi-input inner-product FE."""
+    """Crypto operations for DDH multi-input inner-product FE (ACFGU18 Fig. 4 + ALS16)."""
 
     def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
-
-            Args:
-                config: Scheme configuration dict.
-        """
+        """Initialise with ``keys.pp`` and, for clients, ``keys.sk``."""
         super().__init__(config, **kwargs)
         self.pp = self.keys["pp"]
         if self._has_private_keys():
             self.sk = self.keys["sk"]
-        else:
-            self._load_dlog_table()
+        self.dlog_table = None
 
     def _load_dlog_table(self) -> None:
         _dlog_file = os.path.join(
@@ -181,15 +178,19 @@ class MIFEDamgard(IPFEAbsCrypto):
         )
         bound = self.pp["n"] * self.pp["eta"] * (self.pp["bound"] ** 2) + 1
         self.dlog_table, self.func_bound, self._step_size, self._giant_step = (
-            load_or_build_dlog_table(
-                _dlog_file, self.pp["g"], self.pp["p"], bound,
-            )
+            load_or_build_dlog_table(_dlog_file, self.pp["g"], self.pp["p"], bound)
         )
 
     def encrypt(self, lst_pt: list) -> dict:
+        """Encrypt this slot's vector: ALS16 encryption of ``x + u mod q``.
+
+        Returns:
+            Dict with ``c`` (``g^r``), ``d`` (``h^r``) and ``e`` (one element per
+            coordinate).
+        """
         if not self._has_public_parameters():
             raise FEKeyError("no public parameters provided for encryption")
-        if not self._has_private_keys():
+        if not self._has_private_keys() or "u" not in self.sk:
             raise FEKeyError("no private keys provided for encryption")
         if len(lst_pt) != self.pp["eta"]:
             raise FEValidationError("invalid size of input plaintext")
@@ -200,48 +201,46 @@ class MIFEDamgard(IPFEAbsCrypto):
         q = gp.mpz(self.pp["q"])
         g = gp.mpz(self.pp["g"])
         h = gp.mpz(self.pp["h"])
-        pk = [gp.mpz(v) for v in self.sk["pk"]]
-        r = _random(q, self.pp["modulus_length"])
-
-        c = gp.powmod(g, r, p)
-        dd = gp.powmod(h, r, p)
+        r = _random(q, int(q).bit_length())
         e = []
-        for x_i, pk_i in zip(lst_pt, pk):
-            ct_i = gp.mod(
-                gp.mul(gp.powmod(pk_i, r, p), pow_signed(g, gp.mpz(x_i), p)), p
-            )
-            e.append(gp.digits(ct_i))
-        return {"c": gp.digits(c), "d": gp.digits(dd), "e": e}
+        for x_j, u_j, pk_j in zip(lst_pt, self.sk["u"], self.sk["pk"]):
+            w_j = (gp.mpz(int(x_j)) + gp.mpz(u_j)) % q
+            e.append(gp.digits(gp.powmod(g, w_j, p) * gp.powmod(gp.mpz(pk_j), r, p) % p))
+        return {"c": gp.digits(gp.powmod(g, r, p)), "d": gp.digits(gp.powmod(h, r, p)), "e": e}
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict):
-        """Decrypt ciphertexts and recover the inner product.
+        """Recover ``sum_i <x_i, y_i>`` from one ciphertext per slot.
 
-            Args:
-                dct_ct: Ciphertext dict (or dict of per-client ciphertexts).
-                dk: Functional decryption key.
-                fusion_weight: Fusion weight vector (or dict of per-client weight vectors).
+        Returns:
+            The inner product, or ``None`` if it is out of the dlog bound.
+
+        Raises:
+            FEKeyError: If the key is missing.
+            FESchemeError: If ciphertexts do not cover exactly the key's slots.
         """
         if not self._has_public_parameters():
             raise FEKeyError("no public parameters provided for decryption")
-        if not dk:
+        if not dk or "z" not in dk:
             raise FEKeyError("no decryption key provided")
+        if set(dct_ct) != set(dk["k1"]) or set(dct_ct) != set(fusion_weight):
+            raise FESchemeError("need one ciphertext for every slot of the key")
 
         p = gp.mpz(self.pp["p"])
-        num = gp.mpz(1)
-        denom = gp.mpz(1)
+        g = gp.mpz(self.pp["g"])
+        acc = gp.mpz(1)
         for nid, ct in dct_ct.items():
-            for ct_i, y_i in zip(ct["e"], fusion_weight[nid]):
-                num = gp.mod(num * pow_signed(gp.mpz(ct_i), gp.mpz(y_i), p), p)
-            denom = gp.mod(
-                denom
-                * gp.powmod(gp.mpz(ct["c"]), gp.mpz(dk["k1"][nid]), p)
-                * gp.powmod(gp.mpz(ct["d"]), gp.mpz(dk["k2"][nid]), p),
-                p,
-            )
-        ret = gp.divm(num, denom, p)
-        return self._solve_dlog(ret)
+            # Dec1 of slot nid: [<x_i + u_i, y_i>]
+            for e_j, y_j in zip(ct["e"], fusion_weight[nid]):
+                acc = acc * pow_signed(gp.mpz(e_j), gp.mpz(int(y_j)), p) % p
+            den = gp.powmod(gp.mpz(ct["c"]), gp.mpz(dk["k1"][nid]), p)
+            den = den * gp.powmod(gp.mpz(ct["d"]), gp.mpz(dk["k2"][nid]), p) % p
+            acc = gp.divm(acc, den, p)
+        acc = gp.divm(acc, gp.powmod(g, gp.mpz(dk["z"]), p), p)
+        return self._solve_dlog(acc)
 
     def _solve_dlog(self, encoded_value: gp.mpz) -> int | None:
+        if self.dlog_table is None:
+            self._load_dlog_table()
         try:
             return dlog_table_solve(
                 encoded_value, self.pp["g"], self.pp["p"],
@@ -252,11 +251,7 @@ class MIFEDamgard(IPFEAbsCrypto):
             return None
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
-        """Perform the encrypt_lst_ndarray operation.
-
-            Args:
-                lst_ndarray: List of numpy arrays to encrypt element-wise.
-        """
+        """Encrypt ndarrays element-wise (``eta = 1``)."""
         if self.pp["eta"] != 1:
             raise NotImplementedError("ndarray helper currently expects eta=1")
         lst_ndarray_ct = []
@@ -269,38 +264,26 @@ class MIFEDamgard(IPFEAbsCrypto):
         return lst_ndarray_ct
 
     def compute_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:
-        """Compute inner products on encrypted ndarray ciphertexts.
-
-            Args:
-                dict_ndarray_ct: Encrypted ndarray ciphertexts (list or dict).
-        """
+        """Aggregate-decrypt ndarray ciphertexts (needs ``dk`` and ``fusion_weight``)."""
         dk = kwargs.get("dk", None)
         fusion_weight = kwargs.get("fusion_weight", None)
         if dk is None or fusion_weight is None:
             raise FEKeyError("need to provide decryption key and fusion weight")
-        return self.decrypt_lst_ndarray_ct(
-            dict_ndarray_ct, dk=dk, fusion_weight=fusion_weight
-        )
+        return self.decrypt_lst_ndarray_ct(dict_ndarray_ct, dk=dk, fusion_weight=fusion_weight)
 
     def decrypt_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:
-        """Decrypt encrypted ndarray ciphertexts element-wise.
-
-            Args:
-                dict_ndarray_ct: Encrypted ndarray ciphertexts (list or dict).
-        """
-        dk = kwargs.get("dk", None)
-        fusion_weight = kwargs.get("fusion_weight", None)
+        """Decrypt ndarray ciphertexts element-wise."""
         if self.pp["eta"] != 1:
             raise NotImplementedError("ndarray helper currently expects eta=1")
+        dk = kwargs.get("dk", None)
+        fusion_weight = kwargs.get("fusion_weight", None)
         if dk is None or fusion_weight is None:
             raise FEKeyError("need to provide decryption key and fusion weight")
-
         sample = next(iter(dict_ndarray_ct.values()))
         lst_ndarray = []
         for l in range(len(sample)):
-            ary = sample[l]
-            ary_dec = np.empty(ary.shape, dtype=object)
-            for i, _ in np.ndenumerate(ary):
+            ary_dec = np.empty(sample[l].shape, dtype=object)
+            for i, _ in np.ndenumerate(sample[l]):
                 dct_ct = {nid: dict_ndarray_ct[nid][l][i] for nid in dict_ndarray_ct}
                 ary_dec[i] = self.decrypt(dct_ct, dk, fusion_weight)
             lst_ndarray.append((ary_dec / pow(10, self.precision)).astype(float))

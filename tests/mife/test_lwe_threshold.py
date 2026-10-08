@@ -9,6 +9,7 @@ from pyfe4ai.logger import init_logging_config
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWEKeyGenerator
 from pyfe4ai.utils.crypto_constants import CryptoCONST
+from pyfe4ai.utils.exceptions import FESchemeError
 
 init_logging_config()
 logger = logging.getLogger(__name__)
@@ -49,12 +50,12 @@ def test_key_generator(kg_config):
     assert pp["lst_sid"] == kg_config["lst_sid"]
 
     sk_nid = kg.get_private_keys("nid_0")
-    assert "pk" in sk_nid
+    assert set(sk_nid) == {"pk", "u"}
 
     fusion_weight = {nid: [1] for nid in kg_config["lst_nid"]}
     dk_sid = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": fusion_weight})
-    assert "sk_y" in dk_sid
-    assert "sid_index" in dk_sid
+    assert set(dk_sid) == {"sk_y", "z", "sid", "lst_sid", "weights_id", "noise_key"}
+    assert set(dk_sid["sk_y"]) == set(kg_config["lst_nid"])
 
 
 def test_entire_process(kg_config):
@@ -155,3 +156,72 @@ def test_entire_process_lst_ndarray(kg_config):
     computed = encryptors[lst_nid[0]].decrypt_lst_ndarray_ct(dct_ct_prime)
     for idx in range(len(expected)):
         assert np.allclose(computed[idx], expected[idx], atol=1e-2)
+
+
+def _round(cfg, dct_x, dct_y, enrolled):
+    kg = ThresholdMIFELWEKeyGenerator(cfg)
+    kg.setup()
+    pp = kg.get_public_parameters()
+    dct_ct = {
+        nid: ThresholdMIFELWE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(dct_x[nid])
+        for nid in dct_x
+    }
+    partials = {}
+    for sid in enrolled:
+        dk = kg.get_decryption_keys(sid, credentials={"fusion_weight": dct_y})
+        server = ThresholdMIFELWE({"id": sid, "keys": {"pp": pp, "dk": dk}})
+        partials[sid] = server.share_decrypt(dct_ct, dct_y, dk, enrolled)
+    return kg, pp, dct_ct, partials, ThresholdMIFELWE({"id": "c", "keys": {"pp": pp}})
+
+
+@pytest.mark.parametrize(
+    "s, t, enrolled",
+    [(3, 2, ["sid_1", "sid_2"]), (4, 3, ["sid_3", "sid_0", "sid_2"]), (4, 2, ["sid_0", "sid_1", "sid_2", "sid_3"])],
+)
+def test_any_enrolled_set_decrypts_extreme_values(kg_config, s, t, enrolled):
+    cfg = dict(kg_config, s=s, t=t, lst_sid=["sid_{}".format(i) for i in range(s)])
+    bx, by = cfg["bound_x"], cfg["bound_y"]
+    for sign in (1, -1):
+        dct_x = {nid: [sign * bx] for nid in cfg["lst_nid"]}
+        dct_y = {nid: [by] for nid in cfg["lst_nid"]}
+        _, _, _, partials, combiner = _round(cfg, dct_x, dct_y, enrolled)
+        assert combiner.combine_decrypt(partials) == sign * 3 * bx * by
+
+
+def test_partials_are_flooded_and_derandomised(kg_config):
+    import gmpy2 as gp
+
+    from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
+    from pyfe4ai.utils.matrix_utils import digits_to_vector, vecdot_mod
+
+    dct_x = {nid: [1] for nid in kg_config["lst_nid"]}
+    dct_y = {nid: [1] for nid in kg_config["lst_nid"]}
+    enrolled = ["sid_0", "sid_1"]
+    kg, pp, dct_ct, partials, combiner = _round(kg_config, dct_x, dct_y, enrolled)
+    dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
+    server = ThresholdMIFELWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
+    assert server.share_decrypt(dct_ct, dct_y, dk, enrolled) == partials["sid_0"]
+
+    q = gp.mpz(pp["q"])
+    delta = q // gp.mpz(pp["p"])
+    exact = delta * gp.mpz(dk["z"])
+    for nid, ct in dct_ct.items():
+        exact += vecdot_mod(digits_to_vector(ct["ct0"]), [gp.mpz(v) for v in dk["sk_y"][nid]], q)
+    exact = lagrange_coefficient_at_zero(1, [1, 2], q) * exact % q
+    noise = (gp.mpz(partials["sid_0"]["w"]) - exact) % q
+    assert noise != 0 and min(noise, q - noise) <= 12 * int(pp["sigma_f"])
+    assert combiner.combine_decrypt(partials) == 3
+
+
+def test_single_server_and_bad_partials_rejected(kg_config):
+    dct_x = {nid: [1] for nid in kg_config["lst_nid"]}
+    dct_y = {nid: [1] for nid in kg_config["lst_nid"]}
+    kg, pp, dct_ct, partials, combiner = _round(kg_config, dct_x, dct_y, ["sid_0", "sid_1", "sid_2"])
+    with pytest.raises(FESchemeError):
+        combiner.combine_decrypt({"sid_0": partials["sid_0"]})
+    with pytest.raises(FESchemeError):
+        combiner.combine_decrypt(dict(partials, extra=partials["sid_0"]))
+    dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
+    server = ThresholdMIFELWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
+    with pytest.raises(FESchemeError):
+        server.share_decrypt(dct_ct, {nid: [2] for nid in dct_y}, dk, ["sid_0", "sid_1"])

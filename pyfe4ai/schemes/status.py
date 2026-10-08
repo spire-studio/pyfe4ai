@@ -98,21 +98,25 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     # --- multi-input --------------------------------------------------------
     ("mife", "ddh"): SchemeStatus(_S + "mife.ddh", UNREVIEWED, UNKNOWN, "ACFGU18 + ABDP15 (DDH)"),
     ("mife", "lwe"): SchemeStatus(
-        _S + "mife.lwe", KNOWN_INSECURE, AD_HOC, "ACFGU18 + ABDP15 (LWE)", issue=_NO_PAD
+        _S + "mife.lwe", REVIEWED, ADAPTED, "ACFGU18 Fig. 4 + ABDP15 (LWE)",
+        note="ACFGU18 instantiates Fig. 4 with ALS16; here the selectively secure "
+        "ABDP15 IPFE (same two-step decryption); slots share A",
     ),
     ("mife", "paillier"): SchemeStatus(
-        _S + "mife.paillier", KNOWN_INSECURE, AD_HOC, "ACFGU18 + ALS16 (DCR)",
-        issue=_NO_PAD + _SMALL_DCR_KEYS,
+        _S + "mife.paillier", REVIEWED, ADAPTED, "ACFGU18 Fig. 4 + ALS16 (DCR, Fig. 9)",
+        note="slots share N and g; D_{Z,sigma} realised as a high-precision rounded Gaussian",
     ),
     ("mife", "damgard"): SchemeStatus(
-        _S + "mife.damgard_ddh", KNOWN_INSECURE, AD_HOC, "ACFGU18 + ALS16 (DDH)", issue=_NO_PAD
+        _S + "mife.damgard_ddh", REVIEWED, ADAPTED, "ACFGU18 Fig. 4 + ALS16 (DDH, Fig. 7)",
+        note="slots share the group and h (the matrix A of Fig. 7)",
     ),
     ("mife", "ring_lwe"): SchemeStatus(
-        _S + "mife.ring_lwe", KNOWN_INSECURE, AD_HOC, "ACFGU18 + BMMS21", issue=_NO_PAD
+        _S + "mife.ring_lwe", REVIEWED, ADAPTED, "BMMS21 Sec. 6 MIFE-compiler (ACFGU18)",
+        note="slots share a; parameters sized for dimension n * eta",
     ),
     ("mife", "fullysec_lwe"): SchemeStatus(
-        _S + "mife.fullysec_lwe", KNOWN_INSECURE, AD_HOC, "ACFGU18 + ALS16 (LWE)",
-        issue=_NO_PAD,
+        _S + "mife.fullysec_lwe", REVIEWED, ADAPTED, "ACFGU18 Fig. 4 + ALS16 (LWE, Fig. 8)",
+        note="slots share A; parameters derived for dimension n * eta and bound 3X",
     ),
     ("mife", "fh_ipe_pairing"): SchemeStatus(
         _S + "mife.fh_ipe_pairing", UNREVIEWED, UNKNOWN, "KLMMRW18, multi-input"
@@ -124,9 +128,9 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         _S + "mife.ddh_threshold", UNREVIEWED, UNKNOWN, "MIFE-DDH + Shamir (TAPFed setting)"
     ),
     ("mife", "lwe_threshold"): SchemeStatus(
-        _S + "mife.lwe_threshold", KNOWN_INSECURE, AD_HOC, "MIFE-LWE + Shamir",
-        issue=_NO_PAD + "; partial decryptions are exact linear functions of the "
-        "server's key share (no flooding)",
+        _S + "mife.lwe_threshold", EXPERIMENTAL, AD_HOC, "MIFE-LWE + Shamir + smudging",
+        note="MIFE layer as published; the threshold layer (statistical flooding, "
+        "derandomised noise, enlarged q) is our own",
     ),
     ("mife", "ddh_hybrid_alpha"): SchemeStatus(
         _S + "mife.ddh_hybrid_alpha", UNREVIEWED, UNKNOWN, "HybridAlpha (Xu+ AISec'19)"

@@ -333,3 +333,26 @@ def decode_rounded_inner_product(mu_prime, q, q0, delta, bound_ip) -> int | None
     if abs(mu) > bound_ip:
         return None
     return int(mu)
+
+
+def decode_scaled(value, delta, q, bound) -> int | None:
+    """Decode ``value ~ delta * mu + noise (mod q)`` to the signed integer ``mu``.
+
+    Used by the two-step decryption of the LWE IPFEs (ACFGU18 Section 4.2,
+    encoding ``E(gamma, noise) = gamma * delta + noise mod q``).
+
+        Args:
+            value: Value modulo ``q``.
+            delta: Scaling factor ``floor(q / p)``.
+            q: Modulus.
+            bound: Bound on ``|mu|``; larger results return ``None``.
+    """
+    q = gp.mpz(q)
+    delta = gp.mpz(delta)
+    v = gp.mpz(value) % q
+    if v > q // 2:
+        v -= q
+    mu = (2 * v + delta) // (2 * delta)
+    if abs(mu) > bound:
+        return None
+    return int(mu)

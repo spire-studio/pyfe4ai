@@ -141,8 +141,8 @@ test keeps it in sync.
   correct results but provides no meaningful privacy. Use it only for
   functionality or performance experiments.
 
-Currently 7 reviewed, 1 experimental,
-16 unreviewed and 15 known-insecure out of
+Currently 12 reviewed, 2 experimental,
+16 unreviewed and 9 known-insecure out of
 39 registered schemes.
 
 | Scheme | Status | Fidelity | Construction | Notes |
@@ -157,15 +157,15 @@ Currently 7 reviewed, 1 experimental,
 | `sife/fh_ipe_pairing` | unreviewed | unknown | KLMMRW18 |  |
 | `sife/part_fh_ipe_pairing` | unreviewed | unknown | Gay20 |  |
 | `mife/ddh` | unreviewed | unknown | ACFGU18 + ABDP15 (DDH) |  |
-| `mife/lwe` | known-insecure | ad-hoc | ACFGU18 + ABDP15 (LWE) | see [Known Issues](#known-issues--security-notice) |
-| `mife/paillier` | known-insecure | ad-hoc | ACFGU18 + ALS16 (DCR) | see [Known Issues](#known-issues--security-notice) |
-| `mife/damgard` | known-insecure | ad-hoc | ACFGU18 + ALS16 (DDH) | see [Known Issues](#known-issues--security-notice) |
-| `mife/ring_lwe` | known-insecure | ad-hoc | ACFGU18 + BMMS21 | see [Known Issues](#known-issues--security-notice) |
-| `mife/fullysec_lwe` | known-insecure | ad-hoc | ACFGU18 + ALS16 (LWE) | see [Known Issues](#known-issues--security-notice) |
+| `mife/lwe` | reviewed | adapted | ACFGU18 Fig. 4 + ABDP15 (LWE) | ACFGU18 instantiates Fig. 4 with ALS16; here the selectively secure ABDP15 IPFE (same two-step decryption); slots share A |
+| `mife/paillier` | reviewed | adapted | ACFGU18 Fig. 4 + ALS16 (DCR, Fig. 9) | slots share N and g; D_{Z,sigma} realised as a high-precision rounded Gaussian |
+| `mife/damgard` | reviewed | adapted | ACFGU18 Fig. 4 + ALS16 (DDH, Fig. 7) | slots share the group and h (the matrix A of Fig. 7) |
+| `mife/ring_lwe` | reviewed | adapted | BMMS21 Sec. 6 MIFE-compiler (ACFGU18) | slots share a; parameters sized for dimension n * eta |
+| `mife/fullysec_lwe` | reviewed | adapted | ACFGU18 Fig. 4 + ALS16 (LWE, Fig. 8) | slots share A; parameters derived for dimension n * eta and bound 3X |
 | `mife/fh_ipe_pairing` | unreviewed | unknown | KLMMRW18, multi-input |  |
 | `mife/fh_multi_ipe_pairing` | unreviewed | unknown | DOT18 |  |
 | `mife/ddh_threshold` | unreviewed | unknown | MIFE-DDH + Shamir (TAPFed setting) |  |
-| `mife/lwe_threshold` | known-insecure | ad-hoc | MIFE-LWE + Shamir | see [Known Issues](#known-issues--security-notice) |
+| `mife/lwe_threshold` | experimental | ad-hoc | MIFE-LWE + Shamir + smudging | MIFE layer as published; the threshold layer (statistical flooding, derandomised noise, enlarged q) is our own |
 | `mife/ddh_hybrid_alpha` | unreviewed | unknown | HybridAlpha (Xu+ AISec'19) |  |
 | `mcfe/ddh` | reviewed | faithful | CDGPP18 |  |
 | `mcfe/lwe` | reviewed | adapted | ABMPSW20 Fig. 4, selective parameters | signed messages and weights (K = 2nXY + 1, centred decoding); t is a rounded continuous Gaussian |

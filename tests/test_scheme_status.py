@@ -29,14 +29,26 @@ def test_every_registered_scheme_has_a_status():
             assert entry.note
 
 
-def test_known_insecure_key_generator_warns():
+@pytest.fixture
+def insecure_mife_lwe(monkeypatch):
+    """Pretend mife/lwe is known-insecure (independent of the real table)."""
+    import dataclasses
+
+    key = ("mife", "lwe")
+    fake = dataclasses.replace(
+        st.SCHEME_STATUS[key], status=st.KNOWN_INSECURE, issue="test issue"
+    )
+    monkeypatch.setitem(st.SCHEME_STATUS, key, fake)
+
+
+def test_known_insecure_key_generator_warns(insecure_mife_lwe):
     from pyfe4ai.schemes.mife.lwe import MIFELWEKeyGenerator
 
-    with pytest.warns(FESecurityWarning, match="mife/lwe"):
+    with pytest.warns(FESecurityWarning, match="mife/lwe is known to be insecure: test issue"):
         MIFELWEKeyGenerator({"n": 2, "lwe_n": 8, "bound_x": 2, "bound_y": 2})
 
 
-def test_known_insecure_crypto_object_warns():
+def test_known_insecure_crypto_object_warns(insecure_mife_lwe):
     from pyfe4ai.schemes.mife.lwe import MIFELWE
 
     with pytest.warns(FESecurityWarning, match="mife/lwe"):

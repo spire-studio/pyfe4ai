@@ -1,28 +1,34 @@
 """
-Paillier-Based Multi-Input Inner-Product Functional Encryption
-| Multi-input construction inspired by
-| "Multi-Input Functional Encryption for Inner Products:
-|  Function-Hiding Realizations and Constructions without Pairings"
-| By Michel Abdalla, Dario Catalano, Dario Fiore, Romain Gay, Bogdan Ursu
-| Published in: CRYPTO 2018
-|
-| Instantiated here with a Paillier-based single-input building block inspired by
-| Agrawal, Libert, Stehle:
-| "Fully Secure Functional Encryption for Inner Products, from Standard
-|  Assumptions"
-| Published in: CRYPTO 2016
+DCR (Paillier) multi-input inner-product FE.
 
-* type:     public-key encryption
-* setting:  Integer based
-* note:     research-oriented Python prototype aligned with the existing
-            crypto-ipfe API style
+| Abdalla, Catalano, Fiore, Gay, Ursu:
+| "Multi-Input Functional Encryption for Inner Products: Function-Hiding
+|  Realizations and Constructions without Pairings", CRYPTO 2018
+| (ePrint 2017/972) -- Fig. 4 (transformation for bounded-norm inner products)
+| instantiated with the Paillier IPFE of Agrawal, Libert, Stehle (CRYPTO 2016),
+| recalled as Fig. 9 with its two-step decryption in Section 4.3.
 
-.. warning::
-    Known-insecure (mife/paillier, see pyfe4ai.schemes.status): no ACFGU18 one-
-    time pad and one key component per client: the functional-key holder
-    learns every client's <x_i, y_i>; secret keys are drawn from [-B, B] with B =
-    max(sec_param, bound_y * eta) and can be brute-forced from public data.
-    Use only for functionality or performance experiments.
+* type:     private-key multi-input encryption (MIFE, DCR)
+* setting:  Integer based (Z_{N^2}^*, N = p q with safe primes)
+
+Construction (slot ``i`` is client ``i``, ``L = N``):
+
+* Setup:    ``g = g'^{2N} mod N^2``; per slot ``s_i <- D_{Z^eta, sigma}`` with
+            ``sigma > sqrt(kappa) N^{5/2}``, ``h_{i,j} = g^{s_{i,j}}`` and a
+            one-time pad ``u_i <- Z_N^eta``; client ``i`` keeps ``(h_i, u_i)``.
+* Encrypt:  ``w = x_i + u_i mod N``; ``C_0 = g^r`` (``r <- {0..N/4}``),
+            ``C_j = (1 + w_j N) h_{i,j}^r``.
+* KeyGen:   per slot ``d_i = <s_i, y_i>`` over Z, and ``z = sum_i <u_i, y_i> mod N``.
+* Decrypt:  Dec1 per slot ``E(<w_i, y_i>) = prod_j C_j^{y_j} C_0^{-d_i}``;
+            ``(prod_i E(<w_i, y_i>) * (1 + N)^{-z} - 1 mod N^2) / N``, centred mod N.
+
+The pad hides each slot's partial result; versions <= 0.2.0 had no pad (the
+key holder learned every ``<x_i, y_i>``) and drew keys from a range small
+enough to brute-force from ``h``. Deviation: all slots share ``N`` and ``g``
+instead of running Setup independently per slot (``s_i`` and ``u_i`` are
+independent); the factorization of ``N`` is never stored. A decryption needs
+ciphertexts of every slot named in the key. Correctness needs
+``2 n eta X Y < N``.
 """
 
 from __future__ import annotations
@@ -30,11 +36,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-import random
-
 import gmpy2 as gp
-
-_CSPRNG = random.SystemRandom()
 import numpy as np
 
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
@@ -43,8 +45,10 @@ from pyfe4ai.schemes.ipfe import ParameterCacheMixin
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import generate_group_primes
 from pyfe4ai.utils.modular_utils import pow_signed
+from pyfe4ai.utils.sampling_utils import discrete_gaussian_bigint
+from pyfe4ai.utils.sampling_utils import rand_uniform_vector
 from pyfe4ai.utils.sampling_utils import random_below
-from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
+from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +70,7 @@ class MIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.bit_length = config.get("bit_length", 128)
         self.bound_x = config.get("bound_x", 100)
         self.bound_y = config.get("bound_y", 100)
+        self.stat_param = int(config.get("stat_param", 64))
         if not self.n:
             raise FEKeyError("need to provide number of clients")
         self._load_parameters()
@@ -125,25 +130,24 @@ class MIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             )
 
     def _validate_bounds(self) -> None:
-        x_square_l = gp.mpz(2 * self.eta * (self.bound_x**2))
-        y_square_l = gp.mpz(2 * self.eta * (self.bound_y**2))
-        if self.n_mod <= x_square_l:
-            raise ValueError("bound_x and eta are too large for the chosen bit_length")
-        if self.n_mod <= y_square_l:
-            raise ValueError("bound_y and eta are too large for the chosen bit_length")
+        # the centred result |<x, y>| <= n eta X Y must stay below N / 2
+        if 2 * self.n * self.eta * gp.mpz(self.bound_x) * self.bound_y >= self.n_mod:
+            raise FEValidationError(
+                "2 * n * eta * bound_x * bound_y must be smaller than N; increase bit_length"
+            )
 
     def setup(self) -> None:
-        sk_bound = max(self.sec_param, self.bound_y * self.eta)
-        rand = _CSPRNG
-        s = {
-            nid: [gp.mpz(rand.randint(-sk_bound, sk_bound)) for _ in range(self.eta)]
-            for nid in self.lst_nid
-        }
+        """Sample per slot ``s_i <- D_{Z^eta, sigma}`` (ALS16) and a pad ``u_i <- Z_N^eta``."""
+        self.sigma = (
+            (gp.isqrt(self.stat_param) + 1) * self.n_mod * self.n_mod * (gp.isqrt(self.n_mod) + 1)
+        )
+        s = {nid: discrete_gaussian_bigint(self.sigma, self.eta) for nid in self.lst_nid}
+        u = {nid: rand_uniform_vector(self.eta, self.n_mod) for nid in self.lst_nid}
         pk = {
             nid: [pow_signed(self.g, s_i, self.n_square) for s_i in vec]
             for nid, vec in s.items()
         }
-        self.msk = {"s": s}
+        self.msk = {"s": s, "u": u}
         self.mpk = {
             "n_mod": self.n_mod,
             "n_square": self.n_square,
@@ -173,7 +177,10 @@ class MIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         """
         if nid not in self.mpk["pk"]:
             return None
-        return {"pk": [gp.digits(v) for v in self.mpk["pk"][nid]]}
+        return {
+            "pk": [gp.digits(v) for v in self.mpk["pk"][nid]],
+            "u": [gp.digits(v) for v in self.msk["u"][nid]],
+        }
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Perform the get_decryption_keys operation.
@@ -189,6 +196,7 @@ class MIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             raise FEValidationError("invalid fusion weights provided, need a dict")
 
         dct_k = {}
+        z = gp.mpz(0)
         for nid in self.lst_nid:
             if nid not in fusion_weight:
                 raise FEValidationError("fusion weight missing client {}".format(nid))
@@ -198,10 +206,11 @@ class MIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             if any(abs(int(v)) > self.bound_y for v in weights):
                 raise FEValidationError("fusion weight exceeds configured bound_y")
             k = gp.mpz(0)
-            for s_i, y_i in zip(self.msk["s"][nid], weights):
-                k += s_i * gp.mpz(y_i)
+            for s_i, u_i, y_i in zip(self.msk["s"][nid], self.msk["u"][nid], weights):
+                k += s_i * gp.mpz(int(y_i))
+                z += u_i * gp.mpz(int(y_i))
             dct_k[nid] = gp.digits(k)
-        return {"k": dct_k}
+        return {"k": dct_k, "z": gp.digits(z % self.n_mod)}
 
 
 class MIFEPaillier(IPFEAbsCrypto):
@@ -232,13 +241,15 @@ class MIFEPaillier(IPFEAbsCrypto):
         n_square = gp.mpz(self.pp["n_square"])
         g = gp.mpz(self.pp["g"])
         pk = [gp.mpz(v) for v in self.sk["pk"]]
+        if "u" not in self.sk:
+            raise FEKeyError("encryption key lacks the one-time pad u")
 
         r = random_below(n_mod // 4)
         c0 = gp.powmod(g, r, n_square)
         c1 = []
-        for x_i, pk_i in zip(lst_pt, pk):
-            x_term = gp.mpz(1) + gp.mpz(x_i) * n_mod
-            x_term %= n_square
+        for x_i, u_i, pk_i in zip(lst_pt, self.sk["u"], pk):
+            w_i = (gp.mpz(int(x_i)) + gp.mpz(u_i)) % n_mod
+            x_term = (1 + w_i * n_mod) % n_square
             ct_i = (x_term * gp.powmod(pk_i, r, n_square)) % n_square
             c1.append(gp.digits(ct_i))
         return {"ct0": gp.digits(c0), "ct1": c1}
@@ -256,9 +267,14 @@ class MIFEPaillier(IPFEAbsCrypto):
         if not dk:
             raise FEKeyError("no decryption key provided")
 
+        if "z" not in dk:
+            raise FEKeyError("decryption key lacks z")
+        if set(dct_ct) != set(dk["k"]) or set(dct_ct) != set(fusion_weight):
+            raise FESchemeError("need one ciphertext for every slot of the key")
         n_mod = gp.mpz(self.pp["n_mod"])
         n_square = gp.mpz(self.pp["n_square"])
-        acc = gp.mpz(1)
+        # E(-z) = (1 + N)^{-z} = 1 - z N mod N^2
+        acc = (1 - gp.mpz(dk["z"]) * n_mod) % n_square
         for nid, ct in dct_ct.items():
             acc *= pow_signed(gp.mpz(ct["ct0"]), -gp.mpz(dk["k"][nid]), n_square)
             acc %= n_square

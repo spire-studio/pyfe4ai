@@ -1,26 +1,35 @@
 """
-LWE-Based Multi-Input Inner-Product Functional Encryption
-| Multi-input organization inspired by
-| "Multi-Input Functional Encryption for Inner Products:
-|  Function-Hiding Realizations and Constructions without Pairings"
-| By Michel Abdalla, Dario Catalano, Dario Fiore, Romain Gay, Bogdan Ursu
-| Published in: CRYPTO 2018
-|
-| This prototype composes per-client simple LWE inner-product FE instances
-| following the repository's MIFE API, using the LWE instantiation of
-| "Simple Functional Encryption Schemes for Inner Products"
-| By Michel Abdalla, Florian Bourse, Angelo De Caro, David Pointcheval
-| Published in: PKC 2015
+LWE multi-input inner-product FE (selective security).
 
-* type:     public-key encryption
-* setting:  Integer based
-* note:     prototype implementation aligned with the existing crypto-ipfe API
+| Abdalla, Catalano, Fiore, Gay, Ursu:
+| "Multi-Input Functional Encryption for Inner Products: Function-Hiding
+|  Realizations and Constructions without Pairings", CRYPTO 2018
+| (ePrint 2017/972) -- Fig. 4 (transformation for bounded-norm inner
+| products), instantiated with the LWE IPFE of Abdalla, Bourse, De Caro,
+| Pointcheval, "Simple Functional Encryption Schemes for Inner Products",
+| PKC 2015, using the two-step decryption of ACFGU18 Section 4.2.
 
-.. warning::
-    Known-insecure (mife/lwe, see pyfe4ai.schemes.status): no ACFGU18 one-time
-    pad and one key component per client: the functional-key holder learns
-    every client's <x_i, y_i>. Use only for functionality or performance
-    experiments.
+* type:     private-key multi-input encryption (MIFE, LWE)
+* setting:  Integer based (Z_q, plaintext modulus p, Delta = floor(q / p))
+
+Construction (slot ``i`` is client ``i``, ``L = q``):
+
+* Setup:    public ``A``; per slot ``S_i`` (``lwe_n x eta`` uniform),
+            ``pk_i = A S_i + E_i`` and a one-time pad ``u_i <- Z_q^eta``;
+            client ``i`` keeps ``(pk_i, u_i)``.
+* Encrypt:  ``w = x_i + u_i mod q``; ``ct0 = A^T r``,
+            ``ct1 = pk_i^T r + Delta * w mod q`` (``r`` binary).
+* KeyGen:   per slot ``sk_i = S_i y_i mod q``, and ``z = sum_i <u_i, y_i> mod q``.
+* Decrypt:  Dec1 per slot ``<y_i, ct1> - <ct0, sk_i> = Delta <w_i, y_i> + noise_i``;
+            ``mu = round(centre(sum_i Dec1_i - Delta z) / Delta)`` (Dec2).
+
+The pad hides each slot's partial result; versions <= 0.2.0 had no pad and
+encoded ``floor(x q / p)``, so the key holder decoded every ``<x_i, y_i>``.
+Deviations: ACFGU18 instantiates Fig. 4 with the adaptively secure ALS16 LWE
+IPFE (that is :mod:`pyfe4ai.schemes.mife.fullysec_lwe`); this module uses
+the selectively secure ABDP15 IPFE, whose two-step decryption is the same.
+All slots share ``A`` (secrets and pads are independent per slot). A
+decryption needs ciphertexts of every slot named in the key.
 """
 
 from __future__ import annotations
@@ -36,8 +45,7 @@ from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.ipfe import ParameterCacheMixin
 from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.lwe_utils import center_lwe_vector
-from pyfe4ai.utils.lwe_utils import decode_lwe_inner_product
+from pyfe4ai.utils.lwe_utils import decode_scaled
 from pyfe4ai.utils.lwe_utils import derive_lwe_parameters
 from pyfe4ai.utils.matrix_utils import digits_to_matrix
 from pyfe4ai.utils.matrix_utils import digits_to_vector
@@ -50,7 +58,8 @@ from pyfe4ai.utils.matrix_utils import vector_to_digits
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
 from pyfe4ai.utils.sampling_utils import rand_bit_vector
 from pyfe4ai.utils.sampling_utils import rand_uniform_matrix
-from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
+from pyfe4ai.utils.sampling_utils import rand_uniform_vector
+from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +146,10 @@ class MIFELWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                     pk_nid[i][j] = (pk_nid[i][j] + noise[i][j]) % self.q
             pk[nid] = pk_nid
 
-        self.msk = {"sk": sk}
+        self.msk = {
+            "sk": sk,
+            "u": {nid: rand_uniform_vector(self.eta, self.q) for nid in self.lst_nid},
+        }
         self.mpk = {"pk": pk}
         logger.info("MIFE LWE setup successfully")
 
@@ -172,7 +184,10 @@ class MIFELWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         """
         if nid not in self.mpk["pk"]:
             return None
-        return {"pk": matrix_to_digits(self.mpk["pk"][nid])}
+        return {
+            "pk": matrix_to_digits(self.mpk["pk"][nid]),
+            "u": vector_to_digits(self.msk["u"][nid]),
+        }
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Derive a functional decryption key for the given fusion weights.
@@ -197,6 +212,7 @@ class MIFELWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             raise FEValidationError("invalid fusion weights provided, need a dict")
 
         sk_y = {}
+        z = gp.mpz(0)
         for nid in self.lst_nid:
             if nid not in fusion_weight:
                 raise FEValidationError("fusion weight missing client {}".format(nid))
@@ -209,7 +225,8 @@ class MIFELWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             sk_y[nid] = vector_to_digits(
                 matvec_mod(self.msk["sk"][nid], y_vec, self.q)
             )
-        return {"sk_y": sk_y}
+            z += sum(u * y_j for u, y_j in zip(self.msk["u"][nid], y_vec))
+        return {"sk_y": sk_y, "z": gp.digits(z % self.q)}
 
 
 class MIFELWE(IPFEAbsCrypto):
@@ -257,10 +274,13 @@ class MIFELWE(IPFEAbsCrypto):
         a_trans = transpose(self.A)
         ct0 = matvec_mod(a_trans, r, q)
 
+        if "u" not in self.sk:
+            raise FEKeyError("encryption key lacks the one-time pad u")
+        delta = q // gp.mpz(self.pp["p"])
         pk_trans = transpose(pk)
         ct1 = matvec_mod(pk_trans, r, q)
-        centered = center_lwe_vector(lst_pt, gp.mpz(self.pp["p"]), q)
-        ct1 = [(v + c) % q for v, c in zip(ct1, centered)]
+        w = [(gp.mpz(int(x)) + gp.mpz(u)) % q for x, u in zip(lst_pt, self.sk["u"])]
+        ct1 = [(v + delta * w_j) % q for v, w_j in zip(ct1, w)]
 
         return {"ct0": vector_to_digits(ct0), "ct1": vector_to_digits(ct1)}
 
@@ -279,12 +299,15 @@ class MIFELWE(IPFEAbsCrypto):
             FEKeyError: If decryption key is missing.
             FEValidationError: If fusion weight length or values are invalid.
         """
-        if not dk:
+        if not dk or "z" not in dk:
             raise FEKeyError("no decryption key provided")
+        if set(dct_ct) != set(dk["sk_y"]) or set(dct_ct) != set(fusion_weight):
+            raise FESchemeError("need one ciphertext for every slot of the key")
 
         q = gp.mpz(self.pp["q"])
         p = gp.mpz(self.pp["p"])
-        total = 0
+        delta = q // p
+        total = -delta * gp.mpz(dk["z"])
         for nid in dct_ct:
             y = fusion_weight[nid]
             if len(y) != self.pp["eta"]:
@@ -297,9 +320,9 @@ class MIFELWE(IPFEAbsCrypto):
             ct1 = digits_to_vector(dct_ct[nid]["ct1"])
             sk_y = digits_to_vector(dk["sk_y"][nid])
 
-            d = (vecdot_mod(y_vec, ct1, q) - vecdot_mod(ct0, sk_y, q)) % q
-            total += decode_lwe_inner_product(d, p, q)
-        return total
+            total += vecdot_mod(y_vec, ct1, q) - vecdot_mod(ct0, sk_y, q)
+        bound = self.pp["n"] * self.pp["eta"] * gp.mpz(self.pp["bound_x"]) * gp.mpz(self.pp["bound_y"])
+        return decode_scaled(total % q, delta, q, bound)
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
         """Encrypt a list of ndarrays element-wise (requires ``eta=1``).
