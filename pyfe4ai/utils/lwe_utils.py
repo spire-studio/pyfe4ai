@@ -7,7 +7,6 @@ import random
 
 import gmpy2 as gp
 
-from pyfe4ai.utils.exceptions import FEValidationError
 
 _CSPRNG = random.SystemRandom()
 
@@ -69,7 +68,9 @@ def derive_fullysec_lwe_parameters(
             eta: Inner-product vector dimension.
             lwe_n: LWE lattice dimension.
     """
-    k = gp.mpz(2) * gp.mpz(eta) * gp.mpz(bound_x) * gp.mpz(bound_y)
+    # |<x, y>| <= eta X Y takes 2 eta X Y + 1 values: K = 2 eta X Y made +-eta X Y
+    # collide (the sign of the noise decided the result)
+    k = gp.mpz(2) * gp.mpz(eta) * gp.mpz(bound_x) * gp.mpz(bound_y) + 1
     k_float = float(k)
     squared = k_float * k_float
     n_float = float(lwe_n)
@@ -156,50 +157,6 @@ def decode_lwe_inner_product(value: gp.mpz, p: gp.mpz, q: gp.mpz) -> int:
     d = d * p
     d = (d + half_q) // q
     return int(d)
-
-
-def label_scalar_from_hash(hash_value: gp.mpz, label_modulus: int) -> gp.mpz:
-    """Convert a hash value to a non-zero centered label scalar.
-
-    The scalar lies in ``[-(M - 1 - M // 2), M // 2]`` excluding 0, for
-    ``M = label_modulus``. Zero is excluded because a zero scalar removes the
-    per-client label mask ``u * l`` altogether, letting any functional-key
-    holder decode each client's plaintext.
-
-        Args:
-            hash_value: Hash digest value.
-            label_modulus: Modulus for centering the label scalar (>= 2).
-
-        Raises:
-            FEValidationError: If ``label_modulus < 2``.
-    """
-    label_modulus = int(label_modulus)
-    if label_modulus < 2:
-        raise FEValidationError(
-            "label_modulus must be >= 2, got {}".format(label_modulus)
-        )
-    raw = int(hash_value % gp.mpz(label_modulus - 1)) + 1
-    half = label_modulus // 2
-    if raw > half:
-        raw -= label_modulus
-    return gp.mpz(raw)
-
-
-def decode_fullysec_lwe_inner_product(value: gp.mpz, k: gp.mpz, q: gp.mpz) -> int:
-    """Extract a plaintext from a fully-secure LWE ciphertext.
-
-        Args:
-            value: Input value.
-            k: Inner-product bound.
-            q: Modulus (or second prime).
-    """
-    d = gp.mpz(value) % q
-    half_q = q // 2
-    if d > half_q:
-        d -= q
-    q_div_k = q // k
-    q_div_2k = q // (k * 2)
-    return int((d + q_div_2k) // q_div_k)
 
 
 #: Gaussian tail cut used in worst-case bounds: a Gaussian sample exceeds

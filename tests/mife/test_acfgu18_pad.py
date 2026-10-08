@@ -36,6 +36,24 @@ def _damgard():
     return MIFEDamgardKeyGenerator, MIFEDamgard, cfg, slot_value, expected
 
 
+def _ddh():
+    from pyfe4ai.schemes.mife.ddh import MIFE, MIFEKeyGenerator
+
+    cfg = {"sec_param": 128, "eta": 2, "n": 3, "s": 1, "lst_nid": NIDS}
+
+    def slot_value(pp, ct, dk, nid, y):
+        p = gp.mpz(pp["p"])
+        acc = gp.powmod(gp.mpz(ct["t"]), -gp.mpz(dk["d"][nid]), p)
+        for c_j, y_j in zip(ct["c"], y):
+            acc = acc * gp.powmod(gp.mpz(c_j), gp.mpz(y_j), p) % p
+        return acc
+
+    def expected(pp, value):
+        return gp.powmod(gp.mpz(pp["g"]), gp.mpz(value), gp.mpz(pp["p"]))
+
+    return MIFEKeyGenerator, MIFE, cfg, slot_value, expected
+
+
 def _paillier():
     from pyfe4ai.schemes.mife.paillier import MIFEPaillier, MIFEPaillierKeyGenerator
 
@@ -76,6 +94,7 @@ def _lwe(module, kg_name, crypto_name, delta_key):
 
 
 SCHEMES = {
+    "ddh": _ddh,
     "damgard": _damgard,
     "paillier": _paillier,
     "lwe": lambda: _lwe("pyfe4ai.schemes.mife.lwe", "MIFELWEKeyGenerator", "MIFELWE", "p"),

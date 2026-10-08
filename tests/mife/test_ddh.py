@@ -49,7 +49,7 @@ def test_key_generator(kg_config):
 
     for nid in lst_nid_expected:
         sk_nid = kg.get_private_keys(nid)
-        assert "w" in sk_nid
+        assert "h" in sk_nid
         assert "u" in sk_nid
 
     fusion_weight = {
@@ -128,8 +128,7 @@ def test_client_keys_are_independent():
         {"sec_param": 256, "lst_nid": lst_nid, "eta": 2, "n": 3, "s": 1}
     )
     kg.setup()
-    keys = [kg.get_private_keys(nid)["w"] for nid in lst_nid]
-    flat = [e for key in keys for w_i in key for e in w_i]
+    flat = [e for nid in lst_nid for e in kg.get_private_keys(nid)["h"]]
     assert len(set(flat)) == len(flat)
 
 
@@ -148,9 +147,8 @@ def test_client_cannot_unmask_other_client():
     sk_b = kg.get_private_keys("nid_1")
     ct_b = MIFE({"id": "nid_1", "precision": 3, "keys": {"pp": pp, "sk": sk_b}}).encrypt([5])
 
-    w_a = gp.mpz(sk_a["w"][0][0]) + gp.mpz(sk_a["w"][0][1])
-    mask_guess = gp.mpz(1)
-    for t in ct_b["t"]:
-        mask_guess = mask_guess * gp.powmod(gp.mpz(t), w_a, p) % p
+    # even knowing its own slot secret s_a, client A cannot strip B's mask
+    s_a = kg.msk["s"]["nid_0"][0]
+    mask_guess = gp.powmod(gp.mpz(ct_b["t"]), s_a, p)
     unmasked = gp.divm(gp.mpz(ct_b["c"][0]), mask_guess, p)
     assert unmasked != gp.powmod(g, 5 + gp.mpz(sk_b["u"][0]), p)

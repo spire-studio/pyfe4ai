@@ -1,24 +1,32 @@
 """
 Function-Hiding Inner-Product Encryption over Pairings
-| Based on
 | "Function-Hiding Inner Product Encryption is Practical"
-| By Kim, Lewi, Mandal, Montgomery, Roy, Wu
-|
-| This prototype follows the GoFE `innerprod/fullysec/fhipe.go` structure and
-| adapts it to the repository's single-input FE API.
+| By Kim, Lewi, Mandal, Montgomery, Roy, Wu, SCN 2018 (ePrint 2016/440),
+| Section 3; structure as in GoFE's ``innerprod/fullysec/fhipe.go``.
 
-* type:     public-key encryption
-* setting:  Pairing based
-* note:     research prototype aligned with the existing crypto-ipfe API
+* type:     secret-key encryption with function-hiding keys
+* setting:  asymmetric pairing group (default MNT224); secure in the generic
+            bilinear group model
 
+``B <- GL_n(Z_q)`` (rejection sampling), ``B* = det(B) (B^{-1})^T``. The key for
+``y`` is ``(g1^{alpha det B}, g1^{alpha B y})``, a ciphertext of ``x`` is
+``(g2^beta, g2^{beta B* x})``; decryption pairs them and solves a bounded
+discrete log of ``e(g1, g2)^{alpha beta det B <x, y>}`` to base
+``e(g1, g2)^{alpha beta det B}``. Keys live in G1 and ciphertexts in G2, as in
+the paper (``B`` used transposed, which is identically distributed).
+
+Deviation: every vector is padded as ``x' = (x, 1, 0)``, ``y' = (y, 0, 1)``
+(``<x', y'> = <x, y>``) so that ``n = eta + 2 >= 3`` and no vector is zero: with
+``n = 1`` (``B* = 1``) ciphertexts and keys revealed ``x`` and ``y`` directly,
+and an all-zero vector was recognisable without a key -- the paper requires
+non-zero vectors. The encryption key ``(g2, B*)`` determines ``B`` up to a
+scalar and is master-secret equivalent.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import math
-import os
 
 import gmpy2 as gp
 
@@ -30,6 +38,7 @@ from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup, pair
 from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
+from pyfe4ai.utils.validation import int_vector
 from pyfe4ai.utils.pairing_utils import (
     bounded_discrete_log_gt,
     mat_vec_mod,
@@ -101,10 +110,11 @@ class SIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.g1 = self.group.random(G1)
         self.g2 = self.group.random(G2)
 
+        dim = self.eta + 2  # padded vectors (x, 1, 0) and (y, 0, 1)
         while True:
             b = [
-                [gp.mpz(int(self.group.random(ZR))) for _ in range(self.eta)]
-                for _ in range(self.eta)
+                [gp.mpz(int(self.group.random(ZR))) for _ in range(dim)]
+                for _ in range(dim)
             ]
             try:
                 b_inv, det = _matrix_inverse_mod(b, self.order)
@@ -156,15 +166,10 @@ class SIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         credentials = kwargs.get("credentials", None)
         if not credentials:
             raise FEKeyError("need credentials for FH-IPE decryption key generation")
-        fusion_weight = credentials.get("fusion_weight")
-        if not isinstance(fusion_weight, list):
-            raise FEValidationError("invalid fusion weights provided, need a list")
-        if len(fusion_weight) != self.eta:
-            raise FEValidationError("invalid fusion weights provided, length mismatch")
-        if any(abs(int(v)) > self.bound_y for v in fusion_weight):
-            raise FEValidationError("fusion weight exceeds configured bound_y")
-
-        y = [gp.mpz(v) for v in fusion_weight]
+        y = int_vector(
+            credentials.get("fusion_weight"), "fusion weight", length=self.eta, bound=self.bound_y
+        )
+        y = [gp.mpz(v) for v in y] + [gp.mpz(0), gp.mpz(1)]
         b = [[gp.mpz(v) for v in row] for row in self.msk["b"]]
         det = gp.mpz(self.msk["det"])
         alpha = _random_nonzero_zr(self.group)
@@ -203,12 +208,8 @@ class SIFEFHIPE(IPFEAbsCrypto):
     def encrypt(self, lst_pt: list) -> dict:
         if not self._has_private_keys():
             raise FEKeyError("no encryption key provided")
-        if len(lst_pt) != self.pp["eta"]:
-            raise FEValidationError("invalid size of input plaintext")
-        if any(abs(int(v)) > gp.mpz(self.pp["bound_x"]) for v in lst_pt):
-            raise FEValidationError("plaintext exceeds configured bound_x")
-
-        x = [gp.mpz(v) for v in lst_pt]
+        x = int_vector(lst_pt, "plaintext", length=self.pp["eta"], bound=int(self.pp["bound_x"]))
+        x = [gp.mpz(v) for v in x] + [gp.mpz(1), gp.mpz(0)]
         b_star = [[gp.mpz(v) for v in row] for row in self.sk["b_star"]]
         g2 = self.group.deserialize(self.sk["g2"].encode("utf-8"))
         beta = _random_nonzero_zr(self.group)
@@ -231,17 +232,14 @@ class SIFEFHIPE(IPFEAbsCrypto):
                 dk: Functional decryption key.
                 fusion_weight: Fusion weight vector (or dict of per-client weight vectors).
         """
-        if len(fusion_weight) != self.pp["eta"]:
-            raise FEValidationError("invalid fusion weight length")
-        if any(abs(int(v)) > gp.mpz(self.pp["bound_y"]) for v in fusion_weight):
-            raise FEValidationError("fusion weight exceeds configured bound_y")
+        int_vector(fusion_weight, "fusion weight", length=self.pp["eta"], bound=int(self.pp["bound_y"]))
 
         c1 = self.group.deserialize(dct_ct["c1"].encode("utf-8"))
         c2 = [self.group.deserialize(v.encode("utf-8")) for v in dct_ct["c2"]]
         k1 = self.group.deserialize(dk["k1"].encode("utf-8"))
         k2 = [self.group.deserialize(v.encode("utf-8")) for v in dk["k2"]]
 
-        if len(c2) != self.pp["eta"] or len(k2) != self.pp["eta"]:
+        if len(c2) != self.pp["eta"] + 2 or len(k2) != self.pp["eta"] + 2:
             raise FEValidationError("key or ciphertext length mismatch")
 
         d1 = pair(k1, c1)

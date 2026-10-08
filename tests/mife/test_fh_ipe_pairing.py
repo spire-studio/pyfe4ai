@@ -52,3 +52,56 @@ def test_entire_process(kg_config):
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
     computed = decryptor.decrypt(dct_ct, dk, dct_y)
     assert computed == expected
+
+
+def _round(kg_config, dct_x, dct_y):
+    kg = MIFEFHIPEKeyGenerator(kg_config)
+    kg.setup()
+    pp = kg.get_public_parameters()
+    cts = {
+        nid: MIFEFHIPE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(dct_x[nid])
+        for nid in kg_config["lst_nid"]
+    }
+    return kg, pp, cts
+
+
+def test_slot_results_are_masked_and_keys_do_not_mix(kg_config):
+    """v0.2.0 decoded every slot separately (per-slot <x_i, y_i>) and slot keys
+    of different functional keys could be recombined."""
+    from pyfe4ai.utils.exceptions import FESchemeError
+    from pyfe4ai.utils.pairing_backend import GT
+    from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
+
+    nids = kg_config["lst_nid"]
+    x = {"nid_0": [5, 0, 0, 0], "nid_1": [-5, 0, 0, 0], "nid_2": [0, 0, 0, 0]}
+    y1 = {nid: [1, 0, 0, 0] for nid in nids}
+    y2 = {nid: [0, 1, 0, 0] for nid in nids}
+    kg, pp, cts = _round(kg_config, x, y1)
+    dec = MIFEFHIPE({"id": "sid_0", "keys": {"pp": pp}})
+    dk1 = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y1})
+    dk2 = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y2})
+    assert dec.decrypt(cts, dk1, y1) == 0
+
+    ctx = dec.ctx
+    one = ctx.group.init(GT, 1)
+    slot0 = ctx.fhipe.decrypt([ctx.de(v) for v in cts["nid_0"]["ct"]], [ctx.de(v) for v in dk1["dk"]["nid_0"]], one)
+    with pytest.raises(ValueError):
+        bounded_discrete_log_gt(ctx.group, ctx.fhipe.gt, slot0, 1000)
+
+    mixed = {"dk": {"nid_0": dk1["dk"]["nid_0"], "nid_1": dk2["dk"]["nid_1"], "nid_2": dk1["dk"]["nid_2"]},
+             "z": dk1["z"], "weights_id": dk1["weights_id"]}
+    assert dec.decrypt(cts, mixed, y1) is None
+
+    with pytest.raises(FESchemeError):
+        dec.decrypt({k: v for k, v in cts.items() if k != "nid_2"}, dk1, y1)
+    with pytest.raises(FESchemeError):
+        dec.decrypt(cts, dk1, y2)
+
+
+def test_eta_one_and_zero_weights(kg_config):
+    cfg = dict(kg_config, eta=1)
+    x = {"nid_0": [3], "nid_1": [-2], "nid_2": [6]}
+    y = {"nid_0": [0], "nid_1": [4], "nid_2": [-1]}
+    kg, pp, cts = _round(cfg, x, y)
+    dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y})
+    assert MIFEFHIPE({"id": "sid_0", "keys": {"pp": pp}}).decrypt(cts, dk, y) == -8 - 6

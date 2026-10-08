@@ -1,23 +1,34 @@
 """
 Partially Function-Hiding Inner-Product Encryption over Pairings
-| Based on
 | "A New Paradigm for Public-Key Functional Encryption for Degree-2 Polynomials"
-| By Romain Gay
-|
-| This prototype follows the GoFE `innerprod/fullysec/part_fh_ipe.go`
-| organization and adapts it to the repository's single-input FE API.
+| By Romain Gay, PKC 2020 (ePrint 2020/093) -- Fig. 8, CPA variant (no
+| QANIZK), with k = 1 (SXDH); structure as in GoFE's
+| ``innerprod/fullysec/part_fh_ipe.go``.
 
-* type:     public-key encryption
-* setting:  Pairing based
-* note:     research prototype aligned with the existing crypto-ipfe API
+* type:     public-key encryption for vectors in the span of a public matrix
+            ``M``; secret-key encryption (``Enc'``) of arbitrary vectors
+* setting:  asymmetric pairing group (default MNT224)
 
+``a, b <- (1, Z_q)``, ``U in Z_q^{(eta+2) x 2}``, ``V in Z_q^{eta x 2}`` and a
+random full-rank ``M in Z^{eta x k}`` with ``k = subspace_dim < eta``; the
+public key is ``([a]_1, [U a]_1, V^T M, M)`` and ``msk = (b, U, V)``.
+
+* Enc(t):   ``[c = a r ; (-V^T M t ; M t) + U c]_1`` for ``t in Z^k``.
+* Enc'(x):  the same with ``(-V^T x ; x)``; needs ``V``, so it is run by the
+            key generator (:meth:`SIFEPartFHIPEKeyGenerator.sec_encrypt`).
+* KeyGen(y): ``[(-U^T w ; w)]_2`` with ``w = (b s ; y + V b s)``.
+* Dec:      ``prod_j e(ct_j, sk_j) = [<x, y>]_T`` and a bounded discrete log.
+
+Keys reveal ``y`` only up to its projection onto the span of ``M``. Versions
+<= 0.2.0 handed the master secret key to every encryptor and, by default,
+used a square ``M`` (``k = eta``), which reveals ``V`` and with it ``y``.
+Deviations: ``M`` and ``V^T M`` are published in the clear instead of in G1.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import os
 import random
 
 import gmpy2 as gp
@@ -37,6 +48,8 @@ from pyfe4ai.utils.pairing_backend import G1, G2, PairingGroup, pair
 from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.utils.pairing_utils import matrix_inverse_mod
+from pyfe4ai.utils.validation import int_vector
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +183,10 @@ class SIFEPartFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         require_pairing_backend()
         self.eta = config.get("eta", CryptoCONST.SIFE_DEFAULT_ETA)
         self.bound = gp.mpz(config.get("bound", config.get("bound_x", 16)))
-        self.subspace_dim = int(config.get("subspace_dim", max(1, min(3, self.eta))))
+        self.subspace_dim = int(config.get("subspace_dim", min(3, self.eta - 1)))
+        if not 1 <= self.subspace_dim < self.eta:
+            # a square M (k = eta) makes V = (V^T M) M^{-1} public, and keys reveal y
+            raise FEValidationError("subspace_dim must satisfy 1 <= subspace_dim < eta")
         self.coeff_bound = gp.mpz(config.get("coeff_bound", 1))
         self.pairing_group_param = config.get("pairing_group_param", DEFAULT_PAIRING_GROUP)
         check_asymmetric(self.pairing_group_param)
@@ -217,11 +233,16 @@ class SIFEPartFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         v = _rand_matrix(self.eta, 2, order)
 
         m_entry_bound = max(gp.mpz(1), self.bound // max(1, self.subspace_dim * int(self.coeff_bound)))
-        m = _rand_bounded_matrix(self.eta, self.subspace_dim, m_entry_bound)
+        while True:  # Gay20 Sec. 3.1: M of full column rank (M^T M invertible)
+            m = _rand_bounded_matrix(self.eta, self.subspace_dim, m_entry_bound)
+            try:
+                matrix_inverse_mod(_matmul_mod(transpose_mod(m), m, order), order)
+                break
+            except ValueError:
+                continue
 
         ua_scalars = mat_vec_mod(u, a_vec, order)
-        vt = transpose_mod(v)
-        vt_m = matmul_plain = _matmul_mod(vt, m, order)
+        vt_m = _matmul_mod(transpose_mod(v), m, order)
 
         self.pp = {
             "eta": self.eta,
@@ -247,16 +268,25 @@ class SIFEPartFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         return self.pp
 
     def get_private_keys(self, nid: str = "nid_default", **kwargs) -> dict | None:
-        """Perform the get_private_keys operation.
+        """Public-key scheme: encryptors need the public parameters only.
 
-            Args:
-                nid: Node identifier.
+        Returns ``None``; versions <= 0.2.0 returned the master secret key.
         """
-        return {
-            "b": self.msk["b"],
-            "u": self.msk["u"],
-            "v": self.msk["v"],
-        }
+        return None
+
+    def sec_encrypt(self, lst_pt: list) -> dict:
+        """``Enc'(msk, x)`` for any ``x`` with ``|x_i| <= bound`` (needs ``V``)."""
+        x = int_vector(lst_pt, "plaintext", length=self.eta, bound=int(self.bound))
+        order = self.order
+        g1 = self.group.deserialize(self.pp["g1"].encode("utf-8"))
+        a = _deserialize_vec(self.group, self.pp["a"])
+        ua = _deserialize_vec(self.group, self.pp["ua"])
+        vt = transpose_mod([[gp.mpz(v) for v in row] for row in self.msk["v"]])
+        r = random_nonzero_zr(self.group)
+        neg_vt_x = [(-v) % order for v in mat_vec_mod(vt, [gp.mpz(v) for v in x], order)]
+        body = _g1_pow_vec(self.group, g1, neg_vt_x + [gp.mpz(v) for v in x])
+        cipher = [elem ** r for elem in a] + [lhs * (rhs ** r) for lhs, rhs in zip(body, ua)]
+        return {"ct": _serialize_vec(self.group, cipher)}
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Perform the get_decryption_keys operation.
@@ -267,13 +297,9 @@ class SIFEPartFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         credentials = kwargs.get("credentials", None)
         if not credentials:
             raise FEKeyError("need credentials for partially FH-IPE decryption key generation")
-        fusion_weight = credentials.get("fusion_weight")
-        if not isinstance(fusion_weight, list):
-            raise FEValidationError("invalid fusion weights provided, need a list")
-        if len(fusion_weight) != self.eta:
-            raise FEValidationError("invalid fusion weights provided, length mismatch")
-        if any(abs(int(v)) > self.bound for v in fusion_weight):
-            raise FEValidationError("fusion weight exceeds configured bound")
+        fusion_weight = int_vector(
+            credentials.get("fusion_weight"), "fusion weight", length=self.eta, bound=int(self.bound)
+        )
 
         order = self.order
         y = [gp.mpz(v) for v in fusion_weight]
@@ -313,12 +339,13 @@ class SIFEPartFHIPE(IPFEAbsCrypto):
             self.sk = self.keys["sk"]
 
     def encrypt(self, lst_pt: list) -> dict:
+        """Public ``Enc(t)`` of ``x = M t`` for ``k`` coefficients ``t``."""
         if len(lst_pt) != self.pp["subspace_dim"]:
             raise FESchemeError("public encryption expects subspace coefficients of configured dimension")
-        if any(abs(int(v)) > gp.mpz(self.pp["coeff_bound"]) for v in lst_pt):
-            raise FEValidationError("subspace coefficients exceed configured coeff_bound")
-
-        t = [gp.mpz(v) for v in lst_pt]
+        t = [
+            gp.mpz(v)
+            for v in int_vector(lst_pt, "subspace coefficients", bound=int(self.pp["coeff_bound"]))
+        ]
         m = [[gp.mpz(v) for v in row] for row in self.pp["m"]]
         x = _matrix_vec_plain(m, t)
         if any(abs(int(v)) > gp.mpz(self.pp["bound"]) for v in x):
@@ -330,7 +357,6 @@ class SIFEPartFHIPE(IPFEAbsCrypto):
         vt_m = [[gp.mpz(v) for v in row] for row in self.pp["vt_m"]]
 
         r = random_nonzero_zr(self.group)
-        r_int = gp.mpz(int(r))
         c = [elem ** r for elem in a]
         uc = [elem ** r for elem in ua]
 
@@ -339,34 +365,6 @@ class SIFEPartFHIPE(IPFEAbsCrypto):
         mt_g1 = _g1_pow_vec(self.group, g1, x)
         prefix = _g1_pow_vec(self.group, g1, neg_vt_mt)
         cipher2 = prefix + mt_g1
-        cipher2 = [lhs * rhs for lhs, rhs in zip(cipher2, uc)]
-        cipher = c + cipher2
-        return {"ct": _serialize_vec(self.group, cipher)}
-
-    def sec_encrypt(self, lst_pt: list) -> dict:
-        if not self._has_private_keys():
-            raise FEKeyError("no secret key provided for secret-key encryption")
-        if len(lst_pt) != self.pp["eta"]:
-            raise FEValidationError("invalid size of input plaintext")
-        if any(abs(int(v)) > gp.mpz(self.pp["bound"]) for v in lst_pt):
-            raise FEValidationError("plaintext exceeds configured bound")
-
-        x = [gp.mpz(v) for v in lst_pt]
-        a = _deserialize_vec(self.group, self.pp["a"])
-        ua = _deserialize_vec(self.group, self.pp["ua"])
-        g1 = self.group.deserialize(self.pp["g1"].encode("utf-8"))
-        v = [[gp.mpz(v) for v in row] for row in self.sk["v"]]
-        vt = transpose_mod(v)
-
-        r = random_nonzero_zr(self.group)
-        c = [elem ** r for elem in a]
-        uc = [elem ** r for elem in ua]
-
-        vt_x = mat_vec_mod(vt, x, self.order)
-        neg_vt_x = [(-v) % self.order for v in vt_x]
-        x_g1 = _g1_pow_vec(self.group, g1, x)
-        prefix = _g1_pow_vec(self.group, g1, neg_vt_x)
-        cipher2 = prefix + x_g1
         cipher2 = [lhs * rhs for lhs, rhs in zip(cipher2, uc)]
         cipher = c + cipher2
         return {"ct": _serialize_vec(self.group, cipher)}

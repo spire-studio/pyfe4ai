@@ -94,12 +94,49 @@ table and *Known Issues* before relying on any privacy property.
   family) default to the asymmetric group `MNT224` instead of the symmetric
   `SS512` and reject symmetric groups: their constructions assume SXDH or a
   generic asymmetric bilinear group, and DDH is easy in a symmetric one.
+- **Review of the remaining schemes** against their papers:
+  - SIFE-DDH, SIFE-DDH-Dynamic and MIFE-DDH published ciphertext components
+    as the integer product of two residues mod `p`; trial division (or
+    factoring) recovered the plaintext from the ciphertext alone. Every
+    element is now reduced mod `p`, and keys mod `q` (a key with a large
+    weight used to reveal the master secret / the MIFE pads).
+  - SIFE partial-FH-IPE (Gay20 Fig. 8) handed the master secret key
+    `(b, U, V)` to every encryptor, so any client decrypted everything and
+    recovered every key's weights. `get_private_keys` now returns `None` and
+    `Enc'` is run by the key generator (`sec_encrypt`). The default subspace
+    dimension equalled `eta` (a square `M` reveals `V`); it is now
+    `min(3, eta - 1)` and `M` is resampled until it has full rank.
+  - SIFE FH-IPE (KLMMRW18) had no privacy for `eta = 1` (`B* = 1`) and let
+    anyone recognise zero vectors; vectors are now padded to `(x, 1, 0)`,
+    `(y, 0, 1)`.
+  - MIFE FH-IPE ran independent per-slot instances and decoded every slot,
+    revealing each `<x_i, y_i>` and allowing slot keys of different
+    functional keys to be recombined; it now implements ACFGU18 Fig. 12.
+  - MIFE in federated learning: MIFE has no labels, so one functional key
+    combines any ciphertexts of a client and reveals differences between
+    its values. `encrypt_gradient` / `aggregate_gradients` refuse MIFE
+    schemes (use MCFE).
+  - tMIFE-DDH is rebuilt on MIFE-DDH with the functional key Shamir-shared
+    mod `q` (as tMCFE-DDH); key shares are bound to their weights.
+  - Quadratic Quad now implements Gay20 Fig. 4 (it encrypted `x (x) y` with
+    an IPFE before): ciphertexts of `4n + 2m + 4` G1 and `m` G2 elements.
+  - Gaussian samples wider than `2^40` (FullySec-LWE keys and noise) were
+    rounded doubles whose low bits were all zero; they now use the
+    arbitrary-precision sampler.
+  - charm serialises the identity of G1 into a point outside the group;
+    `pyfe4ai.utils.pairing_backend.PairingGroup` writes it explicitly.
 
 ### Added
 
+- `pyfe4ai.utils.validation.int_vector`: scheme inputs must be integers
+  (integral floats accepted); non-integral values raise
+  `FEValidationError` instead of being truncated.
+- `pyfe4ai.utils.ring_lwe_utils.bmms21_parameters`, `check_ring_n` and
+  `DEFAULT_RING_N`; `dlog_bound` crypto option for SIFE-DDH and MIFE-DDH;
+  `FHIPE.keygen(..., r=...)`.
 - `pyfe4ai.schemes.status` (`SchemeStatus`, `get_scheme_status`, exported
   from `pyfe4ai`): status (`reviewed` / `experimental` / `unreviewed` /
-  `known-insecure`), fidelity, reference and issue for all 39 registered
+  `known-insecure`), fidelity, reference and issue for all registered
   schemes; key generators and crypto objects of known-insecure schemes emit
   `pyfe4ai.FESecurityWarning`; `FESchemeWrapper.status`;
   `markdown_table()` renders the README table, which a test keeps in sync.
@@ -156,13 +193,42 @@ table and *Known Issues* before relying on any privacy property.
   `{w, ct_digest, sid, lst_sid_enrolled}`. The config keys `sec_level`,
   `u_bound` and `label_modulus` are ignored and parameters are no longer
   cached.
+- Decryption keys of the SIFE schemes (DDH, LWE, Damgard, FullySec-LWE,
+  Ring-LWE) carry their weights `y`, and decryption raises
+  `FESchemeError` for other weights; MIFE/FH keys carry `weights_id`.
+  Ciphertext lengths are checked.
+- SIFE-FullySec-LWE: `K = 2 eta X Y + 1`, encoding `floor(q / K) x`
+  (caches carry a construction tag and are regenerated).
+- SIFE-Ring-LWE / MIFE / MCFE: `ring_n` defaults to 32 (it was claimed to be
+  derived but always was 32) and must be a power of two.
+- MIFE-DDH: client keys `{h, u}` (no secret slot key), `ct = {t, c}`, keys
+  must cover every slot. tMIFE-DDH: shares `{d, z, sid, lst_sid,
+  weights_id}`, partial decryptions `{c_y, w, ct_digest, sid,
+  lst_sid_enrolled}`. MIFE FH-IPE: `sk = {imsk}`, `ct = {ct}`,
+  `dk = {dk, z, weights_id}`, no parameter cache. Quad: `ct = {ct_x, ct_y,
+  ct}`, `dk = {f, k}`, no parameter cache.
+- SIFE FH-IPE ciphertexts and keys have `eta + 2` components.
 - Pairing-based schemes: `pairing_group_param` defaults to `MNT224`;
   `SS512` and `SS1024` raise `FEValidationError`. Parameters, keys and
   ciphertexts created over `SS512` cannot be reused (cached parameters are
   regenerated).
 
+### Removed
+
+- `mife/ddh_hybrid_alpha` (HybridAlpha): it duplicated MIFE-DDH without the
+  paper's inference-prevention filter, and the published design leaks
+  individual updates (MIFE without labels; a stateless filter that allows
+  keys for `S` and `S` minus one client).
+- Unused modules `schemes/lwe_base.py`, `schemes/ring_lwe_base.py`,
+  `schemes/paillier_base.py` and the helpers `label_scalar_from_hash`,
+  `decode_fullysec_lwe_inner_product`.
+
 ### Fixed
 
+- SIFE-FullySec-LWE decoded `+-eta X Y` with a random sign (`K` was
+  `2 eta X Y`). SIFE-Damgard could not decrypt in an instance holding the
+  encryption key. SIFE-LWE's ndarray helper skipped the `bound_x` check.
+  The MIFE Ring-LWE key generator overwrote the SIFE parameter cache.
 - Ring-LWE plaintext modulus (SIFE, MIFE, MCFE): `p` was exactly
   `2 l X Y`, so inner products of `+-l X Y` were ambiguous; it is now
   `2 l X Y + 2` (parameter caches are regenerated).
@@ -171,8 +237,10 @@ table and *Known Issues* before relying on any privacy property.
 
 - README: *Scheme Status* table, rewritten *Known Issues*, the scheme table
   cites the implemented constructions (ACFGU18 Fig. 4, ABMPSW20, BMMS21
-  Sec. 6, AGT21b, NPS24); landing page matrix updated; the docs index no
-  longer claims a uniform `setup / keygen / encrypt / decrypt` API.
+  Sec. 6, AGT21b, NPS24, ACFGU18 Fig. 12, Gay20 Fig. 4); the ALS16 link
+  pointed to a different paper (ePrint 2016/011, now 2015/608); landing
+  page matrix updated; the docs index no longer claims a uniform
+  `setup / keygen / encrypt / decrypt` API.
 
 ## [0.2.0] — 2026-10-07
 

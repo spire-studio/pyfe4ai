@@ -106,15 +106,17 @@ class FHIPE:
         ]
         return head + ct_in
 
-    def keygen(self, msk: dict, y_enc: list, rng=None) -> tuple:
+    def keygen(self, msk: dict, y_enc: list, rng=None, r=None) -> tuple:
         """Key for ``[y]_2`` (``m`` elements of G2); returns (``l + 2`` elements of G2, ``z_sum``).
 
-        *rng* (an object with ``getrandbits``) makes the randomness deterministic.
+        *rng* (an object with ``getrandbits``) makes the randomness deterministic;
+        *r* fixes the inner-layer randomness (shared by all slots of an
+        ACFGU18 Fig. 12 key, whose pad term is then ``sum_i z_i r``).
         """
         if len(y_enc) != self.m:
             raise FEValidationError("FH-IPE key vector must have {} entries".format(self.m))
         p = self.order
-        r = self._rand(rng)
+        r = self._rand(rng) if r is None else int(r) % p
         v = list(y_enc) + [self.identity2()] * self.m + [self.g2 ** self._zr(r)]
         sk_in = [
             self._multiexp(v, [(-row[c]) % p for row in msk["u"]], self.identity2())
@@ -129,7 +131,7 @@ class FHIPE:
             key.append(sk_in[j] * (self.g2 ** self._zr(row[0] * ar[0] + row[1] * ar[1])))
         return key, (msk["z"] * r) % p
 
-    def keygen_exponents(self, msk: dict, y: list) -> tuple:
+    def keygen_exponents(self, msk: dict, y: list, r=None) -> tuple:
         """Like :meth:`keygen` for a vector known in the clear, returning exponents.
 
         Returns ``(e, z_sum)`` with the key equal to ``[e]_2``; used to secret-share
@@ -138,7 +140,7 @@ class FHIPE:
         if len(y) != self.m:
             raise FEValidationError("FH-IPE key vector must have {} entries".format(self.m))
         p = self.order
-        r = self._rand()
+        r = self._rand() if r is None else int(r) % p
         v = [int(t) % p for t in y] + [0] * self.m + [r]
         sk_in = [sum(-row[c] * v_j for row, v_j in zip(msk["u"], v)) % p for c in (0, 1)] + v
         r2 = self._rand()

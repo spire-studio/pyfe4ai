@@ -290,3 +290,20 @@ class TestEncryptedGradientSerialization:
         assert restored.precision == 3
         assert restored.nid == "nid_0"
         assert restored.ciphertexts[0].shape == shape
+
+
+@pytest.mark.parametrize("variant", ["ddh", "damgard", "lwe"])
+def test_mife_refused_for_gradient_aggregation(variant):
+    """MIFE has no labels: one key would let the aggregator combine ciphertexts
+    of different elements of a client and learn the differences of its update."""
+    import numpy as _np
+
+    from pyfe4ai.utils.ml_adapter import FESchemeWrapper, aggregate_gradients, encrypt_gradient
+
+    cfg = {"n": 2, "lst_nid": ["nid_0", "nid_1"], "eta": 1, "sec_param": 128, "lwe_n": 8,
+           "bound_x": 4, "bound_y": 4, "bound": 4}
+    wrapper = FESchemeWrapper("mife", variant, cfg)
+    with pytest.raises(NotImplementedError, match="MCFE"):
+        encrypt_gradient(_np.zeros(2), wrapper, nid="nid_0")
+    with pytest.raises(NotImplementedError, match="MCFE"):
+        aggregate_gradients({}, wrapper, {"nid_0": 1, "nid_1": 1})

@@ -119,26 +119,6 @@ def test_entire_process_lst_ndarray(kg_config):
         assert np.allclose(computed[idx], expected[idx], atol=1e-2)
 
 
-@pytest.mark.parametrize("label_modulus", [2, 3, 8, 17])
-def test_label_scalar_is_never_zero(label_modulus):
-    """Regression (N4): ~1/label_modulus of all labels used to map to 0.
-
-    A zero label scalar removes the per-client mask u * l entirely, so the
-    holder of any functional key could decode every client's plaintext.
-    """
-    import gmpy2 as gp
-
-    from pyfe4ai.utils.lwe_utils import label_scalar_from_hash
-
-    scalars = {
-        int(label_scalar_from_hash(gp.mpz(h), label_modulus))
-        for h in range(10 * label_modulus)
-    }
-    assert 0 not in scalars
-    assert len(scalars) == label_modulus - 1
-    assert all(abs(s) <= label_modulus // 2 for s in scalars)
-
-
 SCHEMES = [
     pytest.param(MCFELWEKeyGenerator, MCFELWE, "selective", id="selective"),
     pytest.param(MCFEFullySecLWEKeyGenerator, MCFEFullySecLWE, "adaptive", id="adaptive"),

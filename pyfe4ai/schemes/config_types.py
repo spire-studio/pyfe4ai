@@ -65,10 +65,9 @@ class LWEConfig(FEBaseConfig, total=False):
 
 
 class MCFELWEConfig(LWEConfig, total=False):
-    """Config for MCFE LWE schemes (adds label / noise bounds)."""
+    """Config for MCFE LWE schemes (ABMPSW20 Fig. 4; adds the statistical parameter)."""
 
-    bound_u: int
-    label_modulus: int
+    stat_param: int
 
 
 # ── Ring-LWE family ─────────────────────────────────────────────────
@@ -84,10 +83,7 @@ class RingLWEConfig(FEBaseConfig, total=False):
 
 
 class MCFERingLWEConfig(RingLWEConfig, total=False):
-    """Config for MCFE Ring-LWE schemes."""
-
-    bound_u: int
-    label_modulus: int
+    """Config for MCFE Ring-LWE schemes (keys are bound to a label at key generation)."""
 
 
 # ── Paillier family ─────────────────────────────────────────────────
@@ -115,11 +111,7 @@ class PairingIPEConfig(FEBaseConfig, total=False):
 
 
 class PairingMultiIPEConfig(PairingIPEConfig, total=False):
-    """Config for pairing-based multi-input IPE schemes (FH-MULTI-IPE)."""
-
-    sec_level: int
-    u_bound: int
-    label_modulus: int
+    """Config for pairing-based multi-input / multi-client IPE schemes (FH-MULTI-IPE)."""
 
 
 class PartFHIPEConfig(FEBaseConfig, total=False):

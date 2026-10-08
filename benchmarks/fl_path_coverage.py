@@ -76,7 +76,6 @@ CONFIGS: dict[tuple[str, str], dict] = {
     },
     ("mife", "ddh_threshold"): {"sec_param": 256, **_THRESHOLD},
     ("mife", "lwe_threshold"): {"sec_param": 64, "lwe_n": 16, "bound_x": 6, "bound_y": 6, **_THRESHOLD},
-    ("mife", "ddh_hybrid_alpha"): {"sec_param": 256, **_MULTI},
     ("mcfe", "ddh"): {"sec_param": 256, **_MULTI},
     ("mcfe", "lwe"): {
         "sec_param": 64, "lwe_n": 16, "bound_x": 6, "bound_y": 6, "bound_u": 2,

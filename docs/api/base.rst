@@ -24,27 +24,6 @@ DDH Base Classes
    :members:
    :undoc-members:
 
-LWE Base Classes
-----------------
-
-.. automodule:: pyfe4ai.schemes.lwe_base
-   :members:
-   :undoc-members:
-
-Paillier Base Classes
----------------------
-
-.. automodule:: pyfe4ai.schemes.paillier_base
-   :members:
-   :undoc-members:
-
-Ring-LWE Base Classes
----------------------
-
-.. automodule:: pyfe4ai.schemes.ring_lwe_base
-   :members:
-   :undoc-members:
-
 Threshold Utilities
 -------------------
 

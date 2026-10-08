@@ -419,3 +419,46 @@ def decode_vector(poly: list[gp.mpz], p: gp.mpz, q: gp.mpz, k: int) -> list[int]
         d = (d + half_q) // q
         ret.append(int(d))
     return ret
+
+
+#: Default ring dimension. A toy value chosen for speed: nothing here
+#: estimates the hardness of Ring-LWE at the derived (n, q, sigma), and BMMS21
+#: (Table 1) uses n >= 2048 for comparable settings.
+DEFAULT_RING_N = 32
+
+
+def check_ring_n(ring_n) -> int:
+    """Return *ring_n* if it is a power of two >= 2 (``x^n + 1`` must be the
+    cyclotomic polynomial of BMMS21 and the NTT needs ``2n | q - 1``)."""
+    if isinstance(ring_n, bool) or not isinstance(ring_n, int) or ring_n < 2 or ring_n & (ring_n - 1):
+        from pyfe4ai.utils.exceptions import FEValidationError
+
+        raise FEValidationError("ring_n must be a power of two >= 2, got {!r}".format(ring_n))
+    return ring_n
+
+
+def bmms21_parameters(sec_param: int, eta: int, bound_x, bound_y, ring_n: int) -> tuple:
+    """Plaintext modulus, NTT prime and Gaussian widths of the BMMS21 IPFE.
+
+    For ``l = eta`` coordinates bounded by ``X`` (messages) and ``Y``
+    (weights), ``kappa = sec_param`` and ``sigma = 1`` (BMMS21 Sec. 4.2):
+    ``sigma1 = 2 sqrt(l) X``, ``sigma2 = sqrt(2 (l + 2)) n sigma1 sqrt(kappa)``,
+    ``sigma3 = sqrt(2) sigma2``, ``p = 2 l X Y + 2`` (signed inner products
+    ``|<x, y>| <= l X Y`` strictly inside ``(-p/2, p/2)``) and ``q`` the first
+    NTT-friendly prime above ``p l Y (2 n kappa sigma1 sigma2 + sqrt(kappa) sigma3)``.
+
+    Returns:
+        ``(p, q, sigma1, sigma2, sigma3)``.
+    """
+    import math
+
+    l = int(eta)
+    kappa = float(sec_param)
+    sigma1 = math.sqrt(float(4 * l)) * float(bound_x)
+    p = gp.mpz(bound_x) * gp.mpz(bound_y) * gp.mpz(2 * l) + 2
+    sigma2 = math.sqrt(float(2 * (l + 2) * ring_n * ring_n)) * sigma1 * math.sqrt(kappa)
+    sigma3 = sigma2 * math.sqrt(2.0)
+    q_float = sigma1 * sigma2 * kappa * float(2 * ring_n) + math.sqrt(kappa) * sigma3
+    q_float *= float(bound_y) * float(2 * l)
+    q = next_ntt_prime(gp.mpz(int(q_float)) * p + 1, ring_n)
+    return p, q, sigma1, sigma2, sigma3

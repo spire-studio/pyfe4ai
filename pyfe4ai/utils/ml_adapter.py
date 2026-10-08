@@ -130,11 +130,6 @@ _SCHEME_REGISTRY: dict[tuple[str, str], tuple[str, str, str]] = {
         "ThresholdMIFELWEKeyGenerator",
         "ThresholdMIFELWE",
     ),
-    ("mife", "ddh_hybrid_alpha"): (
-        "pyfe4ai.schemes.mife.ddh_hybrid_alpha",
-        "MIFEKeyGenerator",
-        "MIFE",
-    ),
     # ---- MCFE ----------------------------------------------------------
     ("mcfe", "ddh"): ("pyfe4ai.schemes.mcfe.ddh", "MCFEKeyGenerator", "MCFE"),
     ("mcfe", "lwe"): ("pyfe4ai.schemes.mcfe.lwe", "MCFELWEKeyGenerator", "MCFELWE"),
@@ -254,6 +249,26 @@ def _require_single_decryptor(wrapper: "FESchemeWrapper", api: str) -> None:
             "decryptions from at least t servers (compute_lst_ndarray_ct() "
             "on each server, then decrypt_lst_ndarray_ct() on the combiner). "
             "Use the scheme classes directly.".format(
+                api, wrapper.scheme_type, wrapper.variant
+            )
+        )
+
+
+def _require_labelled_aggregation(wrapper: "FESchemeWrapper", api: str) -> None:
+    """Reject multi-input FE for gradient aggregation.
+
+    MIFE has no labels: the holder of one functional key may combine any
+    ciphertext of each slot, so with element-wise (or per-round) encryption
+    it learns the differences between a client's values -- the client's
+    update up to one offset. Federated aggregation needs MCFE, whose
+    ciphertexts are bound to labels.
+    """
+    if wrapper.scheme_type == "mife":
+        raise NotImplementedError(
+            "{}() does not support '{}/{}': multi-input FE has no labels, so a "
+            "functional-key holder can combine a client's ciphertexts of different "
+            "elements or rounds and learn the differences of its update. Use an "
+            "MCFE scheme (e.g. 'mcfe/ddh') for gradient aggregation.".format(
                 api, wrapper.scheme_type, wrapper.variant
             )
         )
@@ -503,6 +518,7 @@ def encrypt_gradient(
             nid: Node identifier.
             label: Encryption label for replay protection.
     """
+    _require_labelled_aggregation(wrapper, "encrypt_gradient")
     arr = _to_numpy(gradient).astype(np.float64)
     encryptor = wrapper._get_encryptor(nid)
 
@@ -540,6 +556,7 @@ def aggregate_gradients(
             sid: Session / decryption-key identifier.
             label: Encryption label for replay protection.
     """
+    _require_labelled_aggregation(wrapper, "aggregate_gradients")
     _require_single_decryptor(wrapper, "aggregate_gradients")
 
     # Normalise weights to {nid: [w]} format for eta=1 schemes

@@ -6,13 +6,18 @@ Fully Secure LWE-Based Single-Input Inner-Product Functional Encryption
 | By Shweta Agrawal, Benoit Libert, Damien Stehle
 | Published in: CRYPTO 2016
 |
-| This module follows the GoFE `innerprod/fullysec/lwe.go` organization while
-| adapting it to the repository's Python key-generator and crypto API.
+| as recalled in Abdalla, Catalano, Fiore, Gay, Ursu, CRYPTO 2018, Fig. 8.
+| Parameters follow GoFE's ``innerprod/fullysec/lwe.go``.
 
 * type:     public-key encryption
 * setting:  Integer based
-* note:     research prototype aligned with the existing crypto-ipfe API
 
+``A <- Z_q^{m x n}``; ``Z`` has ``D_{sigma1}`` entries in its first ``m/2``
+columns and ``D_{sigma2}`` entries plus the identity in the others; ``U = Z A``.
+The key for ``y`` is ``Z^T y``; ``ct = (A s + e0, U s + e1 + floor(q/K) x)``;
+decryption decodes ``<y, ct1> - <Z^T y, ct0>``. Signed messages and weights:
+``K = 2 eta X Y + 1`` (versions <= 0.2.0 used ``2 eta X Y``, so ``+-eta X Y``
+decoded with a random sign), centred decoding.
 """
 
 from __future__ import annotations
@@ -29,7 +34,7 @@ from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.ipfe import ParameterCacheMixin
 from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.lwe_utils import center_lwe_vector
+from pyfe4ai.utils.lwe_utils import decode_scaled
 from pyfe4ai.utils.lwe_utils import derive_fullysec_lwe_parameters
 from pyfe4ai.utils.matrix_utils import digits_to_matrix
 from pyfe4ai.utils.matrix_utils import digits_to_vector
@@ -42,14 +47,12 @@ from pyfe4ai.utils.matrix_utils import vector_to_digits
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
 from pyfe4ai.utils.sampling_utils import rand_uniform_matrix
 from pyfe4ai.utils.sampling_utils import rand_uniform_vector
-from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
-
-from pyfe4ai.utils.lwe_utils import decode_fullysec_lwe_inner_product
+from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.utils.validation import int_vector
 
 logger = logging.getLogger(__name__)
 
-# Backward-compatible alias
-_decode_fullysec_lwe_inner_product = decode_fullysec_lwe_inner_product
+_CONSTRUCTION = "als16-lwe/v2"  # K = 2 eta X Y + 1, encoding floor(q / K) x
 
 
 class SIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
@@ -86,7 +89,8 @@ class SIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
     def _param_verification(self, param: dict) -> bool:
         """Return ``True`` if *param* matches the current configuration."""
         return (
-            param.get("sec_param") == self.sec_param
+            param.get("construction") == _CONSTRUCTION
+            and param.get("sec_param") == self.sec_param
             and param.get("eta") == self.eta
             and param.get("lwe_n") == self.lwe_n
             and param.get("bound_x") == gp.digits(self.bound_x)
@@ -115,6 +119,7 @@ class SIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         ) as f:
             json.dump(
                 {
+                    "construction": _CONSTRUCTION,
                     "sec_param": self.sec_param,
                     "eta": self.eta,
                     "lwe_n": self.lwe_n,
@@ -139,6 +144,8 @@ class SIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
     def setup(self) -> None:
         """Generate master secret key (``msk``) and master public key (``mpk``)."""
         half_cols = self.m // 2
+        if self.eta > self.m - half_cols:
+            raise FEValidationError("eta must be at most m - m // 2 = {}".format(self.m - half_cols))
         z = [[gp.mpz(0) for _ in range(self.m)] for _ in range(self.eta)]
         for i in range(self.eta):
             for j in range(self.m):
@@ -196,7 +203,7 @@ class SIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             **kwargs: Must include ``credentials`` with ``fusion_weight`` (list of int).
 
         Returns:
-            Dict with ``sk_y`` (the projected secret key).
+            Dict with ``sk_y`` (``Z^T y``) and the weights ``y``.
 
         Raises:
             FEKeyError: If credentials are missing.
@@ -205,18 +212,11 @@ class SIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         credentials = kwargs.get("credentials", None)
         if not credentials:
             raise FEKeyError("need credentials for fully secure SIFE LWE decryption key generation")
-        fusion_weight = credentials.get("fusion_weight")
-        if not isinstance(fusion_weight, list):
-            raise FEValidationError("invalid fusion weights provided, need a list")
-        if len(fusion_weight) != self.eta:
-            raise FEValidationError("invalid fusion weights provided, length mismatch")
-        if any(abs(int(v)) > self.bound_y for v in fusion_weight):
-            raise FEValidationError("fusion weight exceeds configured bound_y")
-
-        y = [gp.mpz(v) for v in fusion_weight]
-        z_t = transpose(self.msk["z"])
-        z_y = matvec_mod(z_t, y, self.q)
-        return {"sk_y": vector_to_digits(z_y)}
+        y = int_vector(
+            credentials.get("fusion_weight"), "fusion weight", length=self.eta, bound=self.bound_y
+        )
+        z_y = matvec_mod(transpose(self.msk["z"]), [gp.mpz(v) for v in y], self.q)
+        return {"sk_y": vector_to_digits(z_y), "y": y}
 
 
 class SIFEFullySecLWE(IPFEAbsCrypto):
@@ -252,13 +252,10 @@ class SIFEFullySecLWE(IPFEAbsCrypto):
             raise FEKeyError("no public parameters provided for encryption")
         if not self._has_private_keys():
             raise FEKeyError("no encryption key provided")
-        if len(lst_pt) != self.pp["eta"]:
-            raise FEValidationError("invalid size of input plaintext")
-        if any(abs(int(v)) > gp.mpz(self.pp["bound_x"]) for v in lst_pt):
-            raise FEValidationError("plaintext exceeds configured bound_x")
+        x = int_vector(lst_pt, "plaintext", length=self.pp["eta"], bound=int(self.pp["bound_x"]))
 
         q = gp.mpz(self.pp["q"])
-        k = gp.mpz(self.pp["k"])
+        delta = q // gp.mpz(self.pp["k"])
         pk = digits_to_matrix(self.sk["pk"])
         r = rand_uniform_vector(self.pp["lwe_n"], q)
         e0 = discrete_gaussian_matrix(1, self.pp["m"], self.pp["sigma_q"])[0]
@@ -268,8 +265,7 @@ class SIFEFullySecLWE(IPFEAbsCrypto):
         c0 = [(a + b) % q for a, b in zip(c0, e0)]
 
         c1 = matvec_mod(pk, r, q)
-        centered = center_lwe_vector(lst_pt, k, q)
-        c1 = [(a + b + c) % q for a, b, c in zip(c1, e1, centered)]
+        c1 = [(a + b + delta * x_i) % q for a, b, x_i in zip(c1, e1, x)]
         return {"ct0": vector_to_digits(c0), "ct1": vector_to_digits(c1)}
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: list):
@@ -281,28 +277,32 @@ class SIFEFullySecLWE(IPFEAbsCrypto):
             fusion_weight: Integer weight vector y.
 
         Returns:
-            The inner product as an integer.
+            The inner product, or ``None`` if it decodes beyond ``eta X Y``
+            (wrong key or ciphertext).
 
         Raises:
             FEKeyError: If decryption key is missing.
-            FEValidationError: If fusion weight length or values are invalid.
+            FESchemeError: If *fusion_weight* are not the key's weights.
+            FEValidationError: If fusion weight or ciphertext are malformed.
         """
         if not dk:
             raise FEKeyError("no decryption key provided")
-        if len(fusion_weight) != self.pp["eta"]:
-            raise FEValidationError("invalid fusion weight length")
-        if any(abs(int(v)) > gp.mpz(self.pp["bound_y"]) for v in fusion_weight):
-            raise FEValidationError("fusion weight exceeds configured bound_y")
+        y = int_vector(
+            fusion_weight, "fusion weight", length=self.pp["eta"], bound=int(self.pp["bound_y"])
+        )
+        if y != dk.get("y"):
+            raise FESchemeError("fusion weights differ from those of the decryption key")
 
         q = gp.mpz(self.pp["q"])
-        k = gp.mpz(self.pp["k"])
-        y = [gp.mpz(v) for v in fusion_weight]
         ct0 = digits_to_vector(dct_ct["ct0"])
         ct1 = digits_to_vector(dct_ct["ct1"])
         z_y = digits_to_vector(dk["sk_y"])
+        if len(ct0) != len(z_y) or len(ct1) != len(y):
+            raise FEValidationError("ciphertext does not match the key dimensions")
 
-        mu = (vecdot_mod(y, ct1, q) - vecdot_mod(z_y, ct0, q)) % q
-        return _decode_fullysec_lwe_inner_product(mu, k, q)
+        mu = (vecdot_mod([gp.mpz(v) for v in y], ct1, q) - vecdot_mod(z_y, ct0, q)) % q
+        bound = self.pp["eta"] * int(self.pp["bound_x"]) * int(self.pp["bound_y"])
+        return decode_scaled(mu, q // gp.mpz(self.pp["k"]), q, bound)
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
         """Encrypt a list of ndarrays element-wise (requires ``eta=1``).

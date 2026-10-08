@@ -42,21 +42,31 @@ def rand_bit_vector(length: int) -> list[gp.mpz]:
     return [gp.mpz(_CSPRNG.randrange(2)) for _ in range(length)]
 
 
+# Above this width a double-precision sample no longer resolves the integers
+# (53-bit mantissa, samples up to ~2^4 sigma): its low bits would be constant.
+_DOUBLE_SAFE_SIGMA = 2 ** 40
+
+
 def discrete_gaussian_matrix(rows: int, cols: int, sigma: float) -> list[list[gp.mpz]]:
     """Sample a matrix from the (rounded) discrete Gaussian distribution.
 
     Samples are drawn from a CSPRNG (``random.SystemRandom``, i.e. OS entropy)
     and rounded to the nearest integer, so this sampler is suitable for LWE
-    noise and secret-key material. Note it is a rounded *continuous* Gaussian
-    rather than a true discrete-Gaussian sampler, and it is not constant-time;
-    this is adequate for a research prototype but not for production
-    side-channel resistance.
+    noise and secret-key material. Widths above ``2^40`` are sampled with
+    :func:`discrete_gaussian_bigint` (a double would leave the low bits of
+    every sample zero). Note it is a rounded *continuous* Gaussian rather
+    than a true discrete-Gaussian sampler, and it is not constant-time; this
+    is adequate for a research prototype but not for production side-channel
+    resistance.
 
         Args:
             rows: Number of rows.
             cols: Number of columns.
             sigma: Standard deviation for the Gaussian distribution.
     """
+    if sigma > _DOUBLE_SAFE_SIGMA:
+        flat = discrete_gaussian_bigint(sigma, rows * cols)
+        return [flat[i * cols:(i + 1) * cols] for i in range(rows)]
     return [
         [gp.mpz(int(round(_CSPRNG.gauss(0.0, sigma)))) for _ in range(cols)]
         for _ in range(rows)

@@ -12,13 +12,6 @@ DDH
    :members:
    :undoc-members:
 
-DDH Hybrid-Alpha
------------------
-
-.. automodule:: pyfe4ai.schemes.mife.ddh_hybrid_alpha
-   :members:
-   :undoc-members:
-
 DDH Threshold
 -------------
 

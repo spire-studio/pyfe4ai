@@ -1,29 +1,32 @@
 """
-Single-Input Inner-Product Functional Encryption
-| Inspired by the fully secure Damgard/DDH instantiation exposed in CiFEr / GoFE
+Single-Input Inner-Product Functional Encryption (Damgard / DDH)
 | From "Fully Secure Functional Encryption for Inner Products,
 |       from Standard Assumptions"
 | By Shweta Agrawal, Benoit Libert, and Damien Stehle
-| Published in: CRYPTO 2016
+| Published in: CRYPTO 2016 -- the DDH scheme, as recalled (D_k-MDDH, here
+| k = 1) in Abdalla, Catalano, Fiore, Gay, Ursu, CRYPTO 2018, Fig. 7.
 
 * type:     public-key encryption
-* setting:  Integer based
-* note:     research-oriented Python prototype aligned with the existing
-            crypto-ipfe API style
+* setting:  Integer based (order-q subgroup of Z_p^*, p = 2q + 1)
 
+``h = g^a`` with ``a`` discarded (``[A]`` with ``A = (1, a)``); per coordinate
+``(s_i, t_i) <- Z_q^2`` and ``pk_i = g^{s_i} h^{t_i}``. The key for ``y`` is
+``(<s, y>, <t, y>) mod q``; ``ct = (g^r, h^r, g^{x_i} pk_i^r)``; decryption
+computes ``prod e_i^{y_i} / (c^{k1} d^{k2}) = g^{<x, y>}`` and a discrete log
+bounded by ``eta B^2``, with ``2 eta B^2 < q`` so that signed results are
+unique.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import random
 
 import gmpy2 as gp
+import numpy as np
 
 _CSPRNG = random.SystemRandom()
-import numpy as np
 
 from pyfe4ai.schemes.ddh_base import DamgardDDHKeyGeneratorBase
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
@@ -31,7 +34,8 @@ from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import _random
 from pyfe4ai.utils.dlog_solver import load_or_build_dlog_table, dlog_table_solve
 from pyfe4ai.utils.modular_utils import pow_signed
-from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
+from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.utils.validation import int_vector
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +61,7 @@ class SIFEDamgardKeyGenerator(DamgardDDHKeyGeneratorBase):
     def _validate_bounds(self) -> None:
         prod = gp.mpz(2 * self.eta * (self.bound**2))
         if prod >= self.q:
-            raise ValueError(
+            raise FEValidationError(
                 "2 * eta * bound^2 should be smaller than the group order"
             )
 
@@ -105,23 +109,12 @@ class SIFEDamgardKeyGenerator(DamgardDDHKeyGeneratorBase):
         credentials = kwargs.get("credentials", None)
         if not credentials:
             raise FEKeyError("need credentials for SIFE Damgard decryption key generation")
-        fusion_weights = credentials.get("fusion_weight")
-        if not isinstance(fusion_weights, list):
-            raise FEValidationError("invalid fusion weights provided, need a list")
-        if len(fusion_weights) != self.eta:
-            raise FEValidationError("invalid fusion weights provided, length mismatch")
-        if any(abs(int(v)) > self.bound for v in fusion_weights):
-            raise FEValidationError("fusion weight exceeds configured bound")
-
-        key1 = gp.mpz(0)
-        key2 = gp.mpz(0)
-        for s_i, t_i, y_i in zip(
-            self.msk["s"], self.msk["t"], fusion_weights
-        ):
-            y_mpz = gp.mpz(y_i)
-            key1 += s_i * y_mpz
-            key2 += t_i * y_mpz
-        return {"k1": gp.digits(key1 % self.q), "k2": gp.digits(key2 % self.q)}
+        y = int_vector(
+            credentials.get("fusion_weight"), "fusion weight", length=self.eta, bound=self.bound
+        )
+        key1 = sum(s_i * y_i for s_i, y_i in zip(self.msk["s"], y))
+        key2 = sum(t_i * y_i for t_i, y_i in zip(self.msk["t"], y))
+        return {"k1": gp.digits(key1 % self.q), "k2": gp.digits(key2 % self.q), "y": y}
 
 
 class SIFEDamgard(IPFEAbsCrypto):
@@ -137,8 +130,7 @@ class SIFEDamgard(IPFEAbsCrypto):
         self.pp = self.keys["pp"]
         if self._has_private_keys():
             self.sk = self.keys["sk"]
-        else:
-            self._load_dlog_table()
+        self.dlog_table = None
 
     def _load_dlog_table(self) -> None:
         _dlog_file = os.path.join(
@@ -152,22 +144,12 @@ class SIFEDamgard(IPFEAbsCrypto):
             )
         )
 
-    def _param_verification(self, param: dict) -> bool:
-        return (
-            param["g"] == self.pp["g"]
-            and param["p"] == self.pp["p"]
-            and param["func_bound"] >= self.pp["eta"] * (self.pp["bound"] ** 2)
-        )
-
     def encrypt(self, lst_pt: list) -> dict:
         if not self._has_public_parameters():
             raise FEKeyError("no public parameters provided for encryption")
         if not self._has_private_keys():
             raise FEKeyError("no private keys provided for encryption")
-        if len(lst_pt) != self.pp["eta"]:
-            raise FEValidationError("invalid size of input plaintext")
-        if any(abs(int(v)) > self.pp["bound"] for v in lst_pt):
-            raise FEValidationError("plaintext exceeds configured bound")
+        lst_pt = int_vector(lst_pt, "plaintext", length=self.pp["eta"], bound=self.pp["bound"])
 
         p = gp.mpz(self.pp["p"])
         q = gp.mpz(self.pp["q"])
@@ -199,12 +181,16 @@ class SIFEDamgard(IPFEAbsCrypto):
             raise FEKeyError("no public parameters provided for decryption")
         if not dk:
             raise FEKeyError("no decryption key provided")
-        if len(fusion_weight) != self.pp["eta"]:
-            raise FEValidationError("invalid fusion weight length")
-        if any(abs(int(v)) > self.pp["bound"] for v in fusion_weight):
-            raise FEValidationError("fusion weight exceeds configured bound")
-
+        fusion_weight = int_vector(
+            fusion_weight, "fusion weight", length=self.pp["eta"], bound=self.pp["bound"]
+        )
+        if fusion_weight != dk.get("y"):
+            raise FESchemeError("fusion weights differ from those of the decryption key")
         p = gp.mpz(self.pp["p"])
+        elems = [gp.mpz(v) for v in dct_ct["e"]] + [gp.mpz(dct_ct["c"]), gp.mpz(dct_ct["d"])]
+        if len(dct_ct["e"]) != self.pp["eta"] or not all(0 < v < p for v in elems):
+            raise FEValidationError("malformed ciphertext")
+
         num = gp.mpz(1)
         for ct_i, y_i in zip(dct_ct["e"], fusion_weight):
             num = gp.mod(num * pow_signed(gp.mpz(ct_i), gp.mpz(y_i), p), p)
@@ -220,6 +206,8 @@ class SIFEDamgard(IPFEAbsCrypto):
         return self._solve_dlog(ret)
 
     def _solve_dlog(self, encoded_value: gp.mpz) -> int | None:
+        if self.dlog_table is None:
+            self._load_dlog_table()
         try:
             return dlog_table_solve(
                 encoded_value, self.pp["g"], self.pp["p"],

@@ -70,28 +70,56 @@ _FIG14_NOTE = (
 
 SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     # --- single-input -------------------------------------------------------
-    ("sife", "ddh"): SchemeStatus(_S + "sife.ddh", UNREVIEWED, UNKNOWN, "ABDP15 (DDH)"),
-    ("sife", "lwe"): SchemeStatus(_S + "sife.lwe", UNREVIEWED, UNKNOWN, "ABDP15 (LWE)"),
+    ("sife", "ddh"): SchemeStatus(
+        _S + "sife.ddh", REVIEWED, FAITHFUL, "ABDP15 Construction 1 (DDH)",
+        note="signed x, y; decryption bound dlog_bound (default 10^(precision + 2))",
+    ),
+    ("sife", "lwe"): SchemeStatus(
+        _S + "sife.lwe", REVIEWED, ADAPTED, "ABDP15 Constructions 2 + 3 (LWE)",
+        note="k = 0 (no r-ary decomposition); signed X/Y-bounded inputs with centred "
+        "decoding; GoFE parameter recipe; noise is a rounded continuous Gaussian",
+    ),
     ("sife", "paillier"): SchemeStatus(
         _S + "sife.paillier", REVIEWED, FAITHFUL, "ALS16 (DCR)",
         note="D_{Z,sigma} realised as a high-precision rounded Gaussian",
     ),
-    ("sife", "damgard"): SchemeStatus(_S + "sife.damgard_ddh", UNREVIEWED, UNKNOWN, "ALS16 (DDH)"),
-    ("sife", "ring_lwe"): SchemeStatus(_S + "sife.ring_lwe", UNREVIEWED, UNKNOWN, "BMMS21"),
+    ("sife", "damgard"): SchemeStatus(
+        _S + "sife.damgard_ddh", REVIEWED, FAITHFUL, "ALS16 DDH (ACFGU18 Fig. 7, k = 1)",
+        note="h = g^a with a discarded",
+    ),
+    ("sife", "ring_lwe"): SchemeStatus(
+        _S + "sife.ring_lwe", REVIEWED, ADAPTED, "BMMS21 Sec. 4 (selective) + Remark 1 batching",
+        note="signed messages and weights (p = 2lXY + 2, centred decoding); one "
+        "ciphertext packs up to ring_n vectors; single NTT prime q; ring_n defaults "
+        "to the toy value 32",
+    ),
     ("sife", "fullysec_lwe"): SchemeStatus(
-        _S + "sife.fullysec_lwe", UNREVIEWED, UNKNOWN, "ALS16 (LWE)"
+        _S + "sife.fullysec_lwe", REVIEWED, ADAPTED, "ALS16 LWE (ACFGU18 Fig. 8)",
+        note="signed inputs (K = 2 eta X Y + 1, centred decoding); GoFE parameter "
+        "recipe; D_{Z,sigma} realised as a rounded Gaussian",
     ),
     ("sife", "ddh_dynamic"): SchemeStatus(
-        _S + "sife.ddh_dynamic", UNREVIEWED, UNKNOWN, "ABDP15 (DDH), dynamic variant"
+        _S + "sife.ddh_dynamic", REVIEWED, ADAPTED, "ABDP15 Construction 1, variable length",
+        note="vectors of length <= eta handled as zero padding (prefix keys, truncated "
+        "ciphertexts)",
     ),
     ("sife", "fh_ipe_pairing"): SchemeStatus(
-        _S + "sife.fh_ipe_pairing", UNREVIEWED, UNKNOWN, "KLMMRW18"
+        _S + "sife.fh_ipe_pairing", REVIEWED, ADAPTED, "KLMMRW18 Sec. 3",
+        note="vectors padded to (x, 1, 0) / (y, 0, 1), so eta = 1 and zero vectors are "
+        "safe; keys in G1, ciphertexts in G2; generic bilinear group model; the "
+        "encryption key is master-secret equivalent",
     ),
     ("sife", "part_fh_ipe_pairing"): SchemeStatus(
-        _S + "sife.part_fh_ipe_pairing", UNREVIEWED, UNKNOWN, "Gay20"
+        _S + "sife.part_fh_ipe_pairing", REVIEWED, ADAPTED, "Gay20 Fig. 8 (CPA, k = 1)",
+        note="M is a random full-rank public matrix (subspace_dim < eta), published "
+        "with V^T M in the clear; Enc' is run by the key generator; no QANIZK",
     ),
     # --- multi-input --------------------------------------------------------
-    ("mife", "ddh"): SchemeStatus(_S + "mife.ddh", UNREVIEWED, UNKNOWN, "ACFGU18 + ABDP15 (DDH)"),
+    ("mife", "ddh"): SchemeStatus(
+        _S + "mife.ddh", REVIEWED, ADAPTED, "ACFGU18 Fig. 4 + ABDP15 (DDH)",
+        note="ACFGU18 instantiates Fig. 4 with ALS16; here the selectively secure "
+        "ABDP15 IPFE in every slot",
+    ),
     ("mife", "lwe"): SchemeStatus(
         _S + "mife.lwe", REVIEWED, ADAPTED, "ACFGU18 Fig. 4 + ABDP15 (LWE)",
         note="ACFGU18 instantiates Fig. 4 with ALS16; here the selectively secure "
@@ -114,21 +142,23 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         note="slots share A; parameters derived for dimension n * eta and bound 3X",
     ),
     ("mife", "fh_ipe_pairing"): SchemeStatus(
-        _S + "mife.fh_ipe_pairing", UNREVIEWED, UNKNOWN, "KLMMRW18, multi-input"
+        _S + "mife.fh_ipe_pairing", REVIEWED, ADAPTED, "ACFGU18 Fig. 12 (k = 1)",
+        note="one r per key shared by all slots; per-slot FH-IPFE as in mcfe/fh_ipe "
+        "(LV16 padding of App. B); asymmetric pairing (default MNT224)",
     ),
     ("mife", "fh_multi_ipe_pairing"): SchemeStatus(
         _S + "mife.fh_multi_ipe_pairing", UNREVIEWED, UNKNOWN, "DOT18"
     ),
     ("mife", "ddh_threshold"): SchemeStatus(
-        _S + "mife.ddh_threshold", UNREVIEWED, UNKNOWN, "MIFE-DDH + Shamir (TAPFed setting)"
+        _S + "mife.ddh_threshold", REVIEWED, ADAPTED,
+        "ACFGU18 Fig. 4 + ABDP15 + Shamir (TAPFed setting)",
+        note="the functional key (d_i, z) is Shamir-shared mod q; any t servers "
+        "interpolate in the exponent (threshold-ElGamal style), as mcfe/ddh_threshold",
     ),
     ("mife", "lwe_threshold"): SchemeStatus(
         _S + "mife.lwe_threshold", EXPERIMENTAL, AD_HOC, "MIFE-LWE + Shamir + smudging",
         note="MIFE layer as published; the threshold layer (statistical flooding, "
         "derandomised noise, enlarged q) is our own",
-    ),
-    ("mife", "ddh_hybrid_alpha"): SchemeStatus(
-        _S + "mife.ddh_hybrid_alpha", UNREVIEWED, UNKNOWN, "HybridAlpha (Xu+ AISec'19)"
     ),
     # --- multi-client -------------------------------------------------------
     ("mcfe", "ddh"): SchemeStatus(_S + "mcfe.ddh", REVIEWED, FAITHFUL, "CDGPP18"),
@@ -206,7 +236,11 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         "ABMPSW20 Fig. 14 (MCFE1 = Fig. 3)", note=_FIG14_NOTE,
     ),
     # --- quadratic ----------------------------------------------------------
-    ("quadratic", "quad"): SchemeStatus(_S + "quadratic.quad", UNREVIEWED, UNKNOWN, "Gay20"),
+    ("quadratic", "quad"): SchemeStatus(
+        _S + "quadratic.quad", REVIEWED, ADAPTED, "Gay20 Fig. 4 over Fig. 8 (CPA)",
+        note="signed inputs (discrete log in [-n m B^3, n m B^3]); CPA variant "
+        "(no QANIZK); asymmetric pairing (default MNT224)",
+    ),
     ("quadratic", "sgp"): SchemeStatus(_S + "quadratic.sgp", UNREVIEWED, UNKNOWN, "DSGPP18"),
     ("quadratic", "multi_input_sgp"): SchemeStatus(
         _S + "quadratic.multi_input_sgp", UNREVIEWED, UNKNOWN, "DSGPP18, multi-input"
