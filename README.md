@@ -315,6 +315,11 @@ The schemes in the following files depend on
 - `pyfe4ai/schemes/quadratic/multi_input_sgp.py`
 - `pyfe4ai/schemes/quadratic/quad.py`
 
+All of them run over an asymmetric (type-3) pairing group, `MNT224` by
+default (`pairing_group_param`, e.g. `BN254`); their constructions assume
+SXDH or a generic asymmetric bilinear group, so symmetric groups (`SS512`,
+`SS1024`) are rejected with `FEValidationError`.
+
 `charm-crypto-framework` supports macOS, Linux, and Windows, but pairing-based
 setups may still require additional system libraries depending on the platform.
 If you plan to work heavily with these schemes, a Linux or Docker environment is
@@ -337,7 +342,6 @@ limitations remain:
 | Issue | Affected schemes | Consequence |
 |---|---|---|
 | Unreviewed schemes | the 16 *unreviewed* rows of the [Scheme Status](#scheme-status) table | Not yet checked against their papers: no defect is known, but none was looked for systematically either. |
-| Symmetric default pairing group | SIFE `fh_ipe_pairing`, `part_fh_ipe_pairing`; MIFE `fh_ipe_pairing`, `fh_multi_ipe_pairing`; quadratic `quad`, `sgp`, `multi_input_sgp` | These default to `SS512`, a symmetric pairing, while their constructions assume asymmetric groups (SXDH, or a generic asymmetric bilinear group); DDH is easy in a symmetric pairing group. Pass an asymmetric `pairing_group_param` (e.g. `MNT224`). The reviewed FH-MCFE family defaults to `MNT224` and rejects symmetric groups. |
 | Experimental threshold layers | tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE, tMCFE-FH-Multi-IPE | The threshold layers (noise flooding, Shamir sharing in the exponent) are our own and have no published security proof; see the module docstrings. |
 | One ciphertext per client and label | all MCFE / DMCFE schemes | As in the papers, a client must not encrypt two different inputs under one label (or tag); the library does not enforce it. |
 | Toy default parameters | all | `sec_param` is a modulus bit length (default 128), not a security level; LWE dimensions default to 16–64; the statistical parameter `stat_param` defaults to 64. All far below any real security level; nothing here estimates concrete hardness. |
@@ -357,7 +361,8 @@ pairing; tMCFE-DDH shares the CDGPP18 key; tMIFE-LWE, tMCFE-LWE and
 tMCFE-Ring-LWE flood partial decryptions with derandomised noise; SIFE,
 MIFE and dMCFE Paillier keys are Gaussian (no longer brute-forceable);
 Paillier parameter caches no longer store the factorization of `N`; user
-labels and ndarray element labels can no longer collide.
+labels and ndarray element labels can no longer collide; all pairing-based
+schemes default to the asymmetric group `MNT224` and reject symmetric ones.
 
 Fixed in v0.2.0: MCFE-DDH re-implemented per CDGPP18; independent per-client
 keys in MIFE-DDH; DDH threshold sharing (1-based Shamir points over the group

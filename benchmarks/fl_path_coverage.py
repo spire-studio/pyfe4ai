@@ -56,10 +56,10 @@ CONFIGS: dict[tuple[str, str], dict] = {
     ("sife", "ring_lwe"): {"sec_param": 64, "ring_n": 16, "bound_x": 2, "bound_y": 2},
     ("sife", "fullysec_lwe"): {"sec_param": 64, "lwe_n": 24, "bound_x": 10, "bound_y": 10},
     ("sife", "ddh_dynamic"): {"sec_param": 128},
-    ("sife", "fh_ipe_pairing"): {"sec_param": 64, "bound_x": 8, "bound_y": 8, "pairing_group_param": "SS512"},
+    ("sife", "fh_ipe_pairing"): {"sec_param": 64, "bound_x": 8, "bound_y": 8, "pairing_group_param": "MNT224"},
     ("sife", "part_fh_ipe_pairing"): {
         "sec_param": 64, "bound": 10, "subspace_dim": 3, "coeff_bound": 1,
-        "pairing_group_param": "SS512",
+        "pairing_group_param": "MNT224",
     },
     ("mife", "ddh"): {"sec_param": 256, **_MULTI},
     ("mife", "lwe"): {"sec_param": 64, "lwe_n": 16, "bound_x": 6, "bound_y": 6, **_MULTI},
@@ -68,11 +68,11 @@ CONFIGS: dict[tuple[str, str], dict] = {
     ("mife", "ring_lwe"): {"sec_param": 64, "ring_n": 16, "bound_x": 2, "bound_y": 2, **_MULTI},
     ("mife", "fullysec_lwe"): {"sec_param": 64, "lwe_n": 24, "bound_x": 8, "bound_y": 8, **_MULTI},
     ("mife", "fh_ipe_pairing"): {
-        "sec_param": 64, "bound_x": 6, "bound_y": 6, "pairing_group_param": "SS512", **_MULTI,
+        "sec_param": 64, "bound_x": 6, "bound_y": 6, "pairing_group_param": "MNT224", **_MULTI,
     },
     ("mife", "fh_multi_ipe_pairing"): {
         "sec_param": 64, "sec_level": 2, "bound_x": 5, "bound_y": 5,
-        "pairing_group_param": "SS512", **_MULTI,
+        "pairing_group_param": "MNT224", **_MULTI,
     },
     ("mife", "ddh_threshold"): {"sec_param": 256, **_THRESHOLD},
     ("mife", "lwe_threshold"): {"sec_param": 64, "lwe_n": 16, "bound_x": 6, "bound_y": 6, **_THRESHOLD},
@@ -125,11 +125,11 @@ CONFIGS: dict[tuple[str, str], dict] = {
     ("mcfe", "paillier_decentralized"): {
         "sec_param": 64, "bit_length": 64, "bound_x": 10, "bound_y": 10, **_MULTI,
     },
-    ("quadratic", "quad"): {"sec_param": 64, "n": 4, "m": 3, "bound": 5, "pairing_group_param": "SS512"},
-    ("quadratic", "sgp"): {"sec_param": 64, "n": 5, "bound": 6, "pairing_group_param": "SS512"},
+    ("quadratic", "quad"): {"sec_param": 64, "n": 4, "m": 3, "bound": 5, "pairing_group_param": "MNT224"},
+    ("quadratic", "sgp"): {"sec_param": 64, "n": 5, "bound": 6, "pairing_group_param": "MNT224"},
     ("quadratic", "multi_input_sgp"): {
         "sec_param": 64, "d": 3, "n": 2, "lst_nid": ["client_0", "client_1"], "s": 1,
-        "bound": 5, "pairing_group_param": "SS512",
+        "bound": 5, "pairing_group_param": "MNT224",
     },
 }
 

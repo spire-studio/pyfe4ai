@@ -17,7 +17,7 @@ def kg_config():
         "sec_param": 64,
         "n": 5,
         "bound": 6,
-        "pairing_group_param": "SS512",
+        "pairing_group_param": "MNT224",
     }
 
 
@@ -73,7 +73,7 @@ def test_entire_process_lst_ndarray():
         "sec_param": 64,
         "n": 2,
         "bound": 500,
-        "pairing_group_param": "SS512",
+        "pairing_group_param": "MNT224",
     }
     kg = QuadraticSGPKeyGenerator(cfg)
     kg.setup()

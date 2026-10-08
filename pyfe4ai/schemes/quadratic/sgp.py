@@ -30,6 +30,7 @@ from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
 from pyfe4ai.utils.pairing_utils import to_zr
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup, pair
+from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 
@@ -139,7 +140,8 @@ class QuadraticSGPKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         require_pairing_backend()
         self.n = config.get("n", config.get("eta", 2))
         self.bound = gp.mpz(config.get("bound", 16))
-        self.pairing_group_param = config.get("pairing_group_param", "SS512")
+        self.pairing_group_param = config.get("pairing_group_param", DEFAULT_PAIRING_GROUP)
+        check_asymmetric(self.pairing_group_param)
         self._load_parameters()
 
     def _apply_parameters(self, param: dict) -> None:
@@ -242,6 +244,7 @@ class QuadraticSGP(IPFEAbsCrypto):
         require_pairing_backend()
         self.pp = self.keys["pp"]
         self.group = PairingGroup(self.pp["pairing_group_param"])
+        check_asymmetric(self.group)
         self.order = gp.mpz(int(self.group.order()))
         if self._has_private_keys():
             self.sk = self.keys["sk"]

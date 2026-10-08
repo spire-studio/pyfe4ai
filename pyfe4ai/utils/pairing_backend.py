@@ -1,5 +1,7 @@
 """Helpers for optional pairing-based dependencies."""
 
+from pyfe4ai.utils.exceptions import FEValidationError
+
 PAIRING_IMPORT_ERROR = None
 
 try:
@@ -7,6 +9,9 @@ try:
 except ImportError as exc:  # pragma: no cover - depends on optional dependency
     PairingGroup = ZR = G1 = G2 = GT = pair = None
     PAIRING_IMPORT_ERROR = exc
+
+#: Default pairing group of every pairing-based scheme (asymmetric, type 3).
+DEFAULT_PAIRING_GROUP = "MNT224"
 
 
 def require_pairing_backend() -> None:
@@ -18,3 +23,29 @@ def require_pairing_backend() -> None:
             "`pip install charm-crypto-framework` or `pip install -e \".[pairing]\"` "
             "and ensure any required system libraries are available."
         ) from PAIRING_IMPORT_ERROR
+
+
+def check_asymmetric(group) -> None:
+    """Reject symmetric (type-1) pairing groups such as SS512.
+
+    Every pairing-based scheme here assumes an asymmetric group (SXDH, or a
+    generic asymmetric bilinear group); in a symmetric group ``G1 = G2`` and
+    DDH is easy. A group is symmetric iff it pairs two ``G1`` elements.
+
+    Args:
+        group: A ``PairingGroup`` or a group name such as ``"MNT224"``.
+
+    Raises:
+        FEValidationError: If the group is symmetric.
+    """
+    require_pairing_backend()
+    if isinstance(group, str):
+        group = PairingGroup(group)
+    try:
+        pair(group.random(G1), group.random(G1))
+    except ValueError:
+        return
+    raise FEValidationError(
+        "{} is a symmetric pairing group, where SXDH does not hold; use an "
+        "asymmetric group such as {} or BN254".format(group.groupType(), DEFAULT_PAIRING_GROUP)
+    )

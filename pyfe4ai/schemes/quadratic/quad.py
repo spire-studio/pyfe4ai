@@ -31,6 +31,7 @@ from pyfe4ai.schemes.sife.part_fh_ipe_pairing import SIFEPartFHIPE
 from pyfe4ai.schemes.sife.part_fh_ipe_pairing import SIFEPartFHIPEKeyGenerator
 from pyfe4ai.utils.pairing_utils import transpose_mod
 from pyfe4ai.utils.crypto_constants import CryptoCONST
+from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 
@@ -73,7 +74,8 @@ class QuadraticQuadKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.n = int(config.get("n", 2))
         self.m = int(config.get("m", self.n))
         self.bound = gp.mpz(config.get("bound", 16))
-        self.pairing_group_param = config.get("pairing_group_param", "SS512")
+        self.pairing_group_param = config.get("pairing_group_param", DEFAULT_PAIRING_GROUP)
+        check_asymmetric(self.pairing_group_param)
         self._load_parameters()
 
     def _apply_parameters(self, param: dict) -> None:

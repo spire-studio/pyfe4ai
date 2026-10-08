@@ -17,7 +17,7 @@ def kg_config():
         "eta": 8,
         "bound_x": 8,
         "bound_y": 8,
-        "pairing_group_param": "SS512",
+        "pairing_group_param": "MNT224",
     }
 
 

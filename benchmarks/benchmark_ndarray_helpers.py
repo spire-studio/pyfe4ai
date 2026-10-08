@@ -121,7 +121,7 @@ def _bench_mife_fh_multi_ipe() -> dict:
         "lst_nid": ["nid_0", "nid_1", "nid_2"],
         "bound_x": FH_BOUND_X,
         "bound_y": FH_BOUND_Y,
-        "pairing_group_param": "SS512",
+        "pairing_group_param": "MNT224",
     }
     dct_y = {"nid_0": [1], "nid_1": [2], "nid_2": [-1]}
     dct_x = {
@@ -491,7 +491,7 @@ def main() -> None:
             "Quadratic/SGP",
             QuadraticSGP,
             QuadraticSGPKeyGenerator,
-            {"sec_param": 64, "n": quadratic_dim, "bound": quadratic_bound, "pairing_group_param": "SS512"},
+            {"sec_param": 64, "n": quadratic_dim, "bound": quadratic_bound, "pairing_group_param": "MNT224"},
             [_base_array(0.1 + 0.1 * i) for i in range(quadratic_dim)],
             [_base_array(0.3 + 0.1 * j) for j in range(quadratic_dim)],
             [[1 for _ in range(quadratic_dim)] for _ in range(quadratic_dim)],
@@ -500,7 +500,7 @@ def main() -> None:
             "Quadratic/Quad",
             QuadraticQuad,
             QuadraticQuadKeyGenerator,
-            {"sec_param": 64, "n": quadratic_dim, "m": quadratic_dim + 1, "bound": quadratic_bound, "pairing_group_param": "SS512"},
+            {"sec_param": 64, "n": quadratic_dim, "m": quadratic_dim + 1, "bound": quadratic_bound, "pairing_group_param": "MNT224"},
             [_base_array(0.1 + 0.1 * i) for i in range(quadratic_dim)],
             [_base_array(0.3 + 0.1 * j) for j in range(quadratic_dim + 1)],
             [[1 for _ in range(quadratic_dim + 1)] for _ in range(quadratic_dim)],
@@ -541,7 +541,7 @@ def main() -> None:
                 "Quadratic/SGP",
                 QuadraticSGP,
                 QuadraticSGPKeyGenerator,
-                {"sec_param": 64, "n": quadratic_dim, "bound": quadratic_bound, "pairing_group_param": "SS512"},
+                {"sec_param": 64, "n": quadratic_dim, "bound": quadratic_bound, "pairing_group_param": "MNT224"},
                 [_base_array(0.1 + 0.1 * i) for i in range(quadratic_dim)],
                 [_base_array(0.3 + 0.1 * j) for j in range(quadratic_dim)],
                 [[1 for _ in range(quadratic_dim)] for _ in range(quadratic_dim)],

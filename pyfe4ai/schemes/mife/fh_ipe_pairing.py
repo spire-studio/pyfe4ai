@@ -34,6 +34,7 @@ from pyfe4ai.utils.pairing_utils import to_zr
 from pyfe4ai.utils.pairing_utils import transpose_mod
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup, pair
+from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
 
@@ -55,7 +56,8 @@ class MIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.eta = config.get("eta", CryptoCONST.MIFE_ETA)
         self.bound_x = gp.mpz(config.get("bound_x", 16))
         self.bound_y = gp.mpz(config.get("bound_y", 16))
-        self.pairing_group_param = config.get("pairing_group_param", "SS512")
+        self.pairing_group_param = config.get("pairing_group_param", DEFAULT_PAIRING_GROUP)
+        check_asymmetric(self.pairing_group_param)
         if not self.n:
             raise FEKeyError("need to provide number of clients")
         self._load_parameters()
@@ -194,6 +196,7 @@ class MIFEFHIPE(IPFEAbsCrypto):
         require_pairing_backend()
         self.pp = self.keys["pp"]
         self.group = PairingGroup(self.pp["pairing_group_param"])
+        check_asymmetric(self.group)
         if self._has_private_keys():
             self.sk = self.keys["sk"]
 

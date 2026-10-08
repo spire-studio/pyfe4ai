@@ -18,7 +18,7 @@ def kg_config():
         "n": 4,
         "m": 3,
         "bound": 5,
-        "pairing_group_param": "SS512",
+        "pairing_group_param": "MNT224",
     }
 
 
@@ -73,7 +73,7 @@ def test_entire_process_lst_ndarray():
         "n": 2,
         "m": 3,
         "bound": 500,
-        "pairing_group_param": "SS512",
+        "pairing_group_param": "MNT224",
     }
     kg = QuadraticQuadKeyGenerator(cfg)
     kg.setup()

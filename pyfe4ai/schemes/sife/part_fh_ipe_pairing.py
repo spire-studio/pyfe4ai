@@ -34,6 +34,7 @@ from pyfe4ai.utils.pairing_utils import to_zr
 from pyfe4ai.utils.pairing_utils import transpose_mod
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.pairing_backend import G1, G2, PairingGroup, pair
+from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 
@@ -171,7 +172,8 @@ class SIFEPartFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.bound = gp.mpz(config.get("bound", config.get("bound_x", 16)))
         self.subspace_dim = int(config.get("subspace_dim", max(1, min(3, self.eta))))
         self.coeff_bound = gp.mpz(config.get("coeff_bound", 1))
-        self.pairing_group_param = config.get("pairing_group_param", "SS512")
+        self.pairing_group_param = config.get("pairing_group_param", DEFAULT_PAIRING_GROUP)
+        check_asymmetric(self.pairing_group_param)
         self._load_parameters()
 
     def _apply_parameters(self, param: dict) -> None:
@@ -305,6 +307,7 @@ class SIFEPartFHIPE(IPFEAbsCrypto):
         require_pairing_backend()
         self.pp = self.keys["pp"]
         self.group = PairingGroup(self.pp["pairing_group_param"])
+        check_asymmetric(self.group)
         self.order = gp.mpz(int(self.group.order()))
         if self._has_private_keys():
             self.sk = self.keys["sk"]

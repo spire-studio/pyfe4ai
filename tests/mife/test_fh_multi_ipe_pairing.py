@@ -20,7 +20,7 @@ def kg_config():
         "lst_nid": ["nid_0", "nid_1", "nid_2"],
         "bound_x": 5,
         "bound_y": 5,
-        "pairing_group_param": "SS512",
+        "pairing_group_param": "MNT224",
     }
 
 

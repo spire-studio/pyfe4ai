@@ -31,20 +31,9 @@ With ``x' = (x, 0^m)``, ``y' = (y, 0^m)`` (``m2 = 2m``) and ``l = m2 + 3``:
 
 from __future__ import annotations
 
-from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup, pair
+from pyfe4ai.utils.pairing_backend import GT, ZR, PairingGroup, pair
+from pyfe4ai.utils.pairing_backend import check_asymmetric  # noqa: F401  (re-export)
 from pyfe4ai.utils.exceptions import FEValidationError
-
-SYMMETRIC_GROUPS = ("SS512", "SS1024")
-
-
-def check_asymmetric(group_name: str) -> None:
-    """Reject symmetric pairing groups: the schemes rely on SXDH."""
-    if group_name in SYMMETRIC_GROUPS:
-        raise FEValidationError(
-            "{} is a symmetric pairing group, where SXDH does not hold; use an "
-            "asymmetric group such as MNT224 or BN254".format(group_name)
-        )
-
 
 class FHIPE:
     """ACFGU18 Fig. 12 (n = 1, k = 1) with LV16 padding, for vectors of length *m*."""

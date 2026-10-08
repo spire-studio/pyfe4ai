@@ -18,7 +18,7 @@ def kg_config():
         "bound": 10,
         "subspace_dim": 3,
         "coeff_bound": 1,
-        "pairing_group_param": "SS512",
+        "pairing_group_param": "MNT224",
     }
 
 

@@ -89,6 +89,11 @@ table and *Known Issues* before relying on any privacy property.
   (*experimental*). Previously all three masked inputs with a public label
   scalar and ran over the symmetric group `SS512`, where SXDH fails; the
   family now defaults to `MNT224` and rejects symmetric groups.
+- **All pairing-based schemes** (SIFE FH-IPE and partial FH-IPE, MIFE
+  FH-IPE and FH-Multi-IPE, quadratic Quad, SGP and MI-SGP, the FH-MCFE
+  family) default to the asymmetric group `MNT224` instead of the symmetric
+  `SS512` and reject symmetric groups: their constructions assume SXDH or a
+  generic asymmetric bilinear group, and DDH is easy in a symmetric one.
 
 ### Added
 
@@ -107,7 +112,9 @@ table and *Known Issues* before relying on any privacy property.
   `round_to_q0`, `decode_rounded_inner_product`.
 - Config keys `stat_param` (ABMPSW20 schemes, SIFE-Paillier; default 64) and
   `mddh_k` (MCFE-Damgard).
-- `pyfe4ai.schemes.mcfe.fh_ipe` (`FHIPE`, `check_asymmetric`),
+- `pyfe4ai.utils.pairing_backend.check_asymmetric` (detects symmetric
+  groups by pairing two `G1` elements) and `DEFAULT_PAIRING_GROUP`.
+- `pyfe4ai.schemes.mcfe.fh_ipe` (`FHIPE`),
   `pyfe4ai.schemes.mcfe.decentralize` (MCFE2 and zero-sum keys for
   Fig. 14), `labels.chunk_label`, `MCFERingLWE.key_chunks` (the ML adapter
   passes the resulting `n_chunks` when requesting Ring-LWE keys).
@@ -149,6 +156,10 @@ table and *Known Issues* before relying on any privacy property.
   `{w, ct_digest, sid, lst_sid_enrolled}`. The config keys `sec_level`,
   `u_bound` and `label_modulus` are ignored and parameters are no longer
   cached.
+- Pairing-based schemes: `pairing_group_param` defaults to `MNT224`;
+  `SS512` and `SS1024` raise `FEValidationError`. Parameters, keys and
+  ciphertexts created over `SS512` cannot be reused (cached parameters are
+  regenerated).
 
 ### Fixed
 

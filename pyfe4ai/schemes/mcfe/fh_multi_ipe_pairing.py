@@ -37,19 +37,19 @@ import numpy as np
 
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
-from pyfe4ai.schemes.mcfe.fh_ipe import FHIPE, check_asymmetric
+from pyfe4ai.schemes.mcfe.fh_ipe import FHIPE
 from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
 from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.schemes.threshold_utils import check_fusion_weight
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup
+from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_GROUP = "MNT224"
 _H1_DOMAIN = "pyfe4ai/fh-mcfe/H1(tag)|"
 _H2_DOMAIN = "pyfe4ai/fh-mcfe/H2(tag-f)|"
 
@@ -66,6 +66,7 @@ class FHContext:
         require_pairing_backend()
         self.pp = pp
         self.group = PairingGroup(pp["pairing_group_param"])
+        check_asymmetric(self.group)
         self.g1 = self.group.deserialize(pp["g1"].encode("utf-8"))
         self.g2 = self.group.deserialize(pp["g2"].encode("utf-8"))
         self.eta = pp["eta"]
@@ -151,7 +152,7 @@ class MCFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator):
         self.eta = int(config.get("eta", 1))
         self.bound_x = int(config.get("bound_x", 10))
         self.bound_y = int(config.get("bound_y", 10))
-        self.pairing_group_param = config.get("pairing_group_param", DEFAULT_GROUP)
+        self.pairing_group_param = config.get("pairing_group_param", DEFAULT_PAIRING_GROUP)
         check_asymmetric(self.pairing_group_param)
         if not self.n:
             raise FEKeyError("need to provide number of clients")

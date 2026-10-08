@@ -26,7 +26,7 @@ def kg_config():
         "lst_nid": ["client_0", "client_1"],
         "s": 1,
         "bound": 5,
-        "pairing_group_param": "SS512",
+        "pairing_group_param": "MNT224",
     }
 
 
