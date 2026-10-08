@@ -29,6 +29,10 @@ The IPFE (Fig. 8, CPA, no QANIZK): ``a', b' <- (1, Z_p)``,
 ``KeyGen_IPFE(z) = [(-U'^T w ; w)]_2`` with ``w = (b' s' ; z + V' b' s')``;
 ``Dec_IPFE = prod e(ct_j, sk_j) = [<M t, z>]_T``.
 
+As in the paper, ``M`` is not of full column rank (the ``a (x) V B`` columns
+are combinations of the ``a (x) Id_m`` ones); the redundant columns are what
+lets the encryptor form ``r (y + V B s)`` from ``[M]_1``.
+
 A ciphertext has ``4n + 2m + 4`` elements of G1 and ``m`` of G2. Signed
 inputs (``|x_i|, |y_j|, |F_ij| <= B``): the discrete log is searched in
 ``[-n m B^3, n m B^3]``. Versions <= 0.2.0 encrypted ``x (x) y`` with an IPFE
@@ -268,6 +272,8 @@ class QuadraticQuad(IPFEAbsCrypto):
             raise FEKeyError("no decryption key provided")
         pp, ctx = self.pp, self.ctx
         n, m = pp["n"], pp["m"]
+        if len(dk["f"]) != n or any(len(row) != m for row in dk["f"]):
+            raise FESchemeError("the key's function matrix does not match the parameters")
         f_mat = [[int(v) for v in row] for row in dk["f"]]
         key = [ctx.de(v) for v in dk["k"]]
         ct_ipfe = [ctx.de(v) for v in ct["ct"]]
@@ -326,6 +332,7 @@ class QuadraticQuad(IPFEAbsCrypto):
         for ary in dict_ndarray_ct:
             ary_dec = np.empty(ary.shape, dtype=object)
             for i, _ in np.ndenumerate(ary):
-                ary_dec[i] = self.decrypt(ary[i], dk)
-            out.append((ary_dec / pow(10, 2 * self.precision)).astype(float))
+                value = self.decrypt(ary[i], dk)
+                ary_dec[i] = np.nan if value is None else value / pow(10, 2 * self.precision)
+            out.append(ary_dec.astype(float))
         return out

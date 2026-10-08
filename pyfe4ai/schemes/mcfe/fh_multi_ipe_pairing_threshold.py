@@ -29,12 +29,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import secrets
 
 import numpy as np
 
 from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPE
 from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEKeyGenerator
-from pyfe4ai.schemes.threshold_utils import check_fusion_weight
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
 from pyfe4ai.schemes.threshold_utils import share_points
@@ -95,8 +95,8 @@ class ThresholdMCFEFHMultiIPEKeyGenerator(MCFEFHMultiIPEKeyGenerator):
 
         Returns:
             Dict with ``k`` (per client the shares of the key exponents),
-            ``z``, ``sid``, ``lst_sid`` and ``weights_id``, or ``None`` if
-            *sid* is unknown.
+            ``z``, ``sid``, ``lst_sid`` and a random ``key_id`` (nothing
+            derived from ``y``), or ``None`` if *sid* is unknown.
         """
         credentials = kwargs.get("credentials", None)
         if not credentials:
@@ -109,9 +109,7 @@ class ThresholdMCFEFHMultiIPEKeyGenerator(MCFEFHMultiIPEKeyGenerator):
         weights_id = fusion_weight_id(fusion_weight)
         if weights_id not in self.dict_dk:
             self.dict_dk[weights_id] = self._share_key(fusion_weight)
-        dk = dict(self.dict_dk[weights_id][sid])
-        dk.update({"sid": sid, "lst_sid": list(self.lst_sid), "weights_id": weights_id})
-        return dk
+        return dict(self.dict_dk[weights_id][sid])
 
     def _share_key(self, fusion_weight: dict) -> dict:
         ctx = self.ctx
@@ -133,10 +131,14 @@ class ThresholdMCFEFHMultiIPEKeyGenerator(MCFEFHMultiIPEKeyGenerator):
 
         k_shares = {nid: [share(v) for v in e] for nid, e in exps.items()}
         z_shares = share(z_total)
+        key_id = secrets.token_hex(16)
         return {
             sid: {
                 "k": {nid: [sh[sid] for sh in k_shares[nid]] for nid in self.lst_nid},
                 "z": z_shares[sid],
+                "sid": sid,
+                "lst_sid": list(self.lst_sid),
+                "key_id": key_id,
             }
             for sid in self.lst_sid
         }
@@ -152,19 +154,20 @@ class ThresholdMCFEFHMultiIPE(MCFEFHMultiIPE):
 
         Args:
             dict_ct: One ciphertext per client (all under one label).
-            credentials: Dict with the ``fusion_weight`` of the key share.
+            credentials: Ignored (the key share encodes ``y``; servers need
+                not know the function). Kept for API compatibility.
             dk: This server's key share from ``get_decryption_keys``.
             lst_sid_enrolled: The servers whose partials will be combined.
 
         Returns:
-            Dict with ``w``, ``ct_digest``, ``sid`` and ``lst_sid_enrolled``.
+            Dict with ``w``, ``ct_digest``, ``key_id``, ``sid`` and
+            ``lst_sid_enrolled``.
         """
         if not dk or "k" not in dk:
             raise FEKeyError("no decryption keys provided")
-        if self.id not in dk["lst_sid"]:
-            raise FESchemeError("local id:{} is not supported".format(self.id))
+        if self.id not in dk["lst_sid"] or dk.get("sid") != self.id:
+            raise FESchemeError("the key share does not belong to server {}".format(self.id))
         validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
-        check_fusion_weight(dk, credentials.get("fusion_weight"))
         if set(dict_ct) != set(dk["k"]):
             raise FESchemeError("need one ciphertext for every client of the key")
 
@@ -185,6 +188,7 @@ class ThresholdMCFEFHMultiIPE(MCFEFHMultiIPE):
         return {
             "w": ctx.ser(acc),
             "ct_digest": ct_digest,
+            "key_id": dk["key_id"],
             "sid": self.id,
             "lst_sid_enrolled": list(lst_sid_enrolled),
         }
@@ -202,7 +206,7 @@ class ThresholdMCFEFHMultiIPE(MCFEFHMultiIPE):
         """
         validate_partial_decryptions(dict_ct_prime, self.pp["t"])
         partials = list(dict_ct_prime.values())
-        if len({p["ct_digest"] for p in partials}) != 1:
+        if len({(p["ct_digest"], p["key_id"]) for p in partials}) != 1:
             logger.warning("ct consistency verification failed.")
             return None
         acc = self.ctx.group.init(GT, 1)

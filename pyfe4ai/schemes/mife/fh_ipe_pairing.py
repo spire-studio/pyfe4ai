@@ -21,7 +21,10 @@ AGRW17 secret ``z_i``):
 
 A slot's partial result is masked by ``r z_i``, so the key holder learns the
 sum only, and slot keys of different functional keys (different ``r``) do
-not combine. As in every MIFE there are no labels: a key holder may combine
+not combine. Keys carry no digest of ``y`` and decryption does not need it.
+A slot's client holds that slot's outer key ``W_i`` (needed to encrypt) and
+could strip the outer layer of its own slot of a functional key -- outside
+the model, where clients are not corrupted. As in every MIFE there are no labels: a key holder may combine
 any ciphertexts of each slot. Versions <= 0.2.0 ran independent KLMMRW
 instances per slot and decoded every slot separately.
 """
@@ -29,6 +32,7 @@ instances per slot and decoded every slot separately.
 from __future__ import annotations
 
 import logging
+import secrets
 
 import gmpy2 as gp
 
@@ -36,8 +40,6 @@ from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.mcfe.fh_ipe import FHIPE
 from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import FHContext
-from pyfe4ai.schemes.threshold_utils import check_fusion_weight
-from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup
 from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
@@ -118,14 +120,15 @@ class MIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator):
         """Return slot *nid*'s FH-IPFE master key ``{imsk}`` (``None`` if unknown)."""
         if nid not in self.msk:
             return None
-        return {"imsk": FHContext.serialise_msk(self.msk[nid])}
+        # the outer A' is only needed for key generation (least privilege)
+        return {"imsk": FHContext.serialise_msk(self.msk[nid], encrypt_only=True)}
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Key for weights ``y`` covering every slot (one ``r`` for all slots).
 
         Returns:
             Dict with ``dk`` (per slot the FH-IPFE key), ``z`` (``[r sum z_i]_T``)
-            and ``weights_id``.
+            and a random ``key_id`` (nothing derived from ``y``).
         """
         credentials = kwargs.get("credentials", None)
         if not credentials:
@@ -144,7 +147,7 @@ class MIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator):
         return {
             "dk": dk,
             "z": ctx.ser(ctx.fhipe.gt ** ctx.zr(z_total)),
-            "weights_id": fusion_weight_id(fusion_weight),
+            "key_id": secrets.token_hex(16),
         }
 
 
@@ -169,16 +172,17 @@ class MIFEFHIPE(IPFEAbsCrypto):
         ct = ctx.fhipe.encrypt(self.imsk, [ctx.g1 ** ctx.zr(v) for v in x])
         return {"ct": [ctx.ser(v) for v in ct]}
 
-    def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict):
+    def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict | None = None):
         """``log prod_i FHIPE.Dec(ct_i, dk_i) / [z]_T``; ``None`` if out of bound.
 
+        *fusion_weight* is accepted for API compatibility and ignored: the
+        key encodes ``y`` (function hiding).
+
         Raises:
-            FESchemeError: If the ciphertexts do not cover every slot of the key
-                or *fusion_weight* are not the key's weights.
+            FESchemeError: If the ciphertexts do not cover every slot of the key.
         """
         if not dk or "dk" not in dk:
             raise FEKeyError("no decryption key provided")
-        check_fusion_weight(dk, fusion_weight)
         if set(dct_ct) != set(dk["dk"]):
             raise FESchemeError("need one ciphertext for every slot of the key")
         ctx = self.ctx

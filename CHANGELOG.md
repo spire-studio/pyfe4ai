@@ -125,6 +125,22 @@ table and *Known Issues* before relying on any privacy property.
     arbitrary-precision sampler.
   - charm serialises the identity of G1 into a point outside the group;
     `pyfe4ai.utils.pairing_backend.PairingGroup` writes it explicitly.
+- **Independent verification** of the rebuilt schemes found:
+  - Function-hiding keys (FH-MCFE, FH-DMCFE, tMCFE-FH, MIFE FH-IPE)
+    carried `weights_id`, an unsalted SHA-256 of `y`: any key holder could
+    brute-force `y` and link keys for the same function. Keys now carry a
+    random `key_id` (FH-DMCFE shares only `tag_f`); decryption no longer
+    needs or checks `y`, and threshold servers do not need it either.
+    Clients receive their slot key without the outer `A'` (only key
+    generation uses it).
+  - SIFE partial-FH-IPE keys reveal `M^T y`, which for small
+    `eta - subspace_dim` usually determines a bounded integer `y`; the
+    default `subspace_dim` is now 1 and the leakage is documented.
+  - tMIFE-DDH applied key shares to unchecked ciphertext elements: an
+    element outside the order-q subgroup leaked one bit of a server's share
+    through the Legendre symbol. Servers (and MIFE-DDH decryption) now
+    require subgroup elements. All threshold servers refuse a key share
+    issued to another server.
 
 ### Added
 

@@ -31,6 +31,7 @@ Versions <= 0.2.0 masked inputs with a public label scalar instead.
 from __future__ import annotations
 
 import logging
+import secrets
 
 import gmpy2 as gp
 import numpy as np
@@ -40,13 +41,12 @@ from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.mcfe.fh_ipe import FHIPE
 from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
 from pyfe4ai.schemes.mcfe.labels import encode_label
-from pyfe4ai.schemes.threshold_utils import check_fusion_weight
-from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup
 from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.utils.validation import int_vector
 
 logger = logging.getLogger(__name__)
 
@@ -99,24 +99,30 @@ class FHContext:
         return [self.g2 ** self.zr(v) for v in y] + [slot_scalar_elem] + [one] * (self.eta + 3)
 
     @staticmethod
-    def serialise_msk(msk: dict) -> dict:
-        return {
+    def serialise_msk(msk: dict, encrypt_only: bool = False) -> dict:
+        """Serialise an FH-IPFE master key; *encrypt_only* drops ``a_out``,
+        which only key generation needs."""
+        out = {
             "a_in": [str(v) for v in msk["a_in"]],
             "u": [[str(v) for v in row] for row in msk["u"]],
-            "a_out": [str(v) for v in msk["a_out"]],
             "w": [[str(v) for v in row] for row in msk["w"]],
             "z": str(msk["z"]),
         }
+        if not encrypt_only:
+            out["a_out"] = [str(v) for v in msk["a_out"]]
+        return out
 
     @staticmethod
     def deserialise_msk(msk: dict) -> dict:
-        return {
+        out = {
             "a_in": [int(v) for v in msk["a_in"]],
             "u": [[int(v) for v in row] for row in msk["u"]],
-            "a_out": [int(v) for v in msk["a_out"]],
             "w": [[int(v) for v in row] for row in msk["w"]],
             "z": int(msk["z"]),
         }
+        if "a_out" in msk:
+            out["a_out"] = [int(v) for v in msk["a_out"]]
+        return out
 
     def key_entry(self, key: list, z_sum: int) -> dict:
         return {"k": [self.ser(v) for v in key], "z": self.ser(self.fhipe.gt ** self.zr(z_sum))}
@@ -181,10 +187,16 @@ class MCFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator):
         return dict(self.pp)
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
-        """Return client *nid*'s FH-IPFE master key ``{imsk}`` (``None`` if unknown)."""
+        """Return client *nid*'s encryption key ``{imsk}`` (``None`` if unknown).
+
+        This is the slot's FH-IPFE master key without the part only key
+        generation needs. With it a client could strip the outer layer of its
+        own slot of a functional key (outside the model: clients are not
+        corrupted).
+        """
         if nid not in self.msk:
             return None
-        return {"imsk": self.ctx.serialise_msk(self.msk[nid])}
+        return {"imsk": self.ctx.serialise_msk(self.msk[nid], encrypt_only=True)}
 
     def _validate_weights(self, fusion_weight: dict) -> None:
         if not isinstance(fusion_weight, dict) or set(fusion_weight) != set(self.lst_nid):
@@ -204,7 +216,8 @@ class MCFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator):
 
         Returns:
             Dict with ``dk`` (per client the FH-IPFE key ``k`` and ``[z]_T``)
-            and ``weights_id``.
+            and a random ``key_id`` (nothing derived from ``y``: keys are
+            function hiding).
         """
         credentials = kwargs.get("credentials", None)
         if not credentials:
@@ -219,7 +232,7 @@ class MCFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator):
             y_hat = ctx.y_hat([int(v) for v in fusion_weight[nid]], ctx.g2 ** ctx.zr(t_i))
             key, z_sum = ctx.fhipe.keygen(self.msk[nid], y_hat)
             dk[nid] = ctx.key_entry(key, z_sum)
-        return {"dk": dk, "weights_id": fusion_weight_id(fusion_weight)}
+        return {"dk": dk, "key_id": secrets.token_hex(16)}
 
 
 class MCFEFHMultiIPE(IPFEAbsCrypto):
@@ -234,30 +247,28 @@ class MCFEFHMultiIPE(IPFEAbsCrypto):
             self.sk = self.keys["sk"]
             self.imsk = FHContext.deserialise_msk(self.sk["imsk"])
 
-    def _check_plaintext(self, lst_pt) -> None:
+    def _check_plaintext(self, lst_pt) -> list:
         if not self._has_private_keys():
             raise FEKeyError("no encryption key provided")
-        if len(lst_pt) != self.pp["eta"]:
-            raise FEValidationError("invalid size of input plaintext")
-        if any(abs(int(v)) > self.pp["bound_x"] for v in lst_pt):
-            raise FEValidationError("plaintext exceeds configured bound_x")
+        return int_vector(lst_pt, "plaintext", length=self.pp["eta"], bound=int(self.pp["bound_x"]))
 
     def encrypt(self, lst_pt: list, label: str) -> dict:
         """``iEnc(imsk_i, [(x_i, H1(label), 0, ...)]_1)``; once per client and label."""
-        self._check_plaintext(lst_pt)
-        x_hat = self.ctx.x_hat([int(v) for v in lst_pt], self.ctx.h1(label))
+        x_hat = self.ctx.x_hat(self._check_plaintext(lst_pt), self.ctx.h1(label))
         return {"ct": [self.ctx.ser(v) for v in self.ctx.fhipe.encrypt(self.imsk, x_hat)]}
 
-    def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict, label: str):
+    def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict | None = None, label=None):
         """``log prod_i iDec(dk_i, ct_i)``; ``None`` if out of bound (wrong tag or key).
 
+        *fusion_weight* and *label* are accepted for API compatibility and
+        ignored: the key encodes ``y`` (function hiding) and the ciphertexts
+        carry ``H1(label)``.
+
         Raises:
-            FESchemeError: If the ciphertexts do not cover every client of the
-                key or *fusion_weight* are not the weights of the key.
+            FESchemeError: If the ciphertexts do not cover every client of the key.
         """
         if not dk or "dk" not in dk:
             raise FEKeyError("no decryption key provided")
-        check_fusion_weight(dk, fusion_weight)
         if set(dct_ct) != set(dk["dk"]):
             raise FESchemeError("need one ciphertext for every client of the key")
         acc = self.ctx.group.init(GT, 1)
@@ -274,7 +285,7 @@ class MCFEFHMultiIPE(IPFEAbsCrypto):
             raise FEValidationError("need a string label for encrypt_lst_ndarray")
         out = []
         for l, ary_src in enumerate(lst_ndarray):
-            ary = (np.asarray(ary_src) * pow(10, self.precision)).astype(int)
+            ary = np.rint(np.asarray(ary_src) * pow(10, self.precision)).astype(int)
             ary_ct = np.empty(ary.shape, dtype=object)
             for i, w in np.ndenumerate(ary):
                 ary_ct[i] = self.encrypt([int(w)], _element_label(label, l, i))
@@ -282,7 +293,7 @@ class MCFEFHMultiIPE(IPFEAbsCrypto):
         return out
 
     def compute_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:
-        """Aggregate-decrypt ndarray ciphertexts (needs ``dk``, ``fusion_weight``, ``label``)."""
+        """Aggregate-decrypt ndarray ciphertexts (needs ``dk`` and ``label``)."""
         return self.decrypt_lst_ndarray_ct(dict_ndarray_ct, **kwargs)
 
     def decrypt_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:
@@ -290,8 +301,8 @@ class MCFEFHMultiIPE(IPFEAbsCrypto):
         dk = kwargs.get("dk", None)
         fusion_weight = kwargs.get("fusion_weight", None)
         label = kwargs.get("label", None)
-        if dk is None or fusion_weight is None or label is None:
-            raise FEKeyError("need to provide decryption key, fusion weight and label")
+        if dk is None or label is None:
+            raise FEKeyError("need to provide decryption key and label")
         sample = next(iter(dict_ndarray_ct.values()))
         out = []
         for l in range(len(sample)):

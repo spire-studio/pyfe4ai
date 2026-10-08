@@ -35,7 +35,6 @@ import numpy as np
 
 from pyfe4ai.schemes.mife.ddh import MIFE, MIFEKeyGenerator
 from pyfe4ai.schemes.threshold_utils import check_fusion_weight
-from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
 from pyfe4ai.schemes.threshold_utils import share_points
 from pyfe4ai.schemes.threshold_utils import share_secret
@@ -131,7 +130,8 @@ class ThresholdMIFE(MIFE):
     """Encryption (with quantisation) and threshold decryption."""
 
     def _quantise(self, values) -> list:
-        return [int(round(float(v) * pow(10, self.precision))) for v in values]
+        scale = pow(10, self.precision)
+        return [int(v) * scale if isinstance(v, (int, np.integer)) else int(round(float(v) * scale)) for v in values]
 
     def encrypt(self, pt: list) -> dict:
         """Encrypt ``eta`` values, quantised with ``10^precision``."""
@@ -154,8 +154,8 @@ class ThresholdMIFE(MIFE):
         """
         if not dk or "d" not in dk:
             raise FEKeyError("no decryption keys provided.")
-        if self.id not in dk["lst_sid"]:
-            raise FESchemeError("local id:{} is not supported".format(self.id))
+        if self.id not in dk["lst_sid"] or dk.get("sid") != self.id:
+            raise FESchemeError("the key share does not belong to server {}".format(self.id))
         validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
         check_fusion_weight(dk, credentials)
         if not set(dict_ct) == set(credentials) == set(dk["d"]):
@@ -174,7 +174,8 @@ class ThresholdMIFE(MIFE):
             y = int_vector(credentials[nid], "fusion weight of " + nid)
             c = [gp.mpz(v) for v in ct["c"]]
             t = gp.mpz(ct["t"])
-            if len(c) != len(y) or not all(0 < v < p for v in c + [t]):
+            if len(c) != len(y) or not all(0 < v < p and gp.legendre(v, p) == 1 for v in c + [t]):
+                # outside the order-q subgroup, t^(lambda d) would leak share bits
                 raise FEValidationError("malformed ciphertext of {}".format(nid))
             for c_j, y_j in zip(c, y):
                 c_y = c_y * gp.powmod(c_j, y_j, p) % p

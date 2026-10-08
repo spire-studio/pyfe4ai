@@ -222,8 +222,8 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         """
         if not dk or "sk_y" not in dk:
             raise FEKeyError("no decryption keys provided")
-        if self.id not in dk["lst_sid"]:
-            raise FESchemeError("local id:{} is not supported".format(self.id))
+        if self.id not in dk["lst_sid"] or dk.get("sid") != self.id:
+            raise FESchemeError("the key share does not belong to server {}".format(self.id))
         fusion_weight = credentials.get("fusion_weight")
         if dk.get("label") != credentials.get("label"):
             raise FESchemeError("the key share was derived for another label")

@@ -75,7 +75,8 @@ def test_subspace_dimension_must_be_proper(kg_config):
     with pytest.raises(FEValidationError):
         SIFEPartFHIPEKeyGenerator(dict(kg_config, subspace_dim=kg_config["eta"]))
     default_cfg = {k: v for k, v in kg_config.items() if k != "subspace_dim"}
-    assert SIFEPartFHIPEKeyGenerator(dict(default_cfg, eta=3)).subspace_dim == 2
+    # keys leak M^T y: the default keeps k = 1
+    assert SIFEPartFHIPEKeyGenerator(dict(default_cfg, eta=3)).subspace_dim == 1
 
 
 def test_adapter_encryptor_gets_no_master_key():

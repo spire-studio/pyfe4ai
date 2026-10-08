@@ -88,7 +88,7 @@ def test_entire_process_lst_ndarray(kg_config):
         expected.append(
             sum(
                 (
-                    (dct_x[nid][layer_idx] * pow(10, precision)).astype(int)
+                    np.rint(dct_x[nid][layer_idx] * pow(10, precision))
                     / pow(10, precision)
                 )
                 * dct_y[nid][0]
@@ -172,10 +172,13 @@ def test_threshold_and_consistency_checks(kg_config):
         combiner.combine_decrypt({"sid_0": parts["sid_0"]})
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y})
     dec = ThresholdMCFEFHMultiIPE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
-    with pytest.raises(FESchemeError):
-        dec.share_decrypt(dct_ct, {"fusion_weight": {**y, "nid_0": [0, 1]}}, dk, ["sid_0", "sid_1"])
+    assert "weights_id" not in dk and "key_id" in dk  # no digest of y
     with pytest.raises(FESchemeError):
         dec.share_decrypt(dct_ct, {"fusion_weight": y}, dk, ["sid_0"])
+    # a server must use its own share (another's has a different Lagrange point)
+    other = ThresholdMCFEFHMultiIPE({"id": "sid_1", "keys": {"pp": pp, "dk": dk}})
+    with pytest.raises(FESchemeError):
+        other.share_decrypt(dct_ct, {}, dk, ["sid_0", "sid_1"])
     # servers that decrypted different ciphertexts are not combined
     other = dict(dct_ct)
     other["nid_0"] = dct_ct["nid_1"]

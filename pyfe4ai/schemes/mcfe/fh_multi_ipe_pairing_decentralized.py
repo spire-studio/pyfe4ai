@@ -64,9 +64,9 @@ class DecentralizedMCFEFHMultiIPEKeyGenerator(MCFEFHMultiIPEKeyGenerator):
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
         """Client *nid*'s ``imsk``, its share ``t_tilde`` and its key-derivation ``seed``."""
-        sk = super().get_private_keys(nid)
-        if sk is None:
+        if nid not in self.msk:
             return None
+        sk = {"imsk": self.ctx.serialise_msk(self.msk[nid])}  # DKeyGen needs a_out
         sk["t_tilde"] = str(self.t_tilde[nid])
         sk["seed"] = self.key_seeds[nid]
         return sk
@@ -84,11 +84,11 @@ class DecentralizedMCFEFHMultiIPE(MCFEFHMultiIPE):
 
     def encrypt(self, lst_pt: list, label: str) -> dict:
         """``iEnc(imsk_i, [(x_i, H1(label)^t~_i, 0, ...)]_1)``; once per client and label."""
-        self._check_plaintext(lst_pt)
+        x = self._check_plaintext(lst_pt)
         if "t_tilde" not in self.sk:
             raise FEKeyError("need the client's DMCFE keys to encrypt")
         omega_t = self.ctx.h1(label) ** self.ctx.zr(int(self.sk["t_tilde"]))
-        x_hat = self.ctx.x_hat([int(v) for v in lst_pt], omega_t)
+        x_hat = self.ctx.x_hat(x, omega_t)
         return {"ct": [self.ctx.ser(v) for v in self.ctx.fhipe.encrypt(self.imsk, x_hat)]}
 
     def derive_function_decryption_key_share(self, fusion_weight: dict, tag_f: str = "") -> dict:
@@ -99,8 +99,8 @@ class DecentralizedMCFEFHMultiIPE(MCFEFHMultiIPE):
             tag_f: Optional function tag; ``tag-f`` is ``(tag_f, H(y))``.
 
         Returns:
-            Dict with ``k`` and ``z`` (the FH-IPFE key), ``nid``, ``tag_f`` and
-            ``weights_id``.
+            Dict with ``k`` and ``z`` (the FH-IPFE key), ``nid`` and ``tag_f``
+            (no digest of ``y``: keys are function hiding).
         """
         if not self._has_private_keys() or "seed" not in self.sk:
             raise FEKeyError("need the client's keys to derive a key share")
@@ -114,13 +114,14 @@ class DecentralizedMCFEFHMultiIPE(MCFEFHMultiIPE):
             raise FEValidationError("invalid fusion weight length for client {}".format(self.id))
         if any(abs(int(v)) > int(self.pp["bound_y"]) for v in weights):
             raise FEValidationError("fusion weight exceeds configured bound_y")
-        weights_id = fusion_weight_id(fusion_weight)
-        context = json.dumps([tag_f, weights_id])
+        # tag-f = (tag_f, H(y)): internal only (it feeds H2 and the secret-seeded
+        # key randomness), never published -- a digest of y would undo function hiding
+        context = json.dumps([tag_f, fusion_weight_id(fusion_weight)])
         y_hat = self.ctx.y_hat([int(v) for v in weights], self.ctx.h2(context))
         rng = XofRandom(bytes.fromhex(self.sk["seed"]) + _KEY_RNG_DOMAIN + context.encode("utf-8"))
         key, z_sum = self.ctx.fhipe.keygen(self.imsk, y_hat, rng=rng)
         share = self.ctx.key_entry(key, z_sum)
-        share.update({"nid": self.id, "tag_f": tag_f, "weights_id": weights_id})
+        share.update({"nid": self.id, "tag_f": tag_f})
         return share
 
     def combine_function_decryption_key_share(self, dct_dk_shares: dict) -> dict:
@@ -128,18 +129,18 @@ class DecentralizedMCFEFHMultiIPE(MCFEFHMultiIPE):
 
         Raises:
             FESchemeError: If a client's key is missing or the keys were derived
-                for different weights or function tags.
+                for different function tags. (Keys for different weights under
+                one ``tag_f`` combine into a key that decrypts to garbage.)
         """
         if set(dct_dk_shares) != set(self.pp["lst_nid"]):
             raise FESchemeError("key shares of all clients are required")
         shares = list(dct_dk_shares.values())
         first = shares[0]
-        if any((sh["weights_id"], sh["tag_f"]) != (first["weights_id"], first["tag_f"]) for sh in shares):
-            raise FESchemeError("key shares were derived for different weights or function tags")
+        if any(sh["tag_f"] != first["tag_f"] for sh in shares):
+            raise FESchemeError("key shares were derived for different function tags")
         if any(sh.get("nid", nid) != nid for nid, sh in dct_dk_shares.items()):
             raise FESchemeError("key share filed under the wrong client id")
         return {
             "dk": {nid: {"k": sh["k"], "z": sh["z"]} for nid, sh in dct_dk_shares.items()},
-            "weights_id": first["weights_id"],
             "tag_f": first["tag_f"],
         }

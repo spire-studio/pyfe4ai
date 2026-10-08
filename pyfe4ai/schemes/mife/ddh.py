@@ -193,7 +193,8 @@ class MIFE(IPFEAbsCrypto):
         """Recover ``sum_i <x_i, y_i>`` from one ciphertext per slot.
 
         Returns:
-            The inner product, or ``None`` if it exceeds ``dlog_bound``.
+            The inner product, or ``None`` if it is out of the range the
+            discrete-log table covers (at least ``|<x, y>| <= dlog_bound``).
 
         Raises:
             FEKeyError: If the decryption key is missing.
@@ -212,7 +213,7 @@ class MIFE(IPFEAbsCrypto):
             y = int_vector(fusion_weight[nid], "fusion weight of " + nid)
             c = [gp.mpz(v) for v in ct["c"]]
             t = gp.mpz(ct["t"])
-            if len(c) != len(y) or not all(0 < v < p for v in c + [t]):
+            if len(c) != len(y) or not all(0 < v < p and gp.legendre(v, p) == 1 for v in c + [t]):
                 raise FEValidationError("malformed ciphertext of {}".format(nid))
             for c_j, y_j in zip(c, y):
                 acc = acc * gp.powmod(c_j, y_j, p) % p

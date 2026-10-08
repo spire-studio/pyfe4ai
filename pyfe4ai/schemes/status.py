@@ -61,7 +61,7 @@ _S = "pyfe4ai.schemes."
 
 _FH_IPE_NOTE = (
     "FH-IPFE = ACFGU18 Fig. 12 (n = 1, SXDH) with LV16 padding; asymmetric "
-    "pairing (default MNT224), symmetric groups rejected"
+    "pairing (default MNT224); keys carry a random id, never a digest of y"
 )
 _FIG14_NOTE = (
     "MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) "
@@ -111,8 +111,10 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     ),
     ("sife", "part_fh_ipe_pairing"): SchemeStatus(
         _S + "sife.part_fh_ipe_pairing", REVIEWED, ADAPTED, "Gay20 Fig. 8 (CPA, k = 1)",
-        note="M is a random full-rank public matrix (subspace_dim < eta), published "
-        "with V^T M in the clear; Enc' is run by the key generator; no QANIZK",
+        note="M is a random full-rank public matrix (subspace_dim < eta, default 1), "
+        "published with V^T M in the clear; keys leak M^T y, which for small "
+        "eta - subspace_dim often determines a bounded y; public Enc needs bounded "
+        "t; Enc' is run by the key generator; no QANIZK",
     ),
     # --- multi-input --------------------------------------------------------
     ("mife", "ddh"): SchemeStatus(
@@ -144,7 +146,8 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     ("mife", "fh_ipe_pairing"): SchemeStatus(
         _S + "mife.fh_ipe_pairing", REVIEWED, ADAPTED, "ACFGU18 Fig. 12 (k = 1)",
         note="one r per key shared by all slots; per-slot FH-IPFE as in mcfe/fh_ipe "
-        "(LV16 padding of App. B); asymmetric pairing (default MNT224)",
+        "(LV16 padding of App. B); asymmetric pairing (default MNT224); keys carry "
+        "a random id, never a digest of y",
     ),
     ("mife", "fh_multi_ipe_pairing"): SchemeStatus(
         _S + "mife.fh_multi_ipe_pairing", UNREVIEWED, UNKNOWN, "DOT18"

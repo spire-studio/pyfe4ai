@@ -89,13 +89,16 @@ def test_slot_results_are_masked_and_keys_do_not_mix(kg_config):
         bounded_discrete_log_gt(ctx.group, ctx.fhipe.gt, slot0, 1000)
 
     mixed = {"dk": {"nid_0": dk1["dk"]["nid_0"], "nid_1": dk2["dk"]["nid_1"], "nid_2": dk1["dk"]["nid_2"]},
-             "z": dk1["z"], "weights_id": dk1["weights_id"]}
+             "z": dk1["z"], "key_id": dk1["key_id"]}
     assert dec.decrypt(cts, mixed, y1) is None
 
     with pytest.raises(FESchemeError):
         dec.decrypt({k: v for k, v in cts.items() if k != "nid_2"}, dk1, y1)
-    with pytest.raises(FESchemeError):
-        dec.decrypt(cts, dk1, y2)
+    # keys carry no digest of y and are unlinkable; decryption does not need y
+    assert set(dk1) == {"dk", "z", "key_id"}
+    assert kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y1})["key_id"] != dk1["key_id"]
+    assert dec.decrypt(cts, dk1) == 0
+    assert "a_out" not in kg.get_private_keys("nid_0")["imsk"]
 
 
 def test_eta_one_and_zero_weights(kg_config):

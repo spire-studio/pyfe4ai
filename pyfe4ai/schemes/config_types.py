@@ -174,8 +174,9 @@ class QuadraticSGPConfig(FEBaseConfig, total=False):
 
 
 class QuadraticQuadConfig(FEBaseConfig, total=False):
-    """Config for Quad quadratic FE schemes."""
+    """Config for Quad quadratic FE schemes (``x`` of length ``n``, ``y`` of length ``m``)."""
 
+    n: int
     m: int
     bound: int
     pairing_group_param: str

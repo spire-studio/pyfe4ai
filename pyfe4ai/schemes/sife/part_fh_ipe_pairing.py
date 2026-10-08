@@ -19,7 +19,12 @@ public key is ``([a]_1, [U a]_1, V^T M, M)`` and ``msk = (b, U, V)``.
 * KeyGen(y): ``[(-U^T w ; w)]_2`` with ``w = (b s ; y + V b s)``.
 * Dec:      ``prod_j e(ct_j, sk_j) = [<x, y>]_T`` and a bounded discrete log.
 
-Keys reveal ``y`` only up to its projection onto the span of ``M``. Versions
+Every key holder learns ``M^T y`` (encrypt the unit vectors ``t = e_j`` and
+decrypt), the leakage the paper allows; for an integer ``y`` with
+``|y_i| <= bound`` this often determines ``y`` unless ``eta - k`` is large, so
+``k`` defaults to 1 -- the public encryption space and the leakage have the
+same dimension ``k``. Public encryption requires ``|t_i| <= coeff_bound`` and
+``|M t| <= bound`` so that the final discrete log is feasible. Versions
 <= 0.2.0 handed the master secret key to every encryptor and, by default,
 used a square ``M`` (``k = eta``), which reveals ``V`` and with it ``y``.
 Deviations: ``M`` and ``V^T M`` are published in the clear instead of in G1.
@@ -47,7 +52,7 @@ from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.pairing_backend import G1, G2, PairingGroup, pair
 from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.utils.pairing_backend import require_pairing_backend
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
 from pyfe4ai.utils.pairing_utils import matrix_inverse_mod
 from pyfe4ai.utils.validation import int_vector
 
@@ -183,7 +188,8 @@ class SIFEPartFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         require_pairing_backend()
         self.eta = config.get("eta", CryptoCONST.SIFE_DEFAULT_ETA)
         self.bound = gp.mpz(config.get("bound", config.get("bound_x", 16)))
-        self.subspace_dim = int(config.get("subspace_dim", min(3, self.eta - 1)))
+        # keys leak M^T y (k values): keep k small relative to eta by default
+        self.subspace_dim = int(config.get("subspace_dim", 1))
         if not 1 <= self.subspace_dim < self.eta:
             # a square M (k = eta) makes V = (V^T M) M^{-1} public, and keys reveal y
             raise FEValidationError("subspace_dim must satisfy 1 <= subspace_dim < eta")
@@ -335,16 +341,15 @@ class SIFEPartFHIPE(IPFEAbsCrypto):
         self.group = PairingGroup(self.pp["pairing_group_param"])
         check_asymmetric(self.group)
         self.order = gp.mpz(int(self.group.order()))
-        if self._has_private_keys():
-            self.sk = self.keys["sk"]
 
     def encrypt(self, lst_pt: list) -> dict:
         """Public ``Enc(t)`` of ``x = M t`` for ``k`` coefficients ``t``."""
-        if len(lst_pt) != self.pp["subspace_dim"]:
-            raise FESchemeError("public encryption expects subspace coefficients of configured dimension")
         t = [
             gp.mpz(v)
-            for v in int_vector(lst_pt, "subspace coefficients", bound=int(self.pp["coeff_bound"]))
+            for v in int_vector(
+                lst_pt, "subspace coefficients", length=self.pp["subspace_dim"],
+                bound=int(self.pp["coeff_bound"]),
+            )
         ]
         m = [[gp.mpz(v) for v in row] for row in self.pp["m"]]
         x = _matrix_vec_plain(m, t)

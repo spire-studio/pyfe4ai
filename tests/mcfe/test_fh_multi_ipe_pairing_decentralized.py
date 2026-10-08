@@ -79,7 +79,7 @@ def test_entire_process_lst_ndarray(kg_config):
         expected.append(
             sum(
                 (
-                    (dct_x[nid][layer_idx] * pow(10, precision)).astype(int)
+                    np.rint(dct_x[nid][layer_idx] * pow(10, precision))
                     / pow(10, precision)
                 )
                 * dct_y[nid][0]
@@ -149,18 +149,23 @@ def test_key_share_is_deterministic_and_bound(kg_config):
     )
 
     decryptor = DecentralizedMCFEFHMultiIPE({"id": "sid_0", "keys": {"pp": pp}})
+    # shares carry nothing derived from y (function hiding) ...
+    share = c0.derive_function_decryption_key_share(y1)
+    assert set(share) == {"k", "z", "nid", "tag_f"}
+    # ... and shares for other weights under one tag_f only give a useless key
     mixed = {nid: c.derive_function_decryption_key_share(y1) for nid, c in clients.items()}
     mixed["nid_2"] = clients["nid_2"].derive_function_decryption_key_share(y2)
+    cts = {nid: c.encrypt([1, 1], "t") for nid, c in clients.items()}
+    assert decryptor.decrypt(cts, decryptor.combine_function_decryption_key_share(mixed)) is None
+    other_tag = dict(mixed, nid_2=clients["nid_2"].derive_function_decryption_key_share(y1, tag_f="x"))
     with pytest.raises(FESchemeError):
-        decryptor.combine_function_decryption_key_share(mixed)
+        decryptor.combine_function_decryption_key_share(other_tag)
     partial = {nid: c.derive_function_decryption_key_share(y1) for nid, c in clients.items() if nid != "nid_1"}
     with pytest.raises(FESchemeError):
         decryptor.combine_function_decryption_key_share(partial)
 
 
-def test_wrong_weights_or_tag_do_not_decrypt(kg_config):
-    from pyfe4ai.utils.exceptions import FESchemeError
-
+def test_wrong_tag_does_not_decrypt(kg_config):
     kg = DecentralizedMCFEFHMultiIPEKeyGenerator(kg_config)
     kg.setup()
     pp, clients = _clients(kg, kg_config)
@@ -172,8 +177,8 @@ def test_wrong_weights_or_tag_do_not_decrypt(kg_config):
         {nid: c.derive_function_decryption_key_share(y) for nid, c in clients.items()}
     )
     assert decryptor.decrypt(dct_ct, dk, y, "round-1") == (2 - 2) + (0 + 6) + (2 - 2)
-    with pytest.raises(FESchemeError):
-        decryptor.decrypt(dct_ct, dk, {**y, "nid_0": [2, 2]}, "round-1")
+    # the decryptor does not need the weights (the key encodes them)
+    assert decryptor.decrypt(dct_ct, dk) == 6
     # ciphertexts of different tags do not combine
     dct_ct["nid_1"] = clients["nid_1"].encrypt(x["nid_1"], "round-2")
     assert decryptor.decrypt(dct_ct, dk, y, "round-1") is None

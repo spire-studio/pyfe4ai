@@ -153,6 +153,8 @@ class FHIPE:
 
     def decrypt(self, ct: list, key: list, z_sum_gt):
         """Return ``[<x, y>]_T`` from a ciphertext, a key and the key's ``[z_sum]_T``."""
+        if len(ct) != self.ell + 2 or len(key) != self.ell + 2:
+            raise FEValidationError("FH-IPE ciphertext and key must have {} elements".format(self.ell + 2))
         acc = self.group.init(GT, 1)
         for c, k in zip(ct, key):
             acc *= pair(c, k)

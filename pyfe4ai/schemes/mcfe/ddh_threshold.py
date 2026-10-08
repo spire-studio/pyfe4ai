@@ -335,8 +335,8 @@ class ThresholdMCFE(IPFEAbsCrypto):
         p = gp.mpz(self.pp["p"])
         q = (p - 1) // 2
         lst_sid = dk["lst_sid"]
-        if self.id not in lst_sid:
-            raise FESchemeError("local id:{} is not supported".format(self.id))
+        if self.id not in lst_sid or dk.get("sid") != self.id:
+            raise FESchemeError("the key share does not belong to server {}".format(self.id))
         validate_enrolled(self.id, lst_sid, lst_sid_enrolled, self.pp["t"])
         check_fusion_weight(dk, credentials)
 

@@ -243,8 +243,8 @@ class ThresholdMIFELWE(MIFELWE):
         """
         if not dk or "sk_y" not in dk or "z" not in dk:
             raise FEKeyError("no decryption keys provided")
-        if self.id not in dk["lst_sid"]:
-            raise FESchemeError("local id:{} is not supported".format(self.id))
+        if self.id not in dk["lst_sid"] or dk.get("sid") != self.id:
+            raise FESchemeError("the key share does not belong to server {}".format(self.id))
         validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
         check_fusion_weight(dk, credentials)
         if set(dict_ct) != set(dk["sk_y"]):
