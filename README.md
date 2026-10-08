@@ -90,31 +90,37 @@ See `examples/sife_minimal.py` for the full runnable version.
 | | Ring-LWE | [BMMS21](https://eprint.iacr.org/2021/046.pdf) (PKC '22) |
 | | FH-IPE *(pairing)* | [KLMMRW](https://eprint.iacr.org/2016/440.pdf) (SCN '18) |
 | | Partial-FH-IPE *(pairing)* | [Gay20](https://eprint.iacr.org/2020/093.pdf) (PKC '20) |
-| **MIFE** (multi-input) | DDH, DDH-Hybrid-α, Damgård-DDH, LWE, FullySec-LWE, Ring-LWE, Paillier, FH-IPE | [ACFGU18](https://eprint.iacr.org/2017/972.pdf) (CRYPTO '18) ¹ |
+| **MIFE** (multi-input) | Damgård-DDH, LWE, FullySec-LWE, Paillier | [ACFGU18](https://eprint.iacr.org/2017/972.pdf) (CRYPTO '18), Fig. 4 + ALS16 / ABDP15 |
+| | Ring-LWE | ACFGU18 Fig. 4 as in [BMMS21](https://eprint.iacr.org/2021/046.pdf), Sec. 6 |
+| | DDH, DDH-Hybrid-α, FH-IPE | ACFGU18 ¹ |
 | | FH-Multi-IPE *(pairing)* | [DOT18](https://eprint.iacr.org/2018/061.pdf) (PKC '18) |
 | **MCFE** (multi-client) | DDH | [CDGPP18](https://eprint.iacr.org/2017/989.pdf) (ASIACRYPT '18) |
 | | Damgård-DDH (MDDH), Paillier (DCR), LWE, FullySec-LWE | [ABMPSW20](https://eprint.iacr.org/2020/788.pdf) (SCN '20), Figs. 2–4 |
-| | Ring-LWE | CDGPP18-style + BMMS21 ¹ |
-| | FH-Multi-IPE *(pairing)* | CDGPP18 + [DOT18](https://eprint.iacr.org/2018/061.pdf) ¹ |
-| **Decentralized** | dMCFE-DDH | [ABKW19](https://eprint.iacr.org/2019/020.pdf) (PKC '19) |
-| | dMCFE-LWE, dMCFE-Ring-LWE, dMCFE-Paillier, dMCFE-FH-Multi-IPE | ABKW19 ¹ |
+| | Ring-LWE | BMMS21, Sec. 6 (identity-based MCFE) |
+| | FH-Multi-IPE *(pairing)* | [AGT21b](https://doi.org/10.1007/978-3-030-90453-1_8) (TCC '21), Sec. 6.2 |
+| **Decentralized** | dMCFE-DDH, dMCFE-LWE, dMCFE-Paillier | ABMPSW20, App. D, Fig. 14 (DMCFE from MCFE) |
+| | dMCFE-Ring-LWE | BMMS21, Sec. 6 ([ABKW19](https://eprint.iacr.org/2019/020.pdf) + GDSum) |
+| | dMCFE-FH-Multi-IPE *(pairing)* | [NPS24](https://doi.org/10.62056/andkp2fgx) (IACR CiC '24), Fig. 1 |
 | **Threshold** | tMIFE (DDH, LWE), tMCFE (DDH, LWE, Ring-LWE, FH-Multi-IPE) | [Xu+24](https://doi.org/10.1109/TDSC.2024.3350206) (IEEE TDSC '24) ² |
 | **Quadratic** | SGP (secret-key), Multi-Input SGP | [DSGPP18](https://eprint.iacr.org/2018/206.pdf) (ePrint) |
 | | Quad (public-key) | [Gay20](https://eprint.iacr.org/2020/093.pdf) (PKC '20) |
 
-> ¹ These rows compose a *framework paper* (ACFGU18 / CDGPP18 / ABKW19)
-> with a per-slot *single-input primitive* (ABDP15, ALS16, BMMS21, …) in a
-> way that no paper describes; several of these compositions are known to be
-> insecure (see [Scheme Status](#scheme-status)). The MCFE rows citing
-> CDGPP18 or ABMPSW20 alone implement those constructions directly.
+> ¹ These rows compose the ACFGU18 framework with a per-slot primitive
+> (ABDP15, KLMMRW, …) and have not yet been checked against a published
+> construction (status *unreviewed*, see [Scheme Status](#scheme-status)).
+> The other rows implement the cited construction, with the deviations
+> listed in the status table.
 >
 > ² Threshold variants add a Shamir secret-sharing layer on top of the
 > corresponding MIFE or MCFE scheme; there is no separate standalone paper
-> for each combination. tMCFE-DDH and tMCFE-LWE share the single aggregated
-> functional key of CDGPP18 / ABMPSW20; tMCFE-LWE additionally floods
-> partial decryptions with noise (see its module docstring).
+> for each combination. tMCFE-DDH shares the single aggregated functional
+> key of CDGPP18 and interpolates in the exponent. tMIFE-LWE, tMCFE-LWE and
+> tMCFE-Ring-LWE additionally flood partial decryptions with noise, and
+> tMCFE-FH-Multi-IPE shares the FH-MCFE key exponents and combines partial
+> decryptions in `G_T`; these threshold layers are our own (status
+> *experimental*, see the module docstrings).
 
-> **⚠️ Several of these schemes have known security issues.** Check the
+> **⚠️ Not every scheme has been reviewed.** Check the
 > [Scheme Status](#scheme-status) table and the
 > [Known Issues / Security Notice](#known-issues--security-notice) before
 > relying on any privacy property.
@@ -141,9 +147,8 @@ test keeps it in sync.
   correct results but provides no meaningful privacy. Use it only for
   functionality or performance experiments.
 
-Currently 17 reviewed, 3 experimental,
-16 unreviewed and 3 known-insecure out of
-39 registered schemes.
+Currently 19 reviewed, 4 experimental and 16 unreviewed out of 39
+registered schemes; none is known to be insecure.
 
 | Scheme | Status | Fidelity | Construction | Notes |
 |---|---|---|---|---|
@@ -173,9 +178,9 @@ Currently 17 reviewed, 3 experimental,
 | `mcfe/damgard` | reviewed | faithful | ABMPSW20 Fig. 2 (D_k-MDDH) | k = mddh_k (default 1, where it equals CDGPP18) |
 | `mcfe/ring_lwe` | reviewed | adapted | BMMS21 Sec. 6 MCFE-compiler (identity-based) | functional keys are bound to a label; ndarray values are packed into one ciphertext per chunk, each chunk with its own label pad |
 | `mcfe/fullysec_lwe` | reviewed | adapted | ABMPSW20 Fig. 4, adaptive parameters | signed messages and weights (K = 2nXY + 1, centred decoding); t is a rounded continuous Gaussian; m0 grows with n log2(2X + 1) |
-| `mcfe/fh_multi_ipe_pairing` | known-insecure | ad-hoc | CDGPP18-style + DOT18 | see [Known Issues](#known-issues--security-notice) |
-| `mcfe/fh_multi_ipe_pairing_threshold` | known-insecure | ad-hoc | CDGPP18-style + DOT18 + Shamir | see [Known Issues](#known-issues--security-notice) |
-| `mcfe/fh_multi_ipe_pairing_decentralized` | known-insecure | ad-hoc | CDGPP18-style + DOT18 + ABKW19-style | see [Known Issues](#known-issues--security-notice) |
+| `mcfe/fh_multi_ipe_pairing` | reviewed | adapted | AGT21b Sec. 6.2 (as recapped in NPS24 Sec. 2) | FH-IPFE = ACFGU18 Fig. 12 (n = 1, SXDH) with LV16 padding; asymmetric pairing (default MNT224), symmetric groups rejected |
+| `mcfe/fh_multi_ipe_pairing_threshold` | experimental | ad-hoc | AGT21b FH-MCFE + Shamir | FH-MCFE layer as published; the Shamir-shared key exponents and partial decryptions in G_T are our own; FH-IPFE = ACFGU18 Fig. 12 (n = 1, SXDH) with LV16 padding; asymmetric pairing (default MNT224), symmetric groups rejected |
+| `mcfe/fh_multi_ipe_pairing_decentralized` | reviewed | adapted | NPS24 Fig. 1 (selective FH-DMCFE) | tag-f is bound to the whole weight vector and keys are derived deterministically (one key per client and tag-f); FH-IPFE = ACFGU18 Fig. 12 (n = 1, SXDH) with LV16 padding; asymmetric pairing (default MNT224), symmetric groups rejected |
 | `mcfe/ddh_threshold` | reviewed | adapted | CDGPP18 + Shamir (TAPFed setting) | the aggregated key is Shamir-shared; any t servers interpolate in the exponent (threshold-ElGamal style) |
 | `mcfe/ddh_decentralized` | reviewed | adapted | ABMPSW20 Fig. 14 (MCFE1 = CDGPP18) | MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) are sampled in-process |
 | `mcfe/lwe_threshold` | experimental | ad-hoc | ABMPSW20 Fig. 4 + Shamir + flooding | MCFE layer as published; the threshold layer and its LWE-based flooding argument are our own (see the module docstring) |
@@ -302,6 +307,7 @@ The schemes in the following files depend on
 - `pyfe4ai/schemes/sife/part_fh_ipe_pairing.py`
 - `pyfe4ai/schemes/mife/fh_ipe_pairing.py`
 - `pyfe4ai/schemes/mife/fh_multi_ipe_pairing.py`
+- `pyfe4ai/schemes/mcfe/fh_ipe.py`
 - `pyfe4ai/schemes/mcfe/fh_multi_ipe_pairing.py`
 - `pyfe4ai/schemes/mcfe/fh_multi_ipe_pairing_threshold.py`
 - `pyfe4ai/schemes/mcfe/fh_multi_ipe_pairing_decentralized.py`
@@ -323,30 +329,35 @@ docker run --rm pyfe4ai-pairing
 
 ## Known Issues / Security Notice
 
-The following problems are known and **not yet fixed**. The affected schemes
-compute correct results but do **not** provide the privacy their family name
-suggests; use them only for functionality and performance experiments. Their
-key generators emit a `pyfe4ai.FESecurityWarning`, and the
-[Scheme Status](#scheme-status) table marks them *known-insecure*.
+No registered scheme is currently known to be insecure (should one be found,
+the [Scheme Status](#scheme-status) table marks it *known-insecure* and its
+key generator emits a `pyfe4ai.FESecurityWarning`). The following
+limitations remain:
 
 | Issue | Affected schemes | Consequence |
 |---|---|---|
-| Label enters as a public scalar; per-client keys | MCFE `ring_lwe`, `ring_lwe_threshold`, `ddh_decentralized` (dMCFE-DDH), `lwe_decentralized`, `ring_lwe_decentralized`, `paillier_decentralized`, `fh_multi_ipe_pairing`, `fh_multi_ipe_pairing_threshold`, `fh_multi_ipe_pairing_decentralized` | An input is masked only by `u_i · ℓ` with a fixed per-client `u_i` and a public label scalar `ℓ`, and functional keys (or partial decryptions) have one component per client. The key holder strips each client's mask: for the lattice and pairing variants it learns `x_i mod ℓ` and `x_i` up to a few candidates per ciphertext (exactly once `\|ℓ\| > 2·bound_x`); for dMCFE-DDH two ciphertexts of one client under two labels reveal its plaintexts, and for dMCFE-Paillier one suffices. |
-| No one-time pad in multi-input FE | MIFE `lwe`, `fullysec_lwe`, `ring_lwe`, `damgard`, `paillier`, `lwe_threshold` (tMIFE-LWE) | ACFGU18 encrypts `x_i + u_i` under a per-slot one-time pad and puts `Σ ⟨u_i, y_i⟩` into the functional key. These variants omit the pad and give the key one component per client, so the functional-key holder learns every individual `⟨x_i, y_i⟩`, not only the sum. (MIFE `ddh` and `ddh_threshold` do use the pad.) |
-| No noise flooding | tMIFE-LWE, tMCFE-Ring-LWE | Partial decryptions are exact linear functions of a server's key share: observing one server on about `lwe_n` ciphertexts recovers its share. |
-| Brute-forceable DCR keys | MIFE `paillier`, MCFE `paillier_decentralized` | Secret keys are drawn from `\|s\| ≤ max(sec_param, bound_y·eta)`; the published `g^s` reveals them by brute force. |
-| Toy default parameters | all | `sec_param` is a modulus bit length (default 128), not a security level; LWE dimensions default to 16–64; the statistical parameter `stat_param` of the ABMPSW20 schemes defaults to 64. All far below any real security level; nothing here estimates concrete hardness. |
-| Unvalidated parameter cache in the working directory | key generators that cache parameters (all except MCFE `lwe`, `fullysec_lwe`, `lwe_threshold`, whose parameters are derived deterministically) | Parameters (public values only; no trapdoors since the Paillier fix) are written to and re-loaded from `./config/authority/...` without structural validation; a planted `param.json` (e.g. a 5-bit group) is accepted. Run only in a directory that nobody else can write to. The pairing dlog cache (`./config/crypto/...`) is likewise trusted if its generators match: a planted table gives wrong results and an inflated bound makes decryption loop for a very long time. |
+| Unreviewed schemes | the 16 *unreviewed* rows of the [Scheme Status](#scheme-status) table | Not yet checked against their papers: no defect is known, but none was looked for systematically either. |
+| Symmetric default pairing group | SIFE `fh_ipe_pairing`, `part_fh_ipe_pairing`; MIFE `fh_ipe_pairing`, `fh_multi_ipe_pairing`; quadratic `quad`, `sgp`, `multi_input_sgp` | These default to `SS512`, a symmetric pairing, while their constructions assume asymmetric groups (SXDH, or a generic asymmetric bilinear group); DDH is easy in a symmetric pairing group. Pass an asymmetric `pairing_group_param` (e.g. `MNT224`). The reviewed FH-MCFE family defaults to `MNT224` and rejects symmetric groups. |
+| Experimental threshold layers | tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE, tMCFE-FH-Multi-IPE | The threshold layers (noise flooding, Shamir sharing in the exponent) are our own and have no published security proof; see the module docstrings. |
+| One ciphertext per client and label | all MCFE / DMCFE schemes | As in the papers, a client must not encrypt two different inputs under one label (or tag); the library does not enforce it. |
+| Toy default parameters | all | `sec_param` is a modulus bit length (default 128), not a security level; LWE dimensions default to 16–64; the statistical parameter `stat_param` defaults to 64. All far below any real security level; nothing here estimates concrete hardness. |
+| Unvalidated parameter cache in the working directory | key generators that cache parameters (most; not MCFE `lwe`, `fullysec_lwe`, `lwe_threshold` and the FH-MCFE family) | Parameters (public values only; no trapdoors since the Paillier fix) are written to and re-loaded from `./config/authority/...` without structural validation; a planted `param.json` (e.g. a 5-bit group) is accepted. Run only in a directory that nobody else can write to. The pairing dlog cache (`./config/crypto/...`) is likewise trusted if its generators match: a planted table gives wrong results and an inflated bound makes decryption loop for a very long time. |
 | Float fusion weights in `aggregate_gradients` | `utils/ml_adapter.py` | Float weights are quantised but the result is not rescaled (e.g. weights 0.5 give 100× the expected sum in decimal mode). Pass integer weights. |
 
-Fixed since v0.2.0 (unreleased, see [`CHANGELOG.md`](CHANGELOG.md)): MCFE
-`paillier`, `lwe`, `fullysec_lwe` and `damgard` re-implemented following
-ABMPSW20 (SCN 2020, Figs. 3, 4 and 2); tMCFE-DDH rebuilt on CDGPP18 with a
-Shamir-shared aggregated key; tMCFE-LWE rebuilt on ABMPSW20 with
-derandomised, noise-flooded partial decryptions (*experimental*); SIFE
-`paillier` keys sampled as in ALS16; Paillier parameter caches no longer
-store the factorization of `N` (a decryption trapdoor); user labels and
-ndarray element labels can no longer collide.
+Fixed since v0.2.0 (unreleased, see [`CHANGELOG.md`](CHANGELOG.md)): every
+scheme previously marked *known-insecure* now implements a published
+construction or, for four threshold variants, an *experimental* layer on
+top of one. MCFE `paillier`, `lwe`, `fullysec_lwe` and `damgard` follow
+ABMPSW20 (Figs. 3, 4 and 2); the MIFE variants `damgard`, `paillier`,
+`lwe`, `fullysec_lwe` and `ring_lwe` add ACFGU18's one-time pad, so the key
+holder learns only the sum; dMCFE-DDH, -LWE and -Paillier follow ABMPSW20
+Fig. 14; MCFE-, dMCFE- and tMCFE-Ring-LWE follow BMMS21's identity-based
+(D)MCFE; the FH-MCFE family follows AGT21b and NPS24 over an asymmetric
+pairing; tMCFE-DDH shares the CDGPP18 key; tMIFE-LWE, tMCFE-LWE and
+tMCFE-Ring-LWE flood partial decryptions with derandomised noise; SIFE,
+MIFE and dMCFE Paillier keys are Gaussian (no longer brute-forceable);
+Paillier parameter caches no longer store the factorization of `N`; user
+labels and ndarray element labels can no longer collide.
 
 Fixed in v0.2.0: MCFE-DDH re-implemented per CDGPP18; independent per-client
 keys in MIFE-DDH; DDH threshold sharing (1-based Shamir points over the group

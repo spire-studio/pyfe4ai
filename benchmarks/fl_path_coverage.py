@@ -93,16 +93,16 @@ CONFIGS: dict[tuple[str, str], dict] = {
         "label_modulus": 8, **_MULTI,
     },
     ("mcfe", "fh_multi_ipe_pairing"): {
-        "sec_param": 64, "sec_level": 2, "bound_x": 4, "bound_y": 4, "u_bound": 3,
-        "label_modulus": 17, "pairing_group_param": "SS512", **_MULTI,
+        "sec_param": 64, "bound_x": 4, "bound_y": 4, "pairing_group_param": "MNT224",
+        **_MULTI,
     },
     ("mcfe", "fh_multi_ipe_pairing_threshold"): {
-        "sec_param": 64, "sec_level": 2, "bound_x": 4, "bound_y": 4, "u_bound": 3,
-        "label_modulus": 17, "pairing_group_param": "SS512", **_THRESHOLD,
+        "sec_param": 64, "bound_x": 4, "bound_y": 4, "pairing_group_param": "MNT224",
+        **_THRESHOLD,
     },
     ("mcfe", "fh_multi_ipe_pairing_decentralized"): {
-        "sec_param": 64, "sec_level": 2, "bound_x": 4, "bound_y": 4, "u_bound": 3,
-        "label_modulus": 17, "pairing_group_param": "SS512", **_MULTI,
+        "sec_param": 64, "bound_x": 4, "bound_y": 4, "pairing_group_param": "MNT224",
+        **_MULTI,
     },
     ("mcfe", "ddh_threshold"): {"sec_param": 128, **_THRESHOLD},
     ("mcfe", "ddh_decentralized"): {"sec_param": 128, **_MULTI},

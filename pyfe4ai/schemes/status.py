@@ -59,22 +59,13 @@ class SchemeStatus:
 
 _S = "pyfe4ai.schemes."
 
-_NO_PAD = (
-    "no ACFGU18 one-time pad and one key component per client: the "
-    "functional-key holder learns every client's <x_i, y_i>"
-)
-_LABEL_MASK = (
-    "the label enters as a public scalar times a fixed per-client secret and "
-    "keys / partial decryptions are per client: the functional-key holder "
-    "can strip the mask and learn individual inputs"
+_FH_IPE_NOTE = (
+    "FH-IPFE = ACFGU18 Fig. 12 (n = 1, SXDH) with LV16 padding; asymmetric "
+    "pairing (default MNT224), symmetric groups rejected"
 )
 _FIG14_NOTE = (
     "MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) "
     "are sampled in-process"
-)
-_SMALL_DCR_KEYS = (
-    "; secret keys are drawn from [-B, B] with B = max(sec_param, bound_y * eta) and "
-    "can be brute-forced from public data"
 )
 
 SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
@@ -165,16 +156,20 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         "t is a rounded continuous Gaussian; m0 grows with n log2(2X + 1)",
     ),
     ("mcfe", "fh_multi_ipe_pairing"): SchemeStatus(
-        _S + "mcfe.fh_multi_ipe_pairing", KNOWN_INSECURE, AD_HOC, "CDGPP18-style + DOT18",
-        issue=_LABEL_MASK,
+        _S + "mcfe.fh_multi_ipe_pairing", REVIEWED, ADAPTED,
+        "AGT21b Sec. 6.2 (as recapped in NPS24 Sec. 2)", note=_FH_IPE_NOTE,
     ),
     ("mcfe", "fh_multi_ipe_pairing_threshold"): SchemeStatus(
-        _S + "mcfe.fh_multi_ipe_pairing_threshold", KNOWN_INSECURE, AD_HOC,
-        "CDGPP18-style + DOT18 + Shamir", issue=_LABEL_MASK,
+        _S + "mcfe.fh_multi_ipe_pairing_threshold", EXPERIMENTAL, AD_HOC,
+        "AGT21b FH-MCFE + Shamir",
+        note="FH-MCFE layer as published; the Shamir-shared key exponents and "
+        "partial decryptions in G_T are our own; " + _FH_IPE_NOTE,
     ),
     ("mcfe", "fh_multi_ipe_pairing_decentralized"): SchemeStatus(
-        _S + "mcfe.fh_multi_ipe_pairing_decentralized", KNOWN_INSECURE, AD_HOC,
-        "CDGPP18-style + DOT18 + ABKW19-style", issue=_LABEL_MASK,
+        _S + "mcfe.fh_multi_ipe_pairing_decentralized", REVIEWED, ADAPTED,
+        "NPS24 Fig. 1 (selective FH-DMCFE)",
+        note="tag-f is bound to the whole weight vector and keys are derived "
+        "deterministically (one key per client and tag-f); " + _FH_IPE_NOTE,
     ),
     ("mcfe", "ddh_threshold"): SchemeStatus(
         _S + "mcfe.ddh_threshold", REVIEWED, ADAPTED, "CDGPP18 + Shamir (TAPFed setting)",

@@ -7,7 +7,6 @@ from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold import ThresholdMCFEFHM
 def main() -> None:
     config = {
         "sec_param": 64,
-        "sec_level": 2,
         "eta": 2,
         "n": 3,
         "s": 3,
@@ -16,9 +15,7 @@ def main() -> None:
         "lst_sid": ["sid_0", "sid_1", "sid_2"],
         "bound_x": 4,
         "bound_y": 4,
-        "u_bound": 3,
-        "label_modulus": 17,
-        "pairing_group_param": "SS512",
+        "pairing_group_param": "MNT224",
     }
     label = "threshold-demo-label"
 

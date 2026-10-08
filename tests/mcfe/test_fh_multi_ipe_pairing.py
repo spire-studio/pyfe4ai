@@ -22,7 +22,7 @@ def kg_config():
         "bound_y": 4,
         "u_bound": 3,
         "label_modulus": 17,
-        "pairing_group_param": "SS512",
+        "pairing_group_param": "MNT224",
     }
 
 
@@ -116,3 +116,33 @@ def test_entire_process_lst_ndarray(kg_config):
 
     for idx in range(len(expected)):
         assert np.allclose(computed[idx], expected[idx], atol=1e-2)
+
+
+def test_symmetric_group_rejected(kg_config):
+    from pyfe4ai.utils.exceptions import FEValidationError
+
+    with pytest.raises(FEValidationError):
+        MCFEFHMultiIPEKeyGenerator(dict(kg_config, pairing_group_param="SS512"))
+
+
+def test_key_is_function_hiding_and_tag_bound(kg_config):
+    """Keys are randomised (two keys for one y differ) and only decrypt the right tag."""
+    cfg = dict(kg_config, eta=1)
+    kg = MCFEFHMultiIPEKeyGenerator(cfg)
+    kg.setup()
+    pp = kg.get_public_parameters()
+    dct_x = {nid: [2] for nid in cfg["lst_nid"]}
+    dct_y = {nid: [3] for nid in cfg["lst_nid"]}
+    dk1 = kg.get_decryption_keys("sid", credentials={"fusion_weight": dct_y})
+    dk2 = kg.get_decryption_keys("sid", credentials={"fusion_weight": dct_y})
+    assert dk1["dk"]["nid_0"]["k"] != dk2["dk"]["nid_0"]["k"]
+    dct_ct = {
+        nid: MCFEFHMultiIPE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(dct_x[nid], "tag-a")
+        for nid in cfg["lst_nid"]
+    }
+    dec = MCFEFHMultiIPE({"id": "sid", "keys": {"pp": pp}})
+    assert dec.decrypt(dct_ct, dk1, dct_y, "tag-a") == 18
+    assert dec.decrypt(dct_ct, dk2, dct_y, "tag-a") == 18
+    # mixing a ciphertext of another tag breaks the zero-sum mask
+    other = MCFEFHMultiIPE({"id": "nid_1", "keys": {"pp": pp, "sk": kg.get_private_keys("nid_1")}}).encrypt([2], "tag-b")
+    assert dec.decrypt(dict(dct_ct, nid_1=other), dk1, dct_y, "tag-a") is None

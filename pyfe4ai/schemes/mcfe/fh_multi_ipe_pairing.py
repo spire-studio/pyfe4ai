@@ -1,325 +1,302 @@
 """
-Function-Hiding Multi-Client Inner-Product Encryption over Pairings
-| Multi-client label-aware structure inspired by
-| "Decentralized multi-client functional encryption for inner product"
-| By Jeremy Chotard, Edouard Dufour Sans, Romain Gay, Duong Hieu Phan,
-| David Pointcheval
-| Published in: ASIACRYPT 2018
-|
-| Instantiated here with a function-hiding multi-input inner-product FE
-| building block based on
-| "Full-Hiding (Unbounded) Multi-Input Inner Product Functional Encryption
-|  from the k-Linear Assumption"
-| By Palash Datta, Tatsuaki Okamoto, Jun Tomida
-| See ePrint 2018/061
+Function-hiding multi-client inner-product FE over pairings.
 
-* type:     public-key encryption
-* setting:  Pairing based
-* note:     research-oriented Python prototype aligned with the existing
-            crypto-ipfe API style
+| Agrawal, Goyal, Tomida, "Multi-Party Functional Encryption", TCC 2021
+| (AGT21b), Section 6.2 -- the FH-IP-MCFE as recapped in
+| Nguyen, Pointcheval, Schaedlich, "Decentralized Multi-Client Functional
+| Encryption with Strong Security", IACR CiC 1(2), 2024, Section 2
+| ("Recap: The Function-Hiding MCFE of [AGT21b]"); selective security under
+| SXDH in the random-oracle model.
 
-.. warning::
-    Known-insecure (mcfe/fh_multi_ipe_pairing, see pyfe4ai.schemes.status): the
-    label enters as a public scalar times a fixed per-client secret and keys
-    / partial decryptions are per client: the functional-key holder can
-    strip the mask and learn individual inputs. Use only for functionality
-    or performance experiments.
+* type:     multi-client encryption with function-hiding keys (FH-MCFE)
+* setting:  asymmetric pairing group (default MNT224), random oracle
+
+Each client ``i`` holds the master key ``imsk_i`` of an independent
+function-hiding IPFE (:mod:`pyfe4ai.schemes.mcfe.fh_ipe`):
+
+* Enc:      ``[omega]_1 = H1(tag)``; ``ct_i = iEnc(imsk_i, [x_hat_i]_1)`` with
+            ``x_hat_i = (x_i, omega, 0, 0^eta, 0, 0)``.
+* KeyGen:   fresh ``t_1, ..., t_n`` with ``sum t_i = 0``;
+            ``dk_i = iKeyGen(imsk_i, [y_hat_i]_2)``, ``y_hat_i = (y_i, t_i, 0, 0^eta, 0, 0)``.
+* Dec:      ``prod_i iDec(dk_i, ct_i) = [sum <x_i, y_i> + omega sum t_i]_T = [<x, y>]_T``,
+            then a bounded discrete log.
+
+The zero coordinates are the ones the security proof uses (NPS24 Section 2).
+Each client's partial result is masked by ``omega t_i`` and the IPFE hides
+``y_i``; each client must encrypt at most once per tag. Symmetric pairing
+groups (SS512, ...) are rejected because SXDH does not hold there.
+Versions <= 0.2.0 masked inputs with a public label scalar instead.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-import random
 
 import gmpy2 as gp
-
-_CSPRNG = random.SystemRandom()
 import numpy as np
 
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
-from pyfe4ai.schemes.ipfe import ParameterCacheMixin
-from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPE
-from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPEKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.crypto_utils import md5_hash
-from pyfe4ai.utils.lwe_utils import label_scalar_from_hash
-from pyfe4ai.utils.pairing_backend import PairingGroup
+from pyfe4ai.schemes.mcfe.fh_ipe import FHIPE, check_asymmetric
+from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
+from pyfe4ai.schemes.mcfe.labels import encode_label
+from pyfe4ai.schemes.threshold_utils import check_fusion_weight
+from pyfe4ai.schemes.threshold_utils import fusion_weight_id
+from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup
 from pyfe4ai.utils.pairing_backend import require_pairing_backend
-from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
+from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
+from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_GROUP = "MNT224"
+_H1_DOMAIN = "pyfe4ai/fh-mcfe/H1(tag)|"
+_H2_DOMAIN = "pyfe4ai/fh-mcfe/H2(tag-f)|"
 
-class MCFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
-    """Key generator for function-hiding multi-client IPE over pairings."""
 
-    _scheme_type = CryptoCONST.TYPE_MCFE_FH_MULTI_IPE
+def vector_dim(eta: int) -> int:
+    """Length of the extended vectors ``(v, scalar, 0, 0^eta, 0, 0)``."""
+    return 2 * eta + 4
+
+
+class FHContext:
+    """Deserialised public parameters shared by the FH (D)MCFE schemes."""
+
+    def __init__(self, pp: dict) -> None:
+        require_pairing_backend()
+        self.pp = pp
+        self.group = PairingGroup(pp["pairing_group_param"])
+        self.g1 = self.group.deserialize(pp["g1"].encode("utf-8"))
+        self.g2 = self.group.deserialize(pp["g2"].encode("utf-8"))
+        self.eta = pp["eta"]
+        self.fhipe = FHIPE(self.group, self.g1, self.g2, vector_dim(self.eta))
+        self.order = self.fhipe.order
+
+    def zr(self, value):
+        return self.group.init(ZR, int(value) % self.order)
+
+    def ser(self, element) -> str:
+        return self.group.serialize(element).decode("utf-8")
+
+    def de(self, text: str):
+        return self.group.deserialize(text.encode("utf-8"))
+
+    def h1(self, tag) -> object:
+        return self.group.hash(_H1_DOMAIN + encode_label(tag), G1)
+
+    def h2(self, tag_f: str) -> object:
+        return self.group.hash(_H2_DOMAIN + tag_f, G2)
+
+    def x_hat(self, x: list, slot_scalar_elem) -> list:
+        """``[(x, s, 0, 0^eta, 0, 0)]_1`` with the scalar slot given as a G1 element."""
+        one = self.fhipe.identity1()
+        return [self.g1 ** self.zr(v) for v in x] + [slot_scalar_elem] + [one] * (self.eta + 3)
+
+    def y_hat(self, y: list, slot_scalar_elem) -> list:
+        """``[(y, s, 0, 0^eta, 0, 0)]_2`` with the scalar slot given as a G2 element."""
+        one = self.fhipe.identity2()
+        return [self.g2 ** self.zr(v) for v in y] + [slot_scalar_elem] + [one] * (self.eta + 3)
+
+    @staticmethod
+    def serialise_msk(msk: dict) -> dict:
+        return {
+            "a_in": [str(v) for v in msk["a_in"]],
+            "u": [[str(v) for v in row] for row in msk["u"]],
+            "a_out": [str(v) for v in msk["a_out"]],
+            "w": [[str(v) for v in row] for row in msk["w"]],
+            "z": str(msk["z"]),
+        }
+
+    @staticmethod
+    def deserialise_msk(msk: dict) -> dict:
+        return {
+            "a_in": [int(v) for v in msk["a_in"]],
+            "u": [[int(v) for v in row] for row in msk["u"]],
+            "a_out": [int(v) for v in msk["a_out"]],
+            "w": [[int(v) for v in row] for row in msk["w"]],
+            "z": int(msk["z"]),
+        }
+
+    def key_entry(self, key: list, z_sum: int) -> dict:
+        return {"k": [self.ser(v) for v in key], "z": self.ser(self.fhipe.gt ** self.zr(z_sum))}
+
+    def partial(self, ct: dict, key_entry: dict):
+        return self.fhipe.decrypt(
+            [self.de(v) for v in ct["ct"]], [self.de(v) for v in key_entry["k"]], self.de(key_entry["z"])
+        )
+
+    def solve(self, value) -> int | None:
+        bound = int(self.pp["n"] * self.eta * gp.mpz(self.pp["bound_x"]) * gp.mpz(self.pp["bound_y"]))
+        try:
+            return bounded_discrete_log_gt(self.group, self.fhipe.gt, value, bound)
+        except ValueError:
+            logger.error("inner product out of bound (wrong tag or key?)")
+            return None
+
+
+class MCFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator):
+    """Key generator for the AGT21b function-hiding MCFE."""
+
     def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
+        """Initialise the key generator.
 
-            Args:
-                config: Scheme configuration dict.
+        Args:
+            config: ``n``, ``lst_nid``, ``eta``, ``bound_x``, ``bound_y`` and
+                ``pairing_group_param`` (asymmetric, default MNT224). The keys
+                ``sec_level``, ``u_bound`` and ``label_modulus`` of versions
+                <= 0.2.0 are ignored.
         """
         super().__init__(config, **kwargs)
         require_pairing_backend()
-        self.sec_level = int(config.get("sec_level", 2))
-        self.eta = int(config.get("eta", CryptoCONST.MCFE_ETA))
-        self.bound_x = gp.mpz(config.get("bound_x", 16))
-        self.bound_y = gp.mpz(config.get("bound_y", 16))
-        self.u_bound = gp.mpz(config.get("u_bound", max(2, int(self.bound_x))))
-        self.label_modulus = int(config.get("label_modulus", 17))
-        self.pairing_group_param = config.get("pairing_group_param", "SS512")
+        self.eta = int(config.get("eta", 1))
+        self.bound_x = int(config.get("bound_x", 10))
+        self.bound_y = int(config.get("bound_y", 10))
+        self.pairing_group_param = config.get("pairing_group_param", DEFAULT_GROUP)
+        check_asymmetric(self.pairing_group_param)
         if not self.n:
             raise FEKeyError("need to provide number of clients")
-        self._load_parameters()
-
-    def _apply_parameters(self, param: dict) -> None:
-        self.group = PairingGroup(self.pairing_group_param)
-        self.order = gp.mpz(int(self.group.order()))
-
-    def _param_verification(self, param: dict) -> bool:
-        return (
-            param.get("sec_param") == self.sec_param
-            and param.get("sec_level") == self.sec_level
-            and param.get("eta") == self.eta
-            and param.get("n") == self.n
-            and param.get("bound_x") == gp.digits(self.bound_x)
-            and param.get("bound_y") == gp.digits(self.bound_y)
-            and param.get("u_bound") == gp.digits(self.u_bound)
-            and param.get("label_modulus") == self.label_modulus
-            and param.get("pairing_group_param") == self.pairing_group_param
-        )
-
-    def _generate_and_save(self, param_file: str) -> None:
-        with open(param_file, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "sec_param": self.sec_param,
-                    "sec_level": self.sec_level,
-                    "eta": self.eta,
-                    "n": self.n,
-                    "bound_x": gp.digits(self.bound_x),
-                    "bound_y": gp.digits(self.bound_y),
-                    "u_bound": gp.digits(self.u_bound),
-                    "label_modulus": self.label_modulus,
-                    "pairing_group_param": self.pairing_group_param,
-                },
-                f,
-            )
-        self.group = PairingGroup(self.pairing_group_param)
-        self.order = gp.mpz(int(self.group.order()))
 
     def setup(self) -> None:
-        half_label = self.label_modulus // 2
-        inner_bound_x = self.bound_x + self.u_bound * gp.mpz(half_label)
-        inner_config = {
-            "sec_param": self.sec_param,
-            "sec_level": self.sec_level,
-            "eta": self.eta,
-            "n": self.n,
-            "s": self.s,
-            "lst_nid": self.lst_nid,
-            "bound_x": gp.digits(inner_bound_x),
-            "bound_y": gp.digits(self.bound_y),
-            "pairing_group_param": self.pairing_group_param,
-        }
-        self.inner_kg = MIFEFHMultiIPEKeyGenerator(inner_config)
-        self.inner_kg.setup()
-        inner_pp = self.inner_kg.get_public_parameters()
-
-        rand = _CSPRNG
-        u = {
-            nid: [gp.mpz(rand.randint(-int(self.u_bound), int(self.u_bound))) for _ in range(self.eta)]
-            for nid in self.lst_nid
-        }
+        """Sample the generators and one FH-IPFE master key per client."""
+        group = PairingGroup(self.pairing_group_param)
+        g1, g2 = group.random(G1), group.random(G2)
         self.pp = {
-            "sec_level": self.sec_level,
+            "pairing_group_param": self.pairing_group_param,
+            "g1": group.serialize(g1).decode("utf-8"),
+            "g2": group.serialize(g2).decode("utf-8"),
             "eta": self.eta,
             "n": self.n,
             "lst_nid": list(self.lst_nid),
-            "bound_x": gp.digits(self.bound_x),
-            "bound_y": gp.digits(self.bound_y),
-            "u_bound": gp.digits(self.u_bound),
-            "label_modulus": self.label_modulus,
-            "pairing_group_param": self.pairing_group_param,
-            "inner_bound_x": gp.digits(inner_bound_x),
-            "inner": inner_pp,
+            "bound_x": self.bound_x,
+            "bound_y": self.bound_y,
+            "sec_param": self.sec_param,
         }
-        self.mpk = {}
-        self.msk = {
-            "inner": self.inner_kg.msk,
-            "u": u,
-        }
-        logger.info("MCFE FHMultiIPE setup successfully")
+        self.ctx = FHContext(self.pp)
+        self.msk = {nid: self.ctx.fhipe.setup() for nid in self.lst_nid}
+        logger.info("FH-MCFE (AGT21b) setup successfully")
 
     def get_public_parameters(self) -> dict:
+        """Group description, generators, dimensions and bounds."""
         return dict(self.pp)
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
-        """Perform the get_private_keys operation.
-
-            Args:
-                nid: Node identifier.
-        """
-        inner_sk = self.inner_kg.get_private_keys(nid)
-        if inner_sk is None or nid not in self.msk["u"]:
+        """Return client *nid*'s FH-IPFE master key ``{imsk}`` (``None`` if unknown)."""
+        if nid not in self.msk:
             return None
-        return {
-            "inner": inner_sk,
-            "u": [gp.digits(value) for value in self.msk["u"][nid]],
-        }
+        return {"imsk": self.ctx.serialise_msk(self.msk[nid])}
+
+    def _validate_weights(self, fusion_weight: dict) -> None:
+        if not isinstance(fusion_weight, dict) or set(fusion_weight) != set(self.lst_nid):
+            raise FEValidationError("fusion weights must cover every client")
+        for nid, y in fusion_weight.items():
+            if len(y) != self.eta:
+                raise FEValidationError("invalid fusion weight length for client {}".format(nid))
+            if any(abs(int(v)) > self.bound_y for v in y):
+                raise FEValidationError("fusion weight exceeds configured bound_y")
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
-        """Perform the get_decryption_keys operation.
+        """Derive ``{dk_i = iKeyGen(imsk_i, [y_hat_i]_2)}`` with fresh zero-sum ``t_i``.
 
-            Args:
-                sid: Session / decryption-key identifier.
+        Args:
+            sid: Session identifier (unused).
+            **kwargs: ``credentials`` with ``fusion_weight`` covering every client.
+
+        Returns:
+            Dict with ``dk`` (per client the FH-IPFE key ``k`` and ``[z]_T``)
+            and ``weights_id``.
         """
-        credentials = kwargs.get("credentials")
+        credentials = kwargs.get("credentials", None)
         if not credentials:
-            raise FEKeyError("need credentials for MCFE FHMultiIPE decryption key generation")
+            raise FEKeyError("need credentials for FH-MCFE decryption key generation")
         fusion_weight = credentials.get("fusion_weight")
-        if not isinstance(fusion_weight, dict):
-            raise FEValidationError("invalid fusion weights provided, need a dict")
-
-        inner_dk = self.inner_kg.get_decryption_keys(
-            sid, credentials={"fusion_weight": fusion_weight}
-        )
-        z = gp.mpz(0)
-        for nid in self.lst_nid:
-            if nid not in fusion_weight:
-                raise FEValidationError("fusion weight missing client {}".format(nid))
-            weights = fusion_weight[nid]
-            if len(weights) != self.eta:
-                raise FEValidationError("invalid fusion weight length for client {}".format(nid))
-            if any(abs(int(value)) > self.bound_y for value in weights):
-                raise FEValidationError("fusion weight exceeds configured bound_y")
-            for u_i, y_i in zip(self.msk["u"][nid], weights):
-                z += u_i * gp.mpz(y_i)
-
-        return {"dk": inner_dk, "z": gp.digits(z)}
+        self._validate_weights(fusion_weight)
+        ctx = self.ctx
+        t = [int(ctx.group.random(ZR)) for _ in self.lst_nid[:-1]]
+        t.append((-sum(t)) % ctx.order)
+        dk = {}
+        for t_i, nid in zip(t, self.lst_nid):
+            y_hat = ctx.y_hat([int(v) for v in fusion_weight[nid]], ctx.g2 ** ctx.zr(t_i))
+            key, z_sum = ctx.fhipe.keygen(self.msk[nid], y_hat)
+            dk[nid] = ctx.key_entry(key, z_sum)
+        return {"dk": dk, "weights_id": fusion_weight_id(fusion_weight)}
 
 
 class MCFEFHMultiIPE(IPFEAbsCrypto):
-    """Crypto operations for function-hiding multi-client IPE over pairings."""
+    """Crypto operations for the AGT21b function-hiding MCFE."""
 
     def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
-
-            Args:
-                config: Scheme configuration dict.
-        """
+        """Initialise with ``keys.pp`` and, for clients, ``keys.sk``."""
         super().__init__(config, **kwargs)
-        require_pairing_backend()
         self.pp = self.keys["pp"]
-        self.group = PairingGroup(self.pp["pairing_group_param"])
-        self.order = gp.mpz(int(self.group.order()))
+        self.ctx = FHContext(self.pp)
         if self._has_private_keys():
             self.sk = self.keys["sk"]
-            self.inner = MIFEFHMultiIPE(
-                {"id": self.id, "keys": {"pp": self.pp["inner"], "sk": self.sk["inner"]}}
-            )
-        else:
-            self.inner = MIFEFHMultiIPE({"id": self.id, "keys": {"pp": self.pp["inner"]}})
+            self.imsk = FHContext.deserialise_msk(self.sk["imsk"])
 
-    def _label_scalar(self, label: str) -> gp.mpz:
-        label_hash = md5_hash(label, self.order)
-        return label_scalar_from_hash(label_hash, self.pp["label_modulus"])
-
-    def encrypt(self, lst_pt: list, label: str) -> dict:
-        """Encrypt plaintext and return a ciphertext dict.
-
-            Args:
-                lst_pt: Integer plaintext vector.
-                label: Encryption label for replay protection.
-        """
+    def _check_plaintext(self, lst_pt) -> None:
         if not self._has_private_keys():
-            raise FEKeyError("no private keys provided for encryption")
+            raise FEKeyError("no encryption key provided")
         if len(lst_pt) != self.pp["eta"]:
             raise FEValidationError("invalid size of input plaintext")
-        if any(abs(int(v)) > gp.mpz(self.pp["bound_x"]) for v in lst_pt):
+        if any(abs(int(v)) > self.pp["bound_x"] for v in lst_pt):
             raise FEValidationError("plaintext exceeds configured bound_x")
 
-        label_scalar = self._label_scalar(label)
-        u = [gp.mpz(value) for value in self.sk["u"]]
-        masked = [
-            gp.mpz(x_i) + label_scalar * u_i
-            for x_i, u_i in zip(lst_pt, u)
-        ]
-        inner_ct = self.inner.encrypt(masked)
-        return {"ct": inner_ct["ct"]}
+    def encrypt(self, lst_pt: list, label: str) -> dict:
+        """``iEnc(imsk_i, [(x_i, H1(label), 0, ...)]_1)``; once per client and label."""
+        self._check_plaintext(lst_pt)
+        x_hat = self.ctx.x_hat([int(v) for v in lst_pt], self.ctx.h1(label))
+        return {"ct": [self.ctx.ser(v) for v in self.ctx.fhipe.encrypt(self.imsk, x_hat)]}
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict, label: str):
-        """Decrypt ciphertexts and recover the inner product.
+        """``log prod_i iDec(dk_i, ct_i)``; ``None`` if out of bound (wrong tag or key).
 
-            Args:
-                dct_ct: Ciphertext dict (or dict of per-client ciphertexts).
-                dk: Functional decryption key.
-                fusion_weight: Fusion weight vector (or dict of per-client weight vectors).
-                label: Encryption label for replay protection.
+        Raises:
+            FESchemeError: If the ciphertexts do not cover every client of the
+                key or *fusion_weight* are not the weights of the key.
         """
-        total = self.inner.decrypt(dct_ct, dk["dk"])
-        label_scalar = self._label_scalar(label)
-        correction = gp.mpz(dk["z"]) * label_scalar
-        return int(gp.mpz(total) - correction)
+        if not dk or "dk" not in dk:
+            raise FEKeyError("no decryption key provided")
+        check_fusion_weight(dk, fusion_weight)
+        if set(dct_ct) != set(dk["dk"]):
+            raise FESchemeError("need one ciphertext for every client of the key")
+        acc = self.ctx.group.init(GT, 1)
+        for nid, ct in dct_ct.items():
+            acc *= self.ctx.partial(ct, dk["dk"][nid])
+        return self.ctx.solve(acc)
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
-        """Perform the encrypt_lst_ndarray operation.
-
-            Args:
-                lst_ndarray: List of numpy arrays to encrypt element-wise.
-        """
+        """Encrypt ndarrays element-wise (``eta = 1``), one derived label per element."""
         if self.pp["eta"] != 1:
             raise NotImplementedError("ndarray helper currently expects eta=1")
         label = kwargs.get("label", None)
-        lst_ndarray_ct = []
-        for ary_src in lst_ndarray:
-            ary = (ary_src.copy() * pow(10, self.precision)).astype(int)
+        if not isinstance(label, str):
+            raise FEValidationError("need a string label for encrypt_lst_ndarray")
+        out = []
+        for l, ary_src in enumerate(lst_ndarray):
+            ary = (np.asarray(ary_src) * pow(10, self.precision)).astype(int)
             ary_ct = np.empty(ary.shape, dtype=object)
             for i, w in np.ndenumerate(ary):
-                ary_ct[i] = self.encrypt([int(w)], label)
-            lst_ndarray_ct.append(ary_ct)
-        return lst_ndarray_ct
+                ary_ct[i] = self.encrypt([int(w)], _element_label(label, l, i))
+            out.append(ary_ct)
+        return out
 
     def compute_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:
-        """Compute inner products on encrypted ndarray ciphertexts.
-
-            Args:
-                dict_ndarray_ct: Encrypted ndarray ciphertexts (list or dict).
-        """
-        dk = kwargs.get("dk", None)
-        fusion_weight = kwargs.get("fusion_weight", None)
-        label = kwargs.get("label", None)
-        if dk is None or fusion_weight is None or label is None:
-            raise FEKeyError("need to provide decryption key, fusion weight and label")
-        return self.decrypt_lst_ndarray_ct(
-            dict_ndarray_ct, dk=dk, fusion_weight=fusion_weight, label=label
-        )
+        """Aggregate-decrypt ndarray ciphertexts (needs ``dk``, ``fusion_weight``, ``label``)."""
+        return self.decrypt_lst_ndarray_ct(dict_ndarray_ct, **kwargs)
 
     def decrypt_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:
-        """Decrypt encrypted ndarray ciphertexts element-wise.
-
-            Args:
-                dict_ndarray_ct: Encrypted ndarray ciphertexts (list or dict).
-        """
+        """Decrypt ndarray ciphertexts element-wise."""
         dk = kwargs.get("dk", None)
         fusion_weight = kwargs.get("fusion_weight", None)
         label = kwargs.get("label", None)
-        if self.pp["eta"] != 1:
-            raise NotImplementedError("ndarray helper currently expects eta=1")
         if dk is None or fusion_weight is None or label is None:
             raise FEKeyError("need to provide decryption key, fusion weight and label")
-
         sample = next(iter(dict_ndarray_ct.values()))
-        lst_ndarray = []
+        out = []
         for l in range(len(sample)):
-            ary = sample[l]
-            ary_dec = np.empty(ary.shape, dtype=object)
-            for i, _ in np.ndenumerate(ary):
+            ary_dec = np.empty(sample[l].shape, dtype=object)
+            for i, _ in np.ndenumerate(sample[l]):
                 dct_ct = {nid: dict_ndarray_ct[nid][l][i] for nid in dict_ndarray_ct}
-                ary_dec[i] = self.decrypt(dct_ct, dk, fusion_weight, label)
-            lst_ndarray.append((ary_dec / pow(10, self.precision)).astype(float))
-        return lst_ndarray
+                ary_dec[i] = self.decrypt(dct_ct, dk, fusion_weight, _element_label(label, l, i))
+            out.append((ary_dec / pow(10, self.precision)).astype(float))
+        return out

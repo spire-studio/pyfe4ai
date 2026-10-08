@@ -7,11 +7,12 @@ compatibility).
 
 ## [Unreleased]
 
-Privacy fixes: five multi-client schemes and SIFE-Paillier now implement
-published constructions, and every scheme carries a review status.
-**Keys, ciphertexts and partial decryptions of the affected schemes are not
-compatible with v0.2.0.** Read the README *Scheme Status* table and *Known
-Issues* before relying on any privacy property.
+Privacy fixes: every scheme that was insecure in v0.2.0 now implements a
+published construction (four threshold variants add an *experimental*
+threshold layer of our own on top of one), and every scheme carries a
+review status. **Keys, ciphertexts and partial decryptions of the affected
+schemes are not compatible with v0.2.0.** Read the README *Scheme Status*
+table and *Known Issues* before relying on any privacy property.
 
 ### Security
 
@@ -50,10 +51,44 @@ Issues* before relying on any privacy property.
 - **SIFE-Paillier** samples keys from `D_{Z,sigma}`, `sigma > sqrt(kappa)
   N^{5/2}` (ALS16); keys used to be drawn from a range small enough to
   brute-force from the public key.
-- Newly documented as known-insecure: MIFE `lwe`, `fullysec_lwe`,
-  `ring_lwe`, `damgard`, `paillier` and tMIFE-LWE omit ACFGU18's one-time
-  pad and reveal every client's `<x_i, y_i>` to the key holder; MIFE-Paillier
-  and dMCFE-Paillier keys are brute-forceable.
+- **MIFE** Damgard, Paillier, LWE, FullySec-LWE and Ring-LWE follow
+  ACFGU18 (CRYPTO 2018) Fig. 4: each slot encrypts `x_i + u_i mod L` under
+  its single-input IPFE with a one-time pad `u_i`, the functional key adds
+  `z = sum <u_i, y_i>`, and decryption decodes only the sum (ALS16 Figs. 7, 9
+  and 8, ABDP15, and BMMS21 Sec. 6 as the per-slot IPFEs). Previously the
+  key holder learned every client's `<x_i, y_i>`. MIFE-Paillier keys are
+  Gaussian (they used to be brute-forceable).
+- **tMIFE-LWE** Shamir-shares the padded MIFE-LWE key and floods each
+  partial decryption with `D_{Z, 2^kappa B}` (`B` bounds the decryption
+  noise; `q` enlarged), derandomised per request (*experimental*).
+- **dMCFE-DDH, dMCFE-LWE, dMCFE-Paillier** follow ABMPSW20 App. D.1, Fig. 14
+  (DMCFE from MCFE): encryption and decryption are those of the reviewed
+  MCFE, and each client publishes an MCFE2 (DCR, Fig. 3) encryption of its
+  key contribution under the label `H(y)`; zero-sum MCFE2 keys make the
+  shares combine to exactly the MCFE1 functional key. Previously the
+  combiner could strip each client's label mask, and dMCFE-Paillier keys
+  were brute-forceable.
+- **MCFE-Ring-LWE** implements BMMS21 (PKC 2022) Sec. 6, the
+  identity-based MCFE-compiler: clients encrypt `x_i + u_i + H(u'_i, l)` and
+  the key for `(y, l)` carries the label's pad term, so keys are bound to a
+  label. **dMCFE-Ring-LWE** follows BMMS21's identity-based DMCFE (ABKW19 +
+  GDSum, realised with pairwise PRF zero-sum masks). **tMCFE-Ring-LWE**
+  Shamir-shares the identity-based key and floods partial decryptions
+  (*experimental*). Previously all three masked inputs with a small public
+  label scalar.
+- **FH-MCFE** implements AGT21b (TCC 2021) Sec. 6.2 as recapped in NPS24
+  (IACR CiC 2024) Sec. 2: one function-hiding IPFE per client
+  (`pyfe4ai.schemes.mcfe.fh_ipe`, ACFGU18 Fig. 12 with `n = 1` and LV16
+  padding), ciphertexts carry `H1(tag)` and every functional key embeds a
+  fresh zero sharing. **dMCFE-FH-Multi-IPE** implements NPS24 Fig. 1
+  (selective FH-DMCFE): the zero sharing lives in the encryption keys and
+  each client derives its own key with `H2(tag-f)`; `tag-f` is bound to the
+  whole weight vector and keys are derived deterministically, so a client
+  issues one key per `tag-f`. **tMCFE-FH-Multi-IPE** Shamir-shares the
+  FH-MCFE key exponents; partial decryptions are combined in `G_T`
+  (*experimental*). Previously all three masked inputs with a public label
+  scalar and ran over the symmetric group `SS512`, where SXDH fails; the
+  family now defaults to `MNT224` and rejects symmetric groups.
 
 ### Added
 
@@ -72,6 +107,11 @@ Issues* before relying on any privacy property.
   `round_to_q0`, `decode_rounded_inner_product`.
 - Config keys `stat_param` (ABMPSW20 schemes, SIFE-Paillier; default 64) and
   `mddh_k` (MCFE-Damgard).
+- `pyfe4ai.schemes.mcfe.fh_ipe` (`FHIPE`, `check_asymmetric`),
+  `pyfe4ai.schemes.mcfe.decentralize` (MCFE2 and zero-sum keys for
+  Fig. 14), `labels.chunk_label`, `MCFERingLWE.key_chunks` (the ML adapter
+  passes the resulting `n_chunks` when requesting Ring-LWE keys).
+- `tag_f` argument of the dMCFE-FH-Multi-IPE key derivation.
 
 ### Changed (breaking)
 
@@ -92,13 +132,36 @@ Issues* before relying on any privacy property.
   ciphertexts relative to v0.2.0.
 - Decrypting under a wrong label returns `None` for MCFE-Paillier and
   MCFE-Damgard and an arbitrary in-range value for the LWE schemes.
+- MIFE Damgard / Paillier / LWE / FullySec-LWE / Ring-LWE: client keys
+  carry the pad `u`; functional keys carry `z` (`{k1, k2, z}`, `{k, z}`,
+  `{sk_y, z}`); decryption needs a ciphertext for every slot of the key.
+  tMIFE-LWE key shares carry `noise_key`.
+- dMCFE-DDH / -LWE / -Paillier: key shares are MCFE2 ciphertexts
+  `{c, nid, weights_id}`, every client must contribute (with zero weights
+  if absent), and the combined key is the MCFE1 key.
+- MCFE / dMCFE / tMCFE-Ring-LWE: functional keys are bound to a label
+  (`credentials` need `label`, optionally `n_chunks`;
+  `derive_function_decryption_key_share(fusion_weight, label, n_chunks)`);
+  ndarray ciphertexts pack values into chunks of `ring_n` coefficients.
+- FH-MCFE family: client keys `{imsk}` (dMCFE adds `t_tilde`, `seed`),
+  functional keys `{dk: {nid: {k, z}}, weights_id}`; tMCFE key shares
+  `{k, z, sid, lst_sid, weights_id}` and partial decryptions
+  `{w, ct_digest, sid, lst_sid_enrolled}`. The config keys `sec_level`,
+  `u_bound` and `label_modulus` are ignored and parameters are no longer
+  cached.
+
+### Fixed
+
+- Ring-LWE plaintext modulus (SIFE, MIFE, MCFE): `p` was exactly
+  `2 l X Y`, so inner products of `+-l X Y` were ambiguous; it is now
+  `2 l X Y + 2` (parameter caches are regenerated).
 
 ### Documentation
 
-- README: *Scheme Status* table, rewritten *Known Issues*, scheme table cites
-  ABMPSW20; landing page matrix updated; the docs index no longer claims a
-  uniform `setup / keygen / encrypt / decrypt` API; known-insecure modules
-  carry a warning in their docstring.
+- README: *Scheme Status* table, rewritten *Known Issues*, the scheme table
+  cites the implemented constructions (ACFGU18 Fig. 4, ABMPSW20, BMMS21
+  Sec. 6, AGT21b, NPS24); landing page matrix updated; the docs index no
+  longer claims a uniform `setup / keygen / encrypt / decrypt` API.
 
 ## [0.2.0] — 2026-10-07
 

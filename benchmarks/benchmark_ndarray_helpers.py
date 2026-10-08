@@ -41,7 +41,6 @@ PRECISION = 1
 FH_SEC_LEVEL = 2
 FH_BOUND_X = 50
 FH_BOUND_Y = 4
-FH_LABEL_MODULUS = 17
 
 
 def _base_array(scale: float) -> np.ndarray:
@@ -192,15 +191,12 @@ def _bench_mcfe_fh_multi_ipe(name: str, decentralized: bool = False, threshold: 
     elements = int(np.prod(SHAPE))
     base_cfg = {
         "sec_param": 64,
-        "sec_level": FH_SEC_LEVEL,
         "eta": 1,
         "n": 3,
         "lst_nid": ["nid_0", "nid_1", "nid_2"],
         "bound_x": FH_BOUND_X,
         "bound_y": FH_BOUND_Y,
-        "u_bound": 3,
-        "label_modulus": FH_LABEL_MODULUS,
-        "pairing_group_param": "SS512",
+        "pairing_group_param": "MNT224",
     }
     if threshold:
         base_cfg.update({"s": 3, "t": 2, "lst_sid": ["sid_0", "sid_1", "sid_2"]})
@@ -391,7 +387,7 @@ def _bench_quadratic(name: str, quad_cls, kg_cls, config: dict, lhs: list[np.nda
 
 
 def main() -> None:
-    global ROUNDS, SHAPE, FH_SEC_LEVEL, FH_BOUND_X, FH_BOUND_Y, FH_LABEL_MODULUS
+    global ROUNDS, SHAPE, FH_SEC_LEVEL, FH_BOUND_X, FH_BOUND_Y
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -453,7 +449,6 @@ def main() -> None:
     FH_SEC_LEVEL = profile_value(args.profile, {"small": 2, "medium": 2, "large": 2, "report": 3, "mnist": 2})
     FH_BOUND_X = profile_value(args.profile, {"small": 32, "medium": 40, "large": 50, "report": 50, "mnist": 50})
     FH_BOUND_Y = profile_value(args.profile, {"small": 4, "medium": 4, "large": 6, "report": 6, "mnist": 6})
-    FH_LABEL_MODULUS = profile_value(args.profile, {"small": 17, "medium": 17, "large": 29, "report": 29, "mnist": 29})
     quadratic_dim = profile_value(args.profile, {"small": 2, "medium": 2, "large": 3, "report": 3, "mnist": 2})
     quadratic_bound = profile_value(args.profile, {"small": 200, "medium": 300, "large": 500, "report": 500, "mnist": 300})
 

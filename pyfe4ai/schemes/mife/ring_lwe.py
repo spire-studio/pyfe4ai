@@ -14,9 +14,10 @@ Ring-LWE multi-input inner-product FE.
 Construction (slot ``i`` is client ``i``; every row of the plaintext matrix is
 one coordinate, its coefficients a batch of independent values):
 
-* Setup:    public ``a``; per slot ``s_{i,row}`` (Gaussian), ``pk_{i,row} =
-            a s_{i,row} + e``, and a one-time pad ``u_{i,row} <- R_q``
-            (uniform coefficients); client ``i`` keeps ``(pk_i, u_i)``.
+* Setup:    public ``a``; per slot ``s_{i,row}`` (Gaussian),
+            ``pk_{i,row} = a s_{i,row} + e``, and a one-time pad
+            ``u_{i,row} <- R_q`` (uniform coefficients); client ``i`` keeps
+            ``(pk_i, u_i)``.
 * Encrypt:  ``w = x_i + u_i`` (coefficient-wise mod q);
             ``ct0_row = pk_row r + e_row + Delta w_row``, ``ct1 = a r + e``.
 * KeyGen:   per slot ``sk_i = sum_row y_{i,row} s_{i,row}`` and

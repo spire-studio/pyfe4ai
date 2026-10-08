@@ -247,20 +247,19 @@ def main() -> None:
     eta = 1
     sec_level = 2
     bound = profile_value(args.profile, {"small": 4, "medium": 8, "large": 8, "report": 8})
-    label_modulus = profile_value(args.profile, {"small": 17, "medium": 17, "large": 29, "report": 29})
     x = {"nid_0": [1 for _ in range(eta)], "nid_1": [1 for _ in range(eta)], "nid_2": [1 for _ in range(eta)]}
     y = {"nid_0": [1 for _ in range(eta)], "nid_1": [1 for _ in range(eta)], "nid_2": [1 for _ in range(eta)]}
 
     for _ in range(args.warmup):
         _bench_mife({"sec_param": 64, "sec_level": sec_level, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": "SS512"}, x, y, 1)
-        _bench_mcfe({"sec_param": 64, "sec_level": sec_level, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "u_bound": 2, "label_modulus": label_modulus, "pairing_group_param": "SS512"}, x, y, "bench-mcfe-fh-multi-ipe", 1)
-        _bench_dmcfe({"sec_param": 64, "sec_level": sec_level, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "u_bound": 2, "label_modulus": label_modulus, "pairing_group_param": "SS512"}, x, y, "bench-dmcfe-fh-multi-ipe", 1)
-        _bench_tmcfe({"sec_param": 64, "sec_level": sec_level, "eta": eta, "n": 3, "s": 3, "t": 2, "lst_nid": list(x.keys()), "lst_sid": ["sid_0", "sid_1", "sid_2"], "bound_x": bound, "bound_y": bound, "u_bound": 2, "label_modulus": label_modulus, "pairing_group_param": "SS512"}, x, y, "bench-tmcfe-fh-multi-ipe", 1)
+        _bench_mcfe({"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": "MNT224"}, x, y, "bench-mcfe-fh-multi-ipe", 1)
+        _bench_dmcfe({"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": "MNT224"}, x, y, "bench-dmcfe-fh-multi-ipe", 1)
+        _bench_tmcfe({"sec_param": 64, "eta": eta, "n": 3, "s": 3, "t": 2, "lst_nid": list(x.keys()), "lst_sid": ["sid_0", "sid_1", "sid_2"], "bound_x": bound, "bound_y": bound, "pairing_group_param": "MNT224"}, x, y, "bench-tmcfe-fh-multi-ipe", 1)
     results = [
         _bench_mife({"sec_param": 64, "sec_level": sec_level, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": "SS512"}, x, y, args.rounds),
-        _bench_mcfe({"sec_param": 64, "sec_level": sec_level, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "u_bound": 2, "label_modulus": label_modulus, "pairing_group_param": "SS512"}, x, y, "bench-mcfe-fh-multi-ipe", args.rounds),
-        _bench_dmcfe({"sec_param": 64, "sec_level": sec_level, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "u_bound": 2, "label_modulus": label_modulus, "pairing_group_param": "SS512"}, x, y, "bench-dmcfe-fh-multi-ipe", args.rounds),
-        _bench_tmcfe({"sec_param": 64, "sec_level": sec_level, "eta": eta, "n": 3, "s": 3, "t": 2, "lst_nid": list(x.keys()), "lst_sid": ["sid_0", "sid_1", "sid_2"], "bound_x": bound, "bound_y": bound, "u_bound": 2, "label_modulus": label_modulus, "pairing_group_param": "SS512"}, x, y, "bench-tmcfe-fh-multi-ipe", args.rounds),
+        _bench_mcfe({"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": "MNT224"}, x, y, "bench-mcfe-fh-multi-ipe", args.rounds),
+        _bench_dmcfe({"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": "MNT224"}, x, y, "bench-dmcfe-fh-multi-ipe", args.rounds),
+        _bench_tmcfe({"sec_param": 64, "eta": eta, "n": 3, "s": 3, "t": 2, "lst_nid": list(x.keys()), "lst_sid": ["sid_0", "sid_1", "sid_2"], "bound_x": bound, "bound_y": bound, "pairing_group_param": "MNT224"}, x, y, "bench-tmcfe-fh-multi-ipe", args.rounds),
     ]
     for result in results:
         result["profile"] = args.profile

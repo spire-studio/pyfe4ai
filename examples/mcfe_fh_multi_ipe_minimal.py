@@ -5,16 +5,13 @@ from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEKeyGenerator
 def main() -> None:
     config = {
         "sec_param": 64,
-        "sec_level": 2,
         "eta": 2,
         "n": 2,
         "s": 1,
         "lst_nid": ["nid_0", "nid_1"],
         "bound_x": 4,
         "bound_y": 4,
-        "u_bound": 3,
-        "label_modulus": 17,
-        "pairing_group_param": "SS512",
+        "pairing_group_param": "MNT224",
     }
     label = "demo-label"
 

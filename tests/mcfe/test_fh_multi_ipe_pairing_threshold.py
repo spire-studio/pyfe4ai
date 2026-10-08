@@ -13,7 +13,6 @@ from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold import ThresholdMCFEFHM
 def kg_config():
     return {
         "sec_param": 64,
-        "sec_level": 2,
         "eta": 2,
         "n": 3,
         "s": 3,
@@ -22,9 +21,7 @@ def kg_config():
         "lst_sid": ["sid_0", "sid_1", "sid_2"],
         "bound_x": 4,
         "bound_y": 4,
-        "u_bound": 3,
-        "label_modulus": 17,
-        "pairing_group_param": "SS512",
+        "pairing_group_param": "MNT224",
     }
 
 
@@ -132,3 +129,63 @@ def test_entire_process_lst_ndarray(kg_config):
 
     for idx in range(len(expected)):
         assert np.allclose(computed[idx], expected[idx], atol=1e-2)
+
+
+def _setup(cfg):
+    kg = ThresholdMCFEFHMultiIPEKeyGenerator(cfg)
+    kg.setup()
+    pp = kg.get_public_parameters()
+    x = {"nid_0": [1, -2], "nid_1": [0, 3], "nid_2": [2, 1]}
+    y = {"nid_0": [2, 1], "nid_1": [-1, 2], "nid_2": [1, -2]}
+    dct_ct = {
+        nid: ThresholdMCFEFHMultiIPE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(
+            x[nid], "round-1"
+        )
+        for nid in cfg["lst_nid"]
+    }
+    return kg, pp, y, dct_ct
+
+
+def _partials(kg, pp, y, dct_ct, enrolled):
+    out = {}
+    for sid in enrolled:
+        dk = kg.get_decryption_keys(sid, credentials={"fusion_weight": y})
+        dec = ThresholdMCFEFHMultiIPE({"id": sid, "keys": {"pp": pp, "dk": dk}})
+        out[sid] = dec.share_decrypt(dct_ct, {"fusion_weight": y}, dk, enrolled)
+    return out
+
+
+def test_every_enrolled_set_decrypts(kg_config):
+    kg, pp, y, dct_ct = _setup(kg_config)
+    combiner = ThresholdMCFEFHMultiIPE({"id": "c", "keys": {"pp": pp}})
+    for enrolled in (["sid_0", "sid_1"], ["sid_1", "sid_2"], ["sid_0", "sid_1", "sid_2"]):
+        assert combiner.combine_decrypt(_partials(kg, pp, y, dct_ct, enrolled)) == 6
+
+
+def test_threshold_and_consistency_checks(kg_config):
+    from pyfe4ai.utils.exceptions import FESchemeError
+
+    kg, pp, y, dct_ct = _setup(kg_config)
+    combiner = ThresholdMCFEFHMultiIPE({"id": "c", "keys": {"pp": pp}})
+    parts = _partials(kg, pp, y, dct_ct, ["sid_0", "sid_1"])
+    with pytest.raises(FESchemeError):
+        combiner.combine_decrypt({"sid_0": parts["sid_0"]})
+    dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y})
+    dec = ThresholdMCFEFHMultiIPE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
+    with pytest.raises(FESchemeError):
+        dec.share_decrypt(dct_ct, {"fusion_weight": {**y, "nid_0": [0, 1]}}, dk, ["sid_0", "sid_1"])
+    with pytest.raises(FESchemeError):
+        dec.share_decrypt(dct_ct, {"fusion_weight": y}, dk, ["sid_0"])
+    # servers that decrypted different ciphertexts are not combined
+    other = dict(dct_ct)
+    other["nid_0"] = dct_ct["nid_1"]
+    parts["sid_1"] = _partials(kg, pp, y, other, ["sid_0", "sid_1"])["sid_1"]
+    assert combiner.combine_decrypt(parts) is None
+
+
+def test_single_share_reveals_nothing_on_its_own(kg_config):
+    """A partial from fewer than t servers does not decrypt."""
+    kg, pp, y, dct_ct = _setup(kg_config)
+    parts = _partials(kg, pp, y, dct_ct, ["sid_0", "sid_1"])
+    combiner = ThresholdMCFEFHMultiIPE({"id": "c", "keys": {"pp": pp}})
+    assert combiner.ctx.solve(combiner.ctx.de(parts["sid_0"]["w"])) is None
