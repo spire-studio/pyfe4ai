@@ -45,6 +45,8 @@ from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
 
 logger = logging.getLogger(__name__)
 
+_PARAM_VERSION = "p-margin/v1"  # p = 2 l X Y + 2
+
 # Backward-compatible aliases (private names used by internal callers)
 _poly_add = poly_add
 _poly_neg = poly_neg
@@ -85,7 +87,8 @@ class SIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
     def _param_verification(self, param: dict) -> bool:
         return (
-            param.get("sec_param") == self.sec_param
+            param.get("param_version") == _PARAM_VERSION
+            and param.get("sec_param") == self.sec_param
             and param.get("eta") == self.eta
             and param.get("bound_x") == gp.digits(self.bound_x)
             and param.get("bound_y") == gp.digits(self.bound_y)
@@ -98,7 +101,9 @@ class SIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         sigma = 1.0
         sigma1 = math.sqrt(float(4 * l)) * sigma * float(self.bound_x)
         kappa_sqrt = math.sqrt(kappa)
-        p = gp.mpz(self.bound_x * self.bound_y * gp.mpz(2 * l))
+        # |<x, y>| <= l X Y must stay strictly inside (-p/2, p/2): with
+        # p = 2 l X Y (versions <= 0.2.0) the values +-l X Y were ambiguous
+        p = gp.mpz(self.bound_x * self.bound_y * gp.mpz(2 * l)) + 2
 
         if self.ring_n is None:
             for pow_exp in range(5, 11):
@@ -131,6 +136,7 @@ class SIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(
                 {
+                    "param_version": _PARAM_VERSION,
                     "sec_param": self.sec_param,
                     "eta": self.eta,
                     "ring_n": self.ring_n,

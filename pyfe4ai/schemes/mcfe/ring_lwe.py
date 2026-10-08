@@ -1,369 +1,196 @@
 """
-Ring-LWE-Based Multi-Client Inner-Product Functional Encryption
-| Multi-client label-aware organization inspired by
-| "Decentralized multi-client functional encryption for inner product"
-| By Jeremy Chotard, Edouard Dufour Sans, Romain Gay, Duong Hieu Phan,
-| David Pointcheval
-| Published in: ASIACRYPT 2018
-|
-| This prototype combines the repository's MCFE API with the Ring-LWE
-| inner-product FE line from
-| "Efficient Lattice-Based Inner-Product Functional Encryption"
-| By Bermudo Mera, Karmakar, Marc, Soleimanian
-| ePrint: 2021/046
+Ring-LWE identity-based multi-client inner-product FE.
 
-* type:     public-key encryption
-* setting:  Integer based
-* note:     research prototype with SIMD-style matrix encryption and labels
+| Bermudo Mera, Karmakar, Marc, Soleimanian:
+| "Efficient Lattice-Based Inner-Product Functional Encryption", PKC 2022
+| (ePrint 2021/046) -- Section 6, "MCFE-Compiler" (from multi-input to
+| identity-based multi-client IPFE, random oracle; Theorem 5, static
+| corruptions) applied to the MIFE of :mod:`pyfe4ai.schemes.mife.ring_lwe`.
 
-.. warning::
-    Known-insecure (mcfe/ring_lwe, see pyfe4ai.schemes.status): the label enters
-    as a public scalar times a fixed per-client secret and keys / partial
-    decryptions are per client: the functional-key holder can strip the mask
-    and learn individual inputs. Use only for functionality or performance
-    experiments.
+* type:     identity-based multi-client encryption (MCFE, Ring-LWE, random oracle)
+* setting:  R_q = Z_q[x] / (x^ring_n + 1)
+
+Construction (MIFE notation; ``H(u'_i, l) in R_q^eta`` is a hash keyed by the
+client secret ``u'_i``):
+
+* Setup:    MIFE setup plus a secret ``u'_i`` per client.
+* Encrypt:  ``ct_{i,l} = MIFE.Enc(msk_i, x_i + H(u'_i, l))``, i.e. the slot
+            encrypts ``x_i + u_i + H(u'_i, l)``.
+* KeyGen:   for weights ``y`` and label ``l``: the MIFE key
+            ``({sk_{i,y}}, z)`` with ``z'' = z + sum_i y_i H(u'_i, l)``.
+* Decrypt:  ``MIFE.Dec`` with ``z''``.
+
+Functional keys are bound to a label (identity-based MCFE): a key for
+``(y, l)`` only decrypts ciphertexts produced under ``l``. Each client must
+encrypt at most once per label. The ndarray helpers pack values into the
+``ring_n`` coefficients of one ciphertext per chunk; chunk ``c`` of label
+``l`` uses ``H(u'_i, (l, c))``, and a key for ``n_chunks`` chunks carries one
+``z''`` per chunk. ``H`` is SHAKE-256 over the client secret and the encoded
+label. Versions <= 0.2.0 masked inputs with a small public label scalar.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-import random
+import math
+import secrets
 
 import gmpy2 as gp
-
-_CSPRNG = random.SystemRandom()
 import numpy as np
 
-from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
-from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
-from pyfe4ai.schemes.ipfe import ParameterCacheMixin
+from pyfe4ai.schemes.mcfe.labels import chunk_label, encode_label
+from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWE
 from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWEKeyGenerator
-from pyfe4ai.utils.ring_lwe_utils import center_matrix
-from pyfe4ai.utils.ring_lwe_utils import decode_vector
-from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul
-from pyfe4ai.utils.ring_lwe_utils import matrix_check_bound
-from pyfe4ai.utils.ring_lwe_utils import poly_add
-from pyfe4ai.utils.ring_lwe_utils import poly_mul
-from pyfe4ai.utils.ring_lwe_utils import poly_neg
-from pyfe4ai.utils.ring_lwe_utils import transpose
 from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.crypto_utils import md5_hash
-from pyfe4ai.utils.lwe_utils import label_scalar_from_hash
-from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
-from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
+from pyfe4ai.utils.crypto_utils import hash_to_zq_vector
+from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 
 logger = logging.getLogger(__name__)
 
+_PAD_DOMAIN = "pyfe4ai/mcfe/ring_lwe/H(u',label)"
 
-class MCFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
-    """Key generator for Ring-LWE-based multi-client inner-product FE."""
+
+def label_pad(u_prime: str, label, q, eta: int, ring_n: int) -> list:
+    """Return ``H(u'_i, label)`` as ``eta`` rows of ``ring_n`` coefficients mod q."""
+    flat = hash_to_zq_vector(
+        "{}|{}".format(u_prime, encode_label(label)), q, eta * ring_n, domain=_PAD_DOMAIN
+    )
+    return [flat[r * ring_n:(r + 1) * ring_n] for r in range(eta)]
+
+
+class MCFERingLWEKeyGenerator(MIFERingLWEKeyGenerator):
+    """Key generator for BMMS21 identity-based MCFE over Ring-LWE."""
 
     _scheme_type = CryptoCONST.TYPE_MCFE_RING_LWE
-    def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
-
-            Args:
-                config: Scheme configuration dict.
-        """
-        super().__init__(config, **kwargs)
-        self.eta = config.get("eta", CryptoCONST.MCFE_ETA)
-        self.ring_n = config.get("ring_n", None)
-        self.bound_x = gp.mpz(config.get("bound_x", 4))
-        self.bound_y = gp.mpz(config.get("bound_y", 4))
-        self.bound_u = gp.mpz(config.get("bound_u", 2))
-        self.label_modulus = int(config.get("label_modulus", 8))
-        if not self.n:
-            raise FEKeyError("need to provide number of clients")
-        self._load_parameters()
-
-    def _effective_bound_x(self) -> gp.mpz:
-        return self.bound_x + self.bound_u * gp.mpz(self.label_modulus // 2)
-
-    def _apply_parameters(self, param: dict) -> None:
-        self.p = gp.mpz(param["p"])
-        self.q = gp.mpz(param["q"])
-        self.ring_n = int(param["ring_n"])
-        self.sigma1 = float(param["sigma1"])
-        self.sigma2 = float(param["sigma2"])
-        self.sigma3 = float(param["sigma3"])
-        self.A = [gp.mpz(v) for v in param["A"]]
-
-    def _param_verification(self, param: dict) -> bool:
-        return (
-            param.get("sec_param") == self.sec_param
-            and param.get("eta") == self.eta
-            and param.get("n") == self.n
-            and param.get("bound_x") == gp.digits(self.bound_x)
-            and param.get("bound_y") == gp.digits(self.bound_y)
-            and param.get("bound_u") == gp.digits(self.bound_u)
-            and param.get("label_modulus") == self.label_modulus
-            and (self.ring_n is None or param.get("ring_n") == self.ring_n)
-        )
-
-    def _generate_and_save(self, param_file: str) -> None:
-        helper = MIFERingLWEKeyGenerator(
-            {
-                "sec_param": self.sec_param,
-                "eta": self.eta,
-                "n": self.n,
-                "ring_n": self.ring_n,
-                "bound_x": int(self._effective_bound_x()),
-                "bound_y": int(self.bound_y),
-            }
-        )
-        self.p = helper.p
-        self.q = helper.q
-        self.ring_n = helper.ring_n
-        self.sigma1 = helper.sigma1
-        self.sigma2 = helper.sigma2
-        self.sigma3 = helper.sigma3
-        self.A = helper.A
-
-        with open(param_file, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "sec_param": self.sec_param,
-                    "eta": self.eta,
-                    "n": self.n,
-                    "ring_n": self.ring_n,
-                    "bound_x": gp.digits(self.bound_x),
-                    "bound_y": gp.digits(self.bound_y),
-                    "bound_u": gp.digits(self.bound_u),
-                    "label_modulus": self.label_modulus,
-                    "p": gp.digits(self.p),
-                    "q": gp.digits(self.q),
-                    "sigma1": self.sigma1,
-                    "sigma2": self.sigma2,
-                    "sigma3": self.sigma3,
-                    "A": [gp.digits(v) for v in self.A],
-                },
-                f,
-            )
 
     def setup(self) -> None:
-        sk = {
-            nid: discrete_gaussian_matrix(self.eta, self.ring_n, self.sigma1)
-            for nid in self.lst_nid
-        }
-        u = {
-            nid: [
-                gp.mpz(_CSPRNG.randint(-int(self.bound_u), int(self.bound_u)))
-                for _ in range(self.eta)
-            ]
-            for nid in self.lst_nid
-        }
-        pk = {}
-        for nid in self.lst_nid:
-            noise = discrete_gaussian_matrix(self.eta, self.ring_n, self.sigma1)
-            pk_nid = []
-            for i in range(self.eta):
-                pk_i = poly_mul(self.A, sk[nid][i], self.q)
-                pk_nid.append(poly_add(pk_i, noise[i], self.q))
-            pk[nid] = pk_nid
-
-        self.msk = {"sk": sk, "u": u}
-        self.mpk = {"pk": pk}
-        logger.info("MCFE Ring-LWE setup successfully")
-
-    def get_public_parameters(self) -> dict:
-        return {
-            "A": [gp.digits(v) for v in self.A],
-            "p": gp.digits(self.p),
-            "q": gp.digits(self.q),
-            "eta": self.eta,
-            "n": self.n,
-            "ring_n": self.ring_n,
-            "bound_x": gp.digits(self.bound_x),
-            "bound_y": gp.digits(self.bound_y),
-            "bound_u": gp.digits(self.bound_u),
-            "label_modulus": self.label_modulus,
-            "sigma1": self.sigma1,
-            "sigma2": self.sigma2,
-            "sigma3": self.sigma3,
-            "sec_param": self.sec_param,
-        }
+        """MIFE setup plus a secret ``u'_i`` for every client."""
+        super().setup()
+        self.msk["u_prime"] = {nid: secrets.token_hex(32) for nid in self.lst_nid}
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
-        """Perform the get_private_keys operation.
-
-            Args:
-                nid: Node identifier.
-        """
-        if nid not in self.mpk["pk"]:
+        """Return client *nid*'s keys: MIFE ``pk``, ``u`` and the label-pad secret ``u_prime``."""
+        sk = super().get_private_keys(nid)
+        if sk is None:
             return None
-        return {
-            "pk": [[gp.digits(v) for v in row] for row in self.mpk["pk"][nid]],
-            "u": [gp.digits(v) for v in self.msk["u"][nid]],
-        }
+        sk["u_prime"] = self.msk["u_prime"][nid]
+        return sk
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
-        """Perform the get_decryption_keys operation.
+        """Derive the key for weights ``y`` and label ``l`` (identity-based).
 
-            Args:
-                sid: Session / decryption-key identifier.
+        Args:
+            sid: Session identifier (unused).
+            **kwargs: ``credentials`` with ``fusion_weight``, ``label`` and
+                optionally ``n_chunks`` (number of ndarray chunks to cover).
+
+        Returns:
+            Dict with ``sk_y`` (per-slot MIFE keys), ``z`` (pad term of the
+            label itself), ``z_chunks`` (pad terms of chunks ``0..n_chunks-1``)
+            and ``label``.
         """
         credentials = kwargs.get("credentials", None)
         if not credentials:
             raise FEKeyError("need credentials for MCFE Ring-LWE decryption key generation")
+        label = credentials.get("label")
+        if not isinstance(label, str):
+            raise FEValidationError("identity-based MCFE keys need a string label")
+        n_chunks = int(credentials.get("n_chunks", 0))
         fusion_weight = credentials.get("fusion_weight")
-        if not isinstance(fusion_weight, dict):
-            raise FEValidationError("invalid fusion weights provided, need a dict")
+        key = super().get_decryption_keys(sid, credentials={"fusion_weight": fusion_weight})
+        base = [gp.mpz(v) for v in key["z"]]
 
-        sk_y = {}
-        z = gp.mpz(0)
-        for nid in self.lst_nid:
-            if nid not in fusion_weight:
-                raise FEValidationError("fusion weight missing client {}".format(nid))
-            y = fusion_weight[nid]
-            if len(y) != self.eta:
-                raise FEValidationError("invalid fusion weight length for client {}".format(nid))
-            if any(abs(int(v)) > self.bound_y for v in y):
-                raise FEValidationError("fusion weight exceeds configured bound_y")
-            sk_t = transpose(self.msk["sk"][nid])
-            y_vec = [gp.mpz(v) for v in y]
-            sk_y[nid] = [gp.digits(v) for v in mat_vec_mul(sk_t, y_vec, self.q)]
-            for u_i, y_i in zip(self.msk["u"][nid], y_vec):
-                z += u_i * y_i
-        return {"sk_y": sk_y, "z": gp.digits(z)}
-
-
-class MCFERingLWE(IPFEAbsCrypto):
-    """Crypto operations for Ring-LWE-based multi-client inner-product FE."""
-
-    def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
-
-            Args:
-                config: Scheme configuration dict.
-        """
-        super().__init__(config, **kwargs)
-        self.pp = self.keys["pp"]
-        self.A = [gp.mpz(v) for v in self.pp["A"]]
-        if self._has_private_keys():
-            self.sk = self.keys["sk"]
-
-    def encrypt(self, matrix_pt: list[list[int]], label: str) -> dict:
-        """Encrypt plaintext and return a ciphertext dict.
-
-            Args:
-                matrix_pt: Integer plaintext matrix.
-                label: Encryption label for replay protection.
-        """
-        if not self._has_public_parameters():
-            raise FEKeyError("no public parameters provided for encryption")
-        if not self._has_private_keys():
-            raise FEKeyError("no encryption key provided")
-        if not isinstance(matrix_pt, list) or not matrix_pt or not isinstance(matrix_pt[0], list):
-            raise FEValidationError("plaintext matrix must be a list of rows")
-        if len(matrix_pt) != self.pp["eta"]:
-            raise FEValidationError("invalid plaintext row count")
-        if len(matrix_pt[0]) > self.pp["ring_n"]:
-            raise FEValidationError("plaintext column count exceeds ring dimension")
-        if not matrix_check_bound(matrix_pt, gp.mpz(self.pp["bound_x"])):
-            raise FEValidationError("plaintext exceeds configured bound_x")
-
-        q = gp.mpz(self.pp["q"])
-        p = gp.mpz(self.pp["p"])
-        pk = [[gp.mpz(v) for v in row] for row in self.sk["pk"]]
-        u = [gp.mpz(v) for v in self.sk["u"]]
-        ring_n = self.pp["ring_n"]
-        label_scalar = label_scalar_from_hash(
-            md5_hash(label, p), self.pp["label_modulus"]
-        )
-
-        masked = []
-        for row_idx, row in enumerate(matrix_pt):
-            masked_row = [gp.mpz(v) + u[row_idx] * label_scalar for v in row]
-            masked.append(masked_row)
-
-        r = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"])[0]
-        noise = discrete_gaussian_matrix(self.pp["eta"], ring_n, self.pp["sigma3"])
-        ct0 = []
-        for i in range(self.pp["eta"]):
-            ct0_i = poly_mul(pk[i], r, q)
-            ct0.append(poly_add(ct0_i, noise[i], q))
-        centered = center_matrix(masked, p, q, ring_n)
-        ct0 = [poly_add(a, b, q) for a, b in zip(ct0, centered)]
-
-        ct1 = poly_mul(self.A, r, q)
-        e = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"])[0]
-        ct1 = poly_add(ct1, e, q)
+        def pad_term(lab) -> list:
+            z = list(base)
+            for nid in self.lst_nid:
+                pad = label_pad(self.msk["u_prime"][nid], lab, self.q, self.eta, self.ring_n)
+                for y_row, pad_row in zip(fusion_weight[nid], pad):
+                    z = [acc + int(y_row) * h for acc, h in zip(z, pad_row)]
+            return [gp.digits(v % self.q) for v in z]
 
         return {
-            "ct0": [[gp.digits(v) for v in row] for row in ct0],
-            "ct1": [gp.digits(v) for v in ct1],
-            "k": len(matrix_pt[0]),
+            "sk_y": key["sk_y"],
+            "z": pad_term(label),
+            "z_chunks": [pad_term(chunk_label(label, c)) for c in range(n_chunks)],
+            "label": label,
         }
 
-    def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict, label: str):
-        """Decrypt ciphertexts and recover the inner product.
 
-            Args:
-                dct_ct: Ciphertext dict (or dict of per-client ciphertexts).
-                dk: Functional decryption key.
-                fusion_weight: Fusion weight vector (or dict of per-client weight vectors).
-                label: Encryption label for replay protection.
-        """
-        if not dk:
-            raise FEKeyError("no decryption key provided")
+class MCFERingLWE(MIFERingLWE):
+    """Crypto operations for BMMS21 identity-based MCFE over Ring-LWE."""
 
-        total = None
-        for nid, ct in dct_ct.items():
-            y = fusion_weight[nid]
-            if len(y) != self.pp["eta"]:
-                raise FEValidationError("invalid fusion weight length for client {}".format(nid))
-            if any(abs(int(v)) > gp.mpz(self.pp["bound_y"]) for v in y):
-                raise FEValidationError("fusion weight exceeds configured bound_y")
-
-            q = gp.mpz(self.pp["q"])
-            p = gp.mpz(self.pp["p"])
-            ct0 = [[gp.mpz(v) for v in row] for row in ct["ct0"]]
-            ct1 = [gp.mpz(v) for v in ct["ct1"]]
-            sk_y = [gp.mpz(v) for v in dk["sk_y"][nid]]
-            y_vec = [gp.mpz(v) for v in y]
-
-            ct0_t = transpose(ct0)
-            lhs = mat_vec_mul(ct0_t, y_vec, q)
-            rhs = poly_mul(ct1, sk_y, q)
-            d = poly_add(lhs, poly_neg(rhs, q), q)
-            dec = decode_vector(d, p, q, int(ct["k"]))
-            if total is None:
-                total = dec
-            else:
-                total = [a + b for a, b in zip(total, dec)]
-
-        label_scalar = label_scalar_from_hash(
-            md5_hash(label, gp.mpz(self.pp["p"])), self.pp["label_modulus"]
+    def _pad(self, label) -> list:
+        return label_pad(
+            self.sk["u_prime"], label, gp.mpz(self.pp["q"]), self.pp["eta"], self.pp["ring_n"]
         )
-        correction = int(gp.mpz(dk["z"]) * label_scalar)
-        return [v - correction for v in total]
+
+    def encrypt(self, matrix_pt: list[list[int]], label: str) -> dict:
+        """Encrypt this client's matrix under *label* (once per client and label)."""
+        self._check_plaintext(matrix_pt)
+        if "u_prime" not in self.sk:
+            raise FEKeyError("encryption key lacks u_prime")
+        if not isinstance(label, str):
+            raise FEValidationError("label must be a string")
+        rows = self._padded_rows(matrix_pt, extra_pad=self._pad(label))
+        return self._encrypt_rows(rows, len(matrix_pt[0]))
+
+    def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict, label: str):
+        """Recover the batch of inner products for a key bound to *label*.
+
+        Raises:
+            FESchemeError: If the key was derived for another label or the
+                ciphertexts do not cover exactly the key's clients.
+        """
+        if not dk or "z" not in dk:
+            raise FEKeyError("no decryption key provided")
+        if dk.get("label") != label:
+            raise FESchemeError("the key was derived for another label")
+        return self._decrypt_with_key_term(dct_ct, dk, dk["z"], fusion_weight)
+
+    def _decrypt_with_key_term(self, dct_ct, dk, z, fusion_weight) -> list:
+        if set(dct_ct) != set(dk["sk_y"]) or set(dct_ct) != set(fusion_weight):
+            raise FESchemeError("need one ciphertext for every client of the key")
+        batch = {int(ct["k"]) for ct in dct_ct.values()}
+        if len(batch) != 1:
+            raise FESchemeError("ciphertexts of different batch lengths")
+        return self._decrypt_with_pad_term(dct_ct, dk["sk_y"], z, fusion_weight, batch.pop())
+
+    @staticmethod
+    def key_chunks(lst_ndarray_ct: list) -> int:
+        """Number of chunk keys needed for the output of :meth:`encrypt_lst_ndarray`."""
+        return sum(len(layer["chunks"]) for layer in lst_ndarray_ct)
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
-        """Perform the encrypt_lst_ndarray operation.
+        """Pack ndarrays into ``ring_n``-coefficient chunks (``eta = 1``).
 
-            Args:
-                lst_ndarray: List of numpy arrays to encrypt element-wise.
+        Chunk ``c`` (counted across all layers) is encrypted under the chunk
+        label ``(label, c)``, so each chunk has its own label pad.
+
+        Returns:
+            One dict per layer with ``shape``, ``first_chunk`` and ``chunks``.
         """
         if self.pp["eta"] != 1:
             raise NotImplementedError("ndarray helper currently expects eta=1")
         label = kwargs.get("label", None)
-        lst_ndarray_ct = []
+        if not isinstance(label, str):
+            raise FEValidationError("need a string label for encrypt_lst_ndarray")
+        ring_n = self.pp["ring_n"]
+        out, chunk = [], 0
         for ary_src in lst_ndarray:
-            ary = (ary_src.copy() * pow(10, self.precision)).astype(int)
-            ary_ct = np.empty(ary.shape, dtype=object)
-            for i, _ in np.ndenumerate(ary):
-                ary_ct[i] = self.encrypt([[int(ary[i])]], label)
-            lst_ndarray_ct.append(ary_ct)
-        return lst_ndarray_ct
+            flat = (np.asarray(ary_src) * pow(10, self.precision)).astype(int).ravel().tolist()
+            n_layer = max(1, math.ceil(len(flat) / ring_n))
+            cts = []
+            for j in range(n_layer):
+                part = flat[j * ring_n:(j + 1) * ring_n]
+                self._check_plaintext([part])
+                rows = self._padded_rows([part], extra_pad=self._pad(chunk_label(label, chunk + j)))
+                cts.append(self._encrypt_rows(rows, len(part)))
+            out.append({"shape": list(np.shape(ary_src)), "first_chunk": chunk, "chunks": cts})
+            chunk += n_layer
+        return out
 
     def compute_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:
-        """Compute inner products on encrypted ndarray ciphertexts.
-
-            Args:
-                dict_ndarray_ct: Encrypted ndarray ciphertexts (list or dict).
-        """
+        """Aggregate-decrypt packed ndarray ciphertexts (needs ``dk``, ``fusion_weight``, ``label``)."""
         dk = kwargs.get("dk", None)
         fusion_weight = kwargs.get("fusion_weight", None)
         label = kwargs.get("label", None)
@@ -374,26 +201,26 @@ class MCFERingLWE(IPFEAbsCrypto):
         )
 
     def decrypt_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:
-        """Decrypt encrypted ndarray ciphertexts element-wise.
-
-            Args:
-                dict_ndarray_ct: Encrypted ndarray ciphertexts (list or dict).
-        """
+        """Decrypt packed ndarray ciphertexts with a key covering their chunks."""
+        if self.pp["eta"] != 1:
+            raise NotImplementedError("ndarray helper currently expects eta=1")
         dk = kwargs.get("dk", None)
         fusion_weight = kwargs.get("fusion_weight", None)
         label = kwargs.get("label", None)
-        if self.pp["eta"] != 1:
-            raise NotImplementedError("ndarray helper currently expects eta=1")
         if dk is None or fusion_weight is None or label is None:
             raise FEKeyError("need to provide decryption key, fusion weight and label")
-
+        if dk.get("label") != label:
+            raise FESchemeError("the key was derived for another label")
         sample = next(iter(dict_ndarray_ct.values()))
-        lst_ndarray = []
-        for l in range(len(sample)):
-            ary = sample[l]
-            ary_dec = np.empty(ary.shape, dtype=object)
-            for i, _ in np.ndenumerate(ary):
-                dct_ct = {nid: dict_ndarray_ct[nid][l][i] for nid in dict_ndarray_ct}
-                ary_dec[i] = self.decrypt(dct_ct, dk, fusion_weight, label)[0]
-            lst_ndarray.append((ary_dec / pow(10, self.precision)).astype(float))
-        return lst_ndarray
+        if self.key_chunks(sample) > len(dk.get("z_chunks", [])):
+            raise FEKeyError("the key covers fewer chunks than the ciphertexts")
+        result = []
+        for l, layer in enumerate(sample):
+            values = []
+            for j in range(len(layer["chunks"])):
+                dct_ct = {nid: dict_ndarray_ct[nid][l]["chunks"][j] for nid in dict_ndarray_ct}
+                z = dk["z_chunks"][layer["first_chunk"] + j]
+                values.extend(self._decrypt_with_key_term(dct_ct, dk, z, fusion_weight))
+            ary = np.array(values, dtype=float).reshape(layer["shape"])
+            result.append(ary / pow(10, self.precision))
+        return result

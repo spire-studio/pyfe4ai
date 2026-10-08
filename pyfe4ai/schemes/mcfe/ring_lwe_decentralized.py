@@ -1,288 +1,196 @@
 """
-Decentralized Ring-LWE-Based Multi-Client Inner-Product Functional Encryption
-| Decentralized key-share organization inspired by
-| "Decentralizing inner-product functional encryption"
-| By Michel Abdalla, Fabrice Benhamouda, Markulf Kohlweiss, Hendrik Waldner
-| Published in: PKC 2019
-|
-| This prototype combines decentralized decryption-key-share derivation with
-| the Ring-LWE multi-client inner-product FE line used in this repository.
+Ring-LWE identity-based decentralised multi-client inner-product FE.
 
-* type:     public-key encryption
-* setting:  Integer based
-* note:     research prototype aligned with the existing crypto-ipfe API
+| Bermudo Mera, Karmakar, Marc, Soleimanian:
+| "Efficient Lattice-Based Inner-Product Functional Encryption", PKC 2022
+| (ePrint 2021/046) -- Section 6: the identity-based MCFE of
+| :mod:`pyfe4ai.schemes.mcfe.ring_lwe`, decentralised with the compiler of
+| Abdalla, Benhamouda, Kohlweiss, Waldner (PKC 2019) extended by a
+| "generalized distributed sum" (GDSum) of label-dependent functions
+| ``H_i(l)`` with ``sum_i H_i(l) = 0``.
 
-.. warning::
-    Known-insecure (mcfe/ring_lwe_decentralized, see pyfe4ai.schemes.status):
-    the label enters as a public scalar times a fixed per-client secret and
-    keys / partial decryptions are per client: the functional-key holder can
-    strip the mask and learn individual inputs. Use only for functionality
-    or performance experiments.
+* type:     identity-based decentralised multi-client encryption (Ring-LWE, ROM)
+* setting:  R_q = Z_q[x] / (x^ring_n + 1)
+
+Encryption and decryption are those of the identity-based MCFE. There is no
+authority for functional keys: for weights ``y`` and label ``l`` client ``i``
+publishes
+
+* its per-slot IPFE key ``sum_row y_{i,row} s_{i,row}`` (part of the key), and
+* ``z_i = sum_row y_{i,row} (u_{i,row} + H(u'_i, l)_row) + M_i(l, y)``,
+
+where the GDSum masks ``M_i(l, y) = sum_{j > i} PRF(K_ij, l, y) - sum_{j < i}
+PRF(K_ji, l, y)`` cancel over all clients, so ``sum_i z_i`` is the pad term
+``z''`` of the key and each ``z_i`` alone is uniformly masked. Every client
+must publish a share; shares for other weights or labels do not combine.
+
+Deviation: the PKC version of BMMS21 states GDSum only through its property;
+this module realises it with pairwise PRF masks (SHAKE-256 keyed by
+pairwise secrets ``K_ij``, which this prototype samples in-process, as it
+does all other keys; a deployment would agree on them by key exchange).
+Versions <= 0.2.0 used an ad-hoc label scalar instead.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-import random
+import secrets
 
 import gmpy2 as gp
 
-_CSPRNG = random.SystemRandom()
-import numpy as np
-
-from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
-from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
-from pyfe4ai.schemes.ipfe import ParameterCacheMixin
-from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWEKeyGenerator
+from pyfe4ai.schemes.mcfe.labels import chunk_label, encode_label
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWE
-from pyfe4ai.utils.ring_lwe_utils import transpose
+from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
+from pyfe4ai.schemes.mcfe.ring_lwe import label_pad
+from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.crypto_utils import md5_hash
-from pyfe4ai.utils.lwe_utils import label_scalar_from_hash
-from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
-from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
+from pyfe4ai.utils.crypto_utils import hash_to_zq_vector
+from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul, transpose
 
 logger = logging.getLogger(__name__)
 
+_GDSUM_DOMAIN = "pyfe4ai/dmcfe/ring_lwe/GDSum"
 
-class DecentralizedMCFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
-    """Key generator for decentralized Ring-LWE-based multi-client inner-product FE."""
+
+def gdsum_mask(nid: str, pair_keys: dict, lst_nid: list, context: str, q, ring_n: int) -> list:
+    """Return ``M_i(context) = sum_{j>i} PRF(K_ij) - sum_{j<i} PRF(K_ji)`` in Z_q^ring_n."""
+    mask = [gp.mpz(0)] * ring_n
+    pos = lst_nid.index(nid)
+    for other in lst_nid:
+        if other == nid:
+            continue
+        prf = hash_to_zq_vector(
+            "{}|{}".format(pair_keys[other], context), q, ring_n, domain=_GDSUM_DOMAIN
+        )
+        sign = 1 if lst_nid.index(other) > pos else -1
+        mask = [(m + sign * v) % q for m, v in zip(mask, prf)]
+    return mask
+
+
+class DecentralizedMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
+    """Sets up identity-based MCFE client keys and pairwise GDSum secrets."""
 
     _scheme_type = CryptoCONST.TYPE_DMCFE_RING_LWE
-    def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
-
-            Args:
-                config: Scheme configuration dict.
-        """
-        super().__init__(config, **kwargs)
-        self.eta = config.get("eta", CryptoCONST.MCFE_ETA)
-        self.ring_n = config.get("ring_n", None)
-        self.bound_x = gp.mpz(config.get("bound_x", 4))
-        self.bound_y = gp.mpz(config.get("bound_y", 4))
-        self.bound_u = gp.mpz(config.get("bound_u", 2))
-        self.label_modulus = int(config.get("label_modulus", 8))
-        if not self.n:
-            raise FEKeyError("need to provide number of clients")
-        self._load_parameters()
-
-    def _effective_bound_x(self) -> gp.mpz:
-        return self.bound_x + self.bound_u * gp.mpz(self.label_modulus // 2)
-
-    def _apply_parameters(self, param: dict) -> None:
-        self.p = gp.mpz(param["p"])
-        self.q = gp.mpz(param["q"])
-        self.ring_n = int(param["ring_n"])
-        self.sigma1 = float(param["sigma1"])
-        self.sigma2 = float(param["sigma2"])
-        self.sigma3 = float(param["sigma3"])
-        self.A = [gp.mpz(v) for v in param["A"]]
-
-    def _param_verification(self, param: dict) -> bool:
-        return (
-            param.get("sec_param") == self.sec_param
-            and param.get("eta") == self.eta
-            and param.get("n") == self.n
-            and param.get("lst_nid") == self.lst_nid
-            and param.get("bound_x") == gp.digits(self.bound_x)
-            and param.get("bound_y") == gp.digits(self.bound_y)
-            and param.get("bound_u") == gp.digits(self.bound_u)
-            and param.get("label_modulus") == self.label_modulus
-            and (self.ring_n is None or param.get("ring_n") == self.ring_n)
-        )
-
-    def _generate_and_save(self, param_file: str) -> None:
-        helper = MIFERingLWEKeyGenerator(
-            {
-                "sec_param": self.sec_param,
-                "eta": self.eta,
-                "n": self.n,
-                "ring_n": self.ring_n,
-                "bound_x": int(self._effective_bound_x()),
-                "bound_y": int(self.bound_y),
-            }
-        )
-        self.p = helper.p
-        self.q = helper.q
-        self.ring_n = helper.ring_n
-        self.sigma1 = helper.sigma1
-        self.sigma2 = helper.sigma2
-        self.sigma3 = helper.sigma3
-        self.A = helper.A
-
-        with open(param_file, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "sec_param": self.sec_param,
-                    "eta": self.eta,
-                    "n": self.n,
-                    "lst_nid": self.lst_nid,
-                    "ring_n": self.ring_n,
-                    "bound_x": gp.digits(self.bound_x),
-                    "bound_y": gp.digits(self.bound_y),
-                    "bound_u": gp.digits(self.bound_u),
-                    "label_modulus": self.label_modulus,
-                    "p": gp.digits(self.p),
-                    "q": gp.digits(self.q),
-                    "sigma1": self.sigma1,
-                    "sigma2": self.sigma2,
-                    "sigma3": self.sigma3,
-                    "A": [gp.digits(v) for v in self.A],
-                },
-                f,
-            )
 
     def setup(self) -> None:
-        sk = {
-            nid: discrete_gaussian_matrix(self.eta, self.ring_n, self.sigma1)
-            for nid in self.lst_nid
-        }
-        u = {
-            nid: [
-                gp.mpz(_CSPRNG.randint(-int(self.bound_u), int(self.bound_u)))
-                for _ in range(self.eta)
-            ]
-            for nid in self.lst_nid
-        }
-
-        v = {}
-        nid_selected = _CSPRNG.sample(self.lst_nid, 1)[0]
-        for nid in self.lst_nid:
-            if nid != nid_selected:
-                v[nid] = [
-                    gp.mpz(_CSPRNG.randint(-int(self.bound_u), int(self.bound_u)))
-                    for _ in range(self.eta * self.n)
-                ]
-        lst_v = [vec for vec in v.values()]
-        v[nid_selected] = [-(sum(vals)) for vals in zip(*lst_v)] if lst_v else [
-            gp.mpz(0) for _ in range(self.eta * self.n)
-        ]
-
-        pk = {}
-        from pyfe4ai.utils.ring_lwe_utils import poly_add, poly_mul
-
-        for nid in self.lst_nid:
-            noise = discrete_gaussian_matrix(self.eta, self.ring_n, self.sigma1)
-            pk_nid = []
-            for i in range(self.eta):
-                pk_i = poly_mul(self.A, sk[nid][i], self.q)
-                pk_nid.append(poly_add(pk_i, noise[i], self.q))
-            pk[nid] = pk_nid
-
-        self.msk = {"sk": sk, "u": u, "v": v}
-        self.mpk = {"pk": pk}
-        logger.info("Decentralized MCFE Ring-LWE setup successfully")
+        """MCFE setup plus a secret ``K_ij`` shared by every pair of clients."""
+        super().setup()
+        if len(self.lst_nid) < 2:
+            raise FEValidationError("decentralised key derivation needs at least two clients")
+        pairs = {nid: {} for nid in self.lst_nid}
+        for a in range(len(self.lst_nid)):
+            for b in range(a + 1, len(self.lst_nid)):
+                k = secrets.token_hex(32)
+                pairs[self.lst_nid[a]][self.lst_nid[b]] = k
+                pairs[self.lst_nid[b]][self.lst_nid[a]] = k
+        self.msk["pair_keys"] = pairs
 
     def get_public_parameters(self) -> dict:
-        return {
-            "A": [gp.digits(v) for v in self.A],
-            "p": gp.digits(self.p),
-            "q": gp.digits(self.q),
-            "eta": self.eta,
-            "n": self.n,
-            "lst_nid": self.lst_nid,
-            "ring_n": self.ring_n,
-            "bound_x": gp.digits(self.bound_x),
-            "bound_y": gp.digits(self.bound_y),
-            "bound_u": gp.digits(self.bound_u),
-            "label_modulus": self.label_modulus,
-            "sigma1": self.sigma1,
-            "sigma2": self.sigma2,
-            "sigma3": self.sigma3,
-            "sec_param": self.sec_param,
-        }
+        """MCFE public parameters plus ``lst_nid``."""
+        pp = super().get_public_parameters()
+        pp["lst_nid"] = list(self.lst_nid)
+        return pp
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
-        """Perform the get_private_keys operation.
-
-            Args:
-                nid: Node identifier.
-        """
-        if nid not in self.mpk["pk"]:
+        """Client *nid*'s MCFE keys, its IPFE secret ``s`` and pairwise ``pair_keys``."""
+        sk = super().get_private_keys(nid)
+        if sk is None:
             return None
-        return {
-            "pk": [[gp.digits(v) for v in row] for row in self.mpk["pk"][nid]],
-            "u": [gp.digits(v) for v in self.msk["u"][nid]],
-            "sk": [[gp.digits(v) for v in row] for row in self.msk["sk"][nid]],
-            "v": [gp.digits(v) for v in self.msk["v"][nid]],
-        }
+        sk["s"] = [[gp.digits(v) for v in row] for row in self.msk["sk"][nid]]
+        sk["pair_keys"] = dict(self.msk["pair_keys"][nid])
+        return sk
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
-        """Not supported: clients derive functional-key shares locally.
-
-            Args:
-                sid: Session / decryption-key identifier.
-
-            Raises:
-                NotImplementedError: Always.
-        """
+        """Not available: functional keys are derived by the clients."""
         raise NotImplementedError(
-            "{} has no central decryption-key derivation: in decentralized "
-            "MCFE each client derives its key share with "
-            "derive_function_decryption_key_share() and the aggregator "
-            "combines them with combine_function_decryption_key_share()".format(
-                type(self).__name__
-            )
+            "decentralised MCFE has no central functional key; combine the "
+            "clients' derive_function_decryption_key_share() outputs instead"
         )
 
 
 class DecentralizedMCFERingLWE(MCFERingLWE):
-    """Crypto operations for decentralized Ring-LWE-based multi-client inner-product FE."""
+    """Identity-based MCFE encryption / decryption with GDSum key derivation."""
 
-    def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
+    def derive_function_decryption_key_share(
+        self, fusion_weight: dict, label: str, n_chunks: int = 0
+    ) -> dict:
+        """Publish this client's key share for weights ``y`` and label ``l``.
 
-            Args:
-                config: Scheme configuration dict.
+        Args:
+            fusion_weight: Weights of every client (``eta`` integers each).
+            label: The label the key will be bound to.
+            n_chunks: Number of ndarray chunks the key must cover.
+
+        Returns:
+            Dict with ``sk_y`` (this slot's IPFE key), ``z`` and ``z_chunks``
+            (masked pad terms), ``label``, ``nid`` and ``weights_id``.
         """
-        super().__init__(config, **kwargs)
-
-    def derive_function_decryption_key_share(self, fusion_weight: dict) -> dict:
-        if not self._has_private_keys():
-            raise FEKeyError("no private keys provided for key-share derivation")
-        if self.id not in fusion_weight:
-            raise FEValidationError("invalid fusion weight provided")
-
-        q = gp.mpz(self.pp["q"])
-        y = fusion_weight[self.id]
-        if len(y) != self.pp["eta"]:
+        if not self._has_private_keys() or "pair_keys" not in self.sk:
+            raise FEKeyError("need the client's keys to derive a key share")
+        lst_nid = self.pp["lst_nid"]
+        if set(fusion_weight) != set(lst_nid):
+            raise FEValidationError("fusion weights must cover every client")
+        if not isinstance(label, str):
+            raise FEValidationError("identity-based MCFE keys need a string label")
+        weights = fusion_weight[self.id]
+        if len(weights) != self.pp["eta"]:
             raise FEValidationError("invalid fusion weight length for client {}".format(self.id))
-        if any(abs(int(v)) > gp.mpz(self.pp["bound_y"]) for v in y):
+        if any(abs(int(v)) > int(self.pp["bound_y"]) for v in weights):
             raise FEValidationError("fusion weight exceeds configured bound_y")
+        q = gp.mpz(self.pp["q"])
+        ring_n = self.pp["ring_n"]
+        y = [gp.mpz(int(v)) for v in weights]
+        weights_id = fusion_weight_id(fusion_weight)
+        s = [[gp.mpz(v) for v in row] for row in self.sk["s"]]
 
-        y_vec = [gp.mpz(v) for v in y]
-        sk_matrix = [[gp.mpz(v) for v in row] for row in self.sk["sk"]]
-        sk_t = transpose(sk_matrix)
-        sk_y = []
-        for row in sk_t:
-            acc = gp.mpz(0)
-            for a_i, b_i in zip(row, y_vec):
-                acc += a_i * b_i
-            sk_y.append(acc % q)
+        def masked_pad_term(lab) -> list:
+            z = [gp.mpz(0)] * ring_n
+            pad = self._pad(lab)
+            for y_row, u_row, h_row in zip(y, self.sk["u"], pad):
+                z = [acc + y_row * (gp.mpz(u) + h) for acc, u, h in zip(z, u_row, h_row)]
+            context = "{}|{}".format(encode_label(lab), weights_id)
+            mask = gdsum_mask(self.id, self.sk["pair_keys"], lst_nid, context, q, ring_n)
+            return [gp.digits((v + m) % q) for v, m in zip(z, mask)]
 
-        u = [gp.mpz(v) for v in self.sk["u"]]
-        z_local = gp.mpz(0)
-        for u_i, y_i in zip(u, y_vec):
-            z_local += u_i * y_i
-
-        ordered_fw = []
-        for nid in self.pp["lst_nid"]:
-            if nid not in fusion_weight:
-                raise FEValidationError("fusion weight missing client {}".format(nid))
-            ordered_fw.extend([gp.mpz(v) for v in fusion_weight[nid]])
-        v = [gp.mpz(val) for val in self.sk["v"]]
-        if len(v) < len(ordered_fw):
-            raise FEValidationError("invalid private key share length")
-        z_pad = gp.mpz(0)
-        for v_i, w_i in zip(v, ordered_fw):
-            z_pad += v_i * w_i
-
-        return {"sk_y": [gp.digits(v) for v in sk_y], "z": gp.digits(z_local + z_pad)}
+        return {
+            "sk_y": [gp.digits(v) for v in mat_vec_mul(transpose(s), y, q)],
+            "z": masked_pad_term(label),
+            "z_chunks": [masked_pad_term(chunk_label(label, c)) for c in range(n_chunks)],
+            "label": label,
+            "nid": self.id,
+            "weights_id": weights_id,
+        }
 
     def combine_function_decryption_key_share(self, dct_dk_shares: dict) -> dict:
+        """Sum every client's share into the identity-based MCFE key.
+
+        Raises:
+            FESchemeError: If a client's share is missing or the shares were
+                derived for different weights, labels or chunk counts.
+        """
+        lst_nid = self.pp["lst_nid"]
+        if set(dct_dk_shares) != set(lst_nid):
+            raise FESchemeError("key shares of all clients are required")
+        shares = list(dct_dk_shares.values())
+        first = shares[0]
+        if any(
+            (sh["weights_id"], sh["label"], len(sh["z_chunks"]))
+            != (first["weights_id"], first["label"], len(first["z_chunks"]))
+            for sh in shares
+        ):
+            raise FESchemeError("key shares were derived for different weights or labels")
+        q = gp.mpz(self.pp["q"])
+
+        def total(get) -> list:
+            acc = [gp.mpz(0)] * self.pp["ring_n"]
+            for sh in shares:
+                acc = [(a + gp.mpz(v)) % q for a, v in zip(acc, get(sh))]
+            return [gp.digits(v) for v in acc]
+
         return {
-            "sk_y": {nid: share["sk_y"] for nid, share in dct_dk_shares.items()},
-            "z": gp.digits(sum(gp.mpz(share["z"]) for share in dct_dk_shares.values())),
+            "sk_y": {nid: sh["sk_y"] for nid, sh in dct_dk_shares.items()},
+            "z": total(lambda sh: sh["z"]),
+            "z_chunks": [total(lambda sh, c=c: sh["z_chunks"][c]) for c in range(len(first["z_chunks"]))],
+            "label": first["label"],
         }

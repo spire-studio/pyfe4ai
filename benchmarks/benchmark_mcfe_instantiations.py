@@ -64,7 +64,10 @@ def _run_case(case: dict, rounds: int) -> dict:
         encrypt_times.append(time.perf_counter() - t0)
 
         t0 = time.perf_counter()
-        dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": case["y"]})
+        # identity-based schemes (Ring-LWE) bind keys to the label; others ignore it
+        dk = kg.get_decryption_keys(
+            "sid_0", credentials={"fusion_weight": case["y"], "label": case["label"]}
+        )
         dkgen_times.append(time.perf_counter() - t0)
 
         dec = case["crypto_cls"](

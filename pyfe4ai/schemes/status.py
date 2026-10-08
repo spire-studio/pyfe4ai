@@ -155,8 +155,9 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         note="k = mddh_k (default 1, where it equals CDGPP18)",
     ),
     ("mcfe", "ring_lwe"): SchemeStatus(
-        _S + "mcfe.ring_lwe", KNOWN_INSECURE, AD_HOC, "CDGPP18-style + BMMS21",
-        issue=_LABEL_MASK,
+        _S + "mcfe.ring_lwe", REVIEWED, ADAPTED, "BMMS21 Sec. 6 MCFE-compiler (identity-based)",
+        note="functional keys are bound to a label; ndarray values are packed into "
+        "one ciphertext per chunk, each chunk with its own label pad",
     ),
     ("mcfe", "fullysec_lwe"): SchemeStatus(
         _S + "mcfe.fullysec_lwe", REVIEWED, ADAPTED, "ABMPSW20 Fig. 4, adaptive parameters",
@@ -194,12 +195,16 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         "ABMPSW20 Fig. 14 (MCFE1 = Fig. 4)", note=_FIG14_NOTE,
     ),
     ("mcfe", "ring_lwe_threshold"): SchemeStatus(
-        _S + "mcfe.ring_lwe_threshold", KNOWN_INSECURE, AD_HOC, "Ring-LWE MCFE + Shamir",
-        issue=_LABEL_MASK + "; partial decryptions are not flooded",
+        _S + "mcfe.ring_lwe_threshold", EXPERIMENTAL, AD_HOC,
+        "BMMS21 identity-based MCFE + Shamir + smudging",
+        note="MCFE layer as published; the threshold layer (statistical flooding, "
+        "derandomised noise, enlarged q) is our own",
     ),
     ("mcfe", "ring_lwe_decentralized"): SchemeStatus(
-        _S + "mcfe.ring_lwe_decentralized", KNOWN_INSECURE, AD_HOC, "ABKW19-style + Ring-LWE",
-        issue=_LABEL_MASK,
+        _S + "mcfe.ring_lwe_decentralized", REVIEWED, ADAPTED,
+        "BMMS21 Sec. 6 identity-based DMCFE (ABKW19 + GDSum)",
+        note="GDSum realised as pairwise PRF zero-sum masks (its full specification "
+        "is only in the ePrint version); pairwise secrets sampled in-process",
     ),
     ("mcfe", "paillier_decentralized"): SchemeStatus(
         _S + "mcfe.paillier_decentralized", REVIEWED, ADAPTED,

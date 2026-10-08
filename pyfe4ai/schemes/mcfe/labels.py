@@ -46,3 +46,13 @@ def encode_label(label) -> str:
     if isinstance(label, str):
         return json.dumps(["label", label])
     raise FEValidationError("label must be a string, got {!r}".format(label))
+
+
+def chunk_label(label: str, chunk: int) -> ElementLabel:
+    """Return the label of batch chunk *chunk* under *label*.
+
+    Used by schemes that pack many values into one ciphertext (one ciphertext
+    per chunk and label); encoded in the element domain with layer ``-1``,
+    so it never collides with a user label or an element label.
+    """
+    return element_label(label, -1, (chunk,))

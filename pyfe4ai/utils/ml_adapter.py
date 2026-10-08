@@ -563,8 +563,6 @@ def aggregate_gradients(
             raise ValueError("MCFE schemes require a label for decryption")
         credentials["label"] = label
 
-    dk = wrapper.kg.get_decryption_keys(sid, credentials=credentials)
-
     # Collect ciphertext arrays per nid
     # decrypt_lst_ndarray_ct expects: list of arrays (one per layer)
     # where each array element is a ciphertext dict
@@ -574,6 +572,12 @@ def aggregate_gradients(
     # For SIFE: dict_ndarray_ct is list of arrays
     # For MCFE/MIFE: dict_ndarray_ct is dict[nid -> list of arrays]
     decryptor = wrapper._get_decryptor(sid)
+    key_chunks = getattr(decryptor, "key_chunks", None)
+    if key_chunks is not None:
+        # identity-based schemes issue one key term per packed chunk
+        credentials["n_chunks"] = key_chunks(sample_enc.ciphertexts)
+
+    dk = wrapper.kg.get_decryption_keys(sid, credentials=credentials)
 
     if wrapper.scheme_type in ("mcfe", "mife"):
         # Multi-client: {nid: [array_per_layer]}

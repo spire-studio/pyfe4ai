@@ -141,8 +141,8 @@ test keeps it in sync.
   correct results but provides no meaningful privacy. Use it only for
   functionality or performance experiments.
 
-Currently 15 reviewed, 2 experimental,
-16 unreviewed and 6 known-insecure out of
+Currently 17 reviewed, 3 experimental,
+16 unreviewed and 3 known-insecure out of
 39 registered schemes.
 
 | Scheme | Status | Fidelity | Construction | Notes |
@@ -171,7 +171,7 @@ Currently 15 reviewed, 2 experimental,
 | `mcfe/lwe` | reviewed | adapted | ABMPSW20 Fig. 4, selective parameters | signed messages and weights (K = 2nXY + 1, centred decoding); t is a rounded continuous Gaussian |
 | `mcfe/paillier` | reviewed | faithful | ABMPSW20 Fig. 3 | D_{Z,sigma} realised as a high-precision rounded Gaussian |
 | `mcfe/damgard` | reviewed | faithful | ABMPSW20 Fig. 2 (D_k-MDDH) | k = mddh_k (default 1, where it equals CDGPP18) |
-| `mcfe/ring_lwe` | known-insecure | ad-hoc | CDGPP18-style + BMMS21 | see [Known Issues](#known-issues--security-notice) |
+| `mcfe/ring_lwe` | reviewed | adapted | BMMS21 Sec. 6 MCFE-compiler (identity-based) | functional keys are bound to a label; ndarray values are packed into one ciphertext per chunk, each chunk with its own label pad |
 | `mcfe/fullysec_lwe` | reviewed | adapted | ABMPSW20 Fig. 4, adaptive parameters | signed messages and weights (K = 2nXY + 1, centred decoding); t is a rounded continuous Gaussian; m0 grows with n log2(2X + 1) |
 | `mcfe/fh_multi_ipe_pairing` | known-insecure | ad-hoc | CDGPP18-style + DOT18 | see [Known Issues](#known-issues--security-notice) |
 | `mcfe/fh_multi_ipe_pairing_threshold` | known-insecure | ad-hoc | CDGPP18-style + DOT18 + Shamir | see [Known Issues](#known-issues--security-notice) |
@@ -180,8 +180,8 @@ Currently 15 reviewed, 2 experimental,
 | `mcfe/ddh_decentralized` | reviewed | adapted | ABMPSW20 Fig. 14 (MCFE1 = CDGPP18) | MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) are sampled in-process |
 | `mcfe/lwe_threshold` | experimental | ad-hoc | ABMPSW20 Fig. 4 + Shamir + flooding | MCFE layer as published; the threshold layer and its LWE-based flooding argument are our own (see the module docstring) |
 | `mcfe/lwe_decentralized` | reviewed | adapted | ABMPSW20 Fig. 14 (MCFE1 = Fig. 4) | MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) are sampled in-process |
-| `mcfe/ring_lwe_threshold` | known-insecure | ad-hoc | Ring-LWE MCFE + Shamir | see [Known Issues](#known-issues--security-notice) |
-| `mcfe/ring_lwe_decentralized` | known-insecure | ad-hoc | ABKW19-style + Ring-LWE | see [Known Issues](#known-issues--security-notice) |
+| `mcfe/ring_lwe_threshold` | experimental | ad-hoc | BMMS21 identity-based MCFE + Shamir + smudging | MCFE layer as published; the threshold layer (statistical flooding, derandomised noise, enlarged q) is our own |
+| `mcfe/ring_lwe_decentralized` | reviewed | adapted | BMMS21 Sec. 6 identity-based DMCFE (ABKW19 + GDSum) | GDSum realised as pairwise PRF zero-sum masks (its full specification is only in the ePrint version); pairwise secrets sampled in-process |
 | `mcfe/paillier_decentralized` | reviewed | adapted | ABMPSW20 Fig. 14 (MCFE1 = Fig. 3) | MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) are sampled in-process |
 | `quadratic/quad` | unreviewed | unknown | Gay20 |  |
 | `quadratic/sgp` | unreviewed | unknown | DSGPP18 |  |

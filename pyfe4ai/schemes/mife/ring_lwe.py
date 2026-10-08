@@ -58,7 +58,7 @@ from pyfe4ai.utils.sampling_utils import rand_uniform_vector
 
 logger = logging.getLogger(__name__)
 
-_CONSTRUCTION = "acfgu18-bmms21/v1"  # parameters sized for n * eta
+_CONSTRUCTION = "acfgu18-bmms21/v2"  # parameters sized for n * eta, p = 2T + 2
 
 
 class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
@@ -238,7 +238,7 @@ class MIFERingLWE(IPFEAbsCrypto):
         if self._has_private_keys():
             self.sk = self.keys["sk"]
 
-    def encrypt(self, matrix_pt: list[list[int]]) -> dict:
+    def _check_plaintext(self, matrix_pt) -> None:
         if not self._has_public_parameters():
             raise FEKeyError("no public parameters provided for encryption")
         if not self._has_private_keys():
@@ -251,34 +251,49 @@ class MIFERingLWE(IPFEAbsCrypto):
             raise FEValidationError("plaintext column count exceeds ring dimension")
         if not matrix_check_bound(matrix_pt, gp.mpz(self.pp["bound_x"])):
             raise FEValidationError("plaintext exceeds configured bound_x")
+        if "u" not in self.sk:
+            raise FEKeyError("encryption key lacks the one-time pad u")
 
+    def _padded_rows(self, matrix_pt, extra_pad=None) -> list:
+        """Rows ``x + u (+ extra_pad)`` mod q, zero-extended to ``ring_n``."""
         q = gp.mpz(self.pp["q"])
-        pk = [[gp.mpz(v) for v in row] for row in self.sk["pk"]]
         ring_n = self.pp["ring_n"]
+        rows = []
+        for i, (row, u_row) in enumerate(zip(matrix_pt, self.sk["u"])):
+            padded = [gp.mpz(int(v)) for v in row] + [gp.mpz(0)] * (ring_n - len(row))
+            extra = extra_pad[i] if extra_pad is not None else [0] * ring_n
+            rows.append([(x + gp.mpz(u) + e) % q for x, u, e in zip(padded, u_row, extra)])
+        return rows
 
+    def _encrypt_rows(self, w_rows: list, k: int) -> dict:
+        """BMMS21 Ring-LWE encryption of rows already reduced mod q."""
+        q = gp.mpz(self.pp["q"])
+        ring_n = self.pp["ring_n"]
+        delta = q // gp.mpz(self.pp["p"])
+        pk = [[gp.mpz(v) for v in row] for row in self.sk["pk"]]
         r = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"])[0]
         noise = discrete_gaussian_matrix(self.pp["eta"], ring_n, self.pp["sigma3"])
         ct0 = []
-        for i in range(self.pp["eta"]):
-            ct0_i = poly_mul(pk[i], r, q)
-            ct0.append(poly_add(ct0_i, noise[i], q))
-        if "u" not in self.sk:
-            raise FEKeyError("encryption key lacks the one-time pad u")
-        delta = q // gp.mpz(self.pp["p"])
-        for i, (row, u_row) in enumerate(zip(matrix_pt, self.sk["u"])):
-            padded = [gp.mpz(int(v)) for v in row] + [gp.mpz(0)] * (ring_n - len(row))
-            w_row = [(x + gp.mpz(u)) % q for x, u in zip(padded, u_row)]
-            ct0[i] = poly_add(ct0[i], [delta * w for w in w_row], q)
-
-        ct1 = poly_mul(self.A, r, q)
+        for i, w_row in enumerate(w_rows):
+            ct0_i = poly_add(poly_mul(pk[i], r, q), noise[i], q)
+            ct0.append(poly_add(ct0_i, [delta * w for w in w_row], q))
         e = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"])[0]
-        ct1 = poly_add(ct1, e, q)
-
+        ct1 = poly_add(poly_mul(self.A, r, q), e, q)
         return {
             "ct0": [[gp.digits(v) for v in row] for row in ct0],
             "ct1": [gp.digits(v) for v in ct1],
-            "k": len(matrix_pt[0]),
+            "k": k,
         }
+
+    def encrypt(self, matrix_pt: list[list[int]]) -> dict:
+        """Encrypt this slot's matrix: Ring-LWE encryption of ``x + u mod q``.
+
+        Returns:
+            Dict with ``ct0`` (one polynomial per row), ``ct1`` and ``k``
+            (number of used coefficients).
+        """
+        self._check_plaintext(matrix_pt)
+        return self._encrypt_rows(self._padded_rows(matrix_pt), len(matrix_pt[0]))
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict):
         """Recover the batch of inner products ``sum_i <x_i[:, k], y_i>``.
@@ -300,9 +315,13 @@ class MIFERingLWE(IPFEAbsCrypto):
         if len(batch) != 1:
             raise FESchemeError("ciphertexts of different batch lengths")
 
+        return self._decrypt_with_pad_term(dct_ct, dk["sk_y"], dk["z"], fusion_weight, batch.pop())
+
+    def _decrypt_with_pad_term(self, dct_ct, sk_y_map, z, fusion_weight, k) -> list:
+        """Dec2(sum_i Dec1_i - Delta z) for the first *k* coefficients."""
         q = gp.mpz(self.pp["q"])
         delta = q // gp.mpz(self.pp["p"])
-        total = [(-delta * gp.mpz(v)) % q for v in dk["z"]]
+        total = [(-delta * gp.mpz(v)) % q for v in z]
         for nid, ct in dct_ct.items():
             y = fusion_weight[nid]
             if len(y) != self.pp["eta"]:
@@ -311,7 +330,7 @@ class MIFERingLWE(IPFEAbsCrypto):
                 raise FEValidationError("fusion weight exceeds configured bound_y")
             ct0 = [[gp.mpz(v) for v in row] for row in ct["ct0"]]
             ct1 = [gp.mpz(v) for v in ct["ct1"]]
-            sk_y = [gp.mpz(v) for v in dk["sk_y"][nid]]
+            sk_y = [gp.mpz(v) for v in sk_y_map[nid]]
             y_vec = [gp.mpz(int(v)) for v in y]
             # Dec1 of slot nid: Delta <w_i, y_i> + noise (coefficient-wise)
             lhs = mat_vec_mul(transpose(ct0), y_vec, q)
@@ -321,7 +340,7 @@ class MIFERingLWE(IPFEAbsCrypto):
             self.pp["n"] * self.pp["eta"]
             * gp.mpz(self.pp["bound_x"]) * gp.mpz(self.pp["bound_y"])
         )
-        return [decode_scaled(v, delta, q, bound) for v in total[: batch.pop()]]
+        return [decode_scaled(v, delta, q, bound) for v in total[:k]]
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
         """Perform the encrypt_lst_ndarray operation.
