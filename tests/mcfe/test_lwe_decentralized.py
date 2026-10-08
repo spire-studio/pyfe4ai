@@ -46,14 +46,12 @@ def test_key_generator(kg_config):
     assert pp["n"] == kg_config["n"]
     assert pp["eta"] == kg_config["eta"]
     assert pp["lwe_n"] == kg_config["lwe_n"]
-    assert len(pp["A"]) == kg.m
-    assert len(pp["A"][0]) == kg.lwe_n
+    assert pp["lst_nid"] == kg_config["lst_nid"]
 
     sk = kg.get_private_keys("nid_0")
-    assert "pk" in sk
-    assert "u" in sk
-    assert "sk" in sk
-    assert "v" in sk
+    assert set(sk) == {"z", "s2"}
+    assert len(sk["s2"]) == kg.dim
+    assert all(sum(col) == 0 for col in zip(*kg.msk["s2"].values()))
 
 
 def test_entire_process(kg_config):
@@ -150,3 +148,22 @@ def test_get_decryption_keys_raises_not_implemented(kg_config):
     kg.setup()
     with pytest.raises(NotImplementedError, match="derive_function_decryption_key_share"):
         kg.get_decryption_keys("sid_0", credentials={"fusion_weight": {}})
+
+
+def test_combined_key_equals_the_central_key(kg_config):
+    """Fig. 14 yields exactly the LWE MCFE key sum y_i Z_i mod q."""
+    from pyfe4ai.schemes.mcfe.lwe import MCFELWEKeyGenerator
+
+    cfg = dict(kg_config, eta=2)
+    kg = DecentralizedMCFELWEKeyGenerator(cfg)
+    kg.setup()
+    pp = kg.get_public_parameters()
+    dct_y = {nid: [random.randint(-6, 6), random.randint(-6, 6)] for nid in cfg["lst_nid"]}
+    shares = {
+        nid: DecentralizedMCFELWE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
+        .derive_function_decryption_key_share(dct_y)
+        for nid in cfg["lst_nid"]
+    }
+    dk = DecentralizedMCFELWE({"id": "agg", "keys": {"pp": pp}}).combine_function_decryption_key_share(shares)
+    central = MCFELWEKeyGenerator._aggregate_key(kg, dct_y)
+    assert [int(v) for v in dk["sk_y"]] == [int(v) for v in central]

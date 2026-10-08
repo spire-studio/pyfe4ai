@@ -68,6 +68,10 @@ _LABEL_MASK = (
     "keys / partial decryptions are per client: the functional-key holder "
     "can strip the mask and learn individual inputs"
 )
+_FIG14_NOTE = (
+    "MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) "
+    "are sampled in-process"
+)
 _SMALL_DCR_KEYS = (
     "; secret keys are drawn from [-B, B] with B = max(sec_param, bound_y * eta) and "
     "can be brute-forced from public data"
@@ -177,7 +181,8 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         "exponent (threshold-ElGamal style)",
     ),
     ("mcfe", "ddh_decentralized"): SchemeStatus(
-        _S + "mcfe.ddh_decentralized", KNOWN_INSECURE, AD_HOC, "ABKW19-style", issue=_LABEL_MASK
+        _S + "mcfe.ddh_decentralized", REVIEWED, ADAPTED,
+        "ABMPSW20 Fig. 14 (MCFE1 = CDGPP18)", note=_FIG14_NOTE,
     ),
     ("mcfe", "lwe_threshold"): SchemeStatus(
         _S + "mcfe.lwe_threshold", EXPERIMENTAL, AD_HOC, "ABMPSW20 Fig. 4 + Shamir + flooding",
@@ -185,8 +190,8 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         "flooding argument are our own (see the module docstring)",
     ),
     ("mcfe", "lwe_decentralized"): SchemeStatus(
-        _S + "mcfe.lwe_decentralized", KNOWN_INSECURE, AD_HOC, "ABKW19-style + LWE",
-        issue=_LABEL_MASK,
+        _S + "mcfe.lwe_decentralized", REVIEWED, ADAPTED,
+        "ABMPSW20 Fig. 14 (MCFE1 = Fig. 4)", note=_FIG14_NOTE,
     ),
     ("mcfe", "ring_lwe_threshold"): SchemeStatus(
         _S + "mcfe.ring_lwe_threshold", KNOWN_INSECURE, AD_HOC, "Ring-LWE MCFE + Shamir",
@@ -197,8 +202,8 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         issue=_LABEL_MASK,
     ),
     ("mcfe", "paillier_decentralized"): SchemeStatus(
-        _S + "mcfe.paillier_decentralized", KNOWN_INSECURE, AD_HOC, "ABKW19-style + ALS16 (DCR)",
-        issue=_LABEL_MASK + _SMALL_DCR_KEYS,
+        _S + "mcfe.paillier_decentralized", REVIEWED, ADAPTED,
+        "ABMPSW20 Fig. 14 (MCFE1 = Fig. 3)", note=_FIG14_NOTE,
     ),
     # --- quadratic ----------------------------------------------------------
     ("quadratic", "quad"): SchemeStatus(_S + "quadratic.quad", UNREVIEWED, UNKNOWN, "Gay20"),

@@ -141,8 +141,8 @@ test keeps it in sync.
   correct results but provides no meaningful privacy. Use it only for
   functionality or performance experiments.
 
-Currently 12 reviewed, 2 experimental,
-16 unreviewed and 9 known-insecure out of
+Currently 15 reviewed, 2 experimental,
+16 unreviewed and 6 known-insecure out of
 39 registered schemes.
 
 | Scheme | Status | Fidelity | Construction | Notes |
@@ -177,12 +177,12 @@ Currently 12 reviewed, 2 experimental,
 | `mcfe/fh_multi_ipe_pairing_threshold` | known-insecure | ad-hoc | CDGPP18-style + DOT18 + Shamir | see [Known Issues](#known-issues--security-notice) |
 | `mcfe/fh_multi_ipe_pairing_decentralized` | known-insecure | ad-hoc | CDGPP18-style + DOT18 + ABKW19-style | see [Known Issues](#known-issues--security-notice) |
 | `mcfe/ddh_threshold` | reviewed | adapted | CDGPP18 + Shamir (TAPFed setting) | the aggregated key is Shamir-shared; any t servers interpolate in the exponent (threshold-ElGamal style) |
-| `mcfe/ddh_decentralized` | known-insecure | ad-hoc | ABKW19-style | see [Known Issues](#known-issues--security-notice) |
+| `mcfe/ddh_decentralized` | reviewed | adapted | ABMPSW20 Fig. 14 (MCFE1 = CDGPP18) | MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) are sampled in-process |
 | `mcfe/lwe_threshold` | experimental | ad-hoc | ABMPSW20 Fig. 4 + Shamir + flooding | MCFE layer as published; the threshold layer and its LWE-based flooding argument are our own (see the module docstring) |
-| `mcfe/lwe_decentralized` | known-insecure | ad-hoc | ABKW19-style + LWE | see [Known Issues](#known-issues--security-notice) |
+| `mcfe/lwe_decentralized` | reviewed | adapted | ABMPSW20 Fig. 14 (MCFE1 = Fig. 4) | MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) are sampled in-process |
 | `mcfe/ring_lwe_threshold` | known-insecure | ad-hoc | Ring-LWE MCFE + Shamir | see [Known Issues](#known-issues--security-notice) |
 | `mcfe/ring_lwe_decentralized` | known-insecure | ad-hoc | ABKW19-style + Ring-LWE | see [Known Issues](#known-issues--security-notice) |
-| `mcfe/paillier_decentralized` | known-insecure | ad-hoc | ABKW19-style + ALS16 (DCR) | see [Known Issues](#known-issues--security-notice) |
+| `mcfe/paillier_decentralized` | reviewed | adapted | ABMPSW20 Fig. 14 (MCFE1 = Fig. 3) | MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) are sampled in-process |
 | `quadratic/quad` | unreviewed | unknown | Gay20 |  |
 | `quadratic/sgp` | unreviewed | unknown | DSGPP18 |  |
 | `quadratic/multi_input_sgp` | unreviewed | unknown | DSGPP18, multi-input |  |
