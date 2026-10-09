@@ -255,12 +255,11 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         "bound B for x, y and F (discrete log in [-n^2 B^3, n^2 B^3]); generic "
         "bilinear group model",
     ),
-    ("quadratic", "multi_input_sgp"): SchemeStatus(
-        _S + "quadratic.multi_input_sgp", KNOWN_INSECURE, AD_HOC,
-        "DSGPP18 Fig. 2 per client (no published multi-input construction)",
-        issue="the functional key is a tuple of independent per-client SGP keys, so "
-        "the key holder decrypts every client's x_i^T F_i y_i (not only the sum) and "
-        "can mix sub-keys of different keys into keys for functions never issued",
+    ("quadratic", "miqfe"): SchemeStatus(
+        _S + "quadratic.miqfe", REVIEWED, ADAPTED, "AGT22 Sec. 5 (MIFE for quadratic functions)",
+        note="cross-user terms only (Def. 2.9); per-user encryption keys made of master "
+        "ciphertexts; building blocks TAO20 FH-IPFE, Fig. 9 and Fig. 1 as in the paper; "
+        "PRF = HMAC-SHA512; pos-security (every user contributes); k = mddh_k >= 2",
     ),
 }
 

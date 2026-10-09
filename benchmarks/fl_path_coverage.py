@@ -126,9 +126,9 @@ CONFIGS: dict[tuple[str, str], dict] = {
     },
     ("quadratic", "quad"): {"sec_param": 64, "n": 4, "m": 3, "bound": 5, "pairing_group_param": "MNT224"},
     ("quadratic", "sgp"): {"sec_param": 64, "n": 5, "bound": 6, "pairing_group_param": "MNT224"},
-    ("quadratic", "multi_input_sgp"): {
-        "sec_param": 64, "d": 3, "n": 2, "lst_nid": ["client_0", "client_1"], "s": 1,
-        "bound": 5, "pairing_group_param": "MNT224",
+    ("quadratic", "miqfe"): {
+        "sec_param": 64, "n": 2, "m": 1, "lst_nid": ["client_0", "client_1"], "s": 1,
+        "bound_x": 5, "bound_c": 3, "pairing_group_param": "MNT224",
     },
 }
 

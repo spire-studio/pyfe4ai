@@ -182,11 +182,13 @@ class QuadraticQuadConfig(FEBaseConfig, total=False):
     pairing_group_param: str
 
 
-class MultiInputSGPConfig(FEBaseConfig, total=False):
-    """Config for multi-input SGP quadratic FE schemes."""
+class MultiInputQuadraticConfig(FEBaseConfig, total=False):
+    """Config for the AGT22 multi-input quadratic FE (``n`` users, ``m`` integers each)."""
 
-    d: int
-    bound: int
+    m: int
+    bound_x: int
+    bound_c: int
+    mddh_k: int
     pairing_group_param: str
 
 

@@ -214,10 +214,10 @@ _SCHEME_REGISTRY: dict[tuple[str, str], tuple[str, str, str]] = {
         "QuadraticSGPKeyGenerator",
         "QuadraticSGP",
     ),
-    ("quadratic", "multi_input_sgp"): (
-        "pyfe4ai.schemes.quadratic.multi_input_sgp",
-        "MultiInputQuadraticSGPKeyGenerator",
-        "MultiInputQuadraticSGP",
+    ("quadratic", "miqfe"): (
+        "pyfe4ai.schemes.quadratic.miqfe",
+        "MultiInputQuadraticKeyGenerator",
+        "MultiInputQuadratic",
     ),
 }
 

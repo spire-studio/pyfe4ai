@@ -150,10 +150,13 @@ table and *Known Issues* before relying on any privacy property.
     `n = 1` with `k = 1`; it now requires `n >= 2`, `k >= 1` and
     `len(lst_nid) == n`, checks that every slot is present, and its
     decryption helpers no longer ask for `y`.
-  - Quadratic MI-SGP has no published basis (per-client copies of SGP): the
-    key holder learns every client's `x_i^T F_i y_i` and can mix sub-keys. It
-    is marked *known-insecure* until replaced by a published multi-input
-    quadratic FE.
+  - Quadratic MI-SGP had no published basis (per-client copies of SGP): the
+    key holder learned every client's `x_i^T F_i y_i` and could mix sub-keys.
+    It is replaced by `quadratic/miqfe`, the MIFE for quadratic functions of
+    Agrawal, Goyal, Tomida (TCC 2022, Sec. 5): per-user encryption keys made
+    of master ciphertexts (corrupting a user reveals only its key), function
+    class `sum_{i<k} c[(i,j,k,l)] x_i[j] x_k[l]` (cross-user terms), built from
+    the TAO20 FH-IPFE and the paper's SK-MCFE schemes (Figs. 1 and 9).
 
 ### Added
 
@@ -244,6 +247,7 @@ table and *Known Issues* before relying on any privacy property.
 
 ### Removed
 
+- `quadratic/multi_input_sgp` (replaced by `quadratic/miqfe`, see above).
 - `mife/ddh_hybrid_alpha` (HybridAlpha): it duplicated MIFE-DDH without the
   paper's inference-prevention filter, and the published design leaks
   individual updates (MIFE without labels; a stateless filter that allows
