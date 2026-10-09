@@ -74,7 +74,7 @@ See `examples/sife_minimal.py` for the full runnable version.
 - **Multiple FE families** — DDH, LWE, Ring-LWE, FullySec-LWE, Paillier, and Damgård instantiations across SIFE, MIFE, and MCFE
 - **Threshold & decentralized** — `tMIFE`, `tMCFE`, `dMCFE` for distributed trust settings
 - **Function-hiding** — pairing-based FH-IPE and FH-Multi-IPE with full inner-product privacy
-- **Quadratic FE** — SGP (secret-key) and Quad (public-key) quadratic functional encryption
+- **Quadratic FE** — SGP and Quad (public-key) and multi-input quadratic FE with per-user keys
 - **ML adapter** — `utils/ml_adapter.py` for encrypted linear inference and federated gradient aggregation
 - **Precision toolkit** — `utils/quantization.py` for float ↔ integer quantization with configurable bit-width
 - **Discrete-log solvers** — in-memory dlog table (default) with on-the-fly BSGS as optional backup in `utils/dlog_solver.py`
@@ -337,7 +337,7 @@ limitations remain:
 
 | Issue | Affected schemes | Consequence |
 |---|---|---|
-| No labels in multi-input FE | all MIFE schemes | By definition, the holder of a functional key may combine any ciphertext of each slot. Encrypting several inputs per client under one key epoch -- e.g. a gradient element by element -- therefore reveals the differences between that client's values. The ML adapter refuses MIFE for gradient aggregation; use MCFE (labelled ciphertexts) for federated learning. |
+| No labels in multi-input FE | all MIFE schemes and quadratic `miqfe` | By definition, the holder of a functional key may combine any ciphertext of each slot. Encrypting several inputs per client under one key epoch -- e.g. a gradient element by element -- therefore reveals the differences between that client's values. The ML adapter refuses MIFE for gradient aggregation; use MCFE (labelled ciphertexts) for federated learning. |
 | Experimental threshold layers | tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE, tMCFE-FH-Multi-IPE | The threshold layers (noise flooding, Shamir sharing in the exponent) are our own and have no published security proof; see the module docstrings. |
 | One ciphertext per client and label | all MCFE / DMCFE schemes | As in the papers, a client must not encrypt two different inputs under one label (or tag); the library does not enforce it. |
 | Toy default parameters | all | `sec_param` is a modulus bit length (default 128), not a security level; LWE dimensions default to 16–64 and the Ring-LWE dimension to 32; the statistical parameter `stat_param` defaults to 64. All far below any real security level (a key column of SIFE-LWE at its defaults falls to plain LLL in minutes); nothing here estimates concrete hardness. |

@@ -130,7 +130,7 @@ def _bench_mife_fh_multi_ipe() -> dict:
         "nid_2": [_base_array(0.3)],
     }
     expected = sum(
-        ((dct_x[nid][0] * pow(10, PRECISION)).astype(int) / pow(10, PRECISION))
+        (np.rint(dct_x[nid][0] * pow(10, PRECISION)) / pow(10, PRECISION))
         * dct_y[nid][0]
         for nid in cfg["lst_nid"]
     )
@@ -346,11 +346,7 @@ def _bench_quadratic(name: str, quad_cls, kg_cls, config: dict, lhs: list[np.nda
         kg = kg_cls(config)
         kg.setup()
         pp = kg.get_public_parameters()
-        if name == "Quadratic/SGP":
-            sk = kg.get_private_keys()
-            enc = quad_cls({"id": "nid_default", "precision": PRECISION, "keys": {"pp": pp, "sk": sk}})
-        else:
-            enc = quad_cls({"id": "nid_default", "precision": PRECISION, "keys": {"pp": pp}})
+        enc = quad_cls({"id": "nid_default", "precision": PRECISION, "keys": {"pp": pp}})
         dec = quad_cls({"id": "sid_0", "precision": PRECISION, "keys": {"pp": pp}})
         dk = kg.get_decryption_keys("sid_0", credentials={"function_matrix": function_matrix})
 

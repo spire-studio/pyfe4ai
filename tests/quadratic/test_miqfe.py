@@ -90,3 +90,21 @@ def test_random_cross_terms_two_entries():
     expected = sum(coeffs[a][b] * xs[a] * xs[b] for a in range(n * m) for b in range(n * m))
     dk = kg.get_decryption_keys(None, credentials={"coefficients": coeffs})
     assert _dec(pp, cts, dk) == expected
+
+
+def test_three_users_cross_blocks():
+    """With n = 3 the blocks (0,1), (0,2), (1,2) are allowed: an i/k swap would show."""
+    nids = ["u0", "u1", "u2"]
+    kg = MultiInputQuadraticKeyGenerator(
+        {"n": 3, "m": 1, "lst_nid": nids, "bound_x": 6, "bound_c": 4, "pairing_group_param": "MNT224"}
+    )
+    kg.setup()
+    pp = kg.get_public_parameters()
+    x = {"u0": [5], "u1": [-3], "u2": [6]}
+    cts = {nid: MultiInputQuadratic({"keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(x[nid])
+           for nid in nids}
+    coeffs = [[0, 2, -4], [0, 0, 3], [0, 0, 0]]
+    dk = kg.get_decryption_keys(None, credentials={"coefficients": coeffs})
+    assert _dec(pp, cts, dk) == 2 * 5 * -3 - 4 * 5 * 6 + 3 * -3 * 6
+    with pytest.raises(FEValidationError):
+        kg.get_decryption_keys(None, credentials={"coefficients": [[0, 0, 0], [1, 0, 0], [0, 0, 0]]})

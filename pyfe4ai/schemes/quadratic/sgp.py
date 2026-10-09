@@ -148,6 +148,8 @@ class QuadraticSGPKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         require_pairing_backend()
         self.n = config.get("n", config.get("eta", 2))
         self.bound = gp.mpz(config.get("bound", 16))
+        if not isinstance(self.n, int) or self.n < 1 or self.bound < 1:
+            raise FEValidationError("need integers n >= 1 and bound >= 1")
         self.pairing_group_param = config.get("pairing_group_param", DEFAULT_PAIRING_GROUP)
         check_asymmetric(self.pairing_group_param)
         self._load_parameters()
@@ -293,7 +295,7 @@ class QuadraticSGP(IPFEAbsCrypto):
             "b": [_serialize_group_vec(group, row) for row in b_rows],
         }
 
-    def decrypt(self, ct: dict, dk: dict) -> int:
+    def decrypt(self, ct: dict, dk: dict) -> int | None:
         """Decrypt ciphertexts and recover the inner product.
 
             Args:
@@ -304,7 +306,7 @@ class QuadraticSGP(IPFEAbsCrypto):
         function_matrix = [[gp.mpz(value) for value in row] for row in dk["f"]]
         if len(function_matrix) != n or any(len(row) != n for row in function_matrix):
             raise FEValidationError("invalid function matrix shape")
-        if len(ct["a"]) != n or len(ct["b"]) != n:
+        if len(ct["a"]) != n or len(ct["b"]) != n or any(len(r) != 2 for r in ct["a"] + ct["b"]):
             raise FEValidationError("ciphertext does not match the parameters")
 
         c0 = self.group.deserialize(ct["c0"].encode("utf-8"))

@@ -9,8 +9,10 @@ Multi-input functional encryption for quadratic functions (cross-user terms)
 | for mixed-group inner products of Sec. 3 / Fig. 1.
 
 * type:     multi-input FE with per-user encryption keys
-* setting:  asymmetric pairing group (default MNT224); selective (pos)
-            security from the bilateral MDDH_k assumption, ``k >= 2``
+* setting:  asymmetric pairing group (default MNT224); selective pos
+            message-hiding security (Thm. 5.1) from MDDH_1 (SXDH, for the
+            TAO20 IPFE), bilateral MDDH_k with ``k >= 2`` (for the mixed-group
+            SK-MCFE) and PRF security
 
 Function class (Def. 2.9): ``n`` users with ``m`` integers each,
 ``f(x_1, ..., x_n) = sum_{i < k} sum_{j, l} c[(i, j, k, l)] x_i[j] x_k[l]`` --
@@ -53,6 +55,7 @@ for small ``n, m``.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import hmac
 import logging
@@ -242,6 +245,8 @@ class MultiInputQuadraticKeyGenerator(IPFEAbsKeyGenerator):
             raise FEValidationError("need n >= 2 users listed in lst_nid")
         if self.m < 1 or self.k < 2:
             raise FEValidationError("need m >= 1 and mddh_k >= 2 (bilateral MDDH)")
+        if self.bound_x < 1 or self.bound_c < 1:
+            raise FEValidationError("need bound_x >= 1 and bound_c >= 1")
 
     def setup(self) -> None:
         """Sample the master key and every user's encryption key (master ciphertexts)."""
@@ -313,8 +318,14 @@ class MultiInputQuadraticKeyGenerator(IPFEAbsKeyGenerator):
         return dict(self.pp)
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
-        """User *nid*'s encryption key: its master ciphertexts only (no master secret)."""
-        return self.ek.get(nid)
+        """User *nid*'s encryption key: its master ciphertexts only (no master secret).
+
+        A corrupted user learns its own key; together with a functional key for
+        ``c`` it can still evaluate ``c`` on its own chosen inputs, which the
+        functionality allows (e.g. ``sum_l c[(i,j,k,l)] x_k[l]``).
+        """
+        ek = self.ek.get(nid)
+        return None if ek is None else copy.deepcopy(ek)
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Key for ``c`` (``credentials["coefficients"]``, an ``nm x nm`` matrix).

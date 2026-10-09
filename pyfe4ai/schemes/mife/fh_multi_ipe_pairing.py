@@ -108,6 +108,8 @@ class MIFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             raise FEValidationError("lst_nid must list n = {} clients".format(self.n))
         if self.sec_level < 1:
             raise FEValidationError("sec_level (k of k-LIN) must be >= 1")
+        if self.eta < 1 or self.bound_x < 0 or self.bound_y < 0:
+            raise FEValidationError("need eta >= 1 and non-negative bounds")
         self._load_parameters()
 
     def _apply_parameters(self, param: dict) -> None:
@@ -280,6 +282,7 @@ class MIFEFHMultiIPE(IPFEAbsCrypto):
         bhat = [[gp.mpz(v) for v in row] for row in self.sk["bhat"]]
         phi = [gp.mpz(int(self.group.random(ZR))) for _ in range(self.pp["sec_level"])]
 
+        order = gp.mpz(int(self.group.order()))
         key_vec = [gp.mpz(0) for _ in range(self.dim)]
         for row_index in range(self.pp["eta"] + self.pp["sec_level"] + 1):
             if row_index < self.pp["eta"]:
@@ -288,8 +291,8 @@ class MIFEFHMultiIPE(IPFEAbsCrypto):
                 scalar = gp.mpz(1)
             else:
                 scalar = phi[row_index - self.pp["eta"] - 1]
-            contribution = vector_scalar_mod(bhat[row_index], scalar, gp.mpz(int(self.group.order())))
-            key_vec = vector_add_mod(key_vec, contribution, gp.mpz(int(self.group.order())))
+            contribution = vector_scalar_mod(bhat[row_index], scalar, order)
+            key_vec = vector_add_mod(key_vec, contribution, order)
 
         g1 = self.group.deserialize(self.pp["g1"].encode("utf-8"))
         ct = [g1 ** to_zr(self.group, value) for value in key_vec]

@@ -8,7 +8,7 @@ from os import path
 
 from pyfe4ai.schemes.status import warn_if_known_insecure
 from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.exceptions import FEKeyError
+from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +88,9 @@ class IPFEAbsKeyGenerator(ABC):
             self.lst_nid = config.get(
                 "lst_nid", ["nid_{}".format(i) for i in range(self.n)]
             )
+            if len(set(self.lst_nid)) != len(self.lst_nid):
+                # a repeated id would silently merge two clients' keys
+                raise FEValidationError("lst_nid contains duplicate client ids")
 
     @abstractmethod
     def setup(self) -> None:

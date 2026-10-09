@@ -111,3 +111,11 @@ class TestValidationErrors:
         crypto = SIFE({"keys": {"pp": pp, "sk": sk}})
         with pytest.raises(FEValidationError, match="must have 3 entries"):
             crypto.encrypt([1, 2, 3, 4])  # eta=3 but 4 elements
+
+
+def test_duplicate_client_ids_rejected():
+    """A repeated id in lst_nid silently merged two clients' keys."""
+    from pyfe4ai.schemes.mcfe.ddh import MCFEKeyGenerator
+
+    with pytest.raises(FEValidationError, match="duplicate"):
+        MCFEKeyGenerator({"sec_param": 128, "n": 3, "lst_nid": ["a", "a", "b"]})

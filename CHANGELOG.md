@@ -154,7 +154,8 @@ table and *Known Issues* before relying on any privacy property.
     key holder learned every client's `x_i^T F_i y_i` and could mix sub-keys.
     It is replaced by `quadratic/miqfe`, the MIFE for quadratic functions of
     Agrawal, Goyal, Tomida (TCC 2022, Sec. 5): per-user encryption keys made
-    of master ciphertexts (corrupting a user reveals only its key), function
+    of master ciphertexts (a corrupted user learns its own key, not the master
+    secret), function
     class `sum_{i<k} c[(i,j,k,l)] x_i[j] x_k[l]` (cross-user terms), built from
     the TAO20 FH-IPFE and the paper's SK-MCFE schemes (Figs. 1 and 9).
 
