@@ -15,8 +15,14 @@ Multi-Input Secret-Key Quadratic Functional Encryption (MI-SGP)
 
 * type:     secret-key encryption
 * setting:  Pairing based
-* note:     research prototype aligned with the existing crypto-ipfe API
 
+.. warning::
+    Known-insecure (quadratic/multi_input_sgp, see pyfe4ai.schemes.status):
+    there is no published multi-input construction behind this composition.
+    The functional key is a tuple of independent per-client SGP keys, so the
+    key holder decrypts every client's ``x_i^T F_i y_i`` separately and can
+    mix sub-keys of different keys. It is to be replaced by a published
+    multi-input quadratic FE; use only for functionality experiments.
 """
 
 from __future__ import annotations

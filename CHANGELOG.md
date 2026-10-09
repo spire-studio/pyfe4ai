@@ -141,6 +141,19 @@ table and *Known Issues* before relying on any privacy property.
     through the Legendre symbol. Servers (and MIFE-DDH decryption) now
     require subgroup elements. All threshold servers refuse a key share
     issued to another server.
+- **DOT18 and DSGPP18 reviews:**
+  - Quadratic SGP handed the master secret key `(s, t)` to every encryptor;
+    as in DSGPP18 Fig. 2 the public key is now `(g1^s, g2^t)`, encryption
+    uses it only and `get_private_keys` returns `None`. Floats were
+    truncated silently; inputs are validated.
+  - MIFE FH-Multi-IPE (DOT18 Sec. 3.1) produced deterministic keys for
+    `n = 1` with `k = 1`; it now requires `n >= 2`, `k >= 1` and
+    `len(lst_nid) == n`, checks that every slot is present, and its
+    decryption helpers no longer ask for `y`.
+  - Quadratic MI-SGP has no published basis (per-client copies of SGP): the
+    key holder learns every client's `x_i^T F_i y_i` and can mix sub-keys. It
+    is marked *known-insecure* until replaced by a published multi-input
+    quadratic FE.
 
 ### Added
 

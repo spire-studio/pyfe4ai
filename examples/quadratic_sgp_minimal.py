@@ -22,9 +22,7 @@ def main() -> None:
     ]
 
     pp = kg.get_public_parameters()
-    sk = kg.get_private_keys()
-
-    encryptor = QuadraticSGP({"id": "nid_default", "keys": {"pp": pp, "sk": sk}})
+    encryptor = QuadraticSGP({"id": "nid_default", "keys": {"pp": pp}})
     decryptor = QuadraticSGP({"id": "sid_0", "keys": {"pp": pp}})
 
     ct = encryptor.encrypt({"x": x, "y": y})

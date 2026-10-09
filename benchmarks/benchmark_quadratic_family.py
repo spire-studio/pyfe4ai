@@ -33,7 +33,7 @@ def _bench_sgp(cfg: dict, x: list[int], y: list[int], f_matrix: list[list[int]],
         setup_times.append(time.perf_counter() - t0)
         pp = kg.get_public_parameters()
         sk = kg.get_private_keys()
-        enc = QuadraticSGP({"id": "nid_default", "keys": {"pp": pp, "sk": sk}})
+        enc = QuadraticSGP({"id": "nid_default", "keys": {"pp": pp}})
         dec = QuadraticSGP({"id": "sid_0", "keys": {"pp": pp}})
 
         t0 = time.perf_counter()

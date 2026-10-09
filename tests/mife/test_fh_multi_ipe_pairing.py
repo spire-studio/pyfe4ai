@@ -77,7 +77,7 @@ def test_entire_process_lst_ndarray(kg_config):
         expected.append(
             sum(
                 (
-                    (dct_x[nid][layer_idx] * pow(10, precision)).astype(int)
+                    np.rint(dct_x[nid][layer_idx] * pow(10, precision))
                     / pow(10, precision)
                 )
                 * dct_y[nid][0]
@@ -105,3 +105,59 @@ def test_entire_process_lst_ndarray(kg_config):
 
     for idx in range(len(expected)):
         assert np.allclose(computed[idx], expected[idx], atol=1e-2)
+
+
+def _setup(cfg):
+    kg = MIFEFHMultiIPEKeyGenerator(cfg)
+    kg.setup()
+    pp = kg.get_public_parameters()
+    clients = {nid: MIFEFHMultiIPE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
+               for nid in cfg["lst_nid"]}
+    return kg, pp, clients
+
+
+@pytest.mark.parametrize("k", [1, 2])
+def test_slots_masked_keys_unlinkable_and_no_y_needed(kg_config, k):
+    from pyfe4ai.utils.exceptions import FESchemeError
+    from pyfe4ai.utils.pairing_backend import GT, pair
+    from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
+
+    cfg = dict(kg_config, sec_level=k, eta=2)
+    kg, pp, clients = _setup(cfg)
+    x = {"nid_0": [5, 0], "nid_1": [-5, 0], "nid_2": [0, 0]}
+    y1 = {nid: [1, 0] for nid in cfg["lst_nid"]}
+    y2 = {nid: [0, 1] for nid in cfg["lst_nid"]}
+    cts = {nid: c.encrypt(x[nid]) for nid, c in clients.items()}
+    dec = MIFEFHMultiIPE({"id": "sid", "keys": {"pp": pp}})
+    dk1 = kg.get_decryption_keys("sid", credentials={"fusion_weight": y1})
+    dk2 = kg.get_decryption_keys("sid", credentials={"fusion_weight": y2})
+    assert dec.decrypt(cts, dk1) == 0
+    assert set(dk1) == {"dk"}  # group elements only, nothing derived from y
+    assert kg.get_decryption_keys("sid", credentials={"fusion_weight": y1})["dk"] != dk1["dk"]
+
+    g = dec.group
+    pub = g.deserialize(pp["pub"].encode())
+    slot0 = g.init(GT, 1)
+    for c, k_ in zip(cts["nid_0"]["ct"], dk1["dk"]["nid_0"]):
+        slot0 *= pair(g.deserialize(c.encode()), g.deserialize(k_.encode()))
+    with pytest.raises(ValueError):
+        bounded_discrete_log_gt(g, pub, slot0, 1000)
+
+    mixed = {"dk": {"nid_0": dk1["dk"]["nid_0"], "nid_1": dk2["dk"]["nid_1"], "nid_2": dk1["dk"]["nid_2"]}}
+    assert dec.decrypt(cts, mixed) is None
+    with pytest.raises(FESchemeError):
+        dec.decrypt({k_: v for k_, v in cts.items() if k_ != "nid_2"}, dk1)
+
+
+def test_parameter_guards(kg_config):
+    from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
+
+    with pytest.raises(FEKeyError):
+        MIFEFHMultiIPEKeyGenerator(dict(kg_config, n=1, lst_nid=["nid_0"], sec_level=1))
+    with pytest.raises(FEValidationError):
+        MIFEFHMultiIPEKeyGenerator(dict(kg_config, sec_level=0))
+    with pytest.raises(FEValidationError):
+        MIFEFHMultiIPEKeyGenerator(dict(kg_config, lst_nid=["nid_0", "nid_1"]))
+    kg, pp, clients = _setup(kg_config)
+    with pytest.raises(FEValidationError):
+        clients["nid_0"].encrypt([1.5, 0, 0, 0])

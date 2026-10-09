@@ -93,7 +93,7 @@ See `examples/sife_minimal.py` for the full runnable version.
 | **MIFE** (multi-input) | DDH, Damgård-DDH, LWE, FullySec-LWE, Paillier | [ACFGU18](https://eprint.iacr.org/2017/972.pdf) (CRYPTO '18), Fig. 4 + ALS16 / ABDP15 |
 | | Ring-LWE | ACFGU18 Fig. 4 as in [BMMS21](https://eprint.iacr.org/2021/046.pdf), Sec. 6 |
 | | FH-IPE *(pairing)* | ACFGU18, Fig. 12 |
-| | FH-Multi-IPE *(pairing)* | [DOT18](https://eprint.iacr.org/2018/061.pdf) (PKC '18) ¹ |
+| | FH-Multi-IPE *(pairing)* | [DOT18](https://eprint.iacr.org/2018/061.pdf) (PKC '18), Sec. 3.1 |
 | **MCFE** (multi-client) | DDH | [CDGPP18](https://eprint.iacr.org/2017/989.pdf) (ASIACRYPT '18) |
 | | Damgård-DDH (MDDH), Paillier (DCR), LWE, FullySec-LWE | [ABMPSW20](https://eprint.iacr.org/2020/788.pdf) (SCN '20), Figs. 2–4 |
 | | Ring-LWE | BMMS21, Sec. 6 (identity-based MCFE) |
@@ -102,11 +102,13 @@ See `examples/sife_minimal.py` for the full runnable version.
 | | dMCFE-Ring-LWE | BMMS21, Sec. 6 ([ABKW19](https://eprint.iacr.org/2019/020.pdf) + GDSum) |
 | | dMCFE-FH-Multi-IPE *(pairing)* | [NPS24](https://doi.org/10.62056/andkp2fgx) (IACR CiC '24), Fig. 1 |
 | **Threshold** | tMIFE (DDH, LWE), tMCFE (DDH, LWE, Ring-LWE, FH-Multi-IPE) | [Xu+24](https://doi.org/10.1109/TDSC.2024.3350206) (IEEE TDSC '24) ² |
-| **Quadratic** | SGP (secret-key), Multi-Input SGP | [DSGPP18](https://eprint.iacr.org/2018/206.pdf) (ePrint) ¹ |
+| **Quadratic** | SGP | [DSGPP18](https://eprint.iacr.org/2018/206.pdf) (ePrint), Fig. 2 |
+| | Multi-Input SGP | none (per-client copies of SGP) ¹ |
 | | Quad (public-key) | [Gay20](https://eprint.iacr.org/2020/093.pdf) (PKC '20), Fig. 4 |
 
-> ¹ Not yet checked against the cited paper (status *unreviewed*, see
-> [Scheme Status](#scheme-status)). The other rows implement the cited
+> ¹ No published construction behind it; *known-insecure* (see
+> [Known Issues](#known-issues--security-notice)) until it is replaced by a
+> published multi-input quadratic FE. The other rows implement the cited
 > construction, with the deviations listed in the status table.
 >
 > ² Threshold variants add a Shamir secret-sharing layer on top of the
@@ -146,8 +148,8 @@ test keeps it in sync.
   correct results but provides no meaningful privacy. Use it only for
   functionality or performance experiments.
 
-Currently 31 reviewed, 4 experimental and 3 unreviewed out of 38
-registered schemes; none is known to be insecure.
+Currently 33 reviewed, 4 experimental and 1 known-insecure out of 38
+registered schemes (`quadratic/multi_input_sgp`, to be replaced).
 
 | Scheme | Status | Fidelity | Construction | Notes |
 |---|---|---|---|---|
@@ -167,7 +169,7 @@ registered schemes; none is known to be insecure.
 | `mife/ring_lwe` | reviewed | adapted | BMMS21 Sec. 6 MIFE-compiler (ACFGU18) | slots share a; parameters sized for dimension n * eta |
 | `mife/fullysec_lwe` | reviewed | adapted | ACFGU18 Fig. 4 + ALS16 (LWE, Fig. 8) | slots share A; parameters derived for dimension n * eta and bound 3X |
 | `mife/fh_ipe_pairing` | reviewed | adapted | ACFGU18 Fig. 12 (k = 1) | one r per key shared by all slots; per-slot FH-IPFE as in mcfe/fh_ipe (LV16 padding of App. B); asymmetric pairing (default MNT224); keys carry a random id, never a digest of y |
-| `mife/fh_multi_ipe_pairing` | unreviewed | unknown | DOT18 |  |
+| `mife/fh_multi_ipe_pairing` | reviewed | adapted | DOT18 Sec. 3.1 (bounded, k-LIN, k = sec_level) | n >= 2 enforced (zero sharing r_i); no Remark B.1 SKE layer, so hiding assumes every slot contributes a ciphertext; slot i's client holds B^_i and can decode its own slot of a key; keys are group elements only, decryption does not need y |
 | `mife/ddh_threshold` | reviewed | adapted | ACFGU18 Fig. 4 + ABDP15 + Shamir (TAPFed setting) | the functional key (d_i, z) is Shamir-shared mod q; any t servers interpolate in the exponent (threshold-ElGamal style), as mcfe/ddh_threshold |
 | `mife/lwe_threshold` | experimental | ad-hoc | MIFE-LWE + Shamir + smudging | MIFE layer as published; the threshold layer (statistical flooding, derandomised noise, enlarged q) is our own |
 | `mcfe/ddh` | reviewed | faithful | CDGPP18 |  |
@@ -187,8 +189,8 @@ registered schemes; none is known to be insecure.
 | `mcfe/ring_lwe_decentralized` | reviewed | adapted | BMMS21 Sec. 6 identity-based DMCFE (ABKW19 + GDSum) | GDSum realised as pairwise PRF zero-sum masks (its full specification is only in the ePrint version); pairwise secrets sampled in-process |
 | `mcfe/paillier_decentralized` | reviewed | adapted | ABMPSW20 Fig. 14 (MCFE1 = Fig. 3) | MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) are sampled in-process |
 | `quadratic/quad` | reviewed | adapted | Gay20 Fig. 4 over Fig. 8 (CPA) | signed inputs (discrete log in [-n m B^3, n m B^3]); CPA variant (no QANIZK); asymmetric pairing (default MNT224) |
-| `quadratic/sgp` | unreviewed | unknown | DSGPP18 |  |
-| `quadratic/multi_input_sgp` | unreviewed | unknown | DSGPP18, multi-input |  |
+| `quadratic/sgp` | reviewed | adapted | DSGPP18 Fig. 2 | public key pk = (g1^s, g2^t) as in the paper; signed inputs with one bound B for x, y and F (discrete log in [-n^2 B^3, n^2 B^3]); generic bilinear group model |
+| `quadratic/multi_input_sgp` | known-insecure | ad-hoc | DSGPP18 Fig. 2 per client (no published multi-input construction) | see [Known Issues](#known-issues--security-notice) |
 
 ## Repository Layout
 
@@ -332,14 +334,14 @@ docker run --rm pyfe4ai-pairing
 
 ## Known Issues / Security Notice
 
-No registered scheme is currently known to be insecure (should one be found,
-the [Scheme Status](#scheme-status) table marks it *known-insecure* and its
-key generator emits a `pyfe4ai.FESecurityWarning`). The following
-limitations remain:
+Schemes with a known privacy defect are marked *known-insecure* in the
+[Scheme Status](#scheme-status) table and their key generators emit a
+`pyfe4ai.FESecurityWarning`; currently this is only `quadratic/multi_input_sgp`.
+The following limitations remain:
 
 | Issue | Affected schemes | Consequence |
 |---|---|---|
-| Unreviewed schemes | MIFE `fh_multi_ipe_pairing` (DOT18); quadratic `sgp`, `multi_input_sgp` (DSGPP18) | Not yet checked against their papers: no defect is known, but none was looked for systematically either. |
+| Multi-input SGP | quadratic `multi_input_sgp` | Known-insecure: the functional key is a tuple of independent per-client SGP keys, so the key holder decrypts every client's `x_i^T F_i y_i` (not only the sum) and can mix sub-keys of different keys. To be replaced by a published multi-input quadratic FE. |
 | No labels in multi-input FE | all MIFE schemes | By definition, the holder of a functional key may combine any ciphertext of each slot. Encrypting several inputs per client under one key epoch -- e.g. a gradient element by element -- therefore reveals the differences between that client's values. The ML adapter refuses MIFE for gradient aggregation; use MCFE (labelled ciphertexts) for federated learning. |
 | Experimental threshold layers | tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE, tMCFE-FH-Multi-IPE | The threshold layers (noise flooding, Shamir sharing in the exponent) are our own and have no published security proof; see the module docstrings. |
 | One ciphertext per client and label | all MCFE / DMCFE schemes | As in the papers, a client must not encrypt two different inputs under one label (or tag); the library does not enforce it. |

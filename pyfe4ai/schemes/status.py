@@ -150,7 +150,12 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         "a random id, never a digest of y",
     ),
     ("mife", "fh_multi_ipe_pairing"): SchemeStatus(
-        _S + "mife.fh_multi_ipe_pairing", UNREVIEWED, UNKNOWN, "DOT18"
+        _S + "mife.fh_multi_ipe_pairing", REVIEWED, ADAPTED,
+        "DOT18 Sec. 3.1 (bounded, k-LIN, k = sec_level)",
+        note="n >= 2 enforced (zero sharing r_i); no Remark B.1 SKE layer, so hiding "
+        "assumes every slot contributes a ciphertext; slot i's client holds B^_i and "
+        "can decode its own slot of a key; keys are group elements only, "
+        "decryption does not need y",
     ),
     ("mife", "ddh_threshold"): SchemeStatus(
         _S + "mife.ddh_threshold", REVIEWED, ADAPTED,
@@ -244,9 +249,18 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         note="signed inputs (discrete log in [-n m B^3, n m B^3]); CPA variant "
         "(no QANIZK); asymmetric pairing (default MNT224)",
     ),
-    ("quadratic", "sgp"): SchemeStatus(_S + "quadratic.sgp", UNREVIEWED, UNKNOWN, "DSGPP18"),
+    ("quadratic", "sgp"): SchemeStatus(
+        _S + "quadratic.sgp", REVIEWED, ADAPTED, "DSGPP18 Fig. 2",
+        note="public key pk = (g1^s, g2^t) as in the paper; signed inputs with one "
+        "bound B for x, y and F (discrete log in [-n^2 B^3, n^2 B^3]); generic "
+        "bilinear group model",
+    ),
     ("quadratic", "multi_input_sgp"): SchemeStatus(
-        _S + "quadratic.multi_input_sgp", UNREVIEWED, UNKNOWN, "DSGPP18, multi-input"
+        _S + "quadratic.multi_input_sgp", KNOWN_INSECURE, AD_HOC,
+        "DSGPP18 Fig. 2 per client (no published multi-input construction)",
+        issue="the functional key is a tuple of independent per-client SGP keys, so "
+        "the key holder decrypts every client's x_i^T F_i y_i (not only the sum) and "
+        "can mix sub-keys of different keys into keys for functions never issued",
     ),
 }
 
