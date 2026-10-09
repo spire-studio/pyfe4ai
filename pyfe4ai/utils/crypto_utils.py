@@ -31,6 +31,56 @@ def _random_prime(bits):
     return gp.next_prime(r)
 
 
+def _small_odd_primes(limit: int) -> list:
+    sieve = bytearray([1]) * (limit + 1)
+    sieve[0:2] = b"\x00\x00"
+    for i in range(2, int(limit ** 0.5) + 1):
+        if sieve[i]:
+            sieve[i * i::i] = bytearray(len(sieve[i * i::i]))
+    return [i for i in range(3, limit + 1) if sieve[i]]
+
+
+#: Odd primes below 2^16 with the inverses of 2 and 4 modulo each.
+_SIEVE = [(sp, (sp + 1) // 2, pow(4, -1, sp)) for sp in _small_odd_primes(1 << 16)]
+_SIEVE_WINDOW = 1 << 14
+#: Below this size the sieve primes could be candidates themselves.
+_SIEVE_MIN_BITS = 64
+
+
+def _safe_prime(bits: int) -> tuple:
+    """Return ``(p, q)`` with ``p = 2q + 1`` of exactly *bits* bits, both prime.
+
+    Candidates ``q = q0 + 2k`` (``q0`` random) are sieved so that neither
+    ``q`` nor ``2q + 1`` has a prime factor below 2^16, then filtered with a
+    base-2 Fermat test; survivors must pass :func:`gmpy2.is_prime` (BPSW plus
+    Miller-Rabin rounds) for both ``q`` and ``p``.
+    """
+    if bits < _SIEVE_MIN_BITS:
+        while True:
+            q = _random_prime(bits - 1)
+            p = q * 2 + 1
+            if gp.is_prime(p) and gp.is_prime(q):
+                return p, q
+    while True:
+        q0 = gp.mpz(_CSPRNG.getrandbits(bits - 1)) | (gp.mpz(1) << (bits - 2)) | 1
+        alive = bytearray([1]) * _SIEVE_WINDOW
+        for sp, inv2, inv4 in _SIEVE:
+            r = int(q0 % sp)
+            for k in ((-r * inv2) % sp, (-(2 * r + 1) * inv4) % sp):  # sp | q, sp | 2q + 1
+                alive[k::sp] = bytes(len(range(k, _SIEVE_WINDOW, sp)))
+        for k in range(_SIEVE_WINDOW):
+            if not alive[k]:
+                continue
+            q = q0 + 2 * k
+            if q.bit_length() != bits - 1:
+                break
+            p = 2 * q + 1
+            if gp.powmod(2, q - 1, q) != 1 or gp.powmod(2, p - 1, p) != 1:
+                continue
+            if gp.is_prime(q, 30) and gp.is_prime(p, 30):
+                return p, q
+
+
 def generate_group_primes(bits: int) -> tuple:
     """
     Generates two safe prime numbers with the restriction:p=2q+1.
@@ -41,12 +91,42 @@ def generate_group_primes(bits: int) -> tuple:
     Returns:
         tuple: p, q
     """
-    while True:
-        p_prime = _random_prime(bits - 1)
-        p = p_prime * 2 + 1
-        if gp.is_prime(p) and gp.is_prime(p_prime):
-            break
-    return p, p_prime
+    return _safe_prime(bits)
+
+
+#: Safe primes of the RFC 3526 MODP groups 14 and 15, by bit length:
+#: ``p = 2^b - 2^(b-64) - 1 + 2^64 (floor(2^(b-130) pi) + c)``. Used instead
+#: of a fresh safe prime when one of these sizes is requested -- generating a
+#: 3072-bit safe prime takes minutes, and at these sizes a fixed, published
+#: group gives nothing to precomputation.
+RFC3526_PRIMES = {
+    2048: gp.mpz(
+        "FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74"
+        "020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F1437"
+        "4FE1356D6D51C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7ED"
+        "EE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3DC2007CB8A163BF05"
+        "98DA48361C55D39A69163FA8FD24CF5F83655D23DCA3AD961C62F356208552BB"
+        "9ED529077096966D670C354E4ABC9804F1746C08CA18217C32905E462E36CE3B"
+        "E39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9DE2BCBF695581718"
+        "3995497CEA956AE515D2261898FA051015728E5A8AACAA68FFFFFFFFFFFFFFFF",
+        16,
+    ),
+    3072: gp.mpz(
+        "FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74"
+        "020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F1437"
+        "4FE1356D6D51C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7ED"
+        "EE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3DC2007CB8A163BF05"
+        "98DA48361C55D39A69163FA8FD24CF5F83655D23DCA3AD961C62F356208552BB"
+        "9ED529077096966D670C354E4ABC9804F1746C08CA18217C32905E462E36CE3B"
+        "E39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9DE2BCBF695581718"
+        "3995497CEA956AE515D2261898FA051015728E5A8AAAC42DAD33170D04507A33"
+        "A85521ABDF1CBA64ECFB850458DBEF0A8AEA71575D060C7DB3970F85A6E1E4C7"
+        "ABF5AE8CDB0933D71E8C94E04A25619DCEE3D2261AD2EE6BF12FFA06D98A0864"
+        "D87602733EC86A64521F2B18177B200CBBE117577A615D6C770988C0BAD946E2"
+        "08E24FA074E5AB3143DB5BFCE0FD108E4B82D120A93AD2CAFFFFFFFFFFFFFFFF",
+        16,
+    ),
+}
 
 
 def _param_generator(bits: int, r: int = 2):
@@ -56,11 +136,10 @@ def _param_generator(bits: int, r: int = 2):
             bits: Security parameter (bit length).
             r: Cofactor (default 2).
     """
-    while True:
-        q = _random_prime(bits - 1)
-        p = q * 2 + 1
-        if gp.is_prime(p) and gp.is_prime(q):
-            break
+    if r == 2 and bits in RFC3526_PRIMES:
+        p = RFC3526_PRIMES[bits]
+        return p, (p - 1) // 2, r
+    p, q = _safe_prime(bits)
     return p, q, r
 
 

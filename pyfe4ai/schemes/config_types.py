@@ -27,8 +27,12 @@ class FEBaseConfig(TypedDict, total=False):
     kappa in its noise bounds; LWE families only record it (their hardness is
     set by ``lwe_n``), Paillier families use ``bit_length`` and pairing families
     ``pairing_group_param``.
+
+    ``security_profile`` (``"toy"`` by default, or ``"standard"``) presets
+    these size parameters; see :mod:`pyfe4ai.schemes.profiles`.
     """
 
+    security_profile: str
     sec_param: int
     n: int
     s: int
@@ -74,10 +78,10 @@ class MCFELWEConfig(LWEConfig, total=False):
 
 
 class RingLWEConfig(FEBaseConfig, total=False):
-    """Config for Ring-LWE-based schemes."""
+    """Config for Ring-LWE-based schemes (``ring_n``: a power of two or ``"auto"``)."""
 
     eta: int
-    ring_n: int
+    ring_n: int | str
     bound_x: int
     bound_y: int
 

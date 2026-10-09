@@ -68,3 +68,24 @@ def test_identity_elements_round_trip(name):
             assert group.ismember(back)
         x = group.random(kind)
         assert group.deserialize(group.serialize(x)) == x
+
+
+@pytest.mark.parametrize("key", PAIRING_SCHEMES, ids="/".join)
+def test_standard_profile_uses_bn254(key):
+    from pyfe4ai import FESecurityWarning
+
+    with pytest.warns(FESecurityWarning, match="100-bit"):
+        kg = _key_generator(key)(dict(_CONFIG, security_profile="standard"))
+    assert kg.pairing_group_param == "BN254"
+
+
+def test_standard_profile_fh_ipe_round_trip():
+    from pyfe4ai.schemes.sife.fh_ipe_pairing import SIFEFHIPE
+
+    with pytest.warns(Warning):
+        kg = _key_generator(("sife", "fh_ipe_pairing"))(dict(_CONFIG, security_profile="standard"))
+    kg.setup()
+    pp = kg.get_public_parameters()
+    enc = SIFEFHIPE({"keys": {"pp": pp, "sk": kg.get_private_keys()}})
+    dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": [2, -1]})
+    assert SIFEFHIPE({"keys": {"pp": pp}}).decrypt(enc.encrypt([3, 1]), dk, [2, -1]) == 5

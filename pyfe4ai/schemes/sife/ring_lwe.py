@@ -31,12 +31,12 @@ import gmpy2 as gp
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.ipfe import ParameterCacheMixin
+from pyfe4ai.schemes.profiles import STANDARD
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.ring_lwe_utils import (
-    DEFAULT_RING_N,
     bmms21_parameters,
     center_matrix,
-    check_ring_n,
+    check_he_standard,
     decode_vector,
     mat_vec_mul,
     matrix_check_bound,
@@ -44,6 +44,7 @@ from pyfe4ai.utils.ring_lwe_utils import (
     poly_mul,
     poly_mul_negacyclic,
     poly_neg,
+    resolve_ring_n,
     transpose,
 )
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
@@ -79,10 +80,15 @@ class SIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         """
         super().__init__(config, **kwargs)
         self.eta = config.get("eta", CryptoCONST.SIFE_DEFAULT_ETA)
-        self.ring_n = check_ring_n(config.get("ring_n") or DEFAULT_RING_N)
         self.bound_x = gp.mpz(config.get("bound_x", 4))
         self.bound_y = gp.mpz(config.get("bound_y", 4))
+        self.ring_n = resolve_ring_n(config.get("ring_n"), self._modulus_for)
         self._load_parameters()
+        if self.security_profile == STANDARD:
+            check_he_standard(self.ring_n, self.q)
+
+    def _modulus_for(self, ring_n: int):
+        return bmms21_parameters(self.sec_param, self.eta, self.bound_x, self.bound_y, ring_n)[1]
 
     def _apply_parameters(self, param: dict) -> None:
         self.p = gp.mpz(param["p"])

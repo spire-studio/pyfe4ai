@@ -437,6 +437,49 @@ def check_ring_n(ring_n) -> int:
     return ring_n
 
 
+#: Largest ``log2 q`` giving 128-bit classical security, per ring dimension:
+#: the bound of the Homomorphic Encryption Standard (Albrecht et al., 2018)
+#: for ternary secrets and error width 3.2, as used by Microsoft SEAL.
+HE_STANDARD_128_LOG_Q = {1024: 27, 2048: 54, 4096: 109, 8192: 218, 16384: 438, 32768: 881}
+
+
+def check_he_standard(ring_n: int, q) -> None:
+    """Raise unless ``(ring_n, q)`` meets :data:`HE_STANDARD_128_LOG_Q`."""
+    max_bits = HE_STANDARD_128_LOG_Q.get(ring_n)
+    if max_bits is None or int(q).bit_length() > max_bits:
+        from pyfe4ai.utils.exceptions import FEValidationError
+
+        raise FEValidationError(
+            "ring_n = {} with a {}-bit q is below 128-bit security (HE standard: log2 q <= {} "
+            "for ring_n in {})".format(
+                ring_n, int(q).bit_length(), max_bits, sorted(HE_STANDARD_128_LOG_Q)
+            )
+        )
+
+
+def he_standard_ring_n(modulus_for) -> int:
+    """Smallest ring dimension whose modulus ``modulus_for(ring_n)`` meets
+    :data:`HE_STANDARD_128_LOG_Q` (the modulus grows with the dimension)."""
+    for ring_n, max_bits in HE_STANDARD_128_LOG_Q.items():
+        if int(modulus_for(ring_n)).bit_length() <= max_bits:
+            return ring_n
+    from pyfe4ai.utils.exceptions import FEValidationError
+
+    raise FEValidationError(
+        "no ring dimension up to 32768 reaches 128-bit security for these bounds; "
+        "reduce bound_x, bound_y, eta or the number of clients"
+    )
+
+
+def resolve_ring_n(ring_n, modulus_for) -> int:
+    """Ring dimension of a config entry: ``"auto"`` selects the smallest one
+    meeting :data:`HE_STANDARD_128_LOG_Q` (see :func:`he_standard_ring_n`),
+    ``None`` gives :data:`DEFAULT_RING_N`."""
+    if ring_n == "auto":
+        return he_standard_ring_n(modulus_for)
+    return check_ring_n(ring_n or DEFAULT_RING_N)
+
+
 def bmms21_parameters(sec_param: int, eta: int, bound_x, bound_y, ring_n: int) -> tuple:
     """Plaintext modulus, NTT prime and Gaussian widths of the BMMS21 IPFE.
 

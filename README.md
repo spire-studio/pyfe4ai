@@ -50,7 +50,8 @@ x = [2, 1, 3]
 y = [4, 5, 6]
 
 # Key generation. sec_param is the bit length of the DDH modulus, not a
-# security level: 128 keeps the demo fast but is NOT secure (use >= 2048).
+# security level: 128 keeps the demo fast but is NOT secure. Add
+# "security_profile": "standard" for a 3072-bit group (see Security Profiles).
 kg = SIFEKeyGenerator({"sec_param": 128, "eta": len(x)})
 kg.setup()
 pp = kg.get_public_parameters()
@@ -75,6 +76,7 @@ See `examples/sife_minimal.py` for the full runnable version.
 - **Threshold & decentralized** — `tMIFE`, `tMCFE`, `dMCFE` for distributed trust settings
 - **Function-hiding** — pairing-based FH-IPE and FH-Multi-IPE with full inner-product privacy
 - **Quadratic FE** — SGP and Quad (public-key) and multi-input quadratic FE with per-user keys
+- **Security profiles** — `security_profile="standard"` selects 3072-bit DL / DCR groups, HE-standard Ring-LWE dimensions and BN254 pairings; the default `"toy"` keeps the fast demo parameters
 - **ML adapter** — `utils/ml_adapter.py` for encrypted linear inference and federated gradient aggregation
 - **Precision toolkit** — `utils/quantization.py` for float ↔ integer quantization with configurable bit-width
 - **Discrete-log solvers** — in-memory dlog table (default) with on-the-fly BSGS as optional backup in `utils/dlog_solver.py`
@@ -187,6 +189,33 @@ none is known to be insecure.
 | `quadratic/quad` | reviewed | adapted | Gay20 Fig. 4 over Fig. 8 (CPA) | signed inputs (discrete log in [-n m B^3, n m B^3]); CPA variant (no QANIZK); asymmetric pairing (default MNT224) |
 | `quadratic/sgp` | reviewed | adapted | DSGPP18 Fig. 2 | public key pk = (g1^s, g2^t) as in the paper; signed inputs with one bound B for x, y and F (discrete log in [-n^2 B^3, n^2 B^3]); generic bilinear group model |
 | `quadratic/miqfe` | reviewed | adapted | AGT22 Sec. 5 (MIFE for quadratic functions) | cross-user terms only (Def. 2.9); per-user encryption keys made of master ciphertexts; building blocks TAO20 FH-IPFE, Fig. 9 and Fig. 1 as in the paper; PRF = HMAC-SHA512; pos-security (every user contributes); k = mddh_k >= 2 |
+
+## Security Profiles
+
+Every key generator accepts a `security_profile` entry in its config
+([`pyfe4ai/schemes/profiles.py`](pyfe4ai/schemes/profiles.py)). The default,
+`"toy"`, keeps the small default parameters -- fast, and **not secure**; a
+config without the entry behaves exactly as before. `"standard"` fills in
+parameters aiming at 128-bit classical security and rejects explicit values
+below them with `FEValidationError`:
+
+```python
+kg = SIFEKeyGenerator({"eta": 3, "security_profile": "standard"})  # 3072-bit group
+```
+
+| Family | `standard` parameters | Measured cost (one core, 2 clients) |
+|---|---|---|
+| Discrete log: DDH, Damgård / MDDH (SIFE, MIFE, MCFE, tMIFE, tMCFE) | `sec_param = modulus_length = 3072`: RFC 3526 MODP group 15 (NIST SP 800-57 Part 1: 3072 bits for 128-bit security) | setup < 0.1 s; encrypt and aggregate < 1 s |
+| `mcfe/ddh_decentralized` | as above; key shares are combined under a DCR modulus of about 6150 bits | setup ≈ 1.5 min (two 3076-bit safe primes); key shares ≈ 1 s |
+| DCR: Paillier (SIFE, MIFE, MCFE) | `bit_length = 1536`: two 1536-bit safe primes, N ≈ 3072 bits | setup a few seconds (two 1536-bit safe primes) |
+| Ring-LWE (SIFE, MIFE, MCFE, tMCFE, dMCFE) | κ = `sec_param` = 128 and `ring_n = "auto"`: the smallest n in {1024, …, 32768} whose derived q (including the threshold flooding) satisfies the 128-bit bound of the Homomorphic Encryption Standard (log2 q ≤ 27 / 54 / 109 / 218 / 438 / 881); an explicit `ring_n` is checked against the same bound | n = 4096–8192 for small bounds; < 1 s |
+| Pairing: FH-IPE, FH-MCFE family, quadratic FE | BN254, the strongest curve charm-crypto offers: about **100-bit** security (exTNFS), below the target; a `FESecurityWarning` says so | — |
+| Refused | dense LWE (`lwe`, `fullysec_lwe` and all their MIFE / MCFE / threshold / decentralised variants) and `mcfe/paillier_decentralized` | `FEValidationError`: no parameter set that is both secure and usable in pure Python (an LWE matrix with billions of entries; a DCR modulus above 15000 bits for combining key shares) |
+
+The statistical parameter `stat_param` keeps its default of 64. The profile
+sizes the hardness assumptions only; the other caveats under
+[Known Issues](#known-issues--security-notice) (research prototype, no
+side-channel hardening, trusted parameter cache) still apply.
 
 ## Repository Layout
 
@@ -340,7 +369,7 @@ limitations remain:
 | No labels in multi-input FE | all MIFE schemes and quadratic `miqfe` | By definition, the holder of a functional key may combine any ciphertext of each slot. Encrypting several inputs per client under one key epoch -- e.g. a gradient element by element -- therefore reveals the differences between that client's values. The ML adapter refuses MIFE for gradient aggregation; use MCFE (labelled ciphertexts) for federated learning. |
 | Experimental threshold layers | tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE, tMCFE-FH-Multi-IPE | The threshold layers (noise flooding, Shamir sharing in the exponent) are our own and have no published security proof; see the module docstrings. |
 | One ciphertext per client and label | all MCFE / DMCFE schemes | As in the papers, a client must not encrypt two different inputs under one label (or tag); the library does not enforce it. |
-| Toy default parameters | all | `sec_param` is a modulus bit length (default 128), not a security level; LWE dimensions default to 16–64 and the Ring-LWE dimension to 32; the statistical parameter `stat_param` defaults to 64. All far below any real security level (a key column of SIFE-LWE at its defaults falls to plain LLL in minutes); nothing here estimates concrete hardness. |
+| Toy default parameters | all | `sec_param` is a modulus bit length (default 128), not a security level; LWE dimensions default to 16–64 and the Ring-LWE dimension to 32; the statistical parameter `stat_param` defaults to 64. All far below any real security level (a key column of SIFE-LWE at its defaults falls to plain LLL in minutes). Pass `security_profile="standard"` for 128-bit-oriented parameters -- except for pairings (BN254, about 100-bit) and dense LWE (refused); see [Security Profiles](#security-profiles). |
 | Unvalidated parameter cache in the working directory | key generators that cache parameters (most; not MCFE `lwe`, `fullysec_lwe`, `lwe_threshold`, the FH-MCFE family, MIFE `fh_ipe_pairing` and quadratic `quad`) | Parameters (public values only; no trapdoors since the Paillier fix) are written to and re-loaded from `./config/authority/...` without structural validation; a planted `param.json` (e.g. a 5-bit group) is accepted. Run only in a directory that nobody else can write to. The pairing dlog cache (`./config/crypto/...`) is likewise trusted if its generators match: a planted table gives wrong results and an inflated bound makes decryption loop for a very long time. |
 | Float fusion weights in `aggregate_gradients` | `utils/ml_adapter.py` | Float weights are quantised but the result is not rescaled (e.g. weights 0.5 give 100× the expected sum in decimal mode). Pass integer weights. |
 

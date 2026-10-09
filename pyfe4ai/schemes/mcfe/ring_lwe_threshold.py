@@ -54,6 +54,7 @@ from pyfe4ai.schemes.threshold_utils import validate_threshold
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.utils.lwe_utils import decode_scaled
+from pyfe4ai.utils.ring_lwe_utils import bmms21_parameters
 from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul
 from pyfe4ai.utils.ring_lwe_utils import next_ntt_prime
 from pyfe4ai.utils.ring_lwe_utils import poly_add
@@ -115,15 +116,27 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         super()._apply_parameters(param)
         self.sigma_f = int(param["sigma_f"])
 
+    def _flooded_modulus(self, ring_n: int, p, q, sigma1, sigma2, sigma3) -> tuple:
+        """Return ``(q', sigma_f)``: the BMMS21 modulus *q* enlarged for flooding."""
+        noise_bound = self.n * self.eta * int(self.bound_y) * int(
+            2 * ring_n * GAUSSIAN_TAIL_CUT ** 2 * sigma1 * sigma2
+            + GAUSSIAN_TAIL_CUT * sigma3 + 1
+        )
+        sigma_f = noise_bound << self.stat_param
+        budget = noise_bound + self.s * GAUSSIAN_TAIL_CUT * sigma_f
+        return next_ntt_prime(max(q, p * (2 * budget + 4)), ring_n), sigma_f
+
+    def _modulus_for(self, ring_n: int):
+        params = bmms21_parameters(
+            self.sec_param, self.n * self.eta, self.bound_x, self.bound_y, ring_n
+        )
+        return self._flooded_modulus(ring_n, *params)[0]
+
     def _generate_and_save(self, param_file: str) -> None:
         super()._generate_and_save(param_file)
-        noise_bound = self.n * self.eta * int(self.bound_y) * int(
-            2 * self.ring_n * GAUSSIAN_TAIL_CUT ** 2 * self.sigma1 * self.sigma2
-            + GAUSSIAN_TAIL_CUT * self.sigma3 + 1
+        self.q, self.sigma_f = self._flooded_modulus(
+            self.ring_n, self.p, self.q, self.sigma1, self.sigma2, self.sigma3
         )
-        self.sigma_f = noise_bound << self.stat_param
-        budget = noise_bound + self.s * GAUSSIAN_TAIL_CUT * self.sigma_f
-        self.q = next_ntt_prime(max(self.q, self.p * (2 * budget + 4)), self.ring_n)
         self.A = rand_uniform_vector(self.ring_n, self.q)
         with open(param_file, "r", encoding="utf-8") as f:
             param = json.load(f)

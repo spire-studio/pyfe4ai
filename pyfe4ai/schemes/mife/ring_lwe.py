@@ -44,14 +44,15 @@ from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.ipfe import ParameterCacheMixin
 from pyfe4ai.utils.lwe_utils import decode_scaled
-from pyfe4ai.utils.ring_lwe_utils import DEFAULT_RING_N
+from pyfe4ai.schemes.profiles import STANDARD
 from pyfe4ai.utils.ring_lwe_utils import bmms21_parameters
-from pyfe4ai.utils.ring_lwe_utils import check_ring_n
+from pyfe4ai.utils.ring_lwe_utils import check_he_standard
 from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul
 from pyfe4ai.utils.ring_lwe_utils import matrix_check_bound
 from pyfe4ai.utils.ring_lwe_utils import poly_add
 from pyfe4ai.utils.ring_lwe_utils import poly_mul
 from pyfe4ai.utils.ring_lwe_utils import poly_neg
+from pyfe4ai.utils.ring_lwe_utils import resolve_ring_n
 from pyfe4ai.utils.ring_lwe_utils import transpose
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
@@ -75,12 +76,20 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         """
         super().__init__(config, **kwargs)
         self.eta = config.get("eta", CryptoCONST.MIFE_ETA)
-        self.ring_n = check_ring_n(config.get("ring_n") or DEFAULT_RING_N)
         self.bound_x = gp.mpz(config.get("bound_x", 4))
         self.bound_y = gp.mpz(config.get("bound_y", 4))
         if not self.n:
             raise FEKeyError("need to provide number of clients")
+        self.ring_n = resolve_ring_n(config.get("ring_n"), self._modulus_for)
         self._load_parameters()
+        if self.security_profile == STANDARD:
+            check_he_standard(self.ring_n, self.q)
+
+    def _modulus_for(self, ring_n: int):
+        """Modulus ``q`` that :meth:`_generate_and_save` derives for *ring_n*."""
+        return bmms21_parameters(
+            self.sec_param, self.n * self.eta, self.bound_x, self.bound_y, ring_n
+        )[1]
 
     def _apply_parameters(self, param: dict) -> None:
         self.p = gp.mpz(param["p"])

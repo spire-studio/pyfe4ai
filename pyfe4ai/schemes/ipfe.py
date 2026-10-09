@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import logging
 import os
-from abc import ABC, abstractmethod
+from abc import ABC, ABCMeta, abstractmethod
 from os import path
 
+from pyfe4ai.schemes import profiles
 from pyfe4ai.schemes.status import warn_if_known_insecure
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
@@ -61,7 +62,23 @@ class ParameterCacheMixin:
         raise NotImplementedError
 
 
-class IPFEAbsKeyGenerator(ABC):
+class _ProfiledKeyGeneratorMeta(ABCMeta):
+    """Completes the config with its security profile before ``__init__`` runs.
+
+    The whole ``__init__`` chain of a key generator then sees the presets of
+    :mod:`pyfe4ai.schemes.profiles`; a config without ``security_profile`` is
+    passed on unchanged.
+    """
+
+    def __call__(cls, *args, **kwargs):
+        if args and isinstance(args[0], dict):
+            args = (profiles.resolve(args[0], profiles.scheme_of(cls)),) + args[1:]
+        elif isinstance(kwargs.get("config"), dict):
+            kwargs["config"] = profiles.resolve(kwargs["config"], profiles.scheme_of(cls))
+        return super().__call__(*args, **kwargs)
+
+
+class IPFEAbsKeyGenerator(metaclass=_ProfiledKeyGeneratorMeta):
     """Abstract base for all inner-product FE key generators.
 
     Subclasses implement :meth:`setup` (generate keys), :meth:`get_public_parameters`,
@@ -69,7 +86,8 @@ class IPFEAbsKeyGenerator(ABC):
 
     Args:
         config: Scheme configuration dict.  Expected keys vary by scheme;
-            common keys include ``sec_param``, ``eta``, ``n``, ``s``, ``lst_nid``.
+            common keys include ``sec_param``, ``eta``, ``n``, ``s``, ``lst_nid``
+            and ``security_profile`` (see :mod:`pyfe4ai.schemes.profiles`).
     """
 
     def __init__(self, config: dict, **kwargs) -> None:
@@ -80,6 +98,7 @@ class IPFEAbsKeyGenerator(ABC):
         """
         super().__init__()
         warn_if_known_insecure(type(self).__module__)
+        self.security_profile = config.get("security_profile", profiles.TOY)
         self.sec_param = config.get("sec_param", CryptoCONST.SEC_PARAM)
         self.n = config.get("n", None)
         self.s = config.get("s", None)

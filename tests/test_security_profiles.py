@@ -1,0 +1,240 @@
+"""Security profiles: ``toy`` leaves configs alone, ``standard`` raises them."""
+
+import warnings
+
+import gmpy2 as gp
+import numpy as np
+import pytest
+
+from pyfe4ai import FESecurityWarning
+from pyfe4ai.schemes import profiles
+from pyfe4ai.schemes import status as st
+from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
+from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWEKeyGenerator
+from pyfe4ai.schemes.sife.ddh import SIFE, SIFEKeyGenerator
+from pyfe4ai.schemes.sife.ring_lwe import SIFERingLWE, SIFERingLWEKeyGenerator
+from pyfe4ai.utils.crypto_utils import RFC3526_PRIMES, generate_group_primes
+from pyfe4ai.utils.exceptions import FEValidationError
+from pyfe4ai.utils.ml_adapter import FESchemeWrapper, aggregate_gradients, encrypt_gradient
+from pyfe4ai.utils.ring_lwe_utils import (
+    HE_STANDARD_128_LOG_Q,
+    bmms21_parameters,
+    check_he_standard,
+    resolve_ring_n,
+)
+
+STANDARD = {"security_profile": "standard"}
+
+
+@pytest.fixture(autouse=True)
+def _param_cache_in_tmp(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+
+# -- resolution --------------------------------------------------------------
+
+
+def test_every_registered_scheme_has_a_kind():
+    assert set(profiles.SCHEME_KIND) == set(st.SCHEME_STATUS)
+
+
+@pytest.mark.parametrize("config", [{"eta": 3}, {"eta": 3, "security_profile": "toy"}])
+def test_toy_returns_the_config_itself(config):
+    assert profiles.resolve(config, ("sife", "ddh")) is config
+    assert profiles.resolve(config, None) is config
+
+
+def test_default_profile_keeps_toy_parameters():
+    kg = SIFEKeyGenerator({"eta": 3})
+    assert kg.security_profile == "toy"
+    assert kg.sec_param == 128 and int(kg.p).bit_length() == 128
+
+
+def test_unknown_profile_is_rejected():
+    with pytest.raises(FEValidationError, match="unknown security_profile"):
+        SIFEKeyGenerator({"eta": 3, "security_profile": "high"})
+
+
+def test_standard_does_not_modify_the_callers_config():
+    config = {"eta": 3, **STANDARD}
+    profiles.resolve(config, ("sife", "ddh"))
+    assert config == {"eta": 3, **STANDARD}
+
+
+@pytest.mark.parametrize(
+    "scheme, expected",
+    [
+        (("mcfe", "ddh"), {"sec_param": 3072, "modulus_length": 3072}),
+        (("sife", "paillier"), {"bit_length": 1536}),
+        (("mife", "ring_lwe"), {"sec_param": 128, "ring_n": "auto"}),
+    ],
+)
+def test_standard_presets(scheme, expected):
+    out = profiles.resolve(dict(STANDARD), scheme)
+    assert {k: out[k] for k in expected} == expected
+
+
+@pytest.mark.parametrize(
+    "scheme, weak",
+    [
+        (("sife", "ddh"), {"sec_param": 2048}),
+        (("mife", "damgard"), {"modulus_length": 1024}),
+        (("mcfe", "paillier"), {"bit_length": 1024}),
+        (("sife", "ring_lwe"), {"sec_param": 64}),
+        (("mcfe", "ddh"), {"sec_param": "3072"}),
+    ],
+)
+def test_standard_rejects_weaker_explicit_values(scheme, weak):
+    with pytest.raises(FEValidationError, match="profile needs"):
+        profiles.resolve({**STANDARD, **weak}, scheme)
+
+
+def test_standard_accepts_stronger_explicit_values():
+    out = profiles.resolve({**STANDARD, "bit_length": 2048}, ("mife", "paillier"))
+    assert out["bit_length"] == 2048
+
+
+@pytest.mark.parametrize(
+    "scheme",
+    [("sife", "lwe"), ("mife", "fullysec_lwe"), ("mcfe", "lwe_decentralized"), ("mcfe", "paillier_decentralized")],
+)
+def test_standard_refuses_schemes_without_a_feasible_parameter_set(scheme):
+    with pytest.raises(FEValidationError, match="no 'standard' parameter set"):
+        profiles.resolve(dict(STANDARD), scheme)
+
+
+def test_standard_pairing_uses_bn254_and_warns():
+    with pytest.warns(FESecurityWarning, match="100-bit"):
+        out = profiles.resolve(dict(STANDARD), ("quadratic", "miqfe"))
+    assert out["pairing_group_param"] == "BN254"
+    with pytest.raises(FEValidationError, match="BN254"):
+        profiles.resolve({**STANDARD, "pairing_group_param": "MNT224"}, ("sife", "fh_ipe_pairing"))
+
+
+def test_unregistered_key_generator_has_no_standard_parameters():
+    class Custom(IPFEAbsKeyGenerator):
+        def setup(self):
+            pass
+
+        def get_public_parameters(self, **kwargs):
+            return {}
+
+        def get_private_keys(self, nid, **kwargs):
+            return None
+
+        def get_decryption_keys(self, sid, **kwargs):
+            return {}
+
+    assert Custom({}).security_profile == "toy"
+    with pytest.raises(FEValidationError, match="no 'standard' parameters"):
+        Custom(dict(STANDARD))
+
+
+def test_subclass_inherits_the_scheme_of_its_base():
+    class MySIFE(SIFEKeyGenerator):
+        pass
+
+    assert profiles.scheme_of(MySIFE) == ("sife", "ddh")
+    kg = MySIFE(config={"eta": 2, **STANDARD})
+    assert kg.p == RFC3526_PRIMES[3072]
+
+
+# -- discrete log ------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bits, c", [(2048, 124476), (3072, 1690314)])
+def test_rfc3526_primes(bits, c):
+    gp.get_context().precision = bits + 64
+    pi_part = int(gp.floor(gp.mpfr(2) ** (bits - 130) * gp.const_pi()))
+    expected = 2 ** bits - 2 ** (bits - 64) - 1 + 2 ** 64 * (pi_part + c)
+    p = RFC3526_PRIMES[bits]
+    assert p == expected and gp.is_prime(p) and gp.is_prime((p - 1) // 2)
+
+
+def test_standard_sife_ddh_round_trip():
+    kg = SIFEKeyGenerator({"eta": 3, **STANDARD})
+    kg.setup()
+    assert kg.sec_param == 3072 and kg.p == RFC3526_PRIMES[3072]
+    pp = kg.get_public_parameters()
+    enc = SIFE({"keys": {"pp": pp, "sk": kg.get_private_keys()}})
+    dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": [3, 2, -1]})
+    assert SIFE({"keys": {"pp": pp}}).decrypt(enc.encrypt([1, 2, 3]), dk, [3, 2, -1]) == 4
+
+
+def test_standard_sife_ring_lwe_round_trip():
+    kg = SIFERingLWEKeyGenerator({"eta": 2, "bound_x": 50, "bound_y": 50, **STANDARD})
+    kg.setup()
+    pp = kg.get_public_parameters()
+    enc = SIFERingLWE({"keys": {"pp": pp, "sk": kg.get_private_keys()}})
+    dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": [2, -3]})
+    ct = enc.encrypt([[1, 2, 3], [4, 5, -6]])
+    assert SIFERingLWE({"keys": {"pp": pp}}).decrypt(ct, dk, [2, -3]) == [-10, -11, 24]
+
+
+@pytest.mark.parametrize("variant", ["ddh", "damgard", "ring_lwe"])
+def test_standard_mcfe_aggregation(variant):
+    config = {
+        "eta": 1, "n": 2, "lst_nid": ["nid_0", "nid_1"], "bound": 50, "bound_x": 50, "bound_y": 50,
+        **STANDARD,
+    }
+    wrapper = FESchemeWrapper("mcfe", variant, config, precision=1)
+    enc = {
+        nid: encrypt_gradient(np.array(g), wrapper, nid=nid, label="round-1")
+        for nid, g in (("nid_0", [2.0, 4.0]), ("nid_1", [1.0, 3.0]))
+    }
+    result = aggregate_gradients(enc, wrapper, {"nid_0": [1], "nid_1": [1]}, label="round-1")
+    np.testing.assert_allclose(result, [3.0, 7.0], atol=0.2)
+
+
+# -- Ring-LWE ----------------------------------------------------------------
+
+
+def test_standard_ring_lwe_picks_a_he_standard_dimension():
+    kg = SIFERingLWEKeyGenerator({"eta": 4, "bound_x": 10, "bound_y": 10, **STANDARD})
+    assert kg.ring_n == 4096
+    assert int(kg.q).bit_length() <= HE_STANDARD_128_LOG_Q[4096]
+    # the dimension below would need a larger q than the bound allows
+    q_2048 = bmms21_parameters(128, 4, 10, 10, 2048)[1]
+    assert int(q_2048).bit_length() > HE_STANDARD_128_LOG_Q[2048]
+
+
+@pytest.mark.parametrize("ring_n", [32, 2048])
+def test_standard_rejects_an_insecure_explicit_ring_dimension(ring_n):
+    with pytest.raises(FEValidationError, match="below 128-bit security"):
+        SIFERingLWEKeyGenerator({"eta": 4, "bound_x": 10, "bound_y": 10, "ring_n": ring_n, **STANDARD})
+
+
+def test_threshold_ring_lwe_dimension_accounts_for_flooding():
+    kg = ThresholdMCFERingLWEKeyGenerator(
+        {"n": 3, "eta": 2, "bound_x": 10, "bound_y": 10, "s": 3, "t": 2, **STANDARD}
+    )
+    assert int(kg.q).bit_length() <= HE_STANDARD_128_LOG_Q[kg.ring_n]
+    assert kg.q == kg._modulus_for(kg.ring_n)
+
+
+def test_ring_n_helpers():
+    assert resolve_ring_n(None, None) == 32
+    assert resolve_ring_n(64, None) == 64
+    assert resolve_ring_n("auto", lambda n: 2 ** 100) == 4096
+    with pytest.raises(FEValidationError, match="no ring dimension"):
+        resolve_ring_n("auto", lambda n: 2 ** 1000)
+    check_he_standard(1024, 2 ** 26)
+    with pytest.raises(FEValidationError):
+        check_he_standard(1024, 2 ** 27)
+    with pytest.raises(FEValidationError):
+        check_he_standard(512, 3)
+
+
+def test_toy_ring_lwe_keeps_the_default_dimension():
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        kg = SIFERingLWEKeyGenerator({"eta": 4})
+    assert kg.ring_n == 32
+
+
+@pytest.mark.parametrize("bits", [16, 63, 64, 65, 256])
+def test_safe_primes_have_the_requested_size(bits):
+    for _ in range(5):
+        p, q = generate_group_primes(bits)
+        assert p == 2 * q + 1 and int(p).bit_length() == bits
+        assert gp.is_prime(p, 40) and gp.is_prime(q, 40)

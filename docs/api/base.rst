@@ -8,6 +8,13 @@ Scheme Status
    :members:
    :undoc-members:
 
+Security Profiles
+-----------------
+
+.. automodule:: pyfe4ai.schemes.profiles
+   :members:
+   :undoc-members:
+
 Abstract Base Classes
 ---------------------
 
