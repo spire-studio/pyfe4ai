@@ -10,11 +10,15 @@ from pyfe4ai import FESecurityWarning
 from pyfe4ai.schemes import profiles
 from pyfe4ai.schemes import status as st
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
+from pyfe4ai.schemes.mcfe.lwe import MCFELWEKeyGenerator
+from pyfe4ai.schemes.mcfe.lwe_decentralized import DecentralizedMCFELWEKeyGenerator
+from pyfe4ai.schemes.mcfe.lwe_threshold import ThresholdMCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWEKeyGenerator
 from pyfe4ai.schemes.sife.ddh import SIFE, SIFEKeyGenerator
 from pyfe4ai.schemes.sife.ring_lwe import SIFERingLWE, SIFERingLWEKeyGenerator
 from pyfe4ai.utils.crypto_utils import RFC3526_PRIMES, generate_group_primes
 from pyfe4ai.utils.exceptions import FEValidationError
+from pyfe4ai.utils.lwe_utils import DENSE_LWE_128_LOG_Q, abmpsw20_lwe_parameters, check_dense_lwe
 from pyfe4ai.utils.ml_adapter import FESchemeWrapper, aggregate_gradients, encrypt_gradient
 from pyfe4ai.utils.ring_lwe_utils import (
     HE_STANDARD_128_LOG_Q,
@@ -96,7 +100,14 @@ def test_standard_accepts_stronger_explicit_values():
 
 @pytest.mark.parametrize(
     "scheme",
-    [("sife", "lwe"), ("mife", "fullysec_lwe"), ("mcfe", "lwe_decentralized"), ("mcfe", "paillier_decentralized")],
+    [
+        ("sife", "lwe"),
+        ("sife", "fullysec_lwe"),
+        ("mife", "lwe"),
+        ("mife", "fullysec_lwe"),
+        ("mife", "lwe_threshold"),
+        ("mcfe", "paillier_decentralized"),
+    ],
 )
 def test_standard_refuses_schemes_without_a_feasible_parameter_set(scheme):
     with pytest.raises(FEValidationError, match="no 'standard' parameter set"):
@@ -171,7 +182,7 @@ def test_standard_sife_ring_lwe_round_trip():
     assert SIFERingLWE({"keys": {"pp": pp}}).decrypt(ct, dk, [2, -3]) == [-10, -11, 24]
 
 
-@pytest.mark.parametrize("variant", ["ddh", "damgard", "ring_lwe"])
+@pytest.mark.parametrize("variant", ["ddh", "damgard", "ring_lwe", "lwe", "fullysec_lwe"])
 def test_standard_mcfe_aggregation(variant):
     config = {
         "eta": 1, "n": 2, "lst_nid": ["nid_0", "nid_1"], "bound": 50, "bound_x": 50, "bound_y": 50,
@@ -184,6 +195,73 @@ def test_standard_mcfe_aggregation(variant):
     }
     result = aggregate_gradients(enc, wrapper, {"nid_0": [1], "nid_1": [1]}, label="round-1")
     np.testing.assert_allclose(result, [3.0, 7.0], atol=0.2)
+
+
+# -- dense LWE (ABMPSW20 MCFE) ----------------------------------------------
+
+MCFE_LWE = [("mcfe", v) for v in ("lwe", "fullysec_lwe", "lwe_threshold", "lwe_decentralized")]
+MCFE_LWE_CONFIG = {"n": 2, "eta": 1, "bound_x": 50, "bound_y": 50}
+
+
+@pytest.mark.parametrize("scheme", MCFE_LWE)
+def test_standard_selects_the_lwe_dimension_of_mcfe_lwe(scheme):
+    assert profiles.resolve(dict(STANDARD), scheme)["lwe_n"] == "auto"
+
+
+def test_dense_lwe_table_grows_with_the_dimension():
+    dims = sorted(DENSE_LWE_128_LOG_Q)
+    assert all(DENSE_LWE_128_LOG_Q[a] < DENSE_LWE_128_LOG_Q[b] for a, b in zip(dims, dims[1:]))
+
+
+def test_check_dense_lwe_uses_the_largest_tabulated_dimension_below():
+    n0 = sorted(DENSE_LWE_128_LOG_Q)[1]
+    bound = DENSE_LWE_128_LOG_Q[n0]
+    check_dense_lwe(n0 + 1, 2 ** bound - 1)
+    with pytest.raises(FEValidationError, match="below 128-bit security"):
+        check_dense_lwe(n0 + 1, 2 ** bound)
+    with pytest.raises(FEValidationError, match="below 128-bit security"):
+        check_dense_lwe(min(DENSE_LWE_128_LOG_Q) - 1, 3)
+
+
+def test_standard_mcfe_lwe_picks_the_smallest_estimated_dimension():
+    kg = MCFELWEKeyGenerator({**MCFE_LWE_CONFIG, **STANDARD})
+    assert kg.lwe_n in DENSE_LWE_128_LOG_Q
+    assert int(kg.q).bit_length() <= DENSE_LWE_128_LOG_Q[kg.lwe_n]
+    for n0 in (d for d in DENSE_LWE_128_LOG_Q if d < kg.lwe_n):
+        q = abmpsw20_lwe_parameters(2, 50, 50, n0, 64)["q"]
+        assert q.bit_length() > DENSE_LWE_128_LOG_Q[n0]
+
+
+def test_toy_mcfe_lwe_accepts_an_automatic_dimension():
+    kg = MCFELWEKeyGenerator({**MCFE_LWE_CONFIG, "lwe_n": "auto"})
+    assert kg.lwe_n in DENSE_LWE_128_LOG_Q
+
+
+@pytest.mark.parametrize("lwe_n", [32, 2048])
+def test_standard_rejects_an_insecure_explicit_lwe_dimension(lwe_n):
+    with pytest.raises(FEValidationError, match="below 128-bit security"):
+        MCFELWEKeyGenerator({**MCFE_LWE_CONFIG, "lwe_n": lwe_n, **STANDARD})
+
+
+def test_standard_accepts_a_larger_explicit_lwe_dimension():
+    lwe_n = max(DENSE_LWE_128_LOG_Q) + 100
+    assert MCFELWEKeyGenerator({**MCFE_LWE_CONFIG, "lwe_n": lwe_n, **STANDARD}).lwe_n == lwe_n
+
+
+def test_standard_threshold_mcfe_lwe_uses_an_estimated_dimension():
+    kg = ThresholdMCFELWEKeyGenerator({**MCFE_LWE_CONFIG, "s": 3, "t": 2, **STANDARD})
+    assert int(kg.q).bit_length() <= DENSE_LWE_128_LOG_Q[kg.lwe_n]
+
+
+def test_standard_dmcfe_lwe_combines_key_shares_under_a_3072_bit_modulus():
+    kg = DecentralizedMCFELWEKeyGenerator({**MCFE_LWE_CONFIG, **STANDARD})
+    assert kg.n2_prime_bits == profiles.STANDARD_DCR_PRIME_BITS
+    assert int(kg.n2_mod).bit_length() >= 2 * profiles.STANDARD_DCR_PRIME_BITS - 1
+
+
+def test_toy_dmcfe_lwe_sizes_its_modulus_by_the_key_shares():
+    kg = DecentralizedMCFELWEKeyGenerator({**MCFE_LWE_CONFIG, "lwe_n": 16})
+    assert kg.n2_prime_bits < profiles.STANDARD_DCR_PRIME_BITS
 
 
 # -- Ring-LWE ----------------------------------------------------------------

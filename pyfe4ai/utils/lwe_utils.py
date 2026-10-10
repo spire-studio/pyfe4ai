@@ -159,6 +159,68 @@ def decode_lwe_inner_product(value: gp.mpz, p: gp.mpz, q: gp.mpz) -> int:
     return int(d)
 
 
+#: Largest ``q.bit_length()`` for which LWE in dimension ``n`` with a uniform
+#: secret modulo ``q``, errors ``D_{Z, ceil(2 sqrt(n))}`` and any number of
+#: samples costs at least 2^128 operations, by the lattice estimator
+#: (https://github.com/malb/lattice-estimator, commit 53da598, default MATZOV
+#: cost model; primal uSVP and BDD, dual, dual hybrid). The error width is the
+#: ``sigma_e`` of :func:`abmpsw20_lwe_parameters`, so this bounds the LWE
+#: problem of the ABMPSW20 security proof. Regenerate with
+#: ``tools/estimate_dense_lwe.py``.
+DENSE_LWE_128_LOG_Q = {
+    4096: 118, 4608: 132, 5120: 146, 5632: 159, 6144: 173,
+    6656: 187, 7168: 200, 7680: 214, 8192: 227, 8704: 241,
+    9216: 254, 9728: 268, 10240: 282, 10752: 295, 11264: 309,
+    11776: 322, 12288: 336, 12800: 350, 13312: 363, 13824: 377,
+    14336: 390, 14848: 404, 15360: 418, 15872: 431, 16384: 445,
+}
+
+
+def check_dense_lwe(lwe_n: int, q) -> None:
+    """Raise unless LWE in dimension *lwe_n* modulo *q* meets :data:`DENSE_LWE_128_LOG_Q`.
+
+    A dimension between two tabulated ones is held to the bound of the
+    smaller one (LWE only gets harder with the dimension and with the error
+    width ``2 sqrt(n)``).
+    """
+    tabulated = [n for n in DENSE_LWE_128_LOG_Q if n <= lwe_n]
+    if not tabulated or int(q).bit_length() > DENSE_LWE_128_LOG_Q[max(tabulated)]:
+        from pyfe4ai.utils.exceptions import FEValidationError
+
+        raise FEValidationError(
+            "lwe_n = {} with a {}-bit q is below 128-bit security (lattice estimator: "
+            "log2 q <= {} for lwe_n >= {})".format(
+                lwe_n,
+                int(q).bit_length(),
+                DENSE_LWE_128_LOG_Q[max(tabulated)] if tabulated else "-",
+                max(tabulated) if tabulated else min(DENSE_LWE_128_LOG_Q),
+            )
+        )
+
+
+def dense_lwe_n(modulus_for) -> int:
+    """Smallest tabulated dimension whose modulus ``modulus_for(n)`` meets
+    :data:`DENSE_LWE_128_LOG_Q` (the modulus grows with the dimension)."""
+    for lwe_n, max_bits in DENSE_LWE_128_LOG_Q.items():
+        if int(modulus_for(lwe_n)).bit_length() <= max_bits:
+            return lwe_n
+    from pyfe4ai.utils.exceptions import FEValidationError
+
+    raise FEValidationError(
+        "no LWE dimension up to {} reaches 128-bit security for these bounds; "
+        "reduce bound_x, bound_y, eta or the number of clients".format(max(DENSE_LWE_128_LOG_Q))
+    )
+
+
+def resolve_lwe_n(lwe_n, modulus_for, default: int) -> int:
+    """LWE dimension of a config entry: ``"auto"`` selects the smallest one
+    meeting :data:`DENSE_LWE_128_LOG_Q` (see :func:`dense_lwe_n`), ``None``
+    gives *default*."""
+    if lwe_n == "auto":
+        return dense_lwe_n(modulus_for)
+    return int(default if lwe_n is None else lwe_n)
+
+
 #: Gaussian tail cut used in worst-case bounds: a Gaussian sample exceeds
 #: 12 standard deviations in absolute value with probability below 2^-100.
 GAUSSIAN_TAIL_CUT = 12
@@ -201,8 +263,8 @@ def abmpsw20_lwe_parameters(
     4,600 for 100 slots with ``X = Y = 100``, ``kappa = 128``), and every
     label costs ``n0 + m0`` hash outputs and inner-product terms, so large
     ndarray workloads (one label per element) become slow.
-    The LWE dimension ``n0`` is taken as given; nothing here estimates the
-    concrete hardness of LWE(n0, q, sigma_e).
+    The LWE dimension ``n0`` is taken as given; :data:`DENSE_LWE_128_LOG_Q`
+    bounds ``q`` for 128-bit hardness of LWE(n0, q, sigma_e).
 
         Args:
             n_slots: Total number of slots ``n`` (clients x coordinates).

@@ -24,15 +24,31 @@ The ``security_profile`` entry of a key generator's config selects one:
       ``log2 q`` <= 27 / 54 / 109 / 218 / 438 / 881 for n = 1024 ... 32768);
       that bound is for ternary secrets and ``sigma = 3.2`` errors, so it is
       conservative for the wider Gaussians used here;
+    * dense LWE, the ABMPSW20 MCFE family (``mcfe/lwe``, ``fullysec_lwe``,
+      ``lwe_threshold``, ``lwe_decentralized``): ``lwe_n = "auto"``, the
+      smallest dimension ``n0`` whose derived ``q`` meets
+      :data:`~pyfe4ai.utils.lwe_utils.DENSE_LWE_128_LOG_Q` -- a lattice
+      estimator table for LWE(n0, q, ceil(2 sqrt(n0))) with a uniform secret,
+      the problem of the scheme's security proof. These schemes have no public
+      matrix: a label is hashed to ``n0 + m0`` values and each ciphertext is
+      one inner product, cheaper than a 3072-bit DDH ciphertext. The
+      decentralised variant combines key shares under a DCR modulus of at
+      least 3072 bits (``STANDARD_DCR_PRIME_BITS`` per prime), so its key
+      derivation is not post-quantum;
     * pairing-based schemes: BN254, the strongest curve charm-crypto provides
       -- about 100-bit security after the exTNFS attacks (Barbulescu and
       Duquesne, J. Cryptol. 2019), **below** the 128-bit target; a
       :class:`~pyfe4ai.utils.exceptions.FESecurityWarning` says so.
 
     Refused, because no parameter set is both secure and usable in pure
-    Python: the dense-LWE schemes (the public matrix of a secure dimension
-    has billions of entries) and ``mcfe/paillier_decentralized`` (its key
-    shares are combined under a DCR modulus of more than 15000 bits).
+    Python: the LWE schemes with a public matrix ``A`` of ``m ~ n log q``
+    rows, which every encryption multiplies by a vector -- ``sife/lwe``,
+    ``mife/lwe``, ``mife/lwe_threshold`` (ABDP15: 4 * 10^7 to 10^8 entries
+    at a dimension the lattice estimator puts at 128 bits, n = 768 to 1024
+    for small bounds) and ``sife/fullysec_lwe``, ``mife/fullysec_lwe``
+    (ALS16: 1.5 to 3 * 10^9 entries, n = 2560 to 3328) -- and
+    ``mcfe/paillier_decentralized`` (its key shares are combined under a DCR
+    modulus of more than 15000 bits).
 
     Values given explicitly in the config must not be weaker than the
     profile's. Statistical parameters (``stat_param``) keep their default,
@@ -57,8 +73,8 @@ SCHEME_KIND = {
     **{("mcfe", v): "dl" for v in ("ddh", "damgard", "ddh_threshold", "ddh_decentralized")},
     **{(f, "paillier"): "dcr" for f in ("sife", "mife", "mcfe")},
     ("mcfe", "paillier_decentralized"): "dcr",
-    **{("sife", v): "lwe" for v in ("lwe", "fullysec_lwe")},
-    **{("mife", v): "lwe" for v in ("lwe", "fullysec_lwe", "lwe_threshold")},
+    **{("sife", v): "lwe_matrix" for v in ("lwe", "fullysec_lwe")},
+    **{("mife", v): "lwe_matrix" for v in ("lwe", "fullysec_lwe", "lwe_threshold")},
     **{("mcfe", v): "lwe" for v in ("lwe", "fullysec_lwe", "lwe_threshold", "lwe_decentralized")},
     **{(f, "ring_lwe"): "ring_lwe" for f in ("sife", "mife", "mcfe")},
     **{("mcfe", v): "ring_lwe" for v in ("ring_lwe_threshold", "ring_lwe_decentralized")},
@@ -70,17 +86,22 @@ SCHEME_KIND = {
     **{("quadratic", v): "pairing" for v in ("quad", "sgp", "miqfe")},
 }
 
+#: Bits of each prime of a DCR modulus under ``standard`` (``N`` of 3072 bits).
+STANDARD_DCR_PRIME_BITS = 1536
+
 #: Minimum value of each size parameter under ``standard``; also its default.
 _STANDARD_MINIMA = {
     "dl": {"sec_param": 3072, "modulus_length": 3072},
-    "dcr": {"bit_length": 1536},
+    "dcr": {"bit_length": STANDARD_DCR_PRIME_BITS},
     "ring_lwe": {"sec_param": 128},
+    "lwe": {},
 }
 STANDARD_PAIRING_GROUP = "BN254"
 
 _REFUSED = {
-    "lwe": "secure dense-LWE dimensions are out of reach of this pure-Python prototype; "
-    "use a Ring-LWE, DL or DCR scheme",
+    "lwe_matrix": "at a 128-bit dimension its public LWE matrix has 4*10^7 to 10^8 (ABDP15) "
+    "or 1.5 to 3*10^9 (ALS16) entries, and every encryption multiplies it by a vector; "
+    "use the Ring-LWE scheme of the same family",
     ("mcfe", "paillier_decentralized"): "its key shares would be combined under a DCR modulus "
     "of more than 15000 bits; use mcfe/ddh_decentralized",
 }
@@ -143,4 +164,6 @@ def resolve(config: dict, scheme: tuple | None) -> dict:
             )
     if kind == "ring_lwe":
         out.setdefault("ring_n", "auto")
+    if kind == "lwe":
+        out.setdefault("lwe_n", "auto")
     return out

@@ -40,7 +40,7 @@ from pyfe4ai.schemes.mcfe.paillier import dcr_sigma
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.utils.crypto_utils import generate_group_primes
 from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
-from pyfe4ai.utils.modular_utils import pow_signed
+from pyfe4ai.utils.modular_utils import pow_signed_many
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_bigint
 
 #: Smallest prime size of N2, whatever the contribution bound.
@@ -109,9 +109,10 @@ def encrypt_contribution(n2_mod, mcfe2_key: list, contribution: list, label: str
     if any(abs(gp.mpz(m)) > bound for m in contribution):
         raise FEValidationError("key contribution exceeds the MCFE2 bound")
     h = _dcr_hash_label(label, n2_mod)
+    masks = pow_signed_many(h, mcfe2_key, n2_square)  # one base: fixed-base method
     return [
-        gp.digits((1 + gp.mpz(m) * n2_mod) % n2_square * pow_signed(h, gp.mpz(s), n2_square) % n2_square)
-        for m, s in zip(contribution, mcfe2_key)
+        gp.digits((1 + gp.mpz(m) * n2_mod) % n2_square * mask % n2_square)
+        for m, mask in zip(contribution, masks)
     ]
 
 

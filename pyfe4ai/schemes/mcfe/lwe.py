@@ -30,8 +30,12 @@ encoded with ``K = 2 n X Y + 1`` and decoded centred. Parameters are derived
 by :func:`pyfe4ai.utils.lwe_utils.abmpsw20_lwe_parameters` from the
 constraints of Appendix C.3; this module uses the selective-security choice
 of ``m0`` and :mod:`pyfe4ai.schemes.mcfe.fullysec_lwe` the adaptive one.
-The LWE dimension ``lwe_n`` defaults to a toy value; no concrete hardness
-estimate is made.
+The LWE dimension ``lwe_n`` defaults to a toy value; ``lwe_n = "auto"``
+(the ``standard`` security profile) selects the smallest dimension whose
+``q`` meets :data:`pyfe4ai.utils.lwe_utils.DENSE_LWE_128_LOG_Q`, a lattice
+estimator bound for LWE(n0, q, ceil(2 sqrt(n0))) -- the assumption of the
+proof (Appendix C.2, game G2: LWE in dimension ``n0`` modulo the scheme's
+``q``) -- with a uniform secret.
 
 Each client slot must encrypt at most once per label (one-IND security):
 two ciphertexts of one slot under one label differ by about
@@ -51,10 +55,13 @@ from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
 from pyfe4ai.schemes.mcfe.labels import encode_label
+from pyfe4ai.schemes.profiles import STANDARD
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import hash_to_zq_vector
 from pyfe4ai.utils.lwe_utils import abmpsw20_lwe_parameters
+from pyfe4ai.utils.lwe_utils import check_dense_lwe
 from pyfe4ai.utils.lwe_utils import decode_rounded_inner_product
+from pyfe4ai.utils.lwe_utils import resolve_lwe_n
 from pyfe4ai.utils.lwe_utils import round_to_q0
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
@@ -91,14 +98,16 @@ class MCFELWEKeyGenerator(IPFEAbsKeyGenerator):
         Args:
             config: Scheme configuration. Recognised keys: ``n`` (number of
                 clients), ``lst_nid``, ``eta`` (slots per client), ``lwe_n``
-                (LWE dimension ``n0``), ``bound_x``, ``bound_y``,
+                (LWE dimension ``n0``; default 32, ``"auto"`` for the
+                smallest one meeting
+                :data:`~pyfe4ai.utils.lwe_utils.DENSE_LWE_128_LOG_Q`, the
+                ``standard`` profile's choice), ``bound_x``, ``bound_y``,
                 ``stat_param`` (statistical parameter ``kappa``) and
                 ``sec_param`` (recorded only). The keys ``bound_u`` and
                 ``label_modulus`` of versions <= 0.2.0 are ignored.
         """
         super().__init__(config, **kwargs)
         self.eta = config.get("eta", CryptoCONST.MCFE_ETA)
-        self.lwe_n = int(config.get("lwe_n", 32))
         self.bound_x = int(config.get("bound_x", 20))
         self.bound_y = int(config.get("bound_y", 20))
         self.stat_param = int(config.get("stat_param", _DEFAULT_STAT_PARAM))
@@ -107,12 +116,20 @@ class MCFELWEKeyGenerator(IPFEAbsKeyGenerator):
         if not isinstance(self.eta, int) or self.eta < 1:
             raise FEValidationError("invalid parameter `eta`:{}".format(self.eta))
         self.n_slots = self.n * self.eta
-        self.params = abmpsw20_lwe_parameters(
-            self.n_slots, self.bound_x, self.bound_y, self.lwe_n,
-            self.stat_param, security=self._security,
+        self.lwe_n = resolve_lwe_n(
+            config.get("lwe_n"), lambda n0: self._parameters_for(n0)["q"], default=32
         )
+        self.params = self._parameters_for(self.lwe_n)
+        if self.security_profile == STANDARD:
+            check_dense_lwe(self.lwe_n, self.params["q"])
         self.q = gp.mpz(self.params["q"])
         self.dim = self.params["n0"] + self.params["m0"]
+
+    def _parameters_for(self, lwe_n: int) -> dict:
+        """Appendix C.3 parameters for LWE dimension *lwe_n* (``q`` under key ``"q"``)."""
+        return abmpsw20_lwe_parameters(
+            self.n_slots, self.bound_x, self.bound_y, lwe_n, self.stat_param, security=self._security
+        )
 
     def setup(self) -> None:
         """Sample ``Z_{i,j} = (s, t)`` for every client slot."""

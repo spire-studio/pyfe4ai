@@ -18,7 +18,13 @@ label ``H(y)``; the zero-sum MCFE2 keys make the product of all clients'
 shares decrypt to ``sk_y = sum_{i,j} y_{i,j} Z_{i,j} mod q``. Every client
 must publish a share. Secure against static corruptions (Theorem 38).
 Versions <= 0.2.0 used an ad-hoc label scalar with per-client key
-components instead. A key share costs ``n0 + m0`` DCR encryptions.
+components instead. A key share costs ``n0 + m0`` DCR encryptions of one
+label hash (computed with a fixed-base method).
+
+``N2`` only has to hold the shares (``2 n2 X2^2 < N2``, a few hundred bits
+for ``X2 = q``); under the ``standard`` security profile each of its primes
+has at least ``STANDARD_DCR_PRIME_BITS`` = 1536 bits. Key derivation thus
+also rests on DCR, which is not post-quantum, whatever the LWE parameters.
 """
 
 from __future__ import annotations
@@ -34,10 +40,13 @@ from pyfe4ai.schemes.mcfe.decentralize import encrypt_contribution
 from pyfe4ai.schemes.mcfe.decentralize import generate_mcfe2_modulus
 from pyfe4ai.schemes.mcfe.decentralize import key_label
 from pyfe4ai.schemes.mcfe.decentralize import mcfe2_key_sigma
+from pyfe4ai.schemes.mcfe.decentralize import MIN_PRIME_BITS
 from pyfe4ai.schemes.mcfe.decentralize import mcfe2_prime_bits
 from pyfe4ai.schemes.mcfe.decentralize import zero_sum_keys
 from pyfe4ai.schemes.mcfe.lwe import MCFELWE
 from pyfe4ai.schemes.mcfe.lwe import MCFELWEKeyGenerator
+from pyfe4ai.schemes.profiles import STANDARD
+from pyfe4ai.schemes.profiles import STANDARD_DCR_PRIME_BITS
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
@@ -60,7 +69,10 @@ class DecentralizedMCFELWEKeyGenerator(MCFELWEKeyGenerator, ParameterCacheMixin)
                 ``eta``, ``lwe_n``, ``bound_x``, ``bound_y``, ``stat_param``).
         """
         super().__init__(config, **kwargs)
-        self.n2_prime_bits = mcfe2_prime_bits(len(self.lst_nid) * self.dim, self.q)
+        # N2 only has to hold the key shares (a few hundred bits); the profile
+        # sets the factoring-hardness floor
+        floor = STANDARD_DCR_PRIME_BITS if self.security_profile == STANDARD else MIN_PRIME_BITS
+        self.n2_prime_bits = mcfe2_prime_bits(len(self.lst_nid) * self.dim, self.q, min_bits=floor)
         self._load_parameters()  # caches only N2; the LWE parameters are derived
 
     def _param_verification(self, param: dict) -> bool:

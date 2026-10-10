@@ -275,8 +275,10 @@ def hash_to_zn2_star(v: str, n_mod: gp.mpz, domain: str = "") -> gp.mpz:
 def hash_to_zq_vector(v: str, q: gp.mpz, length: int, domain: str = "") -> list:
     """Hash a string to a vector of *length* elements of ``Z_q`` (random oracle).
 
-    Each coordinate is an independent SHAKE-256 output of ``bits(q) + 128``
-    bits reduced mod ``q``, hence statistically close to uniform.
+    One SHAKE-256 output stream is cut into *length* blocks of ``bits(q) + 128``
+    bits, each reduced mod ``q``, hence statistically close to uniform.
+    Versions <= 0.2.0 made one SHAKE-256 call per coordinate, so their outputs
+    (and the ciphertexts of the schemes that hash labels this way) differ.
 
         Args:
             v: Input string.
@@ -286,4 +288,9 @@ def hash_to_zq_vector(v: str, q: gp.mpz, length: int, domain: str = "") -> list:
     """
     q = gp.mpz(q)
     n_bytes = (int(q).bit_length() + 128 + 7) // 8
-    return [gp.mpz(_shake_expand(domain, k, 0, v, n_bytes)) % q for k in range(length)]
+    material = "|".join([domain, "zq-vector", str(len(v)), v]).encode("utf-8")
+    stream = hashlib.shake_256(material).digest(length * n_bytes)
+    return [
+        gp.mpz(int.from_bytes(stream[k * n_bytes:(k + 1) * n_bytes], "big")) % q
+        for k in range(length)
+    ]
