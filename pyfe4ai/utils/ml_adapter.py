@@ -41,13 +41,17 @@ from __future__ import annotations
 
 import importlib
 import logging
-from dataclasses import dataclass, field
+import numbers
+from dataclasses import dataclass
+from fractions import Fraction
 from typing import Any
 
 import numpy as np
 
 from pyfe4ai.schemes.status import get_scheme_status
+from pyfe4ai.utils.exceptions import FEValidationError
 from pyfe4ai.utils.quantization import QuantizationConfig
+from pyfe4ai.utils.validation import int_vector
 
 logger = logging.getLogger(__name__)
 
@@ -602,20 +606,27 @@ def _integer_weights(weights: dict, qconfig: QuantizationConfig) -> tuple[dict, 
     lists = {
         nid: [w] if np.ndim(w) == 0 else list(np.ravel(w)) for nid, w in weights.items()
     }
-    values = [float(v) for lst in lists.values() for v in lst]
-    if not all(np.isfinite(values)):
+    values = [v for lst in lists.values() for v in lst]
+    if not all(np.isfinite(float(v)) for v in values):
         raise ValueError("weights must be finite")
-    if all(v.is_integer() for v in values):
-        return {nid: [int(v) for v in lst] for nid, lst in lists.items()}, 1
+    try:
+        return {nid: int_vector(lst, "weight of {}".format(nid)) for nid, lst in lists.items()}, 1
+    except FEValidationError:
+        pass  # fractional weights: quantise them below
     scale = qconfig.scale_factor
     if scale == 1:
         raise ValueError("fractional weights need a wrapper precision > 0")
-    if any(abs(v * scale - round(v * scale)) > 1e-9 * max(1.0, abs(v * scale)) for v in values):
+    scaled = {
+        nid: [Fraction(v) * scale if isinstance(v, numbers.Rational) else float(v) * scale for v in lst]
+        for nid, lst in lists.items()
+    }
+    # exact for rationals; floats (0.1 * 10 = 1.0000000000000002) get an absolute tolerance
+    if any(abs(v - round(v)) > 1e-6 for lst in scaled.values() for v in lst):
         raise ValueError(
             "the weights are not multiples of 1/{} at the wrapper's precision; "
             "raise the precision or round the weights".format(scale)
         )
-    return {nid: [qconfig.quantize(float(v)) for v in lst] for nid, lst in lists.items()}, scale
+    return {nid: [int(round(v)) for v in lst] for nid, lst in scaled.items()}, scale
 
 
 def aggregate_gradients(

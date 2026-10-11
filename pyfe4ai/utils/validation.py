@@ -34,7 +34,12 @@ def int_vector(values, name: str, length: int | None = None, bound=None) -> list
             raise FEValidationError("{} must contain integers, got a bool".format(name))
         if isinstance(v, numbers.Integral):
             iv = int(v)
-        elif isinstance(v, numbers.Real) and float(v).is_integer():
+        elif isinstance(v, numbers.Rational) and v.denominator == 1:
+            iv = int(v.numerator)  # exact (float(v) would round a large fraction)
+        elif (
+            isinstance(v, numbers.Real) and not isinstance(v, numbers.Rational)
+            and float(v).is_integer() and v == float(v)
+        ):
             iv = int(v)
         else:
             # the type only: the value may be a (malformed) secret input

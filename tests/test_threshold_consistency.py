@@ -138,3 +138,46 @@ def test_ndarray_combiners_refuse_bad_partials(tmp_path, monkeypatch):
         combiner.decrypt_lst_ndarray_ct(dict(parts, sid_1=[bad]))
     with pytest.raises(FESchemeError, match="shape"):
         combiner.decrypt_lst_ndarray_ct(dict(parts, sid_1=[parts["sid_1"][0][:1]]))
+
+
+def test_noise_depends_on_the_lagrange_coefficient_not_the_enrolled_set(tmp_path, monkeypatch):
+    """sid_0 has lambda = 2 in both {sid_0, sid_1} and {sid_0, sid_2, sid_3};
+    seeding the noise with the set drew fresh noise for the same key part."""
+    from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE, ThresholdMIFELWEKeyGenerator
+
+    monkeypatch.chdir(tmp_path)
+    sids = ["sid_0", "sid_1", "sid_2", "sid_3"]
+    kg = ThresholdMIFELWEKeyGenerator({"sec_param": 64, "n": 2, "lst_nid": NIDS, "s": 4, "lst_sid": sids, "t": 2,
+                                       "eta": 1, "lwe_n": 16, "bound_x": 4, "bound_y": 5})
+    kg.setup()
+    pp = kg.get_public_parameters()
+    cts = {n: ThresholdMIFELWE({"id": n, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}}).encrypt(X[n]) for n in NIDS}
+    dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": Y})
+    server = ThresholdMIFELWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
+    a = server.share_decrypt(cts, Y, dk, ["sid_0", "sid_1"])
+    b = server.share_decrypt(cts, Y, dk, ["sid_0", "sid_2", "sid_3"])
+    assert a["w"] == b["w"]
+
+
+def test_ring_noise_keys_do_not_change_with_a_resharing(tmp_path, monkeypatch):
+    """A key requested with another n_chunks was re-shared under a fresh noise
+    key, so the same key part came with fresh noise."""
+    monkeypatch.chdir(tmp_path)
+    kg = ThresholdMCFERingLWEKeyGenerator({"sec_param": 64, "n": 2, "lst_nid": NIDS, "s": 3, "lst_sid": SIDS, "t": 2,
+                                           "eta": 1, "ring_n": 16, "bound_x": 4, "bound_y": 5})
+    kg.setup()
+    one = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": Y, "label": "r", "n_chunks": 1})
+    two = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": Y, "label": "r", "n_chunks": 2})
+    assert one["noise_key"] == two["noise_key"]
+
+
+@pytest.mark.parametrize("partials", [
+    {"sid_0": [[[1]]], "sid_1": [[[1]]]},                 # nested lists, not arrays
+    [],                                                   # no group at all
+    {},                                                   # an empty group
+])
+def test_elementwise_combination_raises_scheme_errors_on_malformed_output(partials):
+    from pyfe4ai.schemes.threshold_utils import combine_elementwise
+
+    with pytest.raises(FESchemeError):
+        combine_elementwise(partials, lambda groups, l, i: 1)

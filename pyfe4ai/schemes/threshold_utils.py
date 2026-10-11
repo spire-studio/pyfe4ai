@@ -262,12 +262,16 @@ def combine_elementwise(dict_ndarray_ct, combine) -> list:
             element does not decrypt (servers disagree, or out of range).
     """
     groups = partial_groups(dict_ndarray_ct)
+    if not groups[0]:
+        raise FESchemeError("no partial decryptions given")
     sample = next(iter(groups[0].values()))
+    outputs = [out for group in groups for out in group.values()]
+    if not all(isinstance(out, (list, tuple)) and all(isinstance(a, np.ndarray) for a in out) for out in outputs):
+        raise FESchemeError("malformed partial decryptions: expected lists of object arrays")
     shapes = [np.shape(ary) for ary in sample]
-    for group in groups:
-        for out in group.values():
-            if len(out) != len(shapes) or [np.shape(ary) for ary in out] != shapes:
-                raise FESchemeError("partial decryptions differ in shape")
+    for out in outputs:
+        if len(out) != len(shapes) or [np.shape(ary) for ary in out] != shapes:
+            raise FESchemeError("partial decryptions differ in shape")
     result = []
     for l, shape in enumerate(shapes):
         ary = np.empty(shape, dtype=object)

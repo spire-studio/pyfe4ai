@@ -25,13 +25,21 @@ ciphertexts determine by the decryption noise
 coefficient by ``B = n eta Y (2 ring_n 144 sigma1 sigma2 + 12 sigma3)``;
 ``e_k <- D_{Z, 2^kappa B}`` per coefficient smudges it (statistical
 argument), with ``q`` enlarged so that ``s`` flooding terms still decode.
-The noise is derived from a per-server secret and the request (enrolled
-set and ciphertexts), so repeated requests cannot be averaged. The threshold
-layer is our own design.
+Ciphertexts (and ndarray chunks) carry one HMAC tag per server over the
+(chunk) label and the ciphertext; servers only decrypt ciphertexts tagged
+for them under the label they serve, since ``w_k`` is linear in ``ct1``.
+The noise is seeded with a per-server key (fixed per weights and label),
+``lambda_k``, the label or chunk and the ``ct1`` values, so a request for
+the same key part draws the same noise; a corrupted client varying its own
+``ct1`` draws fresh noise each time, and averaging that away would take about
+``2^(2 stat_param)`` partial decryptions. The threshold layer is our own
+design.
 """
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import logging
 import secrets
@@ -177,6 +185,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         super().setup()
         self.dict_dk = {}
         self.mac_keys = client_server_mac_keys(self.lst_nid, self.lst_sid)
+        self._noise_masters = {sid: secrets.token_hex(32) for sid in self.lst_sid}
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
         """Client *nid*'s MCFE keys plus ``mac_keys`` (``{sid: key}``) for the
@@ -214,7 +223,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         )
         if ident not in self.dict_dk:
             key = super().get_decryption_keys(sid, credentials=credentials)
-            self.dict_dk[ident] = self._share_key(key)
+            self.dict_dk[ident] = self._share_key(key, weights_id)
         dk = dict(self.dict_dk[ident][sid])
         dk.update({
             "sid": sid,
@@ -224,7 +233,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         })
         return dk
 
-    def _share_key(self, key: dict) -> dict:
+    def _share_key(self, key: dict, weights_id: str) -> dict:
         sid_v = share_points(self.lst_sid)
         points = list(sid_v.values())
 
@@ -241,7 +250,13 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
                 "z": z_shares[sid],
                 "z_chunks": [cs[sid] for cs in chunk_shares],
                 "label": key["label"],
-                "noise_key": secrets.token_hex(32),
+                # one per server, weights and label: a re-sharing for another
+                # n_chunks (same key part) must not come with fresh noise
+                "noise_key": hmac.new(
+                    bytes.fromhex(self._noise_masters[sid]),
+                    json.dumps([weights_id, key["label"]]).encode("utf-8"),
+                    hashlib.sha256,
+                ).hexdigest(),
             }
             for sid in self.lst_sid
         }
@@ -339,7 +354,8 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         # same key part always draws the same noise
         ct_digest = ciphertexts_digest(cts)
         key_inputs = ciphertexts_digest({nid: ct1 for nid, (_, _, ct1) in cts.items()})
-        context = json.dumps([key_inputs, encoded, sorted(lst_sid_enrolled)]).encode("utf-8")
+        # the partial depends on the enrolled set only through lambda
+        context = json.dumps([key_inputs, encoded, gp.digits(lagrange)]).encode("utf-8")
         noise = _flooding_poly(
             int(self.pp["sigma_f"]), ring_n, XofRandom(bytes.fromhex(dk["noise_key"]) + context)
         )

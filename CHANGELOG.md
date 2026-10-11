@@ -217,7 +217,12 @@ table and *Known Issues* before relying on any privacy property.
   of the values the key part depends on (`ct0` for tMIFE-LWE; `ct1` and the
   label or chunk for tMCFE-Ring-LWE), so neither the encoding, nor extra
   fields, nor the other half of a ciphertext re-tagged by a corrupted client
-  draws fresh noise (`threshold_utils.ciphertexts_digest`); tMCFE-Ring-LWE
+  draws fresh noise (`threshold_utils.ciphertexts_digest`); the enrolled set
+  enters only through the server's Lagrange coefficient (two sets with the
+  same coefficient drew different noise), and tMCFE-Ring-LWE's noise keys
+  no longer change when a key is re-shared for another `n_chunks`. A
+  corrupted client varying its own slot still draws fresh noise (averaging
+  needs about `2^(2 stat_param)` partials; documented); tMCFE-Ring-LWE
   also refuses ciphertexts of the wrong shape
   (`ring_lwe_utils.canonical_ring_ciphertext`). Tags use the shared
   `threshold_utils.client_server_mac_keys`, `tag_ciphertext` and
@@ -551,7 +556,10 @@ table and *Known Issues* before relying on any privacy property.
   encrypted as `[1, 2]`, a weight `0.5` became `0`); the same `abs(int(v))`
   checks were in MIFE/MCFE LWE, Paillier and Damgard, dMCFE-LWE /
   -Paillier and partial FH-IPE. They now refuse non-integral values
-  (`validation.strict_int`). `scale_to_int` refuses a negative precision;
+  (`validation.strict_int`), and so do MCFE-DDH key derivation, encryption
+  and decryption (`gp.mpz(2.5)` was 2); rationals are checked exactly
+  (`Fraction(2^60 + 1, 2)` passed through a float). `scale_to_int` refuses a
+  negative precision;
   a key generator config that is not a `Mapping` is refused (it could skip
   the security profile).
 - MCFE-DDH and tMCFE-DDH put the plaintext into the message of the
@@ -565,9 +573,9 @@ table and *Known Issues* before relying on any privacy property.
 - The ndarray combiners of the threshold schemes crashed with a `TypeError`
   (or returned NaN, tMCFE-LWE) when an element's partial decryptions
   disagreed, and took the output shape from the first server; they now
-  check that all servers' outputs have one structure and raise
-  `FESchemeError` for an element that does not decrypt
-  (`threshold_utils.combine_elementwise`).
+  check that all servers' outputs have one structure (lists of arrays) and
+  raise `FESchemeError` for malformed outputs and for an element that does
+  not decrypt (`threshold_utils.combine_elementwise`).
 - ML adapter: `aggregate_gradients` on a SIFE wrapper returned the first
   client's result when given several; it now refuses more than one. Fractional
   weights were quantised but the result was not scaled back (weights `0.5`

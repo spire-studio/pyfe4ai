@@ -140,3 +140,30 @@ def test_fractional_inputs_are_refused_everywhere(tmp_path, monkeypatch):
     c = MIFEDamgard({"id": "nid_0", "keys": {"pp": dk.get_public_parameters(), "sk": dk.get_private_keys("nid_0")}})
     with pytest.raises(FEValidationError, match="integers"):
         c.encrypt([1.5])
+
+
+def test_rationals_are_checked_exactly():
+    from fractions import Fraction
+
+    from pyfe4ai.utils.validation import int_vector, strict_int
+
+    assert strict_int(Fraction(6, 2)) == 3
+    for bad in (Fraction(2 ** 60 + 1, 2), 1 + Fraction(1, 10 ** 20)):
+        with pytest.raises(FEValidationError):
+            strict_int(bad)
+    with pytest.raises(FEValidationError):
+        int_vector([Fraction(3, 2)], "x")
+
+
+def test_mcfe_ddh_refuses_fractional_inputs(tmp_path, monkeypatch):
+    """MCFE-DDH used gp.mpz(v), which truncates 2.5 to 2."""
+    from pyfe4ai.schemes.mcfe.ddh import MCFE, MCFEKeyGenerator
+
+    monkeypatch.chdir(tmp_path)
+    kg = MCFEKeyGenerator({"sec_param": 128, "eta": 1, "n": 2, "lst_nid": NIDS})
+    kg.setup()
+    with pytest.raises(FEValidationError):
+        kg.get_decryption_keys("s", credentials={"fusion_weight": {"nid_0": [1.5], "nid_1": [1]}})
+    c = MCFE({"id": "nid_0", "keys": {"pp": kg.get_public_parameters(), "sk": kg.get_private_keys("nid_0")}})
+    with pytest.raises(FEValidationError):
+        c.encrypt([2.5], "l")

@@ -23,7 +23,6 @@ client under the same label reveal the difference of the plaintexts.
 from __future__ import annotations
 
 import os
-import json
 import logging
 
 import numpy as np
@@ -39,6 +38,7 @@ from pyfe4ai.utils.crypto_utils import hash_to_qr_group
 from pyfe4ai.utils.dlog_solver import load_or_build_dlog_table, dlog_table_solve
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.validation import scale_to_int
+from pyfe4ai.utils.validation import int_vector
 
 
 logger = logging.getLogger(__name__)
@@ -163,7 +163,7 @@ class MCFEKeyGenerator(DDHKeyGeneratorBase):
                 raise FEValidationError(
                     "fusion weight of {} is longer than eta".format(nid)
                 )
-            for y_j, s_j in zip(lst_fusion, s_nid):
+            for y_j, s_j in zip(int_vector(lst_fusion, "fusion weight of {}".format(nid)), s_nid):
                 d[0] += gp.mul(gp.mpz(y_j), s_j[0])
                 d[1] += gp.mul(gp.mpz(y_j), s_j[1])
 
@@ -230,7 +230,7 @@ class MCFE(IPFEAbsCrypto):
         u_l = _hash_label(label, p)
 
         c = list()
-        for x_j, s_j in zip(lst_pt, self.sk["s"]):
+        for x_j, s_j in zip(int_vector(lst_pt, "plaintext"), self.sk["s"]):
             c_j = gp.powmod(g, gp.mpz(x_j), p)
             for u_k, s_jk in zip(u_l, s_j):
                 c_j = gp.mul(c_j, gp.powmod(u_k, gp.mpz(s_jk), p)) % p
@@ -273,7 +273,7 @@ class MCFE(IPFEAbsCrypto):
                 raise FESchemeError(
                     "ciphertext and fusion weight of {} differ in length".format(nid)
                 )
-            for c_j, y_j in zip(c_nid, f_nid):
+            for c_j, y_j in zip(c_nid, int_vector(f_nid, "fusion weight of {}".format(nid))):
                 c_j = gp.mpz(c_j)
                 if not 0 < c_j < p:
                     raise FEValidationError("ciphertext element of {} out of range".format(nid))

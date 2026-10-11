@@ -23,8 +23,8 @@ Construction (notation of :mod:`pyfe4ai.schemes.mcfe.lwe`):
              its Lagrange coefficient for ``E`` and flooding noise
              ``e_k <- D_{Z, sigma_f}`` (truncated at 12 sigma_f), plus
              ``sum y_{i,j} c_{i,j} mod q0`` for a consistency check. ``e_k`` is
-             derived from a per-server secret key and ``(l, E)``, so repeated
-             requests for the same label and enrolled set get the same answer.
+             derived from a per-server secret key, ``l`` and ``lambda_k``, so
+             requests for the same label and coefficient get the same answer.
 * Combine:   ``v = sum_{k in E} w_k = <sk_y, H(l)> + sum e_k mod q``;
              decode ``mu' = sum y c - round_q0(v)`` as in the MCFE.
 
@@ -252,7 +252,8 @@ class ThresholdMCFELWE(MCFELWE):
             sid_v[self.id], [sid_v[s] for s in lst_sid_enrolled], self.q
         )
         share_term = dot_mod([gp.mpz(v) for v in dk["sk_y"]], self._hash_label(label), self.q)
-        context = json.dumps([encoded, sorted(lst_sid_enrolled)]).encode("utf-8")
+        # the partial depends on the enrolled set only through lambda
+        context = json.dumps([encoded, gp.digits(lagrange)]).encode("utf-8")
         e_k = flooding_noise(
             int(self.pp["sigma_f"]),
             rng=XofRandom(bytes.fromhex(dk["noise_key"]) + context),

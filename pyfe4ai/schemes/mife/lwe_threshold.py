@@ -32,9 +32,10 @@ smudging argument for threshold LWE decryption). ``q`` is enlarged so that
 a fixed ``lwe_n`` this lowers the noise-to-modulus ratio of the underlying
 LWE instance, and ``m`` grows with ``log2 q`` so that ``A^T r`` stays close to
 uniform (versions <= 0.2.0 kept the ``m`` of the smaller base modulus: about
-half the length the leftover hash lemma needs). ``e_k`` is derived from a per-server secret key and the
-request (enrolled set and ciphertexts), so repeating a request cannot be
-used to average the noise away. The threshold layer is our own design.
+half the length the leftover hash lemma needs). ``e_k`` is derived from a
+per-server secret key and the request (see below), so repeating a request
+cannot be used to average the noise away. The threshold layer is our own
+design.
 
 Ciphertext authentication: ``w_k`` is linear in ``ct0``, so whoever chooses the
 ciphertexts a server decrypts could submit ``ct0 = c e_j`` for chosen ``c`` and
@@ -45,7 +46,12 @@ HMAC-SHA256 tag per server over its serialised ``(ct0, ct1)``, and a server
 only decrypts ciphertexts whose tags for it verify. A corrupted client can
 still put any ciphertext in its own slot, which reveals that slot's key part
 ``S_i y_i`` and nothing about the other slots; mixing authentic ciphertexts of
-different rounds is the usual multi-input functionality.
+different rounds is the usual multi-input functionality. The noise is seeded
+with the server's key, ``lambda_k`` and the ``ct0`` values, so a request for
+the same key part draws the same noise; a corrupted client varying its own
+``ct0`` changes the key part and so draws fresh noise each time, and averaging
+that away to learn the other slots' part would take about ``2^(2 stat_param)``
+partial decryptions.
 
 Under the ``standard`` security profile ``lwe_n = "auto"`` picks the
 smallest dimension meeting :data:`pyfe4ai.utils.lwe_utils.WIDE_LWE_128_LOG_RATIO`
@@ -318,7 +324,8 @@ class ThresholdMIFELWE(MIFELWE):
         # request for the same key part always draws the same noise
         ct_digest = ciphertexts_digest(canonical)
         key_inputs = ciphertexts_digest({nid: values[0] for nid, values in canonical.items()})
-        context = json.dumps([key_inputs, sorted(lst_sid_enrolled)]).encode("utf-8")
+        # the partial depends on the enrolled set only through lambda
+        context = json.dumps([key_inputs, gp.digits(lagrange)]).encode("utf-8")
         e_k = _flooding_noise(
             int(self.pp["sigma_f"]), XofRandom(bytes.fromhex(dk["noise_key"]) + context)
         )
