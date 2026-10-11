@@ -158,6 +158,24 @@ table and *Known Issues* before relying on any privacy property.
     secret), function
     class `sum_{i<k} c[(i,j,k,l)] x_i[j] x_k[l]` (cross-user terms), built from
     the TAO20 FH-IPFE and the paper's SK-MCFE schemes (Figs. 1 and 9).
+- **SIFE-Paillier and MIFE-Paillier** decryption returned whatever the
+  decryption equation produced. The ciphertext `ct0 = 1 + N`, `ct1 = 1`
+  turns `ct0^{-k}` into `-k mod N`, so anyone shown the output of a
+  decryption (e.g. an inference client) learnt the functional key.
+  Decryption now checks ciphertext lengths and ranges and returns `None`
+  unless the result is a valid encoding within `+-eta X Y`
+  (`modular_utils.check_zn2_elements`, `decode_paillier`).
+- **dMCFE-DDH** reduced every client's key contribution mod `q` before the
+  MCFE2 layer, whose decryption is the *integer* sum: anyone holding the
+  published shares read the carry (`0..n-1`) of that sum, a comparison
+  oracle on the clients' secrets. ABMPSW20 states Fig. 14 for MCFEs without
+  a discrete log in decryption only. Contributions are now masked with
+  `q rho_i`, `rho_i < 2^(stat_param + bits(n))` derived from a new per-client
+  key and `H(y)`; the scheme becomes *experimental* (our own argument).
+- **dMCFE-LWE** reduced every contribution mod `q` as well, so the integer
+  sum also told how many `y_i t_i` were negative in each coordinate. The
+  contributions are now sent over the integers, as the functional key
+  `sum y_i Z_i in Z^(n0 + m0)` of ABMPSW20 Fig. 4 / Fig. 14.
 - **SIFE-LWE and SIFE-Ring-LWE** encoded a plaintext as `trunc(x q / p)`
   instead of `floor(q / p) x`. The two differ by a small term that is not
   linear in `x`, while ABDP15's proof relies on the linear ciphertext
@@ -361,6 +379,13 @@ table and *Known Issues* before relying on any privacy property.
 - Ring-LWE plaintext modulus (SIFE, MIFE, MCFE): `p` was exactly
   `2 l X Y`, so inner products of `+-l X Y` were ambiguous; it is now
   `2 l X Y + 2` (parameter caches are regenerated).
+- Safe primes below 64 bits could have one bit too many (`next_prime`
+  stepped past the size, about 1% of 16-bit draws), which made a test fail
+  intermittently.
+- Key generators accepted `n` and a `lst_nid` of another length; bounds,
+  noise widths and moduli were then sized for `n` slots (MCFE-LWE with
+  `n = 2` and 10 clients decrypted 160 instead of 810). They now raise
+  `FEValidationError`, as threshold schemes do for repeated server ids.
 
 ### Documentation
 

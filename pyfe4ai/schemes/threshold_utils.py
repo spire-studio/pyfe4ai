@@ -106,12 +106,14 @@ def share_points(lst_sid: list[str]) -> dict[str, int]:
 
 
 def validate_threshold(threshold: int, lst_sid: list[str]) -> None:
-    """Reject thresholds outside ``1 <= t <= s``.
+    """Reject repeated server ids and thresholds outside ``1 <= t <= s``.
 
     Args:
         threshold: Minimum number of shares needed for reconstruction.
         lst_sid: Ordered list of all decryption-server identifiers.
     """
+    if len(set(lst_sid)) != len(lst_sid):
+        raise FEValidationError("lst_sid contains duplicate server ids")
     if not isinstance(threshold, int) or not 1 <= threshold <= len(lst_sid):
         raise FEValidationError(
             "invalid threshold t={} for s={} decryption servers".format(

@@ -54,7 +54,7 @@ def test_key_generator(kg_config):
 
     for nid in lst_nid_expected:
         sk_nid = kg.get_private_keys(nid)
-        assert set(sk_nid) == {"s", "s2"}
+        assert set(sk_nid) == {"s", "s2", "mask_key"}
         assert len(sk_nid["s2"]) == 2
     # the MCFE2 keys of all clients sum to zero (ABMPSW20 Fig. 14)
     assert all(sum(col) == 0 for col in zip(*kg.msk["s2"].values()))

@@ -146,7 +146,7 @@ test keeps it in sync.
   correct results but provides no meaningful privacy. Use it only for
   functionality or performance experiments.
 
-Currently 35 reviewed and 4 experimental out of 39 registered schemes;
+Currently 34 reviewed and 5 experimental out of 39 registered schemes;
 none is known to be insecure.
 
 | Scheme | Status | Fidelity | Construction | Notes |
@@ -156,8 +156,8 @@ none is known to be insecure.
 | `sife/paillier` | reviewed | faithful | ALS16 (DCR) | D_{Z,sigma} realised as a high-precision rounded Gaussian |
 | `sife/damgard` | reviewed | faithful | ALS16 DDH (ACFGU18 Fig. 7, k = 1) | h = g^a with a discarded |
 | `sife/ring_lwe` | reviewed | adapted | BMMS21 Sec. 4 (selective) + Remark 1 batching | signed messages and weights (p = 2lXY + 2, centred decoding); one ciphertext packs up to ring_n vectors; single NTT prime q; ring_n defaults to the toy value 32 |
-| `sife/fullysec_lwe` | reviewed | adapted | ALS16 LWE (ACFGU18 Fig. 8) | signed inputs (K = 2 eta X Y + 1, centred decoding); GoFE parameter recipe; D_{Z,sigma} realised as a rounded Gaussian |
 | `sife/fullysec_ring_lwe` | reviewed | adapted | BMMS21 Sec. 5 (adaptive) | m >= 5 key polynomials instead of m = 3, which admits no modulus under the paper's App. C.1 constraints (sigma' >= q^(2/m) from Ring-LHL); signed inputs (p = 2lXY + 2, leveraging over (2X+1)^(2l)); one vector per ciphertext |
+| `sife/fullysec_lwe` | reviewed | adapted | ALS16 LWE (ACFGU18 Fig. 8) | signed inputs (K = 2 eta X Y + 1, centred decoding); GoFE parameter recipe; D_{Z,sigma} realised as a rounded Gaussian |
 | `sife/ddh_dynamic` | reviewed | adapted | ABDP15 Construction 1, variable length | vectors of length <= eta handled as zero padding (prefix keys, truncated ciphertexts) |
 | `sife/fh_ipe_pairing` | reviewed | adapted | KLMMRW18 Sec. 3 | vectors padded to (x, 1, 0) / (y, 0, 1), so eta = 1 and zero vectors are safe; keys in G1, ciphertexts in G2; generic bilinear group model; the encryption key is master-secret equivalent |
 | `sife/part_fh_ipe_pairing` | reviewed | adapted | Gay20 Fig. 8 (CPA, k = 1) | M is a random full-rank public matrix (subspace_dim < eta, default 1), published with V^T M in the clear; keys leak M^T y, which for small eta - subspace_dim often determines a bounded y; public Enc needs bounded t; Enc' is run by the key generator; no QANIZK |
@@ -181,7 +181,7 @@ none is known to be insecure.
 | `mcfe/fh_multi_ipe_pairing_threshold` | experimental | ad-hoc | AGT21b FH-MCFE + Shamir | FH-MCFE layer as published; the Shamir-shared key exponents and partial decryptions in G_T are our own; FH-IPFE = ACFGU18 Fig. 12 (n = 1, SXDH) with LV16 padding; asymmetric pairing (default MNT224); keys carry a random id, never a digest of y |
 | `mcfe/fh_multi_ipe_pairing_decentralized` | reviewed | adapted | NPS24 Fig. 1 (selective FH-DMCFE) | tag-f is bound to the whole weight vector and keys are derived deterministically (one key per client and tag-f); FH-IPFE = ACFGU18 Fig. 12 (n = 1, SXDH) with LV16 padding; asymmetric pairing (default MNT224); keys carry a random id, never a digest of y |
 | `mcfe/ddh_threshold` | reviewed | adapted | CDGPP18 + Shamir (TAPFed setting) | the aggregated key is Shamir-shared; any t servers interpolate in the exponent (threshold-ElGamal style) |
-| `mcfe/ddh_decentralized` | reviewed | adapted | ABMPSW20 Fig. 14 (MCFE1 = CDGPP18) | MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) are sampled in-process |
+| `mcfe/ddh_decentralized` | experimental | ad-hoc | ABMPSW20 Fig. 14 (MCFE1 = CDGPP18) + carry mask | Fig. 14 is stated for MCFEs without a discrete log in decryption; contributions are reduced mod q and masked by q rho_i (rho_i from a per-client key and H(y)) so that the carry of their sum stays hidden -- our own argument; MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) are sampled in-process |
 | `mcfe/lwe_threshold` | experimental | ad-hoc | ABMPSW20 Fig. 4 + Shamir + flooding | MCFE layer as published; the threshold layer and its LWE-based flooding argument are our own (see the module docstring) |
 | `mcfe/lwe_decentralized` | reviewed | adapted | ABMPSW20 Fig. 14 (MCFE1 = Fig. 4) | MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) are sampled in-process |
 | `mcfe/ring_lwe_threshold` | experimental | ad-hoc | BMMS21 identity-based MCFE + Shamir + smudging | MCFE layer as published; the threshold layer (statistical flooding, derandomised noise, enlarged q) is our own |

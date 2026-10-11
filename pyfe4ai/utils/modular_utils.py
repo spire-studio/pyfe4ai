@@ -71,3 +71,29 @@ def pow_signed_many(base: gp.mpz, exponents, modulus: gp.mpz) -> list:
             result = result * acc % modulus
         out.append(gp.invert(result, modulus) if e < 0 else result)
     return out
+
+
+def check_zn2_elements(values, n_square) -> list:
+    """Parse ciphertext elements of ``Z_{N^2}`` and reject values outside ``(0, N^2)``."""
+    from pyfe4ai.utils.exceptions import FEValidationError
+
+    parsed = [gp.mpz(v) for v in values]
+    if any(not 0 < v < n_square for v in parsed):
+        raise FEValidationError("ciphertext element outside (0, N^2)")
+    return parsed
+
+
+def decode_paillier(acc, n_mod, bound) -> int | None:
+    """Return ``mu`` with ``acc = (1 + N)^mu mod N^2``, centred, or ``None``.
+
+    ``None`` when *acc* is not of that form or ``|mu| > bound``: a decryption
+    of a crafted ciphertext must not hand out a key-dependent value (e.g.
+    ``ct0 = 1 + N`` turns ``ct0^{-k}`` into ``-k mod N``).
+    """
+    n_mod = gp.mpz(n_mod)
+    if (gp.mpz(acc) - 1) % n_mod != 0:
+        return None
+    mu = ((gp.mpz(acc) - 1) % (n_mod * n_mod)) // n_mod
+    if mu > n_mod // 2:
+        mu -= n_mod
+    return int(mu) if abs(mu) <= bound else None

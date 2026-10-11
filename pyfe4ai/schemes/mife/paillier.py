@@ -44,6 +44,8 @@ from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.ipfe import ParameterCacheMixin
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import generate_group_primes
+from pyfe4ai.utils.modular_utils import check_zn2_elements
+from pyfe4ai.utils.modular_utils import decode_paillier
 from pyfe4ai.utils.modular_utils import pow_signed
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_bigint
 from pyfe4ai.utils.sampling_utils import rand_uniform_vector
@@ -273,21 +275,26 @@ class MIFEPaillier(IPFEAbsCrypto):
             raise FESchemeError("need one ciphertext for every slot of the key")
         n_mod = gp.mpz(self.pp["n_mod"])
         n_square = gp.mpz(self.pp["n_square"])
+        eta = self.pp["eta"]
         # E(-z) = (1 + N)^{-z} = 1 - z N mod N^2
         acc = (1 - gp.mpz(dk["z"]) * n_mod) % n_square
         for nid, ct in dct_ct.items():
-            acc *= pow_signed(gp.mpz(ct["ct0"]), -gp.mpz(dk["k"][nid]), n_square)
-            acc %= n_square
             weights = fusion_weight[nid]
-            for ct_i, y_i in zip(ct["ct1"], weights):
-                acc *= pow_signed(gp.mpz(ct_i), gp.mpz(y_i), n_square)
+            ct1 = ct.get("ct1")
+            if not isinstance(ct1, list) or len(ct1) != eta or len(weights) != eta:
+                raise FEValidationError("ciphertext or weights of {} do not match eta".format(nid))
+            c0, *c1 = check_zn2_elements([ct["ct0"], *ct1], n_square)
+            acc *= pow_signed(c0, -gp.mpz(dk["k"][nid]), n_square)
+            acc %= n_square
+            for ct_i, y_i in zip(c1, weights):
+                acc *= pow_signed(ct_i, gp.mpz(y_i), n_square)
                 acc %= n_square
 
-        ret = ((acc - 1) % n_square) // n_mod
-        n_half = n_mod // 2
-        if ret > n_half:
-            ret -= n_mod
-        return int(ret)
+        bound = len(dct_ct) * eta * int(self.pp["bound_x"]) * int(self.pp["bound_y"])
+        mu = decode_paillier(acc, n_mod, bound)
+        if mu is None:
+            logger.error("decryption is not an inner product in range (wrong key or ciphertext?)")
+        return mu
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
         """Perform the encrypt_lst_ndarray operation.

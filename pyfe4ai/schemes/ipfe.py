@@ -110,6 +110,11 @@ class IPFEAbsKeyGenerator(metaclass=_ProfiledKeyGeneratorMeta):
             if len(set(self.lst_nid)) != len(self.lst_nid):
                 # a repeated id would silently merge two clients' keys
                 raise FEValidationError("lst_nid contains duplicate client ids")
+            if len(self.lst_nid) != self.n:
+                # parameters (bounds, noise widths, moduli) are sized for n slots
+                raise FEValidationError(
+                    "lst_nid has {} clients but n={}".format(len(self.lst_nid), self.n)
+                )
 
     @abstractmethod
     def setup(self) -> None:

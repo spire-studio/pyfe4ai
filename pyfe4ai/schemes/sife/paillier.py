@@ -31,6 +31,8 @@ from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.ipfe import ParameterCacheMixin
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import generate_group_primes
+from pyfe4ai.utils.modular_utils import check_zn2_elements
+from pyfe4ai.utils.modular_utils import decode_paillier
 from pyfe4ai.utils.modular_utils import pow_signed
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_bigint
 from pyfe4ai.utils.sampling_utils import random_below
@@ -241,19 +243,22 @@ class SIFEPaillier(IPFEAbsCrypto):
 
         n = gp.mpz(self.pp["n"])
         n_square = gp.mpz(self.pp["n_square"])
-        c0 = gp.mpz(dct_ct["ct0"])
+        ct1 = dct_ct.get("ct1")
+        if not isinstance(ct1, list) or len(ct1) != self.pp["eta"]:
+            raise FEValidationError("ciphertext does not match eta")
+        c0, *c1 = check_zn2_elements([dct_ct["ct0"], *ct1], n_square)
         k = gp.mpz(dk["k"])
 
         acc = pow_signed(c0, -k, n_square)
-        for ct_i, y_i in zip(dct_ct["ct1"], fusion_weight):
-            acc *= pow_signed(gp.mpz(ct_i), gp.mpz(y_i), n_square)
+        for ct_i, y_i in zip(c1, fusion_weight):
+            acc *= pow_signed(ct_i, gp.mpz(y_i), n_square)
             acc %= n_square
 
-        ret = ((acc - 1) % n_square) // n
-        n_half = n // 2
-        if ret > n_half:
-            ret -= n
-        return int(ret)
+        bound = self.pp["eta"] * int(self.pp["bound_x"]) * int(self.pp["bound_y"])
+        mu = decode_paillier(acc, n, bound)
+        if mu is None:
+            logger.error("decryption is not an inner product in range (wrong key or ciphertext?)")
+        return mu
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
         """Perform the encrypt_lst_ndarray operation.

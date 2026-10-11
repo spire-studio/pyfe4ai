@@ -59,7 +59,8 @@ def _safe_prime(bits: int) -> tuple:
         while True:
             q = _random_prime(bits - 1)
             p = q * 2 + 1
-            if gp.is_prime(p) and gp.is_prime(q):
+            # next_prime can step past 2^(bits - 1), giving a (bits + 1)-bit p
+            if p.bit_length() == bits and gp.is_prime(p) and gp.is_prime(q):
                 return p, q
     while True:
         q0 = gp.mpz(_CSPRNG.getrandbits(bits - 1)) | (gp.mpz(1) << (bits - 2)) | 1

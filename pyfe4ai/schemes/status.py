@@ -223,8 +223,12 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         "exponent (threshold-ElGamal style)",
     ),
     ("mcfe", "ddh_decentralized"): SchemeStatus(
-        _S + "mcfe.ddh_decentralized", REVIEWED, ADAPTED,
-        "ABMPSW20 Fig. 14 (MCFE1 = CDGPP18)", note=_FIG14_NOTE,
+        _S + "mcfe.ddh_decentralized", EXPERIMENTAL, AD_HOC,
+        "ABMPSW20 Fig. 14 (MCFE1 = CDGPP18) + carry mask",
+        note="Fig. 14 is stated for MCFEs without a discrete log in decryption; "
+        "contributions are reduced mod q and masked by q rho_i (rho_i from a per-client "
+        "key and H(y)) so that the carry of their sum stays hidden -- our own argument; "
+        + _FIG14_NOTE,
     ),
     ("mcfe", "lwe_threshold"): SchemeStatus(
         _S + "mcfe.lwe_threshold", EXPERIMENTAL, AD_HOC, "ABMPSW20 Fig. 4 + Shamir + flooding",

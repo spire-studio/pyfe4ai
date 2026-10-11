@@ -13,9 +13,12 @@ Decentralised multi-client inner-product FE over LWE.
 
 Encryption and decryption are those of the LWE MCFE. For weights ``y`` every
 client ``i`` publishes an MCFE2 encryption of its contribution
-``sum_j y_{i,j} Z_{i,j} mod q`` (a vector of length ``n0 + m0``) under the
-label ``H(y)``; the zero-sum MCFE2 keys make the product of all clients'
-shares decrypt to ``sk_y = sum_{i,j} y_{i,j} Z_{i,j} mod q``. Every client
+``sum_j y_{i,j} Z_{i,j}`` over the integers (a vector of length ``n0 + m0``)
+under the label ``H(y)``; the zero-sum MCFE2 keys make the product of all
+clients' shares decrypt to ``sk_y = sum_{i,j} y_{i,j} Z_{i,j}`` in
+``Z^(n0 + m0)``, the functional key of Fig. 4. Versions before this one
+reduced each contribution mod ``q``, so the decrypted integer sum also told
+how many ``y_i t_i`` were negative in every coordinate. Every client
 must publish a share. Secure against static corruptions (Theorem 38).
 Versions <= 0.2.0 used an ad-hoc label scalar with per-client key
 components instead. A key share costs ``n0 + m0`` DCR encryptions of one
@@ -53,7 +56,7 @@ from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationErro
 
 logger = logging.getLogger(__name__)
 
-_CONSTRUCTION = "abmpsw20-fig14-lwe-dcr/v1"
+_CONSTRUCTION = "abmpsw20-fig14-lwe-dcr/v2"
 
 
 class DecentralizedMCFELWEKeyGenerator(MCFELWEKeyGenerator, ParameterCacheMixin):
@@ -69,10 +72,14 @@ class DecentralizedMCFELWEKeyGenerator(MCFELWEKeyGenerator, ParameterCacheMixin)
                 ``eta``, ``lwe_n``, ``bound_x``, ``bound_y``, ``stat_param``).
         """
         super().__init__(config, **kwargs)
+        # contributions sum_j y_j Z_{i,j} over Z: |.| <= eta Y q (the s part)
+        self.contribution_bound = gp.mpz(self.eta) * self.bound_y * self.q
         # N2 only has to hold the key shares (a few hundred bits); the profile
         # sets the factoring-hardness floor
         floor = STANDARD_DCR_PRIME_BITS if self.security_profile == STANDARD else MIN_PRIME_BITS
-        self.n2_prime_bits = mcfe2_prime_bits(len(self.lst_nid) * self.dim, self.q, min_bits=floor)
+        self.n2_prime_bits = mcfe2_prime_bits(
+            len(self.lst_nid) * self.dim, self.contribution_bound, min_bits=floor
+        )
         self._load_parameters()  # caches only N2; the LWE parameters are derived
 
     def _param_verification(self, param: dict) -> bool:
@@ -100,14 +107,18 @@ class DecentralizedMCFELWEKeyGenerator(MCFELWEKeyGenerator, ParameterCacheMixin)
         """Sample the LWE MCFE client keys and the zero-sum MCFE2 keys."""
         super().setup()
         sigma2 = mcfe2_key_sigma(
-            self.n2_mod, len(self.lst_nid) * self.dim, self.q, self.stat_param
+            self.n2_mod, len(self.lst_nid) * self.dim, self.contribution_bound, self.stat_param
         )
         self.msk["s2"] = zero_sum_keys(self.lst_nid, self.dim, sigma2)
 
     def get_public_parameters(self) -> dict:
         """LWE MCFE public parameters plus ``n2_mod`` and ``lst_nid``."""
         pp = super().get_public_parameters()
-        pp.update({"n2_mod": gp.digits(self.n2_mod), "lst_nid": list(self.lst_nid)})
+        pp.update({
+            "n2_mod": gp.digits(self.n2_mod),
+            "lst_nid": list(self.lst_nid),
+            "contribution_bound": gp.digits(self.contribution_bound),
+        })
         return pp
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
@@ -130,7 +141,7 @@ class DecentralizedMCFELWE(MCFELWE):
     """LWE MCFE encryption / decryption with decentralised key derivation."""
 
     def derive_function_decryption_key_share(self, fusion_weight: dict) -> dict:
-        """Publish this client's encrypted contribution ``sum_j y_{i,j} Z_{i,j} mod q``.
+        """Publish this client's encrypted contribution ``sum_j y_{i,j} Z_{i,j}`` (over Z).
 
         Args:
             fusion_weight: The whole weight mapping ``y`` (absent clients
@@ -152,10 +163,12 @@ class DecentralizedMCFELWE(MCFELWE):
         for y_j, z_j in zip(weights, self.sk["z"]):
             y_j = gp.mpz(int(y_j))
             contribution = [acc + y_j * gp.mpz(z) for acc, z in zip(contribution, z_j)]
-        contribution = [v % self.q for v in contribution]
+        # sent over Z as in Fig. 14 (sk_y = sum y_i Z_i in Z^(n0 + m0)); reducing it
+        # mod q first would reveal, per coordinate, how many y_i t_i are negative
         return {
             "c": encrypt_contribution(
-                self.pp["n2_mod"], self.sk["s2"], contribution, key_label(fusion_weight), self.q
+                self.pp["n2_mod"], self.sk["s2"], contribution, key_label(fusion_weight),
+                gp.mpz(self.pp["contribution_bound"]),
             ),
             "nid": self.id,
             "weights_id": fusion_weight_id(fusion_weight),

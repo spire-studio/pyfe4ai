@@ -14,18 +14,32 @@ Decentralised multi-client inner-product FE over DDH.
 Encryption and decryption are those of CDGPP18 (``c = g^x [H(l)]^s``,
 ``g^{<x,y>} = prod c^y / [H(l)]^d``). There is no authority for functional
 keys: for weights ``y`` every client ``i`` publishes an MCFE2 encryption of
-its contribution ``sum_j y_{i,j} s_{i,j} mod q`` (a pair) under the label
-``H(y)``; the zero-sum MCFE2 keys make the product of all clients' shares
-decrypt to ``d = sum_{i,j} y_{i,j} s_{i,j} mod q``, the CDGPP18 functional
-key, and nothing else. Every client must publish a share (with zero weights
-if absent from ``y``). Secure against static corruptions (Theorem 38).
-Versions <= 0.2.0 used an ad-hoc label scalar with per-client key
-components instead.
+its contribution ``c_i = (sum_j y_{i,j} s_{i,j} mod q) + q rho_i`` (a pair)
+under the label ``H(y)``; the zero-sum MCFE2 keys make the product of all
+clients' shares decrypt to ``sum_i c_i``, whose residue mod ``q`` is the
+CDGPP18 functional key ``d``. Every client must publish a share (with zero
+weights if absent from ``y``).
+
+The carry mask ``rho_i`` is our own adaptation. ABMPSW20 states Fig. 14 for
+MCFEs that need no discrete logarithm when decrypting (DCR, LWE): with
+CDGPP18 the secrets are uniform mod ``q``, so ``sum_i y_i s_i`` is not small.
+Reducing each contribution mod ``q`` (as versions before this one did) makes
+the integer sum ``d + q carry`` with ``carry`` in ``0..n-1``, which anyone
+holding the published shares reads off: a comparison oracle on the clients'
+reduced contributions, from which a series of keys reveals their secrets.
+Here ``rho_i`` is uniform below ``2^(stat_param + bits(n))`` and derived
+from a per-client key and ``H(y)`` (repeating a derivation repeats the share,
+so masks cannot be averaged out), and ``carry + sum_i rho_i`` is within
+statistical distance ``2^-stat_param`` of a carry-independent distribution.
+The argument is ours, hence the scheme's *experimental* status; Theorem 38
+covers the MCFE2 layer only.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import secrets
 
 import gmpy2 as gp
 
@@ -44,8 +58,16 @@ from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationErro
 
 logger = logging.getLogger(__name__)
 
-_CONSTRUCTION = "abmpsw20-fig14-cdgpp18-dcr/v1"
+_CONSTRUCTION = "abmpsw20-fig14-cdgpp18-dcr-carry-mask/v2"
 _KEY_DIM = 2  # a CDGPP18 functional key is a pair in Z_q^2
+
+
+def _carry_mask(key_hex: str, label: str, index: int, bits: int) -> gp.mpz:
+    """``rho < 2^bits`` from SHAKE-256 keyed with the client's mask key (a PRF of the label)."""
+    n_bytes = (bits + 7) // 8
+    material = "|".join(["pyfe4ai/dmcfe-ddh/carry-mask", str(index), label]).encode("utf-8")
+    digest = hashlib.shake_256(bytes.fromhex(key_hex) + material).digest(n_bytes)
+    return gp.mpz(int.from_bytes(digest, "big") >> (8 * n_bytes - bits))
 
 
 class DecentralizedMCFEKeyGenerator(MCFEKeyGenerator):
@@ -64,9 +86,10 @@ class DecentralizedMCFEKeyGenerator(MCFEKeyGenerator):
         self.construction = _CONSTRUCTION
         self.stat_param = int(config.get("stat_param", 64))
         sec_param = config.get("sec_param", CryptoCONST.SEC_PARAM)
-        # contributions are reduced mod q < 2^sec_param
-        self.contribution_bound = gp.mpz(1) << sec_param
         n = config.get("n") or len(config.get("lst_nid", []))
+        # contributions (s . y mod q) + q rho with q < 2^sec_param, rho < 2^mask_bits
+        self.mask_bits = self.stat_param + max(1, int(n).bit_length())
+        self.contribution_bound = gp.mpz(1) << (sec_param + self.mask_bits + 1)
         self.n2_prime_bits = mcfe2_prime_bits(n * _KEY_DIM, self.contribution_bound)
         super().__init__(config, **kwargs)
         if isinstance(self.eta, dict):
@@ -95,6 +118,7 @@ class DecentralizedMCFEKeyGenerator(MCFEKeyGenerator):
             self.n2_mod, len(self.lst_nid) * _KEY_DIM, self.contribution_bound, self.stat_param
         )
         self.msk["s2"] = zero_sum_keys(self.lst_nid, _KEY_DIM, sigma2)
+        self.msk["mask_key"] = {nid: secrets.token_hex(32) for nid in self.lst_nid}
 
     def get_public_parameters(self) -> dict:
         """CDGPP18 public parameters plus ``n2_mod``, ``lst_nid`` and the contribution bound."""
@@ -104,16 +128,18 @@ class DecentralizedMCFEKeyGenerator(MCFEKeyGenerator):
                 "n2_mod": gp.digits(self.n2_mod),
                 "lst_nid": list(self.lst_nid),
                 "contribution_bound": gp.digits(self.contribution_bound),
+                "mask_bits": self.mask_bits,
             }
         )
         return pp
 
     def get_private_keys(self, nid: str) -> dict | None:
-        """Return client *nid*'s keys: CDGPP18 ``s`` and MCFE2 ``s2``."""
+        """Return client *nid*'s keys: CDGPP18 ``s``, MCFE2 ``s2`` and the carry-mask key."""
         sk = super().get_private_keys(nid)
         if sk is None:
             return None
         sk["s2"] = [gp.digits(v) for v in self.msk["s2"][nid]]
+        sk["mask_key"] = self.msk["mask_key"][nid]
         return sk
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
@@ -148,11 +174,15 @@ class DecentralizedMCFE(MCFE):
         contribution = [gp.mpz(0)] * _KEY_DIM
         for y_j, s_j in zip(weights, self.sk["s"]):
             contribution = [acc + gp.mpz(int(y_j)) * gp.mpz(s) for acc, s in zip(contribution, s_j)]
-        contribution = [v % q for v in contribution]
+        label = key_label(fusion_weight)
+        contribution = [
+            v % q + q * _carry_mask(self.sk["mask_key"], label, j, int(self.pp["mask_bits"]))
+            for j, v in enumerate(contribution)
+        ]
         return {
             "c": encrypt_contribution(
                 self.pp["n2_mod"], self.sk["s2"], contribution,
-                key_label(fusion_weight), gp.mpz(self.pp["contribution_bound"]),
+                label, gp.mpz(self.pp["contribution_bound"]),
             ),
             "nid": self.id,
             "weights_id": fusion_weight_id(fusion_weight),

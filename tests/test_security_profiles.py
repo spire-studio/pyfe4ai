@@ -379,9 +379,10 @@ def test_toy_ring_lwe_keeps_the_default_dimension():
     assert kg.ring_n == 32
 
 
-@pytest.mark.parametrize("bits", [16, 63, 64, 65, 256])
-def test_safe_primes_have_the_requested_size(bits):
-    for _ in range(5):
+@pytest.mark.parametrize("bits, runs", [(12, 2000), (16, 2000), (63, 20), (64, 20), (65, 20), (256, 5)])
+def test_safe_primes_have_the_requested_size(bits, runs):
+    # next_prime may step past 2^bits for small sizes (about 1% of 16-bit draws)
+    for _ in range(runs):
         p, q = generate_group_primes(bits)
         assert p == 2 * q + 1 and int(p).bit_length() == bits
         assert gp.is_prime(p, 40) and gp.is_prime(q, 40)
