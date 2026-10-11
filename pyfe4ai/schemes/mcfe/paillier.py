@@ -89,6 +89,8 @@ def dcr_sigma(n_mod: gp.mpz, n_slots: int, bound_x: int, kappa: int) -> gp.mpz:
 class MCFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
     """Key generator for DCR-based multi-client inner-product FE (ABMPSW20 Fig. 3)."""
 
+    _holds_dcr_modulus = True  # never cached under standard (see ParameterCacheMixin)
+
     _scheme_type = CryptoCONST.TYPE_MCFE_PAILLIER
 
     def __init__(self, config: dict, **kwargs) -> None:

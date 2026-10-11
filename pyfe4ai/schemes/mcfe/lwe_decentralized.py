@@ -64,6 +64,8 @@ _CONSTRUCTION = "abmpsw20-fig14-lwe-dcr/v2"
 class DecentralizedMCFELWEKeyGenerator(MCFELWEKeyGenerator, ParameterCacheMixin):
     """Sets up LWE MCFE client keys and zero-sum MCFE2 keys (ABMPSW20 Fig. 14)."""
 
+    _holds_dcr_modulus = True  # never cached under standard (see ParameterCacheMixin)
+
     _scheme_type = CryptoCONST.TYPE_DMCFE_LWE
 
     def __init__(self, config: dict, **kwargs) -> None:

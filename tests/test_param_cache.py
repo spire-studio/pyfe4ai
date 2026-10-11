@@ -252,3 +252,20 @@ def test_damgard_h_is_derived_from_a_seed():
     assert "h" not in record and len(bytes.fromhex(record["h_seed"])) == 32
     _rewrite(CryptoCONST.TYPE_SIFE_DAMGARD, lambda r: r.update(h=r["g"]))
     assert SIFEDamgardKeyGenerator(dict(cfg)).h == kg.h != kg.g
+
+
+def test_standard_never_loads_or_stores_dcr_moduli(monkeypatch):
+    """A cached DCR modulus cannot be checked for an unknown factorisation, so
+    under standard it is generated afresh (toy keeps the cache)."""
+    from pyfe4ai.schemes import profiles
+    from pyfe4ai.schemes.sife import paillier
+    from pyfe4ai.utils.crypto_utils import _safe_prime
+
+    monkeypatch.setattr(paillier, "generate_group_primes", lambda bits: _safe_prime(64))
+    monkeypatch.setitem(profiles._STANDARD_MINIMA, "dcr", {"bit_length": 64, "stat_param": 128})
+    std = {"eta": 2, "bound_x": 10, "bound_y": 10, "security_profile": "standard"}
+    first = SIFEPaillierKeyGenerator(dict(std))
+    assert not os.path.exists(_param_file(CryptoCONST.TYPE_SIFE_PAILLIER))
+    assert SIFEPaillierKeyGenerator(dict(std)).n != first.n
+    toy = {"sec_param": 64, "eta": 2, "bit_length": 64, "bound_x": 10, "bound_y": 10}
+    assert SIFEPaillierKeyGenerator(dict(toy)).n == SIFEPaillierKeyGenerator(dict(toy)).n

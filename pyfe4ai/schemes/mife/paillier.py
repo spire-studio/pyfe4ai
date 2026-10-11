@@ -65,6 +65,8 @@ _PARAM_FORMAT = "modulus-only/v1+g-seed"
 class MIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
     """Key generator for Paillier-based multi-input inner-product FE."""
 
+    _holds_dcr_modulus = True  # never cached under standard (see ParameterCacheMixin)
+
     _scheme_type = CryptoCONST.TYPE_MIFE_PAILLIER
     def __init__(self, config: dict, **kwargs) -> None:
         """Perform the __init__ operation.

@@ -284,7 +284,10 @@ table and *Known Issues* before relying on any privacy property.
   plaintexts) and the Damgard element `h`, hashed into the group (a planted
   `h = g` had a known discrete logarithm).
   A file that fails, or does not parse (e.g. after an interrupted write), is
-  regenerated, and files are written atomically.
+  regenerated, and files are written atomically. Since no check can tell
+  whether someone knows the factors of a DCR modulus, the `standard` profile
+  never loads or stores the Paillier moduli and the dMCFE `N2` (they are
+  generated for every key generator); `toy` keeps the cache.
 - **Ring-LWE parameters (SIFE, MIFE, MCFE, tMCFE, dMCFE)**: `bmms21_parameters`
   cites BMMS21 Sec. 4.2 but used `sigma = 1` and `sigma1 = 2 sqrt(l) X`,
   which miss its smoothing conditions (the mhe-RLWE condition of G1 -> G2

@@ -74,6 +74,8 @@ def _carry_mask(key_hex: str, label: str, index: int, bits: int) -> gp.mpz:
 class DecentralizedMCFEKeyGenerator(MCFEKeyGenerator):
     """Sets up CDGPP18 client keys and zero-sum MCFE2 keys (ABMPSW20 Fig. 14)."""
 
+    _holds_dcr_modulus = True  # never cached under standard (see ParameterCacheMixin)
+
     _scheme_type = CryptoCONST.TYPE_DMCFE
     _verify_keys = ("sec_param", "eta", "n", "construction", "n2_prime_bits")
 

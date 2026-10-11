@@ -26,6 +26,10 @@ class ParameterCacheMixin:
 
     config_folder: str
     _scheme_type: str
+    #: Set by key generators whose parameters include a DCR modulus: no check
+    #: can tell whether someone knows its factors, so under the ``standard``
+    #: profile such parameters are generated afresh, never loaded or stored.
+    _holds_dcr_modulus = False
 
     def _load_parameters(self) -> None:
         """Load cached parameters from disk, or generate and save fresh ones.
@@ -41,6 +45,14 @@ class ParameterCacheMixin:
         folder = os.path.join(self.config_folder, self._scheme_type)
         os.makedirs(folder, exist_ok=True)
         param_file = os.path.join(folder, "param.json")
+        if self._holds_dcr_modulus and getattr(self, "security_profile", None) == profiles.STANDARD:
+            fd, tmp_file = tempfile.mkstemp(dir=folder, prefix=".param-", suffix=".json")
+            os.close(fd)
+            try:
+                self._generate_and_save(tmp_file)
+            finally:
+                os.unlink(tmp_file)
+            return
         if os.path.exists(param_file):
             logger.debug("load param file: %s", param_file)
             try:
