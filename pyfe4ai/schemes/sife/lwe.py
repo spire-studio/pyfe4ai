@@ -11,39 +11,39 @@ LWE-Based Single-Input Inner-Product Functional Encryption
 * setting:  Integer based
 * note:     prototype implementation aligned with the existing crypto-ipfe API
 
+The public matrix ``A`` is published as a seed and expanded with SHAKE-128;
+encryption computes ``A^T r`` and ``pk^T r`` exactly with numpy, either over
+an ``A`` kept in memory or expanded for every batch (``matrix_mode``). See
+:mod:`pyfe4ai.schemes.abdp15_lwe`, which also covers the ``standard``
+parameters. Versions <= 0.2.0 published ``A`` entry by entry.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import gmpy2 as gp
 import numpy as np
 
+from pyfe4ai.schemes.abdp15_lwe import ENCRYPT_BATCH
+from pyfe4ai.schemes.abdp15_lwe import ABDP15CryptoMixin
+from pyfe4ai.schemes.abdp15_lwe import ABDP15KeyGeneratorMixin
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
-from pyfe4ai.schemes.ipfe import ParameterCacheMixin
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.lwe_utils import center_lwe_vector
 from pyfe4ai.utils.lwe_utils import decode_lwe_inner_product
-from pyfe4ai.utils.lwe_utils import derive_lwe_parameters
-from pyfe4ai.utils.matrix_utils import digits_to_matrix
 from pyfe4ai.utils.matrix_utils import digits_to_vector
 from pyfe4ai.utils.matrix_utils import matrix_to_digits
-from pyfe4ai.utils.matrix_utils import matmul_mod
 from pyfe4ai.utils.matrix_utils import matvec_mod
-from pyfe4ai.utils.matrix_utils import transpose
 from pyfe4ai.utils.matrix_utils import vecdot_mod
 from pyfe4ai.utils.matrix_utils import vector_to_digits
-from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
-from pyfe4ai.utils.sampling_utils import rand_bit_vector
 from pyfe4ai.utils.sampling_utils import rand_uniform_matrix
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.validation import int_vector
 
 logger = logging.getLogger(__name__)
 
-class SIFELWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
+class SIFELWEKeyGenerator(IPFEAbsKeyGenerator, ABDP15KeyGeneratorMixin):
     """Key generator for LWE-based single-input inner-product FE."""
 
     _scheme_type = CryptoCONST.TYPE_SIFE_LWE
@@ -52,86 +52,37 @@ class SIFELWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
         Args:
             config: Scheme configuration. Recognised keys: ``sec_param``,
-                ``eta``, ``lwe_n``, ``bound_x``, ``bound_y``.
+                ``eta``, ``lwe_n`` (default 32; ``"auto"`` for the smallest
+                dimension meeting the 128-bit table, the ``standard``
+                profile's choice), ``bound_x``, ``bound_y`` and
+                ``matrix_mode`` (``"memory"`` or ``"stream"``, see
+                :mod:`pyfe4ai.schemes.abdp15_lwe`).
         """
         super().__init__(config, **kwargs)
         self.eta = config.get("eta", CryptoCONST.SIFE_DEFAULT_ETA)
-        self.lwe_n = config.get("lwe_n", 32)
         self.bound_x = gp.mpz(config.get("bound_x", 20))
         self.bound_y = gp.mpz(config.get("bound_y", 20))
-        self._load_parameters()
-
-    def _apply_parameters(self, param: dict) -> None:
-        """Assign LWE parameters (p, q, m, sigma_q, l_sigma, A) from *param*."""
-        self.p = gp.mpz(param["p"])
-        self.q = gp.mpz(param["q"])
-        self.m = int(param["m"])
-        self.sigma_q = float(param["sigma_q"])
-        self.l_sigma = gp.mpz(param["l_sigma"])
-        self.A = digits_to_matrix(param["A"])
-
-    def _param_verification(self, param: dict) -> bool:
-        """Return ``True`` if *param* matches the current configuration."""
-        return (
-            param.get("sec_param") == self.sec_param
-            and param.get("eta") == self.eta
-            and param.get("lwe_n") == self.lwe_n
-            and param.get("bound_x") == gp.digits(self.bound_x)
-            and param.get("bound_y") == gp.digits(self.bound_y)
-        )
-
-    def _generate_and_save(self, param_file: str) -> None:
-        """Derive LWE parameters, sample public matrix **A**, and persist."""
-        self.p, self.q, self.m, self.sigma_q, self.l_sigma = derive_lwe_parameters(
-            self.bound_x, self.bound_y, self.eta, self.lwe_n
-        )
-
-        self.A = rand_uniform_matrix(self.m, self.lwe_n, self.q)
-
-        with open(param_file, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "sec_param": self.sec_param,
-                    "eta": self.eta,
-                    "lwe_n": self.lwe_n,
-                    "m": self.m,
-                    "bound_x": gp.digits(self.bound_x),
-                    "bound_y": gp.digits(self.bound_y),
-                    "p": gp.digits(self.p),
-                    "q": gp.digits(self.q),
-                    "sigma_q": self.sigma_q,
-                    "l_sigma": gp.digits(self.l_sigma),
-                    "A": matrix_to_digits(self.A),
-                },
-                f,
-            )
+        self._init_abdp15(config)
 
     def setup(self) -> None:
         """Generate master secret key (``msk``) and master public key (``mpk``)."""
         sk = rand_uniform_matrix(self.lwe_n, self.eta, self.q)
-        noise = discrete_gaussian_matrix(self.m, self.eta, self.sigma_q)
-        pk = matmul_mod(self.A, sk, self.q)
-        for i in range(self.m):
-            for j in range(self.eta):
-                pk[i][j] = (pk[i][j] + noise[i][j]) % self.q
         self.msk = {"sk": sk}
-        self.mpk = {"pk": pk}
+        self.mpk = {"pk": self._public_keys([sk])[0]}
         logger.info("SIFE LWE setup successfully")
 
     def get_public_parameters(self) -> dict:
         """Return serialisable public parameters.
 
         Returns:
-            Dict containing ``A``, ``p``, ``q``, ``m``, ``eta``,
-            ``lwe_n``, ``bound_x``, ``bound_y``, ``sec_param``.
+            Dict containing ``A_seed``, ``m``, ``lwe_n``, ``p``, ``q``,
+            ``eta``, ``bound_x``, ``bound_y``, ``sec_param``.
         """
         return {
-            "A": matrix_to_digits(self.A),
+            **self._matrix_parameters(),
             "p": gp.digits(self.p),
             "q": gp.digits(self.q),
-            "m": self.m,
             "eta": self.eta,
-            "lwe_n": self.lwe_n,
             "bound_x": gp.digits(self.bound_x),
             "bound_y": gp.digits(self.bound_y),
             "sec_param": self.sec_param,
@@ -172,7 +123,7 @@ class SIFELWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         return {"sk_y": vector_to_digits(sk_y), "y": y}
 
 
-class SIFELWE(IPFEAbsCrypto):
+class SIFELWE(IPFEAbsCrypto, ABDP15CryptoMixin):
     """Crypto operations for LWE-based single-input inner-product FE."""
 
     def __init__(self, config: dict, **kwargs) -> None:
@@ -180,13 +131,14 @@ class SIFELWE(IPFEAbsCrypto):
 
         Args:
             config: Must contain ``keys`` with ``pp`` (public parameters)
-                and optionally ``sk`` (encryption keys).
+                and optionally ``sk`` (encryption keys); optional
+                ``matrix_mode`` (``"memory"`` or ``"stream"``).
         """
         super().__init__(config, **kwargs)
         self.pp = self.keys["pp"]
-        self.A = digits_to_matrix(self.pp["A"])
         if self._has_private_keys():
             self.sk = self.keys["sk"]
+        self._init_abdp15(config)
 
     def encrypt(self, lst_pt: list) -> dict:
         """Encrypt a plaintext vector under the LWE-based scheme.
@@ -208,20 +160,21 @@ class SIFELWE(IPFEAbsCrypto):
         lst_pt = int_vector(
             lst_pt, "plaintext", length=self.pp["eta"], bound=int(self.pp["bound_x"])
         )
+        return self._encrypt_batch([lst_pt])[0]
 
+    def _encrypt_batch(self, plaintexts: list) -> list:
+        """Ciphertexts ``(A^T r, pk^T r + floor-encoded x)`` of validated plaintexts."""
         q = gp.mpz(self.pp["q"])
-        pk = digits_to_matrix(self.sk["pk"])
-        r = rand_bit_vector(self.pp["m"])
-
-        a_trans = transpose(self.A)
-        ct0 = matvec_mod(a_trans, r, q)
-
-        pk_trans = transpose(pk)
-        ct1 = matvec_mod(pk_trans, r, q)
-        centered = center_lwe_vector(lst_pt, gp.mpz(self.pp["p"]), q)
-        ct1 = [(v + c) % q for v, c in zip(ct1, centered)]
-
-        return {"ct0": vector_to_digits(ct0), "ct1": vector_to_digits(ct1)}
+        p = gp.mpz(self.pp["p"])
+        ct0s, masks = self._masks(len(plaintexts))
+        out = []
+        for x, ct0, mask in zip(plaintexts, ct0s, masks):
+            centered = center_lwe_vector(x, p, q)
+            out.append({
+                "ct0": vector_to_digits([gp.mpz(v) for v in ct0]),
+                "ct1": vector_to_digits([(gp.mpz(v) + c) % q for v, c in zip(mask, centered)]),
+            })
+        return out
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: list):
         """Decrypt a ciphertext to recover the inner product ⟨x, y⟩.
@@ -277,26 +230,18 @@ class SIFELWE(IPFEAbsCrypto):
         """
         if self.pp["eta"] != 1:
             raise NotImplementedError("ndarray helper currently expects eta=1")
-        q = gp.mpz(self.pp["q"])
-        p = gp.mpz(self.pp["p"])
-        m = self.pp["m"]
-        pk = digits_to_matrix(self.sk["pk"])
-        a_trans = transpose(self.A)
-        pk_trans = transpose(pk)
         lst_ndarray_ct = []
         for ary_src in lst_ndarray:
             ary = (ary_src.copy() * pow(10, self.precision)).astype(int)
-            ary_ct = np.empty(ary.shape, dtype=object)
             if np.abs(ary).max(initial=0) > int(self.pp["bound_x"]):
                 raise FEValidationError("quantised value exceeds configured bound_x")
-            for i, w in np.ndenumerate(ary):
-                r = rand_bit_vector(m)
-                ct0 = matvec_mod(a_trans, r, q)
-                ct1 = matvec_mod(pk_trans, r, q)
-                centered = center_lwe_vector([int(w)], p, q)
-                ct1 = [(v + c) % q for v, c in zip(ct1, centered)]
-                ary_ct[i] = {"ct0": vector_to_digits(ct0), "ct1": vector_to_digits(ct1)}
-            lst_ndarray_ct.append(ary_ct)
+            flat = [[int(w)] for w in ary.ravel()]
+            cts = []
+            for start in range(0, len(flat), ENCRYPT_BATCH):
+                cts.extend(self._encrypt_batch(flat[start:start + ENCRYPT_BATCH]))
+            ary_ct = np.empty(len(cts), dtype=object)
+            ary_ct[:] = cts
+            lst_ndarray_ct.append(ary_ct.reshape(ary.shape))
         return lst_ndarray_ct
 
     def compute_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:

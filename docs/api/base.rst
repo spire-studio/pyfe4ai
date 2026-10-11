@@ -31,6 +31,13 @@ DDH Base Classes
    :members:
    :undoc-members:
 
+ABDP15 LWE Base
+---------------
+
+.. automodule:: pyfe4ai.schemes.abdp15_lwe
+   :members:
+   :undoc-members:
+
 Threshold Utilities
 -------------------
 

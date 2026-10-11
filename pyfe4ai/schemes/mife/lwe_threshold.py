@@ -60,19 +60,15 @@ from pyfe4ai.schemes.threshold_utils import validate_threshold
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.utils.lwe_utils import decode_scaled
-from pyfe4ai.utils.lwe_utils import derive_lwe_parameters
-from pyfe4ai.utils.matrix_utils import digits_to_matrix
 from pyfe4ai.utils.matrix_utils import digits_to_vector
-from pyfe4ai.utils.matrix_utils import matrix_to_digits
 from pyfe4ai.utils.matrix_utils import vecdot_mod
 from pyfe4ai.utils.sampling_utils import XofRandom
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_bigint
-from pyfe4ai.utils.sampling_utils import rand_uniform_matrix
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 
 logger = logging.getLogger(__name__)
 
-_CONSTRUCTION = "acfgu18-abdp15-shamir-smudging/v2"
+_CONSTRUCTION = "acfgu18-abdp15-shamir-smudging-seeded-a/v3"
 _DEFAULT_STAT_PARAM = 64
 
 
@@ -88,6 +84,7 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
     """Key generator for threshold MIFE-LWE (ACFGU18 + Shamir + smudging)."""
 
     _scheme_type = CryptoCONST.TYPE_TMIFE_LWE
+    _construction = _CONSTRUCTION
 
     def __init__(self, config: dict, **kwargs) -> None:
         """Initialise the key generator.
@@ -109,71 +106,39 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
             )
         validate_threshold(self.t, self.lst_sid)
 
-    def _apply_parameters(self, param: dict) -> None:
-        self.p = gp.mpz(param["p"])
-        self.q = gp.mpz(param["q"])
-        self.m = int(param["m"])
-        self.sigma_q = float(param["sigma_q"])
-        self.l_sigma = gp.mpz(param["l_sigma"])
-        self.sigma_f = int(param["sigma_f"])
-        self.A = digits_to_matrix(param["A"])
+    def _record_fields(self) -> dict:
+        return {**super()._record_fields(), "s": self.s, "stat_param": self.stat_param}
 
-    def _param_verification(self, param: dict) -> bool:
-        return (
-            param.get("construction") == _CONSTRUCTION
-            and param.get("sec_param") == self.sec_param
-            and param.get("eta") == self.eta
-            and param.get("n") == self.n
-            and param.get("s") == self.s
-            and param.get("lwe_n") == self.lwe_n
-            and param.get("stat_param") == self.stat_param
-            and param.get("bound_x") == gp.digits(self.bound_x)
-            and param.get("bound_y") == gp.digits(self.bound_y)
-        )
-
-    def _generate_and_save(self, param_file: str) -> None:
-        self.p, q_base, self.m, self.sigma_q, self.l_sigma = derive_lwe_parameters(
-            self.bound_x, self.bound_y, self.eta, self.lwe_n, extra_dimension=self.n
-        )
+    def _derive(self) -> dict:
+        if self.lwe_n_config == "auto":
+            raise FEValidationError(
+                "lwe_n = 'auto' is not available for mife/lwe_threshold: the flooding noise "
+                "puts log2(q / sigma) above 110 bits, beyond the 128-bit table"
+            )
+        params = super()._derive()
+        m = params["m"]
         while True:
             # ciphertext noise of a full decryption: |sum_i y_i^T E_i^T r_i|
             noise_bound = (
-                self.n * self.eta * int(self.bound_y) * self.m
-                * int(GAUSSIAN_TAIL_CUT * self.sigma_q + 1)
+                self.n * self.eta * int(self.bound_y) * m
+                * int(GAUSSIAN_TAIL_CUT * params["sigma_q"] + 1)
             )
-            self.sigma_f = noise_bound << self.stat_param
-            budget = noise_bound + self.s * GAUSSIAN_TAIL_CUT * self.sigma_f
+            sigma_f = noise_bound << self.stat_param
+            budget = noise_bound + self.s * GAUSSIAN_TAIL_CUT * sigma_f
             # Delta = floor(q / p) must exceed 2 * budget (plus a margin for rounding)
-            self.q = gp.next_prime(max(q_base, self.p * (2 * budget + 4)))
+            q = gp.next_prime(max(params["q"], params["p"] * (2 * budget + 4)))
             # A^T r must stay close to uniform for the enlarged q (leftover hash
             # lemma, as in derive_lwe_parameters); a longer r adds noise, so iterate
-            m_need = (self.lwe_n + self.eta + 1) * int(self.q).bit_length() + 2 * self.lwe_n + 1
-            if m_need <= self.m:
+            m_need = (params["lwe_n"] + self.eta + 1) * int(q).bit_length() + 2 * params["lwe_n"] + 1
+            if m_need <= m:
                 break
-            self.m = m_need
-        self.A = rand_uniform_matrix(self.m, self.lwe_n, self.q)
-        with open(param_file, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "construction": _CONSTRUCTION,
-                    "sec_param": self.sec_param,
-                    "eta": self.eta,
-                    "n": self.n,
-                    "s": self.s,
-                    "lwe_n": self.lwe_n,
-                    "stat_param": self.stat_param,
-                    "m": self.m,
-                    "bound_x": gp.digits(self.bound_x),
-                    "bound_y": gp.digits(self.bound_y),
-                    "p": gp.digits(self.p),
-                    "q": gp.digits(self.q),
-                    "sigma_q": self.sigma_q,
-                    "l_sigma": gp.digits(self.l_sigma),
-                    "sigma_f": str(self.sigma_f),
-                    "A": matrix_to_digits(self.A),
-                },
-                f,
-            )
+            m = m_need
+        params.update({"q": q, "m": m, "sigma_f": sigma_f})
+        return params
+
+    def _apply_parameters(self, param: dict) -> None:
+        super()._apply_parameters(param)
+        self.sigma_f = int(param["sigma_f"])
 
     def setup(self) -> None:
         """Sample the MIFE keys and forget any previously shared keys."""

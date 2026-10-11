@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import random
 
 import gmpy2 as gp
+import numpy as np
 
 _CSPRNG = random.SystemRandom()
 
@@ -40,6 +42,13 @@ def rand_uniform_vector(length: int, modulus: gp.mpz) -> list[gp.mpz]:
 
 def rand_bit_vector(length: int) -> list[gp.mpz]:
     return [gp.mpz(_CSPRNG.randrange(2)) for _ in range(length)]
+
+
+def rand_bit_matrix(rows: int, cols: int) -> np.ndarray:
+    """``rows x cols`` uniform bits (``uint8``) from the OS CSPRNG."""
+    count = rows * cols
+    bits = np.unpackbits(np.frombuffer(os.urandom((count + 7) // 8), dtype=np.uint8))
+    return bits[:count].reshape(rows, cols)
 
 
 # Above this width a double-precision sample no longer resolves the integers

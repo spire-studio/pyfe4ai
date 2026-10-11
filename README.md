@@ -152,7 +152,7 @@ none is known to be insecure.
 | Scheme | Status | Fidelity | Construction | Notes |
 |---|---|---|---|---|
 | `sife/ddh` | reviewed | faithful | ABDP15 Construction 1 (DDH) | signed x, y; decryption bound dlog_bound (default 10^(precision + 2)) |
-| `sife/lwe` | reviewed | adapted | ABDP15 Constructions 2 + 3 (LWE) | k = 0 (no r-ary decomposition); signed X/Y-bounded inputs with centred decoding; GoFE parameter recipe; noise is a rounded continuous Gaussian |
+| `sife/lwe` | reviewed | adapted | ABDP15 Constructions 2 + 3 (LWE) | k = 0 (no r-ary decomposition); signed X/Y-bounded inputs with centred decoding; GoFE parameter recipe; noise is a rounded continuous Gaussian; A expanded from a public seed (SHAKE-128) |
 | `sife/paillier` | reviewed | faithful | ALS16 (DCR) | D_{Z,sigma} realised as a high-precision rounded Gaussian |
 | `sife/damgard` | reviewed | faithful | ALS16 DDH (ACFGU18 Fig. 7, k = 1) | h = g^a with a discarded |
 | `sife/ring_lwe` | reviewed | adapted | BMMS21 Sec. 4 (selective) + Remark 1 batching | signed messages and weights (p = 2lXY + 2, centred decoding); one ciphertext packs up to ring_n vectors; single NTT prime q; ring_n defaults to the toy value 32 |
@@ -161,7 +161,7 @@ none is known to be insecure.
 | `sife/fh_ipe_pairing` | reviewed | adapted | KLMMRW18 Sec. 3 | vectors padded to (x, 1, 0) / (y, 0, 1), so eta = 1 and zero vectors are safe; keys in G1, ciphertexts in G2; generic bilinear group model; the encryption key is master-secret equivalent |
 | `sife/part_fh_ipe_pairing` | reviewed | adapted | Gay20 Fig. 8 (CPA, k = 1) | M is a random full-rank public matrix (subspace_dim < eta, default 1), published with V^T M in the clear; keys leak M^T y, which for small eta - subspace_dim often determines a bounded y; public Enc needs bounded t; Enc' is run by the key generator; no QANIZK |
 | `mife/ddh` | reviewed | adapted | ACFGU18 Fig. 4 + ABDP15 (DDH) | ACFGU18 instantiates Fig. 4 with ALS16; here the selectively secure ABDP15 IPFE in every slot |
-| `mife/lwe` | reviewed | adapted | ACFGU18 Fig. 4 + ABDP15 (LWE) | ACFGU18 instantiates Fig. 4 with ALS16; here the selectively secure ABDP15 IPFE (same two-step decryption); slots share A |
+| `mife/lwe` | reviewed | adapted | ACFGU18 Fig. 4 + ABDP15 (LWE) | ACFGU18 instantiates Fig. 4 with ALS16; here the selectively secure ABDP15 IPFE (same two-step decryption); slots share A, expanded from a public seed (SHAKE-128) |
 | `mife/paillier` | reviewed | adapted | ACFGU18 Fig. 4 + ALS16 (DCR, Fig. 9) | slots share N and g; D_{Z,sigma} realised as a high-precision rounded Gaussian |
 | `mife/damgard` | reviewed | adapted | ACFGU18 Fig. 4 + ALS16 (DDH, Fig. 7) | slots share the group and h (the matrix A of Fig. 7) |
 | `mife/ring_lwe` | reviewed | adapted | BMMS21 Sec. 6 MIFE-compiler (ACFGU18) | slots share a; parameters sized for dimension n * eta |
@@ -210,8 +210,9 @@ kg = SIFEKeyGenerator({"eta": 3, "security_profile": "standard"})  # 3072-bit gr
 | DCR: Paillier (SIFE, MIFE, MCFE) | `bit_length = 1536`: two 1536-bit safe primes, N ≈ 3072 bits | setup a few seconds (two 1536-bit safe primes) |
 | Ring-LWE (SIFE, MIFE, MCFE, tMCFE, dMCFE) | κ = `sec_param` = 128 and `ring_n = "auto"`: the smallest n in {1024, …, 32768} whose derived q (including the threshold flooding) satisfies the 128-bit bound of the Homomorphic Encryption Standard (log2 q ≤ 27 / 54 / 109 / 218 / 438 / 881); an explicit `ring_n` is checked against the same bound | n = 4096–8192 for small bounds; < 1 s |
 | Dense LWE: the ABMPSW20 MCFE family (`mcfe/lwe`, `fullysec_lwe`, `lwe_threshold`, `lwe_decentralized`) | `lwe_n = "auto"`: the smallest n0 in {4096, 4608, …, 16384} whose derived q meets a [lattice-estimator](https://github.com/malb/lattice-estimator) bound for LWE(n0, q, ⌈2√n0⌉) with a uniform secret -- the assumption of the scheme's proof (`lwe_utils.DENSE_LWE_128_LOG_Q`, e.g. log2 q ≤ 118 / 173 / 227 for n0 = 4096 / 6144 / 8192; regenerate with `tools/estimate_dense_lwe.py`); an explicit `lwe_n` is checked against the same table. No public matrix: a label is hashed to n0 + m0 values. `lwe_decentralized` combines key shares under a DCR modulus of ≥ 3072 bits, so its key derivation is not post-quantum | n0 = 4608–6144 for small bounds; 3–5 ms per element and client (one label per element), faster than 3072-bit DDH; dMCFE key share ≈ 50 s per client |
+| LWE with a public matrix: ABDP15 (`sife/lwe`, `mife/lwe`) | `lwe_n = "auto"`: the smallest n in {512, 576, …, 2048} whose (q, σ) meets a lattice-estimator bound on log2(q/σ) for the wide-error LWE of the public key A·S + E (`lwe_utils.WIDE_LWE_128_LOG_RATIO`, rows by σ; regenerate with `tools/estimate_wide_lwe.py`). A (m ≈ n·log2 q rows) is published as a 32-byte seed and expanded with SHAKE-128. `matrix_mode` (key generator and crypto configs, forwarded by the ML adapter): `"memory"` keeps A expanded, `"stream"` expands it again for every batch | n = 832 / 1088 for X = Y = 50 / 256 (A: 5·10^7 / 1.1·10^8 entries). Encryptor alone, n = 1088: `"memory"` 0.10 s per encryption and 2.7 GB, `"stream"` 3.4 s and 0.5 GB; the ndarray helpers encrypt in batches of 64 (n = 832: 3 vs 26 ms per element). The public key is m × eta per slot (32 MB of JSON for eta = 10), so keep eta small |
 | Pairing: FH-IPE, FH-MCFE family, quadratic FE | BN254, the strongest curve charm-crypto offers: about **100-bit** security (exTNFS), below the target; a `FESecurityWarning` says so | — |
-| Refused | LWE with a public matrix A: `sife/lwe`, `mife/lwe`, `mife/lwe_threshold` (ABDP15) and `sife/fullysec_lwe`, `mife/fullysec_lwe` (ALS16); `mcfe/paillier_decentralized` | `FEValidationError`: no parameter set that is both secure and usable in pure Python. At a 128-bit dimension (lattice estimator) A has 4·10^7–10^8 entries for ABDP15 and 1.5–3·10^9 for ALS16, and every encryption multiplies it by a vector -- use the Ring-LWE scheme of the same family. dMCFE-Paillier needs a DCR modulus above 15000 bits for combining key shares |
+| Refused | `sife/fullysec_lwe`, `mife/fullysec_lwe` (ALS16), `mife/lwe_threshold`, `mcfe/paillier_decentralized` | `FEValidationError`: no parameter set that is both secure and usable. ALS16 at a 128-bit dimension (lattice estimator, n = 2560–3328): A has 1.5–3·10^9 entries and a ciphertext 6–9·10^5 coordinates of 230–270 bits (17–31 MB) -- use the Ring-LWE scheme of the same family. tMIFE-LWE: its statistical flooding needs n = 3600–3800 and an A of 2–2.7·10^9 entries. dMCFE-Paillier needs a DCR modulus above 15000 bits for combining key shares |
 
 The statistical parameter `stat_param` keeps its default of 64. The profile
 sizes the hardness assumptions only; the other caveats under
@@ -229,6 +230,7 @@ side-channel hardening, trusted parameter cache) still apply.
   - `utils/`: utility modules
     - `crypto_constants.py`, `crypto_utils.py`: group generation and constants
     - `lwe_utils.py`, `ring_lwe_utils.py`: LWE / Ring-LWE helpers with NTT
+    - `lwe_matrix.py`: seeded public LWE matrices and exact numpy products with them
     - `dlog_solver.py`: in-memory dlog table + BSGS discrete-log recovery
     - `ml_adapter.py`: ML integration (encrypted inference, FL aggregation)
     - `quantization.py`: float ↔ integer quantization toolkit
@@ -240,7 +242,7 @@ side-channel hardening, trusted parameter cache) still apply.
 - `tests/`: end-to-end and regression tests (`sife/`, `mife/`, `mcfe/`, `quadratic/`)
 - `examples/`: minimal runnable usage examples
 - `benchmarks/`: lightweight benchmark scripts
-- `tools/`: maintenance scripts (`estimate_dense_lwe.py` regenerates the dense-LWE security table with SageMath and the lattice estimator)
+- `tools/`: maintenance scripts (`estimate_dense_lwe.py`, `estimate_wide_lwe.py` regenerate the LWE security tables with SageMath and the lattice estimator)
 - `environment.yml`: reproducible Conda environment
 - `Dockerfile.pairing`: Docker-based pairing-enabled test environment
 
@@ -371,7 +373,7 @@ limitations remain:
 | No labels in multi-input FE | all MIFE schemes and quadratic `miqfe` | By definition, the holder of a functional key may combine any ciphertext of each slot. Encrypting several inputs per client under one key epoch -- e.g. a gradient element by element -- therefore reveals the differences between that client's values. The ML adapter refuses MIFE for gradient aggregation; use MCFE (labelled ciphertexts) for federated learning. |
 | Experimental threshold layers | tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE, tMCFE-FH-Multi-IPE | The threshold layers (noise flooding, Shamir sharing in the exponent) are our own and have no published security proof; see the module docstrings. |
 | One ciphertext per client and label | all MCFE / DMCFE schemes | As in the papers, a client must not encrypt two different inputs under one label (or tag); the library does not enforce it. |
-| Toy default parameters | all | `sec_param` is a modulus bit length (default 128), not a security level; LWE dimensions default to 16–64 and the Ring-LWE dimension to 32; the statistical parameter `stat_param` defaults to 64. All far below any real security level (a key column of SIFE-LWE at its defaults falls to plain LLL in minutes). Pass `security_profile="standard"` for 128-bit-oriented parameters -- except for pairings (BN254, about 100-bit) and the LWE schemes with a public matrix (refused); see [Security Profiles](#security-profiles). |
+| Toy default parameters | all | `sec_param` is a modulus bit length (default 128), not a security level; LWE dimensions default to 16–64 and the Ring-LWE dimension to 32; the statistical parameter `stat_param` defaults to 64. All far below any real security level (a key column of SIFE-LWE at its defaults falls to plain LLL in minutes). Pass `security_profile="standard"` for 128-bit-oriented parameters -- except for pairings (BN254, about 100-bit) and the refused ALS16 / tMIFE-LWE / dMCFE-Paillier schemes; see [Security Profiles](#security-profiles). |
 | Unvalidated parameter cache in the working directory | key generators that cache parameters (most; not MCFE `lwe`, `fullysec_lwe`, `lwe_threshold`, the FH-MCFE family, MIFE `fh_ipe_pairing` and quadratic `quad`) | Parameters (public values only; no trapdoors since the Paillier fix) are written to and re-loaded from `./config/authority/...` without structural validation; a planted `param.json` (e.g. a 5-bit group) is accepted. Run only in a directory that nobody else can write to. The pairing dlog cache (`./config/crypto/...`) is likewise trusted if its generators match: a planted table gives wrong results and an inflated bound makes decryption loop for a very long time. |
 | Float fusion weights in `aggregate_gradients` | `utils/ml_adapter.py` | Float weights are quantised but the result is not rescaled (e.g. weights 0.5 give 100× the expected sum in decimal mode). Pass integer weights. |
 

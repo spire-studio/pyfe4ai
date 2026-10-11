@@ -10,6 +10,8 @@ from pyfe4ai import FESecurityWarning
 from pyfe4ai.schemes import profiles
 from pyfe4ai.schemes import status as st
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
+from pyfe4ai.schemes.mife.lwe import MIFELWE, MIFELWEKeyGenerator
+from pyfe4ai.schemes.sife.lwe import SIFELWE, SIFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.lwe import MCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.lwe_decentralized import DecentralizedMCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.lwe_threshold import ThresholdMCFELWEKeyGenerator
@@ -18,7 +20,13 @@ from pyfe4ai.schemes.sife.ddh import SIFE, SIFEKeyGenerator
 from pyfe4ai.schemes.sife.ring_lwe import SIFERingLWE, SIFERingLWEKeyGenerator
 from pyfe4ai.utils.crypto_utils import RFC3526_PRIMES, generate_group_primes
 from pyfe4ai.utils.exceptions import FEValidationError
-from pyfe4ai.utils.lwe_utils import DENSE_LWE_128_LOG_Q, abmpsw20_lwe_parameters, check_dense_lwe
+from pyfe4ai.utils.lwe_utils import (
+    DENSE_LWE_128_LOG_Q,
+    WIDE_LWE_128_LOG_RATIO,
+    abmpsw20_lwe_parameters,
+    check_dense_lwe,
+    check_wide_lwe,
+)
 from pyfe4ai.utils.ml_adapter import FESchemeWrapper, aggregate_gradients, encrypt_gradient
 from pyfe4ai.utils.ring_lwe_utils import (
     HE_STANDARD_128_LOG_Q,
@@ -101,9 +109,7 @@ def test_standard_accepts_stronger_explicit_values():
 @pytest.mark.parametrize(
     "scheme",
     [
-        ("sife", "lwe"),
         ("sife", "fullysec_lwe"),
-        ("mife", "lwe"),
         ("mife", "fullysec_lwe"),
         ("mife", "lwe_threshold"),
         ("mcfe", "paillier_decentralized"),
@@ -262,6 +268,45 @@ def test_standard_dmcfe_lwe_combines_key_shares_under_a_3072_bit_modulus():
 def test_toy_dmcfe_lwe_sizes_its_modulus_by_the_key_shares():
     kg = DecentralizedMCFELWEKeyGenerator({**MCFE_LWE_CONFIG, "lwe_n": 16})
     assert kg.n2_prime_bits < profiles.STANDARD_DCR_PRIME_BITS
+
+
+# -- LWE with a seeded public matrix (ABDP15) -------------------------------
+
+
+@pytest.mark.parametrize("scheme", [("sife", "lwe"), ("mife", "lwe")])
+def test_standard_selects_the_lwe_dimension_of_abdp15(scheme):
+    assert profiles.resolve(dict(STANDARD), scheme)["lwe_n"] == "auto"
+
+
+@pytest.mark.parametrize("kg_cls, config", [
+    (SIFELWEKeyGenerator, {"eta": 2, "bound_x": 50, "bound_y": 50}),
+    (MIFELWEKeyGenerator, {"n": 2, "eta": 1, "bound_x": 50, "bound_y": 50}),
+])
+def test_standard_abdp15_meets_the_wide_lwe_table(kg_cls, config):
+    kg = kg_cls({**config, **STANDARD})
+    assert kg.lwe_n in WIDE_LWE_128_LOG_RATIO[16]
+    check_wide_lwe(kg.lwe_n, kg.q, kg.sigma_q)
+
+
+def test_standard_rejects_an_insecure_explicit_abdp15_dimension():
+    with pytest.raises(FEValidationError, match="below 128-bit security"):
+        SIFELWEKeyGenerator({"eta": 2, "bound_x": 50, "bound_y": 50, "lwe_n": 256, **STANDARD})
+
+
+def test_standard_sife_lwe_round_trip_streaming_the_matrix():
+    config = {"eta": 2, "bound_x": 50, "bound_y": 50, "matrix_mode": "stream", **STANDARD}
+    kg = SIFELWEKeyGenerator(config)
+    kg.setup()
+    pp = kg.get_public_parameters()
+    enc = SIFELWE({"keys": {"pp": pp, "sk": kg.get_private_keys()}, "matrix_mode": "stream"})
+    dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": [3, -7]})
+    ct = enc.encrypt([50, -50])
+    assert SIFELWE({"keys": {"pp": pp}}).decrypt(ct, dk, [3, -7]) == 500
+
+
+def test_wrapper_passes_the_matrix_mode_to_its_encryptors():
+    wrapper = FESchemeWrapper("sife", "lwe", {"eta": 2, "lwe_n": 16, "matrix_mode": "stream"})
+    assert wrapper._get_encryptor("nid_0").matrix_mode == "stream"
 
 
 # -- Ring-LWE ----------------------------------------------------------------

@@ -26,8 +26,9 @@ def kg_config():
     }
 
 
-def test_entire_process(kg_config):
-    kg = MIFELWEKeyGenerator(kg_config)
+@pytest.mark.parametrize("mode", ["memory", "stream"])
+def test_entire_process(kg_config, mode):
+    kg = MIFELWEKeyGenerator({**kg_config, "matrix_mode": mode})
     kg.setup()
 
     dct_x = {
@@ -51,6 +52,7 @@ def test_entire_process(kg_config):
             {
                 "id": nid,
                 "keys": {"pp": pp, "sk": kg.get_private_keys(nid)},
+                "matrix_mode": mode,
             }
         )
         dct_ct[nid] = crypto_nid.encrypt(dct_x[nid])
@@ -109,3 +111,16 @@ def test_entire_process_lst_ndarray(kg_config):
 
     for idx in range(len(expected)):
         assert np.allclose(computed[idx], expected[idx], atol=1e-2)
+
+
+def test_clients_share_one_expanded_matrix(kg_config):
+    kg = MIFELWEKeyGenerator(kg_config)
+    kg.setup()
+    pp = kg.get_public_parameters()
+    a, b = (
+        MIFELWE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
+        for nid in ("nid_0", "nid_1")
+    )
+    a.encrypt([1, 2])
+    b.encrypt([3, 4])
+    assert a.A is b.A

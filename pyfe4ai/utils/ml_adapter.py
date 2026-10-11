@@ -384,13 +384,10 @@ class FESchemeWrapper:
             keys: dict[str, Any] = {"pp": self.pp}
             if sk is not None:
                 keys["sk"] = sk
-            self._encryptors[nid] = self._crypto_cls(
-                {
-                    "id": nid,
-                    "precision": self.qconfig.precision,
-                    "keys": keys,
-                }
-            )
+            config = {"id": nid, "precision": self.qconfig.precision, "keys": keys}
+            if "matrix_mode" in self.keygen_config:  # LWE schemes with a seeded matrix
+                config["matrix_mode"] = self.keygen_config["matrix_mode"]
+            self._encryptors[nid] = self._crypto_cls(config)
         return self._encryptors[nid]
 
     def _get_decryptor(self, sid: str) -> Any:

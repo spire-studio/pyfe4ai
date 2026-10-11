@@ -50,6 +50,13 @@ LWE Utilities
    :members:
    :undoc-members:
 
+Seeded LWE Matrices
+-------------------
+
+.. automodule:: pyfe4ai.utils.lwe_matrix
+   :members:
+   :undoc-members:
+
 Ring-LWE Utilities
 ------------------
 

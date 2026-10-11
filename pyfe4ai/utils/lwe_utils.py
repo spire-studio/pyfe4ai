@@ -42,7 +42,9 @@ def derive_lwe_parameters(
     x *= 8.0 * lwe_n * math.sqrt(lwe_n + eta + 1.0)
     x *= math.sqrt(x)
     q_bits = max(p_bits + 2, int(gp.mpz(int(x)).bit_length()) + 1)
-    q = gp.next_prime(gp.mpz(_CSPRNG.getrandbits(q_bits)) + (1 << (q_bits - 1)))
+    # the largest q_bits-bit prime: entries of a seeded A (pyfe4ai.utils.lwe_matrix)
+    # are then sampled from q_bits-bit candidates with almost no rejection
+    q = gp.prev_prime(gp.mpz(1) << q_bits)
 
     m = (lwe_n + eta + 1) * q_bits + 2 * lwe_n + 1
     sigma = 1.0 / (2.0 * math.sqrt(2.0 * eta * m * lwe_n))
@@ -219,6 +221,94 @@ def resolve_lwe_n(lwe_n, modulus_for, default: int) -> int:
     if lwe_n == "auto":
         return dense_lwe_n(modulus_for)
     return int(default if lwe_n is None else lwe_n)
+
+
+#: For each error width ``2^s`` (outer key) and LWE dimension ``n`` (inner
+#: key): the largest ``log2(q / sigma)`` for which LWE with a uniform secret,
+#: errors ``D_{Z, 2^s}`` and any number of samples costs at least 2^128
+#: operations, by the lattice estimator (commit 53da598, MATZOV cost model;
+#: primal uSVP and BDD, dual). This is the LWE problem of the ABDP15 public
+#: key ``A S + E``, whose errors are very wide (``sigma`` of 2^30 to 2^45 from
+#: the GoFE parameter recipe). At a fixed ratio the attacks get more expensive
+#: as ``sigma`` grows, so a scheme is held to the row of the largest width not
+#: above its own ``sigma``. Regenerate with ``tools/estimate_wide_lwe.py``.
+WIDE_LWE_128_LOG_RATIO = {
+    16: {512: 21, 576: 23, 640: 25, 704: 27, 768: 29, 832: 31, 896: 33, 960: 35, 1024: 36,
+         1088: 38, 1152: 40, 1216: 42, 1280: 44, 1344: 45, 1408: 47, 1472: 49, 1536: 51,
+         1600: 52, 1664: 54, 1728: 56, 1792: 58, 1856: 59, 1920: 61, 1984: 63, 2048: 65},
+    24: {512: 24, 576: 27, 640: 29, 704: 31, 768: 33, 832: 35, 896: 37, 960: 39, 1024: 40,
+         1088: 42, 1152: 44, 1216: 46, 1280: 48, 1344: 50, 1408: 52, 1472: 53, 1536: 55,
+         1600: 57, 1664: 59, 1728: 61, 1792: 63, 1856: 64, 1920: 66, 1984: 68, 2048: 70},
+    32: {512: 27, 576: 29, 640: 32, 704: 34, 768: 36, 832: 38, 896: 40, 960: 42, 1024: 44,
+         1088: 46, 1152: 48, 1216: 50, 1280: 52, 1344: 54, 1408: 56, 1472: 58, 1536: 59,
+         1600: 61, 1664: 63, 1728: 65, 1792: 67, 1856: 69, 1920: 71, 1984: 72, 2048: 74},
+    40: {512: 29, 576: 32, 640: 34, 704: 36, 768: 39, 832: 41, 896: 43, 960: 45, 1024: 47,
+         1088: 49, 1152: 51, 1216: 53, 1280: 55, 1344: 57, 1408: 59, 1472: 61, 1536: 63,
+         1600: 65, 1664: 67, 1728: 69, 1792: 71, 1856: 73, 1920: 75, 1984: 77, 2048: 78},
+}
+_WIDE_DIMS = sorted(WIDE_LWE_128_LOG_RATIO[16])
+
+
+def wide_lwe_bound(lwe_n: int, sigma) -> int | None:
+    """Largest 128-bit ``log2(q / sigma)`` of :data:`WIDE_LWE_128_LOG_RATIO` for
+    *lwe_n* and *sigma* (rows at or below both), or ``None`` below the table."""
+    widths = [s for s in WIDE_LWE_128_LOG_RATIO if 2.0 ** s <= sigma]
+    dims = [n for n in _WIDE_DIMS if n <= lwe_n]
+    if not widths or not dims:
+        return None
+    return WIDE_LWE_128_LOG_RATIO[max(widths)][max(dims)]
+
+
+def check_wide_lwe(lwe_n: int, q, sigma) -> None:
+    """Raise unless LWE(lwe_n, q, sigma) meets :data:`WIDE_LWE_128_LOG_RATIO`."""
+    bound = wide_lwe_bound(lwe_n, sigma)
+    ratio = math.log2(int(q)) - math.log2(sigma)
+    if bound is None or ratio > bound:
+        from pyfe4ai.utils.exceptions import FEValidationError
+
+        raise FEValidationError(
+            "lwe_n = {} with log2(q / sigma) = {:.1f} and sigma = 2^{:.1f} is below 128-bit "
+            "security (lattice estimator: log2(q / sigma) <= {} here; tabulated for "
+            "lwe_n >= {} and sigma >= 2^{})".format(
+                lwe_n, ratio, math.log2(sigma), "-" if bound is None else bound,
+                _WIDE_DIMS[0], min(WIDE_LWE_128_LOG_RATIO),
+            )
+        )
+
+
+def wide_lwe_n(params_for) -> dict:
+    """``params_for(n)`` (a dict with ``q`` and ``sigma_q``) for the smallest
+    tabulated ``n`` that meets :data:`WIDE_LWE_128_LOG_RATIO`."""
+    for lwe_n in _WIDE_DIMS:
+        params = params_for(lwe_n)
+        bound = wide_lwe_bound(lwe_n, params["sigma_q"])
+        if bound is not None and math.log2(int(params["q"])) - math.log2(params["sigma_q"]) <= bound:
+            return params
+    from pyfe4ai.utils.exceptions import FEValidationError
+
+    raise FEValidationError(
+        "no LWE dimension up to {} reaches 128-bit security for these bounds; "
+        "reduce bound_x, bound_y, eta or the number of clients".format(_WIDE_DIMS[-1])
+    )
+
+
+def abdp15_parameters(bound_x, bound_y, eta: int, lwe_n, extra_dimension: int | None = None) -> dict:
+    """:func:`derive_lwe_parameters` as a dict, for *lwe_n* or, if it is
+    ``"auto"``, for the smallest dimension meeting :data:`WIDE_LWE_128_LOG_RATIO`.
+
+    Returns:
+        Dict with ``lwe_n``, ``p``, ``q``, ``m``, ``sigma_q`` and ``l_sigma``.
+    """
+
+    def params_for(n: int) -> dict:
+        p, q, m, sigma_q, l_sigma = derive_lwe_parameters(
+            bound_x, bound_y, eta, n, extra_dimension=extra_dimension
+        )
+        return {"lwe_n": n, "p": p, "q": q, "m": m, "sigma_q": sigma_q, "l_sigma": l_sigma}
+
+    if lwe_n == "auto":
+        return wide_lwe_n(params_for)
+    return params_for(int(lwe_n))
 
 
 #: Gaussian tail cut used in worst-case bounds: a Gaussian sample exceeds
