@@ -213,8 +213,8 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         _S + "mcfe.fh_multi_ipe_pairing_threshold", EXPERIMENTAL, AD_HOC,
         "AGT21b FH-MCFE + Shamir",
         note="FH-MCFE layer as published; the key exponents Shamir-shared in the "
-        "exponent ([e^(k)]_2, [z^(k)]_T) and partial decryptions in G_T are our own; "
-        + _FH_IPE_NOTE,
+        "exponent ([e^(k)]_2, [z^(k)]_T), partial decryptions in G_T and labelled, "
+        "client-tagged ciphertexts are our own; " + _FH_IPE_NOTE,
     ),
     ("mcfe", "fh_multi_ipe_pairing_decentralized"): SchemeStatus(
         _S + "mcfe.fh_multi_ipe_pairing_decentralized", REVIEWED, ADAPTED,
@@ -249,7 +249,7 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         _S + "mcfe.ring_lwe_threshold", EXPERIMENTAL, AD_HOC,
         "BMMS21 identity-based MCFE + Shamir + smudging",
         note="MCFE layer as published; the threshold layer (statistical flooding, "
-        "derandomised noise, enlarged q) is our own",
+        "derandomised noise, enlarged q, clients' HMAC tags on ciphertexts) is our own",
     ),
     ("mcfe", "ring_lwe_decentralized"): SchemeStatus(
         _S + "mcfe.ring_lwe_decentralized", REVIEWED, ADAPTED,

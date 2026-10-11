@@ -60,8 +60,6 @@ partial decryption 13 ms.
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 import logging
 import secrets
@@ -71,7 +69,10 @@ import numpy as np
 
 from pyfe4ai.schemes.mife.lwe import MIFELWE
 from pyfe4ai.schemes.mife.lwe import MIFELWEKeyGenerator
+from pyfe4ai.schemes.threshold_utils import check_ciphertext_tags
 from pyfe4ai.schemes.threshold_utils import check_fusion_weight
+from pyfe4ai.schemes.threshold_utils import client_server_mac_keys
+from pyfe4ai.schemes.threshold_utils import tag_ciphertext
 from pyfe4ai.schemes.threshold_utils import ciphertexts_digest
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
@@ -79,7 +80,7 @@ from pyfe4ai.schemes.threshold_utils import share_points
 from pyfe4ai.schemes.threshold_utils import share_secret
 from pyfe4ai.schemes.threshold_utils import validate_enrolled
 from pyfe4ai.schemes.threshold_utils import combine_consistently
-from pyfe4ai.schemes.threshold_utils import partial_groups
+from pyfe4ai.schemes.threshold_utils import combine_elementwise
 from pyfe4ai.schemes.threshold_utils import validate_partial_decryptions
 from pyfe4ai.schemes.threshold_utils import validate_threshold
 from pyfe4ai.utils.crypto_constants import CryptoCONST
@@ -100,24 +101,9 @@ _DEFAULT_STAT_PARAM = 64
 _TAG_DOMAIN = "pyfe4ai/tmife-lwe/ciphertext-tag/v1"
 
 
-def ciphertext_tag(mac_key: str, ct: dict) -> str:
-    """Return the HMAC-SHA256 tag (hex) of a ciphertext's ``ct0`` and ``ct1`` as serialised."""
-    message = json.dumps([_TAG_DOMAIN, ct.get("ct0"), ct.get("ct1")]).encode("utf-8")
-    return hmac.new(bytes.fromhex(mac_key), message, hashlib.sha256).hexdigest()
-
-
-def _authentic(ct, mac_key, sid: str) -> bool:
-    if not isinstance(ct, dict) or not isinstance(mac_key, str):
-        return False
-    tags = ct.get("tags")
-    tag = tags.get(sid) if isinstance(tags, dict) else None
-    if not isinstance(tag, str):
-        return False
-    try:
-        expected = ciphertext_tag(mac_key, ct)
-    except (TypeError, ValueError):
-        return False
-    return hmac.compare_digest(tag, expected)
+def _tag_payload(nid, ct: dict) -> list:
+    """What a tMIFE-LWE ciphertext tag covers: ``ct0`` and ``ct1`` as serialised."""
+    return [ct.get("ct0"), ct.get("ct1")]
 
 
 def _flooding_noise(sigma: int, rng) -> int:
@@ -197,9 +183,7 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
         previously shared keys."""
         super().setup()
         self.dict_dk = {}
-        self.mac_keys = {
-            nid: {sid: secrets.token_hex(32) for sid in self.lst_sid} for nid in self.lst_nid
-        }
+        self.mac_keys = client_server_mac_keys(self.lst_nid, self.lst_sid)
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
         """Return client *nid*'s MIFE encryption key plus ``mac_keys``
@@ -276,7 +260,7 @@ class ThresholdMIFELWE(MIFELWE):
             raise FEKeyError("encryption key lacks the ciphertext MAC keys")
         out = super()._encrypt_batch(plaintexts)
         for ct in out:
-            ct["tags"] = {sid: ciphertext_tag(key, ct) for sid, key in mac_keys.items()}
+            tag_ciphertext(ct, mac_keys, _TAG_DOMAIN, _tag_payload(None, ct))
         return out
 
     def share_decrypt(
@@ -308,12 +292,7 @@ class ThresholdMIFELWE(MIFELWE):
         check_fusion_weight(dk, credentials)
         if set(dict_ct) != set(dk["sk_y"]):
             raise FESchemeError("need one ciphertext for every slot of the key")
-        mac_keys = dk.get("mac_keys") or {}
-        for nid, ct in dict_ct.items():
-            if not _authentic(ct, mac_keys.get(nid), self.id):
-                raise FESchemeError(
-                    "the ciphertext of {} is not authenticated for server {}".format(nid, self.id)
-                )
+        check_ciphertext_tags(dict_ct, dk.get("mac_keys"), self.id, _TAG_DOMAIN, _tag_payload)
 
         q = gp.mpz(self.pp["q"])
         delta = q // gp.mpz(self.pp["p"])
@@ -334,10 +313,12 @@ class ThresholdMIFELWE(MIFELWE):
         lagrange = lagrange_coefficient_at_zero(
             sid_v[self.id], [sid_v[s] for s in lst_sid_enrolled], q
         )
-        # the noise is seeded with the digest of the values only, so neither
-        # extra fields nor other servers' tags draw fresh noise
+        # the noise is seeded with what the key part depends on -- the ct0 values,
+        # not their encoding, ct1, extra fields or other servers' tags -- so a
+        # request for the same key part always draws the same noise
         ct_digest = ciphertexts_digest(canonical)
-        context = json.dumps([ct_digest, sorted(lst_sid_enrolled)]).encode("utf-8")
+        key_inputs = ciphertexts_digest({nid: values[0] for nid, values in canonical.items()})
+        context = json.dumps([key_inputs, sorted(lst_sid_enrolled)]).encode("utf-8")
         e_k = _flooding_noise(
             int(self.pp["sigma_f"]), XofRandom(bytes.fromhex(dk["noise_key"]) + context)
         )
@@ -410,15 +391,11 @@ class ThresholdMIFELWE(MIFELWE):
         return lst_partial
 
     def decrypt_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list:
-        """Combine element-wise partial decryptions from at least ``t`` servers."""
-        groups = partial_groups(dict_ndarray_ct)
-        sample = next(iter(groups[0].values()))
-        lst_dec = []
-        for l in range(len(sample)):
-            ary_dec = np.empty(sample[l].shape, dtype=object)
-            for i, _ in np.ndenumerate(sample[l]):
-                ary_dec[i] = self.combine_decrypt(
-                    [{sid: g[sid][l][i] for sid in g} for g in groups]
-                )
-            lst_dec.append((ary_dec / pow(10, self.precision)).astype(float))
-        return lst_dec
+        """Combine element-wise partial decryptions from at least ``t`` servers.
+
+        Raises:
+            FESchemeError: If the servers' outputs differ in structure or an
+                element does not decrypt (servers disagree, or out of range).
+        """
+        out = combine_elementwise(dict_ndarray_ct, lambda groups, l, i: self.combine_decrypt(groups))
+        return [(ary / pow(10, self.precision)).astype(float) for ary in out]

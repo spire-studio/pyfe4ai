@@ -110,3 +110,31 @@ def test_partial_decryptions_for_several_enrolled_sets_must_agree(build, tmp_pat
     forged = [{s: (tamper(p) if s == "sid_1" else p) for s, p in g.items()} for g in groups]
     with pytest.raises(FESchemeError, match="disagree"):
         combiner.combine_decrypt(forged)
+
+
+def test_ndarray_combiners_refuse_bad_partials(tmp_path, monkeypatch):
+    """A disagreeing partial crashed (TypeError) or gave NaN; a reshaped
+    output was taken from the first server."""
+    import numpy as np
+
+    from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE, ThresholdMIFELWEKeyGenerator
+
+    monkeypatch.chdir(tmp_path)
+    kg = ThresholdMIFELWEKeyGenerator({"sec_param": 64, "n": 2, "lst_nid": NIDS, "s": 3, "lst_sid": SIDS, "t": 2,
+                                       "eta": 1, "lwe_n": 16, "bound_x": 50, "bound_y": 5})
+    kg.setup()
+    pp = kg.get_public_parameters()
+    cts = {n: ThresholdMIFELWE({"id": n, "precision": 1, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}})
+           .encrypt_lst_ndarray([np.ones((2, 2))]) for n in NIDS}
+    dks = {s: kg.get_decryption_keys(s, credentials={"fusion_weight": Y}) for s in SIDS}
+    enrolled = ["sid_0", "sid_1"]
+    parts = {s: ThresholdMIFELWE({"id": s, "keys": {"pp": pp, "dk": dks[s]}}).compute_lst_ndarray_ct(cts, Y, dks[s], enrolled)
+             for s in enrolled}
+    combiner = ThresholdMIFELWE({"id": "c", "precision": 1, "keys": {"pp": pp}})
+    assert np.allclose(combiner.decrypt_lst_ndarray_ct(parts)[0], 7)
+    bad = parts["sid_1"][0].copy()
+    bad[0, 0] = dict(bad[0, 0], c_y="1")
+    with pytest.raises(FESchemeError, match="does not decrypt"):
+        combiner.decrypt_lst_ndarray_ct(dict(parts, sid_1=[bad]))
+    with pytest.raises(FESchemeError, match="shape"):
+        combiner.decrypt_lst_ndarray_ct(dict(parts, sid_1=[parts["sid_1"][0][:1]]))

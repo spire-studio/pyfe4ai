@@ -16,10 +16,13 @@ compares them.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import random
+import secrets
 
 import gmpy2 as gp
+import numpy as np
 
 from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
 from pyfe4ai.utils.validation import int_vector
@@ -245,6 +248,38 @@ def combine_consistently(partials, combine_group):
     return results[0]
 
 
+def combine_elementwise(dict_ndarray_ct, combine) -> list:
+    """Combine element-wise ndarray partial decryptions into object arrays.
+
+    Args:
+        dict_ndarray_ct: ``{sid: [array per layer]}`` for one enrolled set, or
+            a list of them (see :func:`partial_groups`).
+        combine: ``combine(groups, layer, index)``, combining the partials of
+            one element (a list of ``{sid: partial}``).
+
+    Raises:
+        FESchemeError: If the servers' outputs differ in structure or an
+            element does not decrypt (servers disagree, or out of range).
+    """
+    groups = partial_groups(dict_ndarray_ct)
+    sample = next(iter(groups[0].values()))
+    shapes = [np.shape(ary) for ary in sample]
+    for group in groups:
+        for out in group.values():
+            if len(out) != len(shapes) or [np.shape(ary) for ary in out] != shapes:
+                raise FESchemeError("partial decryptions differ in shape")
+    result = []
+    for l, shape in enumerate(shapes):
+        ary = np.empty(shape, dtype=object)
+        for i in np.ndindex(*shape):
+            value = combine([{sid: g[sid][l][i] for sid in g} for g in groups], l, i)
+            if value is None or (isinstance(value, float) and value != value):
+                raise FESchemeError("element {} of layer {} does not decrypt".format(i, l))
+            ary[i] = value
+        result.append(ary)
+    return result
+
+
 def center_mod(value: gp.mpz, modulus: gp.mpz) -> gp.mpz:
     """Center *value* into the range ``(-modulus/2, modulus/2]``.
 
@@ -286,6 +321,63 @@ def ciphertexts_digest(canonical: dict) -> str:
     the partials removes it.
     """
     return hashlib.sha256(json.dumps(canonical, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def client_server_mac_keys(lst_nid: list, lst_sid: list) -> dict:
+    """Fresh 32-byte MAC keys (hex), ``{nid: {sid: key}}``, for ciphertext tags.
+
+    Client ``nid`` holds ``{sid: key}`` and tags each ciphertext for every
+    server; server ``sid`` holds ``{nid: key}`` and checks the tags meant for
+    it (see :func:`check_ciphertext_tags`).
+    """
+    return {nid: {sid: secrets.token_hex(32) for sid in lst_sid} for nid in lst_nid}
+
+
+def ciphertext_tag(mac_key: str, domain: str, payload) -> str:
+    """HMAC-SHA256 (hex) of ``(domain, payload)`` under *mac_key* (hex)."""
+    message = json.dumps([domain, payload], sort_keys=True).encode("utf-8")
+    return hmac.new(bytes.fromhex(mac_key), message, hashlib.sha256).hexdigest()
+
+
+def tag_ciphertext(ct: dict, mac_keys: dict, domain: str, payload) -> dict:
+    """Add ``tags`` (one per server of *mac_keys*) to *ct* and return it."""
+    ct["tags"] = {sid: ciphertext_tag(key, domain, payload) for sid, key in mac_keys.items()}
+    return ct
+
+
+def check_ciphertext_tags(dict_ct: dict, mac_keys: dict, sid: str, domain: str, payload_of) -> None:
+    """Raise unless every ciphertext's tag for server *sid* verifies.
+
+    Threshold servers compute partial decryptions that are linear in parts of
+    the ciphertexts they are handed; were these chosen freely, the partials
+    would reveal the shared functional key. Servers therefore only decrypt
+    ciphertexts tagged by their clients.
+
+    Args:
+        dict_ct: ``{nid: ciphertext}``.
+        mac_keys: The server's ``{nid: key}``.
+        sid: The server's id.
+        domain: Domain-separation string of the scheme.
+        payload_of: ``payload_of(nid, ct)``, the tagged content of a ciphertext.
+
+    Raises:
+        FESchemeError: For a missing, malformed or wrong tag.
+    """
+    for nid, ct in dict_ct.items():
+        ok = False
+        tags = ct.get("tags") if isinstance(ct, dict) else None
+        tag = tags.get(sid) if isinstance(tags, dict) else None
+        key = (mac_keys or {}).get(nid)
+        if isinstance(tag, str) and isinstance(key, str):
+            try:
+                expected = ciphertext_tag(key, domain, payload_of(nid, ct))
+                ok = hmac.compare_digest(tag.encode("utf-8"), expected.encode("utf-8"))
+            except (KeyError, TypeError, ValueError):
+                ok = False
+        if not ok:
+            raise FESchemeError(
+                "the ciphertext of {} is not authenticated for server {}".format(nid, sid)
+            )
 
 
 def check_fusion_weight(dk: dict, fusion_weight: dict) -> None:

@@ -207,7 +207,7 @@ def _bench_tmcfe(cfg: dict, x: dict[str, list[int]], y: dict[str, list[int]], la
         for sid in enrolled:
             dk_sid = kg.get_decryption_keys(sid, credentials=credentials)
             dec = ThresholdMCFEFHMultiIPE({"id": sid, "keys": {"pp": pp, "dk": dk_sid}})
-            partials[sid] = dec.share_decrypt(cts, credentials, dk_sid, enrolled)
+            partials[sid] = dec.share_decrypt(cts, credentials, dk_sid, enrolled, label)
         result = encs["nid_0"].combine_decrypt(partials)
         end_to_end_times.append(time.perf_counter() - t0)
         if result != sum(x[nid][0] * y[nid][0] for nid in x):

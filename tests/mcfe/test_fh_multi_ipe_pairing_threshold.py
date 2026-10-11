@@ -58,7 +58,7 @@ def test_entire_process(kg_config):
     for sid in enrolled:
         dk = kg.get_decryption_keys(sid, credentials=credentials)
         dec = ThresholdMCFEFHMultiIPE({"id": sid, "keys": {"pp": pp, "dk": dk}})
-        dct_prime[sid] = dec.share_decrypt(dct_ct, credentials, dk, enrolled)
+        dct_prime[sid] = dec.share_decrypt(dct_ct, credentials, dk, enrolled, label)
 
     combiner = ThresholdMCFEFHMultiIPE(
         {"id": kg_config["lst_nid"][0], "keys": {"pp": pp, "sk": kg.get_private_keys(kg_config["lst_nid"][0])}}
@@ -116,7 +116,7 @@ def test_entire_process_lst_ndarray(kg_config):
         dec = ThresholdMCFEFHMultiIPE(
             {"id": sid, "precision": precision, "keys": {"pp": pp, "dk": dk}}
         )
-        dct_prime[sid] = dec.compute_lst_ndarray_ct(dct_ct, credentials, dk, enrolled)
+        dct_prime[sid] = dec.compute_lst_ndarray_ct(dct_ct, credentials, dk, enrolled, label)
 
     combiner = ThresholdMCFEFHMultiIPE(
         {
@@ -125,7 +125,7 @@ def test_entire_process_lst_ndarray(kg_config):
             "keys": {"pp": pp, "sk": kg.get_private_keys(cfg["lst_nid"][0])},
         }
     )
-    computed = combiner.decrypt_lst_ndarray_ct(dct_prime)
+    computed = combiner.decrypt_lst_ndarray_ct(dct_prime, label)
 
     for idx in range(len(expected)):
         assert np.allclose(computed[idx], expected[idx], atol=1e-2)
@@ -146,12 +146,12 @@ def _setup(cfg):
     return kg, pp, y, dct_ct
 
 
-def _partials(kg, pp, y, dct_ct, enrolled):
+def _partials(kg, pp, y, dct_ct, enrolled, label="round-1"):
     out = {}
     for sid in enrolled:
         dk = kg.get_decryption_keys(sid, credentials={"fusion_weight": y})
         dec = ThresholdMCFEFHMultiIPE({"id": sid, "keys": {"pp": pp, "dk": dk}})
-        out[sid] = dec.share_decrypt(dct_ct, {"fusion_weight": y}, dk, enrolled)
+        out[sid] = dec.share_decrypt(dct_ct, {"fusion_weight": y}, dk, enrolled, label)
     return out
 
 
@@ -174,14 +174,14 @@ def test_threshold_and_consistency_checks(kg_config):
     dec = ThresholdMCFEFHMultiIPE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
     assert "weights_id" not in dk and "key_id" in dk  # no digest of y
     with pytest.raises(FESchemeError):
-        dec.share_decrypt(dct_ct, {"fusion_weight": y}, dk, ["sid_0"])
+        dec.share_decrypt(dct_ct, {"fusion_weight": y}, dk, ["sid_0"], "round-1")
     # a server must use its own share (another's has a different Lagrange point)
     other = ThresholdMCFEFHMultiIPE({"id": "sid_1", "keys": {"pp": pp, "dk": dk}})
     with pytest.raises(FESchemeError):
-        other.share_decrypt(dct_ct, {}, dk, ["sid_0", "sid_1"])
-    # servers that decrypted different ciphertexts are not combined
-    other = dict(dct_ct)
-    other["nid_0"] = dct_ct["nid_1"]
+        other.share_decrypt(dct_ct, {}, dk, ["sid_0", "sid_1"], "round-1")
+    # servers that decrypted different (authentic) ciphertexts are not combined
+    client = ThresholdMCFEFHMultiIPE({"id": "nid_0", "keys": {"pp": pp, "sk": kg.get_private_keys("nid_0")}})
+    other = dict(dct_ct, nid_0=client.encrypt([0, 0], "round-1"))
     parts["sid_1"] = _partials(kg, pp, y, other, ["sid_0", "sid_1"])["sid_1"]
     assert combiner.combine_decrypt(parts) is None
 
@@ -245,3 +245,22 @@ def test_servers_hold_the_key_only_in_the_exponent(kg_config):
             acc *= pair(ctx.de(c), interpolate({s: dks[s]["k"][nid][j] for s in enrolled}))
     acc /= interpolate({s: dks[s]["z"] for s in enrolled})
     assert ctx.solve(acc) == 6
+
+
+def test_servers_decrypt_only_the_requested_round(kg_config):
+    """Regression: FH ciphertexts carry no label in the clear, so servers
+    decrypted whatever round the combiner submitted. Ciphertexts now carry
+    the label, tagged with the ciphertext for every server."""
+    from pyfe4ai.utils.exceptions import FESchemeError
+
+    kg, pp, y, dct_ct = _setup(kg_config)
+    assert _partials(kg, pp, y, dct_ct, ["sid_0", "sid_1"], "round-1")
+    with pytest.raises(FESchemeError, match="requested label"):
+        _partials(kg, pp, y, dct_ct, ["sid_0", "sid_1"], "round-2")
+    relabelled = {nid: dict(ct, label='["label", "round-2"]') for nid, ct in dct_ct.items()}
+    with pytest.raises(FESchemeError, match="not authenticated"):
+        _partials(kg, pp, y, relabelled, ["sid_0", "sid_1"], "round-2")
+    first = dct_ct["nid_0"]
+    for forged in (dict(first, ct=dct_ct["nid_1"]["ct"]), {k: v for k, v in first.items() if k != "tags"}):
+        with pytest.raises(FESchemeError, match="not authenticated"):
+            _partials(kg, pp, y, dict(dct_ct, nid_0=forged), ["sid_0", "sid_1"])

@@ -61,6 +61,7 @@ from pyfe4ai.schemes.threshold_utils import share_secret
 from pyfe4ai.schemes.threshold_utils import validate_enrolled
 from pyfe4ai.schemes.threshold_utils import combine_consistently
 from pyfe4ai.schemes.threshold_utils import partial_groups
+from pyfe4ai.schemes.threshold_utils import combine_elementwise
 from pyfe4ai.schemes.threshold_utils import validate_partial_decryptions
 from pyfe4ai.schemes.threshold_utils import validate_threshold
 from pyfe4ai.utils.crypto_constants import CryptoCONST
@@ -532,18 +533,15 @@ class ThresholdMCFE(IPFEAbsCrypto):
                 several enrolled sets, see :meth:`combine_decrypt`).
             label: The label of the ndarrays; every partial must be for the
                 element label of its position.
+
+        Raises:
+            FESchemeError: If the servers' outputs differ in structure or an
+                element does not decrypt (servers disagree, or out of range).
         """
-        groups = partial_groups(dict_ndarray_ct)
-        sample = next(iter(groups[0].values()))
-        lst_dec = []
-        for l in range(len(sample)):
-            ary_dec = np.empty(sample[l].shape, dtype=object)
-            for i, _ in np.ndenumerate(sample[l]):
-                ary_dec[i] = self.combine_decrypt(
-                    [{sid: g[sid][l][i] for sid in g} for g in groups], _element_label(label, l, i)
-                )
-            lst_dec.append(ary_dec)
-        return lst_dec
+        return combine_elementwise(
+            dict_ndarray_ct,
+            lambda groups, l, i: self.combine_decrypt(groups, _element_label(label, l, i)),
+        )
 
     @staticmethod
     def L(sid, sid_v: dict, lst_sid_enrolled: list, modulus) -> gp.mpz:

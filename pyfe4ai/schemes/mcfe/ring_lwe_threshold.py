@@ -43,7 +43,11 @@ from pyfe4ai.schemes.mcfe.labels import chunk_label
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWE
 from pyfe4ai.schemes.mcfe.ring_lwe import chunk_key_index
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
+from pyfe4ai.schemes.mcfe.labels import encode_label
+from pyfe4ai.schemes.threshold_utils import check_ciphertext_tags
 from pyfe4ai.schemes.threshold_utils import check_fusion_weight
+from pyfe4ai.schemes.threshold_utils import client_server_mac_keys
+from pyfe4ai.schemes.threshold_utils import tag_ciphertext
 from pyfe4ai.schemes.threshold_utils import ciphertexts_digest
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
@@ -72,6 +76,13 @@ from pyfe4ai.utils.ring_lwe_utils import seeded_polynomial
 logger = logging.getLogger(__name__)
 
 _CONSTRUCTION = "bmms21-ibmcfe-shamir-smudging/v1"
+_TAG_DOMAIN = "pyfe4ai/tmcfe-ring-lwe/ciphertext-tag/v1"
+
+
+def _tag_payload(encoded_label: str, ct: dict) -> list:
+    """What a tMCFE-Ring-LWE ciphertext tag covers: the (chunk) label and the
+    ciphertext as serialised."""
+    return [encoded_label, ct.get("k"), ct.get("ct0"), ct.get("ct1")]
 
 
 def _flooding_poly(sigma: int, ring_n: int, rng) -> list:
@@ -162,9 +173,18 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             json.dump(param, f)
 
     def setup(self) -> None:
-        """MCFE setup; forgets previously shared keys."""
+        """MCFE setup and the client-server MAC keys; forgets previously shared keys."""
         super().setup()
         self.dict_dk = {}
+        self.mac_keys = client_server_mac_keys(self.lst_nid, self.lst_sid)
+
+    def get_private_keys(self, nid: str, **kwargs) -> dict | None:
+        """Client *nid*'s MCFE keys plus ``mac_keys`` (``{sid: key}``) for the
+        ciphertext tags."""
+        sk = super().get_private_keys(nid, **kwargs)
+        if sk is not None:
+            sk["mac_keys"] = dict(self.mac_keys[nid])
+        return sk
 
     def get_public_parameters(self) -> dict:
         """MCFE public parameters plus ``s``, ``t``, ``lst_sid`` and ``sigma_f``."""
@@ -179,8 +199,8 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
 
         Returns:
             Dict with shares ``sk_y``, ``z``, ``z_chunks`` and ``label``,
-            ``sid``, ``lst_sid``, ``weights_id`` and ``noise_key``, or ``None``
-            if *sid* is unknown.
+            ``sid``, ``lst_sid``, ``weights_id``, ``noise_key`` and
+            ``mac_keys`` (``{nid: key}``), or ``None`` if *sid* is unknown.
         """
         credentials = kwargs.get("credentials", None)
         if not credentials:
@@ -196,7 +216,12 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             key = super().get_decryption_keys(sid, credentials=credentials)
             self.dict_dk[ident] = self._share_key(key)
         dk = dict(self.dict_dk[ident][sid])
-        dk.update({"sid": sid, "lst_sid": list(self.lst_sid), "weights_id": weights_id})
+        dk.update({
+            "sid": sid,
+            "lst_sid": list(self.lst_sid),
+            "weights_id": weights_id,
+            "mac_keys": {nid: self.mac_keys[nid][sid] for nid in self.lst_nid},
+        })
         return dk
 
     def _share_key(self, key: dict) -> dict:
@@ -225,9 +250,31 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
 class ThresholdMCFERingLWE(MCFERingLWE):
     """Crypto operations for threshold BMMS21 identity-based MCFE over Ring-LWE."""
 
+    def _mac_keys(self) -> dict:
+        mac_keys = (self.sk or {}).get("mac_keys") if self._has_private_keys() else None
+        if not mac_keys:
+            raise FEKeyError("encryption key lacks the ciphertext MAC keys")
+        return mac_keys
+
+    def encrypt(self, matrix_pt: list[list[int]], label: str) -> dict:
+        """MCFE encryption under *label*, tagged for every server."""
+        mac_keys = self._mac_keys()
+        ct = super().encrypt(matrix_pt, label)
+        return tag_ciphertext(ct, mac_keys, _TAG_DOMAIN, _tag_payload(encode_label(label), ct))
+
+    def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
+        """Packed ndarray encryption; every chunk is tagged under its chunk label."""
+        mac_keys = self._mac_keys()
+        out = super().encrypt_lst_ndarray(lst_ndarray, **kwargs)
+        for layer in out:
+            for j, ct in enumerate(layer["chunks"]):
+                encoded = encode_label(chunk_label(kwargs["label"], layer["first_chunk"] + j))
+                tag_ciphertext(ct, mac_keys, _TAG_DOMAIN, _tag_payload(encoded, ct))
+        return out
+
     def share_decrypt(
         self, dict_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list,
-        _z_share=None,
+        _z_share=None, _chunk=None,
     ) -> dict:
         """Compute this server's flooded partial decryption.
 
@@ -252,10 +299,16 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         check_fusion_weight(dk, fusion_weight)
         if set(dict_ct) != set(dk["sk_y"]):
             raise FESchemeError("need one ciphertext for every client of the key")
+        # only ciphertexts the clients tagged for this server under the label
+        # (or chunk label) it serves: w is linear in ct1
+        tag_label = credentials["label"] if _chunk is None else chunk_label(credentials["label"], _chunk)
+        encoded = encode_label(tag_label)
+        check_ciphertext_tags(
+            dict_ct, dk.get("mac_keys"), self.id, _TAG_DOMAIN,
+            lambda nid, ct: _tag_payload(encoded, ct),
+        )
         q = gp.mpz(self.pp["q"])
         ring_n = self.pp["ring_n"]
-        # the noise is seeded with the digest of these canonical values, so a
-        # re-encoded request (v + q, extra fields) gets the same noise
         cts = {}
         for nid, ct in dict_ct.items():
             try:
@@ -281,8 +334,12 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         lagrange = lagrange_coefficient_at_zero(
             sid_v[self.id], [sid_v[s] for s in lst_sid_enrolled], q
         )
+        # the noise is seeded with what the key part depends on -- the ct1
+        # values and the key term (the label or chunk) -- so a request for the
+        # same key part always draws the same noise
         ct_digest = ciphertexts_digest(cts)
-        context = json.dumps([ct_digest, sorted(lst_sid_enrolled)]).encode("utf-8")
+        key_inputs = ciphertexts_digest({nid: ct1 for nid, (_, _, ct1) in cts.items()})
+        context = json.dumps([key_inputs, encoded, sorted(lst_sid_enrolled)]).encode("utf-8")
         noise = _flooding_poly(
             int(self.pp["sigma_f"]), ring_n, XofRandom(bytes.fromhex(dk["noise_key"]) + context)
         )
@@ -352,24 +409,40 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             parts = []
             for j in range(len(layer["chunks"])):
                 dct_ct = {nid: dict_ndarray_ct[nid][l]["chunks"][j] for nid in dict_ndarray_ct}
+                index = chunk_key_index(layer, j, len(dk["z_chunks"]))
                 parts.append(self.share_decrypt(
                     dct_ct, credentials, dk, lst_sid_enrolled,
-                    _z_share=dk["z_chunks"][chunk_key_index(layer, j, len(dk["z_chunks"]))],
+                    _z_share=dk["z_chunks"][index], _chunk=index,
                 ))
             out.append({"shape": layer["shape"], "parts": parts})
         return out
 
     def decrypt_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list:
-        """Combine chunk-wise partial decryptions from at least ``t`` servers."""
+        """Combine chunk-wise partial decryptions from at least ``t`` servers.
+
+        Raises:
+            FESchemeError: If the servers' outputs differ in structure, or an
+                element does not decrypt (servers disagree, or out of range).
+        """
         groups = partial_groups(dict_ndarray_ct)
         sample = next(iter(groups[0].values()))
+        layout = [(list(layer["shape"]), len(layer["parts"])) for layer in sample]
+        for g in groups:
+            for out in g.values():
+                if [(list(layer["shape"]), len(layer["parts"])) for layer in out] != layout:
+                    raise FESchemeError("partial decryptions differ in shape")
         result = []
         for l, layer in enumerate(sample):
             values = []
             for j in range(len(layer["parts"])):
-                values.extend(self.combine_decrypt(
+                decoded = self.combine_decrypt(
                     [{sid: g[sid][l]["parts"][j] for sid in g} for g in groups]
-                ))
+                )
+                if decoded is None or None in decoded:
+                    raise FESchemeError("element ({}, chunk {}) does not decrypt".format(l, j))
+                values.extend(decoded)
+            if len(values) != int(np.prod(layer["shape"])):
+                raise FESchemeError("partial decryptions do not match the shape {}".format(layer["shape"]))
             ary = np.array(values, dtype=float).reshape(layer["shape"])
             result.append(ary / pow(10, self.precision))
         return result

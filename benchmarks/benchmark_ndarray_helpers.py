@@ -256,7 +256,7 @@ def _bench_mcfe_fh_multi_ipe(name: str, decentralized: bool = False, threshold: 
                         "keys": {"pp": pp, "dk": dk_sid},
                     }
                 )
-                partials[sid] = dec.compute_lst_ndarray_ct(dct_ct, credentials, dk_sid, enrolled)
+                partials[sid] = dec.compute_lst_ndarray_ct(dct_ct, credentials, dk_sid, enrolled, label)
             combiner = actor_cls(
                 {
                     "id": base_cfg["lst_nid"][0],
@@ -264,7 +264,7 @@ def _bench_mcfe_fh_multi_ipe(name: str, decentralized: bool = False, threshold: 
                     "keys": {"pp": pp, "sk": kg.get_private_keys(base_cfg['lst_nid'][0])},
                 }
             )
-            computed = combiner.decrypt_lst_ndarray_ct(partials)
+            computed = combiner.decrypt_lst_ndarray_ct(partials, label)
             compute_t = time.perf_counter() - t0
         elif decentralized:
             dct_ct = {}

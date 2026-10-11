@@ -297,3 +297,21 @@ def test_noise_does_not_depend_on_how_the_request_is_dressed(kg_config):
         dict(reversed(list(dct_ct.items()))),
     ):
         assert server.share_decrypt(dressed, dct_y, dk, enrolled) == partials["sid_0"]
+
+
+def test_a_client_cannot_redraw_the_noise_by_changing_ct1(kg_config):
+    """The key part depends on ct0 only; a corrupted client re-tagging its own
+    ciphertext with another ct1 used to get fresh noise on the same key part."""
+    from pyfe4ai.schemes.mife.lwe_threshold import _TAG_DOMAIN, _tag_payload
+    from pyfe4ai.schemes.threshold_utils import tag_ciphertext
+
+    dct_x = {nid: [1] for nid in kg_config["lst_nid"]}
+    dct_y = {nid: [1] for nid in kg_config["lst_nid"]}
+    enrolled = ["sid_0", "sid_1"]
+    kg, pp, dct_ct, partials, _ = _round(kg_config, dct_x, dct_y, enrolled)
+    dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
+    server = ThresholdMIFELWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
+    changed = dict(dct_ct["nid_0"], ct1=[str(int(v) + 1) for v in dct_ct["nid_0"]["ct1"]])
+    tag_ciphertext(changed, kg.get_private_keys("nid_0")["mac_keys"], _TAG_DOMAIN, _tag_payload(None, changed))
+    part = server.share_decrypt(dict(dct_ct, nid_0=changed), dct_y, dk, enrolled)
+    assert part["w"] == partials["sid_0"]["w"] and part["c_y"] != partials["sid_0"]["c_y"]

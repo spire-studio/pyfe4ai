@@ -77,7 +77,7 @@ from pyfe4ai.schemes.threshold_utils import share_points
 from pyfe4ai.schemes.threshold_utils import share_secret
 from pyfe4ai.schemes.threshold_utils import validate_enrolled
 from pyfe4ai.schemes.threshold_utils import combine_consistently
-from pyfe4ai.schemes.threshold_utils import partial_groups
+from pyfe4ai.schemes.threshold_utils import combine_elementwise
 from pyfe4ai.schemes.threshold_utils import validate_partial_decryptions
 from pyfe4ai.schemes.threshold_utils import validate_threshold
 from pyfe4ai.utils.crypto_constants import CryptoCONST
@@ -340,15 +340,10 @@ class ThresholdMCFELWE(MCFELWE):
         Args:
             dict_ndarray_ct: Mapping of server ids to the outputs of
                 :meth:`compute_lst_ndarray_ct`.
+
+        Raises:
+            FESchemeError: If the servers' outputs differ in structure or an
+                element does not decrypt (servers disagree, or out of range).
         """
-        groups = partial_groups(dict_ndarray_ct)
-        sample = next(iter(groups[0].values()))
-        lst_dec = []
-        for l in range(len(sample)):
-            ary_dec = np.empty(sample[l].shape, dtype=object)
-            for i, _ in np.ndenumerate(sample[l]):
-                ary_dec[i] = self.combine_decrypt(
-                    [{sid: g[sid][l][i] for sid in g} for g in groups]
-                )
-            lst_dec.append(ary_dec.astype(float))
-        return lst_dec
+        out = combine_elementwise(dict_ndarray_ct, lambda groups, l, i: self.combine_decrypt(groups))
+        return [ary.astype(float) for ary in out]

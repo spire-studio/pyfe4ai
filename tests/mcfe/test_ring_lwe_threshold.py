@@ -40,7 +40,7 @@ def test_key_shares(kg_config):
     kg = ThresholdMCFERingLWEKeyGenerator(kg_config)
     kg.setup()
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": {n: [1] for n in kg_config["lst_nid"]}, "label": "l"})
-    assert set(dk) == {"sk_y", "z", "z_chunks", "label", "noise_key", "sid", "lst_sid", "weights_id"}
+    assert set(dk) == {"sk_y", "z", "z_chunks", "label", "noise_key", "sid", "lst_sid", "weights_id", "mac_keys"}
 
 
 @pytest.mark.parametrize("enrolled", [["sid_1", "sid_2"], ["sid_0", "sid_2"], ["sid_0", "sid_1", "sid_2"]])
@@ -110,10 +110,11 @@ def test_entire_process_lst_ndarray(kg_config):
         assert np.allclose(computed[l], expected[l], atol=1e-2)
 
 
-def test_noise_does_not_depend_on_the_encoding_of_the_ciphertexts(kg_config):
+def test_noise_does_not_depend_on_how_the_request_is_dressed(kg_config):
     """Regression: the flooding noise was seeded with the JSON of the
-    ciphertexts, so the same ciphertexts re-encoded (``v + q``, an extra
-    field) drew fresh noise, and averaging such partials removes the noise."""
+    ciphertexts, so an extra field drew fresh noise, and averaging such
+    partials removes the noise. Re-encoded values (v + q) are now refused
+    because the tags cover the ciphertexts as serialised."""
     dct_x = {nid: [[1, 2]] for nid in kg_config["lst_nid"]}
     dct_y = {nid: [1] for nid in kg_config["lst_nid"]}
     enrolled = ["sid_0", "sid_1"]
@@ -123,12 +124,97 @@ def test_noise_does_not_depend_on_the_encoding_of_the_ciphertexts(kg_config):
     server = ThresholdMCFERingLWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
     q = int(pp["q"])
     first = dct_ct["nid_0"]
-    for dressed in (
-        dict(dct_ct, nid_0=dict(first, ct1=[str(int(v) + q) for v in first["ct1"]])),
-        dict(dct_ct, nid_0=dict(first, ct0=[[int(v) for v in row] for row in first["ct0"]])),
-        dict(dct_ct, nid_0=dict(first, padding="1")),
+    dressed = dict(dct_ct, nid_0=dict(first, padding="1"))
+    assert server.share_decrypt(dressed, credentials, dk, enrolled) == partials["sid_0"]
+    shifted = dict(dct_ct, nid_0=dict(first, ct1=[str(int(v) + q) for v in first["ct1"]]))
+    with pytest.raises(FESchemeError, match="not authenticated"):
+        server.share_decrypt(shifted, credentials, dk, enrolled)
+
+
+def test_servers_refuse_ciphertexts_not_made_by_the_clients(kg_config):
+    """Regression: a partial decryption is linear in ct1, so a combiner
+    submitting chosen ct1 read the functional-key parts S_i y_i off the
+    partials."""
+    dct_x = {nid: [[1, 2]] for nid in kg_config["lst_nid"]}
+    dct_y = {nid: [1] for nid in kg_config["lst_nid"]}
+    enrolled = ["sid_0", "sid_1"]
+    kg, pp, dct_ct, partials, _ = _round(kg_config, dct_x, dct_y, "lbl", enrolled)
+    credentials = {"fusion_weight": dct_y, "label": "lbl"}
+    dk = kg.get_decryption_keys("sid_0", credentials=credentials)
+    server = ThresholdMCFERingLWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
+    first = dct_ct["nid_0"]
+    chosen = ["1"] + ["0"] * (len(first["ct1"]) - 1)
+    for forged in (
+        dict(first, ct1=chosen),
+        {k: v for k, v in first.items() if k != "tags"},
+        dict(first, tags=dict(first["tags"], sid_0=first["tags"]["sid_1"])),
+        dct_ct["nid_1"],
     ):
-        assert server.share_decrypt(dressed, credentials, dk, enrolled) == partials["sid_0"]
+        with pytest.raises(FESchemeError, match="not authenticated"):
+            server.share_decrypt(dict(dct_ct, nid_0=forged), credentials, dk, enrolled)
+
+
+def test_ciphertexts_of_another_label_are_refused(kg_config):
+    dct_x = {nid: [[1]] for nid in kg_config["lst_nid"]}
+    dct_y = {nid: [1] for nid in kg_config["lst_nid"]}
+    kg, pp, old_ct, _, _ = _round(kg_config, dct_x, dct_y, "round-1", ["sid_0", "sid_1"])
+    credentials = {"fusion_weight": dct_y, "label": "round-2"}
+    dk = kg.get_decryption_keys("sid_0", credentials=credentials)
+    server = ThresholdMCFERingLWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
+    with pytest.raises(FESchemeError, match="not authenticated"):
+        server.share_decrypt(old_ct, credentials, dk, ["sid_0", "sid_1"])
+
+
+def test_a_client_cannot_redraw_the_noise_by_changing_ct0(kg_config):
+    """The key part depends on ct1 and the key term only."""
+    from pyfe4ai.schemes.mcfe.labels import encode_label
+    from pyfe4ai.schemes.mcfe.ring_lwe_threshold import _TAG_DOMAIN, _tag_payload
+    from pyfe4ai.schemes.threshold_utils import tag_ciphertext
+
+    dct_x = {nid: [[1, 2]] for nid in kg_config["lst_nid"]}
+    dct_y = {nid: [1] for nid in kg_config["lst_nid"]}
+    enrolled = ["sid_0", "sid_1"]
+    kg, pp, dct_ct, partials, _ = _round(kg_config, dct_x, dct_y, "lbl", enrolled)
+    credentials = {"fusion_weight": dct_y, "label": "lbl"}
+    dk = kg.get_decryption_keys("sid_0", credentials=credentials)
+    server = ThresholdMCFERingLWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
+    first = dct_ct["nid_0"]
+    changed = dict(first, ct0=[[str((int(v) + 1) % int(pp["q"])) for v in row] for row in first["ct0"]])
+    tag_ciphertext(changed, kg.get_private_keys("nid_0")["mac_keys"], _TAG_DOMAIN,
+                   _tag_payload(encode_label("lbl"), changed))
+    part = server.share_decrypt(dict(dct_ct, nid_0=changed), credentials, dk, enrolled)
+    assert part["w"] == partials["sid_0"]["w"] and part["c_y"] != partials["sid_0"]["c_y"]
+
+
+def test_ndarray_combination_refuses_bad_partials(kg_config):
+    """A disagreeing partial crashed with a TypeError (values.extend(None))."""
+    cfg = dict(kg_config, bound_x=50)
+    kg = ThresholdMCFERingLWEKeyGenerator(cfg)
+    kg.setup()
+    pp = kg.get_public_parameters()
+    lst_nid = cfg["lst_nid"]
+    dct_ct = {
+        nid: ThresholdMCFERingLWE({"id": nid, "precision": 1, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
+        .encrypt_lst_ndarray([np.ones(20)], label="l")
+        for nid in lst_nid
+    }
+    credentials = {"fusion_weight": {nid: [1] for nid in lst_nid}, "label": "l",
+                   "n_chunks": ThresholdMCFERingLWE.key_chunks(dct_ct["nid_0"])}
+    enrolled = ["sid_0", "sid_1"]
+    partials = {}
+    for sid in enrolled:
+        dk = kg.get_decryption_keys(sid, credentials=credentials)
+        partials[sid] = ThresholdMCFERingLWE({"id": sid, "keys": {"pp": pp, "dk": dk}}).compute_lst_ndarray_ct(
+            dct_ct, credentials, dk, enrolled)
+    combiner = ThresholdMCFERingLWE({"id": "c", "precision": 1, "keys": {"pp": pp}})
+    assert np.allclose(combiner.decrypt_lst_ndarray_ct(partials)[0], 3)
+    bad = dict(partials["sid_1"][0]["parts"][0], c_y=partials["sid_1"][0]["parts"][0]["w"])
+    tampered = dict(partials, sid_1=[dict(partials["sid_1"][0], parts=[bad] + partials["sid_1"][0]["parts"][1:])])
+    with pytest.raises(FESchemeError, match="element"):
+        combiner.decrypt_lst_ndarray_ct(tampered)
+    reshaped = dict(partials, sid_1=[dict(partials["sid_1"][0], shape=[4, 5])])
+    with pytest.raises(FESchemeError, match="shape"):
+        combiner.decrypt_lst_ndarray_ct(reshaped)
 
 
 def test_malformed_ciphertexts_are_refused(kg_config):
@@ -139,6 +225,11 @@ def test_malformed_ciphertexts_are_refused(kg_config):
     credentials = {"fusion_weight": dct_y, "label": "lbl"}
     dk = kg.get_decryption_keys("sid_0", credentials=credentials)
     server = ThresholdMCFERingLWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
+    from pyfe4ai.schemes.mcfe.labels import encode_label
+    from pyfe4ai.schemes.mcfe.ring_lwe_threshold import _TAG_DOMAIN, _tag_payload
+    from pyfe4ai.schemes.threshold_utils import tag_ciphertext
+
+    mac_keys = kg.get_private_keys("nid_0")["mac_keys"]
     first = dct_ct["nid_0"]
     for bad in (
         dict(first, ct1=first["ct1"][:-1]),
@@ -148,5 +239,7 @@ def test_malformed_ciphertexts_are_refused(kg_config):
         dict(first, k=0),
         {"ct1": first["ct1"], "k": first["k"]},
     ):
+        # tagged by the (corrupted) client itself, so it reaches the shape check
+        tag_ciphertext(bad, mac_keys, _TAG_DOMAIN, _tag_payload(encode_label("lbl"), bad))
         with pytest.raises(FESchemeError, match="malformed"):
             server.share_decrypt(dict(dct_ct, nid_0=bad), credentials, dk, enrolled)

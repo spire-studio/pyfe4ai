@@ -47,7 +47,7 @@ def main() -> None:
     for sid in enrolled:
         dk = kg.get_decryption_keys(sid, credentials=credentials)
         decryptor = ThresholdMCFEFHMultiIPE({"id": sid, "keys": {"pp": pp, "dk": dk}})
-        dct_prime[sid] = decryptor.share_decrypt(dct_ct, credentials, dk, enrolled)
+        dct_prime[sid] = decryptor.share_decrypt(dct_ct, credentials, dk, enrolled, label)
 
     combiner = ThresholdMCFEFHMultiIPE(
         {"id": config["lst_nid"][0], "keys": {"pp": pp, "sk": kg.get_private_keys(config["lst_nid"][0])}}

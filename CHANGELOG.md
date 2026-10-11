@@ -200,13 +200,28 @@ table and *Known Issues* before relying on any privacy property.
   `setup`, and a server refuses ciphertexts whose tag for it does not verify.
   A corrupted client can still choose its own slot's ciphertext, which
   reveals only that slot's key part.
+- **tMCFE-Ring-LWE** (experimental) servers decrypted any ciphertexts they
+  were handed; a partial decryption is linear in `ct1`, so a combiner
+  recovered the functional-key parts `S_i y_i` exactly in a few queries
+  with chosen `ct1`. As for tMIFE-LWE, clients now tag every ciphertext (and
+  every ndarray chunk) for every server, over the (chunk) label and the
+  ciphertext; servers refuse untagged, altered or other-label ciphertexts.
+- **tMCFE-FH-Multi-IPE** (experimental) servers decrypted whatever round the
+  combiner submitted (FH ciphertexts hide their label). Ciphertexts now
+  carry the encoded label, tagged together with the ciphertext for every
+  server, and `share_decrypt` takes the label the server agrees to decrypt.
 - **tMIFE-LWE and tMCFE-Ring-LWE** seeded the flooding noise with the JSON of
   the request, so the same ciphertexts with an extra field, another server's
   tag or (Ring-LWE) coefficients written as `v + q` drew fresh noise, and
   averaging such partials removes it. The noise is now seeded with a digest
-  of the ciphertext values mod `q` (`threshold_utils.ciphertexts_digest`);
-  tMCFE-Ring-LWE also refuses ciphertexts of the wrong shape
-  (`ring_lwe_utils.canonical_ring_ciphertext`).
+  of the values the key part depends on (`ct0` for tMIFE-LWE; `ct1` and the
+  label or chunk for tMCFE-Ring-LWE), so neither the encoding, nor extra
+  fields, nor the other half of a ciphertext re-tagged by a corrupted client
+  draws fresh noise (`threshold_utils.ciphertexts_digest`); tMCFE-Ring-LWE
+  also refuses ciphertexts of the wrong shape
+  (`ring_lwe_utils.canonical_ring_ciphertext`). Tags use the shared
+  `threshold_utils.client_server_mac_keys`, `tag_ciphertext` and
+  `check_ciphertext_tags`.
 - **tMCFE-DDH** servers decrypted whatever label the submitted ciphertexts
   carried (the key is label-independent), so they could not restrict
   decryption to the rounds they mean to serve: a combiner could have any
@@ -381,7 +396,14 @@ table and *Known Issues* before relying on any privacy property.
   static method `ThresholdMIFE.L` is removed (use
   `threshold_utils.lagrange_coefficient_at_zero`).
 - tMCFE-FH-Multi-IPE: key shares hold `k` as `G2` elements and `z` as a `GT`
-  element (serialised) instead of integers.
+  element (serialised) instead of integers, plus `mac_keys`; client keys
+  carry `mac_keys`; ciphertexts are `{ct, label, tags}`;
+  `share_decrypt(dict_ct, credentials, dk, lst_sid_enrolled, label)`,
+  `compute_lst_ndarray_ct(..., lst_sid_enrolled, label)`,
+  `decrypt_lst_ndarray_ct(partials, label)`, `combine_decrypt(partials,
+  label=None)`; partial decryptions carry `label`.
+- tMCFE-Ring-LWE: client keys and key shares carry `mac_keys`, ciphertexts
+  and ndarray chunks `tags`.
 - dMCFE-FH-Multi-IPE: `derive_function_decryption_key_share(weights, tag_f)`
   takes this client's weights (or a dict, of which only its entry is used)
   and a required non-empty `tag_f`.
@@ -524,6 +546,12 @@ table and *Known Issues* before relying on any privacy property.
 - The logging configuration is read with `yaml.safe_load` semantics
   (`SafeLoader`); dependencies have lower bounds (`gmpy2>=2.2` for
   `prev_prime`, `numpy>=1.22`, `PyYAML>=5.4`).
+- The ndarray combiners of the threshold schemes crashed with a `TypeError`
+  (or returned NaN, tMCFE-LWE) when an element's partial decryptions
+  disagreed, and took the output shape from the first server; they now
+  check that all servers' outputs have one structure and raise
+  `FESchemeError` for an element that does not decrypt
+  (`threshold_utils.combine_elementwise`).
 - ML adapter: `aggregate_gradients` on a SIFE wrapper returned the first
   client's result when given several; it now refuses more than one. Fractional
   weights were quantised but the result was not scaled back (weights `0.5`
