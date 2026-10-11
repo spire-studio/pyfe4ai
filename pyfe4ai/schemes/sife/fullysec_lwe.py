@@ -53,7 +53,8 @@ from pyfe4ai.utils.validation import scale_to_int
 
 logger = logging.getLogger(__name__)
 
-_CONSTRUCTION = "als16-lwe/v3"  # K = 2 eta X Y + 1, encoding floor(q / K) x, m = 4 n log2 q
+# K = 2 eta X Y + 1, encoding floor(q / K) x, m = 4 n log2 q, B_tau ~ sqrt(m)
+_CONSTRUCTION = "als16-lwe/v4"
 
 
 class SIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):

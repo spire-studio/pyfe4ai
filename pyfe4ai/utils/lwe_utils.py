@@ -101,8 +101,10 @@ def derive_fullysec_lwe_parameters(
         l_sigma2 = gp.mpz(int(sigma2 / SIGMA_CDT) + 1)
         sigma2 = float(l_sigma2) * SIGMA_CDT
 
+        # B_tau: the norm of a row of tau (m entries of width sigma1 or sigma2);
+        # decryption correctness needs alpha^-1 >= K^2 B_tau omega(sqrt(log n))
         bound2 = math.sqrt(sigma1 * sigma1 + sigma2 * sigma2)
-        bound2 *= math.sqrt(n_float)
+        bound2 *= math.sqrt(bound_m_float)
         sigma = 1.0 / squared
         sigma /= bound2
         sigma /= math.log2(n_float)

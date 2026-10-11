@@ -502,10 +502,12 @@ table and *Known Issues* before relying on any privacy property.
   `p` is now the smallest prime of that size.
 - SIFE / MIFE FullySec-LWE (ALS16) used `m = 1.01 n log2 q`; ALS16 Theorem 2
   needs `m >= 4 n log2 q`. The recipe now uses `4 n log2 q` (also inside
-  the width derivation) and the largest prime of the derived size (a random
-  draw could exceed it by one bit); cached parameters are regenerated. The
-  `standard` refusal now quotes the resulting sizes (`n = 3136` to `3776`,
-  70 to 110 MB per ciphertext).
+  the width derivation), sizes the row norm `B_tau` of `tau` with `sqrt(m)`
+  instead of `sqrt(n)` (with the larger `m`, the old bound let about 0.1% of
+  extreme decryptions fail at toy sizes) and takes the largest prime of the
+  derived size (a random draw could exceed it by one bit); cached parameters
+  are regenerated. The `standard` refusal now quotes the resulting sizes
+  (`n = 3328` to `4352`, 80 to 145 MB per ciphertext).
 - `sife/fullysec_ring_lwe` with an explicit `ring_n` and `m = "auto"` under
   `standard` took `m = 5`, whose `q` exceeds the bound, and refused; it now
   takes the smallest `m` that meets the bound.

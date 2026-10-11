@@ -61,10 +61,10 @@ The ``security_profile`` entry of a key generator's config selects one:
 
     Refused, because no parameter set is both secure and usable in pure
     Python: ``sife/fullysec_lwe`` and ``mife/fullysec_lwe`` (ALS16: at a
-    dimension the lattice estimator puts at 128 bits, n = 3136 to 3776 for
-    ``X = Y <= 50``, and with ``m = 4 n log2 q`` as its Theorem 2 requires,
-    the public matrix has 0.8 to 1.4 * 10^10 entries and a ciphertext 2.7 to
-    3.6 * 10^6 coordinates of 213 to 239 bits) and
+    dimension the lattice estimator puts at 128 bits, n = 3328 to 4352 for
+    ``X = Y <= 50`` and ``eta <= 10``, and with ``m = 4 n log2 q`` as its
+    Theorem 2 requires, the public matrix has 1 to 2 * 10^10 entries and a
+    ciphertext 2.9 to 4.5 * 10^6 coordinates of 219 to 258 bits) and
     ``mcfe/paillier_decentralized`` (its key shares are combined under a DCR
     modulus of more than 15000 bits).
 
@@ -138,9 +138,9 @@ _STANDARD_FIXED = {
 }
 
 _REFUSED = {
-    "lwe_matrix": "at a 128-bit dimension (lwe_n = 3136 to 3776 for X = Y <= 50) its public "
-    "matrix has 0.8 to 1.4*10^10 entries and every ciphertext m = 4 n log2 q = 2.7 to 3.6*10^6 "
-    "coordinates of 213 to 239 bits (70 to 110 MB); use sife/fullysec_ring_lwe for adaptive "
+    "lwe_matrix": "at a 128-bit dimension (lwe_n = 3328 to 4352 for X = Y <= 50, eta <= 10) its "
+    "public matrix has 1 to 2*10^10 entries and every ciphertext m = 4 n log2 q = 2.9 to 4.5*10^6 "
+    "coordinates of 219 to 258 bits (80 to 145 MB); use sife/fullysec_ring_lwe for adaptive "
     "security, or the Ring-LWE scheme of the same family",
     ("mcfe", "paillier_decentralized"): "its key shares would be combined under a DCR modulus "
     "of more than 15000 bits; use mcfe/ddh_decentralized",

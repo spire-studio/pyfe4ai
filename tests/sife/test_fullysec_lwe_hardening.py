@@ -48,4 +48,4 @@ def test_stale_cache_is_regenerated(scheme):
     kg, _ = scheme
     path = os.path.join("config", "authority", CryptoCONST.TYPE_SIFE_FULLYSEC_LWE, "param.json")
     with open(path, encoding="utf-8") as f:
-        assert json.load(f)["construction"] == "als16-lwe/v3"
+        assert json.load(f)["construction"] == "als16-lwe/v4"
