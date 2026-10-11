@@ -39,7 +39,9 @@ class DDHKeyGeneratorBase(IPFEAbsKeyGenerator, ParameterCacheMixin):
         return all(param.get(k) == getattr(self, k) for k in self._verify_keys)
 
     def _loaded_parameters_valid(self) -> bool:
-        return is_dl_group(self.p, self.q, self.g, self.sec_param, cofactor=int(self.r))
+        # every DDH group here is a safe-prime group (r = 2); a cached r would
+        # let p = r q + 1 with a small q through
+        return int(self.r) == 2 and is_dl_group(self.p, self.q, self.g, self.sec_param)
 
     def _extra_param_fields(self) -> dict:
         """Return extra fields to include in the saved parameter dict."""

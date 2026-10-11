@@ -404,6 +404,19 @@ def center_matrix(
     return centered
 
 
+def seeded_polynomial(seed: str, q, ring_n: int, index: int = 0) -> list[gp.mpz]:
+    """Uniform element of ``R_q`` expanded from a hex *seed* with SHAKE-256.
+
+    The Ring-LWE schemes publish their public polynomial ``a`` this way: a
+    parameter cache stores only the seed, so a planted cache cannot choose
+    ``a`` (e.g. ``a = 0``), only another pseudo-random one.
+    """
+    from pyfe4ai.utils.crypto_utils import hash_to_zq_vector
+
+    bytes.fromhex(seed)  # a hex string
+    return hash_to_zq_vector(seed, q, ring_n, domain="pyfe4ai/ring-lwe/a|{}".format(int(index)))
+
+
 def canonical_ring_ciphertext(ct, q, eta: int, ring_n: int) -> tuple:
     """Return ``(k, ct0, ct1)`` of a BMMS21 ciphertext with coefficients in ``[0, q)``.
 

@@ -36,6 +36,7 @@ the key.
 from __future__ import annotations
 
 import json
+import secrets
 import logging
 
 import gmpy2 as gp
@@ -60,10 +61,11 @@ from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.sampling_utils import rand_uniform_vector
 from pyfe4ai.utils.validation import int_vector
+from pyfe4ai.utils.ring_lwe_utils import seeded_polynomial
 
 logger = logging.getLogger(__name__)
 
-_CONSTRUCTION = "acfgu18-bmms21/v3"  # sized for n * eta, p = 2T + 2, Sec. 4.2 widths
+_CONSTRUCTION = "acfgu18-bmms21/v4"  # sized for n * eta, p = 2T + 2, Sec. 4.2 widths, seeded a
 
 
 class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
@@ -108,10 +110,14 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.sigma1 = float(param["sigma1"])
         self.sigma2 = float(param["sigma2"])
         self.sigma3 = float(param["sigma3"])
-        self.A = [gp.mpz(v) for v in param["A"]]
+        self.a_seed = param["A_seed"]
+        self.A = seeded_polynomial(self.a_seed, self.q, self.ring_n)
 
     def _param_verification(self, param: dict) -> bool:
-        return (
+        """The cached record must match the config and the parameters derived
+        from it (``q`` as :meth:`_modulus_for` gives it); only the seed of ``a``
+        is random."""
+        if not (
             param.get("construction") == _CONSTRUCTION
             and param.get("sec_param") == self.sec_param
             and param.get("eta") == self.eta
@@ -119,7 +125,15 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             and param.get("bound_x") == gp.digits(self.bound_x)
             and param.get("bound_y") == gp.digits(self.bound_y)
             and param.get("ring_n") == self.ring_n
+        ):
+            return False
+        p, _, sigma1, sigma2, sigma3 = bmms21_parameters(
+            self.sec_param, self.n * self.eta, self.bound_x, self.bound_y, self.ring_n
         )
+        q = self._modulus_for(self.ring_n)
+        return (param.get("p"), param.get("q")) == (gp.digits(p), gp.digits(q)) and (
+            param.get("sigma1"), param.get("sigma2"), param.get("sigma3")
+        ) == (sigma1, sigma2, sigma3)
 
     def _generate_and_save(self, param_file: str) -> None:
         # only the sum over all slots is decoded: size p (and the noise) as
@@ -127,7 +141,8 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.p, self.q, self.sigma1, self.sigma2, self.sigma3 = bmms21_parameters(
             self.sec_param, self.n * self.eta, self.bound_x, self.bound_y, self.ring_n
         )
-        self.A = rand_uniform_vector(self.ring_n, self.q)
+        self.a_seed = secrets.token_hex(32)
+        self.A = seeded_polynomial(self.a_seed, self.q, self.ring_n)
 
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(
@@ -144,7 +159,7 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                     "sigma1": self.sigma1,
                     "sigma2": self.sigma2,
                     "sigma3": self.sigma3,
-                    "A": [gp.digits(v) for v in self.A],
+                    "A_seed": self.a_seed,
                 },
                 f,
             )

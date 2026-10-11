@@ -1,5 +1,6 @@
 """Core cryptographic primitives: safe random generation, group/prime generation, and hashing."""
 
+import functools
 import random
 import hashlib
 
@@ -174,14 +175,19 @@ def group_generator_threshold_fe(bits: int, r: int = 2):
 
 
 def is_dl_group(p, q, g, bits: int, cofactor: int = 2) -> bool:
-    """Whether ``p = cofactor q + 1`` is a *bits*-bit prime, ``q`` is prime and
-    ``g`` generates the order-``q`` subgroup of ``Z_p^*``.
+    """Whether ``p = cofactor q + 1`` is a *bits*-bit prime, ``q`` is a prime of
+    about ``bits`` bits (at most the cofactor's bits fewer) and ``g`` generates
+    the order-``q`` subgroup of ``Z_p^*``; at a size with an RFC 3526 prime,
+    ``p`` must be that prime (another safe prime could carry a trapdoor).
 
     Used to check discrete-log parameters loaded from the parameter cache.
     """
     p, q, g = gp.mpz(p), gp.mpz(q), gp.mpz(g)
+    if int(cofactor) == 2 and bits in RFC3526_PRIMES and p != RFC3526_PRIMES[bits]:
+        return False
     return (
         p.bit_length() == bits
+        and q.bit_length() >= bits - int(cofactor).bit_length()
         and q > 2
         and p == cofactor * q + 1
         and gp.is_prime(q, 40)
@@ -191,9 +197,20 @@ def is_dl_group(p, q, g, bits: int, cofactor: int = 2) -> bool:
     )
 
 
+@functools.lru_cache(maxsize=1)
+def _small_primorial() -> gp.mpz:
+    """Product of the primes below 2^16 (trial division of cached moduli)."""
+    out, p = gp.mpz(1), gp.mpz(2)
+    while p < 1 << 16:
+        out *= p
+        p = gp.next_prime(p)
+    return out
+
+
 def is_dcr_modulus(n, prime_bits: int) -> bool:
     """Whether *n* can be a product of two distinct *prime_bits*-bit primes:
-    odd, composite, not a square, of ``2 prime_bits - 1`` or ``2 prime_bits`` bits.
+    odd, composite, not a square, without prime factors below 2^16, of
+    ``2 prime_bits - 1`` or ``2 prime_bits`` bits.
 
     Used to check DCR moduli loaded from the parameter cache (their
     factorisation is never stored, so it cannot be checked further).
@@ -202,6 +219,7 @@ def is_dcr_modulus(n, prime_bits: int) -> bool:
     return (
         n.bit_length() in (2 * prime_bits - 1, 2 * prime_bits)
         and n % 2 == 1
+        and gp.gcd(n, _small_primorial()) == 1
         and not gp.is_prime(n, 40)
         and not gp.is_square(n)
     )

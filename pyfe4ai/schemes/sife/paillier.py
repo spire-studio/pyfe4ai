@@ -76,6 +76,7 @@ class SIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             and self.n_square == n * n
             and 1 < self.g < self.n_square
             and gp.gcd(self.g, n) == 1
+            and self.g % n != 1  # g = 1 + N (order N) would reveal s mod N from the public key
         )
 
     def _param_verification(self, param: dict) -> bool:

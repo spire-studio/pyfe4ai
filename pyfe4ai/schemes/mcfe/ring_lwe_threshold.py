@@ -66,8 +66,8 @@ from pyfe4ai.utils.ring_lwe_utils import poly_mul
 from pyfe4ai.utils.ring_lwe_utils import transpose
 from pyfe4ai.utils.sampling_utils import XofRandom
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_bigint
-from pyfe4ai.utils.sampling_utils import rand_uniform_vector
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.utils.ring_lwe_utils import seeded_polynomial
 
 logger = logging.getLogger(__name__)
 
@@ -109,12 +109,17 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         validate_threshold(self.t, self.lst_sid)
 
     def _param_verification(self, param: dict) -> bool:
-        return (
+        if not (
             super()._param_verification(param)
             and param.get("threshold_construction") == _CONSTRUCTION
             and param.get("s") == self.s
             and param.get("stat_param") == self.stat_param
+        ):
+            return False
+        params = bmms21_parameters(
+            self.sec_param, self.n * self.eta, self.bound_x, self.bound_y, self.ring_n
         )
+        return param.get("sigma_f") == str(self._flooded_modulus(self.ring_n, *params)[1])
 
     def _apply_parameters(self, param: dict) -> None:
         super()._apply_parameters(param)
@@ -141,7 +146,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         self.q, self.sigma_f = self._flooded_modulus(
             self.ring_n, self.p, self.q, self.sigma1, self.sigma2, self.sigma3
         )
-        self.A = rand_uniform_vector(self.ring_n, self.q)
+        self.A = seeded_polynomial(self.a_seed, self.q, self.ring_n)
         with open(param_file, "r", encoding="utf-8") as f:
             param = json.load(f)
         param.update(
@@ -151,7 +156,6 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
                 "stat_param": self.stat_param,
                 "sigma_f": str(self.sigma_f),
                 "q": gp.digits(self.q),
-                "A": [gp.digits(v) for v in self.A],
             }
         )
         with open(param_file, "w", encoding="utf-8") as f:

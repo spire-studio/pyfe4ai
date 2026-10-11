@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 
 import gmpy2 as gp
 import numpy as np
@@ -69,14 +70,14 @@ from pyfe4ai.utils.ring_lwe_utils import decode_vector
 from pyfe4ai.utils.ring_lwe_utils import ntt_forward
 from pyfe4ai.utils.ring_lwe_utils import ntt_inverse
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
-from pyfe4ai.utils.sampling_utils import rand_uniform_vector
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.validation import int_vector
 from pyfe4ai.utils.validation import scale_to_int
+from pyfe4ai.utils.ring_lwe_utils import seeded_polynomial
 
 logger = logging.getLogger(__name__)
 
-_PARAM_VERSION = "bmms21-sec5/v1"
+_PARAM_VERSION = "bmms21-sec5/v2"  # a expanded from a stored seed
 #: Resampling attempts for ``a`` and for a ciphertext before giving up.
 _MAX_TRIES = 64
 
@@ -114,6 +115,10 @@ def _ntt_all(polys: list, q, root) -> list:
     return [ntt_forward([gp.mpz(v) for v in poly], q, root) for poly in polys]
 
 
+def _seeded_a(seed: str, q, ring_n: int, m: int) -> list:
+    """The ``m`` public polynomials, expanded from *seed* (a cache stores the seed only)."""
+    return [seeded_polynomial(seed, q, ring_n, index=j) for j in range(m)]
+
 class SIFEFullySecRingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
     """Key generator for the adaptively secure Ring-LWE IPFE of BMMS21 (Sec. 5)."""
 
@@ -147,7 +152,7 @@ class SIFEFullySecRingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
     def _param_verification(self, param: dict) -> bool:
         """The cached record must match the config and the parameters derived from
-        it (only ``a`` is random; it must contain a unit)."""
+        it (only the seed of ``a`` is random; ``a`` must contain a unit)."""
         if not (
             param.get("param_version") == _PARAM_VERSION
             and param.get("sec_param") == self.sec_param
@@ -168,12 +173,8 @@ class SIFEFullySecRingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         ):
             return False
         q, n = expected["q"], expected["ring_n"]
-        a = param.get("a", [])
-        return (
-            len(a) == expected["m"]
-            and all(len(poly) == n for poly in a)
-            and any(_invertible(poly, q) for poly in _ntt_all(a, q, _get_ntt_root(q, n)))
-        )
+        a = _seeded_a(param["a_seed"], q, n, expected["m"])
+        return any(_invertible(poly, q) for poly in _ntt_all(a, q, _get_ntt_root(q, n)))
 
     def _apply_parameters(self, param: dict) -> None:
         self.ring_n = int(param["ring_n"])
@@ -182,14 +183,16 @@ class SIFEFullySecRingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.q = gp.mpz(param["q"])
         for key in ("sigma", "sigma_lhl", "sigma1", "sigma2", "sigma3"):
             setattr(self, key, float(param[key]))
-        self.a = [[gp.mpz(v) for v in poly] for poly in param["a"]]
+        self.a_seed = param["a_seed"]
+        self.a = _seeded_a(self.a_seed, self.q, self.ring_n, self.m)
 
     def _generate_and_save(self, param_file: str) -> None:
         params = self._derive()
         q, n = params["q"], params["ring_n"]
         root = _get_ntt_root(q, n)
         for _ in range(_MAX_TRIES):
-            a = [rand_uniform_vector(n, q) for _ in range(params["m"])]
+            seed = secrets.token_hex(32)
+            a = _seeded_a(seed, q, n, params["m"])
             if any(_invertible(poly, q) for poly in _ntt_all(a, q, root)):
                 break
         else:
@@ -207,7 +210,7 @@ class SIFEFullySecRingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             "m": params["m"],
             "p": gp.digits(params["p"]),
             "q": gp.digits(q),
-            "a": [[gp.digits(v) for v in poly] for poly in a],
+            "a_seed": seed,
         }
         record.update({k: params[k] for k in ("sigma", "sigma_lhl", "sigma1", "sigma2", "sigma3")})
         self._apply_parameters(record)

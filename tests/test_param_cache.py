@@ -97,3 +97,96 @@ def test_planted_dcr_moduli_are_replaced():
     MCFEPaillierKeyGenerator(dict(mcfg))
     _rewrite(CryptoCONST.TYPE_MCFE_PAILLIER, lambda r: r.update(n_mod="35"))
     assert int(MCFEPaillierKeyGenerator(dict(mcfg)).n_mod).bit_length() >= 127
+
+
+def _prime_with_small_subgroup(bits, q_bits=32):
+    """A bits-bit prime p = r q + 1 with a q_bits-bit prime q (r even)."""
+    q = gp.next_prime(gp.mpz(1) << (q_bits - 1))
+    r = (gp.mpz(1) << (bits - 1)) // q
+    r += r % 2
+    while True:
+        p = r * q + 1
+        if p.bit_length() == bits and gp.is_prime(p):
+            return p, q, r
+        r += 2
+
+
+def test_planted_group_with_a_small_subgroup_is_replaced():
+    """Regression: the cofactor r came from the cache and the size of q was not
+    checked, so p = r q + 1 with a 32-bit q passed (discrete logs in the order-q
+    subgroup then take seconds)."""
+    SIFEKeyGenerator(dict(DDH))
+    p, q, r = _prime_with_small_subgroup(128)
+    h = gp.mpz(2)
+    g = gp.powmod(h, r, p)
+
+    def plant(record):
+        record["group"] = {"p": str(p), "q": str(q), "r": str(r)}
+        record["g"] = str(g)
+
+    _rewrite(CryptoCONST.TYPE_SIFE, plant)
+    kg = SIFEKeyGenerator(dict(DDH))
+    assert int(kg.q).bit_length() == 127 and int(kg.r) == 2
+
+
+def test_rfc_sizes_must_use_the_rfc_prime(monkeypatch):
+    """At a size with an RFC 3526 prime, another safe prime (which could carry
+    a trapdoor) is refused; checked at a small size registered for the test."""
+    from pyfe4ai.utils import crypto_utils
+    from pyfe4ai.utils.crypto_utils import _safe_prime, is_dl_group
+
+    p1, q1 = _safe_prime(96)
+    while True:
+        p2, q2 = _safe_prime(96)
+        if p2 != p1:
+            break
+    monkeypatch.setitem(crypto_utils.RFC3526_PRIMES, 96, p1)
+    assert is_dl_group(p1, q1, 4, 96)
+    assert not is_dl_group(p2, q2, 4, 96)
+
+
+def test_dcr_moduli_with_small_factors_and_paillier_bases_of_order_n_are_refused():
+    from pyfe4ai.utils.crypto_utils import is_dcr_modulus
+
+    big = gp.next_prime(gp.mpz(1) << 126)
+    assert not is_dcr_modulus(3 * big, 64)
+    cfg = {"sec_param": 64, "eta": 2, "bit_length": 64, "bound_x": 10, "bound_y": 10}
+    kg = SIFEPaillierKeyGenerator(dict(cfg))
+    n = int(kg.n)
+    _rewrite(CryptoCONST.TYPE_SIFE_PAILLIER, lambda r: r.update(g=str(1 + n)))
+    assert int(SIFEPaillierKeyGenerator(dict(cfg)).g) % n != 1
+
+
+@pytest.mark.parametrize("multi", [False, True])
+def test_ring_caches_hold_a_seed_and_are_rederived(multi):
+    """Regression: the public polynomial a and the widths came from the cache
+    unchecked (a = 0 and sigma1 = 0 were accepted, also under standard)."""
+    if multi:
+        from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWEKeyGenerator as K
+        cfg = {"sec_param": 64, "eta": 2, "n": 2, "lst_nid": ["a", "b"], "bound_x": 4, "bound_y": 4,
+               "ring_n": 16}
+        scheme_type = CryptoCONST.TYPE_MIFE_RING_LWE
+    else:
+        from pyfe4ai.schemes.sife.ring_lwe import SIFERingLWEKeyGenerator as K
+        cfg = {"sec_param": 64, "eta": 2, "bound_x": 4, "bound_y": 4, "ring_n": 16}
+        scheme_type = CryptoCONST.TYPE_SIFE_RING_LWE
+    kg = K(dict(cfg))
+    with open(_param_file(scheme_type)) as f:
+        record = json.load(f)
+    assert "A" not in record and len(bytes.fromhex(record["A_seed"])) == 32
+    for plant in ({"sigma1": 0.0}, {"q": str(int(record["q"]) + 32)}, {"p": "5"}):
+        _rewrite(scheme_type, lambda r: r.update(plant))
+        again = K(dict(cfg))
+        assert (again.q, again.p, again.sigma1) == (kg.q, kg.p, kg.sigma1)
+
+
+def test_adaptive_ring_cache_holds_a_seed():
+    from pyfe4ai.schemes.sife.fullysec_ring_lwe import SIFEFullySecRingLWEKeyGenerator as K
+
+    cfg = {"eta": 2, "bound_x": 2, "bound_y": 2, "ring_n": 32}
+    kg = K(dict(cfg))
+    with open(_param_file(CryptoCONST.TYPE_SIFE_FULLYSEC_RING_LWE)) as f:
+        record = json.load(f)
+    assert "a" not in record and len(bytes.fromhex(record["a_seed"])) == 32
+    again = K(dict(cfg))
+    assert again.a == kg.a

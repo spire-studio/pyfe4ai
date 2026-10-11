@@ -249,9 +249,14 @@ table and *Known Issues* before relying on any privacy property.
 - **Parameter cache**: cached discrete-log groups and DCR moduli were used
   without any check (a planted 5-bit group or a prime "RSA modulus" was
   accepted, also under `standard`). DL groups are now checked for primality,
-  size and the order of their generators, DCR moduli for size and
-  compositeness (`crypto_utils.is_dl_group`, `is_dcr_modulus`); a file that
-  fails, or does not parse (e.g. after an interrupted write), is
+  size, a safe-prime structure (a cached cofactor `r` with a small `q`
+  passed a first version of the check), the order of their generators and,
+  at RFC 3526 sizes, for being the RFC prime; DCR moduli for size,
+  compositeness and prime factors below 2^16, Paillier bases for not being
+  `1 mod N` (`crypto_utils.is_dl_group`, `is_dcr_modulus`). The Ring-LWE
+  caches store only a seed of the public polynomial `a` (`a = 0` used to be
+  accepted) and are re-derived on load (`ring_lwe_utils.seeded_polynomial`).
+  A file that fails, or does not parse (e.g. after an interrupted write), is
   regenerated, and files are written atomically.
 - **Ring-LWE parameters (SIFE, MIFE, MCFE, tMCFE, dMCFE)**: `bmms21_parameters`
   cites BMMS21 Sec. 4.2 but used `sigma = 1` and `sigma1 = 2 sqrt(l) X`,
