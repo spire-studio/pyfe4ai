@@ -35,6 +35,7 @@ every slot named in the key.
 from __future__ import annotations
 
 import json
+import secrets
 import logging
 import os
 import tempfile
@@ -58,15 +59,20 @@ from pyfe4ai.utils.matrix_utils import transpose
 from pyfe4ai.utils.matrix_utils import vecdot_mod
 from pyfe4ai.utils.matrix_utils import vector_to_digits
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
-from pyfe4ai.utils.sampling_utils import rand_uniform_matrix
 from pyfe4ai.utils.sampling_utils import rand_uniform_vector
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.validation import scale_to_int
 from pyfe4ai.utils.validation import strict_int
+from pyfe4ai.utils.lwe_matrix import SeededMatrix
 
 logger = logging.getLogger(__name__)
 
-_CONSTRUCTION = "acfgu18-als16-lwe/v3"  # m = 4 n log2 q, B_tau ~ sqrt(m)
+_CONSTRUCTION = "acfgu18-als16-lwe/v4"  # m = 4 n log2 q, B_tau ~ sqrt(m)
+
+
+def _seeded_matrix(seed: str, rows: int, cols: int, q) -> list:
+    """The public matrix ``A``, expanded from *seed* (a cache stores the seed only)."""
+    return [[gp.mpz(v) for v in row] for row in SeededMatrix(seed, rows, cols, int(q)).entries()]
 
 
 class MIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
@@ -98,10 +104,11 @@ class MIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.l_sigma1 = gp.mpz(param["l_sigma1"])
         self.sigma2 = float(param["sigma2"])
         self.l_sigma2 = gp.mpz(param["l_sigma2"])
-        self.A = digits_to_matrix(param["A"])
+        self.a_seed = param["A_seed"]
+        self.A = _seeded_matrix(self.a_seed, self.m, self.lwe_n, self.q)
 
     def _param_verification(self, param: dict) -> bool:
-        return (
+        if not (
             param.get("construction") == _CONSTRUCTION
             and param.get("sec_param") == self.sec_param
             and param.get("eta") == self.eta
@@ -109,7 +116,15 @@ class MIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             and param.get("lwe_n") == self.lwe_n
             and param.get("bound_x") == gp.digits(self.bound_x)
             and param.get("bound_y") == gp.digits(self.bound_y)
-        )
+        ):
+            return False
+        expected = derive_fullysec_lwe_parameters(3 * self.bound_x, self.bound_y, self.n * self.eta, self.lwe_n)
+        names = ("k", "q", "m", "sigma_q", "l_sigma_q", "sigma1", "l_sigma1", "sigma2", "l_sigma2")
+        for name, value in zip(names, expected):
+            if param.get(name) != (value if isinstance(value, (int, float)) else gp.digits(value)):
+                return False
+        seed = param.get("A_seed")
+        return isinstance(seed, str) and len(bytes.fromhex(seed)) == 32
 
     def _generate_and_save(self, param_file: str) -> None:
         (
@@ -125,7 +140,8 @@ class MIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         ) = derive_fullysec_lwe_parameters(
             3 * self.bound_x, self.bound_y, self.n * self.eta, self.lwe_n
         )
-        self.A = rand_uniform_matrix(self.m, self.lwe_n, self.q)
+        self.a_seed = secrets.token_hex(32)
+        self.A = _seeded_matrix(self.a_seed, self.m, self.lwe_n, self.q)
 
         with tempfile.NamedTemporaryFile(
             "w", encoding="utf-8", dir=os.path.dirname(param_file), delete=False
@@ -148,7 +164,7 @@ class MIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                     "l_sigma1": gp.digits(self.l_sigma1),
                     "sigma2": self.sigma2,
                     "l_sigma2": gp.digits(self.l_sigma2),
-                    "A": matrix_to_digits(self.A),
+                    "A_seed": self.a_seed,
                 },
                 f,
             )

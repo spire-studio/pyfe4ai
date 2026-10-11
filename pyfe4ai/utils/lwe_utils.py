@@ -107,7 +107,9 @@ def derive_fullysec_lwe_parameters(
         bound2 *= math.sqrt(bound_m_float)
         sigma = 1.0 / squared
         sigma /= bound2
-        sigma /= math.log2(n_float)
+        # omega(sqrt(log n)) of the correctness bound: log2 n, but at least the
+        # 12-sigma tail cut (log2 n alone left toy dimensions a few sigma of margin)
+        sigma /= max(math.log2(n_float), GAUSSIAN_TAIL_CUT)
 
         sigma_prime = sigma / k_float
         sigma_prime /= math.pow(n_float, 6) * math.pow(float(n_bits_q), 2)

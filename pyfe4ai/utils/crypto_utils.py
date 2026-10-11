@@ -273,6 +273,19 @@ def _shake_expand(domain: str, index: int, counter: int, v: str, n_bytes: int) -
     return int.from_bytes(hashlib.shake_256(material).digest(n_bytes), "big")
 
 
+def paillier_base(seed: str, n_mod) -> gp.mpz:
+    """The base ``g = H(seed)^(2N) mod N^2`` of the ALS16 DCR schemes.
+
+    A random ``2N``-th residue, as the scheme takes it; a parameter cache
+    stores only the seed, so a planted cache cannot choose ``g`` (e.g. of
+    order 2, or ``1 + N``), only another pseudo-random one.
+    """
+    n_mod = gp.mpz(n_mod)
+    bytes.fromhex(seed)  # a hex string
+    h = hash_to_zn2_star(seed, n_mod, domain="pyfe4ai/als16-dcr/g")
+    return gp.powmod(h, 2 * n_mod, n_mod * n_mod)
+
+
 def hash_to_zn2_star(v: str, n_mod: gp.mpz, domain: str = "") -> gp.mpz:
     """Full-domain hash of a string into ``Z_{N^2}^*`` (random oracle).
 

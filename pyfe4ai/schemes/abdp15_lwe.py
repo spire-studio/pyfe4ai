@@ -70,9 +70,27 @@ class ABDP15KeyGeneratorMixin(ParameterCacheMixin):
         }
 
     def _param_verification(self, param: dict) -> bool:
-        return param.get("construction") == self._construction and all(
-            param.get(key) == value for key, value in self._record_fields().items()
-        )
+        """The cached record must match the config and the parameters derived
+        from it (the derivation is deterministic); only the seed of ``A`` is random."""
+        if not (
+            param.get("construction") == self._construction
+            and all(param.get(key) == value for key, value in self._record_fields().items())
+        ):
+            return False
+        seed = param.get("A_seed")
+        if not isinstance(seed, str) or len(bytes.fromhex(seed)) != 32:
+            return False
+        expected = self._serialised(self._derive())
+        return all(param.get(key) == value for key, value in expected.items())
+
+    @staticmethod
+    def _serialised(derived: dict) -> dict:
+        record = {
+            key: value if isinstance(value, float) else gp.digits(gp.mpz(value))
+            for key, value in derived.items()
+        }
+        record["lwe_n"], record["m"] = int(record["lwe_n"]), int(record["m"])
+        return record
 
     def _derive(self) -> dict:
         """Fresh parameters: ``lwe_n``, ``p``, ``q``, ``m``, ``sigma_q``, ``l_sigma``."""
@@ -90,9 +108,7 @@ class ABDP15KeyGeneratorMixin(ParameterCacheMixin):
 
     def _generate_and_save(self, param_file: str) -> None:
         record = {"construction": self._construction, **self._record_fields()}
-        for key, value in self._derive().items():
-            record[key] = value if isinstance(value, float) else gp.digits(gp.mpz(value))
-        record["lwe_n"], record["m"] = int(record["lwe_n"]), int(record["m"])
+        record.update(self._serialised(self._derive()))
         record["A_seed"] = secrets.token_hex(32)
         self._apply_parameters(record)
         with open(param_file, "w", encoding="utf-8") as f:

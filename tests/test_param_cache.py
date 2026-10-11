@@ -190,3 +190,65 @@ def test_adaptive_ring_cache_holds_a_seed():
     assert "a" not in record and len(bytes.fromhex(record["a_seed"])) == 32
     again = K(dict(cfg))
     assert again.a == kg.a
+
+
+# -- second check: everything a cache holds is re-derived or seeded -------
+
+
+def test_abdp15_cache_is_rederived():
+    """lwe_n, q, m and sigma_q were read from the file: lwe_n = 1 with
+    sigma_q = 0, or m = 8, were accepted and leaked the plaintexts."""
+    from pyfe4ai.schemes.sife.lwe import SIFELWEKeyGenerator as K
+
+    cfg = {"sec_param": 64, "eta": 3, "lwe_n": 16, "bound_x": 8, "bound_y": 8}
+    kg = K(dict(cfg))
+    for plant in ({"lwe_n": 1, "sigma_q": 0.0}, {"m": 8}, {"q": "101"}):
+        _rewrite(CryptoCONST.TYPE_SIFE_LWE, lambda r: r.update(plant))
+        again = K(dict(cfg))
+        assert (again.lwe_n, again.m, again.q, again.sigma_q) == (kg.lwe_n, kg.m, kg.q, kg.sigma_q)
+
+
+def test_threshold_mife_lwe_flooding_width_is_rederived():
+    from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWEKeyGenerator as K
+
+    cfg = {"sec_param": 64, "eta": 1, "n": 2, "lst_nid": ["a", "b"], "s": 3, "t": 2,
+           "lst_sid": ["s0", "s1", "s2"], "lwe_n": 16, "bound_x": 4, "bound_y": 4}
+    kg = K(dict(cfg))
+    _rewrite(CryptoCONST.TYPE_TMIFE_LWE, lambda r: r.update(sigma_f="1"))
+    assert K(dict(cfg)).sigma_f == kg.sigma_f > 1
+
+
+def test_als16_cache_holds_a_seed_and_is_rederived():
+    from pyfe4ai.schemes.sife.fullysec_lwe import SIFEFullySecLWEKeyGenerator as K
+
+    cfg = {"sec_param": 64, "eta": 2, "lwe_n": 8, "bound_x": 4, "bound_y": 4}
+    kg = K(dict(cfg))
+    with open(_param_file(CryptoCONST.TYPE_SIFE_FULLYSEC_LWE)) as f:
+        record = json.load(f)
+    assert "A" not in record and len(bytes.fromhex(record["A_seed"])) == 32
+    assert K(dict(cfg)).A == kg.A  # expanded from the stored seed
+    _rewrite(CryptoCONST.TYPE_SIFE_FULLYSEC_LWE, lambda r: r.update(sigma_q=0.0))
+    assert K(dict(cfg)).sigma_q == kg.sigma_q
+
+
+def test_paillier_base_is_derived_from_a_seed():
+    """A planted g = N^2 - 1 (order 2) made every ciphertext reveal x."""
+    cfg = {"sec_param": 64, "eta": 2, "bit_length": 64, "bound_x": 10, "bound_y": 10}
+    kg = SIFEPaillierKeyGenerator(dict(cfg))
+    with open(_param_file(CryptoCONST.TYPE_SIFE_PAILLIER)) as f:
+        record = json.load(f)
+    assert "g" not in record and len(bytes.fromhex(record["g_seed"])) == 32
+    n2 = int(kg.n) ** 2
+    _rewrite(CryptoCONST.TYPE_SIFE_PAILLIER, lambda r: r.update(g=str(n2 - 1)))
+    assert int(SIFEPaillierKeyGenerator(dict(cfg)).g) == int(kg.g) != n2 - 1
+
+
+def test_damgard_h_is_derived_from_a_seed():
+    """A planted h = g (known discrete log) was accepted."""
+    cfg = {"sec_param": 128, "eta": 2, "modulus_length": 128, "bound": 10}
+    kg = SIFEDamgardKeyGenerator(dict(cfg))
+    with open(_param_file(CryptoCONST.TYPE_SIFE_DAMGARD)) as f:
+        record = json.load(f)
+    assert "h" not in record and len(bytes.fromhex(record["h_seed"])) == 32
+    _rewrite(CryptoCONST.TYPE_SIFE_DAMGARD, lambda r: r.update(h=r["g"]))
+    assert SIFEDamgardKeyGenerator(dict(cfg)).h == kg.h != kg.g

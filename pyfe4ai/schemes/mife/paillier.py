@@ -34,6 +34,7 @@ ciphertexts of every slot named in the key. Correctness needs
 from __future__ import annotations
 
 import json
+import secrets
 import logging
 import os
 import gmpy2 as gp
@@ -54,11 +55,12 @@ from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationErro
 from pyfe4ai.utils.validation import scale_to_int
 from pyfe4ai.utils.crypto_utils import is_dcr_modulus
 from pyfe4ai.utils.validation import strict_int
+from pyfe4ai.utils.crypto_utils import paillier_base
 
 logger = logging.getLogger(__name__)
 
 # version <= 0.2.0 caches also stored p and q; they are regenerated
-_PARAM_FORMAT = "modulus-only/v1"
+_PARAM_FORMAT = "modulus-only/v1+g-seed"
 
 class MIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
     """Key generator for Paillier-based multi-input inner-product FE."""
@@ -84,7 +86,8 @@ class MIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
     def _apply_parameters(self, param: dict) -> None:
         self.n_mod = gp.mpz(param["n_mod"])
         self.n_square = gp.mpz(param["n_square"])
-        self.g = gp.mpz(param["g"])
+        self.g_seed = param["g_seed"]
+        self.g = paillier_base(self.g_seed, self.n_mod)
 
     def _loaded_parameters_valid(self) -> bool:
         n = self.n_mod
@@ -119,13 +122,8 @@ class MIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.n_square = self.n_mod * self.n_mod
         self._validate_bounds()
 
-        while True:
-            g_prime = random_below(self.n_square - 1)
-            g = gp.powmod(g_prime, self.n_mod, self.n_square)
-            g = gp.powmod(g, 2, self.n_square)
-            if gp.gcd(g, self.n_square) == 1:
-                self.g = g
-                break
+        self.g_seed = secrets.token_hex(32)
+        self.g = paillier_base(self.g_seed, self.n_mod)
 
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(
@@ -139,7 +137,7 @@ class MIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                     "param_format": _PARAM_FORMAT,
                     "n_mod": gp.digits(self.n_mod),
                     "n_square": gp.digits(self.n_square),
-                    "g": gp.digits(self.g),
+                    "g_seed": self.g_seed,
                 },
                 f,
             )

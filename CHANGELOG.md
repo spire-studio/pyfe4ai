@@ -268,9 +268,16 @@ table and *Known Issues* before relying on any privacy property.
   passed a first version of the check), the order of their generators and,
   at RFC 3526 sizes, for being the RFC prime; DCR moduli for size,
   compositeness and prime factors below 2^16, Paillier bases for not being
-  `1 mod N` (`crypto_utils.is_dl_group`, `is_dcr_modulus`). The Ring-LWE
-  caches store only a seed of the public polynomial `a` (`a = 0` used to be
-  accepted) and are re-derived on load (`ring_lwe_utils.seeded_polynomial`).
+  `1 mod N` (`crypto_utils.is_dl_group`, `is_dcr_modulus`). Everything else
+  a cache holds is now either re-derived on load or expanded from a stored
+  seed: the Ring-LWE parameters and public polynomial `a`
+  (`ring_lwe_utils.seeded_polynomial`; `a = 0` used to be accepted), the
+  ABDP15 / tMIFE-LWE parameters including `sigma_f` (`lwe_n = 1`,
+  `sigma_q = 0`, `m = 8` or `sigma_f = 1` used to be accepted), the ALS16
+  parameters and matrix `A`, the Paillier base `g = H(seed)^(2N)`
+  (`crypto_utils.paillier_base`; `g = N^2 - 1` used to reveal the
+  plaintexts) and the Damgard element `h`, hashed into the group (a planted
+  `h = g` had a known discrete logarithm).
   A file that fails, or does not parse (e.g. after an interrupted write), is
   regenerated, and files are written atomically.
 - **Ring-LWE parameters (SIFE, MIFE, MCFE, tMCFE, dMCFE)**: `bmms21_parameters`
@@ -531,7 +538,9 @@ table and *Known Issues* before relying on any privacy property.
   needs `m >= 4 n log2 q`. The recipe now uses `4 n log2 q` (also inside
   the width derivation), sizes the row norm `B_tau` of `tau` with `sqrt(m)`
   instead of `sqrt(n)` (with the larger `m`, the old bound let about 0.1% of
-  extreme decryptions fail at toy sizes) and takes the largest prime of the
+  extreme decryptions fail at toy sizes), uses at least the 12-sigma tail
+  cut for its `omega(sqrt(log n))` (`log2 n` alone left dimensions below
+  4096 a few sigma of margin) and takes the largest prime of the
   derived size (a random draw could exceed it by one bit); cached parameters
   are regenerated. The `standard` refusal now quotes the resulting sizes
   (`n = 3328` to `4352`, 80 to 145 MB per ciphertext).
