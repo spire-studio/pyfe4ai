@@ -92,7 +92,7 @@ def test_entire_process_lst_ndarray(kg_config):
     clients = _clients(kg, pp, lst_nid, precision)
     dct_x = {nid: [np.random.random_sample((3, 7))] for nid in lst_nid}
     dct_y = {"nid_0": [1], "nid_1": [2], "nid_2": [-1]}
-    expected = sum(((dct_x[nid][0] * 10).astype(int) / 10) * dct_y[nid][0] for nid in lst_nid)
+    expected = sum((np.rint(dct_x[nid][0] * 10) / 10) * dct_y[nid][0] for nid in lst_nid)
     dct_ct = {nid: clients[nid].encrypt_lst_ndarray(dct_x[nid], label=label) for nid in lst_nid}
     n_chunks = DecentralizedMCFERingLWE.key_chunks(dct_ct["nid_0"])
     shares = {nid: clients[nid].derive_function_decryption_key_share(dct_y, label, n_chunks) for nid in lst_nid}

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import numbers
 
+import numpy as np
+
 from pyfe4ai.utils.exceptions import FEValidationError
 
 
@@ -44,3 +46,37 @@ def int_vector(values, name: str, length: int | None = None, bound=None) -> list
             "{} must have {} entries, got {}".format(name, length, len(out))
         )
     return out
+
+
+_MAX_EXACT = 2 ** 53  # floats are exact integers up to here
+
+
+def scale_to_int(values, precision: int) -> np.ndarray:
+    """Return ``round(values * 10^precision)`` as an ``int64`` array.
+
+    The ndarray helpers encode real-valued plaintexts with this: it rounds to
+    the nearest integer (ties to even) instead of truncating toward zero,
+    multiplies integer arrays exactly, and refuses NaN, infinities and values
+    whose scaled magnitude is not exactly representable.
+
+    Raises:
+        FEValidationError: For non-numeric, non-finite or too large values.
+    """
+    arr = np.asarray(values)
+    scale = 10 ** int(precision)
+    if arr.dtype.kind in "iu":
+        if arr.size and int(np.max(np.abs(arr.astype(object)))) * scale >= 2 ** 63:
+            raise FEValidationError("plaintext too large for precision {}".format(precision))
+        return arr.astype(np.int64) * scale
+    if arr.dtype.kind not in "fO":
+        raise FEValidationError("plaintext must be real-valued, got dtype {}".format(arr.dtype))
+    try:
+        arr = arr.astype(np.float64)
+    except (TypeError, ValueError) as exc:
+        raise FEValidationError("plaintext must be real-valued") from exc
+    if not np.all(np.isfinite(arr)):
+        raise FEValidationError("plaintext contains NaN or infinity")
+    scaled = np.rint(arr * float(scale))
+    if scaled.size and np.max(np.abs(scaled)) >= _MAX_EXACT:
+        raise FEValidationError("plaintext too large for precision {}".format(precision))
+    return scaled.astype(np.int64)

@@ -40,6 +40,7 @@ from pyfe4ai.utils.matrix_utils import vector_to_digits
 from pyfe4ai.utils.sampling_utils import rand_uniform_matrix
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.validation import int_vector
+from pyfe4ai.utils.validation import scale_to_int
 
 logger = logging.getLogger(__name__)
 
@@ -232,7 +233,7 @@ class SIFELWE(IPFEAbsCrypto, ABDP15CryptoMixin):
             raise NotImplementedError("ndarray helper currently expects eta=1")
         lst_ndarray_ct = []
         for ary_src in lst_ndarray:
-            ary = (ary_src.copy() * pow(10, self.precision)).astype(int)
+            ary = scale_to_int(ary_src, self.precision)
             if np.abs(ary).max(initial=0) > int(self.pp["bound_x"]):
                 raise FEValidationError("quantised value exceeds configured bound_x")
             flat = [[int(w)] for w in ary.ravel()]

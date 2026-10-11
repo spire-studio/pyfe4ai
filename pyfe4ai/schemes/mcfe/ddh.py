@@ -38,6 +38,7 @@ from pyfe4ai.utils.crypto_utils import _random
 from pyfe4ai.utils.crypto_utils import hash_to_qr_group
 from pyfe4ai.utils.dlog_solver import load_or_build_dlog_table, dlog_table_solve
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.utils.validation import scale_to_int
 
 
 logger = logging.getLogger(__name__)
@@ -312,7 +313,7 @@ class MCFE(IPFEAbsCrypto):
         _label = kwargs.get("label", None)
         lst_ndarray_ct = list()
         for l in range(len(lst_ndarray)):
-            ary = (lst_ndarray[l].copy() * pow(10, self.precision)).astype(int)
+            ary = scale_to_int(lst_ndarray[l], self.precision)
             ary_ct = np.empty(ary.shape, dtype=object)
             for i, w in np.ndenumerate(ary):
                 ary_ct[i] = self.encrypt([w], _element_label(_label, l, i))

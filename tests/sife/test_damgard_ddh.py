@@ -102,7 +102,7 @@ def test_entire_process_lst_ndarray(kg_config):
     fusion_weight = [3]
     lst_x = [np.random.random_sample((2, 3)), np.random.random_sample((2, 2, 2))]
     expected = [
-        ((ary * pow(10, precision)).astype(int) / pow(10, precision))
+        (np.rint(ary * pow(10, precision)) / pow(10, precision))
         * fusion_weight[0]
         for ary in lst_x
     ]

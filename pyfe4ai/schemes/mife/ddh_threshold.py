@@ -46,6 +46,7 @@ from pyfe4ai.schemes.threshold_utils import validate_threshold
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.validation import int_vector
+from pyfe4ai.utils.validation import scale_to_int
 
 logger = logging.getLogger(__name__)
 
@@ -132,8 +133,7 @@ class ThresholdMIFE(MIFE):
     """Encryption (with quantisation) and threshold decryption."""
 
     def _quantise(self, values) -> list:
-        scale = pow(10, self.precision)
-        return [int(v) * scale if isinstance(v, (int, np.integer)) else int(round(float(v) * scale)) for v in values]
+        return [int(v) for v in scale_to_int(values, self.precision)]
 
     def encrypt(self, pt: list) -> dict:
         """Encrypt ``eta`` values, quantised with ``10^precision``."""

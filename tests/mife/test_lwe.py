@@ -83,7 +83,7 @@ def test_entire_process_lst_ndarray(kg_config):
         expected.append(
             sum(
                 (
-                    (dct_x[nid][layer_idx] * pow(10, precision)).astype(int)
+                    np.rint(dct_x[nid][layer_idx] * pow(10, precision))
                     / pow(10, precision)
                 )
                 * dct_y[nid][0]
@@ -124,3 +124,32 @@ def test_clients_share_one_expanded_matrix(kg_config):
     a.encrypt([1, 2])
     b.encrypt([3, 4])
     assert a.A is b.A
+
+
+def _noise_margin(n_slots, tmp_path, monkeypatch):
+    """Standard deviation of the decryption noise of a full key (sum over the
+    slots of y_i^T E_i^T r_i, r binary) in units of Delta = floor(q / p)."""
+    import math
+
+    monkeypatch.chdir(tmp_path / str(n_slots))
+    nids = ["nid_{}".format(i) for i in range(n_slots)]
+    kg = MIFELWEKeyGenerator({"n": n_slots, "lst_nid": nids, "eta": 1, "lwe_n": 64,
+                              "bound_x": 20, "bound_y": 20})
+    sd = 20 * kg.sigma_q * math.sqrt(n_slots * kg.eta * kg.m / 2)
+    return sd / float(kg.q // kg.p)
+
+
+def test_noise_is_sized_for_all_slots(tmp_path, monkeypatch):
+    """ACFGU18 (footnote 14) picks the ALS16 parameters as if the vectors had
+    dimension n * eta: decryption adds the noise of all n slots. Sized for eta
+    alone, the margin shrank with sqrt(n)."""
+    (tmp_path / "1").mkdir()
+    (tmp_path / "16").mkdir()
+    assert _noise_margin(16, tmp_path, monkeypatch) < 1.5 * _noise_margin(1, tmp_path, monkeypatch)
+
+
+def test_parameters_are_deterministic():
+    from pyfe4ai.utils.lwe_utils import abdp15_parameters
+
+    first = abdp15_parameters(20, 20, 3, 64)
+    assert abdp15_parameters(20, 20, 3, 64) == first

@@ -90,7 +90,7 @@ def test_entire_process_lst_ndarray(kg_config):
     lst_nid = cfg["lst_nid"]
     dct_x = {nid: [np.random.random_sample((3, 7)), np.random.random_sample((2,))] for nid in lst_nid}
     dct_y = {"nid_0": [1], "nid_1": [2], "nid_2": [-1]}
-    expected = [sum(((dct_x[nid][l] * 10).astype(int) / 10) * dct_y[nid][0] for nid in lst_nid) for l in range(2)]
+    expected = [sum((np.rint(dct_x[nid][l] * 10) / 10) * dct_y[nid][0] for nid in lst_nid) for l in range(2)]
     dct_ct = {
         nid: ThresholdMCFERingLWE({"id": nid, "precision": precision, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
         .encrypt_lst_ndarray(dct_x[nid], label=label)

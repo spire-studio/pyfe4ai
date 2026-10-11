@@ -68,6 +68,7 @@ from pyfe4ai.utils.crypto_utils import _random
 from pyfe4ai.utils.crypto_utils import hash_to_qr_group
 from pyfe4ai.utils.dlog_solver import load_or_build_dlog_table, dlog_table_solve
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.utils.validation import scale_to_int
 
 logger = logging.getLogger(__name__)
 
@@ -300,8 +301,8 @@ class ThresholdMCFE(IPFEAbsCrypto):
         u_l = _hash_encoded(encoded, p)
 
         c = []
-        for v, s_j in zip(pt, self.sk["s"]):
-            x_j = gp.mpz(int(round(v * pow(10, self.precision))))
+        for v, s_j in zip(scale_to_int(pt, self.precision), self.sk["s"]):
+            x_j = gp.mpz(int(v))
             c_j = gp.powmod(g, x_j, p)
             for u_k, s_jk in zip(u_l, s_j):
                 c_j = gp.mul(c_j, gp.powmod(u_k, gp.mpz(s_jk), p)) % p

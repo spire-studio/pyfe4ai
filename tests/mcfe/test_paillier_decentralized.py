@@ -257,7 +257,7 @@ class TestNdarrayHelpers:
             expected.append(
                 sum(
                     (
-                        (dct_x[nid][layer_idx] * pow(10, precision)).astype(int)
+                        np.rint(dct_x[nid][layer_idx] * pow(10, precision))
                         / pow(10, precision)
                     )
                     * dct_y[nid][0]

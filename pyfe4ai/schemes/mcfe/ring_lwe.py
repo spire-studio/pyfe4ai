@@ -44,6 +44,7 @@ from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWEKeyGenerator
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import hash_to_zq_vector
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.utils.validation import scale_to_int
 
 logger = logging.getLogger(__name__)
 
@@ -126,13 +127,12 @@ class MCFERingLWE(MIFERingLWE):
 
     def encrypt(self, matrix_pt: list[list[int]], label: str) -> dict:
         """Encrypt this client's matrix under *label* (once per client and label)."""
-        self._check_plaintext(matrix_pt)
+        rows = self._check_plaintext(matrix_pt)
         if "u_prime" not in self.sk:
             raise FEKeyError("encryption key lacks u_prime")
         if not isinstance(label, str):
             raise FEValidationError("label must be a string")
-        rows = self._padded_rows(matrix_pt, extra_pad=self._pad(label))
-        return self._encrypt_rows(rows, len(matrix_pt[0]))
+        return self._encrypt_rows(self._padded_rows(rows, extra_pad=self._pad(label)), len(rows[0]))
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict, label: str):
         """Recover the batch of inner products for a key bound to *label*.
@@ -177,7 +177,7 @@ class MCFERingLWE(MIFERingLWE):
         ring_n = self.pp["ring_n"]
         out, chunk = [], 0
         for ary_src in lst_ndarray:
-            flat = (np.asarray(ary_src) * pow(10, self.precision)).astype(int).ravel().tolist()
+            flat = scale_to_int(ary_src, self.precision).ravel().tolist()
             n_layer = max(1, math.ceil(len(flat) / ring_n))
             cts = []
             for j in range(n_layer):

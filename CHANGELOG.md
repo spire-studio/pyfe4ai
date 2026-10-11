@@ -225,6 +225,13 @@ table and *Known Issues* before relying on any privacy property.
   succeeded. As in NPS24 Fig. 1, a client's share now depends on an explicit
   `tag_f` and its own `y_i` only; a client object refuses a second weight
   vector under a `tag_f` it already used.
+- **ML adapter**: `FESchemeWrapper` holds the master key, and
+  `aggregate_gradients` issued a key for any weights, so weights `(1, 0)` or
+  a subset of the clients decrypted one client's gradient; labels could be
+  reused. It now needs a ciphertext and a non-zero weight for every enrolled
+  client (`allow_partial=True` relaxes this), refuses a second encryption by
+  a client under one label and a second weight vector for one label, and is
+  documented as a single-trust-domain simulation.
 - **Threshold schemes** assume honest-but-curious servers; this is now stated
   in the README, `SECURITY.md` and `threshold_utils`. Nothing proves a
   partial decryption correct, so `combine_decrypt` and
@@ -424,6 +431,31 @@ table and *Known Issues* before relying on any privacy property.
 
 ### Fixed
 
+- The ndarray helpers truncated `x 10^precision` toward zero (`0.57` became
+  `0.56` at precision 2) and turned NaN and infinities into `-2^63`. They now
+  round to nearest and refuse non-finite or too large values
+  (`validation.scale_to_int`).
+- Ring-LWE MIFE / MCFE / dMCFE and FH-MCFE keys truncated fractional weights
+  (`0.5` became `0`), and `threshold_utils.fusion_weight_id` gave `1.5` and
+  `1` the same digest; weights now go through `validation.int_vector`.
+  Ring-LWE MIFE / MCFE plaintext rows of different lengths were cut or
+  padded silently and are now refused.
+- MIFE-LWE sized its noise for `eta`-dimensional vectors, but decryption adds
+  the noise of all `n` slots, so the decryption margin shrank with
+  `sqrt(n)`. As in ACFGU18 (footnote 14), the ALS16 / ABDP15 parameters are
+  now chosen as if the vectors had dimension `n * eta`; cached parameters are
+  regenerated.
+- The ABDP15 plaintext modulus `p` was random in its bit range, so
+  `lwe_n = "auto"` could pick different dimensions on different runs (the
+  README's `n = 832` was one such draw; the deterministic choice is 896).
+  `p` is now the smallest prime of that size.
+- ML adapter: `aggregate_gradients` on a SIFE wrapper returned the first
+  client's result when given several; it now refuses more than one. Fractional
+  weights were quantised but the result was not scaled back (weights `0.5`
+  gave `10^precision` times the sum); the result is now rescaled, and
+  fractional weights without a precision are refused.
+  `EncryptedGradient.from_dict` allocated whatever shape it was given; it now
+  bounds the shape and requires one entry per element.
 - SIFE-FullySec-LWE decoded `+-eta X Y` with a random sign (`K` was
   `2 eta X Y`). SIFE-Damgard could not decrypt in an instance holding the
   encryption key. SIFE-LWE's ndarray helper skipped the `bound_x` check.

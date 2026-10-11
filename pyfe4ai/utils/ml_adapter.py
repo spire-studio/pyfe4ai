@@ -19,6 +19,16 @@ Provides two high-level APIs that hide FE complexity from ML engineers:
 
 PyTorch is optional — functions accept both :class:`numpy.ndarray` and
 ``torch.Tensor`` inputs.
+
+**Single trust domain.** A :class:`FESchemeWrapper` runs the key generator
+itself, so it holds the master secret key and plays every party (clients,
+key authority, decryptor). It is meant for experiments and for code that
+already trusts one process with everything; a deployment keeps the master
+key away from the aggregator. The wrapper applies a default policy that a
+key holder would otherwise have to enforce: :func:`aggregate_gradients`
+needs a ciphertext and a non-zero weight for every enrolled client (pass
+``allow_partial=True`` to relax this), each client encrypts at most once per
+label, and each label is aggregated with one weight vector only.
 """
 
 from __future__ import annotations
@@ -379,6 +389,9 @@ class FESchemeWrapper:
 
         # Cache for crypto instances per nid
         self._encryptors: dict[str, Any] = {}
+        # Labels used for encryption, per client, and weights aggregated, per label
+        self._encrypted_labels: set[tuple[str, str]] = set()
+        self._aggregated: dict[str, dict] = {}
 
     # -- crypto instance management ----------------------------------------
 
@@ -449,18 +462,44 @@ class EncryptedGradient:
             "ciphertexts": serialised_cts,
         }
 
+    #: Largest number of elements :meth:`from_dict` accepts per array.
+    MAX_ELEMENTS = 10 ** 7
+
     @classmethod
     def from_dict(cls, d: dict) -> EncryptedGradient:
-        """Deserialise from dict."""
+        """Deserialise from dict.
+
+        Raises:
+            ValueError: If an array's shape is invalid or has more than
+                :attr:`MAX_ELEMENTS` elements, or its entries do not cover
+                exactly the positions of that shape.
+        """
         cts = []
         for ct_dict in d["ciphertexts"]:
-            shape = tuple(ct_dict["shape"])
+            shape = ct_dict["shape"]
+            if (
+                not isinstance(shape, list) or len(shape) > 32
+                or any(not isinstance(v, int) or isinstance(v, bool) or v < 0 for v in shape)
+            ):
+                raise ValueError("invalid ciphertext shape {!r}".format(shape))
+            size = 1
+            for v in shape:
+                size *= v
+            if size > cls.MAX_ELEMENTS:
+                raise ValueError("ciphertext array has too many elements ({})".format(size))
+            shape = tuple(shape)
             ary = np.empty(shape, dtype=object)
+            seen = set()
             for key, val in ct_dict["data"].items():
                 idx = tuple(
                     int(x) for x in key.strip("()").split(",") if x.strip()
                 )
+                if len(idx) != len(shape) or any(not 0 <= i < n for i, n in zip(idx, shape)):
+                    raise ValueError("ciphertext index {} outside the shape {}".format(key, shape))
                 ary[idx] = val
+                seen.add(idx)
+            if len(seen) != size:
+                raise ValueError("ciphertext array must have an entry for every element")
             cts.append(ary)
         return cls(
             ciphertexts=cts,
@@ -519,7 +558,9 @@ def encrypt_gradient(
             gradient: See implementation for details.
             wrapper: FE scheme wrapper instance.
             nid: Node identifier.
-            label: Encryption label for replay protection.
+            label: Round label; MCFE allows one ciphertext per client and
+                label, so a label this wrapper already used for *nid* is
+                refused.
     """
     _require_labelled_aggregation(wrapper, "encrypt_gradient")
     arr = _to_numpy(gradient).astype(np.float64)
@@ -529,9 +570,16 @@ def encrypt_gradient(
     if wrapper.has_label:
         if label is None:
             raise ValueError("MCFE schemes require a label for encryption")
+        if (nid, label) in wrapper._encrypted_labels:
+            raise ValueError(
+                "client {} already encrypted under label {!r}; use a fresh label "
+                "for every round".format(nid, label)
+            )
         kwargs["label"] = label
 
     cts = encryptor.encrypt_lst_ndarray([arr], **kwargs)
+    if wrapper.has_label:
+        wrapper._encrypted_labels.add((nid, label))
 
     return EncryptedGradient(
         ciphertexts=cts,
@@ -542,6 +590,23 @@ def encrypt_gradient(
     )
 
 
+def _integer_weights(weights: dict, qconfig: QuantizationConfig) -> tuple[dict, int]:
+    """Return ``({nid: [int]}, scale)``: the weights as integers, multiplied
+    by the quantisation scale if any of them is fractional."""
+    lists = {
+        nid: [w] if np.ndim(w) == 0 else list(np.ravel(w)) for nid, w in weights.items()
+    }
+    values = [float(v) for lst in lists.values() for v in lst]
+    if not all(np.isfinite(values)):
+        raise ValueError("weights must be finite")
+    if all(v.is_integer() for v in values):
+        return {nid: [int(v) for v in lst] for nid, lst in lists.items()}, 1
+    scale = qconfig.scale_factor
+    if scale == 1:
+        raise ValueError("fractional weights need a wrapper precision > 0")
+    return {nid: [qconfig.quantize(float(v)) for v in lst] for nid, lst in lists.items()}, scale
+
+
 def aggregate_gradients(
     encrypted: dict[str, EncryptedGradient],
     wrapper: FESchemeWrapper,
@@ -549,27 +614,54 @@ def aggregate_gradients(
     *,
     sid: str = "sid_agg",
     label: str | None = None,
+    allow_partial: bool = False,
 ) -> np.ndarray:
     """Decrypt and aggregate encrypted gradients from multiple clients.
 
         Args:
             encrypted: Encrypted data container.
             wrapper: FE scheme wrapper instance.
-            weights: Weight vector or dict.
+            weights: Weight per client (a number or a one-element list);
+                fractional weights are quantised with the wrapper's
+                precision and the result is scaled back.
             sid: Session / decryption-key identifier.
-            label: Encryption label for replay protection.
+            label: Round label (MCFE); each label is aggregated with one
+                weight vector only.
+            allow_partial: Allow zero weights and a subset of the enrolled
+                clients. Off by default: the wrapper holds the master key,
+                and such weights would decrypt a single client's gradient.
+
+        Raises:
+            ValueError: If the policy above is violated, or SIFE is given
+                more than one client.
     """
     _require_labelled_aggregation(wrapper, "aggregate_gradients")
     _require_single_decryptor(wrapper, "aggregate_gradients")
 
     # Normalise weights to {nid: [w]} format for eta=1 schemes
-    fusion_weight: dict[str, list] = {}
-    for nid, w in weights.items():
-        if isinstance(w, (int, float)):
-            qw = wrapper.qconfig.quantize(w) if isinstance(w, float) else w
-            fusion_weight[nid] = [qw]
-        else:
-            fusion_weight[nid] = list(w)
+    fusion_weight, weight_scale = _integer_weights(weights, wrapper.qconfig)
+    if wrapper.scheme_type == "sife":
+        if len(encrypted) != 1 or set(fusion_weight) != set(encrypted):
+            raise ValueError(
+                "single-input FE aggregates one client: pass one ciphertext and its weight"
+            )
+    elif not allow_partial:
+        enrolled = set(getattr(wrapper.kg, "lst_nid", None) or encrypted)
+        if set(encrypted) != enrolled or set(fusion_weight) != enrolled:
+            raise ValueError(
+                "aggregation needs a ciphertext and a weight for every enrolled client "
+                "(allow_partial=True to override)"
+            )
+        if any(v == 0 for lst in fusion_weight.values() for v in lst):
+            raise ValueError("aggregation needs non-zero weights (allow_partial=True to override)")
+    if wrapper.has_label:
+        if label is None:
+            raise ValueError("MCFE schemes require a label for decryption")
+        previous = wrapper._aggregated.setdefault(label, fusion_weight)
+        if previous != fusion_weight:
+            raise ValueError(
+                "label {!r} was already aggregated with other weights".format(label)
+            )
 
     # Build credentials for dk generation
     # SIFE expects fusion_weight as a flat list; MCFE/MIFE expect a dict.
@@ -579,15 +671,12 @@ def aggregate_gradients(
         # Single-input: take the first (only) client's weight list
         credentials = {"fusion_weight": next(iter(fusion_weight.values()))}
     if wrapper.has_label:
-        if label is None:
-            raise ValueError("MCFE schemes require a label for decryption")
         credentials["label"] = label
 
     # Collect ciphertext arrays per nid
     # decrypt_lst_ndarray_ct expects: list of arrays (one per layer)
     # where each array element is a ciphertext dict
     sample_enc = next(iter(encrypted.values()))
-    n_layers = len(sample_enc.ciphertexts)
 
     # For SIFE: dict_ndarray_ct is list of arrays
     # For MCFE/MIFE: dict_ndarray_ct is dict[nid -> list of arrays]
@@ -620,6 +709,8 @@ def aggregate_gradients(
             enc.ciphertexts, dk=dk, fusion_weight=fw_list
         )
 
+    if weight_scale != 1:
+        result_arrays = [np.asarray(ary, dtype=np.float64) / weight_scale for ary in result_arrays]
     if result_arrays and len(result_arrays) == 1:
         return result_arrays[0]
     return np.array(result_arrays)

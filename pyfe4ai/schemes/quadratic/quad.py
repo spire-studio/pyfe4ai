@@ -55,6 +55,7 @@ from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.validation import int_vector
+from pyfe4ai.utils.validation import scale_to_int
 
 logger = logging.getLogger(__name__)
 
@@ -303,9 +304,8 @@ class QuadraticQuad(IPFEAbsCrypto):
         shape = lhs_lst_ndarray[0].shape
         if any(ary.shape != shape for ary in lhs_lst_ndarray + rhs_lst_ndarray):
             raise FEValidationError("all ndarray inputs must share the same shape")
-        scale = pow(10, self.precision)
-        lhs = [np.rint(np.asarray(ary) * scale).astype(int) for ary in lhs_lst_ndarray]
-        rhs = [np.rint(np.asarray(ary) * scale).astype(int) for ary in rhs_lst_ndarray]
+        lhs = [scale_to_int(ary, self.precision) for ary in lhs_lst_ndarray]
+        rhs = [scale_to_int(ary, self.precision) for ary in rhs_lst_ndarray]
         return lhs, rhs
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:

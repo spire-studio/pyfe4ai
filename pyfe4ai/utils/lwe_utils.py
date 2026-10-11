@@ -35,7 +35,8 @@ def derive_lwe_parameters(
     p_bits = bound_x_bits + bound_y_bits + max(1, int(eta).bit_length()) + 2
     if extra_dimension is not None:
         p_bits += max(1, int(extra_dimension).bit_length())
-    p = gp.next_prime(gp.mpz(_CSPRNG.getrandbits(p_bits)) + (1 << (p_bits - 1)))
+    # deterministic, so that a dimension chosen by "auto" is reproducible
+    p = gp.next_prime(gp.mpz(1) << (p_bits - 1))
 
     val = float(max_plain_bound) * math.sqrt(eta) + 1.0
     x = val * float(p) * float(bound_y)

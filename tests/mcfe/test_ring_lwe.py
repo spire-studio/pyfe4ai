@@ -118,7 +118,7 @@ def test_entire_process_lst_ndarray():
     dct_x = {nid: [np.random.random_sample((5, 8)), np.random.random_sample((2, 2))] for nid in cfg["lst_nid"]}
     dct_y = {"nid_0": [1], "nid_1": [-1]}
     expected = [
-        sum(((dct_x[nid][l] * 10 ** precision).astype(int) / 10 ** precision) * dct_y[nid][0] for nid in cfg["lst_nid"])
+        sum((np.rint(dct_x[nid][l] * 10 ** precision) / 10 ** precision) * dct_y[nid][0] for nid in cfg["lst_nid"])
         for l in range(2)
     ]
     pp = kg.get_public_parameters()

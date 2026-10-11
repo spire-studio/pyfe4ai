@@ -53,6 +53,7 @@ from pyfe4ai.utils.crypto_utils import hash_to_zn2_star
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.modular_utils import pow_signed
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_bigint
+from pyfe4ai.utils.validation import scale_to_int
 
 logger = logging.getLogger(__name__)
 
@@ -321,7 +322,7 @@ class MCFEPaillier(IPFEAbsCrypto):
             raise FEValidationError("need a string label for encrypt_lst_ndarray")
         lst_ndarray_ct = []
         for l, ary_src in enumerate(lst_ndarray):
-            ary = (ary_src.copy() * pow(10, self.precision)).astype(int)
+            ary = scale_to_int(ary_src, self.precision)
             ary_ct = np.empty(ary.shape, dtype=object)
             for i, w in np.ndenumerate(ary):
                 ary_ct[i] = self.encrypt([int(w)], _element_label(label, l, i))

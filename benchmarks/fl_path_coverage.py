@@ -55,6 +55,7 @@ CONFIGS: dict[tuple[str, str], dict] = {
     ("sife", "damgard"): {"sec_param": 64, "modulus_length": 64, "bound": 10},
     ("sife", "ring_lwe"): {"sec_param": 64, "ring_n": 16, "bound_x": 2, "bound_y": 2},
     ("sife", "fullysec_lwe"): {"sec_param": 64, "lwe_n": 24, "bound_x": 10, "bound_y": 10},
+    ("sife", "fullysec_ring_lwe"): {"sec_param": 64, "bound_x": 4, "bound_y": 4},
     ("sife", "ddh_dynamic"): {"sec_param": 128},
     ("sife", "fh_ipe_pairing"): {"sec_param": 64, "bound_x": 8, "bound_y": 8, "pairing_group_param": "MNT224"},
     ("sife", "part_fh_ipe_pairing"): {

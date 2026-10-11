@@ -22,6 +22,7 @@ import random
 import gmpy2 as gp
 
 from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.utils.validation import int_vector
 
 _CSPRNG = random.SystemRandom()
 
@@ -270,7 +271,7 @@ def fusion_weight_id(fusion_weight: dict) -> str:
     if not isinstance(fusion_weight, dict) or not fusion_weight:
         raise FEValidationError("invalid fusion weights provided, need a dict")
     canonical = json.dumps(
-        {nid: [int(y) for y in lst] for nid, lst in fusion_weight.items()},
+        {nid: int_vector(lst, "fusion weight of {}".format(nid)) for nid, lst in fusion_weight.items()},
         sort_keys=True,
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

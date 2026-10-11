@@ -52,6 +52,7 @@ from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetri
 from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.validation import int_vector
+from pyfe4ai.utils.validation import scale_to_int
 
 logger = logging.getLogger(__name__)
 
@@ -345,7 +346,7 @@ class MIFEFHMultiIPE(IPFEAbsCrypto):
             raise NotImplementedError("ndarray helper currently expects eta=1")
         lst_ndarray_ct = []
         for ary_src in lst_ndarray:
-            ary = np.rint(np.asarray(ary_src) * pow(10, self.precision)).astype(int)
+            ary = scale_to_int(ary_src, self.precision)
             ary_ct = np.empty(ary.shape, dtype=object)
             for i, w in np.ndenumerate(ary):
                 ary_ct[i] = self.encrypt([int(w)])

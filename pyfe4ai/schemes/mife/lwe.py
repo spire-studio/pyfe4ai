@@ -52,6 +52,7 @@ from pyfe4ai.schemes.abdp15_lwe import ABDP15KeyGeneratorMixin
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.utils.crypto_constants import CryptoCONST
+from pyfe4ai.utils.lwe_utils import abdp15_parameters
 from pyfe4ai.utils.lwe_utils import decode_scaled
 from pyfe4ai.utils.matrix_utils import digits_to_vector
 from pyfe4ai.utils.matrix_utils import matrix_to_digits
@@ -61,6 +62,7 @@ from pyfe4ai.utils.matrix_utils import vector_to_digits
 from pyfe4ai.utils.sampling_utils import rand_uniform_matrix
 from pyfe4ai.utils.sampling_utils import rand_uniform_vector
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.utils.validation import scale_to_int
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +71,7 @@ class MIFELWEKeyGenerator(IPFEAbsKeyGenerator, ABDP15KeyGeneratorMixin):
     """Key generator for LWE-based multi-input inner-product FE."""
 
     _scheme_type = CryptoCONST.TYPE_MIFE_LWE
+    _construction = "acfgu18-abdp15-lwe-seeded-a/v2"
     def __init__(self, config: dict, **kwargs) -> None:
         """Initialise the MIFE LWE key generator.
 
@@ -86,11 +89,15 @@ class MIFELWEKeyGenerator(IPFEAbsKeyGenerator, ABDP15KeyGeneratorMixin):
         self.bound_y = gp.mpz(config.get("bound_y", 20))
         if not self.n:
             raise FEKeyError("need to provide number of clients")
-        self._extra_dimension = self.n
         self._init_abdp15(config)
 
     def _record_fields(self) -> dict:
         return {**super()._record_fields(), "n": self.n}
+
+    def _derive(self) -> dict:
+        # ACFGU18, footnote 14: the ALS16 parameters for vectors of dimension
+        # n * eta, since decryption adds the noise of all n slots
+        return abdp15_parameters(self.bound_x, self.bound_y, self.n * self.eta, self.lwe_n_config)
 
     def setup(self) -> None:
         """Generate per-client secret keys and public keys (one pass over ``A``)."""
@@ -291,7 +298,7 @@ class MIFELWE(IPFEAbsCrypto, ABDP15CryptoMixin):
             raise FEKeyError("no encryption key provided")
         lst_ndarray_ct = []
         for ary_src in lst_ndarray:
-            ary = (ary_src.copy() * pow(10, self.precision)).astype(int)
+            ary = scale_to_int(ary_src, self.precision)
             if np.abs(ary).max(initial=0) > int(self.pp["bound_x"]):
                 raise FEValidationError("plaintext exceeds configured bound_x")
             flat = [[int(w)] for w in ary.ravel()]

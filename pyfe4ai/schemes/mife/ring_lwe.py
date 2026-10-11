@@ -48,7 +48,6 @@ from pyfe4ai.schemes.profiles import STANDARD
 from pyfe4ai.utils.ring_lwe_utils import bmms21_parameters
 from pyfe4ai.utils.ring_lwe_utils import check_he_standard
 from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul
-from pyfe4ai.utils.ring_lwe_utils import matrix_check_bound
 from pyfe4ai.utils.ring_lwe_utils import poly_add
 from pyfe4ai.utils.ring_lwe_utils import poly_mul
 from pyfe4ai.utils.ring_lwe_utils import poly_neg
@@ -58,6 +57,7 @@ from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.sampling_utils import rand_uniform_vector
+from pyfe4ai.utils.validation import int_vector
 
 logger = logging.getLogger(__name__)
 
@@ -207,11 +207,10 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         for nid in self.lst_nid:
             if nid not in fusion_weight:
                 raise FEValidationError("fusion weight missing client {}".format(nid))
-            y = fusion_weight[nid]
-            if len(y) != self.eta:
-                raise FEValidationError("invalid fusion weight length for client {}".format(nid))
-            if any(abs(int(v)) > self.bound_y for v in y):
-                raise FEValidationError("fusion weight exceeds configured bound_y")
+            y = int_vector(
+                fusion_weight[nid], "fusion weight of {}".format(nid),
+                length=self.eta, bound=int(self.bound_y),
+            )
             sk_t = transpose(self.msk["sk"][nid])
             y_vec = [gp.mpz(v) for v in y]
             sk_y[nid] = [gp.digits(v) for v in mat_vec_mul(sk_t, y_vec, self.q)]
@@ -235,7 +234,8 @@ class MIFERingLWE(IPFEAbsCrypto):
         if self._has_private_keys():
             self.sk = self.keys["sk"]
 
-    def _check_plaintext(self, matrix_pt) -> None:
+    def _check_plaintext(self, matrix_pt) -> list:
+        """Return *matrix_pt* as ``eta`` integer rows of one length ``1..ring_n``."""
         if not self._has_public_parameters():
             raise FEKeyError("no public parameters provided for encryption")
         if not self._has_private_keys():
@@ -244,12 +244,15 @@ class MIFERingLWE(IPFEAbsCrypto):
             raise FEValidationError("plaintext matrix must be a list of rows")
         if len(matrix_pt) != self.pp["eta"]:
             raise FEValidationError("invalid plaintext row count")
-        if len(matrix_pt[0]) > self.pp["ring_n"]:
-            raise FEValidationError("plaintext column count exceeds ring dimension")
-        if not matrix_check_bound(matrix_pt, gp.mpz(self.pp["bound_x"])):
-            raise FEValidationError("plaintext exceeds configured bound_x")
+        rows = [int_vector(row, "plaintext row", bound=int(self.pp["bound_x"])) for row in matrix_pt]
+        k = len(rows[0])
+        if not 1 <= k <= self.pp["ring_n"] or any(len(row) != k for row in rows):
+            raise FEValidationError(
+                "plaintext rows must all have the same length, between 1 and ring_n"
+            )
         if "u" not in self.sk:
             raise FEKeyError("encryption key lacks the one-time pad u")
+        return rows
 
     def _padded_rows(self, matrix_pt, extra_pad=None) -> list:
         """Rows ``x + u (+ extra_pad)`` mod q, zero-extended to ``ring_n``."""
@@ -289,8 +292,8 @@ class MIFERingLWE(IPFEAbsCrypto):
             Dict with ``ct0`` (one polynomial per row), ``ct1`` and ``k``
             (number of used coefficients).
         """
-        self._check_plaintext(matrix_pt)
-        return self._encrypt_rows(self._padded_rows(matrix_pt), len(matrix_pt[0]))
+        rows = self._check_plaintext(matrix_pt)
+        return self._encrypt_rows(self._padded_rows(rows), len(rows[0]))
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict):
         """Recover the batch of inner products ``sum_i <x_i[:, k], y_i>``.
@@ -320,11 +323,10 @@ class MIFERingLWE(IPFEAbsCrypto):
         delta = q // gp.mpz(self.pp["p"])
         total = [(-delta * gp.mpz(v)) % q for v in z]
         for nid, ct in dct_ct.items():
-            y = fusion_weight[nid]
-            if len(y) != self.pp["eta"]:
-                raise FEValidationError("invalid fusion weight length for client {}".format(nid))
-            if any(abs(int(v)) > gp.mpz(self.pp["bound_y"]) for v in y):
-                raise FEValidationError("fusion weight exceeds configured bound_y")
+            y = int_vector(
+                fusion_weight[nid], "fusion weight of {}".format(nid),
+                length=self.pp["eta"], bound=int(self.pp["bound_y"]),
+            )
             ct0 = [[gp.mpz(v) for v in row] for row in ct["ct0"]]
             ct1 = [gp.mpz(v) for v in ct["ct1"]]
             sk_y = [gp.mpz(v) for v in sk_y_map[nid]]

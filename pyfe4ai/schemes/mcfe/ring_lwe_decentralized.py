@@ -47,6 +47,7 @@ from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import hash_to_zq_vector
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul, transpose
+from pyfe4ai.utils.validation import int_vector
 
 logger = logging.getLogger(__name__)
 
@@ -133,14 +134,13 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
             raise FEValidationError("fusion weights must cover every client")
         if not isinstance(label, str):
             raise FEValidationError("identity-based MCFE keys need a string label")
-        weights = fusion_weight[self.id]
-        if len(weights) != self.pp["eta"]:
-            raise FEValidationError("invalid fusion weight length for client {}".format(self.id))
-        if any(abs(int(v)) > int(self.pp["bound_y"]) for v in weights):
-            raise FEValidationError("fusion weight exceeds configured bound_y")
+        weights = int_vector(
+            fusion_weight[self.id], "fusion weight of {}".format(self.id),
+            length=self.pp["eta"], bound=int(self.pp["bound_y"]),
+        )
         q = gp.mpz(self.pp["q"])
         ring_n = self.pp["ring_n"]
-        y = [gp.mpz(int(v)) for v in weights]
+        y = [gp.mpz(v) for v in weights]
         weights_id = fusion_weight_id(fusion_weight)
         s = [[gp.mpz(v) for v in row] for row in self.sk["s"]]
 

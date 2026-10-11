@@ -46,6 +46,7 @@ from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.dlog_solver import load_or_build_dlog_table, dlog_table_solve
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.validation import int_vector
+from pyfe4ai.utils.validation import scale_to_int
 
 logger = logging.getLogger(__name__)
 
@@ -245,7 +246,7 @@ class MIFE(IPFEAbsCrypto):
             raise NotImplementedError("ndarray helper currently expects eta=1")
         lst_ndarray_ct = []
         for ary_src in lst_ndarray:
-            ary = np.rint(np.asarray(ary_src) * pow(10, self.precision)).astype(int)
+            ary = scale_to_int(ary_src, self.precision)
             ary_ct = np.empty(ary.shape, dtype=object)
             for i, w in np.ndenumerate(ary):
                 ary_ct[i] = self.encrypt([int(w)])

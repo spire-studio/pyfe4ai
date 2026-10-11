@@ -41,6 +41,7 @@ from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetri
 from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.validation import int_vector
+from pyfe4ai.utils.validation import scale_to_int
 
 logger = logging.getLogger(__name__)
 
@@ -349,10 +350,10 @@ class QuadraticSGP(IPFEAbsCrypto):
         if any(ary.shape != shape for ary in lhs_lst_ndarray + rhs_lst_ndarray):
             raise FEValidationError("all ndarray inputs must share the same shape")
         lhs_scaled = [
-            np.rint(np.asarray(ary) * pow(10, self.precision)).astype(int) for ary in lhs_lst_ndarray
+            scale_to_int(ary, self.precision) for ary in lhs_lst_ndarray
         ]
         rhs_scaled = [
-            np.rint(np.asarray(ary) * pow(10, self.precision)).astype(int) for ary in rhs_lst_ndarray
+            scale_to_int(ary, self.precision) for ary in rhs_lst_ndarray
         ]
         return lhs_scaled, rhs_scaled
 

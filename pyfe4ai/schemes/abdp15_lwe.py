@@ -47,12 +47,10 @@ class ABDP15KeyGeneratorMixin(ParameterCacheMixin):
     """Parameter cache, seeded ``A`` and public keys of an ABDP15 LWE key generator.
 
     The host class sets ``eta``, ``bound_x`` and ``bound_y`` and calls
-    :meth:`_init_abdp15`; ``_extra_dimension`` (``None``, or the number of
-    clients of a MIFE) is passed to the parameter recipe.
+    :meth:`_init_abdp15`.
     """
 
     _construction = CONSTRUCTION
-    _extra_dimension = None
 
     def _init_abdp15(self, config: dict) -> None:
         self.lwe_n_config = config.get("lwe_n", 32)
@@ -78,10 +76,7 @@ class ABDP15KeyGeneratorMixin(ParameterCacheMixin):
 
     def _derive(self) -> dict:
         """Fresh parameters: ``lwe_n``, ``p``, ``q``, ``m``, ``sigma_q``, ``l_sigma``."""
-        return abdp15_parameters(
-            self.bound_x, self.bound_y, self.eta, self.lwe_n_config,
-            extra_dimension=self._extra_dimension,
-        )
+        return abdp15_parameters(self.bound_x, self.bound_y, self.eta, self.lwe_n_config)
 
     def _apply_parameters(self, param: dict) -> None:
         self.lwe_n = int(param["lwe_n"])

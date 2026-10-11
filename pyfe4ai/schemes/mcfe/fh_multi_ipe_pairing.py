@@ -47,6 +47,7 @@ from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.validation import int_vector
+from pyfe4ai.utils.validation import scale_to_int
 
 logger = logging.getLogger(__name__)
 
@@ -202,10 +203,7 @@ class MCFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator):
         if not isinstance(fusion_weight, dict) or set(fusion_weight) != set(self.lst_nid):
             raise FEValidationError("fusion weights must cover every client")
         for nid, y in fusion_weight.items():
-            if len(y) != self.eta:
-                raise FEValidationError("invalid fusion weight length for client {}".format(nid))
-            if any(abs(int(v)) > self.bound_y for v in y):
-                raise FEValidationError("fusion weight exceeds configured bound_y")
+            int_vector(y, "fusion weight of {}".format(nid), length=self.eta, bound=self.bound_y)
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Derive ``{dk_i = iKeyGen(imsk_i, [y_hat_i]_2)}`` with fresh zero-sum ``t_i``.
@@ -285,7 +283,7 @@ class MCFEFHMultiIPE(IPFEAbsCrypto):
             raise FEValidationError("need a string label for encrypt_lst_ndarray")
         out = []
         for l, ary_src in enumerate(lst_ndarray):
-            ary = np.rint(np.asarray(ary_src) * pow(10, self.precision)).astype(int)
+            ary = scale_to_int(ary_src, self.precision)
             ary_ct = np.empty(ary.shape, dtype=object)
             for i, w in np.ndenumerate(ary):
                 ary_ct[i] = self.encrypt([int(w)], _element_label(label, l, i))
