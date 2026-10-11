@@ -94,6 +94,12 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         "ciphertext packs up to ring_n vectors; single NTT prime q; ring_n defaults "
         "to the toy value 32",
     ),
+    ("sife", "fullysec_ring_lwe"): SchemeStatus(
+        _S + "sife.fullysec_ring_lwe", REVIEWED, ADAPTED, "BMMS21 Sec. 5 (adaptive)",
+        note="m >= 5 key polynomials instead of m = 3, which admits no modulus under "
+        "the paper's App. C.1 constraints (sigma' >= q^(2/m) from Ring-LHL); signed "
+        "inputs (p = 2lXY + 2, leveraging over (2X+1)^(2l)); one vector per ciphertext",
+    ),
     ("sife", "fullysec_lwe"): SchemeStatus(
         _S + "sife.fullysec_lwe", REVIEWED, ADAPTED, "ALS16 LWE (ACFGU18 Fig. 8)",
         note="signed inputs (K = 2 eta X Y + 1, centred decoding); GoFE parameter "

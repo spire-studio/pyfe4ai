@@ -203,6 +203,18 @@ table and *Known Issues* before relying on any privacy property.
   80 GB in memory): key generation 6 minutes, one encryption 140 s, 2.3 s
   each in batches of 64. `"memory"` mode refuses a matrix larger than the
   machine's physical memory.
+- `sife/fullysec_ring_lwe`: the adaptively secure Ring-LWE IPFE of BMMS21
+  (Bermudo Mera, Karmakar, Marc, Soleimanian, PKC 2022, Sec. 5), the ring
+  counterpart of ALS16. The paper takes `m = 3` key polynomials, but under
+  its own constraints (Appendix C.1: the Ring-LHL width `sigma'` grows like
+  `q^(2/m)`, the decryption noise like `q^(4/m)`) no modulus exists for
+  `m <= 4`; `m = "auto"` takes the smallest `m >= 5` that admits one (within
+  the HE-standard bound under `standard`). Widths follow Theorems 1 and 2
+  and Appendix C.1 for signed inputs, with complexity leveraging over
+  `(2X + 1)^(2 eta)`; one vector per ciphertext. `standard`: eta = 10,
+  X = Y = 50 gives n = 8192, m = 8 (encrypt 2.0 s, decrypt 0.4 s).
+  `ring_lwe_utils.bmms21_adaptive_parameters`, `bmms21_adaptive_log2_q`,
+  `bmms21_adaptive_choice`.
 - `lwe_n = "auto"` for the MCFE-LWE family; `lwe_utils.DENSE_LWE_128_LOG_Q`,
   `check_dense_lwe`, `dense_lwe_n`, `resolve_lwe_n`;
   `profiles.STANDARD_DCR_PRIME_BITS`; `modular_utils.pow_signed_many`

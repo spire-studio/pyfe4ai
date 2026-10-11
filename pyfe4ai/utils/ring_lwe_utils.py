@@ -14,6 +14,7 @@ reaching into another scheme family's private namespace.
 """
 
 import logging
+import math
 
 import gmpy2 as gp
 
@@ -505,3 +506,173 @@ def bmms21_parameters(sec_param: int, eta: int, bound_x, bound_y, ring_n: int) -
     q_float *= float(bound_y) * float(2 * l)
     q = next_ntt_prime(gp.mpz(int(q_float)) * p + 1, ring_n)
     return p, q, sigma1, sigma2, sigma3
+
+
+# ---------------------------------------------------------------------------
+# Adaptively secure IPFE of BMMS21 Sec. 5 (parameters of Appendix C.1)
+# ---------------------------------------------------------------------------
+
+#: Smallest number ``m`` of key polynomials for which the constraints of
+#: BMMS21 Appendix C.1 can hold (see :func:`bmms21_adaptive_log2_q`).
+BMMS21_ADAPTIVE_MIN_M = 5
+#: Largest ``m`` that ``m = "auto"`` considers.
+BMMS21_ADAPTIVE_MAX_M = 64
+
+
+def _smoothing_log(dim: int, log2_inv_eps: float) -> float:
+    """``ln(2 dim (1 + 1/eps))`` for ``eps = 2^-log2_inv_eps`` (up to a negligible term)."""
+    return math.log(2 * dim) + log2_inv_eps * math.log(2)
+
+
+def _bmms21_adaptive_widths(kappa: int, l: int, bound_x, bound_y, ring_n: int, m: int,
+                            log2_q: float) -> dict:
+    """log2 of the Gaussian widths of BMMS21 Sec. 5 for a modulus of ``log2_q`` bits.
+
+    Signed inputs ``|x| <= X``, ``|y| <= Y``: ``alpha = x1 - x0`` has entries of
+    at most ``2X`` and complexity leveraging ranges over ``(2X + 1)^(2l)``.
+
+    * Theorem 1 (mhe-RLWE from RLWE with errors ``D_sigma``):
+      ``sigma = 1.5 eta_eps(Z^(n + n l))`` with ``eps = 2^-kappa`` (at least
+      3.2) and ``sigma2 = sqrt(2) sigma n C sqrt(l + 2)``, ``C = sqrt(kappa) sigma1``,
+      so that ``sigma sqrt(1 - (sigma n C sqrt(l + 2) / sigma2)^2) > eta``;
+    * Theorem 2 (Ring-LHL, ``k = 2``):
+      ``sigma' = sqrt(n ln(2 m n (1 + 1/delta)) / pi) q^(2/m + eps/2)`` with
+      ``(2 delta + 2^n q^(-eps n) (q^2m / ((q^m - 1)(q^m - q)))^n) (2X + 1)^(2l)
+      <= 2^-kappa``;
+    * G3 -> G4 (Lemma 1 for ``sigma1^2 I - sigma'^2 alpha^T alpha``):
+      ``sigma1 = sqrt(2) ||alpha|| sigma'`` with ``||alpha|| <= 2X sqrt(l)``,
+      so that ``Gamma >= sigma' / sqrt(2) > eta_eps'(Z^n)``;
+    * ``sigma3 = sqrt(m) sigma2``.
+    """
+    n = ring_n
+    log2_lev = 2 * l * math.log2(2 * int(bound_x) + 1)
+    # 1.5 eta: Theorem 1 needs sigma sqrt(1 - 1/2) strictly above eta
+    sigma = max(3.2, 1.5 * math.sqrt(_smoothing_log(n + n * l, kappa) / math.pi))
+    # one bit of slack each for the factor (q^2m / ((q^m - 1)(q^m - q)))^n of the
+    # bad-matrix fraction and for ln(1 + 1/delta) ~ ln(1/delta)
+    log2_inv_delta = kappa + 3 + log2_lev
+    log2_q_eps = (n + kappa + 2 + log2_lev) / n  # eps log2 q, from 2^n q^(-eps n)
+    log_sp = (
+        0.5 * math.log2(n * _smoothing_log(m * n, log2_inv_delta) / math.pi)
+        + 2 * log2_q / m + log2_q_eps / 2
+    )
+    # Lemma 1 also needs sigma' / sqrt(2) above eta_eps'(Z^n), eps' = 2^-kappa / (n m lev)
+    eta_g = math.sqrt(_smoothing_log(n, kappa + math.log2(n * m) + log2_lev) / math.pi)
+    log_sp = max(log_sp, math.log2(math.sqrt(2) * eta_g) + 1e-9)
+    log_s1 = 0.5 + math.log2(2 * int(bound_x) * math.sqrt(l)) + log_sp
+    log_s2 = 0.5 + math.log2(sigma * n * math.sqrt(kappa) * math.sqrt(l + 2)) + log_s1
+    return {
+        "sigma": math.log2(sigma),
+        "sigma_lhl": log_sp,
+        "sigma1": log_s1,
+        "sigma2": log_s2,
+        "sigma3": log_s2 + 0.5 * math.log2(m),
+    }
+
+
+def _bmms21_adaptive_slack(kappa: int, l: int, bound_x, bound_y, ring_n: int, m: int,
+                           log2_q: float) -> float:
+    """``log2(q / 2p) - log2(noise)`` (correctness of Appendix C.1, positive when met)."""
+    w = _bmms21_adaptive_widths(kappa, l, bound_x, bound_y, ring_n, m, log2_q)
+    p = 2 * l * int(bound_x) * int(bound_y) + 2
+    # l Y (sqrt(kappa) sigma3 + m n kappa sigma1 sigma2) = l Y sigma2 (2^u + 2^v), in log2
+    u = 0.5 * math.log2(kappa) + w["sigma3"] - w["sigma2"]
+    v = math.log2(m * ring_n * kappa) + w["sigma1"]
+    log_sum = max(u, v) + math.log2(1 + 2.0 ** -abs(u - v))
+    log_noise = math.log2(l * int(bound_y)) + w["sigma2"] + log_sum
+    return log2_q - math.log2(2 * p) - log_noise
+
+
+def bmms21_adaptive_log2_q(sec_param: int, eta: int, bound_x, bound_y, ring_n: int,
+                           m: int) -> float | None:
+    """Smallest ``log2 q`` meeting the constraints of BMMS21 Appendix C.1, or ``None``.
+
+    All widths grow like ``q^(2/m)`` (the Ring-LHL bound on ``sigma'``) and the
+    correctness noise like ``q^(4/m)``, so a modulus exists only for ``m > 4``;
+    the paper's ``m = 3`` has none.
+    """
+    args = (int(sec_param), int(eta), bound_x, bound_y, int(ring_n), int(m))
+    if m <= 4 or _bmms21_adaptive_slack(*args, 4000.0) <= 0:
+        return None
+    lo, hi = 1.0, 4000.0
+    while hi - lo > 1e-6:
+        mid = (lo + hi) / 2
+        if _bmms21_adaptive_slack(*args, mid) > 0:
+            hi = mid
+        else:
+            lo = mid
+    return hi
+
+
+def bmms21_adaptive_parameters(sec_param: int, eta: int, bound_x, bound_y, ring_n: int,
+                               m: int) -> dict:
+    """Parameters of the adaptively secure BMMS21 IPFE (Sec. 5) for ``m`` key polynomials.
+
+    Returns:
+        Dict with ``p`` (``2 l X Y + 2``), ``q`` (NTT-friendly prime), ``m``,
+        and the widths ``sigma`` (RLWE), ``sigma_lhl`` (``sigma'``),
+        ``sigma1``, ``sigma2``, ``sigma3``; see :func:`_bmms21_adaptive_widths`.
+
+    Raises:
+        FEValidationError: If no modulus meets the constraints (``m <= 4``).
+    """
+    log2_q = bmms21_adaptive_log2_q(sec_param, eta, bound_x, bound_y, ring_n, m)
+    if log2_q is None:
+        from pyfe4ai.utils.exceptions import FEValidationError
+
+        raise FEValidationError(
+            "m = {} key polynomials admit no modulus: the Ring-LHL width sigma' grows like "
+            "q^(2/m) and the decryption noise like q^(4/m), so m must be at least {}".format(
+                m, BMMS21_ADAPTIVE_MIN_M
+            )
+        )
+    q = next_ntt_prime(gp.mpz(2) ** math.ceil(log2_q), ring_n)
+    exact = math.log2(int(q))
+    if _bmms21_adaptive_slack(int(sec_param), int(eta), bound_x, bound_y, ring_n, m, exact) <= 0:
+        raise AssertionError("modulus does not meet the correctness bound")  # q only grew
+    widths = _bmms21_adaptive_widths(int(sec_param), int(eta), bound_x, bound_y, ring_n, m, exact)
+    if max(widths.values()) > 1000:
+        from pyfe4ai.utils.exceptions import FEValidationError
+
+        raise FEValidationError("these bounds need Gaussian widths beyond 2^1000; reduce them")
+    out = {key: 2.0 ** value for key, value in widths.items()}
+    out.update({"p": gp.mpz(2 * int(eta) * int(bound_x) * int(bound_y) + 2), "q": q, "m": int(m)})
+    return out
+
+
+def bmms21_adaptive_choice(sec_param: int, eta: int, bound_x, bound_y, ring_n, m,
+                           he_standard: bool) -> dict:
+    """Ring dimension and ``m`` of the adaptive BMMS21 IPFE, then its parameters.
+
+    ``ring_n = "auto"`` tries the dimensions of :data:`HE_STANDARD_128_LOG_Q` in
+    increasing order (``None`` gives :data:`DEFAULT_RING_N`); ``m = "auto"``
+    takes the smallest ``m >= 5`` that admits a modulus -- one meeting
+    :data:`HE_STANDARD_128_LOG_Q` when *he_standard* is set and ``ring_n`` is
+    ``"auto"``. A small ``m`` keeps the ``l m`` key polynomials and the
+    ``m``-polynomial functional keys small; a larger one lowers ``q``
+    (``sigma'`` grows like ``q^(2/m)``) and can be passed explicitly.
+    """
+    from pyfe4ai.utils.exceptions import FEValidationError
+
+    dims = list(HE_STANDARD_128_LOG_Q) if ring_n == "auto" else [check_ring_n(ring_n or DEFAULT_RING_N)]
+    if m == "auto":
+        ms = range(BMMS21_ADAPTIVE_MIN_M, BMMS21_ADAPTIVE_MAX_M + 1)
+    else:
+        ms = [int(m)]
+    for n in dims:
+        for mm in ms:
+            log2_q = bmms21_adaptive_log2_q(sec_param, eta, bound_x, bound_y, n, mm)
+            if log2_q is None:
+                continue
+            bits = math.ceil(log2_q) + 1  # bits of the NTT prime just above 2^ceil(log2_q)
+            if he_standard and ring_n == "auto" and bits > HE_STANDARD_128_LOG_Q[n]:
+                continue
+            params = bmms21_adaptive_parameters(sec_param, eta, bound_x, bound_y, n, mm)
+            params["ring_n"] = n
+            return params
+    if m != "auto":
+        bmms21_adaptive_parameters(sec_param, eta, bound_x, bound_y, dims[0], int(m))  # raises
+    raise FEValidationError(
+        "no ring dimension up to 32768 and m up to {} reaches 128-bit security for these "
+        "bounds; reduce bound_x, bound_y or eta".format(BMMS21_ADAPTIVE_MAX_M)
+    )

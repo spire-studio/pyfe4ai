@@ -24,6 +24,8 @@ The ``security_profile`` entry of a key generator's config selects one:
       ``log2 q`` <= 27 / 54 / 109 / 218 / 438 / 881 for n = 1024 ... 32768);
       that bound is for ternary secrets and ``sigma = 3.2`` errors, so it is
       conservative for the wider Gaussians used here;
+      ``sife/fullysec_ring_lwe`` (BMMS21 Sec. 5, adaptive) also picks its number
+      ``m`` of key polynomials: the smallest one whose ``q`` meets that bound;
     * dense LWE, the ABMPSW20 MCFE family (``mcfe/lwe``, ``fullysec_lwe``,
       ``lwe_threshold``, ``lwe_decentralized``): ``lwe_n = "auto"``, the
       smallest dimension ``n0`` whose derived ``q`` meets
@@ -89,6 +91,7 @@ SCHEME_KIND = {
     ("mife", "lwe_threshold"): "lwe_abdp15",
     **{("mcfe", v): "lwe" for v in ("lwe", "fullysec_lwe", "lwe_threshold", "lwe_decentralized")},
     **{(f, "ring_lwe"): "ring_lwe" for f in ("sife", "mife", "mcfe")},
+    ("sife", "fullysec_ring_lwe"): "ring_lwe",
     **{("mcfe", v): "ring_lwe" for v in ("ring_lwe_threshold", "ring_lwe_decentralized")},
     **{("sife", v): "pairing" for v in ("fh_ipe_pairing", "part_fh_ipe_pairing")},
     **{("mife", v): "pairing" for v in ("fh_ipe_pairing", "fh_multi_ipe_pairing")},
@@ -123,7 +126,8 @@ _STANDARD_FIXED = {
 _REFUSED = {
     "lwe_matrix": "at a 128-bit dimension (lwe_n = 2560 to 3328) its public matrix has 1.5 to "
     "3*10^9 entries and every ciphertext m = 6 to 9*10^5 coordinates of 230 to 270 bits "
-    "(17 to 31 MB); use the Ring-LWE scheme of the same family",
+    "(17 to 31 MB); use sife/fullysec_ring_lwe for adaptive security, or the Ring-LWE "
+    "scheme of the same family",
     ("mcfe", "paillier_decentralized"): "its key shares would be combined under a DCR modulus "
     "of more than 15000 bits; use mcfe/ddh_decentralized",
 }

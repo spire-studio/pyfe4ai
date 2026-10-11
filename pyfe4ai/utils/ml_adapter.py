@@ -67,6 +67,11 @@ _SCHEME_REGISTRY: dict[tuple[str, str], tuple[str, str, str]] = {
         "SIFERingLWEKeyGenerator",
         "SIFERingLWE",
     ),
+    ("sife", "fullysec_ring_lwe"): (
+        "pyfe4ai.schemes.sife.fullysec_ring_lwe",
+        "SIFEFullySecRingLWEKeyGenerator",
+        "SIFEFullySecRingLWE",
+    ),
     ("sife", "fullysec_lwe"): (
         "pyfe4ai.schemes.sife.fullysec_lwe",
         "SIFEFullySecLWEKeyGenerator",

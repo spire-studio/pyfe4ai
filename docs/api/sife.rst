@@ -47,6 +47,13 @@ Ring-LWE
    :members:
    :undoc-members:
 
+Adaptively Secure Ring-LWE
+--------------------------
+
+.. automodule:: pyfe4ai.schemes.sife.fullysec_ring_lwe
+   :members:
+   :undoc-members:
+
 Paillier
 --------
 
