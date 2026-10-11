@@ -59,6 +59,24 @@ def label_pad(u_prime: str, label, q, eta: int, ring_n: int) -> list:
     return [flat[r * ring_n:(r + 1) * ring_n] for r in range(eta)]
 
 
+def chunk_key_index(layer: dict, j: int, n_keys: int) -> int:
+    """Index of the chunk key for chunk *j* of an ndarray ciphertext layer.
+
+    Raises:
+        FESchemeError: Unless the layer's ``first_chunk`` is a non-negative
+            integer and all its chunks have a key among the *n_keys*.
+    """
+    first = layer.get("first_chunk")
+    n_chunks = len(layer.get("chunks", []))
+    if (
+        not isinstance(first, int) or isinstance(first, bool)
+        or first < 0 or first + n_chunks > n_keys or not 0 <= j < n_chunks
+    ):
+        raise FESchemeError(
+            "ciphertext chunks starting at {!r} are not covered by the {} chunk keys".format(first, n_keys)
+        )
+    return first + j
+
 class MCFERingLWEKeyGenerator(MIFERingLWEKeyGenerator):
     """Key generator for BMMS21 identity-based MCFE over Ring-LWE."""
 
@@ -219,7 +237,7 @@ class MCFERingLWE(MIFERingLWE):
             values = []
             for j in range(len(layer["chunks"])):
                 dct_ct = {nid: dict_ndarray_ct[nid][l]["chunks"][j] for nid in dict_ndarray_ct}
-                z = dk["z_chunks"][layer["first_chunk"] + j]
+                z = dk["z_chunks"][chunk_key_index(layer, j, len(dk["z_chunks"]))]
                 values.extend(self._decrypt_with_key_term(dct_ct, dk, z, fusion_weight))
             ary = np.array(values, dtype=float).reshape(layer["shape"])
             result.append(ary / pow(10, self.precision))

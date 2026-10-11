@@ -47,6 +47,7 @@ from pyfe4ai.utils.lwe_utils import decode_scaled
 from pyfe4ai.schemes.profiles import STANDARD
 from pyfe4ai.utils.ring_lwe_utils import bmms21_parameters
 from pyfe4ai.utils.ring_lwe_utils import bmms21_selective_parameters
+from pyfe4ai.utils.ring_lwe_utils import canonical_ring_ciphertext
 from pyfe4ai.utils.ring_lwe_utils import check_ring_lwe
 from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul
 from pyfe4ai.utils.ring_lwe_utils import poly_add
@@ -336,8 +337,12 @@ class MIFERingLWE(IPFEAbsCrypto):
                 fusion_weight[nid], "fusion weight of {}".format(nid),
                 length=self.pp["eta"], bound=int(self.pp["bound_y"]),
             )
-            ct0 = [[gp.mpz(v) for v in row] for row in ct["ct0"]]
-            ct1 = [gp.mpz(v) for v in ct["ct1"]]
+            try:
+                _, ct0, ct1 = canonical_ring_ciphertext(ct, int(q), self.pp["eta"], self.pp["ring_n"])
+            except FESchemeError as exc:
+                raise FESchemeError("malformed ciphertext of {}".format(nid)) from exc
+            ct0 = [[gp.mpz(v) for v in row] for row in ct0]
+            ct1 = [gp.mpz(v) for v in ct1]
             sk_y = [gp.mpz(v) for v in sk_y_map[nid]]
             y_vec = [gp.mpz(int(v)) for v in y]
             # Dec1 of slot nid: Delta <w_i, y_i> + noise (coefficient-wise)

@@ -73,3 +73,44 @@ def test_ring_plaintexts_must_be_rectangular_integer_matrices(matrix):
     client = MCFERingLWE({"id": "nid_0", "keys": {"pp": pp, "sk": kg.get_private_keys("nid_0")}})
     with pytest.raises(FEValidationError):
         client.encrypt(matrix, "l")
+
+
+def test_ring_decryption_refuses_malformed_ciphertexts():
+    kg = MIFERingLWEKeyGenerator(dict(CFG))
+    kg.setup()
+    pp = kg.get_public_parameters()
+    y = {"nid_0": [1, 1], "nid_1": [1, 1]}
+    dk = kg.get_decryption_keys("sid", credentials={"fusion_weight": y})
+    cts = {nid: MIFERingLWE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt([[1], [2]])
+           for nid in NIDS}
+    dec = MIFERingLWE({"id": "sid", "keys": {"pp": pp}})
+    first = cts["nid_0"]
+    from pyfe4ai.utils.exceptions import FESchemeError
+
+    for bad in (dict(first, ct1=first["ct1"][:-1]), dict(first, ct0=first["ct0"][:1])):
+        with pytest.raises(FESchemeError, match="malformed"):
+            dec.decrypt(dict(cts, nid_0=bad), dk, y)
+    with pytest.raises(FESchemeError, match="malformed"):
+        dec.decrypt({nid: dict(ct, k=0) for nid, ct in cts.items()}, dk, y)
+
+
+def test_ndarray_chunks_must_index_the_key():
+    """A negative first_chunk picked chunk keys from the end of the list."""
+    import numpy as np
+
+    from pyfe4ai.utils.exceptions import FESchemeError
+
+    kg = MCFERingLWEKeyGenerator({**CFG, "eta": 1})
+    kg.setup()
+    pp = kg.get_public_parameters()
+    cts = {nid: MCFERingLWE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
+           .encrypt_lst_ndarray([np.ones(20)], label="l") for nid in NIDS}
+    dec = MCFERingLWE({"id": "sid", "keys": {"pp": pp}})
+    y = {nid: [1] for nid in NIDS}
+    n_chunks = MCFERingLWE.key_chunks(cts["nid_0"])
+    dk = kg.get_decryption_keys("sid", credentials={"fusion_weight": y, "label": "l", "n_chunks": n_chunks})
+    assert np.allclose(dec.decrypt_lst_ndarray_ct(cts, dk=dk, fusion_weight=y, label="l")[0], 2)
+    for first in (-1, n_chunks, "0"):
+        bad = {nid: [dict(layers[0], first_chunk=first)] for nid, layers in cts.items()}
+        with pytest.raises(FESchemeError, match="chunk"):
+            dec.decrypt_lst_ndarray_ct(bad, dk=dk, fusion_weight=y, label="l")

@@ -41,6 +41,7 @@ import numpy as np
 
 from pyfe4ai.schemes.mcfe.labels import chunk_label
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWE
+from pyfe4ai.schemes.mcfe.ring_lwe import chunk_key_index
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
 from pyfe4ai.schemes.threshold_utils import check_fusion_weight
 from pyfe4ai.schemes.threshold_utils import ciphertexts_digest
@@ -349,7 +350,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
                 dct_ct = {nid: dict_ndarray_ct[nid][l]["chunks"][j] for nid in dict_ndarray_ct}
                 parts.append(self.share_decrypt(
                     dct_ct, credentials, dk, lst_sid_enrolled,
-                    _z_share=dk["z_chunks"][layer["first_chunk"] + j],
+                    _z_share=dk["z_chunks"][chunk_key_index(layer, j, len(dk["z_chunks"]))],
                 ))
             out.append({"shape": layer["shape"], "parts": parts})
         return out

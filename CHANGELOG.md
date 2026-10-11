@@ -486,7 +486,10 @@ table and *Known Issues* before relying on any privacy property.
   (`0.5` became `0`), and `threshold_utils.fusion_weight_id` gave `1.5` and
   `1` the same digest; weights now go through `validation.int_vector`.
   Ring-LWE MIFE / MCFE plaintext rows of different lengths were cut or
-  padded silently and are now refused.
+  padded silently and are now refused; so are ciphertexts of the wrong shape
+  (short polynomials were truncated by `zip`) and ndarray layers whose
+  `first_chunk` is negative or beyond the key (a negative index picked chunk
+  keys from the end of the list).
 - MIFE-LWE sized its noise for `eta`-dimensional vectors, but decryption adds
   the noise of all `n` slots, so the decryption margin shrank with
   `sqrt(n)`. As in ACFGU18 (footnote 14), the ALS16 / ABDP15 parameters are
