@@ -115,7 +115,10 @@ See `examples/sife_minimal.py` for the full runnable version.
 > exponent. tMIFE-LWE, tMCFE-LWE and tMCFE-Ring-LWE additionally flood partial decryptions with noise, and
 > tMCFE-FH-Multi-IPE shares the FH-MCFE key exponents and combines partial
 > decryptions in `G_T`; these threshold layers are our own (status
-> *experimental*, see the module docstrings).
+> *experimental*, see the module docstrings). tMIFE-LWE clients tag every
+> ciphertext for every server (HMAC), and servers only decrypt tagged
+> ciphertexts. All threshold variants assume honest-but-curious servers (see
+> [Known Issues](#known-issues--security-notice)).
 
 > **⚠️ Research prototype.** Every scheme has been checked against its
 > paper, but four threshold layers are our own (*experimental*) and the
@@ -170,7 +173,7 @@ none is known to be insecure.
 | `mife/fh_ipe_pairing` | reviewed | adapted | ACFGU18 Fig. 12 (k = 1) | one r per key shared by all slots; per-slot FH-IPFE as in mcfe/fh_ipe (LV16 padding of App. B); asymmetric pairing (default MNT224); keys carry a random id, never a digest of y |
 | `mife/fh_multi_ipe_pairing` | reviewed | adapted | DOT18 Sec. 3.1 (bounded, k-LIN, k = sec_level) | n >= 2 enforced (zero sharing r_i); no Remark B.1 SKE layer, so hiding assumes every slot contributes a ciphertext; slot i's client holds B^_i and can decode its own slot of a key; keys are group elements only, decryption does not need y |
 | `mife/ddh_threshold` | reviewed | adapted | ACFGU18 Fig. 4 + ABDP15 + Shamir (TAPFed setting) | the functional key (d_i, z) is Shamir-shared mod q; any t servers interpolate in the exponent (threshold-ElGamal style), as mcfe/ddh_threshold |
-| `mife/lwe_threshold` | experimental | ad-hoc | MIFE-LWE + Shamir + smudging | MIFE layer as published; the threshold layer (statistical flooding, derandomised noise, enlarged q) is our own |
+| `mife/lwe_threshold` | experimental | ad-hoc | MIFE-LWE + Shamir + smudging | MIFE layer as published; the threshold layer (statistical flooding, derandomised noise, enlarged q, clients' HMAC tags on ciphertexts so that servers only decrypt ciphertexts made by the clients) is our own |
 | `mcfe/ddh` | reviewed | faithful | CDGPP18 |  |
 | `mcfe/lwe` | reviewed | adapted | ABMPSW20 Fig. 4, selective parameters | signed messages and weights (K = 2nXY + 1, centred decoding); t is a rounded continuous Gaussian |
 | `mcfe/paillier` | reviewed | faithful | ABMPSW20 Fig. 3 | D_{Z,sigma} realised as a high-precision rounded Gaussian |
@@ -374,6 +377,7 @@ limitations remain:
 |---|---|---|
 | No labels in multi-input FE | all MIFE schemes and quadratic `miqfe` | By definition, the holder of a functional key may combine any ciphertext of each slot. Encrypting several inputs per client under one key epoch -- e.g. a gradient element by element -- therefore reveals the differences between that client's values. The ML adapter refuses MIFE for gradient aggregation; use MCFE (labelled ciphertexts) for federated learning. |
 | Experimental threshold layers | tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE, tMCFE-FH-Multi-IPE | The threshold layers (noise flooding, Shamir sharing in the exponent) are our own and have no published security proof; see the module docstrings. |
+| Honest-but-curious decryption servers | all threshold schemes (tMIFE, tMCFE) | Fewer than `t` servers learn nothing beyond the result, but partial decryptions carry no proof of correctness: one server that deviates changes the result without notice. `combine_decrypt` accepts partial decryptions for several enrolled sets (a list of `{sid: partial}` mappings) and raises `FESchemeError` if they disagree; this detects one faulty server (not which one) if every server is left out of some set, e.g. the `t + 1` subsets of size `t` of `t + 1` servers. tMCFE-DDH servers decrypt only ciphertexts under the label they are asked for (`share_decrypt(..., label)`). |
 | One ciphertext per client and label | all MCFE / DMCFE schemes | As in the papers, a client must not encrypt two different inputs under one label (or tag); the library does not enforce it. |
 | Toy default parameters | all | `sec_param` is a modulus bit length (default 128), not a security level; LWE dimensions default to 16–64 and the Ring-LWE dimension to 32; the statistical parameter `stat_param` defaults to 64. All far below any real security level (a key column of SIFE-LWE at its defaults falls to plain LLL in minutes). Pass `security_profile="standard"` for 128-bit-oriented parameters -- except for pairings (BN254, about 100-bit) and the refused ALS16 / dMCFE-Paillier schemes; see [Security Profiles](#security-profiles). |
 | Unvalidated parameter cache in the working directory | key generators that cache parameters (most; not MCFE `lwe`, `fullysec_lwe`, `lwe_threshold`, the FH-MCFE family, MIFE `fh_ipe_pairing` and quadratic `quad`) | Parameters (public values only; no trapdoors since the Paillier fix) are written to and re-loaded from `./config/authority/...` without structural validation; a planted `param.json` (e.g. a 5-bit group) is accepted. Run only in a directory that nobody else can write to. The pairing dlog cache (`./config/crypto/...`) is likewise trusted if its generators match: a planted table gives wrong results and an inflated bound makes decryption loop for a very long time. |

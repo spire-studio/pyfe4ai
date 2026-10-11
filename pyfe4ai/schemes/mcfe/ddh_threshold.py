@@ -59,6 +59,8 @@ from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
 from pyfe4ai.schemes.threshold_utils import share_points
 from pyfe4ai.schemes.threshold_utils import share_secret
 from pyfe4ai.schemes.threshold_utils import validate_enrolled
+from pyfe4ai.schemes.threshold_utils import combine_consistently
+from pyfe4ai.schemes.threshold_utils import partial_groups
 from pyfe4ai.schemes.threshold_utils import validate_partial_decryptions
 from pyfe4ai.schemes.threshold_utils import validate_threshold
 from pyfe4ai.utils.crypto_constants import CryptoCONST
@@ -307,7 +309,7 @@ class ThresholdMCFE(IPFEAbsCrypto):
         return {"c": c, "label": encoded}
 
     def share_decrypt(
-        self, dict_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list
+        self, dict_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list, label
     ) -> dict:
         """Compute this server's partial decryption for an enrolled set.
 
@@ -318,6 +320,8 @@ class ThresholdMCFE(IPFEAbsCrypto):
             dk: This server's key share from ``get_decryption_keys``.
             lst_sid_enrolled: The servers whose partial decryptions will be
                 combined (at least ``t``, including this one).
+            label: The label the caller wants decrypted; ciphertexts under any
+                other label (e.g. those of an earlier round) are refused.
 
         Returns:
             Dict with ``c_y`` (``prod c^y``), ``u_d`` (``[u_l]^{lambda d^(k)}``),
@@ -340,7 +344,10 @@ class ThresholdMCFE(IPFEAbsCrypto):
         validate_enrolled(self.id, lst_sid, lst_sid_enrolled, self.pp["t"])
         check_fusion_weight(dk, credentials)
 
+        expected = encode_label(label)
         label = self._common_label(dict_ct)
+        if label != expected:
+            raise FESchemeError("the ciphertexts were not encrypted under the requested label")
         c_y = self._weighted_product(dict_ct, credentials, p)
 
         sid_v = share_points(lst_sid)
@@ -359,7 +366,31 @@ class ThresholdMCFE(IPFEAbsCrypto):
             "lst_sid_enrolled": list(lst_sid_enrolled),
         }
 
-    def combine_decrypt(self, dict_ct_prime: dict) -> float | None:
+    def combine_decrypt(self, partials, label=None) -> float | None:
+        """Combine partial decryptions from at least ``t`` servers.
+
+        Args:
+            partials: ``{sid: share_decrypt(...)}`` for one enrolled set, or a
+                list of such mappings for several enrolled sets, whose results
+                must then agree (see
+                :func:`~pyfe4ai.schemes.threshold_utils.combine_consistently`:
+                servers are assumed honest-but-curious, and only this
+                redundancy detects one that returns a wrong partial).
+
+            label: Optional label the partials must be for.
+
+        Raises:
+            FESchemeError: If a group is incomplete or invalid, is for another
+                label, or the groups disagree.
+        """
+        if label is not None:
+            expected = encode_label(label)
+            for group in partial_groups(partials):
+                if any(part.get("label") != expected for part in group.values()):
+                    raise FESchemeError("partial decryptions are for another label than the requested one")
+        return combine_consistently(partials, self._combine_group)
+
+    def _combine_group(self, dict_ct_prime: dict) -> float | None:
         """Combine at least ``t`` partial decryptions into the inner product.
 
         Args:
@@ -383,7 +414,7 @@ class ThresholdMCFE(IPFEAbsCrypto):
             gp.mpz(part["c_y"]) != c_y or part.get("label") != label
             for part in partials
         ):
-            logger.warning("ct consistency verification failed.")
+            logger.warning("partial decryptions disagree on the ciphertexts they decrypted")
             return None
 
         u_d = gp.mpz(1)
@@ -465,15 +496,19 @@ class ThresholdMCFE(IPFEAbsCrypto):
         return lst_ndarray_ct
 
     def compute_lst_ndarray_ct(
-        self, dict_ndarray_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list
+        self, dict_ndarray_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list, label: str
     ) -> list:
         """Partially decrypt every element of clients' ndarray ciphertexts.
+
+        Element ``(l, i)`` must be encrypted under its element label derived
+        from *label*, so ciphertexts of another round or position are refused.
 
         Args:
             dict_ndarray_ct: Mapping of client IDs to ciphertext ndarray lists.
             credentials: Mapping of client IDs to fusion weights.
             dk: This server's key share.
             lst_sid_enrolled: The servers whose shares will be combined.
+            label: The label the ndarrays were encrypted under.
         """
         sample = next(iter(dict_ndarray_ct.values()))
         lst_partial = []
@@ -482,25 +517,29 @@ class ThresholdMCFE(IPFEAbsCrypto):
             for i, _ in np.ndenumerate(sample[l]):
                 dct_ct = {nid: dict_ndarray_ct[nid][l][i] for nid in dict_ndarray_ct}
                 ary_partial[i] = self.share_decrypt(
-                    dct_ct, credentials, dk, lst_sid_enrolled
+                    dct_ct, credentials, dk, lst_sid_enrolled, _element_label(label, l, i)
                 )
             lst_partial.append(ary_partial)
         return lst_partial
 
-    def decrypt_lst_ndarray_ct(self, dict_ndarray_ct: dict) -> list:
+    def decrypt_lst_ndarray_ct(self, dict_ndarray_ct, label: str) -> list:
         """Combine element-wise partial decryptions from at least ``t`` servers.
 
         Args:
             dict_ndarray_ct: Mapping of server ids to the outputs of
-                :meth:`compute_lst_ndarray_ct`.
+                :meth:`compute_lst_ndarray_ct` (or a list of such mappings for
+                several enrolled sets, see :meth:`combine_decrypt`).
+            label: The label of the ndarrays; every partial must be for the
+                element label of its position.
         """
-        sample = next(iter(dict_ndarray_ct.values()))
+        groups = partial_groups(dict_ndarray_ct)
+        sample = next(iter(groups[0].values()))
         lst_dec = []
         for l in range(len(sample)):
             ary_dec = np.empty(sample[l].shape, dtype=object)
             for i, _ in np.ndenumerate(sample[l]):
                 ary_dec[i] = self.combine_decrypt(
-                    {sid: dict_ndarray_ct[sid][l][i] for sid in dict_ndarray_ct}
+                    [{sid: g[sid][l][i] for sid in g} for g in groups], _element_label(label, l, i)
                 )
             lst_dec.append(ary_dec)
         return lst_dec

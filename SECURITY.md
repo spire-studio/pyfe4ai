@@ -14,6 +14,16 @@ especially for:
 - insecure serialization or parameter handling
 - dependency-related vulnerabilities
 
+## Security Model
+
+The schemes protect inputs against the parties named in their papers; the
+library adds no defence against active network attackers and assumes
+authenticated channels between parties. Decryption servers of the threshold
+schemes are honest-but-curious: partial decryptions carry no proof of
+correctness (redundant enrolled sets can detect a deviating server). Default
+parameters are toy-sized; use `security_profile="standard"`. See "Known
+Issues / Security Notice" in the README for the full list of limitations.
+
 ## Supported Versions
 
 At the moment, only the latest state of the `main` branch should be considered

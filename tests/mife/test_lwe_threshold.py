@@ -50,12 +50,17 @@ def test_key_generator(kg_config):
     assert pp["lst_sid"] == kg_config["lst_sid"]
 
     sk_nid = kg.get_private_keys("nid_0")
-    assert set(sk_nid) == {"pk", "u"}
+    assert set(sk_nid) == {"pk", "u", "mac_keys"}
+    assert set(sk_nid["mac_keys"]) == set(kg_config["lst_sid"])
 
     fusion_weight = {nid: [1] for nid in kg_config["lst_nid"]}
     dk_sid = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": fusion_weight})
-    assert set(dk_sid) == {"sk_y", "z", "sid", "lst_sid", "weights_id", "noise_key"}
+    assert set(dk_sid) == {"sk_y", "z", "sid", "lst_sid", "weights_id", "noise_key", "mac_keys"}
     assert set(dk_sid["sk_y"]) == set(kg_config["lst_nid"])
+    # server k holds client i's key for the tags meant for k, and only those
+    assert dk_sid["mac_keys"] == {
+        nid: kg.get_private_keys(nid)["mac_keys"]["sid_0"] for nid in kg_config["lst_nid"]
+    }
 
 
 def test_entire_process(kg_config):
@@ -235,3 +240,60 @@ def test_m_leaves_room_for_the_leftover_hash_lemma_at_the_enlarged_q(kg_config, 
     kg = ThresholdMIFELWEKeyGenerator(kg_config)
     need = (kg.lwe_n + kg.eta + 1) * int(kg.q).bit_length() + 2 * kg.lwe_n + 1
     assert kg.m >= need
+
+
+def test_servers_refuse_ciphertexts_not_made_by_the_clients(kg_config):
+    """Regression: a partial decryption is linear in ``ct0``, so a combiner that
+    could submit ``ct0 = c e_j`` would read ``sk_y`` off the partials coordinate
+    by coordinate (the flooding hides a fixed noise, not a chosen multiple of
+    the key). Servers therefore only accept ciphertexts tagged by the clients."""
+    dct_x = {nid: [1] for nid in kg_config["lst_nid"]}
+    dct_y = {nid: [1] for nid in kg_config["lst_nid"]}
+    enrolled = ["sid_0", "sid_1"]
+    kg, pp, dct_ct, partials, combiner = _round(kg_config, dct_x, dct_y, enrolled)
+    dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
+    server = ThresholdMIFELWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
+    authentic = dct_ct["nid_0"]
+    unit = ["1"] + ["0"] * (len(authentic["ct0"]) - 1)
+    forgeries = {
+        "chosen ct0, authentic tags": dict(authentic, ct0=unit),
+        "chosen ct0, no tags": {"ct0": unit, "ct1": authentic["ct1"]},
+        "re-encoded ct1": dict(authentic, ct1=[str(int(v) + int(pp["q"])) for v in authentic["ct1"]]),
+        "tag for another server": dict(authentic, tags=dict(authentic["tags"], sid_0=authentic["tags"]["sid_1"])),
+        "another client's ciphertext": dct_ct["nid_1"],
+    }
+    for name, forged in forgeries.items():
+        with pytest.raises(FESchemeError, match="not authenticated"):
+            server.share_decrypt(dict(dct_ct, nid_0=forged), dct_y, dk, enrolled)
+    assert combiner.combine_decrypt(partials) == 3
+
+
+def test_encryption_needs_the_mac_keys(kg_config):
+    from pyfe4ai.utils.exceptions import FEKeyError
+
+    kg = ThresholdMIFELWEKeyGenerator(kg_config)
+    kg.setup()
+    sk = kg.get_private_keys("nid_0")
+    del sk["mac_keys"]
+    enc = ThresholdMIFELWE({"id": "nid_0", "keys": {"pp": kg.get_public_parameters(), "sk": sk}})
+    with pytest.raises(FEKeyError, match="MAC"):
+        enc.encrypt([1])
+
+
+def test_noise_does_not_depend_on_how_the_request_is_dressed(kg_config):
+    """Regression: the flooding noise was seeded with the JSON of the whole
+    request, so an extra field or another server's tag drew fresh noise for
+    the same ciphertexts, and averaging such partials removes the noise."""
+    dct_x = {nid: [1] for nid in kg_config["lst_nid"]}
+    dct_y = {nid: [1] for nid in kg_config["lst_nid"]}
+    enrolled = ["sid_0", "sid_1"]
+    kg, pp, dct_ct, partials, _ = _round(kg_config, dct_x, dct_y, enrolled)
+    dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
+    server = ThresholdMIFELWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
+    first = dct_ct["nid_0"]
+    for dressed in (
+        dict(dct_ct, nid_0=dict(first, padding="1")),
+        dict(dct_ct, nid_0=dict(first, tags=dict(first["tags"], sid_2="00"))),
+        dict(reversed(list(dct_ct.items()))),
+    ):
+        assert server.share_decrypt(dressed, dct_y, dk, enrolled) == partials["sid_0"]

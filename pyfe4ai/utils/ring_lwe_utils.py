@@ -404,6 +404,30 @@ def center_matrix(
     return centered
 
 
+def canonical_ring_ciphertext(ct, q, eta: int, ring_n: int) -> tuple:
+    """Return ``(k, ct0, ct1)`` of a BMMS21 ciphertext with coefficients in ``[0, q)``.
+
+    Raises:
+        FESchemeError: Unless *ct* has ``eta`` polynomials ``ct0`` and one
+            polynomial ``ct1`` of ``ring_n`` integer coefficients each, and a
+            batch length ``1 <= k <= ring_n``.
+    """
+    from pyfe4ai.utils.exceptions import FESchemeError
+
+    try:
+        k = ct["k"]
+        ct0 = [[int(str(v)) % q for v in row] for row in ct["ct0"]]
+        ct1 = [int(str(v)) % q for v in ct["ct1"]]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise FESchemeError("malformed ciphertext") from exc
+    if (
+        not isinstance(k, int) or isinstance(k, bool) or not 1 <= k <= ring_n
+        or len(ct0) != eta or any(len(row) != ring_n for row in ct0) or len(ct1) != ring_n
+    ):
+        raise FESchemeError("malformed ciphertext")
+    return k, ct0, ct1
+
+
 def decode_vector(poly: list[gp.mpz], p: gp.mpz, q: gp.mpz, k: int) -> list[int]:
     """Extract the first k plaintext coefficients by rounding.
 

@@ -36,6 +36,17 @@ half the length the leftover hash lemma needs). ``e_k`` is derived from a per-se
 request (enrolled set and ciphertexts), so repeating a request cannot be
 used to average the noise away. The threshold layer is our own design.
 
+Ciphertext authentication: ``w_k`` is linear in ``ct0``, so whoever chooses the
+ciphertexts a server decrypts could submit ``ct0 = c e_j`` for chosen ``c`` and
+read the functional key off the partials coordinate by coordinate (the
+flooding hides a fixed noise term, not a chosen multiple of the key). Client
+``i`` and server ``k`` therefore share a MAC key; every ciphertext carries one
+HMAC-SHA256 tag per server over its serialised ``(ct0, ct1)``, and a server
+only decrypts ciphertexts whose tags for it verify. A corrupted client can
+still put any ciphertext in its own slot, which reveals that slot's key part
+``S_i y_i`` and nothing about the other slots; mixing authentic ciphertexts of
+different rounds is the usual multi-input functionality.
+
 Under the ``standard`` security profile ``lwe_n = "auto"`` picks the
 smallest dimension meeting :data:`pyfe4ai.utils.lwe_utils.WIDE_LWE_128_LOG_RATIO`
 at the enlarged ``q``: about 3600 for ``X = Y = 50`` (``q`` of 152 bits,
@@ -49,6 +60,7 @@ decryption 9 ms.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import logging
 import secrets
@@ -59,11 +71,14 @@ import numpy as np
 from pyfe4ai.schemes.mife.lwe import MIFELWE
 from pyfe4ai.schemes.mife.lwe import MIFELWEKeyGenerator
 from pyfe4ai.schemes.threshold_utils import check_fusion_weight
+from pyfe4ai.schemes.threshold_utils import ciphertexts_digest
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
 from pyfe4ai.schemes.threshold_utils import share_points
 from pyfe4ai.schemes.threshold_utils import share_secret
 from pyfe4ai.schemes.threshold_utils import validate_enrolled
+from pyfe4ai.schemes.threshold_utils import combine_consistently
+from pyfe4ai.schemes.threshold_utils import partial_groups
 from pyfe4ai.schemes.threshold_utils import validate_partial_decryptions
 from pyfe4ai.schemes.threshold_utils import validate_threshold
 from pyfe4ai.utils.crypto_constants import CryptoCONST
@@ -81,6 +96,27 @@ logger = logging.getLogger(__name__)
 
 _CONSTRUCTION = "acfgu18-abdp15-shamir-smudging-seeded-a/v3"
 _DEFAULT_STAT_PARAM = 64
+_TAG_DOMAIN = "pyfe4ai/tmife-lwe/ciphertext-tag/v1"
+
+
+def ciphertext_tag(mac_key: str, ct: dict) -> str:
+    """Return the HMAC-SHA256 tag (hex) of a ciphertext's ``ct0`` and ``ct1`` as serialised."""
+    message = json.dumps([_TAG_DOMAIN, ct.get("ct0"), ct.get("ct1")]).encode("utf-8")
+    return hmac.new(bytes.fromhex(mac_key), message, hashlib.sha256).hexdigest()
+
+
+def _authentic(ct, mac_key, sid: str) -> bool:
+    if not isinstance(ct, dict) or not isinstance(mac_key, str):
+        return False
+    tags = ct.get("tags")
+    tag = tags.get(sid) if isinstance(tags, dict) else None
+    if not isinstance(tag, str):
+        return False
+    try:
+        expected = ciphertext_tag(mac_key, ct)
+    except (TypeError, ValueError):
+        return False
+    return hmac.compare_digest(tag, expected)
 
 
 def _flooding_noise(sigma: int, rng) -> int:
@@ -156,9 +192,21 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
         self.sigma_f = int(param["sigma_f"])
 
     def setup(self) -> None:
-        """Sample the MIFE keys and forget any previously shared keys."""
+        """Sample the MIFE keys and the client-server MAC keys; forget any
+        previously shared keys."""
         super().setup()
         self.dict_dk = {}
+        self.mac_keys = {
+            nid: {sid: secrets.token_hex(32) for sid in self.lst_sid} for nid in self.lst_nid
+        }
+
+    def get_private_keys(self, nid: str, **kwargs) -> dict | None:
+        """Return client *nid*'s MIFE encryption key plus ``mac_keys``
+        (``{sid: hex}``, one key per server for the ciphertext tags)."""
+        sk = super().get_private_keys(nid, **kwargs)
+        if sk is not None:
+            sk["mac_keys"] = dict(self.mac_keys[nid])
+        return sk
 
     def get_public_parameters(self) -> dict:
         """Return the MIFE public parameters plus ``s``, ``t``, ``lst_sid``, ``sigma_f``."""
@@ -177,8 +225,9 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
 
         Returns:
             Dict with ``sk_y`` (per-slot share vectors), ``z`` (share of the
-            pad term), ``sid``, ``lst_sid``, ``weights_id`` and ``noise_key``,
-            or ``None`` if *sid* is unknown.
+            pad term), ``sid``, ``lst_sid``, ``weights_id``, ``noise_key`` and
+            ``mac_keys`` (``{nid: hex}``, to verify the clients' ciphertext
+            tags), or ``None`` if *sid* is unknown.
         """
         credentials = kwargs.get("credentials", None)
         if not credentials:
@@ -192,7 +241,12 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
             key = super().get_decryption_keys(sid, credentials={"fusion_weight": fusion_weight})
             self.dict_dk[identifier] = self._share_key(key)
         dk = dict(self.dict_dk[identifier][sid])
-        dk.update({"sid": sid, "lst_sid": list(self.lst_sid), "weights_id": identifier})
+        dk.update({
+            "sid": sid,
+            "lst_sid": list(self.lst_sid),
+            "weights_id": identifier,
+            "mac_keys": {nid: self.mac_keys[nid][sid] for nid in self.lst_nid},
+        })
         return dk
 
     def _share_key(self, key: dict) -> dict:
@@ -214,6 +268,16 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
 class ThresholdMIFELWE(MIFELWE):
     """Crypto operations for threshold MIFE-LWE (ACFGU18 + Shamir + smudging)."""
 
+    def _encrypt_batch(self, plaintexts: list) -> list:
+        """MIFE ciphertexts with ``tags``: one HMAC tag per server."""
+        mac_keys = self.sk.get("mac_keys")
+        if not mac_keys:
+            raise FEKeyError("encryption key lacks the ciphertext MAC keys")
+        out = super()._encrypt_batch(plaintexts)
+        for ct in out:
+            ct["tags"] = {sid: ciphertext_tag(key, ct) for sid, key in mac_keys.items()}
+        return out
+
     def share_decrypt(
         self, dict_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list
     ) -> dict:
@@ -229,6 +293,11 @@ class ThresholdMIFELWE(MIFELWE):
 
         Returns:
             Dict with ``w``, ``c_y``, ``ct_digest``, ``sid`` and ``lst_sid_enrolled``.
+
+        Raises:
+            FESchemeError: If the enrolled set is invalid, the weights are not
+                those of the key share, or a ciphertext's tag for this server
+                does not verify (it was not produced by that slot's client).
         """
         if not dk or "sk_y" not in dk or "z" not in dk:
             raise FEKeyError("no decryption keys provided")
@@ -238,14 +307,24 @@ class ThresholdMIFELWE(MIFELWE):
         check_fusion_weight(dk, credentials)
         if set(dict_ct) != set(dk["sk_y"]):
             raise FESchemeError("need one ciphertext for every slot of the key")
+        mac_keys = dk.get("mac_keys") or {}
+        for nid, ct in dict_ct.items():
+            if not _authentic(ct, mac_keys.get(nid), self.id):
+                raise FESchemeError(
+                    "the ciphertext of {} is not authenticated for server {}".format(nid, self.id)
+                )
 
         q = gp.mpz(self.pp["q"])
         delta = q // gp.mpz(self.pp["p"])
         key_part = delta * gp.mpz(dk["z"])
         c_y = gp.mpz(0)
+        canonical = {}
         for nid, ct in dict_ct.items():
-            ct0 = digits_to_vector(ct["ct0"])
-            ct1 = digits_to_vector(ct["ct1"])
+            ct0 = [v % q for v in digits_to_vector(ct["ct0"])]
+            ct1 = [v % q for v in digits_to_vector(ct["ct1"])]
+            if len(ct0) != len(dk["sk_y"][nid]) or len(ct1) != self.pp["eta"]:
+                raise FESchemeError("malformed ciphertext of {}".format(nid))
+            canonical[nid] = [[int(v) for v in ct0], [int(v) for v in ct1]]
             y_vec = [gp.mpz(int(v)) for v in credentials[nid]]
             key_part += vecdot_mod(ct0, [gp.mpz(v) for v in dk["sk_y"][nid]], q)
             c_y += vecdot_mod(y_vec, ct1, q)
@@ -254,9 +333,9 @@ class ThresholdMIFELWE(MIFELWE):
         lagrange = lagrange_coefficient_at_zero(
             sid_v[self.id], [sid_v[s] for s in lst_sid_enrolled], q
         )
-        ct_digest = hashlib.sha256(
-            json.dumps(dict_ct, sort_keys=True).encode("utf-8")
-        ).hexdigest()
+        # the noise is seeded with the digest of the values only, so neither
+        # extra fields nor other servers' tags draw fresh noise
+        ct_digest = ciphertexts_digest(canonical)
         context = json.dumps([ct_digest, sorted(lst_sid_enrolled)]).encode("utf-8")
         e_k = _flooding_noise(
             int(self.pp["sigma_f"]), XofRandom(bytes.fromhex(dk["noise_key"]) + context)
@@ -269,7 +348,24 @@ class ThresholdMIFELWE(MIFELWE):
             "lst_sid_enrolled": list(lst_sid_enrolled),
         }
 
-    def combine_decrypt(self, dict_ct_prime: dict) -> float | None:
+    def combine_decrypt(self, partials) -> float | None:
+        """Combine partial decryptions from at least ``t`` servers.
+
+        Args:
+            partials: ``{sid: share_decrypt(...)}`` for one enrolled set, or a
+                list of such mappings for several enrolled sets, whose results
+                must then agree (see
+                :func:`~pyfe4ai.schemes.threshold_utils.combine_consistently`:
+                servers are assumed honest-but-curious, and only this
+                redundancy detects one that returns a wrong partial).
+
+        Raises:
+            FESchemeError: If a group is incomplete or invalid, or the groups
+                disagree.
+        """
+        return combine_consistently(partials, self._combine_group)
+
+    def _combine_group(self, dict_ct_prime: dict) -> float | None:
         """Combine at least ``t`` partial decryptions into ``<x, y>``.
 
         Returns:
@@ -286,7 +382,7 @@ class ThresholdMIFELWE(MIFELWE):
             part["c_y"] != partials[0]["c_y"] or part["ct_digest"] != partials[0]["ct_digest"]
             for part in partials
         ):
-            logger.warning("ct consistency verification failed.")
+            logger.warning("partial decryptions disagree on the ciphertexts they decrypted")
             return None
         q = gp.mpz(self.pp["q"])
         delta = q // gp.mpz(self.pp["p"])
@@ -314,13 +410,14 @@ class ThresholdMIFELWE(MIFELWE):
 
     def decrypt_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list:
         """Combine element-wise partial decryptions from at least ``t`` servers."""
-        sample = next(iter(dict_ndarray_ct.values()))
+        groups = partial_groups(dict_ndarray_ct)
+        sample = next(iter(groups[0].values()))
         lst_dec = []
         for l in range(len(sample)):
             ary_dec = np.empty(sample[l].shape, dtype=object)
             for i, _ in np.ndenumerate(sample[l]):
                 ary_dec[i] = self.combine_decrypt(
-                    {sid: dict_ndarray_ct[sid][l][i] for sid in dict_ndarray_ct}
+                    [{sid: g[sid][l][i] for sid in g} for g in groups]
                 )
             lst_dec.append((ary_dec / pow(10, self.precision)).astype(float))
         return lst_dec

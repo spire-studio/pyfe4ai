@@ -192,3 +192,20 @@ def test_single_share_reveals_nothing_on_its_own(kg_config):
     parts = _partials(kg, pp, y, dct_ct, ["sid_0", "sid_1"])
     combiner = ThresholdMCFEFHMultiIPE({"id": "c", "keys": {"pp": pp}})
     assert combiner.ctx.solve(combiner.ctx.de(parts["sid_0"]["w"])) is None
+
+
+def test_partial_decryptions_for_several_enrolled_sets_must_agree(kg_config):
+    from pyfe4ai.utils.exceptions import FESchemeError
+
+    kg, pp, y, dct_ct = _setup(kg_config)
+    combiner = ThresholdMCFEFHMultiIPE({"id": "c", "keys": {"pp": pp}})
+    pairs = (["sid_0", "sid_1"], ["sid_0", "sid_2"], ["sid_1", "sid_2"])
+    groups = [_partials(kg, pp, y, dct_ct, pair) for pair in pairs]
+    assert combiner.combine_decrypt(groups) == 6
+    ctx = combiner.ctx
+    forged = [
+        {s: (dict(p, w=ctx.ser(ctx.de(p["w"]) * ctx.fhipe.gt)) if s == "sid_1" else p) for s, p in g.items()}
+        for g in groups
+    ]
+    with pytest.raises(FESchemeError, match="disagree"):
+        combiner.combine_decrypt(forged)

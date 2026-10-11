@@ -51,15 +51,16 @@ def _run_case(case: dict, rounds: int) -> dict:
 
         enrolled = case["lst_sid"][: case["threshold"]]
         dk_credentials = {"fusion_weight": case["y"], "label": case["label"]}
-        share_credentials = (
-            case["y"] if case.get("share_decrypt_mode") == "fusion_weight_only" else dk_credentials
-        )
+        # tMCFE/DDH takes the weights and, separately, the label to decrypt
+        weights_only = case.get("share_decrypt_mode") == "fusion_weight_only"
+        share_credentials = case["y"] if weights_only else dk_credentials
+        share_extra = (case["label"],) if weights_only else ()
         dct_partial = {}
         t0 = time.perf_counter()
         for sid in enrolled:
             dk_sid = kg.get_decryption_keys(sid, credentials=dk_credentials)
             dec = case["crypto_cls"]({"id": sid, "keys": {"pp": pp, "dk": dk_sid}})
-            dct_partial[sid] = dec.share_decrypt(dct_ct, share_credentials, dk_sid, enrolled)
+            dct_partial[sid] = dec.share_decrypt(dct_ct, share_credentials, dk_sid, enrolled, *share_extra)
         partial_times.append(time.perf_counter() - t0)
 
         t0 = time.perf_counter()

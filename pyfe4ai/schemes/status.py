@@ -174,7 +174,8 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     ("mife", "lwe_threshold"): SchemeStatus(
         _S + "mife.lwe_threshold", EXPERIMENTAL, AD_HOC, "MIFE-LWE + Shamir + smudging",
         note="MIFE layer as published; the threshold layer (statistical flooding, "
-        "derandomised noise, enlarged q) is our own",
+        "derandomised noise, enlarged q, clients' HMAC tags on ciphertexts so that "
+        "servers only decrypt ciphertexts made by the clients) is our own",
     ),
     # --- multi-client -------------------------------------------------------
     ("mcfe", "ddh"): SchemeStatus(_S + "mcfe.ddh", REVIEWED, FAITHFUL, "CDGPP18"),

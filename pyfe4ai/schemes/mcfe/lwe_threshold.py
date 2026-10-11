@@ -76,6 +76,8 @@ from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
 from pyfe4ai.schemes.threshold_utils import share_points
 from pyfe4ai.schemes.threshold_utils import share_secret
 from pyfe4ai.schemes.threshold_utils import validate_enrolled
+from pyfe4ai.schemes.threshold_utils import combine_consistently
+from pyfe4ai.schemes.threshold_utils import partial_groups
 from pyfe4ai.schemes.threshold_utils import validate_partial_decryptions
 from pyfe4ai.schemes.threshold_utils import validate_threshold
 from pyfe4ai.utils.crypto_constants import CryptoCONST
@@ -264,7 +266,24 @@ class ThresholdMCFELWE(MCFELWE):
             "lst_sid_enrolled": list(lst_sid_enrolled),
         }
 
-    def combine_decrypt(self, dict_ct_prime: dict) -> float | None:
+    def combine_decrypt(self, partials) -> float | None:
+        """Combine partial decryptions from at least ``t`` servers.
+
+        Args:
+            partials: ``{sid: share_decrypt(...)}`` for one enrolled set, or a
+                list of such mappings for several enrolled sets, whose results
+                must then agree (see
+                :func:`~pyfe4ai.schemes.threshold_utils.combine_consistently`:
+                servers are assumed honest-but-curious, and only this
+                redundancy detects one that returns a wrong partial).
+
+        Raises:
+            FESchemeError: If a group is incomplete or invalid, or the groups
+                disagree.
+        """
+        return combine_consistently(partials, self._combine_group)
+
+    def _combine_group(self, dict_ct_prime: dict) -> float | None:
         """Combine at least ``t`` partial decryptions into the inner product.
 
         Returns:
@@ -279,7 +298,7 @@ class ThresholdMCFELWE(MCFELWE):
         partials = list(dict_ct_prime.values())
         c_y, label = partials[0]["c_y"], partials[0]["label"]
         if any(part["c_y"] != c_y or part["label"] != label for part in partials):
-            logger.warning("ct consistency verification failed.")
+            logger.warning("partial decryptions disagree on the ciphertexts they decrypted")
             return None
         v = sum(gp.mpz(part["w"]) for part in partials) % self.q
         mu = self._decode(gp.mpz(c_y), v)
@@ -322,13 +341,14 @@ class ThresholdMCFELWE(MCFELWE):
             dict_ndarray_ct: Mapping of server ids to the outputs of
                 :meth:`compute_lst_ndarray_ct`.
         """
-        sample = next(iter(dict_ndarray_ct.values()))
+        groups = partial_groups(dict_ndarray_ct)
+        sample = next(iter(groups[0].values()))
         lst_dec = []
         for l in range(len(sample)):
             ary_dec = np.empty(sample[l].shape, dtype=object)
             for i, _ in np.ndenumerate(sample[l]):
                 ary_dec[i] = self.combine_decrypt(
-                    {sid: dict_ndarray_ct[sid][l][i] for sid in dict_ndarray_ct}
+                    [{sid: g[sid][l][i] for sid in g} for g in groups]
                 )
             lst_dec.append(ary_dec.astype(float))
         return lst_dec

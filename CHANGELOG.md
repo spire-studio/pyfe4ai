@@ -191,6 +191,33 @@ table and *Known Issues* before relying on any privacy property.
   uniform (toy defaults: `m = 753` where `2139` is needed); ABDP15's
   semantic-security argument then fails. `m` and `q` are now iterated to a
   fixed point; cached parameters are regenerated.
+- **tMIFE-LWE** (experimental) servers decrypted any ciphertexts they were
+  handed. A partial decryption is linear in `ct0`, so a combiner submitting
+  `ct0 = c e_j` for chosen `c` read the shared functional key off the
+  partials coordinate by coordinate (the flooding hides a fixed noise term,
+  not a chosen multiple of the key). Clients now tag every ciphertext with
+  one HMAC-SHA256 per server, under per-(client, server) keys sampled by
+  `setup`, and a server refuses ciphertexts whose tag for it does not verify.
+  A corrupted client can still choose its own slot's ciphertext, which
+  reveals only that slot's key part.
+- **tMIFE-LWE and tMCFE-Ring-LWE** seeded the flooding noise with the JSON of
+  the request, so the same ciphertexts with an extra field, another server's
+  tag or (Ring-LWE) coefficients written as `v + q` drew fresh noise, and
+  averaging such partials removes it. The noise is now seeded with a digest
+  of the ciphertext values mod `q` (`threshold_utils.ciphertexts_digest`);
+  tMCFE-Ring-LWE also refuses ciphertexts of the wrong shape
+  (`ring_lwe_utils.canonical_ring_ciphertext`).
+- **tMCFE-DDH** servers decrypted whatever label the submitted ciphertexts
+  carried (the key is label-independent), so they could not restrict
+  decryption to the rounds they mean to serve: a combiner could have any
+  round decrypted at any time. `share_decrypt` now takes the label the
+  server agrees to decrypt and refuses ciphertexts under any other.
+- **Threshold schemes** assume honest-but-curious servers; this is now stated
+  in the README, `SECURITY.md` and `threshold_utils`. Nothing proves a
+  partial decryption correct, so `combine_decrypt` and
+  `decrypt_lst_ndarray_ct` of every threshold scheme accept partial
+  decryptions for several enrolled sets and raise `FESchemeError` if their
+  results disagree (`threshold_utils.combine_consistently`).
 
 ### Added
 
@@ -280,6 +307,13 @@ table and *Known Issues* before relying on any privacy property.
 
 ### Changed (breaking)
 
+- tMCFE-DDH: `share_decrypt(dict_ct, credentials, dk, lst_sid_enrolled,
+  label)`, `compute_lst_ndarray_ct(..., lst_sid_enrolled, label)` and
+  `decrypt_lst_ndarray_ct(partials, label)` take the label to decrypt;
+  `combine_decrypt(partials, label=None)` checks it when given.
+- tMIFE-LWE: client keys carry `mac_keys` (`{sid: key}`), key shares
+  `mac_keys` (`{nid: key}`) and ciphertexts `tags` (`{sid: tag}`);
+  ciphertexts without valid tags are refused.
 - MCFE-Paillier: `sk = {s}`, `dk = {k}`, `ct = {c}`. MCFE-LWE /
   FullySec-LWE: `sk = {z}`, `dk = {sk_y}`, `ct = {c}`; the config keys
   `bound_u` and `label_modulus` are ignored and parameters are no longer

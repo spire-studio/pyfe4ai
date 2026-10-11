@@ -148,7 +148,7 @@ def test_entire_process(kg_config):
         }
         tmife_sid = ThresholdMCFE(config_sid)
         ct_sid = tmife_sid.share_decrypt(
-            dict_tmife_n_ct, dict_tmife_n_y, dk_sid, lst_sid_enrolled
+            dict_tmife_n_ct, dict_tmife_n_y, dk_sid, lst_sid_enrolled, label
         )
         assert isinstance(ct_sid, dict)
         assert "c_y" in ct_sid
@@ -228,7 +228,7 @@ def test_entire_process_lst_ndarray(kg_config):
         }
         tmife_sid = ThresholdMCFE(config_sid)
         ct_sid = tmife_sid.compute_lst_ndarray_ct(
-            dict_tmife_n_ct, dict_tmife_n_y, dk_sid, lst_sid_enrolled
+            dict_tmife_n_ct, dict_tmife_n_y, dk_sid, lst_sid_enrolled, label
         )
         assert isinstance(ct_sid, list)
         assert isinstance(ct_sid[0], np.ndarray)
@@ -240,7 +240,7 @@ def test_entire_process_lst_ndarray(kg_config):
     for nid in lst_nid:
         tmife_nid = dict_tmife_n[nid]
         for i, cp in enumerate(lst_check_points):
-            dec_lst_ndarray = tmife_nid.decrypt_lst_ndarray_ct(dict_tmife_s_ct)
+            dec_lst_ndarray = tmife_nid.decrypt_lst_ndarray_ct(dict_tmife_s_ct, label)
             assert isinstance(dec_lst_ndarray, list)
             assert (
                 abs(dec_lst_ndarray[cp[0]][cp[1]] - lst_expected_inner_prod[i]) < 1e-2
@@ -294,7 +294,7 @@ def _share_decrypt(kg, pp, dct_ct, dct_y, label, lst_sid_enrolled, precision=0):
         server = ThresholdMCFE(
             {"id": sid, "precision": precision, "keys": {"pp": pp, "dk": dk_sid}}
         )
-        shares[sid] = server.share_decrypt(dct_ct, dct_y, dk_sid, lst_sid_enrolled)
+        shares[sid] = server.share_decrypt(dct_ct, dct_y, dk_sid, lst_sid_enrolled, label)
     return shares
 
 
@@ -337,7 +337,7 @@ def test_single_server_cannot_decrypt():
     )
     server0 = ThresholdMCFE({"id": "sid_0", "precision": 0, "keys": {"pp": pp, "dk": dk_sid0}})
     with pytest.raises(FESchemeError):
-        server0.share_decrypt(dct_ct, dct_y, dk_sid0, ["sid_0"])
+        server0.share_decrypt(dct_ct, dct_y, dk_sid0, ["sid_0"], label)
     shares = _share_decrypt(kg, pp, dct_ct, dct_y, label, ["sid_0", "sid_1"])
     with pytest.raises(FESchemeError):
         combiner.combine_decrypt({"sid_0": shares["sid_0"]})
@@ -355,7 +355,7 @@ def test_single_server_cannot_decrypt():
             "keys": {"pp": forged_pp, "sk": kg.get_private_keys("nid_0")},
         }
     )
-    lone_share = forged_server.share_decrypt(dct_ct, dct_y, dk_sid0, ["sid_0"])
+    lone_share = forged_server.share_decrypt(dct_ct, dct_y, dk_sid0, ["sid_0"], label)
     assert forged_combiner.combine_decrypt({"sid_0": lone_share}) != expected
 
 
@@ -415,7 +415,7 @@ def test_key_is_label_independent():
             server = ThresholdMCFE(
                 {"id": sid, "precision": 0, "keys": {"pp": pp, "dk": dks[sid]}}
             )
-            shares[sid] = server.share_decrypt(dct_ct, dct_y, dks[sid], enrolled)
+            shares[sid] = server.share_decrypt(dct_ct, dct_y, dks[sid], enrolled, label)
         assert clients["nid_0"].combine_decrypt(shares) == expected
 
 
@@ -436,16 +436,29 @@ def test_mixed_labels_rejected():
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
     server = ThresholdMCFE({"id": "sid_0", "precision": 0, "keys": {"pp": pp, "dk": dk}})
     with pytest.raises(FESchemeError):
-        server.share_decrypt(dct_ct, dct_y, dk, ["sid_0", "sid_1"])
+        server.share_decrypt(dct_ct, dct_y, dk, ["sid_0", "sid_1"], label)
 
 
 def test_relabelled_ciphertexts_do_not_decrypt():
     """A ciphertext only decrypts under the label it was produced for."""
     label = "label-true"
     kg, pp, clients, dct_ct, dct_y, expected = _setup_round(3, 3, 2, 1, label)
-    forged = {nid: dict(ct, label="label-forged") for nid, ct in dct_ct.items()}
-    shares = _share_decrypt(kg, pp, forged, dct_y, label, ["sid_0", "sid_1"])
+    forged = {nid: dict(ct, label=encode_label("label-forged")) for nid, ct in dct_ct.items()}
+    # servers refuse ciphertexts that are not under the label they were asked for
+    with pytest.raises(FESchemeError, match="requested label"):
+        _share_decrypt(kg, pp, forged, dct_y, label, ["sid_0", "sid_1"])
+    # and decrypting them under the forged label does not give the result
+    shares = _share_decrypt(kg, pp, forged, dct_y, "label-forged", ["sid_0", "sid_1"])
     assert clients["nid_0"].combine_decrypt(shares) != expected
+    with pytest.raises(FESchemeError, match="another label"):
+        clients["nid_0"].combine_decrypt(shares, label)
+
+
+def test_server_refuses_ciphertexts_of_another_round():
+    """Replaying last round's ciphertexts to a server asked for this round fails."""
+    kg, pp, clients, old_ct, dct_y, _ = _setup_round(3, 3, 2, 1, "round-1")
+    with pytest.raises(FESchemeError, match="requested label"):
+        _share_decrypt(kg, pp, old_ct, dct_y, "round-2", ["sid_0", "sid_1"])
 
 
 def test_server_rejects_other_weights():
@@ -456,7 +469,7 @@ def test_server_rejects_other_weights():
     server = ThresholdMCFE({"id": "sid_0", "precision": 0, "keys": {"pp": pp, "dk": dk}})
     other = {nid: [y[0] + 1] for nid, y in dct_y.items()}
     with pytest.raises(FESchemeError):
-        server.share_decrypt(dct_ct, other, dk, ["sid_0", "sid_1"])
+        server.share_decrypt(dct_ct, other, dk, ["sid_0", "sid_1"], label)
 
 
 def test_dlog_bound_is_configurable():
@@ -479,7 +492,7 @@ def test_dlog_bound_is_configurable():
     for sid in enrolled:
         dk = kg.get_decryption_keys(sid, credentials={"fusion_weight": dct_y})
         server = ThresholdMCFE({"id": sid, "keys": {"pp": pp, "dk": dk}})
-        shares[sid] = server.share_decrypt(dct_ct, dct_y, dk, enrolled)
+        shares[sid] = server.share_decrypt(dct_ct, dct_y, dk, enrolled, "big")
     assert ThresholdMCFE({"id": "c", "keys": {"pp": pp}}).combine_decrypt(shares) is None
     combiner = ThresholdMCFE({"id": "c", "dlog_bound": 500, "keys": {"pp": pp}})
     assert combiner.combine_decrypt(shares) == -486

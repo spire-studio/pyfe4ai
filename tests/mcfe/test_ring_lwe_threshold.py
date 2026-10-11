@@ -108,3 +108,45 @@ def test_entire_process_lst_ndarray(kg_config):
     computed = ThresholdMCFERingLWE({"id": "c", "precision": precision, "keys": {"pp": pp}}).decrypt_lst_ndarray_ct(partials)
     for l in range(2):
         assert np.allclose(computed[l], expected[l], atol=1e-2)
+
+
+def test_noise_does_not_depend_on_the_encoding_of_the_ciphertexts(kg_config):
+    """Regression: the flooding noise was seeded with the JSON of the
+    ciphertexts, so the same ciphertexts re-encoded (``v + q``, an extra
+    field) drew fresh noise, and averaging such partials removes the noise."""
+    dct_x = {nid: [[1, 2]] for nid in kg_config["lst_nid"]}
+    dct_y = {nid: [1] for nid in kg_config["lst_nid"]}
+    enrolled = ["sid_0", "sid_1"]
+    kg, pp, dct_ct, partials, _ = _round(kg_config, dct_x, dct_y, "lbl", enrolled)
+    credentials = {"fusion_weight": dct_y, "label": "lbl"}
+    dk = kg.get_decryption_keys("sid_0", credentials=credentials)
+    server = ThresholdMCFERingLWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
+    q = int(pp["q"])
+    first = dct_ct["nid_0"]
+    for dressed in (
+        dict(dct_ct, nid_0=dict(first, ct1=[str(int(v) + q) for v in first["ct1"]])),
+        dict(dct_ct, nid_0=dict(first, ct0=[[int(v) for v in row] for row in first["ct0"]])),
+        dict(dct_ct, nid_0=dict(first, padding="1")),
+    ):
+        assert server.share_decrypt(dressed, credentials, dk, enrolled) == partials["sid_0"]
+
+
+def test_malformed_ciphertexts_are_refused(kg_config):
+    dct_x = {nid: [[1]] for nid in kg_config["lst_nid"]}
+    dct_y = {nid: [1] for nid in kg_config["lst_nid"]}
+    enrolled = ["sid_0", "sid_1"]
+    kg, pp, dct_ct, _, _ = _round(kg_config, dct_x, dct_y, "lbl", enrolled)
+    credentials = {"fusion_weight": dct_y, "label": "lbl"}
+    dk = kg.get_decryption_keys("sid_0", credentials=credentials)
+    server = ThresholdMCFERingLWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
+    first = dct_ct["nid_0"]
+    for bad in (
+        dict(first, ct1=first["ct1"][:-1]),
+        dict(first, ct0=first["ct0"] + first["ct0"]),
+        dict(first, ct0=[row[:-1] for row in first["ct0"]]),
+        dict(first, ct1=["x"] + first["ct1"][1:]),
+        dict(first, k=0),
+        {"ct1": first["ct1"], "k": first["k"]},
+    ):
+        with pytest.raises(FESchemeError, match="malformed"):
+            server.share_decrypt(dict(dct_ct, nid_0=bad), credentials, dk, enrolled)

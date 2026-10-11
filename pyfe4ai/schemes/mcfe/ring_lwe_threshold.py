@@ -32,7 +32,6 @@ layer is our own design.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import secrets
@@ -44,17 +43,21 @@ from pyfe4ai.schemes.mcfe.labels import chunk_label
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWE
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
 from pyfe4ai.schemes.threshold_utils import check_fusion_weight
+from pyfe4ai.schemes.threshold_utils import ciphertexts_digest
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
 from pyfe4ai.schemes.threshold_utils import share_points
 from pyfe4ai.schemes.threshold_utils import share_secret
 from pyfe4ai.schemes.threshold_utils import validate_enrolled
+from pyfe4ai.schemes.threshold_utils import combine_consistently
+from pyfe4ai.schemes.threshold_utils import partial_groups
 from pyfe4ai.schemes.threshold_utils import validate_partial_decryptions
 from pyfe4ai.schemes.threshold_utils import validate_threshold
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.utils.lwe_utils import decode_scaled
 from pyfe4ai.utils.ring_lwe_utils import bmms21_parameters
+from pyfe4ai.utils.ring_lwe_utils import canonical_ring_ciphertext
 from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul
 from pyfe4ai.utils.ring_lwe_utils import next_ntt_prime
 from pyfe4ai.utils.ring_lwe_utils import poly_add
@@ -244,19 +247,27 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         check_fusion_weight(dk, fusion_weight)
         if set(dict_ct) != set(dk["sk_y"]):
             raise FESchemeError("need one ciphertext for every client of the key")
-        batch = {int(ct["k"]) for ct in dict_ct.values()}
+        q = gp.mpz(self.pp["q"])
+        ring_n = self.pp["ring_n"]
+        # the noise is seeded with the digest of these canonical values, so a
+        # re-encoded request (v + q, extra fields) gets the same noise
+        cts = {}
+        for nid, ct in dict_ct.items():
+            try:
+                cts[nid] = canonical_ring_ciphertext(ct, int(q), self.pp["eta"], ring_n)
+            except FESchemeError as exc:
+                raise FESchemeError("malformed ciphertext of {}".format(nid)) from exc
+        batch = {k for k, _, _ in cts.values()}
         if len(batch) != 1:
             raise FESchemeError("ciphertexts of different batch lengths")
 
-        q = gp.mpz(self.pp["q"])
-        ring_n = self.pp["ring_n"]
         delta = q // gp.mpz(self.pp["p"])
         z_share = dk["z"] if _z_share is None else _z_share
         key_part = [delta * gp.mpz(v) % q for v in z_share]
         c_y = [gp.mpz(0)] * ring_n
-        for nid, ct in dict_ct.items():
-            ct0 = [[gp.mpz(v) for v in row] for row in ct["ct0"]]
-            ct1 = [gp.mpz(v) for v in ct["ct1"]]
+        for nid, (_, ct0, ct1) in cts.items():
+            ct0 = [[gp.mpz(v) for v in row] for row in ct0]
+            ct1 = [gp.mpz(v) for v in ct1]
             y_vec = [gp.mpz(int(v)) for v in fusion_weight[nid]]
             c_y = poly_add(c_y, mat_vec_mul(transpose(ct0), y_vec, q), q)
             key_part = poly_add(key_part, poly_mul(ct1, [gp.mpz(v) for v in dk["sk_y"][nid]], q), q)
@@ -265,7 +276,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         lagrange = lagrange_coefficient_at_zero(
             sid_v[self.id], [sid_v[s] for s in lst_sid_enrolled], q
         )
-        ct_digest = hashlib.sha256(json.dumps(dict_ct, sort_keys=True).encode("utf-8")).hexdigest()
+        ct_digest = ciphertexts_digest(cts)
         context = json.dumps([ct_digest, sorted(lst_sid_enrolled)]).encode("utf-8")
         noise = _flooding_poly(
             int(self.pp["sigma_f"]), ring_n, XofRandom(bytes.fromhex(dk["noise_key"]) + context)
@@ -280,7 +291,24 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             "lst_sid_enrolled": list(lst_sid_enrolled),
         }
 
-    def combine_decrypt(self, dict_ct_prime: dict) -> list | None:
+    def combine_decrypt(self, partials) -> list | None:
+        """Combine partial decryptions from at least ``t`` servers.
+
+        Args:
+            partials: ``{sid: share_decrypt(...)}`` for one enrolled set, or a
+                list of such mappings for several enrolled sets, whose results
+                must then agree (see
+                :func:`~pyfe4ai.schemes.threshold_utils.combine_consistently`:
+                servers are assumed honest-but-curious, and only this
+                redundancy detects one that returns a wrong partial).
+
+        Raises:
+            FESchemeError: If a group is incomplete or invalid, or the groups
+                disagree.
+        """
+        return combine_consistently(partials, self._combine_group)
+
+    def _combine_group(self, dict_ct_prime: dict) -> list | None:
         """Combine at least ``t`` partial decryptions into the batch of inner products.
 
         Raises:
@@ -294,7 +322,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             (p["c_y"], p["ct_digest"], p["k"]) != (first["c_y"], first["ct_digest"], first["k"])
             for p in partials
         ):
-            logger.warning("ct consistency verification failed.")
+            logger.warning("partial decryptions disagree on the ciphertexts they decrypted")
             return None
         q = gp.mpz(self.pp["q"])
         delta = q // gp.mpz(self.pp["p"])
@@ -328,13 +356,14 @@ class ThresholdMCFERingLWE(MCFERingLWE):
 
     def decrypt_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list:
         """Combine chunk-wise partial decryptions from at least ``t`` servers."""
-        sample = next(iter(dict_ndarray_ct.values()))
+        groups = partial_groups(dict_ndarray_ct)
+        sample = next(iter(groups[0].values()))
         result = []
         for l, layer in enumerate(sample):
             values = []
             for j in range(len(layer["parts"])):
                 values.extend(self.combine_decrypt(
-                    {sid: dict_ndarray_ct[sid][l]["parts"][j] for sid in dict_ndarray_ct}
+                    [{sid: g[sid][l]["parts"][j] for sid in g} for g in groups]
                 ))
             ary = np.array(values, dtype=float).reshape(layer["shape"])
             result.append(ary / pow(10, self.precision))

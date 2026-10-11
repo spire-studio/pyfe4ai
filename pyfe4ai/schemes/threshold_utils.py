@@ -4,6 +4,13 @@ Shared threshold secret-sharing utilities for threshold FE schemes.
 Provides polynomial evaluation, Shamir secret sharing, Lagrange
 interpolation and modular centering used identically by both the
 LWE and Ring-LWE threshold variants.
+
+Trust model of every threshold scheme: decryption servers are
+honest-but-curious. Fewer than ``t`` of them learn nothing beyond the result,
+but nothing proves a partial decryption correct, so a server that deviates
+can change the result undetected -- unless the combiner asks for partial
+decryptions for several enrolled sets and :func:`combine_consistently`
+compares them.
 """
 
 from __future__ import annotations
@@ -198,6 +205,45 @@ def validate_partial_decryptions(dict_ct_prime: dict, threshold: int) -> None:
         )
 
 
+def partial_groups(partials) -> list:
+    """Partial decryptions as a list of groups ``{sid: partial}``, one per enrolled set.
+
+    Accepts one group (a mapping) or several (a list or tuple of mappings).
+    """
+    if isinstance(partials, dict):
+        return [partials]
+    if isinstance(partials, (list, tuple)) and partials and all(isinstance(g, dict) for g in partials):
+        return list(partials)
+    raise FESchemeError("expected a mapping of partial decryptions or a list of such mappings")
+
+
+def combine_consistently(partials, combine_group):
+    """Combine every group of partial decryptions and require a single result.
+
+    Servers are assumed honest-but-curious: nothing proves a partial
+    decryption correct, and one server can shift the result of every group it
+    belongs to. With more than ``t`` servers, partial decryptions for several
+    enrolled sets (a server answers once per set) detect such a server --
+    though not which one -- unless it is in every group: to detect any one
+    faulty server, leave every server out of some group, e.g. use the
+    ``t + 1`` subsets of size ``t`` of ``t + 1`` servers.
+
+    Args:
+        partials: ``{sid: partial}`` for one enrolled set, or a list of them.
+        combine_group: Function combining one group into a result.
+
+    Raises:
+        FESchemeError: If the groups give different results.
+    """
+    results = [combine_group(group) for group in partial_groups(partials)]
+    if any(result != results[0] for result in results[1:]):
+        raise FESchemeError(
+            "partial decryptions for different enrolled sets disagree: "
+            "a server is faulty or malicious"
+        )
+    return results[0]
+
+
 def center_mod(value: gp.mpz, modulus: gp.mpz) -> gp.mpz:
     """Center *value* into the range ``(-modulus/2, modulus/2]``.
 
@@ -228,6 +274,17 @@ def fusion_weight_id(fusion_weight: dict) -> str:
         sort_keys=True,
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def ciphertexts_digest(canonical: dict) -> str:
+    """Return the digest of ciphertexts given in canonical form (``{nid: values}``).
+
+    Partial decryptions seed their flooding noise with it, so it must depend
+    only on the values a server computes with, never on how a request encodes
+    them: otherwise re-encoding one request draws fresh noise, and averaging
+    the partials removes it.
+    """
+    return hashlib.sha256(json.dumps(canonical, sort_keys=True).encode("utf-8")).hexdigest()
 
 
 def check_fusion_weight(dk: dict, fusion_weight: dict) -> None:
