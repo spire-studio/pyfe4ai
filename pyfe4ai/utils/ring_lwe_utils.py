@@ -384,20 +384,23 @@ def mat_vec_mul(matrix: list[list[gp.mpz]], vec: list[gp.mpz], q: gp.mpz) -> lis
 def center_matrix(
     matrix: list[list[int]], p: gp.mpz, q: gp.mpz, ring_n: int
 ) -> list[list[gp.mpz]]:
-    """Scale and round matrix entries for LWE decoding.
+    """Encode the rows of a signed matrix as polynomials ``floor(q / p) x mod q``.
+
+    Row ``i`` becomes a polynomial whose first coefficients hold the entries
+    of the row. The encoding is linear in ``x``, as the BMMS21 proofs need
+    (versions <= 0.2.0 used ``trunc(x q / p)``).
 
         Args:
             matrix: Input matrix.
-            p: Prime modulus.
-            q: Modulus (or second prime).
+            p: Plaintext modulus.
+            q: Ciphertext modulus.
             ring_n: Polynomial ring dimension.
     """
+    delta = gp.mpz(q) // gp.mpz(p)
     centered = [[gp.mpz(0) for _ in range(ring_n)] for _ in range(len(matrix))]
     for i, row in enumerate(matrix):
         for j, value in enumerate(row):
-            t = gp.mpz(value) * q
-            t = gp.t_div(t, p)
-            centered[i][j] = t % q
+            centered[i][j] = delta * gp.mpz(value) % q
     return centered
 
 

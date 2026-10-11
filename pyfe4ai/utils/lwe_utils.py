@@ -128,20 +128,19 @@ def derive_fullysec_lwe_parameters(
 
 
 def center_lwe_vector(vector: list[int] | list[gp.mpz], p: gp.mpz, q: gp.mpz) -> list[gp.mpz]:
-    """Scale and center a vector for LWE message extraction.
+    """Encode a signed vector as ``floor(q / p) x mod q``.
+
+    The encoding is linear in ``x``, as the linear ciphertext homomorphism of
+    the ABDP15 PKE requires (versions <= 0.2.0 used ``trunc(x q / p)``, which
+    differs from it by a small non-linear term).
 
         Args:
             vector: Input vector.
-            p: Prime modulus.
-            q: Modulus (or second prime).
+            p: Plaintext modulus.
+            q: Ciphertext modulus.
     """
-    ret = []
-    for x in vector:
-        t = gp.mpz(x) * q
-        t = gp.t_div(t, p)
-        t %= q
-        ret.append(t)
-    return ret
+    delta = gp.mpz(q) // gp.mpz(p)
+    return [delta * gp.mpz(x) % q for x in vector]
 
 
 def decode_lwe_inner_product(value: gp.mpz, p: gp.mpz, q: gp.mpz) -> int:

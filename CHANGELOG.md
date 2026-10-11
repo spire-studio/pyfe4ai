@@ -158,6 +158,15 @@ table and *Known Issues* before relying on any privacy property.
     secret), function
     class `sum_{i<k} c[(i,j,k,l)] x_i[j] x_k[l]` (cross-user terms), built from
     the TAO20 FH-IPFE and the paper's SK-MCFE schemes (Figs. 1 and 9).
+- **SIFE-LWE and SIFE-Ring-LWE** encoded a plaintext as `trunc(x q / p)`
+  instead of `floor(q / p) x`. The two differ by a small term that is not
+  linear in `x`, while ABDP15's proof relies on the linear ciphertext
+  homomorphism of its PKE and BMMS21's last game on `floor(q/K)` times the
+  message; the residue was hidden only statistically by the ciphertext
+  noise. Both now use `floor(q / p) x mod q` (`center_lwe_vector`,
+  `center_matrix`); found while an independent review of the new
+  `sife/fullysec_ring_lwe` flagged the same encoding there. Ciphertexts
+  change; decryption is unaffected.
 - **tMIFE-LWE** (experimental) enlarged `q` for its flooding noise but kept
   the `m` of the base modulus, so the binary `r` of a ciphertext had about
   half the length the leftover hash lemma needs for `A^T r` to be close to
