@@ -103,7 +103,8 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     ("sife", "fullysec_lwe"): SchemeStatus(
         _S + "sife.fullysec_lwe", REVIEWED, ADAPTED, "ALS16 LWE (ACFGU18 Fig. 8)",
         note="signed inputs (K = 2 eta X Y + 1, centred decoding); GoFE parameter "
-        "recipe; D_{Z,sigma} realised as a rounded Gaussian",
+        "recipe with m = 4 n log2 q (ALS16 Theorem 2); D_{Z,sigma} realised as a "
+        "rounded Gaussian",
     ),
     ("sife", "ddh_dynamic"): SchemeStatus(
         _S + "sife.ddh_dynamic", REVIEWED, ADAPTED, "ABDP15 Construction 1, variable length",
@@ -132,8 +133,8 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     ("mife", "lwe"): SchemeStatus(
         _S + "mife.lwe", REVIEWED, ADAPTED, "ACFGU18 Fig. 4 + ABDP15 (LWE)",
         note="ACFGU18 instantiates Fig. 4 with ALS16; here the selectively secure "
-        "ABDP15 IPFE (same two-step decryption); slots share A, expanded from a public "
-        "seed (SHAKE-128)",
+        "ABDP15 IPFE (same two-step decryption), with parameters for dimension n * eta "
+        "(footnote 14); slots share A, expanded from a public seed (SHAKE-128)",
     ),
     ("mife", "paillier"): SchemeStatus(
         _S + "mife.paillier", REVIEWED, ADAPTED, "ACFGU18 Fig. 4 + ALS16 (DCR, Fig. 9)",
@@ -149,7 +150,8 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     ),
     ("mife", "fullysec_lwe"): SchemeStatus(
         _S + "mife.fullysec_lwe", REVIEWED, ADAPTED, "ACFGU18 Fig. 4 + ALS16 (LWE, Fig. 8)",
-        note="slots share A; parameters derived for dimension n * eta and bound 3X",
+        note="slots share A; parameters derived for dimension n * eta and bound 3X "
+        "(ACFGU18 footnote 14), m = 4 n log2 q",
     ),
     ("mife", "fh_ipe_pairing"): SchemeStatus(
         _S + "mife.fh_ipe_pairing", REVIEWED, ADAPTED, "ACFGU18 Fig. 12 (k = 1)",

@@ -108,24 +108,31 @@ SCHEMES = {
 def test_slot_partials_hide_individual_inner_products(name):
     kg_cls, crypto_cls, cfg, slot_value, expected = SCHEMES[name]()
     kg = kg_cls(cfg)
-    kg.setup()
-    pp = kg.get_public_parameters()
     dct_x = {nid: [3, -2] for nid in NIDS}
     dct_y = {nid: [1, 2] for nid in NIDS}
-    dct_ct = {
-        nid: crypto_cls({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(dct_x[nid])
-        for nid in NIDS
-    }
-    dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
-    assert "z" in dk and "u" in kg.get_private_keys("nid_0")
-    decryptor = crypto_cls({"id": "sid_0", "keys": {"pp": pp}})
-    assert decryptor.decrypt(dct_ct, dk, dct_y) == -3
-
-    # the per-slot value the v0.2.0 decryptor decoded no longer equals <x_i, y_i> = -1
-    leaks = [
-        slot_value(pp, dct_ct[nid], dk, nid, dct_y[nid]) == expected(pp, -1) for nid in NIDS
-    ]
-    assert not any(leaks)
+    # the per-slot value the v0.2.0 decryptor decoded no longer equals
+    # <x_i, y_i> = -1. With the pad it is <x_i + u_i, y_i>, which for the LWE
+    # schemes (a small plaintext modulus) still hits -1 by chance with
+    # probability about 1/p per slot: only a hit in three independent key
+    # setups (fresh pads) counts as a leak
+    for _ in range(3):
+        kg.setup()
+        pp = kg.get_public_parameters()
+        dct_ct = {
+            nid: crypto_cls({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(dct_x[nid])
+            for nid in NIDS
+        }
+        dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
+        assert "z" in dk and "u" in kg.get_private_keys("nid_0")
+        decryptor = crypto_cls({"id": "sid_0", "keys": {"pp": pp}})
+        assert decryptor.decrypt(dct_ct, dk, dct_y) == -3
+        leaks = [
+            slot_value(pp, dct_ct[nid], dk, nid, dct_y[nid]) == expected(pp, -1) for nid in NIDS
+        ]
+        if not any(leaks):
+            break
+    else:
+        pytest.fail("a slot's partial decryption equals <x_i, y_i> after three fresh setups")
 
     with pytest.raises(FESchemeError):
         decryptor.decrypt({nid: dct_ct[nid] for nid in NIDS[:2]}, dk, dct_y)

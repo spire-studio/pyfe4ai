@@ -65,7 +65,7 @@ from pyfe4ai.utils.validation import scale_to_int
 
 logger = logging.getLogger(__name__)
 
-_CONSTRUCTION = "acfgu18-als16-lwe/v1"
+_CONSTRUCTION = "acfgu18-als16-lwe/v2"  # m = 4 n log2 q
 
 
 class MIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):

@@ -38,6 +38,7 @@ from pyfe4ai.utils.sampling_utils import discrete_gaussian_bigint
 from pyfe4ai.utils.sampling_utils import random_below
 from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
 from pyfe4ai.utils.validation import scale_to_int
+from pyfe4ai.utils.crypto_utils import is_dcr_modulus
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,15 @@ class SIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.n = gp.mpz(param["n"])
         self.n_square = gp.mpz(param["n_square"])
         self.g = gp.mpz(param["g"])
+
+    def _loaded_parameters_valid(self) -> bool:
+        n = self.n
+        return (
+            is_dcr_modulus(n, self.bit_length)
+            and self.n_square == n * n
+            and 1 < self.g < self.n_square
+            and gp.gcd(self.g, n) == 1
+        )
 
     def _param_verification(self, param: dict) -> bool:
         return (

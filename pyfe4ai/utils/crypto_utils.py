@@ -173,23 +173,38 @@ def group_generator_threshold_fe(bits: int, r: int = 2):
     return p, g
 
 
-def group_generator_paillier(bits: int) -> tuple:
-    """
-     Generates an integer group (p,q,n),
-     where n = pq, and p, q are prime numbers.
+def is_dl_group(p, q, g, bits: int, cofactor: int = 2) -> bool:
+    """Whether ``p = cofactor q + 1`` is a *bits*-bit prime, ``q`` is prime and
+    ``g`` generates the order-``q`` subgroup of ``Z_p^*``.
 
-    Args:
-        bits (int): the length of the prime number.
-
-    Returns:
-        tuple: p, q, n
+    Used to check discrete-log parameters loaded from the parameter cache.
     """
-    while True:
-        p, q = _random_prime(bits), _random_prime(bits)
-        if gp.is_prime(p) and gp.is_prime(q) and gp.gcd(p * q, (p - 1) * (q - 1)) == 1:
-            break
-    n = p * q
-    return p, q, n
+    p, q, g = gp.mpz(p), gp.mpz(q), gp.mpz(g)
+    return (
+        p.bit_length() == bits
+        and q > 2
+        and p == cofactor * q + 1
+        and gp.is_prime(q, 40)
+        and gp.is_prime(p, 40)
+        and 1 < g < p
+        and gp.powmod(g, q, p) == 1
+    )
+
+
+def is_dcr_modulus(n, prime_bits: int) -> bool:
+    """Whether *n* can be a product of two distinct *prime_bits*-bit primes:
+    odd, composite, not a square, of ``2 prime_bits - 1`` or ``2 prime_bits`` bits.
+
+    Used to check DCR moduli loaded from the parameter cache (their
+    factorisation is never stored, so it cannot be checked further).
+    """
+    n = gp.mpz(n)
+    return (
+        n.bit_length() in (2 * prime_bits - 1, 2 * prime_bits)
+        and n % 2 == 1
+        and not gp.is_prime(n, 40)
+        and not gp.is_square(n)
+    )
 
 
 def group_generator_fe(bits: int, r: int = 2) -> tuple:
@@ -202,16 +217,6 @@ def group_generator_fe(bits: int, r: int = 2) -> tuple:
     p, q, r = _param_generator(bits, r=r)
     g = _g_generator(bits, p, r)
     return p, q, r, g
-
-
-def md5_hash(v: str, p: gp.mpz) -> gp.mpz:
-    """Compute the MD5 hash of a string and return the result modulo p.
-
-        Args:
-            v: Input string.
-            p: Prime modulus.
-    """
-    return gp.mpz(hashlib.md5(v.encode("utf-8")).hexdigest(), 16) % p
 
 
 def hash_to_qr_group(v: str, p: gp.mpz, index: int = 0, domain: str = "") -> gp.mpz:

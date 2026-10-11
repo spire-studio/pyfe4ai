@@ -37,7 +37,10 @@ def int_vector(values, name: str, length: int | None = None, bound=None) -> list
         elif isinstance(v, numbers.Real) and float(v).is_integer():
             iv = int(v)
         else:
-            raise FEValidationError("{} must contain integers, got {!r}".format(name, v))
+            # the type only: the value may be a (malformed) secret input
+            raise FEValidationError(
+                "{} must contain integers, got a non-integral {}".format(name, type(v).__name__)
+            )
         if bound is not None and abs(iv) > bound:
             raise FEValidationError("{} exceeds the bound {}".format(name, bound))
         out.append(iv)

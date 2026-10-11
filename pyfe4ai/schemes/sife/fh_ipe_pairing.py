@@ -224,15 +224,17 @@ class SIFEFHIPE(IPFEAbsCrypto):
             "c2": [self.group.serialize(v).decode("utf-8") for v in c2],
         }
 
-    def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: list):
+    def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: list | None = None):
         """Decrypt ciphertexts and recover the inner product.
 
             Args:
-                dct_ct: Ciphertext dict (or dict of per-client ciphertexts).
+                dct_ct: Ciphertext dict.
                 dk: Functional decryption key.
-                fusion_weight: Fusion weight vector (or dict of per-client weight vectors).
+                fusion_weight: Not needed: the key encodes ``y`` and hides it
+                    (function hiding). Checked against the bounds if given.
         """
-        int_vector(fusion_weight, "fusion weight", length=self.pp["eta"], bound=int(self.pp["bound_y"]))
+        if fusion_weight is not None:
+            int_vector(fusion_weight, "fusion weight", length=self.pp["eta"], bound=int(self.pp["bound_y"]))
 
         c1 = self.group.deserialize(dct_ct["c1"].encode("utf-8"))
         c2 = [self.group.deserialize(v.encode("utf-8")) for v in dct_ct["c2"]]

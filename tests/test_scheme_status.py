@@ -84,3 +84,12 @@ def test_readme_status_table_matches():
             rows[(m.group(1), m.group(2))] = (m.group(3), m.group(4))
     expected = {k: (v.status, v.fidelity) for k, v in st.SCHEME_STATUS.items()}
     assert rows == expected
+
+
+def test_readme_status_table_is_the_rendered_table():
+    """The whole README table (construction and notes too) is
+    st.markdown_table(); regenerate it rather than editing it by hand."""
+    text = README.read_text(encoding="utf-8")
+    section = text.split("## Scheme Status", 1)[1].split("\n## ", 1)[0]
+    rows = [line for line in section.splitlines() if line.startswith("|")]
+    assert "\n".join(rows) == st.markdown_table()

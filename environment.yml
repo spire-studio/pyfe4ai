@@ -8,7 +8,6 @@ dependencies:
   - numpy
   - gmpy2
   - pyyaml
-  - jsonpickle
 #
 # Notes:
 # - This environment covers the core integer-group schemes and tests verified locally.

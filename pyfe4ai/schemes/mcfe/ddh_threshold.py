@@ -291,9 +291,9 @@ class ThresholdMCFE(IPFEAbsCrypto):
         if not self._has_private_keys():
             raise FEKeyError("no private keys provided for encryption")
         if not isinstance(pt, list):
-            raise FEValidationError("invalid format of input plaintext:{}".format(pt))
+            raise FEValidationError("input plaintext must be a list")
         if len(pt) > len(self.sk["s"]):
-            raise FEValidationError("invalid size of input plaintext:{}".format(pt))
+            raise FEValidationError("input plaintext has {} values, more than eta".format(len(pt)))
 
         p = gp.mpz(self.pp["p"])
         g = gp.mpz(self.pp["g"])

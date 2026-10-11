@@ -118,3 +118,14 @@ def test_entire_process_lst_ndarray():
 
     for idx in range(len(expected)):
         assert np.allclose(computed[idx], expected[idx], atol=1e-2)
+
+
+@pytest.mark.parametrize("bound, eta, lwe_n", [(10, 2, 16), (50, 4, 32)])
+def test_m_meets_theorem_2_of_als16(bound, eta, lwe_n):
+    """ALS16 Theorem 2 assumes m >= 4 n log2 q; the recipe used 1.01 n log2 q."""
+    import math
+
+    from pyfe4ai.utils.lwe_utils import derive_fullysec_lwe_parameters
+
+    _, q, m, *_ = derive_fullysec_lwe_parameters(bound, bound, eta, lwe_n)
+    assert m >= 4 * lwe_n * math.log2(int(q))

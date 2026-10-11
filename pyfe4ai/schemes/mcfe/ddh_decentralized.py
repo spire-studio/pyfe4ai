@@ -55,6 +55,7 @@ from pyfe4ai.schemes.mcfe.decentralize import zero_sum_keys
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.utils.crypto_utils import is_dcr_modulus
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,9 @@ class DecentralizedMCFEKeyGenerator(MCFEKeyGenerator):
     def _apply_parameters(self, param: dict) -> None:
         super()._apply_parameters(param)
         self.n2_mod = gp.mpz(param["n2_mod"])
+
+    def _loaded_parameters_valid(self) -> bool:
+        return super()._loaded_parameters_valid() and is_dcr_modulus(self.n2_mod, self.n2_prime_bits)
 
     def _generate_and_save(self, param_file: str) -> None:
         self.n2_mod = generate_mcfe2_modulus(self.n2_prime_bits)

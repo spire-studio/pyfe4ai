@@ -675,7 +675,7 @@ def bmms21_adaptive_choice(sec_param: int, eta: int, bound_x, bound_y, ring_n, m
     increasing order (``None`` gives :data:`DEFAULT_RING_N`); ``m = "auto"``
     takes the smallest ``m >= 5`` that admits a modulus -- one meeting
     :data:`HE_STANDARD_128_LOG_Q` when *he_standard* is set and ``ring_n`` is
-    ``"auto"``. A small ``m`` keeps the ``l m`` key polynomials and the
+    ``"auto"`` or ``m`` is. A small ``m`` keeps the ``l m`` key polynomials and the
     ``m``-polynomial functional keys small; a larger one lowers ``q``
     (``sigma'`` grows like ``q^(2/m)``) and can be passed explicitly.
     """
@@ -692,14 +692,16 @@ def bmms21_adaptive_choice(sec_param: int, eta: int, bound_x, bound_y, ring_n, m
             if log2_q is None:
                 continue
             bits = math.ceil(log2_q) + 1  # bits of the NTT prime just above 2^ceil(log2_q)
-            if he_standard and ring_n == "auto" and bits > HE_STANDARD_128_LOG_Q[n]:
+            # an explicit (ring_n, m) is left to the caller's check, which explains the refusal
+            if he_standard and (ring_n == "auto" or m == "auto") and bits > HE_STANDARD_128_LOG_Q[n]:
                 continue
             params = bmms21_adaptive_parameters(sec_param, eta, bound_x, bound_y, n, mm)
             params["ring_n"] = n
             return params
     if m != "auto":
         bmms21_adaptive_parameters(sec_param, eta, bound_x, bound_y, dims[0], int(m))  # raises
+    where = "ring dimension up to 32768" if ring_n == "auto" else "ring_n = {}".format(dims[0])
     raise FEValidationError(
-        "no ring dimension up to 32768 and m up to {} reaches 128-bit security for these "
-        "bounds; reduce bound_x, bound_y or eta".format(BMMS21_ADAPTIVE_MAX_M)
+        "no {} and m up to {} reaches 128-bit security for these bounds; reduce bound_x, "
+        "bound_y or eta".format(where, BMMS21_ADAPTIVE_MAX_M)
     )

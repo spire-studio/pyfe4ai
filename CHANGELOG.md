@@ -82,15 +82,15 @@ table and *Known Issues* before relying on any privacy property.
   padding), ciphertexts carry `H1(tag)` and every functional key embeds a
   fresh zero sharing. **dMCFE-FH-Multi-IPE** implements NPS24 Fig. 1
   (selective FH-DMCFE): the zero sharing lives in the encryption keys and
-  each client derives its own key with `H2(tag-f)`; `tag-f` is bound to the
-  whole weight vector and keys are derived deterministically, so a client
-  issues one key per `tag-f`. **tMCFE-FH-Multi-IPE** Shamir-shares the
-  FH-MCFE key exponents; partial decryptions are combined in `G_T`
-  (*experimental*). Previously all three masked inputs with a public label
+  each client derives its own key from an explicit `tag-f` and its own
+  weights (`H2(tag-f)`), deterministically, one key per client and `tag-f`.
+  **tMCFE-FH-Multi-IPE** Shamir-shares the FH-MCFE key exponents (servers
+  hold their shares as group elements); partial decryptions are combined in
+  `G_T` (*experimental*). Previously all three masked inputs with a public label
   scalar and ran over the symmetric group `SS512`, where SXDH fails; the
   family now defaults to `MNT224` and rejects symmetric groups.
 - **All pairing-based schemes** (SIFE FH-IPE and partial FH-IPE, MIFE
-  FH-IPE and FH-Multi-IPE, quadratic Quad, SGP and MI-SGP, the FH-MCFE
+  FH-IPE and FH-Multi-IPE, quadratic Quad, SGP and MIQFE, the FH-MCFE
   family) default to the asymmetric group `MNT224` instead of the symmetric
   `SS512` and reject symmetric groups: their constructions assume SXDH or a
   generic asymmetric bilinear group, and DDH is easy in a symmetric one.
@@ -104,8 +104,8 @@ table and *Known Issues* before relying on any privacy property.
     `(b, U, V)` to every encryptor, so any client decrypted everything and
     recovered every key's weights. `get_private_keys` now returns `None` and
     `Enc'` is run by the key generator (`sec_encrypt`). The default subspace
-    dimension equalled `eta` (a square `M` reveals `V`); it is now
-    `min(3, eta - 1)` and `M` is resampled until it has full rank.
+    dimension equalled `eta` (a square `M` reveals `V`); it is now 1 (see
+    below) and `M` is resampled until it has full rank.
   - SIFE FH-IPE (KLMMRW18) had no privacy for `eta = 1` (`B* = 1`) and let
     anyone recognise zero vectors; vectors are now padded to `(x, 1, 0)`,
     `(y, 0, 1)`.
@@ -232,6 +232,27 @@ table and *Known Issues* before relying on any privacy property.
   client (`allow_partial=True` relaxes this), refuses a second encryption by
   a client under one label and a second weight vector for one label, and is
   documented as a single-trust-domain simulation.
+- **`standard` profile**: the statistical parameter `stat_param` kept its
+  default 64 and accepted any explicit value (`stat_param = 1` gave
+  flooding at statistical distance about 1/2), although the profile claims
+  128 bits and refuses weaker explicit values. It is now 128 (the `kappa` of
+  the Ring-LWE schemes) and lower values are refused: a distance of
+  `2^-128` per sample instead of `2^-64`. ABMPSW20 moduli grow by about 64
+  bits (`mcfe/lwe` picks `n0` of about 6600 to 7700 instead of 4600 to
+  5600), tMCFE-Ring-LWE moves to `ring_n = 16384`, and tMIFE-LWE to
+  `lwe_n` of about 6000, for which `WIDE_LWE_128_LOG_RATIO` now extends to
+  `n = 6144` (same estimator and method).
+- **`standard` profile**: a config that was a `Mapping` but not a `dict`
+  (e.g. `MappingProxyType`) skipped the profile while the key generator
+  recorded `security_profile = "standard"` (`sife/ddh` ran on a 128-bit
+  group). Every `Mapping` is now resolved.
+- **Parameter cache**: cached discrete-log groups and DCR moduli were used
+  without any check (a planted 5-bit group or a prime "RSA modulus" was
+  accepted, also under `standard`). DL groups are now checked for primality,
+  size and the order of their generators, DCR moduli for size and
+  compositeness (`crypto_utils.is_dl_group`, `is_dcr_modulus`); a file that
+  fails, or does not parse (e.g. after an interrupted write), is
+  regenerated, and files are written atomically.
 - **Threshold schemes** assume honest-but-curious servers; this is now stated
   in the README, `SECURITY.md` and `threshold_utils`. Nothing proves a
   partial decryption correct, so `combine_decrypt` and
@@ -257,9 +278,8 @@ table and *Known Issues* before relying on any privacy property.
   `tools/estimate_dense_lwe.py`; under `standard` its decentralised variant
   combines key shares under a DCR modulus of at least 3072 bits.
   Explicit values below the profile, and the schemes without a usable
-  secure parameter set (LWE with a public matrix: SIFE / MIFE `lwe`,
-  `fullysec_lwe`, MIFE `lwe_threshold`; dMCFE-Paillier), raise
-  `FEValidationError`.
+  secure parameter set (SIFE / MIFE `fullysec_lwe` and dMCFE-Paillier),
+  raise `FEValidationError`.
 - ABDP15 LWE IPFE (`sife/lwe`, `mife/lwe`) under `standard`: `lwe_n = "auto"`
   picks the smallest dimension whose `(q, sigma)` meets
   `lwe_utils.WIDE_LWE_128_LOG_RATIO`, a lattice-estimator table of the
@@ -331,6 +351,14 @@ table and *Known Issues* before relying on any privacy property.
   label)`, `compute_lst_ndarray_ct(..., lst_sid_enrolled, label)` and
   `decrypt_lst_ndarray_ct(partials, label)` take the label to decrypt;
   `combine_decrypt(partials, label=None)` checks it when given.
+- Exports and registry: `HybridAlphaMIFE` and `HybridAlphaMIFEKeyGenerator`
+  are removed (see *Removed*); `MultiInputQuadraticSGP` and
+  `MultiInputQuadraticSGPKeyGenerator` are replaced by `MultiInputQuadratic`
+  and `MultiInputQuadraticKeyGenerator`, the ML adapter's registry key
+  `("quadratic", "multi_input_sgp")` by `("quadratic", "miqfe")` and
+  `config_types.MultiInputSGPConfig` by `MultiInputQuadraticConfig`. The
+  static method `ThresholdMIFE.L` is removed (use
+  `threshold_utils.lagrange_coefficient_at_zero`).
 - tMCFE-FH-Multi-IPE: key shares hold `k` as `G2` elements and `z` as a `GT`
   element (serialised) instead of integers.
 - dMCFE-FH-Multi-IPE: `derive_function_decryption_key_share(weights, tag_f)`
@@ -425,6 +453,10 @@ table and *Known Issues* before relying on any privacy property.
   paper's inference-prevention filter, and the published design leaks
   individual updates (MIFE without labels; a stateless filter that allows
   keys for `S` and `S` minus one client).
+- `dlog_solver.PairingDLogCacheMixin`, which had no users (it trusted a
+  dlog table read from `./config/crypto`), and the unused helpers
+  `crypto_utils.md5_hash` and `group_generator_paillier`.
+- The `jsonpickle` dependency (never imported).
 - Unused modules `schemes/lwe_base.py`, `schemes/ring_lwe_base.py`,
   `schemes/paillier_base.py` and the helpers `label_scalar_from_hash`,
   `decode_fullysec_lwe_inner_product`.
@@ -449,6 +481,23 @@ table and *Known Issues* before relying on any privacy property.
   `lwe_n = "auto"` could pick different dimensions on different runs (the
   README's `n = 832` was one such draw; the deterministic choice is 896).
   `p` is now the smallest prime of that size.
+- SIFE / MIFE FullySec-LWE (ALS16) used `m = 1.01 n log2 q`; ALS16 Theorem 2
+  needs `m >= 4 n log2 q`. The recipe now uses `4 n log2 q` (also inside
+  the width derivation) and the largest prime of the derived size (a random
+  draw could exceed it by one bit); cached parameters are regenerated. The
+  `standard` refusal now quotes the resulting sizes (`n = 3136` to `3776`,
+  70 to 110 MB per ciphertext).
+- `sife/fullysec_ring_lwe` with an explicit `ring_n` and `m = "auto"` under
+  `standard` took `m = 5`, whose `q` exceeds the bound, and refused; it now
+  takes the smallest `m` that meets the bound.
+- MCFE-DDH and tMCFE-DDH put the plaintext into the message of the
+  exception for a malformed plaintext, and `int_vector` the offending value;
+  messages now name only the problem (and the type).
+- SIFE FH-IPE decryption required the weights `y` although its keys hide
+  them; `fusion_weight` is now optional (checked if given).
+- The logging configuration is read with `yaml.safe_load` semantics
+  (`SafeLoader`); dependencies have lower bounds (`gmpy2>=2.2` for
+  `prev_prime`, `numpy>=1.22`, `PyYAML>=5.4`).
 - ML adapter: `aggregate_gradients` on a SIFE wrapper returned the first
   client's result when given several; it now refuses more than one. Fractional
   weights were quantised but the result was not scaled back (weights `0.5`
@@ -479,6 +528,19 @@ table and *Known Issues* before relying on any privacy property.
   pointed to a different paper (ePrint 2016/011, now 2015/608); landing
   page matrix updated; the docs index no longer claims a uniform
   `setup / keygen / encrypt / decrypt` API.
+- README and docs: the usage example's advice (adding `standard` next to an
+  explicit `sec_param = 128` is refused), `sife/fullysec_ring_lwe` in the
+  scheme table and features, the landing page's scheme count (39), the size
+  of the dMCFE-DDH modulus (about 6150 bits), the docs index's group size
+  (3072 bits); a Sphinx page for `pyfe4ai.utils.validation`; `config_types`
+  lists `stat_param`, `matrix_mode`, `m`, `lwe_n = "auto"` and the crypto
+  config's `dlog_bound`; the benchmarks README lists `benchmark_ntt.py`.
+- Tests: a bare `pytest` from the repository root works without an install
+  (`pythonpath`); the core lane no longer collects pairing tests
+  (`test_fh_ipe.py`, `test_pairing_groups.py`); the ACFGU18 pad test no
+  longer fails when a padded slot hits the plain value by chance (about 0.3%
+  of runs for MIFE FullySec-LWE); the README status table is compared in full
+  with `status.markdown_table()`.
 
 ## [0.2.0] — 2026-10-07
 

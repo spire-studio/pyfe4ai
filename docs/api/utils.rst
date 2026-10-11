@@ -43,6 +43,13 @@ Modular Arithmetic
    :members:
    :undoc-members:
 
+Input Validation
+----------------
+
+.. automodule:: pyfe4ai.utils.validation
+   :members:
+   :undoc-members:
+
 LWE Utilities
 -------------
 

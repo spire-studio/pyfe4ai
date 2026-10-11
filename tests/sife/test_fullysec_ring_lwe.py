@@ -209,3 +209,13 @@ def test_standard_round_trip():
     dk = kg.get_decryption_keys("sid", credentials={"fusion_weight": [4, -4, 4, -4]})
     assert SIFEFullySecRingLWE({"keys": {"pp": pp}}).decrypt(enc.encrypt([4, 4, -4, -4]), dk,
                                                              [4, -4, 4, -4]) == 0
+
+
+def test_standard_with_an_explicit_ring_picks_an_m_that_meets_the_bound():
+    """m = "auto" took m = 5 for an explicit ring_n under standard, whose q is
+    above the bound, and refused although a larger m fits."""
+    kg = SIFEFullySecRingLWEKeyGenerator({"eta": 4, "bound_x": 4, "bound_y": 4, "ring_n": 4096,
+                                          "security_profile": "standard"})
+    assert kg.ring_n == 4096 and kg.m > 5
+    check_he_standard(kg.ring_n, kg.q)
+    assert bmms21_adaptive_log2_q(kg.sec_param, 4, 4, 4, 4096, kg.m - 1) > HE_STANDARD_128_LOG_Q[4096] - 1

@@ -14,7 +14,7 @@ from abc import abstractmethod
 import gmpy2 as gp
 
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator, ParameterCacheMixin
-from pyfe4ai.utils.crypto_utils import _random, group_generator_fe
+from pyfe4ai.utils.crypto_utils import _random, group_generator_fe, is_dl_group
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,9 @@ class DDHKeyGeneratorBase(IPFEAbsKeyGenerator, ParameterCacheMixin):
     def _param_verification(self, param: dict) -> bool:
         """Return ``True`` if *param* matches the current configuration keys."""
         return all(param.get(k) == getattr(self, k) for k in self._verify_keys)
+
+    def _loaded_parameters_valid(self) -> bool:
+        return is_dl_group(self.p, self.q, self.g, self.sec_param, cofactor=int(self.r))
 
     def _extra_param_fields(self) -> dict:
         """Return extra fields to include in the saved parameter dict."""
@@ -79,6 +82,13 @@ class DamgardDDHKeyGeneratorBase(IPFEAbsKeyGenerator, ParameterCacheMixin):
     def _param_verification(self, param: dict) -> bool:
         """Return ``True`` if *param* matches the current configuration keys."""
         return all(param.get(k) == getattr(self, k) for k in self._verify_keys)
+
+    def _loaded_parameters_valid(self) -> bool:
+        return (
+            is_dl_group(self.p, self.q, self.g, self.modulus_length)
+            and 1 < self.h < self.p
+            and gp.powmod(self.h, self.q, self.p) == 1
+        )
 
     def _extra_param_fields(self) -> dict:
         """Return extra fields to include in the saved parameter dict."""

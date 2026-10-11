@@ -45,6 +45,7 @@ from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.utils.crypto_utils import generate_group_primes
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.lwe_utils import GAUSSIAN_TAIL_CUT
+from pyfe4ai.utils.crypto_utils import is_dcr_modulus
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,9 @@ class DecentralizedMCFEPaillierKeyGenerator(MCFEPaillierKeyGenerator):
     def _apply_parameters(self, param: dict) -> None:
         super()._apply_parameters(param)
         self.n2_mod = gp.mpz(param["n2_mod"])
+
+    def _loaded_parameters_valid(self) -> bool:
+        return super()._loaded_parameters_valid() and is_dcr_modulus(self.n2_mod, self.n2_prime_bits)
 
     def _generate_and_save(self, param_file: str) -> None:
         # factorizations are decryption trapdoors: keep them local, never persist them

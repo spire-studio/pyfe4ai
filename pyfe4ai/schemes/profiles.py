@@ -14,7 +14,7 @@ The ``security_profile`` entry of a key generator's config selects one:
     * discrete log (DDH, Damgard / MDDH and their MIFE / MCFE variants): a
       3072-bit safe-prime group, the RFC 3526 MODP group 15 (NIST SP 800-57
       Part 1 Rev. 5, Table 2: L = 3072 for 128 bits). The decentralised
-      ``mcfe/ddh_decentralized`` then needs a DCR modulus of about 6200 bits
+      ``mcfe/ddh_decentralized`` then needs a DCR modulus of about 6150 bits
       for combining key shares, whose safe primes take minutes to generate;
     * DCR (Paillier variants): ``N`` of about 3072 bits (two 1536-bit safe
       primes);
@@ -58,14 +58,21 @@ The ``security_profile`` entry of a key generator's config selects one:
 
     Refused, because no parameter set is both secure and usable in pure
     Python: ``sife/fullysec_lwe`` and ``mife/fullysec_lwe`` (ALS16: at a
-    dimension the lattice estimator puts at 128 bits, n = 2560 to 3328, the
-    public matrix has 1.5 to 3 * 10^9 entries and a ciphertext 6 to 9 * 10^5
-    coordinates of 230 to 270 bits) and ``mcfe/paillier_decentralized`` (its key shares are combined under a DCR
+    dimension the lattice estimator puts at 128 bits, n = 3136 to 3776 for
+    ``X = Y <= 50``, and with ``m = 4 n log2 q`` as its Theorem 2 requires,
+    the public matrix has 0.8 to 1.4 * 10^10 entries and a ciphertext 2.7 to
+    3.6 * 10^6 coordinates of 213 to 239 bits) and
+    ``mcfe/paillier_decentralized`` (its key shares are combined under a DCR
     modulus of more than 15000 bits).
 
+    The statistical parameter ``stat_param`` (rounding and leftover-hash
+    slack of ABMPSW20, flooding of the threshold schemes, the masks of
+    ``mcfe/ddh_decentralized`` and the Paillier and MCFE2 key distributions)
+    is 128, as ``kappa`` of the Ring-LWE schemes: a statistical distance of
+    ``2^-128`` per sample, so that ``Q`` samples stay below ``Q 2^-128``.
+
     Values given explicitly in the config must not be weaker than the
-    profile's. Statistical parameters (``stat_param``) keep their default,
-    ``2^-64`` statistical distance.
+    profile's.
 """
 
 from __future__ import annotations
@@ -104,13 +111,17 @@ SCHEME_KIND = {
 #: Bits of each prime of a DCR modulus under ``standard`` (``N`` of 3072 bits).
 STANDARD_DCR_PRIME_BITS = 1536
 
+#: Statistical parameter under ``standard`` (minimum and default).
+STANDARD_STAT_PARAM = 128
+
 #: Minimum value of each size parameter under ``standard``; also its default.
+#: ``stat_param`` is ignored by the schemes that do not use it.
 _STANDARD_MINIMA = {
-    "dl": {"sec_param": 3072, "modulus_length": 3072},
-    "dcr": {"bit_length": STANDARD_DCR_PRIME_BITS},
-    "ring_lwe": {"sec_param": 128},
-    "lwe": {},
-    "lwe_abdp15": {},
+    "dl": {"sec_param": 3072, "modulus_length": 3072, "stat_param": STANDARD_STAT_PARAM},
+    "dcr": {"bit_length": STANDARD_DCR_PRIME_BITS, "stat_param": STANDARD_STAT_PARAM},
+    "ring_lwe": {"sec_param": 128, "stat_param": STANDARD_STAT_PARAM},
+    "lwe": {"stat_param": STANDARD_STAT_PARAM},
+    "lwe_abdp15": {"stat_param": STANDARD_STAT_PARAM},
 }
 STANDARD_PAIRING_GROUP = "BN254"
 
@@ -124,10 +135,10 @@ _STANDARD_FIXED = {
 }
 
 _REFUSED = {
-    "lwe_matrix": "at a 128-bit dimension (lwe_n = 2560 to 3328) its public matrix has 1.5 to "
-    "3*10^9 entries and every ciphertext m = 6 to 9*10^5 coordinates of 230 to 270 bits "
-    "(17 to 31 MB); use sife/fullysec_ring_lwe for adaptive security, or the Ring-LWE "
-    "scheme of the same family",
+    "lwe_matrix": "at a 128-bit dimension (lwe_n = 3136 to 3776 for X = Y <= 50) its public "
+    "matrix has 0.8 to 1.4*10^10 entries and every ciphertext m = 4 n log2 q = 2.7 to 3.6*10^6 "
+    "coordinates of 213 to 239 bits (70 to 110 MB); use sife/fullysec_ring_lwe for adaptive "
+    "security, or the Ring-LWE scheme of the same family",
     ("mcfe", "paillier_decentralized"): "its key shares would be combined under a DCR modulus "
     "of more than 15000 bits; use mcfe/ddh_decentralized",
 }

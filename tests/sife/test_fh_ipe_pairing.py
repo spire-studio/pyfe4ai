@@ -89,3 +89,15 @@ def test_padding_hides_x_and_zero_vectors(eta):
     y = [-7] + [1] * (eta - 1)
     dk = kg.get_decryption_keys(None, credentials={"fusion_weight": y})
     assert SIFEFHIPE({"keys": {"pp": pp}}).decrypt(ct, dk, y) == -343
+
+
+def test_decryption_does_not_need_the_function(kg_config):
+    """The keys hide y, so the decryptor need not know it."""
+    kg = SIFEFHIPEKeyGenerator(kg_config)
+    kg.setup()
+    pp = kg.get_public_parameters()
+    x = [1, -2, 3][: kg_config["eta"]] + [0] * max(0, kg_config["eta"] - 3)
+    y = [2, 1, -1][: kg_config["eta"]] + [0] * max(0, kg_config["eta"] - 3)
+    ct = SIFEFHIPE({"keys": {"pp": pp, "sk": kg.get_private_keys()}}).encrypt(x)
+    dk = kg.get_decryption_keys("sid", credentials={"fusion_weight": y})
+    assert SIFEFHIPE({"keys": {"pp": pp}}).decrypt(ct, dk) == sum(a * b for a, b in zip(x, y))

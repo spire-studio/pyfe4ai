@@ -40,7 +40,8 @@ Minimal example
    x, y = [2, 1, 3], [4, 5, 6]
 
    # sec_param = bit length of the DDH modulus (NOT a security level);
-   # 128 keeps the demo fast but is insecure -- use >= 2048 for real use
+   # 128 keeps the demo fast but is insecure -- for real use replace it with
+   # "security_profile": "standard" (a 3072-bit group)
    kg = SIFEKeyGenerator({"sec_param": 128, "eta": len(x)})
    kg.setup()
    pp, sk = kg.get_public_parameters(), kg.get_private_keys()

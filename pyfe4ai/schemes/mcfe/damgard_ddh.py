@@ -55,6 +55,7 @@ from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationErro
 from pyfe4ai.utils.modular_utils import pow_signed
 from pyfe4ai.utils.sampling_utils import rand_uniform_vector
 from pyfe4ai.utils.validation import scale_to_int
+from pyfe4ai.utils.crypto_utils import is_dl_group
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +109,9 @@ class MCFEDamgardKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             param.get("construction") == _CONSTRUCTION
             and param.get("modulus_length") == self.modulus_length
         )
+
+    def _loaded_parameters_valid(self) -> bool:
+        return is_dl_group(self.p, self.q, self.g, self.modulus_length)
 
     def _generate_and_save(self, param_file: str) -> None:
         self.p, self.q, _, self.g = group_generator_fe(self.modulus_length)

@@ -4,15 +4,15 @@ from pathlib import Path
 from yaml import load
 
 try:
-    from yaml import CLoader as Loader, CDumper as Dumper
+    from yaml import CSafeLoader as SafeLoader
 except ImportError:
-    from yaml import Loader, Dumper
+    from yaml import SafeLoader
 
 
 def init_logging_config() -> None:
     """Initialise logging from the bundled config.yaml."""
     ref = resources.files("pyfe4ai").joinpath("config.yaml")
-    dict_config = load(ref.read_text(encoding="utf-8"), Loader=Loader)
+    dict_config = load(ref.read_text(encoding="utf-8"), Loader=SafeLoader)
     for handler in dict_config.get("handlers", {}).values():
         filename = handler.get("filename")
         if filename:

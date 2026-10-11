@@ -1,4 +1,4 @@
-"""Discrete logarithm solvers with JSON-backed caching for integer and pairing groups.
+"""Bounded discrete logarithm solvers for integer and pairing groups.
 
 Provides two strategies:
 
@@ -17,10 +17,8 @@ Provides two strategies:
 from __future__ import annotations
 
 import functools
-import json
 import logging
 import math
-import os
 
 import gmpy2 as gp
 
@@ -266,127 +264,3 @@ def bsgs_solve_pairing(target, g, h, pairing_group_param: str, bound: int) -> in
     raise ValueError(
         "discrete log not found in range [-{0}, {0}]".format(bound)
     )
-
-
-# ---------------------------------------------------------------------------
-# PairingDLogCacheMixin  — dlog table caching for pairing-based schemes
-# ---------------------------------------------------------------------------
-
-
-class PairingDLogCacheMixin:
-    """
-    Bounded discrete-log recovery helper for pairing-based IPFE-style schemes.
-
-    Uses a cached dlog lookup table by default.  An on-the-fly BSGS fallback
-    is available via :meth:`_solve_dlog_bsgs`.
-
-    This mixin is intentionally separate from higher-level policy composition:
-    policy composition and numeric recovery are different concerns.
-    """
-
-    scheme_type: str
-    config_folder: str
-    precision: int
-    pp: dict
-
-    def _load_dlog_table(self) -> None:
-        config_folder = os.path.join(self.config_folder, self.scheme_type)
-        os.makedirs(config_folder, exist_ok=True)
-        dlog_file = os.path.join(config_folder, "dlog_{}.json".format(self.precision))
-        if not os.path.exists(dlog_file):
-            logger.info("no dlog config file:%s, generate...", dlog_file)
-            self._generate_dlog_config(dlog_file)
-        else:
-            with open(dlog_file, "r") as f:
-                param = json.load(f)
-            if self._dlog_param_verification(param):
-                self.dlog_table = param["dlog_table"]
-                self.bound = param["func_bound"]
-                # Accept both old and new key names
-                self._step_size = param.get("step_size", param.get("bsgs_m"))
-            else:
-                self._generate_dlog_config(dlog_file)
-
-        logger.info("load dlog config file successfully")
-
-    def _generate_dlog_config(self, dlog_config_file: str) -> None:
-        logger.info("generate dlog config files (dlog_table/pairing).")
-        self.dlog_table = {}
-        self.bound = pow(10, self.precision + 2)
-
-        group = PairingGroup(self.pp["pairing_group_param"])
-        e_gh = pair(self.pp["g"], self.pp["h"])
-
-        m = _dlog_table_step_size(self.bound)
-        self._step_size = m
-
-        # Build table: {serialize(e_gh^j) → j} for j in [0, m)
-        val = e_gh ** 0  # identity element in GT
-        for j in range(m):
-            self.dlog_table[group.serialize(val).decode("utf-8")] = j
-            val = val * e_gh
-
-        dlog_table_dict = {
-            "g": group.serialize(self.pp["g"]).decode("utf-8"),
-            "h": group.serialize(self.pp["h"]).decode("utf-8"),
-            "func_bound": self.bound,
-            "strategy": "dlog_table",
-            "step_size": m,
-            "dlog_table": self.dlog_table,
-        }
-
-        with open(dlog_config_file, "w") as outfile:
-            json.dump(dlog_table_dict, outfile)
-            logger.info("dlog file is located at %s", dlog_config_file)
-
-    def _dlog_param_verification(self, param: dict) -> bool:
-        group = PairingGroup(self.pp["pairing_group_param"])
-        strategy = param.get("strategy", "")
-        return (
-            param["g"] == group.serialize(self.pp["g"]).decode("utf-8")
-            and param["h"] == group.serialize(self.pp["h"]).decode("utf-8")
-            and param["func_bound"] >= pow(10, self.precision + 2)
-            and strategy in ("dlog_table", "bsgs")
-        )
-
-    def _solve_dlog(self, e_gh_inner_prod) -> int:
-        """Solve discrete log in pairing group using the cached dlog table."""
-        group = PairingGroup(self.pp["pairing_group_param"])
-        if self.dlog_table is None:
-            raise RuntimeError("dlog table is not properly initialized.")
-
-        e_gh = pair(self.pp["g"], self.pp["h"])
-        m = self._step_size
-
-        # Shift: h' = target · e_gh^bound
-        h_shifted = e_gh_inner_prod * (e_gh ** self.bound)
-
-        # Giant-step factor: e_gh^(-m)
-        giant = 1 / (e_gh ** m)
-
-        gamma = h_shifted
-        n_giants = (2 * self.bound) // m + 2
-        for i in range(n_giants):
-            key = group.serialize(gamma).decode("utf-8")
-            if key in self.dlog_table:
-                x = i * m + self.dlog_table[key] - self.bound
-                return x
-            gamma = gamma * giant
-
-        raise ValueError(
-            "inner product out of bound supported by crypto system "
-            "(bound={})".format(self.bound)
-        )
-
-    def _solve_dlog_bsgs(self, e_gh_inner_prod) -> int:
-        """Solve discrete log in pairing group using on-the-fly BSGS.
-
-        This is an optional backup that does not require a cached dlog table.
-        """
-        return bsgs_solve_pairing(
-            e_gh_inner_prod,
-            self.pp["g"],
-            self.pp["h"],
-            self.pp["pairing_group_param"],
-            self.bound,
-        )

@@ -54,6 +54,7 @@ from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationErro
 from pyfe4ai.utils.modular_utils import pow_signed
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_bigint
 from pyfe4ai.utils.validation import scale_to_int
+from pyfe4ai.utils.crypto_utils import is_dcr_modulus
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +123,9 @@ class MCFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             param.get("construction") == _CONSTRUCTION
             and param.get("bit_length") == self.bit_length
         )
+
+    def _loaded_parameters_valid(self) -> bool:
+        return is_dcr_modulus(self.n_mod, self.bit_length)
 
     def _generate_and_save(self, param_file: str) -> None:
         # the factorization is a decryption trapdoor (c^lambda reveals x given

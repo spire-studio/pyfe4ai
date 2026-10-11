@@ -35,7 +35,7 @@ import sys
 
 TARGET_BITS = 128
 LOG_SIGMAS = (16, 24, 32, 40)
-GRID = range(512, 4096 + 1, 64)
+GRID = range(512, 6144 + 1, 64)
 ATTACKS = ("usvp", "bdd", "dual")
 
 

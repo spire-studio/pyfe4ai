@@ -102,6 +102,20 @@ def test_standard_rejects_weaker_explicit_values(scheme, weak):
         profiles.resolve({**STANDARD, **weak}, scheme)
 
 
+@pytest.mark.parametrize("scheme", [
+    ("mcfe", "lwe"), ("mcfe", "lwe_threshold"), ("mcfe", "ddh_decentralized"), ("sife", "paillier"),
+    ("mcfe", "paillier"), ("mife", "lwe_threshold"), ("mcfe", "ring_lwe_threshold"),
+])
+def test_standard_statistical_parameter_is_128(scheme):
+    """stat_param kept its default 64 (and accepted any explicit value) under
+    standard: a 2^-64 distance per sample, against a 128-bit claim."""
+    assert profiles.resolve(dict(STANDARD), scheme)["stat_param"] == 128
+    assert profiles.resolve({**STANDARD, "stat_param": 160}, scheme)["stat_param"] == 160
+    for weak in (64, 1):
+        with pytest.raises(FEValidationError, match="stat_param"):
+            profiles.resolve({**STANDARD, "stat_param": weak}, scheme)
+
+
 def test_standard_accepts_stronger_explicit_values():
     out = profiles.resolve({**STANDARD, "bit_length": 2048}, ("mife", "paillier"))
     assert out["bit_length"] == 2048
@@ -234,7 +248,7 @@ def test_standard_mcfe_lwe_picks_the_smallest_estimated_dimension():
     assert kg.lwe_n in DENSE_LWE_128_LOG_Q
     assert int(kg.q).bit_length() <= DENSE_LWE_128_LOG_Q[kg.lwe_n]
     for n0 in (d for d in DENSE_LWE_128_LOG_Q if d < kg.lwe_n):
-        q = abmpsw20_lwe_parameters(2, 50, 50, n0, 64)["q"]
+        q = abmpsw20_lwe_parameters(2, 50, 50, n0, kg.stat_param)["q"]
         assert q.bit_length() > DENSE_LWE_128_LOG_Q[n0]
 
 
@@ -386,3 +400,12 @@ def test_safe_primes_have_the_requested_size(bits, runs):
         p, q = generate_group_primes(bits)
         assert p == 2 * q + 1 and int(p).bit_length() == bits
         assert gp.is_prime(p, 40) and gp.is_prime(q, 40)
+
+
+def test_a_read_only_mapping_config_gets_the_profile_too():
+    """The metaclass only resolved dict configs: a Mapping such as
+    MappingProxyType kept a 128-bit group while recording "standard"."""
+    from types import MappingProxyType
+
+    kg = SIFEKeyGenerator(MappingProxyType({"eta": 2, **STANDARD}))
+    assert kg.sec_param == 3072 and int(kg.p).bit_length() == 3072
