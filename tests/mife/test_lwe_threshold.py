@@ -225,3 +225,13 @@ def test_single_server_and_bad_partials_rejected(kg_config):
     server = ThresholdMIFELWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
     with pytest.raises(FESchemeError):
         server.share_decrypt(dct_ct, {nid: [2] for nid in dct_y}, dk, ["sid_0", "sid_1"])
+
+
+def test_m_leaves_room_for_the_leftover_hash_lemma_at_the_enlarged_q(kg_config, tmp_path, monkeypatch):
+    # ABDP15 needs A^T r close to uniform for a binary r of length m:
+    # m >= (lwe_n + eta + 1) log2 q + 2 lwe_n + 1 (the recipe of derive_lwe_parameters),
+    # for the q that is actually used, not the one before the flooding enlarged it
+    monkeypatch.chdir(tmp_path)
+    kg = ThresholdMIFELWEKeyGenerator(kg_config)
+    need = (kg.lwe_n + kg.eta + 1) * int(kg.q).bit_length() + 2 * kg.lwe_n + 1
+    assert kg.m >= need

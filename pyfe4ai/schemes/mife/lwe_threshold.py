@@ -30,7 +30,9 @@ indistinguishable from ones simulated from the result (the standard
 smudging argument for threshold LWE decryption). ``q`` is enlarged so that
 ``s`` flooding terms still decode: ``Delta / 2 > B + s * 12 * 2^kappa B``; at
 a fixed ``lwe_n`` this lowers the noise-to-modulus ratio of the underlying
-LWE instance. ``e_k`` is derived from a per-server secret key and the
+LWE instance, and ``m`` grows with ``log2 q`` so that ``A^T r`` stays close to
+uniform (versions <= 0.2.0 kept the ``m`` of the smaller base modulus: about
+half the length the leftover hash lemma needs). ``e_k`` is derived from a per-server secret key and the
 request (enrolled set and ciphertexts), so repeating a request cannot be
 used to average the noise away. The threshold layer is our own design.
 """
@@ -70,7 +72,7 @@ from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationErro
 
 logger = logging.getLogger(__name__)
 
-_CONSTRUCTION = "acfgu18-abdp15-shamir-smudging/v1"
+_CONSTRUCTION = "acfgu18-abdp15-shamir-smudging/v2"
 _DEFAULT_STAT_PARAM = 64
 
 
@@ -133,15 +135,22 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
         self.p, q_base, self.m, self.sigma_q, self.l_sigma = derive_lwe_parameters(
             self.bound_x, self.bound_y, self.eta, self.lwe_n, extra_dimension=self.n
         )
-        # ciphertext noise of a full decryption: |sum_i y_i^T E_i^T r_i|
-        noise_bound = (
-            self.n * self.eta * int(self.bound_y) * self.m
-            * int(GAUSSIAN_TAIL_CUT * self.sigma_q + 1)
-        )
-        self.sigma_f = noise_bound << self.stat_param
-        budget = noise_bound + self.s * GAUSSIAN_TAIL_CUT * self.sigma_f
-        # Delta = floor(q / p) must exceed 2 * budget (plus a margin for rounding)
-        self.q = gp.next_prime(max(q_base, self.p * (2 * budget + 4)))
+        while True:
+            # ciphertext noise of a full decryption: |sum_i y_i^T E_i^T r_i|
+            noise_bound = (
+                self.n * self.eta * int(self.bound_y) * self.m
+                * int(GAUSSIAN_TAIL_CUT * self.sigma_q + 1)
+            )
+            self.sigma_f = noise_bound << self.stat_param
+            budget = noise_bound + self.s * GAUSSIAN_TAIL_CUT * self.sigma_f
+            # Delta = floor(q / p) must exceed 2 * budget (plus a margin for rounding)
+            self.q = gp.next_prime(max(q_base, self.p * (2 * budget + 4)))
+            # A^T r must stay close to uniform for the enlarged q (leftover hash
+            # lemma, as in derive_lwe_parameters); a longer r adds noise, so iterate
+            m_need = (self.lwe_n + self.eta + 1) * int(self.q).bit_length() + 2 * self.lwe_n + 1
+            if m_need <= self.m:
+                break
+            self.m = m_need
         self.A = rand_uniform_matrix(self.m, self.lwe_n, self.q)
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(

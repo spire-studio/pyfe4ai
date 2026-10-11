@@ -158,6 +158,12 @@ table and *Known Issues* before relying on any privacy property.
     secret), function
     class `sum_{i<k} c[(i,j,k,l)] x_i[j] x_k[l]` (cross-user terms), built from
     the TAO20 FH-IPFE and the paper's SK-MCFE schemes (Figs. 1 and 9).
+- **tMIFE-LWE** (experimental) enlarged `q` for its flooding noise but kept
+  the `m` of the base modulus, so the binary `r` of a ciphertext had about
+  half the length the leftover hash lemma needs for `A^T r` to be close to
+  uniform (toy defaults: `m = 753` where `2139` is needed); ABDP15's
+  semantic-security argument then fails. `m` and `q` are now iterated to a
+  fixed point; cached parameters are regenerated.
 
 ### Added
 
