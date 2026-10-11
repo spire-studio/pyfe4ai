@@ -117,3 +117,9 @@ def test_shared_instances_expand_once_per_process():
     a = lm.SeededMatrix.shared(SEED, 64, 3, q, "memory")
     assert lm.SeededMatrix.shared(SEED, 64, 3, q, "memory") is a
     assert lm.SeededMatrix.shared(SEED, 64, 3, q, "stream") is not a
+
+
+def test_memory_mode_refuses_a_matrix_larger_than_physical_memory():
+    huge = lm.SeededMatrix(SEED, 4_000_000, 1_000_000, int(gp.next_prime(2 ** 100)), mode="memory")
+    with pytest.raises(FEValidationError, match="stream"):
+        huge.binary_combinations(np.zeros((1, 4_000_000)))

@@ -44,7 +44,11 @@ The ``security_profile`` entry of a key generator's config selects one:
       seed; ``matrix_mode`` chooses between keeping it expanded in memory
       (about 0.1 s per encryption, 1.5 to 3 GB) and expanding it for every
       batch (``"stream"``: seconds per batch, about 0.5 GB). See
-      :mod:`pyfe4ai.schemes.abdp15_lwe`;
+      :mod:`pyfe4ai.schemes.abdp15_lwe`. ``mife/lwe_threshold`` is selected
+      the same way at its flooding-enlarged ``q`` (``lwe_n`` of about 3600
+      to 4000, ``A`` of 2 to 3 * 10^9 entries), and ``standard`` fixes its
+      ``matrix_mode`` to ``"stream"``: key generation takes minutes, an
+      encryption about 140 s, or about 2.3 s each in batches of 64;
     * pairing-based schemes: BN254, the strongest curve charm-crypto provides
       -- about 100-bit security after the exTNFS attacks (Barbulescu and
       Duquesne, J. Cryptol. 2019), **below** the 128-bit target; a
@@ -54,9 +58,7 @@ The ``security_profile`` entry of a key generator's config selects one:
     Python: ``sife/fullysec_lwe`` and ``mife/fullysec_lwe`` (ALS16: at a
     dimension the lattice estimator puts at 128 bits, n = 2560 to 3328, the
     public matrix has 1.5 to 3 * 10^9 entries and a ciphertext 6 to 9 * 10^5
-    coordinates of 230 to 270 bits), ``mife/lwe_threshold`` (its flooding
-    noise needs n = 3600 to 3800 and a matrix of 2 to 2.7 * 10^9 entries) and
-    ``mcfe/paillier_decentralized`` (its key shares are combined under a DCR
+    coordinates of 230 to 270 bits) and ``mcfe/paillier_decentralized`` (its key shares are combined under a DCR
     modulus of more than 15000 bits).
 
     Values given explicitly in the config must not be weaker than the
@@ -84,7 +86,7 @@ SCHEME_KIND = {
     ("mcfe", "paillier_decentralized"): "dcr",
     **{(f, "lwe"): "lwe_abdp15" for f in ("sife", "mife")},
     **{(f, "fullysec_lwe"): "lwe_matrix" for f in ("sife", "mife")},
-    ("mife", "lwe_threshold"): "lwe_matrix",
+    ("mife", "lwe_threshold"): "lwe_abdp15",
     **{("mcfe", v): "lwe" for v in ("lwe", "fullysec_lwe", "lwe_threshold", "lwe_decentralized")},
     **{(f, "ring_lwe"): "ring_lwe" for f in ("sife", "mife", "mcfe")},
     **{("mcfe", v): "ring_lwe" for v in ("ring_lwe_threshold", "ring_lwe_decentralized")},
@@ -109,14 +111,19 @@ _STANDARD_MINIMA = {
 }
 STANDARD_PAIRING_GROUP = "BN254"
 
+#: Settings the ``standard`` profile fixes for single schemes, with the reason.
+_STANDARD_FIXED = {
+    ("mife", "lwe_threshold"): (
+        {"matrix_mode": "stream"},
+        "its flooding noise needs lwe_n of about 3600 to 4000 and a public matrix of 2 to "
+        "3*10^9 entries, about 80 GB when kept in memory",
+    ),
+}
+
 _REFUSED = {
     "lwe_matrix": "at a 128-bit dimension (lwe_n = 2560 to 3328) its public matrix has 1.5 to "
     "3*10^9 entries and every ciphertext m = 6 to 9*10^5 coordinates of 230 to 270 bits "
     "(17 to 31 MB); use the Ring-LWE scheme of the same family",
-    ("mife", "lwe_threshold"): "its statistical flooding puts log2(q / sigma) at 117 to 132 bits, "
-    "which needs lwe_n = 3600 to 3800 and a public matrix of 2 to 2.7*10^9 entries (tens of GB "
-    "in memory, minutes per batch of encryptions when streamed); use mife/lwe or "
-    "mcfe/lwe_threshold",
     ("mcfe", "paillier_decentralized"): "its key shares would be combined under a DCR modulus "
     "of more than 15000 bits; use mcfe/ddh_decentralized",
 }
@@ -181,4 +188,12 @@ def resolve(config: dict, scheme: tuple | None) -> dict:
         out.setdefault("ring_n", "auto")
     if kind in ("lwe", "lwe_abdp15"):
         out.setdefault("lwe_n", "auto")
+    fixed, why = _STANDARD_FIXED.get(scheme, ({}, ""))
+    for key, value in fixed.items():
+        if out.setdefault(key, value) != value:
+            raise FEValidationError(
+                "the '{}' profile needs {}={!r} for {}/{}: {}".format(
+                    profile, key, value, scheme[0], scheme[1], why
+                )
+            )
     return out

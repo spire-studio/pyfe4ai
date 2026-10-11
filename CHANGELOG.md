@@ -197,6 +197,12 @@ table and *Known Issues* before relying on any privacy property.
   encryption, 2.7 GB), `"stream"` expands it for every batch (3.4 s, 0.5 GB).
   `pyfe4ai.utils.lwe_matrix` (`SeededMatrix`, `LimbMatrix`),
   `pyfe4ai.schemes.abdp15_lwe`, `sampling_utils.rand_bit_matrix`.
+  tMIFE-LWE gets the same `lwe_n = "auto"` at its flooding-enlarged `q`
+  (about 3600 for `X = Y = 50`; the table covers dimensions up to 4096), and
+  `standard` fixes its `matrix_mode` to `"stream"` (its `A` would take about
+  80 GB in memory): key generation 6 minutes, one encryption 140 s, 2.3 s
+  each in batches of 64. `"memory"` mode refuses a matrix larger than the
+  machine's physical memory.
 - `lwe_n = "auto"` for the MCFE-LWE family; `lwe_utils.DENSE_LWE_128_LOG_Q`,
   `check_dense_lwe`, `dense_lwe_n`, `resolve_lwe_n`;
   `profiles.STANDARD_DCR_PRIME_BITS`; `modular_utils.pow_signed_many`

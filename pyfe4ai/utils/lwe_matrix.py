@@ -35,6 +35,7 @@ that string extended with ``"|retry|<c>"``, ``c = 1, 2, ...``.
 from __future__ import annotations
 
 import hashlib
+import os
 import weakref
 
 import numpy as np
@@ -69,6 +70,14 @@ def check_matrix_mode(mode: str) -> str:
             "matrix_mode must be one of {}, got {!r}".format(MATRIX_MODES, mode)
         )
     return mode
+
+
+def physical_memory_bytes() -> int | None:
+    """Physical memory of this machine, or ``None`` where the OS does not say."""
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except (AttributeError, OSError, ValueError):
+        return None
 
 
 def _check_shape(rows: int, cols: int) -> None:
@@ -244,13 +253,27 @@ class SeededMatrix:
             out[:, row - start:row - start + unit.shape[1]] = unit
         return out
 
+    def _expand_all(self) -> np.ndarray:
+        """``A`` as float64 limbs, expanded once (``"memory"`` mode)."""
+        if self._full is None:
+            needed = 8 * self.n_limbs * self.rows * self.cols
+            available = physical_memory_bytes()
+            if available is not None and needed > available:
+                raise FEValidationError(
+                    "matrix_mode='memory' needs {:.1f} GB for the expanded matrix, more than "
+                    "the {:.1f} GB of physical memory; use matrix_mode='stream'".format(
+                        needed / 2 ** 30, available / 2 ** 30
+                    )
+                )
+            self._full = self._expand_rows(0, self.rows)
+        return self._full
+
     def _blocks(self):
         if self.mode == "memory":
-            if self._full is None:
-                self._full = self._expand_rows(0, self.rows)
+            full = self._expand_all()
             for start in range(0, self.rows, self.chunk_rows):
                 stop = min(self.rows, start + self.chunk_rows)
-                yield start, stop, self._full[:, start:stop]
+                yield start, stop, full[:, start:stop]
         else:
             for start in range(0, self.rows, self.chunk_rows):
                 stop = min(self.rows, start + self.chunk_rows)
@@ -261,9 +284,7 @@ class SeededMatrix:
     def binary_combinations(self, r) -> list:
         """``[r_b^T A mod q]_b`` for the rows ``r_b`` of a 0/1 matrix *r* (``B x rows``)."""
         if self.mode == "memory":
-            if self._full is None:
-                self._full = self._expand_rows(0, self.rows)
-            blocks = [(0, self.rows, self._full)]
+            blocks = [(0, self.rows, self._expand_all())]
         else:
             blocks = self._blocks()
         return _binary_combinations(blocks, r, self.q, self.n_limbs, self.cols)

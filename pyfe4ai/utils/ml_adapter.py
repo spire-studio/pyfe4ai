@@ -385,8 +385,9 @@ class FESchemeWrapper:
             if sk is not None:
                 keys["sk"] = sk
             config = {"id": nid, "precision": self.qconfig.precision, "keys": keys}
-            if "matrix_mode" in self.keygen_config:  # LWE schemes with a seeded matrix
-                config["matrix_mode"] = self.keygen_config["matrix_mode"]
+            mode = getattr(self.kg, "matrix_mode", None)  # LWE schemes with a seeded matrix
+            if mode is not None:
+                config["matrix_mode"] = mode
             self._encryptors[nid] = self._crypto_cls(config)
         return self._encryptors[nid]
 

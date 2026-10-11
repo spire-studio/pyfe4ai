@@ -11,6 +11,7 @@ from pyfe4ai.schemes import profiles
 from pyfe4ai.schemes import status as st
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.mife.lwe import MIFELWE, MIFELWEKeyGenerator
+from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWEKeyGenerator
 from pyfe4ai.schemes.sife.lwe import SIFELWE, SIFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.lwe import MCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.lwe_decentralized import DecentralizedMCFELWEKeyGenerator
@@ -111,7 +112,6 @@ def test_standard_accepts_stronger_explicit_values():
     [
         ("sife", "fullysec_lwe"),
         ("mife", "fullysec_lwe"),
-        ("mife", "lwe_threshold"),
         ("mcfe", "paillier_decentralized"),
     ],
 )
@@ -307,6 +307,30 @@ def test_standard_sife_lwe_round_trip_streaming_the_matrix():
 def test_wrapper_passes_the_matrix_mode_to_its_encryptors():
     wrapper = FESchemeWrapper("sife", "lwe", {"eta": 2, "lwe_n": 16, "matrix_mode": "stream"})
     assert wrapper._get_encryptor("nid_0").matrix_mode == "stream"
+
+
+def test_wrapper_uses_the_matrix_mode_of_its_key_generator():
+    # the mode a profile fixed for the key generator, not only an explicit config entry
+    wrapper = FESchemeWrapper("sife", "lwe", {"eta": 2, "lwe_n": 16})
+    wrapper.kg.matrix_mode = "stream"
+    assert wrapper._get_encryptor("nid_0").matrix_mode == "stream"
+
+
+TMIFE_CONFIG = {"n": 2, "eta": 1, "s": 3, "t": 2, "bound_x": 50, "bound_y": 50}
+
+
+def test_standard_threshold_mife_lwe_streams_its_matrix():
+    out = profiles.resolve(dict(STANDARD), ("mife", "lwe_threshold"))
+    assert out["lwe_n"] == "auto" and out["matrix_mode"] == "stream"
+    with pytest.raises(FEValidationError, match="stream"):
+        profiles.resolve({**STANDARD, "matrix_mode": "memory"}, ("mife", "lwe_threshold"))
+
+
+def test_standard_threshold_mife_lwe_meets_the_table_at_its_enlarged_q():
+    kg = ThresholdMIFELWEKeyGenerator({**TMIFE_CONFIG, **STANDARD})
+    check_wide_lwe(kg.lwe_n, kg.q, kg.sigma_q)
+    assert kg.matrix_mode == "stream"
+    assert kg.m >= (kg.lwe_n + kg.eta + 1) * int(kg.q).bit_length() + 2 * kg.lwe_n + 1
 
 
 # -- Ring-LWE ----------------------------------------------------------------

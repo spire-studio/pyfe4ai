@@ -35,6 +35,15 @@ uniform (versions <= 0.2.0 kept the ``m`` of the smaller base modulus: about
 half the length the leftover hash lemma needs). ``e_k`` is derived from a per-server secret key and the
 request (enrolled set and ciphertexts), so repeating a request cannot be
 used to average the noise away. The threshold layer is our own design.
+
+Under the ``standard`` security profile ``lwe_n = "auto"`` picks the
+smallest dimension meeting :data:`pyfe4ai.utils.lwe_utils.WIDE_LWE_128_LOG_RATIO`
+at the enlarged ``q``: about 3600 for ``X = Y = 50`` (``q`` of 152 bits,
+``m`` of 550 000, ``A`` of 2 * 10^9 entries). ``A`` then needs about 80 GB
+in memory, so the profile fixes ``matrix_mode = "stream"``. Measured on one
+machine at that size: key generation 6 minutes (3.9 GB), one encryption
+140 s, a batch of 64 encryptions 145 s (1.8 to 2.2 GB), a partial
+decryption 9 ms.
 """
 
 from __future__ import annotations
@@ -59,7 +68,9 @@ from pyfe4ai.schemes.threshold_utils import validate_partial_decryptions
 from pyfe4ai.schemes.threshold_utils import validate_threshold
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.lwe_utils import GAUSSIAN_TAIL_CUT
+from pyfe4ai.utils.lwe_utils import abdp15_parameters
 from pyfe4ai.utils.lwe_utils import decode_scaled
+from pyfe4ai.utils.lwe_utils import wide_lwe_n
 from pyfe4ai.utils.matrix_utils import digits_to_vector
 from pyfe4ai.utils.matrix_utils import vecdot_mod
 from pyfe4ai.utils.sampling_utils import XofRandom
@@ -111,11 +122,15 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
 
     def _derive(self) -> dict:
         if self.lwe_n_config == "auto":
-            raise FEValidationError(
-                "lwe_n = 'auto' is not available for mife/lwe_threshold: the flooding noise "
-                "puts log2(q / sigma) above 110 bits, beyond the 128-bit table"
-            )
-        params = super()._derive()
+            return wide_lwe_n(self._threshold_parameters)
+        return self._threshold_parameters(int(self.lwe_n_config))
+
+    def _threshold_parameters(self, lwe_n: int) -> dict:
+        """ABDP15 parameters at *lwe_n* with ``q`` enlarged for ``s`` flooding
+        terms and ``m`` for the leftover hash lemma at that ``q``."""
+        params = abdp15_parameters(
+            self.bound_x, self.bound_y, self.eta, lwe_n, extra_dimension=self.n
+        )
         m = params["m"]
         while True:
             # ciphertext noise of a full decryption: |sum_i y_i^T E_i^T r_i|
@@ -129,7 +144,7 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
             q = gp.next_prime(max(params["q"], params["p"] * (2 * budget + 4)))
             # A^T r must stay close to uniform for the enlarged q (leftover hash
             # lemma, as in derive_lwe_parameters); a longer r adds noise, so iterate
-            m_need = (params["lwe_n"] + self.eta + 1) * int(q).bit_length() + 2 * params["lwe_n"] + 1
+            m_need = (lwe_n + self.eta + 1) * int(q).bit_length() + 2 * lwe_n + 1
             if m_need <= m:
                 break
             m = m_need
