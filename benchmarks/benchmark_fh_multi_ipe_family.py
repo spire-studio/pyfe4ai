@@ -145,7 +145,7 @@ def _bench_dmcfe(cfg: dict, x: dict[str, list[int]], y: dict[str, list[int]], la
         for nid in x:
             actor = DecentralizedMCFEFHMultiIPE({"id": nid, "keys": {"pp": pp, "sk": sk_by_nid[nid]}})
             cts[nid] = actor.encrypt(x[nid], label)
-            shares[nid] = actor.derive_function_decryption_key_share(y)
+            shares[nid] = actor.derive_function_decryption_key_share(y[nid], "bench")
         dec = DecentralizedMCFEFHMultiIPE({"id": "sid_0", "keys": {"pp": pp}})
         dk = dec.combine_function_decryption_key_share(shares)
         result = dec.decrypt(cts, dk, y, label)

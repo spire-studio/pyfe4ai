@@ -209,14 +209,16 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     ("mcfe", "fh_multi_ipe_pairing_threshold"): SchemeStatus(
         _S + "mcfe.fh_multi_ipe_pairing_threshold", EXPERIMENTAL, AD_HOC,
         "AGT21b FH-MCFE + Shamir",
-        note="FH-MCFE layer as published; the Shamir-shared key exponents and "
-        "partial decryptions in G_T are our own; " + _FH_IPE_NOTE,
+        note="FH-MCFE layer as published; the key exponents Shamir-shared in the "
+        "exponent ([e^(k)]_2, [z^(k)]_T) and partial decryptions in G_T are our own; "
+        + _FH_IPE_NOTE,
     ),
     ("mcfe", "fh_multi_ipe_pairing_decentralized"): SchemeStatus(
         _S + "mcfe.fh_multi_ipe_pairing_decentralized", REVIEWED, ADAPTED,
         "NPS24 Fig. 1 (selective FH-DMCFE)",
-        note="tag-f is bound to the whole weight vector and keys are derived "
-        "deterministically (one key per client and tag-f); " + _FH_IPE_NOTE,
+        note="explicit tag-f, each client's key depends on (tag-f, y_i) only and is "
+        "derived deterministically; one key per client and tag-f (enforced per client "
+        "object); " + _FH_IPE_NOTE,
     ),
     ("mcfe", "ddh_threshold"): SchemeStatus(
         _S + "mcfe.ddh_threshold", REVIEWED, ADAPTED, "CDGPP18 + Shamir (TAPFed setting)",

@@ -209,3 +209,39 @@ def test_partial_decryptions_for_several_enrolled_sets_must_agree(kg_config):
     ]
     with pytest.raises(FESchemeError, match="disagree"):
         combiner.combine_decrypt(forged)
+
+
+def test_servers_hold_the_key_only_in_the_exponent(kg_config):
+    """Regression: key shares were Shamir shares of the key exponents ``e_i``
+    in ``Z_p``, so ``t`` colluding servers (one if ``t = 1``) interpolated
+    ``e_i`` and solved for ``y``; the FH-MCFE key hides ``y`` only as
+    ``[e_i]_2``. Shares are now group elements: ``t`` servers interpolate
+    ``[e_i]_2`` and ``[z]_T``, i.e. the FH-MCFE functional key itself."""
+    from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero, share_points
+    from pyfe4ai.utils.pairing_backend import GT, pair
+
+    kg, pp, y, dct_ct = _setup(kg_config)
+    ctx = ThresholdMCFEFHMultiIPE({"id": "c", "keys": {"pp": pp}}).ctx
+    enrolled = ["sid_0", "sid_2"]
+    dks = {sid: kg.get_decryption_keys(sid, credentials={"fusion_weight": y}) for sid in enrolled}
+    for dk in dks.values():
+        for value in [dk["z"]] + [v for entries in dk["k"].values() for v in entries]:
+            with pytest.raises(ValueError):
+                int(value)
+    pts = share_points(kg_config["lst_sid"])
+    lam = {s: ctx.zr(lagrange_coefficient_at_zero(pts[s], [pts[e] for e in enrolled], ctx.order))
+           for s in enrolled}
+
+    def interpolate(elements):
+        out = None
+        for s, element in elements.items():
+            term = ctx.de(element) ** lam[s]
+            out = term if out is None else out * term
+        return out
+
+    acc = ctx.group.init(GT, 1)
+    for nid, ct in dct_ct.items():
+        for j, c in enumerate(ct["ct"]):
+            acc *= pair(ctx.de(c), interpolate({s: dks[s]["k"][nid][j] for s in enrolled}))
+    acc /= interpolate({s: dks[s]["z"] for s in enrolled})
+    assert ctx.solve(acc) == 6

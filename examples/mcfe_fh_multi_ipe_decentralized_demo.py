@@ -37,7 +37,8 @@ def main() -> None:
             {"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}
         )
         dct_ct[nid] = crypto_nid.encrypt(dct_x[nid], label)
-        dct_dk_shares[nid] = crypto_nid.derive_function_decryption_key_share(dct_y)
+        # each client derives its key from its own weights and the function tag
+        dct_dk_shares[nid] = crypto_nid.derive_function_decryption_key_share(dct_y[nid], "weights-v1")
 
     decryptor = DecentralizedMCFEFHMultiIPE({"id": "sid_0", "keys": {"pp": pp}})
     dk = decryptor.combine_function_decryption_key_share(dct_dk_shares)

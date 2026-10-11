@@ -8,20 +8,24 @@ published security proof):
 
 * the authority computes the FH-MCFE key for ``y`` in the exponent,
   ``dk_i = [e_i]_2`` and ``z = sum_i z_i`` (with ``[z_i]_T`` the per-client
-  correction), and Shamir-shares every entry of every ``e_i`` and ``z``
-  modulo the group order;
+  correction), Shamir-shares every entry of every ``e_i`` and ``z`` modulo
+  the group order and hands server ``k`` its shares in the exponent only:
+  ``[e^(k)_{i,j}]_2`` and ``[z^(k)]_T``;
 * server ``k`` of an enrolled set ``S`` returns
-  ``W_k = prod_{i,j} e(ct_{i,j}, [lambda_k e^(k)_{i,j}]_2) / [lambda_k z^(k)]_T``
+  ``W_k = (prod_{i,j} e(ct_{i,j}, [e^(k)_{i,j}]_2) / [z^(k)]_T)^lambda_k``
   with its Lagrange coefficient ``lambda_k``;
 * ``prod_{k in S} W_k = prod_i iDec(dk_i, ct_i) = [<x, y>]_T``, then a
   bounded discrete log.
 
-Fewer than ``t`` servers learn nothing about the key (Shamir). For any
-ciphertexts, the partial decryptions of an enrolled set are, in the exponent,
-evaluations of a random degree ``t - 1`` polynomial whose constant term is the
-FH-MCFE decryption; a combiner can at most compute what the holder of the
-FH-MCFE key could, without learning the key itself. Versions <= 0.2.0 shared
-a public label-correction term instead.
+Fewer than ``t`` servers learn nothing about the key (Shamir); ``t``
+colluding servers interpolate ``[e_i]_2`` and ``[z]_T`` in the exponent, the
+FH-MCFE functional key, which hides ``y``. For any ciphertexts, the partial
+decryptions of an enrolled set are, in the exponent, evaluations of a random
+degree ``t - 1`` polynomial whose constant term is the FH-MCFE decryption; a
+combiner can at most compute what the holder of the FH-MCFE key could,
+without learning the key itself. Earlier versions handed out the shares of
+``e_i`` in ``Z_p``, from which ``t`` colluding servers solved for ``y``;
+versions <= 0.2.0 shared a public label-correction term instead.
 """
 
 from __future__ import annotations
@@ -96,9 +100,10 @@ class ThresholdMCFEFHMultiIPEKeyGenerator(MCFEFHMultiIPEKeyGenerator):
                 client (a ``label`` entry is ignored: keys are label-free).
 
         Returns:
-            Dict with ``k`` (per client the shares of the key exponents),
-            ``z``, ``sid``, ``lst_sid`` and a random ``key_id`` (nothing
-            derived from ``y``), or ``None`` if *sid* is unknown.
+            Dict with ``k`` (per client the shares of the key exponents as
+            ``G2`` elements), ``z`` (the share of ``z`` as a ``GT`` element),
+            ``sid``, ``lst_sid`` and a random ``key_id`` (nothing derived from
+            ``y``), or ``None`` if *sid* is unknown.
         """
         credentials = kwargs.get("credentials", None)
         if not credentials:
@@ -127,12 +132,13 @@ class ThresholdMCFEFHMultiIPEKeyGenerator(MCFEFHMultiIPEKeyGenerator):
         sid_v = share_points(self.lst_sid)
         points = list(sid_v.values())
 
-        def share(value) -> dict:
+        def share(value, base) -> dict:
+            # in the exponent only: shares in Z_p would let t servers solve for y
             sh = share_secret(value, self.t, points, order)
-            return {sid: str(sh[sid_v[sid]]) for sid in self.lst_sid}
+            return {sid: ctx.ser(base ** ctx.zr(sh[sid_v[sid]])) for sid in self.lst_sid}
 
-        k_shares = {nid: [share(v) for v in e] for nid, e in exps.items()}
-        z_shares = share(z_total)
+        k_shares = {nid: [share(v, ctx.g2) for v in e] for nid, e in exps.items()}
+        z_shares = share(z_total, ctx.fhipe.gt)
         key_id = secrets.token_hex(16)
         return {
             sid: {
@@ -183,9 +189,9 @@ class ThresholdMCFEFHMultiIPE(MCFEFHMultiIPE):
             shares = dk["k"][nid]
             if len(ct["ct"]) != len(shares):
                 raise FESchemeError("ciphertext of {} has the wrong length".format(nid))
-            for c, e in zip(ct["ct"], shares):
-                acc *= pair(ctx.de(c), ctx.g2 ** ctx.zr(lam * int(e)))
-        acc /= ctx.fhipe.gt ** ctx.zr(lam * int(dk["z"]))
+            for c, k in zip(ct["ct"], shares):
+                acc *= pair(ctx.de(c), ctx.de(k))
+        acc = (acc / ctx.de(dk["z"])) ** ctx.zr(lam)
         ct_digest = hashlib.sha256(json.dumps(dict_ct, sort_keys=True).encode("utf-8")).hexdigest()
         return {
             "w": ctx.ser(acc),

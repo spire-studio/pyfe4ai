@@ -50,7 +50,7 @@ def test_entire_process(kg_config):
             {"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}
         )
         dct_ct[nid] = crypto_nid.encrypt(dct_x[nid], label)
-        dct_dk_shares[nid] = crypto_nid.derive_function_decryption_key_share(dct_y)
+        dct_dk_shares[nid] = crypto_nid.derive_function_decryption_key_share(dct_y[nid], "weights-1")
 
     decryptor = DecentralizedMCFEFHMultiIPE({"id": "sid_0", "keys": {"pp": pp}})
     dk = decryptor.combine_function_decryption_key_share(dct_dk_shares)
@@ -99,7 +99,7 @@ def test_entire_process_lst_ndarray(kg_config):
             }
         )
         dct_ct[nid] = crypto_nid.encrypt_lst_ndarray(dct_x[nid], label=label)
-        dct_dk_shares[nid] = crypto_nid.derive_function_decryption_key_share(dct_y)
+        dct_dk_shares[nid] = crypto_nid.derive_function_decryption_key_share(dct_y[nid], "weights-1")
 
     decryptor = DecentralizedMCFEFHMultiIPE(
         {"id": "sid_0", "precision": precision, "keys": {"pp": pp}}
@@ -130,7 +130,7 @@ def _clients(kg, cfg):
 
 
 def test_key_share_is_deterministic_and_bound(kg_config):
-    from pyfe4ai.utils.exceptions import FESchemeError
+    from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
 
     kg = DecentralizedMCFEFHMultiIPEKeyGenerator(kg_config)
     kg.setup()
@@ -138,31 +138,63 @@ def test_key_share_is_deterministic_and_bound(kg_config):
     y1 = {"nid_0": [1, 2], "nid_1": [0, 1], "nid_2": [-1, 3]}
     y2 = {"nid_0": [1, 2], "nid_1": [0, 1], "nid_2": [-1, 2]}
     c0 = clients["nid_0"]
-    # asking twice for the same (tag_f, y) yields the same key ...
-    assert c0.derive_function_decryption_key_share(y1) == c0.derive_function_decryption_key_share(y1)
-    # ... while another weight vector or tag gives a different one, even for
-    # the same own weights y_0
-    assert c0.derive_function_decryption_key_share(y1)["k"] != c0.derive_function_decryption_key_share(y2)["k"]
-    assert (
-        c0.derive_function_decryption_key_share(y1)["k"]
-        != c0.derive_function_decryption_key_share(y1, tag_f="epoch-2")["k"]
-    )
+    # asking twice yields the same key; the share depends on (tag_f, y_0) only
+    # (NPS24 DKeyGen), so the weights of the other clients do not matter ...
+    assert c0.derive_function_decryption_key_share(y1, "f") == c0.derive_function_decryption_key_share(y1, "f")
+    assert c0.derive_function_decryption_key_share(y1, "f") == c0.derive_function_decryption_key_share([1, 2], "f")
+    assert c0.derive_function_decryption_key_share(y2, "f") == c0.derive_function_decryption_key_share(y1, "f")
+    # ... while another tag gives a different key
+    assert c0.derive_function_decryption_key_share(y1, "f")["k"] != c0.derive_function_decryption_key_share(y1, "g")["k"]
+    # NPS24 allows one key per client and tag-f
+    with pytest.raises(FESchemeError, match="tag_f"):
+        c0.derive_function_decryption_key_share([1, 1], "f")
+    with pytest.raises(TypeError):
+        c0.derive_function_decryption_key_share(y1)
+    with pytest.raises(FEValidationError):
+        c0.derive_function_decryption_key_share(y1, "")
 
     decryptor = DecentralizedMCFEFHMultiIPE({"id": "sid_0", "keys": {"pp": pp}})
     # shares carry nothing derived from y (function hiding) ...
-    share = c0.derive_function_decryption_key_share(y1)
+    share = c0.derive_function_decryption_key_share(y1, "f")
     assert set(share) == {"k", "z", "nid", "tag_f"}
-    # ... and shares for other weights under one tag_f only give a useless key
-    mixed = {nid: c.derive_function_decryption_key_share(y1) for nid, c in clients.items()}
-    mixed["nid_2"] = clients["nid_2"].derive_function_decryption_key_share(y2)
+    # ... each client's share encodes its own weights, so the shares of one
+    # tag_f give the key of the weights the clients chose
+    keys = {nid: c.derive_function_decryption_key_share(y2, "f") for nid, c in clients.items()}
     cts = {nid: c.encrypt([1, 1], "t") for nid, c in clients.items()}
-    assert decryptor.decrypt(cts, decryptor.combine_function_decryption_key_share(mixed)) is None
-    other_tag = dict(mixed, nid_2=clients["nid_2"].derive_function_decryption_key_share(y1, tag_f="x"))
+    assert decryptor.decrypt(cts, decryptor.combine_function_decryption_key_share(keys)) == 3 + 1 + 1
+    other_tag = dict(keys, nid_2=clients["nid_2"].derive_function_decryption_key_share(y1, "x"))
     with pytest.raises(FESchemeError):
         decryptor.combine_function_decryption_key_share(other_tag)
-    partial = {nid: c.derive_function_decryption_key_share(y1) for nid, c in clients.items() if nid != "nid_1"}
+    partial = {nid: k for nid, k in keys.items() if nid != "nid_1"}
     with pytest.raises(FESchemeError):
         decryptor.combine_function_decryption_key_share(partial)
+
+
+def test_a_corrupted_client_cannot_test_guesses_of_the_honest_weights():
+    """Regression: tag-f was (tag_f, H(y)), so a client's key share depended on
+    every client's weights. A corrupted client derived its own share for a
+    guess of the honest clients' weights and combined it with their shares:
+    decryption succeeded only for the right guess. With NPS24's explicit tag-f
+    its share depends on its own weights only, whatever it guesses."""
+    import itertools
+
+    cfg = {"n": 3, "lst_nid": ["a", "b", "c"], "eta": 1, "bound_x": 3, "bound_y": 1,
+           "pairing_group_param": "MNT224"}
+    kg = DecentralizedMCFEFHMultiIPEKeyGenerator(cfg)
+    kg.setup()
+    pp, clients = _clients(kg, cfg)
+    x = {"a": [2], "b": [-3], "c": [1]}
+    cts = {nid: c.encrypt(x[nid], "round-1") for nid, c in clients.items()}
+    secret = {"a": [1], "b": [-1], "c": [1]}
+    honest = {nid: clients[nid].derive_function_decryption_key_share(secret, "f") for nid in ("a", "b")}
+    decryptor = DecentralizedMCFEFHMultiIPE({"id": "d", "keys": {"pp": pp}})
+    results = set()
+    for ya, yb in itertools.product([-1, 0, 1], repeat=2):
+        guess = {"a": [ya], "b": [yb], "c": secret["c"]}
+        own = clients["c"].derive_function_decryption_key_share(guess, "f")
+        dk = decryptor.combine_function_decryption_key_share(dict(honest, c=own))
+        results.add(decryptor.decrypt(cts, dk))
+    assert results == {2 + 3 + 1}
 
 
 def test_wrong_tag_does_not_decrypt(kg_config):
@@ -174,7 +206,7 @@ def test_wrong_tag_does_not_decrypt(kg_config):
     dct_ct = {nid: c.encrypt(x[nid], "round-1") for nid, c in clients.items()}
     decryptor = DecentralizedMCFEFHMultiIPE({"id": "sid_0", "keys": {"pp": pp}})
     dk = decryptor.combine_function_decryption_key_share(
-        {nid: c.derive_function_decryption_key_share(y) for nid, c in clients.items()}
+        {nid: c.derive_function_decryption_key_share(y[nid], "f") for nid, c in clients.items()}
     )
     assert decryptor.decrypt(dct_ct, dk, y, "round-1") == (2 - 2) + (0 + 6) + (2 - 2)
     # the decryptor does not need the weights (the key encodes them)

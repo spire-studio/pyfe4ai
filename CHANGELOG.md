@@ -212,6 +212,19 @@ table and *Known Issues* before relying on any privacy property.
   decryption to the rounds they mean to serve: a combiner could have any
   round decrypted at any time. `share_decrypt` now takes the label the
   server agrees to decrypt and refuses ciphertexts under any other.
+- **tMCFE-FH-Multi-IPE** (experimental) handed every server Shamir shares of
+  the FH-MCFE key exponents `e_i` in `Z_p`. The key hides `y` only as
+  `[e_i]_2`: `t` colluding servers (one if `t = 1`) interpolated `e_i` and
+  solved for the weights. Servers now hold their shares in the exponent
+  (`[e^(k)]_2`, `[z^(k)]_T`) and raise their pairing product to their
+  Lagrange coefficient; `t` servers interpolate the FH-MCFE key itself.
+- **dMCFE-FH-Multi-IPE** used `tag-f = (tag_f, H(y))` over all clients'
+  weights, so a client's key share depended on the others' weights: a
+  corrupted client derived its share for a guess of the honest clients'
+  weights and learnt whether the guess was right from whether decryption
+  succeeded. As in NPS24 Fig. 1, a client's share now depends on an explicit
+  `tag_f` and its own `y_i` only; a client object refuses a second weight
+  vector under a `tag_f` it already used.
 - **Threshold schemes** assume honest-but-curious servers; this is now stated
   in the README, `SECURITY.md` and `threshold_utils`. Nothing proves a
   partial decryption correct, so `combine_decrypt` and
@@ -311,6 +324,11 @@ table and *Known Issues* before relying on any privacy property.
   label)`, `compute_lst_ndarray_ct(..., lst_sid_enrolled, label)` and
   `decrypt_lst_ndarray_ct(partials, label)` take the label to decrypt;
   `combine_decrypt(partials, label=None)` checks it when given.
+- tMCFE-FH-Multi-IPE: key shares hold `k` as `G2` elements and `z` as a `GT`
+  element (serialised) instead of integers.
+- dMCFE-FH-Multi-IPE: `derive_function_decryption_key_share(weights, tag_f)`
+  takes this client's weights (or a dict, of which only its entry is used)
+  and a required non-empty `tag_f`.
 - tMIFE-LWE: client keys carry `mac_keys` (`{sid: key}`), key shares
   `mac_keys` (`{nid: key}`) and ciphertexts `tags` (`{sid: tag}`);
   ciphertexts without valid tags are refused.

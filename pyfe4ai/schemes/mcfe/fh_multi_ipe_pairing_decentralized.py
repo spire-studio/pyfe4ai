@@ -20,12 +20,17 @@ Setup samples one FH-IPFE master key ``imsk_i`` per client
 * Dec:      ``prod_i iDec(dk_i, ct_i) = [<x, y> + omega mu sum t~_i]_T = [<x, y>]_T``.
 
 There is no authority for functional keys: each client derives its own
-``dk_i``, and keys of all clients for the same ``tag-f`` are needed. The proof
-allows one key per client and ``tag-f``; this module binds ``tag-f`` to the
-whole weight vector (``tag-f = (tag_f, H(y))``) and derives the key randomness
-from a client secret and ``tag-f``, so asking again returns the same key.
-Each client must encrypt at most once per tag. Versions <= 0.2.0 masked
-inputs with a public label scalar instead.
+``dk_i`` from ``tag-f`` and its own weights ``y_i`` only, and keys of all
+clients for the same ``tag-f`` are needed; together they decrypt
+``sum_i <x_i, y_i>`` for the weights each client chose. The proof allows one
+key per client and ``tag-f``: name every new weight vector with a fresh
+``tag_f``. A client object refuses a second weight vector under a ``tag_f`` it
+already used (other instances cannot know about it), and derives the key
+randomness from a client secret, ``tag-f`` and ``y_i``, so asking again
+returns the same key. Each client must encrypt at most once per tag. Earlier
+versions used ``tag-f = (tag_f, H(y))`` over all clients' weights, so a
+corrupted client could test guesses of the other clients' weights; versions
+<= 0.2.0 masked inputs with a public label scalar instead.
 """
 
 from __future__ import annotations
@@ -36,11 +41,11 @@ import secrets
 
 from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPE
 from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEKeyGenerator
-from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.pairing_backend import ZR
 from pyfe4ai.utils.sampling_utils import XofRandom
+from pyfe4ai.utils.validation import int_vector
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +87,10 @@ class DecentralizedMCFEFHMultiIPEKeyGenerator(MCFEFHMultiIPEKeyGenerator):
 class DecentralizedMCFEFHMultiIPE(MCFEFHMultiIPE):
     """Encryption, key derivation and decryption of the NPS24 FH-DMCFE."""
 
+    def __init__(self, config: dict, **kwargs) -> None:
+        super().__init__(config, **kwargs)
+        self._tags_used = {}
+
     def encrypt(self, lst_pt: list, label: str) -> dict:
         """``iEnc(imsk_i, [(x_i, H1(label)^t~_i, 0, ...)]_1)``; once per client and label."""
         x = self._check_plaintext(lst_pt)
@@ -91,33 +100,41 @@ class DecentralizedMCFEFHMultiIPE(MCFEFHMultiIPE):
         x_hat = self.ctx.x_hat(x, omega_t)
         return {"ct": [self.ctx.ser(v) for v in self.ctx.fhipe.encrypt(self.imsk, x_hat)]}
 
-    def derive_function_decryption_key_share(self, fusion_weight: dict, tag_f: str = "") -> dict:
-        """Derive this client's key ``dk_i`` for the weights ``y`` (NPS24 DKeyGen).
+    def derive_function_decryption_key_share(self, fusion_weight, tag_f: str) -> dict:
+        """Derive this client's key ``dk_i`` for its weights ``y_i`` (NPS24 DKeyGen).
 
         Args:
-            fusion_weight: Weights of every client (``eta`` integers each).
-            tag_f: Optional function tag; ``tag-f`` is ``(tag_f, H(y))``.
+            fusion_weight: This client's weights (``eta`` integers), or a dict
+                of weights in which only this client's entry is used.
+            tag_f: Non-empty name of the function; all clients use the same
+                one for one functional key, and a fresh one for every new
+                weight vector (one key per client and ``tag_f``).
 
         Returns:
             Dict with ``k`` and ``z`` (the FH-IPFE key), ``nid`` and ``tag_f``
-            (no digest of ``y``: keys are function hiding).
+            (nothing derived from ``y``: keys are function hiding).
+
+        Raises:
+            FESchemeError: If this object already derived a key for other
+                weights under *tag_f*.
         """
         if not self._has_private_keys() or "seed" not in self.sk:
             raise FEKeyError("need the client's keys to derive a key share")
-        lst_nid = self.pp["lst_nid"]
-        if not isinstance(fusion_weight, dict) or set(fusion_weight) != set(lst_nid):
-            raise FEValidationError("fusion weights must cover every client")
-        if not isinstance(tag_f, str):
-            raise FEValidationError("tag_f must be a string")
-        weights = fusion_weight[self.id]
-        if len(weights) != self.pp["eta"]:
-            raise FEValidationError("invalid fusion weight length for client {}".format(self.id))
-        if any(abs(int(v)) > int(self.pp["bound_y"]) for v in weights):
-            raise FEValidationError("fusion weight exceeds configured bound_y")
-        # tag-f = (tag_f, H(y)): internal only (it feeds H2 and the secret-seeded
-        # key randomness), never published -- a digest of y would undo function hiding
-        context = json.dumps([tag_f, fusion_weight_id(fusion_weight)])
-        y_hat = self.ctx.y_hat([int(v) for v in weights], self.ctx.h2(context))
+        if not isinstance(tag_f, str) or not tag_f:
+            raise FEValidationError("tag_f must be a non-empty string")
+        weights = fusion_weight.get(self.id) if isinstance(fusion_weight, dict) else fusion_weight
+        weights = int_vector(
+            weights, "fusion weight", length=self.pp["eta"], bound=int(self.pp["bound_y"])
+        )
+        used = self._tags_used.setdefault(tag_f, weights)
+        if used != weights:
+            raise FESchemeError(
+                "a key for other weights was already derived under this tag_f; use a fresh tag_f"
+            )
+        # [mu]_2 = H2(tag-f) and a key randomness seeded with (tag-f, y_i):
+        # nothing about the other clients' weights enters this client's key
+        context = json.dumps([tag_f, weights])
+        y_hat = self.ctx.y_hat(weights, self.ctx.h2(tag_f))
         rng = XofRandom(bytes.fromhex(self.sk["seed"]) + _KEY_RNG_DOMAIN + context.encode("utf-8"))
         key, z_sum = self.ctx.fhipe.keygen(self.imsk, y_hat, rng=rng)
         share = self.ctx.key_entry(key, z_sum)

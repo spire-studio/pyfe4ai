@@ -279,7 +279,7 @@ def _bench_mcfe_fh_multi_ipe(name: str, decentralized: bool = False, threshold: 
                     }
                 )
                 dct_ct[nid] = actor.encrypt_lst_ndarray(dct_x[nid], label=label)
-                shares[nid] = actor.derive_function_decryption_key_share(dct_y)
+                shares[nid] = actor.derive_function_decryption_key_share(dct_y[nid], "bench")
             encrypt_t = time.perf_counter() - t0
 
             dec = actor_cls({"id": "sid_0", "precision": PRECISION, "keys": {"pp": pp}})
