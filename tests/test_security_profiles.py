@@ -412,3 +412,17 @@ def test_a_read_only_mapping_config_gets_the_profile_too():
 
     kg = SIFEKeyGenerator(MappingProxyType({"eta": 2, **STANDARD}))
     assert kg.sec_param == 3072 and int(kg.p).bit_length() == 3072
+
+
+def test_a_config_that_is_not_a_mapping_is_refused():
+    """An object with .get but no Mapping interface skipped the profile while
+    the key generator recorded "standard"."""
+    class Config:
+        def __init__(self, d):
+            self.d = d
+
+        def get(self, key, default=None):
+            return self.d.get(key, default)
+
+    with pytest.raises(FEValidationError, match="mapping"):
+        SIFEKeyGenerator(Config({"eta": 2, **STANDARD}))

@@ -74,3 +74,8 @@ def test_ndarray_helpers_round_and_refuse_nan(tmp_path, monkeypatch):
     assert np.allclose(out[0], [1.14, -0.58])
     with pytest.raises(FEValidationError, match="NaN"):
         clients["nid_0"].encrypt_lst_ndarray([np.array([np.nan])], label="r2")
+
+
+def test_scaling_refuses_a_negative_precision():
+    with pytest.raises(FEValidationError, match="precision"):
+        scale_to_int(np.array([1.5]), -1)

@@ -395,3 +395,11 @@ def test_deserialised_gradients_are_bounded(payload, match):
     d = {"nid": "a", "shape": payload["shape"], "precision": 1, "mode": "decimal", "ciphertexts": [payload]}
     with pytest.raises(ValueError, match=match):
         EncryptedGradient.from_dict(d)
+
+
+def test_fractional_weights_must_fit_the_precision():
+    """(0.5, 0.25) at precision 1 was rounded to (0.5, 0.2 or 0.3) silently."""
+    wrapper = _mcfe_wrapper(precision=1)
+    enc = {nid: encrypt_gradient(np.array([1.0]), wrapper, nid=nid, label="r1") for nid in ("nid_0", "nid_1")}
+    with pytest.raises(ValueError, match="precision"):
+        aggregate_gradients(enc, wrapper, {"nid_0": 0.5, "nid_1": 0.25}, label="r1")

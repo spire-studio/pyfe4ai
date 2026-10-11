@@ -114,3 +114,29 @@ def test_ndarray_chunks_must_index_the_key():
         bad = {nid: [dict(layers[0], first_chunk=first)] for nid, layers in cts.items()}
         with pytest.raises(FESchemeError, match="chunk"):
             dec.decrypt_lst_ndarray_ct(bad, dk=dk, fusion_weight=y, label="l")
+
+
+def test_fractional_inputs_are_refused_everywhere(tmp_path, monkeypatch):
+    """SIFE-Paillier truncated [1.7, 2.9] (and a weight 0.5 to 0); the same
+    abs(int(v)) checks were in the LWE, Paillier and Damgard MIFE/MCFE schemes."""
+    from pyfe4ai.schemes.mcfe.lwe import MCFELWEKeyGenerator
+    from pyfe4ai.schemes.mife.damgard_ddh import MIFEDamgard, MIFEDamgardKeyGenerator
+    from pyfe4ai.schemes.sife.paillier import SIFEPaillier, SIFEPaillierKeyGenerator
+
+    monkeypatch.chdir(tmp_path)
+    kg = SIFEPaillierKeyGenerator({"sec_param": 64, "eta": 2, "bit_length": 64, "bound_x": 10, "bound_y": 10})
+    kg.setup()
+    enc = SIFEPaillier({"keys": {"pp": kg.get_public_parameters(), "sk": kg.get_private_keys()}})
+    with pytest.raises(FEValidationError, match="integers"):
+        enc.encrypt([1.7, 2.9])
+    with pytest.raises(FEValidationError, match="integers"):
+        kg.get_decryption_keys("s", credentials={"fusion_weight": [0.5, 1]})
+    mk = MCFELWEKeyGenerator({"n": 2, "lst_nid": NIDS, "lwe_n": 8, "bound_x": 4, "bound_y": 4})
+    mk.setup()
+    with pytest.raises(FEValidationError, match="integers"):
+        mk.get_decryption_keys("s", credentials={"fusion_weight": {"nid_0": [0.5], "nid_1": [1]}})
+    dk = MIFEDamgardKeyGenerator({"n": 2, "lst_nid": NIDS, "eta": 1, "modulus_length": 64, "bound": 10})
+    dk.setup()
+    c = MIFEDamgard({"id": "nid_0", "keys": {"pp": dk.get_public_parameters(), "sk": dk.get_private_keys("nid_0")}})
+    with pytest.raises(FEValidationError, match="integers"):
+        c.encrypt([1.5])

@@ -54,6 +54,7 @@ from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.crypto_utils import is_dcr_modulus
+from pyfe4ai.utils.validation import strict_int
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +162,7 @@ class DecentralizedMCFELWE(MCFELWE):
         weights = fusion_weight.get(self.id, [])
         if len(weights) > len(self.sk["z"]):
             raise FEValidationError("fusion weight of {} is longer than eta".format(self.id))
-        if any(abs(int(v)) > self.pp["bound_y"] for v in weights):
+        if any(abs(strict_int(v, "fusion weight")) > self.pp["bound_y"] for v in weights):
             raise FEValidationError("fusion weight exceeds configured bound_y")
         contribution = [gp.mpz(0)] * self.dim
         for y_j, z_j in zip(weights, self.sk["z"]):

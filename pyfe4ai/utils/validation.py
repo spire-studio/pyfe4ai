@@ -51,6 +51,11 @@ def int_vector(values, name: str, length: int | None = None, bound=None) -> list
     return out
 
 
+def strict_int(value, name: str = "input") -> int:
+    """*value* as an int; non-integral values raise (see :func:`int_vector`)."""
+    return int_vector([value], name)[0]
+
+
 _MAX_EXACT = 2 ** 53  # floats are exact integers up to here
 
 
@@ -65,6 +70,8 @@ def scale_to_int(values, precision: int) -> np.ndarray:
     Raises:
         FEValidationError: For non-numeric, non-finite or too large values.
     """
+    if isinstance(precision, bool) or not isinstance(precision, (int, np.integer)) or precision < 0:
+        raise FEValidationError("precision must be a non-negative integer, got {!r}".format(precision))
     arr = np.asarray(values)
     scale = 10 ** int(precision)
     if arr.dtype.kind in "iu":

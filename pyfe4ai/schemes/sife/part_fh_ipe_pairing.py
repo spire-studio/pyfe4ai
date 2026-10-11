@@ -55,6 +55,7 @@ from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
 from pyfe4ai.utils.pairing_utils import matrix_inverse_mod
 from pyfe4ai.utils.validation import int_vector
+from pyfe4ai.utils.validation import strict_int
 
 logger = logging.getLogger(__name__)
 
@@ -353,7 +354,7 @@ class SIFEPartFHIPE(IPFEAbsCrypto):
         ]
         m = [[gp.mpz(v) for v in row] for row in self.pp["m"]]
         x = _matrix_vec_plain(m, t)
-        if any(abs(int(v)) > gp.mpz(self.pp["bound"]) for v in x):
+        if any(abs(strict_int(v, "plaintext")) > gp.mpz(self.pp["bound"]) for v in x):
             raise FEValidationError("derived plaintext exceeds configured bound")
 
         a = _deserialize_vec(self.group, self.pp["a"])

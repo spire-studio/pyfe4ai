@@ -63,6 +63,7 @@ from pyfe4ai.utils.sampling_utils import rand_uniform_matrix
 from pyfe4ai.utils.sampling_utils import rand_uniform_vector
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.validation import scale_to_int
+from pyfe4ai.utils.validation import strict_int
 
 logger = logging.getLogger(__name__)
 
@@ -176,7 +177,7 @@ class MIFELWEKeyGenerator(IPFEAbsKeyGenerator, ABDP15KeyGeneratorMixin):
             y = fusion_weight[nid]
             if len(y) != self.eta:
                 raise FEValidationError("invalid fusion weight length for client {}".format(nid))
-            if any(abs(int(v)) > self.bound_y for v in y):
+            if any(abs(strict_int(v, "fusion weight")) > self.bound_y for v in y):
                 raise FEValidationError("fusion weight exceeds configured bound_y")
             y_vec = [gp.mpz(v) for v in y]
             sk_y[nid] = vector_to_digits(
@@ -222,7 +223,7 @@ class MIFELWE(IPFEAbsCrypto, ABDP15CryptoMixin):
             raise FEKeyError("no encryption key provided")
         if len(lst_pt) != self.pp["eta"]:
             raise FEValidationError("invalid size of input plaintext")
-        if any(abs(int(v)) > gp.mpz(self.pp["bound_x"]) for v in lst_pt):
+        if any(abs(strict_int(v, "plaintext")) > gp.mpz(self.pp["bound_x"]) for v in lst_pt):
             raise FEValidationError("plaintext exceeds configured bound_x")
         return self._encrypt_batch([lst_pt])[0]
 
@@ -271,7 +272,7 @@ class MIFELWE(IPFEAbsCrypto, ABDP15CryptoMixin):
             y = fusion_weight[nid]
             if len(y) != self.pp["eta"]:
                 raise FEValidationError("invalid fusion weight length for client {}".format(nid))
-            if any(abs(int(v)) > gp.mpz(self.pp["bound_y"]) for v in y):
+            if any(abs(strict_int(v, "fusion weight")) > gp.mpz(self.pp["bound_y"]) for v in y):
                 raise FEValidationError("fusion weight exceeds configured bound_y")
 
             y_vec = [gp.mpz(v) for v in y]

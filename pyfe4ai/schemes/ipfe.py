@@ -103,12 +103,20 @@ class _ProfiledKeyGeneratorMeta(ABCMeta):
     """
 
     def __call__(cls, *args, **kwargs):
-        # any Mapping (not only dict) is resolved, so no config type skips the profile
-        if args and isinstance(args[0], Mapping):
-            args = (profiles.resolve(dict(args[0]), profiles.scheme_of(cls)),) + args[1:]
-        elif isinstance(kwargs.get("config"), Mapping):
-            kwargs["config"] = profiles.resolve(dict(kwargs["config"]), profiles.scheme_of(cls))
+        # every config goes through the profile: any Mapping is resolved, and
+        # anything else (which could skip it) is refused
+        if args:
+            args = (cls._resolved(args[0]),) + args[1:]
+        elif "config" in kwargs:
+            kwargs["config"] = cls._resolved(kwargs["config"])
         return super().__call__(*args, **kwargs)
+
+    def _resolved(cls, config) -> dict:
+        if not isinstance(config, Mapping):
+            raise FEValidationError(
+                "a key generator config must be a mapping, got {}".format(type(config).__name__)
+            )
+        return profiles.resolve(dict(config), profiles.scheme_of(cls))
 
 
 class IPFEAbsKeyGenerator(metaclass=_ProfiledKeyGeneratorMeta):

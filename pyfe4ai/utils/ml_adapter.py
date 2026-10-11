@@ -28,7 +28,13 @@ key away from the aggregator. The wrapper applies a default policy that a
 key holder would otherwise have to enforce: :func:`aggregate_gradients`
 needs a ciphertext and a non-zero weight for every enrolled client (pass
 ``allow_partial=True`` to relax this), each client encrypts at most once per
-label, and each label is aggregated with one weight vector only.
+label, and each label is aggregated with one weight vector only. These
+checks stop the obvious ways of isolating one client, not all of them: a
+single aggregate with very unequal weights (e.g. ``(W, 1)`` with ``W`` above
+twice the largest gradient entry) separates two clients' gradients, as with
+any inner-product FE; choosing the weights is the key holder's
+responsibility, and :meth:`FESchemeWrapper.get_decryption_keys` issues keys
+for any weights.
 """
 
 from __future__ import annotations
@@ -604,6 +610,11 @@ def _integer_weights(weights: dict, qconfig: QuantizationConfig) -> tuple[dict, 
     scale = qconfig.scale_factor
     if scale == 1:
         raise ValueError("fractional weights need a wrapper precision > 0")
+    if any(abs(v * scale - round(v * scale)) > 1e-9 * max(1.0, abs(v * scale)) for v in values):
+        raise ValueError(
+            "the weights are not multiples of 1/{} at the wrapper's precision; "
+            "raise the precision or round the weights".format(scale)
+        )
     return {nid: [qconfig.quantize(float(v)) for v in lst] for nid, lst in lists.items()}, scale
 
 
@@ -629,7 +640,8 @@ def aggregate_gradients(
                 weight vector only.
             allow_partial: Allow zero weights and a subset of the enrolled
                 clients. Off by default: the wrapper holds the master key,
-                and such weights would decrypt a single client's gradient.
+                and such weights would decrypt a single client's gradient
+                (so would very unequal weights; see the module docstring).
 
         Raises:
             ValueError: If the policy above is violated, or SIFE is given

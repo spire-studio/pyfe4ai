@@ -538,6 +538,13 @@ table and *Known Issues* before relying on any privacy property.
 - `sife/fullysec_ring_lwe` with an explicit `ring_n` and `m = "auto"` under
   `standard` took `m = 5`, whose `q` exceeds the bound, and refused; it now
   takes the smallest `m` that meets the bound.
+- SIFE-Paillier truncated fractional plaintexts and weights (`[1.7, 2.9]`
+  encrypted as `[1, 2]`, a weight `0.5` became `0`); the same `abs(int(v))`
+  checks were in MIFE/MCFE LWE, Paillier and Damgard, dMCFE-LWE /
+  -Paillier and partial FH-IPE. They now refuse non-integral values
+  (`validation.strict_int`). `scale_to_int` refuses a negative precision;
+  a key generator config that is not a `Mapping` is refused (it could skip
+  the security profile).
 - MCFE-DDH and tMCFE-DDH put the plaintext into the message of the
   exception for a malformed plaintext, and `int_vector` the offending value;
   messages now name only the problem (and the type).
@@ -556,7 +563,9 @@ table and *Known Issues* before relying on any privacy property.
   client's result when given several; it now refuses more than one. Fractional
   weights were quantised but the result was not scaled back (weights `0.5`
   gave `10^precision` times the sum); the result is now rescaled, and
-  fractional weights without a precision are refused.
+  fractional weights without a precision, or not representable at it, are
+  refused. The policy does not stop very unequal weights, which separate
+  two clients' gradients in one aggregate; this is now documented.
   `EncryptedGradient.from_dict` allocated whatever shape it was given; it now
   bounds the shape and requires one entry per element.
 - SIFE-FullySec-LWE decoded `+-eta X Y` with a random sign (`K` was

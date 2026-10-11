@@ -47,6 +47,7 @@ from pyfe4ai.utils.modular_utils import pow_signed
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.sampling_utils import rand_uniform_vector
 from pyfe4ai.utils.validation import scale_to_int
+from pyfe4ai.utils.validation import strict_int
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +153,7 @@ class MIFEDamgardKeyGenerator(DamgardDDHKeyGeneratorBase):
             weights = fusion_weight[nid]
             if len(weights) != self.eta:
                 raise FEValidationError("invalid fusion weight length for client {}".format(nid))
-            if any(abs(int(v)) > self.bound for v in weights):
+            if any(abs(strict_int(v, "fusion weight")) > self.bound for v in weights):
                 raise FEValidationError("fusion weight exceeds configured bound")
             ys = [gp.mpz(int(v)) for v in weights]
             k1[nid] = gp.digits(sum(a * b for a, b in zip(self.msk["s"][nid], ys)) % self.q)
@@ -195,7 +196,7 @@ class MIFEDamgard(IPFEAbsCrypto):
             raise FEKeyError("no private keys provided for encryption")
         if len(lst_pt) != self.pp["eta"]:
             raise FEValidationError("invalid size of input plaintext")
-        if any(abs(int(v)) > self.pp["bound"] for v in lst_pt):
+        if any(abs(strict_int(v, "plaintext")) > self.pp["bound"] for v in lst_pt):
             raise FEValidationError("plaintext exceeds configured bound")
 
         p = gp.mpz(self.pp["p"])

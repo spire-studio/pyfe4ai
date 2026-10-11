@@ -46,6 +46,7 @@ from pyfe4ai.utils.crypto_utils import generate_group_primes
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.utils.crypto_utils import is_dcr_modulus
+from pyfe4ai.utils.validation import strict_int
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +172,7 @@ class DecentralizedMCFEPaillier(MCFEPaillier):
         weights = fusion_weight.get(self.id, [])
         if len(weights) > len(self.sk["s"]):
             raise FEValidationError("fusion weight of {} is longer than eta".format(self.id))
-        if any(abs(int(v)) > self.pp["bound_y"] for v in weights):
+        if any(abs(strict_int(v, "fusion weight")) > self.pp["bound_y"] for v in weights):
             raise FEValidationError("fusion weight exceeds configured bound_y")
         k_i = sum(gp.mpz(int(y)) * gp.mpz(s) for y, s in zip(weights, self.sk["s"]))
         return {

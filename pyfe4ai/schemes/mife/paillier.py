@@ -53,6 +53,7 @@ from pyfe4ai.utils.sampling_utils import random_below
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.validation import scale_to_int
 from pyfe4ai.utils.crypto_utils import is_dcr_modulus
+from pyfe4ai.utils.validation import strict_int
 
 logger = logging.getLogger(__name__)
 
@@ -217,7 +218,7 @@ class MIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             weights = fusion_weight[nid]
             if len(weights) != self.eta:
                 raise FEValidationError("invalid fusion weight length for client {}".format(nid))
-            if any(abs(int(v)) > self.bound_y for v in weights):
+            if any(abs(strict_int(v, "fusion weight")) > self.bound_y for v in weights):
                 raise FEValidationError("fusion weight exceeds configured bound_y")
             k = gp.mpz(0)
             for s_i, u_i, y_i in zip(self.msk["s"][nid], self.msk["u"][nid], weights):
@@ -248,7 +249,7 @@ class MIFEPaillier(IPFEAbsCrypto):
             raise FEKeyError("no private keys provided for encryption")
         if len(lst_pt) != self.pp["eta"]:
             raise FEValidationError("invalid size of input plaintext")
-        if any(abs(int(v)) > self.pp["bound_x"] for v in lst_pt):
+        if any(abs(strict_int(v, "plaintext")) > self.pp["bound_x"] for v in lst_pt):
             raise FEValidationError("plaintext exceeds configured bound_x")
 
         n_mod = gp.mpz(self.pp["n_mod"])

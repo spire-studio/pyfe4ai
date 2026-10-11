@@ -67,6 +67,7 @@ from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationErro
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
 from pyfe4ai.utils.sampling_utils import rand_uniform_vector
 from pyfe4ai.utils.validation import scale_to_int
+from pyfe4ai.utils.validation import strict_int
 
 logger = logging.getLogger(__name__)
 
@@ -181,7 +182,7 @@ class MCFELWEKeyGenerator(IPFEAbsKeyGenerator):
             if len(weights) > self.eta:
                 raise FEValidationError("invalid fusion weight length for client {}".format(nid))
             for z_j, y_j in zip(self.msk["z"][nid], weights):
-                if abs(int(y_j)) > self.bound_y:
+                if abs(strict_int(y_j, "fusion weight")) > self.bound_y:
                     raise FEValidationError("fusion weight exceeds configured bound_y")
                 y_j = gp.mpz(int(y_j))
                 sk_y = [acc + y_j * z for acc, z in zip(sk_y, z_j)]
@@ -248,7 +249,7 @@ class MCFELWE(IPFEAbsCrypto):
             raise FEKeyError("no encryption key provided")
         if len(lst_pt) > len(self.sk["z"]):
             raise FEValidationError("invalid size of input plaintext")
-        if any(abs(int(v)) > self.pp["bound_x"] for v in lst_pt):
+        if any(abs(strict_int(v, "plaintext")) > self.pp["bound_x"] for v in lst_pt):
             raise FEValidationError("plaintext exceeds configured bound_x")
 
         h_l = self._hash_label(label)
