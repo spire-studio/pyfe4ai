@@ -264,8 +264,9 @@ table and *Known Issues* before relying on any privacy property.
   errors of width 3.2 (the standard SIFE-Ring-LWE had `sigma1 = 2`) and which
   the lattice estimator puts at about 125 bits; it now uses
   `RING_LWE_128_LOG_Q`, estimated with the same tool and rule as the LWE
-  tables for widths 2 to 16, read at the smallest width among the RLWE
-  problems of the proof (about 8). Cached parameters are regenerated.
+  tables for widths 2 to 16 and `n = 1024` to `32768`, read at the smallest
+  width among the RLWE problems of the proof (about 8). Cached parameters
+  are regenerated.
 - **Threshold schemes** assume honest-but-curious servers; this is now stated
   in the README, `SECURITY.md` and `threshold_utils`. Nothing proves a
   partial decryption correct, so `combine_decrypt` and

@@ -35,6 +35,7 @@ import sys
 TARGET_BITS = 128
 GRID = range(4096, 16384 + 1, 512)
 SKIPPED = ("arora-gb", "bkw", "bdd_hybrid", "bdd_mitm_hybrid")
+ATTACKS = ("usvp", "bdd", "dual", "dual_hybrid")
 
 
 def cost_bits(lwe, nd, n: int, log_q: int, deny=SKIPPED) -> dict:
@@ -47,6 +48,11 @@ def cost_bits(lwe, nd, n: int, log_q: int, deny=SKIPPED) -> dict:
     # nd.UniformMod(q) itself overflows a float for q > 2^512
     params = lwe.Parameters(n=n, q=ZZ(2) ** log_q, Xs=error, Xe=error, m=oo)
     result = lwe.estimate(params, deny_list=deny, quiet=True, jobs=1)
+    # an attack that raised is left out of the result (the estimator only logs
+    # it), which would silently shrink the minimum taken over the attacks
+    missing = [a for a in ATTACKS if a not in deny and a not in result]
+    if missing:
+        raise RuntimeError("no estimate from {} at n={} log2q={}".format(missing, n, log_q))
     return {name: float(math.log2(cost["rop"])) for name, cost in result.items()}
 
 

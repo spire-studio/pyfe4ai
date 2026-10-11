@@ -23,7 +23,7 @@ The ``security_profile`` entry of a key generator's config selects one:
       a lattice-estimator table (the method of the LWE tables) read at the
       smallest width among the RLWE problems of the scheme's proof (about 8
       for the BMMS21 parameters of Sec. 4.2 and 5; ``log2 q`` <= 31 / 57 /
-      111 / 218 / 435 for n = 1024 ... 16384 at that width). It replaces the
+      111 / 218 / 435 / 872 for n = 1024 ... 32768 at that width). It replaces the
       Homomorphic Encryption Standard's bound, which this estimator puts at
       about 125 bits; ``sife/fullysec_ring_lwe`` (BMMS21 Sec. 5, adaptive) also
       picks its number ``m`` of key polynomials: the smallest one whose ``q``
