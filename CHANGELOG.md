@@ -238,7 +238,7 @@ table and *Known Issues* before relying on any privacy property.
   128 bits and refuses weaker explicit values. It is now 128 (the `kappa` of
   the Ring-LWE schemes) and lower values are refused: a distance of
   `2^-128` per sample instead of `2^-64`. ABMPSW20 moduli grow by about 64
-  bits (`mcfe/lwe` picks `n0` of about 6600 to 7700 instead of 4600 to
+  bits (`mcfe/lwe` picks `n0` of about 7200 to 8200 instead of 4600 to
   5600), tMCFE-Ring-LWE moves to `ring_n = 16384`, and tMIFE-LWE to
   `lwe_n` of about 6000, for which `WIDE_LWE_128_LOG_RATIO` now extends to
   `n = 6144` (same estimator and method).
@@ -307,10 +307,10 @@ table and *Known Issues* before relying on any privacy property.
   `pyfe4ai.utils.lwe_matrix` (`SeededMatrix`, `LimbMatrix`),
   `pyfe4ai.schemes.abdp15_lwe`, `sampling_utils.rand_bit_matrix`.
   tMIFE-LWE gets the same `lwe_n = "auto"` at its flooding-enlarged `q`
-  (about 3600 for `X = Y = 50`; the table covers dimensions up to 4096), and
-  `standard` fixes its `matrix_mode` to `"stream"` (its `A` would take about
-  80 GB in memory): key generation 6 minutes, one encryption 140 s, 2.3 s
-  each in batches of 64. `"memory"` mode refuses a matrix larger than the
+  (about 6000 for `X = Y = 50` with `stat_param = 128`; the table covers
+  dimensions up to 6144), and `standard` fixes its `matrix_mode` to
+  `"stream"` (its `A` would take more than 400 GB in memory): key generation
+  38 minutes, one encryption 572 s, 10.6 s each in batches of 64. `"memory"` mode refuses a matrix larger than the
   machine's physical memory.
 - `sife/fullysec_ring_lwe`: the adaptively secure Ring-LWE IPFE of BMMS21
   (Bermudo Mera, Karmakar, Marc, Soleimanian, PKC 2022, Sec. 5), the ring
@@ -321,7 +321,7 @@ table and *Known Issues* before relying on any privacy property.
   the 128-bit Ring-LWE bound under `standard`). Widths follow Theorems 1 and 2
   and Appendix C.1 for signed inputs, with complexity leveraging over
   `(2X + 1)^(2 eta)`; one vector per ciphertext. `standard`: eta = 10,
-  X = Y = 50 gives n = 8192, m = 8 (encrypt 2.0 s, decrypt 0.4 s).
+  X = Y = 50 gives n = 8192, m = 8 (encrypt 2.4 s, decrypt 0.5 s).
   `ring_lwe_utils.bmms21_adaptive_parameters`, `bmms21_adaptive_log2_q`,
   `bmms21_adaptive_choice`.
 - `lwe_n = "auto"` for the MCFE-LWE family; `lwe_utils.DENSE_LWE_128_LOG_Q`,
@@ -550,7 +550,7 @@ table and *Known Issues* before relying on any privacy property.
 - README and docs: the usage example's advice (adding `standard` next to an
   explicit `sec_param = 128` is refused), `sife/fullysec_ring_lwe` in the
   scheme table and features, the landing page's scheme count (39), the size
-  of the dMCFE-DDH modulus (about 6150 bits), the docs index's group size
+  of the dMCFE-DDH modulus (about 6410 bits with the carry mask), the docs index's group size
   (3072 bits); a Sphinx page for `pyfe4ai.utils.validation`; `config_types`
   lists `stat_param`, `matrix_mode`, `m`, `lwe_n = "auto"` and the crypto
   config's `dlog_bound`; the benchmarks README lists `benchmark_ntt.py`.

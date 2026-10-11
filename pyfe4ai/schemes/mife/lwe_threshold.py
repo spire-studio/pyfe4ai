@@ -49,12 +49,13 @@ different rounds is the usual multi-input functionality.
 
 Under the ``standard`` security profile ``lwe_n = "auto"`` picks the
 smallest dimension meeting :data:`pyfe4ai.utils.lwe_utils.WIDE_LWE_128_LOG_RATIO`
-at the enlarged ``q``: about 3600 for ``X = Y = 50`` (``q`` of 152 bits,
-``m`` of 550 000, ``A`` of 2 * 10^9 entries). ``A`` then needs about 80 GB
-in memory, so the profile fixes ``matrix_mode = "stream"``. Measured on one
-machine at that size: key generation 6 minutes (3.9 GB), one encryption
-140 s, a batch of 64 encryptions 145 s (1.8 to 2.2 GB), a partial
-decryption 9 ms.
+at the enlarged ``q`` (``stat_param = 128``): about 6000 for ``X = Y = 50``
+(5952 for two clients: ``q`` of 217 bits, ``m`` of 1.3 * 10^6, ``A`` of
+7.8 * 10^9 entries). ``A`` then needs more than 400 GB in memory, so the
+profile fixes ``matrix_mode = "stream"``. Measured on one machine at that
+size: key generation 38 minutes (8.5 GB; the machine was busy), one
+encryption 572 s (3.9 GB), a batch of 64 encryptions 679 s (5.2 GB), a
+partial decryption 13 ms.
 """
 
 from __future__ import annotations

@@ -14,7 +14,7 @@ The ``security_profile`` entry of a key generator's config selects one:
     * discrete log (DDH, Damgard / MDDH and their MIFE / MCFE variants): a
       3072-bit safe-prime group, the RFC 3526 MODP group 15 (NIST SP 800-57
       Part 1 Rev. 5, Table 2: L = 3072 for 128 bits). The decentralised
-      ``mcfe/ddh_decentralized`` then needs a DCR modulus of about 6150 bits
+      ``mcfe/ddh_decentralized`` then needs a DCR modulus of about 6410 bits
       for combining key shares, whose safe primes take minutes to generate;
     * DCR (Paillier variants): ``N`` of about 3072 bits (two 1536-bit safe
       primes);
@@ -49,10 +49,11 @@ The ``security_profile`` entry of a key generator's config selects one:
       (about 0.1 s per encryption, 1.5 to 3 GB) and expanding it for every
       batch (``"stream"``: seconds per batch, about 0.5 GB). See
       :mod:`pyfe4ai.schemes.abdp15_lwe`. ``mife/lwe_threshold`` is selected
-      the same way at its flooding-enlarged ``q`` (``lwe_n`` of about 3600
-      to 4000, ``A`` of 2 to 3 * 10^9 entries), and ``standard`` fixes its
-      ``matrix_mode`` to ``"stream"``: key generation takes minutes, an
-      encryption about 140 s, or about 2.3 s each in batches of 64;
+      the same way at its flooding-enlarged ``q`` (``lwe_n`` of about 6000
+      with ``stat_param = 128``, ``A`` of about 8 * 10^9 entries), and
+      ``standard`` fixes its ``matrix_mode`` to ``"stream"``: key generation
+      takes over half an hour, an encryption about 10 minutes, or about 11 s
+      each in batches of 64;
     * pairing-based schemes: BN254, the strongest curve charm-crypto provides
       -- about 100-bit security after the exTNFS attacks (Barbulescu and
       Duquesne, J. Cryptol. 2019), **below** the 128-bit target; a
@@ -131,8 +132,8 @@ STANDARD_PAIRING_GROUP = "BN254"
 _STANDARD_FIXED = {
     ("mife", "lwe_threshold"): (
         {"matrix_mode": "stream"},
-        "its flooding noise needs lwe_n of about 3600 to 4000 and a public matrix of 2 to "
-        "3*10^9 entries, about 80 GB when kept in memory",
+        "its flooding noise needs lwe_n of about 6000 and a public matrix of about 8*10^9 "
+        "entries, more than 400 GB when kept in memory",
     ),
 }
 
