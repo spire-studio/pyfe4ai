@@ -515,6 +515,14 @@ table and *Known Issues* before relying on any privacy property.
   dlog table read from `./config/crypto`), and the unused helpers
   `crypto_utils.md5_hash` and `group_generator_paillier`.
 - The `jsonpickle` dependency (never imported).
+
+### Build
+
+- `Dockerfile.pairing`: the deprecated `continuumio/miniconda3` base is
+  replaced by `condaforge/miniforge3:26.5.3-0`, pinned by digest; the PBC
+  1.0.0 archive is checked against its SHA-256 before it is built; the image
+  runs as an unprivileged user. `environment.yml` uses the `conda-forge`
+  channel.
 - Unused modules `schemes/lwe_base.py`, `schemes/ring_lwe_base.py`,
   `schemes/paillier_base.py` and the helpers `label_scalar_from_hash`,
   `decode_fullysec_lwe_inner_product`.

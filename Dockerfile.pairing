@@ -1,9 +1,11 @@
-FROM continuumio/miniconda3
+# Miniforge (conda-forge only), pinned by tag and digest
+FROM condaforge/miniforge3:26.5.3-0@sha256:66f4b7d5dd07883181ef5370f44b43857008a61e8f5b9bcc07f3f3ee027f7e63
 
 WORKDIR /workspace
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    ca-certificates \
     libgmp-dev \
     libfl-dev \
     libssl-dev \
@@ -13,7 +15,11 @@ RUN apt-get update && apt-get install -y \
     m4 \
     && rm -rf /var/lib/apt/lists/*
 
+# PBC 1.0.0 for charm-crypto, checked against the SHA-256 of the archive
+# (computed when the archive was downloaded, 2026-10)
+ARG PBC_SHA256=18275a367283077bafe35f443200499e3b19c4a3754953da2a1b2f0d6b5922dc
 RUN wget -q https://crypto.stanford.edu/pbc/files/pbc-1.0.0.tar.gz \
+    && echo "${PBC_SHA256}  pbc-1.0.0.tar.gz" | sha256sum -c - \
     && tar -xzf pbc-1.0.0.tar.gz \
     && cd pbc-1.0.0 \
     && ./configure \
@@ -29,5 +35,9 @@ COPY tests ./tests
 
 RUN conda env create -f environment.yml && conda clean -afy
 RUN conda run -n pyfe4ai python -m pip install -e ".[test,pairing]"
+
+# run as an unprivileged user (tests write their parameter cache under /workspace)
+RUN useradd --create-home --uid 10001 fe && chown -R fe /workspace
+USER fe
 
 CMD ["conda", "run", "--no-capture-output", "-n", "pyfe4ai", "python", "-m", "pytest", "-q"]
