@@ -44,9 +44,9 @@ Deviations from the paper:
 * Gaussian samples are rounded continuous Gaussians, as elsewhere in the library.
 
 Under the ``standard`` profile ``ring_n = "auto"`` takes the smallest ring
-dimension (with the smallest ``m``) whose ``q`` meets the 128-bit bound of the
-Homomorphic Encryption Standard; the underlying RLWE errors have width
-``sigma`` of about 8, above that table's 3.2.
+dimension (with the smallest ``m``) whose ``q`` meets
+:data:`~pyfe4ai.utils.ring_lwe_utils.RING_LWE_128_LOG_Q` at the width
+``sigma`` (about 8) of the RLWE problem of Theorem 1.
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ from pyfe4ai.schemes.profiles import STANDARD
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.ring_lwe_utils import _get_ntt_root
 from pyfe4ai.utils.ring_lwe_utils import bmms21_adaptive_choice
-from pyfe4ai.utils.ring_lwe_utils import check_he_standard
+from pyfe4ai.utils.ring_lwe_utils import check_ring_lwe
 from pyfe4ai.utils.ring_lwe_utils import decode_vector
 from pyfe4ai.utils.ring_lwe_utils import ntt_forward
 from pyfe4ai.utils.ring_lwe_utils import ntt_inverse
@@ -137,12 +137,12 @@ class SIFEFullySecRingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.m_config = config.get("m", "auto")
         self._load_parameters()
         if self.security_profile == STANDARD:
-            check_he_standard(self.ring_n, self.q)
+            check_ring_lwe(self.ring_n, self.q, self.sigma)
 
     def _derive(self) -> dict:
         return bmms21_adaptive_choice(
             self.sec_param, self.eta, self.bound_x, self.bound_y, self.ring_n_config,
-            self.m_config, he_standard=self.security_profile == STANDARD,
+            self.m_config, standard=self.security_profile == STANDARD,
         )
 
     def _param_verification(self, param: dict) -> bool:

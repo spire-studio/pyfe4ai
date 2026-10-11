@@ -30,9 +30,10 @@ from pyfe4ai.utils.lwe_utils import (
 )
 from pyfe4ai.utils.ml_adapter import FESchemeWrapper, aggregate_gradients, encrypt_gradient
 from pyfe4ai.utils.ring_lwe_utils import (
-    HE_STANDARD_128_LOG_Q,
-    bmms21_parameters,
-    check_he_standard,
+    RING_LWE_128_LOG_Q,
+    bmms21_selective_parameters,
+    check_ring_lwe,
+    ring_lwe_bound,
     resolve_ring_n,
 )
 
@@ -350,13 +351,14 @@ def test_standard_threshold_mife_lwe_meets_the_table_at_its_enlarged_q():
 # -- Ring-LWE ----------------------------------------------------------------
 
 
-def test_standard_ring_lwe_picks_a_he_standard_dimension():
+def test_standard_ring_lwe_picks_the_smallest_estimated_dimension():
     kg = SIFERingLWEKeyGenerator({"eta": 4, "bound_x": 10, "bound_y": 10, **STANDARD})
     assert kg.ring_n == 4096
-    assert int(kg.q).bit_length() <= HE_STANDARD_128_LOG_Q[4096]
+    width = bmms21_selective_parameters(128, 4, 10, 10, 4096)["rlwe_width"]
+    assert int(kg.q).bit_length() <= ring_lwe_bound(4096, width)
     # the dimension below would need a larger q than the bound allows
-    q_2048 = bmms21_parameters(128, 4, 10, 10, 2048)[1]
-    assert int(q_2048).bit_length() > HE_STANDARD_128_LOG_Q[2048]
+    P = bmms21_selective_parameters(128, 4, 10, 10, 2048)
+    assert int(P["q"]).bit_length() > ring_lwe_bound(2048, P["rlwe_width"])
 
 
 @pytest.mark.parametrize("ring_n", [32, 2048])
@@ -369,21 +371,22 @@ def test_threshold_ring_lwe_dimension_accounts_for_flooding():
     kg = ThresholdMCFERingLWEKeyGenerator(
         {"n": 3, "eta": 2, "bound_x": 10, "bound_y": 10, "s": 3, "t": 2, **STANDARD}
     )
-    assert int(kg.q).bit_length() <= HE_STANDARD_128_LOG_Q[kg.ring_n]
-    assert kg.q == kg._modulus_for(kg.ring_n)
+    q, width = kg._params_for(kg.ring_n)
+    assert kg.q == q and int(q).bit_length() <= ring_lwe_bound(kg.ring_n, width)
 
 
 def test_ring_n_helpers():
     assert resolve_ring_n(None, None) == 32
     assert resolve_ring_n(64, None) == 64
-    assert resolve_ring_n("auto", lambda n: 2 ** 100) == 4096
+    assert resolve_ring_n("auto", lambda n: (2 ** 100, 8.0)) == 4096
     with pytest.raises(FEValidationError, match="no ring dimension"):
-        resolve_ring_n("auto", lambda n: 2 ** 1000)
-    check_he_standard(1024, 2 ** 26)
+        resolve_ring_n("auto", lambda n: (2 ** 1000, 8.0))
+    bound = RING_LWE_128_LOG_Q[8.0][1024]
+    check_ring_lwe(1024, 2 ** bound - 1, 8.0)
     with pytest.raises(FEValidationError):
-        check_he_standard(1024, 2 ** 27)
+        check_ring_lwe(1024, 2 ** bound, 8.0)
     with pytest.raises(FEValidationError):
-        check_he_standard(512, 3)
+        check_ring_lwe(512, 3, 8.0)
 
 
 def test_toy_ring_lwe_keeps_the_default_dimension():

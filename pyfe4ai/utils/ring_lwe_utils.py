@@ -465,74 +465,131 @@ def check_ring_n(ring_n) -> int:
     return ring_n
 
 
-#: Largest ``log2 q`` giving 128-bit classical security, per ring dimension:
-#: the bound of the Homomorphic Encryption Standard (Albrecht et al., 2018)
-#: for ternary secrets and error width 3.2, as used by Microsoft SEAL.
-HE_STANDARD_128_LOG_Q = {1024: 27, 2048: 54, 4096: 109, 8192: 218, 16384: 438, 32768: 881}
+#: For each error width ``sigma`` (outer key) and ring dimension ``n`` (inner
+#: key): the largest ``k`` such that LWE in dimension ``n`` with ``q = 2^k``,
+#: secret and errors ``D_{Z, sigma}`` and unlimited samples costs at least
+#: 2^128 operations by the lattice estimator (commit 53da598, MATZOV cost
+#: model; primal uSVP, BDD and BDD hybrid, dual and dual hybrid). Ring-LWE is
+#: estimated as plain LWE, as in the Homomorphic Encryption Standard, whose
+#: table (ternary secret, ``sigma = 3.2``) this estimator puts at about 125
+#: bits. A scheme is held to the row of the largest width not above the
+#: smallest width among the RLWE problems its proof relies on: wider
+#: Gaussians only make the attacks more expensive. Regenerate with
+#: ``tools/estimate_ring_lwe.py``.
+RING_LWE_128_LOG_Q = {
+    2.0: {1024: 27, 2048: 53, 4096: 107, 8192: 214, 16384: 431},
+    3.0: {1024: 28, 2048: 55, 4096: 108, 8192: 216, 16384: 432},
+    4.0: {1024: 29, 2048: 55, 4096: 109, 8192: 216, 16384: 433},
+    6.0: {1024: 30, 2048: 57, 4096: 110, 8192: 218, 16384: 434},
+    8.0: {1024: 31, 2048: 57, 4096: 111, 8192: 218, 16384: 435},
+    12.0: {1024: 32, 2048: 58, 4096: 112, 8192: 220, 16384: 436},
+    16.0: {1024: 33, 2048: 59, 4096: 113, 8192: 221, 16384: 437},
+}
+_RING_DIMS = sorted(RING_LWE_128_LOG_Q[min(RING_LWE_128_LOG_Q)])
 
 
-def check_he_standard(ring_n: int, q) -> None:
-    """Raise unless ``(ring_n, q)`` meets :data:`HE_STANDARD_128_LOG_Q`."""
-    max_bits = HE_STANDARD_128_LOG_Q.get(ring_n)
-    if max_bits is None or int(q).bit_length() > max_bits:
+def ring_lwe_bound(ring_n: int, sigma) -> int | None:
+    """Largest 128-bit ``log2 q`` of :data:`RING_LWE_128_LOG_Q` for *ring_n* and
+    the row of the largest tabulated width not above *sigma*, or ``None``."""
+    widths = [w for w in RING_LWE_128_LOG_Q if w <= sigma]
+    if not widths or ring_n not in RING_LWE_128_LOG_Q[max(widths)]:
+        return None
+    return RING_LWE_128_LOG_Q[max(widths)][ring_n]
+
+
+def check_ring_lwe(ring_n: int, q, sigma) -> None:
+    """Raise unless Ring-LWE with ``(ring_n, q)`` and width *sigma* meets
+    :data:`RING_LWE_128_LOG_Q`."""
+    bound = ring_lwe_bound(ring_n, sigma)
+    if bound is None or int(q).bit_length() > bound:
         from pyfe4ai.utils.exceptions import FEValidationError
 
         raise FEValidationError(
-            "ring_n = {} with a {}-bit q is below 128-bit security (HE standard: log2 q <= {} "
-            "for ring_n in {})".format(
-                ring_n, int(q).bit_length(), max_bits, sorted(HE_STANDARD_128_LOG_Q)
+            "ring_n = {} with a {}-bit q and RLWE width {:.2f} is below 128-bit security "
+            "(lattice estimator: log2 q <= {} here; tabulated for ring_n in {} and widths "
+            ">= {})".format(
+                ring_n, int(q).bit_length(), float(sigma), "-" if bound is None else bound,
+                _RING_DIMS, min(RING_LWE_128_LOG_Q),
             )
         )
 
 
-def he_standard_ring_n(modulus_for) -> int:
-    """Smallest ring dimension whose modulus ``modulus_for(ring_n)`` meets
-    :data:`HE_STANDARD_128_LOG_Q` (the modulus grows with the dimension)."""
-    for ring_n, max_bits in HE_STANDARD_128_LOG_Q.items():
-        if int(modulus_for(ring_n)).bit_length() <= max_bits:
+def ring_lwe_auto_n(params_for) -> int:
+    """Smallest tabulated ring dimension ``n`` whose ``params_for(n) = (q, sigma)``
+    meets :data:`RING_LWE_128_LOG_Q` (the modulus grows with the dimension)."""
+    for ring_n in _RING_DIMS:
+        q, sigma = params_for(ring_n)
+        bound = ring_lwe_bound(ring_n, sigma)
+        if bound is not None and int(q).bit_length() <= bound:
             return ring_n
     from pyfe4ai.utils.exceptions import FEValidationError
 
     raise FEValidationError(
-        "no ring dimension up to 32768 reaches 128-bit security for these bounds; "
-        "reduce bound_x, bound_y, eta or the number of clients"
+        "no ring dimension up to {} reaches 128-bit security for these bounds; "
+        "reduce bound_x, bound_y, eta or the number of clients".format(_RING_DIMS[-1])
     )
 
 
-def resolve_ring_n(ring_n, modulus_for) -> int:
+def resolve_ring_n(ring_n, params_for) -> int:
     """Ring dimension of a config entry: ``"auto"`` selects the smallest one
-    meeting :data:`HE_STANDARD_128_LOG_Q` (see :func:`he_standard_ring_n`),
-    ``None`` gives :data:`DEFAULT_RING_N`."""
+    meeting :data:`RING_LWE_128_LOG_Q` (see :func:`ring_lwe_auto_n`; *params_for*
+    maps a dimension to ``(q, rlwe_width)``), ``None`` gives :data:`DEFAULT_RING_N`."""
     if ring_n == "auto":
-        return he_standard_ring_n(modulus_for)
+        return ring_lwe_auto_n(params_for)
     return check_ring_n(ring_n or DEFAULT_RING_N)
 
 
-def bmms21_parameters(sec_param: int, eta: int, bound_x, bound_y, ring_n: int) -> tuple:
-    """Plaintext modulus, NTT prime and Gaussian widths of the BMMS21 IPFE.
+def bmms21_selective_parameters(sec_param: int, eta: int, bound_x, bound_y, ring_n: int) -> dict:
+    """Parameters of the selectively secure BMMS21 IPFE (Sec. 4) per Sec. 4.2.
 
     For ``l = eta`` coordinates bounded by ``X`` (messages) and ``Y``
-    (weights), ``kappa = sec_param`` and ``sigma = 1`` (BMMS21 Sec. 4.2):
-    ``sigma1 = 2 sqrt(l) X``, ``sigma2 = sqrt(2 (l + 2)) n sigma1 sqrt(kappa)``,
-    ``sigma3 = sqrt(2) sigma2``, ``p = 2 l X Y + 2`` (signed inner products
-    ``|<x, y>| <= l X Y`` strictly inside ``(-p/2, p/2)``) and ``q`` the first
-    NTT-friendly prime above ``p l Y (2 n kappa sigma1 sigma2 + sqrt(kappa) sigma3)``.
+    (weights), ``kappa = sec_param`` and ``n = ring_n``, with
+    ``eta_eps(Z^d) = sqrt(ln(2 d (1 + 1/eps)) / pi)``:
+
+    * G1 -> G2 (mhe-RLWE from RLWE of width ``sigma``, Theorem 1):
+      ``sigma = 1.5 eta_eps(Z^(n + n l))`` with ``eps = 2^-kappa`` (at least
+      3.2) and ``sigma2 = sqrt(2) sigma n C sqrt(l + 2)``, ``C = sqrt(kappa) sigma1``
+      (Lemma 2), so that ``sigma sqrt(1 - (sigma n C sqrt(l + 2) / sigma2)^2)
+      > eta``; ``sigma3 = sqrt(2) sigma2``;
+    * G3 -> G4 (Lemma 1 with ``||alpha|| <= 2 X sqrt(l)``):
+      ``sigma1 = sqrt(2) 2 X sqrt(l) sigma'``, so that ``Gamma >= sigma' / sqrt(2)``,
+      and ``sigma' = sqrt(2) eta_eps'(Z^n)`` with ``eps' = 2^-kappa / n``;
+      G5 -> G6 then needs RLWE with secrets and errors of width ``sigma'``;
+    * correctness: ``l Y (2 n kappa sigma1 sigma2 + sqrt(kappa) sigma3) < q / 2p``
+      with ``p = 2 l X Y + 2`` (signed inner products ``|<x, y>| <= l X Y``
+      strictly inside ``(-p/2, p/2)``); ``q`` is the first NTT-friendly prime
+      above it.
+
+    Versions <= 0.2.0 used ``sigma = 1`` and ``sigma1 = 2 sqrt(l) X`` (the
+    paper's Table 1 has the same gap), which miss both smoothing conditions.
 
     Returns:
-        ``(p, q, sigma1, sigma2, sigma3)``.
+        Dict with ``p``, ``q``, ``sigma``, ``sigma_prime``, ``sigma1``,
+        ``sigma2``, ``sigma3`` and ``rlwe_width`` (``min(sigma, sigma')``, the
+        width the 128-bit table is read at).
     """
-    import math
-
     l = int(eta)
+    n = int(ring_n)
     kappa = float(sec_param)
-    sigma1 = math.sqrt(float(4 * l)) * float(bound_x)
+    sigma = max(3.2, 1.5 * math.sqrt(_smoothing_log(n + n * l, kappa) / math.pi))
+    sigma_prime = math.sqrt(2.0) * math.sqrt(_smoothing_log(n, kappa + math.log2(n)) / math.pi)
+    sigma1 = math.sqrt(2.0) * 2.0 * float(bound_x) * math.sqrt(l) * sigma_prime
+    sigma2 = math.sqrt(2.0) * sigma * n * math.sqrt(kappa) * sigma1 * math.sqrt(l + 2)
+    sigma3 = math.sqrt(2.0) * sigma2
     p = gp.mpz(bound_x) * gp.mpz(bound_y) * gp.mpz(2 * l) + 2
-    sigma2 = math.sqrt(float(2 * (l + 2) * ring_n * ring_n)) * sigma1 * math.sqrt(kappa)
-    sigma3 = sigma2 * math.sqrt(2.0)
-    q_float = sigma1 * sigma2 * kappa * float(2 * ring_n) + math.sqrt(kappa) * sigma3
-    q_float *= float(bound_y) * float(2 * l)
-    q = next_ntt_prime(gp.mpz(int(q_float)) * p + 1, ring_n)
-    return p, q, sigma1, sigma2, sigma3
+    noise = float(l) * float(bound_y) * (2.0 * n * kappa * sigma1 * sigma2 + math.sqrt(kappa) * sigma3)
+    q = next_ntt_prime(gp.mpz(int(noise) + 1) * 2 * p + 1, n)
+    return {
+        "p": p, "q": q, "sigma": sigma, "sigma_prime": sigma_prime,
+        "sigma1": sigma1, "sigma2": sigma2, "sigma3": sigma3,
+        "rlwe_width": min(sigma, sigma_prime),
+    }
+
+
+def bmms21_parameters(sec_param: int, eta: int, bound_x, bound_y, ring_n: int) -> tuple:
+    """``(p, q, sigma1, sigma2, sigma3)`` of :func:`bmms21_selective_parameters`."""
+    P = bmms21_selective_parameters(sec_param, eta, bound_x, bound_y, ring_n)
+    return P["p"], P["q"], P["sigma1"], P["sigma2"], P["sigma3"]
 
 
 # ---------------------------------------------------------------------------
@@ -668,20 +725,21 @@ def bmms21_adaptive_parameters(sec_param: int, eta: int, bound_x, bound_y, ring_
 
 
 def bmms21_adaptive_choice(sec_param: int, eta: int, bound_x, bound_y, ring_n, m,
-                           he_standard: bool) -> dict:
+                           standard: bool) -> dict:
     """Ring dimension and ``m`` of the adaptive BMMS21 IPFE, then its parameters.
 
-    ``ring_n = "auto"`` tries the dimensions of :data:`HE_STANDARD_128_LOG_Q` in
+    ``ring_n = "auto"`` tries the dimensions of :data:`RING_LWE_128_LOG_Q` in
     increasing order (``None`` gives :data:`DEFAULT_RING_N`); ``m = "auto"``
     takes the smallest ``m >= 5`` that admits a modulus -- one meeting
-    :data:`HE_STANDARD_128_LOG_Q` when *he_standard* is set and ``ring_n`` is
-    ``"auto"`` or ``m`` is. A small ``m`` keeps the ``l m`` key polynomials and the
-    ``m``-polynomial functional keys small; a larger one lowers ``q``
-    (``sigma'`` grows like ``q^(2/m)``) and can be passed explicitly.
+    :data:`RING_LWE_128_LOG_Q` at the RLWE width ``sigma`` when *standard* is
+    set and ``ring_n`` or ``m`` is ``"auto"``. A small ``m`` keeps the ``l m``
+    key polynomials and the ``m``-polynomial functional keys small; a larger
+    one lowers ``q`` (``sigma'`` grows like ``q^(2/m)``) and can be passed
+    explicitly.
     """
     from pyfe4ai.utils.exceptions import FEValidationError
 
-    dims = list(HE_STANDARD_128_LOG_Q) if ring_n == "auto" else [check_ring_n(ring_n or DEFAULT_RING_N)]
+    dims = list(_RING_DIMS) if ring_n == "auto" else [check_ring_n(ring_n or DEFAULT_RING_N)]
     if m == "auto":
         ms = range(BMMS21_ADAPTIVE_MIN_M, BMMS21_ADAPTIVE_MAX_M + 1)
     else:
@@ -693,14 +751,17 @@ def bmms21_adaptive_choice(sec_param: int, eta: int, bound_x, bound_y, ring_n, m
                 continue
             bits = math.ceil(log2_q) + 1  # bits of the NTT prime just above 2^ceil(log2_q)
             # an explicit (ring_n, m) is left to the caller's check, which explains the refusal
-            if he_standard and (ring_n == "auto" or m == "auto") and bits > HE_STANDARD_128_LOG_Q[n]:
-                continue
+            if standard and (ring_n == "auto" or m == "auto"):
+                widths = _bmms21_adaptive_widths(sec_param, eta, bound_x, bound_y, n, mm, log2_q)
+                bound = ring_lwe_bound(n, 2.0 ** widths["sigma"])
+                if bound is None or bits > bound:
+                    continue
             params = bmms21_adaptive_parameters(sec_param, eta, bound_x, bound_y, n, mm)
             params["ring_n"] = n
             return params
     if m != "auto":
         bmms21_adaptive_parameters(sec_param, eta, bound_x, bound_y, dims[0], int(m))  # raises
-    where = "ring dimension up to 32768" if ring_n == "auto" else "ring_n = {}".format(dims[0])
+    where = "ring dimension up to {}".format(dims[-1]) if ring_n == "auto" else "ring_n = {}".format(dims[0])
     raise FEValidationError(
         "no {} and m up to {} reaches 128-bit security for these bounds; reduce bound_x, "
         "bound_y or eta".format(where, BMMS21_ADAPTIVE_MAX_M)

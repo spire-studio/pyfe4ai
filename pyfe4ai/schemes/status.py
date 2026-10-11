@@ -90,9 +90,10 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     ),
     ("sife", "ring_lwe"): SchemeStatus(
         _S + "sife.ring_lwe", REVIEWED, ADAPTED, "BMMS21 Sec. 4 (selective) + Remark 1 batching",
-        note="signed messages and weights (p = 2lXY + 2, centred decoding); one "
-        "ciphertext packs up to ring_n vectors; single NTT prime q; ring_n defaults "
-        "to the toy value 32",
+        note="signed messages and weights (p = 2lXY + 2, centred decoding); widths "
+        "from the Sec. 4.2 constraints (the paper's Table 1 misses its smoothing "
+        "conditions); one ciphertext packs up to ring_n vectors; single NTT prime q; "
+        "ring_n defaults to the toy value 32",
     ),
     ("sife", "fullysec_ring_lwe"): SchemeStatus(
         _S + "sife.fullysec_ring_lwe", REVIEWED, ADAPTED, "BMMS21 Sec. 5 (adaptive)",

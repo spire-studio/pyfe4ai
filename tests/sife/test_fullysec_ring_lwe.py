@@ -15,11 +15,11 @@ from pyfe4ai.schemes.sife.fullysec_ring_lwe import (
 )
 from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
 from pyfe4ai.utils.ring_lwe_utils import (
-    HE_STANDARD_128_LOG_Q,
     _bmms21_adaptive_slack,
     bmms21_adaptive_log2_q,
     bmms21_adaptive_parameters,
-    check_he_standard,
+    check_ring_lwe,
+    ring_lwe_bound,
 )
 
 CFG = {"eta": 3, "bound_x": 4, "bound_y": 4}
@@ -180,11 +180,11 @@ def test_standard_profile_presets_ring_parameters():
     assert out["ring_n"] == "auto" and out["sec_param"] == 128
 
 
-def test_standard_picks_a_he_standard_ring_and_at_least_five_polynomials():
+def test_standard_picks_an_estimated_ring_and_at_least_five_polynomials():
     kg = SIFEFullySecRingLWEKeyGenerator({"eta": 4, "bound_x": 4, "bound_y": 4,
                                           "security_profile": "standard"})
-    assert kg.ring_n in HE_STANDARD_128_LOG_Q and kg.m >= 5
-    check_he_standard(kg.ring_n, kg.q)
+    assert kg.m >= 5
+    check_ring_lwe(kg.ring_n, kg.q, kg.sigma)
 
 
 def test_cached_parameters_are_reloaded_and_checked():
@@ -217,5 +217,5 @@ def test_standard_with_an_explicit_ring_picks_an_m_that_meets_the_bound():
     kg = SIFEFullySecRingLWEKeyGenerator({"eta": 4, "bound_x": 4, "bound_y": 4, "ring_n": 4096,
                                           "security_profile": "standard"})
     assert kg.ring_n == 4096 and kg.m > 5
-    check_he_standard(kg.ring_n, kg.q)
-    assert bmms21_adaptive_log2_q(kg.sec_param, 4, 4, 4, 4096, kg.m - 1) > HE_STANDARD_128_LOG_Q[4096] - 1
+    check_ring_lwe(kg.ring_n, kg.q, kg.sigma)
+    assert bmms21_adaptive_log2_q(kg.sec_param, 4, 4, 4, 4096, kg.m - 1) > ring_lwe_bound(4096, kg.sigma) - 1

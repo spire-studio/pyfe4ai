@@ -46,7 +46,8 @@ from pyfe4ai.schemes.ipfe import ParameterCacheMixin
 from pyfe4ai.utils.lwe_utils import decode_scaled
 from pyfe4ai.schemes.profiles import STANDARD
 from pyfe4ai.utils.ring_lwe_utils import bmms21_parameters
-from pyfe4ai.utils.ring_lwe_utils import check_he_standard
+from pyfe4ai.utils.ring_lwe_utils import bmms21_selective_parameters
+from pyfe4ai.utils.ring_lwe_utils import check_ring_lwe
 from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul
 from pyfe4ai.utils.ring_lwe_utils import poly_add
 from pyfe4ai.utils.ring_lwe_utils import poly_mul
@@ -61,7 +62,7 @@ from pyfe4ai.utils.validation import int_vector
 
 logger = logging.getLogger(__name__)
 
-_CONSTRUCTION = "acfgu18-bmms21/v2"  # parameters sized for n * eta, p = 2T + 2
+_CONSTRUCTION = "acfgu18-bmms21/v3"  # sized for n * eta, p = 2T + 2, Sec. 4.2 widths
 
 
 class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
@@ -80,10 +81,18 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.bound_y = gp.mpz(config.get("bound_y", 4))
         if not self.n:
             raise FEKeyError("need to provide number of clients")
-        self.ring_n = resolve_ring_n(config.get("ring_n"), self._modulus_for)
+        self.ring_n = resolve_ring_n(config.get("ring_n"), self._params_for)
         self._load_parameters()
         if self.security_profile == STANDARD:
-            check_he_standard(self.ring_n, self.q)
+            check_ring_lwe(self.ring_n, self.q, self._params_for(self.ring_n)[1])
+
+    def _params_for(self, ring_n: int) -> tuple:
+        """``(q, rlwe_width)`` that :meth:`_generate_and_save` derives for *ring_n*
+        (the width is that of the RLWE problems of the BMMS21 proof)."""
+        P = bmms21_selective_parameters(
+            self.sec_param, self.n * self.eta, self.bound_x, self.bound_y, ring_n
+        )
+        return self._modulus_for(ring_n), P["rlwe_width"]
 
     def _modulus_for(self, ring_n: int):
         """Modulus ``q`` that :meth:`_generate_and_save` derives for *ring_n*."""

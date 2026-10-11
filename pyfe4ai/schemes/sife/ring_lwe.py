@@ -35,8 +35,9 @@ from pyfe4ai.schemes.profiles import STANDARD
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.ring_lwe_utils import (
     bmms21_parameters,
+    bmms21_selective_parameters,
     center_matrix,
-    check_he_standard,
+    check_ring_lwe,
     decode_vector,
     mat_vec_mul,
     matrix_check_bound,
@@ -54,7 +55,7 @@ from pyfe4ai.utils.validation import int_vector
 
 logger = logging.getLogger(__name__)
 
-_PARAM_VERSION = "p-margin/v1"  # p = 2 l X Y + 2
+_PARAM_VERSION = "bmms21-sec4.2/v2"  # p = 2 l X Y + 2, Sec. 4.2 widths
 
 # Backward-compatible aliases (private names used by internal callers)
 _poly_add = poly_add
@@ -82,13 +83,15 @@ class SIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.eta = config.get("eta", CryptoCONST.SIFE_DEFAULT_ETA)
         self.bound_x = gp.mpz(config.get("bound_x", 4))
         self.bound_y = gp.mpz(config.get("bound_y", 4))
-        self.ring_n = resolve_ring_n(config.get("ring_n"), self._modulus_for)
+        self.ring_n = resolve_ring_n(config.get("ring_n"), self._params_for)
         self._load_parameters()
         if self.security_profile == STANDARD:
-            check_he_standard(self.ring_n, self.q)
+            check_ring_lwe(self.ring_n, self.q, self._params_for(self.ring_n)[1])
 
-    def _modulus_for(self, ring_n: int):
-        return bmms21_parameters(self.sec_param, self.eta, self.bound_x, self.bound_y, ring_n)[1]
+    def _params_for(self, ring_n: int) -> tuple:
+        """``(q, rlwe_width)`` that :meth:`_generate_and_save` derives for *ring_n*."""
+        P = bmms21_selective_parameters(self.sec_param, self.eta, self.bound_x, self.bound_y, ring_n)
+        return P["q"], P["rlwe_width"]
 
     def _apply_parameters(self, param: dict) -> None:
         self.p = gp.mpz(param["p"])

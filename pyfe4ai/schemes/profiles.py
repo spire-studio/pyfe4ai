@@ -19,13 +19,15 @@ The ``security_profile`` entry of a key generator's config selects one:
     * DCR (Paillier variants): ``N`` of about 3072 bits (two 1536-bit safe
       primes);
     * Ring-LWE: ``kappa = 128`` and the smallest ring dimension whose derived
-      modulus ``q`` stays within the 128-bit bound of the Homomorphic
-      Encryption Standard (Albrecht et al. 2018, Table 1:
-      ``log2 q`` <= 27 / 54 / 109 / 218 / 438 / 881 for n = 1024 ... 32768);
-      that bound is for ternary secrets and ``sigma = 3.2`` errors, so it is
-      conservative for the wider Gaussians used here;
-      ``sife/fullysec_ring_lwe`` (BMMS21 Sec. 5, adaptive) also picks its number
-      ``m`` of key polynomials: the smallest one whose ``q`` meets that bound;
+      modulus ``q`` meets :data:`~pyfe4ai.utils.ring_lwe_utils.RING_LWE_128_LOG_Q`,
+      a lattice-estimator table (the method of the LWE tables) read at the
+      smallest width among the RLWE problems of the scheme's proof (about 8
+      for the BMMS21 parameters of Sec. 4.2 and 5; ``log2 q`` <= 31 / 57 /
+      111 / 218 / 435 for n = 1024 ... 16384 at that width). It replaces the
+      Homomorphic Encryption Standard's bound, which this estimator puts at
+      about 125 bits; ``sife/fullysec_ring_lwe`` (BMMS21 Sec. 5, adaptive) also
+      picks its number ``m`` of key polynomials: the smallest one whose ``q``
+      meets that bound;
     * dense LWE, the ABMPSW20 MCFE family (``mcfe/lwe``, ``fullysec_lwe``,
       ``lwe_threshold``, ``lwe_decentralized``): ``lwe_n = "auto"``, the
       smallest dimension ``n0`` whose derived ``q`` meets
