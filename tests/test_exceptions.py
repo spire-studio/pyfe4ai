@@ -88,7 +88,7 @@ class TestValidationErrors:
 
         kg = SIFEKeyGenerator({"sec_param": 128, "eta": 3})
         kg.setup()
-        with pytest.raises(FEValidationError, match="fusion weights"):
+        with pytest.raises(FEValidationError, match="fusion weight must be a sequence"):
             kg.get_decryption_keys("sid_1", credentials={"fusion_weight": "not_a_list"})
 
     def test_sife_dk_fusion_weight_length_mismatch(self):
@@ -97,7 +97,7 @@ class TestValidationErrors:
 
         kg = SIFEKeyGenerator({"sec_param": 128, "eta": 3})
         kg.setup()
-        with pytest.raises(FEValidationError, match="length mismatch"):
+        with pytest.raises(FEValidationError, match="must have 3 entries"):
             kg.get_decryption_keys("sid_1", credentials={"fusion_weight": [1, 2]})
 
     def test_sife_encrypt_plaintext_length(self):
@@ -109,5 +109,13 @@ class TestValidationErrors:
         pp = kg.get_public_parameters()
         sk = kg.get_private_keys()
         crypto = SIFE({"keys": {"pp": pp, "sk": sk}})
-        with pytest.raises(FEValidationError, match="invalid size"):
+        with pytest.raises(FEValidationError, match="must have 3 entries"):
             crypto.encrypt([1, 2, 3, 4])  # eta=3 but 4 elements
+
+
+def test_duplicate_client_ids_rejected():
+    """A repeated id in lst_nid silently merged two clients' keys."""
+    from pyfe4ai.schemes.mcfe.ddh import MCFEKeyGenerator
+
+    with pytest.raises(FEValidationError, match="duplicate"):
+        MCFEKeyGenerator({"sec_param": 128, "n": 3, "lst_nid": ["a", "a", "b"]})

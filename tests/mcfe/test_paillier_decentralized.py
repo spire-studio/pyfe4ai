@@ -5,6 +5,7 @@ import pytest
 import numpy as np
 
 from pyfe4ai.logger import init_logging_config
+from pyfe4ai.utils.exceptions import FESchemeError
 from pyfe4ai.schemes.mcfe.paillier_decentralized import DecentralizedMCFEPaillier
 from pyfe4ai.schemes.mcfe.paillier_decentralized import DecentralizedMCFEPaillierKeyGenerator
 
@@ -52,10 +53,10 @@ class TestKeyGenerator:
         for nid in kg_config["lst_nid"]:
             sk = kg.get_private_keys(nid)
             assert sk is not None
-            assert "pk" in sk and len(sk["pk"]) == 2
-            assert "s" in sk and len(sk["s"]) == 2
-            assert "u" in sk and len(sk["u"]) == 2
-            assert "v" in sk and len(sk["v"]) == 2 * 3  # eta * n
+            assert set(sk) == {"s", "s2"}
+            assert len(sk["s"]) == 2 and len(sk["s2"]) == 1
+        # MCFE2 keys cancel (ABMPSW20 Fig. 14)
+        assert sum(kg.msk["s2"][nid][0] for nid in kg_config["lst_nid"]) == 0
 
     def test_get_private_keys_invalid_nid(self, kg_config):
         kg = DecentralizedMCFEPaillierKeyGenerator(kg_config)
@@ -150,7 +151,7 @@ class TestEntireProcess:
         x = [1, 2]
         ct_a = clients["nid_0"].encrypt(x, "label-a")
         ct_b = clients["nid_0"].encrypt(x, "label-b")
-        assert ct_a["ct1"] != ct_b["ct1"]
+        assert ct_a["c"] != ct_b["c"]
 
     def test_two_clients(self):
         """Minimal 2-client scenario."""
@@ -188,20 +189,33 @@ class TestDKShareDerivation:
         dct_y = {"nid_0": [1, 2], "nid_1": [3, 4], "nid_2": [5, 6]}
 
         share = clients["nid_0"].derive_function_decryption_key_share(dct_y)
-        assert "dk0" in share
-        assert "dk1" in share
+        assert set(share) == {"c", "nid", "weights_id"}
 
-    def test_missing_own_nid_raises(self, kg_config):
+    def test_absent_client_contributes_zero(self, kg_config):
+        """Fig. 14: every client publishes a share; absent clients add zero."""
+        _, pp, clients = _setup_and_get_clients(kg_config)
+        dct_y = {"nid_1": [1, 2], "nid_2": [3, 4]}  # nid_0 not weighted
+        shares = {nid: c.derive_function_decryption_key_share(dct_y) for nid, c in clients.items()}
+        combiner = DecentralizedMCFEPaillier({"id": "sid_0", "keys": {"pp": pp}})
+        dk = combiner.combine_function_decryption_key_share(shares)
+        dct_ct = {nid: clients[nid].encrypt([1, 1], "absent") for nid in dct_y}
+        assert combiner.decrypt(dct_ct, dk, dct_y, "absent") == 10
+        with pytest.raises(FESchemeError):
+            combiner.combine_function_decryption_key_share({k: shares[k] for k in dct_y})
+
+    def test_too_long_weights_raise(self, kg_config):
         _, _, clients = _setup_and_get_clients(kg_config)
-        dct_y = {"nid_1": [1, 2], "nid_2": [3, 4]}  # missing nid_0
-        with pytest.raises(ValueError, match="not in fusion_weight"):
+        dct_y = {"nid_0": [1, 2, 3], "nid_1": [2, 0], "nid_2": [3, 0]}  # eta = 2
+        with pytest.raises(ValueError, match="longer than eta"):
             clients["nid_0"].derive_function_decryption_key_share(dct_y)
 
-    def test_wrong_eta_raises(self, kg_config):
-        _, _, clients = _setup_and_get_clients(kg_config)
-        dct_y = {"nid_0": [1], "nid_1": [2], "nid_2": [3]}  # eta=1 but config eta=2
-        with pytest.raises(ValueError, match="length mismatch"):
-            clients["nid_0"].derive_function_decryption_key_share(dct_y)
+    def test_combined_key_equals_the_central_key(self, kg_config):
+        kg, pp, clients = _setup_and_get_clients(kg_config)
+        dct_y = {nid: [random.randint(-10, 10), random.randint(-10, 10)] for nid in clients}
+        shares = {nid: c.derive_function_decryption_key_share(dct_y) for nid, c in clients.items()}
+        dk = DecentralizedMCFEPaillier({"id": "sid_0", "keys": {"pp": pp}}).combine_function_decryption_key_share(shares)
+        central = sum(y * s for nid in clients for y, s in zip(dct_y[nid], kg.msk["s"][nid]))
+        assert int(dk["k"]) == central
 
     def test_exceeds_bound_y_raises(self, kg_config):
         _, _, clients = _setup_and_get_clients(kg_config)
@@ -243,7 +257,7 @@ class TestNdarrayHelpers:
             expected.append(
                 sum(
                     (
-                        (dct_x[nid][layer_idx] * pow(10, precision)).astype(int)
+                        np.rint(dct_x[nid][layer_idx] * pow(10, precision))
                         / pow(10, precision)
                     )
                     * dct_y[nid][0]

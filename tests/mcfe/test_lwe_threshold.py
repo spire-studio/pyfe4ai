@@ -1,4 +1,3 @@
-import os
 import random
 import logging
 
@@ -8,7 +7,7 @@ import pytest
 from pyfe4ai.logger import init_logging_config
 from pyfe4ai.schemes.mcfe.lwe_threshold import ThresholdMCFELWE
 from pyfe4ai.schemes.mcfe.lwe_threshold import ThresholdMCFELWEKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
+from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
 
 init_logging_config()
 logger = logging.getLogger(__name__)
@@ -40,27 +39,24 @@ def test_key_generator(kg_config):
     assert kg.t == kg_config["t"]
     assert kg.eta == kg_config["eta"]
 
-    config_folder = os.path.join("config", "authority", CryptoCONST.TYPE_TMCFE_LWE)
-    assert os.path.exists(config_folder)
-    assert os.path.exists(os.path.join(config_folder, "param.json"))
-
     kg.setup()
     pp = kg.get_public_parameters()
     assert pp["t"] == kg_config["t"]
     assert pp["s"] == kg_config["s"]
     assert pp["lst_sid"] == kg_config["lst_sid"]
 
+    assert int(pp["sigma_f"]) >= 1
+
     sk_nid = kg.get_private_keys("nid_0")
-    assert "pk" in sk_nid
-    assert "u" in sk_nid
+    assert list(sk_nid) == ["z"]
 
     fusion_weight = {nid: [1] for nid in kg_config["lst_nid"]}
     dk_sid = kg.get_decryption_keys(
         "sid_0", credentials={"fusion_weight": fusion_weight, "label": "test-label"}
     )
-    assert "sk_y" in dk_sid
-    assert "z" in dk_sid
-    assert "sid_index" in dk_sid
+    # one share of the aggregated key, nothing per client
+    assert set(dk_sid) == {"sk_y", "sid", "lst_sid", "weights_id", "noise_key"}
+    assert len(dk_sid["sk_y"]) == kg.params["n0"] + kg.params["m0"]
 
 
 def test_entire_process(kg_config):
@@ -128,7 +124,7 @@ def test_entire_process_lst_ndarray(kg_config):
         expected.append(
             sum(
                 (
-                    (dct_x[nid][layer_idx] * pow(10, precision)).astype(int)
+                    np.rint(dct_x[nid][layer_idx] * pow(10, precision))
                     / pow(10, precision)
                 )
                 * dct_y[nid][0]
@@ -165,3 +161,131 @@ def test_entire_process_lst_ndarray(kg_config):
     computed = encryptors[lst_nid[0]].decrypt_lst_ndarray_ct(dct_ct_prime)
     for idx in range(len(expected)):
         assert np.allclose(computed[idx], expected[idx], atol=1e-2)
+
+
+def _round(kg_config, dct_x, dct_y, label, enrolled):
+    kg = ThresholdMCFELWEKeyGenerator(kg_config)
+    kg.setup()
+    pp = kg.get_public_parameters()
+    dct_ct = {
+        nid: ThresholdMCFELWE(
+            {"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}
+        ).encrypt(dct_x[nid], label)
+        for nid in dct_x
+    }
+    credentials = {"fusion_weight": dct_y, "label": label}
+    partials = {}
+    for sid in enrolled:
+        dk = kg.get_decryption_keys(sid, credentials=credentials)
+        server = ThresholdMCFELWE({"id": sid, "keys": {"pp": pp, "dk": dk}})
+        partials[sid] = server.share_decrypt(dct_ct, credentials, dk, enrolled)
+    combiner = ThresholdMCFELWE({"id": "nid_0", "keys": {"pp": pp}})
+    return kg, pp, dct_ct, partials, combiner
+
+
+@pytest.mark.parametrize(
+    "s, t, enrolled",
+    [
+        (3, 2, ["sid_1", "sid_2"]),
+        (4, 2, ["sid_1", "sid_3"]),
+        (4, 3, ["sid_3", "sid_0", "sid_2"]),
+        (5, 3, ["sid_0", "sid_1", "sid_2", "sid_3", "sid_4"]),
+    ],
+)
+def test_any_enrolled_set_decrypts_extreme_values(kg_config, s, t, enrolled):
+    """Correctness with the full flooding noise of |E| servers at the bounds."""
+    cfg = dict(kg_config, s=s, t=t, lst_sid=["sid_{}".format(i) for i in range(s)])
+    bx, by = cfg["bound_x"], cfg["bound_y"]
+    for sign in (1, -1):
+        dct_x = {nid: [sign * bx] for nid in cfg["lst_nid"]}
+        dct_y = {nid: [by] for nid in cfg["lst_nid"]}
+        _, _, _, partials, combiner = _round(cfg, dct_x, dct_y, "edge-{}".format(sign), enrolled)
+        assert combiner.combine_decrypt(partials) == sign * 3 * bx * by
+
+
+def test_partial_decryptions_are_noise_flooded(kg_config):
+    """Partials carry noise, derandomised per (label, enrolled set).
+
+    Without noise a partial is an exact linear function of the key share
+    (v0.2.0 known issue); with fresh noise per request a combiner could
+    average repeated answers, so identical requests get identical answers.
+    """
+    import gmpy2 as gp
+
+    from pyfe4ai.schemes.mcfe.lwe import dot_mod
+    from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
+
+    dct_x = {nid: [1] for nid in kg_config["lst_nid"]}
+    dct_y = {nid: [1] for nid in kg_config["lst_nid"]}
+    enrolled = ["sid_0", "sid_1"]
+    kg, pp, dct_ct, partials, combiner = _round(kg_config, dct_x, dct_y, "flood", enrolled)
+    credentials = {"fusion_weight": dct_y, "label": "flood"}
+    dk = kg.get_decryption_keys("sid_0", credentials=credentials)
+    server = ThresholdMCFELWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
+
+    # identical requests: identical answers (no averaging)
+    assert server.share_decrypt(dct_ct, credentials, dk, enrolled) == partials["sid_0"]
+
+    # the answer is not the exact linear value lambda <share, H(l)>
+    q = gp.mpz(pp["q"])
+    lam = lagrange_coefficient_at_zero(1, [1, 2], q)
+    exact = lam * dot_mod([gp.mpz(v) for v in dk["sk_y"]], server._hash_label("flood"), q) % q
+    noise = (gp.mpz(partials["sid_0"]["w"]) - exact) % q
+    assert noise != 0
+    assert min(noise, q - noise) <= 12 * int(pp["sigma_f"])
+
+    # another enrolled set gets independent noise and still decrypts
+    other = ["sid_0", "sid_2"]
+    w_other = server.share_decrypt(dct_ct, credentials, dk, other)
+    lam_o = lagrange_coefficient_at_zero(1, [1, 3], q)
+    exact_o = lam_o * dot_mod([gp.mpz(v) for v in dk["sk_y"]], server._hash_label("flood"), q) % q
+    assert (gp.mpz(w_other["w"]) - exact_o) % q != noise
+    dk2 = kg.get_decryption_keys("sid_2", credentials=credentials)
+    server2 = ThresholdMCFELWE({"id": "sid_2", "keys": {"pp": pp, "dk": dk2}})
+    partials_o = {"sid_0": w_other, "sid_2": server2.share_decrypt(dct_ct, credentials, dk2, other)}
+    assert combiner.combine_decrypt(partials) == 3
+    assert combiner.combine_decrypt(partials_o) == 3
+
+
+def test_server_rejects_other_weights(kg_config):
+    dct_x = {nid: [1] for nid in kg_config["lst_nid"]}
+    dct_y = {nid: [1] for nid in kg_config["lst_nid"]}
+    kg, pp, dct_ct, _, _ = _round(kg_config, dct_x, dct_y, "weights", ["sid_0", "sid_1"])
+    dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
+    server = ThresholdMCFELWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
+    other = {"fusion_weight": {nid: [2] for nid in dct_y}, "label": "weights"}
+    with pytest.raises(FESchemeError):
+        server.share_decrypt(dct_ct, other, dk, ["sid_0", "sid_1"])
+
+
+def test_single_server_cannot_decrypt(kg_config):
+    dct_x = {nid: [2] for nid in kg_config["lst_nid"]}
+    dct_y = {nid: [1] for nid in kg_config["lst_nid"]}
+    kg, pp, dct_ct, partials, combiner = _round(
+        kg_config, dct_x, dct_y, "lone", ["sid_0", "sid_1"]
+    )
+    with pytest.raises(FESchemeError):
+        combiner.combine_decrypt({"sid_0": partials["sid_0"]})
+    credentials = {"fusion_weight": dct_y, "label": "lone"}
+    dk = kg.get_decryption_keys("sid_0", credentials=credentials)
+    server = ThresholdMCFELWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
+    with pytest.raises(FESchemeError):
+        server.share_decrypt(dct_ct, credentials, dk, ["sid_0"])
+
+
+def test_duplicate_or_mismatched_partials_rejected(kg_config):
+    dct_x = {nid: [1] for nid in kg_config["lst_nid"]}
+    dct_y = {nid: [1] for nid in kg_config["lst_nid"]}
+    _, _, _, partials, combiner = _round(
+        kg_config, dct_x, dct_y, "dup", ["sid_0", "sid_1", "sid_2"]
+    )
+    with pytest.raises(FESchemeError):
+        combiner.combine_decrypt(dict(partials, extra=partials["sid_0"]))
+    del partials["sid_2"]
+    with pytest.raises(FESchemeError):
+        combiner.combine_decrypt(partials)
+
+
+def test_invalid_threshold_rejected(kg_config):
+    with pytest.raises(FEValidationError):
+        ThresholdMCFELWEKeyGenerator(dict(kg_config, t=4))

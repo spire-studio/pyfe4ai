@@ -4,8 +4,6 @@ from pyfe4ai.schemes.mife.damgard_ddh import MIFEDamgard as MIFEDamgardDDH
 from pyfe4ai.schemes.mife.damgard_ddh import MIFEDamgardKeyGenerator as MIFEDamgardDDHKeyGenerator
 from pyfe4ai.schemes.mife.ddh import MIFE
 from pyfe4ai.schemes.mife.ddh import MIFEKeyGenerator
-from pyfe4ai.schemes.mife.ddh_hybrid_alpha import MIFE as HybridAlphaMIFE
-from pyfe4ai.schemes.mife.ddh_hybrid_alpha import MIFEKeyGenerator as HybridAlphaMIFEKeyGenerator
 from pyfe4ai.schemes.mife.fh_ipe_pairing import MIFEFHIPE
 from pyfe4ai.schemes.mife.fh_ipe_pairing import MIFEFHIPEKeyGenerator
 from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPE
@@ -26,8 +24,6 @@ from pyfe4ai.schemes.mife.paillier import MIFEPaillierKeyGenerator
 __all__ = [
     "MIFE",
     "MIFEKeyGenerator",
-    "HybridAlphaMIFE",
-    "HybridAlphaMIFEKeyGenerator",
     "MIFEFHIPE",
     "MIFEFHIPEKeyGenerator",
     "MIFEFHMultiIPE",

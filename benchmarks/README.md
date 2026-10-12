@@ -26,6 +26,8 @@ scheme families in the repository.
   instantiations.
 - `benchmark_ndarray_helpers.py`: compares representative `ndarray` helper
   pipelines across `SIFE`, `FHMultiIPE`, and quadratic FE families.
+- `benchmark_ntt.py`: compares schoolbook (`O(n^2)`) and NTT (`O(n log n)`)
+  negacyclic polynomial multiplication, as used by the Ring-LWE schemes.
 - `fl_path_coverage.py`: not a timing benchmark. Runs the ML-adapter FL path
   (`encrypt_gradient` + `aggregate_gradients`) for every registry entry with
   that variant's own test configuration and reports `usable` / `unusable`

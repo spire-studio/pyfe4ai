@@ -57,7 +57,7 @@ def main() -> None:
                 "keys": {"pp": pp, "dk": dk},
             }
         )
-        shared_results[sid] = partial.share_decrypt(ciphertexts, y, dk, share_ids)
+        shared_results[sid] = partial.share_decrypt(ciphertexts, y, dk, share_ids, label)
 
     result = decryptors["nid_0"].combine_decrypt(shared_results)
 

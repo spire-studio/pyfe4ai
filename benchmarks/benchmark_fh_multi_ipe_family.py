@@ -145,7 +145,7 @@ def _bench_dmcfe(cfg: dict, x: dict[str, list[int]], y: dict[str, list[int]], la
         for nid in x:
             actor = DecentralizedMCFEFHMultiIPE({"id": nid, "keys": {"pp": pp, "sk": sk_by_nid[nid]}})
             cts[nid] = actor.encrypt(x[nid], label)
-            shares[nid] = actor.derive_function_decryption_key_share(y)
+            shares[nid] = actor.derive_function_decryption_key_share(y[nid], "bench")
         dec = DecentralizedMCFEFHMultiIPE({"id": "sid_0", "keys": {"pp": pp}})
         dk = dec.combine_function_decryption_key_share(shares)
         result = dec.decrypt(cts, dk, y, label)
@@ -207,7 +207,7 @@ def _bench_tmcfe(cfg: dict, x: dict[str, list[int]], y: dict[str, list[int]], la
         for sid in enrolled:
             dk_sid = kg.get_decryption_keys(sid, credentials=credentials)
             dec = ThresholdMCFEFHMultiIPE({"id": sid, "keys": {"pp": pp, "dk": dk_sid}})
-            partials[sid] = dec.share_decrypt(cts, credentials, dk_sid, enrolled)
+            partials[sid] = dec.share_decrypt(cts, credentials, dk_sid, enrolled, label)
         result = encs["nid_0"].combine_decrypt(partials)
         end_to_end_times.append(time.perf_counter() - t0)
         if result != sum(x[nid][0] * y[nid][0] for nid in x):
@@ -247,20 +247,19 @@ def main() -> None:
     eta = 1
     sec_level = 2
     bound = profile_value(args.profile, {"small": 4, "medium": 8, "large": 8, "report": 8})
-    label_modulus = profile_value(args.profile, {"small": 17, "medium": 17, "large": 29, "report": 29})
     x = {"nid_0": [1 for _ in range(eta)], "nid_1": [1 for _ in range(eta)], "nid_2": [1 for _ in range(eta)]}
     y = {"nid_0": [1 for _ in range(eta)], "nid_1": [1 for _ in range(eta)], "nid_2": [1 for _ in range(eta)]}
 
     for _ in range(args.warmup):
-        _bench_mife({"sec_param": 64, "sec_level": sec_level, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": "SS512"}, x, y, 1)
-        _bench_mcfe({"sec_param": 64, "sec_level": sec_level, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "u_bound": 2, "label_modulus": label_modulus, "pairing_group_param": "SS512"}, x, y, "bench-mcfe-fh-multi-ipe", 1)
-        _bench_dmcfe({"sec_param": 64, "sec_level": sec_level, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "u_bound": 2, "label_modulus": label_modulus, "pairing_group_param": "SS512"}, x, y, "bench-dmcfe-fh-multi-ipe", 1)
-        _bench_tmcfe({"sec_param": 64, "sec_level": sec_level, "eta": eta, "n": 3, "s": 3, "t": 2, "lst_nid": list(x.keys()), "lst_sid": ["sid_0", "sid_1", "sid_2"], "bound_x": bound, "bound_y": bound, "u_bound": 2, "label_modulus": label_modulus, "pairing_group_param": "SS512"}, x, y, "bench-tmcfe-fh-multi-ipe", 1)
+        _bench_mife({"sec_param": 64, "sec_level": sec_level, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": "MNT224"}, x, y, 1)
+        _bench_mcfe({"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": "MNT224"}, x, y, "bench-mcfe-fh-multi-ipe", 1)
+        _bench_dmcfe({"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": "MNT224"}, x, y, "bench-dmcfe-fh-multi-ipe", 1)
+        _bench_tmcfe({"sec_param": 64, "eta": eta, "n": 3, "s": 3, "t": 2, "lst_nid": list(x.keys()), "lst_sid": ["sid_0", "sid_1", "sid_2"], "bound_x": bound, "bound_y": bound, "pairing_group_param": "MNT224"}, x, y, "bench-tmcfe-fh-multi-ipe", 1)
     results = [
-        _bench_mife({"sec_param": 64, "sec_level": sec_level, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": "SS512"}, x, y, args.rounds),
-        _bench_mcfe({"sec_param": 64, "sec_level": sec_level, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "u_bound": 2, "label_modulus": label_modulus, "pairing_group_param": "SS512"}, x, y, "bench-mcfe-fh-multi-ipe", args.rounds),
-        _bench_dmcfe({"sec_param": 64, "sec_level": sec_level, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "u_bound": 2, "label_modulus": label_modulus, "pairing_group_param": "SS512"}, x, y, "bench-dmcfe-fh-multi-ipe", args.rounds),
-        _bench_tmcfe({"sec_param": 64, "sec_level": sec_level, "eta": eta, "n": 3, "s": 3, "t": 2, "lst_nid": list(x.keys()), "lst_sid": ["sid_0", "sid_1", "sid_2"], "bound_x": bound, "bound_y": bound, "u_bound": 2, "label_modulus": label_modulus, "pairing_group_param": "SS512"}, x, y, "bench-tmcfe-fh-multi-ipe", args.rounds),
+        _bench_mife({"sec_param": 64, "sec_level": sec_level, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": "MNT224"}, x, y, args.rounds),
+        _bench_mcfe({"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": "MNT224"}, x, y, "bench-mcfe-fh-multi-ipe", args.rounds),
+        _bench_dmcfe({"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": "MNT224"}, x, y, "bench-dmcfe-fh-multi-ipe", args.rounds),
+        _bench_tmcfe({"sec_param": 64, "eta": eta, "n": 3, "s": 3, "t": 2, "lst_nid": list(x.keys()), "lst_sid": ["sid_0", "sid_1", "sid_2"], "bound_x": bound, "bound_y": bound, "pairing_group_param": "MNT224"}, x, y, "bench-tmcfe-fh-multi-ipe", args.rounds),
     ]
     for result in results:
         result["profile"] = args.profile

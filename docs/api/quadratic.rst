@@ -12,10 +12,10 @@ SGP (Single-Input)
    :members:
    :undoc-members:
 
-Multi-Input SGP
----------------
+Multi-Input Quadratic FE (AGT22)
+--------------------------------
 
-.. automodule:: pyfe4ai.schemes.quadratic.multi_input_sgp
+.. automodule:: pyfe4ai.schemes.quadratic.miqfe
    :members:
    :undoc-members:
 

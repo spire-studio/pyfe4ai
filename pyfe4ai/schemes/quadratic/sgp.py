@@ -1,24 +1,31 @@
 """
-Secret-Key Quadratic Functional Encryption (SGP)
-| Based on
+Public-key functional encryption for quadratic polynomials (SGP)
 | "Reading in the Dark: Classifying Encrypted Digits with Functional Encryption"
-| By Dufour Sans, Gay, Pointcheval
-| See ePrint 2018/206
-|
-| This prototype follows the GoFE `quadratic/sgp.go` structure and adapts it
-| to the repository's key-generator / crypto split.
+| By Dufour-Sans, Gay, Pointcheval (ePrint 2018/206) -- Fig. 2.
 
-* type:     secret-key encryption
-* setting:  Pairing based
-* note:     research prototype aligned with the existing crypto-ipfe API
+* type:     public-key encryption; keys for matrices ``F``, decryption gives
+            ``x^T F y``
+* setting:  asymmetric pairing group (default MNT224); IND-CPA in the generic
+            bilinear group model
 
+``s, t <- Z_p^n``; ``pk = (g1^s, g2^t)``, ``msk = (s, t)``.
+
+* Enc(pk, x, y): ``gamma <- Z_p``, ``W <- GL_2``;
+  ``a_i = (W^{-1})^T (x_i, gamma s_i)``, ``b_i = W (y_i, -t_i)``;
+  ``ct = (g1^gamma, {g1^{a_i}, g2^{b_i}})`` -- computed from ``pk``.
+* KeyGen(msk, F): ``dk = (g2^{f(s, t)}, F)`` with ``f(s, t) = sum f_ij s_i t_j``.
+* Dec: ``e(g1^gamma, g2^{f(s,t)}) prod e(g1^{a_i}, g2^{b_j})^{f_ij} = [x^T F y]_T``
+  and a discrete log in ``[-n^2 B^3, n^2 B^3]``.
+
+Signed inputs with one bound ``B`` for ``x``, ``y`` and ``F``. Versions <= 0.2.0
+encrypted with ``(s, t)`` themselves (GoFE's secret-key form) and handed
+them to every encryptor, which made each encryptor a key authority.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import os
 
 import gmpy2 as gp
 import numpy as np
@@ -29,9 +36,12 @@ from pyfe4ai.schemes.ipfe import ParameterCacheMixin
 from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
 from pyfe4ai.utils.pairing_utils import to_zr
 from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup, pair
+from pyfe4ai.utils.pairing_backend import G1, G2, ZR, PairingGroup, pair
+from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.utils.validation import int_vector
+from pyfe4ai.utils.validation import scale_to_int
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +136,7 @@ def _quadratic_form(
 
 
 class QuadraticSGPKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
-    """Key generator for secret-key quadratic FE (SGP construction)."""
+    """Setup and key generation of DSGPP18's quadratic FE (Fig. 2)."""
 
     _scheme_type = CryptoCONST.TYPE_QUADRATIC_SGP
     def __init__(self, config: dict, **kwargs) -> None:
@@ -139,7 +149,10 @@ class QuadraticSGPKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         require_pairing_backend()
         self.n = config.get("n", config.get("eta", 2))
         self.bound = gp.mpz(config.get("bound", 16))
-        self.pairing_group_param = config.get("pairing_group_param", "SS512")
+        if not isinstance(self.n, int) or self.n < 1 or self.bound < 1:
+            raise FEValidationError("need integers n >= 1 and bound >= 1")
+        self.pairing_group_param = config.get("pairing_group_param", DEFAULT_PAIRING_GROUP)
+        check_asymmetric(self.pairing_group_param)
         self._load_parameters()
 
     def _apply_parameters(self, param: dict) -> None:
@@ -173,10 +186,14 @@ class QuadraticSGPKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.g2 = self.group.random(G2)
         self.s = [_rand_scalar(self.group) % self.order for _ in range(self.n)]
         self.t = [_rand_scalar(self.group) % self.order for _ in range(self.n)]
-        self.mpk = {}
+        ser = lambda e: self.group.serialize(e).decode("utf-8")  # noqa: E731
+        self.mpk = {
+            "g1_s": [ser(self.g1 ** to_zr(self.group, v)) for v in self.s],
+            "g2_t": [ser(self.g2 ** to_zr(self.group, v)) for v in self.t],
+        }
         self.msk = {
-            "g1": self.group.serialize(self.g1).decode("utf-8"),
-            "g2": self.group.serialize(self.g2).decode("utf-8"),
+            "g1": ser(self.g1),
+            "g2": ser(self.g2),
             "s": [gp.digits(v) for v in self.s],
             "t": [gp.digits(v) for v in self.t],
         }
@@ -189,15 +206,16 @@ class QuadraticSGPKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             "pairing_group_param": self.pairing_group_param,
             "g1": self.msk.get("g1"),
             "g2": self.msk.get("g2"),
+            "g1_s": self.mpk["g1_s"],
+            "g2_t": self.mpk["g2_t"],
         }
 
     def get_private_keys(self, nid: str = "nid_default", **kwargs) -> dict | None:
-        """Perform the get_private_keys operation.
+        """Public-key scheme: encryption needs ``pk`` only (``None``).
 
-            Args:
-                nid: Node identifier.
+        Versions <= 0.2.0 returned the master secret key ``(s, t)``.
         """
-        return dict(self.msk)
+        return None
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Perform the get_decryption_keys operation.
@@ -211,12 +229,10 @@ class QuadraticSGPKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         function_matrix = credentials.get("function_matrix")
         if not isinstance(function_matrix, list) or len(function_matrix) != self.n:
             raise FEValidationError("invalid function_matrix")
-        if any(not isinstance(row, list) or len(row) != self.n for row in function_matrix):
-            raise FEValidationError("invalid function_matrix shape")
-        if any(abs(int(value)) > self.bound for row in function_matrix for value in row):
-            raise FEValidationError("function_matrix exceeds configured bound")
-
-        f_matrix = [[gp.mpz(value) for value in row] for row in function_matrix]
+        f_matrix = [
+            [gp.mpz(v) for v in int_vector(row, "function_matrix row", length=self.n, bound=int(self.bound))]
+            for row in function_matrix
+        ]
         s_vec = [gp.mpz(value) for value in self.msk["s"]]
         t_vec = [gp.mpz(value) for value in self.msk["t"]]
         exponent = _quadratic_form(f_matrix, s_vec, t_vec) % self.order
@@ -230,7 +246,7 @@ class QuadraticSGPKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
 
 class QuadraticSGP(IPFEAbsCrypto):
-    """Crypto operations for secret-key quadratic FE (SGP construction)."""
+    """Encryption (from ``pk``) and decryption of DSGPP18's quadratic FE."""
 
     def __init__(self, config: dict, **kwargs) -> None:
         """Perform the __init__ operation.
@@ -242,65 +258,57 @@ class QuadraticSGP(IPFEAbsCrypto):
         require_pairing_backend()
         self.pp = self.keys["pp"]
         self.group = PairingGroup(self.pp["pairing_group_param"])
+        check_asymmetric(self.group)
         self.order = gp.mpz(int(self.group.order()))
         if self._has_private_keys():
             self.sk = self.keys["sk"]
 
     def encrypt(self, payload: dict) -> dict:
-        if not self._has_private_keys():
-            raise FEKeyError("no encryption key provided")
+        """``Enc(pk, (x, y))`` for ``n`` integers each, bounded by ``bound``."""
         if not isinstance(payload, dict):
             raise FEValidationError("Quadratic SGP expects a dict payload with x and y")
-        x_plain = payload.get("x")
-        y_plain = payload.get("y")
-        if not isinstance(x_plain, list) or not isinstance(y_plain, list):
-            raise FEValidationError("payload must include list-valued x and y")
-        if len(x_plain) != self.pp["n"] or len(y_plain) != self.pp["n"]:
-            raise FEValidationError("invalid input size")
+        n, bound = self.pp["n"], int(self.pp["bound"])
+        x = int_vector(payload.get("x"), "x", length=n, bound=bound)
+        y = int_vector(payload.get("y"), "y", length=n, bound=bound)
+        group, order = self.group, self.order
+        de = lambda v: group.deserialize(v.encode("utf-8"))  # noqa: E731
+        g1, g2 = de(self.pp["g1"]), de(self.pp["g2"])
+        g1_s = [de(v) for v in self.pp["g1_s"]]
+        g2_t = [de(v) for v in self.pp["g2_t"]]
 
-        bound = gp.mpz(self.pp["bound"])
-        x = [gp.mpz(value) for value in x_plain]
-        y = [gp.mpz(value) for value in y_plain]
-        if any(abs(int(value)) > bound for value in x + y):
-            raise FEValidationError("payload exceeds configured bound")
-
-        g1 = self.group.deserialize(self.sk["g1"].encode("utf-8"))
-        g2 = self.group.deserialize(self.sk["g2"].encode("utf-8"))
-        s_vec = [gp.mpz(value) for value in self.sk["s"]]
-        t_vec = [gp.mpz(value) for value in self.sk["t"]]
-
-        gamma = _rand_scalar(self.group) % self.order
-        w, w_inv = _rand_invertible_2x2(self.group, self.order)
+        gamma = _rand_scalar(group) % order
+        w, w_inv = _rand_invertible_2x2(group, order)
         w_inv_t = _transpose(w_inv)
-
-        a_rows = []
-        b_rows = []
-        for x_i, y_i, s_i, t_i in zip(x, y, s_vec, t_vec):
-            left = [x_i % self.order, (gamma * s_i) % self.order]
-            right = [y_i % self.order, (-t_i) % self.order]
-
-            a_i = _matvec_mod(w_inv_t, left, self.order)
-            b_i = _matvec_mod(w, right, self.order)
-
-            a_rows.append([g1 ** to_zr(self.group, value) for value in a_i])
-            b_rows.append([g2 ** to_zr(self.group, value) for value in b_i])
-
+        a_rows, b_rows = [], []
+        for x_i, y_i, gs_i, gt_i in zip(x, y, g1_s, g2_t):
+            # a_i = (W^-1)^T (x_i, gamma s_i), b_i = W (y_i, -t_i), from pk
+            a_rows.append([
+                (g1 ** to_zr(group, row[0] * x_i % order)) * (gs_i ** to_zr(group, row[1] * gamma % order))
+                for row in w_inv_t
+            ])
+            b_rows.append([
+                (g2 ** to_zr(group, row[0] * y_i % order)) * (gt_i ** to_zr(group, -row[1] % order))
+                for row in w
+            ])
         return {
-            "c0": self.group.serialize(g1 ** to_zr(self.group, gamma)).decode("utf-8"),
-            "a": [_serialize_group_vec(self.group, row) for row in a_rows],
-            "b": [_serialize_group_vec(self.group, row) for row in b_rows],
+            "c0": group.serialize(g1 ** to_zr(group, gamma)).decode("utf-8"),
+            "a": [_serialize_group_vec(group, row) for row in a_rows],
+            "b": [_serialize_group_vec(group, row) for row in b_rows],
         }
 
-    def decrypt(self, ct: dict, dk: dict) -> int:
+    def decrypt(self, ct: dict, dk: dict) -> int | None:
         """Decrypt ciphertexts and recover the inner product.
 
             Args:
                 ct: Ciphertext dict.
                 dk: Functional decryption key.
         """
+        n = self.pp["n"]
         function_matrix = [[gp.mpz(value) for value in row] for row in dk["f"]]
-        if len(function_matrix) != self.pp["n"]:
-            raise FEValidationError("invalid function matrix length")
+        if len(function_matrix) != n or any(len(row) != n for row in function_matrix):
+            raise FEValidationError("invalid function matrix shape")
+        if len(ct["a"]) != n or len(ct["b"]) != n or any(len(r) != 2 for r in ct["a"] + ct["b"]):
+            raise FEValidationError("ciphertext does not match the parameters")
 
         c0 = self.group.deserialize(ct["c0"].encode("utf-8"))
         key = self.group.deserialize(dk["key"].encode("utf-8"))
@@ -318,8 +326,12 @@ class QuadraticSGP(IPFEAbsCrypto):
         g1 = self.group.deserialize(self.pp["g1"].encode("utf-8"))
         g2 = self.group.deserialize(self.pp["g2"].encode("utf-8"))
         base = pair(g1, g2)
-        bound = int((gp.mpz(self.pp["n"]) ** 2) * (gp.mpz(self.pp["bound"]) ** 3))
-        return bounded_discrete_log_gt(self.group, base, prod, bound)
+        bound = int((gp.mpz(n) ** 2) * (gp.mpz(self.pp["bound"]) ** 3))
+        try:
+            return bounded_discrete_log_gt(self.group, base, prod, bound)
+        except ValueError:
+            logger.error("quadratic result out of bound (wrong key or ciphertext?)")
+            return None
 
     def _prepare_quadratic_ndarray_payload(
         self, lhs_lst_ndarray: list, rhs_lst_ndarray: list
@@ -338,10 +350,10 @@ class QuadraticSGP(IPFEAbsCrypto):
         if any(ary.shape != shape for ary in lhs_lst_ndarray + rhs_lst_ndarray):
             raise FEValidationError("all ndarray inputs must share the same shape")
         lhs_scaled = [
-            (ary.copy() * pow(10, self.precision)).astype(int) for ary in lhs_lst_ndarray
+            scale_to_int(ary, self.precision) for ary in lhs_lst_ndarray
         ]
         rhs_scaled = [
-            (ary.copy() * pow(10, self.precision)).astype(int) for ary in rhs_lst_ndarray
+            scale_to_int(ary, self.precision) for ary in rhs_lst_ndarray
         ]
         return lhs_scaled, rhs_scaled
 
@@ -387,6 +399,7 @@ class QuadraticSGP(IPFEAbsCrypto):
         for ary in dict_ndarray_ct:
             ary_dec = np.empty(ary.shape, dtype=object)
             for i, _ in np.ndenumerate(ary):
-                ary_dec[i] = self.decrypt(ary[i], dk)
-            lst_ndarray.append((ary_dec / pow(10, 2 * self.precision)).astype(float))
+                value = self.decrypt(ary[i], dk)
+                ary_dec[i] = np.nan if value is None else value / pow(10, 2 * self.precision)
+            lst_ndarray.append(ary_dec.astype(float))
         return lst_ndarray

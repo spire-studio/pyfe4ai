@@ -18,7 +18,7 @@ def kg_config():
         "bound": 10,
         "subspace_dim": 3,
         "coeff_bound": 1,
-        "pairing_group_param": "SS512",
+        "pairing_group_param": "MNT224",
     }
 
 
@@ -34,10 +34,8 @@ def test_key_generator(kg_config):
     assert pp["eta"] == kg_config["eta"]
     assert pp["subspace_dim"] == kg_config["subspace_dim"]
 
-    sk = kg.get_private_keys()
-    assert "b" in sk
-    assert "u" in sk
-    assert "v" in sk
+    # public-key scheme: the master secret key (b, U, V) is never handed out
+    assert kg.get_private_keys() is None
 
     y = [1 for _ in range(kg_config["eta"])]
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y})
@@ -49,9 +47,7 @@ def test_public_and_secret_encryption(kg_config):
     kg = SIFEPartFHIPEKeyGenerator(kg_config)
     kg.setup()
     pp = kg.get_public_parameters()
-    sk = kg.get_private_keys()
-
-    crypto = SIFEPartFHIPE({"id": "nid_default", "keys": {"pp": pp, "sk": sk}})
+    crypto = SIFEPartFHIPE({"id": "nid_default", "keys": {"pp": pp}})
     decryptor = SIFEPartFHIPE({"id": "sid_0", "keys": {"pp": pp}})
 
     y = [random.randint(-kg_config["bound"], kg_config["bound"]) for _ in range(kg_config["eta"])]
@@ -67,6 +63,25 @@ def test_public_and_secret_encryption(kg_config):
 
     x = [random.randint(-kg_config["bound"], kg_config["bound"]) for _ in range(kg_config["eta"])]
     expected_secret = sum(a * b for a, b in zip(x, y))
-    ct_secret = crypto.sec_encrypt(x)
+    ct_secret = kg.sec_encrypt(x)
     computed_secret = decryptor.decrypt(ct_secret, dk)
     assert computed_secret == expected_secret
+
+
+def test_subspace_dimension_must_be_proper(kg_config):
+    """A square M (subspace_dim = eta) published V = (V^T M) M^-1 and with it y."""
+    from pyfe4ai.utils.exceptions import FEValidationError
+
+    with pytest.raises(FEValidationError):
+        SIFEPartFHIPEKeyGenerator(dict(kg_config, subspace_dim=kg_config["eta"]))
+    default_cfg = {k: v for k, v in kg_config.items() if k != "subspace_dim"}
+    # keys leak M^T y: the default keeps k = 1
+    assert SIFEPartFHIPEKeyGenerator(dict(default_cfg, eta=3)).subspace_dim == 1
+
+
+def test_adapter_encryptor_gets_no_master_key():
+    from pyfe4ai.utils.ml_adapter import FESchemeWrapper
+
+    wrapper = FESchemeWrapper("sife", "part_fh_ipe_pairing",
+                              {"sec_param": 64, "eta": 4, "bound": 4, "pairing_group_param": "MNT224"})
+    assert "sk" not in wrapper._get_encryptor("nid_0").keys

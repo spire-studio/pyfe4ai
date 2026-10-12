@@ -1,4 +1,3 @@
-import os
 import random
 
 import numpy as np
@@ -8,7 +7,6 @@ pytest.importorskip("charm", reason="charm-crypto not installed")
 
 from pyfe4ai.schemes.quadratic.quad import QuadraticQuad
 from pyfe4ai.schemes.quadratic.quad import QuadraticQuadKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
 
 
 @pytest.fixture
@@ -18,22 +16,21 @@ def kg_config():
         "n": 4,
         "m": 3,
         "bound": 5,
-        "pairing_group_param": "SS512",
+        "pairing_group_param": "MNT224",
     }
 
 
 def test_key_generator(kg_config):
+    """Gay20 Fig. 4: [M]_1 is (2m + 3n) x (m + 2 + 2n) and only in G1."""
     kg = QuadraticQuadKeyGenerator(kg_config)
-    param_path = os.path.join(
-        "config", "authority", CryptoCONST.TYPE_QUADRATIC_QUAD, "param.json"
-    )
-    assert os.path.exists(param_path)
-
     kg.setup()
     pp = kg.get_public_parameters()
-    assert pp["n"] == kg_config["n"]
-    assert pp["m"] == kg_config["m"]
-    assert pp["inner"]["subspace_dim"] == kg_config["n"] * kg_config["m"]
+    n, m = kg_config["n"], kg_config["m"]
+    assert pp["n"] == n and pp["m"] == m
+    assert len(pp["ipfe"]["m"]) == 2 * m + 3 * n
+    assert all(len(row) == m + 2 + 2 * n for row in pp["ipfe"]["m"])
+    assert all(isinstance(v, str) and v.startswith("1:") for row in pp["ipfe"]["m"] for v in row)
+    assert kg.get_private_keys() is None
 
 
 def test_entire_process(kg_config):
@@ -65,6 +62,20 @@ def test_entire_process(kg_config):
     )
     computed = decryptor.decrypt(ct, dk)
     assert computed == expected
+    # succinct ciphertext: 4n + 2m + 4 elements of G1 and m of G2
+    assert len(ct["ct_x"]) + len(ct["ct"]) == 4 * n + 2 * m + 4
+    assert len(ct["ct_y"]) == m and all(v.startswith("2:") for v in ct["ct_y"])
+
+
+def test_extreme_values(kg_config):
+    kg = QuadraticQuadKeyGenerator(dict(kg_config, n=2, m=2, bound=3))
+    kg.setup()
+    pp = kg.get_public_parameters()
+    enc = QuadraticQuad({"keys": {"pp": pp}})
+    f = [[3, -3], [-3, 3]]
+    dk = kg.get_decryption_keys(None, credentials={"function_matrix": f})
+    ct = enc.encrypt({"x": [3, -3], "y": [3, -3]})
+    assert QuadraticQuad({"keys": {"pp": pp}}).decrypt(ct, dk) == 4 * 27
 
 
 def test_entire_process_lst_ndarray():
@@ -73,7 +84,7 @@ def test_entire_process_lst_ndarray():
         "n": 2,
         "m": 3,
         "bound": 500,
-        "pairing_group_param": "SS512",
+        "pairing_group_param": "MNT224",
     }
     kg = QuadraticQuadKeyGenerator(cfg)
     kg.setup()

@@ -10,6 +10,7 @@ from pyfe4ai.logger import init_logging_config
 from pyfe4ai.schemes.sife.lwe import SIFELWE
 from pyfe4ai.schemes.sife.lwe import SIFELWEKeyGenerator
 from pyfe4ai.utils.crypto_constants import CryptoCONST
+from pyfe4ai.utils.exceptions import FEValidationError
 
 init_logging_config()
 logger = logging.getLogger(__name__)
@@ -42,8 +43,10 @@ def test_key_generator(kg_config):
     pp = kg.get_public_parameters()
     assert gp.digits(kg.p) == pp["p"]
     assert gp.digits(kg.q) == pp["q"]
-    assert len(pp["A"]) == kg.m
-    assert len(pp["A"][0]) == kg.lwe_n
+    # A is published as a seed, not as its m x lwe_n entries
+    assert "A" not in pp
+    assert len(bytes.fromhex(pp["A_seed"])) == 32
+    assert (pp["m"], pp["lwe_n"]) == (kg.m, kg.lwe_n)
 
     enc_key = kg.get_private_keys()
     assert "pk" in enc_key
@@ -54,8 +57,9 @@ def test_key_generator(kg_config):
     assert len(dk["sk_y"]) == kg.lwe_n
 
 
-def test_entire_process(kg_config):
-    kg = SIFELWEKeyGenerator(kg_config)
+@pytest.mark.parametrize("mode", ["memory", "stream"])
+def test_entire_process(kg_config, mode):
+    kg = SIFELWEKeyGenerator({**kg_config, "matrix_mode": mode})
     kg.setup()
 
     x = [random.randint(-kg_config["bound_x"], kg_config["bound_x"]) for _ in range(4)]
@@ -64,7 +68,7 @@ def test_entire_process(kg_config):
 
     pp = kg.get_public_parameters()
     sk_nid = kg.get_private_keys()
-    crypto_nid = SIFELWE({"id": "nid_default", "keys": {"pp": pp, "sk": sk_nid}})
+    crypto_nid = SIFELWE({"id": "nid_default", "keys": {"pp": pp, "sk": sk_nid}, "matrix_mode": mode})
     ct_nid = crypto_nid.encrypt(x)
     assert isinstance(ct_nid, dict)
     assert "ct0" in ct_nid
@@ -90,7 +94,7 @@ def test_entire_process_lst_ndarray(kg_config):
     fusion_weight = [2]
     lst_x = [np.random.random_sample((2, 3)), np.random.random_sample((2, 2, 2))]
     expected = [
-        ((ary * pow(10, precision)).astype(int) / pow(10, precision))
+        (np.rint(ary * pow(10, precision)) / pow(10, precision))
         * fusion_weight[0]
         for ary in lst_x
     ]
@@ -118,3 +122,10 @@ def test_entire_process_lst_ndarray(kg_config):
 
     for idx in range(len(expected)):
         assert np.allclose(computed[idx], expected[idx], atol=1e-2)
+
+
+def test_unknown_matrix_mode_is_refused(kg_config):
+    kg = SIFELWEKeyGenerator(kg_config)
+    kg.setup()
+    with pytest.raises(FEValidationError, match="matrix_mode"):
+        SIFELWE({"keys": {"pp": kg.get_public_parameters()}, "matrix_mode": "disk"})

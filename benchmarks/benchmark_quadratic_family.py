@@ -22,7 +22,6 @@ def _bench_sgp(cfg: dict, x: list[int], y: list[int], f_matrix: list[list[int]],
     setup_times = []
     end_to_end_times = []
     pp_sizes = []
-    sk_sizes = []
     dk_sizes = []
     ct_sizes = []
 
@@ -32,8 +31,7 @@ def _bench_sgp(cfg: dict, x: list[int], y: list[int], f_matrix: list[list[int]],
         kg.setup()
         setup_times.append(time.perf_counter() - t0)
         pp = kg.get_public_parameters()
-        sk = kg.get_private_keys()
-        enc = QuadraticSGP({"id": "nid_default", "keys": {"pp": pp, "sk": sk}})
+        enc = QuadraticSGP({"id": "nid_default", "keys": {"pp": pp}})
         dec = QuadraticSGP({"id": "sid_0", "keys": {"pp": pp}})
 
         t0 = time.perf_counter()
@@ -46,7 +44,6 @@ def _bench_sgp(cfg: dict, x: list[int], y: list[int], f_matrix: list[list[int]],
             raise AssertionError("Quadratic/SGP benchmark produced an unexpected result")
 
         pp_sizes.append(size_bytes(pp))
-        sk_sizes.append(size_bytes(sk))
         dk_sizes.append(size_bytes(dk))
         ct_sizes.append(size_bytes(ct))
 
@@ -57,7 +54,6 @@ def _bench_sgp(cfg: dict, x: list[int], y: list[int], f_matrix: list[list[int]],
         "end_to_end_median_sec": stats(end_to_end_times)[1],
         "end_to_end_std_sec": stats(end_to_end_times)[2],
         "pp_total_bytes": int(sum(pp_sizes) / len(pp_sizes)),
-        "sk_total_bytes": int(sum(sk_sizes) / len(sk_sizes)),
         "dk_total_bytes": int(sum(dk_sizes) / len(dk_sizes)),
         "ct_total_bytes": int(sum(ct_sizes) / len(ct_sizes)),
     }
@@ -124,11 +120,11 @@ def main() -> None:
     f_quad = [[1 for _ in range(quad_m)] for _ in range(dim)]
 
     for _ in range(args.warmup):
-        _bench_sgp({"sec_param": 64, "n": dim, "bound": bound, "pairing_group_param": "SS512"}, x, y_sgp, f_sgp, 1)
-        _bench_quad({"sec_param": 64, "n": dim, "m": quad_m, "bound": bound, "pairing_group_param": "SS512"}, x, y_quad, f_quad, 1)
+        _bench_sgp({"sec_param": 64, "n": dim, "bound": bound, "pairing_group_param": "MNT224"}, x, y_sgp, f_sgp, 1)
+        _bench_quad({"sec_param": 64, "n": dim, "m": quad_m, "bound": bound, "pairing_group_param": "MNT224"}, x, y_quad, f_quad, 1)
     results = [
-        _bench_sgp({"sec_param": 64, "n": dim, "bound": bound, "pairing_group_param": "SS512"}, x, y_sgp, f_sgp, args.rounds),
-        _bench_quad({"sec_param": 64, "n": dim, "m": quad_m, "bound": bound, "pairing_group_param": "SS512"}, x, y_quad, f_quad, args.rounds),
+        _bench_sgp({"sec_param": 64, "n": dim, "bound": bound, "pairing_group_param": "MNT224"}, x, y_sgp, f_sgp, args.rounds),
+        _bench_quad({"sec_param": 64, "n": dim, "m": quad_m, "bound": bound, "pairing_group_param": "MNT224"}, x, y_quad, f_quad, args.rounds),
     ]
     for result in results:
         result["profile"] = args.profile

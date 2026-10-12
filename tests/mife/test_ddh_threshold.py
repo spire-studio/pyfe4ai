@@ -62,8 +62,7 @@ def test_key_generator(kg_config):
     # test sk generation
     for nid in lst_nid_expected:
         sk_nid = kg.get_private_keys(nid)
-        assert "g_alpha" in sk_nid
-        assert "g_alpha_w" in sk_nid
+        assert "h" in sk_nid
         assert "u" in sk_nid
         if nid == "nid_5":
             logger.debug(sk_nid)
@@ -82,10 +81,10 @@ def test_key_generator(kg_config):
     lst_sid = ["sid_{}".format(i) for i in range(kg_config["s"])]
     for sid in lst_sid:
         dk_sid = kg.get_decryption_keys(sid, credentials={"fusion_weight": credentials})
-        assert "v0" in dk_sid
-        assert "v1" in dk_sid
-        assert isinstance(dk_sid["v1"], dict)
-        assert len(dk_sid["v1"]) == kg_config["n"]
+        assert "z" in dk_sid
+        assert "d" in dk_sid
+        assert isinstance(dk_sid["d"], dict)
+        assert len(dk_sid["d"]) == kg_config["n"]
 
 
 def test_threshold_mife(kg_config):
@@ -124,8 +123,8 @@ def test_threshold_mife(kg_config):
         tmife_nid = ThresholdMIFE(config_nid)
         ct_nid = tmife_nid.encrypt(dict_tmife_n_x[nid])
         assert isinstance(ct_nid, dict)
-        assert "ct0" in ct_nid
-        assert "ct1" in ct_nid
+        assert "t" in ct_nid
+        assert "c" in ct_nid
         dict_tmife_n_ct[nid] = ct_nid
         dict_tmife_n[nid] = tmife_nid
 
@@ -147,9 +146,8 @@ def test_threshold_mife(kg_config):
             dict_tmife_n_ct, dict_tmife_n_y, dk_sid, lst_sid_enrolled
         )
         assert isinstance(ct_sid, dict)
-        assert "ct0_prime" in ct_sid
-        assert "ct1_prime" in ct_sid
-        assert "ct2_prime" in ct_sid
+        assert "c_y" in ct_sid
+        assert "w" in ct_sid
         dict_tmife_s_ct[sid] = ct_sid
 
     # combine decryption
@@ -294,3 +292,21 @@ def test_duplicate_partial_decryption_rejected():
     shares["extra"] = shares["sid_0"]
     with pytest.raises(FESchemeError):
         clients["nid_0"].combine_decrypt(shares)
+
+
+def test_key_shares_are_bound_to_weights():
+    kg, pp, clients, dct_ct, dct_y, _ = _setup_round(3, 3, 2, 1)
+    dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
+    server = ThresholdMIFE({"id": "sid_0", "precision": 0, "keys": {"pp": pp, "dk": dk}})
+    other = {nid: [v + 1 for v in y] for nid, y in dct_y.items()}
+    with pytest.raises(FESchemeError):
+        server.share_decrypt(dct_ct, other, dk, ["sid_0", "sid_1"])
+    with pytest.raises(FESchemeError):
+        server.share_decrypt({k: v for k, v in dct_ct.items() if k != "nid_2"}, dct_y, dk, ["sid_0", "sid_1"])
+
+
+def test_pp_only_combiner_decrypts():
+    kg, pp, _, dct_ct, dct_y, expected = _setup_round(3, 3, 2, 1)
+    shares = _share_decrypt(kg, pp, dct_ct, dct_y, ["sid_0", "sid_2"])
+    combiner = ThresholdMIFE({"id": "c", "precision": 0, "keys": {"pp": pp}})
+    assert combiner.combine_decrypt(shares) == expected

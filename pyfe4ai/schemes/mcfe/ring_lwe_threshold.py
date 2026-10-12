@@ -1,394 +1,464 @@
 """
-Threshold Ring-LWE-Based Multi-Client Inner-Product Functional Encryption
-| Threshold secure aggregation organization inspired by
-| "TAPFed: Threshold Secure Aggregation for Privacy-Preserving Federated Learning"
-| Published in: IEEE TDSC
-|
-| This prototype combines threshold decryption-key sharing with the Ring-LWE
-| multi-client inner-product FE line used in this repository.
+Threshold Ring-LWE identity-based multi-client inner-product FE: the BMMS21
+identity-based MCFE with a Shamir-shared functional key and statistically
+flooded partial decryptions.
 
-* type:     public-key encryption
-* setting:  Integer based
-* note:     research prototype aligned with the existing crypto-ipfe API
+| MCFE layer: :mod:`pyfe4ai.schemes.mcfe.ring_lwe` (BMMS21, PKC 2022, Section 6).
+| Threshold layer in the setting of R. Xu et al., "TAPFed: Threshold Secure
+| Aggregation for Privacy-Preserving Federated Learning", IEEE TDSC 2024.
 
+* type:     identity-based multi-client encryption, threshold functional decryption
+* setting:  R_q = Z_q[x] / (x^ring_n + 1), q an NTT-friendly prime
+
+Construction (notation of :mod:`pyfe4ai.schemes.mife.ring_lwe`):
+
+* KeyGen:    the identity-based key ``({sk_i}, z'', z''_chunks)`` for ``(y, l)``;
+             every coefficient is Shamir-shared with threshold ``t`` over ``Z_q``.
+* ShareDec:  server ``k`` of an enrolled set ``E`` publishes, coefficient-wise,
+             ``w_k = lambda_k (sum_i ct1_i sk_i^(k) + Delta z''^(k)) + e_k`` and
+             ``c_y = sum_i sum_row y_row ct0_{i,row}``.
+* Combine:   ``c_y - sum_{k in E} w_k = Delta <x, y> + noise - sum e_k``; decode.
+
+Flooding: the exact key part differs from what the result and the
+ciphertexts determine by the decryption noise
+``sum_row y_row (e'_row r + e_row) - e sum_row y_row s_row``, bounded per
+coefficient by ``B = n eta Y (2 ring_n 144 sigma1 sigma2 + 12 sigma3)``;
+``e_k <- D_{Z, 2^kappa B}`` per coefficient smudges it (statistical
+argument), with ``q`` enlarged so that ``s`` flooding terms still decode.
+Ciphertexts (and ndarray chunks) carry one HMAC tag per server over the
+(chunk) label and the ciphertext; servers only decrypt ciphertexts tagged
+for them under the label they serve, since ``w_k`` is linear in ``ct1``.
+The noise is seeded with a per-server key (fixed per weights and label),
+``lambda_k``, the label or chunk and the ``ct1`` values, so a request for
+the same key part draws the same noise; a corrupted client varying its own
+``ct1`` draws fresh noise each time, and averaging that away would take about
+``2^(2 stat_param)`` partial decryptions. The threshold layer is our own
+design.
 """
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import logging
-import os
-import random
+import secrets
 
 import gmpy2 as gp
-
-_CSPRNG = random.SystemRandom()
 import numpy as np
 
+from pyfe4ai.schemes.mcfe.labels import chunk_label
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWE
+from pyfe4ai.schemes.mcfe.ring_lwe import chunk_key_index
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
-from pyfe4ai.utils.ring_lwe_utils import decode_vector
+from pyfe4ai.schemes.mcfe.labels import encode_label
+from pyfe4ai.schemes.threshold_utils import check_ciphertext_tags
+from pyfe4ai.schemes.threshold_utils import check_fusion_weight
+from pyfe4ai.schemes.threshold_utils import client_server_mac_keys
+from pyfe4ai.schemes.threshold_utils import tag_ciphertext
+from pyfe4ai.schemes.threshold_utils import ciphertexts_digest
+from pyfe4ai.schemes.threshold_utils import fusion_weight_id
+from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
+from pyfe4ai.schemes.threshold_utils import share_points
+from pyfe4ai.schemes.threshold_utils import share_secret
+from pyfe4ai.schemes.threshold_utils import validate_enrolled
+from pyfe4ai.schemes.threshold_utils import combine_consistently
+from pyfe4ai.schemes.threshold_utils import partial_groups
+from pyfe4ai.schemes.threshold_utils import validate_partial_decryptions
+from pyfe4ai.schemes.threshold_utils import validate_threshold
 from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.crypto_utils import md5_hash
-from pyfe4ai.utils.lwe_utils import label_scalar_from_hash
+from pyfe4ai.utils.lwe_utils import GAUSSIAN_TAIL_CUT
+from pyfe4ai.utils.lwe_utils import decode_scaled
+from pyfe4ai.utils.ring_lwe_utils import bmms21_parameters
+from pyfe4ai.utils.ring_lwe_utils import canonical_ring_ciphertext
+from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul
+from pyfe4ai.utils.ring_lwe_utils import next_ntt_prime
+from pyfe4ai.utils.ring_lwe_utils import poly_add
+from pyfe4ai.utils.ring_lwe_utils import poly_mul
+from pyfe4ai.utils.ring_lwe_utils import transpose
+from pyfe4ai.utils.sampling_utils import XofRandom
+from pyfe4ai.utils.sampling_utils import discrete_gaussian_bigint
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.utils.ring_lwe_utils import seeded_polynomial
 
 logger = logging.getLogger(__name__)
 
-
-def _eval_poly(coeffs: list[gp.mpz], x_value: int, modulus: gp.mpz) -> gp.mpz:
-    """Perform the _eval_poly operation.
-
-        Args:
-            coeffs: Polynomial coefficient list.
-            x_value: Evaluation point.
-            modulus: Modulus for the arithmetic operation.
-    """
-    acc = gp.mpz(0)
-    x = gp.mpz(x_value)
-    power = gp.mpz(1)
-    for coeff in coeffs:
-        acc = (acc + coeff * power) % modulus
-        power = (power * x) % modulus
-    return acc
+_CONSTRUCTION = "bmms21-ibmcfe-shamir-smudging/v1"
+_TAG_DOMAIN = "pyfe4ai/tmcfe-ring-lwe/ciphertext-tag/v1"
 
 
-def _share_secret(
-    secret: gp.mpz, threshold: int, share_points: list[int], modulus: gp.mpz
-) -> dict[int, gp.mpz]:
-    """Perform the _share_secret operation.
-
-        Args:
-            secret: The secret to share.
-            threshold: Minimum number of shares needed for reconstruction.
-            share_points: Evaluation points for the shares.
-            modulus: Modulus for the arithmetic operation.
-    """
-    coeffs = [gp.mpz(secret) % modulus] + [
-        gp.mpz(_CSPRNG.randrange(0, int(modulus)))
-        for _ in range(1, threshold)
-    ]
-    return {x: _eval_poly(coeffs, x, modulus) for x in share_points}
+def _tag_payload(encoded_label: str, ct: dict) -> list:
+    """What a tMCFE-Ring-LWE ciphertext tag covers: the (chunk) label and the
+    ciphertext as serialised."""
+    return [encoded_label, ct.get("k"), ct.get("ct0"), ct.get("ct1")]
 
 
-def _lagrange_at_zero(shares: dict[int, gp.mpz], modulus: gp.mpz) -> gp.mpz:
-    """Perform the _lagrange_at_zero operation.
-
-        Args:
-            shares: List of ``(x, y)`` share pairs.
-            modulus: Modulus for the arithmetic operation.
-    """
-    result = gp.mpz(0)
-    xs = list(shares.keys())
-    for x_j in xs:
-        num = gp.mpz(1)
-        den = gp.mpz(1)
-        for x_m in xs:
-            if x_m == x_j:
-                continue
-            num = (num * gp.mpz(x_m)) % modulus
-            den = (den * gp.mpz(x_m - x_j)) % modulus
-        lagrange = (num * gp.invert(den % modulus, modulus)) % modulus
-        result = (result + gp.mpz(shares[x_j]) * lagrange) % modulus
-    return result
-
-
-def _center_mod(value: gp.mpz, modulus: gp.mpz) -> gp.mpz:
-    """Perform the _center_mod operation.
-
-        Args:
-            value: Input value.
-            modulus: Modulus for the arithmetic operation.
-    """
-    value %= modulus
-    half = modulus // 2
-    if value > half:
-        value -= modulus
-    return value
+def _flooding_poly(sigma: int, ring_n: int, rng) -> list:
+    bound = GAUSSIAN_TAIL_CUT * sigma
+    out = []
+    while len(out) < ring_n:
+        e = discrete_gaussian_bigint(sigma, 1, rng=rng)[0]
+        if abs(e) <= bound:
+            out.append(e)
+    return out
 
 
 class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
-    """Key generator for threshold Ring-LWE-based multi-client inner-product FE."""
+    """Key generator for threshold BMMS21 identity-based MCFE over Ring-LWE."""
 
     _scheme_type = CryptoCONST.TYPE_TMCFE_RING_LWE
-    def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
 
-            Args:
-                config: Scheme configuration dict.
+    def __init__(self, config: dict, **kwargs) -> None:
+        """Initialise the key generator.
+
+        Args:
+            config: As for :class:`MCFERingLWEKeyGenerator`, plus ``s``,
+                ``t``, ``lst_sid`` and ``stat_param`` (``kappa`` of the flooding).
         """
         self.t = config.get("t", CryptoCONST.tMCFE_T)
-        self.lst_sid = config.get(
-            "lst_sid", ["sid_{}".format(i) for i in range(config.get("s", 1))]
-        )
+        s = config.get("s") or len(config.get("lst_sid", [])) or 1
+        self.lst_sid = config.get("lst_sid", ["sid_{}".format(i) for i in range(s)])
+        self.stat_param = int(config.get("stat_param", 64))
         self.dict_dk = {}
-        super().__init__(config, **kwargs)
-
-    def _apply_parameters(self, param: dict) -> None:
-        self.p = gp.mpz(param["p"])
-        self.q = gp.mpz(param["q"])
-        self.ring_n = int(param["ring_n"])
-        self.sigma1 = float(param["sigma1"])
-        self.sigma2 = float(param["sigma2"])
-        self.sigma3 = float(param["sigma3"])
-        self.A = [gp.mpz(v) for v in param["A"]]
+        super().__init__(dict(config, s=s), **kwargs)
+        if len(self.lst_sid) != self.s:
+            raise FEValidationError(
+                "lst_sid has {} servers but s={}".format(len(self.lst_sid), self.s)
+            )
+        validate_threshold(self.t, self.lst_sid)
 
     def _param_verification(self, param: dict) -> bool:
-        return (
+        if not (
             super()._param_verification(param)
+            and param.get("threshold_construction") == _CONSTRUCTION
             and param.get("s") == self.s
-            and param.get("t") == self.t
-            and param.get("lst_sid") == self.lst_sid
+            and param.get("stat_param") == self.stat_param
+        ):
+            return False
+        params = bmms21_parameters(
+            self.sec_param, self.n * self.eta, self.bound_x, self.bound_y, self.ring_n
         )
+        return param.get("sigma_f") == str(self._flooded_modulus(self.ring_n, *params)[1])
+
+    def _apply_parameters(self, param: dict) -> None:
+        super()._apply_parameters(param)
+        self.sigma_f = int(param["sigma_f"])
+
+    def _flooded_modulus(self, ring_n: int, p, q, sigma1, sigma2, sigma3) -> tuple:
+        """Return ``(q', sigma_f)``: the BMMS21 modulus *q* enlarged for flooding."""
+        noise_bound = self.n * self.eta * int(self.bound_y) * int(
+            2 * ring_n * GAUSSIAN_TAIL_CUT ** 2 * sigma1 * sigma2
+            + GAUSSIAN_TAIL_CUT * sigma3 + 1
+        )
+        sigma_f = noise_bound << self.stat_param
+        budget = noise_bound + self.s * GAUSSIAN_TAIL_CUT * sigma_f
+        return next_ntt_prime(max(q, p * (2 * budget + 4)), ring_n), sigma_f
+
+    def _modulus_for(self, ring_n: int):
+        params = bmms21_parameters(
+            self.sec_param, self.n * self.eta, self.bound_x, self.bound_y, ring_n
+        )
+        return self._flooded_modulus(ring_n, *params)[0]
 
     def _generate_and_save(self, param_file: str) -> None:
         super()._generate_and_save(param_file)
+        self.q, self.sigma_f = self._flooded_modulus(
+            self.ring_n, self.p, self.q, self.sigma1, self.sigma2, self.sigma3
+        )
+        self.A = seeded_polynomial(self.a_seed, self.q, self.ring_n)
         with open(param_file, "r", encoding="utf-8") as f:
             param = json.load(f)
-        param["s"] = self.s
-        param["t"] = self.t
-        param["lst_sid"] = self.lst_sid
+        param.update(
+            {
+                "threshold_construction": _CONSTRUCTION,
+                "s": self.s,
+                "stat_param": self.stat_param,
+                "sigma_f": str(self.sigma_f),
+                "q": gp.digits(self.q),
+            }
+        )
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(param, f)
 
+    def setup(self) -> None:
+        """MCFE setup and the client-server MAC keys; forgets previously shared keys."""
+        super().setup()
+        self.dict_dk = {}
+        self.mac_keys = client_server_mac_keys(self.lst_nid, self.lst_sid)
+        self._noise_masters = {sid: secrets.token_hex(32) for sid in self.lst_sid}
+
+    def get_private_keys(self, nid: str, **kwargs) -> dict | None:
+        """Client *nid*'s MCFE keys plus ``mac_keys`` (``{sid: key}``) for the
+        ciphertext tags."""
+        sk = super().get_private_keys(nid, **kwargs)
+        if sk is not None:
+            sk["mac_keys"] = dict(self.mac_keys[nid])
+        return sk
+
     def get_public_parameters(self) -> dict:
+        """MCFE public parameters plus ``s``, ``t``, ``lst_sid`` and ``sigma_f``."""
         pp = super().get_public_parameters()
-        pp["s"] = self.s
-        pp["t"] = self.t
-        pp["lst_sid"] = self.lst_sid
+        pp.update(
+            {"s": self.s, "t": self.t, "lst_sid": list(self.lst_sid), "sigma_f": str(self.sigma_f)}
+        )
         return pp
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
-        """Perform the get_decryption_keys operation.
+        """Return server *sid*'s share of the key for ``(y, label, n_chunks)``.
 
-            Args:
-                sid: Session / decryption-key identifier.
+        Returns:
+            Dict with shares ``sk_y``, ``z``, ``z_chunks`` and ``label``,
+            ``sid``, ``lst_sid``, ``weights_id``, ``noise_key`` and
+            ``mac_keys`` (``{nid: key}``), or ``None`` if *sid* is unknown.
         """
         credentials = kwargs.get("credentials", None)
         if not credentials:
             raise FEKeyError("need credentials for Threshold MCFE Ring-LWE")
-        fusion_weight = credentials.get("fusion_weight")
-        if not isinstance(fusion_weight, dict):
-            raise FEValidationError("invalid fusion weights provided, need a dict")
+        if sid not in self.lst_sid:
+            logger.error("invalid sid: {}".format(sid))
+            return None
+        weights_id = fusion_weight_id(credentials.get("fusion_weight"))
+        ident = json.dumps(
+            [weights_id, credentials.get("label"), int(credentials.get("n_chunks", 0))]
+        )
+        if ident not in self.dict_dk:
+            key = super().get_decryption_keys(sid, credentials=credentials)
+            self.dict_dk[ident] = self._share_key(key, weights_id)
+        dk = dict(self.dict_dk[ident][sid])
+        dk.update({
+            "sid": sid,
+            "lst_sid": list(self.lst_sid),
+            "weights_id": weights_id,
+            "mac_keys": {nid: self.mac_keys[nid][sid] for nid in self.lst_nid},
+        })
+        return dk
 
-        ordered_fusion_weights = dict(sorted(fusion_weight.items(), key=lambda x: x[0]))
-        identifier = "{}".format(ordered_fusion_weights)
-        if identifier not in self.dict_dk:
-            self._generate_threshold_decryption_keys(identifier, ordered_fusion_weights)
-        return self.dict_dk[identifier].get(sid)
+    def _share_key(self, key: dict, weights_id: str) -> dict:
+        sid_v = share_points(self.lst_sid)
+        points = list(sid_v.values())
 
-    def _generate_threshold_decryption_keys(
-        self, identifier: str, fusion_weight: dict
-    ) -> None:
-        """Perform the _generate_threshold_decryption_keys operation.
+        def share_poly(coeffs) -> dict:
+            shares = [share_secret(gp.mpz(v), self.t, points, self.q) for v in coeffs]
+            return {sid: [gp.digits(sh[sid_v[sid]]) for sh in shares] for sid in self.lst_sid}
 
-            Args:
-                identifier: Decryption-key identifier string.
-                fusion_weight: Fusion weight vector (or dict of per-client weight vectors).
-        """
-        q = gp.mpz(self.q)
-        sid_index = {sid: idx + 1 for idx, sid in enumerate(self.lst_sid)}
-
-        z = gp.mpz(0)
-        full_sk_y = {}
-        for nid in self.lst_nid:
-            if nid not in fusion_weight:
-                raise FEValidationError("fusion weight missing client {}".format(nid))
-            y = fusion_weight[nid]
-            if len(y) != self.eta:
-                raise FEValidationError("invalid fusion weight length for client {}".format(nid))
-            if any(abs(int(v)) > self.bound_y for v in y):
-                raise FEValidationError("fusion weight exceeds configured bound_y")
-            y_vec = [gp.mpz(v) for v in fusion_weight[nid]]
-            sk_t = np.array(self.msk["sk"][nid], dtype=object).T.tolist()
-            full_sk_y[nid] = []
-            for row in sk_t:
-                acc = gp.mpz(0)
-                for a_i, b_i in zip(row, y_vec):
-                    acc += a_i * b_i
-                full_sk_y[nid].append(acc % q)
-            for u_i, y_i in zip(self.msk["u"][nid], y_vec):
-                z += u_i * y_i
-        z %= q
-
-        per_sid = {
-            sid: {"lst_sid": self.lst_sid, "sid_index": sid_index[sid], "sk_y": {}}
+        sk_shares = {nid: share_poly(v) for nid, v in key["sk_y"].items()}
+        z_shares = share_poly(key["z"])
+        chunk_shares = [share_poly(zc) for zc in key["z_chunks"]]
+        return {
+            sid: {
+                "sk_y": {nid: sk_shares[nid][sid] for nid in sk_shares},
+                "z": z_shares[sid],
+                "z_chunks": [cs[sid] for cs in chunk_shares],
+                "label": key["label"],
+                # one per server, weights and label: a re-sharing for another
+                # n_chunks (same key part) must not come with fresh noise
+                "noise_key": hmac.new(
+                    bytes.fromhex(self._noise_masters[sid]),
+                    json.dumps([weights_id, key["label"]]).encode("utf-8"),
+                    hashlib.sha256,
+                ).hexdigest(),
+            }
             for sid in self.lst_sid
         }
-        for nid in self.lst_nid:
-            component_shares = [
-                _share_secret(secret, self.t, list(sid_index.values()), q)
-                for secret in full_sk_y[nid]
-            ]
-            for sid, x_value in sid_index.items():
-                per_sid[sid]["sk_y"][nid] = [
-                    gp.digits(component_shares[i][x_value])
-                    for i in range(len(component_shares))
-                ]
-
-        z_shares = _share_secret(z, self.t, list(sid_index.values()), q)
-        for sid, x_value in sid_index.items():
-            per_sid[sid]["z"] = gp.digits(z_shares[x_value])
-
-        self.dict_dk[identifier] = per_sid
 
 
 class ThresholdMCFERingLWE(MCFERingLWE):
-    """Crypto operations for threshold Ring-LWE-based multi-client inner-product FE."""
+    """Crypto operations for threshold BMMS21 identity-based MCFE over Ring-LWE."""
 
-    def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
+    def _mac_keys(self) -> dict:
+        mac_keys = (self.sk or {}).get("mac_keys") if self._has_private_keys() else None
+        if not mac_keys:
+            raise FEKeyError("encryption key lacks the ciphertext MAC keys")
+        return mac_keys
 
-            Args:
-                config: Scheme configuration dict.
-        """
-        super().__init__(config, **kwargs)
+    def encrypt(self, matrix_pt: list[list[int]], label: str) -> dict:
+        """MCFE encryption under *label*, tagged for every server."""
+        mac_keys = self._mac_keys()
+        ct = super().encrypt(matrix_pt, label)
+        return tag_ciphertext(ct, mac_keys, _TAG_DOMAIN, _tag_payload(encode_label(label), ct))
+
+    def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
+        """Packed ndarray encryption; every chunk is tagged under its chunk label."""
+        mac_keys = self._mac_keys()
+        out = super().encrypt_lst_ndarray(lst_ndarray, **kwargs)
+        for layer in out:
+            for j, ct in enumerate(layer["chunks"]):
+                encoded = encode_label(chunk_label(kwargs["label"], layer["first_chunk"] + j))
+                tag_ciphertext(ct, mac_keys, _TAG_DOMAIN, _tag_payload(encoded, ct))
+        return out
 
     def share_decrypt(
-        self, dict_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list
+        self, dict_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list,
+        _z_share=None, _chunk=None,
     ) -> dict:
-        """Compute a partial decryption share.
+        """Compute this server's flooded partial decryption.
 
-            Args:
-                dict_ct: Dict of per-client ciphertexts.
-                credentials: Credential dict containing ``fusion_weight`` and optional ``label``.
-                dk: Functional decryption key.
-                lst_sid_enrolled: List of enrolled session / node identifiers.
+        Args:
+            dict_ct: One ciphertext per client, produced under ``credentials["label"]``.
+            credentials: Dict with ``fusion_weight`` and ``label``.
+            dk: This server's key share (derived for that label).
+            lst_sid_enrolled: The servers whose partials will be combined.
+
+        Returns:
+            Dict with ``w``, ``c_y``, ``k``, ``ct_digest``, ``sid`` and
+            ``lst_sid_enrolled``.
         """
-        if not dk:
+        if not dk or "sk_y" not in dk:
             raise FEKeyError("no decryption keys provided")
-        if self.id not in dk["lst_sid"]:
-            raise FESchemeError("local id:{} is not supported".format(self.id))
-
+        if self.id not in dk["lst_sid"] or dk.get("sid") != self.id:
+            raise FESchemeError("the key share does not belong to server {}".format(self.id))
         fusion_weight = credentials.get("fusion_weight")
-        label = credentials.get("label")
-        if fusion_weight is None or label is None:
-            raise FEKeyError("need fusion_weight and label for threshold share decryption")
-
+        if dk.get("label") != credentials.get("label"):
+            raise FESchemeError("the key share was derived for another label")
+        validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
+        check_fusion_weight(dk, fusion_weight)
+        if set(dict_ct) != set(dk["sk_y"]):
+            raise FESchemeError("need one ciphertext for every client of the key")
+        # only ciphertexts the clients tagged for this server under the label
+        # (or chunk label) it serves: w is linear in ct1
+        tag_label = credentials["label"] if _chunk is None else chunk_label(credentials["label"], _chunk)
+        encoded = encode_label(tag_label)
+        check_ciphertext_tags(
+            dict_ct, dk.get("mac_keys"), self.id, _TAG_DOMAIN,
+            lambda nid, ct: _tag_payload(encoded, ct),
+        )
         q = gp.mpz(self.pp["q"])
-        p = gp.mpz(self.pp["p"])
-        label_scalar = label_scalar_from_hash(md5_hash(label, p), self.pp["label_modulus"])
-
-        ct0_prime = {}
+        ring_n = self.pp["ring_n"]
+        cts = {}
         for nid, ct in dict_ct.items():
-            y = [gp.mpz(v) for v in fusion_weight[nid]]
-            ct0 = [[gp.mpz(v) for v in row] for row in ct["ct0"]]
-            ct1 = [gp.mpz(v) for v in ct["ct1"]]
-            sk_y_share = [gp.mpz(v) for v in dk["sk_y"][nid]]
+            try:
+                cts[nid] = canonical_ring_ciphertext(ct, int(q), self.pp["eta"], ring_n)
+            except FESchemeError as exc:
+                raise FESchemeError("malformed ciphertext of {}".format(nid)) from exc
+        batch = {k for k, _, _ in cts.values()}
+        if len(batch) != 1:
+            raise FESchemeError("ciphertexts of different batch lengths")
 
-            ct0_t = np.array(ct0, dtype=object).T.tolist()
-            lhs = []
-            for row in ct0_t:
-                acc = gp.mpz(0)
-                for a_i, b_i in zip(row, y):
-                    acc += a_i * b_i
-                lhs.append(acc % q)
-            rhs = []
-            for i in range(len(ct1)):
-                acc = gp.mpz(0)
-                for j in range(len(ct1)):
-                    idx = i + j
-                    coeff = ct1[i] * sk_y_share[j]
-                    if idx >= len(ct1):
-                        idx -= len(ct1)
-                        coeff = -coeff
-                    while len(rhs) <= idx:
-                        rhs.append(gp.mpz(0))
-                    rhs[idx] = (rhs[idx] + coeff) % q
-            if len(rhs) < len(ct1):
-                rhs.extend([gp.mpz(0) for _ in range(len(ct1) - len(rhs))])
-            d_share = [((lhs[i] - rhs[i]) % q) for i in range(len(ct1))]
-            ct0_prime[nid] = [gp.digits(v) for v in d_share]
+        delta = q // gp.mpz(self.pp["p"])
+        z_share = dk["z"] if _z_share is None else _z_share
+        key_part = [delta * gp.mpz(v) % q for v in z_share]
+        c_y = [gp.mpz(0)] * ring_n
+        for nid, (_, ct0, ct1) in cts.items():
+            ct0 = [[gp.mpz(v) for v in row] for row in ct0]
+            ct1 = [gp.mpz(v) for v in ct1]
+            y_vec = [gp.mpz(int(v)) for v in fusion_weight[nid]]
+            c_y = poly_add(c_y, mat_vec_mul(transpose(ct0), y_vec, q), q)
+            key_part = poly_add(key_part, poly_mul(ct1, [gp.mpz(v) for v in dk["sk_y"][nid]], q), q)
 
-        z_share = (gp.mpz(dk["z"]) * label_scalar) % q
+        sid_v = share_points(dk["lst_sid"])
+        lagrange = lagrange_coefficient_at_zero(
+            sid_v[self.id], [sid_v[s] for s in lst_sid_enrolled], q
+        )
+        # the noise is seeded with what the key part depends on -- the ct1
+        # values and the key term (the label or chunk) -- so a request for the
+        # same key part always draws the same noise
+        ct_digest = ciphertexts_digest(cts)
+        key_inputs = ciphertexts_digest({nid: ct1 for nid, (_, _, ct1) in cts.items()})
+        # the partial depends on the enrolled set only through lambda
+        context = json.dumps([key_inputs, encoded, gp.digits(lagrange)]).encode("utf-8")
+        noise = _flooding_poly(
+            int(self.pp["sigma_f"]), ring_n, XofRandom(bytes.fromhex(dk["noise_key"]) + context)
+        )
+        w = [(lagrange * v + e) % q for v, e in zip(key_part, noise)]
         return {
-            "ct0_prime": ct0_prime,
-            "ct1_prime": gp.digits(z_share),
-            "sid_index": dk["sid_index"],
-            "k": next(iter(dict_ct.values()))["k"],
+            "w": [gp.digits(v) for v in w],
+            "c_y": [gp.digits(v) for v in c_y],
+            "k": batch.pop(),
+            "ct_digest": ct_digest,
+            "sid": self.id,
+            "lst_sid_enrolled": list(lst_sid_enrolled),
         }
 
-    def combine_decrypt(self, dict_ct_prime: dict) -> list[int]:
-        if len(dict_ct_prime) < self.pp["t"]:
-            raise FESchemeError("insufficient threshold shares for decryption")
+    def combine_decrypt(self, partials) -> list | None:
+        """Combine partial decryptions from at least ``t`` servers.
 
-        q = gp.mpz(self.pp["q"])
-        p = gp.mpz(self.pp["p"])
-        total = None
-        sample = next(iter(dict_ct_prime.values()))
-        for nid in sample["ct0_prime"]:
-            d_poly = []
-            for idx in range(len(sample["ct0_prime"][nid])):
-                shares = {
-                    int(ct_prime["sid_index"]): gp.mpz(ct_prime["ct0_prime"][nid][idx])
-                    for ct_prime in dict_ct_prime.values()
-                }
-                d_poly.append(_lagrange_at_zero(shares, q))
-            dec = decode_vector(d_poly, p, q, int(sample["k"]))
-            if total is None:
-                total = dec
-            else:
-                total = [a + b for a, b in zip(total, dec)]
+        Args:
+            partials: ``{sid: share_decrypt(...)}`` for one enrolled set, or a
+                list of such mappings for several enrolled sets, whose results
+                must then agree (see
+                :func:`~pyfe4ai.schemes.threshold_utils.combine_consistently`:
+                servers are assumed honest-but-curious, and only this
+                redundancy detects one that returns a wrong partial).
 
-        z_shares = {
-            int(ct_prime["sid_index"]): gp.mpz(ct_prime["ct1_prime"])
-            for ct_prime in dict_ct_prime.values()
-        }
-        z_value = int(_center_mod(_lagrange_at_zero(z_shares, q), q))
-        return [v - z_value for v in total]
-
-    def _share_decrypt_lst_ndarray(
-        self, dict_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list
-    ) -> list:
-        """Perform the _share_decrypt_lst_ndarray operation.
-
-            Args:
-                dict_ct: Dict of per-client ciphertexts.
-                credentials: Credential dict containing ``fusion_weight`` and optional ``label``.
-                dk: Functional decryption key.
-                lst_sid_enrolled: List of enrolled session / node identifiers.
+        Raises:
+            FESchemeError: If a group is incomplete or invalid, or the groups
+                disagree.
         """
-        sample_lst_ndarray = next(iter(dict_ct.values()))
-        lst_ndarray_ct_sd = []
-        for l in range(len(sample_lst_ndarray)):
-            ary = sample_lst_ndarray[l]
-            ary_ct_sd = np.empty(ary.shape, dtype=object)
-            for i, _ in np.ndenumerate(ary):
-                w_dict_ct = {nid: dict_ct[nid][l][i] for nid in dict_ct.keys()}
-                ary_ct_sd[i] = self.share_decrypt(
-                    w_dict_ct, credentials, dk, lst_sid_enrolled
-                )
-            lst_ndarray_ct_sd.append(ary_ct_sd)
-        return lst_ndarray_ct_sd
+        return combine_consistently(partials, self._combine_group)
 
-    def _combine_decrypt_lst_ndarray(self, dict_ct_prime: dict) -> list:
-        sample_lst_ndarray = next(iter(dict_ct_prime.values()))
-        lst_ndarray_dec = []
-        for l in range(len(sample_lst_ndarray)):
-            ary = sample_lst_ndarray[l]
-            ary_dec = np.empty(ary.shape, dtype=object)
-            for i, _ in np.ndenumerate(ary):
-                w_dict_ct_prime = {
-                    sid: dict_ct_prime[sid][l][i] for sid in dict_ct_prime.keys()
-                }
-                ary_dec[i] = self.combine_decrypt(w_dict_ct_prime)[0]
-            lst_ndarray_dec.append((ary_dec / pow(10, self.precision)).astype(float))
-        return lst_ndarray_dec
+    def _combine_group(self, dict_ct_prime: dict) -> list | None:
+        """Combine at least ``t`` partial decryptions into the batch of inner products.
+
+        Raises:
+            FESchemeError: If fewer than ``t`` shares are given or the shares
+                do not match the enrolled set they were computed for.
+        """
+        validate_partial_decryptions(dict_ct_prime, self.pp["t"])
+        partials = list(dict_ct_prime.values())
+        first = partials[0]
+        if any(
+            (p["c_y"], p["ct_digest"], p["k"]) != (first["c_y"], first["ct_digest"], first["k"])
+            for p in partials
+        ):
+            logger.warning("partial decryptions disagree on the ciphertexts they decrypted")
+            return None
+        q = gp.mpz(self.pp["q"])
+        delta = q // gp.mpz(self.pp["p"])
+        total = [gp.mpz(v) for v in first["c_y"]]
+        for part in partials:
+            total = [(a - gp.mpz(v)) % q for a, v in zip(total, part["w"])]
+        bound = (
+            self.pp["n"] * self.pp["eta"]
+            * gp.mpz(self.pp["bound_x"]) * gp.mpz(self.pp["bound_y"])
+        )
+        return [decode_scaled(v, delta, q, bound) for v in total[: int(first["k"])]]
 
     def compute_lst_ndarray_ct(
         self, dict_ndarray_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list
     ) -> list:
-        """Compute inner products on encrypted ndarray ciphertexts.
+        """Partially decrypt every chunk of the clients' packed ndarray ciphertexts."""
+        sample = next(iter(dict_ndarray_ct.values()))
+        if self.key_chunks(sample) > len(dk.get("z_chunks", [])):
+            raise FEKeyError("the key share covers fewer chunks than the ciphertexts")
+        out = []
+        for l, layer in enumerate(sample):
+            parts = []
+            for j in range(len(layer["chunks"])):
+                dct_ct = {nid: dict_ndarray_ct[nid][l]["chunks"][j] for nid in dict_ndarray_ct}
+                index = chunk_key_index(layer, j, len(dk["z_chunks"]))
+                parts.append(self.share_decrypt(
+                    dct_ct, credentials, dk, lst_sid_enrolled,
+                    _z_share=dk["z_chunks"][index], _chunk=index,
+                ))
+            out.append({"shape": layer["shape"], "parts": parts})
+        return out
 
-            Args:
-                dict_ndarray_ct: Encrypted ndarray ciphertexts (list or dict).
-                credentials: Credential dict containing ``fusion_weight`` and optional ``label``.
-                dk: Functional decryption key.
-                lst_sid_enrolled: List of enrolled session / node identifiers.
+    def decrypt_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list:
+        """Combine chunk-wise partial decryptions from at least ``t`` servers.
+
+        Raises:
+            FESchemeError: If the servers' outputs differ in structure, or an
+                element does not decrypt (servers disagree, or out of range).
         """
-        return self._share_decrypt_lst_ndarray(
-            dict_ndarray_ct, credentials, dk, lst_sid_enrolled
-        )
-
-    def decrypt_lst_ndarray_ct(self, dict_ndarray_ct: dict) -> list:
-        return self._combine_decrypt_lst_ndarray(dict_ndarray_ct)
+        groups = partial_groups(dict_ndarray_ct)
+        sample = next(iter(groups[0].values()))
+        layout = [(list(layer["shape"]), len(layer["parts"])) for layer in sample]
+        for g in groups:
+            for out in g.values():
+                if [(list(layer["shape"]), len(layer["parts"])) for layer in out] != layout:
+                    raise FESchemeError("partial decryptions differ in shape")
+        result = []
+        for l, layer in enumerate(sample):
+            values = []
+            for j in range(len(layer["parts"])):
+                decoded = self.combine_decrypt(
+                    [{sid: g[sid][l]["parts"][j] for sid in g} for g in groups]
+                )
+                if decoded is None or None in decoded:
+                    raise FESchemeError("element ({}, chunk {}) does not decrypt".format(l, j))
+                values.extend(decoded)
+            if len(values) != int(np.prod(layer["shape"])):
+                raise FESchemeError("partial decryptions do not match the shape {}".format(layer["shape"]))
+            ary = np.array(values, dtype=float).reshape(layer["shape"])
+            result.append(ary / pow(10, self.precision))
+        return result

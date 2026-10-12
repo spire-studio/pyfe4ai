@@ -1,26 +1,41 @@
 """
-Fully Secure LWE-Based Multi-Input Inner-Product Functional Encryption
-| Multi-input organization inspired by
-| "Multi-Input Functional Encryption for Inner Products:
-|  Function-Hiding Realizations and Constructions without Pairings"
-| By Michel Abdalla, Dario Catalano, Dario Fiore, Romain Gay, Bogdan Ursu
-| Published in: CRYPTO 2018
-|
-| Instantiated here with the fully secure LWE single-input line from
-| "Fully Secure Functional Encryption for Inner Products,
-|  from Standard Assumptions"
-| By Shweta Agrawal, Benoit Libert, Damien Stehle
-| Published in: CRYPTO 2016
+LWE multi-input inner-product FE (adaptive security).
 
-* type:     public-key encryption
-* setting:  Integer based
-* note:     research-oriented Python prototype aligned with the crypto-ipfe API
+| Abdalla, Catalano, Fiore, Gay, Ursu:
+| "Multi-Input Functional Encryption for Inner Products: Function-Hiding
+|  Realizations and Constructions without Pairings", CRYPTO 2018
+| (ePrint 2017/972) -- Fig. 4 (transformation for bounded-norm inner
+| products) instantiated with the LWE IPFE of Agrawal, Libert, Stehle
+| (CRYPTO 2016, Section 4.1), recalled as Fig. 8 with its two-step decryption
+| in Section 4.2.
 
+* type:     private-key multi-input encryption (MIFE, LWE)
+* setting:  Integer based (Z_q, Delta = floor(q / K))
+
+Construction (slot ``i`` is client ``i``, ``L = q``):
+
+* Setup*:   parameters of ALS16 derived as for vectors of dimension ``n eta``
+            and plaintext bound ``3X`` (Section 4.2, footnote 14 and Fig. 4);
+            public ``A``; per slot ``Z_i <- D`` (ALS16 key distribution),
+            ``U_i = Z_i A`` and a one-time pad ``u_i <- Z_q^eta``; client
+            ``i`` keeps ``(U_i, u_i)``.
+* Encrypt:  ``w = x_i + u_i mod q``; ``c0 = A s + e0``,
+            ``c1 = U_i s + e1 + Delta * w mod q``.
+* KeyGen:   per slot ``Z_i^T y_i mod q``, and ``z = sum_i <u_i, y_i> mod q``.
+* Decrypt:  Dec1 per slot ``<y_i, c1> - <Z_i^T y_i, c0> = Delta <w_i, y_i> + noise_i``;
+            ``mu = round(centre(sum_i Dec1_i - Delta z) / Delta)`` (Dec2).
+
+The pad hides each slot's partial result; versions <= 0.2.0 had no pad (the
+key holder decoded every ``<x_i, y_i>``) and derived single-slot parameters.
+Deviation: all slots share ``A`` instead of running Setup independently per
+slot (``Z_i`` and ``u_i`` are independent). A decryption needs ciphertexts of
+every slot named in the key.
 """
 
 from __future__ import annotations
 
 import json
+import secrets
 import logging
 import os
 import tempfile
@@ -31,9 +46,9 @@ import numpy as np
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.ipfe import ParameterCacheMixin
-from pyfe4ai.utils.lwe_utils import decode_fullysec_lwe_inner_product
+from pyfe4ai.utils.lwe_utils import decode_scaled
 from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.lwe_utils import center_lwe_vector
+
 from pyfe4ai.utils.lwe_utils import derive_fullysec_lwe_parameters
 from pyfe4ai.utils.matrix_utils import digits_to_matrix
 from pyfe4ai.utils.matrix_utils import digits_to_vector
@@ -44,11 +59,20 @@ from pyfe4ai.utils.matrix_utils import transpose
 from pyfe4ai.utils.matrix_utils import vecdot_mod
 from pyfe4ai.utils.matrix_utils import vector_to_digits
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
-from pyfe4ai.utils.sampling_utils import rand_uniform_matrix
 from pyfe4ai.utils.sampling_utils import rand_uniform_vector
-from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
+from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.utils.validation import scale_to_int
+from pyfe4ai.utils.validation import strict_int
+from pyfe4ai.utils.lwe_matrix import SeededMatrix
 
 logger = logging.getLogger(__name__)
+
+_CONSTRUCTION = "acfgu18-als16-lwe/v4"  # m = 4 n log2 q, B_tau ~ sqrt(m)
+
+
+def _seeded_matrix(seed: str, rows: int, cols: int, q) -> list:
+    """The public matrix ``A``, expanded from *seed* (a cache stores the seed only)."""
+    return [[gp.mpz(v) for v in row] for row in SeededMatrix(seed, rows, cols, int(q)).entries()]
 
 
 class MIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
@@ -80,17 +104,27 @@ class MIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.l_sigma1 = gp.mpz(param["l_sigma1"])
         self.sigma2 = float(param["sigma2"])
         self.l_sigma2 = gp.mpz(param["l_sigma2"])
-        self.A = digits_to_matrix(param["A"])
+        self.a_seed = param["A_seed"]
+        self.A = _seeded_matrix(self.a_seed, self.m, self.lwe_n, self.q)
 
     def _param_verification(self, param: dict) -> bool:
-        return (
-            param.get("sec_param") == self.sec_param
+        if not (
+            param.get("construction") == _CONSTRUCTION
+            and param.get("sec_param") == self.sec_param
             and param.get("eta") == self.eta
             and param.get("n") == self.n
             and param.get("lwe_n") == self.lwe_n
             and param.get("bound_x") == gp.digits(self.bound_x)
             and param.get("bound_y") == gp.digits(self.bound_y)
-        )
+        ):
+            return False
+        expected = derive_fullysec_lwe_parameters(3 * self.bound_x, self.bound_y, self.n * self.eta, self.lwe_n)
+        names = ("k", "q", "m", "sigma_q", "l_sigma_q", "sigma1", "l_sigma1", "sigma2", "l_sigma2")
+        for name, value in zip(names, expected):
+            if param.get(name) != (value if isinstance(value, (int, float)) else gp.digits(value)):
+                return False
+        seed = param.get("A_seed")
+        return isinstance(seed, str) and len(bytes.fromhex(seed)) == 32
 
     def _generate_and_save(self, param_file: str) -> None:
         (
@@ -104,15 +138,17 @@ class MIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             self.sigma2,
             self.l_sigma2,
         ) = derive_fullysec_lwe_parameters(
-            self.bound_x, self.bound_y, self.eta, self.lwe_n
+            3 * self.bound_x, self.bound_y, self.n * self.eta, self.lwe_n
         )
-        self.A = rand_uniform_matrix(self.m, self.lwe_n, self.q)
+        self.a_seed = secrets.token_hex(32)
+        self.A = _seeded_matrix(self.a_seed, self.m, self.lwe_n, self.q)
 
         with tempfile.NamedTemporaryFile(
             "w", encoding="utf-8", dir=os.path.dirname(param_file), delete=False
         ) as f:
             json.dump(
                 {
+                    "construction": _CONSTRUCTION,
                     "sec_param": self.sec_param,
                     "eta": self.eta,
                     "n": self.n,
@@ -128,7 +164,7 @@ class MIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                     "l_sigma1": gp.digits(self.l_sigma1),
                     "sigma2": self.sigma2,
                     "l_sigma2": gp.digits(self.l_sigma2),
-                    "A": matrix_to_digits(self.A),
+                    "A_seed": self.a_seed,
                 },
                 f,
             )
@@ -153,7 +189,10 @@ class MIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             z[nid] = z_nid
             u[nid] = matmul_mod(z_nid, self.A, self.q)
 
-        self.msk = {"z": z}
+        self.msk = {
+            "z": z,
+            "pad": {nid: rand_uniform_vector(self.eta, self.q) for nid in self.lst_nid},
+        }
         self.mpk = {"u": u}
         logger.info("MIFE fully secure LWE setup successfully")
 
@@ -182,7 +221,10 @@ class MIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         """
         if nid not in self.mpk["u"]:
             return None
-        return {"pk": matrix_to_digits(self.mpk["u"][nid])}
+        return {
+            "pk": matrix_to_digits(self.mpk["u"][nid]),
+            "u": vector_to_digits(self.msk["pad"][nid]),
+        }
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Perform the get_decryption_keys operation.
@@ -198,18 +240,20 @@ class MIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             raise FEValidationError("invalid fusion weights provided, need a dict")
 
         z_y = {}
+        pad_term = gp.mpz(0)
         for nid in self.lst_nid:
             if nid not in fusion_weight:
                 raise FEValidationError("fusion weight missing client {}".format(nid))
             y = fusion_weight[nid]
             if len(y) != self.eta:
                 raise FEValidationError("invalid fusion weight length for client {}".format(nid))
-            if any(abs(int(v)) > self.bound_y for v in y):
+            if any(abs(strict_int(v, "fusion weight")) > self.bound_y for v in y):
                 raise FEValidationError("fusion weight exceeds configured bound_y")
             y_vec = [gp.mpz(v) for v in y]
             z_t = transpose(self.msk["z"][nid])
             z_y[nid] = vector_to_digits(matvec_mod(z_t, y_vec, self.q))
-        return {"sk_y": z_y}
+            pad_term += sum(u * y_j for u, y_j in zip(self.msk["pad"][nid], y_vec))
+        return {"sk_y": z_y, "z": gp.digits(pad_term % self.q)}
 
 
 class MIFEFullySecLWE(IPFEAbsCrypto):
@@ -234,7 +278,7 @@ class MIFEFullySecLWE(IPFEAbsCrypto):
             raise FEKeyError("no encryption key provided")
         if len(lst_pt) != self.pp["eta"]:
             raise FEValidationError("invalid size of input plaintext")
-        if any(abs(int(v)) > gp.mpz(self.pp["bound_x"]) for v in lst_pt):
+        if any(abs(strict_int(v, "plaintext")) > gp.mpz(self.pp["bound_x"]) for v in lst_pt):
             raise FEValidationError("plaintext exceeds configured bound_x")
 
         q = gp.mpz(self.pp["q"])
@@ -247,9 +291,12 @@ class MIFEFullySecLWE(IPFEAbsCrypto):
         c0 = matvec_mod(self.A, r, q)
         c0 = [(a + b) % q for a, b in zip(c0, e0)]
 
+        if "u" not in self.sk:
+            raise FEKeyError("encryption key lacks the one-time pad u")
+        delta = q // k
         c1 = matvec_mod(pk, r, q)
-        centered = center_lwe_vector(lst_pt, k, q)
-        c1 = [(a + b + c) % q for a, b, c in zip(c1, e1, centered)]
+        w = [(gp.mpz(int(x)) + gp.mpz(u)) % q for x, u in zip(lst_pt, self.sk["u"])]
+        c1 = [(a + b + delta * w_j) % q for a, b, w_j in zip(c1, e1, w)]
         return {"ct0": vector_to_digits(c0), "ct1": vector_to_digits(c1)}
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict):
@@ -260,17 +307,20 @@ class MIFEFullySecLWE(IPFEAbsCrypto):
                 dk: Functional decryption key.
                 fusion_weight: Fusion weight vector (or dict of per-client weight vectors).
         """
-        if not dk:
+        if not dk or "z" not in dk:
             raise FEKeyError("no decryption key provided")
+        if set(dct_ct) != set(dk["sk_y"]) or set(dct_ct) != set(fusion_weight):
+            raise FESchemeError("need one ciphertext for every slot of the key")
 
         q = gp.mpz(self.pp["q"])
         k = gp.mpz(self.pp["k"])
-        total = 0
+        delta = q // k
+        total = -delta * gp.mpz(dk["z"])
         for nid in dct_ct:
             y = fusion_weight[nid]
             if len(y) != self.pp["eta"]:
                 raise FEValidationError("invalid fusion weight length for client {}".format(nid))
-            if any(abs(int(v)) > gp.mpz(self.pp["bound_y"]) for v in y):
+            if any(abs(strict_int(v, "fusion weight")) > gp.mpz(self.pp["bound_y"]) for v in y):
                 raise FEValidationError("fusion weight exceeds configured bound_y")
 
             y_vec = [gp.mpz(v) for v in y]
@@ -278,9 +328,9 @@ class MIFEFullySecLWE(IPFEAbsCrypto):
             ct1 = digits_to_vector(dct_ct[nid]["ct1"])
             z_y = digits_to_vector(dk["sk_y"][nid])
 
-            mu = (vecdot_mod(y_vec, ct1, q) - vecdot_mod(z_y, ct0, q)) % q
-            total += decode_fullysec_lwe_inner_product(mu, k, q)
-        return total
+            total += vecdot_mod(y_vec, ct1, q) - vecdot_mod(z_y, ct0, q)
+        bound = self.pp["n"] * self.pp["eta"] * gp.mpz(self.pp["bound_x"]) * gp.mpz(self.pp["bound_y"])
+        return decode_scaled(total % q, delta, q, bound)
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
         """Perform the encrypt_lst_ndarray operation.
@@ -292,7 +342,7 @@ class MIFEFullySecLWE(IPFEAbsCrypto):
             raise NotImplementedError("ndarray helper currently expects eta=1")
         lst_ndarray_ct = []
         for ary_src in lst_ndarray:
-            ary = (ary_src.copy() * pow(10, self.precision)).astype(int)
+            ary = scale_to_int(ary_src, self.precision)
             ary_ct = np.empty(ary.shape, dtype=object)
             for i, w in np.ndenumerate(ary):
                 ary_ct[i] = self.encrypt([int(w)])

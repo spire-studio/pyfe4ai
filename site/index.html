@@ -218,9 +218,9 @@
       <a class="btn btn-ghost" href="#quickstart">🚀 Quickstart</a>
     </div>
 
-    <p class="notice">⚠️ <strong>Research prototype with known security limitations.</strong>
-      Several multi-client, decentralized and threshold variants do not yet provide the
-      privacy their family name suggests, and default parameters are toy-sized.
+    <p class="notice">⚠️ <strong>Research prototype.</strong>
+      Every scheme has been checked against its paper, but four threshold layers and
+      the dMCFE-DDH carry mask are our own (experimental) and default parameters are toy-sized.
       <a href="https://github.com/spire-studio/pyfe4ai#known-issues--security-notice">Read the Known Issues</a>
       before using any scheme beyond experiments.</p>
 
@@ -244,7 +244,7 @@
         <div class="ico b">🧩</div>
         <h3>Complete FE family coverage</h3>
         <p>SIFE, MIFE, MCFE, decentralized MCFE, threshold MIFE/MCFE, function-hiding
-           IPE / Multi-IPE, and quadratic FE (SGP &amp; Quad) — 39 (family, variant)
+           IPE / Multi-IPE, and quadratic FE (SGP, Quad, multi-input) — 39 (family, variant)
            combinations under one roof.</p>
       </div>
       <div class="card">
@@ -279,9 +279,9 @@
         <div class="ico a">📚</div>
         <h3>Paper-referenced</h3>
         <p>Every scheme cites its source construction (PKC'15, CRYPTO'16/'18,
-           ASIACRYPT'18, PKC'19, IEEE TDSC TAPFed, …) in the module docstring.
-           Where an implementation still deviates from its paper, the deviation is
-           listed under Known Issues.</p>
+           ASIACRYPT'18, SCN'20, TCC'21, PKC'22, IACR CiC'24, IEEE TDSC TAPFed, …)
+           in the module docstring. Deviations from the paper are listed in the
+           Scheme Status table.</p>
       </div>
     </div>
   </div>
@@ -293,7 +293,8 @@
     <h2 class="sec-title">Quickstart</h2>
     <p class="sec-sub">Encrypt a vector, hand out a functional key, learn only the inner product.
        Demo parameters are toy-sized: <code>sec_param</code> is a modulus bit length,
-       not a security level.</p>
+       not a security level; <code>"security_profile": "standard"</code> selects
+       128-bit-oriented parameters.</p>
     <div class="qs-cols">
       <div class="codebox"><pre><span class="cm"># install</span>
 git clone https://github.com/spire-studio/pyfe4ai.git
@@ -342,21 +343,21 @@ result = SIFE({<span class="st">"precision"</span>: <span class="st">3</span>, <
           <tr><td class="fam">MIFE <small>multi-input</small></td>
             <td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
           <tr><td class="fam">MCFE <small>multi-client, labeled</small></td>
-            <td class="y">✓</td><td class="w">⚠</td><td class="w">⚠</td><td class="w">⚠</td><td class="w">⚠</td><td class="w">⚠</td></tr>
+            <td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
           <tr><td class="fam">dMCFE <small>decentralized</small></td>
-            <td class="w">⚠</td><td class="n">—</td><td class="w">⚠</td><td class="w">⚠</td><td class="w">⚠</td><td class="w">⚠</td></tr>
+            <td class="y">✓</td><td class="n">—</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
           <tr><td class="fam">tMIFE <small>threshold</small></td>
-            <td class="y">✓</td><td class="n">—</td><td class="n">—</td><td class="w">⚠</td><td class="n">—</td><td class="n">—</td></tr>
+            <td class="y">✓</td><td class="n">—</td><td class="n">—</td><td class="y">✓</td><td class="n">—</td><td class="n">—</td></tr>
           <tr><td class="fam">tMCFE <small>threshold</small></td>
-            <td class="w">⚠</td><td class="n">—</td><td class="n">—</td><td class="w">⚠</td><td class="w">⚠</td><td class="w">⚠</td></tr>
+            <td class="y">✓</td><td class="n">—</td><td class="n">—</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
           <tr><td class="fam">Quadratic <small>SGP · Quad</small></td>
             <td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✓</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="matrix-legend"><b style="color:var(--teal)">✓</b> implemented ·
-       <b style="color:#b7791f">⚠</b> implemented, but with a known privacy issue —
-       see <a href="https://github.com/spire-studio/pyfe4ai#known-issues--security-notice">Known Issues</a> ·
+    <p class="matrix-legend"><b style="color:var(--teal)">✓</b> implemented, no known issue
+       (per-scheme review state in the
+       <a href="https://github.com/spire-studio/pyfe4ai#scheme-status">Scheme Status</a> table) ·
        — not implemented. Pairing-based and quadratic schemes need <code>charm-crypto</code>
        and are not exercised in the default CI lane.</p>
   </div>
@@ -370,11 +371,11 @@ result = SIFE({<span class="st">"precision"</span>: <span class="st">3</span>, <
     <div class="uc">
       <div class="card">
         <h3><span>🌐</span> Federated-learning secure aggregation</h3>
-        <p>Clients encrypt local gradients with MCFE-DDH (the CDGPP18 construction);
-           the aggregator's functional key decrypts only the weighted sum.
-           Threshold variants (TAPFed-style) split decryption across t-of-s servers.
-           Not every multi-client instantiation meets this yet — check
-           <a href="https://github.com/spire-studio/pyfe4ai#known-issues--security-notice">Known Issues</a>
+        <p>Clients encrypt local gradients with MCFE-DDH (CDGPP18) or the DCR, LWE and
+           MDDH constructions of ABMPSW20; the aggregator's functional key decrypts only
+           the weighted sum. dMCFE variants remove the key authority, and tMCFE variants
+           (TAPFed-style) split decryption across t-of-s servers. Check the
+           <a href="https://github.com/spire-studio/pyfe4ai#scheme-status">Scheme Status</a>
            before choosing one.</p>
         <p><a href="https://github.com/spire-studio/pyfe4ai/blob/main/examples/ml_fl_aggregation.py">examples/ml_fl_aggregation.py →</a></p>
       </div>

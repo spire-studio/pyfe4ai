@@ -5,8 +5,11 @@ pyfe4ai — Python Functional Encryption for AI
 (FE) schemes for AI security and privacy. It covers single-input (SIFE),
 multi-input (MIFE), multi-client (MCFE), decentralized, threshold,
 function-hiding, and quadratic constructions across DDH, Damgård-DDH,
-Paillier, LWE, Ring-LWE, and pairing backends — all under one consistent
-``setup / keygen / encrypt / decrypt`` API.
+Paillier, LWE, Ring-LWE, and pairing backends. Every scheme follows the same
+two-object model (a key generator and a crypto object), but operation names
+and arguments are family-specific; ``FESchemeWrapper`` offers a uniform layer
+for ML workloads. Check each scheme's review status
+(``pyfe4ai.get_scheme_status``) before relying on its privacy.
 
 `Project homepage <../>`_ ·
 `GitHub <https://github.com/spire-studio/pyfe4ai>`_ ·
@@ -37,7 +40,8 @@ Minimal example
    x, y = [2, 1, 3], [4, 5, 6]
 
    # sec_param = bit length of the DDH modulus (NOT a security level);
-   # 128 keeps the demo fast but is insecure -- use >= 2048 for real use
+   # 128 keeps the demo fast but is insecure -- for real use replace it with
+   # "security_profile": "standard" (a 3072-bit group)
    kg = SIFEKeyGenerator({"sec_param": 128, "eta": len(x)})
    kg.setup()
    pp, sk = kg.get_public_parameters(), kg.get_private_keys()

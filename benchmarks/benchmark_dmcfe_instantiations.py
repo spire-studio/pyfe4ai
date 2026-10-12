@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import time
 
 from _common import BENCHMARK_HEADER
@@ -17,6 +18,14 @@ from pyfe4ai.schemes.mcfe.lwe_decentralized import DecentralizedMCFELWE
 from pyfe4ai.schemes.mcfe.lwe_decentralized import DecentralizedMCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe_decentralized import DecentralizedMCFERingLWE
 from pyfe4ai.schemes.mcfe.ring_lwe_decentralized import DecentralizedMCFERingLWEKeyGenerator
+
+def _derive_share(actor, fusion_weight, label):
+    """Identity-based schemes (Ring-LWE) also take the label of the key."""
+    params = inspect.signature(actor.derive_function_decryption_key_share).parameters
+    if "label" in params:
+        return actor.derive_function_decryption_key_share(fusion_weight, label)
+    return actor.derive_function_decryption_key_share(fusion_weight)
+
 
 ROUNDS = 3
 
@@ -51,7 +60,9 @@ def _run_case(case: dict, rounds: int) -> dict:
         encrypt_times.append(time.perf_counter() - t0)
 
         t0 = time.perf_counter()
-        dct_shares = {nid: actors[nid].derive_function_decryption_key_share(case["y"]) for nid in case["lst_nid"]}
+        dct_shares = {
+            nid: _derive_share(actors[nid], case["y"], case["label"]) for nid in case["lst_nid"]
+        }
         share_times.append(time.perf_counter() - t0)
 
         dec = case["crypto_cls"]({"id": "sid_0", "keys": {"pp": pp}})

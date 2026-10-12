@@ -8,6 +8,7 @@ import gmpy2 as gp
 from pyfe4ai.schemes.mcfe.ddh_decentralized import DecentralizedMCFE
 from pyfe4ai.schemes.mcfe.ddh_decentralized import DecentralizedMCFEKeyGenerator
 from pyfe4ai.utils.crypto_constants import CryptoCONST
+from pyfe4ai.utils.exceptions import FESchemeError
 from pyfe4ai.logger import init_logging_config
 
 init_logging_config()
@@ -53,9 +54,10 @@ def test_key_generator(kg_config):
 
     for nid in lst_nid_expected:
         sk_nid = kg.get_private_keys(nid)
-        assert "s" in sk_nid and isinstance(sk_nid["s"], list)
-        assert "u" in sk_nid and isinstance(sk_nid["u"], list)
-        assert "v" in sk_nid and isinstance(sk_nid["v"], list)
+        assert set(sk_nid) == {"s", "s2", "mask_key"}
+        assert len(sk_nid["s2"]) == 2
+    # the MCFE2 keys of all clients sum to zero (ABMPSW20 Fig. 14)
+    assert all(sum(col) == 0 for col in zip(*kg.msk["s2"].values()))
 
 
 def test_entire_process(kg_config):
@@ -92,11 +94,8 @@ def test_entire_process(kg_config):
         dct_ct[nid] = crypto_nid.encrypt(dct_x[nid], label)
         dct_dk_shares[nid] = crypto_nid.derive_function_decryption_key_share(dct_y)
         assert isinstance(dct_ct[nid], dict)
-        assert "ct0" in dct_ct[nid]
-        assert "ct1" in dct_ct[nid]
-        assert isinstance(dct_dk_shares[nid], dict)
-        assert "dk0" in dct_dk_shares[nid]
-        assert "dk1" in dct_dk_shares[nid]
+        assert set(dct_ct[nid]) == {"c"}
+        assert set(dct_dk_shares[nid]) == {"c", "nid", "weights_id"}
 
     # decryption
     _config_sid = {
@@ -106,9 +105,7 @@ def test_entire_process(kg_config):
     }
     crypto_sid = DecentralizedMCFE(_config_sid)
     dk = crypto_sid.combine_function_decryption_key_share(dct_dk_shares)
-    assert isinstance(dk, dict)
-    assert "dk0" in dk
-    assert "dk1" in dk
+    assert set(dk) == {"d"} and len(dk["d"]) == 2
 
     computed_inner_prod = crypto_sid.decrypt(dct_ct, dk, dct_y, label)
     logger.info(
@@ -126,3 +123,60 @@ def test_get_decryption_keys_raises_not_implemented(kg_config):
     kg.setup()
     with pytest.raises(NotImplementedError, match="derive_function_decryption_key_share"):
         kg.get_decryption_keys("sid_0", credentials={"fusion_weight": {}})
+
+
+def _shares(kg, pp, dct_y, lst_nid):
+    shares = {}
+    for nid in lst_nid:
+        client = DecentralizedMCFE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
+        shares[nid] = client.derive_function_decryption_key_share(dct_y)
+    return shares
+
+
+def test_combined_key_equals_the_central_cdgpp18_key(kg_config):
+    """Fig. 14 yields exactly d = sum y_i s_i mod q, the CDGPP18 functional key."""
+    cfg = dict(kg_config, eta=2)
+    kg = DecentralizedMCFEKeyGenerator(cfg)
+    kg.setup()
+    pp = kg.get_public_parameters()
+    lst_nid = cfg["lst_nid"]
+    dct_y = {nid: [random.randint(-5, 5), random.randint(-5, 5)] for nid in lst_nid}
+    combiner = DecentralizedMCFE({"id": "agg", "keys": {"pp": pp}})
+    dk = combiner.combine_function_decryption_key_share(_shares(kg, pp, dct_y, lst_nid))
+    q = kg.q
+    expected = [sum(y * s[k] for nid in lst_nid for y, s in zip(dct_y[nid], kg.msk["s"][nid])) % q for k in (0, 1)]
+    assert [int(v) for v in dk["d"]] == expected
+
+
+def test_subset_weights_still_need_every_share(kg_config):
+    kg = DecentralizedMCFEKeyGenerator(kg_config)
+    kg.setup()
+    pp = kg.get_public_parameters()
+    lst_nid = kg_config["lst_nid"]
+    dct_y = {"nid_0": [2], "nid_1": [3]}  # nid_2 absent: contributes zero
+    shares = _shares(kg, pp, dct_y, lst_nid)
+    combiner = DecentralizedMCFE({"id": "agg", "keys": {"pp": pp}})
+    with pytest.raises(FESchemeError):
+        combiner.combine_function_decryption_key_share({k: shares[k] for k in ["nid_0", "nid_1"]})
+    dk = combiner.combine_function_decryption_key_share(shares)
+    dct_ct = {
+        nid: DecentralizedMCFE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt([4], "round")
+        for nid in ["nid_0", "nid_1"]
+    }
+    assert combiner.decrypt(dct_ct, dk, dct_y, "round") == 20
+
+
+def test_shares_for_other_weights_do_not_combine(kg_config):
+    kg = DecentralizedMCFEKeyGenerator(kg_config)
+    kg.setup()
+    pp = kg.get_public_parameters()
+    lst_nid = kg_config["lst_nid"]
+    a = _shares(kg, pp, {nid: [1] for nid in lst_nid}, lst_nid)
+    b = _shares(kg, pp, {nid: [2] for nid in lst_nid}, lst_nid)
+    mixed = dict(a, nid_2=b["nid_2"])
+    combiner = DecentralizedMCFE({"id": "agg", "keys": {"pp": pp}})
+    with pytest.raises(FESchemeError):
+        combiner.combine_function_decryption_key_share(mixed)
+    mixed["nid_2"] = dict(b["nid_2"], weights_id=a["nid_0"]["weights_id"])  # forged digest
+    with pytest.raises(FESchemeError):
+        combiner.combine_function_decryption_key_share(mixed)

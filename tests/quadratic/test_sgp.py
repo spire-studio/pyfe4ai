@@ -17,7 +17,7 @@ def kg_config():
         "sec_param": 64,
         "n": 5,
         "bound": 6,
-        "pairing_group_param": "SS512",
+        "pairing_group_param": "MNT224",
     }
 
 
@@ -30,11 +30,11 @@ def test_key_generator(kg_config):
 
     kg.setup()
     pp = kg.get_public_parameters()
-    sk = kg.get_private_keys()
     assert pp["n"] == kg_config["n"]
-    assert sk is not None
-    assert len(sk["s"]) == kg_config["n"]
-    assert len(sk["t"]) == kg_config["n"]
+    # public-key scheme (DSGPP18 Fig. 2): pk = (g1^s, g2^t), msk never handed out
+    assert kg.get_private_keys() is None
+    assert len(pp["g1_s"]) == len(pp["g2_t"]) == kg_config["n"]
+    assert "s" not in pp and "t" not in pp
 
 
 def test_entire_process(kg_config):
@@ -56,8 +56,7 @@ def test_entire_process(kg_config):
     )
 
     pp = kg.get_public_parameters()
-    sk = kg.get_private_keys()
-    encryptor = QuadraticSGP({"id": "nid_default", "keys": {"pp": pp, "sk": sk}})
+    encryptor = QuadraticSGP({"id": "nid_default", "keys": {"pp": pp}})
     decryptor = QuadraticSGP({"id": "sid_0", "keys": {"pp": pp}})
 
     ct = encryptor.encrypt({"x": x, "y": y})
@@ -73,7 +72,7 @@ def test_entire_process_lst_ndarray():
         "sec_param": 64,
         "n": 2,
         "bound": 500,
-        "pairing_group_param": "SS512",
+        "pairing_group_param": "MNT224",
     }
     kg = QuadraticSGPKeyGenerator(cfg)
     kg.setup()
@@ -89,9 +88,8 @@ def test_entire_process_lst_ndarray():
     f_matrix = [[2, -1], [3, 1]]
 
     pp = kg.get_public_parameters()
-    sk = kg.get_private_keys()
     encryptor = QuadraticSGP(
-        {"id": "nid_default", "keys": {"pp": pp, "sk": sk}, "precision": 2}
+        {"id": "nid_default", "keys": {"pp": pp}, "precision": 2}
     )
     decryptor = QuadraticSGP({"id": "sid_0", "keys": {"pp": pp}, "precision": 2})
     dk = kg.get_decryption_keys("sid_0", credentials={"function_matrix": f_matrix})
@@ -104,3 +102,21 @@ def test_entire_process_lst_ndarray():
         for j in range(2)
     )
     assert np.allclose(computed, expected, atol=1e-2)
+
+
+def test_inputs_validated_and_extremes():
+    """Floats used to be truncated silently (2.7 -> 2)."""
+    from pyfe4ai.utils.exceptions import FEValidationError
+
+    kg = QuadraticSGPKeyGenerator({"sec_param": 64, "n": 2, "bound": 3, "pairing_group_param": "MNT224"})
+    kg.setup()
+    pp = kg.get_public_parameters()
+    enc = QuadraticSGP({"keys": {"pp": pp}})
+    with pytest.raises(FEValidationError):
+        enc.encrypt({"x": [2.7, 1], "y": [1, 1]})
+    with pytest.raises(FEValidationError):
+        kg.get_decryption_keys(None, credentials={"function_matrix": [[0.5, 1], [1, 1]]})
+    f = [[3, -3], [-3, 3]]
+    dk = kg.get_decryption_keys(None, credentials={"function_matrix": f})
+    ct = enc.encrypt({"x": [3, -3], "y": [3, -3]})
+    assert QuadraticSGP({"keys": {"pp": pp}}).decrypt(ct, dk) == 4 * 27

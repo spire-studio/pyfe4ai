@@ -27,9 +27,17 @@ class FEBaseConfig(TypedDict, total=False):
     kappa in its noise bounds; LWE families only record it (their hardness is
     set by ``lwe_n``), Paillier families use ``bit_length`` and pairing families
     ``pairing_group_param``.
+
+    ``security_profile`` (``"toy"`` by default, or ``"standard"``) presets
+    these size parameters; see :mod:`pyfe4ai.schemes.profiles`.
+    ``stat_param`` is the statistical parameter of the schemes that use one
+    (ABMPSW20 rounding, flooding, masks, Paillier key widths): 64 by default,
+    at least 128 under ``standard``.
     """
 
+    security_profile: str
     sec_param: int
+    stat_param: int
     n: int
     s: int
     lst_nid: list[str]
@@ -56,38 +64,40 @@ class DamgardDDHConfig(FEBaseConfig, total=False):
 
 
 class LWEConfig(FEBaseConfig, total=False):
-    """Config for LWE-based schemes (SIFE / MIFE LWE, FullySec LWE)."""
+    """Config for LWE-based schemes (SIFE / MIFE LWE, FullySec LWE).
+
+    ``lwe_n`` is a dimension or ``"auto"``; ``matrix_mode`` (``"memory"`` or
+    ``"stream"``) chooses how the ABDP15 schemes hold their seeded matrix.
+    """
 
     eta: int
-    lwe_n: int
+    lwe_n: int | str
     bound_x: int
     bound_y: int
+    matrix_mode: str
 
 
 class MCFELWEConfig(LWEConfig, total=False):
-    """Config for MCFE LWE schemes (adds label / noise bounds)."""
-
-    bound_u: int
-    label_modulus: int
+    """Config for MCFE LWE schemes (ABMPSW20 Fig. 4)."""
 
 
 # ── Ring-LWE family ─────────────────────────────────────────────────
 
 
 class RingLWEConfig(FEBaseConfig, total=False):
-    """Config for Ring-LWE-based schemes."""
+    """Config for Ring-LWE-based schemes (``ring_n``: a power of two or ``"auto"``;
+    ``m``: the number of key polynomials of ``sife/fullysec_ring_lwe``, at
+    least 5, or ``"auto"``)."""
 
     eta: int
-    ring_n: int
+    ring_n: int | str
     bound_x: int
     bound_y: int
+    m: int | str
 
 
 class MCFERingLWEConfig(RingLWEConfig, total=False):
-    """Config for MCFE Ring-LWE schemes."""
-
-    bound_u: int
-    label_modulus: int
+    """Config for MCFE Ring-LWE schemes (keys are bound to a label at key generation)."""
 
 
 # ── Paillier family ─────────────────────────────────────────────────
@@ -115,11 +125,7 @@ class PairingIPEConfig(FEBaseConfig, total=False):
 
 
 class PairingMultiIPEConfig(PairingIPEConfig, total=False):
-    """Config for pairing-based multi-input IPE schemes (FH-MULTI-IPE)."""
-
-    sec_level: int
-    u_bound: int
-    label_modulus: int
+    """Config for pairing-based multi-input / multi-client IPE schemes (FH-MULTI-IPE)."""
 
 
 class PartFHIPEConfig(FEBaseConfig, total=False):
@@ -182,18 +188,21 @@ class QuadraticSGPConfig(FEBaseConfig, total=False):
 
 
 class QuadraticQuadConfig(FEBaseConfig, total=False):
-    """Config for Quad quadratic FE schemes."""
+    """Config for Quad quadratic FE schemes (``x`` of length ``n``, ``y`` of length ``m``)."""
 
+    n: int
     m: int
     bound: int
     pairing_group_param: str
 
 
-class MultiInputSGPConfig(FEBaseConfig, total=False):
-    """Config for multi-input SGP quadratic FE schemes."""
+class MultiInputQuadraticConfig(FEBaseConfig, total=False):
+    """Config for the AGT22 multi-input quadratic FE (``n`` users, ``m`` integers each)."""
 
-    d: int
-    bound: int
+    m: int
+    bound_x: int
+    bound_c: int
+    mddh_k: int
     pairing_group_param: str
 
 
@@ -201,9 +210,15 @@ class MultiInputSGPConfig(FEBaseConfig, total=False):
 
 
 class CryptoConfig(TypedDict, total=False):
-    """Config for :class:`~pyfe4ai.schemes.ipfe.IPFEAbsCrypto` subclasses."""
+    """Config for :class:`~pyfe4ai.schemes.ipfe.IPFEAbsCrypto` subclasses.
+
+    ``dlog_bound`` (DDH schemes) bounds the discrete log solved at decryption
+    (default ``10^(precision + 2)``); ``matrix_mode`` as in :class:`LWEConfig`.
+    """
 
     keys: dict
     id: str
     type: str
     precision: int
+    dlog_bound: int
+    matrix_mode: str

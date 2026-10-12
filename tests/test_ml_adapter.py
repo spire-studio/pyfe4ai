@@ -290,3 +290,116 @@ class TestEncryptedGradientSerialization:
         assert restored.precision == 3
         assert restored.nid == "nid_0"
         assert restored.ciphertexts[0].shape == shape
+
+
+@pytest.mark.parametrize("variant", ["ddh", "damgard", "lwe"])
+def test_mife_refused_for_gradient_aggregation(variant):
+    """MIFE has no labels: one key would let the aggregator combine ciphertexts
+    of different elements of a client and learn the differences of its update."""
+    import numpy as _np
+
+    from pyfe4ai.utils.ml_adapter import FESchemeWrapper, aggregate_gradients, encrypt_gradient
+
+    cfg = {"n": 2, "lst_nid": ["nid_0", "nid_1"], "eta": 1, "sec_param": 128, "lwe_n": 8,
+           "bound_x": 4, "bound_y": 4, "bound": 4}
+    wrapper = FESchemeWrapper("mife", variant, cfg)
+    with pytest.raises(NotImplementedError, match="MCFE"):
+        encrypt_gradient(_np.zeros(2), wrapper, nid="nid_0")
+    with pytest.raises(NotImplementedError, match="MCFE"):
+        aggregate_gradients({}, wrapper, {"nid_0": 1, "nid_1": 1})
+
+
+# ── single-trust-domain policy (regressions of the pre-PR review) ──
+
+
+def _mcfe_wrapper(precision=1):
+    return FESchemeWrapper(
+        "mcfe", "ddh", {"sec_param": 128, "eta": 1, "n": 2, "lst_nid": ["nid_0", "nid_1"]},
+        precision=precision,
+    )
+
+
+def _sife_wrapper():
+    return FESchemeWrapper(
+        "sife", "lwe", {"sec_param": 64, "eta": 1, "lwe_n": 16, "bound_x": 50, "bound_y": 50},
+        precision=1,
+    )
+
+
+def test_sife_aggregation_refuses_several_clients():
+    """It returned the first client's result and ignored the others."""
+    wrapper = _sife_wrapper()
+    enc = {nid: encrypt_gradient(np.array([1.0]), wrapper, nid=nid) for nid in ("a", "b")}
+    with pytest.raises(ValueError, match="one client"):
+        aggregate_gradients(enc, wrapper, {"a": [1], "b": [1]})
+
+
+def test_aggregation_needs_every_client_with_a_nonzero_weight():
+    """The wrapper holds the master key: weights (1, 0) or a subset of the
+    clients would decrypt a single client's gradient."""
+    wrapper = _mcfe_wrapper()
+    enc = {nid: encrypt_gradient(np.array([1.0, 2.0]), wrapper, nid=nid, label="r1") for nid in ("nid_0", "nid_1")}
+    with pytest.raises(ValueError, match="non-zero"):
+        aggregate_gradients(enc, wrapper, {"nid_0": 1, "nid_1": 0}, label="r1")
+    with pytest.raises(ValueError, match="every enrolled client"):
+        aggregate_gradients({"nid_0": enc["nid_0"]}, wrapper, {"nid_0": 1}, label="r1")
+    out = aggregate_gradients(enc, wrapper, {"nid_0": 1, "nid_1": 0}, label="r1", allow_partial=True)
+    np.testing.assert_allclose(out, [1.0, 2.0])
+
+
+def test_labels_are_not_reused():
+    wrapper = _mcfe_wrapper()
+    encrypt_gradient(np.array([1.0]), wrapper, nid="nid_0", label="r1")
+    with pytest.raises(ValueError, match="already"):
+        encrypt_gradient(np.array([2.0]), wrapper, nid="nid_0", label="r1")
+    encrypt_gradient(np.array([2.0]), wrapper, nid="nid_0", label="r2")
+
+
+def test_one_aggregation_per_label():
+    """Two weight vectors on one round's ciphertexts give two equations in the
+    clients' gradients."""
+    wrapper = _mcfe_wrapper()
+    enc = {nid: encrypt_gradient(np.array([1.0]), wrapper, nid=nid, label="r1") for nid in ("nid_0", "nid_1")}
+    first = aggregate_gradients(enc, wrapper, {"nid_0": 1, "nid_1": 1}, label="r1")
+    again = aggregate_gradients(enc, wrapper, {"nid_0": 1, "nid_1": 1}, label="r1")
+    np.testing.assert_allclose(first, again)
+    with pytest.raises(ValueError, match="already aggregated"):
+        aggregate_gradients(enc, wrapper, {"nid_0": 1, "nid_1": 2}, label="r1")
+
+
+def test_fractional_weights_are_rescaled():
+    """Weights 0.5 used to give 10^precision times the weighted sum."""
+    wrapper = _mcfe_wrapper(precision=1)
+    enc = {
+        "nid_0": encrypt_gradient(np.array([2.0, 4.0]), wrapper, nid="nid_0", label="r1"),
+        "nid_1": encrypt_gradient(np.array([1.0, 3.0]), wrapper, nid="nid_1", label="r1"),
+    }
+    out = aggregate_gradients(enc, wrapper, {"nid_0": 0.5, "nid_1": 1.5}, label="r1")
+    np.testing.assert_allclose(out, [2.5, 6.5])
+
+
+def test_fractional_weights_need_a_precision():
+    wrapper = _mcfe_wrapper(precision=0)
+    enc = {nid: encrypt_gradient(np.array([1.0]), wrapper, nid=nid, label="r1") for nid in ("nid_0", "nid_1")}
+    with pytest.raises(ValueError, match="precision"):
+        aggregate_gradients(enc, wrapper, {"nid_0": 0.5, "nid_1": 1}, label="r1")
+
+
+@pytest.mark.parametrize("payload, match", [
+    ({"shape": [10 ** 6, 10 ** 6], "data": {}}, "too many"),
+    ({"shape": [2], "data": {"(5,)": "x", "(0,)": "x"}}, "outside"),
+    ({"shape": [2], "data": {"(0,)": "x"}}, "every element"),
+    ({"shape": [-1], "data": {}}, "shape"),
+])
+def test_deserialised_gradients_are_bounded(payload, match):
+    d = {"nid": "a", "shape": payload["shape"], "precision": 1, "mode": "decimal", "ciphertexts": [payload]}
+    with pytest.raises(ValueError, match=match):
+        EncryptedGradient.from_dict(d)
+
+
+def test_fractional_weights_must_fit_the_precision():
+    """(0.5, 0.25) at precision 1 was rounded to (0.5, 0.2 or 0.3) silently."""
+    wrapper = _mcfe_wrapper(precision=1)
+    enc = {nid: encrypt_gradient(np.array([1.0]), wrapper, nid=nid, label="r1") for nid in ("nid_0", "nid_1")}
+    with pytest.raises(ValueError, match="precision"):
+        aggregate_gradients(enc, wrapper, {"nid_0": 0.5, "nid_1": 0.25}, label="r1")

@@ -1,379 +1,336 @@
 """
-LWE-Based Multi-Client Inner-Product Functional Encryption
-| Multi-client label-aware organization inspired by
-| "Decentralized multi-client functional encryption for inner product"
-| By Jeremy Chotard, Edouard Dufour Sans, Romain Gay, Duong Hieu Phan,
-| David Pointcheval
-| Published in: ASIACRYPT 2018
-|
-| This prototype composes per-client simple LWE inner-product FE instances
-| using a bounded label embedding, with the underlying LWE line taken from
-| "Simple Functional Encryption Schemes for Inner Products"
-| By Michel Abdalla, Florian Bourse, Angelo De Caro, David Pointcheval
-| Published in: PKC 2015
+LWE-based multi-client inner-product FE.
 
-* type:     public-key encryption
-* setting:  Integer based
-* note:     prototype implementation aligned with the existing crypto-ipfe API
+| Abdalla, Bourse, Marival, Pointcheval, Soleimanian, Waldner:
+| "Multi-Client Inner-Product Functional Encryption in the Random-Oracle Model"
+| SCN 2020, https://eprint.iacr.org/2020/788 -- Fig. 4 (MCFE based on LWE),
+| correctness and security in Appendix C.2, parameters in Appendix C.3
+| (one-IND secure in the ROM under LWE). The construction is the MCFE
+| counterpart of the LWE IPFE of Agrawal, Libert, Stehle (CRYPTO 2016).
 
+* type:     secret-key multi-client encryption (MCFE, LWE, random oracle)
+* setting:  Integer based (Z_q with a rounding map to Z_q0)
+
+Construction (one coordinate j of client i's vector is one slot; ``n`` is the
+total number of slots, ``Delta = floor(q / K)``):
+
+* Setup:    ``H: labels -> Z_q^{n0 + m0}`` full-domain hash.
+* KeyGen:   ``Z_{i,j} = (s_{i,j}, t_{i,j})`` with ``s <- U(Z_q^{n0})`` and
+            ``t <- D_{Z^{m0}, sigma_t}`` (realised as a rounded continuous
+            Gaussian; the statistical step of the proof, Lemma 34, is stated
+            for a true discrete Gaussian).
+* Encrypt:  ``c_{i,j} = round_q0( Z_{i,j} . H(l) + Delta * x_{i,j} )``.
+* KeyDer:   ``sk_y = sum y_{i,j} Z_{i,j}`` (one aggregated vector, kept mod q).
+* Decrypt:  ``mu' = sum y_{i,j} c_{i,j} - round_q0( sk_y . H(l) ) mod q0``;
+            output the ``mu`` closest to ``mu' q / (q0 Delta)``.
+
+Deviation from the paper: messages and weights are signed (``|x| <= X``,
+``|y| <= Y``) instead of ``{0..P-1}`` / ``{0..V-1}``; the inner product is
+encoded with ``K = 2 n X Y + 1`` and decoded centred. Parameters are derived
+by :func:`pyfe4ai.utils.lwe_utils.abmpsw20_lwe_parameters` from the
+constraints of Appendix C.3; this module uses the selective-security choice
+of ``m0`` and :mod:`pyfe4ai.schemes.mcfe.fullysec_lwe` the adaptive one.
+The LWE dimension ``lwe_n`` defaults to a toy value; ``lwe_n = "auto"``
+(the ``standard`` security profile) selects the smallest dimension whose
+``q`` meets :data:`pyfe4ai.utils.lwe_utils.DENSE_LWE_128_LOG_Q`, a lattice
+estimator bound for LWE(n0, q, ceil(2 sqrt(n0))) -- the assumption of the
+proof (Appendix C.2, game G2: LWE in dimension ``n0`` modulo the scheme's
+``q``) -- with a uniform secret.
+
+Each client slot must encrypt at most once per label (one-IND security):
+two ciphertexts of one slot under one label differ by about
+``(q0 / q) Delta (x - x')``. The ndarray helpers therefore derive a distinct
+label per element. ``H`` is SHAKE-256 (the paper's implementation uses
+counter-mode SHA-256).
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-import random
 
 import gmpy2 as gp
-
-_CSPRNG = random.SystemRandom()
 import numpy as np
 
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
-from pyfe4ai.schemes.ipfe import ParameterCacheMixin
+from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
+from pyfe4ai.schemes.mcfe.labels import encode_label
+from pyfe4ai.schemes.profiles import STANDARD
 from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.crypto_utils import md5_hash
-from pyfe4ai.utils.lwe_utils import center_lwe_vector
-from pyfe4ai.utils.lwe_utils import decode_lwe_inner_product
-from pyfe4ai.utils.lwe_utils import derive_lwe_parameters
-from pyfe4ai.utils.lwe_utils import label_scalar_from_hash
-from pyfe4ai.utils.matrix_utils import digits_to_matrix
-from pyfe4ai.utils.matrix_utils import digits_to_vector
-from pyfe4ai.utils.matrix_utils import matrix_to_digits
-from pyfe4ai.utils.matrix_utils import matmul_mod
-from pyfe4ai.utils.matrix_utils import matvec_mod
-from pyfe4ai.utils.matrix_utils import transpose
-from pyfe4ai.utils.matrix_utils import vecdot_mod
-from pyfe4ai.utils.matrix_utils import vector_to_digits
+from pyfe4ai.utils.crypto_utils import hash_to_zq_vector
+from pyfe4ai.utils.lwe_utils import abmpsw20_lwe_parameters
+from pyfe4ai.utils.lwe_utils import check_dense_lwe
+from pyfe4ai.utils.lwe_utils import decode_rounded_inner_product
+from pyfe4ai.utils.lwe_utils import resolve_lwe_n
+from pyfe4ai.utils.lwe_utils import round_to_q0
+from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
-from pyfe4ai.utils.sampling_utils import rand_bit_vector
-from pyfe4ai.utils.sampling_utils import rand_uniform_matrix
-from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
+from pyfe4ai.utils.sampling_utils import rand_uniform_vector
+from pyfe4ai.utils.validation import scale_to_int
+from pyfe4ai.utils.validation import strict_int
 
 logger = logging.getLogger(__name__)
 
+_LABEL_HASH_DOMAIN = "pyfe4ai/mcfe/lwe/H(label)"
+_DEFAULT_STAT_PARAM = 64
 
-class MCFELWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
-    """Key generator for LWE-based multi-client inner-product FE."""
+
+def hash_label(label, q, length: int) -> list:
+    """Return ``H(label) in Z_q^length`` (random oracle)."""
+    return hash_to_zq_vector(encode_label(label), q, length, domain=_LABEL_HASH_DOMAIN)
+
+
+def dot_mod(left: list, right: list, q) -> gp.mpz:
+    """Return ``<left, right> mod q`` for integer vectors."""
+    acc = gp.mpz(0)
+    for a, b in zip(left, right):
+        acc += gp.mpz(a) * b
+    return acc % q
+
+
+class MCFELWEKeyGenerator(IPFEAbsKeyGenerator):
+    """Key generator for LWE-based multi-client inner-product FE (ABMPSW20 Fig. 4)."""
 
     _scheme_type = CryptoCONST.TYPE_MCFE_LWE
+    _security = "selective"
+
     def __init__(self, config: dict, **kwargs) -> None:
-        """Initialise the MCFE LWE key generator.
+        """Initialise the key generator and derive the parameters.
 
         Args:
-            config: Scheme configuration. Recognised keys: ``sec_param``,
-                ``eta``, ``n`` (number of clients), ``lwe_n``,
-                ``bound_x``, ``bound_y``, ``bound_u``, ``label_modulus``.
+            config: Scheme configuration. Recognised keys: ``n`` (number of
+                clients), ``lst_nid``, ``eta`` (slots per client), ``lwe_n``
+                (LWE dimension ``n0``; default 32, ``"auto"`` for the
+                smallest one meeting
+                :data:`~pyfe4ai.utils.lwe_utils.DENSE_LWE_128_LOG_Q`, the
+                ``standard`` profile's choice), ``bound_x``, ``bound_y``,
+                ``stat_param`` (statistical parameter ``kappa``) and
+                ``sec_param`` (recorded only). The keys ``bound_u`` and
+                ``label_modulus`` of versions <= 0.2.0 are ignored.
         """
         super().__init__(config, **kwargs)
         self.eta = config.get("eta", CryptoCONST.MCFE_ETA)
-        self.lwe_n = config.get("lwe_n", 32)
-        self.bound_x = gp.mpz(config.get("bound_x", 20))
-        self.bound_y = gp.mpz(config.get("bound_y", 20))
-        self.bound_u = gp.mpz(config.get("bound_u", 4))
-        self.label_modulus = int(config.get("label_modulus", 8))
+        self.bound_x = int(config.get("bound_x", 20))
+        self.bound_y = int(config.get("bound_y", 20))
+        self.stat_param = int(config.get("stat_param", _DEFAULT_STAT_PARAM))
         if not self.n:
             raise FEKeyError("need to provide number of clients")
-        self._load_parameters()
-
-    def _effective_bound_x(self) -> gp.mpz:
-        """Compute the effective plaintext bound including label masking."""
-        return self.bound_x + self.bound_u * gp.mpz(self.label_modulus // 2)
-
-    def _apply_parameters(self, param: dict) -> None:
-        """Assign LWE parameters (p, q, m, sigma_q, l_sigma, A) from *param*."""
-        self.p = gp.mpz(param["p"])
-        self.q = gp.mpz(param["q"])
-        self.m = int(param["m"])
-        self.sigma_q = float(param["sigma_q"])
-        self.l_sigma = gp.mpz(param["l_sigma"])
-        self.A = digits_to_matrix(param["A"])
-
-    def _param_verification(self, param: dict) -> bool:
-        """Return ``True`` if *param* matches the current configuration."""
-        return (
-            param.get("sec_param") == self.sec_param
-            and param.get("eta") == self.eta
-            and param.get("n") == self.n
-            and param.get("lwe_n") == self.lwe_n
-            and param.get("bound_x") == gp.digits(self.bound_x)
-            and param.get("bound_y") == gp.digits(self.bound_y)
-            and param.get("bound_u") == gp.digits(self.bound_u)
-            and param.get("label_modulus") == self.label_modulus
+        if not isinstance(self.eta, int) or self.eta < 1:
+            raise FEValidationError("invalid parameter `eta`:{}".format(self.eta))
+        self.n_slots = self.n * self.eta
+        self.lwe_n = resolve_lwe_n(
+            config.get("lwe_n"), lambda n0: self._parameters_for(n0)["q"], default=32
         )
+        self.params = self._parameters_for(self.lwe_n)
+        if self.security_profile == STANDARD:
+            check_dense_lwe(self.lwe_n, self.params["q"])
+        self.q = gp.mpz(self.params["q"])
+        self.dim = self.params["n0"] + self.params["m0"]
 
-    def _generate_and_save(self, param_file: str) -> None:
-        """Derive LWE parameters, sample public matrix **A**, and persist."""
-        eff_bound_x = self._effective_bound_x()
-        self.p, self.q, self.m, self.sigma_q, self.l_sigma = derive_lwe_parameters(
-            eff_bound_x,
-            self.bound_y,
-            self.eta,
-            self.lwe_n,
-            extra_dimension=self.n,
+    def _parameters_for(self, lwe_n: int) -> dict:
+        """Appendix C.3 parameters for LWE dimension *lwe_n* (``q`` under key ``"q"``)."""
+        return abmpsw20_lwe_parameters(
+            self.n_slots, self.bound_x, self.bound_y, lwe_n, self.stat_param, security=self._security
         )
-
-        self.A = rand_uniform_matrix(self.m, self.lwe_n, self.q)
-
-        with open(param_file, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "sec_param": self.sec_param,
-                    "eta": self.eta,
-                    "n": self.n,
-                    "lwe_n": self.lwe_n,
-                    "m": self.m,
-                    "bound_x": gp.digits(self.bound_x),
-                    "bound_y": gp.digits(self.bound_y),
-                    "bound_u": gp.digits(self.bound_u),
-                    "label_modulus": self.label_modulus,
-                    "p": gp.digits(self.p),
-                    "q": gp.digits(self.q),
-                    "sigma_q": self.sigma_q,
-                    "l_sigma": gp.digits(self.l_sigma),
-                    "A": matrix_to_digits(self.A),
-                },
-                f,
-            )
 
     def setup(self) -> None:
-        """Generate per-client secret keys, label masks, and public keys."""
-        sk = {
-            nid: rand_uniform_matrix(self.lwe_n, self.eta, self.q) for nid in self.lst_nid
-        }
-        u = {
-            nid: [
-                gp.mpz(_CSPRNG.randint(-int(self.bound_u), int(self.bound_u)))
-                for _ in range(self.eta)
-            ]
-            for nid in self.lst_nid
-        }
-        pk = {}
+        """Sample ``Z_{i,j} = (s, t)`` for every client slot."""
+        n0, m0 = self.params["n0"], self.params["m0"]
+        sigma_t = self.params["sigma_t"]
+        self.msk = {"z": {}}
         for nid in self.lst_nid:
-            noise = discrete_gaussian_matrix(self.m, self.eta, self.sigma_q)
-            pk_nid = matmul_mod(self.A, sk[nid], self.q)
-            for i in range(self.m):
-                for j in range(self.eta):
-                    pk_nid[i][j] = (pk_nid[i][j] + noise[i][j]) % self.q
-            pk[nid] = pk_nid
-
-        self.msk = {"sk": sk, "u": u}
-        self.mpk = {"pk": pk}
-        logger.info("MCFE LWE setup successfully")
+            t_rows = discrete_gaussian_matrix(self.eta, m0, sigma_t)
+            self.msk["z"][nid] = [
+                rand_uniform_vector(n0, self.q) + t_rows[j] for j in range(self.eta)
+            ]
+        logger.info("MCFE LWE (ABMPSW20, %s) setup successfully", self._security)
 
     def get_public_parameters(self) -> dict:
-        """Return serialisable public parameters.
-
-        Returns:
-            Dict containing ``A``, ``p``, ``q``, ``m``, ``eta``, ``n``,
-            ``lwe_n``, ``bound_x``, ``bound_y``, ``bound_u``,
-            ``label_modulus``, ``sec_param``.
-        """
+        """Return serialisable public parameters."""
         return {
-            "A": matrix_to_digits(self.A),
-            "p": gp.digits(self.p),
             "q": gp.digits(self.q),
-            "m": self.m,
+            "q0": self.params["q0"],
+            "K": self.params["K"],
+            "delta": gp.digits(gp.mpz(self.params["delta"])),
+            "bound_ip": self.params["bound_ip"],
+            "n0": self.params["n0"],
+            "m0": self.params["m0"],
+            "security": self._security,
             "eta": self.eta,
             "n": self.n,
             "lwe_n": self.lwe_n,
-            "bound_x": gp.digits(self.bound_x),
-            "bound_y": gp.digits(self.bound_y),
-            "bound_u": gp.digits(self.bound_u),
-            "label_modulus": self.label_modulus,
+            "bound_x": self.bound_x,
+            "bound_y": self.bound_y,
+            "stat_param": self.stat_param,
             "sec_param": self.sec_param,
         }
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
-        """Return encryption keys for client *nid*.
-
-        Args:
-            nid: Client identifier.
-
-        Returns:
-            Dict with ``pk`` matrix and ``u`` label mask, or ``None`` if invalid.
-        """
-        if nid not in self.mpk["pk"]:
+        """Return the encryption key ``{z}`` of client *nid* (``None`` if unknown)."""
+        if nid not in self.msk["z"]:
             return None
-        return {
-            "pk": matrix_to_digits(self.mpk["pk"][nid]),
-            "u": vector_to_digits(self.msk["u"][nid]),
-        }
+        return {"z": [[gp.digits(v) for v in z_j] for z_j in self.msk["z"][nid]]}
+
+    def _aggregate_key(self, fusion_weight: dict) -> list:
+        """Return ``sum y_{i,j} Z_{i,j} mod q`` after validating the weights."""
+        if not isinstance(fusion_weight, dict) or not fusion_weight:
+            raise FEValidationError("invalid fusion weights provided, need a dict")
+        sk_y = [gp.mpz(0)] * self.dim
+        for nid, weights in fusion_weight.items():
+            if nid not in self.msk["z"]:
+                raise FEValidationError("unknown client {} in fusion weight".format(nid))
+            if len(weights) > self.eta:
+                raise FEValidationError("invalid fusion weight length for client {}".format(nid))
+            for z_j, y_j in zip(self.msk["z"][nid], weights):
+                if abs(strict_int(y_j, "fusion weight")) > self.bound_y:
+                    raise FEValidationError("fusion weight exceeds configured bound_y")
+                y_j = gp.mpz(int(y_j))
+                sk_y = [acc + y_j * z for acc, z in zip(sk_y, z_j)]
+        return [v % self.q for v in sk_y]
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
-        """Derive a functional decryption key for the given fusion weights.
+        """Derive the functional key ``sk_y = sum y_{i,j} Z_{i,j}``.
 
         Args:
-            sid: Session identifier.
+            sid: Session identifier (unused).
             **kwargs: Must include ``credentials`` with ``fusion_weight``
-                (dict mapping client IDs to weight lists).
+                (dict mapping client IDs to integer weight lists).
 
         Returns:
-            Dict with ``sk_y`` (per-client projected secret keys) and
-            ``z`` (aggregated label masking secret).
+            Dict with ``sk_y``, one vector aggregated over all clients.
 
         Raises:
             FEKeyError: If credentials are missing.
-            FEValidationError: If fusion weights are invalid or exceed ``bound_y``.
+            FEValidationError: If a client id is unknown or a weight is
+                malformed or exceeds ``bound_y``.
         """
         credentials = kwargs.get("credentials", None)
         if not credentials:
             raise FEKeyError("need credentials for MCFE LWE decryption key generation")
-        fusion_weight = credentials.get("fusion_weight")
-        if not isinstance(fusion_weight, dict):
-            raise FEValidationError("invalid fusion weights provided, need a dict")
-
-        sk_y = {}
-        z = gp.mpz(0)
-        for nid in self.lst_nid:
-            if nid not in fusion_weight:
-                raise FEValidationError("fusion weight missing client {}".format(nid))
-            y = fusion_weight[nid]
-            if len(y) != self.eta:
-                raise FEValidationError("invalid fusion weight length for client {}".format(nid))
-            if any(abs(int(v)) > self.bound_y for v in y):
-                raise FEValidationError("fusion weight exceeds configured bound_y")
-            y_vec = [gp.mpz(v) for v in y]
-            sk_y[nid] = vector_to_digits(matvec_mod(self.msk["sk"][nid], y_vec, self.q))
-            for u_i, y_i in zip(self.msk["u"][nid], y_vec):
-                z += u_i * y_i
-        return {"sk_y": sk_y, "z": gp.digits(z)}
+        sk_y = self._aggregate_key(credentials.get("fusion_weight"))
+        return {"sk_y": [gp.digits(v) for v in sk_y]}
 
 
 class MCFELWE(IPFEAbsCrypto):
-    """Crypto operations for LWE-based multi-client inner-product FE."""
+    """Crypto operations for LWE-based multi-client inner-product FE (ABMPSW20 Fig. 4)."""
 
     def __init__(self, config: dict, **kwargs) -> None:
-        """Initialise the MCFE LWE crypto system.
-
-        Args:
-            config: Must contain ``keys`` with ``pp`` (public parameters)
-                and optionally ``sk`` (encryption keys).
-        """
+        """Initialise with ``keys.pp`` and, for clients, ``keys.sk``."""
         super().__init__(config, **kwargs)
         self.pp = self.keys["pp"]
-        self.A = digits_to_matrix(self.pp["A"])
         if self._has_private_keys():
             self.sk = self.keys["sk"]
+        self.q = gp.mpz(self.pp["q"])
+        self.q0 = gp.mpz(self.pp["q0"])
+        self.delta = gp.mpz(self.pp["delta"])
+        self.dim = self.pp["n0"] + self.pp["m0"]
+
+    def _hash_label(self, label: str) -> list:
+        return hash_label(label, self.q, self.dim)
 
     def encrypt(self, lst_pt: list, label: str) -> dict:
-        """Encrypt a plaintext vector for one client under a label.
+        """Encrypt one client's integer vector under a label.
 
         Args:
-            lst_pt: Integer plaintext vector of length ``eta``.
-            label: Encryption label binding the ciphertext to a session.
+            lst_pt: Integer plaintext vector of length at most ``eta``.
+            label: Encryption label; a client must not encrypt twice under
+                the same label.
 
         Returns:
-            Dict with ``ct0`` and ``ct1`` (serialised LWE ciphertext vectors).
+            Dict with ``c`` (one element of ``Z_q0`` per slot).
 
         Raises:
             FEKeyError: If public parameters or encryption keys are missing.
-            FEValidationError: If plaintext length or values are invalid.
+            FEValidationError: If the plaintext is malformed or out of bound.
         """
         if not self._has_public_parameters():
             raise FEKeyError("no public parameters provided for encryption")
         if not self._has_private_keys():
             raise FEKeyError("no encryption key provided")
-        if len(lst_pt) != self.pp["eta"]:
+        if len(lst_pt) > len(self.sk["z"]):
             raise FEValidationError("invalid size of input plaintext")
-        if any(abs(int(v)) > gp.mpz(self.pp["bound_x"]) for v in lst_pt):
+        if any(abs(strict_int(v, "plaintext")) > self.pp["bound_x"] for v in lst_pt):
             raise FEValidationError("plaintext exceeds configured bound_x")
 
-        q = gp.mpz(self.pp["q"])
-        pk = digits_to_matrix(self.sk["pk"])
-        u = digits_to_vector(self.sk["u"])
-        label_scalar = label_scalar_from_hash(
-            md5_hash(label, gp.mpz(self.pp["p"])), self.pp["label_modulus"]
+        h_l = self._hash_label(label)
+        c = []
+        for x_j, z_j in zip(lst_pt, self.sk["z"]):
+            v = dot_mod([gp.mpz(z) for z in z_j], h_l, self.q) + self.delta * int(x_j)
+            c.append(int(round_to_q0(v, self.q, self.q0)))
+        return {"c": c}
+
+    def _weighted_sum(self, dct_ct: dict, fusion_weight: dict) -> gp.mpz:
+        """Return ``sum y_{i,j} c_{i,j} mod q0`` after checking the inputs match."""
+        if dct_ct.keys() != fusion_weight.keys():
+            raise FESchemeError("inconsistent input among ct and fusion weight")
+        acc = gp.mpz(0)
+        for nid, ct in dct_ct.items():
+            if len(ct["c"]) != len(fusion_weight[nid]):
+                raise FESchemeError(
+                    "ciphertext and fusion weight of {} differ in length".format(nid)
+                )
+            for c_j, y_j in zip(ct["c"], fusion_weight[nid]):
+                acc += gp.mpz(int(c_j)) * int(y_j)
+        return acc % self.q0
+
+    def _decode(self, weighted_sum, key_term) -> int | None:
+        """Decode ``mu' = weighted_sum - round_q0(key_term)``."""
+        mu_prime = (weighted_sum - round_to_q0(key_term, self.q, self.q0)) % self.q0
+        return decode_rounded_inner_product(
+            mu_prime, self.q, self.q0, self.delta, self.pp["bound_ip"]
         )
-        masked = [gp.mpz(x) + u_i * label_scalar for x, u_i in zip(lst_pt, u)]
-
-        r = rand_bit_vector(self.pp["m"])
-        a_trans = transpose(self.A)
-        ct0 = matvec_mod(a_trans, r, q)
-
-        pk_trans = transpose(pk)
-        ct1 = matvec_mod(pk_trans, r, q)
-        centered = center_lwe_vector(masked, gp.mpz(self.pp["p"]), q)
-        ct1 = [(v + c) % q for v, c in zip(ct1, centered)]
-
-        return {"ct0": vector_to_digits(ct0), "ct1": vector_to_digits(ct1)}
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict, label: str):
-        """Decrypt aggregated ciphertexts to recover the multi-client inner product.
+        """Recover ``sum_i <x_i, y_i>`` from all clients' ciphertexts under one label.
 
         Args:
-            dct_ct: Mapping of client IDs to their ciphertext dicts.
-            dk: Decryption key dict with ``sk_y`` (per-client) and ``z``.
+            dct_ct: Mapping of client IDs to ciphertext dicts.
+            dk: Functional key ``{sk_y}`` derived for *fusion_weight*.
             fusion_weight: Mapping of client IDs to weight lists.
-            label: The encryption label used during :meth:`encrypt`.
+            label: The encryption label.
 
         Returns:
-            The inner product as an integer.
+            The inner product, or ``None`` if the decoded value is outside
+            ``[-n X Y, n X Y]``. A wrong label or key yields an arbitrary
+            value in that range rather than an error.
 
         Raises:
-            FEKeyError: If decryption key is missing.
-            FEValidationError: If fusion weight length or values are invalid.
+            FEKeyError: If the key is missing.
+            FESchemeError: If ciphertexts and weights do not match.
         """
-        if not dk:
+        if not dk or "sk_y" not in dk:
             raise FEKeyError("no decryption key provided")
-
-        q = gp.mpz(self.pp["q"])
-        p = gp.mpz(self.pp["p"])
-        total = 0
-        for nid in dct_ct:
-            y = fusion_weight[nid]
-            if len(y) != self.pp["eta"]:
-                raise FEValidationError("invalid fusion weight length for client {}".format(nid))
-            if any(abs(int(v)) > gp.mpz(self.pp["bound_y"]) for v in y):
-                raise FEValidationError("fusion weight exceeds configured bound_y")
-
-            y_vec = [gp.mpz(v) for v in y]
-            ct0 = digits_to_vector(dct_ct[nid]["ct0"])
-            ct1 = digits_to_vector(dct_ct[nid]["ct1"])
-            sk_y = digits_to_vector(dk["sk_y"][nid])
-
-            d = (vecdot_mod(y_vec, ct1, q) - vecdot_mod(ct0, sk_y, q)) % q
-            total += decode_lwe_inner_product(d, p, q)
-
-        label_scalar = label_scalar_from_hash(
-            md5_hash(label, p), self.pp["label_modulus"]
-        )
-        total -= int(gp.mpz(dk["z"]) * label_scalar)
-        return total
+        weighted = self._weighted_sum(dct_ct, fusion_weight)
+        key_term = dot_mod([gp.mpz(v) for v in dk["sk_y"]], self._hash_label(label), self.q)
+        return self._decode(weighted, key_term)
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
-        """Encrypt a list of ndarrays element-wise with a label (requires ``eta=1``).
+        """Encrypt ndarrays element-wise (``eta = 1``), one derived label per element.
 
         Args:
-            lst_ndarray: List of numpy arrays to encrypt.
+            lst_ndarray: List of numpy arrays.
             **kwargs: Must include ``label``.
-
-        Returns:
-            List of object ndarrays containing per-element ciphertexts.
         """
         if self.pp["eta"] != 1:
             raise NotImplementedError("ndarray helper currently expects eta=1")
         label = kwargs.get("label", None)
+        if not isinstance(label, str):
+            raise FEValidationError("need a string label for encrypt_lst_ndarray")
         lst_ndarray_ct = []
-        for ary_src in lst_ndarray:
-            ary = (ary_src.copy() * pow(10, self.precision)).astype(int)
+        for l, ary_src in enumerate(lst_ndarray):
+            ary = scale_to_int(ary_src, self.precision)
             ary_ct = np.empty(ary.shape, dtype=object)
             for i, w in np.ndenumerate(ary):
-                ary_ct[i] = self.encrypt([int(w)], label)
+                ary_ct[i] = self.encrypt([int(w)], _element_label(label, l, i))
             lst_ndarray_ct.append(ary_ct)
         return lst_ndarray_ct
 
     def compute_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:
-        """Aggregate ndarray ciphertexts (delegates to :meth:`decrypt_lst_ndarray_ct`).
+        """Aggregate-decrypt ndarray ciphertexts (delegates to :meth:`decrypt_lst_ndarray_ct`).
 
         Args:
             dict_ndarray_ct: Mapping of client IDs to ciphertext ndarray lists.
-            **kwargs: Must include ``dk``, ``fusion_weight``, and ``label``.
-
-        Returns:
-            Decrypted ndarray list.
+            **kwargs: Must include ``dk``, ``fusion_weight`` and ``label``.
         """
         dk = kwargs.get("dk", None)
         fusion_weight = kwargs.get("fusion_weight", None)
@@ -385,30 +342,28 @@ class MCFELWE(IPFEAbsCrypto):
         )
 
     def decrypt_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:
-        """Decrypt ndarray ciphertexts from multiple clients.
+        """Decrypt ndarray ciphertexts element-wise.
 
         Args:
             dict_ndarray_ct: Mapping of client IDs to ciphertext ndarray lists.
-            **kwargs: Must include ``dk``, ``fusion_weight``, and ``label``.
-
-        Returns:
-            List of float ndarrays with decrypted values.
+            **kwargs: Must include ``dk``, ``fusion_weight`` and ``label``.
         """
+        if self.pp["eta"] != 1:
+            raise NotImplementedError("ndarray helper currently expects eta=1")
         dk = kwargs.get("dk", None)
         fusion_weight = kwargs.get("fusion_weight", None)
         label = kwargs.get("label", None)
-        if self.pp["eta"] != 1:
-            raise NotImplementedError("ndarray helper currently expects eta=1")
         if dk is None or fusion_weight is None or label is None:
             raise FEKeyError("need to provide decryption key, fusion weight and label")
 
         sample = next(iter(dict_ndarray_ct.values()))
         lst_ndarray = []
         for l in range(len(sample)):
-            ary = sample[l]
-            ary_dec = np.empty(ary.shape, dtype=object)
-            for i, _ in np.ndenumerate(ary):
+            ary_dec = np.empty(sample[l].shape, dtype=object)
+            for i, _ in np.ndenumerate(sample[l]):
                 dct_ct = {nid: dict_ndarray_ct[nid][l][i] for nid in dict_ndarray_ct}
-                ary_dec[i] = self.decrypt(dct_ct, dk, fusion_weight, label)
+                ary_dec[i] = self.decrypt(
+                    dct_ct, dk, fusion_weight, _element_label(label, l, i)
+                )
             lst_ndarray.append((ary_dec / pow(10, self.precision)).astype(float))
         return lst_ndarray

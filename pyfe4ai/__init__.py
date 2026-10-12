@@ -6,6 +6,8 @@ __version__ = "0.2.0"
 from pyfe4ai.schemes.sife import SIFE, SIFEKeyGenerator  # noqa: F401
 from pyfe4ai.schemes.mife import MIFE, MIFEKeyGenerator  # noqa: F401
 from pyfe4ai.schemes.mcfe import MCFE, MCFEKeyGenerator  # noqa: F401
+from pyfe4ai.schemes.status import SchemeStatus, get_scheme_status  # noqa: F401
+from pyfe4ai.utils.exceptions import FESecurityWarning  # noqa: F401
 
 __all__ = [
     "__version__",
@@ -15,4 +17,7 @@ __all__ = [
     "MIFEKeyGenerator",
     "MCFE",
     "MCFEKeyGenerator",
+    "SchemeStatus",
+    "get_scheme_status",
+    "FESecurityWarning",
 ]

@@ -26,10 +26,12 @@ def pytest_collection_modifyitems(config, items):
 
 
 def _is_extended_test(path_str: str, name: str) -> bool:
+    # everything that needs charm-crypto: the pairing schemes (also the FH-IPFE
+    # building block mcfe/test_fh_ipe.py), the pairing-group checks and quadratic FE
     extended_tokens = (
-        "fh_ipe_pairing",
-        "fh_multi_ipe_pairing",
-        "part_fh_ipe_pairing",
+        "fh_ipe",
+        "fh_multi_ipe",
+        "pairing",
         "quadratic",
     )
     return any(token in path_str or token in name for token in extended_tokens)

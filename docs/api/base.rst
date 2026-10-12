@@ -1,6 +1,23 @@
 Base Classes
 ============
 
+Scheme Status
+-------------
+
+.. automodule:: pyfe4ai.schemes.status
+   :members:
+   :undoc-members:
+
+Security Profiles
+-----------------
+
+.. automodule:: pyfe4ai.schemes.profiles
+   :members:
+   :undoc-members:
+
+Abstract Base Classes
+---------------------
+
 Abstract base classes shared by all IPFE schemes.
 
 .. automodule:: pyfe4ai.schemes.ipfe
@@ -14,24 +31,10 @@ DDH Base Classes
    :members:
    :undoc-members:
 
-LWE Base Classes
-----------------
+ABDP15 LWE Base
+---------------
 
-.. automodule:: pyfe4ai.schemes.lwe_base
-   :members:
-   :undoc-members:
-
-Paillier Base Classes
----------------------
-
-.. automodule:: pyfe4ai.schemes.paillier_base
-   :members:
-   :undoc-members:
-
-Ring-LWE Base Classes
----------------------
-
-.. automodule:: pyfe4ai.schemes.ring_lwe_base
+.. automodule:: pyfe4ai.schemes.abdp15_lwe
    :members:
    :undoc-members:
 

@@ -23,3 +23,10 @@ class FEValidationError(FEError, ValueError):
 
 class FESchemeError(FEError, RuntimeError):
     """Internal scheme logic error (unexpected state, unsupported operation)."""
+
+
+class FESecurityWarning(UserWarning):
+    """A scheme with a known security defect is being used.
+
+    See :mod:`pyfe4ai.schemes.status` and the README *Scheme Status* table.
+    """

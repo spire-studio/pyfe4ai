@@ -23,7 +23,6 @@ client under the same label reveal the difference of the plaintexts.
 from __future__ import annotations
 
 import os
-import json
 import logging
 
 import numpy as np
@@ -31,11 +30,15 @@ import gmpy2 as gp
 
 from pyfe4ai.schemes.ddh_base import DDHKeyGeneratorBase
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
+from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
+from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import _random
 from pyfe4ai.utils.crypto_utils import hash_to_qr_group
 from pyfe4ai.utils.dlog_solver import load_or_build_dlog_table, dlog_table_solve
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.utils.validation import scale_to_int
+from pyfe4ai.utils.validation import int_vector
 
 
 logger = logging.getLogger(__name__)
@@ -43,21 +46,10 @@ logger = logging.getLogger(__name__)
 _LABEL_HASH_DOMAIN = "pyfe4ai/mcfe/ddh/H(label)"
 
 
-def _element_label(label: str, layer: int, index: tuple) -> str:
-    """Unambiguous per-element label for the ndarray helpers.
-
-    CDGPP18 ciphertexts are deterministic per (client slot, label), so every
-    array element must be encrypted under its own label; reusing one label
-    would let anyone compute ``c_i / c_j = g^{x_i - x_j}`` without a key.
-    """
-    return json.dumps([label, int(layer), [int(v) for v in index]])
-
-
-def _hash_label(label: str, p: gp.mpz) -> list:
+def _hash_label(label, p: gp.mpz) -> list:
     """Return ``[u_l] = H(label) in G^2`` (random oracle into the QR subgroup)."""
-    if not isinstance(label, str):
-        raise FEValidationError("label must be a string, got {!r}".format(label))
-    return [hash_to_qr_group(label, p, index=k, domain=_LABEL_HASH_DOMAIN) for k in (0, 1)]
+    encoded = encode_label(label)
+    return [hash_to_qr_group(encoded, p, index=k, domain=_LABEL_HASH_DOMAIN) for k in (0, 1)]
 
 
 class MCFEKeyGenerator(DDHKeyGeneratorBase):
@@ -171,7 +163,7 @@ class MCFEKeyGenerator(DDHKeyGeneratorBase):
                 raise FEValidationError(
                     "fusion weight of {} is longer than eta".format(nid)
                 )
-            for y_j, s_j in zip(lst_fusion, s_nid):
+            for y_j, s_j in zip(int_vector(lst_fusion, "fusion weight of {}".format(nid)), s_nid):
                 d[0] += gp.mul(gp.mpz(y_j), s_j[0])
                 d[1] += gp.mul(gp.mpz(y_j), s_j[1])
 
@@ -187,8 +179,11 @@ class MCFE(IPFEAbsCrypto):
         Args:
             config: Must contain ``keys`` with ``pp`` (public parameters)
                 and either ``sk`` (encryption keys) or ``dk`` (decryption key).
+                ``dlog_bound`` (default ``10^(precision + 2)``) bounds
+                ``|<x, y>|`` for the final discrete log.
         """
         super().__init__(config)
+        self.dlog_bound = int(config.get("dlog_bound", pow(10, self.precision + 2)))
         self.pp = self.keys["pp"]
         if self._has_private_keys():
             self.sk = self.keys["sk"]
@@ -202,8 +197,7 @@ class MCFE(IPFEAbsCrypto):
         )
         self.dlog_table, self.bound, self._step_size, self._giant_step = (
             load_or_build_dlog_table(
-                _dlog_file, self.pp["g"], self.pp["p"],
-                pow(10, self.precision + 2),
+                _dlog_file, self.pp["g"], self.pp["p"], self.dlog_bound,
             )
         )
 
@@ -227,16 +221,16 @@ class MCFE(IPFEAbsCrypto):
         if not self._has_private_keys():
             raise FEKeyError("no private keys provided for encryption")
         if not isinstance(lst_pt, list):
-            raise FEValidationError("invalid format of input plaintext:{}".format(lst_pt))
+            raise FEValidationError("input plaintext must be a list")
         if len(lst_pt) > len(self.sk["s"]):
-            raise FEValidationError("invalid size of input plaintext:{}".format(lst_pt))
+            raise FEValidationError("input plaintext has {} values, more than eta".format(len(lst_pt)))
 
         p = gp.mpz(self.pp["p"])
         g = gp.mpz(self.pp["g"])
         u_l = _hash_label(label, p)
 
         c = list()
-        for x_j, s_j in zip(lst_pt, self.sk["s"]):
+        for x_j, s_j in zip(int_vector(lst_pt, "plaintext"), self.sk["s"]):
             c_j = gp.powmod(g, gp.mpz(x_j), p)
             for u_k, s_jk in zip(u_l, s_j):
                 c_j = gp.mul(c_j, gp.powmod(u_k, gp.mpz(s_jk), p)) % p
@@ -279,7 +273,7 @@ class MCFE(IPFEAbsCrypto):
                 raise FESchemeError(
                     "ciphertext and fusion weight of {} differ in length".format(nid)
                 )
-            for c_j, y_j in zip(c_nid, f_nid):
+            for c_j, y_j in zip(c_nid, int_vector(f_nid, "fusion weight of {}".format(nid))):
                 c_j = gp.mpz(c_j)
                 if not 0 < c_j < p:
                     raise FEValidationError("ciphertext element of {} out of range".format(nid))
@@ -306,7 +300,8 @@ class MCFE(IPFEAbsCrypto):
         """Encrypt a list of ndarrays element-wise with a label.
 
         Each element is encrypted under its own label derived from ``label``,
-        the layer and the element index (see :func:`_element_label`).
+        the layer and the element index (see
+        :mod:`pyfe4ai.schemes.mcfe.labels`).
 
         Args:
             lst_ndarray: List of numpy arrays to encrypt.
@@ -318,7 +313,7 @@ class MCFE(IPFEAbsCrypto):
         _label = kwargs.get("label", None)
         lst_ndarray_ct = list()
         for l in range(len(lst_ndarray)):
-            ary = (lst_ndarray[l].copy() * pow(10, self.precision)).astype(int)
+            ary = scale_to_int(lst_ndarray[l], self.precision)
             ary_ct = np.empty(ary.shape, dtype=object)
             for i, w in np.ndenumerate(ary):
                 ary_ct[i] = self.encrypt([w], _element_label(_label, l, i))

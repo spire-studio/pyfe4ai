@@ -1,28 +1,30 @@
 """
 Paillier-Based Single-Input Inner-Product Functional Encryption
-| Inspired by the fully secure Paillier instantiation exposed in CiFEr / GoFE
 | From "Fully Secure Functional Encryption for Inner Products,
 |       from Standard Assumptions"
 | By Shweta Agrawal, Benoit Libert, and Damien Stehle
-| Published in: CRYPTO 2016
+| Published in: CRYPTO 2016 (DCR instantiation; recalled as Fig. 9 of
+| ABMPSW20, https://eprint.iacr.org/2020/788, Appendix B.1)
 
 * type:     public-key encryption
-* setting:  Integer based
-* note:     research-oriented Python prototype aligned with the existing
-            crypto-ipfe API style
+* setting:  Integer based (Z_{N^2}^*, N = p q with safe primes)
+
+Construction: ``g = g'^{2N} mod N^2``; ``s <- D_{Z^eta, sigma}`` with
+``sigma > sqrt(kappa) * N^{5/2}``; ``h_i = g^{s_i}``; ``ct = (g^r,
+(1 + N)^{x_i} h_i^r)`` with ``r <- {0..N/4}``; ``sk_y = <s, y>`` over Z;
+``<x, y> = (prod ct_i^{y_i} ct_0^{-sk_y} - 1 mod N^2) / N``. The Gaussian
+is a rounded continuous Gaussian at ``bits(sigma) + 128`` bits of precision
+and ``kappa`` is the config key ``stat_param`` (default 64).
 
 """
 
 from __future__ import annotations
 
 import json
+import secrets
 import logging
 import os
-import random
-
 import gmpy2 as gp
-
-_CSPRNG = random.SystemRandom()
 import numpy as np
 
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
@@ -30,14 +32,26 @@ from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.ipfe import ParameterCacheMixin
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import generate_group_primes
+from pyfe4ai.utils.modular_utils import check_zn2_elements
+from pyfe4ai.utils.modular_utils import decode_paillier
 from pyfe4ai.utils.modular_utils import pow_signed
+from pyfe4ai.utils.sampling_utils import discrete_gaussian_bigint
 from pyfe4ai.utils.sampling_utils import random_below
 from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
+from pyfe4ai.utils.validation import scale_to_int
+from pyfe4ai.utils.crypto_utils import is_dcr_modulus
+from pyfe4ai.utils.validation import strict_int
+from pyfe4ai.utils.crypto_utils import paillier_base
 
 logger = logging.getLogger(__name__)
 
+# version <= 0.2.0 caches also stored p and q; they are regenerated
+_PARAM_FORMAT = "modulus-only/v1+g-seed"
+
 class SIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
     """Key generator for Paillier-based single-input inner-product FE."""
+
+    _holds_dcr_modulus = True  # never cached under standard (see ParameterCacheMixin)
 
     _scheme_type = CryptoCONST.TYPE_SIFE_PAILLIER
     def __init__(self, config: dict, **kwargs) -> None:
@@ -51,19 +65,30 @@ class SIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.bit_length = config.get("bit_length", 128)
         self.bound_x = config.get("bound_x", 100)
         self.bound_y = config.get("bound_y", 100)
+        self.stat_param = int(config.get("stat_param", 64))
         self._load_parameters()
         self._validate_bounds()
 
     def _apply_parameters(self, param: dict) -> None:
-        self.p = gp.mpz(param["p"])
-        self.q = gp.mpz(param["q"])
         self.n = gp.mpz(param["n"])
         self.n_square = gp.mpz(param["n_square"])
-        self.g = gp.mpz(param["g"])
+        self.g_seed = param["g_seed"]
+        self.g = paillier_base(self.g_seed, self.n)
+
+    def _loaded_parameters_valid(self) -> bool:
+        n = self.n
+        return (
+            is_dcr_modulus(n, self.bit_length)
+            and self.n_square == n * n
+            and 1 < self.g < self.n_square
+            and gp.gcd(self.g, n) == 1
+            and self.g % n != 1  # g = 1 + N (order N) would reveal s mod N from the public key
+        )
 
     def _param_verification(self, param: dict) -> bool:
         return (
-            param.get("sec_param") == self.sec_param
+            param.get("param_format") == _PARAM_FORMAT
+            and param.get("sec_param") == self.sec_param
             and param.get("eta") == self.eta
             and param.get("bit_length") == self.bit_length
             and param.get("bound_x") == self.bound_x
@@ -71,19 +96,19 @@ class SIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         )
 
     def _generate_and_save(self, param_file: str) -> None:
-        self.p, _ = generate_group_primes(self.bit_length)
-        self.q, _ = generate_group_primes(self.bit_length)
-        self.n = self.p * self.q
+        # the factorization is a decryption trapdoor: keep it local, never persist it
+        p, _ = generate_group_primes(self.bit_length)
+        while True:
+            q, _ = generate_group_primes(self.bit_length)
+            if q != p:
+                break
+        self.n = p * q
+        del p, q
         self.n_square = self.n * self.n
         self._validate_bounds()
 
-        while True:
-            g_prime = random_below(self.n_square - 1)
-            g = gp.powmod(g_prime, self.n, self.n_square)
-            g = gp.powmod(g, 2, self.n_square)
-            if gp.gcd(g, self.n_square) == 1:
-                self.g = g
-                break
+        self.g_seed = secrets.token_hex(32)
+        self.g = paillier_base(self.g_seed, self.n)
 
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(
@@ -93,11 +118,10 @@ class SIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                     "bit_length": self.bit_length,
                     "bound_x": self.bound_x,
                     "bound_y": self.bound_y,
-                    "p": gp.digits(self.p),
-                    "q": gp.digits(self.q),
+                    "param_format": _PARAM_FORMAT,
                     "n": gp.digits(self.n),
                     "n_square": gp.digits(self.n_square),
-                    "g": gp.digits(self.g),
+                    "g_seed": self.g_seed,
                 },
                 f,
             )
@@ -111,13 +135,15 @@ class SIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             raise ValueError("bound_y and eta are too large for the chosen bit_length")
 
     def setup(self) -> None:
-        # Prototype note: we use bounded centered integer sampling for secret
-        # keys to keep the Python implementation simple and reproducible.
-        sk_bound = max(self.sec_param, self.bound_y * self.eta)
-        sec = [
-            gp.mpz(_CSPRNG.randint(-sk_bound, sk_bound))
-            for _ in range(self.eta)
-        ]
+        """Sample ``s <- D_{Z^eta, sigma}`` with ``sigma > sqrt(kappa) N^{5/2}`` (ALS16).
+
+        Versions <= 0.2.0 drew ``|s_i| <= max(sec_param, bound_y * eta)``,
+        so ``s`` could be recovered from the public key by brute force.
+        """
+        self.sigma = (
+            (gp.isqrt(self.stat_param) + 1) * self.n * self.n * (gp.isqrt(self.n) + 1)
+        )
+        sec = discrete_gaussian_bigint(self.sigma, self.eta)
         pub = [pow_signed(self.g, s_i, self.n_square) for s_i in sec]
         self.msk = {"s": sec}
         self.mpk = {
@@ -162,7 +188,7 @@ class SIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             raise FEValidationError("invalid fusion weights provided, need a list")
         if len(fusion_weights) != self.eta:
             raise FEValidationError("invalid fusion weights provided, length mismatch")
-        if any(abs(int(v)) > self.bound_y for v in fusion_weights):
+        if any(abs(strict_int(v, "fusion weight")) > self.bound_y for v in fusion_weights):
             raise FEValidationError("fusion weight exceeds configured bound_y")
 
         k = gp.mpz(0)
@@ -192,7 +218,7 @@ class SIFEPaillier(IPFEAbsCrypto):
             raise FEKeyError("no private keys provided for encryption")
         if len(lst_pt) != self.pp["eta"]:
             raise FEValidationError("invalid size of input plaintext")
-        if any(abs(int(v)) > self.pp["bound_x"] for v in lst_pt):
+        if any(abs(strict_int(v, "plaintext")) > self.pp["bound_x"] for v in lst_pt):
             raise FEValidationError("plaintext exceeds configured bound_x")
 
         n = gp.mpz(self.pp["n"])
@@ -225,24 +251,27 @@ class SIFEPaillier(IPFEAbsCrypto):
             raise FEKeyError("no decryption key provided")
         if len(fusion_weight) != self.pp["eta"]:
             raise FEValidationError("invalid fusion weight length")
-        if any(abs(int(v)) > self.pp["bound_y"] for v in fusion_weight):
+        if any(abs(strict_int(v, "fusion weight")) > self.pp["bound_y"] for v in fusion_weight):
             raise FEValidationError("fusion weight exceeds configured bound_y")
 
         n = gp.mpz(self.pp["n"])
         n_square = gp.mpz(self.pp["n_square"])
-        c0 = gp.mpz(dct_ct["ct0"])
+        ct1 = dct_ct.get("ct1")
+        if not isinstance(ct1, list) or len(ct1) != self.pp["eta"]:
+            raise FEValidationError("ciphertext does not match eta")
+        c0, *c1 = check_zn2_elements([dct_ct["ct0"], *ct1], n_square)
         k = gp.mpz(dk["k"])
 
         acc = pow_signed(c0, -k, n_square)
-        for ct_i, y_i in zip(dct_ct["ct1"], fusion_weight):
-            acc *= pow_signed(gp.mpz(ct_i), gp.mpz(y_i), n_square)
+        for ct_i, y_i in zip(c1, fusion_weight):
+            acc *= pow_signed(ct_i, gp.mpz(y_i), n_square)
             acc %= n_square
 
-        ret = ((acc - 1) % n_square) // n
-        n_half = n // 2
-        if ret > n_half:
-            ret -= n
-        return int(ret)
+        bound = self.pp["eta"] * int(self.pp["bound_x"]) * int(self.pp["bound_y"])
+        mu = decode_paillier(acc, n, bound)
+        if mu is None:
+            logger.error("decryption is not an inner product in range (wrong key or ciphertext?)")
+        return mu
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
         """Perform the encrypt_lst_ndarray operation.
@@ -258,7 +287,7 @@ class SIFEPaillier(IPFEAbsCrypto):
         pk = [gp.mpz(v) for v in self.sk["pk"]]
         lst_ndarray_ct = []
         for ary_src in lst_ndarray:
-            ary = (ary_src.copy() * pow(10, self.precision)).astype(int)
+            ary = scale_to_int(ary_src, self.precision)
             ary_ct = np.empty(ary.shape, dtype=object)
             for i, w in np.ndenumerate(ary):
                 x_i = int(w)

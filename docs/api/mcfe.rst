@@ -116,3 +116,18 @@ FH-Multi-IPE Threshold (Pairing)
 .. automodule:: pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold
    :members:
    :undoc-members:
+
+Building Blocks
+---------------
+
+.. automodule:: pyfe4ai.schemes.mcfe.labels
+   :members:
+   :undoc-members:
+
+.. automodule:: pyfe4ai.schemes.mcfe.decentralize
+   :members:
+   :undoc-members:
+
+.. automodule:: pyfe4ai.schemes.mcfe.fh_ipe
+   :members:
+   :undoc-members:

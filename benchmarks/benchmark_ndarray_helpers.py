@@ -41,7 +41,6 @@ PRECISION = 1
 FH_SEC_LEVEL = 2
 FH_BOUND_X = 50
 FH_BOUND_Y = 4
-FH_LABEL_MODULUS = 17
 
 
 def _base_array(scale: float) -> np.ndarray:
@@ -122,7 +121,7 @@ def _bench_mife_fh_multi_ipe() -> dict:
         "lst_nid": ["nid_0", "nid_1", "nid_2"],
         "bound_x": FH_BOUND_X,
         "bound_y": FH_BOUND_Y,
-        "pairing_group_param": "SS512",
+        "pairing_group_param": "MNT224",
     }
     dct_y = {"nid_0": [1], "nid_1": [2], "nid_2": [-1]}
     dct_x = {
@@ -131,7 +130,7 @@ def _bench_mife_fh_multi_ipe() -> dict:
         "nid_2": [_base_array(0.3)],
     }
     expected = sum(
-        ((dct_x[nid][0] * pow(10, PRECISION)).astype(int) / pow(10, PRECISION))
+        (np.rint(dct_x[nid][0] * pow(10, PRECISION)) / pow(10, PRECISION))
         * dct_y[nid][0]
         for nid in cfg["lst_nid"]
     )
@@ -192,15 +191,12 @@ def _bench_mcfe_fh_multi_ipe(name: str, decentralized: bool = False, threshold: 
     elements = int(np.prod(SHAPE))
     base_cfg = {
         "sec_param": 64,
-        "sec_level": FH_SEC_LEVEL,
         "eta": 1,
         "n": 3,
         "lst_nid": ["nid_0", "nid_1", "nid_2"],
         "bound_x": FH_BOUND_X,
         "bound_y": FH_BOUND_Y,
-        "u_bound": 3,
-        "label_modulus": FH_LABEL_MODULUS,
-        "pairing_group_param": "SS512",
+        "pairing_group_param": "MNT224",
     }
     if threshold:
         base_cfg.update({"s": 3, "t": 2, "lst_sid": ["sid_0", "sid_1", "sid_2"]})
@@ -260,7 +256,7 @@ def _bench_mcfe_fh_multi_ipe(name: str, decentralized: bool = False, threshold: 
                         "keys": {"pp": pp, "dk": dk_sid},
                     }
                 )
-                partials[sid] = dec.compute_lst_ndarray_ct(dct_ct, credentials, dk_sid, enrolled)
+                partials[sid] = dec.compute_lst_ndarray_ct(dct_ct, credentials, dk_sid, enrolled, label)
             combiner = actor_cls(
                 {
                     "id": base_cfg["lst_nid"][0],
@@ -268,7 +264,7 @@ def _bench_mcfe_fh_multi_ipe(name: str, decentralized: bool = False, threshold: 
                     "keys": {"pp": pp, "sk": kg.get_private_keys(base_cfg['lst_nid'][0])},
                 }
             )
-            computed = combiner.decrypt_lst_ndarray_ct(partials)
+            computed = combiner.decrypt_lst_ndarray_ct(partials, label)
             compute_t = time.perf_counter() - t0
         elif decentralized:
             dct_ct = {}
@@ -283,7 +279,7 @@ def _bench_mcfe_fh_multi_ipe(name: str, decentralized: bool = False, threshold: 
                     }
                 )
                 dct_ct[nid] = actor.encrypt_lst_ndarray(dct_x[nid], label=label)
-                shares[nid] = actor.derive_function_decryption_key_share(dct_y)
+                shares[nid] = actor.derive_function_decryption_key_share(dct_y[nid], "bench")
             encrypt_t = time.perf_counter() - t0
 
             dec = actor_cls({"id": "sid_0", "precision": PRECISION, "keys": {"pp": pp}})
@@ -350,11 +346,7 @@ def _bench_quadratic(name: str, quad_cls, kg_cls, config: dict, lhs: list[np.nda
         kg = kg_cls(config)
         kg.setup()
         pp = kg.get_public_parameters()
-        if name == "Quadratic/SGP":
-            sk = kg.get_private_keys()
-            enc = quad_cls({"id": "nid_default", "precision": PRECISION, "keys": {"pp": pp, "sk": sk}})
-        else:
-            enc = quad_cls({"id": "nid_default", "precision": PRECISION, "keys": {"pp": pp}})
+        enc = quad_cls({"id": "nid_default", "precision": PRECISION, "keys": {"pp": pp}})
         dec = quad_cls({"id": "sid_0", "precision": PRECISION, "keys": {"pp": pp}})
         dk = kg.get_decryption_keys("sid_0", credentials={"function_matrix": function_matrix})
 
@@ -391,7 +383,7 @@ def _bench_quadratic(name: str, quad_cls, kg_cls, config: dict, lhs: list[np.nda
 
 
 def main() -> None:
-    global ROUNDS, SHAPE, FH_SEC_LEVEL, FH_BOUND_X, FH_BOUND_Y, FH_LABEL_MODULUS
+    global ROUNDS, SHAPE, FH_SEC_LEVEL, FH_BOUND_X, FH_BOUND_Y
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -453,7 +445,6 @@ def main() -> None:
     FH_SEC_LEVEL = profile_value(args.profile, {"small": 2, "medium": 2, "large": 2, "report": 3, "mnist": 2})
     FH_BOUND_X = profile_value(args.profile, {"small": 32, "medium": 40, "large": 50, "report": 50, "mnist": 50})
     FH_BOUND_Y = profile_value(args.profile, {"small": 4, "medium": 4, "large": 6, "report": 6, "mnist": 6})
-    FH_LABEL_MODULUS = profile_value(args.profile, {"small": 17, "medium": 17, "large": 29, "report": 29, "mnist": 29})
     quadratic_dim = profile_value(args.profile, {"small": 2, "medium": 2, "large": 3, "report": 3, "mnist": 2})
     quadratic_bound = profile_value(args.profile, {"small": 200, "medium": 300, "large": 500, "report": 500, "mnist": 300})
 
@@ -496,7 +487,7 @@ def main() -> None:
             "Quadratic/SGP",
             QuadraticSGP,
             QuadraticSGPKeyGenerator,
-            {"sec_param": 64, "n": quadratic_dim, "bound": quadratic_bound, "pairing_group_param": "SS512"},
+            {"sec_param": 64, "n": quadratic_dim, "bound": quadratic_bound, "pairing_group_param": "MNT224"},
             [_base_array(0.1 + 0.1 * i) for i in range(quadratic_dim)],
             [_base_array(0.3 + 0.1 * j) for j in range(quadratic_dim)],
             [[1 for _ in range(quadratic_dim)] for _ in range(quadratic_dim)],
@@ -505,7 +496,7 @@ def main() -> None:
             "Quadratic/Quad",
             QuadraticQuad,
             QuadraticQuadKeyGenerator,
-            {"sec_param": 64, "n": quadratic_dim, "m": quadratic_dim + 1, "bound": quadratic_bound, "pairing_group_param": "SS512"},
+            {"sec_param": 64, "n": quadratic_dim, "m": quadratic_dim + 1, "bound": quadratic_bound, "pairing_group_param": "MNT224"},
             [_base_array(0.1 + 0.1 * i) for i in range(quadratic_dim)],
             [_base_array(0.3 + 0.1 * j) for j in range(quadratic_dim + 1)],
             [[1 for _ in range(quadratic_dim + 1)] for _ in range(quadratic_dim)],
@@ -546,7 +537,7 @@ def main() -> None:
                 "Quadratic/SGP",
                 QuadraticSGP,
                 QuadraticSGPKeyGenerator,
-                {"sec_param": 64, "n": quadratic_dim, "bound": quadratic_bound, "pairing_group_param": "SS512"},
+                {"sec_param": 64, "n": quadratic_dim, "bound": quadratic_bound, "pairing_group_param": "MNT224"},
                 [_base_array(0.1 + 0.1 * i) for i in range(quadratic_dim)],
                 [_base_array(0.3 + 0.1 * j) for j in range(quadratic_dim)],
                 [[1 for _ in range(quadratic_dim)] for _ in range(quadratic_dim)],

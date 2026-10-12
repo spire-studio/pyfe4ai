@@ -29,10 +29,9 @@ classifiers = [
   "Topic :: Security :: Cryptography",
 ]
 dependencies = [
-  "gmpy2",
-  "numpy",
-  "PyYAML",
-  "jsonpickle",
+  "gmpy2>=2.2",  # prev_prime
+  "numpy>=1.22",
+  "PyYAML>=5.4",
 ]
 
 [project.optional-dependencies]
@@ -65,6 +64,12 @@ pyfe4ai = ["config.yaml", "py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# a bare `pytest` from the repository root imports the in-tree package (and can
+# resolve the warning category below) without an install
+pythonpath = ["."]
+# known-insecure schemes warn on every key generator; tests/test_scheme_status.py
+# checks the warning itself
+filterwarnings = ["ignore::pyfe4ai.utils.exceptions.FESecurityWarning"]
 markers = [
   "core: core FE/IPFE coverage intended for the staged core-only release lane",
   "extended: non-core pairing-heavy or quadratic FE coverage kept outside the core-only release lane",

@@ -43,10 +43,24 @@ Modular Arithmetic
    :members:
    :undoc-members:
 
+Input Validation
+----------------
+
+.. automodule:: pyfe4ai.utils.validation
+   :members:
+   :undoc-members:
+
 LWE Utilities
 -------------
 
 .. automodule:: pyfe4ai.utils.lwe_utils
+   :members:
+   :undoc-members:
+
+Seeded LWE Matrices
+-------------------
+
+.. automodule:: pyfe4ai.utils.lwe_matrix
    :members:
    :undoc-members:
 
