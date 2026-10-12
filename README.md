@@ -124,8 +124,8 @@ See `examples/sife_minimal.py` for the full runnable version.
 > [Known Issues](#known-issues--security-notice)).
 
 > **⚠️ Research prototype.** Every scheme has been checked against its
-> paper, but four threshold layers are our own (*experimental*) and the
-> default parameters are toy-sized. Check the
+> paper, but four threshold layers and the dMCFE-DDH carry mask are our own
+> (*experimental*) and the default parameters are toy-sized. Check the
 > [Scheme Status](#scheme-status) table and the
 > [Known Issues / Security Notice](#known-issues--security-notice) before
 > relying on any privacy property.
@@ -390,8 +390,8 @@ limitations remain:
 
 Fixed since v0.2.0 (unreleased, see [`CHANGELOG.md`](CHANGELOG.md)): every
 scheme previously marked *known-insecure* now implements a published
-construction or, for four threshold variants, an *experimental* layer on
-top of one. MCFE `paillier`, `lwe`, `fullysec_lwe` and `damgard` follow
+construction or, for four threshold variants and dMCFE-DDH, an
+*experimental* layer of our own on top of one. MCFE `paillier`, `lwe`, `fullysec_lwe` and `damgard` follow
 ABMPSW20 (Figs. 3, 4 and 2); the MIFE variants `damgard`, `paillier`,
 `lwe`, `fullysec_lwe` and `ring_lwe` add ACFGU18's one-time pad, so the key
 holder learns only the sum; dMCFE-DDH, -LWE and -Paillier follow ABMPSW20

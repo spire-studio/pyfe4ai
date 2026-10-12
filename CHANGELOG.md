@@ -9,7 +9,8 @@ compatibility).
 
 Privacy fixes: every scheme that was insecure in v0.2.0 now implements a
 published construction (four threshold variants add an *experimental*
-threshold layer of our own on top of one), and every scheme carries a
+threshold layer of our own on top of one, and dMCFE-DDH an *experimental*
+carry mask), and every scheme carries a
 review status. **Keys, ciphertexts and partial decryptions of the affected
 schemes are not compatible with v0.2.0.** Read the README *Scheme Status*
 table and *Known Issues* before relying on any privacy property.
