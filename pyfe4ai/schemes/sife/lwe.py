@@ -9,7 +9,7 @@ LWE-Based Single-Input Inner-Product Functional Encryption
 
 * type:     public-key encryption
 * setting:  Integer based
-* note:     prototype implementation aligned with the existing crypto-ipfe API
+* note:     prototype implementation with the common key generator / crypto API
 
 The public matrix ``A`` is published as a seed and expanded with SHAKE-128;
 encryption computes ``A^T r`` and ``pk^T r`` exactly with numpy, either over

@@ -36,8 +36,9 @@ table and *Known Issues* before relying on any privacy property.
 - **tMCFE-LWE** is ABMPSW20 Fig. 4 with a Shamir-shared key and
   noise-flooded partial decryptions (each is an LWE sample under the
   server's share instead of an exact linear function of it). The noise is
-  derived from a per-server secret and `(label, enrolled set)`, so repeated
-  requests cannot be averaged. The threshold layer is our own, so the
+  derived from a per-server secret, the label and the server's Lagrange
+  coefficient for the enrolled set, so repeated requests cannot be
+  averaged. The threshold layer is our own, so the
   scheme's status is *experimental*.
 - **Paillier parameter caches** (SIFE, MIFE, MCFE, dMCFE) no longer store
   the primes `p, q`: the factorization decrypts SIFE ciphertexts directly
@@ -372,16 +373,16 @@ table and *Known Issues* before relying on any privacy property.
   (integral floats accepted); non-integral values raise
   `FEValidationError` instead of being truncated.
 - `pyfe4ai.utils.ring_lwe_utils.bmms21_parameters`, `check_ring_n` and
-  `DEFAULT_RING_N`; `dlog_bound` crypto option for SIFE-DDH and MIFE-DDH;
-  `FHIPE.keygen(..., r=...)`.
+  `DEFAULT_RING_N`; `FHIPE.keygen(..., r=...)`.
+- `dlog_bound` crypto option for SIFE-DDH, MIFE-DDH, MCFE-DDH and
+  tMCFE-DDH (results beyond the default `10^(precision + 2)` decrypt to
+  `None`).
 - `pyfe4ai.schemes.status` (`SchemeStatus`, `get_scheme_status`, exported
   from `pyfe4ai`): status (`reviewed` / `experimental` / `unreviewed` /
   `known-insecure`), fidelity, reference and issue for all registered
   schemes; key generators and crypto objects of known-insecure schemes emit
   `pyfe4ai.FESecurityWarning`; `FESchemeWrapper.status`;
   `markdown_table()` renders the README table, which a test keeps in sync.
-- `dlog_bound` crypto option for MCFE-DDH and tMCFE-DDH (results beyond the
-  default `10^(precision + 2)` decrypted to `None`).
 - `XofRandom` (SHAKE-256 bit source for derandomised sampling) and an `rng`
   argument for `discrete_gaussian_bigint`.
 - `discrete_gaussian_bigint` (arbitrary-width rounded Gaussian),
@@ -482,6 +483,8 @@ table and *Known Issues* before relying on any privacy property.
 
 ### Changed
 
+- The package version is `0.3.0.dev0` until the release, so the docs built
+  from `main` no longer carry the 0.2.0 label.
 - SIFE-LWE, MIFE-LWE and tMIFE-LWE publish the matrix `A` as a 32-byte seed
   (`pp["A_seed"]` replaces the `m x lwe_n` digit matrix `pp["A"]`), expanded
   with SHAKE-128, and encrypt with exact numpy products over 31-bit limbs
@@ -516,6 +519,11 @@ table and *Known Issues* before relying on any privacy property.
   dlog table read from `./config/crypto`), and the unused helpers
   `crypto_utils.md5_hash` and `group_generator_paillier`.
 - The `jsonpickle` dependency (never imported).
+- The unused modules `schemes/lwe_base.py`, `schemes/ring_lwe_base.py` and
+  `schemes/paillier_base.py` and the helpers `label_scalar_from_hash` and
+  `decode_fullysec_lwe_inner_product`.
+- The repository-root `config.yaml`, an unused copy of the bundled
+  `pyfe4ai/config.yaml`.
 
 ### Build
 
@@ -524,12 +532,13 @@ table and *Known Issues* before relying on any privacy property.
   1.0.0 archive is checked against its SHA-256 before it is built; the image
   runs as an unprivileged user. `environment.yml` uses the `conda-forge`
   channel.
-- Unused modules `schemes/lwe_base.py`, `schemes/ring_lwe_base.py`,
-  `schemes/paillier_base.py` and the helpers `label_scalar_from_hash`,
-  `decode_fullysec_lwe_inner_product`.
 
 ### Fixed
 
+- `benchmarks/benchmark_ndarray_helpers.py` ran every group before applying
+  `--group`, so `--group sife` failed without `charm-crypto`, and its warm-up
+  rounds ran after the timed ones. It now runs the warm-up and then only the
+  selected groups.
 - The ndarray helpers truncated `x 10^precision` toward zero (`0.57` became
   `0.56` at precision 2) and turned NaN and infinities into `-2^63`. They now
   round to nearest and refuse non-finite or too large values
@@ -549,7 +558,8 @@ table and *Known Issues* before relying on any privacy property.
   regenerated.
 - The ABDP15 plaintext modulus `p` was random in its bit range, so
   `lwe_n = "auto"` could pick different dimensions on different runs (the
-  README's `n = 832` was one such draw; the deterministic choice is 896).
+  README's `n = 832` for `eta = 1` was one such draw; the deterministic
+  choice is 768).
   `p` is now the smallest prime of that size.
 - SIFE / MIFE FullySec-LWE (ALS16) used `m = 1.01 n log2 q`; ALS16 Theorem 2
   needs `m >= 4 n log2 q`. The recipe now uses `4 n log2 q` (also inside
@@ -633,6 +643,26 @@ table and *Known Issues* before relying on any privacy property.
   longer fails when a padded slot hits the plain value by chance (about 0.3%
   of runs for MIFE FullySec-LWE); the README status table is compared in full
   with `status.markdown_table()`.
+- Docs site: a *Security & Status* page whose scheme table and counts are
+  rendered from `pyfe4ai.schemes.status` at build time; `GLOSSARY.md`, which
+  was never rendered and named config keys that no longer exist
+  (`poly_degree`, `group`), is now `glossary.rst`, corrected and extended
+  (`security_profile`, `stat_param`, `matrix_mode`, `label`, `tag_f`,
+  `mac_keys`); every class is documented once instead of twice; the
+  ML-adapter and quantization docstrings render (they were NumPy style),
+  as do 16 over-indented `Args:` sections and 57 bullet items; placeholder
+  docstrings are replaced; nitpicky build warnings went from 171 to 0.
+- Landing page: experimental schemes are marked in the matrix, MIQFE is
+  listed, the ML-adapter card no longer claims to wrap any scheme, a
+  security-profile card, the toy-parameter warning in the snippet, how to
+  install `charm-crypto`, social-preview tags, a navigation bar that fits
+  phones, and WCAG AA contrast.
+- README, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, issue and
+  PR templates: vulnerabilities are reported through GitHub private
+  vulnerability reporting; the prerequisites of `charm-crypto`; a checklist
+  for adding a scheme; LWE dimensions default to 32–64 (not 16–64); the
+  examples and benchmarks READMEs list every script and say which need
+  `charm-crypto`.
 
 ## [0.2.0] — 2026-10-07
 

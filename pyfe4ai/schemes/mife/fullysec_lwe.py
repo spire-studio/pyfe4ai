@@ -15,15 +15,15 @@ LWE multi-input inner-product FE (adaptive security).
 Construction (slot ``i`` is client ``i``, ``L = q``):
 
 * Setup*:   parameters of ALS16 derived as for vectors of dimension ``n eta``
-            and plaintext bound ``3X`` (Section 4.2, footnote 14 and Fig. 4);
-            public ``A``; per slot ``Z_i <- D`` (ALS16 key distribution),
-            ``U_i = Z_i A`` and a one-time pad ``u_i <- Z_q^eta``; client
-            ``i`` keeps ``(U_i, u_i)``.
+  and plaintext bound ``3X`` (Section 4.2, footnote 14 and Fig. 4);
+  public ``A``; per slot ``Z_i <- D`` (ALS16 key distribution),
+  ``U_i = Z_i A`` and a one-time pad ``u_i <- Z_q^eta``; client
+  ``i`` keeps ``(U_i, u_i)``.
 * Encrypt:  ``w = x_i + u_i mod q``; ``c0 = A s + e0``,
-            ``c1 = U_i s + e1 + Delta * w mod q``.
+  ``c1 = U_i s + e1 + Delta * w mod q``.
 * KeyGen:   per slot ``Z_i^T y_i mod q``, and ``z = sum_i <u_i, y_i> mod q``.
 * Decrypt:  Dec1 per slot ``<y_i, c1> - <Z_i^T y_i, c0> = Delta <w_i, y_i> + noise_i``;
-            ``mu = round(centre(sum_i Dec1_i - Delta z) / Delta)`` (Dec2).
+  ``mu = round(centre(sum_i Dec1_i - Delta z) / Delta)`` (Dec2).
 
 The pad hides each slot's partial result; versions <= 0.2.0 had no pad (the
 key holder decoded every ``<x_i, y_i>``) and derived single-slot parameters.
@@ -80,10 +80,13 @@ class MIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
     _scheme_type = CryptoCONST.TYPE_MIFE_FULLYSEC_LWE
     def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
+        """Initialise the MIFE fully secure LWE key generator.
 
-            Args:
-                config: Scheme configuration dict.
+        Args:
+            config: Scheme configuration. Recognised keys: ``n`` (number of
+                clients, required), ``lst_nid``, ``eta``, ``lwe_n`` (default
+                64), ``bound_x`` and ``bound_y``. The ``standard`` profile
+                refuses this scheme.
         """
         super().__init__(config, **kwargs)
         self.eta = config.get("eta", CryptoCONST.MIFE_ETA)
@@ -214,10 +217,13 @@ class MIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         }
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
-        """Perform the get_private_keys operation.
+        """Return client *nid*'s encryption key (``pk`` and its pad ``u``).
 
-            Args:
-                nid: Node identifier.
+        Args:
+            nid: Client identifier.
+
+        Returns:
+            The key dict, or ``None`` for an unknown client.
         """
         if nid not in self.mpk["u"]:
             return None
@@ -227,10 +233,12 @@ class MIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         }
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
-        """Perform the get_decryption_keys operation.
+        """Derive a functional decryption key for the given fusion weights.
 
-            Args:
-                sid: Session / decryption-key identifier.
+        Args:
+            sid: Session identifier.
+            **kwargs: Must include ``credentials`` with ``fusion_weight`` (dict
+                ``{nid: list of int}``).
         """
         credentials = kwargs.get("credentials", None)
         if not credentials:
@@ -260,10 +268,11 @@ class MIFEFullySecLWE(IPFEAbsCrypto):
     """Crypto operations for fully secure LWE-based multi-input inner-product FE."""
 
     def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
+        """Initialise the MIFE fully secure LWE crypto object.
 
-            Args:
-                config: Scheme configuration dict.
+        Args:
+            config: Must contain ``keys`` with ``pp`` (public parameters) and
+                optionally ``sk`` (encryption keys).
         """
         super().__init__(config, **kwargs)
         self.pp = self.keys["pp"]
@@ -333,10 +342,16 @@ class MIFEFullySecLWE(IPFEAbsCrypto):
         return decode_scaled(total % q, delta, q, bound)
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
-        """Perform the encrypt_lst_ndarray operation.
+        """Encrypt a list of ndarrays element-wise (requires ``eta = 1``).
 
-            Args:
-                lst_ndarray: List of numpy arrays to encrypt element-wise.
+        Args:
+            lst_ndarray: List of numpy arrays, scaled by ``10^precision``.
+
+        Returns:
+            One object array of ciphertexts per input array.
+
+        Raises:
+            NotImplementedError: If ``eta != 1``.
         """
         if self.pp["eta"] != 1:
             raise NotImplementedError("ndarray helper currently expects eta=1")

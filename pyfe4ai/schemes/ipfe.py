@@ -20,8 +20,8 @@ class ParameterCacheMixin:
     """Mixin that provides JSON-based parameter caching with validation.
 
     Subclasses must set ``_scheme_type`` (a CryptoCONST string) and implement
-    :meth:`_param_verification`, :meth:`_apply_parameters`, and
-    :meth:`_generate_and_save`.
+    ``_param_verification``, ``_apply_parameters``, and
+    ``_generate_and_save``.
     """
 
     config_folder: str
@@ -144,11 +144,6 @@ class IPFEAbsKeyGenerator(metaclass=_ProfiledKeyGeneratorMeta):
     """
 
     def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
-
-            Args:
-                config: Scheme configuration dict.
-        """
         super().__init__()
         warn_if_known_insecure(type(self).__module__)
         self.security_profile = config.get("security_profile", profiles.TOY)
@@ -226,11 +221,6 @@ class IPFEAbsCrypto(ABC):
     """
 
     def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
-
-            Args:
-                config: Scheme configuration dict.
-        """
         super().__init__()
         warn_if_known_insecure(type(self).__module__)
         self.keys = config.get("keys", None)

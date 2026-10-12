@@ -31,4 +31,8 @@ project communication channels.
 Project maintainers may remove, edit, or reject comments, commits, code, issues,
 or other contributions that do not align with this code of conduct.
 
-For serious concerns, please contact the maintainers privately.
+For serious concerns, please contact the maintainers privately through
+GitHub's private reporting form
+(<https://github.com/spire-studio/pyfe4ai/security/advisories/new>, see
+`SECURITY.md`); state in the title that the report is a code-of-conduct
+concern rather than a vulnerability.

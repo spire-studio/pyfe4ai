@@ -72,8 +72,9 @@ class DecentralizedMCFELWEKeyGenerator(MCFELWEKeyGenerator, ParameterCacheMixin)
         """Initialise the key generator.
 
         Args:
-            config: As for :class:`MCFELWEKeyGenerator` (``n``, ``lst_nid``,
-                ``eta``, ``lwe_n``, ``bound_x``, ``bound_y``, ``stat_param``).
+            config: As for :class:`~pyfe4ai.schemes.mcfe.lwe.MCFELWEKeyGenerator`
+                (``n``, ``lst_nid``, ``eta``, ``lwe_n``, ``bound_x``, ``bound_y``,
+                ``stat_param``).
         """
         super().__init__(config, **kwargs)
         # contributions sum_j y_j Z_{i,j} over Z: |.| <= eta Y q (the s part)

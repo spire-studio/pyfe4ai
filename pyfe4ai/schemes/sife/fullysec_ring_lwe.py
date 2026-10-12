@@ -14,12 +14,12 @@ Adaptively secure Ring-LWE single-input inner-product FE.
 Construction (``l = eta`` slots, ``m`` key polynomials, ``Delta = floor(q / p)``):
 
 * Setup:    ``a = (a_1, ..., a_m) <- R_q^m`` uniform with some ``a_j``
-            invertible; ``s_i = (s_i1, ..., s_im)``, ``s_ij <- D_sigma1``;
-            ``pk_i = <a, s_i>`` (no error term).
+  invertible; ``s_i = (s_i1, ..., s_im)``, ``s_ij <- D_sigma1``;
+  ``pk_i = <a, s_i>`` (no error term).
 * Encrypt:  ``r <- D_sigma2``, ``f0 <- D_sigma2^m``, ``f_i <- D_sigma3``;
-            ``ct0 = a r + f0``, ``ct_i = pk_i r + f_i + Delta x_i`` (constant
-            coefficient, ``Delta x_i`` linear in ``x_i`` as the proof needs); resampled until some ``ct0_j`` is invertible and
-            ``ct0`` is proportional to ``a`` in no CRT slot.
+  ``ct0 = a r + f0``, ``ct_i = pk_i r + f_i + Delta x_i`` (constant
+  coefficient, ``Delta x_i`` linear in ``x_i`` as the proof needs); resampled until some ``ct0_j`` is invertible and
+  ``ct0`` is proportional to ``a`` in no CRT slot.
 * KeyGen:   ``sk_y = sum_i y_i s_i`` (``m`` polynomials).
 * Decrypt:  ``d = sum_i y_i ct_i - <ct0, sk_y>``; round its constant coefficient.
 

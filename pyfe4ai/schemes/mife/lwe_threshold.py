@@ -14,11 +14,11 @@ Shamir-shared functional key and statistically flooded partial decryptions.
 Construction (notation of :mod:`pyfe4ai.schemes.mife.lwe`):
 
 * KeyGen:    the MIFE key ``({sk_i = S_i y_i}, z)``; every coordinate of every
-             ``sk_i`` and ``z`` is Shamir-shared with threshold ``t`` over
-             ``Z_q`` at points ``1..s``.
+  ``sk_i`` and ``z`` is Shamir-shared with threshold ``t`` over
+  ``Z_q`` at points ``1..s``.
 * ShareDec:  server ``k`` of an enrolled set ``E`` publishes
-             ``w_k = lambda_k (sum_i <ct0_i, sk_i^(k)> + Delta z^(k)) + e_k mod q``
-             and ``c_y = sum_i <y_i, ct1_i> mod q`` for a consistency check.
+  ``w_k = lambda_k (sum_i <ct0_i, sk_i^(k)> + Delta z^(k)) + e_k mod q``
+  and ``c_y = sum_i <y_i, ct1_i> mod q`` for a consistency check.
 * Combine:   ``c_y - sum_{k in E} w_k = Delta <x, y> + noise - sum e_k``; decode.
 
 Flooding: ``c_y - (sum_i <ct0_i, sk_i> + Delta z) = Delta <x, y> + nu`` where
@@ -130,9 +130,10 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
         """Initialise the key generator.
 
         Args:
-            config: As for :class:`MIFELWEKeyGenerator`, plus ``s`` (number of
-                servers), ``t`` (threshold), ``lst_sid`` and ``stat_param``
-                (statistical parameter ``kappa`` of the flooding).
+            config: As for :class:`~pyfe4ai.schemes.mife.lwe.MIFELWEKeyGenerator`,
+                plus ``s`` (number of servers), ``t`` (threshold), ``lst_sid``
+                and ``stat_param`` (statistical parameter ``kappa`` of the
+                flooding).
         """
         self.t = config.get("t", CryptoCONST.tMIFE_T)
         s = config.get("s") or len(config.get("lst_sid", [])) or 1

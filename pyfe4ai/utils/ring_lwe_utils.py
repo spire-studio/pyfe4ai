@@ -390,11 +390,11 @@ def center_matrix(
     of the row. The encoding is linear in ``x``, as the BMMS21 proofs need
     (versions <= 0.2.0 used ``trunc(x q / p)``).
 
-        Args:
-            matrix: Input matrix.
-            p: Plaintext modulus.
-            q: Ciphertext modulus.
-            ring_n: Polynomial ring dimension.
+    Args:
+        matrix: Input matrix.
+        p: Plaintext modulus.
+        q: Ciphertext modulus.
+        ring_n: Polynomial ring dimension.
     """
     delta = gp.mpz(q) // gp.mpz(p)
     centered = [[gp.mpz(0) for _ in range(ring_n)] for _ in range(len(matrix))]
@@ -462,7 +462,7 @@ def decode_vector(poly: list[gp.mpz], p: gp.mpz, q: gp.mpz, k: int) -> list[int]
     return ret
 
 
-#: Default ring dimension. A toy value chosen for speed: nothing here
+#: Default ring dimension. A toy value chosen for speed; nothing here
 #: estimates the hardness of Ring-LWE at the derived (n, q, sigma), and BMMS21
 #: (Table 1) uses n >= 2048 for comparable settings.
 DEFAULT_RING_N = 32
@@ -489,6 +489,8 @@ def check_ring_n(ring_n) -> int:
 #: smallest width among the RLWE problems its proof relies on: wider
 #: Gaussians only make the attacks more expensive. Regenerate with
 #: ``tools/estimate_ring_lwe.py``.
+#:
+#: :meta hide-value:
 RING_LWE_128_LOG_Q = {
     2.0: {1024: 27, 2048: 53, 4096: 107, 8192: 214, 16384: 431, 32768: 868},
     3.0: {1024: 28, 2048: 55, 4096: 108, 8192: 216, 16384: 432, 32768: 870},
@@ -708,7 +710,7 @@ def bmms21_adaptive_parameters(sec_param: int, eta: int, bound_x, bound_y, ring_
     Returns:
         Dict with ``p`` (``2 l X Y + 2``), ``q`` (NTT-friendly prime), ``m``,
         and the widths ``sigma`` (RLWE), ``sigma_lhl`` (``sigma'``),
-        ``sigma1``, ``sigma2``, ``sigma3``; see :func:`_bmms21_adaptive_widths`.
+        ``sigma1``, ``sigma2``, ``sigma3``; see ``_bmms21_adaptive_widths``.
 
     Raises:
         FEValidationError: If no modulus meets the constraints (``m <= 4``).

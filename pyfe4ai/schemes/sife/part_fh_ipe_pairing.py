@@ -6,7 +6,7 @@ Partially Function-Hiding Inner-Product Encryption over Pairings
 | ``innerprod/fullysec/part_fh_ipe.go``.
 
 * type:     public-key encryption for vectors in the span of a public matrix
-            ``M``; secret-key encryption (``Enc'``) of arbitrary vectors
+  ``M``; secret-key encryption (``Enc'``) of arbitrary vectors
 * setting:  asymmetric pairing group (default MNT224)
 
 ``a, b <- (1, Z_q)``, ``U in Z_q^{(eta+2) x 2}``, ``V in Z_q^{eta x 2}`` and a
@@ -15,7 +15,7 @@ public key is ``([a]_1, [U a]_1, V^T M, M)`` and ``msk = (b, U, V)``.
 
 * Enc(t):   ``[c = a r ; (-V^T M t ; M t) + U c]_1`` for ``t in Z^k``.
 * Enc'(x):  the same with ``(-V^T x ; x)``; needs ``V``, so it is run by the
-            key generator (:meth:`SIFEPartFHIPEKeyGenerator.sec_encrypt`).
+  key generator (:meth:`SIFEPartFHIPEKeyGenerator.sec_encrypt`).
 * KeyGen(y): ``[(-U^T w ; w)]_2`` with ``w = (b s ; y + V b s)``.
 * Dec:      ``prod_j e(ct_j, sk_j) = [<x, y>]_T`` and a bounded discrete log.
 
@@ -180,10 +180,15 @@ class SIFEPartFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
     _scheme_type = CryptoCONST.TYPE_SIFE_PART_FH_IPE
     def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
+        """Initialise the SIFE partially FH-IPE key generator.
 
-            Args:
-                config: Scheme configuration dict.
+        Args:
+            config: Scheme configuration. Recognised keys: ``eta``, ``bound``
+                (or ``bound_x``), ``subspace_dim`` (``1 <= subspace_dim <
+                eta``, default 1), ``coeff_bound`` (bound on the coefficients
+                ``t`` of public encryption, default 1) and
+                ``pairing_group_param`` (asymmetric group, default
+                ``"MNT224"``).
         """
         super().__init__(config, **kwargs)
         require_pairing_backend()
@@ -296,10 +301,12 @@ class SIFEPartFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         return {"ct": _serialize_vec(self.group, cipher)}
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
-        """Perform the get_decryption_keys operation.
+        """Derive a functional decryption key for the given fusion weights.
 
-            Args:
-                sid: Session / decryption-key identifier.
+        Args:
+            sid: Session identifier.
+            **kwargs: Must include ``credentials`` with ``fusion_weight`` (list of
+                int).
         """
         credentials = kwargs.get("credentials", None)
         if not credentials:
@@ -331,10 +338,11 @@ class SIFEPartFHIPE(IPFEAbsCrypto):
     """Crypto operations for partially function-hiding inner-product encryption over pairings."""
 
     def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
+        """Initialise the SIFE partially FH-IPE crypto object.
 
-            Args:
-                config: Scheme configuration dict.
+        Args:
+            config: Must contain ``keys`` with ``pp`` (public parameters);
+                encryption is public-key.
         """
         super().__init__(config, **kwargs)
         require_pairing_backend()
@@ -399,11 +407,7 @@ class SIFEPartFHIPE(IPFEAbsCrypto):
         return bounded_discrete_log_gt(self.group, base, acc, bound)
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
-        """Perform the encrypt_lst_ndarray operation.
-
-            Args:
-                lst_ndarray: List of numpy arrays to encrypt element-wise.
-        """
+        """Not implemented for this scheme; raises :class:`NotImplementedError`."""
         raise NotImplementedError("ndarray helper is not implemented for partially FH-IPE")
 
     def compute_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:

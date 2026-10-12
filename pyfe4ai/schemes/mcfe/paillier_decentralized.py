@@ -63,8 +63,9 @@ class DecentralizedMCFEPaillierKeyGenerator(MCFEPaillierKeyGenerator):
         """Initialise the key generator.
 
         Args:
-            config: As for :class:`MCFEPaillierKeyGenerator` (``n``,
-                ``lst_nid``, ``eta``, ``bit_length``, ``bound_x``,
+            config: As for
+                :class:`~pyfe4ai.schemes.mcfe.paillier.MCFEPaillierKeyGenerator`
+                (``n``, ``lst_nid``, ``eta``, ``bit_length``, ``bound_x``,
                 ``bound_y``, ``stat_param``).
         """
         eta = config.get("eta", 1)

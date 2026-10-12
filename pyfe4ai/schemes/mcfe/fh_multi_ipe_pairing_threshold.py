@@ -76,8 +76,9 @@ class ThresholdMCFEFHMultiIPEKeyGenerator(MCFEFHMultiIPEKeyGenerator):
         """Initialise the key generator.
 
         Args:
-            config: As for :class:`MCFEFHMultiIPEKeyGenerator`, plus ``s``,
-                ``t`` and ``lst_sid``.
+            config: As for
+                :class:`~pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing.MCFEFHMultiIPEKeyGenerator`,
+                plus ``s``, ``t`` and ``lst_sid``.
         """
         self.t = config.get("t", CryptoCONST.tMCFE_T)
         s = config.get("s") or len(config.get("lst_sid", [])) or 1

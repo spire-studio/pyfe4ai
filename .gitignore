@@ -161,7 +161,6 @@ cython_debug/
 .idea
 .vscode
 config/*
-!config/generate_config.py
 experiments/*
 !experiments/*.py
 scripts/

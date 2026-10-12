@@ -9,11 +9,12 @@ scheme families in the repository.
   repository's LWE family.
 - `benchmark_fh_multi_ipe_family.py`: compares `MIFE/MCFE/dMCFE/tMCFE` over the
   pairing-based `FHMultiIPE` family.
-- `benchmark_quadratic_family.py`: compares the repository's two quadratic FE
-  prototypes, `Quadratic/SGP` and `Quadratic/Quad`.
+- `benchmark_quadratic_family.py`: compares the two single-input quadratic FE
+  schemes, `Quadratic/SGP` and `Quadratic/Quad` (the multi-input
+  `quadratic/miqfe` is not benchmarked yet).
 - `benchmark_sife_instantiations.py`: compares `SIFE` instantiations such as
   `DDH`, `LWE`, `FullySecLWE`, `RingLWE`, `Paillier`, and `DamgardDDH` under a
-  shared single-input workload.
+  shared single-input workload (not the adaptive `sife/fullysec_ring_lwe`).
 - `benchmark_mife_instantiations.py`: compares core `MIFE` instantiations under
   a shared multi-input workload.
 - `benchmark_mcfe_instantiations.py`: compares core label-aware `MCFE`
@@ -33,6 +34,11 @@ scheme families in the repository.
   that variant's own test configuration and reports `usable` / `unusable`
   (with the reason) / `unverified` (pairing entries without `charm-crypto`).
   `--output json` for machine-readable output.
+
+The `FHMultiIPE` and quadratic scripts, and `benchmark_ndarray_helpers.py
+--group fh|quadratic|all`, need `charm-crypto-framework` (see *Quick Start* in
+the top-level README, or the Docker image); everything else runs without it.
+All scripts use the toy default parameters unless stated otherwise.
 
 ## Recommended Usage
 

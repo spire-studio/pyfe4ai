@@ -6,7 +6,7 @@ Function-Hiding Inner-Product Encryption over Pairings
 
 * type:     secret-key encryption with function-hiding keys
 * setting:  asymmetric pairing group (default MNT224); secure in the generic
-            bilinear group model
+  bilinear group model
 
 ``B <- GL_n(Z_q)`` (rejection sampling), ``B* = det(B) (B^{-1})^T``. The key for
 ``y`` is ``(g1^{alpha det B}, g1^{alpha B y})``, a ciphertext of ``x`` is
@@ -64,10 +64,12 @@ class SIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
     _scheme_type = CryptoCONST.TYPE_SIFE_FH_IPE
     def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
+        """Initialise the SIFE FH-IPE key generator.
 
-            Args:
-                config: Scheme configuration dict.
+        Args:
+            config: Scheme configuration. Recognised keys: ``eta``,
+                ``bound_x``, ``bound_y`` and ``pairing_group_param``
+                (asymmetric group, default ``"MNT224"``).
         """
         super().__init__(config, **kwargs)
         require_pairing_backend()
@@ -147,10 +149,11 @@ class SIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         }
 
     def get_private_keys(self, nid: str = "nid_default", **kwargs) -> dict | None:
-        """Perform the get_private_keys operation.
+        """Return the encryption key (``g2``, ``b_star``); it is equivalent to
+        the master secret key.
 
-            Args:
-                nid: Node identifier.
+        Args:
+            nid: Client identifier (unused for single-input schemes).
         """
         return {
             "g2": self.msk["g2"],
@@ -158,10 +161,12 @@ class SIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         }
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
-        """Perform the get_decryption_keys operation.
+        """Derive a functional decryption key for the given fusion weights.
 
-            Args:
-                sid: Session / decryption-key identifier.
+        Args:
+            sid: Session identifier.
+            **kwargs: Must include ``credentials`` with ``fusion_weight`` (list of
+                int).
         """
         credentials = kwargs.get("credentials", None)
         if not credentials:
@@ -191,10 +196,11 @@ class SIFEFHIPE(IPFEAbsCrypto):
     """Crypto operations for function-hiding inner-product encryption over pairings."""
 
     def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
+        """Initialise the SIFE FH-IPE crypto object.
 
-            Args:
-                config: Scheme configuration dict.
+        Args:
+            config: Must contain ``keys`` with ``pp`` (public parameters) and
+                optionally ``sk`` (encryption keys).
         """
         super().__init__(config, **kwargs)
         require_pairing_backend()
@@ -253,11 +259,7 @@ class SIFEFHIPE(IPFEAbsCrypto):
         return _bounded_discrete_log_gt(self.group, d1, d2, bound)
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
-        """Perform the encrypt_lst_ndarray operation.
-
-            Args:
-                lst_ndarray: List of numpy arrays to encrypt element-wise.
-        """
+        """Not implemented for this scheme; raises :class:`NotImplementedError`."""
         raise NotImplementedError("ndarray helper is not implemented for FH-IPE")
 
     def compute_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:

@@ -90,6 +90,8 @@ STANDARD = "standard"
 PROFILES = (TOY, STANDARD)
 
 #: Scheme family of every registered ``(family, variant)``.
+#:
+#: :meta hide-value:
 SCHEME_KIND = {
     **{("sife", v): "dl" for v in ("ddh", "ddh_dynamic", "damgard")},
     **{("mife", v): "dl" for v in ("ddh", "damgard", "ddh_threshold")},

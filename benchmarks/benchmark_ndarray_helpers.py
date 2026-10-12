@@ -448,42 +448,57 @@ def main() -> None:
     quadratic_dim = profile_value(args.profile, {"small": 2, "medium": 2, "large": 3, "report": 3, "mnist": 2})
     quadratic_bound = profile_value(args.profile, {"small": 200, "medium": 300, "large": 500, "report": 500, "mnist": 300})
 
-    sife_results = [
-        _bench_sife_helper(
+    def sife_lwe() -> dict:
+        return _bench_sife_helper(
             "SIFE/LWE",
             SIFELWEKeyGenerator,
             SIFELWE,
             {"sec_param": 64, "eta": 1, "lwe_n": sife_lwe_n, "bound_x": FH_BOUND_X, "bound_y": 3},
             2,
-        ),
-        _bench_sife_helper(
-            "SIFE/FullySecLWE",
-            SIFEFullySecLWEKeyGenerator,
-            SIFEFullySecLWE,
-            {"sec_param": 64, "eta": 1, "lwe_n": sife_lwe_n + 4, "bound_x": FH_BOUND_X, "bound_y": 3},
-            2,
-        ),
-        _bench_sife_helper(
-            "SIFE/Paillier",
-            SIFEPaillierKeyGenerator,
-            SIFEPaillier,
-            {"sec_param": 64, "eta": 1, "bit_length": sife_bit_length, "bound_x": FH_BOUND_X, "bound_y": 3},
-            2,
-        ),
-        _bench_sife_helper(
-            "SIFE/DamgardDDH",
-            SIFEDamgardKeyGenerator,
-            SIFEDamgard,
-            {"sec_param": 64, "eta": 1, "modulus_length": sife_bit_length, "bound": max(20, sife_bound * 4)},
-            3,
-        ),
-    ]
-    fh_results = [
-        _bench_mife_fh_multi_ipe(),
-        _bench_mcfe_fh_multi_ipe("MCFE/FHMultiIPE"),
-    ]
-    quadratic_results = [
-        _bench_quadratic(
+        )
+
+    def sife_group() -> list[dict]:
+        return [
+            sife_lwe(),
+            _bench_sife_helper(
+                "SIFE/FullySecLWE",
+                SIFEFullySecLWEKeyGenerator,
+                SIFEFullySecLWE,
+                {"sec_param": 64, "eta": 1, "lwe_n": sife_lwe_n + 4, "bound_x": FH_BOUND_X, "bound_y": 3},
+                2,
+            ),
+            _bench_sife_helper(
+                "SIFE/Paillier",
+                SIFEPaillierKeyGenerator,
+                SIFEPaillier,
+                {"sec_param": 64, "eta": 1, "bit_length": sife_bit_length, "bound_x": FH_BOUND_X, "bound_y": 3},
+                2,
+            ),
+            _bench_sife_helper(
+                "SIFE/DamgardDDH",
+                SIFEDamgardKeyGenerator,
+                SIFEDamgard,
+                {"sec_param": 64, "eta": 1, "modulus_length": sife_bit_length, "bound": max(20, sife_bound * 4)},
+                3,
+            ),
+        ]
+
+    def fh_group() -> list[dict]:
+        results = [
+            _bench_mife_fh_multi_ipe(),
+            _bench_mcfe_fh_multi_ipe("MCFE/FHMultiIPE"),
+        ]
+        if args.profile in {"large", "report"}:
+            results.extend(
+                [
+                    _bench_mcfe_fh_multi_ipe("dMCFE/FHMultiIPE", decentralized=True),
+                    _bench_mcfe_fh_multi_ipe("tMCFE/FHMultiIPE", threshold=True),
+                ]
+            )
+        return results
+
+    def quadratic_sgp() -> dict:
+        return _bench_quadratic(
             "Quadratic/SGP",
             QuadraticSGP,
             QuadraticSGPKeyGenerator,
@@ -491,69 +506,34 @@ def main() -> None:
             [_base_array(0.1 + 0.1 * i) for i in range(quadratic_dim)],
             [_base_array(0.3 + 0.1 * j) for j in range(quadratic_dim)],
             [[1 for _ in range(quadratic_dim)] for _ in range(quadratic_dim)],
-        ),
-        _bench_quadratic(
-            "Quadratic/Quad",
-            QuadraticQuad,
-            QuadraticQuadKeyGenerator,
-            {"sec_param": 64, "n": quadratic_dim, "m": quadratic_dim + 1, "bound": quadratic_bound, "pairing_group_param": "MNT224"},
-            [_base_array(0.1 + 0.1 * i) for i in range(quadratic_dim)],
-            [_base_array(0.3 + 0.1 * j) for j in range(quadratic_dim + 1)],
-            [[1 for _ in range(quadratic_dim + 1)] for _ in range(quadratic_dim)],
-        ),
-    ]
-    if args.group in {"fh", "all"} and args.profile == "report":
-        fh_results = [
-            _bench_mife_fh_multi_ipe(),
-            _bench_mcfe_fh_multi_ipe("MCFE/FHMultiIPE"),
-            _bench_mcfe_fh_multi_ipe("dMCFE/FHMultiIPE", decentralized=True),
-            _bench_mcfe_fh_multi_ipe("tMCFE/FHMultiIPE", threshold=True),
-        ]
-    elif args.profile in {"large", "report"}:
-        fh_results.extend(
-            [
-                _bench_mcfe_fh_multi_ipe("dMCFE/FHMultiIPE", decentralized=True),
-                _bench_mcfe_fh_multi_ipe("tMCFE/FHMultiIPE", threshold=True),
-            ]
         )
 
-    if args.group == "sife":
-        for _ in range(args.warmup):
-            _bench_sife_helper(
-                "SIFE/LWE",
-                SIFELWEKeyGenerator,
-                SIFELWE,
-                {"sec_param": 64, "eta": 1, "lwe_n": sife_lwe_n, "bound_x": FH_BOUND_X, "bound_y": 3},
-                2,
-            )
-        results = sife_results
-    elif args.group == "fh":
-        for _ in range(args.warmup):
-            _bench_mife_fh_multi_ipe()
-        results = fh_results
-    elif args.group == "quadratic":
-        for _ in range(args.warmup):
+    def quadratic_group() -> list[dict]:
+        return [
+            quadratic_sgp(),
             _bench_quadratic(
-                "Quadratic/SGP",
-                QuadraticSGP,
-                QuadraticSGPKeyGenerator,
-                {"sec_param": 64, "n": quadratic_dim, "bound": quadratic_bound, "pairing_group_param": "MNT224"},
+                "Quadratic/Quad",
+                QuadraticQuad,
+                QuadraticQuadKeyGenerator,
+                {"sec_param": 64, "n": quadratic_dim, "m": quadratic_dim + 1, "bound": quadratic_bound, "pairing_group_param": "MNT224"},
                 [_base_array(0.1 + 0.1 * i) for i in range(quadratic_dim)],
-                [_base_array(0.3 + 0.1 * j) for j in range(quadratic_dim)],
-                [[1 for _ in range(quadratic_dim)] for _ in range(quadratic_dim)],
-            )
-        results = quadratic_results
-    else:
-        for _ in range(args.warmup):
-            _bench_sife_helper(
-                "SIFE/LWE",
-                SIFELWEKeyGenerator,
-                SIFELWE,
-                {"sec_param": 64, "eta": 1, "lwe_n": sife_lwe_n, "bound_x": FH_BOUND_X, "bound_y": 3},
-                2,
-            )
-            _bench_mife_fh_multi_ipe()
-        results = sife_results + fh_results + quadratic_results
+                [_base_array(0.3 + 0.1 * j) for j in range(quadratic_dim + 1)],
+                [[1 for _ in range(quadratic_dim + 1)] for _ in range(quadratic_dim)],
+            ),
+        ]
+
+    # (warm-up run, benchmark) per group; only the selected groups run, so the
+    # sife group needs no charm-crypto
+    groups = {
+        "sife": (sife_lwe, sife_group),
+        "fh": (_bench_mife_fh_multi_ipe, fh_group),
+        "quadratic": (quadratic_sgp, quadratic_group),
+    }
+    selected = list(groups) if args.group == "all" else [args.group]
+    for _ in range(args.warmup):
+        for name in selected:
+            groups[name][0]()
+    results = [result for name in selected for result in groups[name][1]()]
 
     for result in results:
         result["profile"] = args.profile

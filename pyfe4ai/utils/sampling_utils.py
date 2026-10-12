@@ -68,10 +68,10 @@ def discrete_gaussian_matrix(rows: int, cols: int, sigma: float) -> list[list[gp
     is adequate for a research prototype but not for production side-channel
     resistance.
 
-        Args:
-            rows: Number of rows.
-            cols: Number of columns.
-            sigma: Standard deviation for the Gaussian distribution.
+    Args:
+        rows: Number of rows.
+        cols: Number of columns.
+        sigma: Standard deviation for the Gaussian distribution.
     """
     if sigma > _DOUBLE_SAFE_SIGMA:
         flat = discrete_gaussian_bigint(sigma, rows * cols)
@@ -88,8 +88,8 @@ class XofRandom:
     Provides ``getrandbits`` for derandomised sampling (the same seed always
     yields the same bits). The seed must be secret and unpredictable.
 
-        Args:
-            seed: Secret seed bytes (at least 32 bytes of entropy).
+    Args:
+        seed: Secret seed bytes (at least 32 bytes of entropy).
     """
 
     def __init__(self, seed: bytes) -> None:
@@ -114,10 +114,10 @@ def discrete_gaussian_bigint(sigma, count: int, rng=None) -> list[gp.mpz]:
     a rounded continuous Gaussian, not an exact discrete-Gaussian sampler,
     and it is not constant-time.
 
-        Args:
-            sigma: Standard deviation (int, mpz, float or mpfr), > 0.
-            count: Number of samples.
-            rng: Bit source with ``getrandbits`` (default: the OS CSPRNG).
+    Args:
+        sigma: Standard deviation (int, mpz, float or mpfr), > 0.
+        count: Number of samples.
+        rng: Bit source with ``getrandbits`` (default: the OS CSPRNG).
             An :class:`XofRandom` gives derandomised sampling.
     """
     if not sigma > 0:

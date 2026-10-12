@@ -15,9 +15,9 @@ client secret ``u'_i``):
 
 * Setup:    MIFE setup plus a secret ``u'_i`` per client.
 * Encrypt:  ``ct_{i,l} = MIFE.Enc(msk_i, x_i + H(u'_i, l))``, i.e. the slot
-            encrypts ``x_i + u_i + H(u'_i, l)``.
+  encrypts ``x_i + u_i + H(u'_i, l)``.
 * KeyGen:   for weights ``y`` and label ``l``: the MIFE key
-            ``({sk_{i,y}}, z)`` with ``z'' = z + sum_i y_i H(u'_i, l)``.
+  ``({sk_{i,y}}, z)`` with ``z'' = z + sum_i y_i H(u'_i, l)``.
 * Decrypt:  ``MIFE.Dec`` with ``z''``.
 
 Functional keys are bound to a label (identity-based MCFE): a key for

@@ -14,11 +14,11 @@ is the total number of slots):
 
 * Setup:    safe-prime modulus ``N``; ``H: labels -> Z_{N^2}^*`` full-domain hash.
 * KeyGen:   ``s_{i,j} <- D_{Z, sigma}`` with
-            ``sigma > sqrt(kappa + 2 n log2(2X)) * N^{5/2}`` (adaptive setting).
+  ``sigma > sqrt(kappa + 2 n log2(2X)) * N^{5/2}`` (adaptive setting).
 * Encrypt:  ``c_{i,j} = (1 + N)^{x_{i,j}} * H(l)^{s_{i,j}} mod N^2``.
 * KeyDer:   ``k = sum y_{i,j} s_{i,j}`` over the integers (one aggregated key).
 * Decrypt:  ``C = prod c_{i,j}^{y_{i,j}} * H(l)^{-k}``;
-            ``<x, y> = (C - 1 mod N^2) / N``.
+  ``<x, y> = (C - 1 mod N^2) / N``.
 
 Correctness needs ``|x|, |y| < sqrt(N / 2n)`` (Fig. 3); the result is
 returned centred modulo ``N``, so signed inputs are supported. Each client
@@ -74,11 +74,11 @@ def dcr_sigma(n_mod: gp.mpz, n_slots: int, bound_x: int, kappa: int) -> gp.mpz:
     This is the adaptive-security condition of ABMPSW20 Fig. 3 / Lemma 27
     (the selective one drops the ``2 n log2(2X)`` term).
 
-        Args:
-            n_mod: RSA modulus ``N``.
-            n_slots: Total number of slots ``n``.
-            bound_x: Plaintext bound ``X``.
-            kappa: Statistical security parameter.
+    Args:
+        n_mod: RSA modulus ``N``.
+        n_slots: Total number of slots ``n``.
+        bound_x: Plaintext bound ``X``.
+        kappa: Statistical security parameter.
     """
     log_term = 2 * n_slots * (int(2 * bound_x).bit_length())  # >= 2n log2(2X)
     factor = gp.isqrt(kappa + log_term) + 1  # > sqrt(kappa + 2n log2(2X))

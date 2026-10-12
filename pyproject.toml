@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyfe4ai"
-version = "0.2.0"
+version = "0.3.0.dev0"
 description = "Python-based functional encryption for AI security and privacy."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -55,6 +55,7 @@ Homepage = "https://spire-studio.github.io/pyfe4ai/"
 Documentation = "https://spire-studio.github.io/pyfe4ai/docs/"
 Repository = "https://github.com/spire-studio/pyfe4ai"
 Issues = "https://github.com/spire-studio/pyfe4ai/issues"
+Changelog = "https://github.com/spire-studio/pyfe4ai/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 include = ["pyfe4ai*"]
@@ -67,8 +68,9 @@ testpaths = ["tests"]
 # a bare `pytest` from the repository root imports the in-tree package (and can
 # resolve the warning category below) without an install
 pythonpath = ["."]
-# known-insecure schemes warn on every key generator; tests/test_scheme_status.py
-# checks the warning itself
+# FESecurityWarning marks known-insecure schemes (none at present) and BN254
+# under security_profile="standard"; tests/test_scheme_status.py and
+# tests/test_security_profiles.py check the warnings themselves
 filterwarnings = ["ignore::pyfe4ai.utils.exceptions.FESecurityWarning"]
 markers = [
   "core: core FE/IPFE coverage intended for the staged core-only release lane",

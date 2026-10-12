@@ -10,9 +10,9 @@ Multi-input functional encryption for quadratic functions (cross-user terms)
 
 * type:     multi-input FE with per-user encryption keys
 * setting:  asymmetric pairing group (default MNT224); selective pos
-            message-hiding security (Thm. 5.1) from MDDH_1 (SXDH, for the
-            TAO20 IPFE), bilateral MDDH_k with ``k >= 2`` (for the mixed-group
-            SK-MCFE) and PRF security
+  message-hiding security (Thm. 5.1) from MDDH_1 (SXDH, for the
+  TAO20 IPFE), bilateral MDDH_k with ``k >= 2`` (for the mixed-group
+  SK-MCFE) and PRF security
 
 Function class (Def. 2.9): ``n`` users with ``m`` integers each,
 ``f(x_1, ..., x_n) = sum_{i < k} sum_{j, l} c[(i, j, k, l)] x_i[j] x_k[l]`` --

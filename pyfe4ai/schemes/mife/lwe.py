@@ -15,13 +15,13 @@ LWE multi-input inner-product FE (selective security).
 Construction (slot ``i`` is client ``i``, ``L = q``):
 
 * Setup:    public ``A``; per slot ``S_i`` (``lwe_n x eta`` uniform),
-            ``pk_i = A S_i + E_i`` and a one-time pad ``u_i <- Z_q^eta``;
-            client ``i`` keeps ``(pk_i, u_i)``.
+  ``pk_i = A S_i + E_i`` and a one-time pad ``u_i <- Z_q^eta``;
+  client ``i`` keeps ``(pk_i, u_i)``.
 * Encrypt:  ``w = x_i + u_i mod q``; ``ct0 = A^T r``,
-            ``ct1 = pk_i^T r + Delta * w mod q`` (``r`` binary).
+  ``ct1 = pk_i^T r + Delta * w mod q`` (``r`` binary).
 * KeyGen:   per slot ``sk_i = S_i y_i mod q``, and ``z = sum_i <u_i, y_i> mod q``.
 * Decrypt:  Dec1 per slot ``<y_i, ct1> - <ct0, sk_i> = Delta <w_i, y_i> + noise_i``;
-            ``mu = round(centre(sum_i Dec1_i - Delta z) / Delta)`` (Dec2).
+  ``mu = round(centre(sum_i Dec1_i - Delta z) / Delta)`` (Dec2).
 
 The pad hides each slot's partial result; versions <= 0.2.0 had no pad and
 encoded ``floor(x q / p)``, so the key holder decoded every ``<x_i, y_i>``.

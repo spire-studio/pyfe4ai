@@ -60,8 +60,8 @@ class ThresholdMIFEKeyGenerator(MIFEKeyGenerator):
         """Initialise the key generator.
 
         Args:
-            config: As for :class:`MIFEKeyGenerator`, plus ``t`` and
-                ``lst_sid`` (``s`` decryption servers).
+            config: As for :class:`~pyfe4ai.schemes.mife.ddh.MIFEKeyGenerator`,
+                plus ``t`` and ``lst_sid`` (``s`` decryption servers).
         """
         self.t = config.get("t", CryptoCONST.tMCFE_T)
         s = config.get("s") or len(config.get("lst_sid", [])) or 1
@@ -235,7 +235,8 @@ class ThresholdMIFE(MIFE):
         return float(f / pow(10, self.precision))
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list:
-        """Encrypt ndarrays element-wise (``eta = 1``); see :meth:`MIFE.encrypt_lst_ndarray`."""
+        """Encrypt ndarrays element-wise (``eta = 1``); see
+        :meth:`MIFE.encrypt_lst_ndarray <pyfe4ai.schemes.mife.ddh.MIFE.encrypt_lst_ndarray>`."""
         if len(self.sk["u"]) != 1:
             raise NotImplementedError("ndarray helper currently expects eta=1")
         out = []

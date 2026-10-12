@@ -83,8 +83,9 @@ class DecentralizedMCFEKeyGenerator(MCFEKeyGenerator):
         """Initialise the key generator.
 
         Args:
-            config: As for :class:`MCFEKeyGenerator` (``sec_param``, ``eta``,
-                ``n``, ``lst_nid``), plus ``stat_param`` for MCFE2.
+            config: As for :class:`~pyfe4ai.schemes.mcfe.ddh.MCFEKeyGenerator`
+                (``sec_param``, ``eta``, ``n``, ``lst_nid``), plus ``stat_param``
+                for MCFE2.
         """
         self.construction = _CONSTRUCTION
         self.stat_param = int(config.get("stat_param", 64))

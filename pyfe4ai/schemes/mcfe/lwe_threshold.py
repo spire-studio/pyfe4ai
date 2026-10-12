@@ -16,17 +16,17 @@ Shamir-shared functional key and noise-flooded partial decryptions.
 Construction (notation of :mod:`pyfe4ai.schemes.mcfe.lwe`):
 
 * KeyGen:    ``sk_y = sum y_{i,j} Z_{i,j} mod q``; every coordinate is
-             Shamir-shared with threshold ``t`` over ``Z_q`` (``q`` prime) at
-             points ``1..s``; server ``k`` receives ``sk_y^(k)``.
+  Shamir-shared with threshold ``t`` over ``Z_q`` (``q`` prime) at
+  points ``1..s``; server ``k`` receives ``sk_y^(k)``.
 * ShareDec:  server ``k`` of an enrolled set ``E`` publishes
-             ``w_k = lambda_k <sk_y^(k), H(l)> + e_k mod q`` with ``lambda_k``
-             its Lagrange coefficient for ``E`` and flooding noise
-             ``e_k <- D_{Z, sigma_f}`` (truncated at 12 sigma_f), plus
-             ``sum y_{i,j} c_{i,j} mod q0`` for a consistency check. ``e_k`` is
-             derived from a per-server secret key, ``l`` and ``lambda_k``, so
-             requests for the same label and coefficient get the same answer.
+  ``w_k = lambda_k <sk_y^(k), H(l)> + e_k mod q`` with ``lambda_k``
+  its Lagrange coefficient for ``E`` and flooding noise
+  ``e_k <- D_{Z, sigma_f}`` (truncated at 12 sigma_f), plus
+  ``sum y_{i,j} c_{i,j} mod q0`` for a consistency check. ``e_k`` is
+  derived from a per-server secret key, ``l`` and ``lambda_k``, so
+  requests for the same label and coefficient get the same answer.
 * Combine:   ``v = sum_{k in E} w_k = <sk_y, H(l)> + sum e_k mod q``;
-             decode ``mu' = sum y c - round_q0(v)`` as in the MCFE.
+  decode ``mu' = sum y c - round_q0(v)`` as in the MCFE.
 
 Why the noise: without ``e_k`` a partial decryption is an exact linear
 function of the server's share, so ``n0 + m0`` partial decryptions of one
@@ -93,7 +93,7 @@ def flooding_sigma(params: dict, n_slots: int, bound_y: int, s: int) -> int:
     """Largest ``sigma_f`` with ``(q0 / q) * s * c * sigma_f <= (n Y + 1) / 2``.
 
         Args:
-            params: Output of :func:`abmpsw20_lwe_parameters`.
+            params: Output of :func:`~pyfe4ai.utils.lwe_utils.abmpsw20_lwe_parameters`.
             n_slots: Total number of slots ``n``.
             bound_y: Weight bound ``Y``.
             s: Number of decryption servers (upper bound on ``|E|``).
@@ -109,10 +109,11 @@ def flooding_noise(sigma: int, rng=None) -> int:
     double's mantissa, and scaling a 53-bit normal by it would leave the low
     bits of ``e`` deterministic.
 
-        Args:
-            sigma: Width.
-            rng: Bit source (default: OS CSPRNG).
-            An :class:`XofRandom` makes the sample a function of its seed.
+    Args:
+        sigma: Width.
+        rng: Bit source (default: OS CSPRNG). An
+            :class:`~pyfe4ai.utils.sampling_utils.XofRandom` makes the
+            sample a function of its seed.
     """
     bound = GAUSSIAN_TAIL_CUT * sigma
     while True:
@@ -130,8 +131,9 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
         """Initialise the key generator.
 
         Args:
-            config: As for :class:`MCFELWEKeyGenerator`, plus ``s`` (number of
-                decryption servers), ``t`` (threshold) and ``lst_sid``.
+            config: As for :class:`~pyfe4ai.schemes.mcfe.lwe.MCFELWEKeyGenerator`,
+                plus ``s`` (number of decryption servers), ``t`` (threshold)
+                and ``lst_sid``.
         """
         super().__init__(config, **kwargs)
         self.t = config.get("t", CryptoCONST.tMCFE_T)
@@ -314,7 +316,9 @@ class ThresholdMCFELWE(MCFELWE):
 
         Args:
             dict_ndarray_ct: Mapping of client IDs to ciphertext ndarray lists
-                produced by :meth:`encrypt_lst_ndarray` under ``credentials["label"]``.
+                produced by
+                :meth:`~pyfe4ai.schemes.mcfe.lwe.MCFELWE.encrypt_lst_ndarray`
+                under ``credentials["label"]``.
             credentials: Dict with ``fusion_weight`` and ``label``.
             dk: This server's key share.
             lst_sid_enrolled: The servers whose shares will be combined.
