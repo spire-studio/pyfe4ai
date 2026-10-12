@@ -21,27 +21,35 @@ library adds no defence against active network attackers and assumes
 authenticated channels between parties. Decryption servers of the threshold
 schemes are honest-but-curious: partial decryptions carry no proof of
 correctness (redundant enrolled sets can detect a deviating server). Default
-parameters are toy-sized; use `security_profile="standard"`. See "Known
+parameters are toy-sized; use `security_profile="standard"`, which aims at
+128-bit security except for pairings (BN254, about 100-bit) and refuses the
+ALS16 and dMCFE-Paillier schemes. See "Known
 Issues / Security Notice" in the README for the full list of limitations.
 
 ## Supported Versions
 
 At the moment, only the latest state of the `main` branch should be considered
-supported for security fixes.
+supported for security fixes. The latest release, v0.2.0, still contains
+schemes that have since been found insecure (see its Known Issues and the
+*Unreleased* section of `CHANGELOG.md`); use `main` until the next release.
 
 ## Reporting a Vulnerability
 
 Please do not open a public GitHub issue for undisclosed security
 vulnerabilities.
 
-Instead, report the issue privately to the project maintainer through a private
-channel you control, such as the maintainer email address listed on the GitHub
-profile or repository contact information if available.
+Instead, report it privately through GitHub's private vulnerability
+reporting: open the repository's **Security** tab and choose **Report a
+vulnerability**, or go directly to
+<https://github.com/spire-studio/pyfe4ai/security/advisories/new>. Only the
+maintainers can see the report.
 
 When reporting, please include:
 
 - a clear description of the issue
-- affected files and scheme(s)
+- affected files and scheme(s) (`family/variant`, e.g. `mcfe/ring_lwe`) and
+  the `security_profile` used
+- the pyfe4ai version or commit
 - steps to reproduce
 - impact assessment
 - any proof-of-concept or patch suggestion, if available

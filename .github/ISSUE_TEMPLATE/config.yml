@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/spire-studio/pyfe4ai/security/advisories/new
+    about: Please report vulnerabilities privately (see SECURITY.md), not as public issues.
+  - name: Documentation
+    url: https://spire-studio.github.io/pyfe4ai/docs/
+    about: API reference, scheme status and security profiles.
