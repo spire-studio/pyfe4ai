@@ -15,11 +15,11 @@ Each client ``i`` holds the master key ``imsk_i`` of an independent
 function-hiding IPFE (:mod:`pyfe4ai.schemes.mcfe.fh_ipe`):
 
 * Enc:      ``[omega]_1 = H1(tag)``; ``ct_i = iEnc(imsk_i, [x_hat_i]_1)`` with
-            ``x_hat_i = (x_i, omega, 0, 0^eta, 0, 0)``.
+  ``x_hat_i = (x_i, omega, 0, 0^eta, 0, 0)``.
 * KeyGen:   fresh ``t_1, ..., t_n`` with ``sum t_i = 0``;
-            ``dk_i = iKeyGen(imsk_i, [y_hat_i]_2)``, ``y_hat_i = (y_i, t_i, 0, 0^eta, 0, 0)``.
+  ``dk_i = iKeyGen(imsk_i, [y_hat_i]_2)``, ``y_hat_i = (y_i, t_i, 0, 0^eta, 0, 0)``.
 * Dec:      ``prod_i iDec(dk_i, ct_i) = [sum <x_i, y_i> + omega sum t_i]_T = [<x, y>]_T``,
-            then a bounded discrete log.
+  then a bounded discrete log.
 
 The zero coordinates are the ones the security proof uses (NPS24 Section 2).
 Each client's partial result is masked by ``omega t_i`` and the IPFE hides

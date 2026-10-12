@@ -4,9 +4,9 @@ Public-key functional encryption for quadratic polynomials (SGP)
 | By Dufour-Sans, Gay, Pointcheval (ePrint 2018/206) -- Fig. 2.
 
 * type:     public-key encryption; keys for matrices ``F``, decryption gives
-            ``x^T F y``
+  ``x^T F y``
 * setting:  asymmetric pairing group (default MNT224); IND-CPA in the generic
-            bilinear group model
+  bilinear group model
 
 ``s, t <- Z_p^n``; ``pk = (g1^s, g2^t)``, ``msk = (s, t)``.
 
@@ -140,10 +140,13 @@ class QuadraticSGPKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
     _scheme_type = CryptoCONST.TYPE_QUADRATIC_SGP
     def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
+        """Initialise the DSGPP18 quadratic FE key generator.
 
-            Args:
-                config: Scheme configuration dict.
+        Args:
+            config: Scheme configuration. Recognised keys: ``n`` (vector
+                length, or ``eta``; default 2), ``bound`` (one bound for ``x``,
+                ``y`` and ``F``, default 16) and ``pairing_group_param``
+                (asymmetric group, default ``"MNT224"``).
         """
         super().__init__(config, **kwargs)
         require_pairing_backend()
@@ -218,10 +221,12 @@ class QuadraticSGPKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         return None
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
-        """Perform the get_decryption_keys operation.
+        """Derive a functional decryption key for a matrix ``F``.
 
-            Args:
-                sid: Session / decryption-key identifier.
+        Args:
+            sid: Session identifier.
+            **kwargs: Must include ``credentials`` with ``function_matrix``
+                (``n x n`` integer matrix ``F``).
         """
         credentials = kwargs.get("credentials")
         if not credentials:
@@ -249,10 +254,11 @@ class QuadraticSGP(IPFEAbsCrypto):
     """Encryption (from ``pk``) and decryption of DSGPP18's quadratic FE."""
 
     def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
+        """Initialise the DSGPP18 quadratic FE crypto object.
 
-            Args:
-                config: Scheme configuration dict.
+        Args:
+            config: Must contain ``keys`` with ``pp`` (public parameters,
+                which hold the public key).
         """
         super().__init__(config, **kwargs)
         require_pairing_backend()
@@ -358,10 +364,15 @@ class QuadraticSGP(IPFEAbsCrypto):
         return lhs_scaled, rhs_scaled
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
-        """Perform the encrypt_lst_ndarray operation.
+        """Encrypt pairs ``(x, y)`` of ndarrays element-wise.
 
-            Args:
-                lst_ndarray: List of numpy arrays to encrypt element-wise.
+        Args:
+            lst_ndarray: The ``n`` arrays of ``x`` (one per coordinate), all of
+                one shape, scaled by ``10^precision``.
+            **kwargs: Must include ``rhs_lst_ndarray``, the ``n`` arrays of ``y``.
+
+        Returns:
+            A one-element list: the object array of ciphertexts.
         """
         rhs_lst_ndarray = kwargs.get("rhs_lst_ndarray")
         lhs_scaled, rhs_scaled = self._prepare_quadratic_ndarray_payload(

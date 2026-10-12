@@ -5,9 +5,9 @@ Public-key functional encryption for degree-2 polynomials (Quad)
 | over the partially function-hiding IPFE of Fig. 8 with k = 1.
 
 * type:     public-key encryption; keys for matrices ``F``, decryption gives
-            ``x^T F y``
+  ``x^T F y``
 * setting:  asymmetric pairing group (default MNT224); semi-adaptive
-            simulation security from bilateral DLIN, DDH in G1 and SXDH
+  simulation security from bilateral DLIN, DDH in G1 and SXDH
 
 Setup: ``a <- DDH`` (``(1, a)``), ``B <- DLIN`` (``[[b1, 0], [0, b2], [1, 1]]``),
 ``U in Z_p^{n x 2}``, ``V in Z_p^{m x 3}`` and
@@ -16,10 +16,10 @@ Setup: ``a <- DDH`` (``(1, a)``), ``B <- DLIN`` (``[[b1, 0], [0, b2], [1, 1]]``)
 ``pk = ([U a]_1, [V B]_2, pk_IPFE)``.
 
 * Enc(x, y):  ``r <- Z_p``, ``s <- Z_p^2``; ``ct_x = [x + U a r]_1``,
-              ``ct_y = [y + V B s]_2``, ``ct_IPFE = Enc_IPFE(r (y ; s) ; x (x) s)``.
+  ``ct_y = [y + V B s]_2``, ``ct_IPFE = Enc_IPFE(r (y ; s) ; x (x) s)``.
 * KeyGen(F):  ``sk_F = (F, KeyGen_IPFE(vect(U^T F) ; vect(F V)))``.
 * Dec:        ``e(ct_x, F ct_y) / Dec_IPFE = [x^T F y]_T`` and a discrete log
-              bounded by ``n m B^3``.
+  bounded by ``n m B^3``.
 
 The IPFE (Fig. 8, CPA, no QANIZK): ``a', b' <- (1, Z_p)``,
 ``U' in Z_p^{(N+2) x 2}``, ``V' in Z_p^{N x 2}``,

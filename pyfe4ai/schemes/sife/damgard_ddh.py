@@ -47,10 +47,12 @@ class SIFEDamgardKeyGenerator(DamgardDDHKeyGeneratorBase):
     _verify_keys = ("sec_param", "eta", "modulus_length", "bound")
 
     def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
+        """Initialise the SIFE Damgård DDH key generator.
 
-            Args:
-                config: Scheme configuration dict.
+        Args:
+            config: Scheme configuration. Recognised keys: ``sec_param``,
+                ``eta``, ``modulus_length`` (default ``sec_param``) and
+                ``bound`` (on inputs and weights).
         """
         super().__init__(config, **kwargs)
         self.eta = config.get("eta", CryptoCONST.SIFE_DEFAULT_ETA)
@@ -94,18 +96,20 @@ class SIFEDamgardKeyGenerator(DamgardDDHKeyGeneratorBase):
         }
 
     def get_private_keys(self, nid: str = "nid_default", **kwargs) -> dict | None:
-        """Perform the get_private_keys operation.
+        """Return the encryption key (public key vector ``pk``).
 
-            Args:
-                nid: Node identifier.
+        Args:
+            nid: Client identifier (unused for single-input schemes).
         """
         return {"pk": [gp.digits(v) for v in self.mpk["pk"]]}
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
-        """Perform the get_decryption_keys operation.
+        """Derive a functional decryption key for the given fusion weights.
 
-            Args:
-                sid: Session / decryption-key identifier.
+        Args:
+            sid: Session identifier.
+            **kwargs: Must include ``credentials`` with ``fusion_weight`` (list of
+                int).
         """
         credentials = kwargs.get("credentials", None)
         if not credentials:
@@ -122,10 +126,11 @@ class SIFEDamgard(IPFEAbsCrypto):
     """Crypto operations for Damgard DDH-based single-input inner-product FE."""
 
     def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
+        """Initialise the SIFE Damgård DDH crypto object.
 
-            Args:
-                config: Scheme configuration dict.
+        Args:
+            config: Must contain ``keys`` with ``pp`` (public parameters) and
+                optionally ``sk`` (encryption keys).
         """
         super().__init__(config, **kwargs)
         self.pp = self.keys["pp"]
@@ -219,10 +224,16 @@ class SIFEDamgard(IPFEAbsCrypto):
             return None
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
-        """Perform the encrypt_lst_ndarray operation.
+        """Encrypt a list of ndarrays element-wise (requires ``eta = 1``).
 
-            Args:
-                lst_ndarray: List of numpy arrays to encrypt element-wise.
+        Args:
+            lst_ndarray: List of numpy arrays, scaled by ``10^precision``.
+
+        Returns:
+            One object array of ciphertexts per input array.
+
+        Raises:
+            NotImplementedError: If ``eta != 1``.
         """
         if self.pp["eta"] != 1:
             raise NotImplementedError("ndarray helper currently expects eta=1")

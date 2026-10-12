@@ -101,6 +101,8 @@ def generate_group_primes(bits: int) -> tuple:
 #: of a fresh safe prime when one of these sizes is requested -- generating a
 #: 3072-bit safe prime takes minutes, and at these sizes a fixed, published
 #: group gives nothing to precomputation.
+#:
+#: :meta hide-value:
 RFC3526_PRIMES = {
     2048: gp.mpz(
         "FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74"
@@ -226,11 +228,15 @@ def is_dcr_modulus(n, prime_bits: int) -> bool:
 
 
 def group_generator_fe(bits: int, r: int = 2) -> tuple:
-    """Generate an RSA modulus and generator for FE schemes.
+    """Generate a safe-prime group ``(p, q, r, g)`` for the DDH schemes.
 
-        Args:
-            bits: Security parameter (bit length).
-            r: Cofactor (default 2).
+    ``p = r q + 1`` is a *bits*-bit prime (for ``r = 2`` the RFC 3526 prime
+    at 2048 and 3072 bits) and ``g`` generates the order-``q`` subgroup of
+    ``Z_p^*``.
+
+    Args:
+        bits: Bit length of ``p`` (``sec_param``; not a security level).
+        r: Cofactor (default 2).
     """
     p, q, r = _param_generator(bits, r=r)
     g = _g_generator(bits, p, r)
@@ -247,11 +253,11 @@ def hash_to_qr_group(v: str, p: gp.mpz, index: int = 0, domain: str = "") -> gp.
     with respect to any fixed generator is unknown, as required when the
     hash is modelled as a random oracle into the group.
 
-        Args:
-            v: Input string.
-            p: Safe-prime modulus.
-            index: Output index, giving independent outputs for the same *v*.
-            domain: Domain-separation tag.
+    Args:
+        v: Input string.
+        p: Safe-prime modulus.
+        index: Output index, giving independent outputs for the same *v*.
+        domain: Domain-separation tag.
     """
     p = gp.mpz(p)
     n_bytes = (int(p).bit_length() + 128 + 7) // 8
@@ -293,10 +299,10 @@ def hash_to_zn2_star(v: str, n_mod: gp.mpz, domain: str = "") -> gp.mpz:
     mod ``N^2`` is statistically close to uniform; outputs not coprime to
     ``N`` (which would factor ``N``) are re-hashed with a counter.
 
-        Args:
-            v: Input string.
-            n_mod: RSA modulus ``N``.
-            domain: Domain-separation tag.
+    Args:
+        v: Input string.
+        n_mod: RSA modulus ``N``.
+        domain: Domain-separation tag.
     """
     n_mod = gp.mpz(n_mod)
     n_square = n_mod * n_mod
@@ -317,11 +323,11 @@ def hash_to_zq_vector(v: str, q: gp.mpz, length: int, domain: str = "") -> list:
     Versions <= 0.2.0 made one SHAKE-256 call per coordinate, so their outputs
     (and the ciphertexts of the schemes that hash labels this way) differ.
 
-        Args:
-            v: Input string.
-            q: Modulus.
-            length: Number of coordinates.
-            domain: Domain-separation tag.
+    Args:
+        v: Input string.
+        q: Modulus.
+        length: Number of coordinates.
+        domain: Domain-separation tag.
     """
     q = gp.mpz(q)
     n_bytes = (int(q).bit_length() + 128 + 7) // 8

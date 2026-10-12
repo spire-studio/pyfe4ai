@@ -234,11 +234,7 @@ class SIFE(IPFEAbsCrypto):
             return None
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
-        """Perform the encrypt_lst_ndarray operation.
-
-            Args:
-                lst_ndarray: List of numpy arrays to encrypt element-wise.
-        """
+        """Not implemented for this scheme; raises :class:`NotImplementedError`."""
         raise NotImplementedError()
 
     def compute_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:

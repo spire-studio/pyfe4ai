@@ -68,6 +68,10 @@ _FIG14_NOTE = (
     "are sampled in-process"
 )
 
+#: Review status of every registered ``(family, variant)``: the single source
+#: of the README *Scheme Status* table and of the status table of the docs.
+#:
+#: :meta hide-value:
 SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     # --- single-input -------------------------------------------------------
     ("sife", "ddh"): SchemeStatus(
@@ -300,7 +304,8 @@ def status_for_module(module: str) -> tuple[tuple[str, str], SchemeStatus] | Non
 
 
 def warn_if_known_insecure(module: str, stacklevel: int = 3) -> None:
-    """Emit :class:`FESecurityWarning` if *module* implements a known-insecure scheme."""
+    """Emit :class:`~pyfe4ai.utils.exceptions.FESecurityWarning` if *module*
+    implements a known-insecure scheme."""
     found = status_for_module(module)
     if found is None:
         return

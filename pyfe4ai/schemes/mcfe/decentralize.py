@@ -11,12 +11,12 @@ Fig. 14 turns an MCFE (MCFE1) whose functional key is
 ``sk_y = sum_i y_i sk_{1,i}`` into a decentralised one:
 
 * KeyGen:        each client has ``sk_{1,i}`` (MCFE1) and an MCFE2 key
-                 ``sk_{2,i}`` with ``sum_i sk_{2,i} = 0``.
+  ``sk_{2,i}`` with ``sum_i sk_{2,i} = 0``.
 * KeyDerShare:   client ``i`` publishes
-                 ``Enc2(sk_{2,i}, y_i sk_{1,i}, H(y))`` -- an MCFE2 encryption
-                 of its key contribution under the label ``H(y)``.
+  ``Enc2(sk_{2,i}, y_i sk_{1,i}, H(y))`` -- an MCFE2 encryption
+  of its key contribution under the label ``H(y)``.
 * KeyDerComb:    ``Dec2`` with the all-ones function, whose MCFE2 key is
-                 ``sum_i sk_{2,i} = 0``, returns ``sum_i y_i sk_{1,i} = sk_y``.
+  ``sum_i sk_{2,i} = 0``, returns ``sum_i y_i sk_{1,i} = sk_y``.
 
 This module provides MCFE2: the DCR MCFE of ABMPSW20 Fig. 3 (see
 :mod:`pyfe4ai.schemes.mcfe.paillier`), one MCFE2 slot per coordinate of a

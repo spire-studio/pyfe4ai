@@ -20,13 +20,13 @@ Construction (one coordinate j of client i's vector is one CDGPP18 slot):
 * Setup:     ``s_{i,j} <- Z_q^2`` for every client slot.
 * Encrypt:   ``[u_l] = H(l) in G^2``;  ``c_{i,j} = g^{x_{i,j}} * [u_l]^{s_{i,j}}``.
 * KeyGen:    ``d = sum y_{i,j} s_{i,j} in Z_q^2``; each component of ``d`` is
-             Shamir-shared with threshold ``t`` over ``Z_q`` at points
-             ``1..s``; server ``k`` receives ``d^(k) in Z_q^2``.
+  Shamir-shared with threshold ``t`` over ``Z_q`` at points
+  ``1..s``; server ``k`` receives ``d^(k) in Z_q^2``.
 * ShareDec:  server ``k`` of an enrolled set ``E`` (``|E| >= t``) publishes
-             ``P_k = [u_l]^{lambda_k * d^(k)}`` with ``lambda_k`` its Lagrange
-             coefficient at 0 for ``E`` (mod q), and ``C_y = prod c_{i,j}^{y_{i,j}}``.
+  ``P_k = [u_l]^{lambda_k * d^(k)}`` with ``lambda_k`` its Lagrange
+  coefficient at 0 for ``E`` (mod q), and ``C_y = prod c_{i,j}^{y_{i,j}}``.
 * Combine:   ``[u_l]^d = prod_{k in E} P_k``;
-             ``g^{<x,y>} = C_y / [u_l]^d``, then a bounded dlog.
+  ``g^{<x,y>} = C_y / [u_l]^d``, then a bounded dlog.
 
 The functional key is a single aggregated value, so neither a server nor the
 combiner can decrypt any individual client; fewer than ``t`` shares of ``d``

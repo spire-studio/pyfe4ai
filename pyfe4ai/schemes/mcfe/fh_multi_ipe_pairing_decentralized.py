@@ -14,9 +14,9 @@ Setup samples one FH-IPFE master key ``imsk_i`` per client
 (:mod:`pyfe4ai.schemes.mcfe.fh_ipe`) and a sharing ``t~_1 + ... + t~_n = 0``:
 
 * Enc:      ``[omega]_1 = H1(tag)``; ``ct_i = iEnc(imsk_i, [x_hat_i]_1)`` with
-            ``x_hat_i = (x_i, omega t~_i, 0, 0^eta, 0, 0)``.
+  ``x_hat_i = (x_i, omega t~_i, 0, 0^eta, 0, 0)``.
 * DKeyGen:  ``[mu]_2 = H2(tag-f)``; ``dk_i = iKeyGen(imsk_i, [y_hat_i]_2)`` with
-            ``y_hat_i = (y_i, mu, 0, 0^eta, 0, 0)``.
+  ``y_hat_i = (y_i, mu, 0, 0^eta, 0, 0)``.
 * Dec:      ``prod_i iDec(dk_i, ct_i) = [<x, y> + omega mu sum t~_i]_T = [<x, y>]_T``.
 
 There is no authority for functional keys: each client derives its own

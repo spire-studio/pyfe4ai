@@ -17,7 +17,7 @@ denotes ``g^a``):
 * Encrypt:  ``[u_l] = H(l)``;  ``c_{i,j} = [S_{i,j} . u_l + x_{i,j}]``.
 * KeyDer:   ``sk_y = sum y_{i,j} S_{i,j} in Z_q^{k+1}`` (one aggregated key).
 * Decrypt:  ``[<x, y>] = prod c_{i,j}^{y_{i,j}} / [u_l . sk_y]``, then a
-            bounded discrete log.
+  bounded discrete log.
 
 ``k`` is the config key ``mddh_k`` (default 1). For ``k = 1`` (DDH) this is
 exactly the CDGPP18 MCFE of :mod:`pyfe4ai.schemes.mcfe.ddh`, and it is also

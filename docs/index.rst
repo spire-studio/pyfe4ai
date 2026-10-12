@@ -51,13 +51,42 @@ Minimal example
    result = SIFE({"precision": 3, "keys": {"pp": pp}}).decrypt(ct, dk, y)
    print(result)  # <x, y> = 31
 
-API Reference
--------------
+Security & status
+-----------------
+
+* **Review status**: |n_schemes| registered schemes, |n_reviewed| reviewed,
+  |n_experimental| experimental, |n_unreviewed| unreviewed and
+  |n_known_insecure| known-insecure. The experimental ones are the threshold
+  layers of tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE and tMCFE-FH-Multi-IPE and
+  the carry mask of dMCFE-DDH (our own constructions, no published proof).
+  ``pyfe4ai.get_scheme_status(family, variant)`` returns a scheme's entry.
+* **Security profiles**: ``security_profile="toy"``, the default, is **not
+  secure**; ``"standard"`` aims at 128-bit security (3072-bit DL groups
+  and DCR moduli, lattice-estimator bounds for LWE and Ring-LWE,
+  ``stat_param`` 128), except that pairing-based schemes get BN254 (about
+  100-bit, with a ``FESecurityWarning``) and ``sife/fullysec_lwe``,
+  ``mife/fullysec_lwe`` and ``mcfe/paillier_decentralized`` are refused. The ABDP15 LWE schemes
+  take ``matrix_mode`` (``"memory"`` or ``"stream"``) to trade memory for
+  time.
+* **Threshold schemes**: decryption servers are honest-but-curious; a
+  deviating server can change the result unnoticed.
+* **ML adapter**: ``FESchemeWrapper`` runs the key generator and holds the
+  master key, a single trust domain meant for experiments.
+
+Details: :doc:`security`, and the README sections
+`Scheme Status <https://github.com/spire-studio/pyfe4ai#scheme-status>`__,
+`Security Profiles <https://github.com/spire-studio/pyfe4ai#security-profiles>`__
+and `Known Issues / Security Notice
+<https://github.com/spire-studio/pyfe4ai#known-issues--security-notice>`__.
+
+Contents
+--------
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
 
+   security
+   glossary
    api/index
 
 Indices and tables

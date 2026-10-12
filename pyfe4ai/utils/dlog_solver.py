@@ -70,9 +70,9 @@ def dlog_table_solve(
             g_str: Group generator as a digit string.
             p_str: Prime modulus as a digit string.
             bound: Upper bound on absolute values.
-            table: See implementation for details.
-            m: See implementation for details.
-            giant: See implementation for details.
+            table: Baby-step table ``{digits(g^j): j}`` for ``0 <= j < m``.
+            m: Baby-step count (table size).
+            giant: Giant step ``g^-m mod p``.
     """
     g = gp.mpz(g_str)
     p = gp.mpz(p_str)
@@ -106,11 +106,11 @@ def load_or_build_dlog_table(
     a JSON fallback) from that location without any integrity check, which
     allowed arbitrary code execution / wrong results via a planted file.
 
-        Args:
-            filepath: Ignored (legacy cache location).
-            g_str: Group generator as a digit string.
-            p_str: Prime modulus as a digit string.
-            bound: Upper bound on absolute values.
+    Args:
+        filepath: Ignored (legacy cache location).
+        g_str: Group generator as a digit string.
+        p_str: Prime modulus as a digit string.
+        bound: Upper bound on absolute values.
     """
     table, m, giant = _cached_dlog_table(str(g_str), str(p_str), int(bound))
     return table, bound, m, giant

@@ -2,8 +2,10 @@ Quadratic FE
 ============
 
 .. automodule:: pyfe4ai.schemes.quadratic
-   :members:
-   :undoc-members:
+   :no-members:
+
+The key generator and crypto class of every scheme below are importable
+from :mod:`pyfe4ai.schemes.quadratic`.
 
 SGP (Single-Input)
 ------------------

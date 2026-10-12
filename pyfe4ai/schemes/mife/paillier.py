@@ -14,13 +14,13 @@ DCR (Paillier) multi-input inner-product FE.
 Construction (slot ``i`` is client ``i``, ``L = N``):
 
 * Setup:    ``g = g'^{2N} mod N^2``; per slot ``s_i <- D_{Z^eta, sigma}`` with
-            ``sigma > sqrt(kappa) N^{5/2}``, ``h_{i,j} = g^{s_{i,j}}`` and a
-            one-time pad ``u_i <- Z_N^eta``; client ``i`` keeps ``(h_i, u_i)``.
+  ``sigma > sqrt(kappa) N^{5/2}``, ``h_{i,j} = g^{s_{i,j}}`` and a
+  one-time pad ``u_i <- Z_N^eta``; client ``i`` keeps ``(h_i, u_i)``.
 * Encrypt:  ``w = x_i + u_i mod N``; ``C_0 = g^r`` (``r <- {0..N/4}``),
-            ``C_j = (1 + w_j N) h_{i,j}^r``.
+  ``C_j = (1 + w_j N) h_{i,j}^r``.
 * KeyGen:   per slot ``d_i = <s_i, y_i>`` over Z, and ``z = sum_i <u_i, y_i> mod N``.
 * Decrypt:  Dec1 per slot ``E(<w_i, y_i>) = prod_j C_j^{y_j} C_0^{-d_i}``;
-            ``(prod_i E(<w_i, y_i>) * (1 + N)^{-z} - 1 mod N^2) / N``, centred mod N.
+  ``(prod_i E(<w_i, y_i>) * (1 + N)^{-z} - 1 mod N^2) / N``, centred mod N.
 
 The pad hides each slot's partial result; versions <= 0.2.0 had no pad (the
 key holder learned every ``<x_i, y_i>``) and drew keys from a range small
@@ -69,10 +69,13 @@ class MIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
     _scheme_type = CryptoCONST.TYPE_MIFE_PAILLIER
     def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
+        """Initialise the MIFE Paillier key generator.
 
-            Args:
-                config: Scheme configuration dict.
+        Args:
+            config: Scheme configuration. Recognised keys: ``n`` (number of
+                clients, required), ``lst_nid``, ``eta``, ``bit_length`` (bits
+                of each prime of ``N``, default 128), ``bound_x``, ``bound_y``
+                and ``stat_param`` (default 64).
         """
         super().__init__(config, **kwargs)
         self.eta = config.get("eta", CryptoCONST.MIFE_ETA)
@@ -185,10 +188,13 @@ class MIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         }
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
-        """Perform the get_private_keys operation.
+        """Return client *nid*'s encryption key (``pk`` and its pad ``u``).
 
-            Args:
-                nid: Node identifier.
+        Args:
+            nid: Client identifier.
+
+        Returns:
+            The key dict, or ``None`` for an unknown client.
         """
         if nid not in self.mpk["pk"]:
             return None
@@ -198,10 +204,12 @@ class MIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         }
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
-        """Perform the get_decryption_keys operation.
+        """Derive a functional decryption key for the given fusion weights.
 
-            Args:
-                sid: Session / decryption-key identifier.
+        Args:
+            sid: Session identifier.
+            **kwargs: Must include ``credentials`` with ``fusion_weight`` (dict
+                ``{nid: list of int}``).
         """
         credentials = kwargs.get("credentials", None)
         if not credentials:
@@ -232,10 +240,11 @@ class MIFEPaillier(IPFEAbsCrypto):
     """Crypto operations for Paillier-based multi-input inner-product FE."""
 
     def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
+        """Initialise the MIFE Paillier crypto object.
 
-            Args:
-                config: Scheme configuration dict.
+        Args:
+            config: Must contain ``keys`` with ``pp`` (public parameters) and
+                optionally ``sk`` (encryption keys).
         """
         super().__init__(config, **kwargs)
         self.pp = self.keys["pp"]
@@ -310,10 +319,16 @@ class MIFEPaillier(IPFEAbsCrypto):
         return mu
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
-        """Perform the encrypt_lst_ndarray operation.
+        """Encrypt a list of ndarrays element-wise (requires ``eta = 1``).
 
-            Args:
-                lst_ndarray: List of numpy arrays to encrypt element-wise.
+        Args:
+            lst_ndarray: List of numpy arrays, scaled by ``10^precision``.
+
+        Returns:
+            One object array of ciphertexts per input array.
+
+        Raises:
+            NotImplementedError: If ``eta != 1``.
         """
         if self.pp["eta"] != 1:
             raise NotImplementedError("ndarray helper currently expects eta=1")

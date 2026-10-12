@@ -15,9 +15,9 @@ AGRW17 secret ``z_i``):
 
 * Enc:      ``ct_i = FHIPE.Enc(msk_i, [x_i]_1)``.
 * KeyGen:   one ``r`` for all slots; ``dk_i = FHIPE.KeyGen(msk_i, [y_i]_2; r)``
-            and ``[z]_T = [r sum_i z_i]_T``.
+  and ``[z]_T = [r sum_i z_i]_T``.
 * Dec:      ``prod_i FHIPE.Dec(ct_i, dk_i) / [z]_T = [sum_i <x_i, y_i>]_T``,
-            then one bounded discrete log.
+  then one bounded discrete log.
 
 A slot's partial result is masked by ``r z_i``, so the key holder learns the
 sum only, and slot keys of different functional keys (different ``r``) do

@@ -304,8 +304,8 @@ def fusion_weight_id(fusion_weight: dict) -> str:
     Key shares record the digest of the weights they were derived for, so a
     server can refuse to combine ciphertexts under different weights.
 
-        Args:
-            fusion_weight: Mapping of client IDs to integer weight lists.
+    Args:
+        fusion_weight: Mapping of client IDs to integer weight lists.
     """
     if not isinstance(fusion_weight, dict) or not fusion_weight:
         raise FEValidationError("invalid fusion weights provided, need a dict")

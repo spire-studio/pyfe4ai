@@ -47,7 +47,7 @@ class ABDP15KeyGeneratorMixin(ParameterCacheMixin):
     """Parameter cache, seeded ``A`` and public keys of an ABDP15 LWE key generator.
 
     The host class sets ``eta``, ``bound_x`` and ``bound_y`` and calls
-    :meth:`_init_abdp15`.
+    ``_init_abdp15``.
     """
 
     _construction = CONSTRUCTION

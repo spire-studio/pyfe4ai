@@ -40,10 +40,10 @@ def pow_signed_many(base: gp.mpz, exponents, modulus: gp.mpz) -> list:
     instead of ``bits(e)`` squarings. A negative exponent inverts the power
     of ``|e|``. The results equal those of :func:`pow_signed`.
 
-        Args:
-            base: Base, invertible modulo *modulus* if an exponent is negative.
-            exponents: Integer exponents.
-            modulus: Modulus.
+    Args:
+        base: Base, invertible modulo *modulus* if an exponent is negative.
+        exponents: Integer exponents.
+        modulus: Modulus.
     """
     base, modulus = gp.mpz(base), gp.mpz(modulus)
     exponents = [gp.mpz(e) for e in exponents]

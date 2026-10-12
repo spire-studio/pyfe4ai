@@ -45,6 +45,7 @@ from pyfe4ai.utils.exceptions import FEValidationError
 LIMB_BITS = 31
 EXPANSION_ROWS = 64
 EXPANSION_DOMAIN = "pyfe4ai/lwe/A/v1"
+#: Accepted values of ``matrix_mode``.
 MATRIX_MODES = ("memory", "stream")
 #: Sums of 31-bit limbs over fewer rows than this are exact in float64.
 MAX_ROWS = 1 << (53 - LIMB_BITS)

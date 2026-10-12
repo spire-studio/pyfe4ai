@@ -17,7 +17,7 @@ and a one-time pad ``u_i in Z_q^eta``; client ``i`` holds ``(h_i, u_i)``.
 * Enc:      ``ct_i = (g^r, g^{x_i + u_i} h_i^r)`` (every element reduced mod p).
 * KeyGen:   ``d_i = <s_i, y_i> mod q`` per slot and ``z = sum_i <u_i, y_i> mod q``.
 * Dec:      ``prod_i (prod_j c_{i,j}^{y_{i,j}} / t_i^{d_i}) / g^z = g^{<x, y>}``,
-            then a discrete log bounded by ``dlog_bound``.
+  then a discrete log bounded by ``dlog_bound``.
 
 Each slot's partial result is ``g^{<x_i + u_i, y_i>}``: the pad hides
 ``<x_i, y_i>``, only the sum over all slots is revealed. As in every MIFE,

@@ -27,14 +27,16 @@ import numpy as np
 class QuantizationConfig:
     """Immutable quantization strategy for float↔int conversion.
 
-    Parameters
-    ----------
-    precision : int
-        Number of fractional digits (decimal) or bits (binary) to preserve.
-    mode : str
-        ``"decimal"`` scales by ``10**precision`` (compatible with existing
-        PyFE4AI ndarray helpers).  ``"binary"`` scales by ``2**precision``
-        (avoids base-10 rounding artefacts, better for ML weights).
+    Args:
+        precision: Number of fractional digits (decimal) or bits (binary) to
+            preserve.
+        mode: ``"decimal"`` scales by ``10**precision`` (compatible with
+            existing PyFE4AI ndarray helpers).  ``"binary"`` scales by
+            ``2**precision`` (avoids base-10 rounding artefacts, better for
+            ML weights).
+
+    Raises:
+        ValueError: If *precision* is negative or *mode* is unknown.
     """
 
     precision: int = 3
@@ -64,7 +66,8 @@ class QuantizationConfig:
 
             Args:
                 value: Input value.
-                order: Group order (or exponent order for dequantization).
+                order: Power of the scale factor to divide by (2 for a product
+                    of two quantized values).
         """
         return value / (self.scale_factor ** order)
 
@@ -83,7 +86,8 @@ class QuantizationConfig:
 
             Args:
                 arr: Input array.
-                order: Group order (or exponent order for dequantization).
+                order: Power of the scale factor to divide by (2 for a product
+                    of two quantized values).
         """
         return arr.astype(np.float64) / (self.scale_factor ** order)
 
@@ -103,11 +107,12 @@ def estimate_bounds(
     """Auto-compute safe FE bounds from sample data.
 
         Args:
-            x_data: See implementation for details.
-            y_weights: See implementation for details.
+            x_data: Sample plaintext data (floats).
+            y_weights: Sample weights (floats).
             precision: Quantization precision.
-            eta: Inner-product vector dimension.
-            mode: See implementation for details.
+            eta: Inner-product vector dimension (default: the smaller sample
+                size).
+            mode: Quantization mode, ``"decimal"`` or ``"binary"``.
     """
     qcfg = QuantizationConfig(precision=precision, mode=mode)
 
@@ -195,9 +200,9 @@ def analyze_precision_loss(
     """Report quantization error metrics for the given data and precision.
 
         Args:
-            original: See implementation for details.
+            original: Float data to quantize and restore.
             precision: Quantization precision.
-            mode: See implementation for details.
+            mode: Quantization mode, ``"decimal"`` or ``"binary"``.
     """
     qcfg = QuantizationConfig(precision=precision, mode=mode)
     quantized = qcfg.quantize_array(original)

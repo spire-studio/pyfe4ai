@@ -14,7 +14,7 @@ Per slot dual orthogonal bases ``B_i, B*_i`` of dimension ``2 eta + 2k + 1``
 
 * Enc:    ``c_i = [(x_i, 0^eta, 1, 0^(k-1), phi, 0) B_i]_1`` (``phi <- Z_p^k``).
 * KeyGen: ``k_i = [(y_i, 0^eta, r_i, gamma_i, 0^k, 0) B*_i]_2`` with fresh
-          ``sum_i r_i = 0`` and ``gamma_i <- Z_p^(k-1)``.
+  ``sum_i r_i = 0`` and ``gamma_i <- Z_p^(k-1)``.
 * Dec:    ``prod_i e(c_i, k_i) = g_T^{sum <x_i, y_i>}`` and one discrete log.
 
 Each slot's pairing is masked by ``r_i``; slot keys of different functional
@@ -88,10 +88,14 @@ class MIFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
     _scheme_type = CryptoCONST.TYPE_MIFE_FH_MULTI_IPE
     def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
+        """Initialise the MIFE FH-Multi-IPE key generator.
 
-            Args:
-                config: Scheme configuration dict.
+        Args:
+            config: Scheme configuration. Recognised keys: ``n`` (number of
+                clients, at least 2), ``lst_nid``, ``eta``, ``sec_level``
+                (``k`` of k-LIN, default 2), ``bound_x``, ``bound_y`` and
+                ``pairing_group_param`` (asymmetric group, default
+                ``"MNT224"``).
         """
         super().__init__(config, **kwargs)
         require_pairing_backend()
@@ -197,10 +201,13 @@ class MIFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         return self.pp
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
-        """Perform the get_private_keys operation.
+        """Return client *nid*'s encryption key (its basis ``bhat``).
 
-            Args:
-                nid: Node identifier.
+        Args:
+            nid: Client identifier.
+
+        Returns:
+            The key dict, or ``None`` for an unknown client.
         """
         if nid not in self.msk["bhat"]:
             return None
@@ -209,10 +216,12 @@ class MIFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         }
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
-        """Perform the get_decryption_keys operation.
+        """Derive a functional decryption key for the given fusion weights.
 
-            Args:
-                sid: Session / decryption-key identifier.
+        Args:
+            sid: Session identifier.
+            **kwargs: Must include ``credentials`` with ``fusion_weight`` (dict
+                ``{nid: list of int}`` covering every client).
         """
         credentials = kwargs.get("credentials")
         if not credentials:
@@ -259,10 +268,11 @@ class MIFEFHMultiIPE(IPFEAbsCrypto):
     """Crypto operations for function-hiding multi-slot multi-input IPE over pairings."""
 
     def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
+        """Initialise the MIFE FH-Multi-IPE crypto object.
 
-            Args:
-                config: Scheme configuration dict.
+        Args:
+            config: Must contain ``keys`` with ``pp`` (public parameters) and
+                optionally ``sk`` (encryption keys).
         """
         super().__init__(config, **kwargs)
         require_pairing_backend()

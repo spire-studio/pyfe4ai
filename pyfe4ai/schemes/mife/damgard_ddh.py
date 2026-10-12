@@ -15,12 +15,12 @@ DDH (Damgard-style) multi-input inner-product FE.
 Construction (slot ``i`` is client ``i``; ``[a] = g^a``, ``h = g^a``):
 
 * Setup:    ``W_i = (s_i, t_i) <- (Z_q^eta)^2``, ``pk_{i,j} = g^{s_{i,j}} h^{t_{i,j}}``,
-            one-time pad ``u_i <- Z_q^eta``; client ``i`` keeps ``(pk_i, u_i)``.
+  one-time pad ``u_i <- Z_q^eta``; client ``i`` keeps ``(pk_i, u_i)``.
 * Encrypt:  ``w = x_i + u_i mod q``; ``C = g^r``, ``D = h^r``,
-            ``E_j = g^{w_j} pk_{i,j}^r``.
+  ``E_j = g^{w_j} pk_{i,j}^r``.
 * KeyGen:   per slot ``(<s_i, y_i>, <t_i, y_i>)`` and ``z = sum_i <u_i, y_i> mod q``.
 * Decrypt:  Dec1 per slot ``[<w_i, y_i>] = prod_j E_j^{y_j} / (C^{<s,y>} D^{<t,y>})``;
-            ``[<x, y>] = prod_i [<w_i, y_i>] / [z]``, then a bounded dlog (Dec2).
+  ``[<x, y>] = prod_i [<w_i, y_i>] / [z]``, then a bounded dlog (Dec2).
 
 The pad makes each slot's partial result ``[<x_i + u_i, y_i>]`` uniform, so
 the key holder learns only ``<x, y>``; versions <= 0.2.0 omitted it and

@@ -75,10 +75,15 @@ class SIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
     _scheme_type = CryptoCONST.TYPE_SIFE_RING_LWE
     def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
+        """Initialise the SIFE Ring-LWE key generator.
 
-            Args:
-                config: Scheme configuration dict.
+        Args:
+            config: Scheme configuration. Recognised keys: ``sec_param``
+                (``kappa`` of the noise bounds), ``eta``, ``bound_x``,
+                ``bound_y`` and ``ring_n`` (default
+                :data:`~pyfe4ai.utils.ring_lwe_utils.DEFAULT_RING_N`;
+                ``"auto"`` for the smallest dimension meeting the 128-bit
+                table, the ``standard`` profile's choice).
         """
         super().__init__(config, **kwargs)
         self.eta = config.get("eta", CryptoCONST.SIFE_DEFAULT_ETA)
@@ -176,18 +181,20 @@ class SIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         }
 
     def get_private_keys(self, nid: str = "nid_default", **kwargs) -> dict | None:
-        """Perform the get_private_keys operation.
+        """Return the encryption key (public key polynomials ``pk``).
 
-            Args:
-                nid: Node identifier.
+        Args:
+            nid: Client identifier (unused for single-input schemes).
         """
         return {"pk": [[gp.digits(v) for v in row] for row in self.mpk["pk"]]}
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
-        """Perform the get_decryption_keys operation.
+        """Derive a functional decryption key for the given fusion weights.
 
-            Args:
-                sid: Session / decryption-key identifier.
+        Args:
+            sid: Session identifier.
+            **kwargs: Must include ``credentials`` with ``fusion_weight`` (list of
+                int).
         """
         credentials = kwargs.get("credentials", None)
         if not credentials:
@@ -203,10 +210,11 @@ class SIFERingLWE(IPFEAbsCrypto):
     """Crypto operations for Ring-LWE-based single-input inner-product FE."""
 
     def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
+        """Initialise the SIFE Ring-LWE crypto object.
 
-            Args:
-                config: Scheme configuration dict.
+        Args:
+            config: Must contain ``keys`` with ``pp`` (public parameters) and
+                optionally ``sk`` (encryption keys).
         """
         super().__init__(config, **kwargs)
         self.pp = self.keys["pp"]
@@ -293,11 +301,7 @@ class SIFERingLWE(IPFEAbsCrypto):
         return values
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
-        """Perform the encrypt_lst_ndarray operation.
-
-            Args:
-                lst_ndarray: List of numpy arrays to encrypt element-wise.
-        """
+        """Not implemented for this scheme; raises :class:`NotImplementedError`."""
         raise NotImplementedError()
 
     def compute_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:

@@ -335,22 +335,32 @@ class FESchemeWrapper:
 
     Manages the KeyGenerator lifecycle (setup + key distribution) and
     provides a consistent encrypt / decrypt surface regardless of the
-    underlying scheme family.
+    underlying scheme family. The wrapper runs the key generator itself and
+    so forms a single trust domain (see the module docstring).
 
-    Parameters
-    ----------
-    scheme_type : str
-        ``"sife"``, ``"mcfe"``, ``"mife"``, or ``"quadratic"``.
-    variant : str
-        ``"ddh"``, ``"lwe"``, ``"paillier"``, ``"damgard"``, ``"ring_lwe"``,
-        ``"quad"``, or ``"sgp"``.
-    keygen_config : dict
-        Configuration dict for the KeyGenerator (``sec_param``, ``eta``,
-        ``n``, ``bound_x``, etc.).
-    precision : int
-        Quantization precision (default 0 — no quantization).
-    qmode : str
-        Quantization mode: ``"decimal"`` or ``"binary"`` (default ``"decimal"``).
+    Every registered ``(scheme_type, variant)`` pair is accepted: the keys of
+    :data:`~pyfe4ai.schemes.status.SCHEME_STATUS` (for example
+    ``("sife", "ddh")``, ``("mcfe", "lwe_threshold")``), with their review
+    status in :attr:`status`. The FL helpers are narrower:
+    :func:`encrypt_gradient` and :func:`aggregate_gradients` refuse MIFE (no
+    labels, so a key holder could combine a client's ciphertexts across
+    elements or rounds), and :func:`aggregate_gradients` and
+    :func:`compute_linear` refuse the ``*_decentralized`` and ``*_threshold``
+    variants, whose decryption is a multi-party protocol; use the scheme
+    classes directly for those.
+
+    Args:
+        scheme_type: ``"sife"``, ``"mife"``, ``"mcfe"`` or ``"quadratic"``.
+        variant: Variant name within the family, e.g. ``"ddh"``, ``"lwe"``,
+            ``"damgard"``, ``"paillier"``, ``"ring_lwe"`` or
+            ``"lwe_threshold"`` (see :data:`~pyfe4ai.schemes.status.SCHEME_STATUS`).
+        keygen_config: Configuration dict for the KeyGenerator (``sec_param``,
+            ``eta``, ``n``, ``bound_x``, ``security_profile``, etc.).
+        precision: Quantization precision (0: no quantization).
+        qmode: Quantization mode, ``"decimal"`` or ``"binary"``.
+
+    Raises:
+        ValueError: If ``(scheme_type, variant)`` is not registered.
     """
 
     def __init__(
@@ -362,15 +372,6 @@ class FESchemeWrapper:
         precision: int = 0,
         qmode: str = "decimal",
     ) -> None:
-        """Perform the __init__ operation.
-
-            Args:
-                scheme_type: See implementation for details.
-                variant: See implementation for details.
-                keygen_config: See implementation for details.
-                precision: See implementation for details.
-                qmode: See implementation for details.
-        """
         key = (scheme_type.lower(), variant.lower())
         if key not in _SCHEME_REGISTRY:
             supported = sorted(f"{s}/{v}" for s, v in _SCHEME_REGISTRY)
@@ -565,7 +566,7 @@ def encrypt_gradient(
     """Encrypt a gradient array for federated aggregation.
 
         Args:
-            gradient: See implementation for details.
+            gradient: Gradient array (numpy array or ``torch.Tensor``).
             wrapper: FE scheme wrapper instance.
             nid: Node identifier.
             label: Round label; MCFE allows one ciphertext per client and
@@ -753,7 +754,8 @@ def encrypt_features(
     """Encrypt a feature vector for privacy-preserving inference.
 
         Args:
-            features: See implementation for details.
+            features: Feature vector (numpy array or ``torch.Tensor``),
+                flattened and quantized with the wrapper's precision.
             wrapper: FE scheme wrapper instance.
             nid: Node identifier.
     """

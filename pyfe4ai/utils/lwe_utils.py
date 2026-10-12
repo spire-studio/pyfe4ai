@@ -139,10 +139,10 @@ def center_lwe_vector(vector: list[int] | list[gp.mpz], p: gp.mpz, q: gp.mpz) ->
     the ABDP15 PKE requires (versions <= 0.2.0 used ``trunc(x q / p)``, which
     differs from it by a small non-linear term).
 
-        Args:
-            vector: Input vector.
-            p: Plaintext modulus.
-            q: Ciphertext modulus.
+    Args:
+        vector: Input vector.
+        p: Plaintext modulus.
+        q: Ciphertext modulus.
     """
     delta = gp.mpz(q) // gp.mpz(p)
     return [delta * gp.mpz(x) % q for x in vector]
@@ -173,6 +173,8 @@ def decode_lwe_inner_product(value: gp.mpz, p: gp.mpz, q: gp.mpz) -> int:
 #: ``sigma_e`` of :func:`abmpsw20_lwe_parameters`, so this bounds the LWE
 #: problem of the ABMPSW20 security proof. Regenerate with
 #: ``tools/estimate_dense_lwe.py``.
+#:
+#: :meta hide-value:
 DENSE_LWE_128_LOG_Q = {
     4096: 118, 4608: 132, 5120: 146, 5632: 159, 6144: 173,
     6656: 187, 7168: 200, 7680: 214, 8192: 227, 8704: 241,
@@ -236,6 +238,8 @@ def resolve_lwe_n(lwe_n, modulus_for, default: int) -> int:
 #: the GoFE parameter recipe). At a fixed ratio the attacks get more expensive
 #: as ``sigma`` grows, so a scheme is held to the row of the largest width not
 #: above its own ``sigma``. Regenerate with ``tools/estimate_wide_lwe.py``.
+#:
+#: :meta hide-value:
 WIDE_LWE_128_LOG_RATIO = {
     16: {512: 21, 576: 23, 640: 25, 704: 27, 768: 29, 832: 31, 896: 33, 960: 35,
          1024: 36, 1088: 38, 1152: 40, 1216: 42, 1280: 44, 1344: 45, 1408: 47, 1472: 49,
@@ -351,7 +355,7 @@ def abdp15_parameters(bound_x, bound_y, eta: int, lwe_n, extra_dimension: int | 
     return params_for(int(lwe_n))
 
 
-#: Gaussian tail cut used in worst-case bounds: a Gaussian sample exceeds
+#: Gaussian tail cut used in worst-case bounds. A Gaussian sample exceeds
 #: 12 standard deviations in absolute value with probability below 2^-100.
 GAUSSIAN_TAIL_CUT = 12
 
@@ -396,18 +400,18 @@ def abmpsw20_lwe_parameters(
     The LWE dimension ``n0`` is taken as given; :data:`DENSE_LWE_128_LOG_Q`
     bounds ``q`` for 128-bit hardness of LWE(n0, q, sigma_e).
 
-        Args:
-            n_slots: Total number of slots ``n`` (clients x coordinates).
-            bound_x: Plaintext bound ``X``.
-            bound_y: Weight bound ``Y``.
-            lwe_n: LWE secret dimension ``n0``.
-            stat_param: Statistical security parameter ``kappa``.
-            security: ``"selective"`` or ``"adaptive"`` (choice of ``m0``).
+    Args:
+        n_slots: Total number of slots ``n`` (clients x coordinates).
+        bound_x: Plaintext bound ``X``.
+        bound_y: Weight bound ``Y``.
+        lwe_n: LWE secret dimension ``n0``.
+        stat_param: Statistical security parameter ``kappa``.
+        security: ``"selective"`` or ``"adaptive"`` (choice of ``m0``).
 
-        Returns:
-            Dict with integer entries ``q``, ``q0``, ``K``, ``delta``
-            (``floor(q / K)``), ``bound_ip`` (``T``), ``n0``, ``m0``,
-            ``sigma_t``, ``sigma_e`` and ``B``.
+    Returns:
+        Dict with integer entries ``q``, ``q0``, ``K``, ``delta``
+        (``floor(q / K)``), ``bound_ip`` (``T``), ``n0``, ``m0``,
+        ``sigma_t``, ``sigma_e`` and ``B``.
     """
     if security not in ("selective", "adaptive"):
         raise ValueError("security must be 'selective' or 'adaptive'")
@@ -465,12 +469,12 @@ def decode_rounded_inner_product(mu_prime, q, q0, delta, bound_ip) -> int | None
     Returns the integer ``mu`` closest to ``mu' q / (q0 delta)`` after
     centring ``mu'`` modulo ``q0``, or ``None`` if ``|mu| > bound_ip``.
 
-        Args:
-            mu_prime: Value modulo ``q0``.
-            q: Large modulus.
-            q0: Small modulus.
-            delta: Encoding factor ``floor(q / K)``.
-            bound_ip: Bound ``T`` on ``|mu|``.
+    Args:
+        mu_prime: Value modulo ``q0``.
+        q: Large modulus.
+        q0: Small modulus.
+        delta: Encoding factor ``floor(q / K)``.
+        bound_ip: Bound ``T`` on ``|mu|``.
     """
     q0 = gp.mpz(q0)
     mu_c = gp.mpz(mu_prime) % q0
@@ -490,11 +494,11 @@ def decode_scaled(value, delta, q, bound) -> int | None:
     Used by the two-step decryption of the LWE IPFEs (ACFGU18 Section 4.2,
     encoding ``E(gamma, noise) = gamma * delta + noise mod q``).
 
-        Args:
-            value: Value modulo ``q``.
-            delta: Scaling factor ``floor(q / p)``.
-            q: Modulus.
-            bound: Bound on ``|mu|``; larger results return ``None``.
+    Args:
+        value: Value modulo ``q``.
+        delta: Scaling factor ``floor(q / p)``.
+        q: Modulus.
+        bound: Bound on ``|mu|``; larger results return ``None``.
     """
     q = gp.mpz(q)
     delta = gp.mpz(delta)

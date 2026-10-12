@@ -2,8 +2,12 @@ MIFE — Multi-Input Functional Encryption
 =========================================
 
 .. automodule:: pyfe4ai.schemes.mife
-   :members:
-   :undoc-members:
+   :no-members:
+
+The key generator and crypto class of every scheme below are importable
+from :mod:`pyfe4ai.schemes.mife`, where ``MIFEDamgardDDH`` (and
+``MIFEDamgardDDHKeyGenerator``) is an alias of
+:class:`~pyfe4ai.schemes.mife.damgard_ddh.MIFEDamgard`.
 
 DDH
 ---

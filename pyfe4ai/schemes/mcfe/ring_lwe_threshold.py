@@ -13,10 +13,10 @@ flooded partial decryptions.
 Construction (notation of :mod:`pyfe4ai.schemes.mife.ring_lwe`):
 
 * KeyGen:    the identity-based key ``({sk_i}, z'', z''_chunks)`` for ``(y, l)``;
-             every coefficient is Shamir-shared with threshold ``t`` over ``Z_q``.
+  every coefficient is Shamir-shared with threshold ``t`` over ``Z_q``.
 * ShareDec:  server ``k`` of an enrolled set ``E`` publishes, coefficient-wise,
-             ``w_k = lambda_k (sum_i ct1_i sk_i^(k) + Delta z''^(k)) + e_k`` and
-             ``c_y = sum_i sum_row y_row ct0_{i,row}``.
+  ``w_k = lambda_k (sum_i ct1_i sk_i^(k) + Delta z''^(k)) + e_k`` and
+  ``c_y = sum_i sum_row y_row ct0_{i,row}``.
 * Combine:   ``c_y - sum_{k in E} w_k = Delta <x, y> + noise - sum e_k``; decode.
 
 Flooding: the exact key part differs from what the result and the
@@ -112,8 +112,10 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         """Initialise the key generator.
 
         Args:
-            config: As for :class:`MCFERingLWEKeyGenerator`, plus ``s``,
-                ``t``, ``lst_sid`` and ``stat_param`` (``kappa`` of the flooding).
+            config: As for
+                :class:`~pyfe4ai.schemes.mcfe.ring_lwe.MCFERingLWEKeyGenerator`,
+                plus ``s``, ``t``, ``lst_sid`` and ``stat_param`` (``kappa`` of
+                the flooding).
         """
         self.t = config.get("t", CryptoCONST.tMCFE_T)
         s = config.get("s") or len(config.get("lst_sid", [])) or 1

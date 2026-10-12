@@ -15,15 +15,15 @@ Construction (slot ``i`` is client ``i``; every row of the plaintext matrix is
 one coordinate, its coefficients a batch of independent values):
 
 * Setup:    public ``a``; per slot ``s_{i,row}`` (Gaussian),
-            ``pk_{i,row} = a s_{i,row} + e``, and a one-time pad
-            ``u_{i,row} <- R_q`` (uniform coefficients); client ``i`` keeps
-            ``(pk_i, u_i)``.
+  ``pk_{i,row} = a s_{i,row} + e``, and a one-time pad
+  ``u_{i,row} <- R_q`` (uniform coefficients); client ``i`` keeps
+  ``(pk_i, u_i)``.
 * Encrypt:  ``w = x_i + u_i`` (coefficient-wise mod q);
-            ``ct0_row = pk_row r + e_row + Delta w_row``, ``ct1 = a r + e``.
+  ``ct0_row = pk_row r + e_row + Delta w_row``, ``ct1 = a r + e``.
 * KeyGen:   per slot ``sk_i = sum_row y_{i,row} s_{i,row}`` and
-            ``z = sum_i sum_row y_{i,row} u_{i,row}`` (coefficient-wise mod q).
+  ``z = sum_i sum_row y_{i,row} u_{i,row}`` (coefficient-wise mod q).
 * Decrypt:  Dec1 per slot ``sum_row y_row ct0_row - ct1 sk_i``;
-            Dec2 decodes ``sum_i Dec1_i - Delta z`` coefficient-wise.
+  Dec2 decodes ``sum_i Dec1_i - Delta z`` coefficient-wise.
 
 The pad hides each slot's partial result; versions <= 0.2.0 had no pad and
 decoded every slot separately. Parameters are derived as for a single-input
@@ -73,10 +73,16 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
     _scheme_type = CryptoCONST.TYPE_MIFE_RING_LWE
     def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
+        """Initialise the MIFE Ring-LWE key generator.
 
-            Args:
-                config: Scheme configuration dict.
+        Args:
+            config: Scheme configuration. Recognised keys: ``n`` (number of
+                clients, required), ``lst_nid``, ``sec_param`` (``kappa`` of
+                the noise bounds), ``eta``, ``bound_x``, ``bound_y`` and
+                ``ring_n`` (default
+                :data:`~pyfe4ai.utils.ring_lwe_utils.DEFAULT_RING_N`;
+                ``"auto"`` for the smallest dimension meeting the 128-bit
+                table, the ``standard`` profile's choice).
         """
         super().__init__(config, **kwargs)
         self.eta = config.get("eta", CryptoCONST.MIFE_ETA)
@@ -202,10 +208,13 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         }
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
-        """Perform the get_private_keys operation.
+        """Return client *nid*'s encryption key (``pk`` and its pad ``u``).
 
-            Args:
-                nid: Node identifier.
+        Args:
+            nid: Client identifier.
+
+        Returns:
+            The key dict, or ``None`` for an unknown client.
         """
         if nid not in self.mpk["pk"]:
             return None
@@ -215,10 +224,12 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         }
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
-        """Perform the get_decryption_keys operation.
+        """Derive a functional decryption key for the given fusion weights.
 
-            Args:
-                sid: Session / decryption-key identifier.
+        Args:
+            sid: Session identifier.
+            **kwargs: Must include ``credentials`` with ``fusion_weight`` (dict
+                ``{nid: list of int}``).
         """
         credentials = kwargs.get("credentials", None)
         if not credentials:
@@ -248,10 +259,11 @@ class MIFERingLWE(IPFEAbsCrypto):
     """Crypto operations for Ring-LWE-based multi-input inner-product FE."""
 
     def __init__(self, config: dict, **kwargs) -> None:
-        """Perform the __init__ operation.
+        """Initialise the MIFE Ring-LWE crypto object.
 
-            Args:
-                config: Scheme configuration dict.
+        Args:
+            config: Must contain ``keys`` with ``pp`` (public parameters) and
+                optionally ``sk`` (encryption keys).
         """
         super().__init__(config, **kwargs)
         self.pp = self.keys["pp"]
@@ -371,11 +383,7 @@ class MIFERingLWE(IPFEAbsCrypto):
         return [decode_scaled(v, delta, q, bound) for v in total[:k]]
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
-        """Perform the encrypt_lst_ndarray operation.
-
-            Args:
-                lst_ndarray: List of numpy arrays to encrypt element-wise.
-        """
+        """Not implemented for this scheme; raises :class:`NotImplementedError`."""
         raise NotImplementedError()
 
     def compute_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:
