@@ -39,6 +39,7 @@ import gmpy2 as gp
 import numpy as np
 
 from pyfe4ai.schemes.mcfe.labels import chunk_label, encode_label
+from pyfe4ai.schemes.ipfe import decoded_layer
 from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWE
 from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWEKeyGenerator
 from pyfe4ai.utils.crypto_constants import CryptoCONST
@@ -239,6 +240,7 @@ class MCFERingLWE(MIFERingLWE):
                 dct_ct = {nid: dict_ndarray_ct[nid][l]["chunks"][j] for nid in dict_ndarray_ct}
                 z = dk["z_chunks"][chunk_key_index(layer, j, len(dk["z_chunks"]))]
                 values.extend(self._decrypt_with_key_term(dct_ct, dk, z, fusion_weight))
-            ary = np.array(values, dtype=float).reshape(layer["shape"])
-            result.append(ary / pow(10, self.precision))
+            ary = np.empty(len(values), dtype=object)
+            ary[:] = values
+            result.append(decoded_layer(ary.reshape(layer["shape"]), l, 10 ** self.precision))
         return result

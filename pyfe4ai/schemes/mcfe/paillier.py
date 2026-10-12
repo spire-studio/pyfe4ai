@@ -43,6 +43,7 @@ import gmpy2 as gp
 import numpy as np
 
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
+from pyfe4ai.schemes.ipfe import decoded_layer
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.ipfe import ParameterCacheMixin
 from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
@@ -376,5 +377,5 @@ class MCFEPaillier(IPFEAbsCrypto):
                 ary_dec[i] = self.decrypt(
                     dct_ct, dk, fusion_weight, _element_label(label, l, i)
                 )
-            lst_ndarray.append((ary_dec / pow(10, self.precision)).astype(float))
+            lst_ndarray.append(decoded_layer(ary_dec, l, 10 ** self.precision))
         return lst_ndarray

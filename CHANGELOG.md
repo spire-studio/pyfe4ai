@@ -598,6 +598,16 @@ table and *Known Issues* before relying on any privacy property.
   check that all servers' outputs have one structure (lists of arrays) and
   raise `FESchemeError` for malformed outputs and for an element that does
   not decrypt (`threshold_utils.combine_elementwise`).
+- The ndarray helpers of the other schemes did the same for an element that
+  does not decrypt (result outside the decryption bound, or key and
+  ciphertext do not match): a `TypeError` in most schemes, a silent NaN in
+  MCFE-Ring-LWE, MIFE FH-Multi-IPE, `quad` and `sgp`. They now raise
+  `FESchemeError` naming the element (`ipfe.decoded_layer`), as
+  `ml_adapter.compute_linear` does for a result that does not decrypt.
+- SIFE-Paillier `decrypt_lst_ndarray_ct` decoded inline without the checks
+  of `decrypt` (ciphertexts in `Z_{N^2}^*`, result in range), so a wrong key
+  gave wrapped values instead of an error; it now calls `decrypt` per
+  element.
 - ML adapter: `aggregate_gradients` on a SIFE wrapper returned the first
   client's result when given several; it now refuses more than one. Fractional
   weights were quantised but the result was not scaled back (weights `0.5`

@@ -367,4 +367,5 @@ API method naming
        partial decryptions)
    * - ``decrypt_lst_ndarray_ct(...)``
      - Crypto
-     - Decrypt ndarray ciphertexts to arrays of results
+     - Decrypt ndarray ciphertexts to arrays of results; an element that
+       does not decrypt raises ``FESchemeError``

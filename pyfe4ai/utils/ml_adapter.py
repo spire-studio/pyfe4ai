@@ -49,7 +49,7 @@ from typing import Any
 import numpy as np
 
 from pyfe4ai.schemes.status import get_scheme_status
-from pyfe4ai.utils.exceptions import FEValidationError
+from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
 from pyfe4ai.utils.quantization import QuantizationConfig
 from pyfe4ai.utils.validation import int_vector
 
@@ -799,6 +799,11 @@ def compute_linear(
 
     decryptor = wrapper._get_decryptor(sid)
     raw_result = decryptor.decrypt(encrypted.ciphertext, dk, q_weights)
+    if raw_result is None:
+        raise FESchemeError(
+            "the inner product does not decrypt (result outside the decryption bound, "
+            "or key and ciphertext do not match)"
+        )
 
     # Both x and w were quantized → result scaled by scale_factor^2
     return qcfg.dequantize(raw_result, order=2)

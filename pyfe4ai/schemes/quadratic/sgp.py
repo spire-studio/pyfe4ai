@@ -31,6 +31,7 @@ import gmpy2 as gp
 import numpy as np
 
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
+from pyfe4ai.schemes.ipfe import decoded_layer
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.ipfe import ParameterCacheMixin
 from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
@@ -407,10 +408,10 @@ class QuadraticSGP(IPFEAbsCrypto):
             raise FEKeyError("need to provide decryption key")
 
         lst_ndarray = []
-        for ary in dict_ndarray_ct:
+        for l, ary in enumerate(dict_ndarray_ct):
             ary_dec = np.empty(ary.shape, dtype=object)
             for i, _ in np.ndenumerate(ary):
                 value = self.decrypt(ary[i], dk)
-                ary_dec[i] = np.nan if value is None else value / pow(10, 2 * self.precision)
-            lst_ndarray.append(ary_dec.astype(float))
+                ary_dec[i] = value
+            lst_ndarray.append(decoded_layer(ary_dec, l, 10 ** (2 * self.precision)))
         return lst_ndarray

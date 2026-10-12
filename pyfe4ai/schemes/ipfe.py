@@ -8,10 +8,12 @@ from abc import ABC, ABCMeta, abstractmethod
 from collections.abc import Mapping
 from os import path
 
+import numpy as np
+
 from pyfe4ai.schemes import profiles
 from pyfe4ai.schemes.status import warn_if_known_insecure
 from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
+from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -208,6 +210,30 @@ class IPFEAbsKeyGenerator(metaclass=_ProfiledKeyGeneratorMeta):
         raise NotImplementedError()
 
 
+def decoded_layer(values, layer: int, scale: int = 1) -> np.ndarray:
+    """Return the decrypted elements of one ndarray layer, divided by *scale*.
+
+    Args:
+        values: Array (or nested sequence) of decrypted integers; ``None``
+            marks an element that did not decrypt.
+        layer: Index of the layer, for the error message.
+        scale: Fixed-point scale of the plaintexts (``10^precision``).
+
+    Raises:
+        FESchemeError: For the first element that did not decrypt -- its
+            result is outside the decryption bound, or the key and the
+            ciphertext do not match. ``None`` is never turned into ``NaN``.
+    """
+    values = np.asarray(values, dtype=object)
+    for index, value in np.ndenumerate(values):
+        if value is None:
+            raise FESchemeError(
+                "element {} of layer {} does not decrypt (result outside the decryption "
+                "bound, or key and ciphertext do not match)".format(index, layer)
+            )
+    return (values / scale).astype(float)
+
+
 class IPFEAbsCrypto(ABC):
     """Abstract base for all inner-product FE crypto operations.
 
@@ -263,7 +289,11 @@ class IPFEAbsCrypto(ABC):
             dict_ndarray_ct: Mapping of client IDs to their ciphertext lists.
 
         Returns:
-            List of decrypted inner-product results, or ``None`` on error.
+            One float array of decrypted results per layer.
+
+        Raises:
+            FESchemeError: If an element does not decrypt (see
+                :func:`decoded_layer`).
         """
         raise NotImplementedError()
 

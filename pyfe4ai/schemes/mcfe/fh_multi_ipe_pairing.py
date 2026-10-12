@@ -37,6 +37,7 @@ import gmpy2 as gp
 import numpy as np
 
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
+from pyfe4ai.schemes.ipfe import decoded_layer
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.mcfe.fh_ipe import FHIPE
 from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
@@ -308,5 +309,5 @@ class MCFEFHMultiIPE(IPFEAbsCrypto):
             for i, _ in np.ndenumerate(sample[l]):
                 dct_ct = {nid: dict_ndarray_ct[nid][l][i] for nid in dict_ndarray_ct}
                 ary_dec[i] = self.decrypt(dct_ct, dk, fusion_weight, _element_label(label, l, i))
-            out.append((ary_dec / pow(10, self.precision)).astype(float))
+            out.append(decoded_layer(ary_dec, l, 10 ** self.precision))
         return out
