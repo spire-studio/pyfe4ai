@@ -5,7 +5,7 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/) (pre-1.0: minor bumps may break
 compatibility).
 
-## [Unreleased]
+## [0.3.0] — 2026-10-13
 
 Privacy fixes: every scheme that was insecure in v0.2.0 now implements a
 published construction (four threshold variants add an *experimental*
@@ -483,8 +483,6 @@ table and *Known Issues* before relying on any privacy property.
 
 ### Changed
 
-- The package version is `0.3.0.dev0` until the release, so the docs built
-  from `main` no longer carry the 0.2.0 label.
 - SIFE-LWE, MIFE-LWE and tMIFE-LWE publish the matrix `A` as a 32-byte seed
   (`pp["A_seed"]` replaces the `m x lwe_n` digit matrix `pp["A"]`), expanded
   with SHAKE-128, and encrypt with exact numpy products over 31-bit limbs
@@ -759,6 +757,6 @@ before using them.
 
 Initial public release.
 
-[Unreleased]: https://github.com/spire-studio/pyfe4ai/compare/v0.2.0...HEAD
+[0.3.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/spire-studio/pyfe4ai/releases/tag/v0.1.0
