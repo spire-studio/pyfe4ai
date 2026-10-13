@@ -40,6 +40,7 @@ import numpy as np
 
 from pyfe4ai.schemes.ddh_base import DDHKeyGeneratorBase
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
+from pyfe4ai.schemes.ipfe import decoded_layer
 from pyfe4ai.schemes.threshold_utils import check_fusion_weight
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.utils.crypto_constants import CryptoCONST
@@ -264,7 +265,7 @@ class MIFE(IPFEAbsCrypto):
             for i, _ in np.ndenumerate(_sample[l]):
                 dct_ct = {nid: dict_ndarray_ct[nid][l][i] for nid in dict_ndarray_ct}
                 ary_dec[i] = self.decrypt(dct_ct, dk, fusion_weight)
-            lst_ndarray.append((ary_dec / pow(10, self.precision)).astype(float))
+            lst_ndarray.append(decoded_layer(ary_dec, l, 10 ** self.precision))
         return lst_ndarray
 
     def compute_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:

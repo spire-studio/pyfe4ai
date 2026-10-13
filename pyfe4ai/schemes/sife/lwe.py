@@ -28,6 +28,7 @@ from pyfe4ai.schemes.abdp15_lwe import ENCRYPT_BATCH
 from pyfe4ai.schemes.abdp15_lwe import ABDP15CryptoMixin
 from pyfe4ai.schemes.abdp15_lwe import ABDP15KeyGeneratorMixin
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
+from pyfe4ai.schemes.ipfe import decoded_layer
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.lwe_utils import center_lwe_vector
@@ -283,9 +284,9 @@ class SIFELWE(IPFEAbsCrypto, ABDP15CryptoMixin):
         y = self._key_weights(dk, fusion_weight)
         sk_y = digits_to_vector(dk["sk_y"])
         lst_ndarray = []
-        for ary in dict_ndarray_ct:
+        for l, ary in enumerate(dict_ndarray_ct):
             ary_dec = np.empty(ary.shape, dtype=object)
             for i, _ in np.ndenumerate(ary):
                 ary_dec[i] = self._decode(ary[i], y, sk_y)
-            lst_ndarray.append((ary_dec / pow(10, self.precision)).astype(float))
+            lst_ndarray.append(decoded_layer(ary_dec, l, 10 ** self.precision))
         return lst_ndarray

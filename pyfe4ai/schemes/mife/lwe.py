@@ -50,6 +50,7 @@ from pyfe4ai.schemes.abdp15_lwe import ENCRYPT_BATCH
 from pyfe4ai.schemes.abdp15_lwe import ABDP15CryptoMixin
 from pyfe4ai.schemes.abdp15_lwe import ABDP15KeyGeneratorMixin
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
+from pyfe4ai.schemes.ipfe import decoded_layer
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.lwe_utils import abdp15_parameters
@@ -354,5 +355,5 @@ class MIFELWE(IPFEAbsCrypto, ABDP15CryptoMixin):
             for i, _ in np.ndenumerate(ary):
                 dct_ct = {nid: dict_ndarray_ct[nid][l][i] for nid in dict_ndarray_ct}
                 ary_dec[i] = self.decrypt(dct_ct, dk, fusion_weight)
-            lst_ndarray.append((ary_dec / pow(10, self.precision)).astype(float))
+            lst_ndarray.append(decoded_layer(ary_dec, l, 10 ** self.precision))
         return lst_ndarray

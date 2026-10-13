@@ -40,6 +40,7 @@ import numpy as np
 
 from pyfe4ai.schemes.ddh_base import DamgardDDHKeyGeneratorBase
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
+from pyfe4ai.schemes.ipfe import decoded_layer
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import _random
 from pyfe4ai.utils.dlog_solver import load_or_build_dlog_table, dlog_table_solve
@@ -288,5 +289,5 @@ class MIFEDamgard(IPFEAbsCrypto):
             for i, _ in np.ndenumerate(sample[l]):
                 dct_ct = {nid: dict_ndarray_ct[nid][l][i] for nid in dict_ndarray_ct}
                 ary_dec[i] = self.decrypt(dct_ct, dk, fusion_weight)
-            lst_ndarray.append((ary_dec / pow(10, self.precision)).astype(float))
+            lst_ndarray.append(decoded_layer(ary_dec, l, 10 ** self.precision))
         return lst_ndarray

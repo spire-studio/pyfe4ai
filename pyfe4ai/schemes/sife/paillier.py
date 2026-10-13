@@ -30,6 +30,7 @@ import numpy as np
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.ipfe import ParameterCacheMixin
+from pyfe4ai.schemes.ipfe import decoded_layer
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import generate_group_primes
 from pyfe4ai.utils.modular_utils import check_zn2_elements
@@ -338,22 +339,10 @@ class SIFEPaillier(IPFEAbsCrypto):
             raise FEKeyError("need to provide decryption key and fusion weight")
 
         lst_ndarray = []
-        n = gp.mpz(self.pp["n"])
-        n_square = gp.mpz(self.pp["n_square"])
-        k = gp.mpz(dk["k"])
-        for ary in dict_ndarray_ct:
+        for l, ary in enumerate(dict_ndarray_ct):
             ary_dec = np.empty(ary.shape, dtype=object)
             for i, _ in np.ndenumerate(ary):
-                ct = ary[i]
-                c0 = gp.mpz(ct["ct0"])
-                acc = pow_signed(c0, -k, n_square)
-                for ct_j, y_j in zip(ct["ct1"], fusion_weight):
-                    acc *= pow_signed(gp.mpz(ct_j), gp.mpz(y_j), n_square)
-                    acc %= n_square
-                ret = ((acc - 1) % n_square) // n
-                n_half = n // 2
-                if ret > n_half:
-                    ret -= n
-                ary_dec[i] = int(ret)
-            lst_ndarray.append((ary_dec / pow(10, self.precision)).astype(float))
+                # the checks of decrypt (Z_{N^2}^* members, result in range) apply per element
+                ary_dec[i] = self.decrypt(ary[i], dk, fusion_weight)
+            lst_ndarray.append(decoded_layer(ary_dec, l, 10 ** self.precision))
         return lst_ndarray

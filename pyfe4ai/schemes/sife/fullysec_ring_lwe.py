@@ -59,6 +59,7 @@ import gmpy2 as gp
 import numpy as np
 
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
+from pyfe4ai.schemes.ipfe import decoded_layer
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.ipfe import ParameterCacheMixin
 from pyfe4ai.schemes.profiles import STANDARD
@@ -406,9 +407,9 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
         if dk is None or fusion_weight is None:
             raise FEKeyError("need to provide decryption key and fusion weight")
         out = []
-        for ary in dict_ndarray_ct:
+        for l, ary in enumerate(dict_ndarray_ct):
             ary_dec = np.empty(ary.shape, dtype=object)
             for i, _ in np.ndenumerate(ary):
                 ary_dec[i] = self.decrypt(ary[i], dk, fusion_weight)
-            out.append((ary_dec / pow(10, self.precision)).astype(float))
+            out.append(decoded_layer(ary_dec, l, 10 ** self.precision))
         return out

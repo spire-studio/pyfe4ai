@@ -47,6 +47,7 @@ import random
 import numpy as np
 
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
+from pyfe4ai.schemes.ipfe import decoded_layer
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup, pair
@@ -329,10 +330,10 @@ class QuadraticQuad(IPFEAbsCrypto):
         if dk is None:
             raise FEKeyError("need to provide decryption key")
         out = []
-        for ary in dict_ndarray_ct:
+        for l, ary in enumerate(dict_ndarray_ct):
             ary_dec = np.empty(ary.shape, dtype=object)
             for i, _ in np.ndenumerate(ary):
                 value = self.decrypt(ary[i], dk)
-                ary_dec[i] = np.nan if value is None else value / pow(10, 2 * self.precision)
-            out.append(ary_dec.astype(float))
+                ary_dec[i] = value
+            out.append(decoded_layer(ary_dec, l, 10 ** (2 * self.precision)))
         return out
