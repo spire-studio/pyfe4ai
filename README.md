@@ -400,7 +400,7 @@ limitations remain:
 | Parameter cache in the working directory | key generators that cache parameters (most; not MCFE `lwe`, `fullysec_lwe`, `lwe_threshold`, the FH-MCFE family, MIFE `fh_ipe_pairing` and quadratic `quad` and `miqfe`) | Public parameters are written to and re-loaded from `./config/authority/...`. A cached file is used only if it matches the configuration; discrete-log groups are checked for primality, size, safe-prime structure, generator order and (at RFC 3526 sizes) for being the RFC prime; DCR moduli for size, compositeness and small factors (their factors are never stored); all other cached values are re-derived on load or expanded from a stored seed (LWE and Ring-LWE parameters and public matrices, the Paillier base, the Damgard `h`); under `standard` the lattice schemes re-check their moduli against the 128-bit tables. An unreadable file is regenerated, and files are written atomically. No check can tell whether someone knows the factors of a DCR modulus, so under `standard` the Paillier moduli and the dMCFE `N2` are generated for every key generator, never loaded or stored; under `toy` a planted modulus with known factors is still used: run only in a directory that nobody else can write to. |
 | The ML adapter plays every party | `utils/ml_adapter.py` | `FESchemeWrapper` runs the key generator, so it holds the master key and acts as clients, authority and decryptor in one trust domain; use it for experiments, not as a deployment. By default `aggregate_gradients` needs a ciphertext and a non-zero weight for every enrolled client (`allow_partial=True` relaxes this), a client encrypts at most once per label and a label is aggregated with one weight vector; these checks are per wrapper object, and they do not stop very unequal weights (e.g. `(W, 1)` with `W` above twice the largest gradient entry), which separate two clients' gradients in one aggregate -- as with any inner-product FE, the weights are the key holder's choice. |
 
-Fixed since v0.2.0 (unreleased, see [`CHANGELOG.md`](CHANGELOG.md)): every
+Fixed in v0.3.0 (see [`CHANGELOG.md`](CHANGELOG.md)): every
 scheme previously marked *known-insecure* now implements a published
 construction or, for four threshold variants and dMCFE-DDH, an
 *experimental* layer of our own on top of one. MCFE `paillier`, `lwe`, `fullysec_lwe` and `damgard` follow
@@ -465,7 +465,7 @@ preparation and will be added here once published):
   title   = {{PyFE4AI}: Python-based Functional Encryption
              for {AI} Security and Privacy},
   year    = {2026},
-  version = {0.2.0},
+  version = {0.3.0},
   license = {Apache-2.0},
   url     = {https://github.com/spire-studio/pyfe4ai}
 }

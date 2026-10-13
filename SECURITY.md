@@ -28,10 +28,10 @@ Issues / Security Notice" in the README for the full list of limitations.
 
 ## Supported Versions
 
-At the moment, only the latest state of the `main` branch should be considered
-supported for security fixes. The latest release, v0.2.0, still contains
-schemes that have since been found insecure (see its Known Issues and the
-*Unreleased* section of `CHANGELOG.md`); use `main` until the next release.
+Security fixes go into `main` and the next release; only the latest release
+(currently v0.3.0) is supported. v0.2.0 and earlier contain schemes that have
+since been found insecure (see the 0.3.0 section of `CHANGELOG.md`); upgrade
+to v0.3.0 or later.
 
 ## Reporting a Vulnerability
 
