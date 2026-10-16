@@ -457,6 +457,14 @@ static bool read_words(PyObject *seq_o, size_t n, PyObject *qobj, u128 q, W *out
     return true;
 }
 
+// New references to objects whose memory is read without the GIL (bytes of the
+// caller's lists), released when the holder goes out of scope (with the GIL).
+struct Refs {
+    std::vector<PyObject *> v;
+    void hold(PyObject *o) { Py_INCREF(o); v.push_back(o); }
+    ~Refs() { for (PyObject *o : v) Py_DECREF(o); }
+};
+
 // ===================================================================== threads
 
 template <class F>
@@ -1335,6 +1343,7 @@ static PyObject *py_encrypt_tensor(PyObject *, PyObject *args) {
         const int64_t *x = (const int64_t *)xv.buf;
         size_t chunks = (L + n - 1) / n;
         // pad materials (bytes), kept alive by the list
+        Refs refs;
         std::vector<std::pair<const unsigned char *, size_t>> mat;
         PyObject *mseq = nullptr;
         if (mats != Py_None) {
@@ -1352,6 +1361,7 @@ static PyObject *py_encrypt_tensor(PyObject *, PyObject *args) {
                     PyErr_SetString(PyExc_TypeError, "pad materials must be bytes");
                     return nullptr;
                 }
+                refs.hold(m);
                 mat.emplace_back((const unsigned char *)PyBytes_AS_STRING(m), (size_t)PyBytes_GET_SIZE(m));
             }
         }
@@ -1468,6 +1478,7 @@ static PyObject *py_precompute_tensor(PyObject *, PyObject *args) {
         if (!mseq) return nullptr;
         std::unique_ptr<PyObject, void (*)(PyObject *)> g(mseq, [](PyObject *o) { Py_DECREF(o); });
         size_t chunks = (size_t)PySequence_Fast_GET_SIZE(mseq);
+        Refs refs;
         std::vector<std::pair<const unsigned char *, size_t>> mat;
         for (size_t j = 0; j < chunks; ++j) {
             PyObject *m = PySequence_Fast_GET_ITEM(mseq, j);
@@ -1475,7 +1486,8 @@ static PyObject *py_precompute_tensor(PyObject *, PyObject *args) {
                 PyErr_SetString(PyExc_TypeError, "pad materials must be bytes");
                 return nullptr;
             }
-            mat.emplace_back((const unsigned char *)PyBytes_AS_STRING(m), (size_t)PyBytes_GET_SIZE(m));
+            refs.hold(m);
+                mat.emplace_back((const unsigned char *)PyBytes_AS_STRING(m), (size_t)PyBytes_GET_SIZE(m));
         }
         size_t per = gauss_bytes(n) * 3;
         RandomSource src;
@@ -1616,8 +1628,9 @@ struct ParseJob {
 static const uint32_t SLOW = 0xFFFFFFFFu;
 
 // Copy a sequence of n values for parsing; false (no exception) if it is not a list
-// or tuple of length n, the caller then falls back to Python.
-static bool gather(PyObject *seq, size_t n, ParseJob &job) {
+// or tuple of length n, the caller then falls back to Python. Values that are not
+// plain ASCII strings are parsed later by Python; refs keeps them alive until then.
+static bool gather(PyObject *seq, size_t n, ParseJob &job, Refs &refs) {
     if (!PyList_Check(seq) && !PyTuple_Check(seq)) return false;
     if ((size_t)PySequence_Fast_GET_SIZE(seq) != n) return false;
     PyObject **items = PySequence_Fast_ITEMS(seq);
@@ -1635,6 +1648,7 @@ static bool gather(PyObject *seq, size_t n, ParseJob &job) {
             job.text.insert(job.text.end(), s, s + job.len[i]);
         } else {
             job.len[i] = SLOW;
+            refs.hold(o);
         }
     }
     return true;
@@ -1736,6 +1750,7 @@ static PyObject *py_decrypt_tensor(PyObject *, PyObject *args) {
         if (bound_ll == -1 && PyErr_Occurred()) return nullptr;
         i128 bound = overflow > 0 ? ((i128)1 << 126) : overflow < 0 ? (i128)-1 : (i128)bound_ll;
         // gather: per chunk z, then per slot eta rows of ct0 and ct1
+        Refs refs;
         size_t per_chunk = 1 + S * (eta + 1);
         std::vector<ParseJob> jobs(C * per_chunk);
         std::vector<size_t> ks(C);
@@ -1751,7 +1766,7 @@ static PyObject *py_decrypt_tensor(PyObject *, PyObject *args) {
             total += ks[j];
             PyObject *z = PySequence_GetItem(zs_o, (Py_ssize_t)j);
             if (!z) return nullptr;
-            bool ok = gather(z, n, jobs[j * per_chunk]);
+            bool ok = gather(z, n, jobs[j * per_chunk], refs);
             Py_DECREF(z);
             if (!ok) return fallback();
             PyObject *slots = PySequence_Fast_GET_ITEM(chunks, j);
@@ -1770,18 +1785,15 @@ static PyObject *py_decrypt_tensor(PyObject *, PyObject *args) {
                 if ((!PyList_Check(c0) && !PyTuple_Check(c0)) || (size_t)PySequence_Fast_GET_SIZE(c0) != eta)
                     return fallback();
                 for (size_t r = 0; r < eta; ++r)
-                    if (!gather(PySequence_Fast_GET_ITEM(c0, r), n, jobs[base + r])) return fallback();
-                if (!gather(c1, n, jobs[base + eta])) return fallback();
+                    if (!gather(PySequence_Fast_GET_ITEM(c0, r), n, jobs[base + r], refs)) return fallback();
+                if (!gather(c1, n, jobs[base + eta], refs)) return fallback();
             }
         }
         std::vector<W> vals(jobs.size() * n);
         std::vector<std::vector<uint8_t>> slow(jobs.size());
         std::vector<uint8_t> bad_bin(jobs.size(), 0);
-        std::vector<PyObject *> held;  // binary ciphertexts stay alive without the GIL
-        for (auto &jb : jobs)
-            if (jb.len.empty() && jb.objs.size() == 1) { Py_INCREF(jb.objs[0]); held.push_back(jb.objs[0]); }
-        std::unique_ptr<std::vector<PyObject *>, void (*)(std::vector<PyObject *> *)> hold(
-            &held, [](std::vector<PyObject *> *v) { for (PyObject *o : *v) Py_DECREF(o); });
+        for (auto &jb : jobs)  // binary ciphertexts stay alive without the GIL
+            if (jb.len.empty() && jb.objs.size() == 1) refs.hold(jb.objs[0]);
         Py_BEGIN_ALLOW_THREADS
         parallel_for(jobs.size(), threads, [&](size_t i) {
             const ParseJob &jb = jobs[i];
@@ -1911,8 +1923,8 @@ static PyObject *py_pad_terms(PyObject *, PyObject *args) {
         if (!mats) return nullptr;
         std::unique_ptr<PyObject, void (*)(PyObject *)> g(mats, [](PyObject *o) { Py_DECREF(o); });
         size_t Lc = (size_t)PySequence_Fast_GET_SIZE(mats);
+        Refs refs;
         std::vector<std::pair<const unsigned char *, size_t>> mv;
-        std::vector<PyObject *> keep;
         for (size_t l = 0; l < Lc; ++l) {
             PyObject *row = PySequence_Fast_GET_ITEM(mats, l);
             if ((!PyList_Check(row) && !PyTuple_Check(row)) || PySequence_Fast_GET_SIZE(row) != S) {
@@ -1925,6 +1937,7 @@ static PyObject *py_pad_terms(PyObject *, PyObject *args) {
                     PyErr_SetString(PyExc_TypeError, "materials must be bytes");
                     return nullptr;
                 }
+                refs.hold(m);
                 mv.emplace_back((const unsigned char *)PyBytes_AS_STRING(m), (size_t)PyBytes_GET_SIZE(m));
             }
         }
@@ -2000,6 +2013,7 @@ static PyObject *py_dense_dots(PyObject *, PyObject *args) {
     if (!mseq) return nullptr;
     std::unique_ptr<PyObject, void (*)(PyObject *)> g(mseq, [](PyObject *o) { Py_DECREF(o); });
     size_t M = (size_t)PySequence_Fast_GET_SIZE(mseq);
+    Refs refs;
     std::vector<std::pair<const unsigned char *, size_t>> mv;
     for (size_t i = 0; i < M; ++i) {
         PyObject *m = PySequence_Fast_GET_ITEM(mseq, i);
@@ -2007,7 +2021,8 @@ static PyObject *py_dense_dots(PyObject *, PyObject *args) {
             PyErr_SetString(PyExc_TypeError, "materials must be bytes");
             return nullptr;
         }
-        mv.emplace_back((const unsigned char *)PyBytes_AS_STRING(m), (size_t)PyBytes_GET_SIZE(m));
+        refs.hold(m);
+                mv.emplace_back((const unsigned char *)PyBytes_AS_STRING(m), (size_t)PyBytes_GET_SIZE(m));
     }
     size_t hl = (nb + 7) / 8, sl = kl + hl + 1;
     PyObject *out = PyBytes_FromStringAndSize(nullptr, (Py_ssize_t)(M * sl * 8));
