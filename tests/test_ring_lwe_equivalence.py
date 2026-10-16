@@ -1,4 +1,4 @@
-"""The NTT-domain Ring-LWE paths give the same outputs as the v0.3.0 code.
+"""The NTT-domain Ring-LWE paths (Python backend) give the same outputs as the v0.3.0 code.
 
 ``RingNTT`` caches ``NTT(a)``, ``NTT(pk)`` and ``NTT(sk_y)``, transforms ``r``
 once and sums decryption products in the NTT domain. With the same Gaussian
@@ -20,6 +20,7 @@ from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tmcfe_rlwe
 from pyfe4ai.schemes.mcfe.labels import chunk_label
 from pyfe4ai.schemes.mife import ring_lwe as mife_rlwe
 from pyfe4ai.schemes.sife import ring_lwe as sife_rlwe
+from pyfe4ai.utils import native_backend
 from pyfe4ai.utils import ring_lwe_utils as rlu
 from pyfe4ai.utils.exceptions import FESchemeError
 from pyfe4ai.utils.lwe_utils import decode_scaled
@@ -34,6 +35,13 @@ pytestmark = pytest.mark.core
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+
+
+@pytest.fixture(autouse=True)
+def _python_backend():
+    """These tests compare Python paths (tests/test_native_backend.py the native one)."""
+    with native_backend.backend("python"):
+        yield
 
 
 class SeededGaussian:

@@ -42,7 +42,9 @@ from pyfe4ai.schemes.mcfe.labels import chunk_label, encode_label
 from pyfe4ai.schemes.ipfe import decoded_layer
 from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWE
 from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWEKeyGenerator
+from pyfe4ai.utils import native_backend
 from pyfe4ai.utils.crypto_constants import CryptoCONST
+from pyfe4ai.utils.crypto_utils import hash_to_zq_material
 from pyfe4ai.utils.crypto_utils import hash_to_zq_vector
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.validation import scale_to_int
@@ -58,6 +60,11 @@ def label_pad(u_prime: str, label, q, eta: int, ring_n: int) -> list:
         "{}|{}".format(u_prime, encode_label(label)), q, eta * ring_n, domain=_PAD_DOMAIN
     )
     return [flat[r * ring_n:(r + 1) * ring_n] for r in range(eta)]
+
+
+def label_pad_material(u_prime: str, label) -> bytes:
+    """The hash input of :func:`label_pad` (the native backend expands it itself)."""
+    return hash_to_zq_material("{}|{}".format(u_prime, encode_label(label)), domain=_PAD_DOMAIN)
 
 
 def chunk_key_index(layer: dict, j: int, n_keys: int) -> int:
@@ -118,6 +125,16 @@ class MCFERingLWEKeyGenerator(MIFERingLWEKeyGenerator):
         n_chunks = int(credentials.get("n_chunks", 0))
         fusion_weight = credentials.get("fusion_weight")
         key = super().get_decryption_keys(sid, credentials={"fusion_weight": fusion_weight})
+        labels = [label] + [chunk_label(label, c) for c in range(n_chunks)]
+        ctx = native_backend.ring_context(self.q, self.ring_n)
+        if ctx is not None:  # z'' of every label in one native call (same values)
+            terms = native_backend.ext().pad_terms(
+                ctx.cap, key["z"],
+                [[label_pad_material(self.msk["u_prime"][nid], lab) for nid in self.lst_nid] for lab in labels],
+                [[int(v) for v in fusion_weight[nid]] for nid in self.lst_nid],
+                self.eta, native_backend.get_threads(),
+            )
+            return {"sk_y": key["sk_y"], "z": terms[0], "z_chunks": terms[1:], "label": label}
         base = [gp.mpz(v) for v in key["z"]]
 
         def pad_term(lab) -> list:
@@ -138,6 +155,39 @@ class MCFERingLWEKeyGenerator(MIFERingLWEKeyGenerator):
 
 class MCFERingLWE(MIFERingLWE):
     """Crypto operations for BMMS21 identity-based MCFE over Ring-LWE."""
+
+    def _decrypt_layer_native(self, ctx, dict_ndarray_ct, l, layer, dk, fusion_weight, sk_hats):
+        """Layer *l* of :meth:`decrypt_lst_ndarray_ct` in one native call, with
+        the checks of :meth:`_decrypt_with_key_term` per chunk; ``None`` if the
+        native code does not handle the input (then the Python loop runs)."""
+        chunk_cts, zs, ks = [], [], []
+        for j in range(len(layer["chunks"])):
+            dct_ct = {nid: dict_ndarray_ct[nid][l]["chunks"][j] for nid in dict_ndarray_ct}
+            zs.append(dk["z_chunks"][chunk_key_index(layer, j, len(dk["z_chunks"]))])
+            if set(dct_ct) != set(dk["sk_y"]) or set(dct_ct) != set(fusion_weight):
+                raise FESchemeError("need one ciphertext for every client of the key")
+            batch = {int(ct["k"]) for ct in dct_ct.values()}
+            if len(batch) != 1:
+                raise FESchemeError("ciphertexts of different batch lengths")
+            chunk_cts.append(dct_ct)
+            ks.append(batch.pop())
+        if not chunk_cts:
+            return None
+        out = self._decrypt_native(ctx, chunk_cts, zs, ks, dk["sk_y"], fusion_weight, sk_hats)
+        if out is None:
+            return None
+        values, none = out
+        scale = 10 ** self.precision
+        bound = self.pp["n"] * self.pp["eta"] * int(self.pp["bound_x"]) * int(self.pp["bound_y"])
+        if none is not None or bound >= 2 ** 53 or scale >= 2 ** 53:
+            # decoded_layer's checks and division on Python ints
+            ary = np.empty(len(values), dtype=object)
+            ary[:] = values.tolist()
+            if none is not None:
+                ary[none] = None
+            return decoded_layer(ary.reshape(layer["shape"]), l, scale)
+        # int64 / int as float64: exact here, the same floats as decoded_layer's int / int
+        return (values.reshape(layer["shape"]) / scale).astype(float)
 
     def _pad(self, label) -> list:
         return label_pad(
@@ -204,8 +254,22 @@ class MCFERingLWE(MIFERingLWE):
                 raise FEKeyError("encryption key lacks the one-time pad u")
             if ints.size and int(np.max(np.abs(ints))) > int(self.pp["bound_x"]):
                 raise FEValidationError("plaintext row exceeds the bound {}".format(int(self.pp["bound_x"])))
+            n_layer = max(1, math.ceil(ints.size / ring_n))
+            nkey = self._native_encryption_key() if ints.size else None
+            if nkey is not None:  # one native call for the whole layer, same ciphertexts
+                u_prime = self.sk["u_prime"]
+                res = native_backend.ext().encrypt_tensor(
+                    nkey, np.ascontiguousarray(ints, dtype=np.int64),
+                    [label_pad_material(u_prime, chunk_label(label, chunk + j)) for j in range(n_layer)],
+                    float(self.pp["sigma2"]), float(self.pp["sigma3"]),
+                    native_backend.random_input(3 * native_backend.gauss_bytes(ring_n) * n_layer),
+                    native_backend.get_threads(),
+                )
+                cts = [{"ct0": ct0, "ct1": ct1, "k": k} for ct0, ct1, k in res]
+                out.append({"shape": list(np.shape(ary_src)), "first_chunk": chunk, "chunks": cts})
+                chunk += n_layer
+                continue
             flat = ints.tolist()
-            n_layer = max(1, math.ceil(len(flat) / ring_n))
             cts = []
             for j in range(n_layer):
                 part = flat[j * ring_n:(j + 1) * ring_n]
@@ -243,8 +307,14 @@ class MCFERingLWE(MIFERingLWE):
         if self.key_chunks(sample) > len(dk.get("z_chunks", [])):
             raise FEKeyError("the key covers fewer chunks than the ciphertexts")
         sk_hats = {}  # NTT(sk_i), transformed once for all chunks
+        ctx = self._native()
         result = []
         for l, layer in enumerate(sample):
+            if ctx is not None:
+                ary = self._decrypt_layer_native(ctx, dict_ndarray_ct, l, layer, dk, fusion_weight, sk_hats)
+                if ary is not None:
+                    result.append(ary)
+                    continue
             values = []
             for j in range(len(layer["chunks"])):
                 dct_ct = {nid: dict_ndarray_ct[nid][l]["chunks"][j] for nid in dict_ndarray_ct}

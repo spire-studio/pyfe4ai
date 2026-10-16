@@ -5,3 +5,4 @@ recursive-include pyfe4ai *.yaml py.typed
 recursive-exclude * __pycache__
 recursive-exclude * *.pyc
 include CHANGELOG.md
+recursive-include pyfe4ai/_native *.cpp

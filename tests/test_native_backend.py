@@ -1,0 +1,370 @@
+"""The native Ring-LWE backend computes exactly what the Python code computes.
+
+Kernels (NTT, SHAKE-256, hash to ``Z_q``, the rounded Gaussian on the same
+bytes) and the scheme paths (MIFE / MCFE encryption, decryption including
+values that do not decode, key derivation) are compared with the Python
+implementation; random bytes are fed to both from one deterministic stream.
+Skipped when the extension is not built.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import os
+import random
+
+import gmpy2 as gp
+import numpy as np
+import pytest
+
+from pyfe4ai.schemes.mcfe import ring_lwe as mcfe_rlwe
+from pyfe4ai.schemes.mife import ring_lwe as mife_rlwe
+from pyfe4ai.utils import native_backend
+from pyfe4ai.utils import ring_lwe_utils as rlu
+from pyfe4ai.utils import sampling_utils
+from pyfe4ai.utils.crypto_utils import hash_to_zq_material, hash_to_zq_vector
+from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
+
+pytestmark = [
+    pytest.mark.core,
+    pytest.mark.skipif(not native_backend.available(), reason="native extension not built"),
+]
+N = native_backend.ext()
+
+
+@pytest.fixture(autouse=True)
+def _cwd(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+
+class FixedBytes:
+    """The bytes of *data*, handed out in order."""
+
+    def __init__(self, data: bytes) -> None:
+        self.data, self.pos = data, 0
+
+    def take(self, n: int) -> bytes:
+        self.pos += n
+        if self.pos > len(self.data):
+            raise AssertionError("byte stream exhausted")
+        return self.data[self.pos - n:self.pos]
+
+
+def ByteStream(seed: int) -> FixedBytes:
+    """A deterministic stream (sliced, so 7 + 7 bytes equal 14)."""
+    return FixedBytes(random.Random(seed).randbytes(1 << 22))
+
+
+class StreamRandom(random.Random):
+    """``SystemRandom.random`` on a :class:`ByteStream` (7 bytes per uniform)."""
+
+    def __init__(self, stream: ByteStream) -> None:
+        self.stream = stream
+        super().__init__(0)
+
+    def random(self) -> float:
+        return (int.from_bytes(self.stream.take(7), "big") >> 3) * 2 ** -53
+
+
+@pytest.fixture
+def same_bytes(monkeypatch):
+    """``run(fn, seed)``: call *fn* with the Python and the native sampler fed
+    the same byte stream; returns ``(python_result, native_result)``."""
+
+    def run(fn, seed=1):
+        with native_backend.backend("python"):
+            monkeypatch.setattr(sampling_utils, "_CSPRNG", StreamRandom(ByteStream(seed)))
+            py = fn()
+        with native_backend.backend("native"):
+            monkeypatch.setattr(native_backend, "_random_override", ByteStream(seed).take)
+            nat = fn()
+            monkeypatch.setattr(native_backend, "_random_override", None)
+        return py, nat
+
+    return run
+
+
+def _ctx(bits: int, n: int):
+    q = rlu.next_ntt_prime(gp.mpz(2) ** (bits - 1), n)
+    return q, native_backend.RingContext(q, n, rlu._get_ntt_root(q, n))
+
+
+# ---------------------------------------------------------------- kernels
+
+@pytest.mark.parametrize("bits,n", [(20, 2), (40, 16), (61, 256), (62, 1024), (63, 64), (77, 1024), (124, 512)])
+def test_ntt_and_poly_mul_identical(bits, n):
+    q, ctx = _ctx(bits, n)
+    root = rlu._get_ntt_root(q, n)
+    rng = random.Random(bits * n)
+    a = [gp.mpz(rng.randrange(-2 * int(q), 2 * int(q))) for _ in range(n)]
+    b = [gp.mpz(rng.randrange(int(q))) for _ in range(n)]
+    pa, pb = ctx.pack(a), ctx.pack(b)
+    assert ctx.word_bits == (64 if q < 2 ** 62 else 128)
+    assert ctx.unpack(N.ntt(ctx.cap, pa)) == [int(v) for v in rlu.ntt_forward([v % q for v in a], q, root)]
+    assert ctx.unpack(N.ntt(ctx.cap, pb, True)) == [int(v) for v in rlu.ntt_inverse(b, q, root)]
+    assert ctx.unpack(N.poly_mul(ctx.cap, pa, pb)) == [int(v) for v in rlu.poly_mul(a, b, q)]
+    assert ctx.digits(pa) == [gp.digits(v % q) for v in a]
+    assert ctx.unpack(ctx.pack([gp.digits(v) for v in a])) == [int(v % q) for v in a]
+
+
+def test_pack_reads_like_int():
+    q, ctx = _ctx(77, 16)
+    vals = ["12", "-5", " 7 ", "+3", "1_000", "007", "-0", 2 ** 90, -(2 ** 100), gp.mpz(-9), np.int64(-4)]
+    assert ctx.unpack(ctx.pack(vals + [0] * 5)) == [int(v) % int(q) for v in
+                                                    [12, -5, 7, 3, 1000, 7, 0, 2 ** 90, -(2 ** 100), -9, -4]] + [0] * 5
+    with pytest.raises(ValueError):
+        ctx.pack(["12a"] + ["0"] * 15)
+
+
+@pytest.mark.parametrize("length", [0, 1, 135, 136, 137, 271, 272, 5000])
+def test_shake256_matches_hashlib(length):
+    msg = random.Random(length).randbytes(length)
+    for out in (1, 135, 136, 137, 4097):
+        assert N.shake256(msg, out) == hashlib.shake_256(msg).digest(out)
+
+
+@pytest.mark.parametrize("bits", [40, 61, 62, 64, 77, 124])
+def test_hash_to_zq_identical(bits):
+    q, ctx = _ctx(bits, 64)
+    for v, dom in (("x", ""), ("u'|label", "pyfe4ai/mcfe/ring_lwe/H(u',label)"), ("é" * 50, "d")):
+        got = ctx.unpack(N.hash_to_zq(ctx.cap, hash_to_zq_material(v, dom), 300))
+        assert got == [int(x) for x in hash_to_zq_vector(v, q, 300, domain=dom)]
+
+
+@pytest.mark.parametrize("sigma", [0.5, 3.2, 17.25, 4.97e9, 2.0 ** 40])
+@pytest.mark.parametrize("count", [1, 2, 7, 1024])
+def test_gaussian_identical_to_random_gauss(sigma, count):
+    data = random.Random(count).randbytes(native_backend.gauss_bytes(count))
+    ref = StreamRandom(FixedBytes(data))
+    expected = [int(round(ref.gauss(0.0, sigma))) for _ in range(count)]
+    assert N.gauss(data, count, sigma) == expected
+    assert len(N.gauss(None, count, sigma)) == count  # OS bytes
+
+
+def test_rejects_unsupported_moduli():
+    q = rlu.next_ntt_prime(gp.mpz(2) ** 125, 16)
+    with pytest.raises(ValueError):
+        native_backend.RingContext(q, 16, rlu._get_ntt_root(q, 16))
+    assert native_backend.ring_context(q, 16) is None
+    with pytest.raises(ValueError):  # 3 is not a primitive 2n-th root of unity
+        native_backend.RingContext(rlu.next_ntt_prime(gp.mpz(2) ** 40, 16), 16, 3)
+
+
+# ------------------------------------------------------------ scheme paths
+
+CONFIGS = [  # (eta, ring_n, sec_param, bound_x, bound_y): 64-bit and 128-bit words
+    (1, 16, 64, 2, 2),
+    (2, 32, 64, 3, 3),
+    (3, 16, 64, 3, 3),
+    (1, 64, 128, 100, 1),
+    (2, 64, 128, 100, 3),
+]
+
+
+def _setup(eta, ring_n, sec_param, bound_x, bound_y, mcfe=True, n=3, precision=0):
+    nids = ["c{}".format(i) for i in range(n)]
+    mod = mcfe_rlwe if mcfe else mife_rlwe
+    kg = (mod.MCFERingLWEKeyGenerator if mcfe else mod.MIFERingLWEKeyGenerator)({
+        "n": n, "lst_nid": nids, "eta": eta, "ring_n": ring_n, "sec_param": sec_param,
+        "bound_x": bound_x, "bound_y": bound_y})
+    kg.setup()
+    pp = kg.get_public_parameters()
+    cls = mod.MCFERingLWE if mcfe else mod.MIFERingLWE
+    clients = {nid: cls({"id": nid, "precision": precision, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
+               for nid in nids}
+    return kg, pp, clients, cls({"id": "agg", "precision": precision, "keys": {"pp": pp}})
+
+
+@pytest.mark.parametrize("cfg", CONFIGS, ids=str)
+def test_encrypt_identical(cfg, same_bytes):
+    eta, ring_n, _, bound_x, _ = cfg
+    kg, pp, clients, _ = _setup(*cfg)
+    rng = random.Random(5)
+    for i, cl in enumerate(clients.values()):
+        k = [1, ring_n // 2, ring_n][i]
+        x = [[rng.randint(-bound_x, bound_x) for _ in range(k)] for _ in range(eta)]
+        py, nat = same_bytes(lambda: cl.encrypt(x, "lab"), seed=i)
+        assert py == nat
+        py, nat = same_bytes(lambda: cl._encrypt_rows(cl._padded_rows(x), k), seed=10 + i)
+        assert py == nat
+
+
+@pytest.mark.parametrize("ring_n,size", [(16, 1), (16, 16), (16, 37), (64, 300)])
+def test_mcfe_ndarray_encrypt_identical(ring_n, size, same_bytes):
+    kg, pp, clients, _ = _setup(1, ring_n, 128, 100, 1, precision=2)
+    cl = clients["c0"]
+    rng = np.random.default_rng(size)
+    layers = [rng.uniform(-1, 1, size).round(2), rng.uniform(-1, 1, (2, 3)).round(2)]
+    py, nat = same_bytes(lambda: cl.encrypt_lst_ndarray(layers, label="r"))
+    assert py == nat
+    with native_backend.backend("native"):
+        native_backend.set_threads(4)
+        try:
+            _, threaded = same_bytes(lambda: cl.encrypt_lst_ndarray(layers, label="r"))
+        finally:
+            native_backend.set_threads(1)
+    assert threaded == py
+
+
+@pytest.mark.parametrize("cfg", CONFIGS, ids=str)
+def test_keys_identical(cfg):
+    eta = cfg[0]
+    kg, pp, clients, _ = _setup(*cfg)
+    rng = random.Random(9)
+    weights = {nid: [rng.randint(-cfg[4], cfg[4]) for _ in range(eta)] for nid in clients}
+    creds = {"fusion_weight": weights, "label": "L", "n_chunks": 3}
+    with native_backend.backend("python"):
+        py = kg.get_decryption_keys("s", credentials=creds)
+    with native_backend.backend("native"):
+        nat = kg.get_decryption_keys("s", credentials=creds)
+    assert py == nat
+    bad = dict(weights, c1=[cfg[4] + 1] * eta)
+    for name in ("python", "native"):
+        with native_backend.backend(name), pytest.raises(FEValidationError):
+            kg.get_decryption_keys("s", credentials=dict(creds, fusion_weight=bad))
+
+
+def _decrypt_both(agg, *args):
+    with native_backend.backend("python"):
+        py = agg._decrypt_with_pad_term(*args)
+    with native_backend.backend("native"):
+        nat = agg._decrypt_with_pad_term(*args)
+    return py, nat
+
+
+@pytest.mark.parametrize("cfg", CONFIGS, ids=str)
+def test_decrypt_identical_honest_and_random(cfg):
+    eta, ring_n, _, bound_x, bound_y = cfg
+    kg, pp, clients, agg = _setup(*cfg)
+    rng = random.Random(3)
+    q = int(pp["q"])
+    weights = {nid: [rng.randint(-bound_y, bound_y) for _ in range(eta)] for nid in clients}
+    weights["c0"] = [1] * eta
+    dk = kg.get_decryption_keys("agg", credentials={"fusion_weight": weights, "label": "L"})
+    xs = {nid: [[rng.randint(-bound_x, bound_x) for _ in range(ring_n)] for _ in range(eta)] for nid in clients}
+    cts = {nid: cl.encrypt(xs[nid], "L") for nid, cl in clients.items()}
+    py, nat = _decrypt_both(agg, cts, dk["sk_y"], dk["z"], weights, ring_n)
+    assert py == nat and None not in nat
+    py, nat = _decrypt_both(agg, cts, dk["sk_y"], dk["z"], weights, ring_n // 2)
+    assert py == nat
+    for trial in range(3):  # most values of random ciphertexts do not decode
+        bad = {nid: {"ct0": [[str(rng.randrange(q)) for _ in range(ring_n)] for _ in range(eta)],
+                     "ct1": [rng.randrange(-q, 2 * q) for _ in range(ring_n)], "k": ring_n}
+               for nid in clients}
+        py, nat = _decrypt_both(agg, bad, dk["sk_y"], dk["z"], weights, ring_n)
+        assert py == nat
+    # move results 1 and 3 to bound + 1 (weight 1 on row 0 of slot c0): they do not decode
+    delta, bound = q // int(pp["p"]), 3 * eta * bound_x * bound_y
+    row0 = list(cts["c0"]["ct0"][0])
+    for i in (1, 3):
+        mu = sum(y * x[i] for nid in clients for y, x in zip(weights[nid], xs[nid]))
+        row0[i] = str((int(row0[i]) + delta * (bound + 1 - mu)) % q)
+    shifted = dict(cts, c0=dict(cts["c0"], ct0=[row0] + cts["c0"]["ct0"][1:]))
+    py, nat = _decrypt_both(agg, shifted, dk["sk_y"], dk["z"], weights, ring_n)
+    assert py == nat and nat[1] is None and nat[3] is None and nat.count(None) == 2
+
+
+def test_decrypt_value_formats_and_errors():
+    kg, pp, clients, agg = _setup(1, 16, 64, 2, 2)
+    weights = {nid: [1] for nid in clients}
+    dk = kg.get_decryption_keys("agg", credentials={"fusion_weight": weights, "label": "L"})
+    cts = {nid: cl.encrypt([[1] * 16], "L") for nid, cl in clients.items()}
+    q = int(pp["q"])
+
+    def variant(f):
+        out = {nid: {"ct0": [list(ct["ct0"][0])], "ct1": list(ct["ct1"]), "k": ct["k"]} for nid, ct in cts.items()}
+        f(out["c1"])
+        return out
+
+    ok_variants = [
+        lambda c: c["ct1"].__setitem__(0, " {} ".format(c["ct1"][0])),     # int() strips blanks
+        lambda c: c["ct1"].__setitem__(1, "+" + c["ct1"][1]),
+        lambda c: c["ct1"].__setitem__(2, int(c["ct1"][2]) - q),           # ints of any range
+        lambda c: c["ct0"][0].__setitem__(3, gp.mpz(c["ct0"][0][3]) + q),
+        lambda c: c.__setitem__("ct1", tuple(c["ct1"])),
+        lambda c: c.__setitem__("ct0", (c["ct0"][0],)),
+        lambda c: c["ct1"].__setitem__(4, "٣"),                            # non-ASCII digit
+    ]
+    for f in ok_variants:
+        py, nat = _decrypt_both(agg, variant(f), dk["sk_y"], dk["z"], weights, 16)
+        assert py == nat
+    bad_variants = [
+        lambda c: c["ct1"].__setitem__(0, "12a"),
+        lambda c: c["ct1"].__setitem__(0, 1.5),
+        lambda c: c["ct1"].__setitem__(0, None),
+        lambda c: c["ct1"].pop(),
+        lambda c: c["ct0"].append(c["ct0"][0]),
+        lambda c: c.pop("ct1"),
+        lambda c: c.__setitem__("k", 17),
+        lambda c: c.__setitem__("k", True),
+        lambda c: c.__setitem__("ct0", "x"),
+    ]
+    for f in bad_variants:
+        for name in ("python", "native"):
+            with native_backend.backend(name), pytest.raises(FESchemeError, match="malformed ciphertext of c1"):
+                agg._decrypt_with_pad_term(variant(f), dk["sk_y"], dk["z"], weights, 16)
+    for name in ("python", "native"):
+        with native_backend.backend(name), pytest.raises(ValueError):
+            agg._decrypt_with_pad_term(cts, dk["sk_y"], ["x"] + dk["z"][1:], weights, 16)
+
+
+def test_mcfe_ndarray_aggregation_and_failures():
+    kg, pp, clients, agg = _setup(1, 16, 128, 100, 1, precision=2)
+    rng = np.random.default_rng(1)
+    grads = {nid: [rng.uniform(-1, 1, 40).round(2), rng.uniform(-1, 1, (3, 2)).round(2)] for nid in clients}
+    with native_backend.backend("native"):
+        enc = {nid: cl.encrypt_lst_ndarray(grads[nid], label="r") for nid, cl in clients.items()}
+    weights = {nid: [1] for nid in clients}
+    n_chunks = agg.key_chunks(enc["c0"])
+    dk = kg.get_decryption_keys("a", credentials={"fusion_weight": weights, "label": "r", "n_chunks": n_chunks})
+    outs = {}
+    for name in ("python", "native"):
+        with native_backend.backend(name):
+            outs[name] = agg.decrypt_lst_ndarray_ct(enc, dk=dk, fusion_weight=weights, label="r")
+    for l in range(2):
+        assert outs["python"][l].dtype == outs["native"][l].dtype == np.float64
+        assert np.array_equal(outs["python"][l], outs["native"][l])
+        assert np.allclose(outs["native"][l], sum(g[l] for g in grads.values()))
+    # element 21 (chunk 1, position 5) moved to bound + 1 does not decode
+    q, delta = int(pp["q"]), int(pp["q"]) // int(pp["p"])
+    mu = int(round(sum(g[0][21] for g in grads.values()) * 100))
+    row = enc["c2"][0]["chunks"][1]["ct0"][0]
+    row[5] = str((int(row[5]) + delta * (3 * 100 + 1 - mu)) % q)
+    for name in ("python", "native"):
+        with native_backend.backend(name), pytest.raises(FESchemeError, match=r"element \(21,\) of layer 0"):
+            agg.decrypt_lst_ndarray_ct(enc, dk=dk, fusion_weight=weights, label="r")
+
+
+def test_e2e_standard_profile_native_and_threads():
+    from pyfe4ai.utils.ml_adapter import FESchemeWrapper, aggregate_gradients, encrypt_gradient
+
+    nids = ["c0", "c1", "c2"]
+    with native_backend.backend("native"):
+        w = FESchemeWrapper("mcfe", "ring_lwe", {"eta": 1, "n": 3, "lst_nid": nids, "bound_x": 100,
+                                                 "bound_y": 1, "security_profile": "standard"}, precision=2)
+        rng = np.random.default_rng(0)
+        for r, threads in enumerate((1, 3)):
+            native_backend.set_threads(threads)
+            try:
+                g = {n: rng.uniform(-1, 1, 9000).round(2) for n in nids}
+                enc = {n: encrypt_gradient(g[n], w, nid=n, label="r%d" % r) for n in nids}
+                out = aggregate_gradients(enc, w, {n: 1 for n in nids}, label="r%d" % r)
+            finally:
+                native_backend.set_threads(1)
+            assert np.allclose(out, sum(g.values()))
+
+
+def test_backend_selection(monkeypatch):
+    with pytest.raises(ValueError):
+        native_backend.set_backend("fast")
+    with native_backend.backend("python"):
+        assert native_backend.active_backend() == "python"
+        assert native_backend.ring_context(rlu.next_ntt_prime(gp.mpz(2) ** 40, 16), 16) is None
+    assert native_backend.describe()["available"]
+    # another Gaussian sampler selected: encryption stays in Python
+    monkeypatch.setattr(sampling_utils, "get_gaussian_sampler", lambda: "facct", raising=False)
+    assert not native_backend.sampling_ok(3.2)
+    monkeypatch.undo()
+    assert native_backend.sampling_ok(3.2, 2.0 ** 40) and not native_backend.sampling_ok(2.0 ** 41)
+    with pytest.raises(ValueError):
+        native_backend.set_threads(0)

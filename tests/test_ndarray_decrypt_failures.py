@@ -52,6 +52,9 @@ def _fail_second_element(monkeypatch, cls):
     if hasattr(cls, "_decrypt_with_key_term"):  # Ring-LWE MCFE: one call per packed chunk
         name = "_decrypt_with_key_term"
         original = getattr(cls, name)
+        # the Python path (the native one decrypts a whole layer per call;
+        # tests/test_native_backend.py covers its failures)
+        monkeypatch.setattr(cls, "_native", lambda self: None)
 
         def fake(self, *args, **kwargs):
             values = list(original(self, *args, **kwargs))
