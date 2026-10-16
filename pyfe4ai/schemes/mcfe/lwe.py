@@ -16,9 +16,10 @@ total number of slots, ``Delta = floor(q / K)``):
 
 * Setup:    ``H: labels -> Z_q^{n0 + m0}`` full-domain hash.
 * KeyGen:   ``Z_{i,j} = (s_{i,j}, t_{i,j})`` with ``s <- U(Z_q^{n0})`` and
-  ``t <- D_{Z^{m0}, sigma_t}`` (realised as a rounded continuous
-  Gaussian; the statistical step of the proof, Lemma 34, is stated
-  for a true discrete Gaussian).
+  ``t <- D_{Z^{m0}, sigma_t}`` (by default realised as a rounded
+  continuous Gaussian, while the statistical step of the proof, Lemma 34,
+  is stated for a true discrete Gaussian; the opt-in ``"facct"`` sampler
+  of :mod:`pyfe4ai.utils.sampling_utils` samples it exactly).
 * Encrypt:  ``c_{i,j} = round_q0( Z_{i,j} . H(l) + Delta * x_{i,j} )``.
 * KeyDer:   ``sk_y = sum y_{i,j} Z_{i,j}`` (one aggregated vector, kept mod q).
 * Decrypt:  ``mu' = sum y_{i,j} c_{i,j} - round_q0( sk_y . H(l) ) mod q0``;

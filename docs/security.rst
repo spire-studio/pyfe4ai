@@ -62,6 +62,35 @@ itself, so it holds the master secret key and plays clients, key authority
 and decryptor in one trust domain: use it for experiments, not as a
 deployment (see :mod:`pyfe4ai.utils.ml_adapter`).
 
+Gaussian sampling
+-----------------
+
+The lattice and DCR proofs sample secrets and noise from the discrete
+Gaussian ``D_{Z,sigma}``. The default sampler, ``"rounded"``, rounds a
+continuous Gaussian: per sample it is about ``0.02 / sigma^2`` away in
+statistical distance (2^-9 at ``sigma = 3.2``, 2^-30 at the Ring-LWE
+``sigma1``), and the double-precision path never returns values beyond
+about ``8.6 sigma``. The opt-in sampler ``"facct"``
+(:func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_facct`) samples
+``D_{Z,sigma}`` exactly, to about 2^-185 per sample, for every width:
+
+.. code-block:: python
+
+   from pyfe4ai.utils.sampling_utils import gaussian_sampler, set_gaussian_sampler
+
+   with gaussian_sampler("facct"):     # this context
+       ...
+   set_gaussian_sampler("facct")       # the whole process
+
+or ``PYFE4AI_GAUSSIAN_SAMPLER=facct`` in the environment. It costs a few
+microseconds per sample in CPython, several times the rounded sampler. Its
+algorithm needs no secret-dependent branches, but CPython and big-integer
+arithmetic are not constant-time, so neither sampler resists timing side
+channels; ``"facct"`` is the reference for a native implementation that
+can. For a given bit source its output is the same on every platform, so it
+comes with known-answer tests. Parties that derive noise from a shared seed
+(the threshold schemes' flooding noise) must use the same sampler.
+
 Status API
 ----------
 

@@ -5,6 +5,24 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/) (pre-1.0: minor bumps may break
 compatibility).
 
+## [Unreleased]
+
+### Added
+
+- Opt-in exact discrete Gaussian sampler `"facct"`
+  (`sampling_utils.discrete_gaussian_facct`): FACCT-style double sampling
+  (Zhao, Steinfeld and Sakzad 2020) with a CDT base computed for
+  `sigma / k`, so every width is sampled exactly as requested, to about
+  2^-185 statistical distance per sample. Select it with `sampler="facct"`
+  on `discrete_gaussian_matrix` / `discrete_gaussian_bigint`, the
+  `gaussian_sampler()` context manager, `set_gaussian_sampler()` or
+  `PYFE4AI_GAUSSIAN_SAMPLER=facct`. The default stays the rounded
+  continuous Gaussian. Its output for a given bit source is platform
+  independent (known-answer tests included); it reads `os.urandom` in
+  64 KiB blocks (fork- and thread-safe). Not constant-time in CPython.
+- `benchmarks/benchmark_sampling.py`: rounded vs exact sampler, per width
+  and (`--e2e`) per MCFE Ring-LWE round.
+
 ## [0.3.0] — 2026-10-13
 
 Privacy fixes: every scheme that was insecure in v0.2.0 now implements a
