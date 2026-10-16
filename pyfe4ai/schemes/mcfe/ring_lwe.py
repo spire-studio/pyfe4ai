@@ -166,13 +166,13 @@ class MCFERingLWE(MIFERingLWE):
             raise FESchemeError("the key was derived for another label")
         return self._decrypt_with_key_term(dct_ct, dk, dk["z"], fusion_weight)
 
-    def _decrypt_with_key_term(self, dct_ct, dk, z, fusion_weight) -> list:
+    def _decrypt_with_key_term(self, dct_ct, dk, z, fusion_weight, sk_hats=None) -> list:
         if set(dct_ct) != set(dk["sk_y"]) or set(dct_ct) != set(fusion_weight):
             raise FESchemeError("need one ciphertext for every client of the key")
         batch = {int(ct["k"]) for ct in dct_ct.values()}
         if len(batch) != 1:
             raise FESchemeError("ciphertexts of different batch lengths")
-        return self._decrypt_with_pad_term(dct_ct, dk["sk_y"], z, fusion_weight, batch.pop())
+        return self._decrypt_with_pad_term(dct_ct, dk["sk_y"], z, fusion_weight, batch.pop(), sk_hats)
 
     @staticmethod
     def key_chunks(lst_ndarray_ct: list) -> int:
@@ -196,12 +196,21 @@ class MCFERingLWE(MIFERingLWE):
         ring_n = self.pp["ring_n"]
         out, chunk = [], 0
         for ary_src in lst_ndarray:
-            flat = scale_to_int(ary_src, self.precision).ravel().tolist()
+            ints = scale_to_int(ary_src, self.precision).ravel()
+            # the checks of _check_plaintext, for the whole layer at once
+            # (scale_to_int already returns integers)
+            self._check_encryption_keys()
+            if "u" not in self.sk:
+                raise FEKeyError("encryption key lacks the one-time pad u")
+            if ints.size and int(np.max(np.abs(ints))) > int(self.pp["bound_x"]):
+                raise FEValidationError("plaintext row exceeds the bound {}".format(int(self.pp["bound_x"])))
+            flat = ints.tolist()
             n_layer = max(1, math.ceil(len(flat) / ring_n))
             cts = []
             for j in range(n_layer):
                 part = flat[j * ring_n:(j + 1) * ring_n]
-                self._check_plaintext([part])
+                if not part:
+                    self._check_plaintext([part])  # an empty layer: refused as before
                 rows = self._padded_rows([part], extra_pad=self._pad(chunk_label(label, chunk + j)))
                 cts.append(self._encrypt_rows(rows, len(part)))
             out.append({"shape": list(np.shape(ary_src)), "first_chunk": chunk, "chunks": cts})
@@ -233,13 +242,14 @@ class MCFERingLWE(MIFERingLWE):
         sample = next(iter(dict_ndarray_ct.values()))
         if self.key_chunks(sample) > len(dk.get("z_chunks", [])):
             raise FEKeyError("the key covers fewer chunks than the ciphertexts")
+        sk_hats = {}  # NTT(sk_i), transformed once for all chunks
         result = []
         for l, layer in enumerate(sample):
             values = []
             for j in range(len(layer["chunks"])):
                 dct_ct = {nid: dict_ndarray_ct[nid][l]["chunks"][j] for nid in dict_ndarray_ct}
                 z = dk["z_chunks"][chunk_key_index(layer, j, len(dk["z_chunks"]))]
-                values.extend(self._decrypt_with_key_term(dct_ct, dk, z, fusion_weight))
+                values.extend(self._decrypt_with_key_term(dct_ct, dk, z, fusion_weight, sk_hats))
             ary = np.empty(len(values), dtype=object)
             ary[:] = values
             result.append(decoded_layer(ary.reshape(layer["shape"]), l, 10 ** self.precision))

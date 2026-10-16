@@ -55,6 +55,7 @@ from pyfe4ai.utils.ring_lwe_utils import poly_add
 from pyfe4ai.utils.ring_lwe_utils import poly_mul
 from pyfe4ai.utils.ring_lwe_utils import poly_neg
 from pyfe4ai.utils.ring_lwe_utils import resolve_ring_n
+from pyfe4ai.utils.ring_lwe_utils import RingNTT
 from pyfe4ai.utils.ring_lwe_utils import transpose
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
@@ -271,12 +272,15 @@ class MIFERingLWE(IPFEAbsCrypto):
         if self._has_private_keys():
             self.sk = self.keys["sk"]
 
-    def _check_plaintext(self, matrix_pt) -> list:
-        """Return *matrix_pt* as ``eta`` integer rows of one length ``1..ring_n``."""
+    def _check_encryption_keys(self) -> None:
         if not self._has_public_parameters():
             raise FEKeyError("no public parameters provided for encryption")
         if not self._has_private_keys():
             raise FEKeyError("no encryption key provided")
+
+    def _check_plaintext(self, matrix_pt) -> list:
+        """Return *matrix_pt* as ``eta`` integer rows of one length ``1..ring_n``."""
+        self._check_encryption_keys()
         if not isinstance(matrix_pt, list) or not matrix_pt or not isinstance(matrix_pt[0], list):
             raise FEValidationError("plaintext matrix must be a list of rows")
         if len(matrix_pt) != self.pp["eta"]:
@@ -291,31 +295,70 @@ class MIFERingLWE(IPFEAbsCrypto):
             raise FEKeyError("encryption key lacks the one-time pad u")
         return rows
 
+    def _encryption_key(self) -> dict:
+        """This slot's key in the form encryption uses, computed once per key:
+        ``pk`` and the pad ``u`` as integers, and with an NTT-friendly ``q``
+        (``ring`` not ``None``) the transforms ``NTT(a)`` and ``NTT(pk_row)``."""
+        pk, u = self.sk["pk"], self.sk.get("u")
+        cache = self.__dict__.get("_enc_key")
+        if cache is None or cache["src"] != (id(pk), id(u), id(self.A)):
+            q = gp.mpz(self.pp["q"])
+            ring = RingNTT.get(q, self.pp["ring_n"])
+            pk_m = [[gp.mpz(v) for v in row] for row in pk]
+            cache = {
+                "src": (id(pk), id(u), id(self.A)),
+                "refs": (pk, u, self.A),  # keeps the ids above valid
+                "pk": pk_m,
+                "u": None if u is None else [[gp.mpz(v) for v in row] for row in u],
+                "ring": ring,
+                "a_hat": None if ring is None else ring.forward(self.A),
+                "pk_hat": None if ring is None else [ring.forward(row) for row in pk_m],
+            }
+            self._enc_key = cache
+        return cache
+
     def _padded_rows(self, matrix_pt, extra_pad=None) -> list:
         """Rows ``x + u (+ extra_pad)`` mod q, zero-extended to ``ring_n``."""
         q = gp.mpz(self.pp["q"])
         ring_n = self.pp["ring_n"]
         rows = []
-        for i, (row, u_row) in enumerate(zip(matrix_pt, self.sk["u"])):
+        for i, (row, u_row) in enumerate(zip(matrix_pt, self._encryption_key()["u"])):
             padded = [gp.mpz(int(v)) for v in row] + [gp.mpz(0)] * (ring_n - len(row))
-            extra = extra_pad[i] if extra_pad is not None else [0] * ring_n
-            rows.append([(x + gp.mpz(u) + e) % q for x, u, e in zip(padded, u_row, extra)])
+            if extra_pad is None:
+                rows.append([(x + u) % q for x, u in zip(padded, u_row)])
+            else:
+                rows.append([(x + u + e) % q for x, u, e in zip(padded, u_row, extra_pad[i])])
         return rows
 
     def _encrypt_rows(self, w_rows: list, k: int) -> dict:
-        """BMMS21 Ring-LWE encryption of rows already reduced mod q."""
+        """BMMS21 Ring-LWE encryption of rows already reduced mod q.
+
+        ``r`` is transformed once and multiplied with the cached ``NTT(pk_row)``
+        and ``NTT(a)``: the same ciphertext as ``poly_mul(pk_row, r)`` and
+        ``poly_mul(a, r)`` with the same samples, from 1 + eta + 1 NTTs instead
+        of 3 (eta + 1).
+        """
         q = gp.mpz(self.pp["q"])
         ring_n = self.pp["ring_n"]
         delta = q // gp.mpz(self.pp["p"])
-        pk = [[gp.mpz(v) for v in row] for row in self.sk["pk"]]
+        key = self._encryption_key()
+        ring = key["ring"]
         r = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"])[0]
         noise = discrete_gaussian_matrix(self.pp["eta"], ring_n, self.pp["sigma3"])
+        r_hat = None if ring is None else ring.forward(r)
+
+        def times_r(poly, poly_hat):
+            if ring is None:
+                return poly_mul(poly, r, q)
+            return ring.inverse(ring.mul(poly_hat, r_hat))
+
+        pk_hat = key["pk_hat"] or [None] * len(key["pk"])
         ct0 = []
         for i, w_row in enumerate(w_rows):
-            ct0_i = poly_add(poly_mul(pk[i], r, q), noise[i], q)
-            ct0.append(poly_add(ct0_i, [delta * w for w in w_row], q))
+            prod = times_r(key["pk"][i], pk_hat[i])
+            ct0.append([(c + e + delta * w) % q for c, e, w in zip(prod, noise[i], w_row)])
         e = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"])[0]
-        ct1 = poly_add(poly_mul(self.A, r, q), e, q)
+        ct1 = poly_add(times_r(self.A, key["a_hat"]), e, q)
         return {
             "ct0": [[gp.digits(v) for v in row] for row in ct0],
             "ct1": [gp.digits(v) for v in ct1],
@@ -354,11 +397,20 @@ class MIFERingLWE(IPFEAbsCrypto):
 
         return self._decrypt_with_pad_term(dct_ct, dk["sk_y"], dk["z"], fusion_weight, batch.pop())
 
-    def _decrypt_with_pad_term(self, dct_ct, sk_y_map, z, fusion_weight, k) -> list:
-        """Dec2(sum_i Dec1_i - Delta z) for the first *k* coefficients."""
+    def _decrypt_with_pad_term(self, dct_ct, sk_y_map, z, fusion_weight, k, sk_hats=None) -> list:
+        """Dec2(sum_i Dec1_i - Delta z) for the first *k* coefficients.
+
+        The products ``ct1_i sk_i`` are summed in the NTT domain and
+        transformed back once (NTT linearity: the same sum mod q as summing
+        ``poly_mul(ct1_i, sk_i)``), from ``slots + 1`` NTTs instead of
+        ``3 slots``. *sk_hats*, a dict the caller keeps for all chunks
+        decrypted with one key, caches ``NTT(sk_i)`` per slot.
+        """
         q = gp.mpz(self.pp["q"])
         delta = q // gp.mpz(self.pp["p"])
+        ring = RingNTT.get(q, self.pp["ring_n"])
         total = [(-delta * gp.mpz(v)) % q for v in z]
+        acc = None
         for nid, ct in dct_ct.items():
             y = int_vector(
                 fusion_weight[nid], "fusion weight of {}".format(nid),
@@ -368,14 +420,22 @@ class MIFERingLWE(IPFEAbsCrypto):
                 _, ct0, ct1 = canonical_ring_ciphertext(ct, int(q), self.pp["eta"], self.pp["ring_n"])
             except FESchemeError as exc:
                 raise FESchemeError("malformed ciphertext of {}".format(nid)) from exc
-            ct0 = [[gp.mpz(v) for v in row] for row in ct0]
-            ct1 = [gp.mpz(v) for v in ct1]
-            sk_y = [gp.mpz(v) for v in sk_y_map[nid]]
             y_vec = [gp.mpz(int(v)) for v in y]
             # Dec1 of slot nid: Delta <w_i, y_i> + noise (coefficient-wise)
-            lhs = mat_vec_mul(transpose(ct0), y_vec, q)
-            rhs = poly_mul(ct1, sk_y, q)
-            total = poly_add(total, poly_add(lhs, poly_neg(rhs, q), q), q)
+            for y_row, ct0_row in zip(y_vec, ct0):
+                total = [(t + c * y_row) % q for t, c in zip(total, ct0_row)]
+            if ring is None:
+                rhs = poly_mul([gp.mpz(v) for v in ct1], [gp.mpz(v) for v in sk_y_map[nid]], q)
+                total = poly_add(total, poly_neg(rhs, q), q)
+                continue
+            sk_hat = None if sk_hats is None else sk_hats.get(nid)
+            if sk_hat is None:
+                sk_hat = ring.forward([gp.mpz(v) for v in sk_y_map[nid]])
+                if sk_hats is not None:
+                    sk_hats[nid] = sk_hat
+            acc = ring.mul_add(acc, ring.forward(ct1), sk_hat)
+        if acc is not None:
+            total = [(t - v) % q for t, v in zip(total, ring.inverse(acc))]
         bound = (
             self.pp["n"] * self.pp["eta"]
             * gp.mpz(self.pp["bound_x"]) * gp.mpz(self.pp["bound_y"])

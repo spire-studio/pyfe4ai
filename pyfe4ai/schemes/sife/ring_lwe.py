@@ -47,6 +47,7 @@ from pyfe4ai.utils.ring_lwe_utils import (
     poly_mul_negacyclic,
     poly_neg,
     resolve_ring_n,
+    RingNTT,
     transpose,
 )
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
@@ -222,6 +223,18 @@ class SIFERingLWE(IPFEAbsCrypto):
         if self._has_private_keys():
             self.sk = self.keys["sk"]
 
+    def _encryption_key(self) -> tuple:
+        """``(pk, NTT(a), [NTT(pk_i)])`` of this key, computed once (the
+        transforms are ``None`` without an NTT-friendly ``q``)."""
+        src = (id(self.sk["pk"]), id(self.A))
+        cache = self.__dict__.get("_enc_key")
+        if cache is None or cache[0] != src:
+            pk = [[gp.mpz(v) for v in row] for row in self.sk["pk"]]
+            ring = RingNTT.get(self.pp["q"], self.pp["ring_n"])
+            hats = (None, None) if ring is None else (ring.forward(self.A), [ring.forward(row) for row in pk])
+            cache = self._enc_key = (src, (self.sk["pk"], self.A), pk) + hats
+        return cache[2:]
+
     def encrypt(self, matrix_pt: list[list[int]]) -> dict:
         if not self._has_public_parameters():
             raise FEKeyError("no public parameters provided for encryption")
@@ -240,19 +253,23 @@ class SIFERingLWE(IPFEAbsCrypto):
         ]
 
         q = gp.mpz(self.pp["q"])
-        pk = [[gp.mpz(v) for v in row] for row in self.sk["pk"]]
         ring_n = self.pp["ring_n"]
+        pk, a_hat, pk_hat = self._encryption_key()
+        ring = RingNTT.get(q, ring_n) if a_hat is not None else None
 
         r = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"])[0]
         noise = discrete_gaussian_matrix(self.pp["eta"], ring_n, self.pp["sigma3"])
+        # r is transformed once; NTT(pk_i) and NTT(a) are cached per key (the
+        # same products as _poly_mul with the same samples)
+        r_hat = None if ring is None else ring.forward(r)
         ct0 = []
         for i in range(self.pp["eta"]):
-            ct0_i = _poly_mul(pk[i], r, q)
+            ct0_i = _poly_mul(pk[i], r, q) if ring is None else ring.inverse(ring.mul(pk_hat[i], r_hat))
             ct0.append(_poly_add(ct0_i, noise[i], q))
         centered = _center_matrix(matrix_pt, gp.mpz(self.pp["p"]), q, ring_n)
         ct0 = [_poly_add(a, b, q) for a, b in zip(ct0, centered)]
 
-        ct1 = _poly_mul(self.A, r, q)
+        ct1 = _poly_mul(self.A, r, q) if ring is None else ring.inverse(ring.mul(a_hat, r_hat))
         e = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"])[0]
         ct1 = _poly_add(ct1, e, q)
 

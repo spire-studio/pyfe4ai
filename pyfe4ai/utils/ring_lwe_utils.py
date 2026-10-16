@@ -268,6 +268,53 @@ def poly_mul(
     return poly_mul_negacyclic(a, b, q)
 
 
+class RingNTT:
+    """NTT-domain arithmetic of ``Z_q[x] / (x^n + 1)`` with :func:`poly_mul`'s root.
+
+    ``inverse(mul(forward(a), forward(b)))`` equals ``poly_mul(a, b, q)``, and
+    the NTT is linear mod q, so a fixed operand can be transformed once and
+    products summed in the NTT domain before a single inverse transform, with
+    the same result as summing the :func:`poly_mul` products mod q.
+    :meth:`get` returns ``None`` when ``q`` has no primitive ``2n``-th root of
+    unity (then :func:`poly_mul` falls back to the naive product).
+    """
+
+    _cache: dict = {}
+
+    def __init__(self, q, ring_n: int, root) -> None:
+        self.q = gp.mpz(q)
+        self.ring_n = ring_n
+        self.root = root
+
+    @classmethod
+    def get(cls, q, ring_n: int) -> "RingNTT | None":
+        key = (int(q), ring_n)
+        if key not in cls._cache:
+            root = _get_ntt_root(gp.mpz(q), ring_n)
+            cls._cache[key] = None if root is None else cls(q, ring_n, root)
+        return cls._cache[key]
+
+    def forward(self, a: list) -> list:
+        """NTT of the coefficient vector *a* (integers, any sign)."""
+        return ntt_forward(a, self.q, self.root)
+
+    def inverse(self, a_hat: list) -> list:
+        """Coefficients, in ``[0, q)``, of the NTT-domain vector *a_hat*."""
+        return ntt_inverse(a_hat, self.q, self.root)
+
+    def mul(self, a_hat: list, b_hat: list) -> list:
+        """Pointwise product mod q (the NTT of the negacyclic product)."""
+        q = self.q
+        return [(x * y) % q for x, y in zip(a_hat, b_hat)]
+
+    def mul_add(self, acc: list | None, a_hat: list, b_hat: list) -> list:
+        """``acc + a_hat * b_hat`` pointwise mod q (``acc = None``: just the product)."""
+        if acc is None:
+            return self.mul(a_hat, b_hat)
+        q = self.q
+        return [(s + x * y) % q for s, x, y in zip(acc, a_hat, b_hat)]
+
+
 def next_ntt_prime(lower_bound: gp.mpz, ring_n: int) -> gp.mpz:
     """Find the smallest prime ``q >= lower_bound`` with ``q ≡ 1 (mod 2·ring_n)``.
 

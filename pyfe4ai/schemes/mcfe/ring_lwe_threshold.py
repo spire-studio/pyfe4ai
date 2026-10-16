@@ -75,6 +75,7 @@ from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul
 from pyfe4ai.utils.ring_lwe_utils import next_ntt_prime
 from pyfe4ai.utils.ring_lwe_utils import poly_add
 from pyfe4ai.utils.ring_lwe_utils import poly_mul
+from pyfe4ai.utils.ring_lwe_utils import RingNTT
 from pyfe4ai.utils.ring_lwe_utils import transpose
 from pyfe4ai.utils.sampling_utils import XofRandom
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_bigint
@@ -291,7 +292,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
 
     def share_decrypt(
         self, dict_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list,
-        _z_share=None, _chunk=None,
+        _z_share=None, _chunk=None, _sk_hats=None,
     ) -> dict:
         """Compute this server's flooded partial decryption.
 
@@ -340,12 +341,24 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         z_share = dk["z"] if _z_share is None else _z_share
         key_part = [delta * gp.mpz(v) % q for v in z_share]
         c_y = [gp.mpz(0)] * ring_n
+        # sum_i ct1_i sk_i in the NTT domain, NTT(sk_i) cached across chunks
+        # (_sk_hats); the same sum mod q as adding poly_mul(ct1_i, sk_i)
+        ring = RingNTT.get(q, ring_n)
+        hats = {} if _sk_hats is None else _sk_hats
+        acc = None
         for nid, (_, ct0, ct1) in cts.items():
             ct0 = [[gp.mpz(v) for v in row] for row in ct0]
             ct1 = [gp.mpz(v) for v in ct1]
             y_vec = [gp.mpz(int(v)) for v in fusion_weight[nid]]
             c_y = poly_add(c_y, mat_vec_mul(transpose(ct0), y_vec, q), q)
-            key_part = poly_add(key_part, poly_mul(ct1, [gp.mpz(v) for v in dk["sk_y"][nid]], q), q)
+            if ring is None:
+                key_part = poly_add(key_part, poly_mul(ct1, [gp.mpz(v) for v in dk["sk_y"][nid]], q), q)
+                continue
+            if nid not in hats:
+                hats[nid] = ring.forward([gp.mpz(v) for v in dk["sk_y"][nid]])
+            acc = ring.mul_add(acc, ring.forward(ct1), hats[nid])
+        if acc is not None:
+            key_part = poly_add(key_part, ring.inverse(acc), q)
 
         sid_v = share_points(dk["lst_sid"])
         lagrange = lagrange_coefficient_at_zero(
@@ -423,6 +436,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         if self.key_chunks(sample) > len(dk.get("z_chunks", [])):
             raise FEKeyError("the key share covers fewer chunks than the ciphertexts")
         out = []
+        sk_hats = {}  # NTT(sk_i), transformed once for all chunks
         for l, layer in enumerate(sample):
             parts = []
             for j in range(len(layer["chunks"])):
@@ -430,7 +444,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
                 index = chunk_key_index(layer, j, len(dk["z_chunks"]))
                 parts.append(self.share_decrypt(
                     dct_ct, credentials, dk, lst_sid_enrolled,
-                    _z_share=dk["z_chunks"][index], _chunk=index,
+                    _z_share=dk["z_chunks"][index], _chunk=index, _sk_hats=sk_hats,
                 ))
             out.append({"shape": layer["shape"], "parts": parts})
         return out
