@@ -1418,6 +1418,191 @@ static PyObject *py_encrypt_tensor(PyObject *, PyObject *args) {
     });
 }
 
+// ============================================================ offline / online encryption
+
+// Everything of an MCFE ndarray chunk that does not depend on the plaintext:
+// P = pk r + e_0 + Delta (u + H_c) and ct1 = a r + e (encrypt_chunk with x = 0), so that
+// online ct0 = P + Delta x mod q -- the same values as encrypting x directly with the same
+// samples. One-time: a chunk is wiped when it is used, and every chunk on destruction.
+static const char *PRE_NAME = "pyfe4ai._rlwe_native.precomputed";
+
+struct PreBase {
+    const void *key = nullptr;    // the EncKey it was made with
+    PyObject *key_cap = nullptr;  // ... kept alive (so the address stays its own)
+    size_t chunks = 0, n = 0;
+    std::vector<uint8_t> used;
+    virtual ~PreBase() { Py_XDECREF(key_cap); }
+};
+
+template <class W>
+struct Pre : PreBase {
+    std::vector<W> data;  // per chunk: P (n words), then ct1 (n words)
+    void wipe(size_t j) {
+        volatile W *p = data.data() + 2 * n * j;
+        for (size_t i = 0; i < 2 * n; ++i) p[i] = 0;
+    }
+    ~Pre() override {
+        for (size_t j = 0; j < chunks; ++j) wipe(j);
+    }
+};
+
+static void pre_free(PyObject *cap) { delete (PreBase *)PyCapsule_GetPointer(cap, PRE_NAME); }
+
+// precompute_tensor(key, pad_materials, sigma2, sigma3, random_bytes | None, threads) -> capsule
+// One chunk per pad material (eta = 1), random bytes consumed per chunk as encrypt_tensor does.
+static PyObject *py_precompute_tensor(PyObject *, PyObject *args) {
+    PyObject *kcap, *mats, *rnd;
+    double s2, s3;
+    int threads;
+    if (!PyArg_ParseTuple(args, "OOddOi", &kcap, &mats, &s2, &s3, &rnd, &threads)) return nullptr;
+    return with_key(kcap, [&](auto &k) -> PyObject * {
+        typedef typename std::remove_reference<decltype(k)>::type K;
+        typedef typename K::W W;
+        const auto &c = *k.c;
+        size_t n = c.n;
+        if (k.eta != 1 || !k.has_u) {
+            PyErr_SetString(PyExc_ValueError, "precompute_tensor needs eta = 1 and the pad u");
+            return nullptr;
+        }
+        PyObject *mseq = PySequence_Fast(mats, "pad materials must be a sequence of bytes");
+        if (!mseq) return nullptr;
+        std::unique_ptr<PyObject, void (*)(PyObject *)> g(mseq, [](PyObject *o) { Py_DECREF(o); });
+        size_t chunks = (size_t)PySequence_Fast_GET_SIZE(mseq);
+        std::vector<std::pair<const unsigned char *, size_t>> mat;
+        for (size_t j = 0; j < chunks; ++j) {
+            PyObject *m = PySequence_Fast_GET_ITEM(mseq, j);
+            if (!PyBytes_Check(m)) {
+                PyErr_SetString(PyExc_TypeError, "pad materials must be bytes");
+                return nullptr;
+            }
+            mat.emplace_back((const unsigned char *)PyBytes_AS_STRING(m), (size_t)PyBytes_GET_SIZE(m));
+        }
+        size_t per = gauss_bytes(n) * 3;
+        RandomSource src;
+        if (!src.init(rnd, per * chunks)) return nullptr;
+        std::unique_ptr<Pre<W>> pre(new Pre<W>());
+        pre->key = &k;
+        pre->chunks = chunks;
+        pre->n = n;
+        pre->used.assign(chunks, 0);
+        pre->data.assign(2 * n * chunks, 0);
+        std::atomic<bool> rnd_fail(false);
+        size_t nb = zq_block(c);
+        Py_BEGIN_ALLOW_THREADS
+        parallel_for(chunks, threads, [&](size_t j) {
+            if (src.from_os && !os_random(src.own.data() + per * j, per)) {
+                rnd_fail = true;
+                return;
+            }
+            std::vector<W> w(n);
+            std::vector<unsigned char> stream(nb * n);
+            shake256(mat[j].first, mat[j].second, stream.data(), stream.size());
+            zq_reduce(c, stream.data(), nb, n, w.data());
+            for (size_t i = 0; i < n; ++i) w[i] = c.ar.add(k.u[i], w[i]);
+            W *p0 = pre->data.data() + 2 * n * j;
+            encrypt_chunk(k, w.data(), s2, s3, src.data + per * j, p0, p0 + n);
+        });
+        Py_END_ALLOW_THREADS
+        if (src.from_os) {  // the samples' bytes are no longer needed
+            volatile unsigned char *b = src.own.data();
+            for (size_t i = 0; i < src.own.size(); ++i) b[i] = 0;
+        }
+        if (rnd_fail) return PyErr_SetFromErrno(PyExc_OSError);
+        pre->key_cap = kcap;
+        Py_INCREF(kcap);
+        PyObject *cap = PyCapsule_New(pre.get(), PRE_NAME, pre_free);
+        if (cap) pre.release();
+        return cap;
+    });
+}
+
+// encrypt_precomputed(key, pre, first, x, threads, binary=False) -> as encrypt_tensor
+// Online part for one layer: chunks first .. first + ceil(L / n) - 1 of `pre`, which are
+// then wiped; a chunk can be used once.
+static PyObject *py_encrypt_precomputed(PyObject *, PyObject *args) {
+    PyObject *kcap, *pcap, *xo;
+    Py_ssize_t first;
+    int threads, binary = 0;
+    if (!PyArg_ParseTuple(args, "OOnOi|p", &kcap, &pcap, &first, &xo, &threads, &binary)) return nullptr;
+    PreBase *pb = (PreBase *)PyCapsule_GetPointer(pcap, PRE_NAME);
+    if (!pb) return nullptr;
+    return with_key(kcap, [&](auto &k) -> PyObject * {
+        typedef typename std::remove_reference<decltype(k)>::type K;
+        typedef typename K::W W;
+        const auto &c = *k.c;
+        size_t n = c.n;
+        if (pb->key != (const void *)&k) {
+            PyErr_SetString(PyExc_ValueError, "precomputed with another key");
+            return nullptr;
+        }
+        Pre<W> &pre = *static_cast<Pre<W> *>(pb);
+        Py_buffer xv;
+        if (PyObject_GetBuffer(xo, &xv, PyBUF_SIMPLE) < 0) return nullptr;
+        std::unique_ptr<Py_buffer, void (*)(Py_buffer *)> xguard(&xv, PyBuffer_Release);
+        if (xv.len % 8 || xv.len == 0) {
+            PyErr_SetString(PyExc_ValueError, "x must be a non-empty int64 buffer");
+            return nullptr;
+        }
+        size_t L = (size_t)xv.len / 8, chunks = (L + n - 1) / n;
+        const int64_t *x = (const int64_t *)xv.buf;
+        if (first < 0 || (size_t)first + chunks > pre.chunks) {
+            PyErr_SetString(PyExc_ValueError, "the precomputation does not cover these chunks");
+            return nullptr;
+        }
+        for (size_t j = 0; j < chunks; ++j) {
+            if (pre.used[(size_t)first + j]) {
+                PyErr_SetString(PyExc_ValueError, "precomputed chunk already used");
+                return nullptr;
+            }
+        }
+        for (size_t j = 0; j < chunks; ++j) pre.used[(size_t)first + j] = 1;
+        std::vector<DecChunk> dec(2 * chunks);
+        Py_BEGIN_ALLOW_THREADS
+        parallel_for(chunks, threads, [&](size_t j) {
+            size_t k0 = j * n, kk = std::min(n, L - k0), jj = (size_t)first + j;
+            W *p0 = pre.data.data() + 2 * n * jj, *c1 = p0 + n;
+            for (size_t i = 0; i < kk; ++i)
+                p0[i] = c.ar.add(p0[i], c.ar.mul((W)reduce_i128(x[k0 + i], c.q), k.delta_m));
+            if (binary) {
+                dec[2 * j].buf.resize(bin_size(1, n, bin_wb(c)));
+                bin_write(c, 1, p0, c1, (unsigned char *)dec[2 * j].buf.data());
+            } else {
+                dec[2 * j].format(p0, n);
+                dec[2 * j + 1].format(c1, n);
+            }
+            pre.wipe(jj);
+        });
+        Py_END_ALLOW_THREADS
+        PyObject *out = PyList_New((Py_ssize_t)chunks);
+        if (!out) return nullptr;
+        for (size_t j = 0; j < chunks; ++j) {
+            Py_ssize_t kk = (Py_ssize_t)std::min(n, L - j * n);
+            PyObject *item;
+            if (binary) {
+                item = Py_BuildValue("(y#n)", dec[2 * j].buf.data(), (Py_ssize_t)dec[2 * j].buf.size(), kk);
+            } else {
+                PyObject *row = dec_list_from(dec[2 * j].buf.data(), dec[2 * j].off.data(), n);
+                PyObject *c1 = row ? dec_list_from(dec[2 * j + 1].buf.data(), dec[2 * j + 1].off.data(), n) : nullptr;
+                item = c1 ? Py_BuildValue("([N]Nn)", row, c1, kk) : nullptr;
+                if (!c1) Py_XDECREF(row);
+            }
+            if (!item) { Py_DECREF(out); return nullptr; }
+            PyList_SET_ITEM(out, (Py_ssize_t)j, item);
+        }
+        return out;
+    });
+}
+
+static PyObject *py_precomputed_info(PyObject *, PyObject *args) {
+    PyObject *pcap;
+    if (!PyArg_ParseTuple(args, "O", &pcap)) return nullptr;
+    PreBase *pb = (PreBase *)PyCapsule_GetPointer(pcap, PRE_NAME);
+    if (!pb) return nullptr;
+    size_t used = 0;
+    for (auto u : pb->used) used += u;
+    return Py_BuildValue("{s:n,s:n}", "chunks", (Py_ssize_t)pb->chunks, "used", (Py_ssize_t)used);
+}
+
 // ================================================================== decryption
 
 // Values of one ciphertext polynomial: decimal strings copied with the GIL, parsed
@@ -1805,6 +1990,9 @@ static PyMethodDef methods[] = {
     {"encrypt_tensor", py_encrypt_tensor, METH_VARARGS, "MCFE ndarray encryption of one layer"},
     {"decrypt_tensor", py_decrypt_tensor, METH_VARARGS, "MIFE/MCFE decryption of the chunks of one layer"},
     {"pad_terms", py_pad_terms, METH_VARARGS, "MCFE key terms z'' for several labels"},
+    {"precompute_tensor", py_precompute_tensor, METH_VARARGS, "offline part of MCFE ndarray encryption"},
+    {"encrypt_precomputed", py_encrypt_precomputed, METH_VARARGS, "online part of MCFE ndarray encryption"},
+    {"precomputed_info", py_precomputed_info, METH_VARARGS, "precomputed_info(pre) -> dict"},
     {"build_info", py_build_info, METH_NOARGS, "build_info() -> dict"},
     {nullptr, nullptr, 0, nullptr},
 };

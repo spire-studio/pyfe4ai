@@ -153,6 +153,25 @@ class MCFERingLWEKeyGenerator(MIFERingLWEKeyGenerator):
         }
 
 
+class RingLWEPrecomputation:
+    """Offline phase of :meth:`MCFERingLWE.encrypt_lst_ndarray` for one label
+    and fixed layer shapes (see :meth:`MCFERingLWE.precompute`). Secret and
+    one-time."""
+
+    def __init__(self, owner, label: str, shapes: list, first_chunks: list, native=None, rows=None) -> None:
+        self.owner = owner
+        self.key_src = owner._key_src()
+        self.label = label
+        self.shapes = shapes
+        self.first_chunks = first_chunks
+        self.native = native  # (native key, capsule) or None
+        self.rows = rows      # Python: [(pk r + e_0 + Delta (u + H), a r + e)] per chunk
+        self.used = False
+
+    def __repr__(self) -> str:
+        return "RingLWEPrecomputation(label={!r}, shapes={}, used={})".format(self.label, self.shapes, self.used)
+
+
 class MCFERingLWE(MIFERingLWE):
     """Crypto operations for BMMS21 identity-based MCFE over Ring-LWE."""
 
@@ -229,11 +248,28 @@ class MCFERingLWE(MIFERingLWE):
         """Number of chunk keys needed for the output of :meth:`encrypt_lst_ndarray`."""
         return sum(len(layer["chunks"]) for layer in lst_ndarray_ct)
 
+    def _check_layer(self, ary_src) -> np.ndarray:
+        """The checks of :meth:`_check_plaintext` for a whole ndarray layer
+        (``scale_to_int`` already returns integers); its values as ``int64``."""
+        ints = scale_to_int(ary_src, self.precision).ravel()
+        self._check_encryption_keys()
+        if "u" not in self.sk:
+            raise FEKeyError("encryption key lacks the one-time pad u")
+        if ints.size and int(np.max(np.abs(ints))) > int(self.pp["bound_x"]):
+            raise FEValidationError("plaintext row exceeds the bound {}".format(int(self.pp["bound_x"])))
+        return ints
+
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
         """Pack ndarrays into ``ring_n``-coefficient chunks (``eta = 1``).
 
         Chunk ``c`` (counted across all layers) is encrypted under the chunk
         label ``(label, c)``, so each chunk has its own label pad.
+
+        Args:
+            lst_ndarray: The layers.
+            **kwargs: ``label`` (required) and optionally ``precomputed``,
+                the result of :meth:`precompute` for this label and these
+                layer shapes (the online phase; one-time).
 
         Returns:
             One dict per layer with ``shape``, ``first_chunk`` and ``chunks``.
@@ -243,17 +279,12 @@ class MCFERingLWE(MIFERingLWE):
         label = kwargs.get("label", None)
         if not isinstance(label, str):
             raise FEValidationError("need a string label for encrypt_lst_ndarray")
+        if kwargs.get("precomputed") is not None:
+            return self._encrypt_precomputed(lst_ndarray, label, kwargs["precomputed"])
         ring_n = self.pp["ring_n"]
         out, chunk = [], 0
         for ary_src in lst_ndarray:
-            ints = scale_to_int(ary_src, self.precision).ravel()
-            # the checks of _check_plaintext, for the whole layer at once
-            # (scale_to_int already returns integers)
-            self._check_encryption_keys()
-            if "u" not in self.sk:
-                raise FEKeyError("encryption key lacks the one-time pad u")
-            if ints.size and int(np.max(np.abs(ints))) > int(self.pp["bound_x"]):
-                raise FEValidationError("plaintext row exceeds the bound {}".format(int(self.pp["bound_x"])))
+            ints = self._check_layer(ary_src)
             n_layer = max(1, math.ceil(ints.size / ring_n))
             nkey = self._native_encryption_key() if ints.size else None
             if nkey is not None:  # one native call for the whole layer, same ciphertexts
@@ -265,11 +296,7 @@ class MCFERingLWE(MIFERingLWE):
                     native_backend.random_input(3 * native_backend.gauss_bytes(ring_n) * n_layer),
                     native_backend.get_threads(), self.ct_format == "binary",
                 )
-                if self.ct_format == "binary":
-                    cts = [{"ct": data, "k": k} for data, k in res]
-                else:
-                    cts = [{"ct0": ct0, "ct1": ct1, "k": k} for ct0, ct1, k in res]
-                out.append({"shape": list(np.shape(ary_src)), "first_chunk": chunk, "chunks": cts})
+                out.append({"shape": list(np.shape(ary_src)), "first_chunk": chunk, "chunks": self._native_cts(res)})
                 chunk += n_layer
                 continue
             flat = ints.tolist()
@@ -283,6 +310,101 @@ class MCFERingLWE(MIFERingLWE):
             out.append({"shape": list(np.shape(ary_src)), "first_chunk": chunk, "chunks": cts})
             chunk += n_layer
         return out
+
+    def _native_cts(self, res: list) -> list:
+        if self.ct_format == "binary":
+            return [{"ct": data, "k": k} for data, k in res]
+        return [{"ct0": ct0, "ct1": ct1, "k": k} for ct0, ct1, k in res]
+
+    def precompute(self, label: str, shapes) -> "RingLWEPrecomputation":
+        """Offline phase of :meth:`encrypt_lst_ndarray` for layers of these shapes.
+
+        Everything of the ciphertexts but the plaintext term -- label pads,
+        Gaussian samples, ``pk r + e_0 + Delta (u + H)`` and ``a r + e`` per
+        chunk -- is computed now; the online phase,
+        ``encrypt_lst_ndarray(layers, label=label, precomputed=...)``, only
+        adds ``Delta x``. The ciphertexts are those of a direct
+        :meth:`encrypt_lst_ndarray` with the same samples.
+
+        The result determines the encryption randomness: keep it as secret as
+        the key, and use it once (an MCFE client encrypts at most once per
+        label); its values are wiped when used.
+
+        Args:
+            label: The label the layers will be encrypted under.
+            shapes: One shape (tuple of ints, or an int for a 1-D layer) per layer.
+        """
+        if self.pp["eta"] != 1:
+            raise NotImplementedError("ndarray helper currently expects eta=1")
+        if not isinstance(label, str):
+            raise FEValidationError("label must be a string")
+        self._check_encryption_keys()
+        if "u" not in self.sk:
+            raise FEKeyError("encryption key lacks the one-time pad u")
+        u_prime = self.sk["u_prime"]
+        ring_n = self.pp["ring_n"]
+        shapes = [tuple(int(d) for d in shape) if isinstance(shape, (tuple, list)) else (int(shape),)
+                  for shape in shapes]
+        firsts, total = [], 0
+        for shape in shapes:
+            size = int(np.prod(shape, dtype=np.int64))
+            if size < 1:
+                raise FEValidationError("plaintext rows must all have the same length, between 1 and ring_n")
+            firsts.append(total)
+            total += math.ceil(size / ring_n)
+        nkey = self._native_encryption_key()
+        if nkey is not None:
+            cap = native_backend.ext().precompute_tensor(
+                nkey, [label_pad_material(u_prime, chunk_label(label, c)) for c in range(total)],
+                float(self.pp["sigma2"]), float(self.pp["sigma3"]),
+                native_backend.random_input(3 * native_backend.gauss_bytes(ring_n) * total),
+                native_backend.get_threads(),
+            )
+            return RingLWEPrecomputation(self, label, shapes, firsts, native=(nkey, cap))
+        rows = []
+        for c in range(total):  # x = 0: the stored ct0 is pk r + e_0 + Delta (u + H)
+            ct0, ct1 = self._encrypt_rows_python(self._padded_rows([[]], extra_pad=self._pad(chunk_label(label, c))))
+            rows.append((ct0[0], ct1))
+        return RingLWEPrecomputation(self, label, shapes, firsts, rows=rows)
+
+    def _encrypt_precomputed(self, lst_ndarray: list, label: str, pre) -> list:
+        """Online phase: the precomputed chunks plus ``Delta x``."""
+        if not isinstance(pre, RingLWEPrecomputation) or pre.owner is not self or pre.key_src != self._key_src():
+            raise FEValidationError("the precomputation belongs to another client or key")
+        if pre.label != label:
+            raise FEValidationError("the precomputation is for another label")
+        if pre.used:
+            raise FEValidationError("a precomputation can be used once")
+        if [tuple(np.shape(a)) for a in lst_ndarray] != pre.shapes:
+            raise FEValidationError("layer shapes differ from the precomputed ones {}".format(pre.shapes))
+        layers = [self._check_layer(a) for a in lst_ndarray]
+        pre.used = True
+        ring_n = self.pp["ring_n"]
+        q = gp.mpz(self.pp["q"])
+        delta = q // gp.mpz(self.pp["p"])
+        out = []
+        for ints, first, shape in zip(layers, pre.first_chunks, pre.shapes):
+            if pre.native is not None:
+                nkey, cap = pre.native
+                res = native_backend.ext().encrypt_precomputed(
+                    nkey, cap, first, np.ascontiguousarray(ints, dtype=np.int64),
+                    native_backend.get_threads(), self.ct_format == "binary",
+                )
+                cts = self._native_cts(res)
+            else:
+                flat, cts = ints.tolist(), []
+                for j in range(math.ceil(len(flat) / ring_n)):
+                    part = flat[j * ring_n:(j + 1) * ring_n]
+                    p_row, ct1 = pre.rows[first + j]
+                    pre.rows[first + j] = None
+                    ct0 = [(p + delta * x) % q for p, x in zip(p_row, part)] + p_row[len(part):]
+                    cts.append(self._format_ciphertext([ct0], ct1, len(part)))
+            out.append({"shape": list(shape), "first_chunk": first, "chunks": cts})
+        pre.rows = None
+        return out
+
+    def _key_src(self) -> tuple:
+        return self._encryption_key()["src"]
 
     def compute_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:
         """Aggregate-decrypt packed ndarray ciphertexts (needs ``dk``, ``fusion_weight``, ``label``)."""

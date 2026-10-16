@@ -434,6 +434,23 @@ class MIFERingLWE(IPFEAbsCrypto):
                 native_backend.random_input(native_backend.gauss_bytes(ring_n) * (2 + len(w_rows))), binary,
             )
             return {"ct": out, "k": k} if binary else {"ct0": out[0], "ct1": out[1], "k": k}
+        ct0, ct1 = self._encrypt_rows_python(w_rows)
+        return self._format_ciphertext(ct0, ct1, k)
+
+    def _format_ciphertext(self, ct0: list, ct1: list, k: int) -> dict:
+        """The ciphertext dict of rows ``ct0`` and ``ct1`` (integers in ``[0, q)``)."""
+        if self.ct_format == "binary":
+            return {"ct": encode_binary_ciphertext(ct0, ct1, self.pp["q"], self.pp["ring_n"]), "k": k}
+        return {
+            "ct0": [[gp.digits(v) for v in row] for row in ct0],
+            "ct1": [gp.digits(v) for v in ct1],
+            "k": k,
+        }
+
+    def _encrypt_rows_python(self, w_rows: list) -> tuple:
+        """``(ct0, ct1)`` of :meth:`_encrypt_rows` as integers, in Python."""
+        q = gp.mpz(self.pp["q"])
+        ring_n = self.pp["ring_n"]
         delta = q // gp.mpz(self.pp["p"])
         key = self._encryption_key()
         ring = key["ring"]
@@ -452,14 +469,7 @@ class MIFERingLWE(IPFEAbsCrypto):
             prod = times_r(key["pk"][i], pk_hat[i])
             ct0.append([(c + e + delta * w) % q for c, e, w in zip(prod, noise[i], w_row)])
         e = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"])[0]
-        ct1 = poly_add(times_r(self.A, key["a_hat"]), e, q)
-        if binary:
-            return {"ct": encode_binary_ciphertext(ct0, ct1, q, ring_n), "k": k}
-        return {
-            "ct0": [[gp.digits(v) for v in row] for row in ct0],
-            "ct1": [gp.digits(v) for v in ct1],
-            "k": k,
-        }
+        return ct0, poly_add(times_r(self.A, key["a_hat"]), e, q)
 
     def encrypt(self, matrix_pt: list[list[int]]) -> dict:
         """Encrypt this slot's matrix: Ring-LWE encryption of ``x + u mod q``.

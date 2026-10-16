@@ -153,8 +153,10 @@ def _scheme_params(wrapper) -> dict:
 
 
 def measure(family: str, elements: int, clients: int, rounds: int, precision: int, bound_x: int,
-            profile: str, ct_format: str = "json") -> dict:
-    from pyfe4ai.utils.ml_adapter import FESchemeWrapper, aggregate_gradients, encrypt_gradient
+            profile: str, ct_format: str = "json", offline: bool = False) -> dict:
+    from pyfe4ai.utils.ml_adapter import (
+        FESchemeWrapper, aggregate_gradients, encrypt_gradient, precompute_gradient, prepare_aggregation,
+    )
 
     key, base_cfg, _ = FAMILIES[family]
     nids = ["c{}".format(i) for i in range(clients)]
@@ -180,16 +182,31 @@ def measure(family: str, elements: int, clients: int, rounds: int, precision: in
     wrapper.kg.get_decryption_keys = timed_derive
     rng = np.random.default_rng(7)
     lim = bound_x / 10 ** precision
-    enc_t, agg_t, dk_t = [], [], []
+    enc_t, agg_t, dk_t, enc_off, agg_off = [], [], [], [], []
     ct_size = None
+    weights = {nid: 1 for nid in nids}
     for r in range(rounds + 1):
         label = "round-{}".format(r)
         grads = {nid: rng.uniform(-lim, lim, elements).round(precision) for nid in nids}
+        pre, prepared = {}, None
+        if offline:  # before the round: client masks, then the aggregator's key
+            t0 = time.perf_counter()
+            pre = {nid: precompute_gradient((elements,), wrapper, nid=nid, label=label) for nid in nids}
+            t1 = time.perf_counter()
+            prepared = prepare_aggregation(wrapper, weights, shape=(elements,), label=label)
+            t2 = time.perf_counter()
+            if r:
+                enc_off.append((t1 - t0) / clients)
+                agg_off.append(t2 - t1)
         dk_times.clear()
         t0 = time.perf_counter()
-        enc = {nid: encrypt_gradient(g, wrapper, nid=nid, label=label) for nid, g in grads.items()}
+        enc = {nid: encrypt_gradient(g, wrapper, nid=nid, label=label, precomputed=pre.get(nid))
+               for nid, g in grads.items()}
         t1 = time.perf_counter()
-        total = aggregate_gradients(enc, wrapper, {nid: 1 for nid in nids}, label=label)
+        if offline:
+            total = aggregate_gradients(enc, wrapper, label=label, prepared=prepared)
+        else:
+            total = aggregate_gradients(enc, wrapper, weights, label=label)
         t2 = time.perf_counter()
         if not np.allclose(np.asarray(total, dtype=float), sum(grads.values()), atol=10 ** -precision / 2):
             raise AssertionError("{}: wrong aggregate".format(family))
@@ -210,7 +227,10 @@ def measure(family: str, elements: int, clients: int, rounds: int, precision: in
         client_ms_min=min(enc_t) * 1e3,
         aggregator_ms_min=min(agg_t) * 1e3,
         ct_bytes_per_element=round(ct_size, 1),
+        offline=offline,
     )
+    if offline:
+        row.update(client_offline_ms=med(enc_off) * 1e3, aggregator_offline_ms=med(agg_off) * 1e3)
     return row
 
 
@@ -227,6 +247,9 @@ def main() -> None:
     parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--ct-format", default="json", choices=["json", "binary"],
                         help="ciphertext format of the Ring-LWE schemes")
+    parser.add_argument("--offline", action="store_true",
+                        help="Ring-LWE MCFE: precompute client masks and the aggregator's key before each "
+                             "round; client_ms / aggregator_ms are then the online phase")
     parser.add_argument("--workdir", default=None, help="directory holding ./config (default: temporary)")
     parser.add_argument("--json", default=None, help="append the results to this JSON file")
     parser.add_argument("--tag", default="", help="free-form label stored with every row")
@@ -251,12 +274,15 @@ def main() -> None:
         for family in args.families:
             elements = args.elements or FAMILIES[family][2]
             fmt = args.ct_format if family == "ring_lwe" else "json"
-            row = measure(family, elements, args.clients, args.rounds, args.precision, bound_x, args.profile, fmt)
+            row = measure(family, elements, args.clients, args.rounds, args.precision, bound_x, args.profile, fmt,
+                          args.offline and family == "ring_lwe")
             row.update(backend=backend, threads=args.threads, tag=args.tag)
             rows.append(row)
             print("{family:9s} {backend:6s} t={threads} {elements:6d} el  client {client_ms:9.2f} ms  "
                   "aggregator {aggregator_ms:9.2f} ms (dkgen {dkgen_ms:7.2f})  ct {ct_bytes_per_element} "
-                  "B/el {ct_format}".format(**row), flush=True)
+                  "B/el {ct_format}".format(**row)
+                  + ("  [offline: client {client_offline_ms:.2f} ms, aggregator {aggregator_offline_ms:.2f} ms]"
+                     .format(**row) if row.get("offline") else ""), flush=True)
     finally:
         os.chdir(cwd)
         if tmp is not None:
