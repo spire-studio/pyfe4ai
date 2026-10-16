@@ -47,6 +47,7 @@ counter-mode SHA-256).
 from __future__ import annotations
 
 import logging
+import operator
 
 import gmpy2 as gp
 import numpy as np
@@ -57,7 +58,9 @@ from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
 from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.schemes.profiles import STANDARD
+from pyfe4ai.utils import native_backend
 from pyfe4ai.utils.crypto_constants import CryptoCONST
+from pyfe4ai.utils.crypto_utils import hash_to_zq_material
 from pyfe4ai.utils.crypto_utils import hash_to_zq_vector
 from pyfe4ai.utils.lwe_utils import abmpsw20_lwe_parameters
 from pyfe4ai.utils.lwe_utils import check_dense_lwe
@@ -83,10 +86,17 @@ def hash_label(label, q, length: int) -> list:
 
 def dot_mod(left: list, right: list, q) -> gp.mpz:
     """Return ``<left, right> mod q`` for integer vectors."""
-    acc = gp.mpz(0)
-    for a, b in zip(left, right):
-        acc += gp.mpz(a) * b
-    return acc % q
+    return gp.mpz(sum(map(operator.mul, map(gp.mpz, left), right))) % q
+
+
+def _mpz_cached(owner, attr: str, obj, convert):
+    """``convert(obj)``, cached on *owner* while the same *obj* is passed
+    (keys are converted from decimal strings once, not per element)."""
+    cache = owner.__dict__.get(attr)
+    if cache is None or cache[0] is not obj:
+        cache = (obj, convert(obj))
+        owner.__dict__[attr] = cache
+    return cache[1]
 
 
 class MCFELWEKeyGenerator(IPFEAbsKeyGenerator):
@@ -255,8 +265,9 @@ class MCFELWE(IPFEAbsCrypto):
 
         h_l = self._hash_label(label)
         c = []
-        for x_j, z_j in zip(lst_pt, self.sk["z"]):
-            v = dot_mod([gp.mpz(z) for z in z_j], h_l, self.q) + self.delta * int(x_j)
+        z = _mpz_cached(self, "_z_mpz", self.sk["z"], lambda rows: [[gp.mpz(v) for v in row] for row in rows])
+        for x_j, z_j in zip(lst_pt, z):
+            v = dot_mod(z_j, h_l, self.q) + self.delta * int(x_j)
             c.append(int(round_to_q0(v, self.q, self.q0)))
         return {"c": c}
 
@@ -302,7 +313,8 @@ class MCFELWE(IPFEAbsCrypto):
         if not dk or "sk_y" not in dk:
             raise FEKeyError("no decryption key provided")
         weighted = self._weighted_sum(dct_ct, fusion_weight)
-        key_term = dot_mod([gp.mpz(v) for v in dk["sk_y"]], self._hash_label(label), self.q)
+        sk_y = _mpz_cached(self, "_sk_y_mpz", dk["sk_y"], lambda row: [gp.mpz(v) for v in row])
+        key_term = dot_mod(sk_y, self._hash_label(label), self.q)
         return self._decode(weighted, key_term)
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
@@ -321,10 +333,48 @@ class MCFELWE(IPFEAbsCrypto):
         for l, ary_src in enumerate(lst_ndarray):
             ary = scale_to_int(ary_src, self.precision)
             ary_ct = np.empty(ary.shape, dtype=object)
-            for i, w in np.ndenumerate(ary):
-                ary_ct[i] = self.encrypt([int(w)], _element_label(label, l, i))
+            if ary.size and self._native_dots():
+                # encrypt() of every element, the label hashes and dot products in one call
+                if not self._has_public_parameters():
+                    raise FEKeyError("no public parameters provided for encryption")
+                if not self._has_private_keys():
+                    raise FEKeyError("no encryption key provided")
+                if len(self.sk["z"]) < 1:
+                    raise FEValidationError("invalid size of input plaintext")
+                if int(np.max(np.abs(ary))) > self.pp["bound_x"]:
+                    raise FEValidationError("plaintext exceeds configured bound_x")
+                z = _mpz_cached(self, "_z_mpz", self.sk["z"], lambda rows: [[gp.mpz(v) for v in row] for row in rows])
+                dots = self._label_dots([_element_label(label, l, i) for i in np.ndindex(ary.shape)], z[0])
+                for (i, w), dot in zip(np.ndenumerate(ary), dots):
+                    ary_ct[i] = {"c": [int(round_to_q0(dot + self.delta * int(w), self.q, self.q0))]}
+            else:
+                for i, w in np.ndenumerate(ary):
+                    ary_ct[i] = self.encrypt([int(w)], _element_label(label, l, i))
             lst_ndarray_ct.append(ary_ct)
         return lst_ndarray_ct
+
+    def _native_dots(self) -> bool:
+        return native_backend.active_backend() == "native"
+
+    def _label_dots(self, labels: list, key_row: list) -> list:
+        """``dot_mod(key_row, H(l), q)`` for every label *l*.
+
+        With the native backend, one call hashes every label and sums the
+        products of *key_row* (reduced mod q) with the hash blocks before
+        their reduction mod q -- congruent mod q, so the same values.
+        """
+        q = self.q
+        if not self._native_dots() or len(key_row) != self.dim:
+            return [dot_mod(key_row, self._hash_label(lab), q) for lab in labels]
+        kl = (int(q).bit_length() + 63) // 64
+        key = _mpz_cached(self, "_dense_key", key_row,
+                          lambda row: b"".join((int(v) % int(q)).to_bytes(8 * kl, "little") for v in row))
+        raw = native_backend.ext().dense_dots(
+            [hash_to_zq_material(encode_label(lab), domain=_LABEL_HASH_DOMAIN) for lab in labels],
+            (int(q).bit_length() + 128 + 7) // 8, self.dim, key, kl, native_backend.get_threads(),
+        )
+        step = len(raw) // len(labels)
+        return [gp.mpz(int.from_bytes(raw[i:i + step], "little")) % q for i in range(0, len(raw), step)]
 
     def compute_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:
         """Aggregate-decrypt ndarray ciphertexts (delegates to :meth:`decrypt_lst_ndarray_ct`).
@@ -361,6 +411,17 @@ class MCFELWE(IPFEAbsCrypto):
         lst_ndarray = []
         for l in range(len(sample)):
             ary_dec = np.empty(sample[l].shape, dtype=object)
+            if np.size(sample[l]) and self._native_dots():
+                # decrypt() of every element, the key terms in one call
+                if not dk or "sk_y" not in dk:
+                    raise FEKeyError("no decryption key provided")
+                sk_y = _mpz_cached(self, "_sk_y_mpz", dk["sk_y"], lambda row: [gp.mpz(v) for v in row])
+                key_terms = self._label_dots([_element_label(label, l, i) for i in np.ndindex(sample[l].shape)], sk_y)
+                for (i, _), key_term in zip(np.ndenumerate(sample[l]), key_terms):
+                    dct_ct = {nid: dict_ndarray_ct[nid][l][i] for nid in dict_ndarray_ct}
+                    ary_dec[i] = self._decode(self._weighted_sum(dct_ct, fusion_weight), key_term)
+                lst_ndarray.append(decoded_layer(ary_dec, l, 10 ** self.precision))
+                continue
             for i, _ in np.ndenumerate(sample[l]):
                 dct_ct = {nid: dict_ndarray_ct[nid][l][i] for nid in dict_ndarray_ct}
                 ary_dec[i] = self.decrypt(

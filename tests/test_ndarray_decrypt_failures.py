@@ -63,6 +63,8 @@ def _fail_second_element(monkeypatch, cls):
     else:
         name = "_decode" if cls.__module__.endswith("sife.lwe") else "decrypt"
         original = getattr(cls, name)
+        if hasattr(cls, "_native_dots"):  # dense-LWE MCFE: the per-element Python path
+            monkeypatch.setattr(cls, "_native_dots", lambda self: False)
         calls = []
 
         def fake(self, *args, **kwargs):

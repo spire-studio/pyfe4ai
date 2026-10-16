@@ -338,7 +338,12 @@ def hash_to_zq_vector(v: str, q: gp.mpz, length: int, domain: str = "") -> list:
     q = gp.mpz(q)
     n_bytes = (int(q).bit_length() + 128 + 7) // 8
     stream = hashlib.shake_256(hash_to_zq_material(v, domain)).digest(length * n_bytes)
+    if _MPZ_FROM_BYTES is not None:  # the same values, without a Python int per block
+        return [_MPZ_FROM_BYTES(stream[i:i + n_bytes], "big") % q for i in range(0, length * n_bytes, n_bytes)]
     return [
         gp.mpz(int.from_bytes(stream[k * n_bytes:(k + 1) * n_bytes], "big")) % q
         for k in range(length)
     ]
+
+
+_MPZ_FROM_BYTES = getattr(gp.mpz, "from_bytes", None)  # gmpy2 >= 2.2

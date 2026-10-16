@@ -1959,6 +1959,82 @@ static PyObject *py_pad_terms(PyObject *, PyObject *args) {
     });
 }
 
+// ===================================================================== dense LWE
+
+// acc (al limbs) += a (an limbs) * b (bn limbs), little-endian 64-bit limbs.
+static inline void mac_limbs(u64 *acc, size_t al, const u64 *a, size_t an, const u64 *b, size_t bn) {
+    for (size_t i = 0; i < an; ++i) {
+        u64 carry = 0, ai = a[i];
+        if (!ai) continue;
+        for (size_t j = 0; j < bn; ++j) {
+            u128 t = (u128)ai * b[j] + acc[i + j] + carry;
+            acc[i + j] = (u64)t;
+            carry = (u64)(t >> 64);
+        }
+        for (size_t k = i + bn; carry && k < al; ++k) {
+            u128 t = (u128)acc[k] + carry;
+            acc[k] = (u64)t;
+            carry = (u64)(t >> 64);
+        }
+    }
+}
+
+// dense_dots(materials, nb, count, key, key_limbs, threads) -> bytes
+// For every material m: sum_k key[k] B_k exactly, where B_k is block k (nb bytes, big-endian)
+// of SHAKE-256(m) -- the hash_to_zq_vector blocks before their reduction mod q, so the sum
+// is congruent to <key, hash_to_zq_vector> mod q (key: count values of key_limbs
+// little-endian limbs). Each sum takes key_limbs + ceil(nb / 8) + 1 limbs, little-endian.
+static PyObject *py_dense_dots(PyObject *, PyObject *args) {
+    PyObject *mats;
+    Py_ssize_t nb_s, count_s, kl_s;
+    Py_buffer key;
+    int threads;
+    if (!PyArg_ParseTuple(args, "Onny*ni", &mats, &nb_s, &count_s, &key, &kl_s, &threads)) return nullptr;
+    std::unique_ptr<Py_buffer, void (*)(Py_buffer *)> kguard(&key, PyBuffer_Release);
+    size_t nb = (size_t)nb_s, count = (size_t)count_s, kl = (size_t)kl_s;
+    if (nb_s < 1 || count_s < 0 || kl_s < 1 || nb > 4096 || (size_t)key.len != count * kl * 8) {
+        PyErr_SetString(PyExc_ValueError, "inconsistent dense_dots arguments");
+        return nullptr;
+    }
+    PyObject *mseq = PySequence_Fast(mats, "materials must be a sequence of bytes");
+    if (!mseq) return nullptr;
+    std::unique_ptr<PyObject, void (*)(PyObject *)> g(mseq, [](PyObject *o) { Py_DECREF(o); });
+    size_t M = (size_t)PySequence_Fast_GET_SIZE(mseq);
+    std::vector<std::pair<const unsigned char *, size_t>> mv;
+    for (size_t i = 0; i < M; ++i) {
+        PyObject *m = PySequence_Fast_GET_ITEM(mseq, i);
+        if (!PyBytes_Check(m)) {
+            PyErr_SetString(PyExc_TypeError, "materials must be bytes");
+            return nullptr;
+        }
+        mv.emplace_back((const unsigned char *)PyBytes_AS_STRING(m), (size_t)PyBytes_GET_SIZE(m));
+    }
+    size_t hl = (nb + 7) / 8, sl = kl + hl + 1;
+    PyObject *out = PyBytes_FromStringAndSize(nullptr, (Py_ssize_t)(M * sl * 8));
+    if (!out) return nullptr;
+    u64 *res = (u64 *)PyBytes_AS_STRING(out);
+    const u64 *kv = (const u64 *)key.buf;
+    Py_BEGIN_ALLOW_THREADS
+    parallel_for(M, threads, [&](size_t m) {
+        std::vector<unsigned char> stream(nb * count);
+        shake256(mv[m].first, mv[m].second, stream.data(), stream.size());
+        std::vector<u64> acc(sl, 0), h(hl);
+        const unsigned char *p = stream.data();
+        for (size_t k = 0; k < count; ++k, p += nb) {
+            for (size_t j = 0; j < hl; ++j) {  // limb j: bytes nb - 8 (j + 1) .. nb - 8 j - 1
+                u64 limb = 0;
+                size_t hi = nb - 8 * j, lo = hi >= 8 ? hi - 8 : 0;
+                for (size_t b = lo; b < hi; ++b) limb = (limb << 8) | p[b];
+                h[j] = limb;
+            }
+            mac_limbs(acc.data(), sl, kv + k * kl, kl, h.data(), hl);
+        }
+        memcpy(res + m * sl, acc.data(), sl * 8);  // little-endian hosts (checked at import)
+    });
+    Py_END_ALLOW_THREADS
+    return out;
+}
+
 static PyObject *py_build_info(PyObject *, PyObject *) {
     return Py_BuildValue("{s:s,s:O,s:i}", "compiler",
 #if defined(__clang__)
@@ -1993,10 +2069,18 @@ static PyMethodDef methods[] = {
     {"precompute_tensor", py_precompute_tensor, METH_VARARGS, "offline part of MCFE ndarray encryption"},
     {"encrypt_precomputed", py_encrypt_precomputed, METH_VARARGS, "online part of MCFE ndarray encryption"},
     {"precomputed_info", py_precomputed_info, METH_VARARGS, "precomputed_info(pre) -> dict"},
+    {"dense_dots", py_dense_dots, METH_VARARGS, "dense-LWE <key, H(label)> before reduction, per label"},
     {"build_info", py_build_info, METH_NOARGS, "build_info() -> dict"},
     {nullptr, nullptr, 0, nullptr},
 };
 
 static struct PyModuleDef moddef = {PyModuleDef_HEAD_INIT, "_rlwe_native", nullptr, -1, methods};
 
-PyMODINIT_FUNC PyInit__rlwe_native(void) { return PyModule_Create(&moddef); }
+PyMODINIT_FUNC PyInit__rlwe_native(void) {
+    const uint16_t probe = 1;
+    if (*(const unsigned char *)&probe != 1) {  // packed words are little-endian
+        PyErr_SetString(PyExc_ImportError, "the native backend needs a little-endian host");
+        return nullptr;
+    }
+    return PyModule_Create(&moddef);
+}
