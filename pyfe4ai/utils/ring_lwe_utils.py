@@ -554,7 +554,8 @@ def resolve_ring_n(ring_n, params_for) -> int:
     return check_ring_n(ring_n or DEFAULT_RING_N)
 
 
-def bmms21_selective_parameters(sec_param: int, eta: int, bound_x, bound_y, ring_n: int) -> dict:
+def bmms21_selective_parameters(sec_param: int, eta: int, bound_x, bound_y, ring_n: int, *,
+                                security_bound_x=None) -> dict:
     """Parameters of the selectively secure BMMS21 IPFE (Sec. 4) per Sec. 4.2.
 
     For ``l = eta`` coordinates bounded by ``X`` (messages) and ``Y``
@@ -575,6 +576,12 @@ def bmms21_selective_parameters(sec_param: int, eta: int, bound_x, bound_y, ring
       strictly inside ``(-p/2, p/2)``); ``q`` is the first NTT-friendly prime
       above it.
 
+    ``security_bound_x`` (default ``bound_x``) is the message bound ``X`` of
+    the G3 -> G4 condition, ``bound_x`` the one of decryption (``p``): the
+    MIFE compiler of ACFGU18 (Fig. 4) needs an IPFE that is secure for
+    messages of norm below ``3X`` (its Lemma 3 queries the IPFE with
+    ``x^j - x^1 + x'^1``), although only ``X``-bounded results are decoded.
+
     Versions <= 0.2.0 used ``sigma = 1`` and ``sigma1 = 2 sqrt(l) X`` (the
     paper's Table 1 has the same gap), which miss both smoothing conditions.
 
@@ -588,7 +595,8 @@ def bmms21_selective_parameters(sec_param: int, eta: int, bound_x, bound_y, ring
     kappa = float(sec_param)
     sigma = max(3.2, 1.5 * math.sqrt(_smoothing_log(n + n * l, kappa) / math.pi))
     sigma_prime = math.sqrt(2.0) * math.sqrt(_smoothing_log(n, kappa + math.log2(n)) / math.pi)
-    sigma1 = math.sqrt(2.0) * 2.0 * float(bound_x) * math.sqrt(l) * sigma_prime
+    sec_x = bound_x if security_bound_x is None else security_bound_x
+    sigma1 = math.sqrt(2.0) * 2.0 * float(sec_x) * math.sqrt(l) * sigma_prime
     sigma2 = math.sqrt(2.0) * sigma * n * math.sqrt(kappa) * sigma1 * math.sqrt(l + 2)
     sigma3 = math.sqrt(2.0) * sigma2
     p = gp.mpz(bound_x) * gp.mpz(bound_y) * gp.mpz(2 * l) + 2
@@ -601,9 +609,11 @@ def bmms21_selective_parameters(sec_param: int, eta: int, bound_x, bound_y, ring
     }
 
 
-def bmms21_parameters(sec_param: int, eta: int, bound_x, bound_y, ring_n: int) -> tuple:
+def bmms21_parameters(sec_param: int, eta: int, bound_x, bound_y, ring_n: int, *,
+                      security_bound_x=None) -> tuple:
     """``(p, q, sigma1, sigma2, sigma3)`` of :func:`bmms21_selective_parameters`."""
-    P = bmms21_selective_parameters(sec_param, eta, bound_x, bound_y, ring_n)
+    P = bmms21_selective_parameters(sec_param, eta, bound_x, bound_y, ring_n,
+                                    security_bound_x=security_bound_x)
     return P["p"], P["q"], P["sigma1"], P["sigma2"], P["sigma3"]
 
 

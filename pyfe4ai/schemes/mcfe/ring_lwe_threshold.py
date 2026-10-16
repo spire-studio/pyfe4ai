@@ -69,7 +69,6 @@ from pyfe4ai.schemes.threshold_utils import validate_threshold
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.utils.lwe_utils import decode_scaled
-from pyfe4ai.utils.ring_lwe_utils import bmms21_parameters
 from pyfe4ai.utils.ring_lwe_utils import canonical_ring_ciphertext
 from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul
 from pyfe4ai.utils.ring_lwe_utils import next_ntt_prime
@@ -137,9 +136,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             and param.get("stat_param") == self.stat_param
         ):
             return False
-        params = bmms21_parameters(
-            self.sec_param, self.n * self.eta, self.bound_x, self.bound_y, self.ring_n
-        )
+        params = self._bmms21_tuple(self.ring_n)
         return param.get("sigma_f") == str(self._flooded_modulus(self.ring_n, *params)[1])
 
     def _apply_parameters(self, param: dict) -> None:
@@ -157,10 +154,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         return next_ntt_prime(max(q, p * (2 * budget + 4)), ring_n), sigma_f
 
     def _modulus_for(self, ring_n: int):
-        params = bmms21_parameters(
-            self.sec_param, self.n * self.eta, self.bound_x, self.bound_y, ring_n
-        )
-        return self._flooded_modulus(ring_n, *params)[0]
+        return self._flooded_modulus(ring_n, *self._bmms21_tuple(ring_n))[0]
 
     def _generate_and_save(self, param_file: str) -> None:
         super()._generate_and_save(param_file)
