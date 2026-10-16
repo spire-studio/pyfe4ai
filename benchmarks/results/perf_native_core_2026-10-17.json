@@ -1,0 +1,4274 @@
+{
+ "description": "perf/native-core benchmark results, 2026-10-17 (M2 Max). host: macOS, Python 3.13, clang; docker: Linux aarch64 VM of Docker Desktop on the same machine (12 CPUs), PyFE4AI in pyfe4ai-pairing (Python 3.10, GCC 13), TenSEAL 0.3.18 in pyfe4ai-he (Python 3.11).",
+ "host": {
+  "baseline_host": {
+   "runs": [
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "426aea8",
+      "native": null
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 5,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "auto",
+      "threads": 1,
+      "workdir": "../work",
+      "json": "../results/baseline_host.json",
+      "tag": "baseline"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 5,
+       "precision": 2,
+       "bound_x": 100,
+       "setup_s": 0.13367995899170637,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 197.47559733999273,
+       "aggregator_ms": 279.96766701107845,
+       "dkgen_ms": 31.211833003908396,
+       "decrypt_ms": 248.75583400717005,
+       "client_us_per_element": 19.747559733999275,
+       "aggregator_us_per_element": 27.996766701107845,
+       "client_ms_min": 196.72649999847636,
+       "aggregator_ms_min": 279.4256249908358,
+       "ct_json_bytes_per_element": 66.0,
+       "ct_binary_bytes_per_element": null,
+       "backend": "python",
+       "threads": 1,
+       "tag": "baseline"
+      }
+     ],
+     "time": "2026-10-17T01:09:12+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "426aea8",
+      "native": null
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 5,
+      "precision": 0,
+      "bound_x": 2,
+      "profile": "standard",
+      "backend": "auto",
+      "threads": 1,
+      "workdir": "../work",
+      "json": "../results/baseline_host.json",
+      "tag": "baseline-q60"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 5,
+       "precision": 0,
+       "bound_x": 2,
+       "setup_s": 0.12449137499788776,
+       "q_bits": 60,
+       "p_bits": 4,
+       "ring_n": 4096,
+       "client_ms": 186.8466806675618,
+       "aggregator_ms": 260.39958297042176,
+       "dkgen_ms": 29.577542038168758,
+       "decrypt_ms": 230.7692079921253,
+       "client_us_per_element": 18.68466806675618,
+       "aggregator_us_per_element": 26.039958297042176,
+       "client_ms_min": 185.692333325278,
+       "aggregator_ms_min": 259.21258301241323,
+       "ct_json_bytes_per_element": 53.7,
+       "ct_binary_bytes_per_element": null,
+       "backend": "python",
+       "threads": 1,
+       "tag": "baseline-q60"
+      }
+     ],
+     "time": "2026-10-17T01:09:17+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": null
+     },
+     "args": {
+      "families": [
+       "lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 3,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "auto",
+      "threads": 1,
+      "workdir": "../work",
+      "json": "../results/baseline_host.json",
+      "tag": "baseline"
+     },
+     "rows": [
+      {
+       "family": "lwe",
+       "scheme": "mcfe/lwe",
+       "profile": "standard",
+       "elements": 200,
+       "clients": 3,
+       "rounds": 3,
+       "precision": 2,
+       "bound_x": 100,
+       "setup_s": 0.03715154196834192,
+       "q_bits": 187,
+       "lwe_n": 6656,
+       "n0": 6656,
+       "m0": 1068,
+       "client_ms": 1021.444180669884,
+       "aggregator_ms": 1030.3367089945823,
+       "dkgen_ms": 4.026374954264611,
+       "decrypt_ms": 1026.3103340403177,
+       "client_us_per_element": 5107.22090334942,
+       "aggregator_us_per_element": 5151.6835449729115,
+       "client_ms_min": 1017.8980833346334,
+       "aggregator_ms_min": 1030.2082499838434,
+       "ct_json_bytes_per_element": 13.4,
+       "ct_binary_bytes_per_element": null,
+       "backend": "python",
+       "threads": 1,
+       "tag": "baseline"
+      }
+     ],
+     "time": "2026-10-17T01:09:41+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": null
+     },
+     "args": {
+      "families": [
+       "ddh"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 3,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "auto",
+      "threads": 1,
+      "workdir": "../work",
+      "json": "../results/baseline_host.json",
+      "tag": "baseline"
+     },
+     "rows": [
+      {
+       "family": "ddh",
+       "scheme": "mcfe/ddh",
+       "profile": "standard",
+       "elements": 20,
+       "clients": 3,
+       "rounds": 3,
+       "precision": 2,
+       "bound_x": 100,
+       "setup_s": 0.0007502920343540609,
+       "p_bits": 3072,
+       "client_ms": 215.37544467719272,
+       "aggregator_ms": 223.507915972732,
+       "dkgen_ms": 0.015458033885806799,
+       "decrypt_ms": 223.49283297080547,
+       "client_us_per_element": 10768.772233859636,
+       "aggregator_us_per_element": 11175.3957986366,
+       "client_ms_min": 215.11943065949404,
+       "aggregator_ms_min": 223.30754104768857,
+       "ct_json_bytes_per_element": 935.8,
+       "ct_binary_bytes_per_element": null,
+       "backend": "python",
+       "threads": 1,
+       "tag": "baseline"
+      }
+     ],
+     "time": "2026-10-17T01:09:44+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": null
+     },
+     "args": {
+      "families": [
+       "damgard"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 3,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "auto",
+      "threads": 1,
+      "workdir": "../work",
+      "json": "../results/baseline_host.json",
+      "tag": "baseline"
+     },
+     "rows": [
+      {
+       "family": "damgard",
+       "scheme": "mcfe/damgard",
+       "profile": "standard",
+       "elements": 20,
+       "clients": 3,
+       "rounds": 3,
+       "precision": 2,
+       "bound_x": 100,
+       "setup_s": 0.0007837500306777656,
+       "q_bits": 3071,
+       "p_bits": 3072,
+       "client_ms": 215.89665268159783,
+       "aggregator_ms": 229.479833971709,
+       "dkgen_ms": 0.01712498487904668,
+       "decrypt_ms": 229.46270898682997,
+       "client_us_per_element": 10794.832634079892,
+       "aggregator_us_per_element": 11473.99169858545,
+       "client_ms_min": 213.81211100379005,
+       "aggregator_ms_min": 229.03008299181238,
+       "ct_json_bytes_per_element": 935.9,
+       "ct_binary_bytes_per_element": null,
+       "backend": "python",
+       "threads": 1,
+       "tag": "baseline"
+      }
+     ],
+     "time": "2026-10-17T01:09:48+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": null
+     },
+     "args": {
+      "families": [
+       "paillier"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 3,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "auto",
+      "threads": 1,
+      "workdir": "../work",
+      "json": "../results/baseline_host.json",
+      "tag": "baseline"
+     },
+     "rows": [
+      {
+       "family": "paillier",
+       "scheme": "mcfe/paillier",
+       "profile": "standard",
+       "elements": 20,
+       "clients": 3,
+       "rounds": 3,
+       "precision": 2,
+       "bound_x": 100,
+       "setup_s": 3.4027216670219786,
+       "client_ms": 732.3478196631186,
+       "aggregator_ms": 734.2475000186823,
+       "dkgen_ms": 0.031292031053453684,
+       "decrypt_ms": 734.213916992303,
+       "client_us_per_element": 36617.39098315593,
+       "aggregator_us_per_element": 36712.37500093412,
+       "client_ms_min": 731.5547916611346,
+       "aggregator_ms_min": 733.4562910255045,
+       "ct_json_bytes_per_element": 1860.0,
+       "ct_binary_bytes_per_element": null,
+       "backend": "python",
+       "threads": 1,
+       "tag": "baseline"
+      }
+     ],
+     "time": "2026-10-17T01:10:04+0800"
+    }
+   ]
+  },
+  "phase1_host": {
+   "runs": [
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "426aea8",
+      "native": null
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 5,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "auto",
+      "threads": 1,
+      "workdir": "../work",
+      "json": "../results/phase1_host.json",
+      "tag": "phase1"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 5,
+       "precision": 2,
+       "bound_x": 100,
+       "setup_s": 0.1302785830339417,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 123.74218066300575,
+       "aggregator_ms": 163.8506249873899,
+       "dkgen_ms": 30.64866701606661,
+       "decrypt_ms": 133.3452079561539,
+       "client_us_per_element": 12.374218066300575,
+       "aggregator_us_per_element": 16.38506249873899,
+       "client_ms_min": 123.1045553383107,
+       "aggregator_ms_min": 163.48733298946172,
+       "ct_json_bytes_per_element": 66.0,
+       "ct_binary_bytes_per_element": null,
+       "backend": "python",
+       "threads": 1,
+       "tag": "phase1"
+      }
+     ],
+     "time": "2026-10-17T01:16:20+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "426aea8",
+      "native": null
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 5,
+      "precision": 0,
+      "bound_x": 2,
+      "profile": "standard",
+      "backend": "auto",
+      "threads": 1,
+      "workdir": "../work",
+      "json": "../results/phase1_host.json",
+      "tag": "phase1-q60"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 5,
+       "precision": 0,
+       "bound_x": 2,
+       "setup_s": 0.11903529200935736,
+       "q_bits": 60,
+       "p_bits": 4,
+       "ring_n": 4096,
+       "client_ms": 117.15656934150805,
+       "aggregator_ms": 151.0873750085011,
+       "dkgen_ms": 28.996124980039895,
+       "decrypt_ms": 122.01579194515944,
+       "client_us_per_element": 11.715656934150804,
+       "aggregator_us_per_element": 15.108737500850111,
+       "client_ms_min": 117.01673601055518,
+       "aggregator_ms_min": 150.6860830122605,
+       "ct_json_bytes_per_element": 53.7,
+       "ct_binary_bytes_per_element": null,
+       "backend": "python",
+       "threads": 1,
+       "tag": "phase1-q60"
+      }
+     ],
+     "time": "2026-10-17T01:16:23+0800"
+    }
+   ]
+  },
+  "final_host": {
+   "runs": [
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "11ebbe6",
+      "native": {
+       "available": true,
+       "backend": "python",
+       "threads": 1,
+       "compiler": "clang 21.0.0 (clang-2100.3.34.2)",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "python",
+      "threads": 1,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "../work",
+      "json": "../results/final_host.json",
+      "tag": "python"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.12794295797357336,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 120.69466665464763,
+       "aggregator_ms": 159.0332500054501,
+       "dkgen_ms": 27.27441699244082,
+       "decrypt_ms": 131.90216704970226,
+       "client_us_per_element": 12.069466665464763,
+       "aggregator_us_per_element": 15.90332500054501,
+       "client_ms_min": 119.96712498754884,
+       "aggregator_ms_min": 158.45904196612537,
+       "ct_bytes_per_element": 66.0,
+       "offline": false,
+       "backend": "python",
+       "threads": 1,
+       "tag": "python"
+      }
+     ],
+     "time": "2026-10-17T02:02:36+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "11ebbe6",
+      "native": {
+       "available": true,
+       "backend": "python",
+       "threads": 1,
+       "compiler": "clang 21.0.0 (clang-2100.3.34.2)",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 0,
+      "bound_x": 2,
+      "profile": "standard",
+      "backend": "python",
+      "threads": 1,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "../work",
+      "json": "../results/final_host.json",
+      "tag": "python-q60"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 0,
+       "bound_x": 2,
+       "ct_format": "json",
+       "setup_s": 0.11755408300086856,
+       "q_bits": 60,
+       "p_bits": 4,
+       "ring_n": 4096,
+       "client_ms": 114.62351365480572,
+       "aggregator_ms": 146.59608399961144,
+       "dkgen_ms": 25.499167037196457,
+       "decrypt_ms": 121.32116698194295,
+       "client_us_per_element": 11.462351365480572,
+       "aggregator_us_per_element": 14.659608399961144,
+       "client_ms_min": 114.2041666704851,
+       "aggregator_ms_min": 145.89641703059897,
+       "ct_bytes_per_element": 53.7,
+       "offline": false,
+       "backend": "python",
+       "threads": 1,
+       "tag": "python-q60"
+      }
+     ],
+     "time": "2026-10-17T02:02:41+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "11ebbe6",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 1,
+       "compiler": "clang 21.0.0 (clang-2100.3.34.2)",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 1,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "../work",
+      "json": "../results/final_host.json",
+      "tag": "native"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.12904829095350578,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 4.01287500668938,
+       "aggregator_ms": 8.828624966554344,
+       "dkgen_ms": 4.235750006046146,
+       "decrypt_ms": 4.599957959726453,
+       "client_us_per_element": 0.401287500668938,
+       "aggregator_us_per_element": 0.8828624966554344,
+       "client_ms_min": 3.9662500106108682,
+       "aggregator_ms_min": 8.76933301333338,
+       "ct_bytes_per_element": 66.0,
+       "offline": false,
+       "backend": "native",
+       "threads": 1,
+       "tag": "native"
+      }
+     ],
+     "time": "2026-10-17T02:02:42+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "11ebbe6",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 1,
+       "compiler": "clang 21.0.0 (clang-2100.3.34.2)",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 1,
+      "ct_format": "json",
+      "offline": true,
+      "workdir": "../work",
+      "json": "../results/final_host.json",
+      "tag": "native-offline"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.12865400000009686,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 0.9726526720138887,
+       "aggregator_ms": 4.45637502707541,
+       "dkgen_ms": 0.0,
+       "decrypt_ms": 4.45637502707541,
+       "client_us_per_element": 0.09726526720138887,
+       "aggregator_us_per_element": 0.445637502707541,
+       "client_ms_min": 0.9558890014886856,
+       "aggregator_ms_min": 4.401832993607968,
+       "ct_bytes_per_element": 66.0,
+       "offline": true,
+       "client_offline_ms": 3.160430681115637,
+       "aggregator_offline_ms": 4.3026250205002725,
+       "backend": "native",
+       "threads": 1,
+       "tag": "native-offline"
+      }
+     ],
+     "time": "2026-10-17T02:02:42+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "11ebbe6",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 1,
+       "compiler": "clang 21.0.0 (clang-2100.3.34.2)",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 0,
+      "bound_x": 2,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 1,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "../work",
+      "json": "../results/final_host.json",
+      "tag": "native-q60"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 0,
+       "bound_x": 2,
+       "ct_format": "json",
+       "setup_s": 0.11743716598721221,
+       "q_bits": 60,
+       "p_bits": 4,
+       "ring_n": 4096,
+       "client_ms": 2.9038473342855773,
+       "aggregator_ms": 5.916291032917798,
+       "dkgen_ms": 3.0082499724812806,
+       "decrypt_ms": 2.9018750065006316,
+       "client_us_per_element": 0.29038473342855775,
+       "aggregator_us_per_element": 0.5916291032917798,
+       "client_ms_min": 2.884069321832309,
+       "aggregator_ms_min": 5.879541975446045,
+       "ct_bytes_per_element": 53.7,
+       "offline": false,
+       "backend": "native",
+       "threads": 1,
+       "tag": "native-q60"
+      }
+     ],
+     "time": "2026-10-17T02:02:43+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "11ebbe6",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 1,
+       "compiler": "clang 21.0.0 (clang-2100.3.34.2)",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 1,
+      "ct_format": "binary",
+      "offline": false,
+      "workdir": "../work",
+      "json": "../results/final_host.json",
+      "tag": "native"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "binary",
+       "setup_s": 0.1289308340055868,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 3.238777668836216,
+       "aggregator_ms": 7.151458994485438,
+       "dkgen_ms": 4.218291956931353,
+       "decrypt_ms": 2.9395839665085077,
+       "client_us_per_element": 0.3238777668836216,
+       "aggregator_us_per_element": 0.7151458994485438,
+       "client_ms_min": 3.222777663419644,
+       "aggregator_ms_min": 7.126458047423512,
+       "ct_bytes_per_element": 24.6,
+       "offline": false,
+       "backend": "native",
+       "threads": 1,
+       "tag": "native"
+      }
+     ],
+     "time": "2026-10-17T02:02:43+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "11ebbe6",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 1,
+       "compiler": "clang 21.0.0 (clang-2100.3.34.2)",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 1,
+      "ct_format": "binary",
+      "offline": true,
+      "workdir": "../work",
+      "json": "../results/final_host.json",
+      "tag": "native-offline"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "binary",
+       "setup_s": 0.12843395897652954,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 0.2089166664518416,
+       "aggregator_ms": 2.790833998005837,
+       "dkgen_ms": 0.0,
+       "decrypt_ms": 2.790833998005837,
+       "client_us_per_element": 0.02089166664518416,
+       "aggregator_us_per_element": 0.2790833998005837,
+       "client_ms_min": 0.20104167439664403,
+       "aggregator_ms_min": 2.766875026281923,
+       "ct_bytes_per_element": 24.6,
+       "offline": true,
+       "client_offline_ms": 3.1302363301316896,
+       "aggregator_offline_ms": 4.250542027875781,
+       "backend": "native",
+       "threads": 1,
+       "tag": "native-offline"
+      }
+     ],
+     "time": "2026-10-17T02:02:44+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "11ebbe6",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 1,
+       "compiler": "clang 21.0.0 (clang-2100.3.34.2)",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 0,
+      "bound_x": 2,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 1,
+      "ct_format": "binary",
+      "offline": false,
+      "workdir": "../work",
+      "json": "../results/final_host.json",
+      "tag": "native-q60"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 0,
+       "bound_x": 2,
+       "ct_format": "binary",
+       "setup_s": 0.11765162501251325,
+       "q_bits": 60,
+       "p_bits": 4,
+       "ring_n": 4096,
+       "client_ms": 2.3538473178632557,
+       "aggregator_ms": 4.453708999790251,
+       "dkgen_ms": 2.9907909920439124,
+       "decrypt_ms": 1.4612500090152025,
+       "client_us_per_element": 0.23538473178632557,
+       "aggregator_us_per_element": 0.4453708999790251,
+       "client_ms_min": 2.3475276733127735,
+       "aggregator_ms_min": 4.419374978169799,
+       "ct_bytes_per_element": 19.7,
+       "offline": false,
+       "backend": "native",
+       "threads": 1,
+       "tag": "native-q60"
+      }
+     ],
+     "time": "2026-10-17T02:02:45+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "11ebbe6",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 4,
+       "compiler": "clang 21.0.0 (clang-2100.3.34.2)",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 4,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "../work",
+      "json": "../results/final_host.json",
+      "tag": "native"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.12891625001793727,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 1.8421666657862563,
+       "aggregator_ms": 4.643624997697771,
+       "dkgen_ms": 1.7717499868012965,
+       "decrypt_ms": 2.8751249774359167,
+       "client_us_per_element": 0.18421666657862562,
+       "aggregator_us_per_element": 0.46436249976977706,
+       "client_ms_min": 1.7964583239518106,
+       "aggregator_ms_min": 4.626042034942657,
+       "ct_bytes_per_element": 66.0,
+       "offline": false,
+       "backend": "native",
+       "threads": 4,
+       "tag": "native"
+      }
+     ],
+     "time": "2026-10-17T02:02:45+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "11ebbe6",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 4,
+       "compiler": "clang 21.0.0 (clang-2100.3.34.2)",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 4,
+      "ct_format": "json",
+      "offline": true,
+      "workdir": "../work",
+      "json": "../results/final_host.json",
+      "tag": "native-offline"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.12852229201234877,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 0.6950973183847964,
+       "aggregator_ms": 2.69483303418383,
+       "dkgen_ms": 0.0,
+       "decrypt_ms": 2.69483303418383,
+       "client_us_per_element": 0.06950973183847964,
+       "aggregator_us_per_element": 0.269483303418383,
+       "client_ms_min": 0.6688473319324354,
+       "aggregator_ms_min": 2.665208012331277,
+       "ct_bytes_per_element": 66.0,
+       "offline": true,
+       "client_offline_ms": 1.2500416681480904,
+       "aggregator_offline_ms": 1.7962910351343453,
+       "backend": "native",
+       "threads": 4,
+       "tag": "native-offline"
+      }
+     ],
+     "time": "2026-10-17T02:02:46+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "11ebbe6",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 4,
+       "compiler": "clang 21.0.0 (clang-2100.3.34.2)",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 0,
+      "bound_x": 2,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 4,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "../work",
+      "json": "../results/final_host.json",
+      "tag": "native-q60"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 0,
+       "bound_x": 2,
+       "ct_format": "json",
+       "setup_s": 0.1170637909672223,
+       "q_bits": 60,
+       "p_bits": 4,
+       "ring_n": 4096,
+       "client_ms": 1.4713749988004565,
+       "aggregator_ms": 3.443291992880404,
+       "dkgen_ms": 1.3225420261733234,
+       "decrypt_ms": 2.1363329724408686,
+       "client_us_per_element": 0.14713749988004565,
+       "aggregator_us_per_element": 0.3443291992880404,
+       "client_ms_min": 1.370791675678144,
+       "aggregator_ms_min": 3.2697499846108258,
+       "ct_bytes_per_element": 53.7,
+       "offline": false,
+       "backend": "native",
+       "threads": 4,
+       "tag": "native-q60"
+      }
+     ],
+     "time": "2026-10-17T02:02:46+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "11ebbe6",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 4,
+       "compiler": "clang 21.0.0 (clang-2100.3.34.2)",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 4,
+      "ct_format": "binary",
+      "offline": false,
+      "workdir": "../work",
+      "json": "../results/final_host.json",
+      "tag": "native"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "binary",
+       "setup_s": 0.12936437502503395,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 1.2921110028401017,
+       "aggregator_ms": 3.4963340149261057,
+       "dkgen_ms": 1.7735419678501785,
+       "decrypt_ms": 1.7227920470759273,
+       "client_us_per_element": 0.12921110028401017,
+       "aggregator_us_per_element": 0.3496334014926106,
+       "client_ms_min": 1.2701946737555165,
+       "aggregator_ms_min": 3.4342079889029264,
+       "ct_bytes_per_element": 24.6,
+       "offline": false,
+       "backend": "native",
+       "threads": 4,
+       "tag": "native"
+      }
+     ],
+     "time": "2026-10-17T02:02:47+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "11ebbe6",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 4,
+       "compiler": "clang 21.0.0 (clang-2100.3.34.2)",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 4,
+      "ct_format": "binary",
+      "offline": true,
+      "workdir": "../work",
+      "json": "../results/final_host.json",
+      "tag": "native-offline"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "binary",
+       "setup_s": 0.12868983403313905,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 0.1549306713665525,
+       "aggregator_ms": 1.563708996400237,
+       "dkgen_ms": 0.0,
+       "decrypt_ms": 1.563708996400237,
+       "client_us_per_element": 0.01549306713665525,
+       "aggregator_us_per_element": 0.1563708996400237,
+       "client_ms_min": 0.14326401287689805,
+       "aggregator_ms_min": 1.5253329765982926,
+       "ct_bytes_per_element": 24.6,
+       "offline": true,
+       "client_offline_ms": 1.293000008445233,
+       "aggregator_offline_ms": 1.7959170509129763,
+       "backend": "native",
+       "threads": 4,
+       "tag": "native-offline"
+      }
+     ],
+     "time": "2026-10-17T02:02:47+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "11ebbe6",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 4,
+       "compiler": "clang 21.0.0 (clang-2100.3.34.2)",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 0,
+      "bound_x": 2,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 4,
+      "ct_format": "binary",
+      "offline": false,
+      "workdir": "../work",
+      "json": "../results/final_host.json",
+      "tag": "native-q60"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 0,
+       "bound_x": 2,
+       "ct_format": "binary",
+       "setup_s": 0.11880483402637765,
+       "q_bits": 60,
+       "p_bits": 4,
+       "ring_n": 4096,
+       "client_ms": 0.9701806702651083,
+       "aggregator_ms": 2.2812920506112278,
+       "dkgen_ms": 1.2850830098614097,
+       "decrypt_ms": 0.989625055808574,
+       "client_us_per_element": 0.09701806702651083,
+       "aggregator_us_per_element": 0.22812920506112278,
+       "client_ms_min": 0.9390693351936837,
+       "aggregator_ms_min": 2.242917020339519,
+       "ct_bytes_per_element": 19.7,
+       "offline": false,
+       "backend": "native",
+       "threads": 4,
+       "tag": "native-q60"
+      }
+     ],
+     "time": "2026-10-17T02:02:48+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "11ebbe6",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 8,
+       "compiler": "clang 21.0.0 (clang-2100.3.34.2)",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 8,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "../work",
+      "json": "../results/final_host.json",
+      "tag": "native"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.12900266703218222,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 1.8302500053929787,
+       "aggregator_ms": 4.555916995741427,
+       "dkgen_ms": 1.7876250203698874,
+       "decrypt_ms": 2.7760419761762023,
+       "client_us_per_element": 0.18302500053929788,
+       "aggregator_us_per_element": 0.4555916995741427,
+       "client_ms_min": 1.8137083194839458,
+       "aggregator_ms_min": 4.427624982781708,
+       "ct_bytes_per_element": 66.0,
+       "offline": false,
+       "backend": "native",
+       "threads": 8,
+       "tag": "native"
+      }
+     ],
+     "time": "2026-10-17T02:02:48+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "11ebbe6",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 8,
+       "compiler": "clang 21.0.0 (clang-2100.3.34.2)",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 8,
+      "ct_format": "json",
+      "offline": true,
+      "workdir": "../work",
+      "json": "../results/final_host.json",
+      "tag": "native-offline"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.12889279203955084,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 0.7233749881076316,
+       "aggregator_ms": 2.628833055496216,
+       "dkgen_ms": 0.0,
+       "decrypt_ms": 2.628833055496216,
+       "client_us_per_element": 0.07233749881076315,
+       "aggregator_us_per_element": 0.2628833055496216,
+       "client_ms_min": 0.6914303327600161,
+       "aggregator_ms_min": 2.5598329957574606,
+       "ct_bytes_per_element": 66.0,
+       "offline": true,
+       "client_offline_ms": 1.266764011234045,
+       "aggregator_offline_ms": 1.7950000474229455,
+       "backend": "native",
+       "threads": 8,
+       "tag": "native-offline"
+      }
+     ],
+     "time": "2026-10-17T02:02:49+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "11ebbe6",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 8,
+       "compiler": "clang 21.0.0 (clang-2100.3.34.2)",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 0,
+      "bound_x": 2,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 8,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "../work",
+      "json": "../results/final_host.json",
+      "tag": "native-q60"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 0,
+       "bound_x": 2,
+       "ct_format": "json",
+       "setup_s": 0.11844487499911338,
+       "q_bits": 60,
+       "p_bits": 4,
+       "ring_n": 4096,
+       "client_ms": 1.416555664036423,
+       "aggregator_ms": 3.339042013976723,
+       "dkgen_ms": 1.2882919982075691,
+       "decrypt_ms": 2.036167017649859,
+       "client_us_per_element": 0.1416555664036423,
+       "aggregator_us_per_element": 0.3339042013976723,
+       "client_ms_min": 1.389458329261591,
+       "aggregator_ms_min": 3.1960830092430115,
+       "ct_bytes_per_element": 53.7,
+       "offline": false,
+       "backend": "native",
+       "threads": 8,
+       "tag": "native-q60"
+      }
+     ],
+     "time": "2026-10-17T02:02:49+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "11ebbe6",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 8,
+       "compiler": "clang 21.0.0 (clang-2100.3.34.2)",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 8,
+      "ct_format": "binary",
+      "offline": false,
+      "workdir": "../work",
+      "json": "../results/final_host.json",
+      "tag": "native"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "binary",
+       "setup_s": 0.12988208298338577,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 1.2843613512814045,
+       "aggregator_ms": 3.544290957506746,
+       "dkgen_ms": 1.7844170215539634,
+       "decrypt_ms": 1.7699579475447536,
+       "client_us_per_element": 0.12843613512814045,
+       "aggregator_us_per_element": 0.3544290957506746,
+       "client_ms_min": 1.2610140062558155,
+       "aggregator_ms_min": 3.5017499467357993,
+       "ct_bytes_per_element": 24.6,
+       "offline": false,
+       "backend": "native",
+       "threads": 8,
+       "tag": "native"
+      }
+     ],
+     "time": "2026-10-17T02:02:50+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "11ebbe6",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 8,
+       "compiler": "clang 21.0.0 (clang-2100.3.34.2)",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 8,
+      "ct_format": "binary",
+      "offline": true,
+      "workdir": "../work",
+      "json": "../results/final_host.json",
+      "tag": "native-offline"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "binary",
+       "setup_s": 0.12846770795295015,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 0.15980533013741174,
+       "aggregator_ms": 1.6517919721081853,
+       "dkgen_ms": 0.0,
+       "decrypt_ms": 1.6517919721081853,
+       "client_us_per_element": 0.015980533013741173,
+       "aggregator_us_per_element": 0.16517919721081853,
+       "client_ms_min": 0.14726400452976426,
+       "aggregator_ms_min": 1.555750030092895,
+       "ct_bytes_per_element": 24.6,
+       "offline": true,
+       "client_offline_ms": 1.293930671333025,
+       "aggregator_offline_ms": 1.8129170057363808,
+       "backend": "native",
+       "threads": 8,
+       "tag": "native-offline"
+      }
+     ],
+     "time": "2026-10-17T02:02:50+0800"
+    },
+    {
+     "env": {
+      "python": "3.13.9",
+      "implementation": "CPython",
+      "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "gmpy2": "2.2.1",
+      "numpy": "2.3.5",
+      "cpu": "Apple M2 Max",
+      "benchmark_campaign_running": false,
+      "git_commit": "11ebbe6",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 8,
+       "compiler": "clang 21.0.0 (clang-2100.3.34.2)",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 0,
+      "bound_x": 2,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 8,
+      "ct_format": "binary",
+      "offline": false,
+      "workdir": "../work",
+      "json": "../results/final_host.json",
+      "tag": "native-q60"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 0,
+       "bound_x": 2,
+       "ct_format": "binary",
+       "setup_s": 0.11780916701536626,
+       "q_bits": 60,
+       "p_bits": 4,
+       "ring_n": 4096,
+       "client_ms": 0.9737916795226434,
+       "aggregator_ms": 2.3120419937185943,
+       "dkgen_ms": 1.3092090375721455,
+       "decrypt_ms": 1.0028329561464489,
+       "client_us_per_element": 0.09737916795226434,
+       "aggregator_us_per_element": 0.23120419937185943,
+       "client_ms_min": 0.9506249916739762,
+       "aggregator_ms_min": 2.2353329695761204,
+       "ct_bytes_per_element": 19.7,
+       "offline": false,
+       "backend": "native",
+       "threads": 8,
+       "tag": "native-q60"
+      }
+     ],
+     "time": "2026-10-17T02:02:51+0800"
+    }
+   ]
+  },
+  "offline_potential_host": [
+   {
+    "family": "ddh",
+    "group_bits": 3072,
+    "powmod_ms": 5.101707996800542,
+    "hash_ms": 0.019625003915280104,
+    "client_full_ms": 11.027790955267847,
+    "client_offline_ms": 10.242916992865503,
+    "client_online_ms": 0.01941696973517537,
+    "agg_full_ms": 10.679584054742008,
+    "agg_offline_ms": 10.22991701029241,
+    "agg_online_ms": 0.4165830323472619
+   },
+   {
+    "family": "paillier",
+    "n_bits": 3072,
+    "key_bits": 7684,
+    "hash_ms": 0.01754198456183076,
+    "client_full_ms": 35.104624985251576,
+    "client_offline_ms": 35.06679198471829,
+    "client_online_ms": 0.0037919962778687477,
+    "agg_full_ms": 35.09804198984057,
+    "agg_offline_ms": 35.0235829828307,
+    "agg_online_ms": 0.033750024158507586
+   }
+  ]
+ },
+ "docker": {
+  "fam_docker": {
+   "runs": [
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": null
+     },
+     "args": {
+      "families": [
+       "lwe"
+      ],
+      "elements": 200,
+      "clients": 3,
+      "rounds": 3,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "auto",
+      "threads": 1,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "/tmp/wm",
+      "json": "/out/fam_docker.json",
+      "tag": "v0.3.0"
+     },
+     "rows": [
+      {
+       "family": "lwe",
+       "scheme": "mcfe/lwe",
+       "profile": "standard",
+       "elements": 200,
+       "clients": 3,
+       "rounds": 3,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.026276749999993854,
+       "q_bits": 187,
+       "lwe_n": 6656,
+       "n0": 6656,
+       "m0": 1068,
+       "client_ms": 1240.3494309999985,
+       "aggregator_ms": 1249.3802089999945,
+       "dkgen_ms": 4.366790999995374,
+       "decrypt_ms": 1245.035750999989,
+       "client_us_per_element": 6201.747154999993,
+       "aggregator_us_per_element": 6246.901044999973,
+       "client_ms_min": 1237.0520560000007,
+       "aggregator_ms_min": 1243.769666999995,
+       "ct_bytes_per_element": 13.3,
+       "offline": false,
+       "backend": "python",
+       "threads": 1,
+       "tag": "v0.3.0"
+      }
+     ],
+     "time": "2026-10-16T17:59:46+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": null
+     },
+     "args": {
+      "families": [
+       "ddh",
+       "damgard",
+       "paillier"
+      ],
+      "elements": 20,
+      "clients": 3,
+      "rounds": 3,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "auto",
+      "threads": 1,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "/tmp/wm",
+      "json": "/out/fam_docker.json",
+      "tag": "v0.3.0"
+     },
+     "rows": [
+      {
+       "family": "ddh",
+       "scheme": "mcfe/ddh",
+       "profile": "standard",
+       "elements": 20,
+       "clients": 3,
+       "rounds": 3,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.001136541000008151,
+       "p_bits": 3072,
+       "client_ms": 229.363527999998,
+       "aggregator_ms": 223.24599999998895,
+       "dkgen_ms": 0.024416999991672128,
+       "decrypt_ms": 223.22116599998765,
+       "client_us_per_element": 11468.1763999999,
+       "aggregator_us_per_element": 11162.299999999446,
+       "client_ms_min": 229.0261946666637,
+       "aggregator_ms_min": 223.2255830000014,
+       "ct_bytes_per_element": 935.8,
+       "offline": false,
+       "backend": "python",
+       "threads": 1,
+       "tag": "v0.3.0"
+      },
+      {
+       "family": "damgard",
+       "scheme": "mcfe/damgard",
+       "profile": "standard",
+       "elements": 20,
+       "clients": 3,
+       "rounds": 3,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.0010221659999984922,
+       "q_bits": 3071,
+       "p_bits": 3072,
+       "client_ms": 229.15358366666774,
+       "aggregator_ms": 228.14250000000413,
+       "dkgen_ms": 0.018584000002874745,
+       "decrypt_ms": 228.12279199999352,
+       "client_us_per_element": 11457.679183333388,
+       "aggregator_us_per_element": 11407.125000000207,
+       "client_ms_min": 229.06212499999867,
+       "aggregator_ms_min": 228.05733300000952,
+       "ct_bytes_per_element": 935.9,
+       "offline": false,
+       "backend": "python",
+       "threads": 1,
+       "tag": "v0.3.0"
+      },
+      {
+       "family": "paillier",
+       "scheme": "mcfe/paillier",
+       "profile": "standard",
+       "elements": 20,
+       "clients": 3,
+       "rounds": 3,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 2.683070834999995,
+       "client_ms": 794.1210003333387,
+       "aggregator_ms": 768.4346249999976,
+       "dkgen_ms": 0.022291000021823493,
+       "decrypt_ms": 768.4110000000146,
+       "client_us_per_element": 39706.05001666693,
+       "aggregator_us_per_element": 38421.73124999988,
+       "client_ms_min": 793.8954310000005,
+       "aggregator_ms_min": 768.3751669999879,
+       "ct_bytes_per_element": 1860.2,
+       "offline": false,
+       "backend": "python",
+       "threads": 1,
+       "tag": "v0.3.0"
+      }
+     ],
+     "time": "2026-10-16T18:00:09+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "python",
+       "threads": 1,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "lwe"
+      ],
+      "elements": 200,
+      "clients": 3,
+      "rounds": 3,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "python",
+      "threads": 1,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "/tmp/wc",
+      "json": "/out/fam_docker.json",
+      "tag": "python"
+     },
+     "rows": [
+      {
+       "family": "lwe",
+       "scheme": "mcfe/lwe",
+       "profile": "standard",
+       "elements": 200,
+       "clients": 3,
+       "rounds": 3,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.02527162500001623,
+       "q_bits": 187,
+       "lwe_n": 6656,
+       "n0": 6656,
+       "m0": 1068,
+       "client_ms": 603.6119999999983,
+       "aggregator_ms": 609.1600839999955,
+       "dkgen_ms": 4.649499999999307,
+       "decrypt_ms": 604.6306670000092,
+       "client_us_per_element": 3018.0599999999913,
+       "aggregator_us_per_element": 3045.800419999978,
+       "client_ms_min": 600.4362779999989,
+       "aggregator_ms_min": 606.2899579999907,
+       "ct_bytes_per_element": 13.3,
+       "offline": false,
+       "backend": "python",
+       "threads": 1,
+       "tag": "python"
+      }
+     ],
+     "time": "2026-10-16T18:00:19+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 1,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "lwe"
+      ],
+      "elements": 200,
+      "clients": 3,
+      "rounds": 3,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 1,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "/tmp/wc",
+      "json": "/out/fam_docker.json",
+      "tag": "native"
+     },
+     "rows": [
+      {
+       "family": "lwe",
+       "scheme": "mcfe/lwe",
+       "profile": "standard",
+       "elements": 200,
+       "clients": 3,
+       "rounds": 3,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.028480541999982734,
+       "q_bits": 187,
+       "lwe_n": 6656,
+       "n0": 6656,
+       "m0": 1068,
+       "client_ms": 148.12863900000175,
+       "aggregator_ms": 166.68937500000425,
+       "dkgen_ms": 4.164625000015576,
+       "decrypt_ms": 162.51750000000698,
+       "client_us_per_element": 740.6431950000087,
+       "aggregator_us_per_element": 833.4468750000212,
+       "client_ms_min": 147.55848600000832,
+       "aggregator_ms_min": 166.63833399999817,
+       "ct_bytes_per_element": 13.3,
+       "offline": false,
+       "backend": "native",
+       "threads": 1,
+       "tag": "native"
+      }
+     ],
+     "time": "2026-10-16T18:00:21+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 4,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "lwe"
+      ],
+      "elements": 200,
+      "clients": 3,
+      "rounds": 3,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 4,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "/tmp/wc",
+      "json": "/out/fam_docker.json",
+      "tag": "native"
+     },
+     "rows": [
+      {
+       "family": "lwe",
+       "scheme": "mcfe/lwe",
+       "profile": "standard",
+       "elements": 200,
+       "clients": 3,
+       "rounds": 3,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.028620958999994173,
+       "q_bits": 187,
+       "lwe_n": 6656,
+       "n0": 6656,
+       "m0": 1068,
+       "client_ms": 40.42980566667135,
+       "aggregator_ms": 49.365708999999924,
+       "dkgen_ms": 4.263917000002948,
+       "decrypt_ms": 45.101791999996976,
+       "client_us_per_element": 202.14902833335677,
+       "aggregator_us_per_element": 246.82854499999962,
+       "client_ms_min": 40.355319333334215,
+       "aggregator_ms_min": 49.27849999998557,
+       "ct_bytes_per_element": 13.4,
+       "offline": false,
+       "backend": "native",
+       "threads": 4,
+       "tag": "native"
+      }
+     ],
+     "time": "2026-10-16T18:00:22+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "auto",
+       "threads": 1,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ddh",
+       "damgard",
+       "paillier"
+      ],
+      "elements": 20,
+      "clients": 3,
+      "rounds": 3,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "auto",
+      "threads": 1,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "/tmp/wc",
+      "json": "/out/fam_docker.json",
+      "tag": "current"
+     },
+     "rows": [
+      {
+       "family": "ddh",
+       "scheme": "mcfe/ddh",
+       "profile": "standard",
+       "elements": 20,
+       "clients": 3,
+       "rounds": 3,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.0022687910000058764,
+       "p_bits": 3072,
+       "client_ms": 215.70286133333147,
+       "aggregator_ms": 232.64791699998,
+       "dkgen_ms": 0.017582999987553194,
+       "decrypt_ms": 232.63150099998597,
+       "client_us_per_element": 10785.143066666573,
+       "aggregator_us_per_element": 11632.395849999,
+       "client_ms_min": 215.3672086666726,
+       "aggregator_ms_min": 232.53487499999892,
+       "ct_bytes_per_element": 935.8,
+       "offline": false,
+       "backend": "native",
+       "threads": 1,
+       "tag": "current"
+      },
+      {
+       "family": "damgard",
+       "scheme": "mcfe/damgard",
+       "profile": "standard",
+       "elements": 20,
+       "clients": 3,
+       "rounds": 3,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.001027542000002768,
+       "q_bits": 3071,
+       "p_bits": 3072,
+       "client_ms": 222.3087916666676,
+       "aggregator_ms": 239.93670900000552,
+       "dkgen_ms": 0.01945799999703013,
+       "decrypt_ms": 239.92020899999034,
+       "client_us_per_element": 11115.43958333338,
+       "aggregator_us_per_element": 11996.835450000277,
+       "client_ms_min": 215.537416666668,
+       "aggregator_ms_min": 238.40000000001282,
+       "ct_bytes_per_element": 935.8,
+       "offline": false,
+       "backend": "native",
+       "threads": 1,
+       "tag": "current"
+      },
+      {
+       "family": "paillier",
+       "scheme": "mcfe/paillier",
+       "profile": "standard",
+       "elements": 20,
+       "clients": 3,
+       "rounds": 3,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.20693304100001342,
+       "client_ms": 736.6819446666663,
+       "aggregator_ms": 764.5290420000208,
+       "dkgen_ms": 0.022666999996090453,
+       "decrypt_ms": 764.5093340000244,
+       "client_us_per_element": 36834.09723333331,
+       "aggregator_us_per_element": 38226.45210000104,
+       "client_ms_min": 734.805986333337,
+       "aggregator_ms_min": 764.2285010000194,
+       "ct_bytes_per_element": 1860.0,
+       "offline": false,
+       "backend": "native",
+       "threads": 1,
+       "tag": "current"
+      }
+     ],
+     "time": "2026-10-16T18:00:42+0000"
+    }
+   ]
+  },
+  "fe_docker": {
+   "runs": [
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": null
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "auto",
+      "threads": 1,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "/tmp/wm",
+      "json": "/out/fe_docker.json",
+      "tag": "v0.3.0"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.14049962500000035,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 229.7392776666669,
+       "aggregator_ms": 367.4996249999971,
+       "dkgen_ms": 41.78545800000322,
+       "decrypt_ms": 324.7503329999972,
+       "client_us_per_element": 22.97392776666669,
+       "aggregator_us_per_element": 36.74996249999971,
+       "client_ms_min": 228.9291113333339,
+       "aggregator_ms_min": 364.21904199999847,
+       "ct_bytes_per_element": 66.0,
+       "offline": false,
+       "backend": "python",
+       "threads": 1,
+       "tag": "v0.3.0"
+      }
+     ],
+     "time": "2026-10-16T17:58:15+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": null
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 0,
+      "bound_x": 2,
+      "profile": "standard",
+      "backend": "auto",
+      "threads": 1,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "/tmp/wm",
+      "json": "/out/fe_docker.json",
+      "tag": "v0.3.0-q60"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 0,
+       "bound_x": 2,
+       "ct_format": "json",
+       "setup_s": 0.13282154200000207,
+       "q_bits": 60,
+       "p_bits": 4,
+       "ring_n": 4096,
+       "client_ms": 217.08375000000046,
+       "aggregator_ms": 346.02199999999783,
+       "dkgen_ms": 41.301208000000145,
+       "decrypt_ms": 302.89904200000706,
+       "client_us_per_element": 21.708375000000046,
+       "aggregator_us_per_element": 34.60219999999978,
+       "client_ms_min": 215.5842640000003,
+       "aggregator_ms_min": 343.71766699999995,
+       "ct_bytes_per_element": 53.7,
+       "offline": false,
+       "backend": "python",
+       "threads": 1,
+       "tag": "v0.3.0-q60"
+      }
+     ],
+     "time": "2026-10-16T17:58:25+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "python",
+       "threads": 1,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "python",
+      "threads": 1,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "/tmp/wc",
+      "json": "/out/fe_docker.json",
+      "tag": "python"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.14213841699999819,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 135.9446110000017,
+       "aggregator_ms": 211.139916999997,
+       "dkgen_ms": 35.76387500000067,
+       "decrypt_ms": 175.19687499999748,
+       "client_us_per_element": 13.594461100000169,
+       "aggregator_us_per_element": 21.1139916999997,
+       "client_ms_min": 135.61897233333298,
+       "aggregator_ms_min": 210.67499999999484,
+       "ct_bytes_per_element": 66.0,
+       "offline": false,
+       "backend": "python",
+       "threads": 1,
+       "tag": "python"
+      }
+     ],
+     "time": "2026-10-16T17:58:32+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "python",
+       "threads": 1,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 0,
+      "bound_x": 2,
+      "profile": "standard",
+      "backend": "python",
+      "threads": 1,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "/tmp/wc",
+      "json": "/out/fe_docker.json",
+      "tag": "python-q60"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 0,
+       "bound_x": 2,
+       "ct_format": "json",
+       "setup_s": 0.13762850000000526,
+       "q_bits": 60,
+       "p_bits": 4,
+       "ring_n": 4096,
+       "client_ms": 130.07726366666836,
+       "aggregator_ms": 195.76825000000042,
+       "dkgen_ms": 34.73641700000485,
+       "decrypt_ms": 160.85662500000097,
+       "client_us_per_element": 13.007726366666835,
+       "aggregator_us_per_element": 19.576825000000042,
+       "client_ms_min": 129.2744859999999,
+       "aggregator_ms_min": 194.34079199999843,
+       "ct_bytes_per_element": 53.7,
+       "offline": false,
+       "backend": "python",
+       "threads": 1,
+       "tag": "python-q60"
+      }
+     ],
+     "time": "2026-10-16T17:58:38+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 1,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 1,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "/tmp/wc",
+      "json": "/out/fe_docker.json",
+      "tag": "native"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.14392708399999776,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 4.576694666665067,
+       "aggregator_ms": 10.756332999996232,
+       "dkgen_ms": 5.176041999995107,
+       "decrypt_ms": 5.600458000003528,
+       "client_us_per_element": 0.45766946666650676,
+       "aggregator_us_per_element": 1.0756332999996232,
+       "client_ms_min": 4.5069026666647956,
+       "aggregator_ms_min": 10.703959000004204,
+       "ct_bytes_per_element": 66.0,
+       "offline": false,
+       "backend": "native",
+       "threads": 1,
+       "tag": "native"
+      }
+     ],
+     "time": "2026-10-16T17:58:39+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 1,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 1,
+      "ct_format": "json",
+      "offline": true,
+      "workdir": "/tmp/wc",
+      "json": "/out/fe_docker.json",
+      "tag": "native-offline"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.14803112500000282,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 1.5927916666669262,
+       "aggregator_ms": 5.561625000005677,
+       "dkgen_ms": 0.0,
+       "decrypt_ms": 5.561625000005677,
+       "client_us_per_element": 0.15927916666669262,
+       "aggregator_us_per_element": 0.5561625000005677,
+       "client_ms_min": 1.5424863333327228,
+       "aggregator_ms_min": 5.529541000001359,
+       "ct_bytes_per_element": 66.0,
+       "offline": true,
+       "client_offline_ms": 3.340777666667331,
+       "aggregator_offline_ms": 5.188208999996391,
+       "backend": "native",
+       "threads": 1,
+       "tag": "native-offline"
+      }
+     ],
+     "time": "2026-10-16T17:58:39+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 1,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 0,
+      "bound_x": 2,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 1,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "/tmp/wc",
+      "json": "/out/fe_docker.json",
+      "tag": "native-q60"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 0,
+       "bound_x": 2,
+       "ct_format": "json",
+       "setup_s": 0.1357181249999968,
+       "q_bits": 60,
+       "p_bits": 4,
+       "ring_n": 4096,
+       "client_ms": 3.011555666664852,
+       "aggregator_ms": 6.437041000005195,
+       "dkgen_ms": 3.4245419999976434,
+       "decrypt_ms": 3.0124990000075513,
+       "client_us_per_element": 0.30115556666648524,
+       "aggregator_us_per_element": 0.6437041000005195,
+       "client_ms_min": 2.95697199999978,
+       "aggregator_ms_min": 6.404957999997407,
+       "ct_bytes_per_element": 53.7,
+       "offline": false,
+       "backend": "native",
+       "threads": 1,
+       "tag": "native-q60"
+      }
+     ],
+     "time": "2026-10-16T17:58:40+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 1,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 1,
+      "ct_format": "binary",
+      "offline": false,
+      "workdir": "/tmp/wc",
+      "json": "/out/fe_docker.json",
+      "tag": "native"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "binary",
+       "setup_s": 0.14619887500000317,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 3.4136806666680286,
+       "aggregator_ms": 9.208250000000362,
+       "dkgen_ms": 5.329165999995666,
+       "decrypt_ms": 3.7899579999987054,
+       "client_us_per_element": 0.34136806666680286,
+       "aggregator_us_per_element": 0.9208250000000362,
+       "client_ms_min": 3.3848056666675084,
+       "aggregator_ms_min": 9.05150000000532,
+       "ct_bytes_per_element": 24.6,
+       "offline": false,
+       "backend": "native",
+       "threads": 1,
+       "tag": "native"
+      }
+     ],
+     "time": "2026-10-16T17:58:40+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 1,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 1,
+      "ct_format": "binary",
+      "offline": true,
+      "workdir": "/tmp/wc",
+      "json": "/out/fe_docker.json",
+      "tag": "native-offline"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "binary",
+       "setup_s": 0.14346499999999907,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 0.2265140000001035,
+       "aggregator_ms": 3.6042090000023563,
+       "dkgen_ms": 0.0,
+       "decrypt_ms": 3.6042090000023563,
+       "client_us_per_element": 0.022651400000010348,
+       "aggregator_us_per_element": 0.36042090000023563,
+       "client_ms_min": 0.222985999999518,
+       "aggregator_ms_min": 3.583374999998057,
+       "ct_bytes_per_element": 24.6,
+       "offline": true,
+       "client_offline_ms": 3.311971999998775,
+       "aggregator_offline_ms": 5.170374999998728,
+       "backend": "native",
+       "threads": 1,
+       "tag": "native-offline"
+      }
+     ],
+     "time": "2026-10-16T17:58:41+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 1,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 0,
+      "bound_x": 2,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 1,
+      "ct_format": "binary",
+      "offline": false,
+      "workdir": "/tmp/wc",
+      "json": "/out/fe_docker.json",
+      "tag": "native-q60"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 0,
+       "bound_x": 2,
+       "ct_format": "binary",
+       "setup_s": 0.12965875000000437,
+       "q_bits": 60,
+       "p_bits": 4,
+       "ring_n": 4096,
+       "client_ms": 2.006736000000823,
+       "aggregator_ms": 5.062291999998081,
+       "dkgen_ms": 3.586583000000587,
+       "decrypt_ms": 1.4794580000057067,
+       "client_us_per_element": 0.2006736000000823,
+       "aggregator_us_per_element": 0.5062291999998081,
+       "client_ms_min": 2.0041803333323096,
+       "aggregator_ms_min": 4.839334000003248,
+       "ct_bytes_per_element": 19.7,
+       "offline": false,
+       "backend": "native",
+       "threads": 1,
+       "tag": "native-q60"
+      }
+     ],
+     "time": "2026-10-16T17:58:41+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 4,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 4,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "/tmp/wc",
+      "json": "/out/fe_docker.json",
+      "tag": "native"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.1423787499999989,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 2.0408056666667562,
+       "aggregator_ms": 5.940999999999974,
+       "dkgen_ms": 2.3108749999991574,
+       "decrypt_ms": 3.5566250000016453,
+       "client_us_per_element": 0.20408056666667562,
+       "aggregator_us_per_element": 0.5940999999999974,
+       "client_ms_min": 1.9762639999996168,
+       "aggregator_ms_min": 5.782165999995925,
+       "ct_bytes_per_element": 66.0,
+       "offline": false,
+       "backend": "native",
+       "threads": 4,
+       "tag": "native"
+      }
+     ],
+     "time": "2026-10-16T17:58:42+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 4,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 4,
+      "ct_format": "json",
+      "offline": true,
+      "workdir": "/tmp/wc",
+      "json": "/out/fe_docker.json",
+      "tag": "native-offline"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.14078170799999867,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 1.1598610000002434,
+       "aggregator_ms": 3.44054199999988,
+       "dkgen_ms": 0.0,
+       "decrypt_ms": 3.44054199999988,
+       "client_us_per_element": 0.11598610000002434,
+       "aggregator_us_per_element": 0.344054199999988,
+       "client_ms_min": 1.1111806666666741,
+       "aggregator_ms_min": 3.4086249999987217,
+       "ct_bytes_per_element": 66.0,
+       "offline": true,
+       "client_offline_ms": 1.372430666667886,
+       "aggregator_offline_ms": 2.460749999997347,
+       "backend": "native",
+       "threads": 4,
+       "tag": "native-offline"
+      }
+     ],
+     "time": "2026-10-16T17:58:42+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 4,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 0,
+      "bound_x": 2,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 4,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "/tmp/wc",
+      "json": "/out/fe_docker.json",
+      "tag": "native-q60"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 0,
+       "bound_x": 2,
+       "ct_format": "json",
+       "setup_s": 0.12849420899999586,
+       "q_bits": 60,
+       "p_bits": 4,
+       "ring_n": 4096,
+       "client_ms": 1.4795416666662693,
+       "aggregator_ms": 3.871082999999942,
+       "dkgen_ms": 1.6597500000017362,
+       "decrypt_ms": 2.2165829999991615,
+       "client_us_per_element": 0.14795416666662692,
+       "aggregator_us_per_element": 0.3871082999999942,
+       "client_ms_min": 1.420514000000613,
+       "aggregator_ms_min": 3.7590000000022883,
+       "ct_bytes_per_element": 53.7,
+       "offline": false,
+       "backend": "native",
+       "threads": 4,
+       "tag": "native-q60"
+      }
+     ],
+     "time": "2026-10-16T17:58:43+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 4,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 4,
+      "ct_format": "binary",
+      "offline": false,
+      "workdir": "/tmp/wc",
+      "json": "/out/fe_docker.json",
+      "tag": "native"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "binary",
+       "setup_s": 0.1423128329999983,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 1.3770000000003317,
+       "aggregator_ms": 4.45883300000105,
+       "dkgen_ms": 2.295541999998818,
+       "decrypt_ms": 2.184124000002896,
+       "client_us_per_element": 0.13770000000003318,
+       "aggregator_us_per_element": 0.445883300000105,
+       "client_ms_min": 1.3652640000003657,
+       "aggregator_ms_min": 4.347041999999135,
+       "ct_bytes_per_element": 24.6,
+       "offline": false,
+       "backend": "native",
+       "threads": 4,
+       "tag": "native"
+      }
+     ],
+     "time": "2026-10-16T17:58:43+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 4,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 4,
+      "ct_format": "binary",
+      "offline": true,
+      "workdir": "/tmp/wc",
+      "json": "/out/fe_docker.json",
+      "tag": "native-offline"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "binary",
+       "setup_s": 0.14067162499999597,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 0.20652766666510539,
+       "aggregator_ms": 2.022084000003588,
+       "dkgen_ms": 0.0,
+       "decrypt_ms": 2.022084000003588,
+       "client_us_per_element": 0.020652766666510537,
+       "aggregator_us_per_element": 0.20220840000035878,
+       "client_ms_min": 0.1938749999984187,
+       "aggregator_ms_min": 1.969625000000974,
+       "ct_bytes_per_element": 24.6,
+       "offline": true,
+       "client_offline_ms": 1.3649443333344873,
+       "aggregator_offline_ms": 2.3156669999977453,
+       "backend": "native",
+       "threads": 4,
+       "tag": "native-offline"
+      }
+     ],
+     "time": "2026-10-16T17:58:44+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 4,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": null,
+      "clients": 3,
+      "rounds": 9,
+      "precision": 0,
+      "bound_x": 2,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 4,
+      "ct_format": "binary",
+      "offline": false,
+      "workdir": "/tmp/wc",
+      "json": "/out/fe_docker.json",
+      "tag": "native-q60"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 10000,
+       "clients": 3,
+       "rounds": 9,
+       "precision": 0,
+       "bound_x": 2,
+       "ct_format": "binary",
+       "setup_s": 0.13183533400000158,
+       "q_bits": 60,
+       "p_bits": 4,
+       "ring_n": 4096,
+       "client_ms": 0.8641666666662218,
+       "aggregator_ms": 2.7412920000031704,
+       "dkgen_ms": 1.6565829999990456,
+       "decrypt_ms": 1.0655840000097783,
+       "client_us_per_element": 0.08641666666662218,
+       "aggregator_us_per_element": 0.27412920000031704,
+       "client_ms_min": 0.8570833333318243,
+       "aggregator_ms_min": 2.598624999997412,
+       "ct_bytes_per_element": 19.7,
+       "offline": false,
+       "backend": "native",
+       "threads": 4,
+       "tag": "native-q60"
+      }
+     ],
+     "time": "2026-10-16T17:58:44+0000"
+    }
+   ]
+  },
+  "fe_docker_1e5": {
+   "runs": [
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 1,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": 100000,
+      "clients": 3,
+      "rounds": 5,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 1,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "/tmp/wc",
+      "json": "/out/fe_docker_1e5.json",
+      "tag": "native-1e5"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 100000,
+       "clients": 3,
+       "rounds": 5,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.14334216600002492,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 41.105444666679126,
+       "aggregator_ms": 66.04104199999483,
+       "dkgen_ms": 29.439792000005127,
+       "decrypt_ms": 36.313416999973924,
+       "client_us_per_element": 0.41105444666679125,
+       "aggregator_us_per_element": 0.6604104199999483,
+       "client_ms_min": 40.81162500000346,
+       "aggregator_ms_min": 65.12579200000346,
+       "ct_bytes_per_element": 55.0,
+       "offline": false,
+       "backend": "native",
+       "threads": 1,
+       "tag": "native-1e5"
+      }
+     ],
+     "time": "2026-10-16T18:03:38+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 1,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": 100000,
+      "clients": 3,
+      "rounds": 5,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 1,
+      "ct_format": "binary",
+      "offline": false,
+      "workdir": "/tmp/wc",
+      "json": "/out/fe_docker_1e5.json",
+      "tag": "native-1e5"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 100000,
+       "clients": 3,
+       "rounds": 5,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "binary",
+       "setup_s": 0.14438341699997181,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 28.34658333332148,
+       "aggregator_ms": 56.70787500002916,
+       "dkgen_ms": 30.27254199997742,
+       "decrypt_ms": 26.43533300005174,
+       "client_us_per_element": 0.2834658333332148,
+       "aggregator_us_per_element": 0.5670787500002916,
+       "client_ms_min": 28.21281966667281,
+       "aggregator_ms_min": 56.53383300000314,
+       "ct_bytes_per_element": 20.5,
+       "offline": false,
+       "backend": "native",
+       "threads": 1,
+       "tag": "native-1e5"
+      }
+     ],
+     "time": "2026-10-16T18:03:40+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 4,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": 100000,
+      "clients": 3,
+      "rounds": 5,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 4,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "/tmp/wc",
+      "json": "/out/fe_docker_1e5.json",
+      "tag": "native-1e5"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 100000,
+       "clients": 3,
+       "rounds": 5,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.14452058400001988,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 17.22033333332244,
+       "aggregator_ms": 29.404999999997017,
+       "dkgen_ms": 10.621958999990966,
+       "decrypt_ms": 18.78304100000605,
+       "client_us_per_element": 0.1722033333332244,
+       "aggregator_us_per_element": 0.29404999999997017,
+       "client_ms_min": 16.9775139999994,
+       "aggregator_ms_min": 28.69620799998529,
+       "ct_bytes_per_element": 55.0,
+       "offline": false,
+       "backend": "native",
+       "threads": 4,
+       "tag": "native-1e5"
+      }
+     ],
+     "time": "2026-10-16T18:03:40+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 4,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": 100000,
+      "clients": 3,
+      "rounds": 5,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 4,
+      "ct_format": "binary",
+      "offline": false,
+      "workdir": "/tmp/wc",
+      "json": "/out/fe_docker_1e5.json",
+      "tag": "native-1e5"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 100000,
+       "clients": 3,
+       "rounds": 5,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "binary",
+       "setup_s": 0.1424372500000004,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 8.691791666649351,
+       "aggregator_ms": 21.323750000021846,
+       "dkgen_ms": 11.584916999993311,
+       "decrypt_ms": 9.80845899994165,
+       "client_us_per_element": 0.08691791666649351,
+       "aggregator_us_per_element": 0.21323750000021846,
+       "client_ms_min": 8.481958333334205,
+       "aggregator_ms_min": 21.2714589999905,
+       "ct_bytes_per_element": 20.5,
+       "offline": false,
+       "backend": "native",
+       "threads": 4,
+       "tag": "native-1e5"
+      }
+     ],
+     "time": "2026-10-16T18:03:41+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 8,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": 100000,
+      "clients": 3,
+      "rounds": 5,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 8,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "/tmp/wc",
+      "json": "/out/fe_docker_1e5.json",
+      "tag": "native-1e5"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 100000,
+       "clients": 3,
+       "rounds": 5,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.14374408399999083,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 13.332430333340048,
+       "aggregator_ms": 23.092375000032916,
+       "dkgen_ms": 7.136874999957854,
+       "decrypt_ms": 15.902915999959077,
+       "client_us_per_element": 0.13332430333340048,
+       "aggregator_us_per_element": 0.23092375000032916,
+       "client_ms_min": 13.119458333335388,
+       "aggregator_ms_min": 22.520041999996465,
+       "ct_bytes_per_element": 55.0,
+       "offline": false,
+       "backend": "native",
+       "threads": 8,
+       "tag": "native-1e5"
+      }
+     ],
+     "time": "2026-10-16T18:03:42+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 8,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": 100000,
+      "clients": 3,
+      "rounds": 5,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 8,
+      "ct_format": "binary",
+      "offline": false,
+      "workdir": "/tmp/wc",
+      "json": "/out/fe_docker_1e5.json",
+      "tag": "native-1e5"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 100000,
+       "clients": 3,
+       "rounds": 5,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "binary",
+       "setup_s": 0.1408408750000376,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 5.411361000009644,
+       "aggregator_ms": 15.243041000019275,
+       "dkgen_ms": 8.192333000010876,
+       "decrypt_ms": 7.050708000008399,
+       "client_us_per_element": 0.05411361000009644,
+       "aggregator_us_per_element": 0.15243041000019275,
+       "client_ms_min": 5.40531966665488,
+       "aggregator_ms_min": 15.081667000004018,
+       "ct_bytes_per_element": 20.5,
+       "offline": false,
+       "backend": "native",
+       "threads": 8,
+       "tag": "native-1e5"
+      }
+     ],
+     "time": "2026-10-16T18:03:42+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": true,
+       "backend": "native",
+       "threads": 8,
+       "compiler": "gcc 13.3.0",
+       "os_random": true,
+       "hardware_threads": 12
+      }
+     },
+     "args": {
+      "families": [
+       "ring_lwe"
+      ],
+      "elements": 100000,
+      "clients": 3,
+      "rounds": 5,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "native",
+      "threads": 8,
+      "ct_format": "binary",
+      "offline": true,
+      "workdir": "/tmp/wc",
+      "json": "/out/fe_docker_1e5.json",
+      "tag": "native-1e5-offline"
+     },
+     "rows": [
+      {
+       "family": "ring_lwe",
+       "scheme": "mcfe/ring_lwe",
+       "profile": "standard",
+       "elements": 100000,
+       "clients": 3,
+       "rounds": 5,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "binary",
+       "setup_s": 0.1442511249999825,
+       "q_bits": 77,
+       "p_bits": 10,
+       "ring_n": 4096,
+       "client_ms": 0.7585696666675782,
+       "aggregator_ms": 6.109291000029771,
+       "dkgen_ms": 0.0,
+       "decrypt_ms": 6.109291000029771,
+       "client_us_per_element": 0.007585696666675782,
+       "aggregator_us_per_element": 0.06109291000029771,
+       "client_ms_min": 0.7478613333281222,
+       "aggregator_ms_min": 6.02716599996711,
+       "ct_bytes_per_element": 20.5,
+       "offline": true,
+       "client_offline_ms": 5.566472333327965,
+       "aggregator_offline_ms": 8.228583000004619,
+       "backend": "native",
+       "threads": 8,
+       "tag": "native-1e5-offline"
+      }
+     ],
+     "time": "2026-10-16T18:03:43+0000"
+    }
+   ]
+  },
+  "he_bfv": [
+   {
+    "scheme": "baseline/bfv",
+    "security_profile": "128-bit HE",
+    "elements": 10000,
+    "clients": 3,
+    "rounds": 9,
+    "status": "ok",
+    "setup_sec": 0.023899709000005487,
+    "encrypt_mean_sec_per_client": 0.0029100339259260696,
+    "aggregate_mean_sec": 0.00014550933333307766,
+    "dkgen_mean_sec": 0.0,
+    "decrypt_mean_sec": 0.0010747869999995095,
+    "round_std_sec": 0.0006264013273334501,
+    "ct_bytes_per_element": 26.6,
+    "ct_compact_bytes_per_element": 26.6,
+    "note": "secret-key holder must not collude with the aggregator; sizes are SEAL's compressed serialisation"
+   }
+  ],
+  "he_bfv_1e5": [
+   {
+    "scheme": "baseline/bfv",
+    "security_profile": "128-bit HE",
+    "elements": 100000,
+    "clients": 3,
+    "rounds": 5,
+    "status": "ok",
+    "setup_sec": 0.02968041600001925,
+    "encrypt_mean_sec_per_client": 0.02528608893333815,
+    "aggregate_mean_sec": 0.0014056333999974413,
+    "dkgen_mean_sec": 0.0,
+    "decrypt_mean_sec": 0.009441941599993698,
+    "round_std_sec": 0.0034716852539825433,
+    "ct_bytes_per_element": 22.1,
+    "ct_compact_bytes_per_element": 22.1,
+    "note": "secret-key holder must not collude with the aggregator; sizes are SEAL's compressed serialisation"
+   }
+  ],
+  "he_ckks": [
+   {
+    "scheme": "baseline/ckks",
+    "security_profile": "128-bit HE",
+    "elements": 10000,
+    "clients": 3,
+    "rounds": 9,
+    "status": "ok",
+    "setup_sec": 0.04713166700000215,
+    "encrypt_mean_sec_per_client": 0.0075446203333337245,
+    "aggregate_mean_sec": 0.0002600278888864851,
+    "dkgen_mean_sec": 0.0,
+    "decrypt_mean_sec": 0.002330518444446107,
+    "round_std_sec": 0.00012353753991090977,
+    "ct_bytes_per_element": 99.4,
+    "ct_compact_bytes_per_element": 99.4,
+    "note": "secret-key holder must not collude with the aggregator; sizes are SEAL's compressed serialisation"
+   }
+  ],
+  "he_ckks_1e5": [
+   {
+    "scheme": "baseline/ckks",
+    "security_profile": "128-bit HE",
+    "elements": 100000,
+    "clients": 3,
+    "rounds": 5,
+    "status": "ok",
+    "setup_sec": 0.05201604100000168,
+    "encrypt_mean_sec_per_client": 0.06442634173333014,
+    "aggregate_mean_sec": 0.002862058200003048,
+    "dkgen_mean_sec": 0.0,
+    "decrypt_mean_sec": 0.01985045840000339,
+    "round_std_sec": 0.0031160619303989786,
+    "ct_bytes_per_element": 82.8,
+    "ct_compact_bytes_per_element": 82.8,
+    "note": "secret-key holder must not collude with the aggregator; sizes are SEAL's compressed serialisation"
+   }
+  ],
+  "pair_docker": {
+   "runs": [
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": false,
+       "backend": "auto",
+       "threads": 1,
+       "import_error": "cannot import name '_rlwe_native' from partially initialized module 'pyfe4ai' (most likely due to a circular import) (/tmp/cur/pyfe4ai/__init__.py)"
+      }
+     },
+     "args": {
+      "families": [
+       "pairing"
+      ],
+      "elements": 3,
+      "clients": 3,
+      "rounds": 2,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "toy",
+      "backend": "auto",
+      "threads": 1,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "/tmp/wp",
+      "json": "/out/pair_docker.json",
+      "tag": "toy"
+     },
+     "rows": [
+      {
+       "family": "pairing",
+       "scheme": "mcfe/fh_multi_ipe_pairing",
+       "profile": "toy",
+       "elements": 3,
+       "clients": 3,
+       "rounds": 2,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.06857399999998393,
+       "client_ms": 48.73086100000042,
+       "aggregator_ms": 1650.0453140000104,
+       "dkgen_ms": 216.9505420000064,
+       "decrypt_ms": 1433.094772000004,
+       "client_us_per_element": 16243.620333333472,
+       "aggregator_us_per_element": 550015.1046666702,
+       "client_ms_min": 48.65241666666975,
+       "aggregator_ms_min": 1596.371210000001,
+       "ct_bytes_per_element": 790.0,
+       "offline": false,
+       "backend": "python",
+       "threads": 1,
+       "tag": "toy"
+      }
+     ],
+     "time": "2026-10-16T18:01:58+0000"
+    },
+    {
+     "env": {
+      "python": "3.10.22",
+      "implementation": "CPython",
+      "platform": "Linux-7.0.12-linuxkit-aarch64-with-glibc2.39",
+      "machine": "aarch64",
+      "gmpy2": "2.3.1",
+      "numpy": "2.2.6",
+      "cpu": "aarch64",
+      "benchmark_campaign_running": false,
+      "git_commit": "",
+      "native": {
+       "available": false,
+       "backend": "auto",
+       "threads": 1,
+       "import_error": "cannot import name '_rlwe_native' from partially initialized module 'pyfe4ai' (most likely due to a circular import) (/tmp/cur/pyfe4ai/__init__.py)"
+      }
+     },
+     "args": {
+      "families": [
+       "pairing"
+      ],
+      "elements": 3,
+      "clients": 3,
+      "rounds": 2,
+      "precision": 2,
+      "bound_x": null,
+      "profile": "standard",
+      "backend": "auto",
+      "threads": 1,
+      "ct_format": "json",
+      "offline": false,
+      "workdir": "/tmp/wp",
+      "json": "/out/pair_docker.json",
+      "tag": "standard"
+     },
+     "rows": [
+      {
+       "family": "pairing",
+       "scheme": "mcfe/fh_multi_ipe_pairing",
+       "profile": "standard",
+       "elements": 3,
+       "clients": 3,
+       "rounds": 2,
+       "precision": 2,
+       "bound_x": 100,
+       "ct_format": "json",
+       "setup_s": 0.10682820900001389,
+       "client_ms": 64.68188183333723,
+       "aggregator_ms": 2182.2180010000097,
+       "dkgen_ms": 71.79606300000785,
+       "decrypt_ms": 2110.421938000002,
+       "client_us_per_element": 21560.627277779076,
+       "aggregator_us_per_element": 727406.0003333365,
+       "client_ms_min": 64.5782636666657,
+       "aggregator_ms_min": 2170.748335000013,
+       "ct_bytes_per_element": 858.0,
+       "offline": false,
+       "backend": "python",
+       "threads": 1,
+       "tag": "standard"
+      }
+     ],
+     "time": "2026-10-16T18:02:05+0000"
+    }
+   ]
+  }
+ }
+}

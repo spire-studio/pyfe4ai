@@ -29,6 +29,13 @@ scheme families in the repository.
   pipelines across `SIFE`, `FHMultiIPE`, and quadratic FE families.
 - `benchmark_ntt.py`: compares schoolbook (`O(n^2)`) and NTT (`O(n log n)`)
   negacyclic polynomial multiplication, as used by the Ring-LWE schemes.
+- `bench_fl_compare.py`: the FL aggregation round (`encrypt_gradient` +
+  `aggregate_gradients`) per scheme family, with backend, threads, ciphertext
+  format and offline phase as options; appends JSON records for before /
+  after comparisons. Results and the comparison with HE are in
+  [`PERFORMANCE.md`](PERFORMANCE.md).
+- `bench_offline_potential.py`: per-element split of the DDH and DCR MCFE
+  into label-dependent offline work and the online rest.
 - `fl_path_coverage.py`: not a timing benchmark. Runs the ML-adapter FL path
   (`encrypt_gradient` + `aggregate_gradients`) for every registry entry with
   that variant's own test configuration and reports `usable` / `unusable`

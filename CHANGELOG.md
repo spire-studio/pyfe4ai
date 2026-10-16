@@ -5,6 +5,36 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/) (pre-1.0: minor bumps may break
 compatibility).
 
+## [Unreleased]
+
+### Performance
+
+- **Native backend** (optional C++ extension `pyfe4ai._rlwe_native`, built by
+  `setup.py`; `pyfe4ai.utils.native_backend` selects `auto` / `python` /
+  `native`, `PYFE4AI_BACKEND`, `PYFE4AI_THREADS`): Ring-LWE MIFE / MCFE
+  encryption, decryption and key derivation of a whole tensor per call, with
+  the GIL released and optional threads; dense-LWE MCFE label hashing and
+  dot products. Same outputs as the Python code (checked bit for bit by the
+  tests); Python fallback for unsupported parameters.
+- Ring-LWE in Python: `NTT(a)`, `NTT(pk)` and `NTT(sk_y)` cached, `r`
+  transformed once, decryption products summed in the NTT domain (same
+  outputs). Dense-LWE MCFE: keys parsed once per object.
+- MCFE Ring-LWE 10^4-element FL round (standard profile, 3 clients): client
+  230 -> 3.4 ms, aggregator 368 -> 9.2 ms in a single thread (Linux,
+  binary ciphertexts); see `benchmarks/PERFORMANCE.md`.
+
+### Added
+
+- `ct_format="binary"` for Ring-LWE MIFE / MCFE ciphertexts (crypto config;
+  `FESchemeWrapper(crypto_options=...)`): a versioned compact encoding, 37%
+  of the JSON size. JSON stays the default; decryption reads both.
+- Offline / online MCFE Ring-LWE: `MCFERingLWE.precompute(label, shapes)` and
+  `encrypt_lst_ndarray(..., precomputed=...)`; ML adapter
+  `precompute_gradient`, `encrypt_gradient(precomputed=...)`,
+  `prepare_aggregation` and `aggregate_gradients(prepared=...)`.
+- `benchmarks/bench_fl_compare.py` (per-family FL timings as JSON) and
+  `benchmarks/bench_offline_potential.py`.
+
 ## [0.3.0] — 2026-10-13
 
 Privacy fixes: every scheme that was insecure in v0.2.0 now implements a

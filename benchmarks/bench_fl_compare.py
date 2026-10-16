@@ -154,9 +154,10 @@ def _scheme_params(wrapper) -> dict:
 
 def measure(family: str, elements: int, clients: int, rounds: int, precision: int, bound_x: int,
             profile: str, ct_format: str = "json", offline: bool = False) -> dict:
-    from pyfe4ai.utils.ml_adapter import (
-        FESchemeWrapper, aggregate_gradients, encrypt_gradient, precompute_gradient, prepare_aggregation,
-    )
+    from pyfe4ai.utils.ml_adapter import FESchemeWrapper, aggregate_gradients, encrypt_gradient
+
+    if offline:  # not in versions before the native backend
+        from pyfe4ai.utils.ml_adapter import precompute_gradient, prepare_aggregation
 
     key, base_cfg, _ = FAMILIES[family]
     nids = ["c{}".format(i) for i in range(clients)]
@@ -165,8 +166,8 @@ def measure(family: str, elements: int, clients: int, rounds: int, precision: in
            "clients": clients, "rounds": rounds, "precision": precision, "bound_x": bound_x,
            "ct_format": ct_format}
     t0 = time.perf_counter()
-    options = {"ct_format": ct_format} if ct_format != "json" else None
-    wrapper = FESchemeWrapper(*key, cfg, precision=precision, crypto_options=options)
+    options = {"crypto_options": {"ct_format": ct_format}} if ct_format != "json" else {}
+    wrapper = FESchemeWrapper(*key, cfg, precision=precision, **options)
     row["setup_s"] = time.perf_counter() - t0
     row.update(_scheme_params(wrapper))
 
@@ -200,7 +201,7 @@ def measure(family: str, elements: int, clients: int, rounds: int, precision: in
                 agg_off.append(t2 - t1)
         dk_times.clear()
         t0 = time.perf_counter()
-        enc = {nid: encrypt_gradient(g, wrapper, nid=nid, label=label, precomputed=pre.get(nid))
+        enc = {nid: encrypt_gradient(g, wrapper, nid=nid, label=label, **({"precomputed": pre[nid]} if pre else {}))
                for nid, g in grads.items()}
         t1 = time.perf_counter()
         if offline:
