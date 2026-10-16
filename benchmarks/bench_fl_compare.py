@@ -12,9 +12,9 @@ Reported per family (medians over the counted rounds):
 * ``client_ms``: one client's ``encrypt_gradient``;
 * ``aggregator_ms``: ``aggregate_gradients`` (key derivation + decryption),
   with ``dkgen_ms`` the key derivation inside it;
-* ``ct_json_bytes_per_element``: one client's ciphertexts as JSON, per
-  element; ``ct_binary_bytes_per_element`` where the scheme offers a binary
-  ciphertext format.
+* ``ct_bytes_per_element``: one client's ciphertexts as JSON (bytes values
+  of the binary ciphertext format, ``--ct-format binary``, counted at their
+  length), per element.
 
 The schemes write their parameter cache to ``./config``; the run happens in
 ``--workdir`` (default: a temporary directory) so a cache can be reused across
@@ -120,24 +120,22 @@ def _set_backend(name: str, threads: int) -> str:
     return native_backend.active_backend()
 
 
-def _ct_json_bytes(layers: list) -> int:
-    """JSON size of one client's ciphertexts: per element, or packed layers
-    (``EncryptedGradient.to_dict`` handles only the per-element arrays)."""
+def _ct_bytes(layers: list) -> int:
+    """Size of one client's ciphertexts: JSON, with any bytes values (binary
+    ciphertext format) counted at their length, as in a binary container."""
+    raw = []
+
+    def default(obj):
+        if isinstance(obj, (bytes, bytearray)):
+            raw.append(len(obj))
+            return ""
+        return str(obj)
+
     total = 0
     for layer in layers:
         items = layer.ravel().tolist() if isinstance(layer, np.ndarray) else [layer]
-        total += sum(len(json.dumps(ct, default=str).encode()) for ct in items)
-    return total
-
-
-def _ct_binary_bytes(enc) -> int | None:
-    to_bytes = getattr(enc, "to_bytes", None)
-    if to_bytes is None:
-        return None
-    try:
-        return len(to_bytes())
-    except (NotImplementedError, TypeError, ValueError):
-        return None
+        total += sum(len(json.dumps(ct, default=default).encode()) for ct in items)
+    return total + sum(raw)
 
 
 def _scheme_params(wrapper) -> dict:
@@ -155,16 +153,18 @@ def _scheme_params(wrapper) -> dict:
 
 
 def measure(family: str, elements: int, clients: int, rounds: int, precision: int, bound_x: int,
-            profile: str) -> dict:
+            profile: str, ct_format: str = "json") -> dict:
     from pyfe4ai.utils.ml_adapter import FESchemeWrapper, aggregate_gradients, encrypt_gradient
 
     key, base_cfg, _ = FAMILIES[family]
     nids = ["c{}".format(i) for i in range(clients)]
     cfg = dict(base_cfg, n=clients, lst_nid=nids, security_profile=profile, **_bounds(family, bound_x))
     row = {"family": family, "scheme": "/".join(key), "profile": profile, "elements": elements,
-           "clients": clients, "rounds": rounds, "precision": precision, "bound_x": bound_x}
+           "clients": clients, "rounds": rounds, "precision": precision, "bound_x": bound_x,
+           "ct_format": ct_format}
     t0 = time.perf_counter()
-    wrapper = FESchemeWrapper(*key, cfg, precision=precision)
+    options = {"ct_format": ct_format} if ct_format != "json" else None
+    wrapper = FESchemeWrapper(*key, cfg, precision=precision, crypto_options=options)
     row["setup_s"] = time.perf_counter() - t0
     row.update(_scheme_params(wrapper))
 
@@ -181,7 +181,7 @@ def measure(family: str, elements: int, clients: int, rounds: int, precision: in
     rng = np.random.default_rng(7)
     lim = bound_x / 10 ** precision
     enc_t, agg_t, dk_t = [], [], []
-    ct_json = ct_bin = None
+    ct_size = None
     for r in range(rounds + 1):
         label = "round-{}".format(r)
         grads = {nid: rng.uniform(-lim, lim, elements).round(precision) for nid in nids}
@@ -194,10 +194,7 @@ def measure(family: str, elements: int, clients: int, rounds: int, precision: in
         if not np.allclose(np.asarray(total, dtype=float), sum(grads.values()), atol=10 ** -precision / 2):
             raise AssertionError("{}: wrong aggregate".format(family))
         if r == 0:
-            sample = next(iter(enc.values()))
-            ct_json = _ct_json_bytes(sample.ciphertexts) / elements
-            b = _ct_binary_bytes(sample)
-            ct_bin = None if b is None else b / elements
+            ct_size = _ct_bytes(next(iter(enc.values())).ciphertexts) / elements
             continue
         enc_t.append((t1 - t0) / clients)
         agg_t.append(t2 - t1)
@@ -212,8 +209,7 @@ def measure(family: str, elements: int, clients: int, rounds: int, precision: in
         aggregator_us_per_element=med(agg_t) * 1e6 / elements,
         client_ms_min=min(enc_t) * 1e3,
         aggregator_ms_min=min(agg_t) * 1e3,
-        ct_json_bytes_per_element=round(ct_json, 1),
-        ct_binary_bytes_per_element=None if ct_bin is None else round(ct_bin, 1),
+        ct_bytes_per_element=round(ct_size, 1),
     )
     return row
 
@@ -229,6 +225,8 @@ def main() -> None:
     parser.add_argument("--profile", default="standard", choices=["standard", "toy"])
     parser.add_argument("--backend", default="auto", choices=["auto", "python", "native"])
     parser.add_argument("--threads", type=int, default=1)
+    parser.add_argument("--ct-format", default="json", choices=["json", "binary"],
+                        help="ciphertext format of the Ring-LWE schemes")
     parser.add_argument("--workdir", default=None, help="directory holding ./config (default: temporary)")
     parser.add_argument("--json", default=None, help="append the results to this JSON file")
     parser.add_argument("--tag", default="", help="free-form label stored with every row")
@@ -252,12 +250,13 @@ def main() -> None:
     try:
         for family in args.families:
             elements = args.elements or FAMILIES[family][2]
-            row = measure(family, elements, args.clients, args.rounds, args.precision, bound_x, args.profile)
+            fmt = args.ct_format if family == "ring_lwe" else "json"
+            row = measure(family, elements, args.clients, args.rounds, args.precision, bound_x, args.profile, fmt)
             row.update(backend=backend, threads=args.threads, tag=args.tag)
             rows.append(row)
             print("{family:9s} {backend:6s} t={threads} {elements:6d} el  client {client_ms:9.2f} ms  "
-                  "aggregator {aggregator_ms:9.2f} ms (dkgen {dkgen_ms:7.2f})  ct {ct_json_bytes_per_element} "
-                  "B/el json".format(**row), flush=True)
+                  "aggregator {aggregator_ms:9.2f} ms (dkgen {dkgen_ms:7.2f})  ct {ct_bytes_per_element} "
+                  "B/el {ct_format}".format(**row), flush=True)
     finally:
         os.chdir(cwd)
         if tmp is not None:

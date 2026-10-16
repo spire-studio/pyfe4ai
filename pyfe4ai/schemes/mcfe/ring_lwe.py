@@ -263,9 +263,12 @@ class MCFERingLWE(MIFERingLWE):
                     [label_pad_material(u_prime, chunk_label(label, chunk + j)) for j in range(n_layer)],
                     float(self.pp["sigma2"]), float(self.pp["sigma3"]),
                     native_backend.random_input(3 * native_backend.gauss_bytes(ring_n) * n_layer),
-                    native_backend.get_threads(),
+                    native_backend.get_threads(), self.ct_format == "binary",
                 )
-                cts = [{"ct0": ct0, "ct1": ct1, "k": k} for ct0, ct1, k in res]
+                if self.ct_format == "binary":
+                    cts = [{"ct": data, "k": k} for data, k in res]
+                else:
+                    cts = [{"ct0": ct0, "ct1": ct1, "k": k} for ct0, ct1, k in res]
                 out.append({"shape": list(np.shape(ary_src)), "first_chunk": chunk, "chunks": cts})
                 chunk += n_layer
                 continue

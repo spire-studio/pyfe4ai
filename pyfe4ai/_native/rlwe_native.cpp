@@ -111,6 +111,27 @@ struct CtxBase {
     virtual ~CtxBase() { Py_XDECREF(qobj); }
 };
 
+// Shoup multiplication: x w mod q in [0, 2q) for any word x, with wp = floor(w 2^BITS / q).
+static inline u64 shoup_mul(u64 x, u64 w, u64 wp, u64 q) {
+    u64 quot = (u64)(((u128)x * wp) >> 64);
+    return x * w - quot * q;
+}
+static inline u128 shoup_mul(u128 x, u128 w, u128 wp, u128 q) {
+    u128 hi, lo;
+    mul_full(x, wp, hi, lo);
+    return x * w - hi * q;
+}
+static inline u64 shoup_quot(u64 w, u64 q) { return (u64)(((u128)w << 64) / q); }
+static inline u128 shoup_quot(u128 w, u128 q) {  // floor(w 2^128 / q), w < q < 2^126
+    u128 r = w, quot = 0;
+    for (int i = 0; i < 128; ++i) {
+        r <<= 1;
+        quot <<= 1;
+        if (r >= q) { r -= q; quot |= 1; }
+    }
+    return quot;
+}
+
 template <class A>
 struct Ctx : CtxBase {
     typedef typename A::W W;
@@ -118,7 +139,8 @@ struct Ctx : CtxBase {
     W r2 = 0;      // R^2 mod q
     W rmod = 0;    // R mod q (Montgomery form of 1)
     std::vector<uint32_t> br;
-    std::vector<W> twist, scale, fwd, inv;  // Montgomery form
+    // twiddles as plain values and their Shoup quotients
+    std::vector<W> twist, twist_p, scale, scale_p, fwd, fwd_p, inv, inv_p;
 
     inline W to_mont(W x) const { return ar.mul(x, r2); }
     inline W from_mont(W x) const { return ar.mul(x, 1); }
@@ -134,66 +156,89 @@ struct Ctx : CtxBase {
         return from_mont(r);
     }
 
-    void butterflies(W *x, const W *tw) const {
+    // Cooley-Tukey stages with Harvey's lazy butterflies: values stay in [0, 4q)
+    // (4q < 2^BITS), the same residues as ring_lwe_utils' (u + v, u - v) mod q.
+    void butterflies(W *x, const W *tw, const W *twp) const {
+        const W q = (W)this->q, q2 = q + q;
         size_t off = 0;
         for (size_t len = 2; len <= n; len <<= 1) {
             size_t half = len >> 1;
-            const W *t = tw + off;
+            const W *t = tw + off, *tp = twp + off;
             for (size_t s = 0; s < n; s += len) {
                 W *lo = x + s, *hi = x + s + half;
                 for (size_t j = 0; j < half; ++j) {
-                    W u = lo[j], v = ar.mul(hi[j], t[j]);
-                    lo[j] = ar.add(u, v);
-                    hi[j] = ar.sub(u, v);
+                    W u = lo[j];
+                    u = u >= q2 ? u - q2 : u;
+                    W v = shoup_mul(hi[j], t[j], tp[j], q);
+                    lo[j] = u + v;
+                    hi[j] = u - v + q2;
                 }
             }
             off += half;
         }
     }
-    // ring_lwe_utils.ntt_forward: twist, bit-reverse, Cooley-Tukey stages (plain in, plain out).
-    void forward(const W *in, W *out) const {
-        for (size_t i = 0; i < n; ++i) out[i] = ar.mul(in[br[i]], twist[br[i]]);
-        butterflies(out, fwd.data());
+    static inline W reduce4(W v, W q) {  // [0, 4q) -> [0, q)
+        W q2 = q + q;
+        v = v >= q2 ? v - q2 : v;
+        return v >= q ? v - q : v;
     }
-    // ring_lwe_utils.ntt_inverse: bit-reverse, stages, then times n^-1 untwist[i].
+    // ring_lwe_utils.ntt_forward: twist, bit-reverse, Cooley-Tukey stages (out in [0, q)).
+    void forward(const W *in, W *out) const {
+        const W q = (W)this->q;
+        for (size_t i = 0; i < n; ++i) {
+            uint32_t b = br[i];
+            out[i] = shoup_mul(in[b], twist[b], twist_p[b], q);
+        }
+        butterflies(out, fwd.data(), fwd_p.data());
+        for (size_t i = 0; i < n; ++i) out[i] = reduce4(out[i], q);
+    }
+    // ring_lwe_utils.ntt_inverse: bit-reverse, stages, then times n^-1 untwist[i] (out in [0, q)).
     void inverse(const W *in, W *out) const {
+        const W q = (W)this->q;
         for (size_t i = 0; i < n; ++i) out[i] = in[br[i]];
-        butterflies(out, inv.data());
-        for (size_t i = 0; i < n; ++i) out[i] = ar.mul(out[i], scale[i]);
+        butterflies(out, inv.data(), inv_p.data());
+        for (size_t i = 0; i < n; ++i) {
+            W v = shoup_mul(out[i], scale[i], scale_p[i], q);
+            out[i] = v >= q ? v - q : v;
+        }
     }
 
     // Tables of ring_lwe_utils._get_twiddle_factors from the root of unity.
     bool build(u128 root) {
-        W rt = (W)root;
+        W rt = (W)root, qw = (W)q;
         W root_inv = powp(rt, (u128)(2 * n - 1));
         if (powp(rt, (u128)n) != (W)(q - 1) || mulp(rt, root_inv) != 1) return false;
         W n_inv = powp((W)(n % q), q - 2);  // q is prime
         if (mulp((W)(n % q), n_inv) != 1) return false;
-        twist.resize(n); scale.resize(n); br.resize(n);
+        twist.resize(n); twist_p.resize(n); scale.resize(n); scale_p.resize(n); br.resize(n);
         W t = 1, u = 1;
         for (size_t i = 0; i < n; ++i) {
-            twist[i] = to_mont(t);
-            scale[i] = to_mont(mulp(n_inv, u));
+            twist[i] = t;
+            twist_p[i] = shoup_quot(t, qw);
+            scale[i] = mulp(n_inv, u);
+            scale_p[i] = shoup_quot(scale[i], qw);
             t = mulp(t, rt);
             u = mulp(u, root_inv);
             uint32_t r = 0, x = (uint32_t)i;
             for (int b = 0; b < logn; ++b) { r = (r << 1) | (x & 1); x >>= 1; }
             br[i] = r;
         }
-        auto stages = [&](W base, std::vector<W> &out) {
+        auto stages = [&](W base, std::vector<W> &out, std::vector<W> &outp) {
             W w2 = mulp(base, base);
             out.clear();
+            outp.clear();
             for (size_t len = 2; len <= n; len <<= 1) {
                 W step = powp(w2, (u128)(n / len)), w = 1;
-                out.push_back(to_mont(1));
+                out.push_back(1);
                 for (size_t j = 1; j < len / 2; ++j) {
                     w = mulp(w, step);
-                    out.push_back(to_mont(w));
+                    out.push_back(w);
                 }
             }
+            for (W v : out) outp.push_back(shoup_quot(v, qw));
         };
-        stages(rt, fwd);
-        stages(root_inv, inv);
+        stages(rt, fwd, fwd_p);
+        stages(root_inv, inv, inv_p);
         return true;
     }
 };
@@ -283,32 +328,66 @@ static bool str_int_mod(PyObject *o, PyObject *qobj, u128 *out) {
 // Fast path of int(s) % q: optional '-', then 1..38 ASCII digits. false: use the slow path.
 static inline bool parse_dec(const char *s, size_t len, u128 q, u128 *out) {
     size_t i = (len > 0 && s[0] == '-') ? 1 : 0;
-    if (len - i < 1 || len - i > 38) return false;
-    u128 v = 0;
-    for (size_t j = i; j < len; ++j) {
-        unsigned d = (unsigned char)s[j] - '0';
-        if (d > 9) return false;
-        v = v * 10 + d;
+    size_t nd = len - i;
+    if (nd < 1 || nd > 38) return false;
+    const char *d = s + i;
+    size_t head = nd > 19 ? nd - 19 : 0;  // at most 19 digits per u64
+    u64 hi = 0, lo = 0;
+    for (size_t j = 0; j < head; ++j) {
+        unsigned c = (unsigned char)d[j] - '0';
+        if (c > 9) return false;
+        hi = hi * 10 + c;
     }
+    for (size_t j = head; j < nd; ++j) {
+        unsigned c = (unsigned char)d[j] - '0';
+        if (c > 9) return false;
+        lo = lo * 10 + c;
+    }
+    u128 v = head ? (u128)hi * 10000000000000000000ULL + lo : (u128)lo;
     if (v >= q) v %= q;
     *out = (i && v) ? q - v : v;
     return true;
 }
 
+static const char DIGITS2[] =
+    "00010203040506070809101112131415161718192021222324252627282930313233343536373839"
+    "40414243444546474849505152535455565758596061626364656667686970717273747576777879"
+    "8081828384858687888990919293949596979899";
+
 // Decimal digits of v < 2^127 (gmpy2.digits of a non-negative value).
 static size_t format_dec(u128 v, char *buf /* >= 40 bytes */) {
     char tmp[40];
     char *p = tmp + sizeof tmp;
-    if (v >> 64) {  // v = hi 10^19 + rem with hi < 2^64
+    u64 lo;
+    if (v >> 64) {  // v = hi 10^19 + rem with hi < 2^64: rem as exactly 19 digits
         const u64 TEN19 = 10000000000000000000ULL;
         u128 hi = v / TEN19;
         u64 rem = (u64)(v - hi * TEN19);
-        for (int i = 0; i < 19; ++i) { *--p = (char)('0' + rem % 10); rem /= 10; }
-        v = hi;
+        for (int k = 0; k < 9; ++k) {
+            u64 r = rem % 100;
+            rem /= 100;
+            p -= 2;
+            memcpy(p, DIGITS2 + 2 * r, 2);
+        }
+        *--p = (char)('0' + rem);
+        lo = (u64)hi;
+    } else {
+        lo = (u64)v;
     }
-    u64 lo = (u64)v;
-    if (lo == 0 && p == tmp + sizeof tmp) *--p = '0';
-    while (lo) { *--p = (char)('0' + lo % 10); lo /= 10; }
+    if (lo || p == tmp + sizeof tmp) {
+        while (lo >= 100) {
+            u64 r = lo % 100;
+            lo /= 100;
+            p -= 2;
+            memcpy(p, DIGITS2 + 2 * r, 2);
+        }
+        if (lo >= 10) {
+            p -= 2;
+            memcpy(p, DIGITS2 + 2 * lo, 2);
+        } else {
+            *--p = (char)('0' + lo);
+        }
+    }
     size_t len = (size_t)(tmp + sizeof tmp - p);
     memcpy(buf, p, len);
     return len;
@@ -581,22 +660,32 @@ static void shake256(const unsigned char *msg, size_t len, unsigned char *out, s
 // hash_to_zq_vector's block size: bits(q) + 128 bits.
 static inline size_t zq_block(const CtxBase &c) { return (size_t)(c.qbits + 128 + 7) / 8; }
 
-// hash_to_zq_vector after the SHAKE call: big-endian block k (nb bytes) mod q, by
-// Horner's rule in base 2^64 with Montgomery multiplications.
+// hash_to_zq_vector after the SHAKE call: big-endian block k (nb bytes) mod q, as
+// sum_k limb_k (2^(BITS k) mod q) with one Montgomery multiplication per word-sized limb
+// (limb < R = 2^BITS, so each product is reduced mod q).
 template <class A>
 static void zq_reduce(const Ctx<A> &c, const unsigned char *s, size_t nb, size_t count, typename A::W *out) {
     typedef typename A::W W;
-    const W shift = c.to_mont((W)(((u128)1 << 64) % c.q));  // mul(acc, shift) = acc 2^64 mod q
-    const size_t first = nb % 8 ? nb % 8 : 8;
-    for (size_t k = 0; k < count; ++k, s += nb) {
+    const size_t LB = sizeof(W);
+    const size_t limbs = (nb + LB - 1) / LB, first = nb % LB ? nb % LB : LB;
+    W shift = (W)(A::BITS == 64 ? (((u128)1 << 64) % c.q) : ((((u128)-1) % c.q + 1) % c.q));  // R mod q
+    std::vector<W> cm(limbs);  // Montgomery form of 2^(BITS k) mod q, k = 0 .. limbs - 1
+    W pw = 1;
+    for (size_t k = 0; k < limbs; ++k) {
+        cm[k] = c.to_mont(pw);
+        pw = c.mulp(pw, shift);
+    }
+    for (size_t b = 0; b < count; ++b, s += nb) {
         W acc = 0;
-        for (size_t pos = 0, take = first; pos < nb; pos += take, take = 8) {
-            u64 limb = 0;
-            for (size_t j = 0; j < take; ++j) limb = (limb << 8) | s[pos + j];
-            W l = (u128)limb < c.q ? (W)limb : (W)((u128)limb % c.q);
-            acc = c.ar.add(c.ar.mul(acc, shift), l);
+        const unsigned char *p = s;
+        for (size_t k = limbs; k-- > 0;) {
+            size_t take = k == limbs - 1 ? first : LB;
+            W limb = 0;
+            for (size_t j = 0; j < take; ++j) limb = (limb << 8) | p[j];
+            p += take;
+            acc = c.ar.add(acc, c.ar.mul(limb, cm[k]));
         }
-        out[k] = acc;
+        out[b] = acc;
     }
 }
 
@@ -1099,13 +1188,59 @@ struct RandomSource {
     }
 };
 
-// encrypt(key, w_rows, sigma2, sigma3, random_bytes | None) -> (ct0, ct1)
+// Binary ciphertext format 1 (ring_lwe_utils.encode_binary_ciphertext):
+// "PFRL", version 1, word bytes wb = ceil(bits(q) / 8), eta (u16 LE), log2 n, 0;
+// then the eta rows of ct0 and ct1, n coefficients each, wb bytes little-endian.
+static const size_t BIN_HEADER = 10;
+
+static inline size_t bin_size(size_t eta, size_t n, size_t wb) { return BIN_HEADER + (eta + 1) * n * wb; }
+static inline size_t bin_wb(const CtxBase &c) { return (size_t)(c.qbits + 7) / 8; }
+
+template <class W>
+static void bin_write(const CtxBase &c, size_t eta, const W *ct0, const W *ct1, unsigned char *out) {
+    size_t n = c.n, wb = bin_wb(c);
+    memcpy(out, "PFRL", 4);
+    out[4] = 1;
+    out[5] = (unsigned char)wb;
+    out[6] = (unsigned char)(eta & 0xFF);
+    out[7] = (unsigned char)(eta >> 8);
+    out[8] = (unsigned char)c.logn;
+    out[9] = 0;
+    unsigned char *p = out + BIN_HEADER;
+    for (size_t i = 0; i < (eta + 1) * n; ++i) {
+        u128 v = (u128)(i < eta * n ? ct0[i] : ct1[i - eta * n]);
+        for (size_t b = 0; b < wb; ++b) { *p++ = (unsigned char)v; v >>= 8; }
+    }
+}
+
+// Coefficients of a format-1 ciphertext, reduced mod q (as int(v) % q); false if the
+// header or the length does not match (eta, n, q).
+template <class W>
+static bool bin_read(const CtxBase &c, size_t eta, const unsigned char *in, size_t len, W *ct0, W *ct1) {
+    size_t n = c.n, wb = bin_wb(c);
+    if (len != bin_size(eta, n, wb) || memcmp(in, "PFRL", 4) || in[4] != 1 || in[5] != wb
+        || (size_t)(in[6] | (in[7] << 8)) != eta || in[8] != c.logn || in[9] != 0)
+        return false;
+    const unsigned char *p = in + BIN_HEADER;
+    for (size_t i = 0; i < (eta + 1) * n; ++i) {
+        u128 v = 0;
+        for (size_t b = wb; b-- > 0;) v = (v << 8) | p[b];
+        p += wb;
+        if (v >= c.q) v %= c.q;
+        if (i < eta * n) ct0[i] = (W)v;
+        else ct1[i - eta * n] = (W)v;
+    }
+    return true;
+}
+
+// encrypt(key, w_rows, sigma2, sigma3, random_bytes | None, binary=False) -> (ct0, ct1) | bytes
 // MIFERingLWE._encrypt_rows for rows w (eta rows of n integers already reduced mod q):
 // ct0 as eta lists and ct1 as one list of decimal strings.
 static PyObject *py_encrypt(PyObject *, PyObject *args) {
     PyObject *kcap, *w_rows, *rnd;
     double s2, s3;
-    if (!PyArg_ParseTuple(args, "OOddO", &kcap, &w_rows, &s2, &s3, &rnd)) return nullptr;
+    int binary = 0;
+    if (!PyArg_ParseTuple(args, "OOddO|p", &kcap, &w_rows, &s2, &s3, &rnd, &binary)) return nullptr;
     return with_key(kcap, [&](auto &k) -> PyObject * {
         typedef typename std::remove_reference<decltype(k)>::type K;
         typedef typename K::W W;
@@ -1132,6 +1267,12 @@ static PyObject *py_encrypt(PyObject *, PyObject *args) {
         if (ok) encrypt_chunk(k, w.data(), s2, s3, src.data, ct0.data(), ct1.data());
         Py_END_ALLOW_THREADS
         if (!ok) return PyErr_SetFromErrno(PyExc_OSError);
+        if (binary) {
+            PyObject *b = PyBytes_FromStringAndSize(nullptr, (Py_ssize_t)bin_size(eta, n, bin_wb(c)));
+            if (!b) return nullptr;
+            bin_write(c, eta, ct0.data(), ct1.data(), (unsigned char *)PyBytes_AS_STRING(b));
+            return b;
+        }
         PyObject *rows = PyList_New((Py_ssize_t)eta);
         if (!rows) return nullptr;
         for (size_t r = 0; r < eta; ++r) {
@@ -1163,15 +1304,17 @@ struct DecChunk {
 };
 
 // encrypt_tensor(key, x, pad_materials | None, sigma2, sigma3, random_bytes | None, threads)
-//   -> list of (ct0, ct1, k), one per chunk of n values
+//   -> list of (ct0, ct1, k), one per chunk of n values; with binary=True (data, k), data in
+//   the binary format 1
 // The MCFE ndarray helper (eta = 1) for one layer: x is an int64 buffer of L > 0 values,
 // chunk c holds x[c n : (c + 1) n] (k values, zero-extended) and is encrypted as
 // w = x + u + H_c mod q, H_c = hash_to_zq_vector of pad_materials[c] (n values).
+// encrypt_tensor(key, x, pad_materials | None, sigma2, sigma3, random_bytes | None, threads, binary=False)
 static PyObject *py_encrypt_tensor(PyObject *, PyObject *args) {
     PyObject *kcap, *xo, *mats, *rnd;
     double s2, s3;
-    int threads;
-    if (!PyArg_ParseTuple(args, "OOOddOi", &kcap, &xo, &mats, &s2, &s3, &rnd, &threads)) return nullptr;
+    int threads, binary = 0;
+    if (!PyArg_ParseTuple(args, "OOOddOi|p", &kcap, &xo, &mats, &s2, &s3, &rnd, &threads, &binary)) return nullptr;
     return with_key(kcap, [&](auto &k) -> PyObject * {
         typedef typename std::remove_reference<decltype(k)>::type K;
         typedef typename K::W W;
@@ -1241,15 +1384,26 @@ static PyObject *py_encrypt_tensor(PyObject *, PyObject *args) {
             }
             W *c0 = ct.data() + 2 * n * j, *c1 = c0 + n;
             encrypt_chunk(k, w.data(), s2, s3, rb, c0, c1);
-            dec[2 * j].format(c0, n);
-            dec[2 * j + 1].format(c1, n);
+            if (binary) {
+                dec[2 * j].buf.resize(bin_size(1, n, bin_wb(c)));
+                bin_write(c, 1, c0, c1, (unsigned char *)dec[2 * j].buf.data());
+            } else {
+                dec[2 * j].format(c0, n);
+                dec[2 * j + 1].format(c1, n);
+            }
         });
         Py_END_ALLOW_THREADS
         Py_XDECREF(mseq);
         if (rnd_fail) return PyErr_SetFromErrno(PyExc_OSError);
         PyObject *out = PyList_New((Py_ssize_t)chunks);
         if (!out) return nullptr;
-        for (size_t j = 0; j < chunks; ++j) {
+        for (size_t j = 0; binary && j < chunks; ++j) {
+            PyObject *item = Py_BuildValue("(y#n)", dec[2 * j].buf.data(), (Py_ssize_t)dec[2 * j].buf.size(),
+                                           (Py_ssize_t)std::min(n, L - j * n));
+            if (!item) { Py_DECREF(out); return nullptr; }
+            PyList_SET_ITEM(out, (Py_ssize_t)j, item);
+        }
+        for (size_t j = 0; !binary && j < chunks; ++j) {
             PyObject *row = dec_list_from(dec[2 * j].buf.data(), dec[2 * j].off.data(), n);
             PyObject *c1 = row ? dec_list_from(dec[2 * j + 1].buf.data(), dec[2 * j + 1].off.data(), n) : nullptr;
             PyObject *item = c1 ? Py_BuildValue("([N]Nn)", row, c1, (Py_ssize_t)std::min(n, L - j * n)) : nullptr;
@@ -1325,7 +1479,8 @@ static bool finish_job(const ParseJob &job, size_t n, PyObject *qobj, W *out, co
 }
 
 // decrypt_tensor(ctx, chunks, zs, ks, sk_hats, ys, delta, bound, threads) -> (int64 bytes, first_none)
-//   chunks[c][s] = (ct0_rows, ct1): ciphertext of slot s for chunk c (decimal strings or ints);
+//   chunks[c][s] = (ct0_rows, ct1): ciphertext of slot s for chunk c (decimal strings or ints),
+//     or bytes in the binary format 1;
 //   zs[c]: key term z of chunk c (n values); ks[c]: values to decode; sk_hats[s]: ntt_mont(sk_y_s);
 //   ys[s]: eta weights. MIFERingLWE._decrypt_with_pad_term for every chunk: decode_scaled of
 //   -Delta z + sum_s (<ct0_s, y_s> - ct1_s sk_s), with the products summed in the NTT domain.
@@ -1419,11 +1574,16 @@ static PyObject *py_decrypt_tensor(PyObject *, PyObject *args) {
                 return fallback();
             for (size_t s = 0; s < S; ++s) {
                 PyObject *pair = PySequence_Fast_GET_ITEM(slots, s);
+                size_t base = j * per_chunk + 1 + s * (eta + 1);
+                if (PyBytes_Check(pair)) {  // binary format: decoded below, without the GIL
+                    jobs[base].objs.assign(1, pair);
+                    jobs[base].len.clear();
+                    continue;
+                }
                 if (!PyTuple_Check(pair) || PyTuple_GET_SIZE(pair) != 2) return fallback();
                 PyObject *c0 = PyTuple_GET_ITEM(pair, 0), *c1 = PyTuple_GET_ITEM(pair, 1);
                 if ((!PyList_Check(c0) && !PyTuple_Check(c0)) || (size_t)PySequence_Fast_GET_SIZE(c0) != eta)
                     return fallback();
-                size_t base = j * per_chunk + 1 + s * (eta + 1);
                 for (size_t r = 0; r < eta; ++r)
                     if (!gather(PySequence_Fast_GET_ITEM(c0, r), n, jobs[base + r])) return fallback();
                 if (!gather(c1, n, jobs[base + eta])) return fallback();
@@ -1431,10 +1591,43 @@ static PyObject *py_decrypt_tensor(PyObject *, PyObject *args) {
         }
         std::vector<W> vals(jobs.size() * n);
         std::vector<std::vector<uint8_t>> slow(jobs.size());
+        std::vector<uint8_t> bad_bin(jobs.size(), 0);
+        std::vector<PyObject *> held;  // binary ciphertexts stay alive without the GIL
+        for (auto &jb : jobs)
+            if (jb.len.empty() && jb.objs.size() == 1) { Py_INCREF(jb.objs[0]); held.push_back(jb.objs[0]); }
+        std::unique_ptr<std::vector<PyObject *>, void (*)(std::vector<PyObject *> *)> hold(
+            &held, [](std::vector<PyObject *> *v) { for (PyObject *o : *v) Py_DECREF(o); });
         Py_BEGIN_ALLOW_THREADS
-        parallel_for(jobs.size(), threads, [&](size_t i) { parse_job(jobs[i], n, q, vals.data() + i * n, slow[i]); });
+        parallel_for(jobs.size(), threads, [&](size_t i) {
+            const ParseJob &jb = jobs[i];
+            if (jb.len.empty() && jb.objs.size() == 1) {  // first job of a binary slot: all its eta + 1 rows
+                PyObject *b = jb.objs[0];
+                W *dst = vals.data() + i * n;
+                if (!bin_read(c, eta, (const unsigned char *)PyBytes_AS_STRING(b), (size_t)PyBytes_GET_SIZE(b), dst,
+                              dst + eta * n))
+                    bad_bin[i] = 1;
+                slow[i].assign(n, 0);
+                return;
+            }
+            if (jb.len.empty()) {  // further rows of a binary slot
+                slow[i].assign(n, 0);
+                return;
+            }
+            parse_job(jb, n, q, vals.data() + i * n, slow[i]);
+        });
         Py_END_ALLOW_THREADS
         for (size_t i = 0; i < jobs.size(); ++i) {
+            if (bad_bin[i]) {
+                size_t j = i / per_chunk, rest = i % per_chunk;
+                PyObject *a = Py_BuildValue("(snn)", "malformed ciphertext", (Py_ssize_t)((rest - 1) / (eta + 1)),
+                                            (Py_ssize_t)j);
+                if (a) {
+                    PyErr_SetObject(PyExc_ValueError, a);
+                    Py_DECREF(a);
+                }
+                return nullptr;
+            }
+            if (jobs[i].len.empty()) continue;
             if (!finish_job(jobs[i], n, c.qobj, vals.data() + i * n, slow[i])) {
                 size_t j = i / per_chunk, rest = i % per_chunk;
                 if (rest == 0) return nullptr;  // z: ValueError of int(), as gmpy2.mpz(z) would raise

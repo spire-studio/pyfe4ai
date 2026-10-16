@@ -358,6 +358,8 @@ class FESchemeWrapper:
             ``eta``, ``n``, ``bound_x``, ``security_profile``, etc.).
         precision: Quantization precision (0: no quantization).
         qmode: Quantization mode, ``"decimal"`` or ``"binary"``.
+        crypto_options: Extra entries of the crypto objects' config, e.g.
+            ``{"ct_format": "binary"}`` for the Ring-LWE MIFE / MCFE.
 
     Raises:
         ValueError: If ``(scheme_type, variant)`` is not registered.
@@ -371,6 +373,7 @@ class FESchemeWrapper:
         *,
         precision: int = 0,
         qmode: str = "decimal",
+        crypto_options: dict | None = None,
     ) -> None:
         key = (scheme_type.lower(), variant.lower())
         if key not in _SCHEME_REGISTRY:
@@ -383,6 +386,7 @@ class FESchemeWrapper:
         self.scheme_type = scheme_type.lower()
         self.variant = variant.lower()
         self.keygen_config = dict(keygen_config)
+        self.crypto_options = dict(crypto_options or {})
         self.qconfig = QuantizationConfig(precision=precision, mode=qmode)
         self.has_label = self.scheme_type in _LABEL_SCHEMES
         #: Review status of the scheme (see :mod:`pyfe4ai.schemes.status`).
@@ -413,7 +417,7 @@ class FESchemeWrapper:
             keys: dict[str, Any] = {"pp": self.pp}
             if sk is not None:
                 keys["sk"] = sk
-            config = {"id": nid, "precision": self.qconfig.precision, "keys": keys}
+            config = dict(self.crypto_options, id=nid, precision=self.qconfig.precision, keys=keys)
             mode = getattr(self.kg, "matrix_mode", None)  # LWE schemes with a seeded matrix
             if mode is not None:
                 config["matrix_mode"] = mode
@@ -423,11 +427,7 @@ class FESchemeWrapper:
     def _get_decryptor(self, sid: str) -> Any:
         """Create a crypto instance for decryption (no sk needed)."""
         return self._crypto_cls(
-            {
-                "id": sid,
-                "precision": self.qconfig.precision,
-                "keys": {"pp": self.pp},
-            }
+            dict(self.crypto_options, id=sid, precision=self.qconfig.precision, keys={"pp": self.pp})
         )
 
     def get_decryption_keys(self, sid: str, **credentials) -> dict:

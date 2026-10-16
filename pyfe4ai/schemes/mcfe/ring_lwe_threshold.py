@@ -268,6 +268,8 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
 class ThresholdMCFERingLWE(MCFERingLWE):
     """Crypto operations for threshold BMMS21 identity-based MCFE over Ring-LWE."""
 
+    _binary_ciphertexts = False  # tags cover the JSON form of a ciphertext
+
     def _mac_keys(self) -> dict:
         mac_keys = (self.sk or {}).get("mac_keys") if self._has_private_keys() else None
         if not mac_keys:

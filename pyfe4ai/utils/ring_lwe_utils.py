@@ -464,8 +464,57 @@ def seeded_polynomial(seed: str, q, ring_n: int, index: int = 0) -> list[gp.mpz]
     return hash_to_zq_vector(seed, q, ring_n, domain="pyfe4ai/ring-lwe/a|{}".format(int(index)))
 
 
+#: Ciphertext formats of the Ring-LWE MIFE / MCFE: ``"json"`` (default; ``ct0``
+#: and ``ct1`` as lists of decimal strings) and ``"binary"`` (``ct``: bytes in
+#: format 1 of :func:`encode_binary_ciphertext`).
+CT_FORMATS = ("json", "binary")
+_BIN_MAGIC = b"PFRL"
+_BIN_VERSION = 1
+_BIN_HEADER = 10
+
+
+def encode_binary_ciphertext(ct0: list, ct1: list, q, ring_n: int) -> bytes:
+    """Binary format 1 of a ciphertext with ``eta`` rows ``ct0`` and ``ct1``.
+
+    ``b"PFRL"``, version 1, ``wb = ceil(bits(q) / 8)``, ``eta`` (2 bytes,
+    little-endian), ``log2 ring_n`` and a zero byte; then the coefficients of
+    the ``ct0`` rows and of ``ct1``, ``ring_n`` each, as ``wb``-byte
+    little-endian integers in ``[0, q)``.
+    """
+    wb = (int(q).bit_length() + 7) // 8
+    eta = len(ct0)
+    head = _BIN_MAGIC + bytes([_BIN_VERSION, wb, eta & 0xFF, eta >> 8, ring_n.bit_length() - 1, 0])
+    q = int(q)
+    return head + b"".join(
+        (int(v) % q).to_bytes(wb, "little") for row in list(ct0) + [ct1] for v in row
+    )
+
+
+def decode_binary_ciphertext(data, q, eta: int, ring_n: int) -> tuple:
+    """``(ct0, ct1)`` of a format-1 ciphertext, coefficients reduced mod q.
+
+    Raises:
+        ValueError: If the header or the length does not match.
+    """
+    wb = (int(q).bit_length() + 7) // 8
+    data = bytes(data)
+    head = _BIN_MAGIC + bytes([_BIN_VERSION, wb, eta & 0xFF, eta >> 8, ring_n.bit_length() - 1, 0])
+    if len(data) != _BIN_HEADER + (eta + 1) * ring_n * wb or data[:_BIN_HEADER] != head:
+        raise ValueError("not a format-1 ciphertext of these parameters")
+    q = int(q)
+    vals = [
+        int.from_bytes(data[i:i + wb], "little") % q
+        for i in range(_BIN_HEADER, len(data), wb)
+    ]
+    rows = [vals[r * ring_n:(r + 1) * ring_n] for r in range(eta + 1)]
+    return rows[:eta], rows[eta]
+
+
 def canonical_ring_ciphertext(ct, q, eta: int, ring_n: int) -> tuple:
     """Return ``(k, ct0, ct1)`` of a BMMS21 ciphertext with coefficients in ``[0, q)``.
+
+    *ct* holds ``k`` and either ``ct0`` and ``ct1`` (JSON format) or ``ct``
+    (binary format, :func:`encode_binary_ciphertext`).
 
     Raises:
         FESchemeError: Unless *ct* has ``eta`` polynomials ``ct0`` and one
@@ -476,8 +525,13 @@ def canonical_ring_ciphertext(ct, q, eta: int, ring_n: int) -> tuple:
 
     try:
         k = ct["k"]
-        ct0 = [[int(str(v)) % q for v in row] for row in ct["ct0"]]
-        ct1 = [int(str(v)) % q for v in ct["ct1"]]
+        if "ct" in ct and "ct0" not in ct:
+            if not isinstance(ct["ct"], (bytes, bytearray, memoryview)):
+                raise TypeError("binary ciphertext must be bytes")
+            ct0, ct1 = decode_binary_ciphertext(ct["ct"], q, eta, ring_n)
+        else:
+            ct0 = [[int(str(v)) % q for v in row] for row in ct["ct0"]]
+            ct1 = [int(str(v)) % q for v in ct["ct1"]]
     except (KeyError, TypeError, ValueError) as exc:
         raise FESchemeError("malformed ciphertext") from exc
     if (

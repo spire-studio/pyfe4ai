@@ -49,7 +49,9 @@ from pyfe4ai.utils.lwe_utils import decode_scaled
 from pyfe4ai.schemes.profiles import STANDARD
 from pyfe4ai.utils.ring_lwe_utils import bmms21_parameters
 from pyfe4ai.utils.ring_lwe_utils import bmms21_selective_parameters
+from pyfe4ai.utils.ring_lwe_utils import CT_FORMATS
 from pyfe4ai.utils.ring_lwe_utils import canonical_ring_ciphertext
+from pyfe4ai.utils.ring_lwe_utils import encode_binary_ciphertext
 from pyfe4ai.utils.ring_lwe_utils import check_ring_lwe
 from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul
 from pyfe4ai.utils.ring_lwe_utils import poly_add
@@ -294,18 +296,43 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 class MIFERingLWE(IPFEAbsCrypto):
     """Crypto operations for Ring-LWE-based multi-input inner-product FE."""
 
+    #: Whether ciphertexts may use the binary format (not where tags cover
+    #: the JSON form, as in the threshold variant).
+    _binary_ciphertexts = True
+
     def __init__(self, config: dict, **kwargs) -> None:
         """Initialise the MIFE Ring-LWE crypto object.
 
         Args:
             config: Must contain ``keys`` with ``pp`` (public parameters) and
-                optionally ``sk`` (encryption keys).
+                optionally ``sk`` (encryption keys). ``ct_format``: ``"json"``
+                (default: ``ct0`` and ``ct1`` as decimal strings) or
+                ``"binary"`` (``ct``: bytes, see
+                :func:`~pyfe4ai.utils.ring_lwe_utils.encode_binary_ciphertext`;
+                about a third of the size, and faster to produce and read).
+                Decryption reads both formats.
         """
         super().__init__(config, **kwargs)
         self.pp = self.keys["pp"]
-        self.A = [gp.mpz(v) for v in self.pp["A"]]
+        self.pp["A"]  # a public parameter set without a raises here, as before
+        self.ct_format = config.get("ct_format", "json")
+        if self.ct_format not in CT_FORMATS or (self.ct_format == "binary" and not self._binary_ciphertexts):
+            raise FEValidationError("unsupported ciphertext format {!r}".format(self.ct_format))
         if self._has_private_keys():
             self.sk = self.keys["sk"]
+
+    @property
+    def A(self) -> list:
+        """The public polynomial ``a``, converted from ``pp["A"]`` on first use
+        (decryption never needs it)."""
+        a = self.__dict__.get("_A")
+        if a is None:
+            a = self._A = [gp.mpz(v) for v in self.pp["A"]]
+        return a
+
+    @A.setter
+    def A(self, value) -> None:
+        self._A = value
 
     def _check_encryption_keys(self) -> None:
         if not self._has_public_parameters():
@@ -400,12 +427,13 @@ class MIFERingLWE(IPFEAbsCrypto):
         q = gp.mpz(self.pp["q"])
         ring_n = self.pp["ring_n"]
         nkey = self._native_encryption_key()
+        binary = self.ct_format == "binary"
         if nkey is not None and len(w_rows) == self.pp["eta"] and all(len(row) == ring_n for row in w_rows):
-            ct0, ct1 = native_backend.ext().encrypt(
+            out = native_backend.ext().encrypt(
                 nkey, w_rows, float(self.pp["sigma2"]), float(self.pp["sigma3"]),
-                native_backend.random_input(native_backend.gauss_bytes(ring_n) * (2 + len(w_rows))),
+                native_backend.random_input(native_backend.gauss_bytes(ring_n) * (2 + len(w_rows))), binary,
             )
-            return {"ct0": ct0, "ct1": ct1, "k": k}
+            return {"ct": out, "k": k} if binary else {"ct0": out[0], "ct1": out[1], "k": k}
         delta = q // gp.mpz(self.pp["p"])
         key = self._encryption_key()
         ring = key["ring"]
@@ -425,6 +453,8 @@ class MIFERingLWE(IPFEAbsCrypto):
             ct0.append([(c + e + delta * w) % q for c, e, w in zip(prod, noise[i], w_row)])
         e = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"])[0]
         ct1 = poly_add(times_r(self.A, key["a_hat"]), e, q)
+        if binary:
+            return {"ct": encode_binary_ciphertext(ct0, ct1, q, ring_n), "k": k}
         return {
             "ct0": [[gp.digits(v) for v in row] for row in ct0],
             "ct1": [gp.digits(v) for v in ct1],
@@ -540,12 +570,18 @@ class MIFERingLWE(IPFEAbsCrypto):
                         length=eta, bound=int(self.pp["bound_y"]),
                     )
                 try:  # the shape checks of canonical_ring_ciphertext; values are parsed natively
-                    k, ct0, ct1 = ct["k"], ct["ct0"], ct["ct1"]
+                    k = ct["k"]
+                    if "ct" in ct and "ct0" not in ct:  # binary format
+                        if not isinstance(ct["ct"], (bytes, bytearray, memoryview)):
+                            raise TypeError("binary ciphertext must be bytes")
+                        entry = bytes(ct["ct"])
+                    else:
+                        entry = (ct["ct0"], ct["ct1"])
                 except (KeyError, TypeError) as exc:
                     raise FESchemeError("malformed ciphertext of {}".format(nid)) from exc
                 if not isinstance(k, int) or isinstance(k, bool) or not 1 <= k <= ring_n:
                     raise FESchemeError("malformed ciphertext of {}".format(nid))
-                slots.append((ct0, ct1))
+                slots.append(entry)
             if list(dct_ct) != nids:
                 return None
             chunks.append(slots)
