@@ -5,8 +5,10 @@ against homomorphic encryption (TenSEAL 0.3.18, i.e. Microsoft SEAL) on the
 same workload. Raw numbers: `results/perf_native_core_2026-10-17.json`
 (first session: a C++ prototype of the native backend, host and docker) and
 `results/perf_rust_linux_2026-10-17.json` (the Rust backend in docker, DRBG
-and BLS12-381 measurements); the threshold Ring-LWE MCFE in 256-bit words
-(branch `perf/native-tmcfe-wide-q`): `results/perf_tmcfe_wide_q_2026-10-17.json`.
+and BLS12-381 measurements), `results/perf_tmcfe_wide_q_2026-10-17.json`
+(the threshold Ring-LWE MCFE in 256-bit words) and
+`results/perf_native_bls_msm_2026-10-17.json` (multi-scalar multiplication on
+BLS12-381); the last two were developed on side branches, now merged.
 The C++ prototype was removed once the Rust backend matched it (same kernels,
 same outputs, the same tests); its numbers stay here as measured.
 
@@ -379,7 +381,7 @@ operations (pairing products, checked G2 deserialisation, G2
 exponentiations in key generation); the exponentiations are batched since,
 see the next section.
 
-### Multi-scalar multiplication (branch `perf/native-bls-msm`)
+### Multi-scalar multiplication
 
 `pairing_backend.multiexp(bases, exps)` computes `prod_i b_i^{e_i}` in one
 call (`bls_msm`), `pow_many(base, exps)` the powers of one base with one
