@@ -90,7 +90,12 @@ arithmetic are not constant-time, so neither sampler resists timing side
 channels; ``"facct"`` is the reference for a native implementation that
 can. For a given bit source its output is the same on every platform, so it
 comes with known-answer tests. Parties that derive noise from a shared seed
-(the threshold schemes' flooding noise) must use the same sampler.
+(the Gaussian flooding noise of the threshold LWE schemes, and of
+``mcfe/ring_lwe_threshold`` with ``flooding="gaussian"``) must use the same
+sampler; the default ``flooding="uniform"`` of ``mcfe/ring_lwe_threshold``
+draws its noise without a Gaussian sampler (uniform on ``[-2^tau, 2^tau)``
+from the seeded SHAKE-256 stream, the same statistical distance per
+coefficient, see the module).
 
 Status API
 ----------

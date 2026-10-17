@@ -7,8 +7,9 @@
   derivation, ``dense_dots``) give the Python values bit for bit, for 64-,
   128- and 256-bit words and with rejections actually happening.
 * MCFE Ring-LWE (plain, threshold, decentralised) and dense-LWE MCFE decrypt
-  in every mode; the default leaves public parameters and keys as they were;
-  keys of another mode are refused.
+  in every mode; the default is ``"shake128-rejection"``, public parameters
+  and keys without ``label_hash`` (versions <= 0.3.0) are read as
+  ``"shake256-wide"``; keys of another mode are refused.
 """
 
 from __future__ import annotations
@@ -104,7 +105,7 @@ def test_rejection_happens_and_parameters():
         assert limit / 256 ** nb > 1 - 2 ** -8
 
 
-def test_modes_are_separated_and_default_unchanged():
+def test_modes_are_separated_and_generic_default_unchanged():
     q = (1 << 79) + 12345
     outs = {m: cu.hash_to_zq_vector("lab", q, 64, domain="d", mode=m) for m in cu.LABEL_HASHES}
     assert len({tuple(v) for v in outs.values()}) == 3
@@ -231,8 +232,7 @@ def _rlwe(mode, kg_cls, cls, ring_n=64, **extra):
 def test_mcfe_ring_lwe_round_trip(mode, backend):
     with native_backend.backend(backend):
         kg, pp, clients = _rlwe(mode, mcfe_rlwe.MCFERingLWEKeyGenerator, mcfe_rlwe.MCFERingLWE)
-        assert pp.get("label_hash", "shake256-wide") == mode
-        assert ("label_hash" in pp) == (mode != "shake256-wide")
+        assert pp["label_hash"] == mode
         rng = np.random.default_rng(3)
         grads = {nid: rng.uniform(-1, 1, 150).round(2) for nid in clients}
         cts = {nid: cl.encrypt_lst_ndarray([g], label="r") for nid, (cl, g) in
@@ -240,7 +240,7 @@ def test_mcfe_ring_lwe_round_trip(mode, backend):
         weights = {nid: [1] for nid in clients}
         n_chunks = mcfe_rlwe.MCFERingLWE.key_chunks(cts["c0"])
         dk = kg.get_decryption_keys("s", credentials={"fusion_weight": weights, "label": "r", "n_chunks": n_chunks})
-        assert ("label_hash" in dk) == (mode != "shake256-wide")
+        assert dk["label_hash"] == mode
         agg = mcfe_rlwe.MCFERingLWE({"id": "a", "precision": 2, "keys": {"pp": pp}})
         out = agg.decrypt_lst_ndarray_ct(cts, dk=dk, fusion_weight=weights, label="r")[0]
         assert np.allclose(out, sum(grads.values()), atol=1e-9)
@@ -338,7 +338,7 @@ def test_dense_lwe_round_trip_and_backends(mode, backend, native_calls):
     kg = mcfe_lwe.MCFELWEKeyGenerator(cfg)
     kg.setup()
     pp = kg.get_public_parameters()
-    assert ("label_hash" in pp) == (mode != "shake256-wide")
+    assert pp["label_hash"] == mode
     clients = {nid: mcfe_lwe.MCFELWE({"id": nid, "precision": 2, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
                for nid in nids}
     rng = np.random.default_rng(2)
@@ -363,3 +363,40 @@ def test_unknown_mode_refused():
         mcfe_rlwe.MCFERingLWEKeyGenerator({"n": 2, "lst_nid": nids, "ring_n": 16, "label_hash": "md5"})
     with pytest.raises(FEValidationError):
         mcfe_lwe.MCFELWEKeyGenerator({"n": 2, "lst_nid": nids, "label_hash": "md5"})
+
+
+def test_defaults_and_v030_compatibility():
+    """The key generators default to shake128-rejection; public parameters and
+    keys without ``label_hash`` (as v0.3.0 wrote them) are read as
+    shake256-wide, so their ciphertexts still decrypt, and they do not mix with
+    keys of the new default."""
+    assert cu.DEFAULT_LABEL_HASH == "shake128-rejection" and cu.LEGACY_LABEL_HASH == "shake256-wide"
+    kg, pp, clients = _rlwe(None, mcfe_rlwe.MCFERingLWEKeyGenerator, mcfe_rlwe.MCFERingLWE)
+    assert pp["label_hash"] == "shake128-rejection"
+    weights = {nid: [1] for nid in clients}
+    creds = {"fusion_weight": weights, "label": "r", "n_chunks": 1}
+    new_dk = kg.get_decryption_keys("s", credentials=creds)
+
+    old_kg, old_pp, _ = _rlwe("shake256-wide", mcfe_rlwe.MCFERingLWEKeyGenerator, mcfe_rlwe.MCFERingLWE)
+    v030_pp = {k: v for k, v in old_pp.items() if k != "label_hash"}
+    v030 = {nid: mcfe_rlwe.MCFERingLWE({"id": nid, "precision": 2,
+                                        "keys": {"pp": v030_pp, "sk": old_kg.get_private_keys(nid)}})
+            for nid in clients}
+    assert v030["c0"].label_hash == "shake256-wide"
+    grads = {nid: np.random.default_rng(1).uniform(-1, 1, 30).round(2) for nid in clients}
+    cts = {nid: v030[nid].encrypt_lst_ndarray([grads[nid]], label="r") for nid in clients}
+    v030_dk = {k: v for k, v in old_kg.get_decryption_keys("s", credentials=creds).items() if k != "label_hash"}
+    agg = mcfe_rlwe.MCFERingLWE({"id": "a", "precision": 2, "keys": {"pp": v030_pp}})
+    assert np.allclose(agg.decrypt_lst_ndarray_ct(cts, dk=v030_dk, fusion_weight=weights, label="r")[0],
+                       sum(grads.values()))
+    with pytest.raises(FESchemeError):  # a key of the new default under v0.3.0 parameters
+        agg.decrypt_lst_ndarray_ct(cts, dk=new_dk, fusion_weight=weights, label="r")
+    agg_new = mcfe_rlwe.MCFERingLWE({"id": "a", "precision": 2, "keys": {"pp": pp}})
+    with pytest.raises(FESchemeError):  # a v0.3.0 key under the new parameters
+        agg_new.decrypt_lst_ndarray_ct(cts, dk=v030_dk, fusion_weight=weights, label="r")
+
+    lkg = mcfe_lwe.MCFELWEKeyGenerator({"n": 2, "lst_nid": ["c0", "c1"], "bound_x": 50, "bound_y": 2})
+    assert lkg.get_public_parameters()["label_hash"] == "shake128-rejection"
+    lkg.setup()
+    lpp = {k: v for k, v in lkg.get_public_parameters().items() if k != "label_hash"}
+    assert mcfe_lwe.MCFELWE({"id": "a", "keys": {"pp": lpp}}).label_hash == "shake256-wide"

@@ -55,7 +55,8 @@ def test_key_generator(kg_config):
     assert set(sk) == {"pk", "u", "u_prime"}
     y = {"nid_0": [1, -1], "nid_1": [0, 1], "nid_2": [1, 1]}
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y, "label": "l"})
-    assert set(dk) == {"sk_y", "z", "z_chunks", "label"} and dk["z_chunks"] == []
+    assert set(dk) == {"sk_y", "z", "z_chunks", "label", "label_hash"} and dk["z_chunks"] == []
+    assert dk["label_hash"] == pp["label_hash"] == "shake128-rejection"
     with pytest.raises(FEValidationError):
         kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y})  # no label
 

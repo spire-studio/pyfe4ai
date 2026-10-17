@@ -45,7 +45,7 @@ from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe import label_pad
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.crypto_utils import DEFAULT_LABEL_HASH
+from pyfe4ai.utils.crypto_utils import LEGACY_LABEL_HASH
 from pyfe4ai.utils.crypto_utils import hash_to_zq_vector
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul, transpose
@@ -57,7 +57,7 @@ _GDSUM_DOMAIN = "pyfe4ai/dmcfe/ring_lwe/GDSum"
 
 
 def gdsum_mask(
-    nid: str, pair_keys: dict, lst_nid: list, context: str, q, ring_n: int, mode: str = DEFAULT_LABEL_HASH
+    nid: str, pair_keys: dict, lst_nid: list, context: str, q, ring_n: int, mode: str
 ) -> list:
     """Return ``M_i(context) = sum_{j>i} PRF(K_ij) - sum_{j<i} PRF(K_ji)`` in Z_q^ring_n
     (the PRF: :func:`~pyfe4ai.utils.crypto_utils.hash_to_zq_vector` with the
@@ -167,8 +167,7 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
             "nid": self.id,
             "weights_id": weights_id,
         }
-        if self.label_hash != DEFAULT_LABEL_HASH:
-            share["label_hash"] = self.label_hash
+        share["label_hash"] = self.label_hash
         return share
 
     def combine_function_decryption_key_share(self, dct_dk_shares: dict) -> dict:
@@ -189,7 +188,7 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
             for sh in shares
         ):
             raise FESchemeError("key shares were derived for different weights or labels")
-        if any(sh.get("label_hash", DEFAULT_LABEL_HASH) != self.label_hash for sh in shares):
+        if any(sh.get("label_hash", LEGACY_LABEL_HASH) != self.label_hash for sh in shares):
             raise FESchemeError("key shares were derived with another label hash than the public parameters")
         q = gp.mpz(self.pp["q"])
 
@@ -205,6 +204,5 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
             "z_chunks": [total(lambda sh, c=c: sh["z_chunks"][c]) for c in range(len(first["z_chunks"]))],
             "label": first["label"],
         }
-        if self.label_hash != DEFAULT_LABEL_HASH:
-            key["label_hash"] = self.label_hash
+        key["label_hash"] = self.label_hash
         return key

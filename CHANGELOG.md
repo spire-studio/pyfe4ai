@@ -86,37 +86,6 @@ compatibility).
 
 ### Added
 
-- Opt-in **label hash by rejection sampling** for the MCFE schemes that hash
-  labels to `Z_q` (`mcfe/ring_lwe` with its threshold and decentralized
-  variants, and the dense-LWE MCFE family): key generator config
-  `label_hash="shake128-rejection"` or `"shake256-rejection"`. Candidates of
-  `ceil(bits(q) / 8) + 1` bytes of the XOF stream are accepted below the
-  largest multiple of `q` and reduced, so `H(u'_i, l)` and `H(l)` are exactly
-  uniform (the default reduces `bits(q) + 128`-bit SHAKE-256 blocks:
-  statistical distance below `2^-128` per value) from fewer XOF bytes (26 ->
-  11 per coefficient at an 80-bit `q`); SHAKE128 is FIPS 203's choice for
-  the same pattern. The mode is a public parameter (`pp["label_hash"]`,
-  absent for the default) and a field of the functional keys; a key of
-  another mode is refused. The GDSum masks of `mcfe/ring_lwe_decentralized`
-  follow the same mode. Ciphertext values differ between modes; formats
-  and parameters do not. Python (`hashlib`) and native kernels give the
-  same values (tests with known answers). Standard profile, one thread,
-  native: MCFE Ring-LWE 10^4 elements, binary, aggregator 7.40 -> 5.87 ms
-  (key derivation 4.17 -> 2.65 ms), client 2.77 -> 2.38 ms; dense-LWE MCFE
-  200 elements 153 / 160 -> 94 / 102 ms (client / aggregator). The default
-  is unchanged.
-- Opt-in **uniform flooding** for `mcfe/ring_lwe_threshold`
-  (`flooding="uniform"`): the partial-decryption noise is uniform on
-  `[-2^tau, 2^tau)`, `tau = bits(B) + stat_param`, read from the request's
-  seeded SHAKE-256 stream (smudging lemma: statistical distance below
-  `2^-(stat_param + 1)` per coefficient, the profile's per-sample bound), so
-  no `mpfr` Box-Muller sampler; `q` holds `s 2^tau` instead of `s 12 sigma_f`
-  (215 -> 212 bits under `standard`). Separate parameter records
-  (`bmms21-ibmcfe-shamir-smudging-uniform/v1`), public parameters `flooding`
-  and `flood_bits` instead of `sigma_f`. 10^4 elements, `s = 3`, `t = 2`:
-  partial decryption 222 -> 58 ms per server, aggregator total 492 -> 162
-  ms. The Gaussian stays the default; see the module docstring for what the
-  uniform noise gives up (no margin beyond the per-sample bound).
 - Opt-in exact discrete Gaussian sampler `"facct"`
   (`sampling_utils.discrete_gaussian_facct`): FACCT-style double sampling
   (Zhao, Steinfeld and Sakzad 2020) with a CDT base computed for
@@ -153,6 +122,46 @@ compatibility).
 
 ### Changed
 
+- **MCFE label hash (breaking for ciphertext values):** the MCFE schemes that
+  hash labels to `Z_q` (`mcfe/ring_lwe` with its threshold and decentralized
+  variants -- label pads and GDSum masks -- and the dense-LWE MCFE family
+  `mcfe/lwe`, `fullysec_lwe`, `lwe_threshold`, `lwe_decentralized`) now
+  sample by rejection mod `q` from SHAKE128 (`label_hash="shake128-rejection"`,
+  the key generators' new default): candidates of `ceil(bits(q) / 8) + 1`
+  bytes, accepted below the largest multiple of `q`, so `H(u'_i, l)` and
+  `H(l)` are exactly uniform (v0.3.0 reduced `bits(q) + 128`-bit SHAKE-256
+  blocks: statistical distance below `2^-128` per value) and read fewer XOF
+  bytes (26 -> 11 per coefficient at an 80-bit `q`). **MCFE ciphertexts and
+  functional key terms differ from v0.3.0.** Parameters, formats and the
+  cached parameter records do not change. The mode is now written to the
+  public parameters (`pp["label_hash"]`) and to every functional key or key
+  share; a key of another mode is refused. Public parameters and keys
+  without the field -- those of v0.3.0 -- are read as `"shake256-wide"`, so
+  v0.3.0 keys and ciphertexts stay usable; new setups get the v0.3.0 hash
+  with `label_hash="shake256-wide"` in the key generator config
+  (`"shake256-rejection"` keeps SHAKE-256 with rejection sampling). Python
+  (`hashlib`) and the native kernels give the same values (known-answer
+  tests). Host, native, one thread, `standard`: MCFE Ring-LWE 10^4
+  elements, binary, aggregator 7.40 -> 5.87 ms (key derivation 4.17 -> 2.65
+  ms), client 2.77 -> 2.38 ms; dense-LWE MCFE 200 elements 153 / 160 -> 94 /
+  102 ms (client / aggregator).
+- **Threshold Ring-LWE MCFE flooding (breaking for partial decryptions and
+  `q`):** `mcfe/ring_lwe_threshold` now floods partial decryptions with noise
+  uniform on `[-2^tau, 2^tau)`, `tau = bits(B) + stat_param`
+  (`flooding="uniform"`, the new default), read from the request's seeded
+  SHAKE-256 stream: statistical distance below `2^-(stat_param + 1)` per
+  coefficient by the smudging lemma, the per-sample bound of the Gaussian;
+  no `mpfr` Box-Muller sampler (1.3 instead of 79 ms per 8192
+  coefficients), and `q` holds `s 2^tau` instead of `s 12 sigma_f` (215 ->
+  212 bits under `standard`). What it gives up against the Gaussian (the
+  margin beyond the per-sample bound) is in the module docstring. Its
+  parameter records are `bmms21-ibmcfe-shamir-smudging-uniform/v1`, so
+  cached v0.3.0 (Gaussian) records are re-derived; public parameters carry
+  `flooding` and `flood_bits`. **Partial decryptions and `q` differ from
+  v0.3.0**; `flooding="gaussian"` restores the v0.3.0 flooding (and reuses
+  its cached records), and public parameters without `flooding` are read as
+  Gaussian. 10^4 elements, `s = 3`, `t = 2`: partial decryption 222 -> 58 ms
+  per server, aggregator total 492 -> 162 ms.
 - **Pairing groups (breaking for pairing keys and ciphertexts):** every
   pairing-based scheme (SIFE FH-IPE and partial FH-IPE, MIFE FH-IPE and
   FH-Multi-IPE, MCFE / dMCFE / tMCFE FH-Multi-IPE, Quad, SGP, MIQFE) now

@@ -316,16 +316,25 @@ def hash_to_zn2_star(v: str, n_mod: gp.mpz, domain: str = "") -> gp.mpz:
 
 
 #: How :func:`hash_to_zq_vector` maps a string to ``Z_q`` (the ``label_hash``
-#: setting of the MCFE schemes; the first is the default):
+#: setting of the MCFE schemes):
 #:
 #: * ``"shake256-wide"``: one SHAKE-256 stream cut into blocks of
 #:   ``bits(q) + 128`` bits, each reduced mod q (statistical distance below
-#:   ``2^-128`` per value);
+#:   ``2^-128`` per value); the only mode up to v0.3.0
+#:   (:data:`LEGACY_LABEL_HASH`);
 #: * ``"shake256-rejection"`` / ``"shake128-rejection"``: rejection sampling
 #:   mod q (exactly uniform) from a SHAKE-256 / SHAKE128 stream, see
-#:   :func:`zq_rejection_parameters`.
+#:   :func:`zq_rejection_parameters`; ``"shake128-rejection"`` is the MCFE
+#:   key generators' default (:data:`DEFAULT_LABEL_HASH`).
 LABEL_HASHES = ("shake256-wide", "shake256-rejection", "shake128-rejection")
-DEFAULT_LABEL_HASH = LABEL_HASHES[0]
+
+#: The hash of versions <= 0.3.0, of :func:`hash_to_zq_vector` without a mode
+#: (e.g. the seeded Ring-LWE ``a``) and of MCFE public parameters and keys
+#: without a ``label_hash`` field.
+LEGACY_LABEL_HASH = "shake256-wide"
+
+#: The ``label_hash`` the MCFE key generators use unless configured.
+DEFAULT_LABEL_HASH = "shake128-rejection"
 
 #: The native backend's code of each label-hash mode.
 LABEL_HASH_CODES = {mode: code for code, mode in enumerate(LABEL_HASHES)}
@@ -342,7 +351,7 @@ def check_label_hash(mode) -> str:
     return mode
 
 
-def hash_to_zq_material(v: str, domain: str = "", mode: str = DEFAULT_LABEL_HASH) -> bytes:
+def hash_to_zq_material(v: str, domain: str = "", mode: str = LEGACY_LABEL_HASH) -> bytes:
     """The XOF input of :func:`hash_to_zq_vector` (also hashed natively,
     see :mod:`pyfe4ai.utils.native_backend`); the rejection modes use their
     own tag, so no two modes share an input."""
@@ -385,11 +394,11 @@ def _rejection_sample(material: bytes, q, length: int, mode: str) -> list:
         n_bytes *= 2
 
 
-def hash_to_zq_vector(v: str, q: gp.mpz, length: int, domain: str = "", mode: str = DEFAULT_LABEL_HASH) -> list:
+def hash_to_zq_vector(v: str, q: gp.mpz, length: int, domain: str = "", mode: str = LEGACY_LABEL_HASH) -> list:
     """Hash a string to a vector of *length* elements of ``Z_q`` (random oracle).
 
-    ``mode`` is one of :data:`LABEL_HASHES`. The default cuts one SHAKE-256
-    output stream into *length* blocks of ``bits(q) + 128`` bits, each
+    ``mode`` is one of :data:`LABEL_HASHES`. ``"shake256-wide"`` (the
+    default here, :data:`LEGACY_LABEL_HASH`) cuts one SHAKE-256 output stream into *length* blocks of ``bits(q) + 128`` bits, each
     reduced mod q, hence statistically close to uniform. Versions <= 0.2.0
     made one SHAKE-256 call per coordinate, so their outputs (and the
     ciphertexts of the schemes that hash labels this way) differ. The

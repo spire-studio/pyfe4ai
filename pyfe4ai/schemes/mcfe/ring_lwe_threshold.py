@@ -23,8 +23,9 @@ Flooding: the exact key part differs from what the result and the
 ciphertexts determine by the decryption noise
 ``sum_row y_row (e'_row r + e_row) - e sum_row y_row s_row``, bounded per
 coefficient by ``B = n eta Y (2 ring_n 144 sigma1 sigma2 + 12 sigma3)``;
-``e_k <- D_{Z, 2^kappa B}`` per coefficient smudges it (statistical
-argument), with ``q`` enlarged so that ``s`` flooding terms still decode.
+flooding noise ``e_k`` per coefficient smudges it (statistical argument;
+uniform by default, Gaussian ``D_{Z, 2^kappa B}`` selectable, see below),
+with ``q`` enlarged so that ``s`` flooding terms still decode.
 Ciphertexts (and ndarray chunks) carry one HMAC tag per server over the
 (chunk) label and the ciphertext; servers only decrypt ciphertexts tagged
 for them under the label they serve, since ``w_k`` is linear in ``ct1``.
@@ -32,30 +33,39 @@ The noise is seeded with a per-server key (fixed per weights and label),
 ``lambda_k``, the label or chunk and the ``ct1`` values, so a request for
 the same key part draws the same noise; a corrupted client varying its own
 ``ct1`` draws fresh noise each time, and averaging that away would take about
-``2^(2 stat_param)`` partial decryptions. The threshold layer is our own
-design.
+``2^(2 stat_param)`` partial decryptions with Gaussian noise (see below
+for the uniform default). The threshold layer is our own design.
 
-Uniform flooding (opt-in, key generator config ``flooding="uniform"``):
-``e_k`` uniform on ``[-2^tau, 2^tau)`` with ``tau = bits(B) + kappa``, read
-from the same seeded XOF (:func:`uniform_flooding_poly`). By the smudging
-lemma (Asharov et al., EUROCRYPT 2012, Lemma 2.1) the statistical distance
-per coefficient is ``|E| / 2^(tau + 1) < 2^-(kappa + 1)``, the per-sample
-bound the Gaussian meets as well; ``q`` needs ``s 2^tau`` instead of
-``s 12 sigma_f`` (about 3 bits less), correctness holds without a tail cut,
-and the sampler is exact and integer-only (no ``mpfr``). Unlike the Gaussian
-it has no margin beyond that bound: over ``N`` coefficients the distance is
-``N 2^-(kappa + 1)`` (the Gaussian's is ``sqrt(N)`` times its per-sample
-bound), and telling ``E`` from ``E + 1`` by repetition takes about
-``2^(tau + 1)`` partial decryptions instead of ``2^(2 kappa) B^2``. Its own
-parameter records (construction ``...-uniform/v1``), public parameters
-``flooding`` and ``flood_bits`` instead of ``sigma_f``.
+Flooding distribution (key generator config ``flooding``, a public
+parameter):
+
+* ``"uniform"`` (default): ``e_k`` uniform on ``[-2^tau, 2^tau)`` with
+  ``tau = bits(B) + kappa``, read from the same seeded XOF
+  (:func:`uniform_flooding_poly`). By the smudging lemma (Asharov et al.,
+  EUROCRYPT 2012, Lemma 2.1) the statistical distance per coefficient is
+  ``|E| / 2^(tau + 1) < 2^-(kappa + 1)``, the per-sample bound the Gaussian
+  meets as well; ``q`` holds ``s 2^tau`` instead of ``s 12 sigma_f`` (about
+  3 bits less), correctness needs no tail cut, and the sampler is exact and
+  integer-only (no ``mpfr``). Unlike the Gaussian it has no margin beyond
+  that bound: over ``N`` coefficients the distance is ``N 2^-(kappa + 1)``
+  (the Gaussian's is ``sqrt(N)`` times its per-sample bound), and telling
+  ``E`` from ``E + 1`` by repetition takes about ``2^(tau + 1)`` partial
+  decryptions instead of ``2^(2 kappa) B^2``. Parameter records
+  ``bmms21-ibmcfe-shamir-smudging-uniform/v1``; public parameters
+  ``flooding`` and ``flood_bits``.
+* ``"gaussian"``: ``e_k <- D_{Z, 2^kappa B}`` as described above, the only
+  flooding of versions <= 0.3.0 (records ``bmms21-ibmcfe-shamir-smudging/v1``,
+  public parameter ``sigma_f``; public parameters without ``flooding`` are
+  read as this).
 
 With the native backend (:mod:`pyfe4ai.utils.native_backend`; moduli below
 ``2^253``, which includes the flooded ``q`` of the standard profile) the MCFE
 layer, the Shamir sharing of the key, the parsing, digests and NTT-domain
 products of a partial decryption and the combination run natively, with
-the values of the Python code; the flooding noise is always drawn by
-:func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint`.
+the values of the Python code; the flooding noise is always drawn in
+Python (:func:`uniform_flooding_poly`, or
+:func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint` for the
+Gaussian).
 """
 
 from __future__ import annotations
@@ -111,8 +121,14 @@ _CONSTRUCTION_UNIFORM = "bmms21-ibmcfe-shamir-smudging-uniform/v1"
 _TAG_DOMAIN = "pyfe4ai/tmcfe-ring-lwe/ciphertext-tag/v1"
 _UNIFORM_DOMAIN = b"pyfe4ai/tmcfe-ring-lwe/uniform-flooding/v1"
 
-#: Flooding distributions of the partial decryptions (the first is the default).
-FLOODINGS = ("gaussian", "uniform")
+#: Flooding distributions of the partial decryptions.
+FLOODINGS = ("uniform", "gaussian")
+
+#: The key generator's default flooding.
+DEFAULT_FLOODING = "uniform"
+
+#: The flooding of versions <= 0.3.0 and of public parameters without ``flooding``.
+LEGACY_FLOODING = "gaussian"
 
 
 def uniform_flooding_poly(bits: int, ring_n: int, seed: bytes) -> list:
@@ -158,9 +174,10 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
                 :class:`~pyfe4ai.schemes.mcfe.ring_lwe.MCFERingLWEKeyGenerator`,
                 plus ``s``, ``t``, ``lst_sid``, ``stat_param`` (``kappa`` of
                 the flooding) and ``flooding`` (one of :data:`FLOODINGS`,
-                default ``"gaussian"``; see the module docstring).
+                default ``"uniform"``, ``"gaussian"`` for the partial
+                decryptions of versions <= 0.3.0; see the module docstring).
         """
-        self.flooding = config.get("flooding", FLOODINGS[0])
+        self.flooding = config.get("flooding", DEFAULT_FLOODING)
         if self.flooding not in FLOODINGS:
             raise FEValidationError("unknown flooding {!r}; one of {}".format(self.flooding, ", ".join(FLOODINGS)))
         self.t = config.get("t", CryptoCONST.tMCFE_T)
@@ -257,12 +274,12 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         return sk
 
     def get_public_parameters(self) -> dict:
-        """MCFE public parameters plus ``s``, ``t``, ``lst_sid`` and ``sigma_f``
-        (uniform flooding: ``flooding`` and ``flood_bits`` instead)."""
+        """MCFE public parameters plus ``s``, ``t``, ``lst_sid``, ``flooding``
+        and ``flood_bits`` (uniform) or ``sigma_f`` (Gaussian)."""
         pp = super().get_public_parameters()
-        pp.update({"s": self.s, "t": self.t, "lst_sid": list(self.lst_sid)})
+        pp.update({"s": self.s, "t": self.t, "lst_sid": list(self.lst_sid), "flooding": self.flooding})
         if self.flooding == "uniform":
-            pp.update({"flooding": "uniform", "flood_bits": self.flood_bits})
+            pp["flood_bits"] = self.flood_bits
         else:
             pp["sigma_f"] = str(self.sigma_f)
         return pp
@@ -488,7 +505,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
 
     def _flooding_noise(self, ring_n: int, seed: bytes) -> list:
         """The flooding polynomial of the public parameters' distribution, a function of *seed*."""
-        flooding = self.pp.get("flooding", FLOODINGS[0])
+        flooding = self.pp.get("flooding", LEGACY_FLOODING)
         if flooding == "uniform":
             bits = self.pp.get("flood_bits")
             if type(bits) is not int or bits < 1:

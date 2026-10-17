@@ -26,12 +26,15 @@ encrypt at most once per label. The ndarray helpers pack values into the
 ``ring_n`` coefficients of one ciphertext per chunk; chunk ``c`` of label
 ``l`` uses ``H(u'_i, (l, c))``, and a key for ``n_chunks`` chunks carries one
 ``z''`` per chunk. ``H`` is SHAKE-256 over the client secret and the encoded
-label (:func:`~pyfe4ai.utils.crypto_utils.hash_to_zq_vector`); the key
-generator's ``label_hash`` setting (a public parameter) selects rejection
-sampling mod q from SHAKE-256 or SHAKE128 instead of the default wide
-reduction: exactly uniform pads from fewer XOF bytes, other ciphertext values
-(:data:`~pyfe4ai.utils.crypto_utils.LABEL_HASHES`). Versions <= 0.2.0 masked
-inputs with a small public label scalar.
+label (:func:`~pyfe4ai.utils.crypto_utils.hash_to_zq_vector`), mapped to
+``Z_q`` as the key generator's ``label_hash`` says (a public parameter;
+:data:`~pyfe4ai.utils.crypto_utils.LABEL_HASHES`): by default rejection
+sampling mod q from SHAKE128 (``"shake128-rejection"``: exactly uniform,
+fewer XOF bytes). Versions <= 0.3.0 reduced ``bits(q) + 128``-bit SHAKE-256
+blocks (``"shake256-wide"``, still selectable; public parameters and keys
+without a ``label_hash`` field are read as that), so their ciphertexts and
+key terms differ. Versions <= 0.2.0 masked inputs with a small public label
+scalar.
 """
 
 from __future__ import annotations
@@ -51,6 +54,7 @@ from pyfe4ai.utils import native_backend
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import DEFAULT_LABEL_HASH
 from pyfe4ai.utils.crypto_utils import LABEL_HASH_CODES
+from pyfe4ai.utils.crypto_utils import LEGACY_LABEL_HASH
 from pyfe4ai.utils.crypto_utils import check_label_hash
 from pyfe4ai.utils.crypto_utils import hash_to_zq_material
 from pyfe4ai.utils.crypto_utils import hash_to_zq_vector
@@ -62,7 +66,7 @@ logger = logging.getLogger(__name__)
 _PAD_DOMAIN = "pyfe4ai/mcfe/ring_lwe/H(u',label)"
 
 
-def label_pad(u_prime: str, label, q, eta: int, ring_n: int, mode: str = DEFAULT_LABEL_HASH) -> list:
+def label_pad(u_prime: str, label, q, eta: int, ring_n: int, mode: str) -> list:
     """Return ``H(u'_i, label)`` as ``eta`` rows of ``ring_n`` coefficients mod q
     (*mode*: the ``label_hash`` public parameter)."""
     flat = hash_to_zq_vector(
@@ -71,27 +75,28 @@ def label_pad(u_prime: str, label, q, eta: int, ring_n: int, mode: str = DEFAULT
     return [flat[r * ring_n:(r + 1) * ring_n] for r in range(eta)]
 
 
-def label_pad_material(u_prime: str, label, mode: str = DEFAULT_LABEL_HASH) -> bytes:
+def label_pad_material(u_prime: str, label, mode: str) -> bytes:
     """The hash input of :func:`label_pad` (the native backend expands it itself)."""
     return hash_to_zq_material("{}|{}".format(u_prime, encode_label(label)), domain=_PAD_DOMAIN, mode=mode)
 
 
 def pp_label_hash(pp: dict) -> str:
-    """The ``label_hash`` of public parameters (absent: the default).
+    """The ``label_hash`` of public parameters (absent: ``"shake256-wide"``,
+    the hash of versions <= 0.3.0).
 
     Raises:
         FEValidationError: If it is not one of
             :data:`~pyfe4ai.utils.crypto_utils.LABEL_HASHES`.
     """
     try:
-        return check_label_hash(pp.get("label_hash", DEFAULT_LABEL_HASH))
+        return check_label_hash(pp.get("label_hash", LEGACY_LABEL_HASH))
     except ValueError as exc:
         raise FEValidationError(str(exc)) from exc
 
 
 def native_hash_kwargs(mode: str) -> dict:
-    """The ``hash_mode`` keyword of the native pad kernels (none for the default)."""
-    return {"hash_mode": LABEL_HASH_CODES[mode]} if mode != DEFAULT_LABEL_HASH else {}
+    """The ``hash_mode`` keyword of the native pad kernels (none for the kernels' own ``"shake256-wide"``)."""
+    return {"hash_mode": LABEL_HASH_CODES[mode]} if mode != LEGACY_LABEL_HASH else {}
 
 
 def chunk_key_index(layer: dict, j: int, n_keys: int) -> int:
@@ -121,16 +126,15 @@ class MCFERingLWEKeyGenerator(MIFERingLWEKeyGenerator):
         """As :class:`~pyfe4ai.schemes.mife.ring_lwe.MIFERingLWEKeyGenerator`,
         plus ``label_hash`` (one of
         :data:`~pyfe4ai.utils.crypto_utils.LABEL_HASHES`, default
-        ``"shake256-wide"``), published in the public parameters when not the
-        default."""
+        ``"shake128-rejection"``; ``"shake256-wide"`` for the ciphertexts of
+        versions <= 0.3.0), published in the public parameters."""
         self.label_hash = pp_label_hash({"label_hash": config.get("label_hash", DEFAULT_LABEL_HASH)})
         super().__init__(config, **kwargs)
 
     def get_public_parameters(self) -> dict:
-        """MIFE public parameters, plus ``label_hash`` unless it is the default."""
+        """MIFE public parameters plus ``label_hash``."""
         pp = super().get_public_parameters()
-        if self.label_hash != DEFAULT_LABEL_HASH:
-            pp["label_hash"] = self.label_hash
+        pp["label_hash"] = self.label_hash
         return pp
 
     def setup(self) -> None:
@@ -197,9 +201,8 @@ class MCFERingLWEKeyGenerator(MIFERingLWEKeyGenerator):
         })
 
     def _with_label_hash(self, key: dict) -> dict:
-        """The key, marked with its ``label_hash`` unless that is the default."""
-        if self.label_hash != DEFAULT_LABEL_HASH:
-            key["label_hash"] = self.label_hash
+        """The key, marked with its ``label_hash``."""
+        key["label_hash"] = self.label_hash
         return key
 
 
@@ -234,7 +237,7 @@ class MCFERingLWE(MIFERingLWE):
         return native_hash_kwargs(self.label_hash)
 
     def _check_key_label_hash(self, dk: dict) -> None:
-        if dk.get("label_hash", DEFAULT_LABEL_HASH) != self.label_hash:
+        if dk.get("label_hash", LEGACY_LABEL_HASH) != self.label_hash:
             raise FESchemeError("the key was derived with another label hash than the public parameters")
 
     def _decrypt_layer_native(self, ctx, dict_ndarray_ct, l, layer, dk, fusion_weight, sk_hats):

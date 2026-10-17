@@ -1,10 +1,11 @@
-"""Opt-in uniform flooding of the threshold Ring-LWE MCFE (``flooding="uniform"``).
+"""Uniform flooding of the threshold Ring-LWE MCFE (``flooding="uniform"``, the default).
 
 * :func:`uniform_flooding_poly` follows its specification, keeps known
   answers, is uniform on ``[-2^bits, 2^bits)`` and depends on every seed byte.
 * Parameters: ``2^tau > 2^stat_param B``, ``q`` holds ``s 2^tau`` and is
-  smaller than the Gaussian's; separate parameter records; the default
-  (Gaussian) public parameters are unchanged.
+  smaller than the Gaussian's; separate parameter records; the Gaussian of
+  versions <= 0.3.0 stays selectable, and public parameters without
+  ``flooding`` are read as Gaussian.
 * Partial decryptions combine to the right sums on both backends, are
   identical across backends and repeatable, and differ per server and set.
 """
@@ -76,8 +77,9 @@ def _kg(flooding=None, ring_n=32, stat_param=40, bound_x=100):
 
 
 def test_parameters_and_records():
-    kg_g, pp_g = _kg()
-    assert "sigma_f" in pp_g and "flooding" not in pp_g and "flood_bits" not in pp_g
+    assert tm.DEFAULT_FLOODING == "uniform" and _kg()[1]["flooding"] == "uniform"
+    kg_g, pp_g = _kg("gaussian")
+    assert "sigma_f" in pp_g and pp_g["flooding"] == "gaussian" and "flood_bits" not in pp_g
     kg_u, pp_u = _kg("uniform")
     assert pp_u["flooding"] == "uniform" and "sigma_f" not in pp_u
     tau, sigma_f = pp_u["flood_bits"], int(pp_g["sigma_f"])
@@ -163,3 +165,15 @@ def test_malformed_flooding_parameters_refused():
         srv = tm.ThresholdMCFERingLWE({"id": "s0", "precision": 2, "keys": {"pp": dict(pp, **bad)}})
         with pytest.raises(FEValidationError):
             srv.compute_lst_ndarray_ct(cts, creds, dk, ["s0", "s1"])
+
+
+def test_gaussian_and_v030_parameters_still_decrypt():
+    """flooding="gaussian" and public parameters without ``flooding`` (as
+    v0.3.0 wrote them): the Gaussian sampler, correct sums."""
+    kg, pp = _kg("gaussian", ring_n=16)
+    _round(pp, kg, "python", ring_n=16, size=20)
+    v030 = {k: v for k, v in pp.items() if k != "flooding"}
+    import unittest.mock as mock
+
+    with mock.patch.object(tm, "uniform_flooding_poly", side_effect=AssertionError("uniform flooding used")):
+        _round(v030, kg, "python", ring_n=16, size=20)

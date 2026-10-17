@@ -262,10 +262,12 @@ def test_dense_dots_identical():
 
 def _mcfe(ring_n=32, sec_param=128, bound_x=100, bound_y=1, eta=1, stat_param=None):
     """MCFE Ring-LWE; with *stat_param*, its threshold variant, whose flooded q
-    has 200+ bits for stat_param >= 150 (the MCFE layer is the same)."""
+    has 200+ bits for stat_param >= 150 (the MCFE layer is the same). The
+    label hash of the C ABI's scheme kernels: ``"shake256-wide"`` (the other
+    modes are compared through ``pf4_hash_to_zq_mode`` above)."""
     nids = ["c0", "c1", "c2"]
     cfg = {"n": 3, "lst_nid": nids, "eta": eta, "ring_n": ring_n, "sec_param": sec_param, "bound_x": bound_x,
-           "bound_y": bound_y}
+           "bound_y": bound_y, "label_hash": "shake256-wide"}
     mod = mcfe_rlwe
     if stat_param is not None:
         mod = tmcfe_rlwe
@@ -331,7 +333,8 @@ def test_encrypt_tensor_identical(size, threads, stat_param, monkeypatch):
     ring = Ring(q, n)
     ints = np.ascontiguousarray(np.rint(layer * 100).astype(np.int64))
     chunks = -(-size // n)
-    mats = [mcfe_rlwe.label_pad_material(cl.sk["u_prime"], mcfe_rlwe.chunk_label("r", c)) for c in range(chunks)]
+    mats = [mcfe_rlwe.label_pad_material(cl.sk["u_prime"], mcfe_rlwe.chunk_label("r", c), pp["label_hash"])
+            for c in range(chunks)]
     arr, lens = _materials(mats)
     data = ByteStream(4).take(3 * native_backend.gauss_bytes(n) * chunks)
     out = ctypes.create_string_buffer(2 * VB * n * chunks)
@@ -382,7 +385,8 @@ def test_pad_terms_identical(stat_param):
     dk = _mcfe_key(kg, {"fusion_weight": weights, "label": "L", "n_chunks": 2})
     q, n = int(pp["q"]), 32
     labels = ["L", mcfe_rlwe.chunk_label("L", 0), mcfe_rlwe.chunk_label("L", 1)]
-    mats = [mcfe_rlwe.label_pad_material(kg.msk["u_prime"][nid], lab) for lab in labels for nid in kg.lst_nid]
+    mats = [mcfe_rlwe.label_pad_material(kg.msk["u_prime"][nid], lab, pp["label_hash"])
+            for lab in labels for nid in kg.lst_nid]
     arr, lens = _materials(mats)
     with native_backend.backend("python"):
         base = mife_rlwe.MIFERingLWEKeyGenerator.get_decryption_keys(kg, "a", credentials={"fusion_weight": weights})["z"]

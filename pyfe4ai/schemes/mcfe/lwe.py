@@ -42,10 +42,13 @@ Each client slot must encrypt at most once per label (one-IND security):
 two ciphertexts of one slot under one label differ by about
 ``(q0 / q) Delta (x - x')``. The ndarray helpers therefore derive a distinct
 label per element. ``H`` is SHAKE-256 (the paper's implementation uses
-counter-mode SHA-256); the key generator's ``label_hash`` setting (a public
-parameter) selects rejection sampling mod q from SHAKE-256 or SHAKE128 instead
-(:data:`~pyfe4ai.utils.crypto_utils.LABEL_HASHES`): exactly uniform, fewer XOF
-bytes, other ciphertext values.
+counter-mode SHA-256), mapped to ``Z_q`` as the key generator's
+``label_hash`` says (a public parameter;
+:data:`~pyfe4ai.utils.crypto_utils.LABEL_HASHES`): by default rejection
+sampling mod q from SHAKE128 (exactly uniform, fewer XOF bytes). Versions
+<= 0.3.0 reduced ``bits(q) + 128``-bit SHAKE-256 blocks (``"shake256-wide"``,
+still selectable; public parameters without ``label_hash`` are read as that),
+so their ciphertexts differ.
 """
 
 from __future__ import annotations
@@ -65,6 +68,7 @@ from pyfe4ai.schemes.profiles import STANDARD
 from pyfe4ai.utils import native_backend
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import DEFAULT_LABEL_HASH
+from pyfe4ai.utils.crypto_utils import LEGACY_LABEL_HASH
 from pyfe4ai.utils.crypto_utils import check_label_hash
 from pyfe4ai.utils.crypto_utils import hash_to_zq_material
 from pyfe4ai.utils.crypto_utils import hash_to_zq_vector
@@ -86,7 +90,7 @@ _LABEL_HASH_DOMAIN = "pyfe4ai/mcfe/lwe/H(label)"
 _DEFAULT_STAT_PARAM = 64
 
 
-def hash_label(label, q, length: int, mode: str = DEFAULT_LABEL_HASH) -> list:
+def hash_label(label, q, length: int, mode: str) -> list:
     """Return ``H(label) in Z_q^length`` (random oracle; *mode*: the
     ``label_hash`` public parameter)."""
     return hash_to_zq_vector(encode_label(label), q, length, domain=_LABEL_HASH_DOMAIN, mode=mode)
@@ -133,7 +137,8 @@ class MCFELWEKeyGenerator(IPFEAbsKeyGenerator):
                 ``stat_param`` (statistical parameter ``kappa``),
                 ``sec_param`` (recorded only) and ``label_hash`` (one of
                 :data:`~pyfe4ai.utils.crypto_utils.LABEL_HASHES`, default
-                ``"shake256-wide"``; a public parameter when not the default).
+                ``"shake128-rejection"``, ``"shake256-wide"`` for the
+                ciphertexts of versions <= 0.3.0; a public parameter).
                 The keys ``bound_u`` and ``label_modulus`` of versions <= 0.2.0
                 are ignored.
         """
@@ -194,8 +199,7 @@ class MCFELWEKeyGenerator(IPFEAbsKeyGenerator):
             "stat_param": self.stat_param,
             "sec_param": self.sec_param,
         }
-        if self.label_hash != DEFAULT_LABEL_HASH:
-            pp["label_hash"] = self.label_hash
+        pp["label_hash"] = self.label_hash
         return pp
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
@@ -257,7 +261,7 @@ class MCFELWE(IPFEAbsCrypto):
         self.q0 = gp.mpz(self.pp["q0"])
         self.delta = gp.mpz(self.pp["delta"])
         self.dim = self.pp["n0"] + self.pp["m0"]
-        self.label_hash = _label_hash(self.pp.get("label_hash", DEFAULT_LABEL_HASH))
+        self.label_hash = _label_hash(self.pp.get("label_hash", LEGACY_LABEL_HASH))
 
     def _hash_label(self, label: str) -> list:
         return hash_label(label, self.q, self.dim, self.label_hash)
@@ -394,7 +398,7 @@ class MCFELWE(IPFEAbsCrypto):
                           lambda row: b"".join((int(v) % int(q)).to_bytes(8 * kl, "little") for v in row))
         materials = [hash_to_zq_material(encode_label(lab), domain=_LABEL_HASH_DOMAIN, mode=self.label_hash)
                      for lab in labels]
-        if self.label_hash == DEFAULT_LABEL_HASH:
+        if self.label_hash == LEGACY_LABEL_HASH:
             raw = native_backend.ext().dense_dots(
                 materials, (int(q).bit_length() + 128 + 7) // 8, self.dim, key, kl, native_backend.get_threads(),
             )
