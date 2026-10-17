@@ -19,7 +19,8 @@
 //!   against MPFR), so <= 2^-54;
 //! * a sample is returned only when the approximation is more than
 //!   2^(max(s + 16 - 64 n, -100) + 1) from every half-integer; then both values
-//!   round to the same integer. Otherwise (probability about 2^-45) it is
+//!   round to the same integer. Otherwise (probability at most about 2^-45,
+//!   when s is just below a multiple of 64; about 2^-62 at s = 47) it is
 //!   reported undecided, and the caller computes it with the reference formula
 //!   from the same b1 and b2 -- so for a given bit source the samples are the
 //!   reference's.

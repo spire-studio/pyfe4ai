@@ -601,6 +601,9 @@ fn mag_pyint<'py>(py: Python<'py>, mag: &[u64], neg: bool) -> PyResult<Bound<'py
     if neg { v.neg() } else { Ok(v) }
 }
 
+/// Most samples one gauss_bigint call takes (native_backend.MAX_NATIVE_BIGINT_COUNT).
+const MAX_BIGINT_COUNT: usize = 1 << 24;
+
 /// One chunk of gauss_bigint: its magnitudes, flags and the bytes of its undecided samples.
 struct BigChunk {
     mags: Vec<u64>,
@@ -610,12 +613,14 @@ struct BigChunk {
 
 /// discrete_gaussian_bigint(sigma, count, rng) with the rounded sampler (see
 /// pyfe4ai-core bigauss) at precision `prec` for sig = sig_mant 2^sig_exp
-/// (sig_mant little-endian). The uniforms are getrandbits(prec) of
-/// XofRandom (`xof_head` = its len(seed) || seed, from call `xof_counter`) if
-/// given, else of `rnd` (bytes, tests), else of the call's DRBG (stream c for
-/// samples 256 c to 256 c + 255). Returns (values, holes): values[i] is the
-/// sample, or None when undecided, and holes the (i, b1 bytes, b2 bytes) of
-/// those, for the reference formula. `widen` enlarges the margin (tests).
+/// (sig_mant little-endian). The uniforms are getrandbits(prec) of an
+/// XofRandom (`xof_head` = its len(seed) || seed) from call `xof_counter` on --
+/// calls the caller has claimed (XofRandom._claim) -- if given, else of `rnd`
+/// (bytes, tests), else of the call's DRBG (stream c for samples 256 c to
+/// 256 c + 255). Returns (values,
+/// holes): values[i] is the sample, or None when undecided, and holes the (i,
+/// b1 bytes, b2 bytes) of those, for the reference formula. `widen` enlarges
+/// the margin (tests).
 #[pyfunction]
 #[pyo3(signature = (count, prec, sig_mant, sig_exp, xof_head=None, xof_counter=0, rnd=None, seed=None, threads=1, widen=0))]
 #[allow(clippy::too_many_arguments)]
@@ -623,6 +628,9 @@ fn gauss_bigint(py: Python<'_>, count: usize, prec: u32, sig_mant: &[u8], sig_ex
                 xof_counter: u64, rnd: Option<Vec<u8>>, seed: Option<Vec<u8>>, threads: usize, widen: u32)
                 -> PyResult<(Py<PyList>, Py<PyList>)> {
     const CHUNK: usize = 256;
+    if count > MAX_BIGINT_COUNT {
+        return Err(PyValueError::new_err("too many samples for one native call"));
+    }
     let p = bigauss::Params::new(prec, sig_mant, sig_exp, widen).map_err(PyValueError::new_err)?;
     let nb = p.nbytes();
     let per = 2 * nb;
@@ -631,6 +639,10 @@ fn gauss_bigint(py: Python<'_>, count: usize, prec: u32, sig_mant: &[u8], sig_ex
             return Err(PyValueError::new_err("not enough random bytes"));
         }
     }
+    if xof_head.is_some() && xof_counter.checked_add(2 * count as u64).is_none() {
+        return Err(pyo3::exceptions::PyOverflowError::new_err("XofRandom counter beyond 64 bits"));
+    }
+    let xof_head = xof_head.map(zeroize::Zeroizing::new); // the seed copy is wiped at the end
     let drbg = if xof_head.is_none() && rnd.is_none() { Some(CallDrbg::new(seed.as_deref())?) } else { None };
     let n_chunks = count.div_ceil(CHUNK);
     let mw = p.mag_words();
@@ -688,6 +700,7 @@ fn gauss_bigint(py: Python<'_>, count: usize, prec: u32, sig_mant: &[u8], sig_ex
         for w in ch.mags.iter_mut() {
             unsafe { std::ptr::write_volatile(w, 0) };
         }
+        rlwe::wipe_bytes(&mut ch.flags); // the signs
     }
     Ok((values.unbind(), holes.unbind()))
 }

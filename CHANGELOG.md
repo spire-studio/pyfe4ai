@@ -132,12 +132,16 @@ compatibility).
   tMCFE-Ring-LWE) runs natively for widths below 2^448 when `rng` is an
   `XofRandom` or `None`, with the integers of the MPFR reference for the same
   bits: a fixed-point evaluation whose error is far below its rounding
-  margin, and the reference formula for the samples it cannot decide (about
-  2^-45). Per sample 8-12 -> 0.55 us at 2^49, about 10 -> 2.0 us at 2^200;
-  SIFE FullySec Ring-LWE encryption 964 -> 120 ms, ALS16 483 -> 189 ms per
-  element, tMCFE-Ring-LWE partial decryption 225 -> 107 ms per server. With
+  margin, and the reference formula for the samples it cannot decide (at
+  most about 2^-45 of them, about 2^-62 at the FullySec widths). Per sample
+  8-12 -> 0.55 us at 2^49, about 10 -> 2.0 us at 2^200; SIFE FullySec
+  Ring-LWE encryption 964 -> 120 ms, ALS16 483 -> 189 ms per element,
+  tMCFE-Ring-LWE partial decryption 225 -> 107 ms per server. With
   `rng=None` the bytes come from the per-call DRBG instead of `os.urandom`
-  per call (same distribution).
+  per call (same distribution). `XofRandom` claims its counters atomically
+  (the native call claims all of its calls before it runs), so threads
+  sharing one never draw the same SHAKE block; single-threaded draws are
+  unchanged.
 
 ### Added
 
