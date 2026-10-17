@@ -9,13 +9,23 @@ compatibility).
 
 ### Performance
 
-- **Native backend** (optional C++ extension `pyfe4ai._rlwe_native`, built by
-  `setup.py`; `pyfe4ai.utils.native_backend` selects `auto` / `python` /
-  `native`, `PYFE4AI_BACKEND`, `PYFE4AI_THREADS`): Ring-LWE MIFE / MCFE
+- **Native backend**, two implementations of one interface: Rust
+  (`pyfe4ai._rust_native`, PyO3, built by `tools/build_rust.py` from `rust/`;
+  `rust/core` has no dependencies) and C++ (`pyfe4ai._rlwe_native`, built by
+  `setup.py`). `pyfe4ai.utils.native_backend` selects `auto` / `python` /
+  `native` (`PYFE4AI_BACKEND`), the implementation (`PYFE4AI_NATIVE_IMPL`,
+  Rust first) and threads (`PYFE4AI_THREADS`): Ring-LWE MIFE / MCFE
   encryption, decryption and key derivation of a whole tensor per call, with
   the GIL released and optional threads; dense-LWE MCFE label hashing and
-  dot products. Same outputs as the Python code (checked bit for bit by the
-  tests); Python fallback for unsupported parameters.
+  dot products; ristretto255 (Rust). Same outputs as the Python code
+  (checked bit for bit by the tests); Python fallback for unsupported
+  parameters.
+- **Sampling randomness of the Rust backend**: each tensor call expands one
+  32-byte OS seed with ChaCha20, one stream per chunk, and wipes seed and
+  states at its end (no state across calls); before, every sample byte was
+  read from the OS. Same distribution. ChaCha20 is not an SP 800-90A DRBG
+  (relevant only to FIPS validation). The C++ backend and the Python code
+  still read the OS for every byte.
 - Ring-LWE in Python: `NTT(a)`, `NTT(pk)` and `NTT(sk_y)` cached, `r`
   transformed once, decryption products summed in the NTT domain (same
   outputs). Dense-LWE MCFE: keys parsed once per object.
@@ -34,6 +44,17 @@ compatibility).
   `prepare_aggregation` and `aggregate_gradients(prepared=...)`.
 - `benchmarks/bench_fl_compare.py` (per-family FL timings as JSON) and
   `benchmarks/bench_offline_potential.py`.
+- `sife/`, `mife/`, `mcfe/ddh_ristretto255` (status *unreviewed*): the DDH
+  constructions in the prime-order group ristretto255 (RFC 9496; labels
+  hashed with RFC 9380 `hash_to_ristretto255`), selected with
+  `group="ristretto255"` on the `ddh` variants. About 126-bit security;
+  0.07 ms per element and client for MCFE on the Rust backend (3072-bit
+  group: 10.8 ms), 75 instead of 936 bytes per element.
+
+### Changed
+
+- The `ddh` key generators refuse a `group` other than `"modp"` instead of
+  ignoring it.
 
 ## [0.3.0] — 2026-10-13
 

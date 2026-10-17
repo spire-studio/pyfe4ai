@@ -93,16 +93,38 @@ per round one label pad per client for the label and every chunk.
   not collude with the aggregator; the FE aggregator holds a key for the
   weighted sum only, and the key generator is a trusted party.
 
-### Rust core
+### Rust backend
 
 `rust/core` (no dependencies) ports these kernels; its C ABI lets
-`tests/test_rust_core.py` check them against the Python code bit for bit
-(52 checks). Host timings of the Rust kernels, 77-bit / 60-bit q: NTT
-0.10 / 0.028 ms forward, 0.08 / 0.028 ms inverse, label pad 0.26 / 0.18 ms,
-10^4-element encryption 3.2 / 2.3 ms before formatting, one chunk of
-decryption for 3 clients 0.52 / 0.18 ms -- the C++ figures or better. The
-Python module `pyfe4ai._rust_native` (PyO3) has the C++ module's interface;
-it waits for its crates from crates.io.
+`tests/test_rust_core.py` check them against the Python code bit for bit.
+`pyfe4ai._rust_native` (PyO3, `rust/native`) binds it with the interface
+of the C++ module; both pass the same bit-identity tests, and the Rust one
+is preferred when both are built (`PYFE4AI_NATIVE_IMPL`). Host, 10^4
+elements, one thread, same run: client 2.94 ms (C++ 3.38 ms, binary format;
+the difference is the DRBG below), aggregator 7.94 ms (C++ 7.42 ms). Kernel
+timings: NTT 0.10 / 0.028 ms (77 / 60-bit q), label pad 0.26 / 0.18 ms.
+
+### Sampling randomness (DRBG)
+
+The Rust backend expands one 32-byte OS seed per tensor call with ChaCha20
+(`rand_chacha`), chunk `c` reading stream `c`; seed, generator states and
+sample bytes are overwritten when the call ends and nothing persists across
+calls (a fork or VM snapshot can only duplicate the call in progress).
+Before, every sample byte came from the OS (`getentropy` on macOS: 256 bytes
+per call, 0.32 ms per 4096-coefficient chunk; `getrandom` on Linux:
+0.14 ms). ChaCha20 is a standard stream cipher, not an SP 800-90A DRBG,
+which matters only for FIPS validation; the distribution is unchanged (the
+same Box-Muller consumption, checked by tests with an injected seed).
+
+| host (macOS), Rust, one thread | OS bytes | DRBG |
+| --- | ---: | ---: |
+| client, 10^4 elements, JSON / binary | 4.41 / 3.44 ms | 3.90 / 2.94 ms |
+| client offline phase (precompute), 10^4 | 3.37 ms | 2.79 ms |
+| client online phase, 10^4, binary | 0.23 ms | 0.23 ms |
+| client, 10^5 elements, binary | 28.96 ms | 25.16 ms |
+| client offline phase, 10^5 | 28.27 ms | 24.02 ms |
+
+Linux: pending (the Rust toolchain is not installed in the Linux container).
 
 ### RNS (not adopted; needs a decision)
 
@@ -135,12 +157,18 @@ SHAKE-256 expansion; 10^4 elements take about 7 s per client and thread.
 ## DDH over ristretto255 (`*/ddh_ristretto255`, new, unreviewed)
 
 The DDH constructions in ristretto255 (RFC 9496) instead of a 3072-bit
-`Z_p^*` subgroup, selected with `group="ristretto255"`. `mcfe`, 20 elements,
-3 clients, host, pure-Python group: client 66.8 ms, aggregator 87.8 ms
-(3072-bit group: 213 / 220 ms); ciphertexts 75 B per element (936 B). The
-Rust group (curve25519-dalek; libsodium measures 0.057 ms per variable-base
-multiplication here) should bring an element to about 0.2 ms; not measured
-until the crates are installed.
+`Z_p^*` subgroup, selected with `group="ristretto255"`. MCFE, 3 clients,
+host, per element:
+
+| | client | aggregator | ciphertext |
+| --- | ---: | ---: | ---: |
+| 3072-bit group (Python on gmpy2) | 10.75 ms | 11.10 ms | 936 B |
+| ristretto255, pure Python | 3.47 ms | 4.56 ms | 75 B |
+| ristretto255, Rust, 1 thread | 0.069 ms | 0.139 ms | 75 B |
+| ristretto255, Rust, 4 threads | 0.019 ms | 0.044 ms | 75 B |
+
+10^4 elements with 8 threads: client 107 ms, aggregator 284 ms -- still one
+group element per value (no packing), about 30 times the Ring-LWE MCFE.
 
 ## DDH, DCR and pairing families (design note)
 
