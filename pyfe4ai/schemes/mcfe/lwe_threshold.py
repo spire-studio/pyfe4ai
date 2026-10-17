@@ -89,6 +89,13 @@ from pyfe4ai.utils.sampling_utils import discrete_gaussian_bigint
 logger = logging.getLogger(__name__)
 
 
+def _with_code(ct, code: int):
+    """An ndarray element as a single ciphertext: with its layer's label-hash code."""
+    if code and isinstance(ct, dict) and "label_hash" not in ct:
+        return dict(ct, label_hash=code)
+    return ct
+
+
 def flooding_sigma(params: dict, n_slots: int, bound_y: int, s: int) -> int:
     """Largest ``sigma_f`` with ``(q0 / q) * s * c * sigma_f <= (n Y + 1) / 2``.
 
@@ -326,12 +333,14 @@ class ThresholdMCFELWE(MCFELWE):
         label = credentials.get("label")
         if not isinstance(label, str):
             raise FEValidationError("need a string label")
+        codes = self._layer_codes(dict_ndarray_ct)  # each layer of the public parameters' label hash
         sample = next(iter(dict_ndarray_ct.values()))
         lst_partial = []
         for l in range(len(sample)):
             ary_partial = np.empty(sample[l].shape, dtype=object)
             for i, _ in np.ndenumerate(sample[l]):
-                dct_ct = {nid: dict_ndarray_ct[nid][l][i] for nid in dict_ndarray_ct}
+                # an element as a single ciphertext: with its layer's code
+                dct_ct = {nid: _with_code(dict_ndarray_ct[nid][l][i], codes[nid][l]) for nid in dict_ndarray_ct}
                 elem_credentials = dict(credentials, label=_element_label(label, l, i))
                 ary_partial[i] = self.share_decrypt(
                     dct_ct, elem_credentials, dk, lst_sid_enrolled

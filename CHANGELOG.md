@@ -136,9 +136,10 @@ compatibility).
   cached parameter records do not change. The mode is bound to everything
   that depends on it: the public parameters (`pp["label_hash"]`), the
   clients' encryption keys, every functional key and threshold key share,
-  and every ciphertext (`label_hash`: the code of
-  `crypto_utils.LABEL_HASH_CODES`, also under the threshold variant's
-  HMAC tags). A client whose key and public parameters disagree refuses to
+  every single-vector ciphertext and every ndarray layer, once per layer
+  (`label_hash`: the code of `crypto_utils.LABEL_HASH_CODES`; on a Ring-LWE
+  layer dict, on the first element of a dense-LWE layer; also under the
+  threshold variant's HMAC tags of every chunk). A client whose key and public parameters disagree refuses to
   encrypt, and ciphertexts or keys of another mode are refused at
   decryption, instead of decrypting to wrong sums (crypto review M5).
   Anything without the field -- the data of v0.3.0 -- is read as
@@ -146,9 +147,9 @@ compatibility).
   usable together; new setups get the v0.3.0 hash with
   `label_hash="shake256-wide"` in the key generator config
   (`"shake256-rejection"` keeps SHAKE-256 with rejection sampling). Size:
-  one small field per Ring-LWE chunk (unchanged 24.6 / 68.4 B per element,
-  binary / JSON); dense-LWE ciphertexts carry it per element (13.3 -> 30.3
-  B per element in JSON). Python
+  one small field per layer, so ciphertexts stay at 24.6 / 68.4 B per
+  element (Ring-LWE binary / JSON) and 13.3 B (dense LWE, JSON); the
+  ML adapter's `EncryptedGradient.to_dict` / `from_dict` keep it. Python
   (`hashlib`) and the native kernels give the same values (known-answer
   tests). Host, native, one thread, `standard`: MCFE Ring-LWE 10^4
   elements, binary, aggregator 7.40 -> 5.87 ms (key derivation 4.17 -> 2.65

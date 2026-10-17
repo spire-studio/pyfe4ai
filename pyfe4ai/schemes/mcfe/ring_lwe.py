@@ -34,9 +34,10 @@ fewer XOF bytes). Versions <= 0.3.0 reduced ``bits(q) + 128``-bit SHAKE-256
 blocks (``"shake256-wide"``, still selectable), so their ciphertexts and
 key terms differ. The mode is bound to everything that depends on it: the
 public parameters, the clients' encryption keys, every functional key (and
-threshold key share) and every ciphertext (``label_hash``: the code of
-:data:`~pyfe4ai.utils.crypto_utils.LABEL_HASH_CODES`, covered by the
-threshold variant's tags); a missing field means ``"shake256-wide"`` (the
+threshold key share), every single ciphertext and every ndarray layer
+(``label_hash``: the code of :data:`~pyfe4ai.utils.crypto_utils.LABEL_HASH_CODES`,
+once per layer dict, not per chunk; covered by the threshold variant's
+tags); a missing field means ``"shake256-wide"`` (the
 data of versions <= 0.3.0, which stay readable), and encryption with a key
 of another mode, or decryption of ciphertexts or with keys of another mode,
 raises instead of returning wrong sums. Versions <= 0.2.0 masked inputs with
@@ -101,8 +102,8 @@ def pp_label_hash(pp: dict) -> str:
 
 
 def ciphertext_label_hash(ct) -> str | None:
-    """The label hash a ciphertext dict was produced with (no ``label_hash``
-    field: ``"shake256-wide"``), or ``None`` for an unknown code."""
+    """The label hash a ciphertext or ndarray layer dict was produced with (no
+    ``label_hash`` field: ``"shake256-wide"``), or ``None`` for an unknown code."""
     code = ct.get("label_hash", 0) if isinstance(ct, dict) else 0
     if type(code) is not int or not 0 <= code < len(LABEL_HASH_CODES):
         return None
@@ -297,17 +298,25 @@ class MCFERingLWE(MIFERingLWE):
         return ct
 
     def _mark_layers(self, layers: list) -> list:
+        """Bind the label hash to every ndarray layer, once per layer (its
+        chunks carry none)."""
         for layer in layers:
-            for ct in layer["chunks"]:
-                self._mark(ct)
+            self._mark(layer)
         return layers
 
     def _check_layers_label_hash(self, dict_ndarray_ct: dict) -> None:
+        """Raise unless every client's ndarray layers (and any chunk that carries
+        a code of its own) are of the public parameters' label hash."""
         mode = self.label_hash
         for nid, layers in dict_ndarray_ct.items():
             for layer in layers if isinstance(layers, (list, tuple)) else ():
-                chunks = layer.get("chunks") if isinstance(layer, dict) else None
-                check_ciphertext_label_hashes(chunks if isinstance(chunks, (list, tuple)) else (), mode, nid)
+                if not isinstance(layer, dict):
+                    continue  # malformed: the decryption reports it
+                check_ciphertext_label_hashes((layer,), mode, nid)
+                chunks = layer.get("chunks")
+                check_ciphertext_label_hashes(
+                    [ct for ct in chunks if isinstance(ct, dict) and "label_hash" in ct]
+                    if isinstance(chunks, (list, tuple)) else (), mode, nid)
 
     def _decrypt_layer_native(self, ctx, dict_ndarray_ct, l, layer, dk, fusion_weight, sk_hats):
         """Layer *l* of :meth:`decrypt_lst_ndarray_ct` in one native call, with

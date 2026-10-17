@@ -48,9 +48,11 @@ counter-mode SHA-256), mapped to ``Z_q`` as the key generator's
 sampling mod q from SHAKE128 (exactly uniform, fewer XOF bytes). Versions
 <= 0.3.0 reduced ``bits(q) + 128``-bit SHAKE-256 blocks (``"shake256-wide"``,
 still selectable), so their ciphertexts differ. The mode is bound to the
-public parameters, the clients' encryption keys and every ciphertext
-(``label_hash``: the code of :data:`~pyfe4ai.utils.crypto_utils.LABEL_HASH_CODES`,
-absent for ``"shake256-wide"``); a missing field means ``"shake256-wide"``
+public parameters, the clients' encryption keys, every single ciphertext and
+every ndarray layer (``label_hash``: the code of
+:data:`~pyfe4ai.utils.crypto_utils.LABEL_HASH_CODES`, absent for
+``"shake256-wide"``; in an ndarray layer only its first element carries it,
+for the whole layer); a missing field means ``"shake256-wide"``
 (the data of versions <= 0.3.0 stay readable), and encryption with a key of
 another mode or decryption of a ciphertext of another mode raises instead of
 returning a wrong sum. Functional keys ``sum y Z`` do not depend on the hash.
@@ -289,6 +291,36 @@ class MCFELWE(IPFEAbsCrypto):
             return {"c": c}
         return {"c": c, "label_hash": LABEL_HASH_CODES[self.label_hash]}
 
+    def _mark_layer(self, ary_ct: np.ndarray) -> np.ndarray:
+        """Bind the label hash to an ndarray layer: its first element carries
+        the code for the whole layer (none for ``"shake256-wide"``)."""
+        if ary_ct.size and self.label_hash != LEGACY_LABEL_HASH:
+            first = ary_ct.flat[0]
+            ary_ct.flat[0] = dict(first, label_hash=LABEL_HASH_CODES[self.label_hash])
+        return ary_ct
+
+    def _layer_codes(self, dict_ndarray_ct: dict) -> dict:
+        """``{nid: [code per layer]}`` after checking every client's layers: the
+        code its first element carries (none: ``"shake256-wide"``) must be the
+        public parameters'.
+
+        Raises:
+            FESchemeError: For a layer of another (or an unknown) label hash.
+        """
+        code = LABEL_HASH_CODES[self.label_hash]
+        out = {}
+        for nid, layers in dict_ndarray_ct.items():
+            codes = []
+            for ary in layers if isinstance(layers, (list, tuple)) else ():
+                first = ary.flat[0] if isinstance(ary, np.ndarray) and ary.size else None
+                got = first.get("label_hash", 0) if isinstance(first, dict) else 0
+                if got != code:
+                    raise FESchemeError("a ciphertext layer of {} was produced with another label hash than the "
+                                        "public parameters' {!r}".format(nid, self.label_hash))
+                codes.append(code)
+            out[nid] = codes
+        return out
+
     def _hash_label(self, label: str) -> list:
         return hash_label(label, self.q, self.dim, self.label_hash)
 
@@ -325,14 +357,17 @@ class MCFELWE(IPFEAbsCrypto):
             c.append(int(round_to_q0(v, self.q, self.q0)))
         return self._ciphertext(c)
 
-    def _weighted_sum(self, dct_ct: dict, fusion_weight: dict) -> gp.mpz:
-        """Return ``sum y_{i,j} c_{i,j} mod q0`` after checking the inputs match."""
+    def _weighted_sum(self, dct_ct: dict, fusion_weight: dict, in_layer: bool = False) -> gp.mpz:
+        """Return ``sum y_{i,j} c_{i,j} mod q0`` after checking the inputs match
+        (*in_layer*: elements of ndarray layers checked by :meth:`_layer_codes`,
+        which carry no code of their own but the first)."""
         if dct_ct.keys() != fusion_weight.keys():
             raise FESchemeError("inconsistent input among ct and fusion weight")
         code = LABEL_HASH_CODES[self.label_hash]
+        absent = code if in_layer else 0  # an element without a code: its layer's; a single ciphertext: v0.3.0's
         acc = gp.mpz(0)
         for nid, ct in dct_ct.items():
-            if ct.get("label_hash", 0) != code:  # the hash this ciphertext was made with (none: v0.3.0's)
+            if ct.get("label_hash", absent) != code:  # the hash this ciphertext was made with
                 raise FESchemeError("the ciphertext of {} was produced with another label hash than the public "
                                     "parameters' {!r}".format(nid, self.label_hash))
             if len(ct["c"]) != len(fusion_weight[nid]):
@@ -350,7 +385,7 @@ class MCFELWE(IPFEAbsCrypto):
             mu_prime, self.q, self.q0, self.delta, self.pp["bound_ip"]
         )
 
-    def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict, label: str):
+    def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict, label: str, _in_layer: bool = False):
         """Recover ``sum_i <x_i, y_i>`` from all clients' ciphertexts under one label.
 
         Args:
@@ -370,7 +405,8 @@ class MCFELWE(IPFEAbsCrypto):
         """
         if not dk or "sk_y" not in dk:
             raise FEKeyError("no decryption key provided")
-        weighted = self._weighted_sum(dct_ct, fusion_weight)
+        # _in_layer: elements of ndarray layers, checked by _layer_codes
+        weighted = self._weighted_sum(dct_ct, fusion_weight, _in_layer)
         sk_y = _mpz_cached(self, "_sk_y_mpz", dk["sk_y"], lambda row: [gp.mpz(v) for v in row])
         key_term = dot_mod(sk_y, self._hash_label(label), self.q)
         return self._decode(weighted, key_term)
@@ -405,11 +441,13 @@ class MCFELWE(IPFEAbsCrypto):
                 z = _mpz_cached(self, "_z_mpz", self.sk["z"], lambda rows: [[gp.mpz(v) for v in row] for row in rows])
                 dots = self._label_dots([_element_label(label, l, i) for i in np.ndindex(ary.shape)], z[0])
                 for (i, w), dot in zip(np.ndenumerate(ary), dots):
-                    ary_ct[i] = self._ciphertext([int(round_to_q0(dot + self.delta * int(w), self.q, self.q0))])
+                    ary_ct[i] = {"c": [int(round_to_q0(dot + self.delta * int(w), self.q, self.q0))]}
             else:
                 for i, w in np.ndenumerate(ary):
-                    ary_ct[i] = self.encrypt([int(w)], _element_label(label, l, i))
-            lst_ndarray_ct.append(ary_ct)
+                    ct = self.encrypt([int(w)], _element_label(label, l, i))
+                    ct.pop("label_hash", None)  # the layer carries it once
+                    ary_ct[i] = ct
+            lst_ndarray_ct.append(self._mark_layer(ary_ct))
         return lst_ndarray_ct
 
     def _native_dots(self) -> bool:
@@ -473,6 +511,7 @@ class MCFELWE(IPFEAbsCrypto):
         label = kwargs.get("label", None)
         if dk is None or fusion_weight is None or label is None:
             raise FEKeyError("need to provide decryption key, fusion weight and label")
+        self._layer_codes(dict_ndarray_ct)
 
         sample = next(iter(dict_ndarray_ct.values()))
         lst_ndarray = []
@@ -486,13 +525,13 @@ class MCFELWE(IPFEAbsCrypto):
                 key_terms = self._label_dots([_element_label(label, l, i) for i in np.ndindex(sample[l].shape)], sk_y)
                 for (i, _), key_term in zip(np.ndenumerate(sample[l]), key_terms):
                     dct_ct = {nid: dict_ndarray_ct[nid][l][i] for nid in dict_ndarray_ct}
-                    ary_dec[i] = self._decode(self._weighted_sum(dct_ct, fusion_weight), key_term)
+                    ary_dec[i] = self._decode(self._weighted_sum(dct_ct, fusion_weight, in_layer=True), key_term)
                 lst_ndarray.append(decoded_layer(ary_dec, l, 10 ** self.precision))
                 continue
             for i, _ in np.ndenumerate(sample[l]):
                 dct_ct = {nid: dict_ndarray_ct[nid][l][i] for nid in dict_ndarray_ct}
                 ary_dec[i] = self.decrypt(
-                    dct_ct, dk, fusion_weight, _element_label(label, l, i)
+                    dct_ct, dk, fusion_weight, _element_label(label, l, i), _in_layer=True
                 )
             lst_ndarray.append(decoded_layer(ary_dec, l, 10 ** self.precision))
         return lst_ndarray

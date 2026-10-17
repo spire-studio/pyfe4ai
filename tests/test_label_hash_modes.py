@@ -404,12 +404,16 @@ def test_defaults_and_v030_compatibility():
 
 # ------------------------------------------- binding of the mode (review M5)
 
+def _copy_layers(cts: dict) -> dict:
+    return {nid: [dict(layer, chunks=[dict(c) for c in layer["chunks"]]) for layer in v] for nid, v in cts.items()}
+
+
 def test_ring_mode_bound_to_keys_and_ciphertexts():
     """Encryption keys carry the mode (a client with public parameters of
-    another mode refuses to encrypt); ciphertexts carry its code (none for
-    shake256-wide), and decryption refuses ciphertexts of another mode --
-    e.g. those of a client that still runs v0.3.0 -- instead of returning
-    wrong sums."""
+    another mode refuses to encrypt); every ndarray layer carries its code
+    once (its chunks none), single ciphertexts their own; decryption refuses
+    layers or ciphertexts of another mode -- e.g. those of a client that
+    still runs v0.3.0 -- instead of returning wrong sums."""
     kg, pp, clients = _rlwe(None, mcfe_rlwe.MCFERingLWEKeyGenerator, mcfe_rlwe.MCFERingLWE)
     sk = kg.get_private_keys("c0")
     assert sk["label_hash"] == pp["label_hash"] == "shake128-rejection"
@@ -420,31 +424,51 @@ def test_ring_mode_bound_to_keys_and_ciphertexts():
                      lambda: stale.precompute("r", [(5,)])):
             with pytest.raises(FEKeyError):
                 call()
-    grads = {nid: np.random.default_rng(2).uniform(-1, 1, 70).round(2) for nid in clients}
+    grads = {nid: np.random.default_rng(2).uniform(-1, 1, 150).round(2) for nid in clients}
     weights = {nid: [1] for nid in clients}
     for backend in ["python"] + (["native"] if native_backend.available() else []):
         with native_backend.backend(backend):
             cts = {nid: clients[nid].encrypt_lst_ndarray([grads[nid]], label="r") for nid in clients}
-            assert all(ct["label_hash"] == 2 for layer in cts["c0"] for ct in layer["chunks"])
+            pre = clients["c1"].precompute("r", [grads["c1"].shape])
+            cts["c1"] = clients["c1"].encrypt_lst_ndarray([grads["c1"]], label="r", precomputed=pre)
+            for nid in clients:
+                assert all(layer["label_hash"] == 2 and all("label_hash" not in c for c in layer["chunks"])
+                           for layer in cts[nid])
             dk = kg.get_decryption_keys("s", credentials={"fusion_weight": weights, "label": "r",
                                                           "n_chunks": mcfe_rlwe.MCFERingLWE.key_chunks(cts["c0"])})
             agg = mcfe_rlwe.MCFERingLWE({"id": "a", "precision": 2, "keys": {"pp": pp}})
             assert np.allclose(agg.decrypt_lst_ndarray_ct(cts, dk=dk, fusion_weight=weights, label="r")[0],
                                sum(grads.values()))
-            for tamper in (lambda ct: ct.pop("label_hash"), lambda ct: ct.update(label_hash=1),
-                           lambda ct: ct.update(label_hash="2")):
-                bad = {nid: [dict(layer, chunks=[dict(c) for c in layer["chunks"]]) for layer in v]
-                       for nid, v in cts.items()}
-                tamper(bad["c1"][0]["chunks"][0])
-                with pytest.raises(FESchemeError):
+            for tamper in (lambda v: v[0].pop("label_hash"), lambda v: v[0].update(label_hash=1),
+                           lambda v: v[0].update(label_hash="2"),
+                           lambda v: v[0]["chunks"][1].update(label_hash=1)):  # a chunk of its own other mode
+                bad = _copy_layers(cts)
+                tamper(bad["c1"])
+                with pytest.raises(FESchemeError, match="c1"):
                     agg.decrypt_lst_ndarray_ct(bad, dk=dk, fusion_weight=weights, label="r")
     single = {nid: clients[nid].encrypt([[3, 4]], "s1") for nid in clients}
+    assert all(ct["label_hash"] == 2 for ct in single.values())
     w2 = {nid: [1] for nid in clients}
     dk1 = kg.get_decryption_keys("s", credentials={"fusion_weight": w2, "label": "s1"})
     assert agg.decrypt(single, dk1, w2, "s1") == [9, 12]
     single["c2"].pop("label_hash")
-    with pytest.raises(FESchemeError):
+    with pytest.raises(FESchemeError, match="c2"):
         agg.decrypt(single, dk1, w2, "s1")
+
+
+def test_ml_adapter_keeps_the_layer_marker():
+    from pyfe4ai.utils.ml_adapter import EncryptedGradient, FESchemeWrapper, aggregate_gradients, encrypt_gradient
+
+    nids = ["c0", "c1"]
+    for key, size in ((("mcfe", "ring_lwe"), 70), (("mcfe", "lwe"), 5)):
+        w = FESchemeWrapper(*key, {"n": 2, "lst_nid": nids, "eta": 1, "bound_x": 100, "bound_y": 1}, precision=2)
+        grads = {nid: np.random.default_rng(5).uniform(-1, 1, size).round(2) for nid in nids}
+        enc = {nid: EncryptedGradient.from_dict(encrypt_gradient(g, w, nid=nid, label="r").to_dict())
+               for nid, g in grads.items()}
+        layer = enc["c0"].ciphertexts[0]
+        assert (layer["label_hash"] if isinstance(layer, dict) else layer.flat[0]["label_hash"]) == 2
+        assert np.allclose(np.asarray(aggregate_gradients(enc, w, {nid: 1 for nid in nids}, label="r"), dtype=float),
+                           sum(grads.values()))
 
 
 def test_threshold_tags_and_key_shares_bind_the_mode():
@@ -452,18 +476,27 @@ def test_threshold_tags_and_key_shares_bind_the_mode():
                             32, s=3, t=2, lst_sid=["s0", "s1", "s2"], stat_param=40)
     grads = {nid: np.random.default_rng(3).uniform(-1, 1, 40).round(2) for nid in clients}
     cts = {nid: clients[nid].encrypt_lst_ndarray([grads[nid]], label="r") for nid in clients}
+    assert cts["c0"][0]["label_hash"] == 2
     creds = {"fusion_weight": {nid: [1] for nid in clients}, "label": "r",
              "n_chunks": tmcfe_rlwe.ThresholdMCFERingLWE.key_chunks(cts["c0"])}
     dk = kg.get_decryption_keys("s0", credentials=creds)
     assert dk["label_hash"] == "shake128-rejection"
     srv = tmcfe_rlwe.ThresholdMCFERingLWE({"id": "s0", "precision": 2, "keys": {"pp": pp}})
     srv.compute_lst_ndarray_ct(cts, creds, dk, ["s0", "s1"])
-    # the code is under the servers' tags: changing or dropping it breaks them
-    for tamper in (lambda ct: ct.pop("label_hash"), lambda ct: ct.update(label_hash=0)):
-        bad = {nid: [dict(layer, chunks=[dict(c) for c in layer["chunks"]]) for layer in v] for nid, v in cts.items()}
-        tamper(bad["c2"][0]["chunks"][0])
+    # the layer's code is under the servers' chunk tags: changing or dropping it breaks them
+    for tamper in (lambda v: v[0].pop("label_hash"), lambda v: v[0].update(label_hash=1)):
+        bad = _copy_layers(cts)
+        tamper(bad["c2"])
         with pytest.raises(FESchemeError):
             srv.compute_lst_ndarray_ct(bad, creds, dk, ["s0", "s1"])
+    # single ciphertexts carry their own code under their tags
+    one = {nid: clients[nid].encrypt([[1, 2]], "one") for nid in clients}
+    c1 = {"fusion_weight": {nid: [1] for nid in clients}, "label": "one"}
+    dk1 = kg.get_decryption_keys("s0", credentials=c1)
+    srv.share_decrypt(one, c1, dk1, ["s0", "s1"])
+    one["c1"] = dict(one["c1"], label_hash=1)
+    with pytest.raises(FESchemeError):
+        srv.share_decrypt(one, c1, dk1, ["s0", "s1"])
     # a key share of another mode (or of v0.3.0, without the field)
     for share in (dict(dk, label_hash="shake256-wide"), {k: v for k, v in dk.items() if k != "label_hash"}):
         with pytest.raises(FESchemeError):
@@ -487,7 +520,7 @@ def test_dense_mode_bound_to_keys_and_ciphertexts(backend):
                               "keys": {"pp": {k: v for k, v in pp.items() if k != "label_hash"}, "sk": sk}})
     clients = {nid: mcfe_lwe.MCFELWE({"id": nid, "precision": 2, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
                for nid in nids}
-    grads = {nid: np.random.default_rng(4).uniform(-0.5, 0.5, 6).round(2) for nid in nids}
+    grads = {nid: np.random.default_rng(4).uniform(-0.5, 0.5, (2, 3)).round(2) for nid in nids}
     weights = {nid: [1] for nid in nids}
     dk = kg.get_decryption_keys("s", credentials={"fusion_weight": weights})
     agg = mcfe_lwe.MCFELWE({"id": "a", "precision": 2, "keys": {"pp": pp}})
@@ -496,13 +529,22 @@ def test_dense_mode_bound_to_keys_and_ciphertexts(backend):
             with pytest.raises(FEKeyError):
                 call()
         cts = {nid: clients[nid].encrypt_lst_ndarray([grads[nid]], label="r") for nid in nids}
-        assert all(ct["label_hash"] == 2 for ct in cts["c0"][0].ravel())
+        flat = cts["c0"][0].ravel()
+        assert flat[0]["label_hash"] == 2 and all(set(ct) == {"c"} for ct in flat[1:])  # once per layer
         out = agg.decrypt_lst_ndarray_ct(cts, dk=dk, fusion_weight=weights, label="r")[0]
         assert np.allclose(np.asarray(out, dtype=float), sum(grads.values()))
-        bad = {nid: [a.copy() for a in v] for nid, v in cts.items()}
-        bad["c1"][0][2] = {"c": bad["c1"][0][2]["c"]}  # as a v0.3.0 client would write it
-        with pytest.raises(FESchemeError):
-            agg.decrypt_lst_ndarray_ct(bad, dk=dk, fusion_weight=weights, label="r")
+        for tamper in (lambda a: a.__setitem__((0, 0), {"c": a[0, 0]["c"]}),             # as a v0.3.0 client
+                       lambda a: a.__setitem__((1, 2), dict(a[1, 2], label_hash=1))):    # an element of its own mode
+            bad = {nid: [a.copy() for a in v] for nid, v in cts.items()}
+            tamper(bad["c1"][0])
+            with pytest.raises(FESchemeError, match="c1"):
+                agg.decrypt_lst_ndarray_ct(bad, dk=dk, fusion_weight=weights, label="r")
+        single = {nid: clients[nid].encrypt([2], "one") for nid in nids}
+        assert all(ct["label_hash"] == 2 for ct in single.values())
+        assert agg.decrypt(single, dk, weights, "one") == 4
+        single["c0"] = {"c": single["c0"]["c"]}
+        with pytest.raises(FESchemeError, match="c0"):
+            agg.decrypt(single, dk, weights, "one")
     # all of v0.3.0's format (no field anywhere, shake256-wide) still decrypts
     old = mcfe_lwe.MCFELWEKeyGenerator({"n": 2, "lst_nid": nids, "eta": 1, "bound_x": 50, "bound_y": 2,
                                         "label_hash": "shake256-wide"})
@@ -517,3 +559,29 @@ def test_dense_mode_bound_to_keys_and_ciphertexts(backend):
     oout = oagg.decrypt_lst_ndarray_ct(octs, dk=old.get_decryption_keys("s", credentials={"fusion_weight": weights}),
                                        fusion_weight=weights, label="r")[0]
     assert np.allclose(np.asarray(oout, dtype=float), sum(grads.values()))
+
+
+def test_dense_threshold_partials_check_the_layer():
+    from pyfe4ai.schemes.mcfe import lwe_threshold as tl
+
+    nids, sids = ["c0", "c1"], ["s0", "s1", "s2"]
+    kg = tl.ThresholdMCFELWEKeyGenerator({"n": 2, "lst_nid": nids, "eta": 1, "bound_x": 50, "bound_y": 2,
+                                          "s": 3, "t": 2, "lst_sid": sids})
+    kg.setup()
+    pp = kg.get_public_parameters()
+    cl = {nid: tl.ThresholdMCFELWE({"id": nid, "precision": 2, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
+          for nid in nids}
+    grads = {nid: np.random.default_rng(6).uniform(-0.5, 0.5, 4).round(2) for nid in nids}
+    cts = {nid: cl[nid].encrypt_lst_ndarray([grads[nid]], label="r") for nid in nids}
+    creds = {"fusion_weight": {nid: [1] for nid in nids}, "label": "r"}
+    parts = {}
+    for sid in sids[:2]:
+        srv = tl.ThresholdMCFELWE({"id": sid, "precision": 2, "keys": {"pp": pp}})
+        parts[sid] = srv.compute_lst_ndarray_ct(cts, creds, kg.get_decryption_keys(sid, credentials=creds), sids[:2])
+    comb = tl.ThresholdMCFELWE({"id": "x", "precision": 2, "keys": {"pp": pp}})
+    assert np.allclose(np.asarray(comb.decrypt_lst_ndarray_ct(parts)[0], dtype=float), sum(grads.values()))
+    bad = {nid: [a.copy() for a in v] for nid, v in cts.items()}
+    bad["c1"][0][0] = {"c": bad["c1"][0][0]["c"]}
+    srv = tl.ThresholdMCFELWE({"id": "s0", "precision": 2, "keys": {"pp": pp}})
+    with pytest.raises(FESchemeError, match="c1"):
+        srv.compute_lst_ndarray_ct(bad, creds, kg.get_decryption_keys("s0", credentials=creds), sids[:2])

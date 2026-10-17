@@ -146,12 +146,21 @@ def uniform_flooding_poly(bits: int, ring_n: int, seed: bytes) -> list:
 
 def _tag_payload(encoded_label: str, ct: dict) -> list:
     """What a tMCFE-Ring-LWE ciphertext tag covers: the (chunk) label, the
-    ciphertext as serialised and its ``label_hash`` code when it has one
+    ciphertext as serialised and its ``label_hash`` code when it has one --
+    for an ndarray chunk its layer's code, see :func:`_chunk_with_code`
     (ciphertexts of versions <= 0.3.0 have none: their tags stay valid)."""
     payload = [encoded_label, ct.get("k"), ct.get("ct0"), ct.get("ct1")]
     if "label_hash" in ct:
         payload.append(ct["label_hash"])
     return payload
+
+
+def _chunk_with_code(ct, layer) -> dict:
+    """An ndarray chunk as tagged and decrypted: with its layer's
+    ``label_hash`` code (layers, not chunks, carry it)."""
+    if isinstance(ct, dict) and isinstance(layer, dict) and "label_hash" in layer and "label_hash" not in ct:
+        return dict(ct, label_hash=layer["label_hash"])
+    return ct
 
 
 def _flooding_poly(sigma: int, ring_n: int, rng) -> list:
@@ -397,7 +406,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         for layer in out:
             for j, ct in enumerate(layer["chunks"]):
                 encoded = encode_label(chunk_label(kwargs["label"], layer["first_chunk"] + j))
-                tag_ciphertext(ct, mac_keys, _TAG_DOMAIN, _tag_payload(encoded, ct))
+                tag_ciphertext(ct, mac_keys, _TAG_DOMAIN, _tag_payload(encoded, _chunk_with_code(ct, layer)))
         return out
 
     def share_decrypt(
@@ -618,7 +627,8 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         for l, layer in enumerate(sample):
             parts = []
             for j in range(len(layer["chunks"])):
-                dct_ct = {nid: dict_ndarray_ct[nid][l]["chunks"][j] for nid in dict_ndarray_ct}
+                dct_ct = {nid: _chunk_with_code(dict_ndarray_ct[nid][l]["chunks"][j], dict_ndarray_ct[nid][l])
+                          for nid in dict_ndarray_ct}
                 index = chunk_key_index(layer, j, len(dk["z_chunks"]))
                 parts.append(self.share_decrypt(
                     dct_ct, credentials, dk, lst_sid_enrolled,
