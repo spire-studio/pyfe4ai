@@ -56,8 +56,11 @@ Ciphertext layouts (``ndarray_layout``):
   (guessing both challenge matrices would give ``(2X + 1)^(2lk)``); G3 -> G4
   decomposes along a basis ``B`` of ``V``, ``||B|| <= 2X sqrt(l D)``, which
   ``sigma1`` absorbs, and G4 -> G5 applies Theorem 2 once per basis vector
-  (:func:`pyfe4ai.utils.ring_lwe_utils.bmms21_adaptive_leveraging`). For
-  ``eta = 1`` this gives the parameters of the elementwise layout.
+  (:func:`pyfe4ai.utils.ring_lwe_utils.bmms21_adaptive_leveraging`). G5*
+  writes the differences in that basis mod ``q``, so ``q`` must exceed the
+  minors of the basis, ``(2X sqrt(D))^D``; the parameters enforce it (it
+  moves e.g. ``eta = 24``, ``X = 4`` to a larger ring). For ``eta = 1`` this
+  gives the parameters of the elementwise layout.
 
 Under the ``standard`` profile ``ring_n = "auto"`` takes the smallest ring
 dimension (with the smallest ``m``) whose ``q`` meets

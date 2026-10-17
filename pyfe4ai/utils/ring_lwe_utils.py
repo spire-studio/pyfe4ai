@@ -790,6 +790,19 @@ def bmms21_adaptive_leveraging(eta: int, bound_x, ring_n: int, packed: bool = Fa
     return l * rank * math.log2(4 * int(bound_x) + 1) + math.log2(rank + 1), rank
 
 
+def _bmms21_packed_minor_log2(eta: int, bound_x, ring_n: int) -> float:
+    """log2 of the Hadamard bound ``(2X sqrt(D))^D`` on the ``d x d`` minors of a
+    basis of the differences (``d <= D = min(l, ring_n)``, entries at most ``2X``).
+
+    Game G5* writes every difference as a rational combination of the basis;
+    the denominators divide such a minor, so they are invertible mod the
+    prime ``q`` when ``q`` exceeds this bound. ``q`` is public: below it an
+    adversary could pick differences whose minor is a multiple of ``q``.
+    """
+    rank = min(int(eta), int(ring_n))
+    return rank * math.log2(2 * int(bound_x) * math.sqrt(rank))
+
+
 def _bmms21_adaptive_widths(kappa: int, l: int, bound_x, bound_y, ring_n: int, m: int,
                             log2_q: float, packed: bool = False) -> dict:
     """log2 of the Gaussian widths of BMMS21 Sec. 5 for a modulus of ``log2_q`` bits.
@@ -859,7 +872,9 @@ def bmms21_adaptive_log2_q(sec_param: int, eta: int, bound_x, bound_y, ring_n: i
     All widths grow like ``q^(2/m)`` (the Ring-LHL bound on ``sigma'``) and the
     correctness noise like ``q^(4/m)``, so a modulus exists only for ``m > 4``;
     the paper's ``m = 3`` has none. *packed*: up to ``ring_n`` vectors per
-    ciphertext (see :func:`bmms21_adaptive_leveraging`).
+    ciphertext (see :func:`bmms21_adaptive_leveraging`); ``q`` must then also
+    exceed twice the bound of ``_bmms21_packed_minor_log2`` (a larger ``q`` only
+    widens the correctness margin, since the noise grows like ``q^(4/m)``).
     """
     args = (int(sec_param), int(eta), bound_x, bound_y, int(ring_n), int(m))
     if m <= 4 or _bmms21_adaptive_slack(*args, 4000.0, packed) <= 0:
@@ -871,6 +886,8 @@ def bmms21_adaptive_log2_q(sec_param: int, eta: int, bound_x, bound_y, ring_n: i
             hi = mid
         else:
             lo = mid
+    if packed:
+        hi = max(hi, _bmms21_packed_minor_log2(eta, bound_x, ring_n) + 1)
     return hi
 
 
@@ -901,6 +918,8 @@ def bmms21_adaptive_parameters(sec_param: int, eta: int, bound_x, bound_y, ring_
     exact = math.log2(int(q))
     if _bmms21_adaptive_slack(int(sec_param), int(eta), bound_x, bound_y, ring_n, m, exact, packed) <= 0:
         raise AssertionError("modulus does not meet the correctness bound")  # q only grew
+    if packed and exact <= _bmms21_packed_minor_log2(eta, bound_x, ring_n):
+        raise AssertionError("modulus does not exceed the minors of the differences")
     widths = _bmms21_adaptive_widths(int(sec_param), int(eta), bound_x, bound_y, ring_n, m, exact, packed)
     if max(widths.values()) > 1000:
         from pyfe4ai.utils.exceptions import FEValidationError
