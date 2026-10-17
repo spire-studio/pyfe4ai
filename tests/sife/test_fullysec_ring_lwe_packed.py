@@ -111,6 +111,25 @@ def test_standard_packed_parameters(l, X, Y, expected):
         assert (E["ring_n"], E["m"], E["q"]) == (P["ring_n"], P["m"], P["q"])
 
 
+@pytest.mark.parametrize("l, X, Y, expected", [
+    (24, 4, 4, (8192, 8, 206)),
+    (32, 1, 1, (8192, 8, 190)),
+    (64, 1, 1, (16384, 6, 312)),
+])
+def test_modulus_exceeds_the_minors_of_the_differences(l, X, Y, expected):
+    """At n = 4096 these bounds met App. C.1 with a 111-bit q below the minors
+    (2X sqrt(D))^D (127, 112 and 256 bits): G5* could not write every
+    difference in the basis of their span mod q."""
+    P = rlu.bmms21_adaptive_choice(128, l, X, Y, "auto", "auto", True, packed=True)
+    assert (P["ring_n"], P["m"], int(P["q"]).bit_length()) == expected
+    D = min(l, P["ring_n"])
+    assert math.log2(int(P["q"])) > D * math.log2(2 * X * math.sqrt(D)) + 1
+    rlu.check_ring_lwe(P["ring_n"], P["q"], P["sigma"])
+    # the floor raised q above the correctness minimum of App. C.1 at n = 4096
+    assert rlu.bmms21_adaptive_log2_q(128, l, X, Y, 4096, 20) < D * math.log2(2 * X * math.sqrt(D))
+    assert rlu.bmms21_adaptive_log2_q(128, l, X, Y, 4096, 20, packed=True) > D * math.log2(2 * X * math.sqrt(D))
+
+
 # -- records ------------------------------------------------------------------
 
 
