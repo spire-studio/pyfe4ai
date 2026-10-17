@@ -42,6 +42,7 @@ import numpy as np
 
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import decoded_layer
+from pyfe4ai.schemes.random_offline import OfflineRandomMixin
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.ipfe import ParameterCacheMixin
 from pyfe4ai.utils.crypto_constants import CryptoCONST
@@ -237,7 +238,7 @@ class MIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         return {"k": dct_k, "z": gp.digits(z % self.n_mod)}
 
 
-class MIFEPaillier(IPFEAbsCrypto):
+class MIFEPaillier(OfflineRandomMixin, IPFEAbsCrypto):
     """Crypto operations for Paillier-based multi-input inner-product FE."""
 
     def __init__(self, config: dict, **kwargs) -> None:
@@ -261,22 +262,35 @@ class MIFEPaillier(IPFEAbsCrypto):
             raise FEValidationError("invalid size of input plaintext")
         if any(abs(strict_int(v, "plaintext")) > self.pp["bound_x"] for v in lst_pt):
             raise FEValidationError("plaintext exceeds configured bound_x")
-
-        n_mod = gp.mpz(self.pp["n_mod"])
-        n_square = gp.mpz(self.pp["n_square"])
-        g = gp.mpz(self.pp["g"])
-        pk = [gp.mpz(v) for v in self.sk["pk"]]
         if "u" not in self.sk:
             raise FEKeyError("encryption key lacks the one-time pad u")
+        return self._encrypt_with(lst_pt, self._random_part())
 
+    def _random_part(self) -> tuple:
+        """``(g^r, [pk_i^r])`` mod N^2 for a fresh r (see
+        :mod:`pyfe4ai.schemes.random_offline`)."""
+        n_mod = gp.mpz(self.pp["n_mod"])
+        n_square = gp.mpz(self.pp["n_square"])
         r = random_below(n_mod // 4)
-        c0 = gp.powmod(g, r, n_square)
+        return gp.powmod(gp.mpz(self.pp["g"]), r, n_square), [
+            gp.powmod(gp.mpz(pk_i), r, n_square) for pk_i in self.sk["pk"]]
+
+    def _encrypt_with(self, lst_pt: list, part: tuple) -> dict:
+        """The ciphertext of :meth:`encrypt` (with its checks) for the randomness part *part*."""
+        if len(lst_pt) != self.pp["eta"]:
+            raise FEValidationError("invalid size of input plaintext")
+        if any(abs(strict_int(v, "plaintext")) > self.pp["bound_x"] for v in lst_pt):
+            raise FEValidationError("plaintext exceeds configured bound_x")
+        if "u" not in self.sk:
+            raise FEKeyError("encryption key lacks the one-time pad u")
+        n_mod = gp.mpz(self.pp["n_mod"])
+        n_square = gp.mpz(self.pp["n_square"])
+        c0, masks = part
         c1 = []
-        for x_i, u_i, pk_i in zip(lst_pt, self.sk["u"], pk):
+        for x_i, u_i, m in zip(lst_pt, self.sk["u"], masks):
             w_i = (gp.mpz(int(x_i)) + gp.mpz(u_i)) % n_mod
             x_term = (1 + w_i * n_mod) % n_square
-            ct_i = (x_term * gp.powmod(pk_i, r, n_square)) % n_square
-            c1.append(gp.digits(ct_i))
+            c1.append(gp.digits((x_term * m) % n_square))
         return {"ct0": gp.digits(c0), "ct1": c1}
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict):
@@ -333,6 +347,8 @@ class MIFEPaillier(IPFEAbsCrypto):
         """
         if self.pp["eta"] != 1:
             raise NotImplementedError("ndarray helper currently expects eta=1")
+        if kwargs.get("precomputed") is not None:
+            return self._encrypt_precomputed(lst_ndarray, kwargs["precomputed"])
         lst_ndarray_ct = []
         for ary_src in lst_ndarray:
             ary = scale_to_int(ary_src, self.precision)

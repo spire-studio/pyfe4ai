@@ -61,6 +61,8 @@ FAMILIES = {
     "paillier": (("mcfe", "paillier"), {"eta": 1}, 20),
     "pairing": (("mcfe", "fh_multi_ipe_pairing"), {"eta": 1}, 5),
 }
+#: Families with an offline phase (``--offline``): precompute_gradient / prepare_aggregation.
+OFFLINE_FAMILIES = ("ring_lwe", "ddh", "damgard", "paillier")
 
 
 def _bounds(family: str, bound_x: int) -> dict:
@@ -409,8 +411,8 @@ def main() -> None:
     parser.add_argument("--ct-format", default="json", choices=["json", "binary"],
                         help="ciphertext format of the Ring-LWE schemes")
     parser.add_argument("--offline", action="store_true",
-                        help="Ring-LWE MCFE: precompute client masks and the aggregator's key before each "
-                             "round; client_ms / aggregator_ms are then the online phase")
+                        help="Ring-LWE, DDH, Damgard and Paillier MCFE: precompute client masks and the "
+                             "aggregator's key before each round; client_ms / aggregator_ms are then the online phase")
     parser.add_argument("--workdir", default=None, help="directory holding ./config (default: temporary)")
     parser.add_argument("--json", default=None, help="append the results to this JSON file")
     parser.add_argument("--tag", default="", help="free-form label stored with every row")
@@ -443,7 +445,7 @@ def main() -> None:
                                         args.profile, args.servers, args.threshold)
             else:
                 row = measure(family, elements, args.clients, args.rounds, args.precision, bound_x, args.profile,
-                              fmt, args.offline and family == "ring_lwe")
+                              fmt, args.offline and family in OFFLINE_FAMILIES)
             row.update(backend=backend, threads=args.threads, tag=args.tag)
             rows.append(row)
             print("{family:9s} {backend:6s} t={threads} {elements:6d} el  client {client_ms:9.2f} ms  "

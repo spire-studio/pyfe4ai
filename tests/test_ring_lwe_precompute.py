@@ -113,6 +113,6 @@ def test_ml_adapter_offline_online_round(name):
             precompute_gradient(shape, w, nid="c0", label="r1")
         with pytest.raises(ValueError, match="other weights"):  # the label is bound to its weights
             prepare_aggregation(w, {n: 2 for n in nids}, shape=shape, label="r1")
-        lw = FESchemeWrapper("mcfe", "ddh", {"sec_param": 128, "n": 3, "lst_nid": nids})
+        lw = FESchemeWrapper("mcfe", "ddh_ristretto255", {"n": 3, "lst_nid": nids})  # no offline phase
         with pytest.raises(ValueError, match="no offline"):
             precompute_gradient(shape, lw, nid="c0", label="r1")

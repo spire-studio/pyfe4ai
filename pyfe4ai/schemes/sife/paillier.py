@@ -31,6 +31,7 @@ from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.ipfe import ParameterCacheMixin
 from pyfe4ai.schemes.ipfe import decoded_layer
+from pyfe4ai.schemes.random_offline import OfflineRandomMixin
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import generate_group_primes
 from pyfe4ai.utils.modular_utils import check_zn2_elements
@@ -202,7 +203,7 @@ class SIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         return {"k": gp.digits(k)}
 
 
-class SIFEPaillier(IPFEAbsCrypto):
+class SIFEPaillier(OfflineRandomMixin, IPFEAbsCrypto):
     """Crypto operations for Paillier-based single-input inner-product FE."""
 
     def __init__(self, config: dict, **kwargs) -> None:
@@ -227,20 +228,27 @@ class SIFEPaillier(IPFEAbsCrypto):
         if any(abs(strict_int(v, "plaintext")) > self.pp["bound_x"] for v in lst_pt):
             raise FEValidationError("plaintext exceeds configured bound_x")
 
+        return self._encrypt_with(lst_pt, self._random_part())
+
+    def _random_part(self) -> tuple:
+        """``(g^r, [pk_i^r])`` mod N^2 for a fresh r (see
+        :mod:`pyfe4ai.schemes.random_offline`)."""
         n = gp.mpz(self.pp["n"])
         n_square = gp.mpz(self.pp["n_square"])
-        g = gp.mpz(self.pp["g"])
-        pk = [gp.mpz(v) for v in self.sk["pk"]]
-
         r = random_below(n // 4)
-        c0 = gp.powmod(g, r, n_square)
+        return gp.powmod(gp.mpz(self.pp["g"]), r, n_square), [
+            gp.powmod(gp.mpz(pk_i), r, n_square) for pk_i in self.sk["pk"]]
+
+    def _encrypt_with(self, lst_pt: list, part: tuple) -> dict:
+        """The ciphertext of *lst_pt* for the randomness part *part*."""
+        n = gp.mpz(self.pp["n"])
+        n_square = gp.mpz(self.pp["n_square"])
+        c0, masks = part
         c1 = []
-        for x_i, pk_i in zip(lst_pt, pk):
+        for x_i, m in zip(lst_pt, masks):
             x_term = gp.mpz(1) + gp.mpz(x_i) * n
             x_term %= n_square
-            ct_i = (x_term * gp.powmod(pk_i, r, n_square)) % n_square
-            c1.append(gp.digits(ct_i))
-
+            c1.append(gp.digits((x_term * m) % n_square))
         return {"ct0": gp.digits(c0), "ct1": c1}
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: list):
@@ -293,21 +301,14 @@ class SIFEPaillier(IPFEAbsCrypto):
         """
         if self.pp["eta"] != 1:
             raise NotImplementedError("ndarray helper currently expects eta=1")
-        n = gp.mpz(self.pp["n"])
-        n_square = gp.mpz(self.pp["n_square"])
-        g = gp.mpz(self.pp["g"])
-        pk = [gp.mpz(v) for v in self.sk["pk"]]
+        if kwargs.get("precomputed") is not None:
+            return self._encrypt_precomputed(lst_ndarray, kwargs["precomputed"])
         lst_ndarray_ct = []
         for ary_src in lst_ndarray:
             ary = scale_to_int(ary_src, self.precision)
             ary_ct = np.empty(ary.shape, dtype=object)
             for i, w in np.ndenumerate(ary):
-                x_i = int(w)
-                r = random_below(n // 4)
-                c0 = gp.powmod(g, r, n_square)
-                x_term = (gp.mpz(1) + gp.mpz(x_i) * n) % n_square
-                ct_i = (x_term * gp.powmod(pk[0], r, n_square)) % n_square
-                ary_ct[i] = {"ct0": gp.digits(c0), "ct1": [gp.digits(ct_i)]}
+                ary_ct[i] = self._encrypt_with([int(w)], self._random_part())
             lst_ndarray_ct.append(ary_ct)
         return lst_ndarray_ct
 

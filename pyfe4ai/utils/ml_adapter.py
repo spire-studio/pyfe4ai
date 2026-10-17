@@ -695,7 +695,10 @@ def precompute_gradient(
     :meth:`~pyfe4ai.schemes.mcfe.ring_lwe.MCFERingLWE.precompute`): label
     pads, Gaussian samples and NTT products are computed before the gradient
     exists; ``encrypt_gradient(..., precomputed=...)`` then only adds the
-    plaintext term. The result is secret and one-time.
+    plaintext term. For ``mcfe/ddh``, ``mcfe/damgard`` and ``mcfe/paillier``
+    (and their decentralized variants; :mod:`pyfe4ai.schemes.mcfe.offline`)
+    the label masks of every element are computed. The result is secret and
+    one-time; the ciphertexts are those of the plain call.
 
     Raises:
         ValueError: If the scheme has no offline phase, or *nid* already
@@ -880,6 +883,9 @@ def prepare_aggregation(
     fusion_weight, weight_scale, dk = _aggregation_key(
         wrapper, weights, label, sid, list(weights), allow_partial, lambda: n_chunks
     )
+    prepare_key = getattr(decryptor, "prepare_key", None)
+    if prepare_key is not None:  # element-wise MCFE: the label terms of the key too
+        dk = prepare_key(dk, label, [tuple(int(d) for d in np.shape(np.empty(shape)))])
     return PreparedAggregation(label, sid, fusion_weight, weight_scale, n_chunks, dk, allow_partial)
 
 

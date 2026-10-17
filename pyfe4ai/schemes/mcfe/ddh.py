@@ -32,6 +32,7 @@ from pyfe4ai.schemes.ddh_base import DDHKeyGeneratorBase
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import decoded_layer
 from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
+from pyfe4ai.schemes.mcfe.offline import OfflineMCFEMixin
 from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import _random
@@ -171,7 +172,7 @@ class MCFEKeyGenerator(DDHKeyGeneratorBase):
         return {"d": [gp.digits(d_k % self.q) for d_k in d]}
 
 
-class MCFE(IPFEAbsCrypto):
+class MCFE(OfflineMCFEMixin, IPFEAbsCrypto):
     """Crypto operations for DDH-based multi-client inner-product FE."""
 
     def __init__(self, config: dict) -> None:
@@ -225,21 +226,33 @@ class MCFE(IPFEAbsCrypto):
             raise FEValidationError("input plaintext must be a list")
         if len(lst_pt) > len(self.sk["s"]):
             raise FEValidationError("input plaintext has {} values, more than eta".format(len(lst_pt)))
+        return self._encrypt_masked(lst_pt, self._label_mask(label))
 
+    def _label_mask(self, label: str) -> list:
+        """``prod_k H_k(l)^{s_jk} mod p`` for every slot j (offline part, see
+        :mod:`pyfe4ai.schemes.mcfe.offline`)."""
+        p = gp.mpz(self.pp["p"])
+        u_l = _hash_label(label, p)
+        masks = []
+        for s_j in self.sk["s"]:
+            m = gp.mpz(1)
+            for u_k, s_jk in zip(u_l, s_j):
+                m = gp.mul(m, gp.powmod(u_k, gp.mpz(s_jk), p)) % p
+            masks.append(m)
+        return masks
+
+    def _encrypt_masked(self, lst_pt: list, masks: list) -> dict:
+        """``g^{x_j}`` times the label masks: the ciphertext of :meth:`encrypt`."""
+        if not isinstance(lst_pt, list):
+            raise FEValidationError("input plaintext must be a list")
+        if len(lst_pt) > len(masks):
+            raise FEValidationError("input plaintext has {} values, more than eta".format(len(lst_pt)))
         p = gp.mpz(self.pp["p"])
         g = gp.mpz(self.pp["g"])
-        u_l = _hash_label(label, p)
+        return {"c": [gp.digits(gp.mul(gp.powmod(g, gp.mpz(x_j), p), m) % p)
+                      for x_j, m in zip(int_vector(lst_pt, "plaintext"), masks)]}
 
-        c = list()
-        for x_j, s_j in zip(int_vector(lst_pt, "plaintext"), self.sk["s"]):
-            c_j = gp.powmod(g, gp.mpz(x_j), p)
-            for u_k, s_jk in zip(u_l, s_j):
-                c_j = gp.mul(c_j, gp.powmod(u_k, gp.mpz(s_jk), p)) % p
-            c.append(gp.digits(c_j))
-
-        return {"c": c}
-
-    def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict, label: str):
+    def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict, label: str, term=None):
         """Decrypt aggregated ciphertexts to recover the multi-client inner product.
 
         Args:
@@ -248,6 +261,8 @@ class MCFE(IPFEAbsCrypto):
             fusion_weight: Mapping of client IDs to weight lists; must be the
                 weights the key was derived for.
             label: The encryption label used during :meth:`encrypt`.
+            term: ``prod_k H_k(l)^{d_k} mod p`` if already computed
+                (:meth:`prepare_key`).
 
         Returns:
             The inner product as an integer, or ``None`` if out of bound.
@@ -264,7 +279,6 @@ class MCFE(IPFEAbsCrypto):
             raise FESchemeError("inconsistent input among ct and fusion weight")
 
         p = gp.mpz(self.pp["p"])
-        u_l = _hash_label(label, p)
 
         _cf_prod = gp.mpz(1)
         for nid, ct_nid in dct_ct.items():
@@ -280,11 +294,16 @@ class MCFE(IPFEAbsCrypto):
                     raise FEValidationError("ciphertext element of {} out of range".format(nid))
                 _cf_prod = gp.mul(_cf_prod, gp.powmod(c_j, gp.mpz(y_j), p)) % p
 
-        _ud_prod = gp.mpz(1)
-        for u_k, d_k in zip(u_l, dk["d"]):
-            _ud_prod = gp.mul(_ud_prod, gp.powmod(u_k, gp.mpz(d_k), p)) % p
-
+        _ud_prod = self._key_term(dk, label) if term is None else term
         return self._solve_dlog(gp.divm(_cf_prod, _ud_prod, p))
+
+    def _key_term(self, dk: dict, label: str):
+        """``prod_k H_k(l)^{d_k} mod p``, the label part of :meth:`decrypt`."""
+        p = gp.mpz(self.pp["p"])
+        _ud_prod = gp.mpz(1)
+        for u_k, d_k in zip(_hash_label(label, p), dk["d"]):
+            _ud_prod = gp.mul(_ud_prod, gp.powmod(u_k, gp.mpz(d_k), p)) % p
+        return _ud_prod
 
     def _solve_dlog(self, g_inner_prod) -> int | None:
         """Solve the discrete log using a cached dlog table."""
@@ -312,6 +331,8 @@ class MCFE(IPFEAbsCrypto):
             List of object ndarrays containing per-element ciphertexts.
         """
         _label = kwargs.get("label", None)
+        if kwargs.get("precomputed") is not None:
+            return self._encrypt_precomputed(lst_ndarray, _label, kwargs["precomputed"])
         lst_ndarray_ct = list()
         for l in range(len(lst_ndarray)):
             ary = scale_to_int(lst_ndarray[l], self.precision)
@@ -336,6 +357,7 @@ class MCFE(IPFEAbsCrypto):
             List of float ndarrays with decrypted values.
         """
         _sample = next(iter(dict_ndarray_ct.values()))
+        terms = self._prepared_terms(dk, label, _sample)
         lst_ndarray = list()
         for l in range(len(_sample)):
             ary = _sample[l]
@@ -345,7 +367,8 @@ class MCFE(IPFEAbsCrypto):
                     nid: dict_ndarray_ct[nid][l][i] for nid in dict_ndarray_ct.keys()
                 }
                 ary_dec[i] = self.decrypt(
-                    dct_ct, dk, fusion_weight, _element_label(label, l, i)
+                    dct_ct, dk, fusion_weight, _element_label(label, l, i),
+                    term=None if terms is None else terms[l][i],
                 )
             lst_ndarray.append(decoded_layer(ary_dec, l, 10 ** self.precision))
 

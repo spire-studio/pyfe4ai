@@ -41,6 +41,7 @@ import numpy as np
 from pyfe4ai.schemes.ddh_base import DDHKeyGeneratorBase
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import decoded_layer
+from pyfe4ai.schemes.random_offline import OfflineRandomMixin
 from pyfe4ai.schemes.threshold_utils import check_fusion_weight
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.utils.crypto_constants import CryptoCONST
@@ -143,7 +144,7 @@ class MIFEKeyGenerator(DDHKeyGeneratorBase):
         return {"d": d, "z": gp.digits(z % self.q), "weights_id": fusion_weight_id(fusion_weight)}
 
 
-class MIFE(IPFEAbsCrypto):
+class MIFE(OfflineRandomMixin, IPFEAbsCrypto):
     """Crypto operations for DDH-based multi-input inner-product FE."""
 
     def __init__(self, config: dict) -> None:
@@ -181,15 +182,27 @@ class MIFE(IPFEAbsCrypto):
         if not self._has_private_keys():
             raise FEKeyError("no private keys provided for encryption")
         x = int_vector(lst_pt, "plaintext", length=len(self.sk["u"]))
+        return self._encrypt_with(x, self._random_part())
+
+    def _random_part(self) -> tuple:
+        """``(g^r, [h_j^r])`` mod p for a fresh r (see
+        :mod:`pyfe4ai.schemes.random_offline`)."""
         p = gp.mpz(self.pp["p"])
-        q = gp.mpz(self.pp["q"])
+        r = gp.mpz(_CSPRNG.randrange(int(gp.mpz(self.pp["q"]))))
+        return gp.powmod(gp.mpz(self.pp["g"]), r, p), [gp.powmod(gp.mpz(h_j), r, p) for h_j in self.sk["h"]]
+
+    def _encrypt_with(self, lst_pt: list, part: tuple) -> dict:
+        """``(g^r, g^{x_j + u_j} h_j^r)`` for the randomness part *part*;
+        ``g^{x_j + u_j} = g^{x_j} g^{u_j}`` with ``g^{u_j}`` cached per key."""
+        x = int_vector(lst_pt, "plaintext", length=len(self.sk["u"]))
+        p = gp.mpz(self.pp["p"])
         g = gp.mpz(self.pp["g"])
-        r = gp.mpz(_CSPRNG.randrange(int(q)))
-        c = [
-            gp.digits(gp.powmod(g, x_j + gp.mpz(u_j), p) * gp.powmod(gp.mpz(h_j), r, p) % p)
-            for x_j, u_j, h_j in zip(x, self.sk["u"], self.sk["h"])
-        ]
-        return {"t": gp.digits(gp.powmod(g, r, p)), "c": c}
+        cached = self.__dict__.get("_g_u")
+        if cached is None or cached[0] is not self.sk:
+            cached = self._g_u = (self.sk, [gp.powmod(g, gp.mpz(u_j), p) for u_j in self.sk["u"]])
+        t, masks = part
+        c = [gp.digits(gp.powmod(g, x_j, p) * g_u % p * m % p) for x_j, g_u, m in zip(x, cached[1], masks)]
+        return {"t": gp.digits(t), "c": c}
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict):
         """Recover ``sum_i <x_i, y_i>`` from one ciphertext per slot.
@@ -245,6 +258,8 @@ class MIFE(IPFEAbsCrypto):
         """
         if len(self.sk["u"]) != 1:
             raise NotImplementedError("ndarray helper currently expects eta=1")
+        if kwargs.get("precomputed") is not None:
+            return self._encrypt_precomputed(lst_ndarray, kwargs["precomputed"])
         lst_ndarray_ct = []
         for ary_src in lst_ndarray:
             ary = scale_to_int(ary_src, self.precision)

@@ -64,3 +64,17 @@ def test_planted_json_cache_is_ignored(tmp_path):
     table, bound, m, giant = load_or_build_dlog_table(str(cache), g, p, 1000)
     for x in range(-50, 51):
         assert dlog_table_solve(gp.powmod(gg, x, pp), g, p, bound, table, m, giant) == x
+
+
+def test_tables_keyed_by_value_or_digits_solve_alike():
+    from pyfe4ai.utils.dlog_solver import dlog_build_table
+
+    g, p = _group()
+    table, m, giant = dlog_build_table(g, p, 300)
+    assert all(isinstance(k, int) for k in table)
+    digits_table = {gp.digits(gp.mpz(k)): j for k, j in table.items()}
+    gg, pp = gp.mpz(g), gp.mpz(p)
+    for x in range(-300, 301, 7):
+        v = gp.powmod(gg, x, pp)
+        assert dlog_table_solve(v, g, p, 300, table, m, giant) == x
+        assert dlog_table_solve(v, g, p, 300, digits_table, m, giant) == x

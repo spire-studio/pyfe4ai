@@ -50,10 +50,10 @@ def dlog_build_table(
     g = gp.mpz(g_str)
     p = gp.mpz(p_str)
     m = _dlog_table_step_size(bound)
-    table: dict[str, int] = {}
+    table: dict[int, int] = {}  # keyed by value: an mpz finds its int key (same hash and equality)
     val = gp.mpz(1)
     for j in range(m):
-        table[gp.digits(val)] = j
+        table[int(val)] = j
         val = (val * g) % p
     giant = gp.powmod(g, -m, p)
     return table, m, giant
@@ -70,7 +70,8 @@ def dlog_table_solve(
             g_str: Group generator as a digit string.
             p_str: Prime modulus as a digit string.
             bound: Upper bound on absolute values.
-            table: Baby-step table ``{digits(g^j): j}`` for ``0 <= j < m``.
+            table: Baby-step table ``{g^j: j}`` for ``0 <= j < m`` (keys as
+                integers; tables keyed by ``digits(g^j)`` are still read).
             m: Baby-step count (table size).
             giant: Giant step ``g^-m mod p``.
     """
@@ -79,10 +80,11 @@ def dlog_table_solve(
     h_shifted = (gp.mpz(value) * gp.powmod(g, bound, p)) % p
     gamma = h_shifted
     n_giants = (2 * bound) // m + 2
+    by_digits = bool(table) and isinstance(next(iter(table)), str)  # the format of v0.3
     for i in range(n_giants):
-        key = gp.digits(gamma)
-        if key in table:
-            return i * m + table[key] - bound
+        j = table.get(gp.digits(gamma) if by_digits else gamma)
+        if j is not None:
+            return i * m + j - bound
         gamma = (gamma * giant) % p
     raise ValueError(
         "inner product out of bound supported by crypto system "
