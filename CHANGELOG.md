@@ -10,20 +10,25 @@ compatibility).
 ### Added
 
 - **`sife/fullysec_ring_lwe`: opt-in packed layout** (`ndarray_layout =
-  "packed"`). A ciphertext holds an `eta x k` matrix, `k <= ring_n` (BMMS21
-  Remark 1), and decrypts to the `k` inner products; the ndarray helper
+  "packed"`, experimental: the leveraging argument is the project's own,
+  independently checked, not externally reviewed). A ciphertext holds an
+  `eta x k` matrix, `k <= ring_n` (BMMS21 Remark 1), and decrypts to the
+  `k` inner products; the ndarray helper
   packs `ring_n` elements per ciphertext in the `{"shape", "first_chunk",
   "chunks"}` layout of the MCFE Ring-LWE schemes. The adaptive proof's
   statistical games depend on the challenge only through the span `V` of the
   differences, so the complexity leveraging ranges over the possible `V`
   (`(D + 1)(4X + 1)^(l D)`, `D = min(eta, ring_n)`) instead of the
-  `(2X + 1)^(2 eta k)` challenge pairs, and `sigma1` gains `sqrt(D)`. With
-  `eta = 1` and `X = 100` (gradients) the parameters are those of the
-  elementwise layout (n = 4096, m = 19, 111-bit q), so one ciphertext
-  (1.15 MB of coefficients, 3.0 MB as JSON) carries 4096 elements instead of
-  one: 280 bytes and, with the time of one encryption spread over them,
-  under a millisecond per element. Own parameter record
-  (`bmms21-sec5-packed/v1`); the elementwise default is unchanged.
+  `(2X + 1)^(2 eta k)` challenge pairs, and `sigma1` gains `sqrt(D)`; G5*
+  also needs `q > (2X sqrt(D))^D`, which the parameters enforce, and `pp`
+  flagged packed must hold the packed derivation. For `eta = 1`, `V` is
+  `{0}` or `Q` (two guesses) with the basis `[1]` of norm 1 instead of
+  `2X`: with `X = 100` (gradients) n = 4096, m = 12 and a 107-bit q
+  (elementwise: m = 19, 111 bits), so one ciphertext of 0.75 MB of
+  coefficients carries 4096 elements instead of one, 182 bytes and, with
+  the time of one encryption spread over them, under a millisecond per
+  element. Own parameter record (`bmms21-sec5-packed/v2`); the elementwise
+  parameters are unchanged.
 
 ### Security
 
@@ -181,6 +186,19 @@ compatibility).
 
 ### Changed
 
+- **`sife/fullysec_ring_lwe` samples exact Gaussians by default**
+  (`gaussian_sampler = "facct"` for the keys and the encryption noise of
+  both layouts, whatever the library-wide sampler; `pp` carries the key
+  generator's choice as the encryptors' default). With the rounded sampler
+  the keys at `eta = 1` are about 2^-47 from `D_{Z,sigma1}`, a term the
+  adaptive proof does not budget. `gaussian_sampler = "rounded"` in the key
+  generator or crypto config restores the previous draws (the same keys and
+  ciphertexts for the same random source). Measured (standard profile,
+  medians of 3, load 6-17): setup 0.17 -> 0.65 s at `eta = 1` and 0.55 ->
+  2.2 s at `eta = 4` (Python FACCT is slower at the key width `sigma1`),
+  6.8 -> 6.0 s at `eta = 10`; one encryption 0.87 -> 0.74 s, 0.95 -> 0.83 s
+  and 1.80 -> 1.56 s (above 2^40 FACCT is faster than the rounded MPFR
+  Box-Muller). Other schemes keep the rounded default.
 - **Pairing groups (breaking for pairing keys and ciphertexts):** every
   pairing-based scheme (SIFE FH-IPE and partial FH-IPE, MIFE FH-IPE and
   FH-Multi-IPE, MCFE / dMCFE / tMCFE FH-Multi-IPE, Quad, SGP, MIQFE) now

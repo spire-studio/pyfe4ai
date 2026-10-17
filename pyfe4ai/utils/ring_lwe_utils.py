@@ -781,13 +781,27 @@ def bmms21_adaptive_leveraging(eta: int, bound_x, ring_n: int, packed: bool = Fa
     dimension ``d <= D = min(l, ring_n)`` and is spanned by ``d`` vectors of
     ``[-2X, 2X]^l``, so ``L = (D + 1) (4X + 1)^(l D)``, independent of the
     number of packed vectors (guessing both challenge matrices would give
-    ``(2X + 1)^(2lk)``).
+    ``(2X + 1)^(2lk)``). For ``l = 1``, ``V`` is ``{0}`` or ``Q``: ``L = 2``.
     """
     l = int(eta)
     if not packed:
         return 2 * l * math.log2(2 * int(bound_x) + 1), 1
+    if l == 1:
+        return 1.0, 1
     rank = min(l, int(ring_n))
     return l * rank * math.log2(4 * int(bound_x) + 1) + math.log2(rank + 1), rank
+
+
+def _bmms21_basis_norm_log2(eta: int, bound_x, ring_n: int, packed: bool = False) -> float:
+    """log2 of the bound on ``||B||`` of G3 -> G4: the basis ``B`` along which
+    Lemma 1 decomposes the key columns. ``||alpha|| <= 2X sqrt(l)`` for one
+    difference, ``2X sqrt(l D)`` for ``D`` basis vectors of ``[-2X, 2X]^l``;
+    packed with ``l = 1``, ``V = Q`` has the basis ``[1]`` (norm 1)."""
+    l = int(eta)
+    if packed and l == 1:
+        return 0.0
+    rank = bmms21_adaptive_leveraging(l, bound_x, ring_n, packed)[1]
+    return math.log2(2 * int(bound_x) * math.sqrt(l * rank))
 
 
 def _bmms21_packed_minor_log2(eta: int, bound_x, ring_n: int) -> float:
@@ -799,6 +813,8 @@ def _bmms21_packed_minor_log2(eta: int, bound_x, ring_n: int) -> float:
     prime ``q`` when ``q`` exceeds this bound. ``q`` is public: below it an
     adversary could pick differences whose minor is a multiple of ``q``.
     """
+    if int(eta) == 1:
+        return 0.0  # the basis [1]: integer coefficients
     rank = min(int(eta), int(ring_n))
     return rank * math.log2(2 * int(bound_x) * math.sqrt(rank))
 
@@ -821,8 +837,9 @@ def _bmms21_adaptive_widths(kappa: int, l: int, bound_x, bound_y, ring_n: int, m
       ``(2 D delta + 2^n q^(-eps n) (q^2m / ((q^m - 1)(q^m - q)))^n) L <= 2^-kappa``
       (``D`` applications, one per basis vector of the differences);
     * G3 -> G4 (Lemma 1 for ``sigma1^2 I - sigma'^2 B B^T``, ``B`` a basis of the
-      differences): ``sigma1 = sqrt(2) ||B|| sigma'`` with ``||B|| <= 2X sqrt(l D)``,
-      so that ``Gamma >= sigma' / sqrt(2) > eta_eps'(Z^n)``;
+      differences): ``sigma1 = sqrt(2) ||B|| sigma'`` with ``||B|| <= 2X sqrt(l D)``
+      (1 when packed with ``l = 1``, see ``_bmms21_basis_norm_log2``), so that
+      ``Gamma >= sigma' / sqrt(2) > eta_eps'(Z^n)``;
     * ``sigma3 = sqrt(m) sigma2``.
     """
     n = ring_n
@@ -841,7 +858,7 @@ def _bmms21_adaptive_widths(kappa: int, l: int, bound_x, bound_y, ring_n: int, m
     # Lemma 1 also needs sigma' / sqrt(2) above eta_eps'(Z^n), eps' = 2^-kappa / (n m lev)
     eta_g = math.sqrt(_smoothing_log(n, kappa + math.log2(n * m) + log2_lev) / math.pi)
     log_sp = max(log_sp, math.log2(math.sqrt(2) * eta_g) + 1e-9)
-    log_s1 = 0.5 + math.log2(2 * int(bound_x) * math.sqrt(l * rank)) + log_sp
+    log_s1 = 0.5 + _bmms21_basis_norm_log2(l, bound_x, n, packed) + log_sp
     log_s2 = 0.5 + math.log2(sigma * n * math.sqrt(kappa) * math.sqrt(l + 2)) + log_s1
     return {
         "sigma": math.log2(sigma),

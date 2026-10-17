@@ -39,13 +39,23 @@ Deviations from the paper:
 * Signed inputs ``|x| <= X``, ``|y| <= Y``: ``p = 2 l X Y + 2`` with centred
   decoding, ``||x1 - x0||_inf <= 2X``, and complexity leveraging over
   ``(2X + 1)^(2l)`` challenge pairs.
-* Gaussian samples are rounded continuous Gaussians, as elsewhere in the library.
+* Gaussian samples (keys and encryption noise) are exact ``D_{Z,sigma}``
+  by default (``gaussian_sampler = "facct"``,
+  :func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_facct`), whatever the
+  library-wide default; ``"rounded"`` (a rounded continuous Gaussian, the
+  library default) stays selectable. At ``eta = 1`` the rounded keys are
+  about ``2^-47`` from ``D_{Z,sigma1}`` in statistical distance, a term the
+  proof does not account for. Python FACCT is slower than the rounded
+  sampler at the key width ``sigma1`` but faster beyond ``2^40`` (the
+  encryption widths), where the rounded sampler needs MPFR Box-Muller.
 
 Ciphertext layouts (``ndarray_layout``):
 
 * ``"elementwise"`` (default): one vector per ciphertext; the ndarray helper
   encrypts every element on its own.
-* ``"packed"`` (opt-in, its own parameter record): a ciphertext holds an
+* ``"packed"`` (opt-in, **experimental**, its own parameter record; the
+  leveraging argument below is this project's own, checked independently
+  but not published or externally reviewed): a ciphertext holds an
   ``eta x k`` matrix, ``k <= ring_n`` (Remark 1: ``Delta x_ij`` is added to
   coefficient ``j`` of ``ct_i``), and decrypts to the ``k`` inner products
   ``<x_j, y>`` of its columns. The ndarray helper packs ``ring_n``
@@ -59,8 +69,13 @@ Ciphertext layouts (``ndarray_layout``):
   (:func:`pyfe4ai.utils.ring_lwe_utils.bmms21_adaptive_leveraging`). G5*
   writes the differences in that basis mod ``q``, so ``q`` must exceed the
   minors of the basis, ``(2X sqrt(D))^D``; the parameters enforce it (it
-  moves e.g. ``eta = 24``, ``X = 4`` to a larger ring). For ``eta = 1`` this
-  gives the parameters of the elementwise layout.
+  moves e.g. ``eta = 24``, ``X = 4`` to a larger ring). For ``eta = 1``,
+  ``V`` is ``{0}`` or ``Q``: two guesses, and the basis ``[1]`` of norm 1
+  instead of ``2X`` (``X = 100``, ``Y = 1``: ``m = 12`` and a 107-bit ``q``
+  against ``m = 19`` and 111 bits elementwise, whose parameters stay as
+  they are). Encryptors and decryptors
+  accept ``pp`` flagged ``"packed"`` only if its ``q``, ``p`` and widths are
+  the packed derivation.
 
 Under the ``standard`` profile ``ring_n = "auto"`` takes the smallest ring
 dimension (with the smallest ``m``) whose ``q`` meets
@@ -72,6 +87,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import secrets
 
 import gmpy2 as gp
@@ -85,10 +101,12 @@ from pyfe4ai.schemes.profiles import STANDARD
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.ring_lwe_utils import _get_ntt_root
 from pyfe4ai.utils.ring_lwe_utils import bmms21_adaptive_choice
+from pyfe4ai.utils.ring_lwe_utils import bmms21_adaptive_parameters
 from pyfe4ai.utils.ring_lwe_utils import check_ring_lwe
 from pyfe4ai.utils.ring_lwe_utils import decode_vector
 from pyfe4ai.utils.ring_lwe_utils import ntt_forward
 from pyfe4ai.utils.ring_lwe_utils import ntt_inverse
+from pyfe4ai.utils.sampling_utils import GAUSSIAN_SAMPLERS
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.validation import int_vector
@@ -99,9 +117,20 @@ logger = logging.getLogger(__name__)
 
 _PARAM_VERSION = "bmms21-sec5/v2"  # a expanded from a stored seed
 #: Record version of the packed layout (leveraging over the span of the differences).
-_PACKED_PARAM_VERSION = "bmms21-sec5-packed/v1"
+_PACKED_PARAM_VERSION = "bmms21-sec5-packed/v2"  # v2: eta = 1 with the basis [1]
 #: Values of the ``ndarray_layout`` option; the first is the default.
 LAYOUTS = ("elementwise", "packed")
+#: Default Gaussian sampler of this scheme (``gaussian_sampler`` option): the
+#: exact ``D_{Z,sigma}`` of the proof, whatever the library-wide default is.
+DEFAULT_SAMPLER = "facct"
+
+
+def _checked_sampler(name) -> str:
+    if name not in GAUSSIAN_SAMPLERS:
+        raise FEValidationError(
+            "gaussian_sampler must be one of {}, got {!r}".format(GAUSSIAN_SAMPLERS, name)
+        )
+    return name
 #: Resampling attempts for ``a`` and for a ciphertext before giving up.
 _MAX_TRIES = 64
 
@@ -156,12 +185,15 @@ class SIFEFullySecRingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                 (``kappa``), ``eta``, ``bound_x``, ``bound_y``, ``ring_n``
                 (power of two, ``"auto"``, or ``None`` for the toy default),
                 ``m`` (number of key polynomials, at least 5, or
-                ``"auto"``, the default) and ``ndarray_layout``
+                ``"auto"``, the default), ``ndarray_layout``
                 (``"elementwise"``, the default, or ``"packed"``: up to
-                ``ring_n`` vectors per ciphertext, with parameters of their own).
+                ``ring_n`` vectors per ciphertext, with parameters of their own)
+                and ``gaussian_sampler`` (``"facct"``, the default, or
+                ``"rounded"``) for the keys, also published in ``pp`` as the
+                encryptors' default.
 
         Raises:
-            FEValidationError: For an unknown ``ndarray_layout``.
+            FEValidationError: For an unknown ``ndarray_layout`` or sampler.
         """
         super().__init__(config, **kwargs)
         self.eta = config.get("eta", CryptoCONST.SIFE_DEFAULT_ETA)
@@ -174,6 +206,7 @@ class SIFEFullySecRingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             raise FEValidationError(
                 "ndarray_layout must be one of {}, got {!r}".format(LAYOUTS, self.ndarray_layout)
             )
+        self.gaussian_sampler = _checked_sampler(config.get("gaussian_sampler", DEFAULT_SAMPLER))
         self._load_parameters()
         if self.security_profile == STANDARD:
             check_ring_lwe(self.ring_n, self.q, self.sigma)
@@ -267,7 +300,7 @@ class SIFEFullySecRingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         a_ntt = _ntt_all(self.a, q, root)
         sk, pk = [], []
         for _ in range(self.eta):
-            s_i = discrete_gaussian_matrix(self.m, n, self.sigma1)
+            s_i = discrete_gaussian_matrix(self.m, n, self.sigma1, sampler=self.gaussian_sampler)
             acc = [gp.mpz(0)] * n
             for a_j, s_j in zip(a_ntt, _ntt_all(s_i, q, root)):
                 acc = [(u + x * y) % q for u, x, y in zip(acc, a_j, s_j)]
@@ -279,7 +312,8 @@ class SIFEFullySecRingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
     def get_public_parameters(self) -> dict:
         """Return ``a``, ``p``, ``q``, ``ring_n``, ``m``, ``eta``, the bounds and the
-        encryption widths ``sigma2``, ``sigma3`` (and ``ndarray_layout`` when packed)."""
+        encryption widths ``sigma2``, ``sigma3``, the ``gaussian_sampler`` (and
+        ``ndarray_layout`` when packed)."""
         pp = {
             "a": [[gp.digits(v) for v in poly] for poly in self.a],
             "p": gp.digits(self.p),
@@ -292,6 +326,7 @@ class SIFEFullySecRingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             "sigma2": self.sigma2,
             "sigma3": self.sigma3,
             "sec_param": self.sec_param,
+            "gaussian_sampler": self.gaussian_sampler,
         }
         if self._packed():
             pp["ndarray_layout"] = self.ndarray_layout
@@ -327,11 +362,20 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
     """Crypto operations for the adaptively secure Ring-LWE IPFE of BMMS21 (Sec. 5)."""
 
     def __init__(self, config: dict, **kwargs) -> None:
-        """Initialise with ``keys.pp`` and, for encryptors, ``keys.sk``."""
+        """Initialise with ``keys.pp`` and, for encryptors, ``keys.sk``; the
+        optional ``gaussian_sampler`` (``"facct"`` or ``"rounded"``) of the
+        encryption noise defaults to that of ``pp``, else ``"facct"``.
+
+        Raises:
+            FEValidationError: For an unknown sampler.
+        """
         super().__init__(config, **kwargs)
         self.pp = self.keys["pp"]
         if self._has_private_keys():
             self.sk = self.keys["sk"]
+        self.gaussian_sampler = _checked_sampler(
+            config.get("gaussian_sampler") or self.pp.get("gaussian_sampler", DEFAULT_SAMPLER)
+        )
         self._cache = {}
 
     def _ring(self) -> tuple:
@@ -346,7 +390,36 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
         return self._cache["a"]
 
     def _packed(self) -> bool:
-        return self.pp.get("ndarray_layout", LAYOUTS[0]) == "packed"
+        """Whether *pp* holds packed parameters. The flag alone does not suffice:
+        ``q``, ``p``, ``sigma2`` and ``sigma3`` must be the packed derivation for
+        the bounds, ``ring_n`` and ``m`` of *pp* (checked once per *pp*), since
+        elementwise widths cover one vector per ciphertext only.
+
+        Raises:
+            FEValidationError: If *pp* is flagged packed but its parameters are not.
+        """
+        if self.pp.get("ndarray_layout", LAYOUTS[0]) != "packed":
+            return False
+        if self._cache.get("packed_pp") is not self.pp:
+            pp = self.pp
+            try:
+                expected = bmms21_adaptive_parameters(
+                    int(pp["sec_param"]), int(pp["eta"]), int(pp["bound_x"]), int(pp["bound_y"]),
+                    int(pp["ring_n"]), int(pp["m"]), packed=True,
+                )
+                same = (
+                    int(pp["q"]) == int(expected["q"]) and int(pp["p"]) == int(expected["p"])
+                    and float(pp["sigma2"]) == expected["sigma2"] and float(pp["sigma3"]) == expected["sigma3"]
+                )
+            except (KeyError, TypeError, ValueError, FEValidationError):
+                same = False
+            if not same:
+                raise FEValidationError(
+                    "ndarray_layout = 'packed', but q, p and the widths of these public "
+                    "parameters are not the packed ones for their bounds, ring_n and m"
+                )
+            self._cache["packed_pp"] = pp
+        return True
 
     def encrypt(self, lst_pt: list) -> dict:
         """Encrypt an integer vector of length ``eta`` or, with packed parameters,
@@ -387,14 +460,15 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
     def _encrypt_rows(self, rows: list) -> dict:
         """``ct0`` and ``ct`` for the plaintext *rows* (``eta`` lists of ``k`` ints)."""
         q, n, root = self._ring()
+        sampler = self.gaussian_sampler
         m = int(self.pp["m"])
         a_ntt = self._a_ntt()
         if "pk" not in self._cache:
             self._cache["pk"] = _ntt_all(self.sk["pk"], q, root)
         pk_ntt = self._cache["pk"]
         for _ in range(_MAX_TRIES):
-            r_ntt = ntt_forward(discrete_gaussian_matrix(1, n, self.pp["sigma2"])[0], q, root)
-            f0 = discrete_gaussian_matrix(m, n, self.pp["sigma2"])
+            r_ntt = ntt_forward(discrete_gaussian_matrix(1, n, self.pp["sigma2"], sampler=sampler)[0], q, root)
+            f0 = discrete_gaussian_matrix(m, n, self.pp["sigma2"], sampler=sampler)
             ct0_ntt = [
                 [(u * v + w) % q for u, v, w in zip(a_j, r_ntt, f_j)]
                 for a_j, f_j in zip(a_ntt, _ntt_all(f0, q, root))
@@ -405,7 +479,7 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
                 break
         else:
             raise FESchemeError("could not sample a ciphertext with the required ct0")
-        noise = discrete_gaussian_matrix(len(rows), n, self.pp["sigma3"])
+        noise = discrete_gaussian_matrix(len(rows), n, self.pp["sigma3"], sampler=sampler)
         ct = []
         for row, pk_i, f_i in zip(rows, pk_ntt, noise):
             poly = ntt_inverse([(u * v) % q for u, v in zip(pk_i, r_ntt)], q, root)
@@ -522,14 +596,16 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
         dk, fusion_weight = kwargs.get("dk"), kwargs.get("fusion_weight")
         if dk is None or fusion_weight is None:
             raise FEKeyError("need to provide decryption key and fusion weight")
-        out, key = [], None
+        out, key, first = [], None, 0
         for l, ary in enumerate(dict_ndarray_ct):
             if isinstance(ary, dict):  # packed layer
                 if key is None:
                     y = self._checked_key(dk, fusion_weight)
                     q, _, root = self._ring()
                     key = (y, _ntt_all(dk["sk_y"], q, root))
-                out.append(self._decrypt_packed_layer(ary, l, *key))
+                shape, chunks = self._checked_packed_layer(ary, l, first)
+                out.append(self._decrypt_packed_layer(shape, chunks, l, *key))
+                first += len(chunks)
                 continue
             ary_dec = np.empty(ary.shape, dtype=object)
             for i, _ in np.ndenumerate(ary):
@@ -537,24 +613,49 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
             out.append(decoded_layer(ary_dec, l, 10 ** self.precision))
         return out
 
-    def _decrypt_packed_layer(self, layer: dict, l: int, y: list, sk_ntt: list) -> np.ndarray:
-        try:
-            shape = tuple(int(v) for v in layer["shape"])
-            chunks = list(layer["chunks"])
-        except (KeyError, TypeError, ValueError) as exc:
-            raise FEValidationError("packed layer {} is malformed".format(l)) from exc
+    def _checked_packed_layer(self, layer, l: int, first: int) -> tuple:
+        """``(shape, chunks)`` of packed layer *l*, laid out as
+        :meth:`encrypt_lst_ndarray` writes it: a shape of non-negative ints,
+        ``first_chunk`` equal to *first* (the chunks of the packed layers
+        before it), and chunks of ``ring_n`` elements but the last, covering
+        the shape. The order of full chunks is not authenticated (nor is the
+        position of an elementwise ciphertext): a ciphertext is not bound to
+        its place.
+
+        Raises:
+            FEValidationError: For any other layout.
+        """
+        def whole(v) -> bool:
+            return isinstance(v, (int, np.integer)) and not isinstance(v, bool)
+
+        n = int(self.pp["ring_n"])
+        if not isinstance(layer, dict) or set(layer) != {"shape", "first_chunk", "chunks"}:
+            raise FEValidationError("packed layer {} must be a dict of shape, first_chunk and chunks".format(l))
+        shape, chunks = layer["shape"], layer["chunks"]
+        if not isinstance(shape, (list, tuple)) or len(shape) > 32 or not all(whole(v) and v >= 0 for v in shape):
+            raise FEValidationError("packed layer {} has an invalid shape {!r}".format(l, shape))
+        shape = tuple(int(v) for v in shape)
+        if not whole(layer["first_chunk"]) or layer["first_chunk"] != first:
+            raise FEValidationError(
+                "packed layer {} starts at chunk {!r}, expected {}".format(l, layer["first_chunk"], first)
+            )
+        if not isinstance(chunks, list) or not chunks or not all(
+            isinstance(chunk, dict) and whole(chunk.get("k")) for chunk in chunks
+        ):
+            raise FEValidationError("packed layer {} needs a non-empty list of packed ciphertexts".format(l))
+        ks = [int(chunk["k"]) for chunk in chunks]
+        if any(k != n for k in ks[:-1]) or not 0 < ks[-1] <= n or sum(ks) != math.prod(shape):
+            raise FEValidationError(
+                "packed layer {} has chunks of {} elements; its shape {} needs {} in chunks of "
+                "ring_n = {} but the last".format(l, ks, shape, math.prod(shape), n)
+            )
+        return shape, chunks
+
+    def _decrypt_packed_layer(self, shape: tuple, chunks: list, l: int, y: list, sk_ntt: list) -> np.ndarray:
         values = []
         for chunk in chunks:
-            if not isinstance(chunk, dict) or "k" not in chunk:
-                raise FEValidationError("packed layer {} holds a chunk without a batch length".format(l))
             vals = self._decrypt_values(chunk, sk_ntt, y)
             values.extend([None] * chunk["k"] if vals is None else vals)
-        if len(values) != int(np.prod(shape, dtype=np.int64)):
-            raise FEValidationError(
-                "packed layer {} has {} elements, its shape {} needs {}".format(
-                    l, len(values), shape, int(np.prod(shape, dtype=np.int64))
-                )
-            )
         ary = np.empty(len(values), dtype=object)
         ary[:] = values
         return decoded_layer(ary.reshape(shape), l, 10 ** self.precision)
