@@ -106,7 +106,8 @@ compatibility).
   `ring_n`: ciphertexts 16% smaller, partial decryptions as fast as before
   (the sampler dominates). With `N = 2^40`, `mife/lwe_threshold` (2 clients,
   `X = Y = 50`) has `lwe_n` 4352 instead of 5952, a 172-bit `q` and 3.3
-  instead of 7.8 * 10^9 entries of `A`. The KL parameters have their own
+  instead of 7.8 * 10^9 entries of `A` (key generation and encryption 45%
+  faster, half the memory, in one measurement). The KL parameters have their own
   records (`*-smudging-kl/v1`) and `pp` fields (`flooding_accounting`,
   `max_partial_decryptions`, `stat_param`, `flood_tail_cut`). The default
   (per-sample) accounting, its records, `pp` and partial decryptions are

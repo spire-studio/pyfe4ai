@@ -51,12 +51,14 @@ def _run_case(case: dict, rounds: int) -> dict:
                 case["name"], kg.lwe_n, int(kg.q).bit_length(), kg.m, math.log2(kg.sigma_f),
                 pp.get("flooding_accounting", "per-sample"), setup_times[-1]), file=sys.stderr, flush=True)
         sk_by_nid = {nid: kg.get_private_keys(nid) for nid in case["lst_nid"]}
+        # the ABDP15 schemes' encryptors hold A as the key generator does ("stream" under standard)
+        extra = {"matrix_mode": kg.matrix_mode} if hasattr(kg, "matrix_mode") else {}
 
         encryptors = {}
         dct_ct = {}
         t0 = time.perf_counter()
         for nid in case["lst_nid"]:
-            enc = case["crypto_cls"]({"id": nid, "keys": {"pp": pp, "sk": sk_by_nid[nid]}})
+            enc = case["crypto_cls"]({"id": nid, "keys": {"pp": pp, "sk": sk_by_nid[nid]}, **extra})
             dct_ct[nid] = enc.encrypt(case["x"][nid])
             encryptors[nid] = enc
         encrypt_times.append(time.perf_counter() - t0)
@@ -66,7 +68,7 @@ def _run_case(case: dict, rounds: int) -> dict:
         t0 = time.perf_counter()
         for sid in enrolled:
             dk_sid = kg.get_decryption_keys(sid, credentials={"fusion_weight": case["y"]})
-            dec = case["crypto_cls"]({"id": sid, "keys": {"pp": pp, "dk": dk_sid}})
+            dec = case["crypto_cls"]({"id": sid, "keys": {"pp": pp, "dk": dk_sid}, **extra})
             dct_partial[sid] = dec.share_decrypt(dct_ct, case["y"], dk_sid, enrolled)
         partial_times.append(time.perf_counter() - t0)
 

@@ -270,6 +270,23 @@ Only the sizes gain: the words stay 256-bit, and the flooding sampler,
 which dominates a partial decryption, runs at `bits(sigma_f) + 128 + log2 N
 + 8` bits (351 at `N = 2^53`, 328 by default), so it does not get faster.
 
+The same option on `mife/lwe_threshold` shrinks the LWE dimension.
+`benchmark_tmife_instantiations.py --security-profile standard --clients 2
+--bound 50 --cases lwe` (`X = Y = 50`, `s = 3`, `t = 2`, streamed `A`), one
+run each, the two side by side. The machine was heavily loaded: load
+average 30 to 54 until the KL run ended, falling to 7 by the end of the
+default run. That favours the default run's encryption, so the ratios are
+conservative:
+
+| `mife/lwe_threshold`, `standard` | lwe_n | q bits | m | entries of `A` | key generation s | encryption s (2 clients) | peak RSS | public key per client | ciphertext per client |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| default | 5952 | 217 | 1 303 923 | 7.8 * 10^9 | 2836 | 1191 | 12.4 GB | 93 MB | 414 KB |
+| KL, `N = 2^40` (`Q` = 3.7 * 10^11) | 4352 | 172 | 757 593 | 3.3 * 10^9 | 1569 (-45%) | 622 (-48%) | 6.2 GB | 44 MB | 243 KB |
+
+Partial decryptions take milliseconds in both (one flooded scalar each);
+their measured 94 vs 281 ms for two servers, key shares included, reflect
+the load, not the parameters.
+
 ## Dense LWE: MCFE of ABMPSW20 (`mcfe/lwe`), 200 elements
 
 `n0 + m0 = 7724`, 187-bit `q`. One LWE sample per element: the label of every

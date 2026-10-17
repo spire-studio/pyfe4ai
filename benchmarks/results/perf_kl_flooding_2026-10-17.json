@@ -1270,5 +1270,96 @@
    ],
    "time": "2026-10-17T22:36:09+0800"
   }
- ]
+ ],
+ "tmife_lwe_standard": {
+  "description": "mife/lwe_threshold, benchmark_tmife_instantiations.py --security-profile standard --clients 2 --bound 50 --cases lwe --rounds 1 --warmup 0 (streamed A); default vs flooding_accounting=kl, max_partial_decryptions = 2^40 // 3 (N = 2^40); the two runs side by side from 22:50, load average 30 to 54 until 23:27 (KL end), then falling to 7 (default end 23:58)",
+  "runs": {
+   "default": {
+    "row": {
+     "scheme": "tMIFE/LWE",
+     "profile": "small",
+     "setup_mean_sec": 2836.360665666056,
+     "keygen_mean_sec": "",
+     "client_key_export_mean_sec": "",
+     "encrypt_mean_sec": 1190.8576360830339,
+     "share_mean_sec": "",
+     "dkgen_mean_sec": "",
+     "partial_decrypt_mean_sec": 0.09369775000959635,
+     "combine_mean_sec": 2.3374916054308414e-05,
+     "combine_decrypt_mean_sec": "",
+     "decrypt_mean_sec": "",
+     "compute_mean_sec": "",
+     "end_to_end_mean_sec": 4027.3120228740154,
+     "end_to_end_median_sec": 4027.3120228740154,
+     "end_to_end_std_sec": 0.0,
+     "shape": "",
+     "layers": "",
+     "output_elements": "",
+     "elements_per_sec": "",
+     "pp_total_bytes": 396,
+     "sk_total_bytes": "",
+     "client_sk_total_bytes": 186288886,
+     "client_sk_avg_bytes": 93144443,
+     "dk_total_bytes": "",
+     "combined_dk_total_bytes": "",
+     "share_bundle_total_bytes": "",
+     "share_bundle_avg_bytes": "",
+     "partial_bundle_total_bytes": 575,
+     "partial_bundle_avg_bytes": 287,
+     "ct_total_bytes": 827255,
+     "ct_avg_bytes": 413627
+    },
+    "time_l": [
+     "4029.84 real      8585.10 user      5785.86 sys",
+     "12382011392  maximum resident set size"
+    ],
+    "params": [
+     "tMIFE/LWE: lwe_n 5952 q 217 bits m 1303923 sigma_f 2^194.7 flooding per-sample setup 2836.4 s"
+    ]
+   },
+   "kl40": {
+    "row": {
+     "scheme": "tMIFE/LWE",
+     "profile": "small",
+     "setup_mean_sec": 1568.61835091596,
+     "keygen_mean_sec": "",
+     "client_key_export_mean_sec": "",
+     "encrypt_mean_sec": 622.4992229579948,
+     "share_mean_sec": "",
+     "dkgen_mean_sec": "",
+     "partial_decrypt_mean_sec": 0.28064854198601097,
+     "combine_mean_sec": 4.9708993174135685e-05,
+     "combine_decrypt_mean_sec": "",
+     "decrypt_mean_sec": "",
+     "compute_mean_sec": "",
+     "end_to_end_mean_sec": 2191.398272124934,
+     "end_to_end_median_sec": 2191.398272124934,
+     "end_to_end_std_sec": 0.0,
+     "shape": "",
+     "layers": "",
+     "output_elements": "",
+     "elements_per_sec": "",
+     "pp_total_bytes": 478,
+     "sk_total_bytes": "",
+     "client_sk_total_bytes": 87562042,
+     "client_sk_avg_bytes": 43781021,
+     "dk_total_bytes": "",
+     "combined_dk_total_bytes": "",
+     "share_bundle_total_bytes": "",
+     "share_bundle_avg_bytes": "",
+     "partial_bundle_total_bytes": 521,
+     "partial_bundle_avg_bytes": 260,
+     "ct_total_bytes": 486234,
+     "ct_avg_bytes": 243117
+    },
+    "time_l": [
+     "2193.34 real      3263.89 user      4035.66 sys",
+     "6198050816  maximum resident set size"
+    ],
+    "params": [
+     "tMIFE/LWE: lwe_n 4352 q 172 bits m 757593 sigma_f 2^148.9 flooding kl setup 1568.6 s"
+    ]
+   }
+  }
+ }
 }
