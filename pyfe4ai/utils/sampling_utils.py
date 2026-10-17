@@ -172,7 +172,9 @@ class XofRandom:
         return int.from_bytes(block, "big") >> (8 * n_bytes - k)
 
 
-def discrete_gaussian_bigint(sigma, count: int, rng=None, sampler: str | None = None) -> list[gp.mpz]:
+def discrete_gaussian_bigint(
+    sigma, count: int, rng=None, sampler: str | None = None, precision: int | None = None
+) -> list[gp.mpz]:
     """Sample *count* integers from a rounded Gaussian of arbitrary width.
 
     Unlike :func:`discrete_gaussian_matrix`, *sigma* may exceed the range of
@@ -192,12 +194,18 @@ def discrete_gaussian_bigint(sigma, count: int, rng=None, sampler: str | None = 
             An :class:`XofRandom` gives derandomised sampling.
         sampler: ``"rounded"`` or ``"facct"``; ``None`` takes
             :func:`get_gaussian_sampler`.
+        precision: Bits of the rounded sampler, at least (and by default)
+            ``bits(sigma) + 128``; FACCT has a fixed precision and ignores it.
     """
     if not sigma > 0:
         raise ValueError("sigma must be positive")
     if _resolve_sampler(sampler) == "facct":
         return discrete_gaussian_facct(sigma, count, rng=rng)
     prec = int(gp.ceil(gp.mpfr(sigma))).bit_length() + 128
+    if precision is not None:
+        if int(precision) < prec:
+            raise ValueError("precision must be at least bits(sigma) + 128 = {}".format(prec))
+        prec = int(precision)
     rng = rng or _CSPRNG
     samples = []
     with gp.context(gp.get_context(), precision=prec):

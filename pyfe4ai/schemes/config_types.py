@@ -150,10 +150,17 @@ class ThresholdDDHConfig(DDHConfig, total=False):
 
 
 class ThresholdLWEConfig(LWEConfig, total=False):
-    """Config for threshold LWE-based schemes."""
+    """Config for threshold LWE-based schemes.
+
+    ``flooding_accounting`` (``"per-sample"`` by default, or ``"kl"`` with
+    ``max_partial_decryptions``) chooses how ``mife/lwe_threshold`` sizes its
+    flooding noise; see :mod:`pyfe4ai.schemes.flooding_accounting`.
+    """
 
     t: int
     lst_sid: list[str]
+    flooding_accounting: str
+    max_partial_decryptions: int
 
 
 class ThresholdMCFELWEConfig(MCFELWEConfig, total=False):
@@ -164,10 +171,13 @@ class ThresholdMCFELWEConfig(MCFELWEConfig, total=False):
 
 
 class ThresholdMCFERingLWEConfig(MCFERingLWEConfig, total=False):
-    """Config for threshold MCFE Ring-LWE-based schemes."""
+    """Config for threshold MCFE Ring-LWE-based schemes (``flooding_accounting``
+    and ``max_partial_decryptions`` as in :class:`ThresholdLWEConfig`)."""
 
     t: int
     lst_sid: list[str]
+    flooding_accounting: str
+    max_partial_decryptions: int
 
 
 class ThresholdPairingMultiIPEConfig(PairingMultiIPEConfig, total=False):

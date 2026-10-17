@@ -53,6 +53,20 @@ the same key part draws the same noise; a corrupted client varying its own
 that away to learn the other slots' part would take about ``2^(2 stat_param)``
 partial decryptions.
 
+``flooding_accounting = "kl"`` with ``max_partial_decryptions = Q``
+(opt-in, see :mod:`pyfe4ai.schemes.flooding_accounting`) sizes the noise
+for a run in which every server produces at most ``Q`` partial decryptions:
+``KL <= 2^-stat_param`` for the ``N = s Q`` flooded values, i.e.
+``sigma_f = B sqrt(N 2^(stat_param - 1))`` cut at 20 ``sigma_f``, instead of
+a statistical distance ``2^-stat_param`` per value. It is a different, weaker
+guarantee (about ``stat_param - 7`` bits in the bit-security sense of
+Micciancio and Walter, ``2^-64.5`` of total statistical distance at
+``stat_param = 128``), valid only up to the limit, which each server
+enforces. Under ``standard`` with ``X = Y = 50``, two clients and ``s = 3``
+it gives ``lwe_n`` 4352 (``q`` of 172 bits, ``A`` of 3.3 * 10^9 entries) at
+``N = 2^40`` instead of 5952. These parameters have their own record
+(construction ``acfgu18-abdp15-shamir-smudging-kl/v1``).
+
 Under the ``standard`` security profile ``lwe_n = "auto"`` picks the
 smallest dimension meeting :data:`pyfe4ai.utils.lwe_utils.WIDE_LWE_128_LOG_RATIO`
 at the enlarged ``q`` (``stat_param = 128``): about 6000 for ``X = Y = 50``
@@ -73,6 +87,13 @@ import secrets
 import gmpy2 as gp
 import numpy as np
 
+from pyfe4ai.schemes.flooding_accounting import KL
+from pyfe4ai.schemes.flooding_accounting import KL_TAIL_CUT
+from pyfe4ai.schemes.flooding_accounting import PartialDecryptionBudget
+from pyfe4ai.schemes.flooding_accounting import flooding_config
+from pyfe4ai.schemes.flooding_accounting import kl_flooded_samples
+from pyfe4ai.schemes.flooding_accounting import kl_flooding
+from pyfe4ai.schemes.flooding_accounting import kl_flooding_width
 from pyfe4ai.schemes.mife.lwe import MIFELWE
 from pyfe4ai.schemes.mife.lwe import MIFELWEKeyGenerator
 from pyfe4ai.schemes.threshold_utils import check_ciphertext_tags
@@ -103,6 +124,7 @@ from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationErro
 logger = logging.getLogger(__name__)
 
 _CONSTRUCTION = "acfgu18-abdp15-shamir-smudging-seeded-a/v3"
+_CONSTRUCTION_KL = "acfgu18-abdp15-shamir-smudging-kl/v1"
 _DEFAULT_STAT_PARAM = 64
 _TAG_DOMAIN = "pyfe4ai/tmife-lwe/ciphertext-tag/v1"
 
@@ -131,14 +153,18 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
 
         Args:
             config: As for :class:`~pyfe4ai.schemes.mife.lwe.MIFELWEKeyGenerator`,
-                plus ``s`` (number of servers), ``t`` (threshold), ``lst_sid``
-                and ``stat_param`` (statistical parameter ``kappa`` of the
-                flooding).
+                plus ``s`` (number of servers), ``t`` (threshold), ``lst_sid``,
+                ``stat_param`` (statistical parameter ``kappa`` of the
+                flooding) and, opt-in, ``flooding_accounting = "kl"`` with
+                ``max_partial_decryptions`` (see the module docstring).
         """
         self.t = config.get("t", CryptoCONST.tMIFE_T)
         s = config.get("s") or len(config.get("lst_sid", [])) or 1
         self.lst_sid = config.get("lst_sid", ["sid_{}".format(i) for i in range(s)])
         self.stat_param = int(config.get("stat_param", _DEFAULT_STAT_PARAM))
+        self.flooding_accounting, self.max_partial_decryptions = flooding_config(config)
+        if self.flooding_accounting == KL:
+            self._construction = _CONSTRUCTION_KL
         self.dict_dk = {}
         super().__init__(dict(config, s=s), **kwargs)
         if len(self.lst_sid) != self.s:
@@ -148,7 +174,10 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
         validate_threshold(self.t, self.lst_sid)
 
     def _record_fields(self) -> dict:
-        return {**super()._record_fields(), "s": self.s, "stat_param": self.stat_param}
+        fields = {**super()._record_fields(), "s": self.s, "stat_param": self.stat_param}
+        if self.flooding_accounting == KL:
+            fields.update(flooding_accounting=KL, max_partial_decryptions=self.max_partial_decryptions)
+        return fields
 
     def _derive(self) -> dict:
         if self.lwe_n_config == "auto":
@@ -168,8 +197,13 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
                 self.n * self.eta * int(self.bound_y) * m
                 * int(GAUSSIAN_TAIL_CUT * params["sigma_q"] + 1)
             )
-            sigma_f = noise_bound << self.stat_param
-            budget = noise_bound + self.s * GAUSSIAN_TAIL_CUT * sigma_f
+            if self.flooding_accounting == KL:
+                samples = kl_flooded_samples(self.s, self.max_partial_decryptions, 1)
+                sigma_f = kl_flooding_width(noise_bound, samples, self.stat_param)
+                budget = noise_bound + self.s * KL_TAIL_CUT * sigma_f
+            else:
+                sigma_f = noise_bound << self.stat_param
+                budget = noise_bound + self.s * GAUSSIAN_TAIL_CUT * sigma_f
             # Delta = floor(q / p) must exceed 2 * budget (plus a margin for rounding)
             q = gp.next_prime(max(params["q"], params["p"] * (2 * budget + 4)))
             # A^T r must stay close to uniform for the enlarged q (leftover hash
@@ -201,11 +235,20 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
         return sk
 
     def get_public_parameters(self) -> dict:
-        """Return the MIFE public parameters plus ``s``, ``t``, ``lst_sid``, ``sigma_f``."""
+        """Return the MIFE public parameters plus ``s``, ``t``, ``lst_sid``,
+        ``sigma_f`` and, under ``"kl"``, ``flooding_accounting``,
+        ``max_partial_decryptions``, ``stat_param`` and ``flood_tail_cut``."""
         pp = super().get_public_parameters()
         pp.update(
             {"s": self.s, "t": self.t, "lst_sid": list(self.lst_sid), "sigma_f": str(self.sigma_f)}
         )
+        if self.flooding_accounting == KL:
+            pp.update({
+                "flooding_accounting": KL,
+                "max_partial_decryptions": self.max_partial_decryptions,
+                "stat_param": self.stat_param,
+                "flood_tail_cut": KL_TAIL_CUT,
+            })
         return pp
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
@@ -260,6 +303,23 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
 class ThresholdMIFELWE(MIFELWE):
     """Crypto operations for threshold MIFE-LWE (ACFGU18 + Shamir + smudging)."""
 
+    def __init__(self, config: dict, **kwargs) -> None:
+        """As :class:`~pyfe4ai.schemes.mife.lwe.MIFELWE`; a server under
+        ``flooding_accounting = "kl"`` may take a shared ``partial_budget``
+        (:class:`~pyfe4ai.schemes.flooding_accounting.PartialDecryptionBudget`),
+        else it keeps its own."""
+        super().__init__(config, **kwargs)
+        self._partial_budget = config.get("partial_budget")
+
+    def _kl_flooding(self):
+        """KL flooding parameters and the partial decryption budget, or ``(None, None)``."""
+        flood = kl_flooding(self.pp, 1)
+        if flood is None:
+            return None, None
+        if self._partial_budget is None:
+            self._partial_budget = PartialDecryptionBudget(flood.max_partial_decryptions)
+        return flood, self._partial_budget
+
     def _encrypt_batch(self, plaintexts: list) -> list:
         """MIFE ciphertexts with ``tags``: one HMAC tag per server."""
         mac_keys = self.sk.get("mac_keys")
@@ -271,7 +331,7 @@ class ThresholdMIFELWE(MIFELWE):
         return out
 
     def share_decrypt(
-        self, dict_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list
+        self, dict_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list, _budgeted=False
     ) -> dict:
         """Compute this server's flooded partial decryption.
 
@@ -288,8 +348,10 @@ class ThresholdMIFELWE(MIFELWE):
 
         Raises:
             FESchemeError: If the enrolled set is invalid, the weights are not
-                those of the key share, or a ciphertext's tag for this server
-                does not verify (it was not produced by that slot's client).
+                those of the key share, a ciphertext's tag for this server
+                does not verify (it was not produced by that slot's client),
+                or, under ``flooding_accounting = "kl"``, the server has
+                produced ``max_partial_decryptions`` partials already.
         """
         if not dk or "sk_y" not in dk or "z" not in dk:
             raise FEKeyError("no decryption keys provided")
@@ -327,9 +389,14 @@ class ThresholdMIFELWE(MIFELWE):
         key_inputs = ciphertexts_digest({nid: values[0] for nid, values in canonical.items()})
         # the partial depends on the enrolled set only through lambda
         context = json.dumps([key_inputs, gp.digits(lagrange)]).encode("utf-8")
-        e_k = _flooding_noise(
-            int(self.pp["sigma_f"]), XofRandom(bytes.fromhex(dk["noise_key"]) + context)
-        )
+        rng = XofRandom(bytes.fromhex(dk["noise_key"]) + context)
+        flood, budget = self._kl_flooding()
+        if flood is None:
+            e_k = _flooding_noise(int(self.pp["sigma_f"]), rng)
+        else:
+            if not _budgeted:
+                budget.consume(1)
+            e_k = int(flood.sample(1, rng)[0])
         return {
             "w": gp.digits((lagrange * key_part + e_k) % q),
             "c_y": gp.digits(c_y % q),
@@ -387,14 +454,20 @@ class ThresholdMIFELWE(MIFELWE):
     def compute_lst_ndarray_ct(
         self, dict_ndarray_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list
     ) -> list:
-        """Partially decrypt every element of the slots' ndarray ciphertexts."""
+        """Partially decrypt every element of the slots' ndarray ciphertexts
+        (under ``"kl"``, all of them count against the limit, checked first)."""
         sample = next(iter(dict_ndarray_ct.values()))
+        _, budget = self._kl_flooding()
+        if budget is not None:
+            budget.consume(sum(int(np.prod(np.shape(layer))) for layer in sample))
         lst_partial = []
         for l in range(len(sample)):
             ary_partial = np.empty(sample[l].shape, dtype=object)
             for i, _ in np.ndenumerate(sample[l]):
                 dct_ct = {nid: dict_ndarray_ct[nid][l][i] for nid in dict_ndarray_ct}
-                ary_partial[i] = self.share_decrypt(dct_ct, credentials, dk, lst_sid_enrolled)
+                ary_partial[i] = self.share_decrypt(
+                    dct_ct, credentials, dk, lst_sid_enrolled, _budgeted=budget is not None
+                )
             lst_partial.append(ary_partial)
         return lst_partial
 
