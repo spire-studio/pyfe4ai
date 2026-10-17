@@ -8,7 +8,7 @@
 
 use pyfe4ai_core::codec::{bin_read, bin_size, bin_wb, bin_write};
 use pyfe4ai_core::gauss::{gauss_bytes, gauss_fill};
-use pyfe4ai_core::keccak::{hash_to_zq, shake256};
+use pyfe4ai_core::keccak::{hash_to_zq_mode, shake256, HashMode};
 use pyfe4ai_core::rlwe::{self, EncKey, Precomputed, Randomness};
 use pyfe4ai_core::{osrand, parallel_for, with_ring, AnyRing, Modulus, Ring, Word, U256};
 use pyo3::intern;
@@ -396,12 +396,21 @@ fn shake256_py(py: Python<'_>, data: &[u8], length: usize) -> PyResult<Py<PyByte
     Ok(PyBytes::new(py, &out).unbind())
 }
 
+fn hash_mode(code: u8) -> PyResult<HashMode> {
+    HashMode::from_code(code).ok_or_else(|| PyValueError::new_err("unknown label-hash mode"))
+}
+
+/// crypto_utils.hash_to_zq_vector of the material (mode: 0 shake256-wide,
+/// 1 shake256-rejection, 2 shake128-rejection), packed words.
 #[pyfunction(name = "hash_to_zq")]
-fn hash_to_zq_py(py: Python<'_>, ctx: &Bound<'_, RingCtx>, material: &[u8], count: usize) -> PyResult<Py<PyBytes>> {
+#[pyo3(signature = (ctx, material, count, hash_mode=0))]
+fn hash_to_zq_py(py: Python<'_>, ctx: &Bound<'_, RingCtx>, material: &[u8], count: usize, hash_mode: u8)
+    -> PyResult<Py<PyBytes>> {
     let ring = get_ring(ctx);
+    let mode = self::hash_mode(hash_mode)?;
     with_ring!(&*ring, r => {
         let mut out = vec![Word::ZERO; count];
-        py.detach(|| hash_to_zq(&r.m, material, &mut out));
+        py.detach(|| hash_to_zq_mode(&r.m, material, mode, &mut out));
         Ok(words_to_bytes(py, &out))
     })
 }
@@ -439,8 +448,10 @@ macro_rules! with_key {
 }
 
 #[pyfunction]
+#[pyo3(signature = (ctx, a, pk, u, delta, hash_mode=0))]
 fn enc_key(py: Python<'_>, ctx: &Bound<'_, RingCtx>, a: &Bound<'_, PyAny>, pk: &Bound<'_, PyAny>,
-           u: &Bound<'_, PyAny>, delta: &Bound<'_, PyAny>) -> PyResult<EncKeyObj> {
+           u: &Bound<'_, PyAny>, delta: &Bound<'_, PyAny>, hash_mode: u8) -> PyResult<EncKeyObj> {
+    let mode = self::hash_mode(hash_mode)?;
     let q = ctx.get().q.bind(py);
     let ring = get_ring(ctx);
     let n = ring.n();
@@ -462,7 +473,9 @@ fn enc_key(py: Python<'_>, ctx: &Bound<'_, RingCtx>, a: &Bound<'_, PyAny>, pk: &
                 Some(rows)
             };
             let d = index_mod(delta, q, m)?;
-            AnyKey::$variant(EncKey::new($r, &av, &pk_rows, u_rows.as_deref(), d))
+            let mut key = EncKey::new($r, &av, &pk_rows, u_rows.as_deref(), d);
+            key.hash_mode = mode;
+            AnyKey::$variant(key)
         }};
     }
     let key = match &*ring {
@@ -867,8 +880,11 @@ fn decrypt_tensor_w<W: Word>(py: Python<'_>, r: &Ring<W>, q: &Bound<'_, PyAny>, 
 
 /// MCFE key terms z'' of several labels as decimal strings.
 #[pyfunction]
+#[pyo3(signature = (ctx, base, materials, ys, eta, threads, hash_mode=0))]
+#[allow(clippy::too_many_arguments)]
 fn pad_terms(py: Python<'_>, ctx: &Bound<'_, RingCtx>, base: &Bound<'_, PyAny>, materials: &Bound<'_, PyAny>,
-             ys: &Bound<'_, PyAny>, eta: usize, threads: usize) -> PyResult<Py<PyList>> {
+             ys: &Bound<'_, PyAny>, eta: usize, threads: usize, hash_mode: u8) -> PyResult<Py<PyList>> {
+    let mode = self::hash_mode(hash_mode)?;
     let q = ctx.get().q.bind(py).clone();
     let ring = get_ring(ctx);
     let n = ring.n();
@@ -888,7 +904,7 @@ fn pad_terms(py: Python<'_>, ctx: &Bound<'_, RingCtx>, base: &Bound<'_, PyAny>, 
         let ym: Vec<_> = y_rows.iter().flatten().map(|&v| m.to_mont(v)).collect();
         let refs: Vec<Vec<&[u8]>> = mats.iter().map(|row| row.iter().map(|v| v.as_slice()).collect()).collect();
         let outs: Vec<Mutex<Option<DecBuf>>> = (0..refs.len()).map(|_| Mutex::new(None)).collect();
-        py.detach(|| rlwe::pad_terms(r, &basev, &refs, &ym, eta, threads, |l, z| *outs[l].lock().unwrap() = Some(DecBuf::new(z))));
+        py.detach(|| rlwe::pad_terms(r, &basev, &refs, &ym, eta, mode, threads, |l, z| *outs[l].lock().unwrap() = Some(DecBuf::new(z))));
         let lists = outs.into_iter().map(|o| o.into_inner().unwrap().unwrap().list(py)).collect::<PyResult<Vec<_>>>()?;
         Ok(PyList::new(py, lists)?.unbind())
     })
@@ -1211,16 +1227,27 @@ fn shamir_share(py: Python<'_>, ctx: &Bound<'_, RingCtx>, values: &Bound<'_, PyA
 
 // --------------------------------------------------------------- dense LWE
 
+/// Dense-LWE sums of every material; with `limit` (nb big-endian bytes) the
+/// blocks are the rejection-sampled candidates of SHAKE with `rate` (136 or 168).
 #[pyfunction]
+#[pyo3(signature = (materials, nb, count, key, kl, threads, limit=None, rate=136))]
+#[allow(clippy::too_many_arguments)]
 fn dense_dots(py: Python<'_>, materials: &Bound<'_, PyAny>, nb: usize, count: usize, key: &[u8], kl: usize,
-              threads: usize) -> PyResult<Py<PyBytes>> {
+              threads: usize, limit: Option<Vec<u8>>, rate: usize) -> PyResult<Py<PyBytes>> {
     let mats = materials_of(materials)?.unwrap_or_default();
-    if nb == 0 || kl == 0 || key.len() != count * kl * 8 {
+    if nb == 0 || kl == 0 || key.len() != count * kl * 8 || limit.as_ref().is_some_and(|l| l.len() != nb)
+        || (rate != 136 && rate != 168) {
         return Err(PyValueError::new_err("inconsistent dense_dots arguments"));
+    }
+    if limit.as_ref().is_some_and(|l| l.iter().all(|&b| b == 0)) {
+        return Err(PyValueError::new_err("dense_dots: a zero limit accepts nothing"));
     }
     let k: Vec<u64> = key.chunks_exact(8).map(|c| u64::from_le_bytes(c.try_into().unwrap())).collect();
     let refs: Vec<&[u8]> = mats.iter().map(|v| v.as_slice()).collect();
-    let sums = py.detach(|| pyfe4ai_core::dense::dense_dots(&refs, nb, count, &k, kl, threads));
+    let sums = py.detach(|| match &limit {
+        None => pyfe4ai_core::dense::dense_dots(&refs, nb, count, &k, kl, threads),
+        Some(l) => pyfe4ai_core::dense::dense_dots_rej(&refs, nb, l, rate, count, &k, kl, threads),
+    });
     Ok(PyBytes::new(py, &sums.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>()).unbind())
 }
 

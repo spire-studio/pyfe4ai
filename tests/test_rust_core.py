@@ -61,6 +61,13 @@ if LIB is not None:
     LIB.pf4_shake256.argtypes = [ctypes.c_char_p, ctypes.c_size_t, ctypes.c_char_p, ctypes.c_size_t]
     LIB.pf4_hash_to_zq.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_size_t,
                                    ctypes.c_char_p]
+    if hasattr(LIB, "pf4_hash_to_zq_mode"):  # the label-hash modes
+        LIB.pf4_hash_to_zq_mode.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_size_t,
+                                            ctypes.c_uint8, ctypes.c_char_p]
+        LIB.pf4_dense_dots_rej.argtypes = [ctypes.POINTER(ctypes.c_char_p), ctypes.POINTER(ctypes.c_size_t),
+                                           ctypes.c_size_t, ctypes.c_size_t, ctypes.c_char_p, ctypes.c_size_t,
+                                           ctypes.c_size_t, ctypes.POINTER(ctypes.c_uint64), ctypes.c_size_t,
+                                           ctypes.c_size_t, ctypes.POINTER(ctypes.c_uint64)]
     LIB.pf4_encrypt_rows.argtypes = [ctypes.c_void_p] + [ctypes.c_char_p] * 2 + [ctypes.c_size_t] + \
         [ctypes.c_char_p] * 2 + [ctypes.c_double] * 2 + [ctypes.c_char_p, ctypes.c_size_t] + [ctypes.c_char_p] * 2
     LIB.pf4_encrypt_tensor.restype = ctypes.c_int64
@@ -179,6 +186,48 @@ def test_hash_to_zq_identical(bits):
     LIB.pf4_hash_to_zq(ring.ptr, mat, len(mat), 300, out)
     assert unpack(out.raw) == [int(v) for v in hash_to_zq_vector(
         "u'|label", q, 300, domain="pyfe4ai/mcfe/ring_lwe/H(u',label)")]
+
+
+needs_modes = pytest.mark.skipif(LIB is None or not hasattr(LIB, "pf4_hash_to_zq_mode"),
+                                 reason="rust/core without the label-hash modes")
+
+
+@needs_modes
+@pytest.mark.parametrize("mode", ["shake256-rejection", "shake128-rejection"])
+@pytest.mark.parametrize("bits", [17, 40, 62, 64, 80, 126, 187, 215, 253])
+def test_hash_to_zq_rejection_modes_identical(mode, bits):
+    from pyfe4ai.utils.crypto_utils import LABEL_HASH_CODES
+
+    q = rlu.next_ntt_prime(gp.mpz(2) ** (bits - 1), 64)
+    ring = Ring(q, 64)
+    mat = hash_to_zq_material("u'|label", "pyfe4ai/mcfe/ring_lwe/H(u',label)", mode)
+    out = ctypes.create_string_buffer(VB * 3000)
+    LIB.pf4_hash_to_zq_mode(ring.ptr, mat, len(mat), 3000, LABEL_HASH_CODES[mode], out)
+    assert unpack(out.raw) == [int(v) for v in hash_to_zq_vector(
+        "u'|label", q, 3000, domain="pyfe4ai/mcfe/ring_lwe/H(u',label)", mode=mode)]
+
+
+@needs_modes
+@pytest.mark.parametrize("mode", ["shake256-rejection", "shake128-rejection"])
+def test_dense_dots_rejection_identical(mode):
+    from pyfe4ai.utils.crypto_utils import zq_rejection_parameters
+
+    q = gp.next_prime(gp.mpz(2) ** 186)
+    count, kl = 300, 3
+    nb, limit = zq_rejection_parameters(q)
+    rng = random.Random(6)
+    key = [rng.randrange(int(q)) for _ in range(count)]
+    labels = ["a", "b", "c"]
+    mats = [hash_to_zq_material(lab, "d", mode) for lab in labels]
+    arr, lens = _materials(mats)
+    sl = kl + (nb + 7) // 8 + 1
+    out = (ctypes.c_uint64 * (sl * len(mats)))()
+    key_limbs = (ctypes.c_uint64 * (count * kl))(*[(v >> (64 * i)) & (2 ** 64 - 1) for v in key for i in range(kl)])
+    LIB.pf4_dense_dots_rej(arr, lens, len(mats), nb, limit.to_bytes(nb, "big"),
+                           168 if mode == "shake128-rejection" else 136, count, key_limbs, kl, 2, out)
+    for m, lab in enumerate(labels):
+        total = sum(int(out[m * sl + i]) << (64 * i) for i in range(sl))
+        assert total % int(q) == int(mcfe_lwe.dot_mod(key, hash_to_zq_vector(lab, q, count, domain="d", mode=mode), q))
 
 
 def test_expand_message_xmd_identical():

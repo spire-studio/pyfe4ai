@@ -27,7 +27,8 @@ must publish a share; shares for other weights or labels do not combine.
 Deviation: the PKC version of BMMS21 states GDSum only through its property;
 this module realises it with pairwise PRF masks (SHAKE-256 keyed by
 pairwise secrets ``K_ij``, which this prototype samples in-process, as it
-does all other keys; a deployment would agree on them by key exchange).
+does all other keys; a deployment would agree on them by key exchange),
+hashed to ``Z_q`` like the label pads (the ``label_hash`` public parameter).
 Versions <= 0.2.0 used an ad-hoc label scalar instead.
 """
 
@@ -44,6 +45,7 @@ from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe import label_pad
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.utils.crypto_constants import CryptoCONST
+from pyfe4ai.utils.crypto_utils import DEFAULT_LABEL_HASH
 from pyfe4ai.utils.crypto_utils import hash_to_zq_vector
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul, transpose
@@ -54,15 +56,19 @@ logger = logging.getLogger(__name__)
 _GDSUM_DOMAIN = "pyfe4ai/dmcfe/ring_lwe/GDSum"
 
 
-def gdsum_mask(nid: str, pair_keys: dict, lst_nid: list, context: str, q, ring_n: int) -> list:
-    """Return ``M_i(context) = sum_{j>i} PRF(K_ij) - sum_{j<i} PRF(K_ji)`` in Z_q^ring_n."""
+def gdsum_mask(
+    nid: str, pair_keys: dict, lst_nid: list, context: str, q, ring_n: int, mode: str = DEFAULT_LABEL_HASH
+) -> list:
+    """Return ``M_i(context) = sum_{j>i} PRF(K_ij) - sum_{j<i} PRF(K_ji)`` in Z_q^ring_n
+    (the PRF: :func:`~pyfe4ai.utils.crypto_utils.hash_to_zq_vector` with the
+    ``label_hash`` *mode*)."""
     mask = [gp.mpz(0)] * ring_n
     pos = lst_nid.index(nid)
     for other in lst_nid:
         if other == nid:
             continue
         prf = hash_to_zq_vector(
-            "{}|{}".format(pair_keys[other], context), q, ring_n, domain=_GDSUM_DOMAIN
+            "{}|{}".format(pair_keys[other], context), q, ring_n, domain=_GDSUM_DOMAIN, mode=mode
         )
         sign = 1 if lst_nid.index(other) > pos else -1
         mask = [(m + sign * v) % q for m, v in zip(mask, prf)]
@@ -150,10 +156,10 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
             for y_row, u_row, h_row in zip(y, self.sk["u"], pad):
                 z = [acc + y_row * (gp.mpz(u) + h) for acc, u, h in zip(z, u_row, h_row)]
             context = "{}|{}".format(encode_label(lab), weights_id)
-            mask = gdsum_mask(self.id, self.sk["pair_keys"], lst_nid, context, q, ring_n)
+            mask = gdsum_mask(self.id, self.sk["pair_keys"], lst_nid, context, q, ring_n, self.label_hash)
             return [gp.digits((v + m) % q) for v, m in zip(z, mask)]
 
-        return {
+        share = {
             "sk_y": [gp.digits(v) for v in mat_vec_mul(transpose(s), y, q)],
             "z": masked_pad_term(label),
             "z_chunks": [masked_pad_term(chunk_label(label, c)) for c in range(n_chunks)],
@@ -161,6 +167,9 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
             "nid": self.id,
             "weights_id": weights_id,
         }
+        if self.label_hash != DEFAULT_LABEL_HASH:
+            share["label_hash"] = self.label_hash
+        return share
 
     def combine_function_decryption_key_share(self, dct_dk_shares: dict) -> dict:
         """Sum every client's share into the identity-based MCFE key.
@@ -180,6 +189,8 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
             for sh in shares
         ):
             raise FESchemeError("key shares were derived for different weights or labels")
+        if any(sh.get("label_hash", DEFAULT_LABEL_HASH) != self.label_hash for sh in shares):
+            raise FESchemeError("key shares were derived with another label hash than the public parameters")
         q = gp.mpz(self.pp["q"])
 
         def total(get) -> list:
@@ -188,9 +199,12 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
                 acc = [(a + gp.mpz(v)) % q for a, v in zip(acc, get(sh))]
             return [gp.digits(v) for v in acc]
 
-        return {
+        key = {
             "sk_y": {nid: sh["sk_y"] for nid, sh in dct_dk_shares.items()},
             "z": total(lambda sh: sh["z"]),
             "z_chunks": [total(lambda sh, c=c: sh["z_chunks"][c]) for c in range(len(first["z_chunks"]))],
             "label": first["label"],
         }
+        if self.label_hash != DEFAULT_LABEL_HASH:
+            key["label_hash"] = self.label_hash
+        return key

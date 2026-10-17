@@ -85,6 +85,20 @@ pub unsafe extern "C" fn pf4_hash_to_zq(r: *const AnyRing, mat: *const u8, len: 
     })
 }
 
+/// hash_to_zq_vector with a label-hash mode (0 wide SHAKE-256, 1 / 2 rejection
+/// with SHAKE-256 / SHAKE128); nothing is written for an unknown mode.
+#[no_mangle]
+pub unsafe extern "C" fn pf4_hash_to_zq_mode(
+    r: *const AnyRing, mat: *const u8, len: usize, count: usize, mode: u8, out: *mut u8,
+) {
+    let Some(mode) = crate::keccak::HashMode::from_code(mode) else { return };
+    with_ring!(&*r, ring => {
+        let mut w = vec![Word::ZERO; count];
+        crate::keccak::hash_to_zq_mode(&ring.m, slice::from_raw_parts(mat, len), mode, &mut w);
+        put_vals(out, w.iter());
+    })
+}
+
 /// MIFERingLWE._encrypt_rows: ct0 (eta n) and ct1 (n) from w (eta n) and the random bytes.
 #[no_mangle]
 pub unsafe extern "C" fn pf4_encrypt_rows(
@@ -168,7 +182,7 @@ pub unsafe extern "C" fn pf4_pad_terms(
         let per_label: Vec<Vec<&[u8]>> = all.chunks(s).map(|c| c.to_vec()).collect();
         let ym: Vec<_> = words(m, &vals_in(ys, s * eta)).iter().map(|&v| m.to_mont(v)).collect();
         let outp = out as usize;
-        rlwe::pad_terms(ring, &words(m, &vals_in(base, n)), &per_label, &ym, eta, threads, |l, zv| {
+        rlwe::pad_terms(ring, &words(m, &vals_in(base, n)), &per_label, &ym, eta, crate::keccak::HashMode::Wide256, threads, |l, zv| {
             put_vals((outp + VB * n * l) as *mut u8, zv.iter());
         });
     })
@@ -244,6 +258,19 @@ pub unsafe extern "C" fn pf4_dense_dots(
 ) {
     let mats = materials(mats, mat_lens, n_mats);
     let res = crate::dense::dense_dots(&mats, nb, count, slice::from_raw_parts(key, count * kl), kl, threads);
+    std::ptr::copy_nonoverlapping(res.as_ptr(), out, res.len());
+}
+
+/// dense::dense_dots_rej: candidates of nb bytes below `limit` (nb big-endian bytes)
+/// from SHAKE with `rate` (136 or 168).
+#[no_mangle]
+pub unsafe extern "C" fn pf4_dense_dots_rej(
+    mats: *const *const u8, mat_lens: *const usize, n_mats: usize, nb: usize, limit: *const u8, rate: usize,
+    count: usize, key: *const u64, kl: usize, threads: usize, out: *mut u64,
+) {
+    let mats = materials(mats, mat_lens, n_mats);
+    let res = crate::dense::dense_dots_rej(&mats, nb, slice::from_raw_parts(limit, nb), rate, count,
+                                           slice::from_raw_parts(key, count * kl), kl, threads);
     std::ptr::copy_nonoverlapping(res.as_ptr(), out, res.len());
 }
 
