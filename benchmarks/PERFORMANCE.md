@@ -231,6 +231,64 @@ cryptographic code review:
   - the leveraging over `(2X + 1)^(2lk)`, and that it enters only Theorem 2's `delta` and `eps` and Lemma 1's smoothing parameter, not Theorem 1;
   - the resulting m, q and ring_n.
 
+### Update: FACCT as FullySec's default sampler (exp/fullysec-packing 0e7be56, merged as b070e6c)
+
+Since 0e7be56 `sife/fullysec_ring_lwe` draws its keys and noise with the
+exact sampler by default (`gaussian_sampler = "facct"`). Its packed eta 1
+layout now uses the basis [1]: n 4096, m 12, a 107-bit q, 182 B per element
+in full ciphertexts. `discrete_gaussian_facct` has no native path: the
+native FACCT runs only inside the Ring-LWE encryption kernels, which take
+widths up to 2^40. So all of FullySec's FACCT samples are drawn in Python,
+and the native wide rounded sampler is used only with
+`gaussian_sampler = "rounded"`.
+
+Host, standard profile, one encryption of a full ciphertext (1 vector per
+element, 4096 / 8192 packed). Medians of 2 runs alternating the samplers;
+the load average was 7.5-9.5 from other processes.
+
+| configuration | layout | sigma1 / sigma2 / sigma3 (log2) | setup s: facct / rounded | encrypt s: facct / rounded | decrypt s |
+| --- | --- | --- | ---: | ---: | ---: |
+| eta 1, X 100, Y 1 | per element (n 4096, m 19, 111 bits) | 28.8 / 48.7 / 50.8 | 0.65 / 0.16 | 0.768 / 0.164 | 0.08 |
+| | packed (n 4096, m 12, 107 bits) | 27.2 / 47.1 / 48.9 | 0.40 / 0.10 | 0.548 / 0.109 | 0.05 |
+| eta 4, X = Y = 4 | per element (4096, 17, 110) | 26.5 / 46.8 / 48.9 | 2.17 / 0.50 | 0.848 / 0.168 | 0.08 |
+| | packed (4096, 18, 111) | 27.0 / 47.4 / 49.5 | 2.61 / 0.55 | 0.875 / 0.194 | 0.09 |
+| eta 10, X = Y = 50 | per element (8192, 8, 218) | 73.0 / 94.9 / 96.4 | 5.77 / 1.27 | 1.626 / 0.503 | 0.2 |
+| | packed (8192, 9, 205) | 66.7 / 88.6 / 90.2 | 6.29 / 1.38 | 1.750 / 0.600 | 0.18 |
+
+Per sample:
+* Python FACCT: 7.8-9.2 us at every width.
+* The MPFR Box-Muller: 9.1-10.1 us.
+* The native wide rounded sampler: 0.60-0.64 us below 2^50, 0.97 us at 2^95.
+* The native FACCT kernel (`facct_sample`, k <= 2^50, i.e. sigma up to
+  about 2^49.8): 0.49-0.57 us.
+
+Under the FACCT default, setup is about 4x and encryption 4.5-5x the
+rounded times; per-element ciphertexts stay at 0.15-0.4 s each in either
+case.
+
+**Estimate, not implemented.**
+* **(A)** A Python-level dispatch of `discrete_gaussian_facct` to the
+  existing kernel for `k <= 2^50`, with the same `getrandbits` order and
+  decisions, so its known answers hold. An `XofRandom` would be sampled with
+  the GIL held, since the number of calls is data-dependent and cannot be
+  claimed in advance. It covers:
+  - every width of eta 1 packed and of eta 4 in both layouts;
+  - eta 1 per element except sigma3 (2^50.8).
+
+  Those configurations would come back to about their rounded times: setup
+  about 0.1-0.55 s, encryption about 0.11-0.2 s. eta 10 would be unchanged.
+* **(B)** A multi-limb FACCT up to 2^448:
+  - multi-limb y, z and `t = y (y + 2kx)`;
+  - the acceptance exponent from the exact product `c t`, then the same
+    120-bit `exp_neg` and margin;
+  - multi-limb outputs.
+
+  It would also bring eta 10 back to about the rounded times: setup about
+  1.3-1.4 s, encryption about 0.5-0.6 s.
+
+(A) is a small change. (B) is a few hundred lines of Rust with its own
+error argument, and needs agreement tests at the wide widths.
+
 ## Workload and method
 
 `bench_fl_compare.py`: every one of 3 clients encrypts a gradient of
