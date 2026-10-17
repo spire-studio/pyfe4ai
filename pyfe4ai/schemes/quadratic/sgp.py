@@ -38,6 +38,7 @@ from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
 from pyfe4ai.utils.pairing_utils import to_zr
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.pairing_backend import G1, G2, ZR, PairingGroup, multi_pair, pair
+from pyfe4ai.utils.pairing_backend import deserialize_many, multiexp, pow_many
 from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
@@ -116,7 +117,7 @@ def _deserialize_group_vec(group: PairingGroup, elements: list[str]) -> list:
             group: Pairing group instance.
             elements: Vector of group elements.
     """
-    return [group.deserialize(elem.encode("utf-8")) for elem in elements]
+    return deserialize_many(group, elements)
 
 
 def _quadratic_form(
@@ -192,8 +193,8 @@ class QuadraticSGPKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.t = [_rand_scalar(self.group) % self.order for _ in range(self.n)]
         ser = lambda e: self.group.serialize(e).decode("utf-8")  # noqa: E731
         self.mpk = {
-            "g1_s": [ser(self.g1 ** to_zr(self.group, v)) for v in self.s],
-            "g2_t": [ser(self.g2 ** to_zr(self.group, v)) for v in self.t],
+            "g1_s": [ser(v) for v in pow_many(self.g1, self.s, self.group)],
+            "g2_t": [ser(v) for v in pow_many(self.g2, self.t, self.group)],
         }
         self.msk = {
             "g1": ser(self.g1),
@@ -278,10 +279,10 @@ class QuadraticSGP(IPFEAbsCrypto):
         x = int_vector(payload.get("x"), "x", length=n, bound=bound)
         y = int_vector(payload.get("y"), "y", length=n, bound=bound)
         group, order = self.group, self.order
-        de = lambda v: group.deserialize(v.encode("utf-8"))  # noqa: E731
-        g1, g2 = de(self.pp["g1"]), de(self.pp["g2"])
-        g1_s = [de(v) for v in self.pp["g1_s"]]
-        g2_t = [de(v) for v in self.pp["g2_t"]]
+        g1, g2, *pk = _deserialize_group_vec(
+            group, [self.pp["g1"], self.pp["g2"]] + list(self.pp["g1_s"]) + list(self.pp["g2_t"])
+        )
+        g1_s, g2_t = pk[:len(self.pp["g1_s"])], pk[len(self.pp["g1_s"]):]
 
         gamma = _rand_scalar(group) % order
         w, w_inv = _rand_invertible_2x2(group, order)
@@ -290,13 +291,9 @@ class QuadraticSGP(IPFEAbsCrypto):
         for x_i, y_i, gs_i, gt_i in zip(x, y, g1_s, g2_t):
             # a_i = (W^-1)^T (x_i, gamma s_i), b_i = W (y_i, -t_i), from pk
             a_rows.append([
-                (g1 ** to_zr(group, row[0] * x_i % order)) * (gs_i ** to_zr(group, row[1] * gamma % order))
-                for row in w_inv_t
+                multiexp([g1, gs_i], [row[0] * x_i % order, row[1] * gamma % order], group) for row in w_inv_t
             ])
-            b_rows.append([
-                (g2 ** to_zr(group, row[0] * y_i % order)) * (gt_i ** to_zr(group, -row[1] % order))
-                for row in w
-            ])
+            b_rows.append([multiexp([g2, gt_i], [row[0] * y_i % order, -row[1] % order], group) for row in w])
         return {
             "c0": group.serialize(g1 ** to_zr(group, gamma)).decode("utf-8"),
             "a": [_serialize_group_vec(group, row) for row in a_rows],
@@ -317,24 +314,22 @@ class QuadraticSGP(IPFEAbsCrypto):
         if len(ct["a"]) != n or len(ct["b"]) != n or any(len(r) != 2 for r in ct["a"] + ct["b"]):
             raise FEValidationError("ciphertext does not match the parameters")
 
-        c0 = self.group.deserialize(ct["c0"].encode("utf-8"))
-        key = self.group.deserialize(dk["key"].encode("utf-8"))
-        a_rows = [_deserialize_group_vec(self.group, row) for row in ct["a"]]
-        b_rows = [_deserialize_group_vec(self.group, row) for row in ct["b"]]
+        c0, key, *flat = _deserialize_group_vec(
+            self.group, [ct["c0"], dk["key"]] + [v for row in ct["a"] + ct["b"] for v in row]
+        )
+        a_rows = [flat[2 * i:2 * i + 2] for i in range(n)]
+        b_rows = [flat[2 * (n + j):2 * (n + j) + 2] for j in range(n)]
 
         # prod_ij (e(a_i0, b_j0) e(a_i1, b_j1))^F_ij = prod_i e(a_i0, prod_j b_j0^F_ij) e(a_i1, ...):
-        # two G2 multi-exponentiations per row and one product of 2 n + 1 pairings
+        # two G2 multi-scalar multiplications per row and one product of 2 n + 1 pairings
         lhs, rhs = [c0], [key]
         for i, row in enumerate(function_matrix):
-            terms = [(b_rows[j], to_zr(self.group, value % self.order)) for j, value in enumerate(row) if value]
+            terms = [(b_rows[j], value % self.order) for j, value in enumerate(row) if value]
             if not terms:
                 continue
             for k in (0, 1):
-                acc = None
-                for b, e in terms:
-                    acc = b[k] ** e if acc is None else acc * b[k] ** e
                 lhs.append(a_rows[i][k])
-                rhs.append(acc)
+                rhs.append(multiexp([b[k] for b, _ in terms], [e for _, e in terms], self.group))
         prod = multi_pair(lhs, rhs)
 
         g1 = self.group.deserialize(self.pp["g1"].encode("utf-8"))
