@@ -248,6 +248,28 @@ decryption needs a different flooding sampler (an exact discrete Gaussian
 at this width, natively) or a smaller `sigma_f`; both change the
 distribution and need a review.
 
+### KL accounting of the flooding (opt-in, `flooding_accounting="kl"`)
+
+A smaller `sigma_f` for a run of at most `max_partial_decryptions = Q`
+partial decryptions per server (see `pyfe4ai.schemes.flooding_accounting`;
+a different, weaker guarantee than the default). `N = 3 * Q * 8192` flooded
+coefficients; `bench_fl_compare.py --families ring_lwe_threshold`, native,
+one thread, `standard`, local `main` (810a4a5) and the branch interleaved,
+3 passes of 5 rounds, medians (load average 5 to 9 on 12 cores: other
+sessions were active):
+
+| `ring_lwe_threshold`, ring_n 8192 | q bits | client ms | key shares | partial, per server | combine | aggregator ms | ct B/element |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `main` | 215 | 21.30 | 43.0 | 228.1 | 4.65 | 504.2 | 225.2 |
+| branch, default | 215 | 21.26 | 43.1 | 227.0 | 4.59 | 501.9 | 225.2 |
+| KL, `N = 2^53` (`Q` = 3.7 * 10^11) | 178 | 20.46 | 44.6 | 229.7 | 4.49 | 508.9 | 188.5 (-16%) |
+| KL, `N = 2^40` (`Q` = 4.5 * 10^7) | 171 | 20.31 | 41.9 | 224.3 | 4.36 | 495.6 | 182.1 (-19%) |
+| KL, `N = 2^30` (`Q` = 43 690) | 166 | 19.56 | 39.0 | 217.6 | 4.11 | 478.6 | 176.5 (-22%) |
+
+Only the sizes gain: the words stay 256-bit, and the flooding sampler,
+which dominates a partial decryption, runs at `bits(sigma_f) + 128 + log2 N
++ 8` bits (351 at `N = 2^53`, 328 by default), so it does not get faster.
+
 ## Dense LWE: MCFE of ABMPSW20 (`mcfe/lwe`), 200 elements
 
 `n0 + m0 = 7724`, 187-bit `q`. One LWE sample per element: the label of every

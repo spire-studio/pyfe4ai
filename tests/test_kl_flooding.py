@@ -4,7 +4,6 @@ parameters, records, run-time limit, sampler, and that the default is untouched.
 import math
 import random
 
-import gmpy2 as gp
 import numpy as np
 import pytest
 

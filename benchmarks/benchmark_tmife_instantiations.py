@@ -1,8 +1,18 @@
-"""Cross-instantiation benchmark for threshold MIFE families."""
+"""Cross-instantiation benchmark for threshold MIFE families.
+
+``--security-profile standard`` runs ``mife/lwe_threshold`` at its
+``standard`` parameters (``lwe_n = "auto"``, streamed matrix; with
+``--clients 2 --bound 50`` the documented configuration: key generation
+takes tens of minutes and every encryption a pass over ``A``);
+``--flooding-accounting kl --max-partial-decryptions Q`` selects the opt-in
+KL accounting of its flooding (:mod:`pyfe4ai.schemes.flooding_accounting`).
+"""
 
 from __future__ import annotations
 
 import argparse
+import math
+import sys
 import time
 
 from _common import BENCHMARK_HEADER
@@ -36,6 +46,10 @@ def _run_case(case: dict, rounds: int) -> dict:
         kg.setup()
         setup_times.append(time.perf_counter() - t0)
         pp = kg.get_public_parameters()
+        if hasattr(kg, "lwe_n"):
+            print("{}: lwe_n {} q {} bits m {} sigma_f 2^{:.1f} flooding {} setup {:.1f} s".format(
+                case["name"], kg.lwe_n, int(kg.q).bit_length(), kg.m, math.log2(kg.sigma_f),
+                pp.get("flooding_accounting", "per-sample"), setup_times[-1]), file=sys.stderr, flush=True)
         sk_by_nid = {nid: kg.get_private_keys(nid) for nid in case["lst_nid"]}
 
         encryptors = {}
@@ -104,44 +118,64 @@ def main() -> None:
     parser.add_argument("--output", choices=["csv", "json"], default="csv")
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--cases", nargs="+", default=["ddh", "lwe"], choices=["ddh", "lwe"])
+    parser.add_argument("--security-profile", default="toy", choices=["toy", "standard"],
+                        help="tMIFE/LWE: 'standard' takes lwe_n = 'auto' (see the module docstring)")
+    parser.add_argument("--clients", type=int, default=3)
+    parser.add_argument("--bound", type=int, default=None, help="bound_x = bound_y (default: per --profile)")
+    parser.add_argument("--flooding-accounting", default=None, choices=["per-sample", "kl"])
+    parser.add_argument("--max-partial-decryptions", type=int, default=None)
     args = parser.parse_args()
     prepare_benchmark(args.seed)
 
-    lst_nid = ["nid_0", "nid_1", "nid_2"]
+    lst_nid = ["nid_{}".format(i) for i in range(args.clients)]
     lst_sid = ["sid_0", "sid_1", "sid_2"]
     lwe_n = profile_value(args.profile, {"small": 16, "medium": 24, "large": 32})
-    bound = profile_value(args.profile, {"small": 4, "medium": 8, "large": 12})
+    bound = args.bound or profile_value(args.profile, {"small": 4, "medium": 8, "large": 12})
     dct_x = {nid: [1] for nid in lst_nid}
     dct_y = {nid: [1] for nid in lst_nid}
+    lwe_config = {"sec_param": 64, "eta": 1, "n": len(lst_nid), "s": 3, "t": 2, "lst_nid": lst_nid,
+                  "lst_sid": lst_sid, "lwe_n": lwe_n, "bound_x": bound, "bound_y": bound}
+    if args.security_profile == "standard":
+        del lwe_config["lwe_n"], lwe_config["sec_param"]
+        lwe_config["security_profile"] = "standard"
+    if args.flooding_accounting is not None:
+        lwe_config["flooding_accounting"] = args.flooding_accounting
+    if args.max_partial_decryptions is not None:
+        lwe_config["max_partial_decryptions"] = args.max_partial_decryptions
 
     cases = [
         {
             "name": "tMIFE/DDH",
             "kg_cls": ThresholdMIFEKeyGenerator,
             "crypto_cls": ThresholdMIFE,
-            "config": {"sec_param": 256, "eta": 1, "n": 3, "s": 3, "t": 2, "lst_nid": lst_nid, "lst_sid": lst_sid},
+            "config": {"sec_param": 256, "eta": 1, "n": len(lst_nid), "s": 3, "t": 2, "lst_nid": lst_nid,
+                       "lst_sid": lst_sid},
             "lst_nid": lst_nid,
             "lst_sid": lst_sid,
             "threshold": 2,
             "x": dct_x,
             "y": dct_y,
-            "expected": 3,
+            "expected": len(lst_nid),
             "tolerance": 1e-2,
+            "case": "ddh",
         },
         {
             "name": "tMIFE/LWE",
             "kg_cls": ThresholdMIFELWEKeyGenerator,
             "crypto_cls": ThresholdMIFELWE,
-            "config": {"sec_param": 64, "eta": 1, "n": 3, "s": 3, "t": 2, "lst_nid": lst_nid, "lst_sid": lst_sid, "lwe_n": lwe_n, "bound_x": bound, "bound_y": bound},
+            "config": lwe_config,
             "lst_nid": lst_nid,
             "lst_sid": lst_sid,
             "threshold": 2,
             "x": dct_x,
             "y": dct_y,
-            "expected": 3,
+            "expected": len(lst_nid),
             "tolerance": 1e-6,
+            "case": "lwe",
         },
     ]
+    cases = [case for case in cases if case["case"] in args.cases]
 
     results = []
     for case in cases:

@@ -24,6 +24,9 @@ the key shares of the ``t`` enrolled servers; ``partial_ms`` one server's
 ``compute_lst_ndarray_ct``; ``combine_ms`` the combiner's
 ``decrypt_lst_ndarray_ct``; ``aggregator_ms`` their sum over the ``t``
 servers on one machine.
+``--flooding-accounting kl --max-partial-decryptions Q`` runs it with the
+opt-in KL accounting of its flooding noise (see
+:mod:`pyfe4ai.schemes.flooding_accounting`).
 
 The schemes write their parameter cache to ``./config``; the run happens in
 ``--workdir`` (default: a temporary directory) so a cache can be reused across
@@ -246,7 +249,7 @@ def measure(family: str, elements: int, clients: int, rounds: int, precision: in
 
 
 def measure_threshold(family: str, elements: int, clients: int, rounds: int, precision: int, bound_x: int,
-                      profile: str, servers: int, threshold: int) -> dict:
+                      profile: str, servers: int, threshold: int, flooding: dict | None = None) -> dict:
     """:func:`measure` for a threshold scheme, on its classes (see the module docstring)."""
     import importlib
 
@@ -259,10 +262,10 @@ def measure_threshold(family: str, elements: int, clients: int, rounds: int, pre
     nids = ["c{}".format(i) for i in range(clients)]
     sids = ["s{}".format(i) for i in range(servers)]
     cfg = dict(base_cfg, n=clients, lst_nid=nids, s=servers, t=threshold, lst_sid=sids,
-               security_profile=profile, **_bounds(family, bound_x))
+               security_profile=profile, **_bounds(family, bound_x), **(flooding or {}))
     row = {"family": family, "scheme": "/".join(key), "profile": profile, "elements": elements,
            "clients": clients, "servers": servers, "threshold": threshold, "rounds": rounds,
-           "precision": precision, "bound_x": bound_x, "ct_format": "json"}
+           "precision": precision, "bound_x": bound_x, "ct_format": "json", **(flooding or {})}
     t0 = time.perf_counter()
     kg = getattr(mod, kg_name)(cfg)
     kg.setup()
@@ -331,6 +334,10 @@ def main() -> None:
     parser.add_argument("--clients", type=int, default=3)
     parser.add_argument("--servers", type=int, default=3, help="threshold family: servers s")
     parser.add_argument("--threshold", type=int, default=2, help="threshold family: threshold t")
+    parser.add_argument("--flooding-accounting", default=None, choices=["per-sample", "kl"],
+                        help="threshold family: accounting of the flooding noise (default: the scheme's)")
+    parser.add_argument("--max-partial-decryptions", type=int, default=None,
+                        help="threshold family: partial decryptions per server under --flooding-accounting kl")
     parser.add_argument("--rounds", type=int, default=5)
     parser.add_argument("--precision", type=int, default=2)
     parser.add_argument("--bound-x", type=int, default=None, help="default 10^precision (values in [-1, 1])")
@@ -367,8 +374,13 @@ def main() -> None:
             elements = args.elements or FAMILIES[family][2]
             fmt = args.ct_format if family == "ring_lwe" else "json"
             if family.endswith("_threshold"):
+                flooding = {}
+                if args.flooding_accounting is not None:
+                    flooding["flooding_accounting"] = args.flooding_accounting
+                if args.max_partial_decryptions is not None:
+                    flooding["max_partial_decryptions"] = args.max_partial_decryptions
                 row = measure_threshold(family, elements, args.clients, args.rounds, args.precision, bound_x,
-                                        args.profile, args.servers, args.threshold)
+                                        args.profile, args.servers, args.threshold, flooding)
             else:
                 row = measure(family, elements, args.clients, args.rounds, args.precision, bound_x, args.profile,
                               fmt, args.offline and family == "ring_lwe")
