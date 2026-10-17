@@ -3,7 +3,9 @@ import random
 import numpy as np
 import pytest
 
-pytest.importorskip("charm", reason="charm-crypto not installed")
+from tests.pairing_group import GROUP, skip_unless_available  # noqa: E402
+
+skip_unless_available()
 
 from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPE
 from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEKeyGenerator
@@ -22,7 +24,7 @@ def kg_config():
         "bound_y": 4,
         "u_bound": 3,
         "label_modulus": 17,
-        "pairing_group_param": "MNT224",
+        "pairing_group_param": GROUP,
     }
 
 
@@ -119,6 +121,7 @@ def test_entire_process_lst_ndarray(kg_config):
 
 
 def test_symmetric_group_rejected(kg_config):
+    pytest.importorskip("charm", reason="SS512 is a charm-crypto group")
     from pyfe4ai.utils.exceptions import FEValidationError
 
     with pytest.raises(FEValidationError):

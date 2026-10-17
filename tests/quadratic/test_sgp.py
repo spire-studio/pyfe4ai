@@ -4,7 +4,9 @@ import random
 import numpy as np
 import pytest
 
-pytest.importorskip("charm", reason="charm-crypto not installed")
+from tests.pairing_group import GROUP, skip_unless_available  # noqa: E402
+
+skip_unless_available()
 
 from pyfe4ai.schemes.quadratic.sgp import QuadraticSGP
 from pyfe4ai.schemes.quadratic.sgp import QuadraticSGPKeyGenerator
@@ -17,7 +19,7 @@ def kg_config():
         "sec_param": 64,
         "n": 5,
         "bound": 6,
-        "pairing_group_param": "MNT224",
+        "pairing_group_param": GROUP,
     }
 
 
@@ -72,7 +74,7 @@ def test_entire_process_lst_ndarray():
         "sec_param": 64,
         "n": 2,
         "bound": 500,
-        "pairing_group_param": "MNT224",
+        "pairing_group_param": GROUP,
     }
     kg = QuadraticSGPKeyGenerator(cfg)
     kg.setup()
@@ -108,7 +110,7 @@ def test_inputs_validated_and_extremes():
     """Floats used to be truncated silently (2.7 -> 2)."""
     from pyfe4ai.utils.exceptions import FEValidationError
 
-    kg = QuadraticSGPKeyGenerator({"sec_param": 64, "n": 2, "bound": 3, "pairing_group_param": "MNT224"})
+    kg = QuadraticSGPKeyGenerator({"sec_param": 64, "n": 2, "bound": 3, "pairing_group_param": GROUP})
     kg.setup()
     pp = kg.get_public_parameters()
     enc = QuadraticSGP({"keys": {"pp": pp}})

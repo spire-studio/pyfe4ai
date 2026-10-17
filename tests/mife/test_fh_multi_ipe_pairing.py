@@ -3,7 +3,9 @@ import random
 import numpy as np
 import pytest
 
-pytest.importorskip("charm", reason="charm-crypto not installed")
+from tests.pairing_group import GROUP, skip_unless_available  # noqa: E402
+
+skip_unless_available()
 
 from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPE
 from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPEKeyGenerator
@@ -20,7 +22,7 @@ def kg_config():
         "lst_nid": ["nid_0", "nid_1", "nid_2"],
         "bound_x": 5,
         "bound_y": 5,
-        "pairing_group_param": "MNT224",
+        "pairing_group_param": GROUP,
     }
 
 

@@ -12,6 +12,7 @@ pub mod keccak;
 pub mod ntt;
 pub mod osrand;
 pub mod rlwe;
+pub mod sha256;
 pub mod sha512;
 
 pub use arith::{Modulus, Word};

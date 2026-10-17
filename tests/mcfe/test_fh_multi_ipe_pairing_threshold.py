@@ -3,7 +3,9 @@ import random
 import numpy as np
 import pytest
 
-pytest.importorskip("charm", reason="charm-crypto not installed")
+from tests.pairing_group import GROUP, skip_unless_available  # noqa: E402
+
+skip_unless_available()
 
 from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold import ThresholdMCFEFHMultiIPE
 from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold import ThresholdMCFEFHMultiIPEKeyGenerator
@@ -21,7 +23,7 @@ def kg_config():
         "lst_sid": ["sid_0", "sid_1", "sid_2"],
         "bound_x": 4,
         "bound_y": 4,
-        "pairing_group_param": "MNT224",
+        "pairing_group_param": GROUP,
     }
 
 

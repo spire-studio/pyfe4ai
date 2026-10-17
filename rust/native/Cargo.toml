@@ -19,6 +19,11 @@ pyfe4ai-core = { path = "../core" }
 pyo3 = { version = "0.30", features = ["extension-module"] }
 curve25519-dalek = { version = "5", default-features = false, features = ["alloc", "zeroize", "precomputed-tables"] }
 rand_chacha = "0.9"
+ark-bls12-381 = "0.6"
+ark-ec = "0.6"
+ark-ff = "0.6"
+ark-serialize = "0.6"
+ark-std = "0.6"
 zeroize = "1"
 
 [build-dependencies]

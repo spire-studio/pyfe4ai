@@ -9,7 +9,7 @@ Function-hiding multi-client inner-product FE over pairings.
 | SXDH in the random-oracle model.
 
 * type:     multi-client encryption with function-hiding keys (FH-MCFE)
-* setting:  asymmetric pairing group (default MNT224), random oracle
+* setting:  asymmetric pairing group (default BLS12-381), random oracle
 
 Each client ``i`` holds the master key ``imsk_i`` of an independent
 function-hiding IPFE (:mod:`pyfe4ai.schemes.mcfe.fh_ipe`):
@@ -151,7 +151,7 @@ class MCFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator):
 
         Args:
             config: ``n``, ``lst_nid``, ``eta``, ``bound_x``, ``bound_y`` and
-                ``pairing_group_param`` (asymmetric, default MNT224). The keys
+                ``pairing_group_param`` (asymmetric, default BLS12-381). The keys
                 ``sec_level``, ``u_bound`` and ``label_modulus`` of versions
                 <= 0.2.0 are ignored.
         """

@@ -55,7 +55,7 @@ from pyfe4ai.schemes.threshold_utils import validate_partial_decryptions
 from pyfe4ai.schemes.threshold_utils import validate_threshold
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.pairing_backend import GT, ZR, pair
+from pyfe4ai.utils.pairing_backend import GT, ZR, multi_pair
 
 logger = logging.getLogger(__name__)
 
@@ -230,14 +230,14 @@ class ThresholdMCFEFHMultiIPE(MCFEFHMultiIPE):
         lam = int(lagrange_coefficient_at_zero(
             sid_v[self.id], [sid_v[s] for s in lst_sid_enrolled], ctx.order
         ))
-        acc = ctx.group.init(GT, 1)
+        lhs, rhs = [], []
         for nid, ct in dict_ct.items():
             shares = dk["k"][nid]
             if len(ct["ct"]) != len(shares):
                 raise FESchemeError("ciphertext of {} has the wrong length".format(nid))
-            for c, k in zip(ct["ct"], shares):
-                acc *= pair(ctx.de(c), ctx.de(k))
-        acc = (acc / ctx.de(dk["z"])) ** ctx.zr(lam)
+            lhs.extend(ctx.de(c) for c in ct["ct"])
+            rhs.extend(ctx.de(k) for k in shares)
+        acc = (multi_pair(lhs, rhs) / ctx.de(dk["z"])) ** ctx.zr(lam)
         ct_digest = ciphertexts_digest({nid: _tag_payload(nid, ct) for nid, ct in dict_ct.items()})
         return {
             "w": ctx.ser(acc),

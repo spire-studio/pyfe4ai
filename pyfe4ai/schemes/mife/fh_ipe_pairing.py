@@ -7,7 +7,7 @@ Function-hiding multi-input inner-product FE over pairings.
 | of Fig. 11, with ``k = 1`` (SXDH) and the LV16 padding of Appendix B.
 
 * type:     private-key multi-input encryption with function-hiding keys
-* setting:  asymmetric pairing group (default MNT224)
+* setting:  asymmetric pairing group (default BLS12-381)
 
 Slot ``i`` has the master key ``msk_i`` of a function-hiding IPFE
 (:class:`pyfe4ai.schemes.mcfe.fh_ipe.FHIPE`, which contains the inner
@@ -82,7 +82,7 @@ class MIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator):
 
         Args:
             config: ``n``, ``lst_nid``, ``eta``, ``bound_x``, ``bound_y`` and
-                ``pairing_group_param`` (asymmetric, default MNT224).
+                ``pairing_group_param`` (asymmetric, default BLS12-381).
         """
         super().__init__(config, **kwargs)
         require_pairing_backend()

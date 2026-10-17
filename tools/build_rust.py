@@ -43,12 +43,17 @@ def main() -> None:
         cmd.append("--release")
     if args.offline:
         cmd.append("--offline")
-    subprocess.run(cmd, check=True, env=env, cwd=CRATE)  # .cargo/config.toml of the crate applies
+    subprocess.run(cmd, check=True, env=env, cwd=CRATE)  # build.rs of the crate adds the link arguments
     profile = "debug" if args.debug else "release"
     names = {"darwin": "lib_rust_native.dylib", "win32": "_rust_native.dll"}
     built = target_dir / profile / names.get(sys.platform, "lib_rust_native.so")
     dest = ROOT / "pyfe4ai" / ("_rust_native" + sysconfig.get_config_var("EXT_SUFFIX"))
-    shutil.copy2(built, dest)
+    # copy to a new file and rename it over the old one: overwriting a loaded
+    # library in place makes macOS kill the next process that maps it (the
+    # kernel caches the code signature per file)
+    tmp = dest.with_name(dest.name + ".tmp")
+    shutil.copy2(built, tmp)
+    os.replace(tmp, dest)
     print("built", dest.relative_to(ROOT))
 
 

@@ -57,10 +57,10 @@ The ``security_profile`` entry of a key generator's config selects one:
       ``standard`` fixes its ``matrix_mode`` to ``"stream"``: key generation
       takes over half an hour, an encryption about 10 minutes, or about 11 s
       each in batches of 64;
-    * pairing-based schemes: BN254, the strongest curve charm-crypto provides
-      -- about 100-bit security after the exTNFS attacks (Barbulescu and
-      Duquesne, J. Cryptol. 2019), **below** the 128-bit target; a
-      :class:`~pyfe4ai.utils.exceptions.FESecurityWarning` says so.
+    * pairing-based schemes: BLS12-381 (the Rust extension) -- about 120 to
+      126-bit security after the exTNFS attacks on its 381-bit field
+      (Barbulescu and Duquesne, J. Cryptol. 2019), **below** the 128-bit
+      target; a :class:`~pyfe4ai.utils.exceptions.FESecurityWarning` says so.
 
     Refused, because no parameter set is both secure and usable in pure
     Python: ``sife/fullysec_lwe`` and ``mife/fullysec_lwe`` (ALS16: at a
@@ -134,7 +134,7 @@ _STANDARD_MINIMA = {
     "lwe": {"stat_param": STANDARD_STAT_PARAM},
     "lwe_abdp15": {"stat_param": STANDARD_STAT_PARAM},
 }
-STANDARD_PAIRING_GROUP = "BN254"
+STANDARD_PAIRING_GROUP = "BLS12-381"
 
 #: Settings the ``standard`` profile fixes for single schemes, with the reason.
 _STANDARD_FIXED = {
@@ -198,8 +198,8 @@ def resolve(config: dict, scheme: tuple | None) -> dict:
                 "the '{}' profile uses pairing group {}, got {!r}".format(profile, STANDARD_PAIRING_GROUP, group)
             )
         warnings.warn(
-            "{}/{}: BN254, the strongest pairing group of charm-crypto, gives about "
-            "100-bit security, below the 128-bit target of the '{}' profile".format(*scheme, profile),
+            "{}/{}: BLS12-381 gives about 120 to 126-bit security after the exTNFS "
+            "attacks, below the 128-bit target of the '{}' profile".format(*scheme, profile),
             FESecurityWarning,
             stacklevel=3,
         )

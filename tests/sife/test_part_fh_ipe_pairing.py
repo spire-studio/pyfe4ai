@@ -3,7 +3,9 @@ import random
 
 import pytest
 
-pytest.importorskip("charm", reason="charm-crypto not installed")
+from tests.pairing_group import GROUP, skip_unless_available  # noqa: E402
+
+skip_unless_available()
 
 from pyfe4ai.schemes.sife.part_fh_ipe_pairing import SIFEPartFHIPE
 from pyfe4ai.schemes.sife.part_fh_ipe_pairing import SIFEPartFHIPEKeyGenerator
@@ -18,7 +20,7 @@ def kg_config():
         "bound": 10,
         "subspace_dim": 3,
         "coeff_bound": 1,
-        "pairing_group_param": "MNT224",
+        "pairing_group_param": GROUP,
     }
 
 
@@ -83,5 +85,5 @@ def test_adapter_encryptor_gets_no_master_key():
     from pyfe4ai.utils.ml_adapter import FESchemeWrapper
 
     wrapper = FESchemeWrapper("sife", "part_fh_ipe_pairing",
-                              {"sec_param": 64, "eta": 4, "bound": 4, "pairing_group_param": "MNT224"})
+                              {"sec_param": 64, "eta": 4, "bound": 4, "pairing_group_param": GROUP})
     assert "sk" not in wrapper._get_encryptor("nid_0").keys

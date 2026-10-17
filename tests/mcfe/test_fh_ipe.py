@@ -4,7 +4,9 @@ import random
 
 import pytest
 
-pytest.importorskip("charm")
+from tests.pairing_group import GROUP, skip_unless_available  # noqa: E402
+
+skip_unless_available()
 
 from pyfe4ai.schemes.mcfe.fh_ipe import FHIPE, check_asymmetric  # noqa: E402
 from pyfe4ai.utils.exceptions import FEValidationError  # noqa: E402
@@ -13,7 +15,7 @@ from pyfe4ai.utils.pairing_backend import G1, G2, ZR, PairingGroup  # noqa: E402
 
 @pytest.fixture(scope="module")
 def fhipe():
-    group = PairingGroup("MNT224")
+    group = PairingGroup(GROUP)
     return FHIPE(group, group.random(G1), group.random(G2), m=3)
 
 
@@ -41,9 +43,10 @@ def test_encryption_and_keys_are_randomised(fhipe):
 
 
 def test_symmetric_groups_rejected():
+    pytest.importorskip("charm", reason="SS512 is a charm-crypto group")
     with pytest.raises(FEValidationError):
         check_asymmetric("SS512")
-    check_asymmetric("MNT224")
+    check_asymmetric(GROUP)
 
 
 def test_keygen_exponents_match_group_keygen(fhipe):

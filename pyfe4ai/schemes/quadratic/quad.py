@@ -6,7 +6,7 @@ Public-key functional encryption for degree-2 polynomials (Quad)
 
 * type:     public-key encryption; keys for matrices ``F``, decryption gives
   ``x^T F y``
-* setting:  asymmetric pairing group (default MNT224); semi-adaptive
+* setting:  asymmetric pairing group (default BLS12-381); semi-adaptive
   simulation security from bilateral DLIN, DDH in G1 and SXDH
 
 Setup: ``a <- DDH`` (``(1, a)``), ``B <- DLIN`` (``[[b1, 0], [0, b2], [1, 1]]``),
@@ -50,7 +50,7 @@ from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import decoded_layer
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup, pair
+from pyfe4ai.utils.pairing_backend import G1, G2, ZR, PairingGroup, multi_pair, pair
 from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
@@ -115,7 +115,7 @@ class QuadraticQuadKeyGenerator(IPFEAbsKeyGenerator):
         Args:
             config: ``n`` (length of ``x``), ``m`` (length of ``y``), ``bound``
                 (``B`` on every entry of ``x``, ``y`` and ``F``) and
-                ``pairing_group_param`` (asymmetric, default MNT224).
+                ``pairing_group_param`` (asymmetric, default BLS12-381).
         """
         super().__init__(config, **kwargs)
         require_pairing_backend()
@@ -284,12 +284,8 @@ class QuadraticQuad(IPFEAbsCrypto):
         n_ipfe = 2 * m + 3 * n + 4
         if len(ct_x) != n or len(ct_y) != m or len(ct_ipfe) != n_ipfe or len(key) != n_ipfe:
             raise FESchemeError("ciphertext and key do not match the parameters")
-        d = ctx.group.init(GT, 1)
-        for c_j, k_j in zip(ct_ipfe, key):
-            d *= pair(c_j, k_j)
-        v = ctx.group.init(GT, 1)
-        for x_i, row in zip(ct_x, f_mat):
-            v *= pair(x_i, ctx.multiexp(ct_y, row))
+        d = multi_pair(ct_ipfe, key)
+        v = multi_pair(ct_x, [ctx.multiexp(ct_y, row) for row in f_mat])
         bound = n * m * int(pp["bound"]) ** 3
         try:
             return bounded_discrete_log_gt(ctx.group, ctx.gt, v / d, bound)

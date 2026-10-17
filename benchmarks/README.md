@@ -39,12 +39,15 @@ scheme families in the repository.
 - `fl_path_coverage.py`: not a timing benchmark. Runs the ML-adapter FL path
   (`encrypt_gradient` + `aggregate_gradients`) for every registry entry with
   that variant's own test configuration and reports `usable` / `unusable`
-  (with the reason) / `unverified` (pairing entries without `charm-crypto`).
+  (with the reason) / `unverified` (pairing entries without a backend for
+  the default group).
   `--output json` for machine-readable output.
 
 The `FHMultiIPE` and quadratic scripts, and `benchmark_ndarray_helpers.py
---group fh|quadratic|all`, need `charm-crypto-framework` (see *Quick Start* in
-the top-level README, or the Docker image); everything else runs without it.
+--group fh|quadratic|all`, need a pairing backend: the Rust extension for
+BLS12-381 (the default), or `charm-crypto-framework` for the curves chosen
+with `--pairing-group` (e.g. `MNT224`; see *Quick Start* in the top-level
+README, or the Docker image); everything else runs without either.
 All scripts use the toy default parameters unless stated otherwise.
 
 ## Recommended Usage

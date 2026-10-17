@@ -57,7 +57,7 @@ Configuration keys
       ``"toy"`` (the default) keeps the small default parameters: fast, and
       **not secure**. ``"standard"`` fills in parameters aiming at 128-bit
       classical security and refuses explicit values below them. Its
-      exceptions: pairing-based schemes get BN254 (about 100-bit, with a
+      exceptions: pairing-based schemes get BLS12-381 (about 120-126-bit, with a
       :class:`~pyfe4ai.utils.exceptions.FESecurityWarning`), and
       ``sife/fullysec_lwe``, ``mife/fullysec_lwe`` and
       ``mcfe/paillier_decentralized`` are refused. See
@@ -152,12 +152,13 @@ Configuration keys
       ``mife/lwe_threshold``. See :mod:`pyfe4ai.schemes.abdp15_lwe`.
 
    ``pairing_group_param``
-      Pairing group of the pairing-based schemes; default ``"MNT224"``. Only
+      Pairing group of the pairing-based schemes; default ``"BLS12-381"``
+      (the Rust extension; other names are charm-crypto groups). Only
       asymmetric (type-3) groups are accepted: symmetric ones such as
-      ``"SS512"`` are rejected. ``standard`` uses ``"BN254"``, about 100-bit,
-      with a :class:`~pyfe4ai.utils.exceptions.FESecurityWarning`. The
-      ``group`` attribute of a scheme object is the charm ``PairingGroup``
-      built from it.
+      ``"SS512"`` are rejected. ``standard`` requires ``"BLS12-381"``, about
+      120-126-bit, with a :class:`~pyfe4ai.utils.exceptions.FESecurityWarning`.
+      The ``group`` attribute of a scheme object is the ``PairingGroup``
+      built from it (:mod:`pyfe4ai.utils.pairing_backend`).
 
    ``sec_level``
       ``k`` of k-LIN in ``mife/fh_multi_ipe_pairing`` (default 2).

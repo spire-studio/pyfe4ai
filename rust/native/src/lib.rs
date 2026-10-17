@@ -19,6 +19,7 @@ use rand_chacha::ChaCha20Rng;
 use std::sync::{Arc, Mutex};
 
 mod ec;
+mod pairing;
 
 // ------------------------------------------------------------------ DRBG
 
@@ -934,5 +935,6 @@ fn _rust_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_function(f)?;
     }
     ec::register(m)?;
+    pairing::register(m)?;
     Ok(())
 }

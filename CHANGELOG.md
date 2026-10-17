@@ -32,6 +32,17 @@ compatibility).
 - MCFE Ring-LWE 10^4-element FL round (standard profile, 3 clients): client
   230 -> 3.4 ms, aggregator 368 -> 9.2 ms in a single thread (Linux,
   binary ciphertexts); see `benchmarks/PERFORMANCE.md`.
+- **Pairings on BLS12-381 in Rust** (arkworks; `pyfe4ai.utils.bls12_381`
+  behind charm's `PairingGroup` interface): a pairing takes 0.9 ms (charm:
+  MNT224 2.4 ms, BN254 13.7 ms), G2 exponentiation 0.4 ms (3.2 / 0.9 ms).
+  Products of pairings take one final exponentiation (`multi_pair`; a
+  product of 8: 2.6 ms, charm MNT224 19.4 ms). The bounded discrete log in
+  GT keeps its baby-step table per base and bound. SGP decryption pairs
+  `a_i` with `prod_j b_j^{F_ij}` (2 n + 1 pairings instead of 2 n^2 pairings
+  and n^2 GT exponentiations). End to end (`report` profile) SGP 320 -> 36
+  ms, Quad 506 -> 67 ms, MIFE / MCFE / dMCFE / tMCFE FH-Multi-IPE 425 /
+  889 / 945 / 1565 -> 25 / 82 / 79 / 136 ms (charm MNT224 in Docker before,
+  same Mac).
 
 ### Added
 
@@ -53,6 +64,25 @@ compatibility).
 
 ### Changed
 
+- **Pairing groups (breaking for pairing keys and ciphertexts):** every
+  pairing-based scheme (SIFE FH-IPE and partial FH-IPE, MIFE FH-IPE and
+  FH-Multi-IPE, MCFE / dMCFE / tMCFE FH-Multi-IPE, Quad, SGP, MIQFE) now
+  defaults to **BLS12-381** from the Rust extension, under both profiles.
+  The `toy` default was MNT224 (charm): toy pairing keys, public parameters
+  and ciphertexts of earlier versions are not readable any more (pass
+  `pairing_group_param="MNT224"` to keep using them with charm installed).
+  The `standard` profile uses BLS12-381 instead of BN254 (about 100-bit) and
+  still warns, since BLS12-381 gives about 120-126 bits after the exTNFS
+  attacks on its 381-bit field (Barbulescu and Duquesne, J. Cryptol. 2019):
+  `FESecurityWarning: <family>/<variant>: BLS12-381 gives about 120 to
+  126-bit security after the exTNFS attacks, below the 128-bit target of the
+  'standard' profile`. charm-crypto stays the backend of every other curve
+  (MNT224, BN254, ...) and is no longer needed for the defaults.
+- `group.hash(msg, G1 | G2)` on BLS12-381 is the RFC 9380 hash_to_curve
+  (BLS12381G1/G2_XMD:SHA-256_SSWU_RO_, domain tag
+  `PYFE4AI-V01-CS01-with-...`), used by the FH-MCFE label hashes.
+- The pairing-scheme tests run on `PYFE4AI_TEST_PAIRING_GROUP` (default
+  BLS12-381) and skip when no backend implements it.
 - The `ddh` key generators refuse a `group` other than `"modp"` instead of
   ignoring it.
 

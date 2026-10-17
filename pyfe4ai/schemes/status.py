@@ -61,7 +61,7 @@ _S = "pyfe4ai.schemes."
 
 _FH_IPE_NOTE = (
     "FH-IPFE = ACFGU18 Fig. 12 (n = 1, SXDH) with LV16 padding; asymmetric "
-    "pairing (default MNT224); keys carry a random id, never a digest of y"
+    "pairing (default BLS12-381); keys carry a random id, never a digest of y"
 )
 _FIG14_NOTE = (
     "MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) "
@@ -175,7 +175,7 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     ("mife", "fh_ipe_pairing"): SchemeStatus(
         _S + "mife.fh_ipe_pairing", REVIEWED, ADAPTED, "ACFGU18 Fig. 12 (k = 1)",
         note="one r per key shared by all slots; per-slot FH-IPFE as in mcfe/fh_ipe "
-        "(LV16 padding of App. B); asymmetric pairing (default MNT224); keys carry "
+        "(LV16 padding of App. B); asymmetric pairing (default BLS12-381); keys carry "
         "a random id, never a digest of y",
     ),
     ("mife", "fh_multi_ipe_pairing"): SchemeStatus(
@@ -287,7 +287,7 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     ("quadratic", "quad"): SchemeStatus(
         _S + "quadratic.quad", REVIEWED, ADAPTED, "Gay20 Fig. 4 over Fig. 8 (CPA)",
         note="signed inputs (discrete log in [-n m B^3, n m B^3]); CPA variant "
-        "(no QANIZK); asymmetric pairing (default MNT224)",
+        "(no QANIZK); asymmetric pairing (default BLS12-381)",
     ),
     ("quadratic", "sgp"): SchemeStatus(
         _S + "quadratic.sgp", REVIEWED, ADAPTED, "DSGPP18 Fig. 2",

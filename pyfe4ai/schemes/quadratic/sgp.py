@@ -5,7 +5,7 @@ Public-key functional encryption for quadratic polynomials (SGP)
 
 * type:     public-key encryption; keys for matrices ``F``, decryption gives
   ``x^T F y``
-* setting:  asymmetric pairing group (default MNT224); IND-CPA in the generic
+* setting:  asymmetric pairing group (default BLS12-381); IND-CPA in the generic
   bilinear group model
 
 ``s, t <- Z_p^n``; ``pk = (g1^s, g2^t)``, ``msk = (s, t)``.
@@ -37,7 +37,7 @@ from pyfe4ai.schemes.ipfe import ParameterCacheMixin
 from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
 from pyfe4ai.utils.pairing_utils import to_zr
 from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.pairing_backend import G1, G2, ZR, PairingGroup, pair
+from pyfe4ai.utils.pairing_backend import G1, G2, ZR, PairingGroup, multi_pair, pair
 from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
@@ -147,7 +147,7 @@ class QuadraticSGPKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             config: Scheme configuration. Recognised keys: ``n`` (vector
                 length, or ``eta``; default 2), ``bound`` (one bound for ``x``,
                 ``y`` and ``F``, default 16) and ``pairing_group_param``
-                (asymmetric group, default ``"MNT224"``).
+                (asymmetric group, default ``"BLS12-381"``).
         """
         super().__init__(config, **kwargs)
         require_pairing_backend()
@@ -322,13 +322,20 @@ class QuadraticSGP(IPFEAbsCrypto):
         a_rows = [_deserialize_group_vec(self.group, row) for row in ct["a"]]
         b_rows = [_deserialize_group_vec(self.group, row) for row in ct["b"]]
 
-        prod = pair(c0, key)
+        # prod_ij (e(a_i0, b_j0) e(a_i1, b_j1))^F_ij = prod_i e(a_i0, prod_j b_j0^F_ij) e(a_i1, ...):
+        # two G2 multi-exponentiations per row and one product of 2 n + 1 pairings
+        lhs, rhs = [c0], [key]
         for i, row in enumerate(function_matrix):
-            for j, value in enumerate(row):
-                if value == 0:
-                    continue
-                e = pair(a_rows[i][0], b_rows[j][0]) * pair(a_rows[i][1], b_rows[j][1])
-                prod *= e ** to_zr(self.group, value % self.order)
+            terms = [(b_rows[j], to_zr(self.group, value % self.order)) for j, value in enumerate(row) if value]
+            if not terms:
+                continue
+            for k in (0, 1):
+                acc = None
+                for b, e in terms:
+                    acc = b[k] ** e if acc is None else acc * b[k] ** e
+                lhs.append(a_rows[i][k])
+                rhs.append(acc)
+        prod = multi_pair(lhs, rhs)
 
         g1 = self.group.deserialize(self.pp["g1"].encode("utf-8"))
         g2 = self.group.deserialize(self.pp["g2"].encode("utf-8"))

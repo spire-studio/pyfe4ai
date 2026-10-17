@@ -9,7 +9,7 @@ Multi-input functional encryption for quadratic functions (cross-user terms)
 | for mixed-group inner products of Sec. 3 / Fig. 1.
 
 * type:     multi-input FE with per-user encryption keys
-* setting:  asymmetric pairing group (default MNT224); selective pos
+* setting:  asymmetric pairing group (default BLS12-381); selective pos
   message-hiding security (Thm. 5.1) from MDDH_1 (SXDH, for the
   TAO20 IPFE), bilateral MDDH_k with ``k >= 2`` (for the mixed-group
   SK-MCFE) and PRF security
@@ -66,7 +66,7 @@ from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup, pair
+from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup, multi_pair, pair
 from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
@@ -113,10 +113,7 @@ class _Ctx:
         """``prod_j e(ct_j, key_j)`` for serialised G1 / G2 vectors of equal length."""
         if len(cts) != len(keys):
             raise FESchemeError("IPFE ciphertext and key lengths differ")
-        acc = self.group.init(GT, 1)
-        for c, k in zip(cts, keys):
-            acc *= pair(self.de(c), self.de(k))
-        return acc
+        return multi_pair([self.de(c) for c in cts], [self.de(k) for k in keys])
 
 
 class _TAO20:
@@ -232,7 +229,7 @@ class MultiInputQuadraticKeyGenerator(IPFEAbsKeyGenerator):
         Args:
             config: ``n`` (users, >= 2), ``lst_nid``, ``m`` (integers per user),
                 ``bound_x`` (``X``), ``bound_c`` (``C``), ``mddh_k`` (``k >= 2``,
-                default 2) and ``pairing_group_param`` (asymmetric, default MNT224).
+                default 2) and ``pairing_group_param`` (asymmetric, default BLS12-381).
         """
         super().__init__(config, **kwargs)
         self.m = int(config.get("m", 2))

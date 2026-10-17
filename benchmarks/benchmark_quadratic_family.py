@@ -15,6 +15,7 @@ from pyfe4ai.schemes.quadratic.quad import QuadraticQuad
 from pyfe4ai.schemes.quadratic.quad import QuadraticQuadKeyGenerator
 from pyfe4ai.schemes.quadratic.sgp import QuadraticSGP
 from pyfe4ai.schemes.quadratic.sgp import QuadraticSGPKeyGenerator
+from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP
 
 ROUNDS = 3
 
@@ -107,6 +108,8 @@ def main() -> None:
     parser.add_argument("--output", choices=["csv", "json"], default="csv")
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--pairing-group", default=DEFAULT_PAIRING_GROUP,
+                        help="BLS12-381 (Rust extension) or a charm-crypto group such as MNT224")
     args = parser.parse_args()
     prepare_benchmark(args.seed)
 
@@ -120,11 +123,11 @@ def main() -> None:
     f_quad = [[1 for _ in range(quad_m)] for _ in range(dim)]
 
     for _ in range(args.warmup):
-        _bench_sgp({"sec_param": 64, "n": dim, "bound": bound, "pairing_group_param": "MNT224"}, x, y_sgp, f_sgp, 1)
-        _bench_quad({"sec_param": 64, "n": dim, "m": quad_m, "bound": bound, "pairing_group_param": "MNT224"}, x, y_quad, f_quad, 1)
+        _bench_sgp({"sec_param": 64, "n": dim, "bound": bound, "pairing_group_param": args.pairing_group}, x, y_sgp, f_sgp, 1)
+        _bench_quad({"sec_param": 64, "n": dim, "m": quad_m, "bound": bound, "pairing_group_param": args.pairing_group}, x, y_quad, f_quad, 1)
     results = [
-        _bench_sgp({"sec_param": 64, "n": dim, "bound": bound, "pairing_group_param": "MNT224"}, x, y_sgp, f_sgp, args.rounds),
-        _bench_quad({"sec_param": 64, "n": dim, "m": quad_m, "bound": bound, "pairing_group_param": "MNT224"}, x, y_quad, f_quad, args.rounds),
+        _bench_sgp({"sec_param": 64, "n": dim, "bound": bound, "pairing_group_param": args.pairing_group}, x, y_sgp, f_sgp, args.rounds),
+        _bench_quad({"sec_param": 64, "n": dim, "m": quad_m, "bound": bound, "pairing_group_param": args.pairing_group}, x, y_quad, f_quad, args.rounds),
     ]
     for result in results:
         result["profile"] = args.profile

@@ -7,7 +7,7 @@ Partially Function-Hiding Inner-Product Encryption over Pairings
 
 * type:     public-key encryption for vectors in the span of a public matrix
   ``M``; secret-key encryption (``Enc'``) of arbitrary vectors
-* setting:  asymmetric pairing group (default MNT224)
+* setting:  asymmetric pairing group (default BLS12-381)
 
 ``a, b <- (1, Z_q)``, ``U in Z_q^{(eta+2) x 2}``, ``V in Z_q^{eta x 2}`` and a
 random full-rank ``M in Z^{eta x k}`` with ``k = subspace_dim < eta``; the
@@ -49,7 +49,7 @@ from pyfe4ai.utils.pairing_utils import random_nonzero_zr
 from pyfe4ai.utils.pairing_utils import to_zr
 from pyfe4ai.utils.pairing_utils import transpose_mod
 from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.pairing_backend import G1, G2, PairingGroup, pair
+from pyfe4ai.utils.pairing_backend import G1, G2, PairingGroup, multi_pair, pair
 from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
@@ -188,7 +188,7 @@ class SIFEPartFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                 eta``, default 1), ``coeff_bound`` (bound on the coefficients
                 ``t`` of public encryption, default 1) and
                 ``pairing_group_param`` (asymmetric group, default
-                ``"MNT224"``).
+                ``"BLS12-381"``).
         """
         super().__init__(config, **kwargs)
         require_pairing_backend()
@@ -396,9 +396,7 @@ class SIFEPartFHIPE(IPFEAbsCrypto):
         if len(cipher) != self.pp["eta"] + 4 or len(key) != self.pp["eta"] + 4:
             raise FEValidationError("ciphertext or key length mismatch")
 
-        acc = pair(cipher[0], key[0])
-        for lhs, rhs in zip(cipher[1:], key[1:]):
-            acc *= pair(lhs, rhs)
+        acc = multi_pair(cipher, key)
 
         g1 = self.group.deserialize(self.pp["g1"].encode("utf-8"))
         g2 = self.group.deserialize(self.pp["g2"].encode("utf-8"))

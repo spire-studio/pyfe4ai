@@ -19,6 +19,7 @@ from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold import ThresholdMCFEFHM
 from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold import ThresholdMCFEFHMultiIPEKeyGenerator
 from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPE
 from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPEKeyGenerator
+from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP
 
 ROUNDS = 3
 
@@ -241,6 +242,8 @@ def main() -> None:
     parser.add_argument("--output", choices=["csv", "json"], default="csv")
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--pairing-group", default=DEFAULT_PAIRING_GROUP,
+                        help="BLS12-381 (Rust extension) or a charm-crypto group such as MNT224")
     args = parser.parse_args()
     prepare_benchmark(args.seed)
 
@@ -251,15 +254,15 @@ def main() -> None:
     y = {"nid_0": [1 for _ in range(eta)], "nid_1": [1 for _ in range(eta)], "nid_2": [1 for _ in range(eta)]}
 
     for _ in range(args.warmup):
-        _bench_mife({"sec_param": 64, "sec_level": sec_level, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": "MNT224"}, x, y, 1)
-        _bench_mcfe({"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": "MNT224"}, x, y, "bench-mcfe-fh-multi-ipe", 1)
-        _bench_dmcfe({"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": "MNT224"}, x, y, "bench-dmcfe-fh-multi-ipe", 1)
-        _bench_tmcfe({"sec_param": 64, "eta": eta, "n": 3, "s": 3, "t": 2, "lst_nid": list(x.keys()), "lst_sid": ["sid_0", "sid_1", "sid_2"], "bound_x": bound, "bound_y": bound, "pairing_group_param": "MNT224"}, x, y, "bench-tmcfe-fh-multi-ipe", 1)
+        _bench_mife({"sec_param": 64, "sec_level": sec_level, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": args.pairing_group}, x, y, 1)
+        _bench_mcfe({"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": args.pairing_group}, x, y, "bench-mcfe-fh-multi-ipe", 1)
+        _bench_dmcfe({"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": args.pairing_group}, x, y, "bench-dmcfe-fh-multi-ipe", 1)
+        _bench_tmcfe({"sec_param": 64, "eta": eta, "n": 3, "s": 3, "t": 2, "lst_nid": list(x.keys()), "lst_sid": ["sid_0", "sid_1", "sid_2"], "bound_x": bound, "bound_y": bound, "pairing_group_param": args.pairing_group}, x, y, "bench-tmcfe-fh-multi-ipe", 1)
     results = [
-        _bench_mife({"sec_param": 64, "sec_level": sec_level, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": "MNT224"}, x, y, args.rounds),
-        _bench_mcfe({"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": "MNT224"}, x, y, "bench-mcfe-fh-multi-ipe", args.rounds),
-        _bench_dmcfe({"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": "MNT224"}, x, y, "bench-dmcfe-fh-multi-ipe", args.rounds),
-        _bench_tmcfe({"sec_param": 64, "eta": eta, "n": 3, "s": 3, "t": 2, "lst_nid": list(x.keys()), "lst_sid": ["sid_0", "sid_1", "sid_2"], "bound_x": bound, "bound_y": bound, "pairing_group_param": "MNT224"}, x, y, "bench-tmcfe-fh-multi-ipe", args.rounds),
+        _bench_mife({"sec_param": 64, "sec_level": sec_level, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": args.pairing_group}, x, y, args.rounds),
+        _bench_mcfe({"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": args.pairing_group}, x, y, "bench-mcfe-fh-multi-ipe", args.rounds),
+        _bench_dmcfe({"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": list(x.keys()), "bound_x": bound, "bound_y": bound, "pairing_group_param": args.pairing_group}, x, y, "bench-dmcfe-fh-multi-ipe", args.rounds),
+        _bench_tmcfe({"sec_param": 64, "eta": eta, "n": 3, "s": 3, "t": 2, "lst_nid": list(x.keys()), "lst_sid": ["sid_0", "sid_1", "sid_2"], "bound_x": bound, "bound_y": bound, "pairing_group_param": args.pairing_group}, x, y, "bench-tmcfe-fh-multi-ipe", args.rounds),
     ]
     for result in results:
         result["profile"] = args.profile

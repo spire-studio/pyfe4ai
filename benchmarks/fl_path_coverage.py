@@ -38,7 +38,7 @@ from pyfe4ai.utils.ml_adapter import (
     aggregate_gradients,
     encrypt_gradient,
 )
-from pyfe4ai.utils.pairing_backend import PAIRING_IMPORT_ERROR
+from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, pairing_available
 
 NIDS = ["nid_0", "nid_1", "nid_2"]
 SIDS = ["sid_0", "sid_1", "sid_2"]
@@ -58,10 +58,10 @@ CONFIGS: dict[tuple[str, str], dict] = {
     ("sife", "fullysec_lwe"): {"sec_param": 64, "lwe_n": 24, "bound_x": 10, "bound_y": 10},
     ("sife", "fullysec_ring_lwe"): {"sec_param": 64, "bound_x": 4, "bound_y": 4},
     ("sife", "ddh_dynamic"): {"sec_param": 128},
-    ("sife", "fh_ipe_pairing"): {"sec_param": 64, "bound_x": 8, "bound_y": 8, "pairing_group_param": "MNT224"},
+    ("sife", "fh_ipe_pairing"): {"sec_param": 64, "bound_x": 8, "bound_y": 8, "pairing_group_param": DEFAULT_PAIRING_GROUP},
     ("sife", "part_fh_ipe_pairing"): {
         "sec_param": 64, "bound": 10, "subspace_dim": 3, "coeff_bound": 1,
-        "pairing_group_param": "MNT224",
+        "pairing_group_param": DEFAULT_PAIRING_GROUP,
     },
     ("mife", "ddh"): {"sec_param": 256, **_MULTI},
     ("mife", "ddh_ristretto255"): {**_MULTI},
@@ -71,11 +71,11 @@ CONFIGS: dict[tuple[str, str], dict] = {
     ("mife", "ring_lwe"): {"sec_param": 64, "ring_n": 16, "bound_x": 2, "bound_y": 2, **_MULTI},
     ("mife", "fullysec_lwe"): {"sec_param": 64, "lwe_n": 24, "bound_x": 8, "bound_y": 8, **_MULTI},
     ("mife", "fh_ipe_pairing"): {
-        "sec_param": 64, "bound_x": 6, "bound_y": 6, "pairing_group_param": "MNT224", **_MULTI,
+        "sec_param": 64, "bound_x": 6, "bound_y": 6, "pairing_group_param": DEFAULT_PAIRING_GROUP, **_MULTI,
     },
     ("mife", "fh_multi_ipe_pairing"): {
         "sec_param": 64, "sec_level": 2, "bound_x": 5, "bound_y": 5,
-        "pairing_group_param": "MNT224", **_MULTI,
+        "pairing_group_param": DEFAULT_PAIRING_GROUP, **_MULTI,
     },
     ("mife", "ddh_threshold"): {"sec_param": 256, **_THRESHOLD},
     ("mife", "lwe_threshold"): {"sec_param": 64, "lwe_n": 16, "bound_x": 6, "bound_y": 6, **_THRESHOLD},
@@ -96,15 +96,15 @@ CONFIGS: dict[tuple[str, str], dict] = {
         "label_modulus": 8, **_MULTI,
     },
     ("mcfe", "fh_multi_ipe_pairing"): {
-        "sec_param": 64, "bound_x": 4, "bound_y": 4, "pairing_group_param": "MNT224",
+        "sec_param": 64, "bound_x": 4, "bound_y": 4, "pairing_group_param": DEFAULT_PAIRING_GROUP,
         **_MULTI,
     },
     ("mcfe", "fh_multi_ipe_pairing_threshold"): {
-        "sec_param": 64, "bound_x": 4, "bound_y": 4, "pairing_group_param": "MNT224",
+        "sec_param": 64, "bound_x": 4, "bound_y": 4, "pairing_group_param": DEFAULT_PAIRING_GROUP,
         **_THRESHOLD,
     },
     ("mcfe", "fh_multi_ipe_pairing_decentralized"): {
-        "sec_param": 64, "bound_x": 4, "bound_y": 4, "pairing_group_param": "MNT224",
+        "sec_param": 64, "bound_x": 4, "bound_y": 4, "pairing_group_param": DEFAULT_PAIRING_GROUP,
         **_MULTI,
     },
     ("mcfe", "ddh_threshold"): {"sec_param": 128, **_THRESHOLD},
@@ -128,11 +128,11 @@ CONFIGS: dict[tuple[str, str], dict] = {
     ("mcfe", "paillier_decentralized"): {
         "sec_param": 64, "bit_length": 64, "bound_x": 10, "bound_y": 10, **_MULTI,
     },
-    ("quadratic", "quad"): {"sec_param": 64, "n": 4, "m": 3, "bound": 5, "pairing_group_param": "MNT224"},
-    ("quadratic", "sgp"): {"sec_param": 64, "n": 5, "bound": 6, "pairing_group_param": "MNT224"},
+    ("quadratic", "quad"): {"sec_param": 64, "n": 4, "m": 3, "bound": 5, "pairing_group_param": DEFAULT_PAIRING_GROUP},
+    ("quadratic", "sgp"): {"sec_param": 64, "n": 5, "bound": 6, "pairing_group_param": DEFAULT_PAIRING_GROUP},
     ("quadratic", "miqfe"): {
         "sec_param": 64, "n": 2, "m": 1, "lst_nid": ["client_0", "client_1"], "s": 1,
-        "bound_x": 5, "bound_c": 3, "pairing_group_param": "MNT224",
+        "bound_x": 5, "bound_c": 3, "pairing_group_param": DEFAULT_PAIRING_GROUP,
     },
 }
 
@@ -169,8 +169,8 @@ def _describe(exc: Exception) -> str:
 
 
 def check_entry(scheme_type: str, variant: str) -> tuple[str, str]:
-    if _needs_pairing(scheme_type, variant) and PAIRING_IMPORT_ERROR is not None:
-        return "unverified", "charm-crypto not installed"
+    if _needs_pairing(scheme_type, variant) and not pairing_available():
+        return "unverified", "no backend for pairing group {}".format(DEFAULT_PAIRING_GROUP)
     config = dict(CONFIGS[(scheme_type, variant)])
     if scheme_type != "quadratic":
         config["eta"] = 1
@@ -232,9 +232,9 @@ def main() -> None:
         reason = row["reason"].replace("|", "\\|")
         print("| {} | `{}` | {} | {} |".format(i, row["scheme"], row["status"], reason))
     print()
-    print("Total {}: {} usable, {} unusable, {} unverified (charm-crypto {}).".format(
-        len(rows), counts["usable"], counts["unusable"], counts["unverified"],
-        "missing" if PAIRING_IMPORT_ERROR is not None else "installed",
+    print("Total {}: {} usable, {} unusable, {} unverified (pairing group {} {}).".format(
+        len(rows), counts["usable"], counts["unusable"], counts["unverified"], DEFAULT_PAIRING_GROUP,
+        "available" if pairing_available() else "missing",
     ))
 
 

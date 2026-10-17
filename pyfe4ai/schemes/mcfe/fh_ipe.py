@@ -31,7 +31,7 @@ With ``x' = (x, 0^m)``, ``y' = (y, 0^m)`` (``m2 = 2m``) and ``l = m2 + 3``:
 
 from __future__ import annotations
 
-from pyfe4ai.utils.pairing_backend import GT, ZR, PairingGroup, pair
+from pyfe4ai.utils.pairing_backend import ZR, PairingGroup, multi_pair, pair
 from pyfe4ai.utils.pairing_backend import check_asymmetric  # noqa: F401  (re-export)
 from pyfe4ai.utils.exceptions import FEValidationError
 
@@ -155,7 +155,4 @@ class FHIPE:
         """Return ``[<x, y>]_T`` from a ciphertext, a key and the key's ``[z_sum]_T``."""
         if len(ct) != self.ell + 2 or len(key) != self.ell + 2:
             raise FEValidationError("FH-IPE ciphertext and key must have {} elements".format(self.ell + 2))
-        acc = self.group.init(GT, 1)
-        for c, k in zip(ct, key):
-            acc *= pair(c, k)
-        return acc / z_sum_gt
+        return multi_pair(ct, key) / z_sum_gt

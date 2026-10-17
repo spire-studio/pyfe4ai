@@ -206,28 +206,58 @@ Paillier 794 / 768 vs 737 / 765 ms per 20 elements).
   online with masks. A new instantiation with its own security argument and
   dlog table; still one group element per value (32 bytes, vs 936 B per
   element now), so 1.8 s per client for 10^4 elements. Needs a decision.
-* **Pairing backend.** Charm (docker): MNT224 pairing 2.1 ms, G2
-  exponentiation 2.7 ms; BN254 pairing 12.6 ms. `mcfe/fh_multi_ipe_pairing`
-  takes 16 to 22 ms per element per client and 550 to 730 ms per element
-  for the aggregator (toy MNT224 / standard BN254). A Rust backend on
-  BLS12-381 (arkworks, blst, or RustPFE, Apache-2.0, which already has PyO3
-  bindings) would also lift the curve to about 128-bit security; published
-  BLS12-381 pairings take well under 1 ms on this class of CPU (not
-  measured here, no Rust toolchain installed). A new curve and backend:
-  needs a decision.
+* **Pairing backend.** Done: BLS12-381 in Rust, see the next section.
 
-### Pairing backend (planned)
+## Pairing families on BLS12-381 (Rust)
 
-A Rust BLS12-381 backend (arkworks `ark-bls12-381`, or `blst`) behind the
-interface the pairing schemes use today -- `PairingGroup(name)`, `random`,
-`init`, `pair`, `serialize` / `deserialize`, `order`, elements with `*`, `**`
-and `==` -- so that `PairingGroup("BLS12-381")` comes from Rust and the Charm
-curves stay available as fallback until the results agree. Native batch
-paths where the schemes spend their time: products of pairings (one final
-exponentiation) and the bounded discrete log in G_T with a baby-step table
-built once per (generator, bound) and shared. BLS12-381 gives about 120-126
-bits after the exTNFS attacks, below the 128-bit target, so the `standard`
-profile would keep a `FESecurityWarning`; a strict 128-bit curve
-(BLS12-446/461, BN462) has no mature Rust crate. Which one the user wants
-is open.
+`PairingGroup("BLS12-381")` comes from the Rust extension (arkworks 0.6,
+`pyfe4ai.utils.bls12_381`) with charm's element interface, and is the
+default of every pairing scheme under both profiles; other curve names still
+come from charm. Native paths: products of pairings with one final
+exponentiation (`pairing_backend.multi_pair`, used by every decryption), the
+bounded discrete log in G_T with the baby-step table kept per (base, bound),
+RFC 9380 hash to G1 / G2 (BLS12381G1/G2_XMD:SHA-256_SSWU_RO_; SHA-256 in
+`rust/core`, checked against the RFC vectors). SGP decryption pairs `a_i`
+with `prod_j b_j^{F_ij}` (2 n + 1 pairings instead of 2 n^2 pairings and n^2
+G_T exponentiations), for every backend. Elements cross the boundary as
+Python objects; serialisation is the compressed encoding (48 / 96 / 576
+bytes for G1 / G2 / G_T, base64 behind charm's `"<type>:"` prefix), checked
+for subgroup membership on deserialisation. Not constant-time.
 
+Per operation (charm in the Docker image, Linux VM on the same Mac; Rust on
+the host):
+
+| | BLS12-381 (Rust) | MNT224 (charm) | BN254 (charm) |
+| --- | ---: | ---: | ---: |
+| pairing | 0.91 ms | 2.36 ms | 13.7 ms |
+| product of 8 pairings | 2.61 ms | 19.4 ms | 110.8 ms |
+| G1 / G2 / G_T exponentiation | 0.08 / 0.39 / 0.48 ms | 0.34 / 3.21 / 0.87 ms | 0.44 / 0.87 / 3.16 ms |
+| G1 / G2 deserialisation | 0.06 / 0.11 ms | 0.04 / 7.8 ms | 0.03 / 0.06 ms |
+| G_T dlog, bound 10^4 (table cached) | 0.05 ms | 1.33 ms | 4.81 ms |
+
+End to end, one setup + key + encryption + decryption round
+(`benchmark_quadratic_family.py`, `benchmark_fh_multi_ipe_family.py`,
+`--rounds 2`):
+
+| scheme | profile | v0.3 code, MNT224 (charm) | this branch, BLS12-381 (Rust) | |
+| --- | --- | ---: | ---: | ---: |
+| Quadratic SGP | small / report | 179 / 320 ms | 14 / 36 ms | 13x / 9x |
+| Quadratic Quad | small / report | 302 / 506 ms | 32 / 67 ms | 9.5x / 7.6x |
+| MIFE FH-Multi-IPE | small / report | 406 / 425 ms | 24 / 25 ms | 17x |
+| MCFE FH-Multi-IPE | small / report | 889 / 889 ms | 79 / 82 ms | 11x |
+| dMCFE FH-Multi-IPE | small / report | 909 / 945 ms | 80 / 79 ms | 12x |
+| tMCFE FH-Multi-IPE | small / report | 1680 / 1565 ms | 137 / 136 ms | 12x |
+
+This branch on charm (same scripts, `--pairing-group`): MNT224 162 / 301 /
+381 / 923 / 943 / 1657 ms and BN254 133 / 323 / 423 / 974 / 981 / 1756 ms
+(small profile, same order), i.e. the scheme changes alone do not move the
+charm numbers; the gain is the backend. The time left is in native group
+operations (pairing products, checked G2 deserialisation, G2
+exponentiations in key generation); a native multi-scalar multiplication
+would be the next step.
+
+BLS12-381 gives about 120-126 bits after the exTNFS attacks (Barbulescu and
+Duquesne, J. Cryptol. 2019), below the 128-bit target, so the `standard`
+profile keeps a `FESecurityWarning`; a strict 128-bit curve (BLS12-446/461,
+BN462) has no mature Rust crate. The `toy` default moved from MNT224 to
+BLS12-381 too: pairing keys and ciphertexts of v0.3 are not compatible.

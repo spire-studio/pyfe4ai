@@ -217,7 +217,7 @@ def bsgs_solve_pairing(target, g, h, pairing_group_param: str, bound: int) -> in
         target: The target element in GT (output of a pairing).
         g: Generator in G1.
         h: Generator in G2.
-        pairing_group_param: PBC pairing parameter name (e.g. ``"MNT224"``).
+        pairing_group_param: pairing group name (e.g. ``"BLS12-381"``).
         bound: Search range ``[-bound, bound]``.
 
     Returns:
