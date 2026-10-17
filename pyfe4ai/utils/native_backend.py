@@ -29,9 +29,23 @@ The native path applies to moduli below ``2^125`` with a ``2 ring_n``-th root
 of unity (all moduli the parameter generators derive), and samples natively
 only for the default rounded Gaussian sampler with widths up to ``2^40``
 (wider ones use :func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint`
-in Python). Random bytes come from the operating system as for
-:func:`os.urandom` (``getrandom`` / ``getentropy``), seven per uniform as
+in Python), consuming seven random bytes per uniform as
 ``random.SystemRandom.random``.
+
+Random bytes. The Rust backend draws them from a DRBG scoped to one call:
+every tensor-level call (``encrypt_tensor``, ``precompute_tensor``, and
+``encrypt`` for one matrix) reads one 32-byte seed from the operating system
+(``getrandom`` / ``getentropy``, the source of :func:`os.urandom`) and expands
+it with ChaCha20 (the ``rand_chacha`` crate), chunk ``c`` of the call reading
+stream ``c`` -- no two chunks, hence no two threads, share a stream. The seed,
+the generator states and the sample bytes are overwritten when the call
+ends; no generator state outlives a call, which limits what a fork or a
+virtual-machine snapshot can duplicate to the call in progress, and the
+system is asked for 32 bytes per tensor instead of about 86 KB per chunk.
+ChaCha20 is a standard stream cipher, not an SP 800-90A DRBG, which matters
+only for FIPS validation. The C++ backend and the Python reference read the
+operating system for every byte (:func:`os.urandom` semantics); the
+distribution is the same either way.
 
 ``set_threads(k)`` (or ``PYFE4AI_THREADS``) lets one call use ``k`` threads
 over the chunks of a tensor; the default is one.
@@ -181,6 +195,18 @@ def _sampler_is_rounded() -> bool:
 #: Tests set this to a function ``nbytes -> bytes`` to feed the native sampler
 #: the bytes they also feed the Python one; ``None``: the OS source.
 _random_override = None
+
+
+#: Tests set this to a 32-byte seed for the Rust backend's per-call DRBG (see
+#: the module docstring); ``None``: a fresh seed from the OS for every call.
+_seed_override = None
+
+
+def seed_kwargs() -> dict:
+    """Keyword arguments of the Rust tensor calls: a test-injected DRBG seed, if any."""
+    if _seed_override is None or implementation() != "rust":
+        return {}
+    return {"seed": _seed_override}
 
 
 def random_input(nbytes: int):

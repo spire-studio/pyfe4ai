@@ -14,9 +14,61 @@ use pyfe4ai_core::{osrand, parallel_for, with_ring, AnyRing, Ring, Word};
 use pyo3::exceptions::{PyNotImplementedError, PyOSError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyString, PyTuple};
+use rand_chacha::rand_core::{RngCore, SeedableRng};
+use rand_chacha::ChaCha20Rng;
 use std::sync::{Arc, Mutex};
 
 mod ec;
+
+// ------------------------------------------------------------------ DRBG
+
+/// Randomness of one native call: ChaCha20 keyed by one 32-byte seed from the OS
+/// (or injected by a test), with stream c for chunk c, so that no two chunks --
+/// hence no two threads -- share a stream. Seed and generator states are wiped
+/// when the call ends; nothing persists across calls.
+struct CallDrbg {
+    seed: zeroize::Zeroizing<[u8; 32]>,
+}
+
+impl CallDrbg {
+    fn new(seed: Option<&[u8]>) -> PyResult<Self> {
+        let mut s = zeroize::Zeroizing::new([0u8; 32]);
+        match seed {
+            Some(b) => {
+                if b.len() != 32 {
+                    return Err(PyValueError::new_err("a DRBG seed has 32 bytes"));
+                }
+                s.copy_from_slice(b);
+            }
+            None => osrand::fill(&mut s[..]).map_err(|e| PyOSError::new_err(e.to_string()))?,
+        }
+        Ok(CallDrbg { seed: s })
+    }
+
+    /// Bytes of stream `stream` from its start.
+    fn fill(&self, stream: u64, out: &mut [u8]) {
+        let mut rng = ChaCha20Rng::from_seed(*self.seed);
+        rng.set_stream(stream);
+        rng.fill_bytes(out);
+        // ChaCha20Rng holds only integers: zero its bytes before it is dropped
+        unsafe {
+            let p = &mut rng as *mut ChaCha20Rng as *mut u8;
+            for i in 0..std::mem::size_of::<ChaCha20Rng>() {
+                std::ptr::write_volatile(p.add(i), 0);
+            }
+        }
+        std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// The DRBG output of stream `stream` for `seed` (for the tests' reference stream).
+#[pyfunction]
+fn drbg_bytes(py: Python<'_>, seed: &[u8], stream: u64, n: usize) -> PyResult<Py<PyBytes>> {
+    let d = CallDrbg::new(Some(seed))?;
+    let mut out = vec![0u8; n];
+    d.fill(stream, &mut out);
+    Ok(PyBytes::new(py, &out).unbind())
+}
 
 // ------------------------------------------------------------------ context
 
@@ -351,10 +403,11 @@ fn enc_key(py: Python<'_>, ctx: &Bound<'_, RingCtx>, a: &Bound<'_, PyAny>, pk: &
     Ok(EncKeyObj { ring, key })
 }
 
-fn randomness<'a>(rnd: &'a Option<Vec<u8>>) -> Randomness<'a> {
+/// Given bytes (tests), else the call's DRBG streams.
+fn randomness<'a>(rnd: &'a Option<Vec<u8>>, stream: &'a (dyn Fn(usize, &mut [u8]) + Sync)) -> Randomness<'a> {
     match rnd {
         Some(b) => Randomness::Given(b),
-        None => Randomness::Os,
+        None => Randomness::Stream(stream),
     }
 }
 
@@ -367,9 +420,10 @@ fn core_err(e: rlwe::Error) -> PyErr {
 
 /// MIFERingLWE._encrypt_rows: (ct0, ct1) as decimal strings, or format-1 bytes.
 #[pyfunction]
-#[pyo3(signature = (key, w_rows, sigma2, sigma3, rnd, binary=false))]
+#[pyo3(signature = (key, w_rows, sigma2, sigma3, rnd, binary=false, seed=None))]
+#[allow(clippy::too_many_arguments)]
 fn encrypt(py: Python<'_>, key: &Bound<'_, EncKeyObj>, w_rows: &Bound<'_, PyAny>, sigma2: f64, sigma3: f64,
-           rnd: &Bound<'_, PyAny>, binary: bool) -> PyResult<Py<PyAny>> {
+           rnd: &Bound<'_, PyAny>, binary: bool, seed: Option<Vec<u8>>) -> PyResult<Py<PyAny>> {
     let obj = key.get();
     let ring = obj.ring.clone();
     let (n, qv) = (ring.n(), ring.q());
@@ -382,13 +436,20 @@ fn encrypt(py: Python<'_>, key: &Bound<'_, EncKeyObj>, w_rows: &Bound<'_, PyAny>
             return Err(PyValueError::new_err("one plaintext row per pk row"));
         }
         let need = gauss_bytes(n) * (2 + eta);
-        let rb = if rnd.is_none() { os_random(py, need)? } else { rnd.extract::<Vec<u8>>()? };
+        let mut rb = if rnd.is_none() {
+            let mut b = vec![0u8; need];
+            CallDrbg::new(seed.as_deref())?.fill(0, &mut b);
+            b
+        } else {
+            rnd.extract::<Vec<u8>>()?
+        };
         if rb.len() < need {
             return Err(PyValueError::new_err("not enough random bytes"));
         }
         let w: Vec<_> = rows.iter().flatten().map(|&v| r.m.reduce_u128(v)).collect();
         let (mut c0, mut c1) = (vec![Word::ZERO; eta * n], vec![Word::ZERO; n]);
         py.detach(|| rlwe::encrypt_chunk(r, k, &w, sigma2, sigma3, &rb, &mut c0, &mut c1));
+        rlwe::wipe_bytes(&mut rb);
         if binary {
             let mut out = Vec::new();
             let c0u: Vec<u128> = c0.iter().map(|v| v.to_u128()).collect();
@@ -451,20 +512,23 @@ fn materials_of(mats: &Bound<'_, PyAny>) -> PyResult<Option<Vec<Vec<u8>>>> {
 
 /// MCFE ndarray encryption of one layer (eta = 1); see pyfe4ai-core rlwe::encrypt_tensor.
 #[pyfunction]
-#[pyo3(signature = (key, x, pad_materials, sigma2, sigma3, rnd, threads, binary=false))]
+#[pyo3(signature = (key, x, pad_materials, sigma2, sigma3, rnd, threads, binary=false, seed=None))]
 #[allow(clippy::too_many_arguments)]
 fn encrypt_tensor(py: Python<'_>, key: &Bound<'_, EncKeyObj>, x: &Bound<'_, PyAny>, pad_materials: &Bound<'_, PyAny>,
-                  sigma2: f64, sigma3: f64, rnd: &Bound<'_, PyAny>, threads: usize, binary: bool) -> PyResult<Py<PyList>> {
+                  sigma2: f64, sigma3: f64, rnd: &Bound<'_, PyAny>, threads: usize, binary: bool,
+                  seed: Option<Vec<u8>>) -> PyResult<Py<PyList>> {
     let obj = key.get();
     let xs = int64_buffer(x)?;
     let mats = materials_of(pad_materials)?;
     let rb: Option<Vec<u8>> = if rnd.is_none() { None } else { Some(rnd.extract()?) };
+    let drbg = CallDrbg::new(seed.as_deref())?;
+    let stream = |c: usize, buf: &mut [u8]| drbg.fill(c as u64, buf);
     with_key!(obj, r, k => {
         let n = r.n;
         let chunks = if xs.is_empty() { 0 } else { (xs.len() + n - 1) / n };
         let outs: Vec<Mutex<Option<ChunkOut>>> = (0..chunks).map(|_| Mutex::new(None)).collect();
         let refs: Option<Vec<&[u8]>> = mats.as_ref().map(|m| m.iter().map(|v| v.as_slice()).collect());
-        py.detach(|| rlwe::encrypt_tensor(r, k, &xs, refs.as_deref(), sigma2, sigma3, randomness(&rb), threads,
+        py.detach(|| rlwe::encrypt_tensor(r, k, &xs, refs.as_deref(), sigma2, sigma3, randomness(&rb, &stream), threads,
             |j, c0, c1| *outs[j].lock().unwrap() = Some(chunk_out(r, binary, c0, c1))))
             .map_err(core_err)?;
         chunk_list(py, outs.into_iter().map(|m| m.into_inner().unwrap()).collect(), n, xs.len())
@@ -736,15 +800,20 @@ struct PrecomputedObj {
 }
 
 #[pyfunction]
+#[pyo3(signature = (key, pad_materials, sigma2, sigma3, rnd, threads, seed=None))]
+#[allow(clippy::too_many_arguments)]
 fn precompute_tensor(py: Python<'_>, key: &Bound<'_, EncKeyObj>, pad_materials: &Bound<'_, PyAny>, sigma2: f64,
-                     sigma3: f64, rnd: &Bound<'_, PyAny>, threads: usize) -> PyResult<PrecomputedObj> {
+                     sigma3: f64, rnd: &Bound<'_, PyAny>, threads: usize, seed: Option<Vec<u8>>)
+    -> PyResult<PrecomputedObj> {
     let obj = key.get();
     let mats = materials_of(pad_materials)?.unwrap_or_default();
     let refs: Vec<&[u8]> = mats.iter().map(|v| v.as_slice()).collect();
     let rb: Option<Vec<u8>> = if rnd.is_none() { None } else { Some(rnd.extract()?) };
+    let drbg = CallDrbg::new(seed.as_deref())?;
+    let stream = |c: usize, buf: &mut [u8]| drbg.fill(c as u64, buf);
     let pre = match (&*obj.ring, &obj.key) {
-        (AnyRing::W64(r), AnyKey::W64(k)) => AnyPre::W64(py.detach(|| rlwe::precompute(r, k, &refs, sigma2, sigma3, randomness(&rb), threads)).map_err(core_err)?),
-        (AnyRing::W128(r), AnyKey::W128(k)) => AnyPre::W128(py.detach(|| rlwe::precompute(r, k, &refs, sigma2, sigma3, randomness(&rb), threads)).map_err(core_err)?),
+        (AnyRing::W64(r), AnyKey::W64(k)) => AnyPre::W64(py.detach(|| rlwe::precompute(r, k, &refs, sigma2, sigma3, randomness(&rb, &stream), threads)).map_err(core_err)?),
+        (AnyRing::W128(r), AnyKey::W128(k)) => AnyPre::W128(py.detach(|| rlwe::precompute(r, k, &refs, sigma2, sigma3, randomness(&rb, &stream), threads)).map_err(core_err)?),
         _ => unreachable!(),
     };
     Ok(PrecomputedObj { key: key.clone().unbind(), pre: Mutex::new(pre) })
@@ -813,6 +882,7 @@ fn build_info(py: Python<'_>) -> PyResult<Py<PyAny>> {
     d.set_item("compiler", concat!("rustc (pyfe4ai-native ", env!("CARGO_PKG_VERSION"), ", pyo3)"))?;
     d.set_item("implementation", "rust")?;
     d.set_item("os_random", osrand::AVAILABLE)?;
+    d.set_item("sampling_randomness", "ChaCha20 per call, seeded from the OS")?;
     d.set_item("hardware_threads", std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1))?;
     Ok(d.into_any().unbind())
 }
@@ -831,6 +901,7 @@ fn _rust_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(decrypt_tensor, m)?, wrap_pyfunction!(pad_terms, m)?,
         wrap_pyfunction!(precompute_tensor, m)?, wrap_pyfunction!(encrypt_precomputed, m)?,
         wrap_pyfunction!(precomputed_info, m)?, wrap_pyfunction!(dense_dots, m)?, wrap_pyfunction!(build_info, m)?,
+        wrap_pyfunction!(drbg_bytes, m)?,
     ] {
         m.add_function(f)?;
     }

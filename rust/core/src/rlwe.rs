@@ -93,10 +93,43 @@ pub enum Error {
     Random(std::io::Error),
 }
 
-/// Random bytes: given, or from the OS (filled per chunk inside the workers).
+/// Random bytes of a tensor call: given (tests), from the OS (filled per chunk
+/// inside the workers), or from a stream per chunk -- `fill(c, buf)` fills chunk
+/// c's bytes from a stream no other chunk uses (the binding's per-call DRBG).
 pub enum Randomness<'a> {
     Given(&'a [u8]),
     Os,
+    Stream(&'a (dyn Fn(usize, &mut [u8]) + Sync)),
+}
+
+/// Overwrite a buffer of secret bytes before it is freed.
+pub fn wipe_bytes(buf: &mut [u8]) {
+    for b in buf.iter_mut() {
+        unsafe { std::ptr::write_volatile(b, 0) };
+    }
+    std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Chunk j's random bytes: a slice of the given ones, or `own` filled from the OS
+/// or the chunk's stream (the caller wipes `own` after use).
+fn chunk_bytes<'b>(rnd: &Randomness<'b>, j: usize, per: usize, own: &'b mut Vec<u8>)
+    -> Result<&'b [u8], std::io::Error>
+where
+    'b: 'b,
+{
+    match rnd {
+        Randomness::Given(b) => Ok(&b[per * j..per * (j + 1)]),
+        Randomness::Os => {
+            own.resize(per, 0);
+            osrand::fill(own)?;
+            Ok(own.as_slice())
+        }
+        Randomness::Stream(fill) => {
+            own.resize(per, 0);
+            fill(j, own);
+            Ok(own.as_slice())
+        }
+    }
 }
 
 /// The pad H_c = hash_to_zq_vector(material) plus u, mod q (MCFE w without x).
@@ -143,28 +176,25 @@ where
     }
     let failed = std::sync::Mutex::new(None);
     parallel_for(chunks, threads, |j| {
-        let own: Vec<u8>;
-        let rb: &[u8] = match rnd {
-            Randomness::Given(b) => &b[per * j..per * (j + 1)],
-            Randomness::Os => {
-                let mut fresh = vec![0u8; per];
-                if let Err(e) = osrand::fill(&mut fresh) {
-                    *failed.lock().unwrap() = Some(e);
-                    return;
-                }
-                own = fresh;
-                &own
-            }
-        };
-        let mut w = vec![W::ZERO; n];
-        pad_row(ring, u, materials.map(|m| m[j]), &mut w);
-        let k0 = j * n;
-        let kk = n.min(x.len() - k0);
-        for i in 0..kk {
-            w[i] = ring.m.add(w[i], ring.m.reduce_i128(x[k0 + i] as i128));
-        }
+        let mut own = Vec::new();
         let (mut c0, mut c1) = (vec![W::ZERO; n], vec![W::ZERO; n]);
-        encrypt_chunk(ring, key, &w, sigma2, sigma3, rb, &mut c0, &mut c1);
+        match chunk_bytes(&rnd, j, per, &mut own) {
+            Ok(rb) => {
+                let mut w = vec![W::ZERO; n];
+                pad_row(ring, u, materials.map(|m| m[j]), &mut w);
+                let k0 = j * n;
+                let kk = n.min(x.len() - k0);
+                for i in 0..kk {
+                    w[i] = ring.m.add(w[i], ring.m.reduce_i128(x[k0 + i] as i128));
+                }
+                encrypt_chunk(ring, key, &w, sigma2, sigma3, rb, &mut c0, &mut c1);
+            }
+            Err(e) => {
+                *failed.lock().unwrap() = Some(e);
+                return;
+            }
+        }
+        wipe_bytes(&mut own);
         emit(j, &c0, &c1);
     });
     if let Some(e) = failed.into_inner().unwrap() {
@@ -321,27 +351,22 @@ pub fn precompute<W: Word>(
     let data: Vec<std::sync::Mutex<Vec<W>>> = (0..chunks).map(|_| std::sync::Mutex::new(Vec::new())).collect();
     let failed = std::sync::Mutex::new(None);
     parallel_for(chunks, threads, |j| {
-        let mut own: Vec<u8> = Vec::new();
-        let rb: &[u8] = match rnd {
-            Randomness::Given(b) => &b[per * j..per * (j + 1)],
-            Randomness::Os => {
-                own = vec![0u8; per];
-                if let Err(e) = osrand::fill(&mut own) {
-                    *failed.lock().unwrap() = Some(e);
-                    return;
-                }
-                &own
-            }
-        };
-        let mut w = vec![W::ZERO; n];
-        pad_row(ring, u, Some(materials[j]), &mut w);
+        let mut own = Vec::new();
         let mut pc = vec![W::ZERO; 2 * n];
-        let (c0, c1) = pc.split_at_mut(n);
-        encrypt_chunk(ring, key, &w, sigma2, sigma3, rb, c0, c1);
-        *data[j].lock().unwrap() = pc;
-        for b in own.iter_mut() {  // the samples' bytes (empty when given)
-            unsafe { std::ptr::write_volatile(b, 0) };
+        match chunk_bytes(&rnd, j, per, &mut own) {
+            Ok(rb) => {
+                let mut w = vec![W::ZERO; n];
+                pad_row(ring, u, Some(materials[j]), &mut w);
+                let (c0, c1) = pc.split_at_mut(n);
+                encrypt_chunk(ring, key, &w, sigma2, sigma3, rb, c0, c1);
+            }
+            Err(e) => {
+                *failed.lock().unwrap() = Some(e);
+                return;
+            }
         }
+        wipe_bytes(&mut own); // the samples' bytes (empty when given)
+        *data[j].lock().unwrap() = pc;
     });
     if let Some(e) = failed.into_inner().unwrap() {
         return Err(Error::Random(e));
