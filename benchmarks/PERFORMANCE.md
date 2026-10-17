@@ -89,10 +89,10 @@ both apply, medians of 3 runs unless stated.
    are moved offline.
 6. **Single-vector label pads natively** (identical; 3.8 -> 2.9 ms per pad).
 
-Not done, needs a decision: packed ndarray ciphertexts for SIFE FullySec
-(3.65 MB per element now; a new ciphertext layout); FACCT as the native
-default (decided: stays opt-in). The native `discrete_gaussian_bigint` that
-reproduces the MPFR reference is the next section.
+Decided since: FACCT stays opt-in (rounded default; 2.7 vs 18.3 ms per
+client above); the native `discrete_gaussian_bigint` that reproduces the MPFR
+reference and the packed SIFE FullySec ciphertexts (two versions, opt-in) are
+the next sections.
 
 ## Native wide Gaussian (branch `perf/native-gaussian-bigint`, from `perf/phase2`)
 
@@ -157,6 +157,78 @@ conversion to `mpz` 8 ms; the rest is the scheme's Python code (strings, slot
 checks). FullySec setup and decryption do not draw wide Gaussians and are
 unchanged. Scheme-level timings with 4 threads were noisy (the sampling part
 scales as in the table).
+
+## SIFE FullySec Ring-LWE: packed ciphertexts, two versions (2026-10-18)
+
+Two opt-in ways to put up to `ring_n` vectors into one BMMS21 Sec. 5
+ciphertext (Remark 1), both on top of the native `discrete_gaussian_bigint`
+(91d0369); both keep the per-element layout as the default, unchanged, and
+read it:
+
+* **span** -- `perf/fullysec-packing-native`: `exp/fullysec-packing` (671d3ab,
+  `ndarray_layout="packed"`, records `bmms21-sec5-packed/v1`) merged with
+  91d0369. The statistical games G3*-G5* use the challenge only through the
+  span V of the differences `x1^j - x0^j`, so the complexity leveraging
+  ranges over the possible V, `(D + 1)(4X + 1)^(lD)` with `D = min(eta,
+  ring_n)`; G3 -> G4 decomposes along a basis of V (`sigma1` gains
+  `sqrt(D)`), and the Ring-LHL is applied once per basis vector.
+* **all pairs** -- `perf/fullysec-packed` (5222384, `batch = k | "auto"`,
+  records `bmms21-sec5-batch/v1`): the leveraging over all
+  `(2X + 1)^(2lk)` challenge pairs, as Remark 1 states it; it enters the
+  statistical steps only (Ring-LHL `delta` and `eps`, Lemma 1).
+
+**Decryption.** On both branches, column `j` of a packed ciphertext decrypts
+to what a one-vector ciphertext of column `j` decrypts to, under packed and
+under per-element keys, and that is `<x_j, y>`. The tests cover four toy
+configurations plus the standard ones: all three on the span branch, eta 1
+and eta 4 on the all-pairs branch. Its eta 10 case is checked by the
+assertions of the benchmark below.
+
+Standard profile, host (M2 Max, Python 3.13, Rust extension), medians of
+2 runs per variant. Other processes held the load average at 7-10, so the
+runs alternate between the variants. "Per element" means per vector of
+`eta` values. "Leveraging" is log2 of the number of guesses each argument
+pays for; it is `(2X + 1)^(2l)` for one vector per ciphertext.
+
+| configuration | layout | ring_n | m | log2 q | leveraging (bits) | compact B / el | JSON B / el | enc ms / el | dec ms / el | setup s (+ params) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| eta 1, X 100, Y 1 (10^4-element gradient, precision 2) | per element | 4096 | 19 | 111 | 15.3 | 1,146,880 | 3,042,891 | 144 | 92 | 0.17 (+0.11) |
+| | span | 4096 | 19 | 111 | 9.6 | 344 (280 per full ct) | 913 | 0.039 | 0.016 | 0.17 (+0.11) |
+| | all pairs | 8192 | 9 | 205 | 125,355 | 426 (260 per full ct) | 1,074 | 0.048 | 0.025 | 0.15 (+0.14) |
+| eta 4, X = Y = 4 (one full ciphertext) | per element | 4096 | 17 | 110 | 25.4 | 1,204,224 | 3,167,892 | 148 | 67 | 0.47 (+0.07) |
+| | span | 4096 | 18 | 111 | 67.7 | 308 | 817 | 0.041 | 0.018 | 0.58 (+0.09) |
+| | all pairs | 8192 | 9 | 218 | 207,744 | 364 | 903 | 0.042 | 0.016 | 0.54 (+0.13) |
+| eta 10, X = Y = 50 (one full ciphertext) | per element | 8192 | 8 | 218 | 133.2 | 4,128,768 | 10,244,005 | 422 | 135 | 1.14 (+0.10) |
+| | span | 8192 | 9 | 205 | 768.6 | 494 | 1,246 | 0.061 | 0.018 | 1.17 (+0.13) |
+| | all pairs | 16384 | 10 | 431 | 2,181,763 | 1,080 | 2,672 | 0.232 | 0.078 | 8.4 (+0.73) |
+
+How to read the table:
+* "Compact" is `(m + eta) ring_n ceil(log2 q / 8)` bytes per ciphertext.
+  The gradient's 10^4 elements fill three ciphertexts of 4096 or two of
+  8192, so the narrower chunks pad less.
+* Per ciphertext, enc / dec ms: eta 4, span 167 / 73, all pairs 347 / 135;
+  eta 10, span 498 / 147, all pairs 3803 / 1276. The all-pairs eta 10
+  modulus (431 bits) is beyond the native 2^253 words, so its NTTs run in
+  Python.
+* At eta 1 the two versions are close: span pads less over 10^4 elements;
+  all pairs is 7% smaller per full ciphertext, since its larger q comes
+  with fewer key polynomials. At eta 10 all pairs needs twice the ring,
+  2.2x the bytes and about 4x the time.
+* The span version relies on a new argument, under independent check and in
+  the code review below. The all-pairs version relies on the leveraging as
+  the paper states it, and on the reading that the leveraging enters only
+  the statistical steps.
+
+**Cryptographic code review scope.** Both versions go into the planned
+cryptographic code review:
+* span (671d3ab):
+  - the complexity leveraging over the span V of the differences, `(D + 1)(4X + 1)^(lD)`;
+  - G3 -> G4 along a basis of V (Lemma 1 for `sigma1^2 I - sigma'^2 B B^T`);
+  - the Ring-LHL once per basis vector (`delta` with `log2 D`);
+  - the changed m and q: eta 4, m 17 -> 18 and q 110 -> 111 bits; eta 10, m 8 -> 9 and q 218 -> 205 bits.
+* all pairs (5222384):
+  - the leveraging over `(2X + 1)^(2lk)`, and that it enters only Theorem 2's `delta` and `eps` and Lemma 1's smoothing parameter, not Theorem 1;
+  - the resulting m, q and ring_n.
 
 ## Workload and method
 
