@@ -326,6 +326,9 @@ pub fn encrypt_tensor(py: Python<'_>, key: &Bound<'_, RnsKeyObj>, x: &Bound<'_, 
 pub struct RnsPreObj {
     key: Py<RnsKeyObj>,
     pre: Mutex<RnsPrecomputed>,
+    /// The process that made it: after a fork the child's copy is unused too,
+    /// and using it there would encrypt another input with the same r and noise.
+    pid: u32,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -342,7 +345,7 @@ pub fn precompute_tensor(py: Python<'_>, key: &Bound<'_, RnsKeyObj>, pad_materia
         py.detach(|| rns::precompute(&obj.ring, &obj.key, &refs, sigma2, sigma3, &noise, randomness(&rb, &stream),
             threads)).map_err(core_err)?
     });
-    Ok(RnsPreObj { key: key.clone().unbind(), pre: Mutex::new(pre) })
+    Ok(RnsPreObj { key: key.clone().unbind(), pre: Mutex::new(pre), pid: std::process::id() })
 }
 
 /// The precomputation's lock, waited for detached from the interpreter: the call
@@ -357,6 +360,9 @@ pub fn encrypt_precomputed(py: Python<'_>, key: &Bound<'_, RnsKeyObj>, pre: &Bou
     let p = pre.cast::<RnsPreObj>().map_err(|_| PyValueError::new_err("precomputed with another key"))?.borrow();
     if !p.key.bind(py).is(key) {
         return Err(PyValueError::new_err("precomputed with another key"));
+    }
+    if p.pid != std::process::id() {
+        return Err(PyValueError::new_err("precomputed in another process (a fork): one-time, use it there only"));
     }
     let xs = int64_buffer(x)?;
     let obj = key.get();

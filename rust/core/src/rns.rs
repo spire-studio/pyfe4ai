@@ -576,7 +576,7 @@ where
         return Err(Error::Input("x must be non-empty"));
     }
     let chunks = (x.len() + n - 1) / n;
-    if first + chunks > pre.chunks() {
+    if first.checked_add(chunks).map_or(true, |end| end > pre.chunks()) {
         return Err(Error::Input("the precomputation does not cover these chunks"));
     }
     if pre.used[first..first + chunks].iter().any(|&u| u) {
