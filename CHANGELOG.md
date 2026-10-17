@@ -32,6 +32,19 @@ compatibility).
 - MCFE Ring-LWE 10^4-element FL round (standard profile, 3 clients): client
   230 -> about 3.5 ms, aggregator 368 -> about 9.5 ms in a single thread
   (Linux, binary ciphertexts); see `benchmarks/PERFORMANCE.md`.
+- **Threshold Ring-LWE MCFE natively under `standard`**: 256-bit words in
+  `rust/core` for moduli up to 2^253 (the flooded `q` has 212 bits at
+  `ring_n` 8192, beyond the 125-bit words), so its encryption and key
+  derivation run natively; so do the Shamir sharing of the key, the parsing,
+  digests and NTT-domain products of a partial decryption, and the
+  combination, with the values of the Python code (Shamir coefficients drawn
+  as `SystemRandom.randrange(0, q)` draws them, from the per-call DRBG). The
+  flooding noise is still `discrete_gaussian_bigint`, drawn in one call per
+  polynomial (same draws); ciphertext tags are serialised once for all
+  servers (same tags). 10^4 elements, 3 clients, `s = 3`, `t = 2` (host):
+  client 213.5 -> 19.6 ms, key shares 276 -> 41 ms, partial decryption 528 ->
+  211 ms per server (three quarters of it the flooding sampler), combination
+  18.0 -> 4.3 ms.
 - **Pairings on BLS12-381 in Rust** (arkworks; `pyfe4ai.utils.bls12_381`
   behind charm's `PairingGroup` interface): a pairing takes 0.9 ms (charm:
   MNT224 2.4 ms, BN254 13.7 ms), G2 exponentiation 0.4 ms (3.2 / 0.9 ms).
