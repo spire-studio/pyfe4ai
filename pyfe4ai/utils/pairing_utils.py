@@ -10,6 +10,7 @@ import math
 
 import gmpy2 as gp
 
+from pyfe4ai.utils import bls12_381 as _bls
 from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup, pair
 
 
@@ -146,6 +147,12 @@ def bounded_discrete_log_gt(group: PairingGroup, base, target, bound: int) -> in
     """
     if bound < 0:
         raise ValueError("bound must be non-negative")
+    if _bls.is_element(base):
+        # BLS12-381: baby-step table in Rust, built once per (base, bound)
+        found = _bls.gt_dlog(base, target, bound)
+        if found is None:
+            raise ValueError("discrete log not found within configured bound")
+        return found
     identity = group.init(GT, 1)
     if target == identity:
         return 0

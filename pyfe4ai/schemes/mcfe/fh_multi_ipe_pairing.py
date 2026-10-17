@@ -9,7 +9,7 @@ Function-hiding multi-client inner-product FE over pairings.
 | SXDH in the random-oracle model.
 
 * type:     multi-client encryption with function-hiding keys (FH-MCFE)
-* setting:  asymmetric pairing group (default MNT224), random oracle
+* setting:  asymmetric pairing group (default BLS12-381), random oracle
 
 Each client ``i`` holds the master key ``imsk_i`` of an independent
 function-hiding IPFE (:mod:`pyfe4ai.schemes.mcfe.fh_ipe`):
@@ -42,7 +42,7 @@ from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.mcfe.fh_ipe import FHIPE
 from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
 from pyfe4ai.schemes.mcfe.labels import encode_label
-from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup
+from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup, deserialize_many, pow_many
 from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
@@ -84,6 +84,9 @@ class FHContext:
     def de(self, text: str):
         return self.group.deserialize(text.encode("utf-8"))
 
+    def de_many(self, texts: list) -> list:
+        return deserialize_many(self.group, texts)
+
     def h1(self, tag) -> object:
         return self.group.hash(_H1_DOMAIN + encode_label(tag), G1)
 
@@ -93,12 +96,12 @@ class FHContext:
     def x_hat(self, x: list, slot_scalar_elem) -> list:
         """``[(x, s, 0, 0^eta, 0, 0)]_1`` with the scalar slot given as a G1 element."""
         one = self.fhipe.identity1()
-        return [self.g1 ** self.zr(v) for v in x] + [slot_scalar_elem] + [one] * (self.eta + 3)
+        return pow_many(self.g1, x, self.group) + [slot_scalar_elem] + [one] * (self.eta + 3)
 
     def y_hat(self, y: list, slot_scalar_elem) -> list:
         """``[(y, s, 0, 0^eta, 0, 0)]_2`` with the scalar slot given as a G2 element."""
         one = self.fhipe.identity2()
-        return [self.g2 ** self.zr(v) for v in y] + [slot_scalar_elem] + [one] * (self.eta + 3)
+        return pow_many(self.g2, y, self.group) + [slot_scalar_elem] + [one] * (self.eta + 3)
 
     @staticmethod
     def serialise_msk(msk: dict, encrypt_only: bool = False) -> dict:
@@ -130,9 +133,7 @@ class FHContext:
         return {"k": [self.ser(v) for v in key], "z": self.ser(self.fhipe.gt ** self.zr(z_sum))}
 
     def partial(self, ct: dict, key_entry: dict):
-        return self.fhipe.decrypt(
-            [self.de(v) for v in ct["ct"]], [self.de(v) for v in key_entry["k"]], self.de(key_entry["z"])
-        )
+        return self.fhipe.decrypt(self.de_many(ct["ct"]), self.de_many(key_entry["k"]), self.de(key_entry["z"]))
 
     def solve(self, value) -> int | None:
         bound = int(self.pp["n"] * self.eta * gp.mpz(self.pp["bound_x"]) * gp.mpz(self.pp["bound_y"]))
@@ -151,7 +152,7 @@ class MCFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator):
 
         Args:
             config: ``n``, ``lst_nid``, ``eta``, ``bound_x``, ``bound_y`` and
-                ``pairing_group_param`` (asymmetric, default MNT224). The keys
+                ``pairing_group_param`` (asymmetric, default BLS12-381). The keys
                 ``sec_level``, ``u_bound`` and ``label_modulus`` of versions
                 <= 0.2.0 are ignored.
         """

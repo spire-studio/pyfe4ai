@@ -22,6 +22,68 @@ compatibility).
   Cached parameters of these schemes are re-derived (construction
   `acfgu18-bmms21/v5`).
 
+### Performance
+
+- **Native backend** in Rust (`pyfe4ai._rust_native`, PyO3; sources in
+  `rust/`, `rust/core` has no dependencies), built by `pip install` when
+  cargo is available or by `tools/build_rust.py`.
+  `pyfe4ai.utils.native_backend` selects `auto` / `python` / `native`
+  (`PYFE4AI_BACKEND`) and threads (`PYFE4AI_THREADS`): Ring-LWE MIFE / MCFE
+  encryption, decryption and key derivation of a whole tensor per call, with
+  the GIL released and optional threads; dense-LWE MCFE label hashing and
+  dot products; ristretto255; BLS12-381 (below). Same outputs as the Python code
+  (checked bit for bit by the tests); Python fallback for unsupported
+  parameters.
+- **Sampling randomness of the native backend**: each tensor call expands one
+  32-byte OS seed with ChaCha20, one stream per chunk, and wipes seed and
+  states at its end (no state across calls); before, every sample byte was
+  read from the OS. Same distribution. ChaCha20 is not an SP 800-90A DRBG
+  (relevant only to FIPS validation). The Python code still reads the OS
+  for every byte. Faster on macOS (0.4-0.6 ms per 10^4
+  elements, `getentropy`), unchanged on Linux (`getrandom` is cheap).
+- Ring-LWE in Python: `NTT(a)`, `NTT(pk)` and `NTT(sk_y)` cached, `r`
+  transformed once, decryption products summed in the NTT domain (same
+  outputs). Dense-LWE MCFE: keys parsed once per object.
+- MCFE Ring-LWE 10^4-element FL round (standard profile, 3 clients): client
+  230 -> about 3.5 ms, aggregator 368 -> about 9.5 ms in a single thread
+  (Linux, binary ciphertexts); see `benchmarks/PERFORMANCE.md`.
+- **Threshold Ring-LWE MCFE natively under `standard`**: 256-bit words in
+  `rust/core` for moduli up to 2^253 (the flooded `q` has 212 bits at
+  `ring_n` 8192, beyond the 125-bit words), so its encryption and key
+  derivation run natively; so do the Shamir sharing of the key, the parsing,
+  digests and NTT-domain products of a partial decryption, and the
+  combination, with the values of the Python code (Shamir coefficients drawn
+  as `SystemRandom.randrange(0, q)` draws them, from the per-call DRBG). The
+  flooding noise is still `discrete_gaussian_bigint`, drawn in one call per
+  polynomial (same draws); ciphertext tags are serialised once for all
+  servers (same tags). 10^4 elements, 3 clients, `s = 3`, `t = 2` (host):
+  client 213.5 -> 19.6 ms, key shares 276 -> 41 ms, partial decryption 528 ->
+  211 ms per server (three quarters of it the flooding sampler), combination
+  18.0 -> 4.3 ms.
+- **Pairings on BLS12-381 in Rust** (arkworks; `pyfe4ai.utils.bls12_381`
+  behind charm's `PairingGroup` interface): a pairing takes 0.9 ms (charm:
+  MNT224 2.4 ms, BN254 13.7 ms), G2 exponentiation 0.4 ms (3.2 / 0.9 ms).
+  Products of pairings take one final exponentiation (`multi_pair`; a
+  product of 8: 2.6 ms, charm MNT224 19.4 ms). The bounded discrete log in
+  GT keeps its baby-step table per base and bound. SGP decryption pairs
+  `a_i` with `prod_j b_j^{F_ij}` (2 n + 1 pairings instead of 2 n^2 pairings
+  and n^2 GT exponentiations). End to end (`report` profile) SGP 320 -> 36
+  ms, Quad 506 -> 67 ms, MIFE / MCFE / dMCFE / tMCFE FH-Multi-IPE 425 /
+  889 / 945 / 1565 -> 25 / 82 / 79 / 136 ms (charm MNT224 in Docker before,
+  same Mac).
+- **Products of powers on BLS12-381 in one native call**: every product of
+  powers in the pairing schemes is one multi-scalar multiplication (Straus
+  over the GLV decomposition in G1 / G2, Pippenger from 512 terms, a
+  Frobenius decomposition of the exponent in GT), powers of one base share
+  one table, and vectors of group elements are decoded in one call (equal
+  encodings once). Single exponentiations: G2 0.37 -> 0.16 ms (arkworks
+  used plain double-and-add in G2), GT 0.49 -> 0.22 ms; GT deserialisation
+  0.81 -> 0.08 ms (membership by `f^p = f^u` in the cyclotomic subgroup
+  instead of `f^r = 1`). Keys and ciphertexts are unchanged; charm groups
+  keep the loops. End to end (`report`, host): MIFE / MCFE / dMCFE / tMCFE
+  FH-Multi-IPE 24 / 79 / 79 / 138 -> 18 / 47 / 48 / 70 ms, SGP 35 -> 30 ms,
+  Quad 65 -> 48 ms (setup 16 -> 6 ms); see `benchmarks/PERFORMANCE.md`.
+
 ### Added
 
 - Opt-in exact discrete Gaussian sampler `"facct"`
@@ -38,6 +100,50 @@ compatibility).
 - `benchmarks/benchmark_sampling.py`: rounded vs exact sampler, per width
   and (`--e2e`) per MCFE Ring-LWE round.
 
+- `ct_format="binary"` for Ring-LWE MIFE / MCFE ciphertexts (crypto config;
+  `FESchemeWrapper(crypto_options=...)`): a versioned compact encoding, 37%
+  of the JSON size. JSON stays the default; decryption reads both.
+- Offline / online MCFE Ring-LWE: `MCFERingLWE.precompute(label, shapes)` and
+  `encrypt_lst_ndarray(..., precomputed=...)`; ML adapter
+  `precompute_gradient`, `encrypt_gradient(precomputed=...)`,
+  `prepare_aggregation` and `aggregate_gradients(prepared=...)`.
+- `benchmarks/bench_fl_compare.py` (per-family FL timings as JSON) and
+  `benchmarks/bench_offline_potential.py`.
+- `pyfe4ai.utils.pairing_backend.multiexp(bases, exps, group=None)`,
+  `pow_many(base, exps, group=None)` and `deserialize_many(group,
+  encodings)`, native on BLS12-381 and loops on charm groups;
+  `PairingGroup.deserialize_many` on BLS12-381.
+- `sife/`, `mife/`, `mcfe/ddh_ristretto255` (status *unreviewed*): the DDH
+  constructions in the prime-order group ristretto255 (RFC 9496; labels
+  hashed with RFC 9380 `hash_to_ristretto255`), selected with
+  `group="ristretto255"` on the `ddh` variants. About 126-bit security;
+  0.07 ms per element and client for MCFE on the Rust backend (3072-bit
+  group: 10.8 ms), 75 instead of 936 bytes per element.
+
+### Changed
+
+- **Pairing groups (breaking for pairing keys and ciphertexts):** every
+  pairing-based scheme (SIFE FH-IPE and partial FH-IPE, MIFE FH-IPE and
+  FH-Multi-IPE, MCFE / dMCFE / tMCFE FH-Multi-IPE, Quad, SGP, MIQFE) now
+  defaults to **BLS12-381** from the Rust extension, under both profiles.
+  The `toy` default was MNT224 (charm): toy pairing keys, public parameters
+  and ciphertexts of earlier versions are not readable any more (pass
+  `pairing_group_param="MNT224"` to keep using them with charm installed).
+  The `standard` profile uses BLS12-381 instead of BN254 (about 100-bit) and
+  still warns, since BLS12-381 gives about 120-126 bits after the exTNFS
+  attacks on its 381-bit field (Barbulescu and Duquesne, J. Cryptol. 2019):
+  `FESecurityWarning: <family>/<variant>: BLS12-381 gives about 120 to
+  126-bit security after the exTNFS attacks, below the 128-bit target of the
+  'standard' profile`. charm-crypto stays the backend of every other curve
+  (MNT224, BN254, ...) and is no longer needed for the defaults.
+- `group.hash(msg, G1 | G2)` on BLS12-381 is the RFC 9380 hash_to_curve
+  (BLS12381G1/G2_XMD:SHA-256_SSWU_RO_, domain tag
+  `PYFE4AI-V01-CS01-with-...`), used by the FH-MCFE label hashes.
+- The pairing-scheme tests run on `PYFE4AI_TEST_PAIRING_GROUP` (default
+  BLS12-381) and skip when no backend implements it.
+- The `ddh` key generators refuse a `group` other than `"modp"` instead of
+  ignoring it.
+
 ### Fixed
 
 - `EncryptedGradient.to_dict()` failed with `KeyError: ()` on the packed
@@ -51,6 +157,7 @@ compatibility).
   elements, and only a layer's last chunk shorter than the others.
   `to_dict()` raises `TypeError` for chunks holding `bytes` (a binary
   ciphertext format has no JSON form).
+
 
 ## [0.3.0] — 2026-10-13
 

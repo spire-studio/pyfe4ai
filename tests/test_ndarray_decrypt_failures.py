@@ -52,6 +52,9 @@ def _fail_second_element(monkeypatch, cls):
     if hasattr(cls, "_decrypt_with_key_term"):  # Ring-LWE MCFE: one call per packed chunk
         name = "_decrypt_with_key_term"
         original = getattr(cls, name)
+        # the Python path (the native one decrypts a whole layer per call;
+        # tests/test_native_backend.py covers its failures)
+        monkeypatch.setattr(cls, "_native", lambda self: None)
 
         def fake(self, *args, **kwargs):
             values = list(original(self, *args, **kwargs))
@@ -60,6 +63,8 @@ def _fail_second_element(monkeypatch, cls):
     else:
         name = "_decode" if cls.__module__.endswith("sife.lwe") else "decrypt"
         original = getattr(cls, name)
+        if hasattr(cls, "_native_dots"):  # dense-LWE MCFE: the per-element Python path
+            monkeypatch.setattr(cls, "_native_dots", lambda self: False)
         calls = []
 
         def fake(self, *args, **kwargs):
@@ -124,13 +129,15 @@ def test_compute_linear_reports_a_result_that_does_not_decrypt(monkeypatch):
 
 
 def test_pairing_ndarray_helpers_raise_instead_of_nan(monkeypatch):
-    pytest.importorskip("charm", reason="charm-crypto not installed")
+    from tests.pairing_group import GROUP, skip_unless_available
+
+    skip_unless_available()
     from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPE
     from pyfe4ai.schemes.quadratic.quad import QuadraticQuad, QuadraticQuadKeyGenerator
     from pyfe4ai.schemes.quadratic.sgp import QuadraticSGP, QuadraticSGPKeyGenerator
 
     # MIFE FH-Multi-IPE
-    cfg = {"sec_param": 64, "sec_level": 2, "bound_x": 5, "bound_y": 5, "pairing_group_param": "MNT224", **_MULTI}
+    cfg = {"sec_param": 64, "sec_level": 2, "bound_x": 5, "bound_y": 5, "pairing_group_param": GROUP, **_MULTI}
     wrapper = FESchemeWrapper("mife", "fh_multi_ipe_pairing", cfg, precision=0)
     dct_ct = {nid: wrapper._get_encryptor(nid).encrypt_lst_ndarray([GRADIENT]) for nid in NIDS}
     weights = {nid: [1] for nid in NIDS}
@@ -147,7 +154,7 @@ def test_pairing_ndarray_helpers_raise_instead_of_nan(monkeypatch):
         (QuadraticQuadKeyGenerator, QuadraticQuad, {"n": 2, "m": 2}),
         (QuadraticSGPKeyGenerator, QuadraticSGP, {"n": 2}),
     ):
-        kg = kg_cls({"sec_param": 64, "bound": 50, "pairing_group_param": "MNT224", **cfg})
+        kg = kg_cls({"sec_param": 64, "bound": 50, "pairing_group_param": GROUP, **cfg})
         kg.setup()
         pp = kg.get_public_parameters()
         ct = crypto_cls({"keys": {"pp": pp}, "precision": 0}).encrypt_lst_ndarray(x_lst, rhs_lst_ndarray=y_lst)

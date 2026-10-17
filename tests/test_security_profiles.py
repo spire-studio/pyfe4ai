@@ -135,12 +135,13 @@ def test_standard_refuses_schemes_without_a_feasible_parameter_set(scheme):
         profiles.resolve(dict(STANDARD), scheme)
 
 
-def test_standard_pairing_uses_bn254_and_warns():
-    with pytest.warns(FESecurityWarning, match="100-bit"):
+def test_standard_pairing_uses_bls12_381_and_warns():
+    with pytest.warns(FESecurityWarning, match="120 to 126-bit"):
         out = profiles.resolve(dict(STANDARD), ("quadratic", "miqfe"))
-    assert out["pairing_group_param"] == "BN254"
-    with pytest.raises(FEValidationError, match="BN254"):
-        profiles.resolve({**STANDARD, "pairing_group_param": "MNT224"}, ("sife", "fh_ipe_pairing"))
+    assert out["pairing_group_param"] == "BLS12-381"
+    for other in ("MNT224", "BN254"):
+        with pytest.raises(FEValidationError, match="BLS12-381"):
+            profiles.resolve({**STANDARD, "pairing_group_param": other}, ("sife", "fh_ipe_pairing"))
 
 
 def test_unregistered_key_generator_has_no_standard_parameters():

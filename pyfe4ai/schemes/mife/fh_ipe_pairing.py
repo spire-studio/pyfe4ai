@@ -7,7 +7,7 @@ Function-hiding multi-input inner-product FE over pairings.
 | of Fig. 11, with ``k = 1`` (SXDH) and the LV16 padding of Appendix B.
 
 * type:     private-key multi-input encryption with function-hiding keys
-* setting:  asymmetric pairing group (default MNT224)
+* setting:  asymmetric pairing group (default BLS12-381)
 
 Slot ``i`` has the master key ``msk_i`` of a function-hiding IPFE
 (:class:`pyfe4ai.schemes.mcfe.fh_ipe.FHIPE`, which contains the inner
@@ -41,7 +41,7 @@ from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.mcfe.fh_ipe import FHIPE
 from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import FHContext
 from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup
+from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup, deserialize_many, pow_many
 from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
@@ -71,6 +71,9 @@ class _Group:
     def de(self, text: str):
         return self.group.deserialize(text.encode("utf-8"))
 
+    def de_many(self, texts: list) -> list:
+        return deserialize_many(self.group, texts)
+
 
 class MIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator):
     """Key generator for the ACFGU18 function-hiding MIFE."""
@@ -82,7 +85,7 @@ class MIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator):
 
         Args:
             config: ``n``, ``lst_nid``, ``eta``, ``bound_x``, ``bound_y`` and
-                ``pairing_group_param`` (asymmetric, default MNT224).
+                ``pairing_group_param`` (asymmetric, default BLS12-381).
         """
         super().__init__(config, **kwargs)
         require_pairing_backend()
@@ -141,7 +144,7 @@ class MIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator):
         z_total, dk = 0, {}
         for nid in self.lst_nid:
             y = int_vector(fusion_weight[nid], "fusion weight of " + nid, length=self.eta, bound=self.bound_y)
-            key, z_i = ctx.fhipe.keygen(self.msk[nid], [ctx.g2 ** ctx.zr(v) for v in y], r=r)
+            key, z_i = ctx.fhipe.keygen(self.msk[nid], pow_many(ctx.g2, y, ctx.group), r=r)
             dk[nid] = [ctx.ser(v) for v in key]
             z_total = (z_total + z_i) % ctx.fhipe.order
         return {
@@ -169,7 +172,7 @@ class MIFEFHIPE(IPFEAbsCrypto):
             raise FEKeyError("no encryption key provided")
         x = int_vector(lst_pt, "plaintext", length=self.pp["eta"], bound=self.pp["bound_x"])
         ctx = self.ctx
-        ct = ctx.fhipe.encrypt(self.imsk, [ctx.g1 ** ctx.zr(v) for v in x])
+        ct = ctx.fhipe.encrypt(self.imsk, pow_many(ctx.g1, x, ctx.group))
         return {"ct": [ctx.ser(v) for v in ct]}
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict | None = None):
@@ -188,9 +191,7 @@ class MIFEFHIPE(IPFEAbsCrypto):
         ctx = self.ctx
         acc = ctx.group.init(GT, 1)
         for nid, ct in dct_ct.items():
-            acc *= ctx.fhipe.decrypt(
-                [ctx.de(v) for v in ct["ct"]], [ctx.de(v) for v in dk["dk"][nid]], ctx.group.init(GT, 1)
-            )
+            acc *= ctx.fhipe.decrypt(ctx.de_many(ct["ct"]), ctx.de_many(dk["dk"][nid]), ctx.group.init(GT, 1))
         acc /= ctx.de(dk["z"])
         bound = int(self.pp["n"] * self.pp["eta"] * gp.mpz(self.pp["bound_x"]) * gp.mpz(self.pp["bound_y"]))
         try:

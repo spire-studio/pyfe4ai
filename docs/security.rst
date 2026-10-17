@@ -35,8 +35,9 @@ Security profiles
 The ``security_profile`` entry of a key generator's config selects its
 parameters: ``"toy"`` (the default) is fast and **not secure**;
 ``"standard"`` aims at 128-bit classical security and refuses explicit
-values below it. Its exceptions: the pairing-based schemes run on BN254,
-about 100-bit (with a :class:`~pyfe4ai.utils.exceptions.FESecurityWarning`),
+values below it. Its exceptions: the pairing-based schemes run on
+BLS12-381, about 120-126-bit after the exTNFS attacks (with a
+:class:`~pyfe4ai.utils.exceptions.FESecurityWarning`),
 and ``sife/fullysec_lwe``, ``mife/fullysec_lwe`` (ALS16) and
 ``mcfe/paillier_decentralized`` are refused. :mod:`pyfe4ai.schemes.profiles`
 below gives the parameters per family, including ``matrix_mode`` for the

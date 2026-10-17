@@ -8,7 +8,7 @@ Decentralized function-hiding multi-client inner-product FE over pairings.
 | under SXDH in the random-oracle model, static corruptions.
 
 * type:     decentralised multi-client encryption with function-hiding keys
-* setting:  asymmetric pairing group (default MNT224), random oracle
+* setting:  asymmetric pairing group (default BLS12-381), random oracle
 
 Setup samples one FH-IPFE master key ``imsk_i`` per client
 (:mod:`pyfe4ai.schemes.mcfe.fh_ipe`) and a sharing ``t~_1 + ... + t~_n = 0``:

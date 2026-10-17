@@ -17,6 +17,7 @@ import gmpy2 as gp
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator, ParameterCacheMixin
 from pyfe4ai.utils.crypto_utils import group_generator_fe, is_dl_group
 from pyfe4ai.utils.crypto_utils import hash_to_qr_group
+from pyfe4ai.utils.exceptions import FEValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,16 @@ class DDHKeyGeneratorBase(IPFEAbsKeyGenerator, ParameterCacheMixin):
     """
 
     _verify_keys: tuple[str, ...] = ()
+
+    def __init__(self, config: dict, **kwargs) -> None:
+        super().__init__(config, **kwargs)
+        group = config.get("group", "modp")
+        if group != "modp":
+            # the elliptic-curve instantiation is a scheme of its own
+            raise FEValidationError(
+                "{} runs in a Z_p^* subgroup (group='modp'), got group={!r}; ristretto255 is "
+                "the variant ddh_ristretto255".format(type(self).__name__, group)
+            )
 
     def _apply_parameters(self, param: dict) -> None:
         self.p = gp.mpz(param["group"]["p"])

@@ -55,7 +55,7 @@ from pyfe4ai.schemes.threshold_utils import validate_partial_decryptions
 from pyfe4ai.schemes.threshold_utils import validate_threshold
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.pairing_backend import GT, ZR, pair
+from pyfe4ai.utils.pairing_backend import GT, ZR, multi_pair, pow_many
 
 logger = logging.getLogger(__name__)
 
@@ -157,13 +157,18 @@ class ThresholdMCFEFHMultiIPEKeyGenerator(MCFEFHMultiIPEKeyGenerator):
         sid_v = share_points(self.lst_sid)
         points = list(sid_v.values())
 
-        def share(value, base) -> dict:
+        def share(values: list, base) -> list:
             # in the exponent only: shares in Z_p would let t servers solve for y
-            sh = share_secret(value, self.t, points, order)
-            return {sid: ctx.ser(base ** ctx.zr(sh[sid_v[sid]])) for sid in self.lst_sid}
+            shares = [share_secret(value, self.t, points, order) for value in values]
+            powers = iter(pow_many(base, [sh[sid_v[sid]] for sh in shares for sid in self.lst_sid], ctx.group))
+            return [{sid: ctx.ser(next(powers)) for sid in self.lst_sid} for _ in shares]
 
-        k_shares = {nid: [share(v, ctx.g2) for v in e] for nid, e in exps.items()}
-        z_shares = share(z_total, ctx.fhipe.gt)
+        flat = share([v for e in exps.values() for v in e], ctx.g2)
+        k_shares, pos = {}, 0
+        for nid, e in exps.items():
+            k_shares[nid] = flat[pos:pos + len(e)]
+            pos += len(e)
+        z_shares = share([z_total], ctx.fhipe.gt)[0]
         key_id = secrets.token_hex(16)
         return {
             sid: {
@@ -230,14 +235,14 @@ class ThresholdMCFEFHMultiIPE(MCFEFHMultiIPE):
         lam = int(lagrange_coefficient_at_zero(
             sid_v[self.id], [sid_v[s] for s in lst_sid_enrolled], ctx.order
         ))
-        acc = ctx.group.init(GT, 1)
+        lhs, rhs = [], []
         for nid, ct in dict_ct.items():
             shares = dk["k"][nid]
             if len(ct["ct"]) != len(shares):
                 raise FESchemeError("ciphertext of {} has the wrong length".format(nid))
-            for c, k in zip(ct["ct"], shares):
-                acc *= pair(ctx.de(c), ctx.de(k))
-        acc = (acc / ctx.de(dk["z"])) ** ctx.zr(lam)
+            lhs.extend(ctx.de_many(ct["ct"]))
+            rhs.extend(ctx.de_many(shares))
+        acc = (multi_pair(lhs, rhs) / ctx.de(dk["z"])) ** ctx.zr(lam)
         ct_digest = ciphertexts_digest({nid: _tag_payload(nid, ct) for nid, ct in dict_ct.items()})
         return {
             "w": ctx.ser(acc),

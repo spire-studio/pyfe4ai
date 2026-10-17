@@ -3,7 +3,9 @@ import random
 import numpy as np
 import pytest
 
-pytest.importorskip("charm", reason="charm-crypto not installed")
+from tests.pairing_group import GROUP, skip_unless_available  # noqa: E402
+
+skip_unless_available()
 
 from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import DecentralizedMCFEFHMultiIPE
 from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import DecentralizedMCFEFHMultiIPEKeyGenerator
@@ -19,7 +21,7 @@ def kg_config():
         "lst_nid": ["nid_0", "nid_1", "nid_2"],
         "bound_x": 4,
         "bound_y": 4,
-        "pairing_group_param": "MNT224",
+        "pairing_group_param": GROUP,
     }
 
 
@@ -179,7 +181,7 @@ def test_a_corrupted_client_cannot_test_guesses_of_the_honest_weights():
     import itertools
 
     cfg = {"n": 3, "lst_nid": ["a", "b", "c"], "eta": 1, "bound_x": 3, "bound_y": 1,
-           "pairing_group_param": "MNT224"}
+           "pairing_group_param": GROUP}
     kg = DecentralizedMCFEFHMultiIPEKeyGenerator(cfg)
     kg.setup()
     pp, clients = _clients(kg, cfg)
@@ -217,6 +219,7 @@ def test_wrong_tag_does_not_decrypt(kg_config):
 
 
 def test_symmetric_group_rejected(kg_config):
+    pytest.importorskip("charm", reason="SS512 is a charm-crypto group")
     from pyfe4ai.utils.exceptions import FEValidationError
 
     with pytest.raises(FEValidationError, match="symmetric"):

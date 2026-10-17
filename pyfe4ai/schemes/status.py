@@ -61,11 +61,18 @@ _S = "pyfe4ai.schemes."
 
 _FH_IPE_NOTE = (
     "FH-IPFE = ACFGU18 Fig. 12 (n = 1, SXDH) with LV16 padding; asymmetric "
-    "pairing (default MNT224); keys carry a random id, never a digest of y"
+    "pairing (default BLS12-381); keys carry a random id, never a digest of y"
 )
 _FIG14_NOTE = (
     "MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) "
     "are sampled in-process"
+)
+
+_R255_NOTE = (
+    "ristretto255 (RFC 9496, about 126-bit security: Pollard rho in a group of order 2^252) "
+    "instead of a 3072-bit Z_p^* subgroup; {}group arithmetic in Rust (curve25519-dalek) "
+    "with the native extension, else in pure Python and not constant-time; new code, "
+    "not yet reviewed"
 )
 
 #: Review status of every registered ``(family, variant)``: the single source
@@ -77,6 +84,10 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     ("sife", "ddh"): SchemeStatus(
         _S + "sife.ddh", REVIEWED, FAITHFUL, "ABDP15 Construction 1 (DDH)",
         note="signed x, y; decryption bound dlog_bound (default 10^(precision + 2))",
+    ),
+    ("sife", "ddh_ristretto255"): SchemeStatus(
+        _S + "sife.ddh_ristretto255", UNREVIEWED, UNKNOWN, "ABDP15 Construction 1 (DDH) in ristretto255",
+        note=_R255_NOTE.format(""),
     ),
     ("sife", "lwe"): SchemeStatus(
         _S + "sife.lwe", REVIEWED, ADAPTED, "ABDP15 Constructions 2 + 3 (LWE)",
@@ -135,6 +146,10 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         note="ACFGU18 instantiates Fig. 4 with ALS16; here the selectively secure "
         "ABDP15 IPFE in every slot",
     ),
+    ("mife", "ddh_ristretto255"): SchemeStatus(
+        _S + "mife.ddh_ristretto255", UNREVIEWED, UNKNOWN, "ACFGU18 Fig. 4 + ABDP15 (DDH) in ristretto255",
+        note=_R255_NOTE.format(""),
+    ),
     ("mife", "lwe"): SchemeStatus(
         _S + "mife.lwe", REVIEWED, ADAPTED, "ACFGU18 Fig. 4 + ABDP15 (LWE)",
         note="ACFGU18 instantiates Fig. 4 with ALS16; here the selectively secure "
@@ -162,7 +177,7 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     ("mife", "fh_ipe_pairing"): SchemeStatus(
         _S + "mife.fh_ipe_pairing", REVIEWED, ADAPTED, "ACFGU18 Fig. 12 (k = 1)",
         note="one r per key shared by all slots; per-slot FH-IPFE as in mcfe/fh_ipe "
-        "(LV16 padding of App. B); asymmetric pairing (default MNT224); keys carry "
+        "(LV16 padding of App. B); asymmetric pairing (default BLS12-381); keys carry "
         "a random id, never a digest of y",
     ),
     ("mife", "fh_multi_ipe_pairing"): SchemeStatus(
@@ -187,6 +202,10 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     ),
     # --- multi-client -------------------------------------------------------
     ("mcfe", "ddh"): SchemeStatus(_S + "mcfe.ddh", REVIEWED, FAITHFUL, "CDGPP18"),
+    ("mcfe", "ddh_ristretto255"): SchemeStatus(
+        _S + "mcfe.ddh_ristretto255", UNREVIEWED, UNKNOWN, "CDGPP18 in ristretto255",
+        note=_R255_NOTE.format("labels hashed with RFC 9380 hash_to_ristretto255; "),
+    ),
     ("mcfe", "lwe"): SchemeStatus(
         _S + "mcfe.lwe", REVIEWED, ADAPTED, "ABMPSW20 Fig. 4, selective parameters",
         note="signed messages and weights (K = 2nXY + 1, centred decoding); "
@@ -271,7 +290,7 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     ("quadratic", "quad"): SchemeStatus(
         _S + "quadratic.quad", REVIEWED, ADAPTED, "Gay20 Fig. 4 over Fig. 8 (CPA)",
         note="signed inputs (discrete log in [-n m B^3, n m B^3]); CPA variant "
-        "(no QANIZK); asymmetric pairing (default MNT224)",
+        "(no QANIZK); asymmetric pairing (default BLS12-381)",
     ),
     ("quadratic", "sgp"): SchemeStatus(
         _S + "quadratic.sgp", REVIEWED, ADAPTED, "DSGPP18 Fig. 2",

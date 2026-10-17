@@ -5,3 +5,7 @@ recursive-include pyfe4ai *.yaml py.typed
 recursive-exclude * __pycache__
 recursive-exclude * *.pyc
 include CHANGELOG.md
+include tools/build_rust.py
+recursive-include rust *.rs *.toml *.lock
+prune rust/core/target
+prune rust/native/target

@@ -7,7 +7,7 @@ Full-hiding multi-input inner-product FE over pairings (bounded slots)
 | vector spaces; structure as in GoFE's ``innerprod/fullysec/fh_multi_ipe.go``.
 
 * type:     private-key multi-input encryption with function-hiding keys
-* setting:  asymmetric pairing group (default MNT224), ``k = sec_level``
+* setting:  asymmetric pairing group (default BLS12-381), ``k = sec_level``
 
 Per slot dual orthogonal bases ``B_i, B*_i`` of dimension ``2 eta + 2k + 1``
 (``B_i B*_i^T = mu I``), ``g_T = e(g1, g2)^mu`` public.
@@ -48,7 +48,8 @@ from pyfe4ai.utils.pairing_utils import vector_add_mod
 from pyfe4ai.utils.pairing_utils import vector_scalar_mod
 from pyfe4ai.utils.pairing_utils import serialize_matrix_g
 from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup, pair
+from pyfe4ai.utils.pairing_backend import G1, G2, ZR, PairingGroup, multi_pair, pair
+from pyfe4ai.utils.pairing_backend import deserialize_many, pow_many
 from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
@@ -96,7 +97,7 @@ class MIFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                 clients, at least 2), ``lst_nid``, ``eta``, ``sec_level``
                 (``k`` of k-LIN, default 2), ``bound_x``, ``bound_y`` and
                 ``pairing_group_param`` (asymmetric group, default
-                ``"MNT224"``).
+                ``"BLS12-381"``).
         """
         super().__init__(config, **kwargs)
         require_pairing_backend()
@@ -259,7 +260,7 @@ class MIFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                 )
                 key_vec = vector_add_mod(key_vec, contribution, self.order)
             g2 = self.group.deserialize(self.pp["g2"].encode("utf-8"))
-            g2_row = [g2 ** to_zr(self.group, value) for value in key_vec]
+            g2_row = pow_many(g2, key_vec, self.group)
             dk[nid] = serialize_matrix_g(self.group, [g2_row])[0]
 
         return {"dk": dk}
@@ -307,7 +308,7 @@ class MIFEFHMultiIPE(IPFEAbsCrypto):
             key_vec = vector_add_mod(key_vec, contribution, order)
 
         g1 = self.group.deserialize(self.pp["g1"].encode("utf-8"))
-        ct = [g1 ** to_zr(self.group, value) for value in key_vec]
+        ct = pow_many(g1, key_vec, self.group)
         return {"ct": [self.group.serialize(value).decode("utf-8") for value in ct]}
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict | None = None):
@@ -325,14 +326,15 @@ class MIFEFHMultiIPE(IPFEAbsCrypto):
         if not set(dct_ct) == set(dk["dk"]) == set(lst_nid):
             raise FESchemeError("need one ciphertext and one key part for every slot")
         pub = self.group.deserialize(self.pp["pub"].encode("utf-8"))
-        acc = self.group.init(GT, 1)
+        lhs, rhs = [], []
         for nid in lst_nid:
-            ct = [self.group.deserialize(v.encode("utf-8")) for v in dct_ct[nid]["ct"]]
-            key = [self.group.deserialize(v.encode("utf-8")) for v in dk["dk"][nid]]
+            ct = deserialize_many(self.group, dct_ct[nid]["ct"])
+            key = deserialize_many(self.group, dk["dk"][nid])
             if len(ct) != self.dim or len(key) != self.dim:
                 raise FESchemeError("ciphertext or key of {} has the wrong length".format(nid))
-            for lhs, rhs in zip(ct, key):
-                acc *= pair(lhs, rhs)
+            lhs.extend(ct)
+            rhs.extend(key)
+        acc = multi_pair(lhs, rhs)
 
         bound = int(
             self.pp["n"]

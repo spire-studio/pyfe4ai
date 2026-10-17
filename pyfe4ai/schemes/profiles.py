@@ -8,8 +8,8 @@ The ``security_profile`` entry of a key generator's config selects one:
     exactly as given.
 
 ``"standard"``
-    Parameters aiming at 128-bit classical security where this pure-Python
-    prototype can reach it, chosen per scheme family:
+    Parameters aiming at 128-bit classical security where this prototype
+    can reach it, chosen per scheme family:
 
     * discrete log (DDH, Damgard / MDDH and their MIFE / MCFE variants): a
       3072-bit safe-prime group, the RFC 3526 MODP group 15 (NIST SP 800-57
@@ -18,6 +18,9 @@ The ``security_profile`` entry of a key generator's config selects one:
       for combining key shares, whose safe primes take minutes to generate;
     * DCR (Paillier variants): ``N`` of about 3072 bits (two 1536-bit safe
       primes);
+    * DDH over ristretto255 (``*/ddh_ristretto255``): the group is fixed, of
+      order about ``2^252`` (Pollard rho about ``2^126``, the 128-bit class of
+      X25519 / Ed25519); the profile sets nothing;
     * Ring-LWE: ``kappa = 128`` and the smallest ring dimension whose derived
       modulus ``q`` meets :data:`~pyfe4ai.utils.ring_lwe_utils.RING_LWE_128_LOG_Q`,
       a lattice-estimator table (the method of the LWE tables) read at the
@@ -54,10 +57,10 @@ The ``security_profile`` entry of a key generator's config selects one:
       ``standard`` fixes its ``matrix_mode`` to ``"stream"``: key generation
       takes over half an hour, an encryption about 10 minutes, or about 11 s
       each in batches of 64;
-    * pairing-based schemes: BN254, the strongest curve charm-crypto provides
-      -- about 100-bit security after the exTNFS attacks (Barbulescu and
-      Duquesne, J. Cryptol. 2019), **below** the 128-bit target; a
-      :class:`~pyfe4ai.utils.exceptions.FESecurityWarning` says so.
+    * pairing-based schemes: BLS12-381 (the Rust extension) -- about 120 to
+      126-bit security after the exTNFS attacks on its 381-bit field
+      (Barbulescu and Duquesne, J. Cryptol. 2019), **below** the 128-bit
+      target; a :class:`~pyfe4ai.utils.exceptions.FESecurityWarning` says so.
 
     Refused, because no parameter set is both secure and usable in pure
     Python: ``sife/fullysec_lwe`` and ``mife/fullysec_lwe`` (ALS16: at a
@@ -96,6 +99,7 @@ SCHEME_KIND = {
     **{("sife", v): "dl" for v in ("ddh", "ddh_dynamic", "damgard")},
     **{("mife", v): "dl" for v in ("ddh", "damgard", "ddh_threshold")},
     **{("mcfe", v): "dl" for v in ("ddh", "damgard", "ddh_threshold", "ddh_decentralized")},
+    **{(f, "ddh_ristretto255"): "ec" for f in ("sife", "mife", "mcfe")},
     **{(f, "paillier"): "dcr" for f in ("sife", "mife", "mcfe")},
     ("mcfe", "paillier_decentralized"): "dcr",
     **{(f, "lwe"): "lwe_abdp15" for f in ("sife", "mife")},
@@ -123,12 +127,14 @@ STANDARD_STAT_PARAM = 128
 #: ``stat_param`` is ignored by the schemes that do not use it.
 _STANDARD_MINIMA = {
     "dl": {"sec_param": 3072, "modulus_length": 3072, "stat_param": STANDARD_STAT_PARAM},
+    # ristretto255 is fixed (about 126-bit security); nothing to size
+    "ec": {},
     "dcr": {"bit_length": STANDARD_DCR_PRIME_BITS, "stat_param": STANDARD_STAT_PARAM},
     "ring_lwe": {"sec_param": 128, "stat_param": STANDARD_STAT_PARAM},
     "lwe": {"stat_param": STANDARD_STAT_PARAM},
     "lwe_abdp15": {"stat_param": STANDARD_STAT_PARAM},
 }
-STANDARD_PAIRING_GROUP = "BN254"
+STANDARD_PAIRING_GROUP = "BLS12-381"
 
 #: Settings the ``standard`` profile fixes for single schemes, with the reason.
 _STANDARD_FIXED = {
@@ -192,8 +198,8 @@ def resolve(config: dict, scheme: tuple | None) -> dict:
                 "the '{}' profile uses pairing group {}, got {!r}".format(profile, STANDARD_PAIRING_GROUP, group)
             )
         warnings.warn(
-            "{}/{}: BN254, the strongest pairing group of charm-crypto, gives about "
-            "100-bit security, below the 128-bit target of the '{}' profile".format(*scheme, profile),
+            "{}/{}: BLS12-381 gives about 120 to 126-bit security after the exTNFS "
+            "attacks, below the 128-bit target of the '{}' profile".format(*scheme, profile),
             FESecurityWarning,
             stacklevel=3,
         )

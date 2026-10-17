@@ -3,7 +3,9 @@ import random
 import numpy as np
 import pytest
 
-pytest.importorskip("charm", reason="charm-crypto not installed")
+from tests.pairing_group import GROUP, skip_unless_available  # noqa: E402
+
+skip_unless_available()
 
 from pyfe4ai.schemes.quadratic.quad import QuadraticQuad
 from pyfe4ai.schemes.quadratic.quad import QuadraticQuadKeyGenerator
@@ -16,7 +18,7 @@ def kg_config():
         "n": 4,
         "m": 3,
         "bound": 5,
-        "pairing_group_param": "MNT224",
+        "pairing_group_param": GROUP,
     }
 
 
@@ -84,7 +86,7 @@ def test_entire_process_lst_ndarray():
         "n": 2,
         "m": 3,
         "bound": 500,
-        "pairing_group_param": "MNT224",
+        "pairing_group_param": GROUP,
     }
     kg = QuadraticQuadKeyGenerator(cfg)
     kg.setup()

@@ -9,7 +9,7 @@ Multi-input functional encryption for quadratic functions (cross-user terms)
 | for mixed-group inner products of Sec. 3 / Fig. 1.
 
 * type:     multi-input FE with per-user encryption keys
-* setting:  asymmetric pairing group (default MNT224); selective pos
+* setting:  asymmetric pairing group (default BLS12-381); selective pos
   message-hiding security (Thm. 5.1) from MDDH_1 (SXDH, for the
   TAO20 IPFE), bilateral MDDH_k with ``k >= 2`` (for the mixed-group
   SK-MCFE) and PRF security
@@ -66,7 +66,8 @@ from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup, pair
+from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup, multi_pair, pair
+from pyfe4ai.utils.pairing_backend import deserialize_many, multiexp, pow_many
 from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
@@ -89,7 +90,14 @@ class _Ctx:
         self.p = int(self.group.order())
         self.g1 = g1 if g1 is not None else self.group.random(G1)
         self.g2 = g2 if g2 is not None else self.group.random(G2)
-        self.gt = pair(self.g1, self.g2)
+        self._gt = None
+
+    @property
+    def gt(self):
+        """``e(g1, g2)``, computed on first use (decryption only)."""
+        if self._gt is None:
+            self._gt = pair(self.g1, self.g2)
+        return self._gt
 
     def rand(self) -> int:
         return _CSPRNG.randrange(self.p)
@@ -103,20 +111,23 @@ class _Ctx:
     def de(self, text: str):
         return self.group.deserialize(text.encode("utf-8"))
 
+    def de_many(self, texts: list) -> list:
+        return deserialize_many(self.group, texts)
+
     def g1v(self, exps: list) -> list:
-        return [self.ser(self.g1 ** self.zr(e)) for e in exps]
+        return [self.ser(v) for v in pow_many(self.g1, exps, self.group)]
 
     def g2v(self, exps: list) -> list:
-        return [self.ser(self.g2 ** self.zr(e)) for e in exps]
+        return [self.ser(v) for v in pow_many(self.g2, exps, self.group)]
+
+    def multiexp(self, bases: list, exps: list):
+        return multiexp(bases, exps, self.group)
 
     def ip(self, cts: list, keys: list):
         """``prod_j e(ct_j, key_j)`` for serialised G1 / G2 vectors of equal length."""
         if len(cts) != len(keys):
             raise FESchemeError("IPFE ciphertext and key lengths differ")
-        acc = self.group.init(GT, 1)
-        for c, k in zip(cts, keys):
-            acc *= pair(self.de(c), self.de(k))
-        return acc
+        return multi_pair(self.de_many(cts), self.de_many(keys))
 
 
 class _TAO20:
@@ -232,7 +243,7 @@ class MultiInputQuadraticKeyGenerator(IPFEAbsKeyGenerator):
         Args:
             config: ``n`` (users, >= 2), ``lst_nid``, ``m`` (integers per user),
                 ``bound_x`` (``X``), ``bound_c`` (``C``), ``mddh_k`` (``k >= 2``,
-                default 2) and ``pairing_group_param`` (asymmetric, default MNT224).
+                default 2) and ``pairing_group_param`` (asymmetric, default BLS12-381).
         """
         super().__init__(config, **kwargs)
         self.m = int(config.get("m", 2))
@@ -406,11 +417,13 @@ class MultiInputQuadratic(IPFEAbsCrypto):
         weights = [(mct, a % ctx.p) for mct, a in weights if a % ctx.p]
 
         def combine(get) -> list:
-            first = [ctx.de(v) for v in get(weights[0][0])]
-            acc = [e ** ctx.zr(weights[0][1]) for e in first]
-            for mct, a in weights[1:]:
-                acc = [x_ * (ctx.de(v) ** ctx.zr(a)) for x_, v in zip(acc, get(mct))]
-            return [ctx.ser(e) for e in acc]
+            # entry j: prod_w get(mct_w)[j] ** a_w, one product of powers per entry
+            rows = [get(mct) for mct, _ in weights]
+            width = min(len(row) for row in rows)
+            elems = iter(ctx.de_many([v for row in rows for v in row[:width]]))
+            rows = [[next(elems) for _ in range(width)] for _ in rows]
+            exps = [a for _, a in weights]
+            return [ctx.ser(ctx.multiexp([row[j] for row in rows], exps)) for j in range(width)]
 
         return {
             "ct": [combine(lambda mct, j=j: mct["ct"][j]) for j in range(m)],
@@ -436,17 +449,16 @@ class MultiInputQuadratic(IPFEAbsCrypto):
         cts = [dct_ct[nid] for nid in lst_nid]
         c = [[int(v) for v in row] for row in dk["c"]]
         sigma = [[int(v) for v in row] for row in dk["sigma"]]
-        z1 = ctx.group.init(GT, 1)
-        for mu in range(n * m):
-            for nu in range(n * m):
-                if c[mu][nu]:
-                    i, j, a, b = mu // m, mu % m, nu // m, nu % m
-                    z1 *= ctx.ip(cts[i]["ct"][j], cts[a]["sk"][b]) ** ctx.zr(c[mu][nu])
-        z2 = ctx.group.init(GT, 1)
-        for i in range(n):
-            for a in range(n):
-                if sigma[i][a]:
-                    z2 *= ctx.ip(cts[i]["ct2"], cts[a]["sk2"]) ** ctx.zr(sigma[i][a])
+        # z1, z2: products of powers in GT, one multi-exponentiation each
+        terms = [
+            (ctx.ip(cts[mu // m]["ct"][mu % m], cts[nu // m]["sk"][nu % m]), c[mu][nu])
+            for mu in range(n * m) for nu in range(n * m) if c[mu][nu]
+        ]
+        z1 = ctx.multiexp(*zip(*terms)) if terms else ctx.group.init(GT, 1)
+        terms = [
+            (ctx.ip(cts[i]["ct2"], cts[a]["sk2"]), sigma[i][a]) for i in range(n) for a in range(n) if sigma[i][a]
+        ]
+        z2 = ctx.multiexp(*zip(*terms)) if terms else ctx.group.init(GT, 1)
         z3 = ctx.group.init(GT, 1)
         for i in range(n):
             z3 *= ctx.ip(cts[i]["mg_ct"], dk["mg_sk"][i])

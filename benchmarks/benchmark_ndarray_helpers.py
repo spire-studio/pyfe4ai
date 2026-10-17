@@ -33,6 +33,7 @@ from pyfe4ai.schemes.sife.fullysec_lwe import SIFEFullySecLWEKeyGenerator
 from pyfe4ai.schemes.sife.lwe import SIFELWE
 from pyfe4ai.schemes.sife.lwe import SIFELWEKeyGenerator
 from pyfe4ai.schemes.sife.paillier import SIFEPaillier
+from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP
 from pyfe4ai.schemes.sife.paillier import SIFEPaillierKeyGenerator
 
 ROUNDS = 2
@@ -121,7 +122,7 @@ def _bench_mife_fh_multi_ipe() -> dict:
         "lst_nid": ["nid_0", "nid_1", "nid_2"],
         "bound_x": FH_BOUND_X,
         "bound_y": FH_BOUND_Y,
-        "pairing_group_param": "MNT224",
+        "pairing_group_param": DEFAULT_PAIRING_GROUP,
     }
     dct_y = {"nid_0": [1], "nid_1": [2], "nid_2": [-1]}
     dct_x = {
@@ -196,7 +197,7 @@ def _bench_mcfe_fh_multi_ipe(name: str, decentralized: bool = False, threshold: 
         "lst_nid": ["nid_0", "nid_1", "nid_2"],
         "bound_x": FH_BOUND_X,
         "bound_y": FH_BOUND_Y,
-        "pairing_group_param": "MNT224",
+        "pairing_group_param": DEFAULT_PAIRING_GROUP,
     }
     if threshold:
         base_cfg.update({"s": 3, "t": 2, "lst_sid": ["sid_0", "sid_1", "sid_2"]})
@@ -502,7 +503,7 @@ def main() -> None:
             "Quadratic/SGP",
             QuadraticSGP,
             QuadraticSGPKeyGenerator,
-            {"sec_param": 64, "n": quadratic_dim, "bound": quadratic_bound, "pairing_group_param": "MNT224"},
+            {"sec_param": 64, "n": quadratic_dim, "bound": quadratic_bound, "pairing_group_param": DEFAULT_PAIRING_GROUP},
             [_base_array(0.1 + 0.1 * i) for i in range(quadratic_dim)],
             [_base_array(0.3 + 0.1 * j) for j in range(quadratic_dim)],
             [[1 for _ in range(quadratic_dim)] for _ in range(quadratic_dim)],
@@ -515,7 +516,7 @@ def main() -> None:
                 "Quadratic/Quad",
                 QuadraticQuad,
                 QuadraticQuadKeyGenerator,
-                {"sec_param": 64, "n": quadratic_dim, "m": quadratic_dim + 1, "bound": quadratic_bound, "pairing_group_param": "MNT224"},
+                {"sec_param": 64, "n": quadratic_dim, "m": quadratic_dim + 1, "bound": quadratic_bound, "pairing_group_param": DEFAULT_PAIRING_GROUP},
                 [_base_array(0.1 + 0.1 * i) for i in range(quadratic_dim)],
                 [_base_array(0.3 + 0.1 * j) for j in range(quadratic_dim + 1)],
                 [[1 for _ in range(quadratic_dim + 1)] for _ in range(quadratic_dim)],
@@ -523,7 +524,7 @@ def main() -> None:
         ]
 
     # (warm-up run, benchmark) per group; only the selected groups run, so the
-    # sife group needs no charm-crypto
+    # sife group needs no pairing backend
     groups = {
         "sife": (sife_lwe, sife_group),
         "fh": (_bench_mife_fh_multi_ipe, fh_group),

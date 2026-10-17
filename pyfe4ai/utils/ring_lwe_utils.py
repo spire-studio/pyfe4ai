@@ -268,6 +268,53 @@ def poly_mul(
     return poly_mul_negacyclic(a, b, q)
 
 
+class RingNTT:
+    """NTT-domain arithmetic of ``Z_q[x] / (x^n + 1)`` with :func:`poly_mul`'s root.
+
+    ``inverse(mul(forward(a), forward(b)))`` equals ``poly_mul(a, b, q)``, and
+    the NTT is linear mod q, so a fixed operand can be transformed once and
+    products summed in the NTT domain before a single inverse transform, with
+    the same result as summing the :func:`poly_mul` products mod q.
+    :meth:`get` returns ``None`` when ``q`` has no primitive ``2n``-th root of
+    unity (then :func:`poly_mul` falls back to the naive product).
+    """
+
+    _cache: dict = {}
+
+    def __init__(self, q, ring_n: int, root) -> None:
+        self.q = gp.mpz(q)
+        self.ring_n = ring_n
+        self.root = root
+
+    @classmethod
+    def get(cls, q, ring_n: int) -> "RingNTT | None":
+        key = (int(q), ring_n)
+        if key not in cls._cache:
+            root = _get_ntt_root(gp.mpz(q), ring_n)
+            cls._cache[key] = None if root is None else cls(q, ring_n, root)
+        return cls._cache[key]
+
+    def forward(self, a: list) -> list:
+        """NTT of the coefficient vector *a* (integers, any sign)."""
+        return ntt_forward(a, self.q, self.root)
+
+    def inverse(self, a_hat: list) -> list:
+        """Coefficients, in ``[0, q)``, of the NTT-domain vector *a_hat*."""
+        return ntt_inverse(a_hat, self.q, self.root)
+
+    def mul(self, a_hat: list, b_hat: list) -> list:
+        """Pointwise product mod q (the NTT of the negacyclic product)."""
+        q = self.q
+        return [(x * y) % q for x, y in zip(a_hat, b_hat)]
+
+    def mul_add(self, acc: list | None, a_hat: list, b_hat: list) -> list:
+        """``acc + a_hat * b_hat`` pointwise mod q (``acc = None``: just the product)."""
+        if acc is None:
+            return self.mul(a_hat, b_hat)
+        q = self.q
+        return [(s + x * y) % q for s, x, y in zip(acc, a_hat, b_hat)]
+
+
 def next_ntt_prime(lower_bound: gp.mpz, ring_n: int) -> gp.mpz:
     """Find the smallest prime ``q >= lower_bound`` with ``q ≡ 1 (mod 2·ring_n)``.
 
@@ -417,8 +464,57 @@ def seeded_polynomial(seed: str, q, ring_n: int, index: int = 0) -> list[gp.mpz]
     return hash_to_zq_vector(seed, q, ring_n, domain="pyfe4ai/ring-lwe/a|{}".format(int(index)))
 
 
+#: Ciphertext formats of the Ring-LWE MIFE / MCFE: ``"json"`` (default; ``ct0``
+#: and ``ct1`` as lists of decimal strings) and ``"binary"`` (``ct``: bytes in
+#: format 1 of :func:`encode_binary_ciphertext`).
+CT_FORMATS = ("json", "binary")
+_BIN_MAGIC = b"PFRL"
+_BIN_VERSION = 1
+_BIN_HEADER = 10
+
+
+def encode_binary_ciphertext(ct0: list, ct1: list, q, ring_n: int) -> bytes:
+    """Binary format 1 of a ciphertext with ``eta`` rows ``ct0`` and ``ct1``.
+
+    ``b"PFRL"``, version 1, ``wb = ceil(bits(q) / 8)``, ``eta`` (2 bytes,
+    little-endian), ``log2 ring_n`` and a zero byte; then the coefficients of
+    the ``ct0`` rows and of ``ct1``, ``ring_n`` each, as ``wb``-byte
+    little-endian integers in ``[0, q)``.
+    """
+    wb = (int(q).bit_length() + 7) // 8
+    eta = len(ct0)
+    head = _BIN_MAGIC + bytes([_BIN_VERSION, wb, eta & 0xFF, eta >> 8, ring_n.bit_length() - 1, 0])
+    q = int(q)
+    return head + b"".join(
+        (int(v) % q).to_bytes(wb, "little") for row in list(ct0) + [ct1] for v in row
+    )
+
+
+def decode_binary_ciphertext(data, q, eta: int, ring_n: int) -> tuple:
+    """``(ct0, ct1)`` of a format-1 ciphertext, coefficients reduced mod q.
+
+    Raises:
+        ValueError: If the header or the length does not match.
+    """
+    wb = (int(q).bit_length() + 7) // 8
+    data = bytes(data)
+    head = _BIN_MAGIC + bytes([_BIN_VERSION, wb, eta & 0xFF, eta >> 8, ring_n.bit_length() - 1, 0])
+    if len(data) != _BIN_HEADER + (eta + 1) * ring_n * wb or data[:_BIN_HEADER] != head:
+        raise ValueError("not a format-1 ciphertext of these parameters")
+    q = int(q)
+    vals = [
+        int.from_bytes(data[i:i + wb], "little") % q
+        for i in range(_BIN_HEADER, len(data), wb)
+    ]
+    rows = [vals[r * ring_n:(r + 1) * ring_n] for r in range(eta + 1)]
+    return rows[:eta], rows[eta]
+
+
 def canonical_ring_ciphertext(ct, q, eta: int, ring_n: int) -> tuple:
     """Return ``(k, ct0, ct1)`` of a BMMS21 ciphertext with coefficients in ``[0, q)``.
+
+    *ct* holds ``k`` and either ``ct0`` and ``ct1`` (JSON format) or ``ct``
+    (binary format, :func:`encode_binary_ciphertext`).
 
     Raises:
         FESchemeError: Unless *ct* has ``eta`` polynomials ``ct0`` and one
@@ -429,8 +525,13 @@ def canonical_ring_ciphertext(ct, q, eta: int, ring_n: int) -> tuple:
 
     try:
         k = ct["k"]
-        ct0 = [[int(str(v)) % q for v in row] for row in ct["ct0"]]
-        ct1 = [int(str(v)) % q for v in ct["ct1"]]
+        if "ct" in ct and "ct0" not in ct:
+            if not isinstance(ct["ct"], (bytes, bytearray, memoryview)):
+                raise TypeError("binary ciphertext must be bytes")
+            ct0, ct1 = decode_binary_ciphertext(ct["ct"], q, eta, ring_n)
+        else:
+            ct0 = [[int(str(v)) % q for v in row] for row in ct["ct0"]]
+            ct1 = [int(str(v)) % q for v in ct["ct1"]]
     except (KeyError, TypeError, ValueError) as exc:
         raise FESchemeError("malformed ciphertext") from exc
     if (

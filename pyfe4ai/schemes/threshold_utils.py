@@ -337,15 +337,21 @@ def client_server_mac_keys(lst_nid: list, lst_sid: list) -> dict:
     return {nid: {sid: secrets.token_hex(32) for sid in lst_sid} for nid in lst_nid}
 
 
+def _tag_message(domain: str, payload) -> bytes:
+    return json.dumps([domain, payload], sort_keys=True).encode("utf-8")
+
+
 def ciphertext_tag(mac_key: str, domain: str, payload) -> str:
     """HMAC-SHA256 (hex) of ``(domain, payload)`` under *mac_key* (hex)."""
-    message = json.dumps([domain, payload], sort_keys=True).encode("utf-8")
-    return hmac.new(bytes.fromhex(mac_key), message, hashlib.sha256).hexdigest()
+    return hmac.new(bytes.fromhex(mac_key), _tag_message(domain, payload), hashlib.sha256).hexdigest()
 
 
 def tag_ciphertext(ct: dict, mac_keys: dict, domain: str, payload) -> dict:
     """Add ``tags`` (one per server of *mac_keys*) to *ct* and return it."""
-    ct["tags"] = {sid: ciphertext_tag(key, domain, payload) for sid, key in mac_keys.items()}
+    message = _tag_message(domain, payload) if mac_keys else None  # serialised once for all servers
+    ct["tags"] = {
+        sid: hmac.new(bytes.fromhex(key), message, hashlib.sha256).hexdigest() for sid, key in mac_keys.items()
+    }
     return ct
 
 

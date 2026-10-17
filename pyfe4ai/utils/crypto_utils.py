@@ -315,6 +315,12 @@ def hash_to_zn2_star(v: str, n_mod: gp.mpz, domain: str = "") -> gp.mpz:
         counter += 1
 
 
+def hash_to_zq_material(v: str, domain: str = "") -> bytes:
+    """The SHAKE-256 input of :func:`hash_to_zq_vector` (also hashed natively,
+    see :mod:`pyfe4ai.utils.native_backend`)."""
+    return "|".join([domain, "zq-vector", str(len(v)), v]).encode("utf-8")
+
+
 def hash_to_zq_vector(v: str, q: gp.mpz, length: int, domain: str = "") -> list:
     """Hash a string to a vector of *length* elements of ``Z_q`` (random oracle).
 
@@ -331,9 +337,13 @@ def hash_to_zq_vector(v: str, q: gp.mpz, length: int, domain: str = "") -> list:
     """
     q = gp.mpz(q)
     n_bytes = (int(q).bit_length() + 128 + 7) // 8
-    material = "|".join([domain, "zq-vector", str(len(v)), v]).encode("utf-8")
-    stream = hashlib.shake_256(material).digest(length * n_bytes)
+    stream = hashlib.shake_256(hash_to_zq_material(v, domain)).digest(length * n_bytes)
+    if _MPZ_FROM_BYTES is not None:  # the same values, without a Python int per block
+        return [_MPZ_FROM_BYTES(stream[i:i + n_bytes], "big") % q for i in range(0, length * n_bytes, n_bytes)]
     return [
         gp.mpz(int.from_bytes(stream[k * n_bytes:(k + 1) * n_bytes], "big")) % q
         for k in range(length)
     ]
+
+
+_MPZ_FROM_BYTES = getattr(gp.mpz, "from_bytes", None)  # gmpy2 >= 2.2

@@ -4,7 +4,9 @@ import random
 
 import pytest
 
-pytest.importorskip("charm", reason="charm-crypto not installed")
+from tests.pairing_group import GROUP, skip_unless_available  # noqa: E402
+
+skip_unless_available()
 
 from pyfe4ai.schemes.quadratic.miqfe import MultiInputQuadratic  # noqa: E402
 from pyfe4ai.schemes.quadratic.miqfe import MultiInputQuadraticKeyGenerator  # noqa: E402
@@ -17,7 +19,7 @@ NIDS = ["nid_0", "nid_1"]
 def small():
     """n = 2 users with m = 1 integer each."""
     kg = MultiInputQuadraticKeyGenerator(
-        {"n": 2, "m": 1, "lst_nid": NIDS, "bound_x": 4, "bound_c": 3, "pairing_group_param": "MNT224"}
+        {"n": 2, "m": 1, "lst_nid": NIDS, "bound_x": 4, "bound_c": 3, "pairing_group_param": GROUP}
     )
     kg.setup()
     pp = kg.get_public_parameters()
@@ -65,15 +67,15 @@ def test_function_class_and_inputs_validated(small):
 
 def test_parameter_guards():
     with pytest.raises(FEValidationError):
-        MultiInputQuadraticKeyGenerator({"n": 1, "m": 1, "lst_nid": ["a"]})
+        MultiInputQuadraticKeyGenerator({"n": 1, "m": 1, "lst_nid": ["a"], "pairing_group_param": GROUP})
     with pytest.raises(FEValidationError):
-        MultiInputQuadraticKeyGenerator({"n": 2, "m": 1, "lst_nid": NIDS, "mddh_k": 1})
+        MultiInputQuadraticKeyGenerator({"n": 2, "m": 1, "lst_nid": NIDS, "mddh_k": 1, "pairing_group_param": GROUP})
 
 
 def test_random_cross_terms_two_entries():
     m, n, X, C = 2, 2, 5, 3
     kg = MultiInputQuadraticKeyGenerator(
-        {"n": n, "m": m, "lst_nid": NIDS, "bound_x": X, "bound_c": C, "pairing_group_param": "MNT224"}
+        {"n": n, "m": m, "lst_nid": NIDS, "bound_x": X, "bound_c": C, "pairing_group_param": GROUP}
     )
     kg.setup()
     pp = kg.get_public_parameters()
@@ -96,7 +98,7 @@ def test_three_users_cross_blocks():
     """With n = 3 the blocks (0,1), (0,2), (1,2) are allowed: an i/k swap would show."""
     nids = ["u0", "u1", "u2"]
     kg = MultiInputQuadraticKeyGenerator(
-        {"n": 3, "m": 1, "lst_nid": nids, "bound_x": 6, "bound_c": 4, "pairing_group_param": "MNT224"}
+        {"n": 3, "m": 1, "lst_nid": nids, "bound_x": 6, "bound_c": 4, "pairing_group_param": GROUP}
     )
     kg.setup()
     pp = kg.get_public_parameters()

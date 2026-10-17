@@ -63,8 +63,8 @@ Security & status
 * **Security profiles**: ``security_profile="toy"``, the default, is **not
   secure**; ``"standard"`` aims at 128-bit security (3072-bit DL groups
   and DCR moduli, lattice-estimator bounds for LWE and Ring-LWE,
-  ``stat_param`` 128), except that pairing-based schemes get BN254 (about
-  100-bit, with a ``FESecurityWarning``) and ``sife/fullysec_lwe``,
+  ``stat_param`` 128), except that pairing-based schemes get BLS12-381
+  (about 120-126-bit, with a ``FESecurityWarning``) and ``sife/fullysec_lwe``,
   ``mife/fullysec_lwe`` and ``mcfe/paillier_decentralized`` are refused. The ABDP15 LWE schemes
   take ``matrix_mode`` (``"memory"`` or ``"stream"``) to trade memory for
   time.

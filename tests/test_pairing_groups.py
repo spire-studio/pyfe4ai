@@ -4,12 +4,10 @@ import importlib
 
 import pytest
 
-pytest.importorskip("charm", reason="charm-crypto not installed")
-
-from pyfe4ai.utils.exceptions import FEValidationError  # noqa: E402
-from pyfe4ai.utils.ml_adapter import _SCHEME_REGISTRY  # noqa: E402
-from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP  # noqa: E402
-from pyfe4ai.utils.pairing_backend import PairingGroup, check_asymmetric  # noqa: E402
+from pyfe4ai.utils.exceptions import FEValidationError
+from pyfe4ai.utils.ml_adapter import _SCHEME_REGISTRY
+from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP
+from pyfe4ai.utils.pairing_backend import PairingGroup, check_asymmetric, pairing_available
 
 PAIRING_SCHEMES = sorted(
     key for key in _SCHEME_REGISTRY if "pairing" in key[1] or key[0] == "quadratic"
@@ -19,6 +17,13 @@ _CONFIG = {
     "lst_nid": ["nid_0", "nid_1"], "lst_sid": ["sid_0", "sid_1"],
     "bound": 3, "bound_x": 3, "bound_y": 3,
 }
+#: BLS12-381 from the Rust extension; the others from charm-crypto
+ASYMMETRIC_GROUPS = ["BLS12-381", "MNT224", "BN254"]
+
+
+def _need(name):
+    if not pairing_available(name):
+        pytest.skip("no backend for pairing group {}".format(name))
 
 
 def _key_generator(key):
@@ -32,33 +37,39 @@ def test_registry_has_ten_pairing_schemes():
 
 @pytest.mark.parametrize("name", ["SS512", "SS1024"])
 def test_symmetric_groups_rejected(name):
+    _need(name)
     with pytest.raises(FEValidationError, match="symmetric"):
         check_asymmetric(name)
     with pytest.raises(FEValidationError, match="symmetric"):
         check_asymmetric(PairingGroup(name))
 
 
-@pytest.mark.parametrize("name", ["MNT224", "BN254"])
+@pytest.mark.parametrize("name", ASYMMETRIC_GROUPS)
 def test_asymmetric_groups_accepted(name):
+    _need(name)
     check_asymmetric(name)
 
 
 @pytest.mark.parametrize("key", PAIRING_SCHEMES, ids="/".join)
 def test_key_generator_rejects_symmetric_group(key):
+    _need("SS512")
     with pytest.raises(FEValidationError, match="symmetric"):
         _key_generator(key)(dict(_CONFIG, pairing_group_param="SS512"))
 
 
 @pytest.mark.parametrize("key", PAIRING_SCHEMES, ids="/".join)
 def test_key_generator_defaults_to_asymmetric_group(key):
+    _need(DEFAULT_PAIRING_GROUP)
+    assert DEFAULT_PAIRING_GROUP == "BLS12-381"
     assert _key_generator(key)(dict(_CONFIG)).pairing_group_param == DEFAULT_PAIRING_GROUP
 
 
-@pytest.mark.parametrize("name", ["MNT224", "BN254"])
+@pytest.mark.parametrize("name", ASYMMETRIC_GROUPS)
 def test_identity_elements_round_trip(name):
     """charm's compressed G1 identity used to deserialise to a non-member point."""
     from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR
 
+    _need(name)
     group = PairingGroup(name)
     for kind in (G1, G2, GT):
         one = group.random(kind) ** group.init(ZR, 0)
@@ -70,18 +81,27 @@ def test_identity_elements_round_trip(name):
         assert group.deserialize(group.serialize(x)) == x
 
 
+def test_unknown_group_without_charm_names_the_dependency():
+    if pairing_available("MNT224"):
+        pytest.skip("charm-crypto is installed")
+    with pytest.raises(ImportError, match="charm-crypto"):
+        PairingGroup("MNT224")
+
+
 @pytest.mark.parametrize("key", PAIRING_SCHEMES, ids="/".join)
-def test_standard_profile_uses_bn254(key):
+def test_standard_profile_uses_bls12_381(key):
     from pyfe4ai import FESecurityWarning
 
-    with pytest.warns(FESecurityWarning, match="100-bit"):
+    _need("BLS12-381")
+    with pytest.warns(FESecurityWarning, match="120 to 126-bit"):
         kg = _key_generator(key)(dict(_CONFIG, security_profile="standard"))
-    assert kg.pairing_group_param == "BN254"
+    assert kg.pairing_group_param == "BLS12-381"
 
 
 def test_standard_profile_fh_ipe_round_trip():
     from pyfe4ai.schemes.sife.fh_ipe_pairing import SIFEFHIPE
 
+    _need("BLS12-381")
     with pytest.warns(Warning):
         kg = _key_generator(("sife", "fh_ipe_pairing"))(dict(_CONFIG, security_profile="standard"))
     kg.setup()

@@ -45,6 +45,7 @@ import secrets
 import logging
 
 import gmpy2 as gp
+import numpy as np
 
 from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
 from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
@@ -52,14 +53,18 @@ from pyfe4ai.schemes.ipfe import ParameterCacheMixin
 from pyfe4ai.utils.lwe_utils import decode_scaled
 from pyfe4ai.schemes.profiles import STANDARD
 from pyfe4ai.utils.ring_lwe_utils import bmms21_selective_parameters
+from pyfe4ai.utils.ring_lwe_utils import CT_FORMATS
 from pyfe4ai.utils.ring_lwe_utils import canonical_ring_ciphertext
+from pyfe4ai.utils.ring_lwe_utils import encode_binary_ciphertext
 from pyfe4ai.utils.ring_lwe_utils import check_ring_lwe
 from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul
 from pyfe4ai.utils.ring_lwe_utils import poly_add
 from pyfe4ai.utils.ring_lwe_utils import poly_mul
 from pyfe4ai.utils.ring_lwe_utils import poly_neg
 from pyfe4ai.utils.ring_lwe_utils import resolve_ring_n
+from pyfe4ai.utils.ring_lwe_utils import RingNTT
 from pyfe4ai.utils.ring_lwe_utils import transpose
+from pyfe4ai.utils import native_backend
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
@@ -248,45 +253,106 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         if not isinstance(fusion_weight, dict):
             raise FEValidationError("invalid fusion weights provided, need a dict")
 
-        sk_y = {}
-        z = [gp.mpz(0)] * self.ring_n
+        ys = {}
         for nid in self.lst_nid:
             if nid not in fusion_weight:
                 raise FEValidationError("fusion weight missing client {}".format(nid))
-            y = int_vector(
+            ys[nid] = int_vector(
                 fusion_weight[nid], "fusion weight of {}".format(nid),
                 length=self.eta, bound=int(self.bound_y),
             )
+        native = self._native_master_key()
+        if native is not None:  # the same sums mod q, as decimal strings
+            ctx, sk_rows, u_rows = native
+            sk_y = {nid: native_backend.ext().lincomb(ctx.cap, sk_rows[nid], ys[nid]) for nid in self.lst_nid}
+            z = native_backend.ext().lincomb(
+                ctx.cap, [row for nid in self.lst_nid for row in u_rows[nid]],
+                [v for nid in self.lst_nid for v in ys[nid]],
+            )
+            return {"sk_y": sk_y, "z": z}
+        sk_y = {}
+        z = [gp.mpz(0)] * self.ring_n
+        for nid in self.lst_nid:
             sk_t = transpose(self.msk["sk"][nid])
-            y_vec = [gp.mpz(v) for v in y]
+            y_vec = [gp.mpz(v) for v in ys[nid]]
             sk_y[nid] = [gp.digits(v) for v in mat_vec_mul(sk_t, y_vec, self.q)]
             for y_row, u_row in zip(y_vec, self.msk["u"][nid]):
                 z = [acc + y_row * u for acc, u in zip(z, u_row)]
         return {"sk_y": sk_y, "z": [gp.digits(v % self.q) for v in z]}
 
+    def _native_master_key(self):
+        """``(context, sk rows, u rows)`` packed for the native backend, per
+        client, computed once per master key; ``None`` for the Python path."""
+        ctx = native_backend.ring_context(self.q, self.ring_n)
+        if ctx is None:
+            return None
+        cache = self.__dict__.get("_native_msk")
+        if cache is None or cache[0] is not self.msk or cache[1] is not ctx:
+            try:
+                packed = (
+                    {nid: [ctx.pack(row) for row in self.msk["sk"][nid]] for nid in self.lst_nid},
+                    {nid: [ctx.pack(row) for row in self.msk["u"][nid]] for nid in self.lst_nid},
+                )
+            except (KeyError, TypeError, ValueError):
+                packed = None
+            if packed is not None and any(
+                len(b) != ctx.word_bytes * self.ring_n for rows in packed for nid in rows for b in rows[nid]
+            ):
+                packed = None
+            cache = self._native_msk = (self.msk, ctx, packed)
+        return None if cache[2] is None else (ctx,) + cache[2]
+
 
 class MIFERingLWE(IPFEAbsCrypto):
     """Crypto operations for Ring-LWE-based multi-input inner-product FE."""
+
+    #: Whether ciphertexts may use the binary format (not where tags cover
+    #: the JSON form, as in the threshold variant).
+    _binary_ciphertexts = True
 
     def __init__(self, config: dict, **kwargs) -> None:
         """Initialise the MIFE Ring-LWE crypto object.
 
         Args:
             config: Must contain ``keys`` with ``pp`` (public parameters) and
-                optionally ``sk`` (encryption keys).
+                optionally ``sk`` (encryption keys). ``ct_format``: ``"json"``
+                (default: ``ct0`` and ``ct1`` as decimal strings) or
+                ``"binary"`` (``ct``: bytes, see
+                :func:`~pyfe4ai.utils.ring_lwe_utils.encode_binary_ciphertext`;
+                about a third of the size, and faster to produce and read).
+                Decryption reads both formats.
         """
         super().__init__(config, **kwargs)
         self.pp = self.keys["pp"]
-        self.A = [gp.mpz(v) for v in self.pp["A"]]
+        self.pp["A"]  # a public parameter set without a raises here, as before
+        self.ct_format = config.get("ct_format", "json")
+        if self.ct_format not in CT_FORMATS or (self.ct_format == "binary" and not self._binary_ciphertexts):
+            raise FEValidationError("unsupported ciphertext format {!r}".format(self.ct_format))
         if self._has_private_keys():
             self.sk = self.keys["sk"]
 
-    def _check_plaintext(self, matrix_pt) -> list:
-        """Return *matrix_pt* as ``eta`` integer rows of one length ``1..ring_n``."""
+    @property
+    def A(self) -> list:
+        """The public polynomial ``a``, converted from ``pp["A"]`` on first use
+        (decryption never needs it)."""
+        a = self.__dict__.get("_A")
+        if a is None:
+            a = self._A = [gp.mpz(v) for v in self.pp["A"]]
+        return a
+
+    @A.setter
+    def A(self, value) -> None:
+        self._A = value
+
+    def _check_encryption_keys(self) -> None:
         if not self._has_public_parameters():
             raise FEKeyError("no public parameters provided for encryption")
         if not self._has_private_keys():
             raise FEKeyError("no encryption key provided")
+
+    def _check_plaintext(self, matrix_pt) -> list:
+        """Return *matrix_pt* as ``eta`` integer rows of one length ``1..ring_n``."""
+        self._check_encryption_keys()
         if not isinstance(matrix_pt, list) or not matrix_pt or not isinstance(matrix_pt[0], list):
             raise FEValidationError("plaintext matrix must be a list of rows")
         if len(matrix_pt) != self.pp["eta"]:
@@ -301,36 +367,120 @@ class MIFERingLWE(IPFEAbsCrypto):
             raise FEKeyError("encryption key lacks the one-time pad u")
         return rows
 
+    def _encryption_key(self) -> dict:
+        """This slot's key in the form encryption uses, computed once per key:
+        ``pk`` and the pad ``u`` as integers, and with an NTT-friendly ``q``
+        (``ring`` not ``None``) the transforms ``NTT(a)`` and ``NTT(pk_row)``."""
+        pk, u = self.sk["pk"], self.sk.get("u")
+        cache = self.__dict__.get("_enc_key")
+        if cache is None or cache["src"] != (id(pk), id(u), id(self.A)):
+            q = gp.mpz(self.pp["q"])
+            ring = RingNTT.get(q, self.pp["ring_n"])
+            pk_m = [[gp.mpz(v) for v in row] for row in pk]
+            cache = {
+                "src": (id(pk), id(u), id(self.A)),
+                "refs": (pk, u, self.A),  # keeps the ids above valid
+                "pk": pk_m,
+                "u": None if u is None else [[gp.mpz(v) for v in row] for row in u],
+                "ring": ring,
+                "a_hat": None if ring is None else ring.forward(self.A),
+                "pk_hat": None if ring is None else [ring.forward(row) for row in pk_m],
+            }
+            self._enc_key = cache
+        return cache
+
+    def _native(self):
+        """The native ring context (see :mod:`pyfe4ai.utils.native_backend`), or ``None``."""
+        return native_backend.ring_context(self.pp["q"], self.pp["ring_n"])
+
+    def _native_encryption_key(self):
+        """This slot's native encryption key (``NTT(a)``, ``NTT(pk)``, ``u``), or
+        ``None`` when encryption runs in Python (see :meth:`_native`; also for
+        widths or a Gaussian sampler the native code does not reproduce)."""
+        ctx = self._native()
+        if ctx is None or not native_backend.sampling_ok(self.pp["sigma2"], self.pp["sigma3"]):
+            return None
+        key = self._encryption_key()
+        cached = key.get("native")
+        if cached is None or cached[0] is not ctx:
+            q = gp.mpz(self.pp["q"])
+            try:
+                nkey = native_backend.ext().enc_key(
+                    ctx.cap, self.A, self.sk["pk"], self.sk.get("u"), q // gp.mpz(self.pp["p"])
+                )
+            except (TypeError, ValueError, OverflowError):
+                nkey = None  # malformed key: the Python path reports it
+            cached = key["native"] = (ctx, nkey)
+        return cached[1]
+
     def _padded_rows(self, matrix_pt, extra_pad=None) -> list:
         """Rows ``x + u (+ extra_pad)`` mod q, zero-extended to ``ring_n``."""
         q = gp.mpz(self.pp["q"])
         ring_n = self.pp["ring_n"]
         rows = []
-        for i, (row, u_row) in enumerate(zip(matrix_pt, self.sk["u"])):
+        for i, (row, u_row) in enumerate(zip(matrix_pt, self._encryption_key()["u"])):
             padded = [gp.mpz(int(v)) for v in row] + [gp.mpz(0)] * (ring_n - len(row))
-            extra = extra_pad[i] if extra_pad is not None else [0] * ring_n
-            rows.append([(x + gp.mpz(u) + e) % q for x, u, e in zip(padded, u_row, extra)])
+            if extra_pad is None:
+                rows.append([(x + u) % q for x, u in zip(padded, u_row)])
+            else:
+                rows.append([(x + u + e) % q for x, u, e in zip(padded, u_row, extra_pad[i])])
         return rows
 
     def _encrypt_rows(self, w_rows: list, k: int) -> dict:
-        """BMMS21 Ring-LWE encryption of rows already reduced mod q."""
+        """BMMS21 Ring-LWE encryption of rows already reduced mod q.
+
+        ``r`` is transformed once and multiplied with the cached ``NTT(pk_row)``
+        and ``NTT(a)``: the same ciphertext as ``poly_mul(pk_row, r)`` and
+        ``poly_mul(a, r)`` with the same samples, from 1 + eta + 1 NTTs instead
+        of 3 (eta + 1).
+        """
         q = gp.mpz(self.pp["q"])
         ring_n = self.pp["ring_n"]
-        delta = q // gp.mpz(self.pp["p"])
-        pk = [[gp.mpz(v) for v in row] for row in self.sk["pk"]]
-        r = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"])[0]
-        noise = discrete_gaussian_matrix(self.pp["eta"], ring_n, self.pp["sigma3"])
-        ct0 = []
-        for i, w_row in enumerate(w_rows):
-            ct0_i = poly_add(poly_mul(pk[i], r, q), noise[i], q)
-            ct0.append(poly_add(ct0_i, [delta * w for w in w_row], q))
-        e = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"])[0]
-        ct1 = poly_add(poly_mul(self.A, r, q), e, q)
+        nkey = self._native_encryption_key()
+        binary = self.ct_format == "binary"
+        if nkey is not None and len(w_rows) == self.pp["eta"] and all(len(row) == ring_n for row in w_rows):
+            out = native_backend.ext().encrypt(
+                nkey, w_rows, float(self.pp["sigma2"]), float(self.pp["sigma3"]),
+                native_backend.random_input(native_backend.gauss_bytes(ring_n) * (2 + len(w_rows))), binary,
+                **native_backend.seed_kwargs(),
+            )
+            return {"ct": out, "k": k} if binary else {"ct0": out[0], "ct1": out[1], "k": k}
+        ct0, ct1 = self._encrypt_rows_python(w_rows)
+        return self._format_ciphertext(ct0, ct1, k)
+
+    def _format_ciphertext(self, ct0: list, ct1: list, k: int) -> dict:
+        """The ciphertext dict of rows ``ct0`` and ``ct1`` (integers in ``[0, q)``)."""
+        if self.ct_format == "binary":
+            return {"ct": encode_binary_ciphertext(ct0, ct1, self.pp["q"], self.pp["ring_n"]), "k": k}
         return {
             "ct0": [[gp.digits(v) for v in row] for row in ct0],
             "ct1": [gp.digits(v) for v in ct1],
             "k": k,
         }
+
+    def _encrypt_rows_python(self, w_rows: list) -> tuple:
+        """``(ct0, ct1)`` of :meth:`_encrypt_rows` as integers, in Python."""
+        q = gp.mpz(self.pp["q"])
+        ring_n = self.pp["ring_n"]
+        delta = q // gp.mpz(self.pp["p"])
+        key = self._encryption_key()
+        ring = key["ring"]
+        r = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"])[0]
+        noise = discrete_gaussian_matrix(self.pp["eta"], ring_n, self.pp["sigma3"])
+        r_hat = None if ring is None else ring.forward(r)
+
+        def times_r(poly, poly_hat):
+            if ring is None:
+                return poly_mul(poly, r, q)
+            return ring.inverse(ring.mul(poly_hat, r_hat))
+
+        pk_hat = key["pk_hat"] or [None] * len(key["pk"])
+        ct0 = []
+        for i, w_row in enumerate(w_rows):
+            prod = times_r(key["pk"][i], pk_hat[i])
+            ct0.append([(c + e + delta * w) % q for c, e, w in zip(prod, noise[i], w_row)])
+        e = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"])[0]
+        return ct0, poly_add(times_r(self.A, key["a_hat"]), e, q)
 
     def encrypt(self, matrix_pt: list[list[int]]) -> dict:
         """Encrypt this slot's matrix: Ring-LWE encryption of ``x + u mod q``.
@@ -364,11 +514,29 @@ class MIFERingLWE(IPFEAbsCrypto):
 
         return self._decrypt_with_pad_term(dct_ct, dk["sk_y"], dk["z"], fusion_weight, batch.pop())
 
-    def _decrypt_with_pad_term(self, dct_ct, sk_y_map, z, fusion_weight, k) -> list:
-        """Dec2(sum_i Dec1_i - Delta z) for the first *k* coefficients."""
+    def _decrypt_with_pad_term(self, dct_ct, sk_y_map, z, fusion_weight, k, sk_hats=None) -> list:
+        """Dec2(sum_i Dec1_i - Delta z) for the first *k* coefficients.
+
+        The products ``ct1_i sk_i`` are summed in the NTT domain and
+        transformed back once (NTT linearity: the same sum mod q as summing
+        ``poly_mul(ct1_i, sk_i)``), from ``slots + 1`` NTTs instead of
+        ``3 slots``. *sk_hats*, a dict the caller keeps for all chunks
+        decrypted with one key, caches ``NTT(sk_i)`` per slot.
+        """
+        ctx = self._native()
+        if ctx is not None:
+            out = self._decrypt_native(ctx, [dct_ct], [z], [k], sk_y_map, fusion_weight, sk_hats)
+            if out is not None:
+                values, none = out
+                values = values.tolist()
+                if none is not None:
+                    values = [None if bad else v for v, bad in zip(values, none.tolist())]
+                return values
         q = gp.mpz(self.pp["q"])
         delta = q // gp.mpz(self.pp["p"])
+        ring = RingNTT.get(q, self.pp["ring_n"])
         total = [(-delta * gp.mpz(v)) % q for v in z]
+        acc = None
         for nid, ct in dct_ct.items():
             y = int_vector(
                 fusion_weight[nid], "fusion weight of {}".format(nid),
@@ -378,19 +546,93 @@ class MIFERingLWE(IPFEAbsCrypto):
                 _, ct0, ct1 = canonical_ring_ciphertext(ct, int(q), self.pp["eta"], self.pp["ring_n"])
             except FESchemeError as exc:
                 raise FESchemeError("malformed ciphertext of {}".format(nid)) from exc
-            ct0 = [[gp.mpz(v) for v in row] for row in ct0]
-            ct1 = [gp.mpz(v) for v in ct1]
-            sk_y = [gp.mpz(v) for v in sk_y_map[nid]]
             y_vec = [gp.mpz(int(v)) for v in y]
             # Dec1 of slot nid: Delta <w_i, y_i> + noise (coefficient-wise)
-            lhs = mat_vec_mul(transpose(ct0), y_vec, q)
-            rhs = poly_mul(ct1, sk_y, q)
-            total = poly_add(total, poly_add(lhs, poly_neg(rhs, q), q), q)
+            for y_row, ct0_row in zip(y_vec, ct0):
+                total = [(t + c * y_row) % q for t, c in zip(total, ct0_row)]
+            if ring is None:
+                rhs = poly_mul([gp.mpz(v) for v in ct1], [gp.mpz(v) for v in sk_y_map[nid]], q)
+                total = poly_add(total, poly_neg(rhs, q), q)
+                continue
+            sk_hat = None if sk_hats is None else sk_hats.get(nid)
+            if sk_hat is None:
+                sk_hat = ring.forward([gp.mpz(v) for v in sk_y_map[nid]])
+                if sk_hats is not None:
+                    sk_hats[nid] = sk_hat
+            acc = ring.mul_add(acc, ring.forward(ct1), sk_hat)
+        if acc is not None:
+            total = [(t - v) % q for t, v in zip(total, ring.inverse(acc))]
         bound = (
             self.pp["n"] * self.pp["eta"]
             * gp.mpz(self.pp["bound_x"]) * gp.mpz(self.pp["bound_y"])
         )
         return [decode_scaled(v, delta, q, bound) for v in total[:k]]
+
+    def _decrypt_native(self, ctx, chunk_cts, zs, ks, sk_y_map, fusion_weight, sk_hats=None):
+        """:meth:`_decrypt_with_pad_term` of several chunks in one native call.
+
+        ``chunk_cts[j]`` maps every slot to its ciphertext of chunk ``j``,
+        ``zs[j]`` and ``ks[j]`` are that chunk's key term and batch length.
+        The same checks as the Python path come first (and raise the same
+        errors). Returns ``(values, none)``: the decoded values as ``int64``
+        and a boolean mask of those that are ``None`` (or ``None`` if all
+        decode); ``None`` if the native code does not handle the input (the
+        caller then runs the Python path).
+        """
+        eta, ring_n = self.pp["eta"], self.pp["ring_n"]
+        nids = list(chunk_cts[0])
+        ys, chunks = {}, []
+        for dct_ct in chunk_cts:
+            slots = []
+            for nid, ct in dct_ct.items():
+                if nid not in ys:
+                    ys[nid] = int_vector(
+                        fusion_weight[nid], "fusion weight of {}".format(nid),
+                        length=eta, bound=int(self.pp["bound_y"]),
+                    )
+                try:  # the shape checks of canonical_ring_ciphertext; values are parsed natively
+                    k = ct["k"]
+                    if "ct" in ct and "ct0" not in ct:  # binary format
+                        if not isinstance(ct["ct"], (bytes, bytearray, memoryview)):
+                            raise TypeError("binary ciphertext must be bytes")
+                        entry = bytes(ct["ct"])
+                    else:
+                        entry = (ct["ct0"], ct["ct1"])
+                except (KeyError, TypeError) as exc:
+                    raise FESchemeError("malformed ciphertext of {}".format(nid)) from exc
+                if not isinstance(k, int) or isinstance(k, bool) or not 1 <= k <= ring_n:
+                    raise FESchemeError("malformed ciphertext of {}".format(nid))
+                slots.append(entry)
+            if list(dct_ct) != nids:
+                return None
+            chunks.append(slots)
+        ext = native_backend.ext()
+        hats = []
+        for nid in nids:
+            hat = None if sk_hats is None else sk_hats.get(("native", nid))
+            if hat is None:
+                try:
+                    hat = ext.ntt_mont(ctx.cap, ctx.pack(sk_y_map[nid]))
+                except (TypeError, ValueError, OverflowError):
+                    return None
+                if sk_hats is not None:
+                    sk_hats[("native", nid)] = hat
+            hats.append(hat)
+        q = gp.mpz(self.pp["q"])
+        bound = self.pp["n"] * self.pp["eta"] * gp.mpz(self.pp["bound_x"]) * gp.mpz(self.pp["bound_y"])
+        try:
+            data, mask = ext.decrypt_tensor(
+                ctx.cap, chunks, zs, ks, hats, [ys[nid] for nid in nids],
+                int(q // gp.mpz(self.pp["p"])), int(bound), native_backend.get_threads(),
+            )
+        except NotImplementedError:
+            return None
+        except ValueError as exc:
+            if exc.args[:1] == ("malformed ciphertext",):
+                raise FESchemeError("malformed ciphertext of {}".format(nids[exc.args[1]])) from exc
+            raise
+        values = np.frombuffer(data, dtype=np.int64)
+        return values, (None if mask is None else np.frombuffer(mask, dtype=np.uint8).astype(bool))
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
         """Not implemented for this scheme; raises :class:`NotImplementedError`."""

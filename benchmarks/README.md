@@ -32,15 +32,25 @@ scheme families in the repository.
 - `benchmark_sampling.py`: compares the default rounded Gaussian sampler with
   the exact `"facct"` sampler per width (`--e2e`: one MCFE Ring-LWE round,
   `security_profile="standard"`, with each).
+- `bench_fl_compare.py`: the FL aggregation round (`encrypt_gradient` +
+  `aggregate_gradients`) per scheme family, with backend, threads, ciphertext
+  format and offline phase as options; appends JSON records for before /
+  after comparisons. Results and the comparison with HE are in
+  [`PERFORMANCE.md`](PERFORMANCE.md).
+- `bench_offline_potential.py`: per-element split of the DDH and DCR MCFE
+  into label-dependent offline work and the online rest.
 - `fl_path_coverage.py`: not a timing benchmark. Runs the ML-adapter FL path
   (`encrypt_gradient` + `aggregate_gradients`) for every registry entry with
   that variant's own test configuration and reports `usable` / `unusable`
-  (with the reason) / `unverified` (pairing entries without `charm-crypto`).
+  (with the reason) / `unverified` (pairing entries without a backend for
+  the default group).
   `--output json` for machine-readable output.
 
 The `FHMultiIPE` and quadratic scripts, and `benchmark_ndarray_helpers.py
---group fh|quadratic|all`, need `charm-crypto-framework` (see *Quick Start* in
-the top-level README, or the Docker image); everything else runs without it.
+--group fh|quadratic|all`, need a pairing backend: the Rust extension for
+BLS12-381 (the default), or `charm-crypto-framework` for the curves chosen
+with `--pairing-group` (e.g. `MNT224`; see *Quick Start* in the top-level
+README, or the Docker image); everything else runs without either.
 All scripts use the toy default parameters unless stated otherwise.
 
 ## Recommended Usage
