@@ -55,10 +55,16 @@ _PAD_DOMAIN = "pyfe4ai/mcfe/ring_lwe/H(u',label)"
 
 
 def label_pad(u_prime: str, label, q, eta: int, ring_n: int) -> list:
-    """Return ``H(u'_i, label)`` as ``eta`` rows of ``ring_n`` coefficients mod q."""
-    flat = hash_to_zq_vector(
-        "{}|{}".format(u_prime, encode_label(label)), q, eta * ring_n, domain=_PAD_DOMAIN
-    )
+    """Return ``H(u'_i, label)`` as ``eta`` rows of ``ring_n`` coefficients mod q
+    (expanded natively when the extension has a context for ``(q, ring_n)``)."""
+    ctx = native_backend.ring_context(q, ring_n)
+    if ctx is not None:
+        words = native_backend.ext().hash_to_zq(ctx.cap, label_pad_material(u_prime, label), eta * ring_n)
+        flat = [gp.mpz(v) for v in ctx.unpack(words)]
+    else:
+        flat = hash_to_zq_vector(
+            "{}|{}".format(u_prime, encode_label(label)), q, eta * ring_n, domain=_PAD_DOMAIN
+        )
     return [flat[r * ring_n:(r + 1) * ring_n] for r in range(eta)]
 
 

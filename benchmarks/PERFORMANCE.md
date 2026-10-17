@@ -9,6 +9,8 @@ and BLS12-381 measurements), `results/perf_tmcfe_wide_q_2026-10-17.json`
 (the threshold Ring-LWE MCFE in 256-bit words) and
 `results/perf_native_bls_msm_2026-10-17.json` (multi-scalar multiplication on
 BLS12-381); the last two were developed on side branches, now merged.
+Branch `perf/phase2` (from local `main` 810a4a5) adds the items of *Phase 2*
+below; its numbers are in that section.
 The C++ prototype was removed once the Rust backend matched it (same kernels,
 same outputs, the same tests); its numbers stay here as measured.
 
@@ -16,16 +18,83 @@ same outputs, the same tests); its numbers stay here as measured.
 
 | family | native (Rust) | still Python |
 | --- | --- | --- |
-| MCFE Ring-LWE (`ring_lwe`, `ring_lwe_decentralized`) | ndarray encryption, offline / online phases, key derivation, aggregation | single-vector label pad; setup; dMCFE key shares and their combination |
+| MCFE Ring-LWE (`ring_lwe`, `ring_lwe_decentralized`) | ndarray encryption (rounded or FACCT noise), offline / online phases, key derivation, aggregation, single-vector label pads; dMCFE key shares and their combination | setup |
 | MCFE Ring-LWE threshold | any `q` below 2^253 (the flooded `q` of `standard` has 212 bits: 256-bit words): ndarray encryption, key derivation, Shamir shares of the key, partial decryptions (parsing, digests, NTT-domain products), combination | the flooding noise (`discrete_gaussian_bigint`, mpfr Box-Muller: 74% of a partial decryption), ciphertext tags (JSON + HMAC), setup; see below |
 | MIFE Ring-LWE | encryption, key derivation, decryption (no ndarray helpers) | setup |
-| SIFE Ring-LWE, SIFE FullySec Ring-LWE | -- | everything (NTT in Python) |
+| SIFE Ring-LWE | encryption, `<ct0, y>`, NTTs and products (also of setup) | decoding, setup sampling |
+| SIFE FullySec Ring-LWE | NTTs and products (`ring_lwe_utils` dispatch) | Gaussian sampling with mpfr (91% of an encryption), slot checks |
 | MCFE dense LWE (`lwe`, `fullysec_lwe`, `lwe_decentralized`) | label hashing and dot products of ndarray encryption / decryption | rounding, decoding, key derivation, single vectors; dMCFE DCR key shares |
 | MCFE LWE threshold | ndarray encryption (as `lwe`) | partial decryptions (label hashed again in Python per element), flooding, combination, Shamir shares |
 | ABDP15 SIFE / MIFE LWE, MIFE LWE threshold, ALS16 | -- (ABDP15 encryption: numpy matrix products) | decryption, keys, flooding, Shamir shares |
 | DDH over ristretto255 | MCFE ndarray encryption and decryption with dlog in one call each; group operations | MIFE / SIFE call per group operation |
-| DDH over Z_p^*, Damgård, Paillier | -- | everything (gmpy2 `powmod`, Python dlog tables); see the design note below |
+| DDH over Z_p^*, Damgård, Paillier | -- (gmpy2) | `powmod`; but the label masks / key terms (MCFE) and the randomness powers (SIFE / MIFE Paillier, MIFE DDH) can be computed offline (*Phase 2*), and the dlog tables are keyed by value |
 | Pairing schemes, quadratic FE | BLS12-381 group operations, `multi_pair`, products of powers and powers of one base (`multiexp`, `pow_many`), batch deserialisation, G_T dlog, hash to G1 / G2 | matrix algebra mod p, Shamir shares of tMCFE keys; the G_T dlog table is built once per base and bound |
+
+## Phase 2 (branch `perf/phase2`)
+
+Host (M2 Max, Python 3.13), interleaved with local `main` 810a4a5 where
+both apply, medians of 3 runs unless stated.
+
+| item | before | after |
+| --- | ---: | ---: |
+| 1. u64 words for 62-63-bit `q` (`bound_x = 2`, precision 0: 63 bits since the 3X fix), 10^4, binary: client / aggregator / online aggregator | 2.77 / 7.25 / 2.97 ms | 2.04 / 5.14 / 1.59 ms |
+| 2. `sampler="facct"`, standard, 10^4, binary, client (1 / 4 threads) | 355 ms (Python) | 18.3 / 6.4 ms (rounded: 2.7 / 1.0 ms) |
+| 2. FACCT sampler alone, per sample (sigma 3.2 .. 2^40) | 5.6-7.3 us (Python) | 0.39-0.52 us |
+| 3. SIFE Ring-LWE (eta 10, ring_n 4096): setup / encrypt / decrypt | 374 / 200 / 40 ms | 151 / 16 / 15.5 ms |
+| 3. SIFE FullySec Ring-LWE (eta 4): setup / encrypt / decrypt | 1257 / 1078 / 290 ms | 510 / 807 / 67 ms |
+| 3. dMCFE Ring-LWE, 10^4: key share per client / combination | 25.3 / 12.6 ms | 4.7 / 2.0 ms |
+| 5. MCFE DDH / Damgård / Paillier, 20 elements, online client | 212 / 212 / 717 ms | 0.67 / 0.67 / 0.39 ms |
+| 5. ... online aggregator | 220 / 225 / 717 ms | 4.6 / 6.9 / 0.9 ms |
+| 5. SIFE / MIFE Paillier, MIFE DDH, online encryption per element | 28.7 / 30.5 / 11.4 ms | 0.03-0.04 ms |
+| 6. MCFE Ring-LWE single-vector encryption (eta 4) | 141 ms (Python) | 15 ms |
+
+1. **u64 words up to 2^63.** Montgomery and Shoup products and sums need
+   only 2q < 2^64; at 62-63 bits the NTT keeps its values in [0, q)
+   instead of Harvey's lazy [0, 4q). The 3X fix (q +3 bits) had moved this
+   configuration from 60 to 63 bits and into u128 words (+45% / +51%);
+   this recovers it.
+2. **Native FACCT** (`rust/core/src/facct.rs`): the getrandbits calls and
+   decisions of `discrete_gaussian_facct`; the tables come from Python, the
+   acceptance test is decided in fixed point (error below 2^-110) and the
+   tests it cannot decide (about 2^-99 of them) call the Python formula, so
+   the samples for a given bit source are the reference's (its KATs hold
+   natively). 30% of the time is ChaCha20, 50 bytes per trial. The default
+   stays the rounded sampler.
+3. **SIFE Ring-LWE and dMCFE natively; NTT dispatch.**
+   `ring_lwe_utils.ntt_forward` / `ntt_inverse` / `poly_mul` (so `RingNTT`
+   and every Python caller) use the extension when it has a context for
+   (q, n) with the same root. SIFE Ring-LWE encrypts through the native
+   `encrypt`; dMCFE key shares are `pad_terms` and `lincomb` calls. SIFE
+   FullySec is bound by `discrete_gaussian_bigint` (MPFR Box-Muller, one
+   `os.urandom` per `getrandbits`); so are tMCFE's flooding noise and ALS16.
+   dMCFE / tMCFE separately, 10^4 elements: dMCFE client 2.8 ms, key share
+   4.7 ms per client, combination 2.0 ms, decryption 3.0 ms; tMCFE (q of 212
+   bits) client 20.2 ms, key shares 41.3 ms, partial decryption 216 ms per
+   server, combination 4.4 ms (unchanged by this branch).
+4. **ABDP15 / ALS16 (profiled, nothing ported).** ABDP15 `memory`: 11.1 ms
+   per element to encrypt at standard (lwe_n 768), 95% in the numpy / BLAS
+   product; `stream`: 60% SHAKE-128 (OpenSSL) -- a Rust port would not beat
+   either; decryption 0.25 ms per element. ALS16 (toy only: `standard`
+   refuses it): 436-500 ms per element, 70% `discrete_gaussian_bigint`,
+   27% big-integer matrix-vector products.
+5. **Offline phases for Z_p^* and DCR** (`pyfe4ai/schemes/mcfe/offline.py`,
+   `pyfe4ai/schemes/random_offline.py`): the label masks prod H(l)^s of
+   MCFE-DDH / Damgård / Paillier and the label terms of a functional key, and
+   the randomness powers g^r, pk^r of SIFE- / MIFE-Paillier and MIFE-DDH, are
+   computed before the plaintext (the ML adapter's `precompute_gradient` /
+   `prepare_aggregation` use the MCFE ones); the same ciphertexts. The
+   offline work equals the former total. dlog tables keyed by value instead
+   of decimal strings (half the online aggregation). Multi-exponentiation:
+   not used -- the weights of the FL path are small and the large exponents
+   are moved offline.
+6. **Single-vector label pads natively** (identical; 3.8 -> 2.9 ms per pad).
+
+Not done, needs a decision: a faster `discrete_gaussian_bigint` -- reading the
+OS in blocks as FACCT's `_OSRandomBuffer` does (about -27%, changes how
+secret randomness is held), or a native MPFR-exact Box-Muller (a sizeable
+multi-precision port) -- for SIFE FullySec, tMCFE flooding, ALS16 and MIFE
+LWE threshold; packed ndarray ciphertexts for SIFE FullySec (3.65 MB per
+element now; a new ciphertext layout); FACCT as the native default.
 
 ## Workload and method
 

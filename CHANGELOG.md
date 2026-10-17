@@ -83,6 +83,31 @@ compatibility).
   keep the loops. End to end (`report`, host): MIFE / MCFE / dMCFE / tMCFE
   FH-Multi-IPE 24 / 79 / 79 / 138 -> 18 / 47 / 48 / 70 ms, SGP 35 -> 30 ms,
   Quad 65 -> 48 ms (setup 16 -> 6 ms); see `benchmarks/PERFORMANCE.md`.
+- **u64 words for moduli of 62 and 63 bits** (the NTT keeps its values in
+  [0, q) there instead of Harvey's lazy [0, 4q)): the `bound_x = 2`
+  configuration, at 63 bits since the 3X fix, is back in 64-bit words --
+  client 2.77 -> 2.04 ms, aggregator 7.25 -> 5.14 ms (10^4 elements).
+- **The exact FACCT sampler in Rust**: `sampler="facct"` keeps the Ring-LWE
+  encryption native, with the getrandbits calls and decisions of
+  `discrete_gaussian_facct` (its known answers hold natively; the rare
+  acceptance tests the fixed-point bound cannot decide use the Python
+  formula). 10^4 elements: 355 ms (Python) -> 18.3 ms; 0.45 us per sample.
+  The default stays the rounded sampler.
+- `ring_lwe_utils` NTTs and `poly_mul` run natively when the extension has a
+  context for (q, n) and the caller's root (the same values): SIFE Ring-LWE
+  encrypts natively (200 -> 16 ms, eta 10), SIFE FullySec Ring-LWE decrypts
+  in 67 instead of 290 ms; dMCFE Ring-LWE key shares and their combination
+  are native (25.3 -> 4.7 ms per client, 12.6 -> 2.0 ms); single-vector MCFE
+  label pads are hashed natively.
+- **Offline phases for Z_p^* and DCR**: `precompute(label, shapes)` /
+  `encrypt_lst_ndarray(..., precomputed=...)` and `prepare_key(dk, label,
+  shapes)` for MCFE-DDH, MCFE-Damgard and MCFE-Paillier (and their
+  decentralized variants; used by `precompute_gradient` and
+  `prepare_aggregation`), `precompute(shapes)` for SIFE- / MIFE-Paillier
+  and MIFE-DDH; the same ciphertexts. Online, 20 elements: client 212 /
+  212 / 717 -> 0.67 / 0.67 / 0.39 ms, aggregator 220 / 225 / 717 -> 4.6 /
+  6.9 / 0.9 ms. Discrete-log tables are keyed by value (the old string
+  keys are still read).
 
 ### Added
 
