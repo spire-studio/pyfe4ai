@@ -1,0 +1,41 @@
+# Cryptographic code review, October 2026 (performance work)
+
+Review only: the reviewed branches are unchanged. Each finding below has a
+failing test on a review branch cut from the reviewed commit (`tests/review/`).
+Later increments are reviewed as diffs against these commits.
+
+## Reviewed commits
+
+| Branch | Commit | Reviewed range | Review branch |
+| --- | --- | --- | --- |
+| local `main` | 810a4a5 | `426aea8..810a4a5` (v0.3.0 to main, first-parent merges) | `review/crypto-2026-10` |
+| `perf/phase2` | 34d2063 | `810a4a5..34d2063` | `review/crypto-2026-10-phase2` |
+| `exp/hash-and-flooding` | 3a84434 | `810a4a5..3a84434` | `review/crypto-2026-10-hash` |
+| `exp/rns-modulus` | 256b6a9 | `810a4a5..256b6a9` | `review/crypto-2026-10-rns` |
+
+Next increments: the Rust `discrete_gaussian_bigint` (from 34d2063), the KL
+flooding prototype (`exp/kl-flooding`, from 810a4a5), a packed layout for
+`sife/fullysec_ring_lwe`.
+
+## Findings and their tests
+
+| Id | Severity | Commit | Where | Test |
+| --- | --- | --- | --- | --- |
+| H1 | high | 34d2063 | `schemes/random_offline.py:62-74`, `schemes/mcfe/offline.py:91-103`: one-time check not atomic; `copy.copy` / fork keep `used = False` -> same `r` twice | phase2 `test_offline_one_time.py` |
+| M1 | medium | 810a4a5 | `schemes/mcfe/ring_lwe.py` precompute + native `PrecomputedObj`: reused after `fork()` | `test_precompute_one_time.py::test_precomputation_is_not_reused_after_fork` |
+| M2 | medium | all four | `rust/native/src/lib.rs` `encrypt_precomputed` / `precomputed_info` (main 948/970; phase2 1089/1111; hash 964/986; rns 1021/1046, `rns.rs` 276-288): mutex held across `py.detach` -> deadlock | `test_precompute_one_time.py::test_concurrent_use...`, rns `test_rns_precompute_deadlock.py` |
+| M3 | medium | 810a4a5 | `rust/native/src/pairing.rs:518-537` GT table cache never evicted; `sife/fh_ipe_pairing.py:250-254` new base per decryption | `test_bls12_381_review.py::test_fh_ipe_decryptions_do_not_grow_memory` |
+| M4 | medium | 34d2063 | `utils/native_backend.py:212`: `-neg_c` in the 53-bit default context -> native FACCT acceptance off by 2^-55 | phase2 `test_native_facct_precision.py` |
+| M5 | medium | 3a84434 | `schemes/mcfe/ring_lwe.py:83-92`, `mcfe/lwe.py:264`: `label_hash` defaulted, not bound to ciphertexts; tMCFE shares drop it | hash `test_label_hash_binding.py` |
+| M6 | medium (pre-existing) | 810a4a5 | `utils/ml_adapter.py:744-755`: (nid, label) checked before, recorded after encryption | `test_adapter_label_race.py` |
+| L1 | low | 810a4a5 | `pairing.rs:129,136-139`, `utils/bls12_381.py:96-125`: trailing bytes, lax tags, `OverflowError` | `test_bls12_381_review.py` |
+| L2 | low | 810a4a5 | `pairing.rs:526-551`, `ec.rs:109-126`: `2 bound + 1` wraps, no cap | `test_bls12_381_review.py::test_gt_dlog_with_a_bound_of_2_63` |
+| L3 | low | 810a4a5 | `dense.rs:44-49`, `rlwe.rs:212-214`, `rlwe.rs:499`: unchecked sizes, divide by zero -> `PanicException` / poisoned mutex | `test_native_robustness.py` |
+| L4 | low | 810a4a5 | `ec.rs:183` vs `utils/ec_group.py`: ristretto hex parsed differently by the backends | `test_native_robustness.py` |
+| L5 | low | 810a4a5 | `utils/native_backend.py:99`: `PYFE4AI_THREADS` not validated or capped | `test_native_robustness.py` |
+| L6 | low (pre-existing) | 810a4a5 | `utils/sampling_utils.py:149`: `gauss_next` cached globally, duplicated by fork | `test_gauss_next_fork.py` |
+| L7 | low | 810a4a5, 34d2063 | `rust/core/src/rlwe.rs` (`encrypt_chunk`, `precompute`), `CallDrbg::rng`: r, NTT(r), t, per-chunk buffers, seed copies not wiped | reading |
+| L8 | low (latent) | 810a4a5 | `pairing.rs:238-251`: `ZR ** k` reduces k mod r, not r - 1 | reading / agent PoC |
+| T1 | test bug (pre-existing) | 4081616.. | `tests/mcfe/test_ddh_threshold.py:245`: tolerance below the quantisation error (about 0.35 % of runs) | `test_flaky_ddh_threshold.py` |
+
+Informational items (no test) are listed in the review report.
