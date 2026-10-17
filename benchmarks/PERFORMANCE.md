@@ -5,16 +5,17 @@ against homomorphic encryption (TenSEAL 0.3.18, i.e. Microsoft SEAL) on the
 same workload. Raw numbers: `results/perf_native_core_2026-10-17.json`
 (first session: a C++ prototype of the native backend, host and docker) and
 `results/perf_rust_linux_2026-10-17.json` (the Rust backend in docker, DRBG
-and BLS12-381 measurements). The C++ prototype was removed once the Rust
-backend matched it (same kernels, same outputs, the same tests); its numbers
-stay here as measured.
+and BLS12-381 measurements); the threshold Ring-LWE MCFE in 256-bit words
+(branch `perf/native-tmcfe-wide-q`): `results/perf_tmcfe_wide_q_2026-10-17.json`.
+The C++ prototype was removed once the Rust backend matched it (same kernels,
+same outputs, the same tests); its numbers stay here as measured.
 
 ## Native coverage (status)
 
 | family | native (Rust) | still Python |
 | --- | --- | --- |
 | MCFE Ring-LWE (`ring_lwe`, `ring_lwe_decentralized`) | ndarray encryption, offline / online phases, key derivation, aggregation | single-vector label pad; setup; dMCFE key shares and their combination |
-| MCFE Ring-LWE threshold | only with toy parameters | everything under `standard`: its flooded `q` (212 bits at `ring_n` 8192) exceeds the 125-bit native words, so encryption takes 282 ms per 10^4 elements (host); partial decryptions and Shamir shares are Python in any case |
+| MCFE Ring-LWE threshold | any `q` below 2^253 (the flooded `q` of `standard` has 212 bits: 256-bit words): ndarray encryption, key derivation, Shamir shares of the key, partial decryptions (parsing, digests, NTT-domain products), combination | the flooding noise (`discrete_gaussian_bigint`, mpfr Box-Muller: 74% of a partial decryption), ciphertext tags (JSON + HMAC), setup; see below |
 | MIFE Ring-LWE | encryption, key derivation, decryption (no ndarray helpers) | setup |
 | SIFE Ring-LWE, SIFE FullySec Ring-LWE | -- | everything (NTT in Python) |
 | MCFE dense LWE (`lwe`, `fullysec_lwe`, `lwe_decentralized`) | label hashing and dot products of ndarray encryption / decryption | rounding, decoding, key derivation, single vectors; dMCFE DCR key shares |
@@ -198,6 +199,52 @@ kernel timings: client -17% (binary 3.4 -> about 2.9 ms), aggregator online
 BMMS21's analysis and the parameter derivation assume a prime) and the
 binary format, so it needs a security review first; the 60-bit-q rows show
 what u64 arithmetic gives.
+
+## Threshold MCFE over Ring-LWE (`mcfe/ring_lwe_threshold`), 10^4 elements
+
+The flooded modulus (statistical parameter 64 on top of BMMS21's `q`) has
+212 bits at `ring_n` 8192 under `standard`, beyond the 125-bit u128 words, so
+the scheme ran entirely in Python. `rust/core` now has a 256-bit word (four
+u64 limbs): Montgomery products with R = 2^256, Shoup products for the
+twiddles (`q < 2^253` keeps 4q below 2^256 for the lazy butterflies);
+`AnyRing` picks u64 / u128 / 256-bit words by the size of `q`. With it the
+MCFE layer (encryption, key terms) runs natively, and three kernels take the
+threshold layer: `shamir_share` (the key's coefficients, drawn as
+`SystemRandom.randrange(0, q)` draws them, from the per-call DRBG),
+`share_inputs` / `share_partial` (a partial decryption's parsing, the JSON
+text that `ciphertexts_digest` hashes, and `w = lambda (Delta z + sum_i ct1_i
+sk_i) + e`, `c_y` in the NTT domain) and `share_combine`. The flooding noise
+is still drawn by `discrete_gaussian_bigint` (mpfr at `bits(sigma_f) + 128`
+= 324 bits; a native sampler would not reproduce its rounding), now with one
+call per polynomial instead of one per coefficient (the same draws, 24%
+faster); tags are serialised once for all servers.
+
+Host (Apple M2 Max, Python 3.13), 3 clients, `s = 3`, `t = 2`, weight 1,
+`bound_x = 100`, precision 2; `bench_fl_compare.py --families ring_lwe
+ring_lwe_threshold`, before (`50e3188`) and after interleaved, medians of 2
+runs (3 / 5 rounds each); "aggregator" is key shares + both partial
+decryptions + combination on one machine:
+
+| `ring_lwe_threshold`, 212-bit q, ring_n 8192 | client ms | key shares (2 servers) | partial, per server | combine | aggregator ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| before (`q` beyond the native words: Python) | 213.5 | 275.9 | 528.0 | 18.0 | 1347.9 |
+| after, Python backend | 204.6 | 276.0 | 478.7 | 17.9 | 1251.8 |
+| after, native | **19.6** | **41.3** | **211.2** | **4.3** | **468.3** |
+| after, native, 4 threads | 13.7 | 32.3 | 211.8 | 4.3 | 461.2 |
+| `ring_lwe` (77-bit q), before / after | 3.66 / 3.46 | -- | -- | -- | 9.19 / 8.90 |
+
+One 8192-coefficient chunk of a partial decryption takes 103 ms: the
+flooding noise 76 ms (Python), the tag checks 7.5 ms (Python),
+`share_partial` 8.1 ms (three forward NTTs, one inverse, reading the noise)
+and `share_inputs` 6.8 ms. Kernels at 212 bits (`cargo run --release
+--example kernels`): NTT 0.97 / 0.83 ms forward / inverse (77-bit q, 4096:
+0.11 / 0.09 ms), encryption of 10^4 elements 10.9 ms (two chunks), one
+decryption chunk of 3 clients 5.3 ms. The client's other 9 ms are the
+ciphertexts' Python strings and the tags (one JSON serialisation per chunk,
+one HMAC per server and chunk). A faster partial
+decryption needs a different flooding sampler (an exact discrete Gaussian
+at this width, natively) or a smaller `sigma_f`; both change the
+distribution and need a review.
 
 ## Dense LWE: MCFE of ABMPSW20 (`mcfe/lwe`), 200 elements
 

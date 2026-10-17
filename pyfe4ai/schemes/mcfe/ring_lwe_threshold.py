@@ -34,6 +34,13 @@ the same key part draws the same noise; a corrupted client varying its own
 ``ct1`` draws fresh noise each time, and averaging that away would take about
 ``2^(2 stat_param)`` partial decryptions. The threshold layer is our own
 design.
+
+With the native backend (:mod:`pyfe4ai.utils.native_backend`; moduli below
+``2^253``, which includes the flooded ``q`` of the standard profile) the MCFE
+layer, the Shamir sharing of the key, the parsing, digests and NTT-domain
+products of a partial decryption and the combination run natively, with
+the values of the Python code; the flooding noise is always drawn by
+:func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint`.
 """
 
 from __future__ import annotations
@@ -66,6 +73,7 @@ from pyfe4ai.schemes.threshold_utils import combine_consistently
 from pyfe4ai.schemes.threshold_utils import partial_groups
 from pyfe4ai.schemes.threshold_utils import validate_partial_decryptions
 from pyfe4ai.schemes.threshold_utils import validate_threshold
+from pyfe4ai.utils import native_backend
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.utils.lwe_utils import decode_scaled
@@ -95,9 +103,11 @@ def _tag_payload(encoded_label: str, ct: dict) -> list:
 
 
 def _flooding_poly(sigma: int, ring_n: int, rng) -> list:
+    """*ring_n* samples of ``D_{Z, sigma}`` cut at ``GAUSSIAN_TAIL_CUT sigma``, drawn in order."""
     bound = GAUSSIAN_TAIL_CUT * sigma
-    out = []
-    while len(out) < ring_n:
+    # one call for ring_n samples draws what ring_n calls for one sample draw
+    out = [e for e in discrete_gaussian_bigint(sigma, ring_n, rng=rng) if abs(e) <= bound]
+    while len(out) < ring_n:  # beyond the tail cut (rare): draw on, one at a time
         e = discrete_gaussian_bigint(sigma, 1, rng=rng)[0]
         if abs(e) <= bound:
             out.append(e)
@@ -239,14 +249,18 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
     def _share_key(self, key: dict, weights_id: str) -> dict:
         sid_v = share_points(self.lst_sid)
         points = list(sid_v.values())
+        polys = list(key["sk_y"].values()) + [key["z"]] + list(key["z_chunks"])
+        shared = self._share_polys_native(polys, points)
+        if shared is None:
+            def share_poly(coeffs) -> dict:
+                shares = [share_secret(gp.mpz(v), self.t, points, self.q) for v in coeffs]
+                return {sid: [gp.digits(sh[sid_v[sid]]) for sh in shares] for sid in self.lst_sid}
 
-        def share_poly(coeffs) -> dict:
-            shares = [share_secret(gp.mpz(v), self.t, points, self.q) for v in coeffs]
-            return {sid: [gp.digits(sh[sid_v[sid]]) for sh in shares] for sid in self.lst_sid}
-
-        sk_shares = {nid: share_poly(v) for nid, v in key["sk_y"].items()}
-        z_shares = share_poly(key["z"])
-        chunk_shares = [share_poly(zc) for zc in key["z_chunks"]]
+            shared = [share_poly(poly) for poly in polys]
+        n_sk = len(key["sk_y"])
+        sk_shares = dict(zip(key["sk_y"], shared[:n_sk]))
+        z_shares = shared[n_sk]
+        chunk_shares = shared[n_sk + 1:]
         return {
             sid: {
                 "sk_y": {nid: sk_shares[nid][sid] for nid in sk_shares},
@@ -263,6 +277,26 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             }
             for sid in self.lst_sid
         }
+
+    def _share_polys_native(self, polys: list, points: list) -> list | None:
+        """:func:`share_secret` of every coefficient of *polys* in one native
+        call (coefficients drawn as ``share_secret`` draws them, in the same
+        order), as ``[{sid: shares}]``; ``None`` when the Python path applies."""
+        ctx = native_backend.ring_context(self.q, self.ring_n)
+        if ctx is None:
+            return None
+        flat = [v for poly in polys for v in poly]
+        width = (int(self.q).bit_length() + 7) // 8
+        out = native_backend.ext().shamir_share(
+            ctx.cap, flat, self.t, points,
+            native_backend.random_input(4 * width * len(flat) * (self.t - 1) + 64),
+            **native_backend.seed_kwargs(),
+        )
+        shared, start = [], 0
+        for poly in polys:
+            shared.append({sid: out[i][start:start + len(poly)] for i, sid in enumerate(self.lst_sid)})
+            start += len(poly)
+        return shared
 
 
 class ThresholdMCFERingLWE(MCFERingLWE):
@@ -329,38 +363,47 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         )
         q = gp.mpz(self.pp["q"])
         ring_n = self.pp["ring_n"]
-        cts = {}
-        for nid, ct in dict_ct.items():
-            try:
-                cts[nid] = canonical_ring_ciphertext(ct, int(q), self.pp["eta"], ring_n)
-            except FESchemeError as exc:
-                raise FESchemeError("malformed ciphertext of {}".format(nid)) from exc
-        batch = {k for k, _, _ in cts.values()}
+        delta = q // gp.mpz(self.pp["p"])
+        z_share = dk["z"] if _z_share is None else _z_share
+        hats = {} if _sk_hats is None else _sk_hats
+        ctx = native_backend.ring_context(q, ring_n)
+        native = None if ctx is None else self._native_inputs(ctx, dict_ct, dk, fusion_weight, z_share)
+        if native is None:
+            cts = {}
+            for nid, ct in dict_ct.items():
+                try:
+                    cts[nid] = canonical_ring_ciphertext(ct, int(q), self.pp["eta"], ring_n)
+                except FESchemeError as exc:
+                    raise FESchemeError("malformed ciphertext of {}".format(nid)) from exc
+            batch = {k for k, _, _ in cts.values()}
+        else:
+            nids, ks, packed, ct_digest, key_inputs = native
+            batch = set(ks)
         if len(batch) != 1:
             raise FESchemeError("ciphertexts of different batch lengths")
 
-        delta = q // gp.mpz(self.pp["p"])
-        z_share = dk["z"] if _z_share is None else _z_share
-        key_part = [delta * gp.mpz(v) % q for v in z_share]
-        c_y = [gp.mpz(0)] * ring_n
-        # sum_i ct1_i sk_i in the NTT domain, NTT(sk_i) cached across chunks
-        # (_sk_hats); the same sum mod q as adding poly_mul(ct1_i, sk_i)
-        ring = RingNTT.get(q, ring_n)
-        hats = {} if _sk_hats is None else _sk_hats
-        acc = None
-        for nid, (_, ct0, ct1) in cts.items():
-            ct0 = [[gp.mpz(v) for v in row] for row in ct0]
-            ct1 = [gp.mpz(v) for v in ct1]
-            y_vec = [gp.mpz(int(v)) for v in fusion_weight[nid]]
-            c_y = poly_add(c_y, mat_vec_mul(transpose(ct0), y_vec, q), q)
-            if ring is None:
-                key_part = poly_add(key_part, poly_mul(ct1, [gp.mpz(v) for v in dk["sk_y"][nid]], q), q)
-                continue
-            if nid not in hats:
-                hats[nid] = ring.forward([gp.mpz(v) for v in dk["sk_y"][nid]])
-            acc = ring.mul_add(acc, ring.forward(ct1), hats[nid])
-        if acc is not None:
-            key_part = poly_add(key_part, ring.inverse(acc), q)
+        if native is None:
+            key_part = [delta * gp.mpz(v) % q for v in z_share]
+            c_y = [gp.mpz(0)] * ring_n
+            # sum_i ct1_i sk_i in the NTT domain, NTT(sk_i) cached across chunks
+            # (_sk_hats); the same sum mod q as adding poly_mul(ct1_i, sk_i)
+            ring = RingNTT.get(q, ring_n)
+            acc = None
+            for nid, (_, ct0, ct1) in cts.items():
+                ct0 = [[gp.mpz(v) for v in row] for row in ct0]
+                ct1 = [gp.mpz(v) for v in ct1]
+                y_vec = [gp.mpz(int(v)) for v in fusion_weight[nid]]
+                c_y = poly_add(c_y, mat_vec_mul(transpose(ct0), y_vec, q), q)
+                if ring is None:
+                    key_part = poly_add(key_part, poly_mul(ct1, [gp.mpz(v) for v in dk["sk_y"][nid]], q), q)
+                    continue
+                if nid not in hats:
+                    hats[nid] = ring.forward([gp.mpz(v) for v in dk["sk_y"][nid]])
+                acc = ring.mul_add(acc, ring.forward(ct1), hats[nid])
+            if acc is not None:
+                key_part = poly_add(key_part, ring.inverse(acc), q)
+            ct_digest = ciphertexts_digest(cts)
+            key_inputs = ciphertexts_digest({nid: ct1 for nid, (_, _, ct1) in cts.items()})
 
         sid_v = share_points(dk["lst_sid"])
         lagrange = lagrange_coefficient_at_zero(
@@ -369,22 +412,59 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         # the noise is seeded with what the key part depends on -- the ct1
         # values and the key term (the label or chunk) -- so a request for the
         # same key part always draws the same noise
-        ct_digest = ciphertexts_digest(cts)
-        key_inputs = ciphertexts_digest({nid: ct1 for nid, (_, _, ct1) in cts.items()})
         # the partial depends on the enrolled set only through lambda
         context = json.dumps([key_inputs, encoded, gp.digits(lagrange)]).encode("utf-8")
         noise = _flooding_poly(
             int(self.pp["sigma_f"]), ring_n, XofRandom(bytes.fromhex(dk["noise_key"]) + context)
         )
-        w = [(lagrange * v + e) % q for v, e in zip(key_part, noise)]
+        if native is None:
+            w = [gp.digits((lagrange * v + e) % q) for v, e in zip(key_part, noise)]
+            c_y = [gp.digits(v) for v in c_y]
+        else:
+            for nid in nids:  # NTT(sk_i share), cached across chunks
+                if ("native", nid) not in hats:
+                    hats[("native", nid)] = ctx.ntt_mont(dk["sk_y"][nid])
+            w, c_y = native_backend.ext().share_partial(
+                ctx.cap, packed, self.pp["eta"], [[int(v) for v in fusion_weight[nid]] for nid in nids],
+                [hats[("native", nid)] for nid in nids], z_share, delta, lagrange, noise,
+            )
         return {
-            "w": [gp.digits(v) for v in w],
-            "c_y": [gp.digits(v) for v in c_y],
+            "w": w,
+            "c_y": c_y,
             "k": batch.pop(),
             "ct_digest": ct_digest,
             "sid": self.id,
             "lst_sid_enrolled": list(lst_sid_enrolled),
         }
+
+    def _native_inputs(self, ctx, dict_ct: dict, dk: dict, fusion_weight: dict, z_share) -> tuple | None:
+        """The ciphertexts of :meth:`share_decrypt` read natively: ``(nids, ks,
+        packed, ct_digest, key_inputs)``, the client ids sorted, the digests
+        those of :func:`ciphertexts_digest`; ``None`` when the Python path must
+        read them (values other than exact ints and plain decimal strings,
+        other layouts -- also of the key share -- and malformed ciphertexts,
+        whose errors it raises)."""
+        eta, ring_n = self.pp["eta"], self.pp["ring_n"]
+        if not all(isinstance(nid, str) for nid in dict_ct) or len(z_share) != ring_n:
+            return None
+        nids = sorted(dict_ct)  # the key order of json.dumps(..., sort_keys=True)
+        ks, rows = [], []
+        for nid in nids:
+            ct = dict_ct[nid]
+            if not isinstance(ct, dict) or "ct0" not in ct or "ct1" not in ct:
+                return None
+            k, ct0 = ct.get("k"), ct["ct0"]
+            if type(k) is not int or not 1 <= k <= ring_n or type(ct0) not in (list, tuple) or len(ct0) != eta:
+                return None
+            if len(dk["sk_y"][nid]) != ring_n or len(fusion_weight[nid]) != eta:
+                return None
+            ks.append(k)
+            rows.append((ct0, ct["ct1"]))
+        out = native_backend.ext().share_inputs(ctx.cap, [json.dumps(nid) for nid in nids], ks, rows, eta)
+        if out is None:
+            return None
+        packed, ct_text, key_text = out
+        return nids, ks, packed, hashlib.sha256(ct_text).hexdigest(), hashlib.sha256(key_text).hexdigest()
 
     def combine_decrypt(self, partials) -> list | None:
         """Combine partial decryptions from at least ``t`` servers.
@@ -421,13 +501,20 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             return None
         q = gp.mpz(self.pp["q"])
         delta = q // gp.mpz(self.pp["p"])
-        total = [gp.mpz(v) for v in first["c_y"]]
-        for part in partials:
-            total = [(a - gp.mpz(v)) % q for a, v in zip(total, part["w"])]
         bound = (
             self.pp["n"] * self.pp["eta"]
             * gp.mpz(self.pp["bound_x"]) * gp.mpz(self.pp["bound_y"])
         )
+        ctx = native_backend.ring_context(q, self.pp["ring_n"])
+        if ctx is not None and type(first["k"]) is int:
+            out = native_backend.ext().share_combine(
+                ctx.cap, first["c_y"], [p["w"] for p in partials], delta, bound, first["k"]
+            )
+            if out is not None:  # else values or layouts the Python code reads
+                return out
+        total = [gp.mpz(v) for v in first["c_y"]]
+        for part in partials:
+            total = [(a - gp.mpz(v)) % q for a, v in zip(total, part["w"])]
         return [decode_scaled(v, delta, q, bound) for v in total[: int(first["k"])]]
 
     def compute_lst_ndarray_ct(

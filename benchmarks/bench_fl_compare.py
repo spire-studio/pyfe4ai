@@ -16,6 +16,15 @@ Reported per family (medians over the counted rounds):
   of the binary ciphertext format, ``--ct-format binary``, counted at their
   length), per element.
 
+The threshold family ``ring_lwe_threshold`` (``mcfe/ring_lwe_threshold``,
+``--servers`` servers, threshold ``--threshold``) has no single aggregator
+(:mod:`~pyfe4ai.utils.ml_adapter` refuses it) and runs on the scheme
+classes: ``client_ms`` is one client's ``encrypt_lst_ndarray``; ``dkgen_ms``
+the key shares of the ``t`` enrolled servers; ``partial_ms`` one server's
+``compute_lst_ndarray_ct``; ``combine_ms`` the combiner's
+``decrypt_lst_ndarray_ct``; ``aggregator_ms`` their sum over the ``t``
+servers on one machine.
+
 The schemes write their parameter cache to ``./config``; the run happens in
 ``--workdir`` (default: a temporary directory) so a cache can be reused across
 runs. Usage::
@@ -43,6 +52,7 @@ import numpy as np
 #: family -> (registry key, keygen config without bounds, default element count)
 FAMILIES = {
     "ring_lwe": (("mcfe", "ring_lwe"), {"eta": 1}, 10_000),
+    "ring_lwe_threshold": (("mcfe", "ring_lwe_threshold"), {"eta": 1}, 10_000),
     "lwe": (("mcfe", "lwe"), {"eta": 1}, 200),
     "ddh": (("mcfe", "ddh"), {"eta": 1}, 20),
     "ddh_r255": (("mcfe", "ddh_ristretto255"), {"eta": 1}, 20),
@@ -139,8 +149,7 @@ def _ct_bytes(layers: list) -> int:
     return total + sum(raw)
 
 
-def _scheme_params(wrapper) -> dict:
-    pp = wrapper.pp
+def _scheme_params(pp: dict) -> dict:
     out = {}
     for key in ("q", "p", "ring_n", "lwe_n", "n0", "m0"):
         if key in pp:
@@ -170,7 +179,7 @@ def measure(family: str, elements: int, clients: int, rounds: int, precision: in
     options = {"crypto_options": {"ct_format": ct_format}} if ct_format != "json" else {}
     wrapper = FESchemeWrapper(*key, cfg, precision=precision, **options)
     row["setup_s"] = time.perf_counter() - t0
-    row.update(_scheme_params(wrapper))
+    row.update(_scheme_params(wrapper.pp))
 
     dk_times = []
     derive = wrapper.kg.get_decryption_keys
@@ -236,11 +245,92 @@ def measure(family: str, elements: int, clients: int, rounds: int, precision: in
     return row
 
 
+def measure_threshold(family: str, elements: int, clients: int, rounds: int, precision: int, bound_x: int,
+                      profile: str, servers: int, threshold: int) -> dict:
+    """:func:`measure` for a threshold scheme, on its classes (see the module docstring)."""
+    import importlib
+
+    from pyfe4ai.utils.ml_adapter import _SCHEME_REGISTRY
+
+    key, base_cfg, _ = FAMILIES[family]
+    mod_path, kg_name, crypto_name = _SCHEME_REGISTRY[key]
+    mod = importlib.import_module(mod_path)
+    crypto_cls = getattr(mod, crypto_name)
+    nids = ["c{}".format(i) for i in range(clients)]
+    sids = ["s{}".format(i) for i in range(servers)]
+    cfg = dict(base_cfg, n=clients, lst_nid=nids, s=servers, t=threshold, lst_sid=sids,
+               security_profile=profile, **_bounds(family, bound_x))
+    row = {"family": family, "scheme": "/".join(key), "profile": profile, "elements": elements,
+           "clients": clients, "servers": servers, "threshold": threshold, "rounds": rounds,
+           "precision": precision, "bound_x": bound_x, "ct_format": "json"}
+    t0 = time.perf_counter()
+    kg = getattr(mod, kg_name)(cfg)
+    kg.setup()
+    row["setup_s"] = time.perf_counter() - t0
+    pp = kg.get_public_parameters()
+    row.update(_scheme_params(pp))
+    cls = {nid: crypto_cls({"id": nid, "precision": precision, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
+           for nid in nids}
+    enrolled = sids[:threshold]
+    srv = {sid: crypto_cls({"id": sid, "precision": precision, "keys": {"pp": pp}}) for sid in enrolled}
+    combiner = crypto_cls({"id": "combiner", "precision": precision, "keys": {"pp": pp}})
+    weights = {nid: [1] for nid in nids}
+    rng = np.random.default_rng(7)
+    lim = bound_x / 10 ** precision
+    enc_t, dk_t, part_t, comb_t, agg_t = [], [], [], [], []
+    ct_size = None
+    for r in range(rounds + 1):
+        label = "round-{}".format(r)
+        grads = {nid: rng.uniform(-lim, lim, elements).round(precision) for nid in nids}
+        t0 = time.perf_counter()
+        enc = {nid: cls[nid].encrypt_lst_ndarray([g], label=label) for nid, g in grads.items()}
+        t1 = time.perf_counter()
+        creds = {"fusion_weight": weights, "label": label, "n_chunks": cls[nids[0]].key_chunks(enc[nids[0]])}
+        dks = {sid: kg.get_decryption_keys(sid, credentials=creds) for sid in enrolled}
+        t2 = time.perf_counter()
+        parts, one = {}, []
+        for sid in enrolled:
+            ts = time.perf_counter()
+            parts[sid] = srv[sid].compute_lst_ndarray_ct(enc, creds, dks[sid], enrolled)
+            one.append(time.perf_counter() - ts)
+        t3 = time.perf_counter()
+        total = combiner.decrypt_lst_ndarray_ct(parts)[0]
+        t4 = time.perf_counter()
+        if not np.allclose(np.asarray(total, dtype=float), sum(grads.values()), atol=10 ** -precision / 2):
+            raise AssertionError("{}: wrong aggregate".format(family))
+        if r == 0:
+            ct_size = _ct_bytes(enc[nids[0]]) / elements
+            continue
+        enc_t.append((t1 - t0) / clients)
+        dk_t.append(t2 - t1)
+        part_t.append(statistics.median(one))
+        comb_t.append(t4 - t3)
+        agg_t.append(t4 - t1)
+    med = statistics.median
+    row.update(
+        client_ms=med(enc_t) * 1e3,
+        aggregator_ms=med(agg_t) * 1e3,
+        dkgen_ms=med(dk_t) * 1e3,
+        partial_ms=med(part_t) * 1e3,
+        combine_ms=med(comb_t) * 1e3,
+        decrypt_ms=med([a - d for a, d in zip(agg_t, dk_t)]) * 1e3,
+        client_us_per_element=med(enc_t) * 1e6 / elements,
+        aggregator_us_per_element=med(agg_t) * 1e6 / elements,
+        client_ms_min=min(enc_t) * 1e3,
+        aggregator_ms_min=min(agg_t) * 1e3,
+        ct_bytes_per_element=round(ct_size, 1),
+        offline=False,
+    )
+    return row
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--families", nargs="+", default=["ring_lwe"], choices=sorted(FAMILIES))
     parser.add_argument("--elements", type=int, default=None, help="per family default if omitted")
     parser.add_argument("--clients", type=int, default=3)
+    parser.add_argument("--servers", type=int, default=3, help="threshold family: servers s")
+    parser.add_argument("--threshold", type=int, default=2, help="threshold family: threshold t")
     parser.add_argument("--rounds", type=int, default=5)
     parser.add_argument("--precision", type=int, default=2)
     parser.add_argument("--bound-x", type=int, default=None, help="default 10^precision (values in [-1, 1])")
@@ -276,15 +366,21 @@ def main() -> None:
         for family in args.families:
             elements = args.elements or FAMILIES[family][2]
             fmt = args.ct_format if family == "ring_lwe" else "json"
-            row = measure(family, elements, args.clients, args.rounds, args.precision, bound_x, args.profile, fmt,
-                          args.offline and family == "ring_lwe")
+            if family.endswith("_threshold"):
+                row = measure_threshold(family, elements, args.clients, args.rounds, args.precision, bound_x,
+                                        args.profile, args.servers, args.threshold)
+            else:
+                row = measure(family, elements, args.clients, args.rounds, args.precision, bound_x, args.profile,
+                              fmt, args.offline and family == "ring_lwe")
             row.update(backend=backend, threads=args.threads, tag=args.tag)
             rows.append(row)
             print("{family:9s} {backend:6s} t={threads} {elements:6d} el  client {client_ms:9.2f} ms  "
                   "aggregator {aggregator_ms:9.2f} ms (dkgen {dkgen_ms:7.2f})  ct {ct_bytes_per_element} "
                   "B/el {ct_format}".format(**row)
                   + ("  [offline: client {client_offline_ms:.2f} ms, aggregator {aggregator_offline_ms:.2f} ms]"
-                     .format(**row) if row.get("offline") else ""), flush=True)
+                     .format(**row) if row.get("offline") else "")
+                  + ("  [partial {partial_ms:.2f} ms per server, combine {combine_ms:.2f} ms]".format(**row)
+                     if "partial_ms" in row else ""), flush=True)
     finally:
         os.chdir(cwd)
         if tmp is not None:

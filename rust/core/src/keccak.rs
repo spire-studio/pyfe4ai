@@ -124,12 +124,9 @@ pub fn zq_reduce<W: Word>(m: &Modulus<W>, stream: &[u8], nb: usize, out: &mut [W
         let mut pos = 0;
         for k in (0..limbs).rev() {
             let take = if k == limbs - 1 { first } else { lb };
-            let mut limb = 0u128;
-            for &byte in &s[pos..pos + take] {
-                limb = (limb << 8) | byte as u128;
-            }
+            let limb = W::read_be(&s[pos..pos + take]);
             pos += take;
-            acc = m.add(acc, m.mul(W::from_u128(limb), cm[k]));
+            acc = m.add(acc, m.mul(limb, cm[k]));
         }
         *o = acc;
     }

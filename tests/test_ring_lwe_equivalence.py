@@ -4,7 +4,9 @@
 once and sums decryption products in the NTT domain. With the same Gaussian
 samples (a seeded sampler patched into the scheme modules) the ciphertexts,
 decryptions and threshold partial decryptions must equal those of the v0.3.0
-implementations kept verbatim below.
+implementations kept verbatim below -- also for 200+-bit moduli (the flooded
+q of ``mcfe/ring_lwe_threshold``), which the native backend handles in
+256-bit words.
 """
 
 from __future__ import annotations
@@ -148,13 +150,20 @@ def ref_mcfe_encrypt_lst_ndarray(self, lst_ndarray, label, dgm) -> list:
 
 # ------------------------------------------------------------------- setups
 
-def _mife(eta: int, ring_n: int, bound_x: int = 3, bound_y: int = 3, n: int = 3, mcfe: bool = False):
+def _mife(eta: int, ring_n: int, bound_x: int = 3, bound_y: int = 3, n: int = 3, mcfe: bool = False,
+          stat_param=None):
+    """MIFE or MCFE Ring-LWE; with *stat_param*, the threshold MCFE (its MCFE
+    layer on the flooded q: 200+ bits for stat_param >= 150)."""
     nids = ["c{}".format(i) for i in range(n)]
     mod = mcfe_rlwe if mcfe else mife_rlwe
     kg_cls = mod.MCFERingLWEKeyGenerator if mcfe else mod.MIFERingLWEKeyGenerator
     crypto_cls = mod.MCFERingLWE if mcfe else mod.MIFERingLWE
-    kg = kg_cls({"n": n, "lst_nid": nids, "eta": eta, "ring_n": ring_n, "sec_param": 64,
-                 "bound_x": bound_x, "bound_y": bound_y})
+    cfg = {"n": n, "lst_nid": nids, "eta": eta, "ring_n": ring_n, "sec_param": 64,
+           "bound_x": bound_x, "bound_y": bound_y}
+    if stat_param is not None:
+        kg_cls, crypto_cls = tmcfe_rlwe.ThresholdMCFERingLWEKeyGenerator, tmcfe_rlwe.ThresholdMCFERingLWE
+        cfg.update(s=3, t=2, lst_sid=["s0", "s1", "s2"], stat_param=stat_param)
+    kg = kg_cls(cfg)
     kg.setup()
     pp = kg.get_public_parameters()
     clients = {nid: crypto_cls({"id": nid, "precision": 0, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
@@ -200,22 +209,26 @@ def test_mife_decrypt_identical_honest_and_tampered(sampler, eta, ring_n):
         assert agg._decrypt_with_pad_term(bad, dk["sk_y"], dk["z"], weights, ring_n, sk_hats) == new
 
 
-def test_mcfe_ndarray_identical(sampler):
-    kg, pp, clients, agg = _mife(1, 64, bound_x=100, bound_y=1, mcfe=True)
+@pytest.mark.parametrize("stat_param", [None, 150])
+def test_mcfe_ndarray_identical(sampler, stat_param):
+    kg, pp, clients, agg = _mife(1, 64, bound_x=100, bound_y=1, mcfe=True, stat_param=stat_param)
+    if stat_param is not None:
+        assert int(pp["q"]).bit_length() > 200
     for cl in list(clients.values()) + [agg]:
         cl.precision = 2
     rng = np.random.default_rng(3)
     grads = {nid: [rng.uniform(-1, 1, 150).round(2), rng.uniform(-1, 1, (3, 5)).round(2)] for nid in clients}
     enc = {}
     for nid, cl in clients.items():
-        sampler.reset()
-        enc[nid] = cl.encrypt_lst_ndarray(grads[nid], label="r1")
+        sampler.reset()  # the MCFE layer (no per-server tags of the threshold variant)
+        enc[nid] = mcfe_rlwe.MCFERingLWE.encrypt_lst_ndarray(cl, grads[nid], label="r1")
         sampler.reset()
         assert enc[nid] == ref_mcfe_encrypt_lst_ndarray(cl, grads[nid], "r1", sampler)
     weights = {nid: [1] for nid in clients}
     n_chunks = agg.key_chunks(next(iter(enc.values())))
-    dk = kg.get_decryption_keys("agg", credentials={"fusion_weight": weights, "label": "r1", "n_chunks": n_chunks})
-    out = agg.decrypt_lst_ndarray_ct(enc, dk=dk, fusion_weight=weights, label="r1")
+    dk = mcfe_rlwe.MCFERingLWEKeyGenerator.get_decryption_keys(  # unshared, also for the threshold variant
+        kg, "agg", credentials={"fusion_weight": weights, "label": "r1", "n_chunks": n_chunks})
+    out = mcfe_rlwe.MCFERingLWE.decrypt_lst_ndarray_ct(agg, enc, dk=dk, fusion_weight=weights, label="r1")
     for l in range(2):
         assert np.allclose(out[l], sum(g[l] for g in grads.values()))
     # chunk by chunk against the v0.3.0 decryption
@@ -239,11 +252,12 @@ def test_mcfe_ndarray_bound_and_empty_errors(sampler):
         cl.encrypt_lst_ndarray([np.array([])], label="y")
 
 
-def test_threshold_share_decrypt_identical(sampler, monkeypatch):
+@pytest.mark.parametrize("stat_param", [64, 150])
+def test_threshold_share_decrypt_identical(sampler, monkeypatch, stat_param):
     nids, sids = ["c0", "c1", "c2"], ["s0", "s1", "s2"]
     kg = tmcfe_rlwe.ThresholdMCFERingLWEKeyGenerator({
         "n": 3, "lst_nid": nids, "s": 3, "t": 2, "lst_sid": sids, "eta": 1, "ring_n": 32,
-        "sec_param": 64, "bound_x": 4, "bound_y": 4})
+        "sec_param": 64, "bound_x": 4, "bound_y": 4, "stat_param": stat_param})
     kg.setup()
     pp = kg.get_public_parameters()
     clients = {nid: tmcfe_rlwe.ThresholdMCFERingLWE({"id": nid, "precision": 0,
@@ -285,8 +299,9 @@ def test_sife_encrypt_identical(sampler):
     assert new == old
 
 
-def test_ring_ntt_matches_poly_mul():
-    q = rlu.next_ntt_prime(gp.mpz(2) ** 77, 64)
+@pytest.mark.parametrize("bits", [78, 212, 253])
+def test_ring_ntt_matches_poly_mul(bits):
+    q = rlu.next_ntt_prime(gp.mpz(2) ** (bits - 1), 64)
     ring = rlu.RingNTT.get(q, 64)
     rng = random.Random(1)
     a = [gp.mpz(rng.randrange(-int(q), int(q))) for _ in range(64)]
