@@ -567,6 +567,10 @@ from other sessions; `main` = 810a4a5, "prime" = this branch's default):
 | offline phase, `main` / RNS | 2.59 / 2.37 (-9%) | 4.12 / 4.16 | | |
 | JSON, `main` / RNS | 3.44 / 3.20 (-7%) | 8.82 / 8.38 (-5%) | 4.12 / 4.11 | |
 
+10 clients (86-bit q, 43 + 43 bits; binary, one thread, 3 interleaved runs):
+client 2.90 -> 2.62 ms (-10%), decryption 9.44 -> 7.77 ms (-18%),
+aggregator 22.8 -> 20.7 ms (-9%; key derivation 13.0 to 13.3 ms, unchanged).
+
 A first session (3 runs, load 6 to 9) gave client -11%, aggregator online
 -18%. Against the estimate (client -17%, aggregator online -25%): the NTT
 is about a third of a client's time (Gaussians, SHAKE-256 label pads and the

@@ -7515,5 +7515,469 @@
    },
    "q_prime_min": 407.4033015938336
   }
+ ],
+ "fl_round_10_clients_3_runs": [
+  {
+   "env": {
+    "python": "3.13.9",
+    "implementation": "CPython",
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "gmpy2": "2.2.1",
+    "numpy": "2.3.5",
+    "cpu": "Apple M2 Max",
+    "benchmark_campaign_running": false,
+    "git_commit": "810a4a5",
+    "native": {
+     "available": true,
+     "implementation": "rust",
+     "backend": "native",
+     "threads": 1,
+     "compiler": "rustc (pyfe4ai-native 0.4.0, pyo3)",
+     "os_random": true,
+     "sampling_randomness": "ChaCha20 per call, seeded from the OS",
+     "hardware_threads": 12
+    }
+   },
+   "args": {
+    "families": [
+     "ring_lwe"
+    ],
+    "elements": null,
+    "clients": 10,
+    "servers": 3,
+    "threshold": 2,
+    "rounds": 9,
+    "precision": 2,
+    "bound_x": null,
+    "profile": "standard",
+    "backend": "native",
+    "threads": 1,
+    "ct_format": "binary",
+    "offline": false,
+    "workdir": null,
+    "json": "/private/tmp/claude-501/-Users-runhua-ws-spire-studio-pyfe4ai/25a069ea-5d56-4af3-981b-4c510a5fffe5/scratchpad/bench/host10.json",
+    "tag": "base rep1"
+   },
+   "rows": [
+    {
+     "family": "ring_lwe",
+     "scheme": "mcfe/ring_lwe",
+     "profile": "standard",
+     "elements": 10000,
+     "clients": 10,
+     "rounds": 9,
+     "precision": 2,
+     "bound_x": 100,
+     "ct_format": "binary",
+     "setup_s": 0.4279127089539543,
+     "q_bits": 86,
+     "p_bits": 11,
+     "ring_n": 4096,
+     "client_ms": 2.831958292517811,
+     "aggregator_ms": 22.184875095263124,
+     "dkgen_ms": 12.915250030346215,
+     "decrypt_ms": 9.29320917930454,
+     "client_us_per_element": 0.2831958292517811,
+     "aggregator_us_per_element": 2.2184875095263124,
+     "client_ms_min": 2.811583294533193,
+     "aggregator_ms_min": 21.905416040681303,
+     "ct_bytes_per_element": 27.0,
+     "offline": false,
+     "backend": "native",
+     "threads": 1,
+     "tag": "base rep1"
+    }
+   ],
+   "time": "2026-10-17T19:17:11+0800"
+  },
+  {
+   "env": {
+    "python": "3.13.9",
+    "implementation": "CPython",
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "gmpy2": "2.2.1",
+    "numpy": "2.3.5",
+    "cpu": "Apple M2 Max",
+    "benchmark_campaign_running": false,
+    "git_commit": "db3cd95",
+    "native": {
+     "available": true,
+     "implementation": "rust",
+     "backend": "native",
+     "threads": 1,
+     "compiler": "rustc (pyfe4ai-native 0.4.0, pyo3)",
+     "os_random": true,
+     "sampling_randomness": "ChaCha20 per call, seeded from the OS",
+     "hardware_threads": 12
+    }
+   },
+   "args": {
+    "families": [
+     "ring_lwe"
+    ],
+    "elements": null,
+    "clients": 10,
+    "servers": 3,
+    "threshold": 2,
+    "rounds": 9,
+    "precision": 2,
+    "bound_x": null,
+    "profile": "standard",
+    "backend": "native",
+    "threads": 1,
+    "ct_format": "binary",
+    "offline": false,
+    "ring_modulus": "rns",
+    "workdir": null,
+    "json": "/private/tmp/claude-501/-Users-runhua-ws-spire-studio-pyfe4ai/25a069ea-5d56-4af3-981b-4c510a5fffe5/scratchpad/bench/host10.json",
+    "tag": "rns rep1"
+   },
+   "rows": [
+    {
+     "family": "ring_lwe",
+     "scheme": "mcfe/ring_lwe",
+     "profile": "standard",
+     "elements": 10000,
+     "clients": 10,
+     "rounds": 9,
+     "precision": 2,
+     "bound_x": 100,
+     "ct_format": "binary",
+     "ring_modulus": "rns",
+     "setup_s": 0.414006375009194,
+     "q_bits": 86,
+     "p_bits": 11,
+     "ring_n": 4096,
+     "q_factor_bits": [
+      43,
+      43
+     ],
+     "client_ms": 2.599362505134195,
+     "aggregator_ms": 20.544625003822148,
+     "dkgen_ms": 12.952791061252356,
+     "decrypt_ms": 7.619248935952783,
+     "client_us_per_element": 0.2599362505134195,
+     "aggregator_us_per_element": 2.054462500382215,
+     "client_ms_min": 2.5725374929606915,
+     "aggregator_ms_min": 20.48575005028397,
+     "ct_bytes_per_element": 27.0,
+     "offline": false,
+     "backend": "native",
+     "threads": 1,
+     "tag": "rns rep1"
+    }
+   ],
+   "time": "2026-10-17T19:17:12+0800"
+  },
+  {
+   "env": {
+    "python": "3.13.9",
+    "implementation": "CPython",
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "gmpy2": "2.2.1",
+    "numpy": "2.3.5",
+    "cpu": "Apple M2 Max",
+    "benchmark_campaign_running": false,
+    "git_commit": "810a4a5",
+    "native": {
+     "available": true,
+     "implementation": "rust",
+     "backend": "native",
+     "threads": 1,
+     "compiler": "rustc (pyfe4ai-native 0.4.0, pyo3)",
+     "os_random": true,
+     "sampling_randomness": "ChaCha20 per call, seeded from the OS",
+     "hardware_threads": 12
+    }
+   },
+   "args": {
+    "families": [
+     "ring_lwe"
+    ],
+    "elements": null,
+    "clients": 10,
+    "servers": 3,
+    "threshold": 2,
+    "rounds": 9,
+    "precision": 2,
+    "bound_x": null,
+    "profile": "standard",
+    "backend": "native",
+    "threads": 1,
+    "ct_format": "binary",
+    "offline": false,
+    "workdir": null,
+    "json": "/private/tmp/claude-501/-Users-runhua-ws-spire-studio-pyfe4ai/25a069ea-5d56-4af3-981b-4c510a5fffe5/scratchpad/bench/host10.json",
+    "tag": "base rep2"
+   },
+   "rows": [
+    {
+     "family": "ring_lwe",
+     "scheme": "mcfe/ring_lwe",
+     "profile": "standard",
+     "elements": 10000,
+     "clients": 10,
+     "rounds": 9,
+     "precision": 2,
+     "bound_x": 100,
+     "ct_format": "binary",
+     "setup_s": 0.4251050000311807,
+     "q_bits": 86,
+     "p_bits": 11,
+     "ring_n": 4096,
+     "client_ms": 2.9331082943826914,
+     "aggregator_ms": 22.913584019988775,
+     "dkgen_ms": 13.331792084500194,
+     "decrypt_ms": 9.556750068441033,
+     "client_us_per_element": 0.29331082943826914,
+     "aggregator_us_per_element": 2.2913584019988775,
+     "client_ms_min": 2.919466595631093,
+     "aggregator_ms_min": 22.680792026221752,
+     "ct_bytes_per_element": 27.0,
+     "offline": false,
+     "backend": "native",
+     "threads": 1,
+     "tag": "base rep2"
+    }
+   ],
+   "time": "2026-10-17T19:17:13+0800"
+  },
+  {
+   "env": {
+    "python": "3.13.9",
+    "implementation": "CPython",
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "gmpy2": "2.2.1",
+    "numpy": "2.3.5",
+    "cpu": "Apple M2 Max",
+    "benchmark_campaign_running": false,
+    "git_commit": "db3cd95",
+    "native": {
+     "available": true,
+     "implementation": "rust",
+     "backend": "native",
+     "threads": 1,
+     "compiler": "rustc (pyfe4ai-native 0.4.0, pyo3)",
+     "os_random": true,
+     "sampling_randomness": "ChaCha20 per call, seeded from the OS",
+     "hardware_threads": 12
+    }
+   },
+   "args": {
+    "families": [
+     "ring_lwe"
+    ],
+    "elements": null,
+    "clients": 10,
+    "servers": 3,
+    "threshold": 2,
+    "rounds": 9,
+    "precision": 2,
+    "bound_x": null,
+    "profile": "standard",
+    "backend": "native",
+    "threads": 1,
+    "ct_format": "binary",
+    "offline": false,
+    "ring_modulus": "rns",
+    "workdir": null,
+    "json": "/private/tmp/claude-501/-Users-runhua-ws-spire-studio-pyfe4ai/25a069ea-5d56-4af3-981b-4c510a5fffe5/scratchpad/bench/host10.json",
+    "tag": "rns rep2"
+   },
+   "rows": [
+    {
+     "family": "ring_lwe",
+     "scheme": "mcfe/ring_lwe",
+     "profile": "standard",
+     "elements": 10000,
+     "clients": 10,
+     "rounds": 9,
+     "precision": 2,
+     "bound_x": 100,
+     "ct_format": "binary",
+     "ring_modulus": "rns",
+     "setup_s": 0.427568249986507,
+     "q_bits": 86,
+     "p_bits": 11,
+     "ring_n": 4096,
+     "q_factor_bits": [
+      43,
+      43
+     ],
+     "client_ms": 2.6293666916899383,
+     "aggregator_ms": 20.758833037689328,
+     "dkgen_ms": 12.97675003297627,
+     "decrypt_ms": 7.83737504389137,
+     "client_us_per_element": 0.26293666916899383,
+     "aggregator_us_per_element": 2.075883303768933,
+     "client_ms_min": 2.580516703892499,
+     "aggregator_ms_min": 20.678624976426363,
+     "ct_bytes_per_element": 27.0,
+     "offline": false,
+     "backend": "native",
+     "threads": 1,
+     "tag": "rns rep2"
+    }
+   ],
+   "time": "2026-10-17T19:17:15+0800"
+  },
+  {
+   "env": {
+    "python": "3.13.9",
+    "implementation": "CPython",
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "gmpy2": "2.2.1",
+    "numpy": "2.3.5",
+    "cpu": "Apple M2 Max",
+    "benchmark_campaign_running": false,
+    "git_commit": "810a4a5",
+    "native": {
+     "available": true,
+     "implementation": "rust",
+     "backend": "native",
+     "threads": 1,
+     "compiler": "rustc (pyfe4ai-native 0.4.0, pyo3)",
+     "os_random": true,
+     "sampling_randomness": "ChaCha20 per call, seeded from the OS",
+     "hardware_threads": 12
+    }
+   },
+   "args": {
+    "families": [
+     "ring_lwe"
+    ],
+    "elements": null,
+    "clients": 10,
+    "servers": 3,
+    "threshold": 2,
+    "rounds": 9,
+    "precision": 2,
+    "bound_x": null,
+    "profile": "standard",
+    "backend": "native",
+    "threads": 1,
+    "ct_format": "binary",
+    "offline": false,
+    "workdir": null,
+    "json": "/private/tmp/claude-501/-Users-runhua-ws-spire-studio-pyfe4ai/25a069ea-5d56-4af3-981b-4c510a5fffe5/scratchpad/bench/host10.json",
+    "tag": "base rep3"
+   },
+   "rows": [
+    {
+     "family": "ring_lwe",
+     "scheme": "mcfe/ring_lwe",
+     "profile": "standard",
+     "elements": 10000,
+     "clients": 10,
+     "rounds": 9,
+     "precision": 2,
+     "bound_x": 100,
+     "ct_format": "binary",
+     "setup_s": 0.42742641700897366,
+     "q_bits": 86,
+     "p_bits": 11,
+     "ring_n": 4096,
+     "client_ms": 2.901404199656099,
+     "aggregator_ms": 22.82966603524983,
+     "dkgen_ms": 13.364250073209405,
+     "decrypt_ms": 9.443000075407326,
+     "client_us_per_element": 0.2901404199656099,
+     "aggregator_us_per_element": 2.282966603524983,
+     "client_ms_min": 2.8966707992367446,
+     "aggregator_ms_min": 22.673374973237514,
+     "ct_bytes_per_element": 27.0,
+     "offline": false,
+     "backend": "native",
+     "threads": 1,
+     "tag": "base rep3"
+    }
+   ],
+   "time": "2026-10-17T19:17:16+0800"
+  },
+  {
+   "env": {
+    "python": "3.13.9",
+    "implementation": "CPython",
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "gmpy2": "2.2.1",
+    "numpy": "2.3.5",
+    "cpu": "Apple M2 Max",
+    "benchmark_campaign_running": false,
+    "git_commit": "db3cd95",
+    "native": {
+     "available": true,
+     "implementation": "rust",
+     "backend": "native",
+     "threads": 1,
+     "compiler": "rustc (pyfe4ai-native 0.4.0, pyo3)",
+     "os_random": true,
+     "sampling_randomness": "ChaCha20 per call, seeded from the OS",
+     "hardware_threads": 12
+    }
+   },
+   "args": {
+    "families": [
+     "ring_lwe"
+    ],
+    "elements": null,
+    "clients": 10,
+    "servers": 3,
+    "threshold": 2,
+    "rounds": 9,
+    "precision": 2,
+    "bound_x": null,
+    "profile": "standard",
+    "backend": "native",
+    "threads": 1,
+    "ct_format": "binary",
+    "offline": false,
+    "ring_modulus": "rns",
+    "workdir": null,
+    "json": "/private/tmp/claude-501/-Users-runhua-ws-spire-studio-pyfe4ai/25a069ea-5d56-4af3-981b-4c510a5fffe5/scratchpad/bench/host10.json",
+    "tag": "rns rep3"
+   },
+   "rows": [
+    {
+     "family": "ring_lwe",
+     "scheme": "mcfe/ring_lwe",
+     "profile": "standard",
+     "elements": 10000,
+     "clients": 10,
+     "rounds": 9,
+     "precision": 2,
+     "bound_x": 100,
+     "ct_format": "binary",
+     "ring_modulus": "rns",
+     "setup_s": 0.42327945900615305,
+     "q_bits": 86,
+     "p_bits": 11,
+     "ring_n": 4096,
+     "q_factor_bits": [
+      43,
+      43
+     ],
+     "client_ms": 2.6201499975286424,
+     "aggregator_ms": 20.72583301924169,
+     "dkgen_ms": 12.956124963238835,
+     "decrypt_ms": 7.774249999783933,
+     "client_us_per_element": 0.26201499975286424,
+     "aggregator_us_per_element": 2.072583301924169,
+     "client_ms_min": 2.5710416957736015,
+     "aggregator_ms_min": 20.56608395650983,
+     "ct_bytes_per_element": 27.0,
+     "offline": false,
+     "backend": "native",
+     "threads": 1,
+     "tag": "rns rep3"
+    }
+   ],
+   "time": "2026-10-17T19:17:18+0800"
+  }
  ]
 }
