@@ -69,6 +69,7 @@ if LIB is not None:
     LIB.pf4_pad_terms.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_char_p),
                                   ctypes.POINTER(ctypes.c_size_t), ctypes.c_size_t, ctypes.c_size_t,
                                   ctypes.c_char_p, ctypes.c_size_t, ctypes.c_size_t, ctypes.c_char_p]
+    LIB.pf4_xmd64.argtypes = [ctypes.c_char_p, ctypes.c_size_t, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_char_p]
     LIB.pf4_dense_dots.argtypes = [ctypes.POINTER(ctypes.c_char_p), ctypes.POINTER(ctypes.c_size_t),
                                    ctypes.c_size_t, ctypes.c_size_t, ctypes.c_size_t,
                                    ctypes.POINTER(ctypes.c_uint64), ctypes.c_size_t, ctypes.c_size_t,
@@ -151,6 +152,17 @@ def test_hash_to_zq_identical(bits):
     LIB.pf4_hash_to_zq(ring.ptr, mat, len(mat), 300, out)
     assert unpack(out.raw) == [int(v) for v in hash_to_zq_vector(
         "u'|label", q, 300, domain="pyfe4ai/mcfe/ring_lwe/H(u',label)")]
+
+
+def test_expand_message_xmd_identical():
+    from pyfe4ai.utils.ristretto255 import expand_message_xmd
+
+    rng = random.Random(8)
+    for length in (0, 1, 111, 112, 127, 128, 129, 300):
+        msg, dst = rng.randbytes(length), rng.randbytes(rng.randrange(1, 256))
+        out = ctypes.create_string_buffer(64)
+        LIB.pf4_xmd64(msg, len(msg), dst, len(dst), out)
+        assert out.raw == expand_message_xmd(msg, dst, 64)
 
 
 def test_dense_dots_identical():

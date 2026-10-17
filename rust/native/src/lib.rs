@@ -60,7 +60,7 @@ fn read_values(seq: &Bound<'_, PyAny>, n: Option<usize>, q: &Bound<'_, PyAny>, q
     items
         .iter()
         .map(|ob| {
-            if let Ok(s) = ob.downcast::<PyString>() {
+            if let Ok(s) = ob.cast::<PyString>() {
                 if let Some(v) = s.to_str().ok().and_then(|t| parse_dec(t.as_bytes(), qv)) {
                     return Ok(v);
                 }
@@ -443,7 +443,7 @@ fn materials_of(mats: &Bound<'_, PyAny>) -> PyResult<Option<Vec<Vec<u8>>>> {
         .try_iter()?
         .map(|m| {
             let m = m?;
-            m.downcast::<PyBytes>().map(|b| b.as_bytes().to_vec()).map_err(|_| PyTypeError::new_err("pad materials must be bytes"))
+            m.cast::<PyBytes>().map(|b| b.as_bytes().to_vec()).map_err(|_| PyTypeError::new_err("pad materials must be bytes"))
         })
         .collect::<PyResult<_>>()?;
     Ok(Some(v))
@@ -473,7 +473,7 @@ fn encrypt_tensor(py: Python<'_>, key: &Bound<'_, EncKeyObj>, x: &Bound<'_, PyAn
 
 /// An int64 buffer (numpy array, bytes, ...) as a vector.
 fn int64_buffer(x: &Bound<'_, PyAny>) -> PyResult<Vec<i64>> {
-    let b: Vec<u8> = if let Ok(b) = x.downcast::<PyBytes>() {
+    let b: Vec<u8> = if let Ok(b) = x.cast::<PyBytes>() {
         b.as_bytes().to_vec()
     } else {
         x.call_method0("tobytes")?.extract()?
@@ -487,18 +487,22 @@ fn int64_buffer(x: &Bound<'_, PyAny>) -> PyResult<Vec<i64>> {
 // --------------------------------------------------------------- decryption
 
 /// One gathered ciphertext value list: plain decimal strings copied, others for Python.
-struct Gathered<'py> {
+struct GText {
     text: Vec<u8>,
     pos: Vec<(u32, u32)>,
+}
+
+struct Gathered<'py> {
+    t: GText,
     slow: Vec<(usize, Bound<'py, PyAny>)>,
 }
 
 const SLOW: u32 = u32::MAX;
 
 fn gather<'py>(seq: &Bound<'py, PyAny>, n: usize) -> Option<Gathered<'py>> {
-    let items: Vec<Bound<'py, PyAny>> = if let Ok(l) = seq.downcast::<PyList>() {
+    let items: Vec<Bound<'py, PyAny>> = if let Ok(l) = seq.cast::<PyList>() {
         l.iter().collect()
-    } else if let Ok(t) = seq.downcast::<PyTuple>() {
+    } else if let Ok(t) = seq.cast::<PyTuple>() {
         t.iter().collect()
     } else {
         return None;
@@ -506,15 +510,15 @@ fn gather<'py>(seq: &Bound<'py, PyAny>, n: usize) -> Option<Gathered<'py>> {
     if items.len() != n {
         return None;
     }
-    let mut g = Gathered { text: Vec::with_capacity(n * 24), pos: Vec::with_capacity(n), slow: Vec::new() };
+    let mut g = Gathered { t: GText { text: Vec::with_capacity(n * 24), pos: Vec::with_capacity(n) }, slow: Vec::new() };
     for (i, ob) in items.into_iter().enumerate() {
-        match ob.downcast_exact::<PyString>().ok().and_then(|s| s.to_str().ok().map(|t| t.as_bytes().to_vec())) {
+        match ob.cast_exact::<PyString>().ok().and_then(|s| s.to_str().ok().map(|t| t.as_bytes().to_vec())) {
             Some(t) if t.is_ascii() && t.len() <= 39 => {
-                g.pos.push((g.text.len() as u32, t.len() as u32));
-                g.text.extend_from_slice(&t);
+                g.t.pos.push((g.t.text.len() as u32, t.len() as u32));
+                g.t.text.extend_from_slice(&t);
             }
             _ => {
-                g.pos.push((SLOW, 0));
+                g.t.pos.push((SLOW, 0));
                 g.slow.push((i, ob));
             }
         }
@@ -562,7 +566,7 @@ fn decrypt_tensor(py: Python<'_>, ctx: &Bound<'_, RingCtx>, chunks: &Bound<'_, P
             return Err(fallback());
         }
         zg.push(gather(z, n).ok_or_else(fallback)?);
-        let per: Vec<Bound<'_, PyAny>> = if c.downcast::<PyList>().is_ok() || c.downcast::<PyTuple>().is_ok() {
+        let per: Vec<Bound<'_, PyAny>> = if c.cast::<PyList>().is_ok() || c.cast::<PyTuple>().is_ok() {
             c.try_iter()?.collect::<PyResult<_>>()?
         } else {
             return Err(fallback());
@@ -572,16 +576,16 @@ fn decrypt_tensor(py: Python<'_>, ctx: &Bound<'_, RingCtx>, chunks: &Bound<'_, P
         }
         let mut row = Vec::with_capacity(s_count);
         for pair in per {
-            if let Ok(b) = pair.downcast::<PyBytes>() {
+            if let Ok(b) = pair.cast::<PyBytes>() {
                 row.push(Slot::Bin(b.as_bytes().to_vec()));
                 continue;
             }
-            let t = pair.downcast::<PyTuple>().map_err(|_| fallback())?;
+            let t = pair.cast::<PyTuple>().map_err(|_| fallback())?;
             if t.len() != 2 {
                 return Err(fallback());
             }
             let (c0, c1) = (t.get_item(0)?, t.get_item(1)?);
-            let rows: Vec<Bound<'_, PyAny>> = if c0.downcast::<PyList>().is_ok() || c0.downcast::<PyTuple>().is_ok() {
+            let rows: Vec<Bound<'_, PyAny>> = if c0.cast::<PyList>().is_ok() || c0.cast::<PyTuple>().is_ok() {
                 c0.try_iter()?.collect::<PyResult<_>>()?
             } else {
                 return Err(fallback());
@@ -599,15 +603,16 @@ fn decrypt_tensor(py: Python<'_>, ctx: &Bound<'_, RingCtx>, chunks: &Bound<'_, P
         slots.push(row);
     }
     // parse (without the GIL), then the values Python must read
-    let parse = |g: &Gathered<'_>| -> Vec<Option<u128>> {
+    let parse = |g: &GText| -> Vec<Option<u128>> {
         g.pos.iter().map(|&(p, l)| if p == SLOW { None } else { parse_dec(&g.text[p as usize..(p + l) as usize], qv) }).collect()
     };
-    let mut zvals: Vec<Vec<Option<u128>>> = py.detach(|| zg.iter().map(&parse).collect());
+    let ztexts: Vec<&GText> = zg.iter().map(|g| &g.t).collect();
+    let mut zvals: Vec<Vec<Option<u128>>> = py.detach(|| ztexts.iter().map(|t| parse(t)).collect());
     for (j, g) in zg.iter().enumerate() {
         for (i, v) in zvals[j].iter_mut().enumerate() {
             if v.is_none() {
                 let ob = g.slow.iter().find(|(k, _)| *k == i).map(|(_, o)| o.clone());
-                let ob = match ob { Some(o) => o, None => PyString::new(py, std::str::from_utf8(&g.text[g.pos[i].0 as usize..(g.pos[i].0 + g.pos[i].1) as usize]).unwrap()).into_any() };
+                let ob = match ob { Some(o) => o, None => PyString::new(py, std::str::from_utf8(&g.t.text[g.t.pos[i].0 as usize..(g.t.pos[i].0 + g.t.pos[i].1) as usize]).unwrap()).into_any() };
                 *v = Some(str_int_mod(&ob, &q)?); // int()'s ValueError, as gmpy2.mpz(z) would raise
             }
         }
@@ -626,13 +631,13 @@ fn decrypt_tensor(py: Python<'_>, ctx: &Bound<'_, RingCtx>, chunks: &Bound<'_, P
                 Slot::Dec(gs) => {
                     let mut v = Vec::with_capacity((eta + 1) * n);
                     for g in gs {
-                        for (i, p) in parse(g).into_iter().enumerate() {
+                        for (i, p) in parse(&g.t).into_iter().enumerate() {
                             v.push(match p {
                                 Some(x) => x,
                                 None => {
                                     let ob = g.slow.iter().find(|(k, _)| *k == i).map(|(_, o)| o.clone()).unwrap_or_else(|| {
-                                        let (a, l) = g.pos[i];
-                                        PyString::new(py, std::str::from_utf8(&g.text[a as usize..(a + l) as usize]).unwrap()).into_any()
+                                        let (a, l) = g.t.pos[i];
+                                        PyString::new(py, std::str::from_utf8(&g.t.text[a as usize..(a + l) as usize]).unwrap()).into_any()
                                     });
                                     str_int_mod(&ob, &q).map_err(|_| malformed())?
                                 }
@@ -697,7 +702,7 @@ fn pad_terms(py: Python<'_>, ctx: &Bound<'_, RingCtx>, base: &Bound<'_, PyAny>, 
     let y_rows: Vec<Vec<u128>> = ys.try_iter()?.map(|y| read_values(&y?, Some(eta), &q, qv, false)).collect::<PyResult<_>>()?;
     let mats: Vec<Vec<Vec<u8>>> = materials.try_iter()?.map(|row| {
         let row = row?;
-        let v: Vec<Vec<u8>> = row.try_iter()?.map(|m| m?.downcast::<PyBytes>().map(|b| b.as_bytes().to_vec())
+        let v: Vec<Vec<u8>> = row.try_iter()?.map(|m| m?.cast::<PyBytes>().map(|b| b.as_bytes().to_vec())
             .map_err(|_| PyTypeError::new_err("materials must be bytes"))).collect::<PyResult<_>>()?;
         if v.len() != y_rows.len() {
             return Err(PyValueError::new_err("one material per slot and label"));
@@ -805,7 +810,7 @@ fn dense_dots(py: Python<'_>, materials: &Bound<'_, PyAny>, nb: usize, count: us
 #[pyfunction]
 fn build_info(py: Python<'_>) -> PyResult<Py<PyAny>> {
     let d = pyo3::types::PyDict::new(py);
-    d.set_item("compiler", concat!("rustc ", env!("CARGO_PKG_RUST_VERSION")))?;
+    d.set_item("compiler", concat!("rustc (pyfe4ai-native ", env!("CARGO_PKG_VERSION"), ", pyo3)"))?;
     d.set_item("implementation", "rust")?;
     d.set_item("os_random", osrand::AVAILABLE)?;
     d.set_item("hardware_threads", std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1))?;

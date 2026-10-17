@@ -18,7 +18,7 @@ crate-type = ["cdylib"]
 pyfe4ai-core = { path = "../core" }
 pyo3 = { version = "0.30", features = ["extension-module"] }
 curve25519-dalek = { version = "5", default-features = false, features = ["alloc", "zeroize", "precomputed-tables"] }
-sha2 = { version = "0.10", default-features = false }
+rand_chacha = "0.9"
 zeroize = "1"
 
 [profile.release]

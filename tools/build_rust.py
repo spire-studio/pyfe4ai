@@ -43,7 +43,7 @@ def main() -> None:
         cmd.append("--release")
     if args.offline:
         cmd.append("--offline")
-    subprocess.run(cmd, check=True, env=env)
+    subprocess.run(cmd, check=True, env=env, cwd=CRATE)  # .cargo/config.toml of the crate applies
     profile = "debug" if args.debug else "release"
     names = {"darwin": "lib_rust_native.dylib", "win32": "_rust_native.dll"}
     built = target_dir / profile / names.get(sys.platform, "lib_rust_native.so")

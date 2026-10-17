@@ -182,3 +182,10 @@ pub unsafe extern "C" fn pf4_dense_dots(
     let res = crate::dense::dense_dots(&mats, nb, count, slice::from_raw_parts(key, count * kl), kl, threads);
     std::ptr::copy_nonoverlapping(res.as_ptr(), out, res.len());
 }
+
+/// RFC 9380 expand_message_xmd with SHA-512 to 64 bytes.
+#[no_mangle]
+pub unsafe extern "C" fn pf4_xmd64(msg: *const u8, len: usize, dst: *const u8, dst_len: usize, out: *mut u8) {
+    let o = crate::sha512::expand_message_xmd_64(slice::from_raw_parts(msg, len), slice::from_raw_parts(dst, dst_len));
+    std::ptr::copy_nonoverlapping(o.as_ptr(), out, 64);
+}

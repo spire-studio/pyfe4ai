@@ -1,7 +1,7 @@
 //! ristretto255 for the */ddh_ristretto255 schemes (curve25519-dalek):
 //! points as 32-byte canonical encodings, scalars as 32-byte little-endian
 //! integers (reduced mod L by the caller or here), the RFC 9380
-//! hash_to_ristretto255 (expand_message_xmd with SHA-512), a bounded discrete
+//! hash_to_ristretto255 (expand_message_xmd with the core's SHA-512), a bounded discrete
 //! log by baby-step giant-step over encodings, and the per-element loops of
 //! the MCFE ndarray helpers. Scalar multiplications by secret scalars are the
 //! constant-time ones of curve25519-dalek.
@@ -14,7 +14,7 @@ use pyfe4ai_core::parallel_for;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyString, PyTuple};
-use sha2::{Digest, Sha512};
+use pyfe4ai_core::sha512::expand_message_xmd_64;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -32,29 +32,8 @@ fn enc(py: Python<'_>, p: &RistrettoPoint) -> Py<PyBytes> {
     PyBytes::new(py, p.compress().as_bytes()).unbind()
 }
 
-/// RFC 9380 expand_message_xmd with SHA-512 to 64 bytes.
-fn expand_xmd_64(msg: &[u8], dst: &[u8]) -> [u8; 64] {
-    let mut dst_prime = dst.to_vec();
-    dst_prime.push(dst.len() as u8);
-    let mut h = Sha512::new();
-    h.update([0u8; 128]);
-    h.update(msg);
-    h.update(64u16.to_be_bytes());
-    h.update([0u8]);
-    h.update(&dst_prime);
-    let b0 = h.finalize();
-    let mut h1 = Sha512::new();
-    h1.update(b0);
-    h1.update([1u8]);
-    h1.update(&dst_prime);
-    let b1 = h1.finalize();
-    let mut out = [0u8; 64];
-    out.copy_from_slice(&b1);
-    out
-}
-
 fn hash_point(msg: &[u8], dst: &[u8]) -> RistrettoPoint {
-    RistrettoPoint::from_uniform_bytes(&expand_xmd_64(msg, dst))
+    RistrettoPoint::from_uniform_bytes(&expand_message_xmd_64(msg, dst))
 }
 
 #[pyfunction]

@@ -123,10 +123,10 @@ def test_matches_libsodium():
 
 
 def test_label_hash_is_domain_separated():
-    a = mcfe_ec.hash_label("round-1")
-    b = mcfe_ec.hash_label("round-2")
-    assert R.encode(a[0]) != R.encode(a[1]) != R.encode(b[0])
-    assert R.encode(ec_group.hash_to_group("x", ec_group.dst("A"))) != R.encode(
+    a = [ec_group.to_hex(p) for p in mcfe_ec.hash_label("round-1")]
+    b = [ec_group.to_hex(p) for p in mcfe_ec.hash_label("round-2")]
+    assert a[0] != a[1] != b[0]
+    assert ec_group.to_hex(ec_group.hash_to_group("x", ec_group.dst("A"))) != ec_group.to_hex(
         ec_group.hash_to_group("x", ec_group.dst("B")))
 
 
