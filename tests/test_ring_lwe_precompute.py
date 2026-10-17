@@ -15,7 +15,7 @@ from pyfe4ai.schemes.mcfe import ring_lwe as mcfe_rlwe
 from pyfe4ai.utils import native_backend
 from pyfe4ai.utils import sampling_utils
 from pyfe4ai.utils.exceptions import FEValidationError
-from tests.test_native_backend import ByteStream, StreamRandom
+from tests.test_native_backend import ByteStream, StreamRandom, _rounded_sampler  # noqa: F401  (autouse)
 
 pytestmark = pytest.mark.core
 BACKENDS = ["python"] + (["native"] if native_backend.available() else [])

@@ -18,6 +18,7 @@ from pyfe4ai.utils import native_backend
 from pyfe4ai.utils import sampling_utils
 from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
 from pyfe4ai.utils.ring_lwe_utils import decode_binary_ciphertext, encode_binary_ciphertext
+from tests.test_native_backend import _rounded_sampler  # noqa: F401  (autouse)
 
 pytestmark = pytest.mark.core
 BACKENDS = ["python"] + (["native"] if native_backend.available() else [])

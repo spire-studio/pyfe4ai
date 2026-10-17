@@ -37,6 +37,18 @@ def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
 
+@pytest.fixture(autouse=True)
+def _rounded_sampler():
+    """The native sampler reproduces the default rounded Gaussian: compare with
+    it even when another sampler is selected (PYFE4AI_GAUSSIAN_SAMPLER)."""
+    select = getattr(sampling_utils, "gaussian_sampler", None)
+    if select is None:  # versions without a sampler choice
+        yield
+        return
+    with select("rounded"):
+        yield
+
+
 class FixedBytes:
     """The bytes of *data*, handed out in order."""
 
