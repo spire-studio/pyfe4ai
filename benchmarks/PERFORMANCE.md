@@ -55,10 +55,13 @@ both apply, medians of 3 runs unless stated.
    this recovers it.
 2. **Native FACCT** (`rust/core/src/facct.rs`): the getrandbits calls and
    decisions of `discrete_gaussian_facct`; the tables come from Python, the
-   acceptance test is decided in fixed point (error below 2^-110) and the
-   tests it cannot decide (about 2^-99 of them) call the Python formula, so
-   the samples for a given bit source are the reference's (its KATs hold
-   natively). 30% of the time is ChaCha20, 50 bytes per trial. The default
+   acceptance test is decided in fixed point (error below 2^-110 with
+   `c = 1 / (2 sigma^2)` passed to 128 bits; until the October 2026 review
+   fix it was passed with 53, an error of about 2^-55) and the tests it
+   cannot decide (about 2^-99 of them) call the Python formula, so the
+   samples for a given bit source are the reference's (its KATs hold
+   natively; a table checks a few thresholds against the formula when it
+   is built). 30% of the time is ChaCha20, 50 bytes per trial. The default
    stays the rounded sampler.
 3. **SIFE Ring-LWE and dMCFE natively; NTT dispatch.**
    `ring_lwe_utils.ntt_forward` / `ntt_inverse` / `poly_mul` (so `RingNTT`

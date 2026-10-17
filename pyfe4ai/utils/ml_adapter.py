@@ -42,6 +42,7 @@ from __future__ import annotations
 import importlib
 import logging
 import numbers
+import threading
 from dataclasses import dataclass
 from fractions import Fraction
 from typing import Any
@@ -434,8 +435,10 @@ class FESchemeWrapper:
 
         # Cache for crypto instances per nid
         self._encryptors: dict[str, Any] = {}
-        # Labels used for encryption, per client, and weights aggregated, per label
+        # Labels used for encryption, per client (reserved before encrypting,
+        # under _label_lock), and weights aggregated, per label
         self._encrypted_labels: set[tuple[str, str]] = set()
+        self._label_lock = threading.Lock()
         self._aggregated: dict[str, dict] = {}
 
     # -- crypto instance management ----------------------------------------
@@ -711,8 +714,9 @@ def precompute_gradient(
     precompute = getattr(encryptor, "precompute", None)
     if precompute is None:
         raise ValueError("{}/{} has no offline encryption phase".format(wrapper.scheme_type, wrapper.variant))
-    if (nid, label) in wrapper._encrypted_labels:
-        raise ValueError("client {} already encrypted under label {!r}".format(nid, label))
+    with wrapper._label_lock:
+        if (nid, label) in wrapper._encrypted_labels:
+            raise ValueError("client {} already encrypted under label {!r}".format(nid, label))
     return precompute(label, [tuple(int(d) for d in np.shape(np.empty(shape)))])
 
 
@@ -744,18 +748,26 @@ def encrypt_gradient(
     if wrapper.has_label:
         if label is None:
             raise ValueError("MCFE schemes require a label for encryption")
-        if (nid, label) in wrapper._encrypted_labels:
-            raise ValueError(
-                "client {} already encrypted under label {!r}; use a fresh label "
-                "for every round".format(nid, label)
-            )
+        # reserve (nid, label) before encrypting: of two concurrent calls one
+        # encrypts, the other is refused; a failed encryption releases it
+        with wrapper._label_lock:
+            if (nid, label) in wrapper._encrypted_labels:
+                raise ValueError(
+                    "client {} already encrypted under label {!r}; use a fresh label "
+                    "for every round".format(nid, label)
+                )
+            wrapper._encrypted_labels.add((nid, label))
         kwargs["label"] = label
     if precomputed is not None:
         kwargs["precomputed"] = precomputed
 
-    cts = encryptor.encrypt_lst_ndarray([arr], **kwargs)
-    if wrapper.has_label:
-        wrapper._encrypted_labels.add((nid, label))
+    try:
+        cts = encryptor.encrypt_lst_ndarray([arr], **kwargs)
+    except BaseException:
+        if wrapper.has_label:
+            with wrapper._label_lock:
+                wrapper._encrypted_labels.discard((nid, label))
+        raise
 
     return EncryptedGradient(
         ciphertexts=cts,

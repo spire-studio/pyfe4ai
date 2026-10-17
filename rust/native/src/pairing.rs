@@ -11,6 +11,7 @@
 //! powers (`bls_msm`, `bls_pow_many`) use the methods of `msm.rs`. Not
 //! constant-time in general.
 
+use crate::dlog::{self, TableCache};
 use crate::msm;
 use ark_bls12_381::{Bls12_381, Fq12, Fr, G1Projective, G2Projective};
 use ark_ec::pairing::{Pairing, PairingOutput};
@@ -18,13 +19,14 @@ use ark_ec::{CurveGroup, PrimeGroup};
 use ark_ff::{BigInteger, Field, One, PrimeField, Zero};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
 use pyfe4ai_core::osrand;
+use pyfe4ai_core::sha256::sha256;
 use pyo3::basic::CompareOp;
 use pyo3::exceptions::{PyOSError, PyTypeError, PyValueError, PyZeroDivisionError};
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyBytes, PyInt};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 
 /// charm's type codes.
 pub const ZR: u8 = 0;
@@ -130,8 +132,15 @@ fn gt_deserialize(data: &[u8]) -> Option<Gt> {
     msm::gt_is_member(&f).then_some(PairingOutput(f))
 }
 
+/// Bytes of the compressed encodings of ZR, G1, G2 and GT.
+const ENCODED_LEN: [usize; 4] = [32, 48, 96, 576];
+
+/// The element of type t of exactly its compressed encoding (no trailing bytes).
 fn deserialize_val(t: u8, data: &[u8]) -> PyResult<Val> {
     let bad = |_| PyValueError::new_err("invalid BLS12-381 encoding");
+    if t <= GT && data.len() != ENCODED_LEN[t as usize] {
+        return Err(PyValueError::new_err("invalid BLS12-381 encoding"));
+    }
     Ok(match t {
         ZR => Val::Zr(Fr::deserialize_compressed(data).map_err(bad)?),
         G1 => Val::G1(ark_bls12_381::G1Affine::deserialize_compressed(data).map_err(bad)?.into()),
@@ -235,22 +244,39 @@ impl Elem {
         if !modulo.is_none() {
             return Err(PyTypeError::new_err("pow() with a modulus is not supported"));
         }
-        let e = fr_from_int(exponent)?;
-        Ok(elem(match self.v {
-            Val::Zr(a) => {
-                // ZR ** k with k an integer: k mod (r - 1) would be wrong for k < 0; use the
-                // field power for k >= 0 and the inverse for k < 0
-                let neg = exponent.lt(0).unwrap_or(false) && other_elem(exponent).is_none();
-                let mag = if neg { -e } else { e };
-                let p = a.pow(mag.into_bigint());
-                if neg {
-                    Val::Zr(p.inverse().ok_or_else(|| PyZeroDivisionError::new_err("0 ** negative in ZR"))?)
-                } else {
-                    Val::Zr(p)
-                }
-            }
-            v => group_pow(&v, &e),
-        }))
+        let a = match self.v {
+            Val::Zr(a) => a,
+            v => return Ok(elem(group_pow(&v, &fr_from_int(exponent)?))),
+        };
+        if let Some(v) = other_elem(exponent) {
+            // a ZR exponent: its representative in [0, r)
+            return match v {
+                Val::Zr(k) => Ok(elem(Val::Zr(a.pow(k.into_bigint())))),
+                _ => Err(PyTypeError::new_err("exponent must be an integer or a ZR element")),
+            };
+        }
+        // an integer k: a^k = a^(k mod (r - 1)) for a != 0 (Fermat), k < 0 included;
+        // reducing k mod r would be wrong for |k| >= r
+        let py = exponent.py();
+        let k = unsafe { Bound::from_owned_ptr_or_err(py, pyo3::ffi::PyNumber_Index(exponent.as_ptr())) }?;
+        if a.is_zero() {
+            return if k.lt(0)? {
+                Err(PyZeroDivisionError::new_err("0 ** negative in ZR"))
+            } else {
+                Ok(elem(Val::Zr(if k.eq(0)? { Fr::one() } else { Fr::zero() })))
+            };
+        }
+        if let Ok(v) = k.extract::<i64>() {
+            // |k| < r - 1: the field power, inverted for k < 0
+            let p = a.pow([v.unsigned_abs()]);
+            return Ok(elem(Val::Zr(if v < 0 {
+                p.inverse().ok_or_else(|| PyZeroDivisionError::new_err("0 ** negative in ZR"))?
+            } else {
+                p
+            })));
+        }
+        let e = fr_from_int(&k.rem(cached_order(py)?.sub(1)?)?)?; // in [0, r - 1): exact
+        Ok(elem(Val::Zr(a.pow(e.into_bigint()))))
     }
 
     fn __add__(&self, other: &Bound<'_, PyAny>) -> PyResult<Elem> {
@@ -510,50 +536,72 @@ fn bls_multi_pair(py: Python<'_>, a: Vec<Bound<'_, Elem>>, b: Vec<Bound<'_, Elem
 struct GtTable {
     m: u64,
     giant: Gt,
-    baby: HashMap<Vec<u8>, u64>,
+    baby: HashMap<[u8; 32], u64>,
 }
 
-const BABY_FACTOR: u64 = 16;
+/// The table key of a GT element: SHA-256 of its encoding (32 bytes instead of 576).
+fn gt_key(t: &Gt) -> [u8; 32] {
+    sha256(&[&serialize_val(&Val::Gt(*t))])
+}
 
-fn gt_table(base: Gt, bound: u64) -> Arc<GtTable> {
-    type Tables = Mutex<HashMap<(Vec<u8>, u64), Arc<GtTable>>>;
-    static TABLES: OnceLock<Tables> = OnceLock::new();
-    let tables = TABLES.get_or_init(|| Mutex::new(HashMap::new()));
-    let key = (serialize_val(&Val::Gt(base)), bound);
-    if let Some(t) = tables.lock().unwrap().get(&key) {
-        return t.clone();
-    }
-    let span = 2 * bound + 1;
-    let m = span.min(((span as f64).sqrt() as u64 + 1) * BABY_FACTOR);
+fn build_gt_table(base: Gt, m: u64) -> GtTable {
     let mut baby = HashMap::with_capacity(m as usize);
     let mut cur = Gt::zero();
     for j in 0..m {
-        baby.insert(serialize_val(&Val::Gt(cur)), j);
+        baby.insert(gt_key(&cur), j);
         cur += base;
     }
-    let t = Arc::new(GtTable { m, giant: -(base * Fr::from(m)), baby });
-    tables.lock().unwrap().insert(key, t.clone());
-    t
+    GtTable { m, giant: -(base * Fr::from(m)), baby }
 }
 
-/// The x with base^x = target and |x| <= bound, or None (table cached per base and bound).
+/// The cached tables, per (base, size): at most 16 tables / 128 MB, least
+/// recently used evicted.
+static GT_TABLES: TableCache<([u8; 32], u64), GtTable> = TableCache::new(16, 128 << 20);
+
+fn gt_table(base: Gt, bound: u64) -> Arc<GtTable> {
+    let m = dlog::baby_steps(bound, true);
+    GT_TABLES.get_or_build((gt_key(&base), m), m as usize * dlog::ENTRY_BYTES, || build_gt_table(base, m))
+}
+
+/// (tables, estimated bytes) of the GT dlog table cache (diagnostics, tests).
 #[pyfunction]
-fn bls_gt_dlog(py: Python<'_>, base: &Bound<'_, Elem>, target: &Bound<'_, Elem>, bound: u64) -> PyResult<Option<i64>> {
+fn bls_gt_dlog_cache() -> (usize, usize) {
+    GT_TABLES.stats()
+}
+
+fn gt_search(t: &GtTable, g: Gt, h: Gt, bound: u64) -> Option<i64> {
+    let mut gamma = h + g * Fr::from(bound);
+    for i in 0..(2 * bound) / t.m + 2 {
+        if let Some(&j) = t.baby.get(&gt_key(&gamma)) {
+            let x = (i * t.m + j) as i64 - bound as i64;
+            return if x.unsigned_abs() <= bound { Some(x) } else { None };
+        }
+        gamma += t.giant;
+    }
+    None
+}
+
+/// The x with base^x = target and |x| <= bound (at most 2^48), or None. With
+/// `cache` the baby-step table is kept for later calls with this base and bound;
+/// without (a base used once, such as SIFE FH-IPE's e(k1, c1)), a table of about
+/// sqrt(2 bound + 1) steps is built for this call only.
+#[pyfunction]
+#[pyo3(signature = (base, target, bound, cache=true))]
+fn bls_gt_dlog(py: Python<'_>, base: &Bound<'_, Elem>, target: &Bound<'_, Elem>, bound: u64, cache: bool)
+    -> PyResult<Option<i64>> {
     let (g, h) = match (base.get().v, target.get().v) {
         (Val::Gt(g), Val::Gt(h)) => (g, h),
         _ => return Err(PyTypeError::new_err("dlog in GT takes GT elements")),
     };
+    if bound > dlog::MAX_BOUND {
+        return Err(PyValueError::new_err("dlog bound above 2^48"));
+    }
     Ok(py.detach(|| {
-        let t = gt_table(g, bound);
-        let mut gamma = h + g * Fr::from(bound);
-        for i in 0..(2 * bound) / t.m + 2 {
-            if let Some(&j) = t.baby.get(&serialize_val(&Val::Gt(gamma))) {
-                let x = (i * t.m + j) as i64 - bound as i64;
-                return if x.unsigned_abs() <= bound { Some(x) } else { None };
-            }
-            gamma += t.giant;
+        if cache {
+            gt_search(&gt_table(g, bound), g, h, bound)
+        } else {
+            gt_search(&build_gt_table(g, dlog::baby_steps(bound, false)), g, h, bound)
         }
-        None
     }))
 }
 
@@ -606,6 +654,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(bls_order, m)?, wrap_pyfunction!(bls_deserialize, m)?, wrap_pyfunction!(bls_pair, m)?,
         wrap_pyfunction!(bls_multi_pair, m)?, wrap_pyfunction!(bls_gt_dlog, m)?, wrap_pyfunction!(bls_hash, m)?,
         wrap_pyfunction!(bls_deserialize_many, m)?, wrap_pyfunction!(bls_msm, m)?, wrap_pyfunction!(bls_pow_many, m)?,
+        wrap_pyfunction!(bls_gt_dlog_cache, m)?,
     ] {
         m.add_function(f)?;
     }

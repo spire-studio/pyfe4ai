@@ -81,6 +81,10 @@ fn encrypt_chunk_with<W: Word>(
     for v in smp.iter_mut() {
         unsafe { std::ptr::write_volatile(v, 0) };
     }
+    // r, NTT(r) and the products with it determine the noise-free ciphertext
+    wipe_words(&mut r);
+    wipe_words(&mut rh);
+    wipe_words(&mut t);
 }
 
 /// encrypt_chunk_with for the rounded Gaussian of discrete_gaussian_matrix:
@@ -209,6 +213,14 @@ pub fn wipe_bytes(buf: &mut [u8]) {
     std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
 }
 
+/// Overwrite a buffer of secret words before it is freed.
+pub fn wipe_words<W: Word>(buf: &mut [W]) {
+    for v in buf.iter_mut() {
+        unsafe { std::ptr::write_volatile(v, W::ZERO) };
+    }
+    std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
+}
+
 /// Chunk j's random bytes: a slice of the given ones, or `own` filled from the OS
 /// or the chunk's stream (the caller wipes `own` after use).
 fn chunk_bytes<'b>(rnd: &Randomness<'b>, j: usize, per: usize, own: &'b mut Vec<u8>)
@@ -279,7 +291,9 @@ where
     if let Noise::Facct(nz) = noise {
         facct_chunks(chunks, threads, &rnd, |j, bits| {
             let (mut c0, mut c1) = (vec![W::ZERO; n], vec![W::ZERO; n]);
-            encrypt_chunk_facct(ring, key, &plain(j), nz, bits, &mut c0, &mut c1);
+            let mut w = plain(j);
+            encrypt_chunk_facct(ring, key, &w, nz, bits, &mut c0, &mut c1);
+            wipe_words(&mut w); // x + u + H_c: the pad u is secret
             emit(j, &c0, &c1);
         })?;
         return Ok(chunks);
@@ -296,7 +310,9 @@ where
         let (mut c0, mut c1) = (vec![W::ZERO; n], vec![W::ZERO; n]);
         match chunk_bytes(&rnd, j, per, &mut own) {
             Ok(rb) => {
-                encrypt_chunk(ring, key, &plain(j), sigma2, sigma3, rb, &mut c0, &mut c1);
+                let mut w = plain(j);
+                encrypt_chunk(ring, key, &w, sigma2, sigma3, rb, &mut c0, &mut c1);
+                wipe_words(&mut w);
             }
             Err(e) => {
                 *failed.lock().unwrap() = Some(e);
@@ -316,6 +332,9 @@ where
 /// None if |mu| > bound; Err(()) if |mu| does not fit an i64.
 #[inline]
 pub fn decode_scaled(v: u128, q: u128, delta: u128, bound: i128) -> Result<Option<i64>, ()> {
+    if delta == 0 {
+        return Err(()); // not a valid Delta (the bindings refuse it before)
+    }
     let half = q >> 1;
     let sv: i128 = if v > half { v as i128 - q as i128 } else { v as i128 };
     let den = 2 * delta as i128;
@@ -360,6 +379,9 @@ fn small_quotient<W: Word>(num: W, den: W) -> Option<i128> {
 pub fn decode_scaled_w<W: Word>(v: W, q: W, delta: W, bound: i128) -> Result<Option<i64>, ()> {
     if W::BITS <= 128 {
         return decode_scaled(v.to_u128(), q.to_u128(), delta.to_u128(), bound);
+    }
+    if delta == W::ZERO {
+        return Err(());
     }
     let den = delta.shl1();
     // v <= q / 2: mu = floor((2 v + Delta) / (2 Delta)) >= 0; else v - q = -a and
@@ -530,9 +552,7 @@ pub struct Precomputed<W: Word> {
 impl<W: Word> Precomputed<W> {
     fn wipe(&mut self, j: usize) {
         let n = self.n;
-        for v in self.data[2 * n * j..2 * n * (j + 1)].iter_mut() {
-            unsafe { std::ptr::write_volatile(v, W::ZERO) };
-        }
+        wipe_words(&mut self.data[2 * n * j..2 * n * (j + 1)]);
     }
     pub fn chunks(&self) -> usize {
         self.used.len()
@@ -564,9 +584,11 @@ pub fn precompute<W: Word>(
         w
     };
     let collect = |data: Vec<std::sync::Mutex<Vec<W>>>| {
-        let mut flat = Vec::with_capacity(2 * n * chunks);
+        let mut flat = Vec::with_capacity(2 * n * chunks); // no reallocation: nothing left behind
         for d in data {
-            flat.extend_from_slice(&d.into_inner().unwrap());
+            let mut pc = d.into_inner().unwrap();
+            flat.extend_from_slice(&pc);
+            wipe_words(&mut pc);
         }
         Precomputed { n, data: flat, used: vec![false; chunks] }
     };
@@ -574,7 +596,9 @@ pub fn precompute<W: Word>(
         facct_chunks(chunks, threads, &rnd, |j, bits| {
             let mut pc = vec![W::ZERO; 2 * n];
             let (c0, c1) = pc.split_at_mut(n);
-            encrypt_chunk_facct(ring, key, &pad(j), nz, bits, c0, c1);
+            let mut w = pad(j);
+            encrypt_chunk_facct(ring, key, &w, nz, bits, c0, c1);
+            wipe_words(&mut w);
             *data[j].lock().unwrap() = pc;
         })?;
         return Ok(collect(data));
@@ -592,7 +616,9 @@ pub fn precompute<W: Word>(
         match chunk_bytes(&rnd, j, per, &mut own) {
             Ok(rb) => {
                 let (c0, c1) = pc.split_at_mut(n);
-                encrypt_chunk(ring, key, &pad(j), sigma2, sigma3, rb, c0, c1);
+                let mut w = pad(j);
+                encrypt_chunk(ring, key, &w, sigma2, sigma3, rb, c0, c1);
+                wipe_words(&mut w);
             }
             Err(e) => {
                 *failed.lock().unwrap() = Some(e);
@@ -620,7 +646,7 @@ where
         return Err(Error::Input("x must be non-empty"));
     }
     let chunks = (x.len() + n - 1) / n;
-    if first + chunks > pre.chunks() {
+    if first.checked_add(chunks).map_or(true, |end| end > pre.chunks()) {
         return Err(Error::Input("the precomputation does not cover these chunks"));
     }
     if pre.used[first..first + chunks].iter().any(|&u| u) {

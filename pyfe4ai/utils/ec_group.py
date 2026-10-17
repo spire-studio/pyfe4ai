@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import functools
 import math
+import re
 
 from pyfe4ai.utils import ristretto255 as r255
 from pyfe4ai.utils.exceptions import FEValidationError
@@ -31,6 +32,10 @@ _DST_SUFFIX = "-V01-CS02-with-ristretto255_XMD:SHA-512_R255MAP_RO_"
 
 G = r255.BASE
 IDENTITY = r255.IDENTITY
+#: Largest bound of :func:`dlog` (``ValueError`` above), as the extension's.
+MAX_DLOG_BOUND = 2 ** 48
+#: A group element as text: exactly 64 hex digits (either case), on both backends.
+_HEX64 = re.compile(r"[0-9a-fA-F]{64}")
 
 
 def _ext():
@@ -97,13 +102,19 @@ def to_hex(point) -> str:
 
 
 def from_hex(value, what: str = "group element"):
-    """The group element of a 64-hex-digit canonical encoding.
+    """The group element of a 64-hex-digit canonical encoding (exactly 64 hex
+    digits for a string: no signs, spaces or other separators, as natively).
 
     Raises:
         FEValidationError: If *value* is not the encoding of a group element.
     """
     try:
-        data = bytes.fromhex(value) if isinstance(value, str) else bytes(value)
+        if isinstance(value, str):
+            if not _HEX64.fullmatch(value):
+                raise ValueError("not 64 hex digits")
+            data = bytes.fromhex(value)
+        else:
+            data = bytes(value)
         ext = _ext()
         if ext:
             if not ext.r255_check(data):
@@ -148,8 +159,14 @@ def _dlog_table(bound: int) -> tuple:
 
 
 def dlog(point, bound: int) -> int | None:
-    """The ``x`` with ``x G = point`` and ``|x| <= bound``, or ``None``."""
+    """The ``x`` with ``x G = point`` and ``|x| <= bound``, or ``None``.
+
+    Raises:
+        ValueError: If *bound* is negative or above :data:`MAX_DLOG_BOUND`.
+    """
     bound = int(bound)
+    if not 0 <= bound <= MAX_DLOG_BOUND:
+        raise ValueError("dlog bound must be between 0 and 2^48, got {}".format(bound))
     ext = _ext()
     if ext:
         return ext.r255_dlog(_b(point), bound)

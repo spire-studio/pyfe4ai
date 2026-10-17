@@ -31,8 +31,12 @@ for them under the label they serve, since ``w_k`` is linear in ``ct1``.
 The noise is seeded with a per-server key (fixed per weights and label),
 ``lambda_k``, the label or chunk and the ``ct1`` values, so a request for
 the same key part draws the same noise; a corrupted client varying its own
-``ct1`` draws fresh noise each time, and averaging that away would take about
-``2^(2 stat_param)`` partial decryptions. The threshold layer is our own
+``ct1`` draws fresh noise each time. The flooding argument is statistical
+per answer (a statistical distance of about ``2^-stat_param`` per
+coefficient, adding up over the answers); it does not bound what many
+answers to varied ``ct1`` reveal together: averaging them would take about
+``2^(2 stat_param)`` partial decryptions, but other ways of combining these
+noisy linear equations are not ruled out. The threshold layer is our own
 design.
 
 With the native backend (:mod:`pyfe4ai.utils.native_backend`; moduli below

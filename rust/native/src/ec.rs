@@ -6,6 +6,7 @@
 //! the MCFE ndarray helpers. Scalar multiplications by secret scalars are the
 //! constant-time ones of curve25519-dalek.
 
+use crate::dlog::{self, TableCache};
 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
 use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
@@ -16,7 +17,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyString, PyTuple};
 use pyfe4ai_core::sha512::expand_message_xmd_64;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 fn point(b: &[u8]) -> PyResult<RistrettoPoint> {
     let arr: [u8; 32] = b.try_into().map_err(|_| PyValueError::new_err("a ristretto255 encoding has 32 bytes"))?;
@@ -98,25 +99,34 @@ struct Table {
     baby: HashMap<[u8; 32], u64>,
 }
 
-const BABY_FACTOR: u64 = 16;
+/// The cached tables, per size: at most 16 tables / 128 MB, least recently used evicted.
+static TABLES: TableCache<u64, Table> = TableCache::new(16, 128 << 20);
 
+/// (tables, estimated bytes) of the dlog table cache (diagnostics, tests).
+#[pyfunction]
+fn r255_dlog_cache() -> (usize, usize) {
+    TABLES.stats()
+}
+
+/// The table for |x| <= bound.
 fn table(bound: u64) -> Arc<Table> {
-    static TABLES: OnceLock<Mutex<HashMap<u64, Arc<Table>>>> = OnceLock::new();
-    let tables = TABLES.get_or_init(|| Mutex::new(HashMap::new()));
-    if let Some(t) = tables.lock().unwrap().get(&bound) {
-        return t.clone();
+    let m = dlog::baby_steps(bound, true);
+    TABLES.get_or_build(m, m as usize * dlog::ENTRY_BYTES, || {
+        let mut baby = HashMap::with_capacity(m as usize);
+        let mut p = RistrettoPoint::identity();
+        for j in 0..m {
+            baby.insert(p.compress().to_bytes(), j);
+            p += RISTRETTO_BASEPOINT_POINT;
+        }
+        Table { m, giant: -(RISTRETTO_BASEPOINT_POINT * Scalar::from(m)), baby }
+    })
+}
+
+fn check_bound(bound: u64) -> PyResult<()> {
+    if bound > dlog::MAX_BOUND {
+        return Err(PyValueError::new_err("dlog bound above 2^48"));
     }
-    let span = 2 * bound + 1;
-    let m = span.min(((span as f64).sqrt() as u64 + 1) * BABY_FACTOR);
-    let mut baby = HashMap::with_capacity(m as usize);
-    let mut p = RistrettoPoint::identity();
-    for j in 0..m {
-        baby.insert(p.compress().to_bytes(), j);
-        p += RISTRETTO_BASEPOINT_POINT;
-    }
-    let t = Arc::new(Table { m, giant: -(RISTRETTO_BASEPOINT_POINT * Scalar::from(m)), baby });
-    tables.lock().unwrap().insert(bound, t.clone());
-    t
+    Ok(())
 }
 
 fn dlog(p: RistrettoPoint, bound: u64, t: &Table) -> Option<i64> {
@@ -131,11 +141,26 @@ fn dlog(p: RistrettoPoint, bound: u64, t: &Table) -> Option<i64> {
     None
 }
 
-/// The x with x G = p and |x| <= bound, or None.
+/// The x with x G = p and |x| <= bound (at most 2^48), or None.
 #[pyfunction]
 fn r255_dlog(py: Python<'_>, p: &[u8], bound: u64) -> PyResult<Option<i64>> {
+    check_bound(bound)?;
     let pt = point(p)?;
     Ok(py.detach(|| dlog(pt, bound, &table(bound))))
+}
+
+/// The 32 bytes of exactly 64 hex digits (either case), as utils.ec_group.from_hex.
+fn hex32(h: &str) -> Option<[u8; 32]> {
+    let digit = |c: u8| (c as char).to_digit(16).map(|d| d as u8);
+    let b = h.as_bytes();
+    if b.len() != 64 {
+        return None;
+    }
+    let mut out = [0u8; 32];
+    for (k, o) in out.iter_mut().enumerate() {
+        *o = (digit(b[2 * k])? << 4) | digit(b[2 * k + 1])?;
+    }
+    Some(out)
 }
 
 // ------------------------------------------------- MCFE ndarray, per element
@@ -172,6 +197,7 @@ fn r255_mcfe_encrypt(py: Python<'_>, msgs: Vec<Vec<u8>>, dst: &[u8], xs: Vec<i64
 #[allow(clippy::too_many_arguments)]
 fn r255_mcfe_decrypt(py: Python<'_>, cts: Vec<Vec<String>>, ys: Vec<i64>, d0: &[u8], d1: &[u8], msgs: Vec<Vec<u8>>,
                      dst: &[u8], bound: u64, threads: usize) -> PyResult<Py<PyAny>> {
+    check_bound(bound)?;
     if cts.len() != ys.len() || cts.iter().any(|c| c.len() != msgs.len()) {
         return Err(PyValueError::new_err("inconsistent decryption inputs"));
     }
@@ -179,33 +205,32 @@ fn r255_mcfe_decrypt(py: Python<'_>, cts: Vec<Vec<String>>, ys: Vec<i64>, d0: &[
     for (c, col) in cts.iter().enumerate() {
         let mut v = Vec::with_capacity(col.len());
         for (i, h) in col.iter().enumerate() {
-            let bytes: Option<Vec<u8>> = (0..h.len() / 2)
-                .map(|k| u8::from_str_radix(h.get(2 * k..2 * k + 2)?, 16).ok())
-                .collect();
-            let p = bytes.filter(|b| b.len() == 32 && h.len() == 64).and_then(|b| point(&b).ok());
+            let p = hex32(h).and_then(|b| point(&b).ok());
             v.push(p.ok_or_else(|| PyValueError::new_err(("malformed ciphertext", c, i)))?);
         }
         pts.push(v);
     }
     let (k0, k1) = (scalar(d0)?, scalar(d1)?);
     let yk: Vec<Scalar> = ys.iter().map(|&y| if y < 0 { -Scalar::from(y.unsigned_abs()) } else { Scalar::from(y as u64) }).collect();
-    let t = table(bound);
     let n = msgs.len();
     let outs: Vec<Mutex<Option<i64>>> = (0..n).map(|_| Mutex::new(None)).collect();
-    py.detach(|| parallel_for(n, threads, |i| {
-        let mut m0 = vec![0u8];
-        m0.extend_from_slice(&msgs[i]);
-        let mut m1 = vec![1u8];
-        m1.extend_from_slice(&msgs[i]);
-        let mut scalars: Vec<Scalar> = yk.clone();
-        let mut points: Vec<RistrettoPoint> = pts.iter().map(|col| col[i]).collect();
-        scalars.push(-k0);
-        scalars.push(-k1);
-        points.push(hash_point(&m0, dst));
-        points.push(hash_point(&m1, dst));
-        let v = RistrettoPoint::multiscalar_mul(scalars.iter(), points.iter());
-        *outs[i].lock().unwrap() = dlog(v, bound, &t);
-    }));
+    py.detach(|| {
+        let t = table(bound);
+        parallel_for(n, threads, |i| {
+            let mut m0 = vec![0u8];
+            m0.extend_from_slice(&msgs[i]);
+            let mut m1 = vec![1u8];
+            m1.extend_from_slice(&msgs[i]);
+            let mut scalars: Vec<Scalar> = yk.clone();
+            let mut points: Vec<RistrettoPoint> = pts.iter().map(|col| col[i]).collect();
+            scalars.push(-k0);
+            scalars.push(-k1);
+            points.push(hash_point(&m0, dst));
+            points.push(hash_point(&m1, dst));
+            let v = RistrettoPoint::multiscalar_mul(scalars.iter(), points.iter());
+            *outs[i].lock().unwrap() = dlog(v, bound, &t);
+        })
+    });
     let vals: Vec<Option<i64>> = outs.into_iter().map(|m| m.into_inner().unwrap()).collect();
     let data: Vec<u8> = vals.iter().flat_map(|v| v.unwrap_or(0).to_ne_bytes()).collect();
     let mask: Py<PyAny> = if vals.iter().any(|v| v.is_none()) {
@@ -222,6 +247,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(r255_sub, m)?, wrap_pyfunction!(r255_neg, m)?, wrap_pyfunction!(r255_mul, m)?,
         wrap_pyfunction!(r255_mul_base, m)?, wrap_pyfunction!(r255_lincomb, m)?, wrap_pyfunction!(r255_hash, m)?,
         wrap_pyfunction!(r255_dlog, m)?, wrap_pyfunction!(r255_mcfe_encrypt, m)?, wrap_pyfunction!(r255_mcfe_decrypt, m)?,
+        wrap_pyfunction!(r255_dlog_cache, m)?,
     ] {
         m.add_function(f)?;
     }

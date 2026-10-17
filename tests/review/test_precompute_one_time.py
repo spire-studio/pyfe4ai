@@ -87,7 +87,7 @@ _THREADS = textwrap.dedent(
     shape = (3000 * 1024,)
     pre = enc.precompute("L", [shape])
     if pre.native is None:
-        print("python path"); os._exit(0)
+        print("python path", flush=True); os._exit(0)
     nkey, cap = pre.native
     x = np.ones(shape, dtype=np.int64)
     out, bar = [], threading.Barrier(2)

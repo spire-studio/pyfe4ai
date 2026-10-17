@@ -6,10 +6,13 @@
 //! then the sign) and the same decisions. The base CDT comes from Python (its
 //! MPFR tables). The acceptance test `v < floor(2^192 exp(-y (y + 2 k x) /
 //! (2 sigma^2)))` -- rounded twice to 256 bits by MPFR in Python -- is decided
-//! here with a fixed-point exp(-a) whose error is below 2^-110: whenever v is
-//! within 2^-100 (relative to 2^192) of the threshold, the exact threshold is
-//! asked from `exact(x, y)` (the Python formula; probability about 2^-99 per
-//! trial), so the decisions are always Python's.
+//! here with a fixed-point exp(-a) whose error is below 2^-110 (about 2^-119
+//! measured) provided the table's c = 1 / (2 sigma^2) is correct to its 128-bit
+//! mantissa: whenever v is within 2^-100 (relative to 2^192) of the threshold,
+//! the exact threshold is asked from `exact(x, y)` (the Python formula;
+//! probability about 2^-99 per trial), so the decisions are always Python's.
+//! `check_table` compares a few thresholds with `exact` (the binding runs it
+//! when a table is built), so an imprecise c is refused, not used.
 
 use crate::arith::{Word, U256};
 use crate::keccak::shake256;
@@ -199,7 +202,8 @@ fn shr_pair(hi: u128, lo: u128, s: u32) -> Option<u128> {
     }
 }
 
-/// exp(-a) in fixed point (F fractional bits) for a = c t; error below 2^-110.
+/// exp(-a) in fixed point (F fractional bits) for a = c t; error below 2^-110
+/// when c_mant 2^c_exp is c rounded down to 128 bits (check_table checks it).
 /// None if a is beyond the range this handles (the caller then uses `exact`).
 fn exp_neg(table: &Table, t: u128) -> Option<u128> {
     // a = c_mant t 2^c_exp with F fractional bits: (c_mant t) >> (-(c_exp + F))
@@ -249,6 +253,28 @@ fn accept(table: &Table, x: u64, y: u64, v: U256, exact: &dyn Fn(u64, u64) -> U2
         }
     }
     v < exact(x, y)
+}
+
+/// Whether the fixed-point thresholds agree with `exact` to 2^-102 (relative to
+/// 2^192; the undecided band is 2^-100) at the corners and the middle of the
+/// (x, y) range: a wrong or imprecise c -- one not correct to about 2^-110 --
+/// fails. Points where exp_neg defers to `exact` anyway are skipped.
+pub fn check_table(table: &Table, exact: &dyn Fn(u64, u64) -> U256) -> bool {
+    if table.k < 2 {
+        return true; // y = 0 always: no acceptance test
+    }
+    let (xm, ym) = (CDT_SIZE as u64, table.k - 1);
+    for (x, y) in [(0, 1), (0, ym), (xm, 1), (xm, ym), (xm / 2, ym.div_ceil(2))] {
+        let t = y as u128 * (y as u128 + 2 * table.k as u128 * x as u128);
+        if let Some(e) = exp_neg(table, t) {
+            let (a, b) = (U256::from_u128(e).shl(PRECISION - F), exact(x, y));
+            let d = if a >= b { a.wsub(b) } else { b.wsub(a) };
+            if d >= U256::ONE.shl(PRECISION - 102) {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 /// `out.len()` samples of D_{Z,sigma} (discrete_gaussian_facct) from `bits`;

@@ -206,6 +206,8 @@ class MCFEDamgardKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 class MCFEDamgard(OfflineMCFEMixin, IPFEAbsCrypto):
     """Crypto operations for MDDH-based multi-client inner-product FE (ABMPSW20 Fig. 2)."""
 
+    _online_bound = "bound"  # checked by the online phase before the precomputation is used
+
     def __init__(self, config: dict, **kwargs) -> None:
         """Initialise with ``keys.pp`` and, for clients, ``keys.sk``."""
         super().__init__(config, **kwargs)

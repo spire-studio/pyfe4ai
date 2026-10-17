@@ -65,7 +65,8 @@ def test_bad_first_chunk_does_not_poison_the_precomputation():
     kg.setup()
     pp = kg.get_public_parameters()
     enc = MCFERingLWE({"id": "a", "precision": 0, "keys": {"pp": pp, "sk": kg.get_private_keys("a")}})
-    pre = enc.precompute("L", [(16,)])
+    with native_backend.backend("native"):  # also under PYFE4AI_BACKEND=python
+        pre = enc.precompute("L", [(16,)])
     nkey, cap = pre.native
     x = np.ones(16, dtype=np.int64)
     with pytest.raises(BaseException) as info:  # noqa: PT011

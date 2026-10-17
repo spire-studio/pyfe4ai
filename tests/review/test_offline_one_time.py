@@ -30,7 +30,10 @@ def test_a_copied_precomputation_cannot_encrypt_twice():
     pp = kg.get_public_parameters()
     enc = sife_paillier.SIFEPaillier({"keys": {"pp": pp, "sk": kg.get_private_keys()}, "precision": 0})
     pre = enc.precompute([(1,)])
-    twin = copy.copy(pre)
+    try:
+        twin = copy.copy(pre)
+    except TypeError:
+        return  # the copy refused: the fix (fix/crypto-review-2026-10 refuses copies outright)
     first = enc.encrypt_lst_ndarray([np.array([7])], precomputed=pre)[0][0]
     try:
         second = enc.encrypt_lst_ndarray([np.array([-5])], precomputed=twin)[0][0]

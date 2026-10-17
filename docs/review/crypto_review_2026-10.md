@@ -39,3 +39,29 @@ flooding prototype (`exp/kl-flooding`, from 810a4a5), a packed layout for
 | T1 | test bug (pre-existing) | 4081616.. | `tests/mcfe/test_ddh_threshold.py:245`: tolerance below the quantisation error (about 0.35 % of runs) | `test_flaky_ddh_threshold.py` |
 
 Informational items (no test) are listed in the review report.
+
+## Fixes
+
+On `fix/crypto-review-2026-10` (from `perf/phase2` 34d2063), with the tests of
+`review/crypto-2026-10` and `review/crypto-2026-10-phase2` in `tests/review/`
+(all passing) and further tests in `tests/test_one_time.py` and
+`tests/test_review_fixes.py`. M5 is fixed on `exp/hash-and-flooding`, the RNS
+copy of M2 (`rns.rs`) on `exp/rns-modulus`, with the same locking pattern.
+
+| Id | Fix |
+| --- | --- |
+| H1, M1 | `schemes/one_time.py`: the online phase validates its input, then claims the precomputation under a per-object lock (check and set `used`, move the secret parts out); `copy`, `deepcopy` and pickling raise `TypeError`; use in another process than the creator's is refused, and a forked child's copies are invalidated (`os.register_at_fork`). Applies to `RandomPrecomputation`, `LabelPrecomputation` and `RingLWEPrecomputation` (both backends); the native `PrecomputedObj` records its pid too. `test_offline_one_time.py::test_a_copied_precomputation_cannot_encrypt_twice` now also accepts the refusal of the copy itself. |
+| M2 | `lib.rs`: `lock_pre` waits with `MutexExt::lock_py_attached` (detached while waiting); a poisoned lock is a `ValueError`. |
+| M3 | `dlog.rs`: LRU table cache (16 tables / 128 MB) for GT and ristretto255, GT tables keyed by SHA-256 of the encoding; `gt_dlog(..., cache=False)` (SIFE FH-IPE) builds an uncached table of about `sqrt(2 bound + 1)` steps. |
+| M4 | `native_backend._facct_table` negates the mantissa of `neg_c` exactly; `FacctTable` checks five thresholds against `exact()` when built. |
+| M6 | `ml_adapter`: `(nid, label)` reserved under `_label_lock` before encrypting, released on failure. |
+| L1 | Strict BLS12-381 strings: tag `^[0-3]$`, canonical base64, exact encoding length (Rust and Python); `OverflowError` caught. |
+| L2 | Bounds above `2^48` raise `ValueError` (Rust and Python); at most `2^21` baby steps per table. |
+| L3 | Checked `count * kl * 8`, `nb * count` (`dense_dots`) and `first + chunks`; `Delta = 0` refused at the bindings and in `decode_scaled`. |
+| L4 | Exactly 64 hex digits (either case) on both backends. |
+| L5 | `PYFE4AI_THREADS` validated and clamped to `MAX_THREADS`; `set_threads` refuses more. |
+| L6 | `_rounded_gaussians`: the Box-Muller of `random.gauss` without the cached second value. |
+| L7 | `rlwe.rs`: `wipe_words` for `r`, `NTT(r)`, `t`, the pads and the per-chunk precompute buffers (the stack copy of the DRBG seed that `from_seed` takes by value is not addressed). |
+| L8 | `ZR ** k` reduces an integer `k` mod `r - 1`; a ZR exponent keeps its representative. |
+| T1 | `test_ddh_threshold.py` compares with the product of the quantised inputs (tolerance `1e-6`). |
+| docs | FACCT `2^-110` (conditional on the 128-bit constant, now checked), "wiped when used" (native only), tMCFE / tMIFE flooding remark (per-answer statistical argument only). |

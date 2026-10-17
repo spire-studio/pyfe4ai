@@ -49,9 +49,13 @@ still put any ciphertext in its own slot, which reveals that slot's key part
 different rounds is the usual multi-input functionality. The noise is seeded
 with the server's key, ``lambda_k`` and the ``ct0`` values, so a request for
 the same key part draws the same noise; a corrupted client varying its own
-``ct0`` changes the key part and so draws fresh noise each time, and averaging
-that away to learn the other slots' part would take about ``2^(2 stat_param)``
-partial decryptions.
+``ct0`` changes the key part and so draws fresh noise each time. The flooding
+argument is statistical per answer (a statistical distance of about
+``2^-stat_param`` per coefficient, adding up over the answers); it does not
+bound what many answers to varied ``ct0`` reveal together about the other
+slots' part: averaging them would take about ``2^(2 stat_param)`` partial
+decryptions, but other ways of combining these noisy linear equations are
+not ruled out.
 
 Under the ``standard`` security profile ``lwe_n = "auto"`` picks the
 smallest dimension meeting :data:`pyfe4ai.utils.lwe_utils.WIDE_LWE_128_LOG_RATIO`
