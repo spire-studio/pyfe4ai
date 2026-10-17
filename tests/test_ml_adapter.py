@@ -403,3 +403,107 @@ def test_fractional_weights_must_fit_the_precision():
     enc = {nid: encrypt_gradient(np.array([1.0]), wrapper, nid=nid, label="r1") for nid in ("nid_0", "nid_1")}
     with pytest.raises(ValueError, match="precision"):
         aggregate_gradients(enc, wrapper, {"nid_0": 0.5, "nid_1": 0.25}, label="r1")
+
+
+# ── packed (Ring-LWE MCFE) gradient serialization ──────────────────
+
+
+def test_packed_ring_lwe_gradients_round_trip_through_json(tmp_path, monkeypatch):
+    """MCFE-Ring-LWE packs a layer into ring_n-coefficient chunks; to_dict used to raise KeyError."""
+    import json
+
+    monkeypatch.chdir(tmp_path)  # key generation writes config/ to the working directory
+    wrapper = FESchemeWrapper(
+        "mcfe", "ring_lwe",
+        {"eta": 1, "n": 2, "lst_nid": ["nid_0", "nid_1"], "ring_n": 16, "sec_param": 64,
+         "bound_x": 50, "bound_y": 2},
+        precision=1,
+    )
+    rng = np.random.default_rng(0)
+    grads = {nid: rng.integers(-25, 26, size=(3, 7)) / 10 for nid in ("nid_0", "nid_1")}  # 2 chunks
+    encrypted = {nid: encrypt_gradient(g, wrapper, nid=nid, label="r1") for nid, g in grads.items()}
+    sent = {nid: json.loads(json.dumps(enc.to_dict())) for nid, enc in encrypted.items()}
+    received = {nid: EncryptedGradient.from_dict(d) for nid, d in sent.items()}
+
+    assert sent["nid_0"]["ciphertexts"][0]["packed"]["shape"] == [3, 7]
+    assert [len(enc.ciphertexts[0]["chunks"]) for enc in received.values()] == [2, 2]
+    for nid, enc in received.items():
+        assert enc.ciphertexts == encrypted[nid].ciphertexts
+        assert enc.shape == (3, 7)
+    out = aggregate_gradients(received, wrapper, {"nid_0": 1, "nid_1": 1}, label="r1")
+    np.testing.assert_allclose(out, grads["nid_0"] + grads["nid_1"])
+
+
+@pytest.mark.parametrize("variant, extra", [
+    ("ring_lwe_threshold", {"s": 3, "t": 2}),  # chunks also carry server tags
+    ("ring_lwe_decentralized", {}),
+])
+def test_packed_gradients_of_ring_lwe_variants_round_trip(variant, extra, tmp_path, monkeypatch):
+    import json
+
+    monkeypatch.chdir(tmp_path)
+    wrapper = FESchemeWrapper(
+        "mcfe", variant,
+        dict({"eta": 1, "n": 2, "lst_nid": ["nid_0", "nid_1"], "ring_n": 16, "sec_param": 64,
+              "bound_x": 50, "bound_y": 2}, **extra),
+        precision=1,
+    )
+    enc = encrypt_gradient(np.arange(20.0).reshape(4, 5) / 10, wrapper, nid="nid_0", label="r1")
+    restored = EncryptedGradient.from_dict(json.loads(json.dumps(enc.to_dict())))
+    assert restored.ciphertexts == enc.ciphertexts
+
+
+def _fake_chunk(k):
+    return {"ct0": [["1"]], "ct1": ["2"], "k": k}
+
+
+def _packed(shape, first, ks):
+    return {"shape": shape, "first_chunk": first, "chunks": [_fake_chunk(k) for k in ks]}
+
+
+def test_packed_layers_of_several_tensors_round_trip():
+    import json
+
+    layers = [_packed([2, 3], 0, [4, 2]), _packed([5], 2, [4, 1]), _packed([], 4, [1])]
+    enc = EncryptedGradient(ciphertexts=layers, shape=(2, 3), precision=1, mode="decimal", nid="a")
+    restored = EncryptedGradient.from_dict(json.loads(json.dumps(enc.to_dict())))
+    assert restored.ciphertexts == layers
+
+
+def test_binary_chunks_are_refused_by_to_dict():
+    """Chunks with bytes values (a binary ciphertext format) have no JSON form."""
+    layer = {"shape": [2], "first_chunk": 0, "chunks": [{"ct": b"\x00\x01", "k": 2}]}
+    enc = EncryptedGradient(ciphertexts=[layer], shape=(2,), precision=1, mode="decimal", nid="a")
+    with pytest.raises(TypeError, match="binary"):
+        enc.to_dict()
+
+
+@pytest.mark.parametrize("layers, match", [
+    ([{"packed": {"shape": [2], "first_chunk": 0}}], "packed"),
+    ([{"packed": dict(_packed([2], 0, [2]), extra=1)}], "packed"),
+    ([{"packed": _packed([2], 0, [2]), "shape": [2]}], "packed"),
+    ([{"packed": [2, 0, []]}], "packed"),
+    ([{"packed": _packed([-1], 0, [2])}], "shape"),
+    ([{"packed": _packed([2.0], 0, [2])}], "shape"),
+    ([{"packed": _packed([10 ** 6, 10 ** 6], 0, [2])}], "too many"),
+    ([{"packed": _packed([2], -1, [2])}], "first chunk"),
+    ([{"packed": _packed([2], True, [2])}], "first chunk"),
+    ([{"packed": _packed([2], 1, [2])}], "first chunk"),
+    ([{"packed": _packed([2], 0, [2])}, {"packed": _packed([2], 0, [2])}], "first chunk"),
+    ([{"packed": dict(_packed([2], 0, []), chunks={"0": _fake_chunk(2)})}], "chunks"),
+    ([{"packed": _packed([0], 0, [])}], "chunks"),
+    ([{"packed": dict(_packed([2], 0, []), chunks=["x"])}], "chunk 0"),
+    ([{"packed": dict(_packed([2], 0, []), chunks=[{"ct0": []}])}], "chunk 0"),
+    ([{"packed": _packed([2], 0, [0, 2])}], "chunk 0"),
+    ([{"packed": _packed([2], 0, ["2"])}], "chunk 0"),
+    ([{"packed": _packed([2], 0, [True, True])}], "chunk 0"),
+    ([{"packed": _packed([5], 0, [3])}], "cover"),
+    ([{"packed": _packed([5], 0, [4, 4])}], "cover"),
+    ([{"packed": _packed([5], 0, [2, 3])}], "width"),
+    ([{"packed": _packed([4], 0, [4])}, {"packed": _packed([6], 1, [2, 4])}], "width"),
+    ([{"packed": _packed([2], 0, [2])}, {"shape": [1], "data": {"(0,)": "x"}}], "mix"),
+])
+def test_deserialised_packed_layers_are_checked(layers, match):
+    d = {"nid": "a", "shape": [2], "precision": 1, "mode": "decimal", "ciphertexts": layers}
+    with pytest.raises(ValueError, match=match):
+        EncryptedGradient.from_dict(d)
