@@ -50,6 +50,7 @@ from pyfe4ai.utils.ring_lwe_utils import (
     RingNTT,
     transpose,
 )
+from pyfe4ai.utils import native_backend
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.validation import int_vector
@@ -235,6 +236,24 @@ class SIFERingLWE(IPFEAbsCrypto):
             cache = self._enc_key = (src, (self.sk["pk"], self.A), pk) + hats
         return cache[2:]
 
+    def _native_key(self):
+        """The native encryption key (``NTT(a)``, ``NTT(pk_i)``, ``Delta``), or
+        ``None`` when encryption runs in Python (no native context, or widths
+        or a sampler the native code does not reproduce)."""
+        ctx = native_backend.ring_context(self.pp["q"], self.pp["ring_n"])
+        if ctx is None or not native_backend.sampling_ok(self.pp["sigma2"], self.pp["sigma3"]):
+            return None
+        src = (id(self.sk["pk"]), id(self.A))
+        cached = self.__dict__.get("_nkey")
+        if cached is None or cached[0] is not ctx or cached[1] != src:
+            try:
+                nkey = native_backend.ext().enc_key(
+                    ctx.cap, self.A, self.sk["pk"], None, gp.mpz(self.pp["q"]) // gp.mpz(self.pp["p"]))
+            except (TypeError, ValueError, OverflowError):
+                nkey = None  # malformed key: the Python path reports it
+            cached = self._nkey = (ctx, src, nkey)
+        return cached[2]
+
     def encrypt(self, matrix_pt: list[list[int]]) -> dict:
         if not self._has_public_parameters():
             raise FEKeyError("no public parameters provided for encryption")
@@ -254,6 +273,16 @@ class SIFERingLWE(IPFEAbsCrypto):
 
         q = gp.mpz(self.pp["q"])
         ring_n = self.pp["ring_n"]
+        nkey = self._native_key()
+        if nkey is not None:  # the same draws (r, the noise rows, e) and values natively
+            ct0, ct1 = native_backend.ext().encrypt(
+                nkey, [row + [0] * (ring_n - k) for row in matrix_pt],
+                float(self.pp["sigma2"]), float(self.pp["sigma3"]),
+                native_backend.random_input(native_backend.gauss_bytes(ring_n) * (2 + self.pp["eta"])), False,
+                **native_backend.seed_kwargs(),
+                **native_backend.noise_kwargs(self.pp["sigma2"], self.pp["sigma3"]),
+            )
+            return {"ct0": ct0, "ct1": ct1, "k": k}
         pk, a_hat, pk_hat = self._encryption_key()
         ring = RingNTT.get(q, ring_n) if a_hat is not None else None
 
@@ -308,7 +337,11 @@ class SIFERingLWE(IPFEAbsCrypto):
         ):
             raise FEValidationError("ciphertext does not match the parameters")
 
-        lhs = _mat_vec_mul(_transpose(ct0), [gp.mpz(v) for v in y], q)
+        ctx = native_backend.ring_context(q, ring_n)
+        if ctx is not None:  # sum_i y_i ct0_i mod q natively (the same values)
+            lhs = [gp.mpz(v) for v in native_backend.ext().lincomb(ctx.cap, [ctx.pack(row) for row in ct0], y)]
+        else:
+            lhs = _mat_vec_mul(_transpose(ct0), [gp.mpz(v) for v in y], q)
         rhs = _poly_mul(ct1, sk_y, q)
         values = _decode_vector(_poly_add(lhs, _poly_neg(rhs, q), q), p, q, k)
         bound = len(y) * int(self.pp["bound_x"]) * int(self.pp["bound_y"])

@@ -132,10 +132,33 @@ def _get_twiddle_factors(q: gp.mpz, n: int, root: gp.mpz) -> dict:
     return factors
 
 
+def _native_ring(q, n: int, root):
+    """The native context computing this module's NTT of ``(q, n)`` with *root*
+    (the root :func:`_get_ntt_root` picks), or ``None`` (Python backend,
+    extension not built, unsupported modulus, another root)."""
+    from pyfe4ai.utils import native_backend
+
+    if n < 2 or root is None or native_backend.active_backend() != "native":
+        return None
+    ctx = native_backend.ring_context(q, n)
+    if ctx is None or gp.mpz(root) != _get_ntt_root(gp.mpz(q), n):
+        return None
+    return ctx
+
+
+def _native_ntt(ctx, a: list, inverse: bool) -> list[gp.mpz]:
+    from pyfe4ai.utils import native_backend
+
+    return [gp.mpz(v) for v in ctx.unpack(native_backend.ext().ntt(ctx.cap, ctx.pack(a), inverse))]
+
+
 def ntt_forward(
     a: list[gp.mpz], q: gp.mpz, root: gp.mpz
 ) -> list[gp.mpz]:
     """In-place iterative Cooley-Tukey NTT (decimation-in-time).
+
+    Runs in the native extension when it has a context for ``(q, len(a))``
+    with this root (the same values; see :mod:`pyfe4ai.utils.native_backend`).
 
         Args:
             a: First polynomial (coefficient vector).
@@ -143,6 +166,9 @@ def ntt_forward(
             root: Primitive root of unity for NTT.
     """
     n = len(a)
+    ctx = _native_ring(q, n, root)
+    if ctx is not None:
+        return _native_ntt(ctx, a, False)
     tf = _get_twiddle_factors(q, n, root)
     twist = tf["twist"]
     bit_rev = tf["bit_rev"]
@@ -179,6 +205,9 @@ def ntt_inverse(
             root: Primitive root of unity for NTT.
     """
     n = len(a)
+    ctx = _native_ring(q, n, root)
+    if ctx is not None:
+        return _native_ntt(ctx, a, True)
     tf = _get_twiddle_factors(q, n, root)
     bit_rev = tf["bit_rev"]
     inv_twiddles = tf["inv_twiddles"]
@@ -257,6 +286,11 @@ def poly_mul(
     """
     n = len(a)
     root = _get_ntt_root(q, n)
+    ctx = _native_ring(q, n, root) if len(b) == n else None
+    if ctx is not None:
+        from pyfe4ai.utils import native_backend
+
+        return [gp.mpz(v) for v in ctx.unpack(native_backend.ext().poly_mul(ctx.cap, ctx.pack(a), ctx.pack(b)))]
     if root is not None:
         return poly_mul_ntt(a, b, q, root)
     logger.warning(

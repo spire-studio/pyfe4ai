@@ -53,6 +53,7 @@ import numpy as np
 FAMILIES = {
     "ring_lwe": (("mcfe", "ring_lwe"), {"eta": 1}, 10_000),
     "ring_lwe_threshold": (("mcfe", "ring_lwe_threshold"), {"eta": 1}, 10_000),
+    "ring_lwe_decentralized": (("mcfe", "ring_lwe_decentralized"), {"eta": 1}, 10_000),
     "lwe": (("mcfe", "lwe"), {"eta": 1}, 200),
     "ddh": (("mcfe", "ddh"), {"eta": 1}, 20),
     "ddh_r255": (("mcfe", "ddh_ristretto255"), {"eta": 1}, 20),
@@ -324,6 +325,74 @@ def measure_threshold(family: str, elements: int, clients: int, rounds: int, pre
     return row
 
 
+def measure_decentralized(family: str, elements: int, clients: int, rounds: int, precision: int, bound_x: int,
+                          profile: str, ct_format: str = "json") -> dict:
+    """:func:`measure` for a decentralized scheme: every client derives a key
+    share for the round, the aggregator combines them and decrypts the sum."""
+    import importlib
+
+    from pyfe4ai.utils.ml_adapter import _SCHEME_REGISTRY
+
+    key, base_cfg, _ = FAMILIES[family]
+    mod_path, kg_name, crypto_name = _SCHEME_REGISTRY[key]
+    mod = importlib.import_module(mod_path)
+    crypto_cls = getattr(mod, crypto_name)
+    nids = ["c{}".format(i) for i in range(clients)]
+    cfg = dict(base_cfg, n=clients, lst_nid=nids, security_profile=profile, **_bounds(family, bound_x))
+    row = {"family": family, "scheme": "/".join(key), "profile": profile, "elements": elements,
+           "clients": clients, "rounds": rounds, "precision": precision, "bound_x": bound_x, "ct_format": ct_format}
+    t0 = time.perf_counter()
+    kg = getattr(mod, kg_name)(cfg)
+    kg.setup()
+    row["setup_s"] = time.perf_counter() - t0
+    pp = kg.get_public_parameters()
+    row.update(_scheme_params(pp))
+    cls = {nid: crypto_cls({"id": nid, "precision": precision, "ct_format": ct_format,
+                            "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}) for nid in nids}
+    agg = crypto_cls({"id": "agg", "precision": precision, "ct_format": ct_format, "keys": {"pp": pp}})
+    weights = {nid: [1] for nid in nids}
+    rng = np.random.default_rng(7)
+    lim = bound_x / 10 ** precision
+    enc_t, share_t, comb_t, dec_t = [], [], [], []
+    ct_size = None
+    for r in range(rounds + 1):
+        label = "round-{}".format(r)
+        grads = {nid: rng.uniform(-lim, lim, elements).round(precision) for nid in nids}
+        t0 = time.perf_counter()
+        enc = {nid: cls[nid].encrypt_lst_ndarray([g], label=label) for nid, g in grads.items()}
+        t1 = time.perf_counter()
+        n_chunks = crypto_cls.key_chunks(enc[nids[0]])
+        shares = {nid: cls[nid].derive_function_decryption_key_share(weights, label, n_chunks) for nid in nids}
+        t2 = time.perf_counter()
+        dk = agg.combine_function_decryption_key_share(shares)
+        t3 = time.perf_counter()
+        total = agg.compute_lst_ndarray_ct(enc, dk=dk, fusion_weight=weights, label=label)[0]
+        t4 = time.perf_counter()
+        if not np.allclose(np.asarray(total, dtype=float), sum(grads.values()), atol=10 ** -precision / 2):
+            raise AssertionError("{}: wrong aggregate".format(family))
+        if r == 0:
+            ct_size = _ct_bytes(enc[nids[0]]) / elements
+            continue
+        enc_t.append((t1 - t0) / clients)
+        share_t.append((t2 - t1) / clients)
+        comb_t.append(t3 - t2)
+        dec_t.append(t4 - t3)
+    med = statistics.median
+    row.update(
+        client_ms=med(enc_t) * 1e3,
+        key_share_ms=med(share_t) * 1e3,
+        combine_ms=med(comb_t) * 1e3,
+        aggregator_ms=(med(comb_t) + med(dec_t)) * 1e3,
+        dkgen_ms=med(comb_t) * 1e3,
+        decrypt_ms=med(dec_t) * 1e3,
+        client_us_per_element=med(enc_t) * 1e6 / elements,
+        aggregator_us_per_element=(med(comb_t) + med(dec_t)) * 1e6 / elements,
+        ct_bytes_per_element=round(ct_size, 1),
+        offline=False,
+    )
+    return row
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--families", nargs="+", default=["ring_lwe"], choices=sorted(FAMILIES))
@@ -365,8 +434,11 @@ def main() -> None:
     try:
         for family in args.families:
             elements = args.elements or FAMILIES[family][2]
-            fmt = args.ct_format if family == "ring_lwe" else "json"
-            if family.endswith("_threshold"):
+            fmt = args.ct_format if family in ("ring_lwe", "ring_lwe_decentralized") else "json"
+            if family.endswith("_decentralized"):
+                row = measure_decentralized(family, elements, args.clients, args.rounds, args.precision, bound_x,
+                                            args.profile, fmt)
+            elif family.endswith("_threshold"):
                 row = measure_threshold(family, elements, args.clients, args.rounds, args.precision, bound_x,
                                         args.profile, args.servers, args.threshold)
             else:
@@ -380,7 +452,9 @@ def main() -> None:
                   + ("  [offline: client {client_offline_ms:.2f} ms, aggregator {aggregator_offline_ms:.2f} ms]"
                      .format(**row) if row.get("offline") else "")
                   + ("  [partial {partial_ms:.2f} ms per server, combine {combine_ms:.2f} ms]".format(**row)
-                     if "partial_ms" in row else ""), flush=True)
+                     if "partial_ms" in row else "")
+                  + ("  [key share {key_share_ms:.2f} ms per client, combine {combine_ms:.2f} ms]".format(**row)
+                     if "key_share_ms" in row else ""), flush=True)
     finally:
         os.chdir(cwd)
         if tmp is not None:
