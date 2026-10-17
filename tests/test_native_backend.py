@@ -41,6 +41,14 @@ def _cwd(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _compare_backends():
+    """Start from ``auto`` even when ``PYFE4AI_BACKEND=python`` runs the rest of
+    the suite on the Python backend: these tests compare the two."""
+    with native_backend.backend("auto"):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def _rounded_sampler():
     """The native sampler reproduces the default rounded Gaussian: compare with
     it even when another sampler is selected (PYFE4AI_GAUSSIAN_SAMPLER)."""
