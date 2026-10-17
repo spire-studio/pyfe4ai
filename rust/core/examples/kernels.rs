@@ -60,7 +60,7 @@ fn main() {
             let x: Vec<i64> = (0..10000).map(|i| (i % 201) as i64 - 100).collect();
             let mats: Vec<Vec<u8>> = (0..(10000 + n - 1) / n).map(|c| format!("material {}", c).into_bytes()).collect();
             let refs: Vec<&[u8]> = mats.iter().map(|m| m.as_slice()).collect();
-            let t1 = time(50, || { rlwe::encrypt_tensor(r, &key, &x, Some(&refs), 4.97e9, 7.03e9, Randomness::Os, 1, |_, _, _| {}).unwrap(); });
+            let t1 = time(50, || { rlwe::encrypt_tensor(r, &key, &x, Some(&refs), 4.97e9, 7.03e9, &rlwe::Noise::Rounded, Randomness::Os, 1, |_, _, _| {}).unwrap(); });
             println!("  encrypt 1e4 elements ({} chunks, OS random, words out) {:.3} ms", (10000 + n - 1) / n, t1);
             let slot: Vec<_> = a.iter().chain(a.iter()).cloned().collect();
             let slots = [&slot[..], &slot[..], &slot[..]];

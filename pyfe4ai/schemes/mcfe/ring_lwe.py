@@ -295,6 +295,7 @@ class MCFERingLWE(MIFERingLWE):
                     float(self.pp["sigma2"]), float(self.pp["sigma3"]),
                     native_backend.random_input(3 * native_backend.gauss_bytes(ring_n) * n_layer),
                     native_backend.get_threads(), self.ct_format == "binary", **native_backend.seed_kwargs(),
+                    **native_backend.noise_kwargs(self.pp["sigma2"], self.pp["sigma3"]),
                 )
                 out.append({"shape": list(np.shape(ary_src)), "first_chunk": chunk, "chunks": self._native_cts(res)})
                 chunk += n_layer
@@ -359,6 +360,7 @@ class MCFERingLWE(MIFERingLWE):
                 float(self.pp["sigma2"]), float(self.pp["sigma3"]),
                 native_backend.random_input(3 * native_backend.gauss_bytes(ring_n) * total),
                 native_backend.get_threads(), **native_backend.seed_kwargs(),
+                **native_backend.noise_kwargs(self.pp["sigma2"], self.pp["sigma3"]),
             )
             return RingLWEPrecomputation(self, label, shapes, firsts, native=(nkey, cap))
         rows = []

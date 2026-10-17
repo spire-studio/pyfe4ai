@@ -415,10 +415,13 @@ def test_backend_selection(monkeypatch):
         assert native_backend.active_backend() == "python"
         assert native_backend.ring_context(rlu.next_ntt_prime(gp.mpz(2) ** 40, 16), 16) is None
     assert native_backend.describe()["available"]
-    # another Gaussian sampler selected: encryption stays in Python
+    # the exact sampler is native too (tests/test_native_facct.py); another one stays in Python
     monkeypatch.setattr(sampling_utils, "get_gaussian_sampler", lambda: "facct", raising=False)
+    assert native_backend.sampling_ok(3.2) and native_backend.noise_kwargs(3.2, 4.0)["facct"]
+    monkeypatch.setattr(sampling_utils, "get_gaussian_sampler", lambda: "other", raising=False)
     assert not native_backend.sampling_ok(3.2)
     monkeypatch.undo()
+    assert native_backend.noise_kwargs(3.2, 4.0) == {}
     assert native_backend.sampling_ok(3.2, 2.0 ** 40) and not native_backend.sampling_ok(2.0 ** 41)
     with pytest.raises(ValueError):
         native_backend.set_threads(0)

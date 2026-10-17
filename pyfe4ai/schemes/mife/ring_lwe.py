@@ -443,6 +443,7 @@ class MIFERingLWE(IPFEAbsCrypto):
                 nkey, w_rows, float(self.pp["sigma2"]), float(self.pp["sigma3"]),
                 native_backend.random_input(native_backend.gauss_bytes(ring_n) * (2 + len(w_rows))), binary,
                 **native_backend.seed_kwargs(),
+                **native_backend.noise_kwargs(self.pp["sigma2"], self.pp["sigma3"]),
             )
             return {"ct": out, "k": k} if binary else {"ct0": out[0], "ct1": out[1], "k": k}
         ct0, ct1 = self._encrypt_rows_python(w_rows)

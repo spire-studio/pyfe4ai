@@ -9,7 +9,8 @@
 use pyfe4ai_core::codec::{bin_read, bin_size, bin_wb, bin_write};
 use pyfe4ai_core::gauss::{gauss_bytes, gauss_fill};
 use pyfe4ai_core::keccak::{hash_to_zq, shake256};
-use pyfe4ai_core::rlwe::{self, EncKey, Precomputed, Randomness};
+use pyfe4ai_core::facct;
+use pyfe4ai_core::rlwe::{self, EncKey, FacctNoise, Noise, Precomputed, Randomness};
 use pyfe4ai_core::{osrand, parallel_for, with_ring, AnyRing, Modulus, Ring, Word, U256};
 use pyo3::intern;
 use pyo3::exceptions::{PyNotImplementedError, PyOSError, PyTypeError, PyValueError};
@@ -57,7 +58,16 @@ impl CallDrbg {
 
     /// Bytes of stream `stream` from its start.
     fn fill(&self, stream: u64, out: &mut [u8]) {
+        self.fill_at(stream, 0, out);
+    }
+
+    /// Bytes of stream `stream` from byte `offset` (a multiple of 4).
+    fn fill_at(&self, stream: u64, offset: u64, out: &mut [u8]) {
+        debug_assert!(offset % 4 == 0);
         let mut rng = self.rng(stream);
+        if offset > 0 {
+            rng.set_word_pos((offset / 4) as u128);
+        }
         rng.fill_bytes(out);
         wipe_rng(&mut rng);
     }
@@ -474,7 +484,7 @@ fn enc_key(py: Python<'_>, ctx: &Bound<'_, RingCtx>, a: &Bound<'_, PyAny>, pk: &
 }
 
 /// Given bytes (tests), else the call's DRBG streams.
-fn randomness<'a>(rnd: &'a Option<Vec<u8>>, stream: &'a (dyn Fn(usize, &mut [u8]) + Sync)) -> Randomness<'a> {
+fn randomness<'a>(rnd: &'a Option<Vec<u8>>, stream: &'a (dyn Fn(usize, u64, &mut [u8]) + Sync)) -> Randomness<'a> {
     match rnd {
         Some(b) => Randomness::Given(b),
         None => Randomness::Stream(stream),
@@ -488,12 +498,111 @@ fn core_err(e: rlwe::Error) -> PyErr {
     }
 }
 
+// ------------------------------------------------------------------ FACCT
+
+/// The tables of discrete_gaussian_facct for one width (see pyfe4ai-core facct)
+/// and `exact(x, y)`, the Python acceptance threshold for the rare undecided tests.
+#[pyclass(frozen, module = "pyfe4ai._rust_native", name = "FacctTable")]
+struct FacctObj {
+    table: facct::Table,
+    exact: Py<PyAny>,
+}
+
+#[pymethods]
+impl FacctObj {
+    #[new]
+    fn new(k: u64, y_bits: u32, cdt: Vec<Bound<'_, PyAny>>, c_mant: u128, c_exp: i32, exact: Py<PyAny>) -> PyResult<Self> {
+        if cdt.len() != facct::CDT_SIZE || k == 0 || k > 1 << 50 {
+            return Err(PyValueError::new_err("unsupported FACCT tables"));
+        }
+        let mut t = [U256::ZERO; facct::CDT_SIZE];
+        for (dst, v) in t.iter_mut().zip(cdt.iter()) {
+            *dst = u256_arg(v)?;
+        }
+        Ok(FacctObj { table: facct::Table { k, y_bits, cdt: t, c_mant, c_exp }, exact })
+    }
+}
+
+/// `exact` as a closure for the kernels (with the GIL); a Python error is kept in `err`.
+fn exact_fn<'a>(obj: &'a FacctObj, err: &'a Mutex<Option<PyErr>>) -> impl Fn(u64, u64) -> U256 + Sync + 'a {
+    move |x, y| {
+        Python::attach(|py| match obj.exact.call1(py, (x, y)).and_then(|v| u256_arg(v.bind(py))) {
+            Ok(v) => v,
+            Err(e) => {
+                err.lock().unwrap().get_or_insert(e);
+                U256::ZERO
+            }
+        })
+    }
+}
+
+fn exact_err(err: &Mutex<Option<PyErr>>) -> PyResult<()> {
+    match err.lock().unwrap().take() {
+        Some(e) => Err(e),
+        None => Ok(()),
+    }
+}
+
+/// discrete_gaussian_facct(sigma, count, rng) for the width of `table`: rng is
+/// XofRandom(xof_seed) if given, else the call's DRBG (stream 0, or `seed`).
+#[pyfunction]
+#[pyo3(signature = (table, count, xof_seed=None, seed=None))]
+fn facct_sample(py: Python<'_>, table: &Bound<'_, FacctObj>, count: usize, xof_seed: Option<Vec<u8>>,
+                seed: Option<Vec<u8>>) -> PyResult<Py<PyList>> {
+    let obj = table.get();
+    let err = Mutex::new(None);
+    let exact = exact_fn(obj, &err);
+    let mut out = vec![0i64; count];
+    match xof_seed {
+        Some(s) => {
+            let mut bits = facct::XofBits::new(&s);
+            py.detach(|| facct::sample(&obj.table, &mut out, &mut bits, &exact));
+        }
+        None => {
+            let drbg = CallDrbg::new(seed.as_deref())?;
+            let mut offset = 0u64;
+            let mut bits = facct::ByteBits::new(4096, |buf: &mut [u8]| {
+                drbg.fill_at(0, offset, buf);
+                offset += buf.len() as u64;
+                buf.len()
+            });
+            py.detach(|| facct::sample(&obj.table, &mut out, &mut bits, &exact));
+        }
+    }
+    exact_err(&err)?;
+    Ok(PyList::new(py, out)?.unbind())
+}
+
+/// The noise of an encryption call: FACCT with the tables of (sigma2, sigma3), else rounded.
+type FacctArg = Option<(Py<FacctObj>, Py<FacctObj>)>;
+
+macro_rules! with_noise {
+    ($py:expr, $facct:expr, $noise:ident, $err:ident, $body:block) => {{
+        let $err = Mutex::new(None);
+        let tables = $facct.as_ref().map(|(a, b)| (a.bind($py).get(), b.bind($py).get()));
+        let (e2, e3) = match tables {
+            Some((a, b)) => (Some(exact_fn(a, &$err)), Some(exact_fn(b, &$err))),
+            None => (None, None),
+        };
+        let $noise = match (tables, e2.as_ref(), e3.as_ref()) {
+            (Some((a, b)), Some(f2), Some(f3)) => Noise::Facct(FacctNoise {
+                sigma2: &a.table, sigma3: &b.table, exact2: f2, exact3: f3,
+            }),
+            _ => Noise::Rounded,
+        };
+        let out = $body;
+        drop($noise);
+        exact_err(&$err)?;
+        out
+    }};
+}
+
 /// MIFERingLWE._encrypt_rows: (ct0, ct1) as decimal strings, or format-1 bytes.
 #[pyfunction]
-#[pyo3(signature = (key, w_rows, sigma2, sigma3, rnd, binary=false, seed=None))]
+#[pyo3(signature = (key, w_rows, sigma2, sigma3, rnd, binary=false, seed=None, facct=None))]
 #[allow(clippy::too_many_arguments)]
 fn encrypt(py: Python<'_>, key: &Bound<'_, EncKeyObj>, w_rows: &Bound<'_, PyAny>, sigma2: f64, sigma3: f64,
-           rnd: &Bound<'_, PyAny>, binary: bool, seed: Option<Vec<u8>>) -> PyResult<Py<PyAny>> {
+           rnd: &Bound<'_, PyAny>, binary: bool, seed: Option<Vec<u8>>, facct: FacctArg) -> PyResult<Py<PyAny>> {
     let obj = key.get();
     let ring = obj.ring.clone();
     let n = ring.n();
@@ -504,21 +613,48 @@ fn encrypt(py: Python<'_>, key: &Bound<'_, EncKeyObj>, w_rows: &Bound<'_, PyAny>
         if rows.len() != eta {
             return Err(PyValueError::new_err("one plaintext row per pk row"));
         }
-        let need = gauss_bytes(n) * (2 + eta);
-        let mut rb = if rnd.is_none() {
-            let mut b = vec![0u8; need];
-            CallDrbg::new(seed.as_deref())?.fill(0, &mut b);
-            b
-        } else {
-            rnd.extract::<Vec<u8>>()?
-        };
-        if rb.len() < need {
-            return Err(PyValueError::new_err("not enough random bytes"));
-        }
         let w: Vec<_> = rows.concat();
         let (mut c0, mut c1) = (vec![Word::ZERO; eta * n], vec![Word::ZERO; n]);
-        py.detach(|| rlwe::encrypt_chunk(r, k, &w, sigma2, sigma3, &rb, &mut c0, &mut c1));
-        rlwe::wipe_bytes(&mut rb);
+        if facct.is_some() {
+            let given: Option<Vec<u8>> = if rnd.is_none() { None } else { Some(rnd.extract()?) };
+            let drbg = CallDrbg::new(seed.as_deref())?;
+            let (mut pos, mut offset) = (0usize, 0u64);
+            let mut bits = facct::ByteBits::new(4096, |buf: &mut [u8]| match &given {
+                Some(b) => {
+                    let c = buf.len().min(b.len() - pos);
+                    buf[..c].copy_from_slice(&b[pos..pos + c]);
+                    pos += c;
+                    c
+                }
+                None => {
+                    drbg.fill_at(0, offset, buf);
+                    offset += buf.len() as u64;
+                    buf.len()
+                }
+            });
+            with_noise!(py, facct, noise, err, {
+                if let Noise::Facct(nz) = &noise {
+                    py.detach(|| rlwe::encrypt_chunk_facct(r, k, &w, nz, &mut bits, &mut c0, &mut c1));
+                }
+            });
+            if bits.failed {
+                return Err(PyValueError::new_err("not enough random bytes"));
+            }
+        } else {
+            let need = gauss_bytes(n) * (2 + eta);
+            let mut rb = if rnd.is_none() {
+                let mut b = vec![0u8; need];
+                CallDrbg::new(seed.as_deref())?.fill(0, &mut b);
+                b
+            } else {
+                rnd.extract::<Vec<u8>>()?
+            };
+            if rb.len() < need {
+                return Err(PyValueError::new_err("not enough random bytes"));
+            }
+            py.detach(|| rlwe::encrypt_chunk(r, k, &w, sigma2, sigma3, &rb, &mut c0, &mut c1));
+            rlwe::wipe_bytes(&mut rb);
+        }
         if binary {
             let mut out = Vec::new();
             bin_write(ring.qbits(), r.logn, eta, &c0, &c1, &mut out);
@@ -578,25 +714,27 @@ fn materials_of(mats: &Bound<'_, PyAny>) -> PyResult<Option<Vec<Vec<u8>>>> {
 
 /// MCFE ndarray encryption of one layer (eta = 1); see pyfe4ai-core rlwe::encrypt_tensor.
 #[pyfunction]
-#[pyo3(signature = (key, x, pad_materials, sigma2, sigma3, rnd, threads, binary=false, seed=None))]
+#[pyo3(signature = (key, x, pad_materials, sigma2, sigma3, rnd, threads, binary=false, seed=None, facct=None))]
 #[allow(clippy::too_many_arguments)]
 fn encrypt_tensor(py: Python<'_>, key: &Bound<'_, EncKeyObj>, x: &Bound<'_, PyAny>, pad_materials: &Bound<'_, PyAny>,
                   sigma2: f64, sigma3: f64, rnd: &Bound<'_, PyAny>, threads: usize, binary: bool,
-                  seed: Option<Vec<u8>>) -> PyResult<Py<PyList>> {
+                  seed: Option<Vec<u8>>, facct: FacctArg) -> PyResult<Py<PyList>> {
     let obj = key.get();
     let xs = int64_buffer(x)?;
     let mats = materials_of(pad_materials)?;
     let rb: Option<Vec<u8>> = if rnd.is_none() { None } else { Some(rnd.extract()?) };
     let drbg = CallDrbg::new(seed.as_deref())?;
-    let stream = |c: usize, buf: &mut [u8]| drbg.fill(c as u64, buf);
+    let stream = |c: usize, off: u64, buf: &mut [u8]| drbg.fill_at(c as u64, off, buf);
     with_key!(obj, r, k => {
         let n = r.n;
         let chunks = if xs.is_empty() { 0 } else { (xs.len() + n - 1) / n };
         let outs: Vec<Mutex<Option<ChunkOut>>> = (0..chunks).map(|_| Mutex::new(None)).collect();
         let refs: Option<Vec<&[u8]>> = mats.as_ref().map(|m| m.iter().map(|v| v.as_slice()).collect());
-        py.detach(|| rlwe::encrypt_tensor(r, k, &xs, refs.as_deref(), sigma2, sigma3, randomness(&rb, &stream), threads,
-            |j, c0, c1| *outs[j].lock().unwrap() = Some(chunk_out(r, binary, c0, c1))))
-            .map_err(core_err)?;
+        with_noise!(py, facct, noise, err, {
+            py.detach(|| rlwe::encrypt_tensor(r, k, &xs, refs.as_deref(), sigma2, sigma3, &noise, randomness(&rb, &stream),
+                threads, |j, c0, c1| *outs[j].lock().unwrap() = Some(chunk_out(r, binary, c0, c1))))
+                .map_err(core_err)?
+        });
         chunk_list(py, outs.into_iter().map(|m| m.into_inner().unwrap()).collect(), n, xs.len())
     })
 }
@@ -910,20 +1048,23 @@ struct PrecomputedObj {
 }
 
 #[pyfunction]
-#[pyo3(signature = (key, pad_materials, sigma2, sigma3, rnd, threads, seed=None))]
+#[pyo3(signature = (key, pad_materials, sigma2, sigma3, rnd, threads, seed=None, facct=None))]
 #[allow(clippy::too_many_arguments)]
 fn precompute_tensor(py: Python<'_>, key: &Bound<'_, EncKeyObj>, pad_materials: &Bound<'_, PyAny>, sigma2: f64,
-                     sigma3: f64, rnd: &Bound<'_, PyAny>, threads: usize, seed: Option<Vec<u8>>)
+                     sigma3: f64, rnd: &Bound<'_, PyAny>, threads: usize, seed: Option<Vec<u8>>, facct: FacctArg)
     -> PyResult<PrecomputedObj> {
     let obj = key.get();
     let mats = materials_of(pad_materials)?.unwrap_or_default();
     let refs: Vec<&[u8]> = mats.iter().map(|v| v.as_slice()).collect();
     let rb: Option<Vec<u8>> = if rnd.is_none() { None } else { Some(rnd.extract()?) };
     let drbg = CallDrbg::new(seed.as_deref())?;
-    let stream = |c: usize, buf: &mut [u8]| drbg.fill(c as u64, buf);
+    let stream = |c: usize, off: u64, buf: &mut [u8]| drbg.fill_at(c as u64, off, buf);
     macro_rules! run {
         ($r:expr, $k:expr, $variant:ident) => {
-            AnyPre::$variant(py.detach(|| rlwe::precompute($r, $k, &refs, sigma2, sigma3, randomness(&rb, &stream), threads)).map_err(core_err)?)
+            with_noise!(py, facct, noise, err, {
+                AnyPre::$variant(py.detach(|| rlwe::precompute($r, $k, &refs, sigma2, sigma3, &noise, randomness(&rb, &stream),
+                    threads)).map_err(core_err)?)
+            })
         };
     }
     let pre = match (&*obj.ring, &obj.key) {
@@ -1240,12 +1381,13 @@ fn _rust_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<RingCtx>()?;
     m.add_class::<EncKeyObj>()?;
     m.add_class::<PrecomputedObj>()?;
+    m.add_class::<FacctObj>()?;
     for f in [
         wrap_pyfunction!(ctx_new, m)?, wrap_pyfunction!(ctx_info, m)?, wrap_pyfunction!(pack, m)?,
         wrap_pyfunction!(unpack, m)?, wrap_pyfunction!(ntt, m)?, wrap_pyfunction!(ntt_mont, m)?,
         wrap_pyfunction!(poly_mul, m)?, wrap_pyfunction!(lincomb, m)?, wrap_pyfunction!(gauss, m)?,
         wrap_pyfunction!(shake256_py, m)?, wrap_pyfunction!(hash_to_zq_py, m)?, wrap_pyfunction!(random_bytes, m)?,
-        wrap_pyfunction!(enc_key, m)?, wrap_pyfunction!(encrypt, m)?, wrap_pyfunction!(encrypt_tensor, m)?,
+        wrap_pyfunction!(enc_key, m)?, wrap_pyfunction!(encrypt, m)?, wrap_pyfunction!(encrypt_tensor, m)?, wrap_pyfunction!(facct_sample, m)?,
         wrap_pyfunction!(decrypt_tensor, m)?, wrap_pyfunction!(pad_terms, m)?,
         wrap_pyfunction!(precompute_tensor, m)?, wrap_pyfunction!(encrypt_precomputed, m)?,
         wrap_pyfunction!(precomputed_info, m)?, wrap_pyfunction!(dense_dots, m)?, wrap_pyfunction!(build_info, m)?,

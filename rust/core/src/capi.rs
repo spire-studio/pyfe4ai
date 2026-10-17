@@ -119,7 +119,7 @@ pub unsafe extern "C" fn pf4_encrypt_tensor(
         let mats = materials(mats, mat_lens, n_mats);
         let rand = if rnd.is_null() { Randomness::Os } else { Randomness::Given(slice::from_raw_parts(rnd, rnd_len)) };
         let outp = out as usize;
-        let res = rlwe::encrypt_tensor(ring, &key, slice::from_raw_parts(x, len), Some(&mats), sigma2, sigma3, rand,
+        let res = rlwe::encrypt_tensor(ring, &key, slice::from_raw_parts(x, len), Some(&mats), sigma2, sigma3, &rlwe::Noise::Rounded, rand,
             threads, |j, c0, c1| {
                 let p = (outp + 2 * VB * n * j) as *mut u8;
                 put_vals(p, c0.iter().chain(c1.iter()));

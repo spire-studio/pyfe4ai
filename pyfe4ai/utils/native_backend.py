@@ -31,10 +31,18 @@ The native path applies to moduli below ``2^253`` with a ``2 ring_n``-th root
 of unity (all moduli the parameter generators derive, including the flooded
 moduli of ``mcfe/ring_lwe_threshold``), in 64-bit words below ``2^63``,
 128-bit words below ``2^125`` and 256-bit words above, and samples natively
-only for the default rounded Gaussian sampler with widths up to ``2^40``
-(wider ones use :func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint`
-in Python), consuming seven random bytes per uniform as
-``random.SystemRandom.random``.
+Gaussians of widths up to ``2^40`` (wider ones use
+:func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint` in Python)
+with the sampler in effect: the default rounded Gaussian, consuming seven
+random bytes per uniform as ``random.SystemRandom.random``, or the exact
+FACCT sampler (``sampler="facct"``), which draws ``getrandbits`` in the order
+of :func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_facct` and makes
+its decisions: the tables come from Python (:func:`facct_table`), the
+acceptance test is decided in fixed point with an error below ``2^-110``,
+and the rare tests that bound cannot decide (about one in ``2^99``) are
+handed to the Python formula, so for a given bit source the samples are the
+reference's (the known-answer tests of ``tests/test_sampling_facct.py`` hold
+natively).
 
 Random bytes. The extension draws them from a DRBG scoped to one call:
 every tensor-level call (``encrypt_tensor``, ``precompute_tensor``,
@@ -60,6 +68,7 @@ over the chunks of a tensor; the default is one.
 from __future__ import annotations
 
 import contextlib
+import functools
 import os
 import threading
 
@@ -178,12 +187,55 @@ def describe() -> dict:
     return info
 
 
-def _sampler_is_rounded() -> bool:
-    """The native sampler reproduces the default rounded Gaussian only."""
+def _sampler() -> str:
+    """The Gaussian sampler in effect (``"rounded"`` or ``"facct"``)."""
     from pyfe4ai.utils import sampling_utils
 
     current = getattr(sampling_utils, "get_gaussian_sampler", None)
-    return current is None or current() == "rounded"
+    return "rounded" if current is None else current()
+
+
+def _sampler_is_rounded() -> bool:
+    return _sampler() == "rounded"
+
+
+@functools.lru_cache(maxsize=64)
+def _facct_table(sigma_q):
+    """The extension's tables of
+    :func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_facct` for the exact
+    width *sigma_q*: k, the base CDT and ``-neg_c`` (rounded down to a 128-bit
+    mantissa) for the fixed-point acceptance test, and the exact threshold of
+    the Python reference for the tests it cannot decide (about one in 2^99)."""
+    from pyfe4ai.utils import sampling_utils as su
+
+    params = su._facct_params(sigma_q)
+    mant, exp = (-params.neg_c).as_mantissa_exp()
+    mant, exp = int(mant), int(exp)
+    shift = mant.bit_length() - 128  # a 128-bit mantissa: truncated, or extended exactly
+    mant = mant >> shift if shift > 0 else mant << -shift
+    precision, neg_c, k = su.FACCT_PRECISION, params.neg_c, params.k
+    scale = 1 << precision
+
+    def exact(x: int, y: int) -> int:
+        with gp.context(precision=precision + 64, round=gp.RoundToNearest):
+            return int(gp.floor(gp.exp(neg_c * (y * (y + 2 * k * x))) * scale))
+
+    return _ext.FacctTable(k, params.y_bits, list(params.cdt), mant, exp + shift, exact)
+
+
+def facct_table(sigma):
+    """Native tables of the exact sampler for *sigma* (see :func:`_facct_table`)."""
+    from pyfe4ai.utils import sampling_utils as su
+
+    return _facct_table(su._exact(sigma))
+
+
+def noise_kwargs(*sigmas) -> dict:
+    """Keyword arguments of the native encryption calls for the sampler in
+    effect: the FACCT tables of the widths, or nothing (rounded)."""
+    if _sampler() != "facct":
+        return {}
+    return {"facct": tuple(facct_table(s) for s in sigmas)}
 
 
 #: Tests set this to a function ``nbytes -> bytes`` to feed the native sampler
@@ -215,8 +267,11 @@ def gauss_bytes(count: int) -> int:
 
 
 def sampling_ok(*sigmas) -> bool:
-    """Whether Gaussians of these widths may be sampled natively now."""
-    return all(0 < float(s) <= MAX_NATIVE_SIGMA for s in sigmas) and _sampler_is_rounded()
+    """Whether Gaussians of these widths may be sampled natively now: with the
+    rounded sampler, or with FACCT when the extension has it."""
+    if not all(0 < float(s) <= MAX_NATIVE_SIGMA for s in sigmas):
+        return False
+    return _sampler_is_rounded() or (_sampler() == "facct" and hasattr(_ext, "FacctTable"))
 
 
 class RingContext:

@@ -1,7 +1,8 @@
 //! BMMS21 MIFE / MCFE over Ring-LWE: the loops of pyfe4ai.schemes.mife.ring_lwe
 //! and mcfe.ring_lwe on words, for one chunk or a whole tensor.
 
-use crate::arith::Word;
+use crate::arith::{Word, U256};
+use crate::facct::{self, ByteBits, RandBits};
 use crate::gauss::{gauss_bytes, gauss_fill};
 use crate::keccak::{shake256, zq_block, zq_reduce};
 use crate::ntt::Ring;
@@ -41,18 +42,17 @@ impl<W: Word> EncKey<W> {
 
 /// One chunk of BMMS21 encryption (MIFERingLWE._encrypt_rows): r <- D(sigma2);
 /// ct0_row = pk_row r + e_row + Delta w_row, e_row <- D(sigma3); ct1 = a r + e,
-/// e <- D(sigma2). Random bytes are consumed for r, the e_row, e in that order.
-pub fn encrypt_chunk<W: Word>(
-    ring: &Ring<W>, key: &EncKey<W>, w: &[W], sigma2: f64, sigma3: f64, rnd: &[u8],
-    ct0: &mut [W], ct1: &mut [W],
+/// e <- D(sigma2). `draw(wide, out)` samples one vector (wide: sigma3), called
+/// for r, the e_row, e in that order.
+fn encrypt_chunk_with<W: Word>(
+    ring: &Ring<W>, key: &EncKey<W>, w: &[W], mut draw: impl FnMut(bool, &mut [i64]), ct0: &mut [W],
+    ct1: &mut [W],
 ) {
     let n = ring.n;
     let m = &ring.m;
     let mut smp = vec![0i64; n];
     let (mut r, mut rh, mut t) = (vec![W::ZERO; n], vec![W::ZERO; n], vec![W::ZERO; n]);
-    let mut pos = 0;
-    gauss_fill(&rnd[pos..], sigma2, &mut smp);
-    pos += gauss_bytes(n);
+    draw(false, &mut smp);
     for i in 0..n {
         r[i] = m.reduce_i128(smp[i] as i128);
     }
@@ -64,8 +64,7 @@ pub fn encrypt_chunk<W: Word>(
         }
         let out = &mut ct0[row * n..(row + 1) * n];
         ring.inverse(&t, out);
-        gauss_fill(&rnd[pos..], sigma3, &mut smp);
-        pos += gauss_bytes(n);
+        draw(true, &mut smp);
         let wr = &w[row * n..(row + 1) * n];
         for i in 0..n {
             out[i] = m.add(m.add(out[i], m.reduce_i128(smp[i] as i128)), m.mul(wr[i], key.delta_m));
@@ -75,10 +74,57 @@ pub fn encrypt_chunk<W: Word>(
         t[i] = m.mul(key.a_hat[i], rh[i]);
     }
     ring.inverse(&t, ct1);
-    gauss_fill(&rnd[pos..], sigma2, &mut smp);
+    draw(false, &mut smp);
     for i in 0..n {
         ct1[i] = m.add(ct1[i], m.reduce_i128(smp[i] as i128));
     }
+    for v in smp.iter_mut() {
+        unsafe { std::ptr::write_volatile(v, 0) };
+    }
+}
+
+/// encrypt_chunk_with for the rounded Gaussian of discrete_gaussian_matrix:
+/// gauss_bytes(n) random bytes per vector, consumed in order from `rnd`.
+pub fn encrypt_chunk<W: Word>(
+    ring: &Ring<W>, key: &EncKey<W>, w: &[W], sigma2: f64, sigma3: f64, rnd: &[u8],
+    ct0: &mut [W], ct1: &mut [W],
+) {
+    let per = gauss_bytes(ring.n);
+    let mut pos = 0;
+    encrypt_chunk_with(ring, key, w, |wide, out| {
+        gauss_fill(&rnd[pos..], if wide { sigma3 } else { sigma2 }, out);
+        pos += per;
+    }, ct0, ct1);
+}
+
+/// The exact sampler (discrete_gaussian_facct) for both widths: the tables
+/// and the exact acceptance thresholds of the Python reference.
+pub struct FacctNoise<'a> {
+    pub sigma2: &'a facct::Table,
+    pub sigma3: &'a facct::Table,
+    pub exact2: &'a (dyn Fn(u64, u64) -> U256 + Sync),
+    pub exact3: &'a (dyn Fn(u64, u64) -> U256 + Sync),
+}
+
+/// The noise of an encryption: the rounded Gaussian (fixed bytes per sample) or FACCT.
+pub enum Noise<'a> {
+    Rounded,
+    Facct(FacctNoise<'a>),
+}
+
+/// encrypt_chunk_with for FACCT, drawing getrandbits from `bits` as the
+/// Python sampler draws them from its source.
+pub fn encrypt_chunk_facct<W: Word>(
+    ring: &Ring<W>, key: &EncKey<W>, w: &[W], noise: &FacctNoise, bits: &mut dyn RandBits, ct0: &mut [W],
+    ct1: &mut [W],
+) {
+    encrypt_chunk_with(ring, key, w, |wide, out| {
+        if wide {
+            facct::sample(noise.sigma3, out, bits, noise.exact3)
+        } else {
+            facct::sample(noise.sigma2, out, bits, noise.exact2)
+        }
+    }, ct0, ct1);
 }
 
 /// Random bytes per chunk of an eta = 1 tensor encryption.
@@ -94,12 +140,65 @@ pub enum Error {
 }
 
 /// Random bytes of a tensor call: given (tests), from the OS (filled per chunk
-/// inside the workers), or from a stream per chunk -- `fill(c, buf)` fills chunk
-/// c's bytes from a stream no other chunk uses (the binding's per-call DRBG).
+/// inside the workers), or from a stream per chunk -- `fill(c, offset, buf)` fills
+/// buf with the bytes at `offset` (a multiple of 4) of chunk c's stream, which no
+/// other chunk uses (the binding's per-call DRBG).
 pub enum Randomness<'a> {
     Given(&'a [u8]),
     Os,
-    Stream(&'a (dyn Fn(usize, &mut [u8]) + Sync)),
+    Stream(&'a (dyn Fn(usize, u64, &mut [u8]) + Sync)),
+}
+
+/// Block of the FACCT byte readers (a multiple of 4: stream offsets).
+const FACCT_BLOCK: usize = 4096;
+
+/// Run `work(j, bits)` for every chunk with its FACCT bit source: given bytes
+/// are one stream read by the chunks in order (as the Python reference reads
+/// its source); the OS and the per-chunk DRBG streams give each worker its own.
+fn facct_chunks<G>(chunks: usize, threads: usize, rnd: &Randomness, work: G) -> Result<(), Error>
+where
+    G: Fn(usize, &mut dyn RandBits) + Sync,
+{
+    match rnd {
+        Randomness::Given(b) => {
+            let mut pos = 0usize;
+            let mut bits = ByteBits::new(FACCT_BLOCK, |buf: &mut [u8]| {
+                let k = buf.len().min(b.len() - pos);
+                buf[..k].copy_from_slice(&b[pos..pos + k]);
+                pos += k;
+                k
+            });
+            for j in 0..chunks {
+                work(j, &mut bits);
+            }
+            if bits.failed {
+                return Err(Error::Input("not enough random bytes"));
+            }
+            Ok(())
+        }
+        Randomness::Os | Randomness::Stream(_) => {
+            let failed = std::sync::Mutex::new(false);
+            parallel_for(chunks, threads, |j| {
+                let mut offset = 0u64;
+                let mut bits = ByteBits::new(FACCT_BLOCK, |buf: &mut [u8]| match rnd {
+                    Randomness::Stream(fill) => {
+                        fill(j, offset, buf);
+                        offset += buf.len() as u64;
+                        buf.len()
+                    }
+                    _ => if osrand::fill(buf).is_ok() { buf.len() } else { 0 },
+                });
+                work(j, &mut bits);
+                if bits.failed {
+                    *failed.lock().unwrap() = true;
+                }
+            });
+            if failed.into_inner().unwrap() {
+                return Err(Error::Input("the operating system's random source failed"));
+            }
+            Ok(())
+        }
+    }
 }
 
 /// Overwrite a buffer of secret bytes before it is freed.
@@ -126,7 +225,7 @@ where
         }
         Randomness::Stream(fill) => {
             own.resize(per, 0);
-            fill(j, own);
+            fill(j, 0, own);
             Ok(own.as_slice())
         }
     }
@@ -154,7 +253,7 @@ fn pad_row<W: Word>(ring: &Ring<W>, u: &[W], material: Option<&[u8]>, out: &mut 
 /// called from the worker threads with each chunk's ciphertext.
 pub fn encrypt_tensor<W: Word, F>(
     ring: &Ring<W>, key: &EncKey<W>, x: &[i64], materials: Option<&[&[u8]]>, sigma2: f64, sigma3: f64,
-    rnd: Randomness, threads: usize, emit: F,
+    noise: &Noise, rnd: Randomness, threads: usize, emit: F,
 ) -> Result<usize, Error>
 where
     F: Fn(usize, &[W], &[W]) + Sync,
@@ -168,6 +267,23 @@ where
     if materials.map_or(false, |m| m.len() != chunks) {
         return Err(Error::Input("one pad material per chunk"));
     }
+    let plain = |j: usize| {
+        let mut w = vec![W::ZERO; n];
+        pad_row(ring, u, materials.map(|m| m[j]), &mut w);
+        let k0 = j * n;
+        for i in 0..n.min(x.len() - k0) {
+            w[i] = ring.m.add(w[i], ring.m.reduce_i128(x[k0 + i] as i128));
+        }
+        w
+    };
+    if let Noise::Facct(nz) = noise {
+        facct_chunks(chunks, threads, &rnd, |j, bits| {
+            let (mut c0, mut c1) = (vec![W::ZERO; n], vec![W::ZERO; n]);
+            encrypt_chunk_facct(ring, key, &plain(j), nz, bits, &mut c0, &mut c1);
+            emit(j, &c0, &c1);
+        })?;
+        return Ok(chunks);
+    }
     let per = tensor_chunk_bytes(n);
     if let Randomness::Given(b) = rnd {
         if b.len() < per * chunks {
@@ -180,14 +296,7 @@ where
         let (mut c0, mut c1) = (vec![W::ZERO; n], vec![W::ZERO; n]);
         match chunk_bytes(&rnd, j, per, &mut own) {
             Ok(rb) => {
-                let mut w = vec![W::ZERO; n];
-                pad_row(ring, u, materials.map(|m| m[j]), &mut w);
-                let k0 = j * n;
-                let kk = n.min(x.len() - k0);
-                for i in 0..kk {
-                    w[i] = ring.m.add(w[i], ring.m.reduce_i128(x[k0 + i] as i128));
-                }
-                encrypt_chunk(ring, key, &w, sigma2, sigma3, rb, &mut c0, &mut c1);
+                encrypt_chunk(ring, key, &plain(j), sigma2, sigma3, rb, &mut c0, &mut c1);
             }
             Err(e) => {
                 *failed.lock().unwrap() = Some(e);
@@ -439,8 +548,8 @@ impl<W: Word> Drop for Precomputed<W> {
 }
 
 pub fn precompute<W: Word>(
-    ring: &Ring<W>, key: &EncKey<W>, materials: &[&[u8]], sigma2: f64, sigma3: f64, rnd: Randomness,
-    threads: usize,
+    ring: &Ring<W>, key: &EncKey<W>, materials: &[&[u8]], sigma2: f64, sigma3: f64, noise: &Noise,
+    rnd: Randomness, threads: usize,
 ) -> Result<Precomputed<W>, Error> {
     let n = ring.n;
     let u = key.u.as_ref().ok_or(Error::Input("precompute needs the pad u"))?;
@@ -448,23 +557,42 @@ pub fn precompute<W: Word>(
         return Err(Error::Input("precompute needs eta = 1"));
     }
     let chunks = materials.len();
+    let data: Vec<std::sync::Mutex<Vec<W>>> = (0..chunks).map(|_| std::sync::Mutex::new(Vec::new())).collect();
+    let pad = |j: usize| {
+        let mut w = vec![W::ZERO; n];
+        pad_row(ring, u, Some(materials[j]), &mut w);
+        w
+    };
+    let collect = |data: Vec<std::sync::Mutex<Vec<W>>>| {
+        let mut flat = Vec::with_capacity(2 * n * chunks);
+        for d in data {
+            flat.extend_from_slice(&d.into_inner().unwrap());
+        }
+        Precomputed { n, data: flat, used: vec![false; chunks] }
+    };
+    if let Noise::Facct(nz) = noise {
+        facct_chunks(chunks, threads, &rnd, |j, bits| {
+            let mut pc = vec![W::ZERO; 2 * n];
+            let (c0, c1) = pc.split_at_mut(n);
+            encrypt_chunk_facct(ring, key, &pad(j), nz, bits, c0, c1);
+            *data[j].lock().unwrap() = pc;
+        })?;
+        return Ok(collect(data));
+    }
     let per = tensor_chunk_bytes(n);
     if let Randomness::Given(b) = rnd {
         if b.len() < per * chunks {
             return Err(Error::Input("not enough random bytes"));
         }
     }
-    let data: Vec<std::sync::Mutex<Vec<W>>> = (0..chunks).map(|_| std::sync::Mutex::new(Vec::new())).collect();
     let failed = std::sync::Mutex::new(None);
     parallel_for(chunks, threads, |j| {
         let mut own = Vec::new();
         let mut pc = vec![W::ZERO; 2 * n];
         match chunk_bytes(&rnd, j, per, &mut own) {
             Ok(rb) => {
-                let mut w = vec![W::ZERO; n];
-                pad_row(ring, u, Some(materials[j]), &mut w);
                 let (c0, c1) = pc.split_at_mut(n);
-                encrypt_chunk(ring, key, &w, sigma2, sigma3, rb, c0, c1);
+                encrypt_chunk(ring, key, &pad(j), sigma2, sigma3, rb, c0, c1);
             }
             Err(e) => {
                 *failed.lock().unwrap() = Some(e);
@@ -477,11 +605,7 @@ pub fn precompute<W: Word>(
     if let Some(e) = failed.into_inner().unwrap() {
         return Err(Error::Random(e));
     }
-    let mut flat = Vec::with_capacity(2 * n * chunks);
-    for d in data {
-        flat.extend_from_slice(&d.into_inner().unwrap());
-    }
-    Ok(Precomputed { n, data: flat, used: vec![false; chunks] })
+    Ok(collect(data))
 }
 
 /// Online part for one layer: chunks first .. first + ceil(L / n) - 1, then wiped.
