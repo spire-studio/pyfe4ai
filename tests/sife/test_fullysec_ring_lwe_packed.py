@@ -218,6 +218,36 @@ def test_a_wrong_key_does_not_decrypt(scheme):
     assert out is None or out != _products(matrix, [1, 1, 1])
 
 
+@pytest.mark.parametrize("eta, X, Y, profile, k", [
+    (1, 100, 1, "toy", 32), (3, 4, 4, "toy", 32), (2, 7, 3, "toy", 20), (5, 1, 9, "toy", 20),
+    # the standard configurations of the parameter table (two columns each: these keys are large)
+    (1, 100, 1, "standard", 2), (4, 4, 4, "standard", 2), (10, 50, 50, "standard", 2),
+])
+def test_packed_decryption_equals_per_element_decryption(eta, X, Y, profile, k):
+    """Column j of a packed ciphertext decrypts to what a one-vector ciphertext of
+    column j decrypts to -- under packed keys and under elementwise keys -- and
+    both are <x_j, y>."""
+    base = {"eta": eta, "bound_x": X, "bound_y": Y}
+    if profile == "standard":
+        base["security_profile"] = "standard"
+    kg_p, enc_p, pp_p = _keys({**base, "ndarray_layout": "packed"})
+    kg_e, enc_e, pp_e = _keys(base)
+    dec_p, dec_e = SIFEFullySecRingLWE({"keys": {"pp": pp_p}}), SIFEFullySecRingLWE({"keys": {"pp": pp_e}})
+    rng = random.Random(eta * 1000 + X)
+    matrix = [[X] + [rng.randint(-X, X) for _ in range(k - 1)] for _ in range(eta)]  # column 0 extreme
+    columns = [[row[j] for row in matrix] for j in range(k)]
+    weights = [[Y if i % 2 else -Y for i in range(eta)]]
+    if profile == "toy":
+        weights += [[Y] * eta, [rng.randint(-Y, Y) for _ in range(eta)]]
+    for y in weights:
+        dk_p = kg_p.get_decryption_keys("sid", credentials={"fusion_weight": y})
+        dk_e = kg_e.get_decryption_keys("sid", credentials={"fusion_weight": y})
+        packed = dec_p.decrypt(enc_p.encrypt(matrix), dk_p, y)
+        one_by_one_packed_keys = [dec_p.decrypt(enc_p.encrypt(c), dk_p, y) for c in columns]
+        one_by_one_elementwise = [dec_e.decrypt(enc_e.encrypt(c), dk_e, y) for c in columns]
+        assert packed == one_by_one_packed_keys == one_by_one_elementwise == _products(matrix, y)
+
+
 # -- ndarray helper (eta = 1) ---------------------------------------------------
 
 
