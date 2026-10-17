@@ -21,7 +21,7 @@ from pyfe4ai.utils.sampling_utils import (
 
 # widths of the schemes: Ring-LWE sigma1 / sigma2 / sigma3 (aggregation.py
 # parameters), a small LWE-style width, and a DCR-style big-integer width
-WIDTHS = [3.2, 4.03e3, 4.97e9, 7.03e9, 2 ** 200]
+WIDTHS = [3.2, 1.21e4, 1.49e10, 2.11e10, 2 ** 200]
 SAMPLERS = ["rounded", "facct"]
 ROUNDS = 5
 

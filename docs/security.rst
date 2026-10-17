@@ -68,7 +68,7 @@ Gaussian sampling
 The lattice and DCR proofs sample secrets and noise from the discrete
 Gaussian ``D_{Z,sigma}``. The default sampler, ``"rounded"``, rounds a
 continuous Gaussian: per sample it is about ``0.02 / sigma^2`` away in
-statistical distance (2^-9 at ``sigma = 3.2``, 2^-30 at the Ring-LWE
+statistical distance (2^-9 at ``sigma = 3.2``, about 2^-33 at the Ring-LWE
 ``sigma1``), and the double-precision path never returns values beyond
 about ``8.6 sigma``. The opt-in sampler ``"facct"``
 (:func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_facct`) samples
