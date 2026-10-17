@@ -35,18 +35,25 @@ the same key part draws the same noise; a corrupted client varying its own
 ``2^(2 stat_param)`` partial decryptions. The threshold layer is our own
 design.
 
-Sharing (config entry ``sharing``): with the default ``"shamir"`` and
-``t < s`` the smudging argument does not hold: with ``t - 1`` servers ``C``
-corrupted an honest partial is computable from ``C``'s shares and the result
-up to ``e_k - M nu`` per coefficient, ``M = lambda_k^E prod_{j in C} (k - j)
-/ (0 - j)``, a non-integer rational ``r / d`` for some ``(C, E, k)``, and
-``d`` times the difference reveals ``nu mod d`` coefficient by coefficient,
-whatever ``sigma_f`` (integer ``M`` reach 4 for ``s = 3, t = 2``, which
-multiplies the statistical distance of the flooding by 4). ``"replicated"``
-(see :func:`~pyfe4ai.schemes.threshold_utils.share_replicated`) makes ``M``
-0 or 1, so the argument holds as stated with ``q`` and ``ring_n`` unchanged;
-a server holds ``C(s - 1, t - 1)`` key pieces instead of one share, and its
-key share is drawn in Python. With ``t = s`` both are sound.
+Sharing (config entry ``sharing``; default ``"replicated"`` for ``t < s`` and
+``"shamir"`` for ``t = s``): with ``"shamir"`` and ``t < s`` -- the sharing of
+versions <= 0.3.0 -- the smudging argument does not hold: with ``t - 1``
+servers ``C`` corrupted an honest partial is computable from ``C``'s shares
+and the result up to ``e_k - M nu`` per coefficient,
+``M = lambda_k^E prod_{j in C} (k - j) / (0 - j)``, a non-integer rational
+``r / d`` for some ``(C, E, k)``, and ``d`` times the difference reveals
+``nu mod d`` coefficient by coefficient, whatever ``sigma_f`` (integer ``M``
+reach 4 for ``s = 3, t = 2``, which multiplies the statistical distance of the
+flooding by 4). ``"replicated"`` (see
+:func:`~pyfe4ai.schemes.threshold_utils.share_replicated`) makes ``M`` 0 or 1,
+so the argument holds as stated with ``q`` and ``ring_n`` unchanged; a server
+holds ``C(s - 1, t - 1)`` key pieces instead of one share, and its key share
+is drawn in Python. With ``t = s`` both are sound. An explicit ``"shamir"``
+with ``t < s`` is refused under the ``standard`` profile and draws an
+``FESecurityWarning`` under ``toy``; the replicated sharing has its own
+parameter record (``threshold_construction``
+``bmms21-ibmcfe-replicated-smudging/v1``), so a record cached by an earlier
+version for ``t < s`` is not reused by the default.
 
 With the native backend (:mod:`pyfe4ai.utils.native_backend`; moduli below
 ``2^253``, which includes the flooded ``q`` of the standard profile) the MCFE
@@ -87,7 +94,7 @@ from pyfe4ai.schemes.threshold_utils import validate_enrolled
 from pyfe4ai.schemes.threshold_utils import combine_consistently
 from pyfe4ai.schemes.threshold_utils import partial_groups
 from pyfe4ai.schemes.threshold_utils import validate_partial_decryptions
-from pyfe4ai.schemes.threshold_utils import validate_sharing
+from pyfe4ai.schemes.threshold_utils import resolve_sharing
 from pyfe4ai.schemes.threshold_utils import validate_threshold
 from pyfe4ai.utils import native_backend
 from pyfe4ai.utils.crypto_constants import CryptoCONST
@@ -108,6 +115,9 @@ from pyfe4ai.utils.ring_lwe_utils import seeded_polynomial
 logger = logging.getLogger(__name__)
 
 _CONSTRUCTION = "bmms21-ibmcfe-shamir-smudging/v1"
+# the parameters are those of the Shamir record; its own record keeps cached
+# Shamir records (t < s) of versions <= 0.3.0 from being taken for it
+_CONSTRUCTION_REPLICATED = "bmms21-ibmcfe-replicated-smudging/v1"
 _TAG_DOMAIN = "pyfe4ai/tmcfe-ring-lwe/ciphertext-tag/v1"
 
 
@@ -141,12 +151,16 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             config: As for
                 :class:`~pyfe4ai.schemes.mcfe.ring_lwe.MCFERingLWEKeyGenerator`,
                 plus ``s``, ``t``, ``lst_sid``, ``stat_param`` (``kappa`` of
-                the flooding) and ``sharing`` (``"shamir"`` or
-                ``"replicated"``, see the module docstring).
+                the flooding) and ``sharing`` (``"replicated"``, the default
+                for ``t < s``, or ``"shamir"``, the default for ``t = s``; see
+                :func:`~pyfe4ai.schemes.threshold_utils.resolve_sharing`).
         """
         self.t = config.get("t", CryptoCONST.tMCFE_T)
-        self.sharing = validate_sharing(config.get("sharing", "shamir"))
         s = config.get("s") or len(config.get("lst_sid", [])) or 1
+        self.sharing = resolve_sharing(config, s, self.t, "mcfe/ring_lwe_threshold")
+        self._threshold_construction = (
+            _CONSTRUCTION if self.sharing == "shamir" else _CONSTRUCTION_REPLICATED
+        )
         self.lst_sid = config.get("lst_sid", ["sid_{}".format(i) for i in range(s)])
         self.stat_param = int(config.get("stat_param", 64))
         self.dict_dk = {}
@@ -160,7 +174,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
     def _param_verification(self, param: dict) -> bool:
         if not (
             super()._param_verification(param)
-            and param.get("threshold_construction") == _CONSTRUCTION
+            and param.get("threshold_construction") == self._threshold_construction
             and param.get("s") == self.s
             and param.get("stat_param") == self.stat_param
         ):
@@ -195,7 +209,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             param = json.load(f)
         param.update(
             {
-                "threshold_construction": _CONSTRUCTION,
+                "threshold_construction": self._threshold_construction,
                 "s": self.s,
                 "stat_param": self.stat_param,
                 "sigma_f": str(self.sigma_f),

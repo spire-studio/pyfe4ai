@@ -47,26 +47,29 @@ sets containing server ``k`` carry independent noise; since the Lagrange
 coefficients are small rationals, ``r`` such sets allow averaging that
 reduces the noise by at most ``sqrt(r)``.
 
-Sharing (config entry ``sharing``): the argument above takes one answer
-carrying ``<sk_y, H(l)>``, with multiplier 1, per label and enrolled set.
-With the default ``"shamir"`` and ``t < s`` that is not what a coalition
+Sharing (config entry ``sharing``; default ``"replicated"`` for ``t < s`` and
+``"shamir"`` for ``t = s``): the argument above takes one answer carrying
+``<sk_y, H(l)>``, with multiplier 1, per label and enrolled set. With
+``"shamir"`` and ``t < s`` (versions <= 0.3.0) that is not what a coalition
 ``C`` of ``t - 1`` servers sees: an honest answer is computable from ``C``'s
-shares up to ``M_k <sk_y, H(l)> + e_k``, ``M_k = lambda_k^E prod_{j in C}
-(k - j) / (0 - j)``, and several honest answers of one enrolled set carry
-multipliers other than 0 and 1 (rationals ``r_k / d_k``, or integers such as
-``-3`` and ``4``). Then ``d_k (w_k - known) - r_k v``, with ``v`` the
-combined value, is the small integer ``d_k e_k - r_k sum_E e_j``: the
-answers fix the noise terms up to multiples of ``D M`` (``D`` the common
-denominator; ``sum_E e_j`` modulo ``D``), and ``v`` is an LWE sample whose
-error is ``D |M|_2`` times narrower than the ``sigma_f`` of one answer of
-multiplier 1: ``sqrt(10)`` for ``s = 3, t = 2``, ``C = {2}``, ``E = {1, 3}``
-(``M = (3/4, 1/4)``), up to 5 for ``s = 3, t = 2`` and 79 for
-``s = 5, t = 3``. This is not a break, but the argument does not cover it.
-``"replicated"`` (see
-:func:`~pyfe4ai.schemes.threshold_utils.share_replicated`) makes every
-``M_k`` 0 or 1, with one honest answer of multiplier 1 per enrolled set; the
-other answers are computable up to their own noise. ``sigma_f`` and ``q``
-are unchanged. With ``t = s`` both are as described.
+shares up to ``M_k <sk_y, H(l)> + e_k``,
+``M_k = lambda_k^E prod_{j in C} (k - j) / (0 - j)``, and several honest
+answers of one enrolled set carry multipliers other than 0 and 1 (rationals
+``r_k / d_k``, or integers such as ``-3`` and ``4``). Then
+``d_k (w_k - known) - r_k v``, with ``v`` the combined value, is the small
+integer ``d_k e_k - r_k sum_E e_j``: the answers fix the noise terms up to
+multiples of ``D M`` (``D`` the common denominator; ``sum_E e_j`` modulo
+``D``), and ``v`` is an LWE sample whose error is ``D |M|_2`` times narrower
+than the ``sigma_f`` of one answer of multiplier 1: ``sqrt(10)`` for
+``s = 3, t = 2``, ``C = {2}``, ``E = {1, 3}`` (``M = (3/4, 1/4)``), up to 5
+for ``s = 3, t = 2`` and 79 for ``s = 5, t = 3``. This is not a break, but the
+argument does not cover it. ``"replicated"`` (see
+:func:`~pyfe4ai.schemes.threshold_utils.share_replicated`) makes every ``M_k``
+0 or 1, with one honest answer of multiplier 1 per enrolled set; the other
+answers are computable up to their own noise. ``sigma_f`` and ``q`` are
+unchanged. With ``t = s`` both are as described. An explicit ``"shamir"`` with
+``t < s`` is refused under the ``standard`` profile and draws an
+``FESecurityWarning`` under ``toy`` (this scheme caches no parameters).
 
 Statistical smudging in the usual sense (noise hiding a small ciphertext
 error) does not apply, because these ciphertexts carry no LWE error, only
@@ -102,7 +105,7 @@ from pyfe4ai.schemes.threshold_utils import validate_enrolled
 from pyfe4ai.schemes.threshold_utils import combine_consistently
 from pyfe4ai.schemes.threshold_utils import combine_elementwise
 from pyfe4ai.schemes.threshold_utils import validate_partial_decryptions
-from pyfe4ai.schemes.threshold_utils import validate_sharing
+from pyfe4ai.schemes.threshold_utils import resolve_sharing
 from pyfe4ai.schemes.threshold_utils import validate_threshold
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.lwe_utils import GAUSSIAN_TAIL_CUT
@@ -157,12 +160,16 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
         Args:
             config: As for :class:`~pyfe4ai.schemes.mcfe.lwe.MCFELWEKeyGenerator`,
                 plus ``s`` (number of decryption servers), ``t`` (threshold),
-                ``lst_sid`` and ``sharing`` (``"shamir"`` or
-                ``"replicated"``, see the module docstring).
+                ``lst_sid`` and ``sharing`` (``"replicated"``, the default
+                for ``t < s``, or ``"shamir"``, the default for ``t = s``; see
+                :func:`~pyfe4ai.schemes.threshold_utils.resolve_sharing`).
         """
+        t = config.get("t", CryptoCONST.tMCFE_T)
+        s = config.get("s") or len(config.get("lst_sid", [])) or CryptoCONST.tMCFE_S
+        # before the parameters are derived: a refused config costs nothing
+        self.sharing = resolve_sharing(config, s, t, "mcfe/lwe_threshold")
         super().__init__(config, **kwargs)
-        self.t = config.get("t", CryptoCONST.tMCFE_T)
-        self.sharing = validate_sharing(config.get("sharing", "shamir"))
+        self.t = t
         if self.s is None:
             self.s = len(config.get("lst_sid", [])) or CryptoCONST.tMCFE_S
         self.lst_sid = config.get("lst_sid", ["sid_{}".format(i) for i in range(self.s)])

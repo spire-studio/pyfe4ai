@@ -33,12 +33,25 @@ compatibility).
   of 160 tMCFE-Ring-LWE coefficients for `s = 3, t = 2`, server 2 corrupted,
   enrolled set {1, 3}). In tMCFE-LWE the same multipliers fix linear
   relations among the flooding terms and narrow the error of its LWE
-  argument up to 5-fold (`s = 3, t = 2`). New config entry
-  `sharing = "replicated"`: the key is shared additively over the
-  `(t - 1)`-subsets of the servers, every multiplier is 0 or 1 and the
-  existing arguments hold, with `q`, `ring_n` and `lwe_n` unchanged; a
-  server holds `C(s - 1, t - 1)` key pieces instead of one share. The
-  default stays `"shamir"` (sound for `t = s`).
+  argument up to 5-fold (`s = 3, t = 2`; 79-fold for `s = 5, t = 3`).
+  **v0.3.0 and earlier are affected** for every `t < s` with `s >= 3`
+  (`t = 1` included, where no server needs to be corrupted); `(s, t) =
+  (2, 1)` only through the integer multiplier 2. Not affected: `t = s`, and
+  the DDH and pairing threshold layers (exact interpolation in the
+  exponent). New config entry `sharing`: `"replicated"` shares the key
+  additively over the `(t - 1)`-subsets of the servers (piece `T` held by
+  the servers outside `T`, added by the smallest enrolled one), every
+  multiplier is 0 or 1 and the existing arguments hold, with `q`, `ring_n`
+  and `lwe_n` unchanged; a server holds `C(s - 1, t - 1)` key pieces
+  instead of one share. **It is the default for `t < s`**; `"shamir"`
+  stays the default for `t = s`, with unchanged outputs and cached
+  parameters. An explicit `"shamir"` with `t < s` is refused under
+  `standard` and draws an `FESecurityWarning` under `toy`. The replicated
+  sharing has its own parameter records (construction
+  `acfgu18-abdp15-replicated-smudging-seeded-a/v1`, threshold construction
+  `bmms21-ibmcfe-replicated-smudging/v1`), so records cached for `t < s`
+  by v0.3.0 are not reused; key shares for `t < s` have a new layout
+  (`sharing`, `pieces`), and their partial decryptions change.
 
 ### Performance
 

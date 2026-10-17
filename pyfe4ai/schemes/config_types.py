@@ -150,24 +150,39 @@ class ThresholdDDHConfig(DDHConfig, total=False):
 
 
 class ThresholdLWEConfig(LWEConfig, total=False):
-    """Config for threshold LWE-based schemes."""
+    """Config for threshold LWE-based schemes.
+
+    ``sharing``: ``"replicated"`` (the default for ``t < s``) or ``"shamir"``
+    (the default for ``t = s``).
+    """
 
     t: int
     lst_sid: list[str]
+    sharing: str
 
 
 class ThresholdMCFELWEConfig(MCFELWEConfig, total=False):
-    """Config for threshold MCFE LWE-based schemes."""
+    """Config for threshold MCFE LWE-based schemes.
+
+    ``sharing``: ``"replicated"`` (the default for ``t < s``) or ``"shamir"``
+    (the default for ``t = s``).
+    """
 
     t: int
     lst_sid: list[str]
+    sharing: str
 
 
 class ThresholdMCFERingLWEConfig(MCFERingLWEConfig, total=False):
-    """Config for threshold MCFE Ring-LWE-based schemes."""
+    """Config for threshold MCFE Ring-LWE-based schemes.
+
+    ``sharing``: ``"replicated"`` (the default for ``t < s``) or ``"shamir"``
+    (the default for ``t = s``).
+    """
 
     t: int
     lst_sid: list[str]
+    sharing: str
 
 
 class ThresholdPairingMultiIPEConfig(PairingMultiIPEConfig, total=False):

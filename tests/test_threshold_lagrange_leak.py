@@ -7,12 +7,15 @@ F(j)`` and ``F(0) = c_y - Delta mu - nu``: computable from the result and
 ``C``'s shares up to ``e_k - M nu``, ``M = lambda_k^E L_{k,0}``. For ``s = 3,
 t = 2``, ``C = {2}``, ``E = {1, 3}``, ``k = 1``: ``M = 3/4``, and the residue
 mod 4 of four times the difference is ``nu mod 4``, whatever the flooding.
-Replicated sharing makes ``M`` 0 or 1. The tests check the simulation itself
-(difference within the flooding range) and the residue attack; the Shamir
-cases are expected failures documenting the gap of the default.
+Replicated sharing, the default for ``t < s``, makes ``M`` 0 or 1. The
+tests check the simulation itself (difference within the flooding range) and
+the residue attack, for the default and for ``sharing = "replicated"``; the
+explicit ``"shamir"`` cases (the sharing of v0.3.0, which now warns under
+``toy`` and is refused under ``standard``) are expected failures.
 
-Only names that exist on ``main`` are imported, so that there these tests
-fail on the leak itself (``sharing`` is then an ignored config entry).
+Only names that exist in v0.3.0 / ``main`` 810a4a5 are imported, so that there
+these tests fail on the leak itself (``sharing`` is then an ignored config
+entry).
 """
 
 import random
@@ -32,9 +35,14 @@ from pyfe4ai.utils.ring_lwe_utils import poly_add, poly_mul
 
 SIDS = ["s1", "s2", "s3"]  # points 1, 2, 3
 SHARINGS = [
+    pytest.param(None, id="default"),
     "replicated",
     pytest.param("shamir", marks=pytest.mark.xfail(strict=True, reason="Shamir with t < s: rational multipliers")),
 ]
+
+
+def _with_sharing(cfg, sharing):
+    return cfg if sharing is None else dict(cfg, sharing=sharing)
 
 
 def _center(v, q):
@@ -98,8 +106,8 @@ def _configs():
 
 def _tmife(sharing):
     cfg = {"sec_param": 64, "eta": 1, "n": 2, "s": 3, "t": 2, "lst_nid": ["c0", "c1"],
-           "lst_sid": SIDS, "lwe_n": 16, "bound_x": 6, "bound_y": 6, "sharing": sharing}
-    kg = ThresholdMIFELWEKeyGenerator(cfg)
+           "lst_sid": SIDS, "lwe_n": 16, "bound_x": 6, "bound_y": 6}
+    kg = ThresholdMIFELWEKeyGenerator(_with_sharing(cfg, sharing))
     kg.setup()
     return cfg, kg, kg.get_public_parameters()
 
@@ -176,8 +184,8 @@ def test_tmife_lwe_honest_partials_are_simulatable(sharing):
 
 def _tmcfe_ring(sharing):
     cfg = {"sec_param": 64, "eta": 1, "n": 3, "s": 3, "t": 2, "lst_nid": ["a", "b", "c"],
-           "lst_sid": SIDS, "ring_n": 16, "bound_x": 4, "bound_y": 4, "sharing": sharing}
-    kg = ThresholdMCFERingLWEKeyGenerator(cfg)
+           "lst_sid": SIDS, "ring_n": 16, "bound_x": 4, "bound_y": 4}
+    kg = ThresholdMCFERingLWEKeyGenerator(_with_sharing(cfg, sharing))
     kg.setup()
     return cfg, kg, kg.get_public_parameters()
 
@@ -262,8 +270,8 @@ def test_tmcfe_lwe_honest_answers_carry_the_key_term_once(sharing):
     fix ``sum_E e_k`` modulo their common denominator."""
     cfg = {"sec_param": 64, "eta": 1, "n": 3, "s": 3, "t": 2, "lst_nid": ["c0", "c1", "c2"],
            "lst_sid": SIDS, "lwe_n": 16, "bound_x": 6, "bound_y": 6, "bound_u": 2,
-           "label_modulus": 8, "sharing": sharing}
-    kg = ThresholdMCFELWEKeyGenerator(cfg)
+           "label_modulus": 8}
+    kg = ThresholdMCFELWEKeyGenerator(_with_sharing(cfg, sharing))
     kg.setup()
     pp = kg.get_public_parameters()
     q = gp.mpz(pp["q"])

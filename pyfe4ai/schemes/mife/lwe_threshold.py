@@ -53,20 +53,28 @@ the same key part draws the same noise; a corrupted client varying its own
 that away to learn the other slots' part would take about ``2^(2 stat_param)``
 partial decryptions.
 
-Sharing (config entry ``sharing``): with the default ``"shamir"`` and
-``t < s`` the argument above does not hold. With ``t - 1`` servers ``C``
-corrupted, an honest partial is computable from ``C``'s shares and the result
-up to ``e_k - M nu``, ``M = lambda_k^E prod_{j in C} (k - j) / (0 - j)``, and
-``M`` is a non-integer rational for some ``(C, E, k)`` (6 of 18 for
-``s = 3, t = 2``): for ``M = r / d``, ``d`` times the difference is the small
-integer ``d e_k - r nu``, which gives ``nu mod d`` whatever ``sigma_f``;
-where ``M`` is an integer it reaches 4 (45 for ``s = 5, t = 3``), and the
-statistical distance of the flooding grows ``|M|``-fold. ``"replicated"`` shares the key additively over the ``(t - 1)``-subsets of
-the servers (see :func:`~pyfe4ai.schemes.threshold_utils.share_replicated`):
-each server of ``E`` adds up the pieces assigned to it, ``M`` is 0 or 1 and
-the smudging argument holds as stated, with ``q`` unchanged; a server holds
-``C(s - 1, t - 1)`` pieces instead of one share. With ``t = s`` both are
-sound (``M = 1``).
+Sharing (config entry ``sharing``; default ``"replicated"`` for ``t < s`` and
+``"shamir"`` for ``t = s``): with ``"shamir"`` and ``t < s`` -- the sharing of
+versions <= 0.3.0 -- the argument above does not hold. With ``t - 1`` servers
+``C`` corrupted, an honest partial is computable from ``C``'s shares and the
+result up to ``e_k - M nu``,
+``M = lambda_k^E prod_{j in C} (k - j) / (0 - j)``, and ``M`` is a non-integer
+rational for some ``(C, E, k)`` (6 of 18 for ``s = 3, t = 2``): for
+``M = r / d``, ``d`` times the difference is the small integer
+``d e_k - r nu``, which gives ``nu mod d`` whatever ``sigma_f``; where ``M``
+is an integer it reaches 4 (45 for ``s = 5, t = 3``), and the statistical
+distance of the flooding grows ``|M|``-fold. ``"replicated"`` shares the key
+additively over the ``(t - 1)``-subsets of the servers (see
+:func:`~pyfe4ai.schemes.threshold_utils.share_replicated`): each server of
+``E`` adds up the pieces assigned to it, ``M`` is 0 or 1 and the smudging
+argument holds as stated, with ``q`` unchanged; a server holds
+``C(s - 1, t - 1)`` pieces instead of one share. With ``t = s`` both are sound
+(``M = 1``). An explicit ``"shamir"`` with ``t < s`` is refused under the
+``standard`` profile and draws an ``FESecurityWarning`` under ``toy``; the two
+sharings have their own parameter records (construction
+``acfgu18-abdp15-replicated-smudging-seeded-a/v1`` for ``"replicated"``), so a
+record cached by an earlier version for ``t < s`` is not reused by the
+default.
 
 Under the ``standard`` security profile ``lwe_n = "auto"`` picks the
 smallest dimension meeting :data:`pyfe4ai.utils.lwe_utils.WIDE_LWE_128_LOG_RATIO`
@@ -105,7 +113,7 @@ from pyfe4ai.schemes.threshold_utils import validate_enrolled
 from pyfe4ai.schemes.threshold_utils import combine_consistently
 from pyfe4ai.schemes.threshold_utils import combine_elementwise
 from pyfe4ai.schemes.threshold_utils import validate_partial_decryptions
-from pyfe4ai.schemes.threshold_utils import validate_sharing
+from pyfe4ai.schemes.threshold_utils import resolve_sharing
 from pyfe4ai.schemes.threshold_utils import validate_threshold
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.lwe_utils import GAUSSIAN_TAIL_CUT
@@ -121,6 +129,9 @@ from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationErro
 logger = logging.getLogger(__name__)
 
 _CONSTRUCTION = "acfgu18-abdp15-shamir-smudging-seeded-a/v3"
+# the parameters are those of the Shamir record; its own record keeps cached
+# Shamir records (t < s) of versions <= 0.3.0 from being taken for it
+_CONSTRUCTION_REPLICATED = "acfgu18-abdp15-replicated-smudging-seeded-a/v1"
 _DEFAULT_STAT_PARAM = 64
 _TAG_DOMAIN = "pyfe4ai/tmife-lwe/ciphertext-tag/v1"
 
@@ -151,12 +162,14 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
             config: As for :class:`~pyfe4ai.schemes.mife.lwe.MIFELWEKeyGenerator`,
                 plus ``s`` (number of servers), ``t`` (threshold), ``lst_sid``,
                 ``stat_param`` (statistical parameter ``kappa`` of the
-                flooding) and ``sharing`` (``"shamir"`` or ``"replicated"``,
-                see the module docstring).
+                flooding) and ``sharing`` (``"replicated"``, the default for
+                ``t < s``, or ``"shamir"``, the default for ``t = s``; see
+                :func:`~pyfe4ai.schemes.threshold_utils.resolve_sharing`).
         """
         self.t = config.get("t", CryptoCONST.tMIFE_T)
-        self.sharing = validate_sharing(config.get("sharing", "shamir"))
         s = config.get("s") or len(config.get("lst_sid", [])) or 1
+        self.sharing = resolve_sharing(config, s, self.t, "mife/lwe_threshold")
+        self._construction = _CONSTRUCTION if self.sharing == "shamir" else _CONSTRUCTION_REPLICATED
         self.lst_sid = config.get("lst_sid", ["sid_{}".format(i) for i in range(s)])
         self.stat_param = int(config.get("stat_param", _DEFAULT_STAT_PARAM))
         self.dict_dk = {}

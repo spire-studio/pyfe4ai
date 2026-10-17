@@ -140,11 +140,11 @@ See `examples/sife_minimal.py` for the full runnable version.
 > *experimental*, see the module docstrings). In tMIFE-LWE, tMCFE-Ring-LWE
 > and tMCFE-FH-Multi-IPE clients tag every ciphertext for every server
 > (HMAC, over the label too), and servers only decrypt ciphertexts tagged for
-> them under the label they serve. With `t < s`, the Shamir sharing of
-> tMIFE-LWE, tMCFE-LWE and tMCFE-Ring-LWE lets `t - 1` corrupted servers
-> read the decryption noise modulo small integers off honest partial
-> decryptions; `sharing = "replicated"` avoids this (see the module
-> docstrings). All threshold variants assume honest-but-curious servers (see
+> them under the label they serve. For `t < s`, tMIFE-LWE, tMCFE-LWE and
+> tMCFE-Ring-LWE share the key with a replicated (0/1) sharing rather than
+> Shamir's, whose partial decryptions reveal the decryption noise modulo
+> small integers there (v0.3.0 is affected, see
+> [Known Issues](#known-issues--security-notice)). All threshold variants assume honest-but-curious servers (see
 > [Known Issues](#known-issues--security-notice)).
 
 > **⚠️ Research prototype.** Every scheme has been checked against its
@@ -204,7 +204,7 @@ schemes over ristretto255 (`*/ddh_ristretto255`, selected with
 | `mife/fh_ipe_pairing` | reviewed | adapted | ACFGU18 Fig. 12 (k = 1) | one r per key shared by all slots; per-slot FH-IPFE as in mcfe/fh_ipe (LV16 padding of App. B); asymmetric pairing (default BLS12-381); keys carry a random id, never a digest of y |
 | `mife/fh_multi_ipe_pairing` | reviewed | adapted | DOT18 Sec. 3.1 (bounded, k-LIN, k = sec_level) | n >= 2 enforced (zero sharing r_i); no Remark B.1 SKE layer, so hiding assumes every slot contributes a ciphertext; slot i's client holds B^_i and can decode its own slot of a key; keys are group elements only, decryption does not need y |
 | `mife/ddh_threshold` | reviewed | adapted | ACFGU18 Fig. 4 + ABDP15 + Shamir (TAPFed setting) | the functional key (d_i, z) is Shamir-shared mod q; any t servers interpolate in the exponent (threshold-ElGamal style), as mcfe/ddh_threshold |
-| `mife/lwe_threshold` | experimental | ad-hoc | MIFE-LWE + Shamir + smudging | MIFE layer as published; the threshold layer (statistical flooding, derandomised noise, enlarged q, clients' HMAC tags on ciphertexts so that servers only decrypt ciphertexts made by the clients) is our own |
+| `mife/lwe_threshold` | experimental | ad-hoc | MIFE-LWE + replicated / Shamir sharing + smudging | MIFE layer as published; the threshold layer (statistical flooding, derandomised noise, enlarged q, clients' HMAC tags on ciphertexts so that servers only decrypt ciphertexts made by the clients, replicated key sharing for t < s, where Shamir shares let partials reveal the decryption noise modulo small integers) is our own |
 | `mcfe/ddh` | reviewed | faithful | CDGPP18 |  |
 | `mcfe/ddh_ristretto255` | unreviewed | unknown | CDGPP18 in ristretto255 | ristretto255 (RFC 9496, about 126-bit security: Pollard rho in a group of order 2^252) instead of a 3072-bit Z_p^* subgroup; labels hashed with RFC 9380 hash_to_ristretto255; group arithmetic in Rust (curve25519-dalek) with the native extension, else in pure Python and not constant-time; new code, not yet reviewed |
 | `mcfe/lwe` | reviewed | adapted | ABMPSW20 Fig. 4, selective parameters | signed messages and weights (K = 2nXY + 1, centred decoding); t is a rounded continuous Gaussian |
@@ -217,9 +217,9 @@ schemes over ristretto255 (`*/ddh_ristretto255`, selected with
 | `mcfe/fh_multi_ipe_pairing_decentralized` | reviewed | adapted | NPS24 Fig. 1 (selective FH-DMCFE) | explicit tag-f, each client's key depends on (tag-f, y_i) only and is derived deterministically; one key per client and tag-f (enforced per client object); FH-IPFE = ACFGU18 Fig. 12 (n = 1, SXDH) with LV16 padding; asymmetric pairing (default BLS12-381); keys carry a random id, never a digest of y |
 | `mcfe/ddh_threshold` | reviewed | adapted | CDGPP18 + Shamir (TAPFed setting) | the aggregated key is Shamir-shared; any t servers interpolate in the exponent (threshold-ElGamal style) |
 | `mcfe/ddh_decentralized` | experimental | ad-hoc | ABMPSW20 Fig. 14 (MCFE1 = CDGPP18) + carry mask | Fig. 14 is stated for MCFEs without a discrete log in decryption; contributions are reduced mod q and masked by q rho_i (rho_i from a per-client key and H(y)) so that the carry of their sum stays hidden -- our own argument; MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) are sampled in-process |
-| `mcfe/lwe_threshold` | experimental | ad-hoc | ABMPSW20 Fig. 4 + Shamir + flooding | MCFE layer as published; the threshold layer and its LWE-based flooding argument are our own (see the module docstring) |
+| `mcfe/lwe_threshold` | experimental | ad-hoc | ABMPSW20 Fig. 4 + replicated / Shamir sharing + flooding | MCFE layer as published; the threshold layer (replicated key sharing for t < s, Shamir for t = s) and its LWE-based flooding argument are our own (see the module docstring) |
 | `mcfe/lwe_decentralized` | reviewed | adapted | ABMPSW20 Fig. 14 (MCFE1 = Fig. 4) | MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) are sampled in-process |
-| `mcfe/ring_lwe_threshold` | experimental | ad-hoc | BMMS21 identity-based MCFE + Shamir + smudging | MCFE layer as published; the threshold layer (statistical flooding, derandomised noise, enlarged q, clients' HMAC tags on ciphertexts) is our own |
+| `mcfe/ring_lwe_threshold` | experimental | ad-hoc | BMMS21 identity-based MCFE + replicated / Shamir sharing + smudging | MCFE layer as published; the threshold layer (statistical flooding, derandomised noise, enlarged q, clients' HMAC tags on ciphertexts, replicated key sharing for t < s, where Shamir shares let partials reveal the decryption noise modulo small integers) is our own |
 | `mcfe/ring_lwe_decentralized` | reviewed | adapted | BMMS21 Sec. 6 identity-based DMCFE (ABKW19 + GDSum) | GDSum realised as pairwise PRF zero-sum masks (its full specification is only in the ePrint version); pairwise secrets sampled in-process |
 | `mcfe/paillier_decentralized` | reviewed | adapted | ABMPSW20 Fig. 14 (MCFE1 = Fig. 3) | MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) are sampled in-process |
 | `quadratic/quad` | reviewed | adapted | Gay20 Fig. 4 over Fig. 8 (CPA) | signed inputs (discrete log in [-n m B^3, n m B^3]); CPA variant (no QANIZK); asymmetric pairing (default BLS12-381) |
@@ -426,6 +426,34 @@ limitations remain:
 | Toy default parameters | all | `sec_param` is a modulus bit length (default 128), not a security level; LWE dimensions default to 32–64 and the Ring-LWE dimension to 32; the statistical parameter `stat_param` defaults to 64. All far below any real security level (a key column of SIFE-LWE at its defaults falls to plain LLL in minutes). Pass `security_profile="standard"` for 128-bit-oriented parameters -- except for pairings (BLS12-381, about 120–126-bit) and the refused ALS16 / dMCFE-Paillier schemes; see [Security Profiles](#security-profiles). |
 | Parameter cache in the working directory | key generators that cache parameters (most; not MCFE `lwe`, `fullysec_lwe`, `lwe_threshold`, the FH-MCFE family, MIFE `fh_ipe_pairing` and quadratic `quad` and `miqfe`) | Public parameters are written to and re-loaded from `./config/authority/...`. A cached file is used only if it matches the configuration; discrete-log groups are checked for primality, size, safe-prime structure, generator order and (at RFC 3526 sizes) for being the RFC prime; DCR moduli for size, compositeness and small factors (their factors are never stored); all other cached values are re-derived on load or expanded from a stored seed (LWE and Ring-LWE parameters and public matrices, the Paillier base, the Damgard `h`); under `standard` the lattice schemes re-check their moduli against the 128-bit tables. An unreadable file is regenerated, and files are written atomically. No check can tell whether someone knows the factors of a DCR modulus, so under `standard` the Paillier moduli and the dMCFE `N2` are generated for every key generator, never loaded or stored; under `toy` a planted modulus with known factors is still used: run only in a directory that nobody else can write to. |
 | The ML adapter plays every party | `utils/ml_adapter.py` | `FESchemeWrapper` runs the key generator, so it holds the master key and acts as clients, authority and decryptor in one trust domain; use it for experiments, not as a deployment. By default `aggregate_gradients` needs a ciphertext and a non-zero weight for every enrolled client (`allow_partial=True` relaxes this), a client encrypts at most once per label and a label is aggregated with one weight vector; these checks are per wrapper object, and they do not stop very unequal weights (e.g. `(W, 1)` with `W` above twice the largest gradient entry), which separate two clients' gradients in one aggregate -- as with any inner-product FE, the weights are the key holder's choice. |
+
+**v0.3.0 and earlier are affected: Lagrange-multiplier leak in the threshold
+LWE layers** (fixed after v0.3.0, see [`CHANGELOG.md`](CHANGELOG.md)).
+`mife/lwe_threshold`, `mcfe/ring_lwe_threshold` and `mcfe/lwe_threshold`
+Shamir-shared the functional key. With `t < s`, an honest partial
+decryption differs from its simulation from the result and the shares of
+`t - 1` corrupted servers `C` by `M nu`, where `nu` is the decryption noise
+(it depends on the clients' secret LWE errors and encryption randomness)
+and `M = lambda_k^E prod_{j in C} (k - j) / (0 - j)`, a Lagrange product
+over the enrolled set `E`. For every `t < s` with `s >= 3` (`t = 1`
+included, where `C` is empty and anyone who sees the partials and the
+result can do it), `M` is a non-integer `r / d` for some `(C, E, k)` -- 6 of
+18 cases for `s = 3, t = 2`, 202 of 330 for `s = 5, t = 3` -- and then
+`d` times the partial minus the computable part reveals `nu mod d`, whatever
+the flooding width: for `s = 3, t = 2`, server 2 corrupted and `E = {1, 3}`,
+`nu mod 4` in every tMIFE-LWE partial and every tMCFE-Ring-LWE coefficient.
+Integer multipliers up to 4 (`s = 3, t = 2`; 45 for `s = 5, t = 3`; 2 for
+`s = 2, t = 1`) multiply the statistical distance of the flooding. In
+tMCFE-LWE, whose flooding argument is computational, the same multipliers
+fix exact relations among the flooding terms and narrow the error of its
+LWE argument up to 5-fold (`s = 3, t = 2`) or 79-fold (`s = 5, t = 3`).
+Not affected: `t = s`, and the DDH and pairing threshold layers
+(`mife/ddh_threshold`, `mcfe/ddh_threshold`,
+`mcfe/fh_multi_ipe_pairing_threshold`), which interpolate exactly in the
+exponent. The three layers now default to `sharing="replicated"` for
+`t < s` (multipliers 0 or 1; `q`, `ring_n` and `lwe_n` unchanged, a server
+holds `C(s - 1, t - 1)` key pieces); `sharing="shamir"` with `t < s` is
+refused under `standard` and draws an `FESecurityWarning` under `toy`.
 
 Fixed in v0.3.0 (see [`CHANGELOG.md`](CHANGELOG.md)): every
 scheme previously marked *known-insecure* now implements a published

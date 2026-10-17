@@ -295,3 +295,82 @@ def test_tmcfe_ring_lwe_replicated_partials_agree_across_backends():
             with native_backend.backend("native"):
                 b = server.share_decrypt(cts, cred, dk, enrolled)
             assert [str(v) for v in a["w"]] == [str(v) for v in b["w"]]
+
+
+# ------------------------------------------------- default and refusal
+
+_CONFIGS = {
+    "mife": (ThresholdMIFELWEKeyGenerator, {"sec_param": 64, "eta": 1, "n": 2, "lst_nid": ["c0", "c1"],
+                                            "lwe_n": 16, "bound_x": 6, "bound_y": 6}),
+    "ring": (ThresholdMCFERingLWEKeyGenerator, {"sec_param": 64, "eta": 1, "n": 2, "lst_nid": ["a", "b"],
+                                                "ring_n": 16, "bound_x": 4, "bound_y": 4}),
+    "lwe": (ThresholdMCFELWEKeyGenerator, {"sec_param": 64, "eta": 1, "n": 2, "lst_nid": ["c0", "c1"],
+                                           "lwe_n": 16, "bound_x": 6, "bound_y": 6}),
+}
+
+
+def _make(kind, s, t, **extra):
+    cls, base = _CONFIGS[kind]
+    return cls(dict(base, s=s, t=t, lst_sid=["sid_%d" % i for i in range(s)], **extra))
+
+
+@pytest.mark.parametrize("kind", sorted(_CONFIGS))
+def test_default_sharing_is_replicated_below_s_and_shamir_at_s(kind):
+    import warnings
+
+    from pyfe4ai.utils.exceptions import FESecurityWarning
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FESecurityWarning)
+        for s, t, want in [(3, 2, "replicated"), (3, 1, "replicated"), (2, 1, "replicated"),
+                           (3, 3, "shamir"), (2, 2, "shamir"), (1, 1, "shamir")]:
+            kg = _make(kind, s, t)
+            kg.setup()
+            assert kg.sharing == want and kg.get_public_parameters()["sharing"] == want, (s, t)
+        _make(kind, 3, 3, sharing="shamir")  # explicit Shamir at t = s: no warning
+        _make(kind, 3, 3, sharing="replicated")
+
+
+@pytest.mark.parametrize("kind", sorted(_CONFIGS))
+def test_explicit_shamir_below_s_warns_under_toy_and_is_refused_under_standard(kind):
+    from pyfe4ai.utils.exceptions import FESecurityWarning
+
+    with pytest.warns(FESecurityWarning, match="t = 2 < s = 3"):
+        kg = _make(kind, 3, 2, sharing="shamir")
+    assert kg.sharing == "shamir"
+    # refused before any parameter is derived (standard sizes would take long)
+    with pytest.raises(FEValidationError, match="Shamir sharing with t = 2 < s = 3"):
+        _make(kind, 3, 2, sharing="shamir", security_profile="standard", sec_param=128)
+
+
+def test_the_sharings_have_their_own_parameter_records():
+    """A record cached for Shamir with t < s (versions <= 0.3.0) is not taken
+    for the default; Shamir records at t = s are those of before."""
+    import json
+    import os
+
+    from pyfe4ai.utils.exceptions import FESecurityWarning
+
+    def record(kg):
+        with open(os.path.join(kg.config_folder, kg._scheme_type, "param.json"), encoding="utf-8") as f:
+            return json.load(f)
+
+    with pytest.warns(FESecurityWarning):
+        old_kg = _make("mife", 3, 2, sharing="shamir")
+    old = record(old_kg)
+    assert old["construction"] == "acfgu18-abdp15-shamir-smudging-seeded-a/v3"
+    new_kg = _make("mife", 3, 2)
+    new = record(new_kg)
+    assert new["construction"] == "acfgu18-abdp15-replicated-smudging-seeded-a/v1"
+    assert new["A_seed"] != old["A_seed"] and new_kg.q == old_kg.q  # regenerated, same parameters
+    at_s = _make("mife", 3, 3)
+    assert record(at_s)["construction"] == "acfgu18-abdp15-shamir-smudging-seeded-a/v3"
+
+    with pytest.warns(FESecurityWarning):
+        old_kg = _make("ring", 3, 2, sharing="shamir")
+    old = record(old_kg)
+    assert old["threshold_construction"] == "bmms21-ibmcfe-shamir-smudging/v1"
+    new_kg = _make("ring", 3, 2)
+    new = record(new_kg)
+    assert new["threshold_construction"] == "bmms21-ibmcfe-replicated-smudging/v1"
+    assert new["A_seed"] != old["A_seed"] and new_kg.q == old_kg.q

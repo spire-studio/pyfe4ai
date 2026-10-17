@@ -55,8 +55,11 @@ def test_key_generator(kg_config):
 
     fusion_weight = {nid: [1] for nid in kg_config["lst_nid"]}
     dk_sid = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": fusion_weight})
-    assert set(dk_sid) == {"sk_y", "z", "sid", "lst_sid", "weights_id", "noise_key", "mac_keys"}
-    assert set(dk_sid["sk_y"]) == set(kg_config["lst_nid"])
+    # t < s: replicated sharing, C(s - 1, t - 1) = 2 pieces of (sk_y, z)
+    assert pp["sharing"] == "replicated"
+    assert set(dk_sid) == {"sharing", "pieces", "sid", "lst_sid", "weights_id", "noise_key", "mac_keys"}
+    assert len(dk_sid["pieces"]) == 2
+    assert all(set(piece["share"]["sk_y"]) == set(kg_config["lst_nid"]) for piece in dk_sid["pieces"])
     # server k holds client i's key for the tags meant for k, and only those
     assert dk_sid["mac_keys"] == {
         nid: kg.get_private_keys(nid)["mac_keys"]["sid_0"] for nid in kg_config["lst_nid"]
@@ -196,7 +199,7 @@ def test_any_enrolled_set_decrypts_extreme_values(kg_config, s, t, enrolled):
 def test_partials_are_flooded_and_derandomised(kg_config):
     import gmpy2 as gp
 
-    from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
+    from pyfe4ai.schemes.threshold_utils import share_for_enrolled
     from pyfe4ai.utils.matrix_utils import digits_to_vector, vecdot_mod
 
     dct_x = {nid: [1] for nid in kg_config["lst_nid"]}
@@ -209,10 +212,12 @@ def test_partials_are_flooded_and_derandomised(kg_config):
 
     q = gp.mpz(pp["q"])
     delta = q // gp.mpz(pp["p"])
-    exact = delta * gp.mpz(dk["z"])
+    # what the server multiplies (its assigned key pieces, or its Shamir share) and by what
+    share, multiplier, _ = share_for_enrolled(dk, "sid_0", enrolled, pp["t"], q)
+    exact = delta * gp.mpz(share["z"])
     for nid, ct in dct_ct.items():
-        exact += vecdot_mod(digits_to_vector(ct["ct0"]), [gp.mpz(v) for v in dk["sk_y"][nid]], q)
-    exact = lagrange_coefficient_at_zero(1, [1, 2], q) * exact % q
+        exact += vecdot_mod(digits_to_vector(ct["ct0"]), [gp.mpz(v) for v in share["sk_y"][nid]], q)
+    exact = multiplier * exact % q
     noise = (gp.mpz(partials["sid_0"]["w"]) - exact) % q
     assert noise != 0 and min(noise, q - noise) <= 12 * int(pp["sigma_f"])
     assert combiner.combine_decrypt(partials) == 3
