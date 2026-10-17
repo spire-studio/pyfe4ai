@@ -412,3 +412,229 @@ def test_backend_selection(monkeypatch):
     assert native_backend.sampling_ok(3.2, 2.0 ** 40) and not native_backend.sampling_ok(2.0 ** 41)
     with pytest.raises(ValueError):
         native_backend.set_threads(0)
+
+
+# ------------------------------------------------------------ threshold MCFE
+
+TCONFIGS = [  # (ring_n, bound_x, bound_y, stat_param): q of 116 (128-bit words), 129 and 216 bits
+    (16, 4, 4, 64),
+    (16, 50, 4, 64),
+    (32, 100, 3, 150),
+]
+
+
+@pytest.fixture
+def native_calls(monkeypatch):
+    """Counts the extension's calls by name (to see that a native path ran)."""
+    import collections
+
+    real, counts = native_backend._ext, collections.Counter()
+
+    class Spy:
+        def __getattr__(self, name):
+            fn = getattr(real, name)
+
+            def call(*args, **kwargs):
+                counts[name] += 1
+                return fn(*args, **kwargs)
+
+            return call if callable(fn) else fn
+
+    monkeypatch.setattr(native_backend, "_ext", Spy())
+    return counts
+
+
+def _threshold(ring_n, bound_x, bound_y, stat_param, eta=1):
+    nids, sids = ["c0", "c1", "c2"], ["s0", "s1", "s2"]
+    kg = tmcfe_rlwe.ThresholdMCFERingLWEKeyGenerator({
+        "n": 3, "lst_nid": nids, "s": 3, "t": 2, "lst_sid": sids, "eta": eta, "ring_n": ring_n,
+        "sec_param": 64, "bound_x": bound_x, "bound_y": bound_y, "stat_param": stat_param})
+    kg.setup()
+    pp = kg.get_public_parameters()
+    clients = {nid: tmcfe_rlwe.ThresholdMCFERingLWE({"id": nid, "precision": 0,
+                                                    "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
+               for nid in nids}
+    return kg, pp, clients, sids
+
+
+def _server(pp, sid):
+    return tmcfe_rlwe.ThresholdMCFERingLWE({"id": sid, "precision": 0, "keys": {"pp": pp}})
+
+
+def _both(fn):
+    with native_backend.backend("python"):
+        py = fn()
+    with native_backend.backend("native"):
+        nat = fn()
+    return py, nat
+
+
+@pytest.mark.parametrize("cfg", TCONFIGS, ids=str)
+def test_threshold_partials_and_combination_identical(cfg, native_calls):
+    ring_n, bound_x, bound_y, _ = cfg
+    kg, pp, clients, sids = _threshold(*cfg)
+    rng = np.random.default_rng(4)
+    grads = {nid: [rng.integers(-bound_x, bound_x + 1, 2 * ring_n + 3), rng.integers(-bound_x, bound_x + 1, (2, 3))]
+             for nid in clients}
+    weights = {nid: [int(rng.integers(-bound_y, bound_y + 1))] for nid in clients}
+    enc = {nid: cl.encrypt_lst_ndarray(grads[nid], label="r") for nid, cl in clients.items()}
+    creds = {"fusion_weight": weights, "label": "r", "n_chunks": clients["c0"].key_chunks(enc["c0"])}
+    dks = {sid: kg.get_decryption_keys(sid, credentials=creds) for sid in sids}
+    groups = []
+    for enrolled in (sids[:2], sids[1:]):
+        parts = {}
+        for sid in enrolled:
+            py, nat = _both(lambda: _server(pp, sid).compute_lst_ndarray_ct(enc, creds, dks[sid], enrolled))
+            assert py == nat
+            parts[sid] = nat
+        groups.append(parts)
+    assert native_calls["share_inputs"] == native_calls["share_partial"] == 4 * 4  # 4 chunks, 2 x 2 servers
+    combiner = _server(pp, "comb")
+    py, nat = _both(lambda: combiner.decrypt_lst_ndarray_ct(groups))
+    assert native_calls["share_combine"] == 4 * 2
+    expected = [sum(weights[nid][0] * grads[nid][l] for nid in clients) for l in range(2)]
+    for l in range(2):
+        assert np.array_equal(py[l], nat[l]) and np.array_equal(nat[l], expected[l])
+    # a chunk's element 1 moved to bound + 1 (in c_y, which all partials share) does not decode
+    q, delta = int(pp["q"]), int(pp["q"]) // int(pp["p"])
+    bound = 3 * bound_x * bound_y
+    mu = sum(weights[nid][0] * int(grads[nid][0][1]) for nid in clients)
+    chunk = {}
+    for sid, part in groups[0].items():
+        c = dict(part[0]["parts"][0])
+        c["c_y"] = list(c["c_y"])
+        c["c_y"][1] = str((int(c["c_y"][1]) + delta * (bound + 1 - mu)) % q)
+        chunk[sid] = c
+    py, nat = _both(lambda: combiner.combine_decrypt(chunk))
+    assert py == nat and nat[1] is None and None not in nat[:1] + nat[2:]
+
+
+def _retag(kg, nid, label, ct):
+    from pyfe4ai.schemes.mcfe.labels import encode_label
+    from pyfe4ai.schemes.threshold_utils import tag_ciphertext
+
+    return tag_ciphertext(dict(ct), kg.get_private_keys(nid)["mac_keys"], tmcfe_rlwe._TAG_DOMAIN,
+                          tmcfe_rlwe._tag_payload(encode_label(label), ct))
+
+
+@pytest.mark.parametrize("cfg", TCONFIGS[1:], ids=str)
+def test_threshold_value_formats_and_errors_identical(cfg, native_calls):
+    """Values the native reader does not take (blanks, signs, other digits, ...)
+    go to the Python path; both give the same partials, and the same errors."""
+    ring_n = cfg[0]
+    kg, pp, clients, sids = _threshold(*cfg)
+    weights = {nid: [1] for nid in clients}
+    cts = {nid: cl.encrypt([[1, -2, 3]], "L") for nid, cl in clients.items()}
+    creds = {"fusion_weight": weights, "label": "L"}
+    dk = kg.get_decryption_keys("s0", credentials=creds)
+    server = _server(pp, "s0")
+    q = int(pp["q"])
+
+    def variant(f):
+        ct = {"ct0": [list(cts["c1"]["ct0"][0])], "ct1": list(cts["c1"]["ct1"]), "k": cts["c1"]["k"]}
+        f(ct)
+        return dict(cts, c1=_retag(kg, "c1", "L", ct))
+
+    share = lambda c: server.share_decrypt(c, creds, dk, sids[:2])
+    reference = share(cts)
+    variants = [  # (change, read natively, same values mod q)
+        (lambda c: c["ct1"].__setitem__(0, int(c["ct1"][0])), True, True),            # exact ints
+        (lambda c: c["ct1"].__setitem__(1, int(c["ct1"][1]) + 5 * q), True, True),    # any range
+        (lambda c: c["ct1"].__setitem__(1, int(c["ct1"][1]) - q), False, True),       # below -2^63: Python's %
+        (lambda c: c["ct1"].__setitem__(2, "00" + c["ct1"][2]), True, True),          # leading zeros
+        (lambda c: c.__setitem__("ct0", (tuple(c["ct0"][0]),)), True, True),
+        (lambda c: c["ct1"].__setitem__(0, " {} ".format(c["ct1"][0])), False, True),  # int() strips blanks
+        (lambda c: c["ct1"].__setitem__(1, "+" + c["ct1"][1]), False, True),
+        (lambda c: c["ct1"].__setitem__(4, "٣"), False, False),                       # non-ASCII digit
+        (lambda c: c["ct1"].__setitem__(5, str(2 ** 300)), False, False),             # beyond 2^256
+    ]
+    for f, native, same in variants:
+        native_calls.clear()
+        py, nat = _both(lambda: share(variant(f)))
+        assert py == nat
+        assert (native_calls["share_partial"] == 1) == native
+        assert (nat["w"] == reference["w"]) == same  # same values: the same noise
+    bad_variants = [
+        lambda c: c["ct1"].__setitem__(0, "12a"),
+        lambda c: c["ct1"].__setitem__(0, 1.5),
+        lambda c: c["ct1"].__setitem__(0, None),
+        lambda c: c["ct1"].pop(),
+        lambda c: c["ct0"].append(c["ct0"][0]),
+        lambda c: c.__setitem__("k", ring_n + 1),
+        lambda c: c.__setitem__("k", True),
+        lambda c: c.__setitem__("ct0", "x"),
+    ]
+    for f in bad_variants:
+        for name in ("python", "native"):
+            with native_backend.backend(name), pytest.raises(FESchemeError, match="malformed ciphertext of c1"):
+                share(variant(f))
+
+
+class _BytesSystemRandom(random.Random):
+    """``random.SystemRandom.getrandbits`` on a :class:`ByteStream` (big-endian
+    bytes, as from os.urandom); randrange then draws as SystemRandom does."""
+
+    def __init__(self, stream) -> None:
+        self.stream = stream
+        super().__init__(0)
+
+    def getrandbits(self, k: int) -> int:
+        nbytes = (k + 7) // 8
+        return int.from_bytes(self.stream.take(nbytes), "big") >> (8 * nbytes - k)
+
+
+@pytest.mark.parametrize("cfg", TCONFIGS, ids=str)
+def test_threshold_key_shares_identical(cfg, monkeypatch):
+    from pyfe4ai.schemes import threshold_utils
+
+    kg, pp, clients, sids = _threshold(*cfg)
+    creds = {"fusion_weight": {nid: [1] for nid in clients}, "label": "L", "n_chunks": 2}
+    key = _mcfe_keys(kg, "s0", creds)
+    with native_backend.backend("python"):
+        monkeypatch.setattr(threshold_utils, "_CSPRNG", _BytesSystemRandom(ByteStream(6)))
+        py = kg._share_key(key, "w")
+    with native_backend.backend("native"):
+        monkeypatch.setattr(native_backend, "_random_override", ByteStream(6).take)
+        nat = kg._share_key(key, "w")
+        monkeypatch.setattr(native_backend, "_random_override", None)
+    assert py == nat
+    with native_backend.backend("native"):  # the DRBG: shares still reconstruct the key
+        shares = kg._share_key(key, "w")
+    q = int(pp["q"])
+    lam = {s: int(threshold_utils.lagrange_coefficient_at_zero(i + 1, [1, 3], q)) for i, s in enumerate(sids)}
+    for poly, name in ((key["z"], "z"), (key["sk_y"]["c2"], None)):
+        got = [(lam["s0"] * int(a) + lam["s2"] * int(b)) % q for a, b in zip(
+            *[(shares[s][name] if name else shares[s]["sk_y"]["c2"]) for s in ("s0", "s2")])]
+        assert got == [int(v) % q for v in poly]
+    assert shares["s0"]["z"] != nat["s0"]["z"]
+
+
+def test_threshold_standard_profile_native(native_calls):
+    """mcfe/ring_lwe_threshold under the standard profile (q of 212 bits,
+    ring_n 8192): encryption, keys, key shares, partials and combination native."""
+    nids, sids = ["c0", "c1", "c2"], ["s0", "s1", "s2"]
+    kg = tmcfe_rlwe.ThresholdMCFERingLWEKeyGenerator({
+        "n": 3, "lst_nid": nids, "s": 3, "t": 2, "lst_sid": sids, "eta": 1, "bound_x": 100, "bound_y": 1,
+        "security_profile": "standard"})
+    kg.setup()
+    pp = kg.get_public_parameters()
+    assert int(pp["q"]).bit_length() > 200 and native_backend.ring_context(pp["q"], pp["ring_n"]).word_bits == 256
+    rng = np.random.default_rng(2)
+    grads = {nid: rng.uniform(-1, 1, 9000).round(2) for nid in nids}
+    clients = {nid: tmcfe_rlwe.ThresholdMCFERingLWE({"id": nid, "precision": 2,
+                                                    "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
+               for nid in nids}
+    enc = {nid: cl.encrypt_lst_ndarray([grads[nid]], label="r") for nid, cl in clients.items()}
+    creds = {"fusion_weight": {nid: [1] for nid in nids}, "label": "r",
+             "n_chunks": clients["c0"].key_chunks(enc["c0"])}
+    parts = {}
+    for sid in sids[1:]:
+        dk = kg.get_decryption_keys(sid, credentials=creds)
+        server = tmcfe_rlwe.ThresholdMCFERingLWE({"id": sid, "precision": 2, "keys": {"pp": pp}})
+        parts[sid] = server.compute_lst_ndarray_ct(enc, creds, dk, sids[1:])
+    combiner = tmcfe_rlwe.ThresholdMCFERingLWE({"id": "comb", "precision": 2, "keys": {"pp": pp}})
+    out = combiner.decrypt_lst_ndarray_ct(parts)[0]
+    assert np.allclose(out, sum(grads.values()))
+    for name, count in (("encrypt_tensor", 3), ("pad_terms", 1), ("shamir_share", 1), ("share_partial", 4),
+                        ("share_combine", 2)):
+        assert native_calls[name] == count, name

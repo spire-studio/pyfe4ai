@@ -30,6 +30,7 @@ from pyfe4ai.utils import ring_lwe_utils as rlu
 from pyfe4ai.utils import sampling_utils
 from pyfe4ai.utils.crypto_utils import hash_to_zq_material, hash_to_zq_vector
 from tests.test_native_backend import ByteStream, FixedBytes, StreamRandom, _rounded_sampler  # noqa: F401
+from tests.test_native_backend import _BytesSystemRandom
 
 pytestmark = pytest.mark.core
 
@@ -73,6 +74,11 @@ if LIB is not None:
     LIB.pf4_pad_terms.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_char_p),
                                   ctypes.POINTER(ctypes.c_size_t), ctypes.c_size_t, ctypes.c_size_t,
                                   ctypes.c_char_p, ctypes.c_size_t, ctypes.c_size_t, ctypes.c_char_p]
+    LIB.pf4_share_partial.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_size_t] + [ctypes.c_char_p] * 9
+    LIB.pf4_shamir_share.restype = ctypes.c_int
+    LIB.pf4_shamir_share.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_size_t,
+                                     ctypes.POINTER(ctypes.c_uint64), ctypes.c_size_t, ctypes.c_char_p,
+                                     ctypes.c_size_t, ctypes.c_char_p]
     LIB.pf4_xmd64.argtypes = [ctypes.c_char_p, ctypes.c_size_t, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_char_p]
     LIB.pf4_dense_dots.argtypes = [ctypes.POINTER(ctypes.c_char_p), ctypes.POINTER(ctypes.c_size_t),
                                    ctypes.c_size_t, ctypes.c_size_t, ctypes.c_size_t,
@@ -338,3 +344,52 @@ def test_pad_terms_identical(stat_param):
     assert [str(v) for v in vals[:n]] == dk["z"]
     assert [str(v) for v in vals[n:2 * n]] == dk["z_chunks"][0]
     assert [str(v) for v in vals[2 * n:]] == dk["z_chunks"][1]
+
+
+# ------------------------------------------------------------ threshold MCFE
+
+@pytest.mark.parametrize("bits,n,eta", [(61, 16, 1), (116, 32, 2), (212, 64, 1), (253, 16, 3)])
+def test_share_partial_identical(bits, n, eta):
+    """w = lambda (Delta z + sum_s ct1_s sk_s) + e and c_y = sum_s sum_row y ct0 mod q,
+    as ThresholdMCFERingLWE.share_decrypt computes them (poly_mul, mat_vec_mul)."""
+    q = rlu.next_ntt_prime(gp.mpz(2) ** (bits - 1), n)
+    ring = Ring(q, n)
+    rng = random.Random(bits)
+    s = 3
+    rand = lambda count: [gp.mpz(rng.randrange(int(q))) for _ in range(count)]
+    slots = [[rand(n) for _ in range(eta + 1)] for _ in range(s)]
+    ys = [[gp.mpz(rng.randint(-5, 5)) for _ in range(eta)] for _ in range(s)]
+    sk, z, noise = [rand(n) for _ in range(s)], rand(n), [gp.mpz(rng.randint(-2 ** 40, 2 ** 40)) for _ in range(n)]
+    delta, lam = gp.mpz(q) // 1009, gp.mpz(rng.randrange(int(q)))
+    key = [delta * v % q for v in z]
+    c_y = [gp.mpz(0)] * n
+    for slot, y, k in zip(slots, ys, sk):
+        key = rlu.poly_add(key, rlu.poly_mul(slot[eta], k, q), q)
+        c_y = rlu.poly_add(c_y, rlu.mat_vec_mul(rlu.transpose(slot[:eta]), y, q), q)
+    w = [(lam * v + e) % q for v, e in zip(key, noise)]
+    out_w, out_cy = ctypes.create_string_buffer(VB * n), ctypes.create_string_buffer(VB * n)
+    LIB.pf4_share_partial(ring.ptr, eta, s, pack([v for slot in slots for row in slot for v in row], q),
+                          pack([v for y in ys for v in y], q), pack([v for k in sk for v in k], q), pack(z, q),
+                          pack([delta], q), pack([lam], q), pack(noise, q), out_w, out_cy)
+    assert unpack(out_w.raw) == [int(v) for v in w]
+    assert unpack(out_cy.raw) == [int(v) for v in c_y]
+
+
+@pytest.mark.parametrize("bits,t", [(61, 2), (116, 3), (212, 2), (253, 4)])
+def test_shamir_share_identical(bits, t, monkeypatch):
+    from pyfe4ai.schemes import threshold_utils
+
+    q = rlu.next_ntt_prime(gp.mpz(2) ** (bits - 1), 16)
+    ring = Ring(q, 16)
+    secrets = [gp.mpz(random.Random(bits).randrange(-int(q), 2 * int(q))) for _ in range(50)]
+    points = [1, 2, 3, 5]
+    monkeypatch.setattr(threshold_utils, "_CSPRNG", _BytesSystemRandom(ByteStream(bits)))
+    expected = [threshold_utils.share_secret(v, t, points, q) for v in secrets]
+    data = ByteStream(bits).take(4 * 50 * (t - 1) * ((bits + 7) // 8))
+    out = ctypes.create_string_buffer(VB * 50 * len(points))
+    pts = (ctypes.c_uint64 * len(points))(*points)
+    assert LIB.pf4_shamir_share(ring.ptr, pack(secrets, q), 50, t, pts, len(points), data, len(data), out) == 1
+    vals = unpack(out.raw)
+    for p, x in enumerate(points):
+        assert vals[50 * p:50 * (p + 1)] == [int(e[x]) for e in expected]
+    assert LIB.pf4_shamir_share(ring.ptr, pack(secrets, q), 50, t, pts, len(points), data, 10, out) == 0

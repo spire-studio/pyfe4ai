@@ -323,6 +323,63 @@ pub fn decrypt_chunk<W: Word>(
     true
 }
 
+/// ThresholdMCFERingLWE.share_decrypt of one chunk once its noise e is drawn:
+/// w = lambda (Delta z + sum_s ct1_s sk_s) + e and c_y = sum_s sum_row
+/// y_{s,row} ct0_{s,row} mod q, the products ct1_s sk_s summed in the NTT
+/// domain. `slots[s]` holds the eta rows of ct0 and ct1 ((eta + 1) n words),
+/// `ym[s * eta + r]` the weights and `sk_hats[s]` NTT(sk_s) (key shares), both
+/// in Montgomery form.
+#[allow(clippy::too_many_arguments)]
+pub fn share_partial<W: Word>(
+    ring: &Ring<W>, eta: usize, slots: &[&[W]], ym: &[W], sk_hats: &[&[W]], z: &[W], delta: W, lambda: W,
+    noise: &[W], w: &mut [W], c_y: &mut [W],
+) {
+    let n = ring.n;
+    let m = &ring.m;
+    let (mut acc, mut xh, mut kp) = (vec![W::ZERO; n], vec![W::ZERO; n], vec![W::ZERO; n]);
+    for (slot, skh) in slots.iter().zip(sk_hats) {
+        ring.forward(&slot[eta * n..(eta + 1) * n], &mut xh);
+        for i in 0..n {
+            acc[i] = m.add(acc[i], m.mul(skh[i], xh[i]));
+        }
+    }
+    ring.inverse(&acc, &mut kp);
+    let (dm, lm) = (m.to_mont(delta), m.to_mont(lambda));
+    for i in 0..n {
+        let key = m.add(m.mul(z[i], dm), kp[i]);
+        w[i] = m.add(m.mul(key, lm), noise[i]);
+        let mut cy = W::ZERO;
+        for (s, slot) in slots.iter().enumerate() {
+            for r in 0..eta {
+                cy = m.add(cy, m.mul(slot[r * n + i], ym[s * eta + r]));
+            }
+        }
+        c_y[i] = cy;
+    }
+}
+
+/// ThresholdMCFERingLWE._combine_group: c_y - sum_k w_k mod q, decoded (see
+/// decode_scaled) for the first out.len() values; false if one does not fit an i64.
+pub fn share_combine<W: Word>(
+    m: &crate::Modulus<W>, c_y: &[W], ws: &[&[W]], delta: W, bound: i128, out: &mut [i64], none: &mut [u8],
+) -> bool {
+    for i in 0..out.len() {
+        let v = ws.iter().fold(c_y[i], |acc, w| m.sub(acc, w[i]));
+        match decode_scaled_w(v, m.q, delta, bound) {
+            Ok(Some(mu)) => {
+                out[i] = mu;
+                none[i] = 0;
+            }
+            Ok(None) => {
+                out[i] = 0;
+                none[i] = 1;
+            }
+            Err(()) => return false,
+        }
+    }
+    true
+}
+
 /// MCFERingLWEKeyGenerator's z'' for several labels: base + sum_s sum_row
 /// ym[s eta + row] H_{s,l}[row] mod q, H_{s,l} = hash_to_zq_vector of
 /// materials[l][s] (eta n values, row-major); `emit(l, z)` from the workers.

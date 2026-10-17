@@ -5,7 +5,10 @@ built by ``pip install`` when a Rust toolchain is available, or in a source
 checkout by ``tools/build_rust.py``) runs the Ring-LWE MIFE / MCFE hot paths
 -- NTTs, Gaussian sampling, label pads, the encryption, decryption and
 key-derivation loops of the ndarray helpers -- one call per tensor, with the
-GIL released and optionally several threads. It also has the dense-LWE label
+GIL released and optionally several threads -- and of the threshold MCFE
+(``mcfe/ring_lwe_threshold``): the Shamir sharing of the functional key, the
+parsing, digests and NTT-domain products of a partial decryption (its
+flooding noise stays Python) and the combination. It also has the dense-LWE label
 sums, the ristretto255 group of the ``*/ddh_ristretto255`` schemes and the
 BLS12-381 pairing group (:mod:`pyfe4ai.utils.bls12_381`). The Python implementation stays the
 reference and the fallback: the native code computes the same values (same NTT
@@ -34,8 +37,10 @@ in Python), consuming seven random bytes per uniform as
 ``random.SystemRandom.random``.
 
 Random bytes. The extension draws them from a DRBG scoped to one call:
-every tensor-level call (``encrypt_tensor``, ``precompute_tensor``, and
-``encrypt`` for one matrix) reads one 32-byte seed from the operating system
+every tensor-level call (``encrypt_tensor``, ``precompute_tensor``,
+``encrypt`` for one matrix, and ``shamir_share`` for a whole key, which reads
+stream 0 in order and draws each coefficient as
+``random.SystemRandom.randrange(0, q)`` does) reads one 32-byte seed from the operating system
 (``getrandom`` / ``getentropy``, the source of :func:`os.urandom`) and expands
 it with ChaCha20 (the ``rand_chacha`` crate), chunk ``c`` of the call reading
 stream ``c`` -- no two chunks, hence no two threads, share a stream. The seed,

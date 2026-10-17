@@ -174,6 +174,68 @@ pub unsafe extern "C" fn pf4_pad_terms(
     })
 }
 
+/// One chunk of ThresholdMCFERingLWE.share_decrypt with its noise: S slots of
+/// (eta + 1) n values, weights (S eta, plain), key shares (S n, plain
+/// coefficients), z, Delta, lambda and the noise (n values mod q); w and c_y (n each).
+#[no_mangle]
+pub unsafe extern "C" fn pf4_share_partial(
+    r: *const AnyRing, eta: usize, s: usize, slots: *const u8, ys: *const u8, sk: *const u8, z: *const u8,
+    delta: *const u8, lambda: *const u8, noise: *const u8, w: *mut u8, cy: *mut u8,
+) {
+    with_ring!(&*r, ring => {
+        let n = ring.n;
+        let m = &ring.m;
+        let slotv = words(m, &vals_in(slots, s * (eta + 1) * n));
+        let ym: Vec<_> = words(m, &vals_in(ys, s * eta)).iter().map(|&v| m.to_mont(v)).collect();
+        let skv = words(m, &vals_in(sk, s * n));
+        let mut hats = vec![Word::ZERO; s * n];
+        for (src, dst) in skv.chunks(n).zip(hats.chunks_mut(n)) {
+            ring.forward_mont(src, dst);
+        }
+        let slot_refs: Vec<&[_]> = slotv.chunks((eta + 1) * n).collect();
+        let hat_refs: Vec<&[_]> = hats.chunks(n).collect();
+        let (mut wv, mut cyv) = (vec![Word::ZERO; n], vec![Word::ZERO; n]);
+        rlwe::share_partial(ring, eta, &slot_refs, &ym, &hat_refs, &words(m, &vals_in(z, n)),
+            m.reduce_u256(vals_in(delta, 1)[0]), m.reduce_u256(vals_in(lambda, 1)[0]), &words(m, &vals_in(noise, n)),
+            &mut wv, &mut cyv);
+        put_vals(w, wv.iter());
+        put_vals(cy, cyv.iter());
+    })
+}
+
+/// Shamir shares (threshold t) of `count` secrets at `n_points` points, the
+/// coefficients drawn from `rnd` as SystemRandom.randrange draws them; out holds
+/// n_points * count values (point-major). Returns 1, or 0 if the bytes run out.
+#[no_mangle]
+pub unsafe extern "C" fn pf4_shamir_share(
+    r: *const AnyRing, secrets: *const u8, count: usize, t: usize, points: *const u64, n_points: usize,
+    rnd: *const u8, rnd_len: usize, out: *mut u8,
+) -> i32 {
+    with_ring!(&*r, ring => {
+        let m = &ring.m;
+        let bytes = slice::from_raw_parts(rnd, rnd_len);
+        let mut pos = 0;
+        let res = crate::shamir::share(m, &words(m, &vals_in(secrets, count)), t, slice::from_raw_parts(points, n_points),
+            |b: &mut [u8]| {
+                if pos + b.len() > bytes.len() {
+                    return false;
+                }
+                b.copy_from_slice(&bytes[pos..pos + b.len()]);
+                pos += b.len();
+                true
+            });
+        match res {
+            Some(shares) => {
+                for (p, sh) in shares.iter().enumerate() {
+                    put_vals(out.add(VB * count * p), sh.iter());
+                }
+                1
+            }
+            None => 0,
+        }
+    })
+}
+
 /// Dense-LWE sums (see dense::dense_dots); out holds n_mats * sum_limbs(nb, kl) limbs.
 #[no_mangle]
 pub unsafe extern "C" fn pf4_dense_dots(
