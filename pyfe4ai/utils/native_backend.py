@@ -29,7 +29,7 @@ the ``PYFE4AI_BACKEND`` environment variable:
 
 The native path applies to moduli below ``2^253`` with a ``2 ring_n``-th root
 of unity (all moduli the parameter generators derive, including the flooded
-moduli of ``mcfe/ring_lwe_threshold``), in 64-bit words below ``2^62``,
+moduli of ``mcfe/ring_lwe_threshold``), in 64-bit words below ``2^63``,
 128-bit words below ``2^125`` and 256-bit words above, and samples natively
 only for the default rounded Gaussian sampler with widths up to ``2^40``
 (wider ones use :func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint`

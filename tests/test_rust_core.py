@@ -103,7 +103,7 @@ def unpack(data: bytes) -> list:
 
 
 def word_bits(q) -> int:
-    return 64 if q < 2 ** 62 else 128 if q < 2 ** 125 else 256
+    return 64 if q < 2 ** 63 else 128 if q < 2 ** 125 else 256
 
 
 class Ring:
@@ -170,7 +170,7 @@ def test_shake256_identical(length):
         assert out.raw == hashlib.shake_256(msg).digest(out_len)
 
 
-@pytest.mark.parametrize("bits", [40, 61, 62, 64, 77, 124, 126, 129, 192, 212, 253])
+@pytest.mark.parametrize("bits", [40, 61, 62, 63, 64, 77, 124, 126, 129, 192, 212, 253])
 def test_hash_to_zq_identical(bits):
     q = rlu.next_ntt_prime(gp.mpz(2) ** (bits - 1), 64)
     ring = Ring(q, 64)

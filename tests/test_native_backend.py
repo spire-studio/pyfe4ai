@@ -113,7 +113,7 @@ def _ctx(bits: int, n: int):
 
 
 def _word_bits(q) -> int:
-    return 64 if q < 2 ** 62 else 128 if q < 2 ** 125 else 256
+    return 64 if q < 2 ** 63 else 128 if q < 2 ** 125 else 256
 
 
 # ---------------------------------------------------------------- kernels
@@ -158,7 +158,7 @@ def test_shake256_matches_hashlib(length):
         assert N.shake256(msg, out) == hashlib.shake_256(msg).digest(out)
 
 
-@pytest.mark.parametrize("bits", [40, 61, 62, 64, 77, 124, 126, 129, 192, 212, 253])
+@pytest.mark.parametrize("bits", [40, 61, 62, 63, 64, 77, 124, 126, 129, 192, 212, 253])
 def test_hash_to_zq_identical(bits):
     q, ctx = _ctx(bits, 64)
     for v, dom in (("x", ""), ("u'|label", "pyfe4ai/mcfe/ring_lwe/H(u',label)"), ("é" * 50, "d")):
@@ -191,6 +191,8 @@ CONFIGS = [  # (eta, ring_n, sec_param, bound_x, bound_y[, stat_param]): 64-, 12
     (1, 16, 64, 2, 2),
     (2, 32, 64, 3, 3),
     (3, 16, 64, 3, 3),
+    (1, 64, 64, 50, 1),        # q of 62 bits: u64 words, lazy butterflies
+    (1, 64, 64, 70, 1),        # q of 63 bits: u64 words, reduced butterflies
     (1, 64, 128, 100, 1),
     (2, 64, 128, 100, 3),
     (1, 16, 64, 50, 4, 64),    # tMCFE layer, q of 129 bits

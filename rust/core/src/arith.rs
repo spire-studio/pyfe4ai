@@ -1,4 +1,4 @@
-//! Modular arithmetic on u64 words (q < 2^62), u128 words (q < 2^125) and
+//! Modular arithmetic on u64 words (q < 2^63), u128 words (q < 2^125) and
 //! 256-bit words (q < 2^253): Montgomery multiplication, Shoup multiplication
 //! by precomputed constants.
 
@@ -9,7 +9,8 @@ pub trait Word:
     Copy + Clone + PartialEq + Eq + PartialOrd + Ord + Default + Send + Sync + core::fmt::Debug + 'static
 {
     const BITS: u32;
-    /// Largest bit length of q (Harvey's lazy butterflies need 4q < 2^BITS).
+    /// Largest bit length of q: 2q < 2^BITS (Montgomery and Shoup products,
+    /// sums); the NTT uses Harvey's lazy butterflies only when also 4q < 2^BITS.
     const MAX_Q_BITS: u32;
     /// Longest decimal string `parse_dec` reads.
     const DEC_DIGITS: usize;
@@ -55,7 +56,7 @@ pub trait Word:
 
 impl Word for u64 {
     const BITS: u32 = 64;
-    const MAX_Q_BITS: u32 = 62;
+    const MAX_Q_BITS: u32 = 63;
     const DEC_DIGITS: usize = 38;
     const ZERO: Self = 0;
     const ONE: Self = 1;

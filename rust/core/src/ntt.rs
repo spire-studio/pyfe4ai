@@ -1,7 +1,8 @@
 //! Negacyclic NTT of Z_q[x] / (x^n + 1) with the root, tables and butterfly
 //! order of pyfe4ai.utils.ring_lwe_utils.ntt_forward / ntt_inverse: the values
 //! are the Python ones in both domains. Shoup twiddles, Harvey's lazy
-//! butterflies (values in [0, 4q), which needs 4q < 2^BITS: q < 2^MAX_Q_BITS).
+//! butterflies (values in [0, 4q)) when 4q < 2^BITS, else butterflies that keep
+//! the values in [0, q) (u64 words for 2^62 <= q < 2^63).
 
 use crate::arith::{Modulus, Word, U256};
 
@@ -11,6 +12,8 @@ pub struct Ring<W: Word> {
     pub n: usize,
     pub logn: u32,
     pub q: W,
+    /// 4q < 2^BITS: Harvey's lazy butterflies.
+    lazy: bool,
     br: Vec<u32>,
     twist: Vec<W>,
     twist_p: Vec<W>,
@@ -51,6 +54,7 @@ impl<W: Word> Ring<W> {
             n,
             logn,
             q,
+            lazy: q.bits() + 2 <= W::BITS,
             br: Vec::with_capacity(n),
             twist: Vec::with_capacity(n),
             twist_p: Vec::with_capacity(n),
@@ -99,6 +103,9 @@ impl<W: Word> Ring<W> {
     }
 
     fn butterflies(&self, x: &mut [W], tw: &[W], twp: &[W]) {
+        if !self.lazy {
+            return self.butterflies_reduced(x, tw, twp);
+        }
         let q = self.m.q;
         let q2 = q.wadd(q);
         let n = self.n;
@@ -124,6 +131,33 @@ impl<W: Word> Ring<W> {
         }
     }
 
+    /// The butterflies with values in [0, q) throughout (inputs in [0, q)), for
+    /// 2q < 2^BITS <= 4q.
+    fn butterflies_reduced(&self, x: &mut [W], tw: &[W], twp: &[W]) {
+        let q = self.m.q;
+        let n = self.n;
+        let mut off = 0;
+        let mut len = 2;
+        while len <= n {
+            let half = len >> 1;
+            let (t, tp) = (&tw[off..off + half], &twp[off..off + half]);
+            for blk in x.chunks_exact_mut(len) {
+                let (lo, hi) = blk.split_at_mut(half);
+                for (((l, h), &w), &wp) in lo.iter_mut().zip(hi.iter_mut()).zip(t).zip(tp) {
+                    let u = *l;
+                    let v = self.m.shoup(*h, w, wp);
+                    let v = if v >= q { v.wsub(q) } else { v };
+                    let s = u.wadd(v);
+                    *l = if s >= q { s.wsub(q) } else { s };
+                    let d = u.wadd(q).wsub(v);
+                    *h = if d >= q { d.wsub(q) } else { d };
+                }
+            }
+            off += half;
+            len <<= 1;
+        }
+    }
+
     #[inline(always)]
     fn reduce4(&self, v: W) -> W {
         let q = self.m.q;
@@ -138,6 +172,14 @@ impl<W: Word> Ring<W> {
             let b = self.br[i] as usize;
             out[i] = self.m.shoup(input[b], self.twist[b], self.twist_p[b]);
         }
+        if !self.lazy {
+            let q = self.m.q;
+            for v in out.iter_mut() {
+                if *v >= q {
+                    *v = v.wsub(q);
+                }
+            }
+        }
         self.butterflies(out, &self.fwd, &self.fwd_p);
         for v in out.iter_mut() {
             *v = self.reduce4(*v);
@@ -148,6 +190,14 @@ impl<W: Word> Ring<W> {
     pub fn inverse(&self, input: &[W], out: &mut [W]) {
         for i in 0..self.n {
             out[i] = input[self.br[i] as usize];
+        }
+        if !self.lazy {
+            let q = self.m.q;
+            for v in out.iter_mut() {
+                if *v >= q {
+                    *v = v.wsub(q);
+                }
+            }
         }
         self.butterflies(out, &self.inv, &self.inv_p);
         let q = self.m.q;
@@ -187,7 +237,7 @@ pub enum AnyRing {
 }
 
 impl AnyRing {
-    /// u64 words for q < 2^62, u128 words for q < 2^125, 256-bit words for q < 2^253.
+    /// u64 words for q < 2^63, u128 words for q < 2^125, 256-bit words for q < 2^253.
     pub fn new(q: U256, n: usize, root: U256) -> Result<Self, &'static str> {
         let bits = q.bits();
         if bits > U256::MAX_Q_BITS {
