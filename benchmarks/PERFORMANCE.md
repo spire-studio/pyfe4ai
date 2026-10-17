@@ -93,6 +93,17 @@ per round one label pad per client for the label and every chunk.
   not collude with the aggregator; the FE aggregator holds a key for the
   weighted sum only, and the key generator is a trusted party.
 
+### Rust core
+
+`rust/core` (no dependencies) ports these kernels; its C ABI lets
+`tests/test_rust_core.py` check them against the Python code bit for bit
+(52 checks). Host timings of the Rust kernels, 77-bit / 60-bit q: NTT
+0.10 / 0.028 ms forward, 0.08 / 0.028 ms inverse, label pad 0.26 / 0.18 ms,
+10^4-element encryption 3.2 / 2.3 ms before formatting, one chunk of
+decryption for 3 clients 0.52 / 0.18 ms -- the C++ figures or better. The
+Python module `pyfe4ai._rust_native` (PyO3) has the C++ module's interface;
+it waits for its crates from crates.io.
+
 ### RNS (not adopted; needs a decision)
 
 With `q` a product of two NTT-friendly primes of about 39 bits, every NTT
@@ -120,6 +131,16 @@ ABDP15 schemes, not this one.
 Host: 1021 / 1030 -> 550 / 557 (Python) -> 140 / 147 (native) -> 38 / 45 ms
 (4 threads). Per element 0.7 ms per client natively, of which 0.44 ms is the
 SHAKE-256 expansion; 10^4 elements take about 7 s per client and thread.
+
+## DDH over ristretto255 (`*/ddh_ristretto255`, new, unreviewed)
+
+The DDH constructions in ristretto255 (RFC 9496) instead of a 3072-bit
+`Z_p^*` subgroup, selected with `group="ristretto255"`. `mcfe`, 20 elements,
+3 clients, host, pure-Python group: client 66.8 ms, aggregator 87.8 ms
+(3072-bit group: 213 / 220 ms); ciphertexts 75 B per element (936 B). The
+Rust group (curve25519-dalek; libsodium measures 0.057 ms per variable-base
+multiplication here) should bring an element to about 0.2 ms; not measured
+until the crates are installed.
 
 ## DDH, DCR and pairing families (design note)
 
@@ -166,3 +187,19 @@ Paillier 794 / 768 vs 737 / 765 ms per 20 elements).
   BLS12-381 pairings take well under 1 ms on this class of CPU (not
   measured here, no Rust toolchain installed). A new curve and backend:
   needs a decision.
+
+### Pairing backend (planned)
+
+A Rust BLS12-381 backend (arkworks `ark-bls12-381`, or `blst`) behind the
+interface the pairing schemes use today -- `PairingGroup(name)`, `random`,
+`init`, `pair`, `serialize` / `deserialize`, `order`, elements with `*`, `**`
+and `==` -- so that `PairingGroup("BLS12-381")` comes from Rust and the Charm
+curves stay available as fallback until the results agree. Native batch
+paths where the schemes spend their time: products of pairings (one final
+exponentiation) and the bounded discrete log in G_T with a baby-step table
+built once per (generator, bound) and shared. BLS12-381 gives about 120-126
+bits after the exTNFS attacks, below the 128-bit target, so the `standard`
+profile would keep a `FESecurityWarning`; a strict 128-bit curve
+(BLS12-446/461, BN462) has no mature Rust crate. Which one the user wants
+is open.
+
