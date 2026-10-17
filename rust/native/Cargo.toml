@@ -1,0 +1,27 @@
+[package]
+name = "pyfe4ai-native"
+version = "0.4.0"
+edition = "2021"
+rust-version = "1.77"
+license = "Apache-2.0"
+description = "Python extension pyfe4ai._rust_native: lattice kernels (pyfe4ai-core), ristretto255, BLS12-381"
+publish = false
+
+# Separate from rust/core so that the core builds offline without these crates.
+[workspace]
+
+[lib]
+name = "_rust_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyfe4ai-core = { path = "../core" }
+pyo3 = { version = "0.30", features = ["extension-module"] }
+curve25519-dalek = { version = "5", default-features = false, features = ["alloc", "zeroize", "precomputed-tables"] }
+sha2 = { version = "0.10", default-features = false }
+zeroize = "1"
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+lto = "fat"

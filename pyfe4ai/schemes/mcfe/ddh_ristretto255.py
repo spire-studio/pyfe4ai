@@ -32,6 +32,7 @@ from pyfe4ai.schemes.ipfe import decoded_layer
 from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
 from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.utils import ec_group as eg
+from pyfe4ai.utils import native_backend
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.validation import int_vector, scale_to_int
@@ -39,6 +40,10 @@ from pyfe4ai.utils.validation import int_vector, scale_to_int
 logger = logging.getLogger(__name__)
 
 _LABEL_DST = eg.dst("MCFE-DDH-H(label)")
+
+
+def _k(k) -> bytes:
+    return (int(k) % eg.ORDER).to_bytes(32, "little")
 
 
 def hash_label(label) -> list:
@@ -170,8 +175,20 @@ class MCFERistretto255(ECDDHCryptoBase):
         for l, ary_src in enumerate(lst_ndarray):
             ary = scale_to_int(ary_src, self.precision)
             ary_ct = np.empty(ary.shape, dtype=object)
-            for i, w in np.ndenumerate(ary):
-                ary_ct[i] = self.encrypt([int(w)], _element_label(label, l, i))
+            ext = native_backend.ec_ext()
+            if (ext is not None and ary.size and self._has_public_parameters() and self._has_private_keys()
+                    and len(self.sk["s"]) >= 1):
+                # encrypt() of every element in one native call
+                s0, s1 = self._key()[0]
+                cts = ext.r255_mcfe_encrypt(
+                    [encode_label(_element_label(label, l, i)).encode("utf-8") for i in np.ndindex(ary.shape)],
+                    _LABEL_DST, [int(w) for w in ary.ravel()], _k(s0), _k(s1), native_backend.get_threads(),
+                )
+                for i, c in zip(np.ndindex(ary.shape), cts):
+                    ary_ct[i] = {"c": [c]}
+            else:
+                for i, w in np.ndenumerate(ary):
+                    ary_ct[i] = self.encrypt([int(w)], _element_label(label, l, i))
             out.append(ary_ct)
         return out
 
@@ -180,11 +197,60 @@ class MCFERistretto255(ECDDHCryptoBase):
         out = []
         for l in range(len(sample)):
             ary_dec = np.empty(sample[l].shape, dtype=object)
+            native = self._decrypt_layer_native(dict_ndarray_ct, dk, fusion_weight, label, l, sample[l])
+            if native is not None:
+                out.append(native)
+                continue
             for i, _ in np.ndenumerate(sample[l]):
                 dct_ct = {nid: dict_ndarray_ct[nid][l][i] for nid in dict_ndarray_ct}
                 ary_dec[i] = self.decrypt(dct_ct, dk, fusion_weight, _element_label(label, l, i))
             out.append(decoded_layer(ary_dec, l, 10 ** self.precision))
         return out
+
+    def _decrypt_layer_native(self, dict_ndarray_ct, dk, fusion_weight, label, l, layer):
+        """decrypt() of every element of layer *l* in one native call, with its
+        checks; ``None`` when the Python path applies (no Rust group, or
+        layouts other than one value per client and element)."""
+        ext = native_backend.ec_ext()
+        if ext is None or not np.size(layer):
+            return None
+        if not dk:
+            raise FEKeyError("no decryption key provided.")
+        if not isinstance(dk.get("d"), (list, tuple)) or len(dk["d"]) != 2:
+            raise FEKeyError("malformed MCFE decryption key: expected d = [d0, d1]")
+        if dict_ndarray_ct.keys() != fusion_weight.keys():
+            raise FESchemeError("inconsistent input among ct and fusion weight")
+        nids = list(dict_ndarray_ct)
+        ys = []
+        for nid in nids:
+            weights = fusion_weight[nid]
+            if len(weights) != 1:
+                return None
+            ys.append(int_vector(weights, "fusion weight of {}".format(nid))[0])
+        index = list(np.ndindex(np.shape(layer)))
+        try:
+            cts = [[dict_ndarray_ct[nid][l][i]["c"] for i in index] for nid in nids]
+        except (KeyError, TypeError, IndexError):
+            return None
+        if any(not isinstance(c, list) or len(c) != 1 or not isinstance(c[0], str) for col in cts for c in col):
+            return None
+        d = [eg.scalar_from(v, "decryption key") for v in dk["d"]]
+        try:
+            data, mask = ext.r255_mcfe_decrypt(
+                [[c[0] for c in col] for col in cts], ys, _k(d[0]), _k(d[1]),
+                [encode_label(_element_label(label, l, i)).encode("utf-8") for i in index], _LABEL_DST,
+                self.dlog_bound, native_backend.get_threads(),
+            )
+        except ValueError as exc:
+            if exc.args[:1] == ("malformed ciphertext",):
+                raise FEValidationError("malformed ciphertext element of {}".format(nids[exc.args[1]])) from exc
+            raise
+        values = np.frombuffer(data, dtype=np.int64).tolist()
+        ary = np.empty(len(values), dtype=object)
+        ary[:] = values
+        if mask is not None:
+            ary[np.frombuffer(mask, dtype=np.uint8).astype(bool)] = None
+        return decoded_layer(ary.reshape(np.shape(layer)), l, 10 ** self.precision)
 
     def compute_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:
         dk = kwargs.get("dk", None)

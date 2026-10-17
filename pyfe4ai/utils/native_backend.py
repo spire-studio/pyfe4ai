@@ -1,7 +1,11 @@
-"""Optional native (C++) backend of the Ring-LWE schemes.
+"""Optional native backend of the Ring-LWE, dense-LWE and ristretto255 schemes.
 
-The extension ``pyfe4ai._rlwe_native`` (built by ``setup.py`` when a 64-bit
-GCC or Clang is available) runs the Ring-LWE MIFE / MCFE hot paths -- NTTs,
+Two implementations of one interface: ``pyfe4ai._rust_native`` (Rust, built by
+``tools/build_rust.py`` from ``rust/``; it also has the ristretto255 group of
+the ``*/ddh_ristretto255`` schemes) and ``pyfe4ai._rlwe_native`` (C++, built
+by ``setup.py`` when a 64-bit GCC or Clang is available). The Rust one is
+used when both are built; ``PYFE4AI_NATIVE_IMPL=rust`` or ``cpp`` chooses.
+They run the Ring-LWE MIFE / MCFE hot paths -- NTTs,
 Gaussian sampling, label pads, the encryption, decryption and key-derivation
 loops of the ndarray helpers -- in C++, one call per tensor, with the GIL
 released and optionally several threads. The Python implementation stays the
@@ -41,13 +45,27 @@ import threading
 
 import gmpy2 as gp
 
-try:  # the optional extension
-    from pyfe4ai import _rlwe_native as _ext
-except ImportError as _exc:  # pragma: no cover - depends on the build
-    _ext = None
-    _IMPORT_ERROR = _exc
-else:
-    _IMPORT_ERROR = None
+IMPLEMENTATIONS = {"rust": "pyfe4ai._rust_native", "cpp": "pyfe4ai._rlwe_native"}
+_ENV_IMPL = "PYFE4AI_NATIVE_IMPL"
+
+
+def _load():
+    """The extension module: the one ``PYFE4AI_NATIVE_IMPL`` names (``auto``:
+    Rust, else C++), or ``None`` with the import error."""
+    import importlib
+
+    choice = os.environ.get(_ENV_IMPL, "auto")
+    names = [IMPLEMENTATIONS[choice]] if choice in IMPLEMENTATIONS else list(IMPLEMENTATIONS.values())
+    error = None
+    for name in names:
+        try:
+            return importlib.import_module(name), None
+        except ImportError as exc:  # pragma: no cover - depends on the build
+            error = exc
+    return None, error
+
+
+_ext, _IMPORT_ERROR = _load()
 
 BACKENDS = ("auto", "python", "native")
 _ENV_BACKEND = "PYFE4AI_BACKEND"
@@ -126,9 +144,25 @@ def set_threads(threads: int) -> None:
     _threads = threads
 
 
+def implementation() -> str | None:
+    """``"rust"``, ``"cpp"`` or ``None`` (no extension)."""
+    if _ext is None:
+        return None
+    return "rust" if _ext.__name__ == IMPLEMENTATIONS["rust"] else "cpp"
+
+
+def ec_ext():
+    """The extension's ristretto255 functions (Rust only), or ``None`` when the
+    Python group of :mod:`pyfe4ai.utils.ristretto255` applies."""
+    if _ext is None or get_backend() == "python" or not hasattr(_ext, "r255_mul"):
+        return None
+    return _ext
+
+
 def describe() -> dict:
     """Backend selection and build information, for benchmark records."""
-    info = {"available": _ext is not None, "backend": get_backend(), "threads": _threads}
+    info = {"available": _ext is not None, "implementation": implementation(), "backend": get_backend(),
+            "threads": _threads}
     if _ext is not None:
         info.update(_ext.build_info())
     else:
