@@ -3,6 +3,7 @@
 //! reference implementation (see tests/ and pyfe4ai's tests/test_native_backend.py).
 
 pub mod arith;
+pub mod bigauss;
 pub mod capi;
 pub mod codec;
 pub mod dense;

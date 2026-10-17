@@ -7,8 +7,11 @@ checkout by ``tools/build_rust.py``) runs the Ring-LWE MIFE / MCFE hot paths
 key-derivation loops of the ndarray helpers -- one call per tensor, with the
 GIL released and optionally several threads -- and of the threshold MCFE
 (``mcfe/ring_lwe_threshold``): the Shamir sharing of the functional key, the
-parsing, digests and NTT-domain products of a partial decryption (its
-flooding noise stays Python) and the combination. It also has the dense-LWE label
+parsing, digests and NTT-domain products of a partial decryption and the
+combination. It also samples the wide rounded Gaussians of
+:func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint` (SIFE FullySec,
+ALS16 and the flooding noise of the threshold schemes; :func:`gaussian_bigint`)
+with the reference's integers, and has the dense-LWE label
 sums, the ristretto255 group of the ``*/ddh_ristretto255`` schemes and the
 BLS12-381 pairing group (:mod:`pyfe4ai.utils.bls12_381`). The Python implementation stays the
 reference and the fallback: the native code computes the same values (same NTT
@@ -31,8 +34,8 @@ The native path applies to moduli below ``2^253`` with a ``2 ring_n``-th root
 of unity (all moduli the parameter generators derive, including the flooded
 moduli of ``mcfe/ring_lwe_threshold``), in 64-bit words below ``2^63``,
 128-bit words below ``2^125`` and 256-bit words above, and samples natively
-Gaussians of widths up to ``2^40`` (wider ones use
-:func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint` in Python)
+Gaussians of widths up to ``2^40`` inside its encryption calls (wider ones
+come from :func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint`)
 with the sampler in effect: the default rounded Gaussian, consuming seven
 random bytes per uniform as ``random.SystemRandom.random``, or the exact
 FACCT sampler (``sampler="facct"``), which draws ``getrandbits`` in the order
@@ -264,6 +267,102 @@ def random_input(nbytes: int):
 def gauss_bytes(count: int) -> int:
     """Random bytes the native sampler consumes for *count* samples."""
     return 14 * ((count + 1) // 2)
+
+
+#: Widths below ``2^MAX_NATIVE_BIGINT_BITS`` (and uniforms of at most
+#: ``MAX_NATIVE_BIGINT_PREC`` bits) are sampled natively by :func:`gaussian_bigint`.
+MAX_NATIVE_BIGINT_BITS = 448
+MAX_NATIVE_BIGINT_PREC = 768
+#: Tests set this to widen the decision margin of :func:`gaussian_bigint` by
+#: ``2^k``, so that many samples take the exact Python formula.
+_bigint_widen = 0
+_TRAPS = ("trap_underflow", "trap_overflow", "trap_inexact", "trap_invalid", "trap_erange", "trap_divzero")
+
+
+@functools.lru_cache(maxsize=256)
+def _bigint_width(sigma, prec: int):
+    """``(sig, mantissa bytes, exponent)``: ``sig = mpfr(sigma)`` at *prec* bits
+    (round to nearest; it depends only on the value of *sigma*) as
+    :func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint` computes it,
+    with ``sig = mantissa 2^exponent`` (odd mantissa, little-endian); ``None``
+    beyond the native widths."""
+    with gp.context(gp.get_context(), precision=prec, round=gp.RoundToNearest):
+        sig = gp.mpfr(sigma)
+    mant, exp = (int(v) for v in sig.as_mantissa_exp())
+    if mant <= 0:
+        return None
+    zeros = (mant & -mant).bit_length() - 1
+    mant, exp = mant >> zeros, exp + zeros
+    if mant.bit_length() + exp > MAX_NATIVE_BIGINT_BITS or mant.bit_length() > MAX_NATIVE_BIGINT_PREC:
+        return None
+    return sig, mant.to_bytes((mant.bit_length() + 7) // 8, "little"), exp
+
+
+def gaussian_bigint(sigma, count: int, rng, prec: int):
+    """:func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint` with the
+    rounded sampler, natively; ``None`` when the Python code applies.
+
+    The extension reads ``b1, b2 = getrandbits(prec)`` per sample as the
+    reference does -- from *rng* if it is an
+    :class:`~pyfe4ai.utils.sampling_utils.XofRandom` (whose counter advances
+    as in Python), else, for ``rng=None``, from its per-call DRBG (stream
+    ``c`` for samples ``256 c`` to ``256 c + 255``; or from
+    :data:`_random_override` in the tests) -- and computes
+    ``X = sig sqrt(-2 ln u1) cos(2 pi u2)`` in fixed point with an error
+    below ``2^(s + 10 - 64 n)`` (``sig < 2^s``, ``n = ceil((s + 64) / 64)``
+    fraction words). The reference's MPFR value is within ``2^-118`` of
+    ``X``; whenever ``X`` is farther than ``2^(max(s + 16 - 64 n, -100) + 1)``
+    from every half-integer both round to the same integer. The other samples
+    (about one in ``2^45``) are computed here with the reference formula from
+    the same ``b1, b2``. So for a given bit source the samples are the
+    reference's. Applies to widths below ``2^448`` under the default MPFR
+    context (round to nearest, no traps); any other *rng* (a replaced
+    ``sampling_utils._CSPRNG`` included) keeps the Python code.
+    """
+    if _ext is None or get_backend() == "python" or not hasattr(_ext, "gauss_bigint"):
+        return None
+    from pyfe4ai.utils import sampling_utils as su
+
+    if rng is None:
+        if su._CSPRNG is not su._SYSTEM_RANDOM:
+            return None
+        xof = None
+    elif type(rng) is su.XofRandom:
+        xof = rng
+    else:
+        return None
+    if prec > MAX_NATIVE_BIGINT_PREC:
+        return None
+    ctx = gp.get_context()
+    if ctx.round != gp.RoundToNearest or any(getattr(ctx, t) for t in _TRAPS):
+        return None
+    width = _bigint_width(sigma, prec)
+    if width is None:
+        return None
+    sig, mant, exp = width
+    kwargs = {"threads": _threads, "widen": _bigint_widen}
+    if xof is not None:
+        kwargs.update(xof_head=xof._seed, xof_counter=xof._counter)
+    else:
+        rnd = random_input(2 * count * ((prec + 7) // 8))
+        if rnd is not None:
+            kwargs["rnd"] = rnd
+        kwargs.update(seed_kwargs())
+    values, holes = _ext.gauss_bigint(count, prec, mant, exp, **kwargs)
+    if xof is not None:
+        xof._counter += 2 * count
+    out = [v if v is None else gp.mpz(v) for v in values]
+    if holes:
+        from pyfe4ai.utils.sampling_utils import _box_muller_rint
+
+        pad = 8 * ((prec + 7) // 8) - prec
+        with gp.context(ctx, precision=prec):
+            two_pi = 2 * gp.const_pi()
+            scale = gp.mpfr(2) ** prec
+            for i, b1, b2 in holes:
+                out[i] = _box_muller_rint(int.from_bytes(b1, "big") >> pad, int.from_bytes(b2, "big") >> pad,
+                                          two_pi, sig, scale)
+    return out
 
 
 def sampling_ok(*sigmas) -> bool:

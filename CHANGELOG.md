@@ -109,6 +109,18 @@ compatibility).
   6.9 / 0.9 ms. Discrete-log tables are keyed by value (the old string
   keys are still read).
 
+- **Wide Gaussians in Rust**: `discrete_gaussian_bigint` (the noise of SIFE
+  FullySec Ring-LWE and ALS16, the flooding noise of tMIFE-LWE, tMCFE-LWE and
+  tMCFE-Ring-LWE) runs natively for widths below 2^448 when `rng` is an
+  `XofRandom` or `None`, with the integers of the MPFR reference for the same
+  bits: a fixed-point evaluation whose error is far below its rounding
+  margin, and the reference formula for the samples it cannot decide (about
+  2^-45). Per sample 8-12 -> 0.55 us at 2^49, about 10 -> 2.0 us at 2^200;
+  SIFE FullySec Ring-LWE encryption 964 -> 120 ms, ALS16 483 -> 189 ms per
+  element, tMCFE-Ring-LWE partial decryption 225 -> 107 ms per server. With
+  `rng=None` the bytes come from the per-call DRBG instead of `os.urandom`
+  per call (same distribution).
+
 ### Added
 
 - Opt-in exact discrete Gaussian sampler `"facct"`

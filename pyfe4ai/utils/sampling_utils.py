@@ -17,6 +17,8 @@ import numpy as np
 from pyfe4ai.utils.exceptions import FEValidationError
 
 _CSPRNG = random.SystemRandom()
+# The OS source of the module; a replaced _CSPRNG (tests) keeps the Python sampler.
+_SYSTEM_RANDOM = _CSPRNG
 
 #: Gaussian samplers: ``"rounded"`` (the default; a rounded continuous
 #: Gaussian) and ``"facct"`` (exact ``D_{Z,sigma}``, see
@@ -185,6 +187,13 @@ def discrete_gaussian_bigint(sigma, count: int, rng=None, sampler: str | None = 
     from :func:`discrete_gaussian_facct` (exact ``D_{Z,sigma}``) with the
     same *rng*.
 
+    With the native backend (:mod:`pyfe4ai.utils.native_backend`) the
+    rounded samples of widths below ``2^448`` are computed by the extension
+    when *rng* is an :class:`XofRandom` or ``None``: from the same
+    ``getrandbits`` values, it returns the integers this function computes
+    (see :func:`~pyfe4ai.utils.native_backend.gaussian_bigint`); with
+    ``rng=None`` its bits come from the extension's per-call DRBG.
+
     Args:
         sigma: Standard deviation (int, mpz, float or mpfr), > 0.
         count: Number of samples.
@@ -198,6 +207,12 @@ def discrete_gaussian_bigint(sigma, count: int, rng=None, sampler: str | None = 
     if _resolve_sampler(sampler) == "facct":
         return discrete_gaussian_facct(sigma, count, rng=rng)
     prec = int(gp.ceil(gp.mpfr(sigma))).bit_length() + 128
+    if count > 0:
+        from pyfe4ai.utils import native_backend
+
+        native = native_backend.gaussian_bigint(sigma, count, rng, prec)
+        if native is not None:
+            return native
     rng = rng or _CSPRNG
     samples = []
     with gp.context(gp.get_context(), precision=prec):
@@ -205,11 +220,17 @@ def discrete_gaussian_bigint(sigma, count: int, rng=None, sampler: str | None = 
         sig = gp.mpfr(sigma)
         scale = gp.mpfr(2) ** prec
         for _ in range(count):
-            u1 = (gp.mpfr(rng.getrandbits(prec)) + 1) / scale  # (0, 1]
-            u2 = gp.mpfr(rng.getrandbits(prec)) / scale  # [0, 1)
-            z = gp.sqrt(-2 * gp.log(u1)) * gp.cos(two_pi * u2)
-            samples.append(gp.mpz(gp.rint(z * sig)))
+            samples.append(_box_muller_rint(rng.getrandbits(prec), rng.getrandbits(prec), two_pi, sig, scale))
     return samples
+
+
+def _box_muller_rint(b1: int, b2: int, two_pi, sig, scale) -> gp.mpz:
+    """One sample of :func:`discrete_gaussian_bigint` from its uniforms
+    ``b1, b2 = getrandbits(prec)``, in the caller's context of ``prec`` bits."""
+    u1 = (gp.mpfr(b1) + 1) / scale  # (0, 1]
+    u2 = gp.mpfr(b2) / scale  # [0, 1)
+    z = gp.sqrt(-2 * gp.log(u1)) * gp.cos(two_pi * u2)
+    return gp.mpz(gp.rint(z * sig))
 
 
 # ---------------------------------------------------------------------------

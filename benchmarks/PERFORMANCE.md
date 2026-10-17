@@ -19,13 +19,13 @@ same outputs, the same tests); its numbers stay here as measured.
 | family | native (Rust) | still Python |
 | --- | --- | --- |
 | MCFE Ring-LWE (`ring_lwe`, `ring_lwe_decentralized`) | ndarray encryption (rounded or FACCT noise), offline / online phases, key derivation, aggregation, single-vector label pads; dMCFE key shares and their combination | setup |
-| MCFE Ring-LWE threshold | any `q` below 2^253 (the flooded `q` of `standard` has 212 bits: 256-bit words): ndarray encryption, key derivation, Shamir shares of the key, partial decryptions (parsing, digests, NTT-domain products), combination | the flooding noise (`discrete_gaussian_bigint`, mpfr Box-Muller: 74% of a partial decryption), ciphertext tags (JSON + HMAC), setup; see below |
+| MCFE Ring-LWE threshold | any `q` below 2^253 (the flooded `q` of `standard` has 212 bits: 256-bit words): ndarray encryption, key derivation, Shamir shares of the key, partial decryptions (parsing, digests, NTT-domain products), combination | ciphertext tags (JSON + HMAC), setup; the flooding noise is native since the wide-Gaussian sampler below |
 | MIFE Ring-LWE | encryption, key derivation, decryption (no ndarray helpers) | setup |
 | SIFE Ring-LWE | encryption, `<ct0, y>`, NTTs and products (also of setup) | decoding, setup sampling |
-| SIFE FullySec Ring-LWE | NTTs and products (`ring_lwe_utils` dispatch) | Gaussian sampling with mpfr (91% of an encryption), slot checks |
+| SIFE FullySec Ring-LWE | NTTs and products (`ring_lwe_utils` dispatch), the wide Gaussian noise (`discrete_gaussian_bigint`) | slot checks, string conversions |
 | MCFE dense LWE (`lwe`, `fullysec_lwe`, `lwe_decentralized`) | label hashing and dot products of ndarray encryption / decryption | rounding, decoding, key derivation, single vectors; dMCFE DCR key shares |
 | MCFE LWE threshold | ndarray encryption (as `lwe`) | partial decryptions (label hashed again in Python per element), flooding, combination, Shamir shares |
-| ABDP15 SIFE / MIFE LWE, MIFE LWE threshold, ALS16 | -- (ABDP15 encryption: numpy matrix products) | decryption, keys, flooding, Shamir shares |
+| ABDP15 SIFE / MIFE LWE, MIFE LWE threshold, ALS16 | the wide Gaussians of ALS16 and the threshold flooding (`discrete_gaussian_bigint`); ABDP15 encryption: numpy matrix products | decryption, keys, big-integer matrix products of ALS16, Shamir shares |
 | DDH over ristretto255 | MCFE ndarray encryption and decryption with dlog in one call each; group operations | MIFE / SIFE call per group operation |
 | DDH over Z_p^*, Damgård, Paillier | -- (gmpy2) | `powmod`; but the label masks / key terms (MCFE) and the randomness powers (SIFE / MIFE Paillier, MIFE DDH) can be computed offline (*Phase 2*), and the dlog tables are keyed by value |
 | Pairing schemes, quadratic FE | BLS12-381 group operations, `multi_pair`, products of powers and powers of one base (`multiexp`, `pow_many`), batch deserialisation, G_T dlog, hash to G1 / G2 | matrix algebra mod p, Shamir shares of tMCFE keys; the G_T dlog table is built once per base and bound |
@@ -89,12 +89,74 @@ both apply, medians of 3 runs unless stated.
    are moved offline.
 6. **Single-vector label pads natively** (identical; 3.8 -> 2.9 ms per pad).
 
-Not done, needs a decision: a faster `discrete_gaussian_bigint` -- reading the
-OS in blocks as FACCT's `_OSRandomBuffer` does (about -27%, changes how
-secret randomness is held), or a native MPFR-exact Box-Muller (a sizeable
-multi-precision port) -- for SIFE FullySec, tMCFE flooding, ALS16 and MIFE
-LWE threshold; packed ndarray ciphertexts for SIFE FullySec (3.65 MB per
-element now; a new ciphertext layout); FACCT as the native default.
+Not done, needs a decision: packed ndarray ciphertexts for SIFE FullySec
+(3.65 MB per element now; a new ciphertext layout); FACCT as the native
+default (decided: stays opt-in). The native `discrete_gaussian_bigint` that
+reproduces the MPFR reference is the next section.
+
+## Native wide Gaussian (branch `perf/native-gaussian-bigint`, from `perf/phase2`)
+
+`sampling_utils.discrete_gaussian_bigint`, the rounded Gaussian of widths
+above 2^40 (the noise of SIFE FullySec Ring-LWE and ALS16, the flooding noise
+of tMIFE-LWE, tMCFE-LWE and tMCFE-Ring-LWE), runs in Rust
+(`rust/core/src/bigauss.rs`, `native_backend.gaussian_bigint`) for widths
+below 2^448 when `rng` is an `XofRandom` or `None`, and returns the
+reference's integers for the same bits:
+
+* **Same bits.** `b1, b2 = getrandbits(p)` per sample, `p = bits(ceil(sigma))
+  + 128`, the same calls and bytes as the reference; an `XofRandom`'s counter
+  advances as in Python. With `rng=None` the bytes come from the per-call
+  DRBG (stream `c` for samples `256 c .. 256 c + 255`) instead of one
+  `os.urandom` per `getrandbits`: the same distribution, as for the other
+  native samplers. Any other `rng` (or a replaced `_CSPRNG`), another MPFR
+  rounding mode or trap, or a wider sigma keeps the Python code.
+* **Same integers.** `X = sig sqrt(-2 ln u1) cos(2 pi u2)` is evaluated in
+  fixed point with `n = ceil((s + 64) / 64)` fraction words for `sig < 2^s`
+  (2 words for FullySec and ALS16, 5 for the flooding widths): `-ln u1` by two
+  table reductions and a short series (for `u1` near 1 with relative
+  precision), the square root by Newton with an exact residual check, the
+  cosine by quadrant and octant symmetry, a 257-entry table and Taylor
+  series; the tables (ln 2, pi, logarithms, cos / sin) are computed in Rust at
+  704 bits on first use (about 2 ms). Its error is below `2^(s + 10 - 64 n)`
+  (largest measured: `92 * 2^(s - 64 n)` over 4000 random and edge inputs per
+  width); the MPFR value, a dozen roundings at `p` bits, is within `2^-118`
+  of `X`. A sample is returned when `X` is farther than
+  `2^(max(s + 16 - 64 n, -100) + 1)` from every half-integer, where both
+  round alike; the others (about `2^-45` of them) are computed in Python with
+  the reference formula from the same `b1, b2` (`_box_muller_rint`, which the
+  reference loop now calls as well).
+* **Tests** (`tests/test_native_gaussian_bigint.py`): known answers taken
+  from the reference before the port, on both backends; agreement on
+  `XofRandom` streams (1200 samples, then single draws, then the stream's next
+  bits) and on the same OS-style bytes, at the widths of FullySec Ring-LWE
+  (2^47, 2^49), ALS16 (2^54, 2^64), tMIFE-LWE (2^99, 2^195), tMCFE-Ring-LWE
+  (2^199, 2^217), 3.2 and 2^40 + 1; `discrete_gaussian_matrix` and the
+  tMIFE / tMCFE flooding helpers; the reference formula for undecided
+  samples (margin widened until half or all are undecided); the error bound
+  against MPFR at `2p + 256` bits; thread-count independence; the cases that
+  keep the Python code.
+
+Host (M2 Max, Python 3.13), medians of 3:
+
+| | Python | native | native, 4 threads |
+| --- | ---: | ---: | ---: |
+| per sample, sigma 2^49 (FullySec), `rng=None` / `XofRandom` | 11.9 / 7.8 us | 0.56 / 0.98 us | 0.24 us |
+| per sample, sigma 2^54 (ALS16) | 8.6 / 7.8 us | 0.55 / 0.98 us | 0.24 us |
+| per sample, sigma 2^99 (tMIFE toy) | 9.5 / 8.7 us | 0.89 / 1.27 us | 0.33 us |
+| per sample, sigma 2^195 .. 2^217 (tMIFE / tMCFE standard) | 10.2-10.5 / 9.7-14.8 us | 2.0 / 2.3-2.4 us | 0.63-0.66 us |
+| one sample per call (the tMIFE flooding loop), 2^195 | 13.8 us | 5.1 us | |
+| tMCFE flooding polynomial, 8192 coefficients | 81 ms | 20.8 ms | 7.6 ms |
+| SIFE FullySec Ring-LWE (eta 4, standard) encryption, `perf/phase2` vs this branch, interleaved | 964 ms | 120 ms | 90 ms |
+| ALS16 SIFE FullySec LWE (toy, eta 4) encryption | 483 ms | 189 ms | |
+| tMCFE-Ring-LWE (q 215 bits, 10^4 elements, 3 clients) partial decryption per server, `perf/phase2` vs this branch, interleaved | 225 ms | 107 ms | |
+| ... aggregator (key shares, two partial decryptions, combination) | 501 ms | 262 ms | |
+
+The `XofRandom` column costs two SHAKE-256 calls per sample (about 0.2 us
+each). In a FullySec encryption the samples now take 42 ms and their
+conversion to `mpz` 8 ms; the rest is the scheme's Python code (strings, slot
+checks). FullySec setup and decryption do not draw wide Gaussians and are
+unchanged. Scheme-level timings with 4 threads were noisy (the sampling part
+scales as in the table).
 
 ## Workload and method
 
@@ -286,9 +348,11 @@ threshold layer: `shamir_share` (the key's coefficients, drawn as
 text that `ciphertexts_digest` hashes, and `w = lambda (Delta z + sum_i ct1_i
 sk_i) + e`, `c_y` in the NTT domain) and `share_combine`. The flooding noise
 is still drawn by `discrete_gaussian_bigint` (mpfr at `bits(sigma_f) + 128`
-= 324 bits; a native sampler would not reproduce its rounding), now with one
-call per polynomial instead of one per coefficient (the same draws, 24%
-faster); tags are serialised once for all servers.
+= 324 bits), now with one call per polynomial instead of one per coefficient
+(the same draws, 24% faster); tags are serialised once for all servers.
+Since the native wide-Gaussian sampler (section above) the flooding noise is
+computed in Rust with the same samples: partial decryption 225 -> 107 ms per
+server.
 
 Host (Apple M2 Max, Python 3.13), 3 clients, `s = 3`, `t = 2`, weight 1,
 `bound_x = 100`, precision 2; `bench_fl_compare.py --families ring_lwe
@@ -312,10 +376,10 @@ and `share_inputs` 6.8 ms. Kernels at 212 bits (`cargo run --release
 0.11 / 0.09 ms), encryption of 10^4 elements 10.9 ms (two chunks), one
 decryption chunk of 3 clients 5.3 ms. The client's other 9 ms are the
 ciphertexts' Python strings and the tags (one JSON serialisation per chunk,
-one HMAC per server and chunk). A faster partial
-decryption needs a different flooding sampler (an exact discrete Gaussian
-at this width, natively) or a smaller `sigma_f`; both change the
-distribution and need a review.
+one HMAC per server and chunk). The flooding noise of a chunk now takes 21 ms
+natively instead of 76 ms (same samples); beyond that, a faster partial
+decryption needs a different flooding distribution or a smaller `sigma_f`,
+which change the scheme and need a review.
 
 ## Dense LWE: MCFE of ABMPSW20 (`mcfe/lwe`), 200 elements
 

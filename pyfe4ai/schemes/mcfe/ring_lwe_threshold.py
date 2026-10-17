@@ -40,7 +40,8 @@ With the native backend (:mod:`pyfe4ai.utils.native_backend`; moduli below
 layer, the Shamir sharing of the key, the parsing, digests and NTT-domain
 products of a partial decryption and the combination run natively, with
 the values of the Python code; the flooding noise is always drawn by
-:func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint`.
+:func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint` (natively too,
+with the same samples).
 """
 
 from __future__ import annotations

@@ -9,6 +9,7 @@
 use pyfe4ai_core::codec::{bin_read, bin_size, bin_wb, bin_write};
 use pyfe4ai_core::gauss::{gauss_bytes, gauss_fill};
 use pyfe4ai_core::keccak::{hash_to_zq, shake256};
+use pyfe4ai_core::bigauss;
 use pyfe4ai_core::facct;
 use pyfe4ai_core::rlwe::{self, EncKey, FacctNoise, Noise, Precomputed, Randomness};
 use pyfe4ai_core::{osrand, parallel_for, with_ring, AnyRing, Modulus, Ring, Word, U256};
@@ -571,6 +572,144 @@ fn facct_sample(py: Python<'_>, table: &Bound<'_, FacctObj>, count: usize, xof_s
     }
     exact_err(&err)?;
     Ok(PyList::new(py, out)?.unbind())
+}
+
+// ------------------------------------------------------------ wide Gaussians
+
+/// int.from_bytes(b, "little") (a new reference, or null with an exception set).
+unsafe fn long_from_le(b: &[u8]) -> *mut pyo3::ffi::PyObject {
+    #[cfg(Py_3_13)]
+    {
+        // Py_ASNATIVEBYTES_LITTLE_ENDIAN
+        pyo3::ffi::PyLong_FromUnsignedNativeBytes(b.as_ptr().cast(), b.len(), 1)
+    }
+    #[cfg(not(Py_3_13))]
+    {
+        pyo3::ffi::_PyLong_FromByteArray(b.as_ptr(), b.len(), 1, 0)
+    }
+}
+
+/// A non-negative little-endian magnitude as a Python int, negated if `neg`.
+fn mag_pyint<'py>(py: Python<'py>, mag: &[u64], neg: bool) -> PyResult<Bound<'py, PyAny>> {
+    let mut b = [0u8; 8 * bigauss::MAG];
+    for (i, w) in mag.iter().enumerate() {
+        b[8 * i..8 * i + 8].copy_from_slice(&w.to_le_bytes());
+    }
+    let v = unsafe { Bound::from_owned_ptr_or_err(py, long_from_le(&b[..8 * mag.len()])) };
+    rlwe::wipe_bytes(&mut b);
+    let v = v?;
+    if neg { v.neg() } else { Ok(v) }
+}
+
+/// One chunk of gauss_bigint: its magnitudes, flags and the bytes of its undecided samples.
+struct BigChunk {
+    mags: Vec<u64>,
+    flags: Vec<u8>,
+    holes: Vec<(usize, Vec<u8>)>,
+}
+
+/// discrete_gaussian_bigint(sigma, count, rng) with the rounded sampler (see
+/// pyfe4ai-core bigauss) at precision `prec` for sig = sig_mant 2^sig_exp
+/// (sig_mant little-endian). The uniforms are getrandbits(prec) of
+/// XofRandom (`xof_head` = its len(seed) || seed, from call `xof_counter`) if
+/// given, else of `rnd` (bytes, tests), else of the call's DRBG (stream c for
+/// samples 256 c to 256 c + 255). Returns (values, holes): values[i] is the
+/// sample, or None when undecided, and holes the (i, b1 bytes, b2 bytes) of
+/// those, for the reference formula. `widen` enlarges the margin (tests).
+#[pyfunction]
+#[pyo3(signature = (count, prec, sig_mant, sig_exp, xof_head=None, xof_counter=0, rnd=None, seed=None, threads=1, widen=0))]
+#[allow(clippy::too_many_arguments)]
+fn gauss_bigint(py: Python<'_>, count: usize, prec: u32, sig_mant: &[u8], sig_exp: i64, xof_head: Option<Vec<u8>>,
+                xof_counter: u64, rnd: Option<Vec<u8>>, seed: Option<Vec<u8>>, threads: usize, widen: u32)
+                -> PyResult<(Py<PyList>, Py<PyList>)> {
+    const CHUNK: usize = 256;
+    let p = bigauss::Params::new(prec, sig_mant, sig_exp, widen).map_err(PyValueError::new_err)?;
+    let nb = p.nbytes();
+    let per = 2 * nb;
+    if let Some(b) = &rnd {
+        if b.len() < per * count {
+            return Err(PyValueError::new_err("not enough random bytes"));
+        }
+    }
+    let drbg = if xof_head.is_none() && rnd.is_none() { Some(CallDrbg::new(seed.as_deref())?) } else { None };
+    let n_chunks = count.div_ceil(CHUNK);
+    let mw = p.mag_words();
+    let slots: Vec<Mutex<Option<BigChunk>>> = (0..n_chunks).map(|_| Mutex::new(None)).collect();
+    py.detach(|| {
+        parallel_for(n_chunks, threads, |c| {
+            let (s, e) = (c * CHUNK, ((c + 1) * CHUNK).min(count));
+            let m = e - s;
+            let mut own = Vec::new();
+            let bytes: &[u8] = match (&rnd, &xof_head, &drbg) {
+                (Some(b), _, _) => &b[s * per..e * per],
+                (None, Some(head), _) => {
+                    own = vec![0u8; m * per];
+                    for i in 0..m {
+                        let ctr = xof_counter + 2 * (s + i) as u64;
+                        bigauss::xof_call(head, ctr, &mut own[i * per..i * per + nb]);
+                        bigauss::xof_call(head, ctr + 1, &mut own[i * per + nb..(i + 1) * per]);
+                    }
+                    &own
+                }
+                (None, None, Some(d)) => {
+                    own = vec![0u8; m * per];
+                    d.fill(c as u64, &mut own);
+                    &own
+                }
+                _ => unreachable!(),
+            };
+            let mut out = BigChunk { mags: vec![0u64; mw * m], flags: vec![0u8; m], holes: Vec::new() };
+            bigauss::fill(&p, bytes, &mut out.mags, &mut out.flags);
+            for (i, &f) in out.flags.iter().enumerate() {
+                if f == bigauss::UNDECIDED {
+                    out.holes.push((s + i, bytes[i * per..(i + 1) * per].to_vec()));
+                }
+            }
+            rlwe::wipe_bytes(&mut own);
+            *slots[c].lock().unwrap() = Some(out);
+        })
+    });
+    let values = PyList::empty(py);
+    let holes = PyList::empty(py);
+    for slot in slots {
+        let Some(mut ch) = slot.into_inner().unwrap() else { continue };
+        for (i, &f) in ch.flags.iter().enumerate() {
+            if f == bigauss::UNDECIDED {
+                values.append(py.None())?;
+            } else {
+                let mag = &ch.mags[mw * i..mw * (i + 1)];
+                values.append(mag_pyint(py, mag, f == bigauss::NEGATIVE)?)?;
+            }
+        }
+        for (i, b) in ch.holes.iter_mut() {
+            holes.append((*i, PyBytes::new(py, &b[..nb]), PyBytes::new(py, &b[nb..])))?;
+            rlwe::wipe_bytes(b);
+        }
+        for w in ch.mags.iter_mut() {
+            unsafe { std::ptr::write_volatile(w, 0) };
+        }
+    }
+    Ok((values.unbind(), holes.unbind()))
+}
+
+/// The native approximation of X = sig sqrt(-2 ln u1) cos(2 pi u2) for one pair of
+/// uniforms (bytes of getrandbits(prec)), for the tests: (P, sh, negative, words)
+/// with |X| ~ P 2^-sh, or None (u1 = 1, or the square root check failed).
+#[pyfunction]
+fn gauss_bigint_approx(py: Python<'_>, prec: u32, sig_mant: &[u8], sig_exp: i64, b1: &[u8], b2: &[u8])
+                       -> PyResult<Py<PyAny>> {
+    let p = bigauss::Params::new(prec, sig_mant, sig_exp, 0).map_err(PyValueError::new_err)?;
+    if b1.len() != p.nbytes() || b2.len() != p.nbytes() {
+        return Err(PyValueError::new_err("each uniform has ceil(prec / 8) bytes"));
+    }
+    match bigauss::approx(&p, b1, b2) {
+        None => Ok(py.None()),
+        Some((prod, sh, neg)) => {
+            let b: Vec<u8> = prod.iter().flat_map(|w| w.to_le_bytes()).collect();
+            let v = unsafe { Bound::from_owned_ptr_or_err(py, long_from_le(&b))? };
+            Ok((v, sh, neg, p.words()).into_pyobject(py)?.into_any().unbind())
+        }
+    }
 }
 
 /// The noise of an encryption call: FACCT with the tables of (sigma2, sigma3), else rounded.
@@ -1393,6 +1532,7 @@ fn _rust_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(precomputed_info, m)?, wrap_pyfunction!(dense_dots, m)?, wrap_pyfunction!(build_info, m)?,
         wrap_pyfunction!(drbg_bytes, m)?, wrap_pyfunction!(share_inputs, m)?, wrap_pyfunction!(share_partial, m)?,
         wrap_pyfunction!(share_combine, m)?, wrap_pyfunction!(shamir_share, m)?,
+        wrap_pyfunction!(gauss_bigint, m)?, wrap_pyfunction!(gauss_bigint_approx, m)?,
     ] {
         m.add_function(f)?;
     }
