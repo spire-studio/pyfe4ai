@@ -8,8 +8,8 @@ The ``security_profile`` entry of a key generator's config selects one:
     exactly as given.
 
 ``"standard"``
-    Parameters aiming at 128-bit classical security where this pure-Python
-    prototype can reach it, chosen per scheme family:
+    Parameters aiming at 128-bit classical security where this prototype
+    can reach it, chosen per scheme family:
 
     * discrete log (DDH, Damgard / MDDH and their MIFE / MCFE variants): a
       3072-bit safe-prime group, the RFC 3526 MODP group 15 (NIST SP 800-57

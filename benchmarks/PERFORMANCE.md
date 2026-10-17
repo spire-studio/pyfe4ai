@@ -9,6 +9,21 @@ and BLS12-381 measurements). The C++ prototype was removed once the Rust
 backend matched it (same kernels, same outputs, the same tests); its numbers
 stay here as measured.
 
+## Native coverage (status)
+
+| family | native (Rust) | still Python |
+| --- | --- | --- |
+| MCFE Ring-LWE (`ring_lwe`, `ring_lwe_decentralized`) | ndarray encryption, offline / online phases, key derivation, aggregation | single-vector label pad; setup; dMCFE key shares and their combination |
+| MCFE Ring-LWE threshold | only with toy parameters | everything under `standard`: its flooded `q` (212 bits at `ring_n` 8192) exceeds the 125-bit native words, so encryption takes 282 ms per 10^4 elements (host); partial decryptions and Shamir shares are Python in any case |
+| MIFE Ring-LWE | encryption, key derivation, decryption (no ndarray helpers) | setup |
+| SIFE Ring-LWE, SIFE FullySec Ring-LWE | -- | everything (NTT in Python) |
+| MCFE dense LWE (`lwe`, `fullysec_lwe`, `lwe_decentralized`) | label hashing and dot products of ndarray encryption / decryption | rounding, decoding, key derivation, single vectors; dMCFE DCR key shares |
+| MCFE LWE threshold | ndarray encryption (as `lwe`) | partial decryptions (label hashed again in Python per element), flooding, combination, Shamir shares |
+| ABDP15 SIFE / MIFE LWE, MIFE LWE threshold, ALS16 | -- (ABDP15 encryption: numpy matrix products) | decryption, keys, flooding, Shamir shares |
+| DDH over ristretto255 | MCFE ndarray encryption and decryption with dlog in one call each; group operations | MIFE / SIFE call per group operation |
+| DDH over Z_p^*, Damgård, Paillier | -- | everything (gmpy2 `powmod`, Python dlog tables); see the design note below |
+| Pairing schemes, quadratic FE | BLS12-381 group operations, `multi_pair`, G_T dlog, hash to G1 / G2 | multi-exponentiations (one call per term, no native MSM), matrix algebra |
+
 ## Workload and method
 
 `bench_fl_compare.py`: every one of 3 clients encrypts a gradient of
@@ -246,14 +261,8 @@ Paillier 794 / 768 vs 737 / 765 ms per 20 elements).
   GMP's `mpn` layer, but gmpy2 has no such primitive and a Python-level
   Straus loop over gmpy2 products is slower than two `powmod` calls. Not
   worth it without a native GMP binding.
-* **Elliptic-curve DDH** (e.g. ristretto255). Measured with the installed
-  libsodium (PyNaCl 1.6.0, edwards25519 group, the arithmetic ristretto255
-  uses): variable-base scalar multiplication 0.057 ms (vs 5.1 ms for the
-  3072-bit `powmod`, 90x), fixed-base 0.012 ms, addition 0.010 ms, hash to
-  the group 0.016 ms: about 0.18 ms per element for encryption, 0.02 ms
-  online with masks. A new instantiation with its own security argument and
-  dlog table; still one group element per value (32 bytes, vs 936 B per
-  element now), so 1.8 s per client for 10^4 elements. Needs a decision.
+* **Elliptic-curve DDH.** Done: `*/ddh_ristretto255`, see *DDH over
+  ristretto255* above (still one group element per value).
 * **Pairing backend.** Done: BLS12-381 in Rust, see the next section.
 
 ## Pairing families on BLS12-381 (Rust)

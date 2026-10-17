@@ -70,8 +70,9 @@ _FIG14_NOTE = (
 
 _R255_NOTE = (
     "ristretto255 (RFC 9496, about 126-bit security: Pollard rho in a group of order 2^252) "
-    "instead of a 3072-bit Z_p^* subgroup; {}group arithmetic in pure Python and not "
-    "constant-time; new code, not yet reviewed"
+    "instead of a 3072-bit Z_p^* subgroup; {}group arithmetic in Rust (curve25519-dalek) "
+    "with the native extension, else in pure Python and not constant-time; new code, "
+    "not yet reviewed"
 )
 
 #: Review status of every registered ``(family, variant)``: the single source
