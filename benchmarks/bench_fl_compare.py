@@ -31,6 +31,8 @@ runs. Usage::
 
     python benchmarks/bench_fl_compare.py --families ring_lwe --elements 10000 --json out.json
     python benchmarks/bench_fl_compare.py --families ring_lwe --backend native --threads 4
+    python benchmarks/bench_fl_compare.py --families ring_lwe lwe --label-hash shake128-rejection
+    python benchmarks/bench_fl_compare.py --families ring_lwe_threshold --flooding uniform
 """
 
 from __future__ import annotations
@@ -163,7 +165,7 @@ def _scheme_params(pp: dict) -> dict:
 
 
 def measure(family: str, elements: int, clients: int, rounds: int, precision: int, bound_x: int,
-            profile: str, ct_format: str = "json", offline: bool = False) -> dict:
+            profile: str, ct_format: str = "json", offline: bool = False, extra: dict | None = None) -> dict:
     from pyfe4ai.utils.ml_adapter import FESchemeWrapper, aggregate_gradients, encrypt_gradient
 
     if offline:  # not in versions before the native backend
@@ -171,10 +173,10 @@ def measure(family: str, elements: int, clients: int, rounds: int, precision: in
 
     key, base_cfg, _ = FAMILIES[family]
     nids = ["c{}".format(i) for i in range(clients)]
-    cfg = dict(base_cfg, n=clients, lst_nid=nids, security_profile=profile, **_bounds(family, bound_x))
+    cfg = dict(base_cfg, n=clients, lst_nid=nids, security_profile=profile, **_bounds(family, bound_x), **(extra or {}))
     row = {"family": family, "scheme": "/".join(key), "profile": profile, "elements": elements,
            "clients": clients, "rounds": rounds, "precision": precision, "bound_x": bound_x,
-           "ct_format": ct_format}
+           "ct_format": ct_format, **(extra or {})}
     t0 = time.perf_counter()
     options = {"crypto_options": {"ct_format": ct_format}} if ct_format != "json" else {}
     wrapper = FESchemeWrapper(*key, cfg, precision=precision, **options)
@@ -246,7 +248,7 @@ def measure(family: str, elements: int, clients: int, rounds: int, precision: in
 
 
 def measure_threshold(family: str, elements: int, clients: int, rounds: int, precision: int, bound_x: int,
-                      profile: str, servers: int, threshold: int) -> dict:
+                      profile: str, servers: int, threshold: int, extra: dict | None = None) -> dict:
     """:func:`measure` for a threshold scheme, on its classes (see the module docstring)."""
     import importlib
 
@@ -259,10 +261,10 @@ def measure_threshold(family: str, elements: int, clients: int, rounds: int, pre
     nids = ["c{}".format(i) for i in range(clients)]
     sids = ["s{}".format(i) for i in range(servers)]
     cfg = dict(base_cfg, n=clients, lst_nid=nids, s=servers, t=threshold, lst_sid=sids,
-               security_profile=profile, **_bounds(family, bound_x))
+               security_profile=profile, **_bounds(family, bound_x), **(extra or {}))
     row = {"family": family, "scheme": "/".join(key), "profile": profile, "elements": elements,
            "clients": clients, "servers": servers, "threshold": threshold, "rounds": rounds,
-           "precision": precision, "bound_x": bound_x, "ct_format": "json"}
+           "precision": precision, "bound_x": bound_x, "ct_format": "json", **(extra or {})}
     t0 = time.perf_counter()
     kg = getattr(mod, kg_name)(cfg)
     kg.setup()
@@ -342,6 +344,9 @@ def main() -> None:
     parser.add_argument("--offline", action="store_true",
                         help="Ring-LWE MCFE: precompute client masks and the aggregator's key before each "
                              "round; client_ms / aggregator_ms are then the online phase")
+    parser.add_argument("--label-hash", default=None,
+                        help="label_hash of the MCFE Ring-LWE / dense-LWE families (default: the scheme's)")
+    parser.add_argument("--flooding", default=None, help="flooding of ring_lwe_threshold (default: the scheme's)")
     parser.add_argument("--workdir", default=None, help="directory holding ./config (default: temporary)")
     parser.add_argument("--json", default=None, help="append the results to this JSON file")
     parser.add_argument("--tag", default="", help="free-form label stored with every row")
@@ -365,13 +370,18 @@ def main() -> None:
     try:
         for family in args.families:
             elements = args.elements or FAMILIES[family][2]
+            extra = {}
+            if args.label_hash and family in ("ring_lwe", "ring_lwe_threshold", "lwe"):
+                extra["label_hash"] = args.label_hash
+            if args.flooding and family == "ring_lwe_threshold":
+                extra["flooding"] = args.flooding
             fmt = args.ct_format if family == "ring_lwe" else "json"
             if family.endswith("_threshold"):
                 row = measure_threshold(family, elements, args.clients, args.rounds, args.precision, bound_x,
-                                        args.profile, args.servers, args.threshold)
+                                        args.profile, args.servers, args.threshold, extra)
             else:
                 row = measure(family, elements, args.clients, args.rounds, args.precision, bound_x, args.profile,
-                              fmt, args.offline and family == "ring_lwe")
+                              fmt, args.offline and family == "ring_lwe", extra)
             row.update(backend=backend, threads=args.threads, tag=args.tag)
             rows.append(row)
             print("{family:9s} {backend:6s} t={threads} {elements:6d} el  client {client_ms:9.2f} ms  "

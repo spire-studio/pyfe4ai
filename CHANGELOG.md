@@ -86,6 +86,37 @@ compatibility).
 
 ### Added
 
+- Opt-in **label hash by rejection sampling** for the MCFE schemes that hash
+  labels to `Z_q` (`mcfe/ring_lwe` with its threshold and decentralized
+  variants, and the dense-LWE MCFE family): key generator config
+  `label_hash="shake128-rejection"` or `"shake256-rejection"`. Candidates of
+  `ceil(bits(q) / 8) + 1` bytes of the XOF stream are accepted below the
+  largest multiple of `q` and reduced, so `H(u'_i, l)` and `H(l)` are exactly
+  uniform (the default reduces `bits(q) + 128`-bit SHAKE-256 blocks:
+  statistical distance below `2^-128` per value) from fewer XOF bytes (26 ->
+  11 per coefficient at an 80-bit `q`); SHAKE128 is FIPS 203's choice for
+  the same pattern. The mode is a public parameter (`pp["label_hash"]`,
+  absent for the default) and a field of the functional keys; a key of
+  another mode is refused. The GDSum masks of `mcfe/ring_lwe_decentralized`
+  follow the same mode. Ciphertext values differ between modes; formats
+  and parameters do not. Python (`hashlib`) and native kernels give the
+  same values (tests with known answers). Standard profile, one thread,
+  native: MCFE Ring-LWE 10^4 elements, binary, aggregator 7.40 -> 5.87 ms
+  (key derivation 4.17 -> 2.65 ms), client 2.77 -> 2.38 ms; dense-LWE MCFE
+  200 elements 153 / 160 -> 94 / 102 ms (client / aggregator). The default
+  is unchanged.
+- Opt-in **uniform flooding** for `mcfe/ring_lwe_threshold`
+  (`flooding="uniform"`): the partial-decryption noise is uniform on
+  `[-2^tau, 2^tau)`, `tau = bits(B) + stat_param`, read from the request's
+  seeded SHAKE-256 stream (smudging lemma: statistical distance below
+  `2^-(stat_param + 1)` per coefficient, the profile's per-sample bound), so
+  no `mpfr` Box-Muller sampler; `q` holds `s 2^tau` instead of `s 12 sigma_f`
+  (215 -> 212 bits under `standard`). Separate parameter records
+  (`bmms21-ibmcfe-shamir-smudging-uniform/v1`), public parameters `flooding`
+  and `flood_bits` instead of `sigma_f`. 10^4 elements, `s = 3`, `t = 2`:
+  partial decryption 222 -> 58 ms per server, aggregator total 492 -> 162
+  ms. The Gaussian stays the default; see the module docstring for what the
+  uniform noise gives up (no margin beyond the per-sample bound).
 - Opt-in exact discrete Gaussian sampler `"facct"`
   (`sampling_utils.discrete_gaussian_facct`): FACCT-style double sampling
   (Zhao, Steinfeld and Sakzad 2020) with a CDT base computed for
