@@ -11,7 +11,10 @@ separation tags of :data:`HASH_DST`), ``ismember``, ``groupType``; elements
 written multiplicatively (``*``, ``/``, ``**``), ZR elements with ``+ - * /
 **`` and ``int()``. Products of pairings (:func:`multi_pair`) take one final
 exponentiation; :func:`gt_dlog` is a bounded discrete logarithm in GT with a
-baby-step table built once per base and bound.
+baby-step table built once per base and bound. Products of powers
+(:func:`msm`) are one multi-scalar multiplication, powers of one base
+(:func:`pow_many`) share one table, and :meth:`PairingGroup.deserialize_many`
+decodes a list in one call.
 
 BLS12-381 gives about 120-126 bits of security after the exTNFS attacks on
 its 381-bit field (Barbulescu and Duquesne, J. Cryptol. 2019), below the
@@ -91,10 +94,14 @@ class PairingGroup:
 
     def deserialize(self, data, compression: bool = True):
         try:
-            if isinstance(data, str):
-                data = data.encode("ascii")
-            kind, _, body = bytes(data).partition(b":")
-            return self._ext.bls_deserialize(int(kind), base64.b64decode(body, validate=True))
+            return self._ext.bls_deserialize(*_split(data))
+        except (ValueError, TypeError) as exc:
+            raise ValueError("invalid serialised BLS12-381 element") from exc
+
+    def deserialize_many(self, items) -> list:
+        """``[deserialize(x) for x in items]`` in one call; equal encodings are decoded once."""
+        try:
+            return self._ext.bls_deserialize_many([_split(data) for data in items])
         except (ValueError, TypeError) as exc:
             raise ValueError("invalid serialised BLS12-381 element") from exc
 
@@ -110,6 +117,14 @@ class PairingGroup:
         return self._ext.bls_hash(kind, bytes(msg), HASH_DST[kind])
 
 
+def _split(data) -> tuple:
+    """``(type, encoding)`` of a serialised element ``b"<type>:<base64>"`` (bytes or str)."""
+    if isinstance(data, str):
+        data = data.encode("ascii")
+    kind, _, body = bytes(data).partition(b":")
+    return int(kind), base64.b64decode(body, validate=True)
+
+
 def pair(a, b):
     """e(a, b) for a in G1 and b in G2."""
     return _require().bls_pair(a, b)
@@ -118,6 +133,17 @@ def pair(a, b):
 def multi_pair(lhs: list, rhs: list):
     """prod_i e(lhs[i], rhs[i]) with one final exponentiation."""
     return _require().bls_multi_pair(list(lhs), list(rhs))
+
+
+def msm(bases: list, scalars: list):
+    """prod_i bases[i] ** scalars[i] for elements of one group (G1, G2 or GT)
+    and int or ZR scalars, as one multi-scalar multiplication."""
+    return _require().bls_msm(list(bases), list(scalars))
+
+
+def pow_many(base, scalars: list) -> list:
+    """``[base ** k for k in scalars]`` with one precomputation for *base*."""
+    return _require().bls_pow_many(base, list(scalars))
 
 
 def gt_dlog(base, target, bound: int):

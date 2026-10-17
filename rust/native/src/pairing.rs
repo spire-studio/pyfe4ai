@@ -7,18 +7,22 @@
 //! Elements are kept in memory as curve points (projective) / field elements;
 //! serialization is the arkworks compressed form, deserialization checks
 //! the encoding and subgroup membership. Random elements are g^r for scalars
-//! from 64 OS-random bytes reduced mod r. Not constant-time in general.
+//! from 64 OS-random bytes reduced mod r. Exponentiations and products of
+//! powers (`bls_msm`, `bls_pow_many`) use the methods of `msm.rs`. Not
+//! constant-time in general.
 
-use ark_bls12_381::{Bls12_381, Fr, G1Projective, G2Projective};
+use crate::msm;
+use ark_bls12_381::{Bls12_381, Fq12, Fr, G1Projective, G2Projective};
 use ark_ec::pairing::{Pairing, PairingOutput};
 use ark_ec::{CurveGroup, PrimeGroup};
 use ark_ff::{BigInteger, Field, One, PrimeField, Zero};
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
 use pyfe4ai_core::osrand;
 use pyo3::basic::CompareOp;
 use pyo3::exceptions::{PyOSError, PyTypeError, PyValueError, PyZeroDivisionError};
 use pyo3::prelude::*;
-use pyo3::types::PyBytes;
+use pyo3::sync::PyOnceLock;
+use pyo3::types::{PyBytes, PyInt};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -54,10 +58,30 @@ fn fr_from_int(ob: &Bound<'_, PyAny>) -> PyResult<Fr> {
             _ => Err(PyTypeError::new_err("exponent must be an integer or a ZR element")),
         };
     }
-    let r = order_int(ob.py())?;
-    let v = ob.py().import("operator")?.getattr("index")?.call1((ob,))?.rem(r)?;
-    let bytes: Vec<u8> = v.call_method1("to_bytes", (32, "little"))?.extract()?;
-    Ok(Fr::from_le_bytes_mod_order(&bytes))
+    if let Ok(i) = ob.cast_exact::<PyInt>() {
+        // an int of 64 bits, without raising
+        let mut overflow: std::os::raw::c_int = 0;
+        let v = unsafe { pyo3::ffi::PyLong_AsLongLongAndOverflow(i.as_ptr(), &mut overflow) };
+        if overflow == 0 {
+            return Ok(Fr::from(v));
+        }
+    }
+    // operator.index(ob) % r
+    let py = ob.py();
+    let v = unsafe { Bound::from_owned_ptr_or_err(py, pyo3::ffi::PyNumber_Index(ob.as_ptr())) }?;
+    let v = v.rem(cached_order(py)?)?;
+    let bytes = v.call_method1("to_bytes", (32, "little"))?;
+    Ok(Fr::from_le_bytes_mod_order(bytes.cast::<PyBytes>()?.as_bytes()))
+}
+
+/// The Fr of every item of a sequence of ints / ZR elements.
+fn frs_from_seq(seq: &Bound<'_, PyAny>) -> PyResult<Vec<Fr>> {
+    seq.try_iter()?.map(|ob| fr_from_int(&ob?)).collect()
+}
+
+fn cached_order(py: Python<'_>) -> PyResult<&Bound<'_, PyAny>> {
+    static ORDER: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+    Ok(ORDER.get_or_try_init(py, || order_int(py).map(Bound::unbind))?.bind(py))
 }
 
 fn order_int(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
@@ -81,6 +105,40 @@ fn random_fr() -> PyResult<Fr> {
 
 fn elem(v: Val) -> Elem {
     Elem { v }
+}
+
+/// e(g1, g2) for the fixed generators.
+fn gt_generator() -> Gt {
+    static GT_GEN: OnceLock<Gt> = OnceLock::new();
+    *GT_GEN.get_or_init(|| Bls12_381::pairing(G1Projective::generator(), G2Projective::generator()))
+}
+
+/// The power of a group element (not ZR) by e.
+fn group_pow(v: &Val, e: &Fr) -> Val {
+    match v {
+        Val::G1(p) => Val::G1(msm::curve_msm(&[*p], &[*e])),
+        Val::G2(p) => Val::G2(msm::curve_msm(&[*p], &[*e])),
+        Val::Gt(t) => Val::Gt(PairingOutput(msm::gt_msm(&[t.0], &[*e]))),
+        Val::Zr(_) => unreachable!("ZR is not a group here"),
+    }
+}
+
+/// GT from its encoding: the Fq12 coefficients are checked canonical, and
+/// the membership test of msm.rs replaces arkworks' f^r == 1.
+fn gt_deserialize(data: &[u8]) -> Option<Gt> {
+    let f = Fq12::deserialize_with_mode(data, Compress::Yes, Validate::Yes).ok()?;
+    msm::gt_is_member(&f).then_some(PairingOutput(f))
+}
+
+fn deserialize_val(t: u8, data: &[u8]) -> PyResult<Val> {
+    let bad = |_| PyValueError::new_err("invalid BLS12-381 encoding");
+    Ok(match t {
+        ZR => Val::Zr(Fr::deserialize_compressed(data).map_err(bad)?),
+        G1 => Val::G1(ark_bls12_381::G1Affine::deserialize_compressed(data).map_err(bad)?.into()),
+        G2 => Val::G2(ark_bls12_381::G2Affine::deserialize_compressed(data).map_err(bad)?.into()),
+        GT => Val::Gt(gt_deserialize(data).ok_or_else(|| PyValueError::new_err("invalid BLS12-381 encoding"))?),
+        _ => return Err(PyValueError::new_err("unknown group type")),
+    })
 }
 
 fn kind(v: &Val) -> u8 {
@@ -191,9 +249,7 @@ impl Elem {
                     Val::Zr(p)
                 }
             }
-            Val::G1(p) => Val::G1(p * e),
-            Val::G2(p) => Val::G2(p * e),
-            Val::Gt(t) => Val::Gt(t * e),
+            v => group_pow(&v, &e),
         }))
     }
 
@@ -293,9 +349,9 @@ fn bls_random(t: u8) -> PyResult<Elem> {
     let x = random_fr()?;
     Ok(elem(match t {
         ZR => Val::Zr(x),
-        G1 => Val::G1(G1Projective::generator() * x),
-        G2 => Val::G2(G2Projective::generator() * x),
-        GT => Val::Gt(Bls12_381::pairing(G1Projective::generator(), G2Projective::generator()) * x),
+        G1 => group_pow(&Val::G1(G1Projective::generator()), &x),
+        G2 => group_pow(&Val::G2(G2Projective::generator()), &x),
+        GT => group_pow(&Val::Gt(gt_generator()), &x),
         _ => return Err(PyValueError::new_err("unknown group type")),
     }))
 }
@@ -322,7 +378,7 @@ fn bls_generator(t: u8) -> PyResult<Elem> {
     Ok(elem(match t {
         G1 => Val::G1(G1Projective::generator()),
         G2 => Val::G2(G2Projective::generator()),
-        GT => Val::Gt(Bls12_381::pairing(G1Projective::generator(), G2Projective::generator())),
+        GT => Val::Gt(gt_generator()),
         _ => return Err(PyValueError::new_err("ZR has no generator")),
     }))
 }
@@ -335,14 +391,85 @@ fn bls_order(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
 /// Element of type t from its canonical compressed encoding (checked).
 #[pyfunction]
 fn bls_deserialize(t: u8, data: &[u8]) -> PyResult<Elem> {
-    let bad = |_| PyValueError::new_err("invalid BLS12-381 encoding");
-    Ok(elem(match t {
-        ZR => Val::Zr(Fr::deserialize_compressed(data).map_err(bad)?),
-        G1 => Val::G1(ark_bls12_381::G1Affine::deserialize_compressed(data).map_err(bad)?.into()),
-        G2 => Val::G2(ark_bls12_381::G2Affine::deserialize_compressed(data).map_err(bad)?.into()),
-        GT => Val::Gt(Gt::deserialize_compressed(data).map_err(bad)?),
-        _ => return Err(PyValueError::new_err("unknown group type")),
-    }))
+    deserialize_val(t, data).map(elem)
+}
+
+/// Elements from (type, encoding) pairs, each checked as by bls_deserialize;
+/// equal pairs are decoded once. Raises ValueError at the first invalid one.
+#[pyfunction]
+fn bls_deserialize_many(py: Python<'_>, items: Vec<(u8, Vec<u8>)>) -> PyResult<Vec<Elem>> {
+    let vals: Vec<PyResult<Val>> = py.detach(|| {
+        let mut seen: HashMap<(u8, &[u8]), Val> = HashMap::new();
+        items
+            .iter()
+            .map(|(t, data)| {
+                if let Some(v) = seen.get(&(*t, data.as_slice())) {
+                    return Ok(*v);
+                }
+                let v = deserialize_val(*t, data)?;
+                seen.insert((*t, data.as_slice()), v);
+                Ok(v)
+            })
+            .collect()
+    });
+    vals.into_iter().map(|v| v.map(elem)).collect()
+}
+
+/// The bases of a product of powers: elements of one group (G1, G2 or GT).
+fn group_bases(bases: &[Bound<'_, Elem>]) -> PyResult<Vec<Val>> {
+    let vals: Vec<Val> = bases.iter().map(|b| b.get().v).collect();
+    match vals.first() {
+        None => Err(PyValueError::new_err("a product of powers needs at least one base")),
+        Some(Val::Zr(_)) => Err(PyTypeError::new_err("bases must be G1, G2 or GT elements")),
+        Some(v0) if vals.iter().any(|v| kind(v) != kind(v0)) => {
+            Err(PyTypeError::new_err("bases of a product of powers must be of one group"))
+        }
+        _ => Ok(vals),
+    }
+}
+
+/// prod_i bases[i] ** scalars[i] for bases of one group (G1, G2 or GT) and
+/// scalars ints or ZR elements: one multi-scalar multiplication.
+#[pyfunction]
+fn bls_msm(py: Python<'_>, bases: Vec<Bound<'_, Elem>>, scalars: &Bound<'_, PyAny>) -> PyResult<Elem> {
+    let vals = group_bases(&bases)?;
+    let ks = frs_from_seq(scalars)?;
+    if ks.len() != vals.len() {
+        return Err(PyValueError::new_err("msm takes as many scalars as bases"));
+    }
+    // group_bases checked that every base is of the group of the first
+    Ok(elem(py.detach(|| match vals[0] {
+        Val::G1(_) => {
+            let ps: Vec<_> = vals.iter().filter_map(|v| if let Val::G1(p) = v { Some(*p) } else { None }).collect();
+            Val::G1(msm::curve_msm(&ps, &ks))
+        }
+        Val::G2(_) => {
+            let ps: Vec<_> = vals.iter().filter_map(|v| if let Val::G2(p) = v { Some(*p) } else { None }).collect();
+            Val::G2(msm::curve_msm(&ps, &ks))
+        }
+        Val::Gt(_) => {
+            let fs: Vec<_> = vals.iter().filter_map(|v| if let Val::Gt(t) = v { Some(t.0) } else { None }).collect();
+            Val::Gt(PairingOutput(msm::gt_msm(&fs, &ks)))
+        }
+        Val::Zr(_) => unreachable!("group_bases rejects ZR"),
+    })))
+}
+
+/// [base ** k for k in scalars] for base in G1, G2 or GT (one table for the base).
+#[pyfunction]
+fn bls_pow_many(py: Python<'_>, base: &Bound<'_, Elem>, scalars: &Bound<'_, PyAny>) -> PyResult<Vec<Elem>> {
+    let v = base.get().v;
+    if let Val::Zr(_) = v {
+        return Err(PyTypeError::new_err("the base must be a G1, G2 or GT element"));
+    }
+    let ks = frs_from_seq(scalars)?;
+    let out: Vec<Val> = py.detach(|| match v {
+        Val::G1(p) => msm::curve_pow_many(&p, &ks).into_iter().map(Val::G1).collect(),
+        Val::G2(p) => msm::curve_pow_many(&p, &ks).into_iter().map(Val::G2).collect(),
+        Val::Gt(t) => msm::gt_pow_many(&t.0, &ks).into_iter().map(|f| Val::Gt(PairingOutput(f))).collect(),
+        Val::Zr(_) => unreachable!("checked above"),
+    });
+    Ok(out.into_iter().map(elem).collect())
 }
 
 /// e(a, b) for a in G1 and b in G2 (either order).
@@ -478,6 +605,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(bls_random, m)?, wrap_pyfunction!(bls_init, m)?, wrap_pyfunction!(bls_generator, m)?,
         wrap_pyfunction!(bls_order, m)?, wrap_pyfunction!(bls_deserialize, m)?, wrap_pyfunction!(bls_pair, m)?,
         wrap_pyfunction!(bls_multi_pair, m)?, wrap_pyfunction!(bls_gt_dlog, m)?, wrap_pyfunction!(bls_hash, m)?,
+        wrap_pyfunction!(bls_deserialize_many, m)?, wrap_pyfunction!(bls_msm, m)?, wrap_pyfunction!(bls_pow_many, m)?,
     ] {
         m.add_function(f)?;
     }

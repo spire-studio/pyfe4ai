@@ -23,7 +23,7 @@ same outputs, the same tests); its numbers stay here as measured.
 | ABDP15 SIFE / MIFE LWE, MIFE LWE threshold, ALS16 | -- (ABDP15 encryption: numpy matrix products) | decryption, keys, flooding, Shamir shares |
 | DDH over ristretto255 | MCFE ndarray encryption and decryption with dlog in one call each; group operations | MIFE / SIFE call per group operation |
 | DDH over Z_p^*, Damgård, Paillier | -- | everything (gmpy2 `powmod`, Python dlog tables); see the design note below |
-| Pairing schemes, quadratic FE | BLS12-381 group operations, `multi_pair`, G_T dlog, hash to G1 / G2 | multi-exponentiations (one call per term, no native MSM), matrix algebra |
+| Pairing schemes, quadratic FE | BLS12-381 group operations, `multi_pair`, products of powers and powers of one base (`multiexp`, `pow_many`), batch deserialisation, G_T dlog, hash to G1 / G2 | matrix algebra mod p, Shamir shares of tMCFE keys; the G_T dlog table is built once per base and bound |
 
 ## Workload and method
 
@@ -374,10 +374,85 @@ ms, aggregator 3703 ms -> BLS12-381 24 ms and 186 ms; ciphertexts 858 ->
 This branch on charm (same scripts, `--pairing-group`): MNT224 162 / 301 /
 381 / 923 / 943 / 1657 ms and BN254 133 / 323 / 423 / 974 / 981 / 1756 ms
 (small profile, same order), i.e. the scheme changes alone do not move the
-charm numbers; the gain is the backend. The time left is in native group
+charm numbers; the gain is the backend. The time left was in native group
 operations (pairing products, checked G2 deserialisation, G2
-exponentiations in key generation); a native multi-scalar multiplication
-would be the next step.
+exponentiations in key generation); the exponentiations are batched since,
+see the next section.
+
+### Multi-scalar multiplication (branch `perf/native-bls-msm`)
+
+`pairing_backend.multiexp(bases, exps)` computes `prod_i b_i^{e_i}` in one
+call (`bls_msm`), `pow_many(base, exps)` the powers of one base with one
+table (`bls_pow_many`), and `deserialize_many(group, encodings)` decodes a
+list in one call, equal encodings once (the 368 entries of Quad's `[M]_1`
+have 21 distinct encodings); on charm groups they are the loops they
+replace. The schemes use them for every vector: FH-IPE / FH-Multi-IPE
+encryption and keys (MIFE, MCFE, dMCFE, tMCFE, with the tMCFE key shares as
+one batch of powers of `g2`), SIFE FH-IPE and partial FH-IPE, SGP, Quad
+(public key decoded once per encryptor object) and MIQFE (G_T products in
+decryption). Keys and ciphertexts are unchanged: FH-IPE outputs with seeded
+randomness are byte for byte those of the previous code, and the decryption
+tests pass on BLS12-381 and on charm MNT224. Methods (`rust/native/src/msm.rs`):
+
+* G1 / G2: Straus' interleaved wNAF (window 5) over the GLV decomposition
+  `k = k1 + lambda k2` (`|k_i| ~ 2^128`), so the 128 doublings are shared by
+  all terms; arkworks' Pippenger from 512 terms (its MSM does not use the
+  endomorphism, and neither did its G2 scalar multiplication, plain
+  double-and-add over 255 bits: a single G2 exponentiation is the one-term
+  case and 2.3x faster).
+* One base, many exponents: a table of `d 2^(w j) P` and its GLV images,
+  each power `~2 * 129 / w` additions without doublings: the NAF (`w = 1`)
+  below 12 exponents, windows of 4 / 5 / 6 bits from 12 / 32 / 96.
+* G_T: `p = u (mod r)`, so the Frobenius map is `f -> f^u` on G_T, and
+  `k = sum_{i<4} k_i |u|^i` (`k_i < 2^64`) turns `f^k` into a four-term
+  product over 64-bit exponents (64 cyclotomic squarings instead of 255).
+* G_T deserialisation tests membership by `f^(p^4) f = f^(p^2)` (cyclotomic
+  subgroup) and `f^p = f^u` (Scott, ePrint 2021/1130; `gcd(Phi_12(p), p - u)
+  = r` for BLS12-381, checked) instead of arkworks' `f^r = 1`; the tests
+  reject elements of the cyclotomic subgroup outside G_T built in Python.
+* `e(g1, g2)` of the FH-IPE, Quad and MIQFE contexts is computed when first
+  needed (encryptors never need it), and Python ints of up to 64 bits cross
+  into Rust without a call back into Python.
+
+Per operation, host (M2 Max), both builds in one session, best of 5:
+
+| | `perf/native-core` | this branch | |
+| --- | ---: | ---: | ---: |
+| G1 / G2 / G_T exponentiation | 0.079 / 0.367 / 0.492 ms | 0.058 / 0.159 / 0.215 ms | 1.4x / 2.3x / 2.3x |
+| product of 4 powers, G1 / G2 / G_T | 0.34 / 1.63 / 2.02 ms | 0.14 / 0.39 / 0.75 ms | 2.4x / 4.1x / 2.7x |
+| product of 16 powers, G1 / G2 / G_T | 1.44 / 6.52 / 8.24 ms | 0.47 / 1.33 / 2.79 ms | 3.0x / 4.9x / 3.0x |
+| 16 powers of one base, G1 / G2 / G_T | 1.43 / 6.47 / 8.15 ms | 0.64 / 1.95 / 3.47 ms | 2.2x / 3.3x / 2.3x |
+| G_T deserialisation | 0.81 ms | 0.078 ms | 10x |
+| G1 / G2 deserialisation | 0.056 / 0.110 ms | 0.055 / 0.110 ms | -- |
+| pairing / product of 8 pairings | 0.81 / 2.56 ms | 0.81 / 2.56 ms | -- |
+
+End to end (`report` profile, `--rounds 2`; the two builds alternated twice
+on the host, the faster run of each):
+
+| scheme | `perf/native-core` | this branch | |
+| --- | ---: | ---: | ---: |
+| Quadratic SGP | 35.4 ms | 30.0 ms | 1.18x |
+| Quadratic Quad | 64.7 ms | 47.8 ms | 1.35x |
+| MIFE FH-Multi-IPE | 24.2 ms | 18.1 ms | 1.34x |
+| MCFE FH-Multi-IPE | 79.2 ms | 46.6 ms | 1.70x |
+| dMCFE FH-Multi-IPE | 79.4 ms | 48.3 ms | 1.64x |
+| tMCFE FH-Multi-IPE | 138.4 ms | 70.2 ms | 1.97x |
+
+Setup: Quad 15.8 -> 5.9 ms, the FH-Multi-IPE MCFE family 2.3-3.1 -> 1.2 ms.
+Against v0.3 on charm MNT224 (table above): SGP 11x, Quad 11x, MIFE 23x,
+MCFE 19x, dMCFE 20x, tMCFE 22x. Raw numbers:
+`results/perf_native_bls_msm_2026-10-17.json`. Not repeated in docker: the
+`pyfe4ai-pairing` image has no Rust toolchain.
+
+Where the time goes now (one round, profiled): in the FH-Multi-IPE family,
+products of pairings 35% (the Miller loops of the 17-pair FH-IPE
+decryptions), checked deserialisation 25% (a G2 point costs a square root
+in Fq2 and the `[x] P` subgroup test, ~0.11 ms, batched or not), powers of
+one base 22% (tMCFE's 153 key-share powers of `g2`, FH-IPE key generation)
+and products of powers 7%. In SGP and Quad, the G_T dlog takes 45%: its
+baby-step table (16 sqrt(2 bound + 1) entries, ~17 ms at the report bounds)
+is built per base and bound and pays off only over many decryptions, while
+the benchmark decrypts once per fresh setup.
 
 BLS12-381 gives about 120-126 bits after the exTNFS attacks (Barbulescu and
 Duquesne, J. Cryptol. 2019), below the 128-bit target, so the `standard`

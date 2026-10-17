@@ -56,6 +56,18 @@ compatibility).
   ms, Quad 506 -> 67 ms, MIFE / MCFE / dMCFE / tMCFE FH-Multi-IPE 425 /
   889 / 945 / 1565 -> 25 / 82 / 79 / 136 ms (charm MNT224 in Docker before,
   same Mac).
+- **Products of powers on BLS12-381 in one native call**: every product of
+  powers in the pairing schemes is one multi-scalar multiplication (Straus
+  over the GLV decomposition in G1 / G2, Pippenger from 512 terms, a
+  Frobenius decomposition of the exponent in GT), powers of one base share
+  one table, and vectors of group elements are decoded in one call (equal
+  encodings once). Single exponentiations: G2 0.37 -> 0.16 ms (arkworks
+  used plain double-and-add in G2), GT 0.49 -> 0.22 ms; GT deserialisation
+  0.81 -> 0.08 ms (membership by `f^p = f^u` in the cyclotomic subgroup
+  instead of `f^r = 1`). Keys and ciphertexts are unchanged; charm groups
+  keep the loops. End to end (`report`, host): MIFE / MCFE / dMCFE / tMCFE
+  FH-Multi-IPE 24 / 79 / 79 / 138 -> 18 / 47 / 48 / 70 ms, SGP 35 -> 30 ms,
+  Quad 65 -> 48 ms (setup 16 -> 6 ms); see `benchmarks/PERFORMANCE.md`.
 
 ### Added
 
@@ -68,6 +80,10 @@ compatibility).
   `prepare_aggregation` and `aggregate_gradients(prepared=...)`.
 - `benchmarks/bench_fl_compare.py` (per-family FL timings as JSON) and
   `benchmarks/bench_offline_potential.py`.
+- `pyfe4ai.utils.pairing_backend.multiexp(bases, exps, group=None)`,
+  `pow_many(base, exps, group=None)` and `deserialize_many(group,
+  encodings)`, native on BLS12-381 and loops on charm groups;
+  `PairingGroup.deserialize_many` on BLS12-381.
 - `sife/`, `mife/`, `mcfe/ddh_ristretto255` (status *unreviewed*): the DDH
   constructions in the prime-order group ristretto255 (RFC 9496; labels
   hashed with RFC 9380 `hash_to_ristretto255`), selected with

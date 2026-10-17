@@ -20,6 +20,7 @@ use rand_chacha::ChaCha20Rng;
 use std::sync::{Arc, Mutex};
 
 mod ec;
+mod msm;
 mod pairing;
 
 // ------------------------------------------------------------------ DRBG

@@ -161,3 +161,159 @@ def test_backend_dispatch():
     pb.check_asymmetric(g)
     e = pb.pair(g.random(pb.G1), g.random(pb.G2))
     assert e.type == pb.GT
+
+
+# -- exponentiation, products of powers, batch deserialisation ---------------
+
+def _ref_pow(group, g, k):
+    """g^k by square-and-multiply with the group operation only (independent of ** and msm)."""
+    k %= R
+    acc, base = group.init(g.type), g
+    while k:
+        if k & 1:
+            acc = acc * base
+        base = base * base
+        k >>= 1
+    return acc
+
+
+EXPONENTS = [0, 1, 2, 3, -1, -7, 255, 2**64 - 1, 2**64, 2**128 + 1, R - 1, R, R + 5, 3 * R - 2,
+             0x5A3C_96E1_0F2D_7B48_C3A5_1E9F_6D02_B7C4_8A1F_3E6D_9B05_C27A_E4F1_6083_D5B9_2C71]
+
+
+@pytest.mark.parametrize("kind", [B.G1, B.G2, B.GT])
+def test_pow_matches_square_and_multiply(group, kind):
+    g = group.random(kind)
+    for k in EXPONENTS:
+        assert g ** k == _ref_pow(group, g, k)
+        assert g ** group.init(B.ZR, k) == _ref_pow(group, g, k)
+    assert group.init(kind) ** 12345 == group.init(kind)
+
+
+@pytest.mark.parametrize("kind", [B.G1, B.G2, B.GT])
+def test_msm_and_pow_many(group, kind):
+    gs = [group.random(kind) for _ in range(5)] + [group.init(kind)]
+    for n in (1, 2, 3, 6, 17):
+        bases = [gs[(3 * i) % len(gs)] for i in range(n)]
+        ks = [EXPONENTS[(5 * i + n) % len(EXPONENTS)] for i in range(n)]
+        want = group.init(kind)
+        for b, k in zip(bases, ks):
+            want = want * _ref_pow(group, b, k)
+        assert B.msm(bases, ks) == want
+        assert B.msm(bases, [group.init(B.ZR, k) for k in ks]) == want
+    # one base: NAF table below 12 powers, windows of 4, 5, 6 bits from 12, 32, 96 (G1, G2)
+    for n in (2, 5, 12, 40, 100):
+        ks = [EXPONENTS[(7 * i + n) % len(EXPONENTS)] + i for i in range(n)]
+        assert B.pow_many(gs[0], ks) == [_ref_pow(group, gs[0], k) for k in ks]
+    assert B.msm(gs[:2], [0, R]) == group.init(kind)
+    assert B.pow_many(group.init(kind), [1, 5]) == [group.init(kind)] * 2
+    assert B.pow_many(gs[0], []) == []
+
+
+@pytest.mark.parametrize("kind", [B.G1, B.G2])
+def test_msm_pippenger_range(group, kind):
+    # from 512 terms on, arkworks' bucket method; below, the GLV/Straus method
+    gs = [group.random(kind) for _ in range(520)]
+    ks = [int(group.random(B.ZR)) for _ in range(520)]
+    assert B.msm(gs, ks) == B.msm(gs[:260], ks[:260]) * B.msm(gs[260:], ks[260:])
+
+
+def test_msm_rejects_bad_input(group):
+    g1, g2 = group.random(B.G1), group.random(B.G2)
+    for bases, ks in (([], []), ([g1], [1, 2]), ([g1, g2], [1, 2]), ([group.init(B.ZR, 1)], [1])):
+        with pytest.raises((ValueError, TypeError)):
+            B.msm(bases, ks)
+    with pytest.raises(TypeError):
+        B.msm([g1], ["1"])
+    with pytest.raises(TypeError):
+        B.pow_many(group.init(B.ZR, 2), [1])
+
+
+def test_deserialize_many(group):
+    xs = [group.random(k) for k in (B.G1, B.G2, B.GT)] + [group.init(B.ZR, 9), group.init(B.G1)]
+    texts = [group.serialize(x) for x in xs] * 2
+    assert group.deserialize_many(texts) == xs * 2
+    assert group.deserialize_many([t.decode("utf-8") for t in texts]) == xs * 2
+    assert group.deserialize_many([]) == []
+    raw = bytearray(xs[2].to_bytes())
+    raw[7] ^= 4
+    for bad in (b"3:" + base64.b64encode(bytes(raw)), b"9:AA==", b"garbage", b"1:" + texts[0][2:-4]):
+        with pytest.raises(ValueError):
+            group.deserialize_many(texts[:3] + [bad])
+
+
+# -- membership in GT --------------------------------------------------------
+# Fq12 = Fq6[w]/(w^2 - v), Fq6 = Fq2[v]/(v^3 - (1 + u)), Fq2 = Fq[u]/(u^2 + 1), as in
+# arkworks, serialised as 12 coefficients of 48 bytes (little-endian), c0 before c1.
+
+def _f2_mul(a, b):
+    return ((a[0] * b[0] - a[1] * b[1]) % P, (a[0] * b[1] + a[1] * b[0]) % P)
+
+
+def _f2_add(a, b):
+    return ((a[0] + b[0]) % P, (a[1] + b[1]) % P)
+
+
+def _f2_xi(a):  # a (1 + u)
+    return ((a[0] - a[1]) % P, (a[0] + a[1]) % P)
+
+
+def _f6_mul(a, b):
+    c = [(0, 0)] * 5
+    for i in range(3):
+        for j in range(3):
+            c[i + j] = _f2_add(c[i + j], _f2_mul(a[i], b[j]))
+    return (_f2_add(c[0], _f2_xi(c[3])), _f2_add(c[1], _f2_xi(c[4])), c[2])
+
+
+def _f6_add(a, b):
+    return tuple(_f2_add(x, y) for x, y in zip(a, b))
+
+
+def _f12_mul(a, b):
+    c1c1 = _f6_mul(a[1], b[1])
+    return (_f6_add(_f6_mul(a[0], b[0]), (_f2_xi(c1c1[2]), c1c1[0], c1c1[1])),
+            _f6_add(_f6_mul(a[0], b[1]), _f6_mul(a[1], b[0])))
+
+
+def _f12_pow(a, e):
+    acc = (((1, 0), (0, 0), (0, 0)), ((0, 0),) * 3)
+    while e:
+        if e & 1:
+            acc = _f12_mul(acc, a)
+        a = _f12_mul(a, a)
+        e >>= 1
+    return acc
+
+
+def _f12_from_bytes(data):
+    c = [int.from_bytes(data[48 * i:48 * i + 48], "little") for i in range(12)]
+    f6 = lambda o: tuple((c[o + 2 * i], c[o + 2 * i + 1]) for i in range(3))  # noqa: E731
+    return (f6(0), f6(6))
+
+
+def _f12_to_bytes(a):
+    return b"".join(x.to_bytes(48, "little") for half in a for f2 in half for x in f2)
+
+
+def test_gt_membership_check():
+    import random
+
+    group = B.PairingGroup()
+    s, t = group.random(B.GT), group.random(B.GT)
+    # the Python tower agrees with the extension
+    assert _f12_to_bytes(_f12_mul(_f12_from_bytes(s.to_bytes()), _f12_from_bytes(t.to_bytes()))) == (s * t).to_bytes()
+    one = _f12_pow(_f12_from_bytes(s.to_bytes()), 0)
+    assert group.deserialize(group.serialize(s)) == s
+    assert B._ext.bls_deserialize(B.GT, _f12_to_bytes(one)) == group.init(B.GT, 1)
+    rnd = random.Random(5)
+    f = (tuple((rnd.randrange(P), rnd.randrange(P)) for _ in range(3)),
+         tuple((rnd.randrange(P), rnd.randrange(P)) for _ in range(3)))
+    # h is in the cyclotomic subgroup (order p^4 - p^2 + 1) but not in GT: only f^p == f^u rejects it
+    h = _f12_pow(f, (P ** 6 - 1) * (P ** 2 + 1))
+    assert _f12_pow(h, R) != one
+    for bad in (f, h, _f12_mul(h, _f12_from_bytes(s.to_bytes())), ((((0, 0),) * 3), (((0, 0),) * 3))):
+        with pytest.raises(ValueError):
+            B._ext.bls_deserialize(B.GT, _f12_to_bytes(bad))
+    with pytest.raises(ValueError):
+        B._ext.bls_deserialize(B.GT, P.to_bytes(48, "little") + s.to_bytes()[48:])  # non-canonical

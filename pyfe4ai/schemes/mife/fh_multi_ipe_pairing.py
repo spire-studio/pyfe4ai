@@ -49,6 +49,7 @@ from pyfe4ai.utils.pairing_utils import vector_scalar_mod
 from pyfe4ai.utils.pairing_utils import serialize_matrix_g
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.pairing_backend import G1, G2, ZR, PairingGroup, multi_pair, pair
+from pyfe4ai.utils.pairing_backend import deserialize_many, pow_many
 from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
@@ -259,7 +260,7 @@ class MIFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                 )
                 key_vec = vector_add_mod(key_vec, contribution, self.order)
             g2 = self.group.deserialize(self.pp["g2"].encode("utf-8"))
-            g2_row = [g2 ** to_zr(self.group, value) for value in key_vec]
+            g2_row = pow_many(g2, key_vec, self.group)
             dk[nid] = serialize_matrix_g(self.group, [g2_row])[0]
 
         return {"dk": dk}
@@ -307,7 +308,7 @@ class MIFEFHMultiIPE(IPFEAbsCrypto):
             key_vec = vector_add_mod(key_vec, contribution, order)
 
         g1 = self.group.deserialize(self.pp["g1"].encode("utf-8"))
-        ct = [g1 ** to_zr(self.group, value) for value in key_vec]
+        ct = pow_many(g1, key_vec, self.group)
         return {"ct": [self.group.serialize(value).decode("utf-8") for value in ct]}
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict | None = None):
@@ -327,8 +328,8 @@ class MIFEFHMultiIPE(IPFEAbsCrypto):
         pub = self.group.deserialize(self.pp["pub"].encode("utf-8"))
         lhs, rhs = [], []
         for nid in lst_nid:
-            ct = [self.group.deserialize(v.encode("utf-8")) for v in dct_ct[nid]["ct"]]
-            key = [self.group.deserialize(v.encode("utf-8")) for v in dk["dk"][nid]]
+            ct = deserialize_many(self.group, dct_ct[nid]["ct"])
+            key = deserialize_many(self.group, dk["dk"][nid])
             if len(ct) != self.dim or len(key) != self.dim:
                 raise FESchemeError("ciphertext or key of {} has the wrong length".format(nid))
             lhs.extend(ct)

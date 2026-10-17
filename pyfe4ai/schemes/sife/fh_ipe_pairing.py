@@ -35,6 +35,7 @@ from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.ipfe import ParameterCacheMixin
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.pairing_backend import G1, G2, ZR, PairingGroup, multi_pair, pair
+from pyfe4ai.utils.pairing_backend import deserialize_many, pow_many
 from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.utils.pairing_backend import require_pairing_backend
 from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
@@ -184,8 +185,7 @@ class SIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         by = [(alpha_int * entry) % self.order for entry in by]
 
         g1 = self.group.deserialize(self.msk["g1"].encode("utf-8"))
-        k1 = g1 ** _to_zr(self.group, (alpha_int * det) % self.order)
-        k2 = [g1 ** _to_zr(self.group, entry) for entry in by]
+        k1, *k2 = pow_many(g1, [(alpha_int * det) % self.order] + by, self.group)
         return {
             "k1": self.group.serialize(k1).decode("utf-8"),
             "k2": [self.group.serialize(v).decode("utf-8") for v in k2],
@@ -223,8 +223,7 @@ class SIFEFHIPE(IPFEAbsCrypto):
 
         bstar_x = _mat_vec_mod(b_star, x, self.order)
         bstar_x = [(beta_int * entry) % self.order for entry in bstar_x]
-        c1 = g2 ** _to_zr(self.group, beta_int)
-        c2 = [g2 ** _to_zr(self.group, entry) for entry in bstar_x]
+        c1, *c2 = pow_many(g2, [beta_int] + bstar_x, self.group)
         return {
             "c1": self.group.serialize(c1).decode("utf-8"),
             "c2": [self.group.serialize(v).decode("utf-8") for v in c2],
@@ -242,10 +241,8 @@ class SIFEFHIPE(IPFEAbsCrypto):
         if fusion_weight is not None:
             int_vector(fusion_weight, "fusion weight", length=self.pp["eta"], bound=int(self.pp["bound_y"]))
 
-        c1 = self.group.deserialize(dct_ct["c1"].encode("utf-8"))
-        c2 = [self.group.deserialize(v.encode("utf-8")) for v in dct_ct["c2"]]
-        k1 = self.group.deserialize(dk["k1"].encode("utf-8"))
-        k2 = [self.group.deserialize(v.encode("utf-8")) for v in dk["k2"]]
+        c1, *c2 = deserialize_many(self.group, [dct_ct["c1"]] + list(dct_ct["c2"]))
+        k1, *k2 = deserialize_many(self.group, [dk["k1"]] + list(dk["k2"]))
 
         if len(c2) != self.pp["eta"] + 2 or len(k2) != self.pp["eta"] + 2:
             raise FEValidationError("key or ciphertext length mismatch")

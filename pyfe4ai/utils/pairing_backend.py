@@ -5,8 +5,9 @@
 default, and charm-crypto's group of that name otherwise (MNT224, BN254, ...).
 charm is optional when the Rust extension is built; it is the fallback for
 BLS12-381 only in the sense that every other curve still comes from charm.
-``pair`` dispatches on its arguments, and ``ZR``, ``G1``, ``G2``, ``GT`` are
-charm's type codes, which both backends share.
+``pair``, ``multi_pair``, ``multiexp`` and ``pow_many`` dispatch on their
+arguments, and ``ZR``, ``G1``, ``G2``, ``GT`` are charm's type codes, which
+both backends share.
 """
 
 from pyfe4ai.utils import bls12_381 as _bls
@@ -107,6 +108,63 @@ def multi_pair(lhs, rhs):
         e = pair(a, b)
         out = e if out is None else out * e
     return out
+
+
+def multiexp(bases, exps, group=None):
+    """prod_i bases[i] ** exps[i] for elements of one group (G1, G2 or GT).
+
+    One multi-scalar multiplication on BLS12-381; on charm groups the loop
+    of exponentiations, with the exponents (ints or ZR elements) reduced mod
+    the order of *group* (without *group* they must be non-negative ints).
+    The result is the same group element either way.
+
+    Raises:
+        ValueError: If there are no bases, or not as many exponents as bases.
+    """
+    bases, exps = list(bases), list(exps)
+    if not bases or len(bases) != len(exps):
+        raise ValueError("multiexp needs as many exponents as bases, and at least one")
+    if _bls.is_element(bases[0]):
+        return _bls.msm(bases, exps)
+    acc = bases[0] ** 0
+    for b, e in zip(bases, exps):
+        e = _charm_exponent(group, e)
+        if e is not None:
+            acc = acc * (b ** e)
+    return acc
+
+
+def pow_many(base, exps, group=None) -> list:
+    """``[base ** e for e in exps]``; on BLS12-381 with one precomputation for *base*.
+
+    Exponents as for :func:`multiexp`.
+    """
+    exps = list(exps)
+    if _bls.is_element(base):
+        return _bls.pow_many(base, exps)
+    out = []
+    for e in exps:
+        e = _charm_exponent(group, e)
+        out.append(base ** (e if e is not None else 0))
+    return out
+
+
+def _charm_exponent(group, e):
+    """ZR(e mod order) for *group*, or None for 0; the int itself without a group."""
+    e = int(e)
+    if group is None:
+        if e < 0:
+            raise ValueError("negative exponents on charm groups need the group")
+        return e or None
+    e %= int(group.order())
+    return group.init(ZR, e) if e else None
+
+
+def deserialize_many(group, items) -> list:
+    """``[group.deserialize(x) for x in items]`` (str or bytes), in one call on BLS12-381."""
+    if isinstance(group, _bls.PairingGroup):
+        return group.deserialize_many(items)
+    return [group.deserialize(x.encode("utf-8") if isinstance(x, str) else x) for x in items]
 
 
 def require_pairing_backend(name=None) -> None:
