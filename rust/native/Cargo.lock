@@ -114,6 +114,7 @@ dependencies = [
  "curve25519-dalek",
  "pyfe4ai-core",
  "pyo3",
+ "pyo3-build-config",
  "rand_chacha",
  "zeroize",
 ]

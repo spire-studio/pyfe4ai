@@ -21,6 +21,9 @@ curve25519-dalek = { version = "5", default-features = false, features = ["alloc
 rand_chacha = "0.9"
 zeroize = "1"
 
+[build-dependencies]
+pyo3-build-config = "0.30"
+
 [profile.release]
 opt-level = 3
 codegen-units = 1
