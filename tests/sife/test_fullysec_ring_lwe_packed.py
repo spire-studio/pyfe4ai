@@ -332,3 +332,75 @@ def test_packed_identical_with_native_ntts(monkeypatch):
 
 def test_layouts_are_listed():
     assert fs.LAYOUTS == ("elementwise", "packed")
+
+
+# -- review 2026-10: binding of the layout flag, strict layers, status ----------
+
+
+def test_a_packed_flag_on_elementwise_parameters_is_refused():
+    kg, _, pp = _keys({k: v for k, v in CFG.items() if k != "ndarray_layout"})
+    relabelled = dict(pp, ndarray_layout="packed")  # sigma1 of one vector per ciphertext
+    enc = SIFEFullySecRingLWE({"keys": {"pp": relabelled, "sk": kg.get_private_keys()}})
+    with pytest.raises(FEValidationError, match="packed"):
+        enc.encrypt([[4] * 32, [-4] * 32, [3] * 32])
+    kg_p, enc_p, _ = _keys(CFG)
+    ct = enc_p.encrypt([[1], [1], [1]])
+    dk = kg_p.get_decryption_keys("sid", credentials={"fusion_weight": [1, 1, 1]})
+    with pytest.raises(FEValidationError, match="packed"):  # decryptors check it too
+        SIFEFullySecRingLWE({"keys": {"pp": relabelled}}).decrypt(ct, dk, [1, 1, 1])
+    for key in ("sigma2", "q"):  # nor a packed pp with one value changed
+        kg_p, _, pp_p = _keys(CFG)
+        bad = dict(pp_p, **{key: pp_p[key] * 2 if key == "sigma2" else str(int(pp_p[key]) + 2 * pp_p["ring_n"])})
+        with pytest.raises(FEValidationError):
+            SIFEFullySecRingLWE({"keys": {"pp": bad, "sk": kg_p.get_private_keys()}}).encrypt([[1], [1], [1]])
+
+
+def test_packed_parameters_survive_a_json_round_trip(scheme):
+    kg, _, pp = scheme
+    again = json.loads(json.dumps(pp))
+    enc = SIFEFullySecRingLWE({"keys": {"pp": again, "sk": kg.get_private_keys()}})
+    dk = kg.get_decryption_keys("sid", credentials={"fusion_weight": [1, 1, 1]})
+    ct = enc.encrypt([[1, 2], [3, 4], [-4, 0]])
+    assert SIFEFullySecRingLWE({"keys": {"pp": again}}).decrypt(ct, dk, [1, 1, 1]) == [0, 6]
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda layer: layer.update(shape=[True, 70]),
+    lambda layer: layer.update(shape=["7", 10.9]),
+    lambda layer: layer.update(shape=[-7, -10]),  # np.prod gives 70
+    lambda layer: layer.update(shape=[2 ** 62, 4], chunks=[]),
+    lambda layer: layer.update(shape=[2 ** 62, 2 ** 2]),  # int64 wraps to 0
+    lambda layer: layer.update(first_chunk="garbage"),
+    lambda layer: layer.update(first_chunk=1),
+    lambda layer: layer.update(chunks=layer["chunks"][::-1]),
+    lambda layer: layer.update(chunks=layer["chunks"][:1] + layer["chunks"][2:]),
+    lambda layer: layer.update(extra=1),
+    lambda layer: layer["chunks"][0].update(k=31),
+], ids=["bool-dim", "str-float-dims", "negative-dims", "huge-empty", "int64-wrap", "first-chunk-str",
+        "first-chunk-offset", "reversed-chunks", "dropped-chunk", "extra-key", "short-chunk"])
+def test_malformed_packed_layers_are_refused(gradient_scheme, mutate):
+    kg, enc, dec, pp = gradient_scheme
+    layers = enc.encrypt_lst_ndarray([(np.arange(70).reshape(7, 10) - 35) / 100])
+    assert [c["k"] for c in layers[0]["chunks"]] == [32, 32, 6]
+    dk = kg.get_decryption_keys("sid", credentials={"fusion_weight": [1]})
+    mutate(layers[0])
+    with pytest.raises(FEValidationError):
+        dec.decrypt_lst_ndarray_ct(layers, dk=dk, fusion_weight=[1])
+
+
+def test_first_chunk_counts_the_chunks_of_earlier_layers(gradient_scheme):
+    kg, enc, dec, pp = gradient_scheme
+    layers = enc.encrypt_lst_ndarray([np.zeros(40), np.ones(3) / 100])
+    dk = kg.get_decryption_keys("sid", credentials={"fusion_weight": [1]})
+    assert [c["first_chunk"] for c in layers] == [0, 2]
+    assert np.allclose(dec.decrypt_lst_ndarray_ct(layers, dk=dk, fusion_weight=[1])[1], 0.01)
+    with pytest.raises(FEValidationError, match="chunk"):
+        dec.decrypt_lst_ndarray_ct(layers[1:], dk=dk, fusion_weight=[1])
+
+
+def test_status_marks_the_packed_layout_experimental():
+    from pyfe4ai.schemes.status import REVIEWED, SCHEME_STATUS
+
+    status = SCHEME_STATUS[("sife", "fullysec_ring_lwe")]
+    assert status.status == REVIEWED  # the elementwise layout keeps its status
+    assert "experimental" in status.note.lower() and "packed" in status.note

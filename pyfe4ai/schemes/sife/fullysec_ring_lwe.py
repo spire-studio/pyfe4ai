@@ -45,7 +45,9 @@ Ciphertext layouts (``ndarray_layout``):
 
 * ``"elementwise"`` (default): one vector per ciphertext; the ndarray helper
   encrypts every element on its own.
-* ``"packed"`` (opt-in, its own parameter record): a ciphertext holds an
+* ``"packed"`` (opt-in, **experimental**, its own parameter record; the
+  leveraging argument below is this project's own, checked independently
+  but not published or externally reviewed): a ciphertext holds an
   ``eta x k`` matrix, ``k <= ring_n`` (Remark 1: ``Delta x_ij`` is added to
   coefficient ``j`` of ``ct_i``), and decrypts to the ``k`` inner products
   ``<x_j, y>`` of its columns. The ndarray helper packs ``ring_n``
@@ -59,8 +61,12 @@ Ciphertext layouts (``ndarray_layout``):
   (:func:`pyfe4ai.utils.ring_lwe_utils.bmms21_adaptive_leveraging`). G5*
   writes the differences in that basis mod ``q``, so ``q`` must exceed the
   minors of the basis, ``(2X sqrt(D))^D``; the parameters enforce it (it
-  moves e.g. ``eta = 24``, ``X = 4`` to a larger ring). For ``eta = 1`` this
-  gives the parameters of the elementwise layout.
+  moves e.g. ``eta = 24``, ``X = 4`` to a larger ring). For ``eta = 1`` the
+  standard configurations checked (e.g. ``X = 100``, ``Y = 1``) get the same
+  ``(ring_n, m, q)`` as the elementwise layout; the widths differ slightly,
+  and the packed record is a different one. Encryptors and decryptors
+  accept ``pp`` flagged ``"packed"`` only if its ``q``, ``p`` and widths are
+  the packed derivation.
 
 Under the ``standard`` profile ``ring_n = "auto"`` takes the smallest ring
 dimension (with the smallest ``m``) whose ``q`` meets
@@ -72,6 +78,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import secrets
 
 import gmpy2 as gp
@@ -85,6 +92,7 @@ from pyfe4ai.schemes.profiles import STANDARD
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.ring_lwe_utils import _get_ntt_root
 from pyfe4ai.utils.ring_lwe_utils import bmms21_adaptive_choice
+from pyfe4ai.utils.ring_lwe_utils import bmms21_adaptive_parameters
 from pyfe4ai.utils.ring_lwe_utils import check_ring_lwe
 from pyfe4ai.utils.ring_lwe_utils import decode_vector
 from pyfe4ai.utils.ring_lwe_utils import ntt_forward
@@ -346,7 +354,36 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
         return self._cache["a"]
 
     def _packed(self) -> bool:
-        return self.pp.get("ndarray_layout", LAYOUTS[0]) == "packed"
+        """Whether *pp* holds packed parameters. The flag alone does not suffice:
+        ``q``, ``p``, ``sigma2`` and ``sigma3`` must be the packed derivation for
+        the bounds, ``ring_n`` and ``m`` of *pp* (checked once per *pp*), since
+        elementwise widths cover one vector per ciphertext only.
+
+        Raises:
+            FEValidationError: If *pp* is flagged packed but its parameters are not.
+        """
+        if self.pp.get("ndarray_layout", LAYOUTS[0]) != "packed":
+            return False
+        if self._cache.get("packed_pp") is not self.pp:
+            pp = self.pp
+            try:
+                expected = bmms21_adaptive_parameters(
+                    int(pp["sec_param"]), int(pp["eta"]), int(pp["bound_x"]), int(pp["bound_y"]),
+                    int(pp["ring_n"]), int(pp["m"]), packed=True,
+                )
+                same = (
+                    int(pp["q"]) == int(expected["q"]) and int(pp["p"]) == int(expected["p"])
+                    and float(pp["sigma2"]) == expected["sigma2"] and float(pp["sigma3"]) == expected["sigma3"]
+                )
+            except (KeyError, TypeError, ValueError, FEValidationError):
+                same = False
+            if not same:
+                raise FEValidationError(
+                    "ndarray_layout = 'packed', but q, p and the widths of these public "
+                    "parameters are not the packed ones for their bounds, ring_n and m"
+                )
+            self._cache["packed_pp"] = pp
+        return True
 
     def encrypt(self, lst_pt: list) -> dict:
         """Encrypt an integer vector of length ``eta`` or, with packed parameters,
@@ -522,14 +559,16 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
         dk, fusion_weight = kwargs.get("dk"), kwargs.get("fusion_weight")
         if dk is None or fusion_weight is None:
             raise FEKeyError("need to provide decryption key and fusion weight")
-        out, key = [], None
+        out, key, first = [], None, 0
         for l, ary in enumerate(dict_ndarray_ct):
             if isinstance(ary, dict):  # packed layer
                 if key is None:
                     y = self._checked_key(dk, fusion_weight)
                     q, _, root = self._ring()
                     key = (y, _ntt_all(dk["sk_y"], q, root))
-                out.append(self._decrypt_packed_layer(ary, l, *key))
+                shape, chunks = self._checked_packed_layer(ary, l, first)
+                out.append(self._decrypt_packed_layer(shape, chunks, l, *key))
+                first += len(chunks)
                 continue
             ary_dec = np.empty(ary.shape, dtype=object)
             for i, _ in np.ndenumerate(ary):
@@ -537,24 +576,49 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
             out.append(decoded_layer(ary_dec, l, 10 ** self.precision))
         return out
 
-    def _decrypt_packed_layer(self, layer: dict, l: int, y: list, sk_ntt: list) -> np.ndarray:
-        try:
-            shape = tuple(int(v) for v in layer["shape"])
-            chunks = list(layer["chunks"])
-        except (KeyError, TypeError, ValueError) as exc:
-            raise FEValidationError("packed layer {} is malformed".format(l)) from exc
+    def _checked_packed_layer(self, layer, l: int, first: int) -> tuple:
+        """``(shape, chunks)`` of packed layer *l*, laid out as
+        :meth:`encrypt_lst_ndarray` writes it: a shape of non-negative ints,
+        ``first_chunk`` equal to *first* (the chunks of the packed layers
+        before it), and chunks of ``ring_n`` elements but the last, covering
+        the shape. The order of full chunks is not authenticated (nor is the
+        position of an elementwise ciphertext): a ciphertext is not bound to
+        its place.
+
+        Raises:
+            FEValidationError: For any other layout.
+        """
+        def whole(v) -> bool:
+            return isinstance(v, (int, np.integer)) and not isinstance(v, bool)
+
+        n = int(self.pp["ring_n"])
+        if not isinstance(layer, dict) or set(layer) != {"shape", "first_chunk", "chunks"}:
+            raise FEValidationError("packed layer {} must be a dict of shape, first_chunk and chunks".format(l))
+        shape, chunks = layer["shape"], layer["chunks"]
+        if not isinstance(shape, (list, tuple)) or len(shape) > 32 or not all(whole(v) and v >= 0 for v in shape):
+            raise FEValidationError("packed layer {} has an invalid shape {!r}".format(l, shape))
+        shape = tuple(int(v) for v in shape)
+        if not whole(layer["first_chunk"]) or layer["first_chunk"] != first:
+            raise FEValidationError(
+                "packed layer {} starts at chunk {!r}, expected {}".format(l, layer["first_chunk"], first)
+            )
+        if not isinstance(chunks, list) or not chunks or not all(
+            isinstance(chunk, dict) and whole(chunk.get("k")) for chunk in chunks
+        ):
+            raise FEValidationError("packed layer {} needs a non-empty list of packed ciphertexts".format(l))
+        ks = [int(chunk["k"]) for chunk in chunks]
+        if any(k != n for k in ks[:-1]) or not 0 < ks[-1] <= n or sum(ks) != math.prod(shape):
+            raise FEValidationError(
+                "packed layer {} has chunks of {} elements; its shape {} needs {} in chunks of "
+                "ring_n = {} but the last".format(l, ks, shape, math.prod(shape), n)
+            )
+        return shape, chunks
+
+    def _decrypt_packed_layer(self, shape: tuple, chunks: list, l: int, y: list, sk_ntt: list) -> np.ndarray:
         values = []
         for chunk in chunks:
-            if not isinstance(chunk, dict) or "k" not in chunk:
-                raise FEValidationError("packed layer {} holds a chunk without a batch length".format(l))
             vals = self._decrypt_values(chunk, sk_ntt, y)
             values.extend([None] * chunk["k"] if vals is None else vals)
-        if len(values) != int(np.prod(shape, dtype=np.int64)):
-            raise FEValidationError(
-                "packed layer {} has {} elements, its shape {} needs {}".format(
-                    l, len(values), shape, int(np.prod(shape, dtype=np.int64))
-                )
-            )
         ary = np.empty(len(values), dtype=object)
         ary[:] = values
         return decoded_layer(ary.reshape(shape), l, 10 ** self.precision)
