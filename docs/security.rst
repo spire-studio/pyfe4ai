@@ -92,6 +92,17 @@ can. For a given bit source its output is the same on every platform, so it
 comes with known-answer tests. Parties that derive noise from a shared seed
 (the threshold schemes' flooding noise) must use the same sampler.
 
+``sife/fullysec_ring_lwe`` is the exception: its keys and encryption noise
+use ``"facct"`` by default, whatever the library-wide choice, because the
+rounded keys at ``eta = 1`` are already about 2^-47 from ``D_{Z,sigma1}``
+(``0.02 / sigma1^2`` over its ``m n eta`` key samples), a term its adaptive
+proof does not budget. Its widths beyond ``2^40`` are faster to sample
+exactly than with the rounded sampler's MPFR Box-Muller; the key width is
+slower. The key generator and the crypto objects take
+``gaussian_sampler = "rounded"`` in their config to select the rounded
+sampler; the key generator publishes its choice in ``pp`` as the
+encryptors' default.
+
 Status API
 ----------
 

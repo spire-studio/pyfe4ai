@@ -58,8 +58,10 @@ def test_elementwise_leveraging_is_the_previous_one():
 def test_packed_leveraging_ranges_over_the_span_of_the_differences(l, X, n):
     lev, rank = rlu.bmms21_adaptive_leveraging(l, X, n, packed=True)
     assert rank == min(l, n)
-    # at most D + 1 dimensions, each subspace spanned by D vectors of [-2X, 2X]^l
-    assert lev == pytest.approx(math.log2((rank + 1) * (4 * X + 1) ** (l * rank)))
+    if l == 1:  # V is {0} or Q
+        assert lev == 1
+    else:  # at most D + 1 dimensions, each subspace spanned by D vectors of [-2X, 2X]^l
+        assert lev == pytest.approx(math.log2((rank + 1) * (4 * X + 1) ** (l * rank)))
     # guessing both challenge matrices of k = n vectors would cost (2X + 1)^(2 l n)
     assert lev < 2 * l * n * math.log2(2 * X + 1)
 
@@ -67,7 +69,8 @@ def test_packed_leveraging_ranges_over_the_span_of_the_differences(l, X, n):
 @pytest.mark.parametrize("kappa, l, X, Y, n, m", [
     (128, 10, 50, 50, 8192, 9),
     (128, 4, 4, 4, 4096, 18),
-    (128, 1, 100, 1, 4096, 19),
+    (128, 1, 100, 1, 4096, 12),
+    (128, 1, 4, 4, 32, 6),
     (128, 3, 4, 4, 32, 8),
 ])
 def test_packed_parameters_meet_the_constraints(kappa, l, X, Y, n, m):
@@ -83,10 +86,12 @@ def test_packed_parameters_meet_the_constraints(kappa, l, X, Y, n, m):
     bad = (2 * m - math.log2((q ** m - 1) * (q ** m - q)) / math.log2(q))
     log2_bad = n - eps * n * math.log2(q) + n * bad * math.log2(q)
     assert math.log2(D * 2 * 2.0 ** log2_delta + 2.0 ** log2_bad) + lev <= -kappa
-    # G3 -> G4: Lemma 1 along a basis B of the differences, ||B|| <= 2X sqrt(l D)
-    assert P["sigma1"] >= math.sqrt(2) * 2 * X * math.sqrt(l * D) * P["sigma_lhl"] * (1 - 1e-12)
+    # G3 -> G4: Lemma 1 along a basis B of the differences, ||B|| <= 2X sqrt(l D);
+    # for l = 1 the basis [1] of V = Q
+    norm = 1 if l == 1 else 2 * X * math.sqrt(l * D)
+    assert P["sigma1"] >= math.sqrt(2) * norm * P["sigma_lhl"] * (1 - 1e-12)
     # the differences are rational combinations of B: denominators (minors) below q
-    assert D * math.log2(2 * X * math.sqrt(D)) < math.log2(q)
+    assert l == 1 or D * math.log2(2 * X * math.sqrt(D)) < math.log2(q)
     # Theorem 1 and correctness as for one vector per ciphertext
     C = math.sqrt(kappa) * P["sigma1"]
     eta = math.sqrt((math.log(2 * (n + n * l)) + kappa * math.log(2)) / math.pi)
@@ -98,7 +103,7 @@ def test_packed_parameters_meet_the_constraints(kappa, l, X, Y, n, m):
 
 
 @pytest.mark.parametrize("l, X, Y, expected", [
-    (1, 100, 1, (4096, 19, 111)),
+    (1, 100, 1, (4096, 12, 107)),
     (4, 4, 4, (4096, 18, 111)),
     (10, 50, 50, (8192, 9, 205)),
 ])
@@ -106,9 +111,10 @@ def test_standard_packed_parameters(l, X, Y, expected):
     P = rlu.bmms21_adaptive_choice(128, l, X, Y, "auto", "auto", True, packed=True)
     assert (P["ring_n"], P["m"], int(P["q"]).bit_length()) == expected
     rlu.check_ring_lwe(P["ring_n"], P["q"], P["sigma"])
-    if l == 1:  # D = 1: the modulus, ring and m of one vector per ciphertext
+    if l == 1:  # basis [1]: smaller than one vector per ciphertext, which stays as it was
         E = rlu.bmms21_adaptive_choice(128, l, X, Y, "auto", "auto", True)
-        assert (E["ring_n"], E["m"], E["q"]) == (P["ring_n"], P["m"], P["q"])
+        assert (E["ring_n"], E["m"], int(E["q"]).bit_length()) == (4096, 19, 111)
+        assert P["sigma1"] < E["sigma1"] and P["m"] < E["m"]
 
 
 @pytest.mark.parametrize("l, X, Y, expected", [
@@ -138,7 +144,7 @@ def test_packed_record_has_its_own_version_and_layout(scheme):
     assert pp["ndarray_layout"] == "packed"
     SIFEFullySecRingLWEKeyGenerator(dict(CFG))
     record = json.load(open(RECORD))
-    assert record["param_version"] == "bmms21-sec5-packed/v1" and record["ndarray_layout"] == "packed"
+    assert record["param_version"] == "bmms21-sec5-packed/v2" and record["ndarray_layout"] == "packed"
     expected = rlu.bmms21_adaptive_choice(kg.sec_param, 3, 4, 4, None, "auto", False, packed=True)
     assert (record["m"], record["sigma1"]) == (expected["m"], expected["sigma1"])
 
@@ -152,7 +158,7 @@ def test_switching_the_layout_regenerates_the_parameters():
     assert "ndarray_layout" not in kg.get_public_parameters()
     packed = SIFEFullySecRingLWEKeyGenerator(dict(CFG))
     assert packed.sigma1 > kg.sigma1  # sqrt(l D) and the larger leveraging
-    assert json.load(open(RECORD))["param_version"] == "bmms21-sec5-packed/v1"
+    assert json.load(open(RECORD))["param_version"] == "bmms21-sec5-packed/v2"
     again = SIFEFullySecRingLWEKeyGenerator(dict(elementwise))
     assert json.load(open(RECORD))["param_version"] == "bmms21-sec5/v2" and again.sigma1 == kg.sigma1
 
@@ -160,7 +166,7 @@ def test_switching_the_layout_regenerates_the_parameters():
 def test_a_record_relabelled_as_packed_is_regenerated():
     kg = SIFEFullySecRingLWEKeyGenerator({k: v for k, v in CFG.items() if k != "ndarray_layout"})
     record = json.load(open(RECORD))
-    record.update(param_version="bmms21-sec5-packed/v1", ndarray_layout="packed")
+    record.update(param_version="bmms21-sec5-packed/v2", ndarray_layout="packed")
     json.dump(record, open(RECORD, "w"))
     packed = SIFEFullySecRingLWEKeyGenerator(dict(CFG))
     assert packed.a_seed != kg.a_seed and packed.sigma1 > kg.sigma1
@@ -313,8 +319,8 @@ def test_packed_identical_with_native_ntts(monkeypatch):
         assert rlu._native_ring(gp.mpz(pp["q"]), pp["ring_n"], rlu._get_ntt_root(gp.mpz(pp["q"]), pp["ring_n"]))
     matrix = [[(-1) ** j for j in range(64)], [j % 3 - 1 for j in range(64)]]
 
-    def run(backend):
-        monkeypatch.setattr(sampling_utils, "_CSPRNG", random.Random(11))
+    def run(backend):  # the same bits for the FACCT samples of both runs
+        monkeypatch.setattr(sampling_utils, "_OS_RANDOM", sampling_utils.XofRandom(b"packed-native" * 3))
         with native_backend.backend(backend):
             return SIFEFullySecRingLWE({"keys": {"pp": pp, "sk": kg.get_private_keys()}}).encrypt(matrix)
 
@@ -404,3 +410,49 @@ def test_status_marks_the_packed_layout_experimental():
     status = SCHEME_STATUS[("sife", "fullysec_ring_lwe")]
     assert status.status == REVIEWED  # the elementwise layout keeps its status
     assert "experimental" in status.note.lower() and "packed" in status.note
+
+
+# -- Gaussian sampler (exact FACCT by default for this scheme) -----------------
+
+
+def _spy(monkeypatch):
+    calls = []
+    real = sampling_utils.discrete_gaussian_matrix
+
+    def spy(rows, cols, sigma, sampler=None):
+        calls.append(sampler)
+        return real(rows, cols, sigma, sampler=sampler)
+
+    monkeypatch.setattr(fs, "discrete_gaussian_matrix", spy)
+    return calls
+
+
+@pytest.mark.parametrize("layout", ["elementwise", "packed"])
+def test_keys_and_noise_are_exact_gaussians_by_default(monkeypatch, layout):
+    calls = _spy(monkeypatch)
+    with sampling_utils.gaussian_sampler("rounded"):  # the library-wide choice does not apply
+        kg, enc, pp = _keys({**CFG, "ndarray_layout": layout})
+        assert pp["gaussian_sampler"] == "facct" and calls == ["facct"] * 3  # s_i, eta = 3
+        enc.encrypt([1, 2, 3])
+    assert calls[3:] == ["facct"] * 3  # r, f0, f_i
+
+
+def test_the_rounded_sampler_stays_selectable(monkeypatch):
+    calls = _spy(monkeypatch)
+    kg, enc, pp = _keys({**CFG, "gaussian_sampler": "rounded"})
+    assert pp["gaussian_sampler"] == "rounded" and calls == ["rounded"] * 3
+    enc.encrypt([[1], [2], [3]])
+    exact = SIFEFullySecRingLWE({"keys": {"pp": pp, "sk": kg.get_private_keys()}, "gaussian_sampler": "facct"})
+    exact.encrypt([[1], [2], [3]])
+    assert calls[3:] == ["rounded"] * 3 + ["facct"] * 3
+    old_pp = {k: v for k, v in pp.items() if k != "gaussian_sampler"}  # pp of earlier versions
+    assert SIFEFullySecRingLWE({"keys": {"pp": old_pp}}).gaussian_sampler == "facct"
+
+
+def test_unknown_samplers_are_refused(scheme):
+    _, _, pp = scheme
+    with pytest.raises(FEValidationError, match="gaussian_sampler"):
+        SIFEFullySecRingLWEKeyGenerator({**CFG, "gaussian_sampler": "exact"})
+    with pytest.raises(FEValidationError, match="gaussian_sampler"):
+        SIFEFullySecRingLWE({"keys": {"pp": dict(pp, gaussian_sampler="box-muller")}})
+

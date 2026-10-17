@@ -99,8 +99,9 @@ def test_fullysec_identical_with_native_ntts(monkeypatch):
     with native_backend.backend("native"):
         assert rlu._native_ring(gp.mpz(pp["q"]), pp["ring_n"], rlu._get_ntt_root(gp.mpz(pp["q"]), pp["ring_n"]))
 
-    def run():
+    def run():  # the same bits for both runs (FACCT by default for this scheme)
         monkeypatch.setattr(sampling_utils, "_CSPRNG", random.Random(11))
+        monkeypatch.setattr(sampling_utils, "_OS_RANDOM", sampling_utils.XofRandom(b"fullysec-native" * 3))
         e = fs_rlwe.SIFEFullySecRingLWE({"keys": {"pp": pp, "sk": kg.get_private_keys()}})
         return e.encrypt([-1])
 
