@@ -7,6 +7,21 @@ compatibility).
 
 ## [Unreleased]
 
+### Security
+
+- **MIFE-Ring-LWE** and the **Ring-LWE MCFE** schemes (`mcfe/ring_lwe` and
+  its threshold and decentralized variants) now take the Gaussian widths of
+  BMMS21 Sec. 4.2 for messages of norm `3X`: the MIFE compiler of ACFGU18
+  (Fig. 4, footnote 12) needs an IPFE that is secure for that bound, since
+  the hybrids of its Lemma 3 encrypt `x^j - x^1 + x'^1` in one slot. Up to
+  v0.3.0 the widths were sized for `X` and dimension `n * eta`, which meets
+  the condition only for nine or more clients (with three clients `sigma1`
+  was 0.58 of the required width). No attack is known. The plaintext modulus
+  `p` is still sized for `X`; `q` grows by 3 to 4 bits, and the `standard`
+  profile keeps the same ring dimension for the benchmark configurations.
+  Cached parameters of these schemes are re-derived (construction
+  `acfgu18-bmms21/v5`).
+
 ### Fixed
 
 - `EncryptedGradient.to_dict()` failed with `KeyError: ()` on the packed

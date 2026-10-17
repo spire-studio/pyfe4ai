@@ -151,7 +151,8 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     ),
     ("mife", "ring_lwe"): SchemeStatus(
         _S + "mife.ring_lwe", REVIEWED, ADAPTED, "BMMS21 Sec. 6 MIFE-compiler (ACFGU18)",
-        note="slots share a; parameters sized for dimension n * eta",
+        note="slots share a; parameters sized for dimension n * eta, with the Sec. 4.2 "
+        "widths for bound 3X (ACFGU18 Fig. 4, footnote 12)",
     ),
     ("mife", "fullysec_lwe"): SchemeStatus(
         _S + "mife.fullysec_lwe", REVIEWED, ADAPTED, "ACFGU18 Fig. 4 + ALS16 (LWE, Fig. 8)",
@@ -202,7 +203,8 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     ("mcfe", "ring_lwe"): SchemeStatus(
         _S + "mcfe.ring_lwe", REVIEWED, ADAPTED, "BMMS21 Sec. 6 MCFE-compiler (identity-based)",
         note="functional keys are bound to a label; ndarray values are packed into "
-        "one ciphertext per chunk, each chunk with its own label pad",
+        "one ciphertext per chunk, each chunk with its own label pad; parameters as "
+        "mife/ring_lwe (widths for bound 3X)",
     ),
     ("mcfe", "fullysec_lwe"): SchemeStatus(
         _S + "mcfe.fullysec_lwe", REVIEWED, ADAPTED, "ABMPSW20 Fig. 4, adaptive parameters",

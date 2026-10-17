@@ -69,3 +69,42 @@ def test_check_ring_lwe():
         check_ring_lwe(4096, 2 ** bound + 1, 8.0)
     with pytest.raises(FEValidationError, match="below 128-bit"):
         check_ring_lwe(4096, 3, 1.0)
+
+
+def test_security_bound_widens_sigma1_only():
+    """``security_bound_x`` sets the G3 -> G4 widths; ``p`` stays sized for ``bound_x``."""
+    P = bmms21_selective_parameters(128, 3, 100, 2, 4096)
+    P3 = bmms21_selective_parameters(128, 3, 100, 2, 4096, security_bound_x=300)
+    assert P3["p"] == P["p"] == 2 * 3 * 100 * 2 + 2
+    assert P3["sigma1"] == pytest.approx(3 * P["sigma1"])
+    assert P3["sigma2"] == pytest.approx(3 * P["sigma2"])
+    assert P3["q"] > P["q"]
+
+
+@pytest.mark.parametrize("module, kg_name, extra", [
+    ("pyfe4ai.schemes.mife.ring_lwe", "MIFERingLWEKeyGenerator", {}),
+    ("pyfe4ai.schemes.mcfe.ring_lwe", "MCFERingLWEKeyGenerator", {"label_modulus": 8}),
+    ("pyfe4ai.schemes.mcfe.ring_lwe_threshold", "ThresholdMCFERingLWEKeyGenerator",
+     {"label_modulus": 8, "s": 3, "t": 2}),
+    ("pyfe4ai.schemes.mcfe.ring_lwe_decentralized", "DecentralizedMCFERingLWEKeyGenerator",
+     {"label_modulus": 8}),
+])
+@pytest.mark.parametrize("clients", [2, 3])
+def test_multi_input_widths_cover_3x(tmp_path, monkeypatch, module, kg_name, extra, clients):
+    """Regression: ACFGU18 Fig. 4 needs an IPFE secure for messages of norm 3X
+    (its Lemma 3 encrypts x^j - x^1 + x'^1 in one slot), but the MIFE and MCFE
+    Ring-LWE schemes took the G3 -> G4 width sigma1 for ||alpha|| <= 2 X
+    sqrt(n eta), which covers a slot's alpha (entries up to 6X, eta of them)
+    only for n >= 9 clients."""
+    import importlib
+
+    monkeypatch.chdir(tmp_path)
+    X, Y, eta = 4, 3, 2
+    nids = ["nid_{}".format(i) for i in range(clients)]
+    kg = getattr(importlib.import_module(module), kg_name)(dict(
+        {"n": clients, "lst_nid": nids, "eta": eta, "bound_x": X, "bound_y": Y,
+         "sec_param": 64, "ring_n": 64}, **extra))
+    P = bmms21_selective_parameters(64, clients * eta, X, Y, 64)
+    # per slot, ||alpha|| <= 2 (3X) sqrt(eta)
+    assert kg.sigma1 >= math.sqrt(2) * 2 * (3 * X) * math.sqrt(eta) * P["sigma_prime"] * (1 - 1e-12)
+    assert int(kg.p) == 2 * clients * eta * X * Y + 2  # decoding still sized for X

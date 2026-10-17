@@ -28,8 +28,13 @@ one coordinate, its coefficients a batch of independent values):
 The pad hides each slot's partial result; versions <= 0.2.0 had no pad and
 decoded every slot separately. Parameters are derived as for a single-input
 scheme of dimension ``n eta`` (ACFGU18 Setup*), since only the sum over all
-slots is decoded. Deviation: all slots share ``a`` (secrets and pads are
-independent per slot). A decryption needs ciphertexts of every slot named in
+slots is decoded, and with the Gaussian widths of BMMS21 Sec. 4.2 for
+messages of norm ``3X``: ACFGU18 Fig. 4 needs an IPFE for the class
+``F_{m,3X,Y}`` (footnote 12; the hybrids of Lemma 3 encrypt
+``x^j - x^1 + x'^1``), while ``p`` stays sized for ``X``. Versions <= 0.3.0
+used ``X``, which meets that condition only for nine or more clients.
+Deviation: all slots share ``a`` (secrets and pads are independent per
+slot). A decryption needs ciphertexts of every slot named in
 the key.
 """
 
@@ -46,7 +51,6 @@ from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.ipfe import ParameterCacheMixin
 from pyfe4ai.utils.lwe_utils import decode_scaled
 from pyfe4ai.schemes.profiles import STANDARD
-from pyfe4ai.utils.ring_lwe_utils import bmms21_parameters
 from pyfe4ai.utils.ring_lwe_utils import bmms21_selective_parameters
 from pyfe4ai.utils.ring_lwe_utils import canonical_ring_ciphertext
 from pyfe4ai.utils.ring_lwe_utils import check_ring_lwe
@@ -65,7 +69,7 @@ from pyfe4ai.utils.ring_lwe_utils import seeded_polynomial
 
 logger = logging.getLogger(__name__)
 
-_CONSTRUCTION = "acfgu18-bmms21/v4"  # sized for n * eta, p = 2T + 2, Sec. 4.2 widths, seeded a
+_CONSTRUCTION = "acfgu18-bmms21/v5"  # sized for n * eta, p = 2T + 2, Sec. 4.2 widths for 3X, seeded a
 
 
 class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
@@ -95,19 +99,28 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         if self.security_profile == STANDARD:
             check_ring_lwe(self.ring_n, self.q, self._params_for(self.ring_n)[1])
 
+    def _bmms21(self, ring_n: int) -> dict:
+        """BMMS21 Sec. 4.2 parameters for *ring_n*: dimension ``n eta``,
+        decoding bound ``X``, widths for messages of norm ``3X`` (ACFGU18
+        Fig. 4, see the module docstring)."""
+        return bmms21_selective_parameters(
+            self.sec_param, self.n * self.eta, self.bound_x, self.bound_y, ring_n,
+            security_bound_x=3 * self.bound_x,
+        )
+
+    def _bmms21_tuple(self, ring_n: int) -> tuple:
+        """``(p, q, sigma1, sigma2, sigma3)`` of :meth:`_bmms21`."""
+        P = self._bmms21(ring_n)
+        return P["p"], P["q"], P["sigma1"], P["sigma2"], P["sigma3"]
+
     def _params_for(self, ring_n: int) -> tuple:
         """``(q, rlwe_width)`` that :meth:`_generate_and_save` derives for *ring_n*
         (the width is that of the RLWE problems of the BMMS21 proof)."""
-        P = bmms21_selective_parameters(
-            self.sec_param, self.n * self.eta, self.bound_x, self.bound_y, ring_n
-        )
-        return self._modulus_for(ring_n), P["rlwe_width"]
+        return self._modulus_for(ring_n), self._bmms21(ring_n)["rlwe_width"]
 
     def _modulus_for(self, ring_n: int):
         """Modulus ``q`` that :meth:`_generate_and_save` derives for *ring_n*."""
-        return bmms21_parameters(
-            self.sec_param, self.n * self.eta, self.bound_x, self.bound_y, ring_n
-        )[1]
+        return self._bmms21_tuple(ring_n)[1]
 
     def _apply_parameters(self, param: dict) -> None:
         self.p = gp.mpz(param["p"])
@@ -133,9 +146,7 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             and param.get("ring_n") == self.ring_n
         ):
             return False
-        p, _, sigma1, sigma2, sigma3 = bmms21_parameters(
-            self.sec_param, self.n * self.eta, self.bound_x, self.bound_y, self.ring_n
-        )
+        p, _, sigma1, sigma2, sigma3 = self._bmms21_tuple(self.ring_n)
         q = self._modulus_for(self.ring_n)
         return (param.get("p"), param.get("q")) == (gp.digits(p), gp.digits(q)) and (
             param.get("sigma1"), param.get("sigma2"), param.get("sigma3")
@@ -143,10 +154,9 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
     def _generate_and_save(self, param_file: str) -> None:
         # only the sum over all slots is decoded: size p (and the noise) as
-        # for a single-input scheme of dimension n * eta (ACFGU18 Setup*)
-        self.p, self.q, self.sigma1, self.sigma2, self.sigma3 = bmms21_parameters(
-            self.sec_param, self.n * self.eta, self.bound_x, self.bound_y, self.ring_n
-        )
+        # for a single-input scheme of dimension n * eta (ACFGU18 Setup*),
+        # with the widths for 3X (ACFGU18 Fig. 4)
+        self.p, self.q, self.sigma1, self.sigma2, self.sigma3 = self._bmms21_tuple(self.ring_n)
         self.a_seed = secrets.token_hex(32)
         self.A = seeded_polynomial(self.a_seed, self.q, self.ring_n)
 
