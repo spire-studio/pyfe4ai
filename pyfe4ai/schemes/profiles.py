@@ -18,6 +18,9 @@ The ``security_profile`` entry of a key generator's config selects one:
       for combining key shares, whose safe primes take minutes to generate;
     * DCR (Paillier variants): ``N`` of about 3072 bits (two 1536-bit safe
       primes);
+    * DDH over ristretto255 (``*/ddh_ristretto255``): the group is fixed, of
+      order about ``2^252`` (Pollard rho about ``2^126``, the 128-bit class of
+      X25519 / Ed25519); the profile sets nothing;
     * Ring-LWE: ``kappa = 128`` and the smallest ring dimension whose derived
       modulus ``q`` meets :data:`~pyfe4ai.utils.ring_lwe_utils.RING_LWE_128_LOG_Q`,
       a lattice-estimator table (the method of the LWE tables) read at the
@@ -96,6 +99,7 @@ SCHEME_KIND = {
     **{("sife", v): "dl" for v in ("ddh", "ddh_dynamic", "damgard")},
     **{("mife", v): "dl" for v in ("ddh", "damgard", "ddh_threshold")},
     **{("mcfe", v): "dl" for v in ("ddh", "damgard", "ddh_threshold", "ddh_decentralized")},
+    **{(f, "ddh_ristretto255"): "ec" for f in ("sife", "mife", "mcfe")},
     **{(f, "paillier"): "dcr" for f in ("sife", "mife", "mcfe")},
     ("mcfe", "paillier_decentralized"): "dcr",
     **{(f, "lwe"): "lwe_abdp15" for f in ("sife", "mife")},
@@ -123,6 +127,8 @@ STANDARD_STAT_PARAM = 128
 #: ``stat_param`` is ignored by the schemes that do not use it.
 _STANDARD_MINIMA = {
     "dl": {"sec_param": 3072, "modulus_length": 3072, "stat_param": STANDARD_STAT_PARAM},
+    # ristretto255 is fixed (about 126-bit security); nothing to size
+    "ec": {},
     "dcr": {"bit_length": STANDARD_DCR_PRIME_BITS, "stat_param": STANDARD_STAT_PARAM},
     "ring_lwe": {"sec_param": 128, "stat_param": STANDARD_STAT_PARAM},
     "lwe": {"stat_param": STANDARD_STAT_PARAM},

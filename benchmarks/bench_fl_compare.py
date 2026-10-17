@@ -45,6 +45,7 @@ FAMILIES = {
     "ring_lwe": (("mcfe", "ring_lwe"), {"eta": 1}, 10_000),
     "lwe": (("mcfe", "lwe"), {"eta": 1}, 200),
     "ddh": (("mcfe", "ddh"), {"eta": 1}, 20),
+    "ddh_r255": (("mcfe", "ddh_ristretto255"), {"eta": 1}, 20),
     "damgard": (("mcfe", "damgard"), {"eta": 1}, 20),
     "paillier": (("mcfe", "paillier"), {"eta": 1}, 20),
     "pairing": (("mcfe", "fh_multi_ipe_pairing"), {"eta": 1}, 5),

@@ -50,6 +50,7 @@ _THRESHOLD = {"n": 3, "s": 3, "t": 2, "lst_nid": NIDS, "lst_sid": SIDS}
 # Configurations taken from each variant's test fixture (tests/<family>/test_*.py).
 CONFIGS: dict[tuple[str, str], dict] = {
     ("sife", "ddh"): {"sec_param": 128},
+    ("sife", "ddh_ristretto255"): {},
     ("sife", "lwe"): {"sec_param": 64, "lwe_n": 16, "bound_x": 8, "bound_y": 8},
     ("sife", "paillier"): {"sec_param": 64, "bit_length": 64, "bound_x": 10, "bound_y": 10},
     ("sife", "damgard"): {"sec_param": 64, "modulus_length": 64, "bound": 10},
@@ -63,6 +64,7 @@ CONFIGS: dict[tuple[str, str], dict] = {
         "pairing_group_param": "MNT224",
     },
     ("mife", "ddh"): {"sec_param": 256, **_MULTI},
+    ("mife", "ddh_ristretto255"): {**_MULTI},
     ("mife", "lwe"): {"sec_param": 64, "lwe_n": 16, "bound_x": 6, "bound_y": 6, **_MULTI},
     ("mife", "paillier"): {"sec_param": 64, "bit_length": 64, "bound_x": 10, "bound_y": 10, **_MULTI},
     ("mife", "damgard"): {"sec_param": 64, "modulus_length": 64, "bound": 10, **_MULTI},
@@ -78,6 +80,7 @@ CONFIGS: dict[tuple[str, str], dict] = {
     ("mife", "ddh_threshold"): {"sec_param": 256, **_THRESHOLD},
     ("mife", "lwe_threshold"): {"sec_param": 64, "lwe_n": 16, "bound_x": 6, "bound_y": 6, **_THRESHOLD},
     ("mcfe", "ddh"): {"sec_param": 256, **_MULTI},
+    ("mcfe", "ddh_ristretto255"): {**_MULTI},
     ("mcfe", "lwe"): {
         "sec_param": 64, "lwe_n": 16, "bound_x": 6, "bound_y": 6, "bound_u": 2,
         "label_modulus": 8, **_MULTI,

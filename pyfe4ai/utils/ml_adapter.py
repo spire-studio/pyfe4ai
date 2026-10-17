@@ -71,6 +71,11 @@ except ImportError:  # pragma: no cover
 _SCHEME_REGISTRY: dict[tuple[str, str], tuple[str, str, str]] = {
     # ---- SIFE ----------------------------------------------------------
     ("sife", "ddh"): ("pyfe4ai.schemes.sife.ddh", "SIFEKeyGenerator", "SIFE"),
+    ("sife", "ddh_ristretto255"): (
+        "pyfe4ai.schemes.sife.ddh_ristretto255",
+        "SIFERistretto255KeyGenerator",
+        "SIFERistretto255",
+    ),
     ("sife", "lwe"): ("pyfe4ai.schemes.sife.lwe", "SIFELWEKeyGenerator", "SIFELWE"),
     ("sife", "paillier"): (
         "pyfe4ai.schemes.sife.paillier",
@@ -114,6 +119,11 @@ _SCHEME_REGISTRY: dict[tuple[str, str], tuple[str, str, str]] = {
     ),
     # ---- MIFE ----------------------------------------------------------
     ("mife", "ddh"): ("pyfe4ai.schemes.mife.ddh", "MIFEKeyGenerator", "MIFE"),
+    ("mife", "ddh_ristretto255"): (
+        "pyfe4ai.schemes.mife.ddh_ristretto255",
+        "MIFERistretto255KeyGenerator",
+        "MIFERistretto255",
+    ),
     ("mife", "lwe"): ("pyfe4ai.schemes.mife.lwe", "MIFELWEKeyGenerator", "MIFELWE"),
     ("mife", "paillier"): (
         "pyfe4ai.schemes.mife.paillier",
@@ -157,6 +167,11 @@ _SCHEME_REGISTRY: dict[tuple[str, str], tuple[str, str, str]] = {
     ),
     # ---- MCFE ----------------------------------------------------------
     ("mcfe", "ddh"): ("pyfe4ai.schemes.mcfe.ddh", "MCFEKeyGenerator", "MCFE"),
+    ("mcfe", "ddh_ristretto255"): (
+        "pyfe4ai.schemes.mcfe.ddh_ristretto255",
+        "MCFERistretto255KeyGenerator",
+        "MCFERistretto255",
+    ),
     ("mcfe", "lwe"): ("pyfe4ai.schemes.mcfe.lwe", "MCFELWEKeyGenerator", "MCFELWE"),
     ("mcfe", "paillier"): (
         "pyfe4ai.schemes.mcfe.paillier",
@@ -248,6 +263,13 @@ _SCHEME_REGISTRY: dict[tuple[str, str], tuple[str, str, str]] = {
 
 # Schemes whose encrypt/decrypt require a label argument.
 _LABEL_SCHEMES = frozenset({"mcfe"})
+
+#: Instantiations selected with the ``group`` entry of a key-generator config:
+#: ``{group: {(family, variant): variant in that group}}``. ``"modp"`` (or no
+#: entry) keeps the 3072-bit ``Z_p^*`` subgroup of the ``ddh`` variants.
+_GROUP_VARIANTS = {
+    "ristretto255": {(f, "ddh"): "ddh_ristretto255" for f in ("sife", "mife", "mcfe")},
+}
 
 
 def _require_single_decryptor(wrapper: "FESchemeWrapper", api: str) -> None:
@@ -356,6 +378,8 @@ class FESchemeWrapper:
             ``"lwe_threshold"`` (see :data:`~pyfe4ai.schemes.status.SCHEME_STATUS`).
         keygen_config: Configuration dict for the KeyGenerator (``sec_param``,
             ``eta``, ``n``, ``bound_x``, ``security_profile``, etc.).
+            ``group="ristretto255"`` selects the elliptic-curve instantiation
+            of the ``ddh`` variants (``ddh_ristretto255``).
         precision: Quantization precision (0: no quantization).
         qmode: Quantization mode, ``"decimal"`` or ``"binary"``.
         crypto_options: Extra entries of the crypto objects' config, e.g.
@@ -376,6 +400,13 @@ class FESchemeWrapper:
         crypto_options: dict | None = None,
     ) -> None:
         key = (scheme_type.lower(), variant.lower())
+        group = keygen_config.get("group")
+        if group not in (None, "modp") and key in _SCHEME_REGISTRY:
+            by_group = _GROUP_VARIANTS.get(group, {})
+            if key in by_group:
+                key = (key[0], by_group[key])
+            elif key[1] not in by_group.values():
+                raise ValueError("{}/{} has no instantiation in group {!r}".format(*key, group))
         if key not in _SCHEME_REGISTRY:
             supported = sorted(f"{s}/{v}" for s, v in _SCHEME_REGISTRY)
             raise ValueError(
@@ -383,8 +414,7 @@ class FESchemeWrapper:
                 f"Supported: {supported}"
             )
 
-        self.scheme_type = scheme_type.lower()
-        self.variant = variant.lower()
+        self.scheme_type, self.variant = key
         self.keygen_config = dict(keygen_config)
         self.crypto_options = dict(crypto_options or {})
         self.qconfig = QuantizationConfig(precision=precision, mode=qmode)
