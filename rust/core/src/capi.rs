@@ -1,25 +1,27 @@
 //! A small C ABI over the kernels, for the bit-identity tests of the Python
 //! package (tests/test_rust_core.py loads it with ctypes) before the PyO3
-//! bindings exist. Values mod q cross it as 16-byte little-endian integers.
+//! bindings exist. Values mod q cross it as 32-byte little-endian integers.
 //! Not a public interface: every pointer must be valid for the lengths given.
 
 #![allow(clippy::missing_safety_doc)]
 
 use crate::ntt::AnyRing;
 use crate::rlwe::{self, EncKey, Randomness};
-use crate::{with_ring, Word};
+use crate::{with_ring, Word, U256};
 use std::slice;
 
-unsafe fn u128s(p: *const u8, count: usize) -> Vec<u128> {
-    slice::from_raw_parts(p, 16 * count)
-        .chunks_exact(16)
-        .map(|c| u128::from_le_bytes(c.try_into().unwrap()))
+const VB: usize = 32;
+
+unsafe fn vals_in(p: *const u8, count: usize) -> Vec<U256> {
+    slice::from_raw_parts(p, VB * count)
+        .chunks_exact(VB)
+        .map(|c| U256::from_le_bytes(c.try_into().unwrap()))
         .collect()
 }
 
-unsafe fn put_u128s(p: *mut u8, vals: impl Iterator<Item = u128>) {
+unsafe fn put_vals<'a, W: Word>(p: *mut u8, vals: impl Iterator<Item = &'a W>) {
     for (i, v) in vals.enumerate() {
-        std::ptr::copy_nonoverlapping(v.to_le_bytes().as_ptr(), p.add(16 * i), 16);
+        std::ptr::copy_nonoverlapping(v.to_u256().to_le_bytes().as_ptr(), p.add(VB * i), VB);
     }
 }
 
@@ -27,14 +29,14 @@ unsafe fn materials<'a>(ptrs: *const *const u8, lens: *const usize, count: usize
     (0..count).map(|i| slice::from_raw_parts(*ptrs.add(i), *lens.add(i))).collect()
 }
 
-fn words<W: Word>(m: &crate::Modulus<W>, vals: &[u128]) -> Vec<W> {
-    vals.iter().map(|&v| m.reduce_u128(v)).collect()
+fn words<W: Word>(m: &crate::Modulus<W>, vals: &[U256]) -> Vec<W> {
+    vals.iter().map(|&v| m.reduce_u256(v)).collect()
 }
 
 /// A ring for (q, n, root); null if unsupported.
 #[no_mangle]
 pub unsafe extern "C" fn pf4_ring_new(q: *const u8, n: usize, root: *const u8) -> *mut AnyRing {
-    let (q, root) = (u128s(q, 1)[0], u128s(root, 1)[0]);
+    let (q, root) = (vals_in(q, 1)[0], vals_in(root, 1)[0]);
     match AnyRing::new(q, n, root) {
         Ok(r) => Box::into_raw(Box::new(r)),
         Err(_) => std::ptr::null_mut(),
@@ -57,10 +59,10 @@ pub unsafe extern "C" fn pf4_word_bits(r: *const AnyRing) -> u32 {
 #[no_mangle]
 pub unsafe extern "C" fn pf4_ntt(r: *const AnyRing, inp: *const u8, out: *mut u8, inverse: i32) {
     with_ring!(&*r, ring => {
-        let x = words(&ring.m, &u128s(inp, ring.n));
+        let x = words(&ring.m, &vals_in(inp, ring.n));
         let mut y = x.clone();
         if inverse != 0 { ring.inverse(&x, &mut y) } else { ring.forward(&x, &mut y) }
-        put_u128s(out, y.iter().map(|v| v.to_u128()));
+        put_vals(out, y.iter());
     })
 }
 
@@ -79,7 +81,7 @@ pub unsafe extern "C" fn pf4_hash_to_zq(r: *const AnyRing, mat: *const u8, len: 
     with_ring!(&*r, ring => {
         let mut w = vec![Word::ZERO; count];
         crate::keccak::hash_to_zq(&ring.m, slice::from_raw_parts(mat, len), &mut w);
-        put_u128s(out, w.iter().map(|v| v.to_u128()));
+        put_vals(out, w.iter());
     })
 }
 
@@ -91,14 +93,14 @@ pub unsafe extern "C" fn pf4_encrypt_rows(
 ) {
     with_ring!(&*r, ring => {
         let n = ring.n;
-        let pkv = words(&ring.m, &u128s(pk, eta * n));
+        let pkv = words(&ring.m, &vals_in(pk, eta * n));
         let rows: Vec<Vec<_>> = pkv.chunks(n).map(|c| c.to_vec()).collect();
-        let key = EncKey::new(ring, &words(&ring.m, &u128s(a, n)), &rows, None, ring.m.reduce_u128(u128s(delta, 1)[0]));
-        let wv = words(&ring.m, &u128s(w, eta * n));
+        let key = EncKey::new(ring, &words(&ring.m, &vals_in(a, n)), &rows, None, ring.m.reduce_u256(vals_in(delta, 1)[0]));
+        let wv = words(&ring.m, &vals_in(w, eta * n));
         let (mut c0, mut c1) = (vec![Word::ZERO; eta * n], vec![Word::ZERO; n]);
         rlwe::encrypt_chunk(ring, &key, &wv, sigma2, sigma3, slice::from_raw_parts(rnd, rnd_len), &mut c0, &mut c1);
-        put_u128s(ct0, c0.iter().map(|v| v.to_u128()));
-        put_u128s(ct1, c1.iter().map(|v| v.to_u128()));
+        put_vals(ct0, c0.iter());
+        put_vals(ct1, c1.iter());
     })
 }
 
@@ -112,15 +114,15 @@ pub unsafe extern "C" fn pf4_encrypt_tensor(
 ) -> i64 {
     with_ring!(&*r, ring => {
         let n = ring.n;
-        let key = EncKey::new(ring, &words(&ring.m, &u128s(a, n)), &[words(&ring.m, &u128s(pk, n))],
-                              Some(&[words(&ring.m, &u128s(u, n))]), ring.m.reduce_u128(u128s(delta, 1)[0]));
+        let key = EncKey::new(ring, &words(&ring.m, &vals_in(a, n)), &[words(&ring.m, &vals_in(pk, n))],
+                              Some(&[words(&ring.m, &vals_in(u, n))]), ring.m.reduce_u256(vals_in(delta, 1)[0]));
         let mats = materials(mats, mat_lens, n_mats);
         let rand = if rnd.is_null() { Randomness::Os } else { Randomness::Given(slice::from_raw_parts(rnd, rnd_len)) };
         let outp = out as usize;
         let res = rlwe::encrypt_tensor(ring, &key, slice::from_raw_parts(x, len), Some(&mats), sigma2, sigma3, rand,
             threads, |j, c0, c1| {
-                let p = (outp + 32 * n * j) as *mut u8;
-                put_u128s(p, c0.iter().chain(c1.iter()).map(|v| v.to_u128()));
+                let p = (outp + 2 * VB * n * j) as *mut u8;
+                put_vals(p, c0.iter().chain(c1.iter()));
             });
         match res { Ok(c) => c as i64, Err(_) => -1 }
     })
@@ -137,17 +139,17 @@ pub unsafe extern "C" fn pf4_decrypt_chunk(
     with_ring!(&*r, ring => {
         let n = ring.n;
         let m = &ring.m;
-        let slotv = words(m, &u128s(slots, s * (eta + 1) * n));
-        let ym: Vec<_> = words(m, &u128s(ys, s * eta)).iter().map(|&v| m.to_mont(v)).collect();
-        let skv = words(m, &u128s(sk, s * n));
+        let slotv = words(m, &vals_in(slots, s * (eta + 1) * n));
+        let ym: Vec<_> = words(m, &vals_in(ys, s * eta)).iter().map(|&v| m.to_mont(v)).collect();
+        let skv = words(m, &vals_in(sk, s * n));
         let mut hats = vec![Word::ZERO; s * n];
         for (src, dst) in skv.chunks(n).zip(hats.chunks_mut(n)) {
             ring.forward_mont(src, dst);
         }
         let slot_refs: Vec<&[_]> = slotv.chunks((eta + 1) * n).collect();
         let hat_refs: Vec<&[_]> = hats.chunks(n).collect();
-        let ok = rlwe::decrypt_chunk(ring, eta, &words(m, &u128s(z, n)), &slot_refs, &ym, &hat_refs,
-            m.reduce_u128(u128s(delta, 1)[0]), bound as i128, slice::from_raw_parts_mut(out, k),
+        let ok = rlwe::decrypt_chunk(ring, eta, &words(m, &vals_in(z, n)), &slot_refs, &ym, &hat_refs,
+            m.reduce_u256(vals_in(delta, 1)[0]), bound as i128, slice::from_raw_parts_mut(out, k),
             slice::from_raw_parts_mut(none, k));
         ok as i32
     })
@@ -164,10 +166,10 @@ pub unsafe extern "C" fn pf4_pad_terms(
         let m = &ring.m;
         let all = materials(mats, mat_lens, n_labels * s);
         let per_label: Vec<Vec<&[u8]>> = all.chunks(s).map(|c| c.to_vec()).collect();
-        let ym: Vec<_> = words(m, &u128s(ys, s * eta)).iter().map(|&v| m.to_mont(v)).collect();
+        let ym: Vec<_> = words(m, &vals_in(ys, s * eta)).iter().map(|&v| m.to_mont(v)).collect();
         let outp = out as usize;
-        rlwe::pad_terms(ring, &words(m, &u128s(base, n)), &per_label, &ym, eta, threads, |l, zv| {
-            put_u128s((outp + 16 * n * l) as *mut u8, zv.iter().map(|v| v.to_u128()));
+        rlwe::pad_terms(ring, &words(m, &vals_in(base, n)), &per_label, &ym, eta, threads, |l, zv| {
+            put_vals((outp + VB * n * l) as *mut u8, zv.iter());
         });
     })
 }

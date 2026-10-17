@@ -14,7 +14,7 @@ pub mod rlwe;
 pub mod sha256;
 pub mod sha512;
 
-pub use arith::{Modulus, Word};
+pub use arith::{Modulus, Word, U256};
 pub use ntt::{AnyRing, Ring};
 
 use std::sync::atomic::{AtomicUsize, Ordering};

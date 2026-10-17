@@ -24,8 +24,10 @@ the ``PYFE4AI_BACKEND`` environment variable:
 ``"native"``
     like ``"auto"``, but an error if the extension is not built.
 
-The native path applies to moduli below ``2^125`` with a ``2 ring_n``-th root
-of unity (all moduli the parameter generators derive), and samples natively
+The native path applies to moduli below ``2^253`` with a ``2 ring_n``-th root
+of unity (all moduli the parameter generators derive, including the flooded
+moduli of ``mcfe/ring_lwe_threshold``), in 64-bit words below ``2^62``,
+128-bit words below ``2^125`` and 256-bit words above, and samples natively
 only for the default rounded Gaussian sampler with widths up to ``2^40``
 (wider ones use :func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint`
 in Python), consuming seven random bytes per uniform as
@@ -77,8 +79,8 @@ _ENV_THREADS = "PYFE4AI_THREADS"
 #: Largest Gaussian width sampled natively (that of the double-precision
 #: sampler of :func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_matrix`).
 MAX_NATIVE_SIGMA = 2 ** 40
-#: Moduli must be below this bound (two 64-bit words with 3 bits of headroom).
-MAX_NATIVE_Q = 2 ** 125
+#: Moduli must be below this bound (four 64-bit words with 3 bits of headroom).
+MAX_NATIVE_Q = 2 ** 253
 
 
 def _check_backend(name) -> str:
@@ -245,7 +247,7 @@ _contexts_lock = threading.Lock()
 
 def ring_context(q, ring_n: int) -> RingContext | None:
     """The native context for ``(q, ring_n)``, or ``None`` when the Python
-    path applies (backend ``"python"``, extension not built, ``q >= 2^125``
+    path applies (backend ``"python"``, extension not built, ``q >= 2^253``
     or no ``2 ring_n``-th root of unity)."""
     if _ext is None or get_backend() == "python":
         return None

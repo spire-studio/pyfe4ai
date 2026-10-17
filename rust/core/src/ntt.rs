@@ -1,16 +1,16 @@
 //! Negacyclic NTT of Z_q[x] / (x^n + 1) with the root, tables and butterfly
 //! order of pyfe4ai.utils.ring_lwe_utils.ntt_forward / ntt_inverse: the values
 //! are the Python ones in both domains. Shoup twiddles, Harvey's lazy
-//! butterflies (values in [0, 4q), which needs 4q < 2^BITS).
+//! butterflies (values in [0, 4q), which needs 4q < 2^BITS: q < 2^MAX_Q_BITS).
 
-use crate::arith::{Modulus, Word};
+use crate::arith::{Modulus, Word, U256};
 
 #[derive(Clone, Debug)]
 pub struct Ring<W: Word> {
     pub m: Modulus<W>,
     pub n: usize,
     pub logn: u32,
-    pub q: u128,
+    pub q: W,
     br: Vec<u32>,
     twist: Vec<W>,
     twist_p: Vec<W>,
@@ -24,22 +24,24 @@ pub struct Ring<W: Word> {
 
 impl<W: Word> Ring<W> {
     /// The ring for an NTT prime q (q = 1 mod 2n) and a primitive 2n-th root of unity.
-    pub fn new(q: u128, n: usize, root: u128) -> Result<Self, &'static str> {
+    pub fn new(q: W, n: usize, root: W) -> Result<Self, &'static str> {
         if n < 2 || !n.is_power_of_two() || n > (1 << 24) {
             return Err("n must be a power of two in [2, 2^24]");
         }
-        let limit = if W::BITS == 64 { 1u128 << 62 } else { 1u128 << 125 };
-        if q < 3 || q & 1 == 0 || q >= limit || root >= q || (q - 1) % (2 * n as u128) != 0 {
+        if q < W::from_u128(3) || !q.bit0() || q.bits() > W::MAX_Q_BITS || root >= q
+            || q.wsub(W::ONE).rem_u64(2 * n as u64) != 0
+        {
             return Err("unsupported (q, n): need an odd q = 1 mod 2n below the word limit");
         }
         let m = Modulus::<W>::new(q);
-        let rt = W::from_u128(root);
-        let root_inv = m.pow(rt, (2 * n - 1) as u128);
-        if m.pow(rt, n as u128) != W::from_u128(q - 1) || m.mulp(rt, root_inv) != W::ONE {
+        let rt = root;
+        let small = |v: usize| W::from_u128(v as u128);
+        let root_inv = m.pow(rt, small(2 * n - 1));
+        if m.pow(rt, small(n)) != q.wsub(W::ONE) || m.mulp(rt, root_inv) != W::ONE {
             return Err("root is not a primitive 2n-th root of unity mod q");
         }
-        let nw = W::from_u128(n as u128 % q);
-        let n_inv = m.pow(nw, q - 2); // q is prime
+        let nw = m.reduce(small(n));
+        let n_inv = m.pow(nw, q.wsub(W::from_u128(2))); // q is prime
         if m.mulp(nw, n_inv) != W::ONE {
             return Err("n is not invertible mod q");
         }
@@ -75,7 +77,7 @@ impl<W: Word> Ring<W> {
             let mut out = Vec::with_capacity(n);
             let mut len = 2;
             while len <= n {
-                let step = m.pow(w2, (n / len) as u128);
+                let step = m.pow(w2, small(n / len));
                 let mut w = W::ONE;
                 out.push(W::ONE);
                 for _ in 1..len / 2 {
@@ -181,39 +183,50 @@ impl<W: Word> Ring<W> {
 pub enum AnyRing {
     W64(Ring<u64>),
     W128(Ring<u128>),
+    W256(Ring<U256>),
 }
 
 impl AnyRing {
-    pub fn new(q: u128, n: usize, root: u128) -> Result<Self, &'static str> {
-        if q >= (1u128 << 125) {
-            return Err("q must be below 2^125");
+    /// u64 words for q < 2^62, u128 words for q < 2^125, 256-bit words for q < 2^253.
+    pub fn new(q: U256, n: usize, root: U256) -> Result<Self, &'static str> {
+        let bits = q.bits();
+        if bits > U256::MAX_Q_BITS {
+            return Err("q must be below 2^253");
         }
-        if q < (1u128 << 62) {
-            Ok(AnyRing::W64(Ring::new(q, n, root)?))
+        if root >= q {
+            return Err("unsupported (q, n): need an odd q = 1 mod 2n below the word limit");
+        }
+        if bits <= u64::MAX_Q_BITS {
+            Ok(AnyRing::W64(Ring::new(u64::from_u256(q), n, u64::from_u256(root))?))
+        } else if bits <= u128::MAX_Q_BITS {
+            Ok(AnyRing::W128(Ring::new(u128::from_u256(q), n, u128::from_u256(root))?))
         } else {
-            Ok(AnyRing::W128(Ring::new(q, n, root)?))
+            Ok(AnyRing::W256(Ring::new(q, n, root)?))
         }
     }
     pub fn word_bits(&self) -> u32 {
         match self {
             AnyRing::W64(_) => 64,
             AnyRing::W128(_) => 128,
+            AnyRing::W256(_) => 256,
         }
     }
     pub fn n(&self) -> usize {
         match self {
             AnyRing::W64(r) => r.n,
             AnyRing::W128(r) => r.n,
+            AnyRing::W256(r) => r.n,
         }
     }
-    pub fn q(&self) -> u128 {
+    pub fn q(&self) -> U256 {
         match self {
-            AnyRing::W64(r) => r.q,
-            AnyRing::W128(r) => r.q,
+            AnyRing::W64(r) => r.q.to_u256(),
+            AnyRing::W128(r) => r.q.to_u256(),
+            AnyRing::W256(r) => r.q,
         }
     }
     pub fn qbits(&self) -> u32 {
-        128 - self.q().leading_zeros()
+        self.q().bits()
     }
 }
 
@@ -224,6 +237,7 @@ macro_rules! with_ring {
         match $ring {
             $crate::ntt::AnyRing::W64($r) => $body,
             $crate::ntt::AnyRing::W128($r) => $body,
+            $crate::ntt::AnyRing::W256($r) => $body,
         }
     };
 }
@@ -231,43 +245,52 @@ macro_rules! with_ring {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::arith::tests::{slow_mulmod, u256, Lcg};
 
-    fn primitive_root(q: u128, n: usize) -> u128 {
-        let order = 2 * n as u128;
+    fn primitive_root<W: Word>(q: W, n: usize) -> W {
+        let order = 2 * n as u64;
+        let m = Modulus::<W>::new(q);
+        let e = q.wsub(W::ONE);
+        // (q - 1) / order by repeated halving (order is a power of two)
+        let mut cof = e;
+        for _ in 0..order.trailing_zeros() {
+            cof = cof.shr1();
+        }
         for g in 2u128..1000 {
-            let m = Modulus::<u128>::new(q);
-            let r = m.pow(g, (q - 1) / order);
-            if r != 1 && m.pow(r, order) == 1 && m.pow(r, order / 2) != 1 {
+            let r = m.pow(W::from_u128(g), cof);
+            if m.pow(r, W::from_u128(order as u128 / 2)) != W::ONE {
                 return r;
             }
         }
         panic!("no root")
     }
 
-    fn is_prime(n: u128) -> bool {
-        if n < 2 {
+    fn is_prime<W: Word>(n: W) -> bool {
+        if n < W::from_u128(4) {
+            return n > W::ONE;
+        }
+        if !n.bit0() {
             return false;
         }
-        let m = Modulus::<u128>::new(if n & 1 == 1 { n } else { 3 });
-        if n & 1 == 0 {
-            return n == 2;
-        }
-        let (mut d, mut s) = (n - 1, 0);
-        while d & 1 == 0 {
-            d >>= 1;
+        let m = Modulus::<W>::new(n);
+        let nm1 = n.wsub(W::ONE);
+        let (mut d, mut s) = (nm1, 0);
+        while !d.bit0() {
+            d = d.shr1();
             s += 1;
         }
         'outer: for &a in &[2u128, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37] {
-            if a % n == 0 {
+            let aw = W::from_u128(a);
+            if aw.rem(n) == W::ZERO {
                 continue;
             }
-            let mut x = m.pow(a, d);
-            if x == 1 || x == n - 1 {
+            let mut x = m.pow(aw, d);
+            if x == W::ONE || x == nm1 {
                 continue;
             }
             for _ in 1..s {
                 x = m.mulp(x, x);
-                if x == n - 1 {
+                if x == nm1 {
                     continue 'outer;
                 }
             }
@@ -276,22 +299,27 @@ mod tests {
         true
     }
 
-    pub fn ntt_prime(bits: u32, n: usize) -> u128 {
-        let m = 2 * n as u128;
-        let mut c = (1u128 << (bits - 1)) / m * m + 1;
+    pub fn ntt_prime(bits: u32, n: usize) -> U256 {
+        let m = U256::from_u128(2 * n as u128);
+        let base = U256::ONE.shl(bits - 1);
+        // the first c = 1 mod 2n above 2^(bits - 1)
+        let mut c = base.wsub(base.rem(m)).wadd(U256::ONE);
+        if c < base {
+            c = c.wadd(m);
+        }
         while !is_prime(c) {
-            c += m;
+            c = c.wadd(m);
         }
         c
     }
 
-    fn schoolbook(a: &[u128], b: &[u128], q: u128) -> Vec<u128> {
+    fn schoolbook(a: &[U256], b: &[U256], q: U256) -> Vec<U256> {
         let n = a.len();
-        let m = Modulus::<u128>::new(q);
-        let mut out = vec![0u128; n];
+        let m = Modulus::<U256>::new(q);
+        let mut out = vec![U256::ZERO; n];
         for i in 0..n {
             for j in 0..n {
-                let p = m.mulp(a[i], b[j]);
+                let p = slow_mulmod(a[i], b[j], q);
                 let k = i + j;
                 if k < n {
                     out[k] = m.add(out[k], p);
@@ -305,22 +333,22 @@ mod tests {
 
     #[test]
     fn ntt_products_match_schoolbook() {
-        for &(bits, n) in &[(20u32, 8usize), (40, 16), (61, 64), (62, 32), (77, 64), (124, 32)] {
+        for &(bits, n) in &[(20u32, 8usize), (40, 16), (61, 64), (62, 32), (77, 64), (124, 32), (125, 16),
+                            (126, 16), (160, 32), (212, 64), (252, 16), (253, 32)] {
             let q = ntt_prime(bits, n);
+            assert_eq!(q.bits(), bits);
             let root = primitive_root(q, n);
             let ring = AnyRing::new(q, n, root).unwrap();
-            let mut s = q ^ 0xdead_beef;
-            let mut rnd = || {
-                s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-                (s >> 7) % q
-            };
-            let a: Vec<u128> = (0..n).map(|_| rnd()).collect();
-            let b: Vec<u128> = (0..n).map(|_| rnd()).collect();
+            let want_bits = if bits <= 62 { 64 } else if bits <= 125 { 128 } else { 256 };
+            assert_eq!(ring.word_bits(), want_bits);
+            let mut rng = Lcg(q.0[0] as u128 ^ 0xdead_beef);
+            let a: Vec<U256> = (0..n).map(|_| rng.below(q)).collect();
+            let b: Vec<U256> = (0..n).map(|_| rng.below(q)).collect();
             let want = schoolbook(&a, &b, q);
             with_ring!(&ring, r => {
-                let aw: Vec<_> = a.iter().map(|&v| Word::from_u128(v)).collect();
-                let bw: Vec<_> = b.iter().map(|&v| Word::from_u128(v)).collect();
-                let got: Vec<u128> = r.poly_mul(&aw, &bw).iter().map(|v| v.to_u128()).collect();
+                let aw: Vec<_> = a.iter().map(|&v| Word::from_u256(v)).collect();
+                let bw: Vec<_> = b.iter().map(|&v| Word::from_u256(v)).collect();
+                let got: Vec<U256> = r.poly_mul(&aw, &bw).iter().map(|v| v.to_u256()).collect();
                 assert_eq!(got, want, "bits {} n {}", bits, n);
                 let mut f = aw.clone();
                 let mut back = aw.clone();
@@ -328,6 +356,20 @@ mod tests {
                 r.inverse(&f, &mut back);
                 assert_eq!(back, aw);
             });
+            if bits <= 125 {
+                // the 256-bit word gives the same transforms for small moduli
+                let wide = Ring::<U256>::new(q, n, root).unwrap();
+                let mut f = a.clone();
+                wide.forward(&a, &mut f);
+                with_ring!(&ring, r => {
+                    let aw: Vec<_> = a.iter().map(|&v| Word::from_u256(v)).collect();
+                    let mut g = aw.clone();
+                    r.forward(&aw, &mut g);
+                    assert_eq!(g.iter().map(|v| v.to_u256()).collect::<Vec<_>>(), f);
+                });
+            }
         }
+        assert!(AnyRing::new(ntt_prime(254, 16), 16, U256::from_u128(3)).is_err());
+        assert_eq!(u256("97"), U256::from_u128(97));
     }
 }

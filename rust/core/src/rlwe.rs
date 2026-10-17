@@ -224,6 +224,56 @@ pub fn decode_scaled(v: u128, q: u128, delta: u128, bound: i128) -> Result<Optio
     Ok(Some(mu as i64))
 }
 
+/// floor(num / den) if below 2^127 (den > 0): shift-and-subtract over the quotient's bits only.
+fn small_quotient<W: Word>(num: W, den: W) -> Option<i128> {
+    if num < den {
+        return Some(0);
+    }
+    let shift = num.bits() - den.bits();
+    if shift >= 127 {
+        return None; // quotient >= 2^126 ... beyond any bound below
+    }
+    let (mut r, mut d, mut quot) = (num, den.shl(shift), 0u128);
+    for _ in 0..=shift {
+        quot <<= 1;
+        if r >= d {
+            r = r.wsub(d);
+            quot |= 1;
+        }
+        d = d.shr1();
+    }
+    i128::try_from(quot).ok()
+}
+
+/// decode_scaled on words of any size (q < 2^MAX_Q_BITS, so 2 q fits a word);
+/// bound < 2^126.
+#[inline]
+pub fn decode_scaled_w<W: Word>(v: W, q: W, delta: W, bound: i128) -> Result<Option<i64>, ()> {
+    if W::BITS <= 128 {
+        return decode_scaled(v.to_u128(), q.to_u128(), delta.to_u128(), bound);
+    }
+    let den = delta.shl1();
+    // v <= q / 2: mu = floor((2 v + Delta) / (2 Delta)) >= 0; else v - q = -a and
+    // mu = floor((Delta - 2 a) / (2 Delta)) = -ceil((2 a - Delta) / (2 Delta)) <= 0
+    let quot = if v <= q.shr1() {
+        small_quotient(v.shl1().wadd(delta), den)
+    } else {
+        let a2 = q.wsub(v).shl1();
+        if a2 <= delta { Some(0) } else { small_quotient(a2.wsub(delta).wadd(den).wsub(W::ONE), den).map(|m| -m) }
+    };
+    let mu = match quot {
+        Some(m) => m,
+        None => return Ok(None), // |mu| >= 2^126 > bound
+    };
+    if mu > bound || mu < -bound {
+        return Ok(None);
+    }
+    if mu > i64::MAX as i128 || mu < i64::MIN as i128 {
+        return Err(());
+    }
+    Ok(Some(mu as i64))
+}
+
 /// MIFERingLWE._decrypt_with_pad_term of one chunk: decode_scaled of
 /// -Delta z + sum_s (<ct0_s, y_s> - ct1_s sk_s), the products summed in the NTT
 /// domain. `slots[s]` holds the eta rows of ct0 and ct1 ((eta + 1) n words),
@@ -256,10 +306,9 @@ pub fn decrypt_chunk<W: Word>(
         }
     }
     ring.inverse(&acc, &mut rhs);
-    let (q, d) = (ring.q, delta.to_u128());
     for i in 0..out.len() {
-        let v = m.sub(tot[i], rhs[i]).to_u128();
-        match decode_scaled(v, q, d, bound) {
+        let v = m.sub(tot[i], rhs[i]);
+        match decode_scaled_w(v, ring.q, delta, bound) {
             Ok(Some(mu)) => {
                 out[i] = mu;
                 none[i] = 0;
@@ -419,4 +468,49 @@ where
         pre.wipe(j);
     }
     Ok(chunks)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::arith::U256;
+
+    /// Python's decode_scaled on i128 (exact for the moduli used here).
+    fn py_decode(v: i128, q: i128, delta: i128, bound: i128) -> Option<i128> {
+        let v = if v > q / 2 { v - q } else { v };
+        let mu = (2 * v + delta).div_euclid(2 * delta);
+        if mu.abs() > bound { None } else { Some(mu) }
+    }
+
+    #[test]
+    fn wide_decode_matches_python() {
+        let q: i128 = (1 << 100) + 277; // any odd q
+        let delta = q / 1009;
+        let qw = U256::from_u128(q as u128);
+        let dw = U256::from_u128(delta as u128);
+        let mut vals: Vec<i128> = vec![0, 1, delta / 2, delta / 2 + 1, delta, q / 2, q / 2 + 1, q - 1, q - delta / 2,
+                                       q - delta / 2 - 1, q - delta, q - delta - 1];
+        let mut s = 12345u128;
+        for _ in 0..2000 {
+            s = s.wrapping_mul(0x5851_f42d_4c95_7f2d_1405_7b7e_f767_814f).wrapping_add(7);
+            vals.push((s % q as u128) as i128);
+        }
+        for bound in [0i128, 3, 504, 505, 1 << 70] {
+            for &v in &vals {
+                let want = py_decode(v, q, delta, bound).map(|m| m as i64);
+                assert_eq!(decode_scaled_w(U256::from_u128(v as u128), qw, dw, bound), Ok(want), "v {} bound {}", v, bound);
+                assert_eq!(decode_scaled(v as u128, q as u128, delta as u128, bound), Ok(want));
+            }
+        }
+        // quotients beyond 64 bits: delta 1
+        let big = U256::ONE.shl(200);
+        let q2 = big.wadd(U256::from_u128(1)).shl1().wsub(U256::ONE);
+        assert_eq!(decode_scaled_w(big, q2, U256::ONE, 1 << 70), Ok(None));
+        assert_eq!(decode_scaled_w(big, q2, U256::ONE, 1i128 << 100), Ok(None));
+        let v = U256::ONE.shl(80);
+        assert_eq!(decode_scaled_w(v, q2, U256::ONE, 1i128 << 100), Err(())); // 2^80 decodes, beyond i64
+        assert_eq!(decode_scaled_w(q2.wsub(v), q2, U256::ONE, 1i128 << 100), Err(()));
+        assert_eq!(decode_scaled_w(U256::from_u128(5), q2, U256::ONE, 10), Ok(Some(5)));
+        assert_eq!(decode_scaled_w(q2.wsub(U256::from_u128(5)), q2, U256::ONE, 10), Ok(Some(-5)));
+    }
 }
