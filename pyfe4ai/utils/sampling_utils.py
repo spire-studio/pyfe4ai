@@ -153,11 +153,28 @@ def discrete_gaussian_matrix(
     ]
 
 
+# Guards the counter claims of every XofRandom (a few bytecodes each); a
+# forked child gets a new one, as the parent's may be held at the fork.
+_XOF_LOCK = threading.Lock()
+
+
+def _reset_xof_lock() -> None:
+    global _XOF_LOCK
+    _XOF_LOCK = threading.Lock()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_xof_lock)
+
+
 class XofRandom:
     """Deterministic bit source: SHAKE-256 keyed by a secret seed.
 
     Provides ``getrandbits`` for derandomised sampling (the same seed always
-    yields the same bits). The seed must be secret and unpredictable.
+    yields the same bits). The seed must be secret and unpredictable. Call
+    ``c`` (from 0) hashes ``len(seed) || seed || c``; each call claims its
+    ``c`` atomically, so threads sharing an instance never draw the same block
+    (which thread gets which block then depends on scheduling).
 
     Args:
         seed: Secret seed bytes (at least 32 bytes of entropy).
@@ -167,10 +184,17 @@ class XofRandom:
         self._seed = len(seed).to_bytes(8, "big") + seed
         self._counter = 0
 
+    def _claim(self, calls: int) -> int:
+        """Reserve the next *calls* counters for the caller; returns the first."""
+        with _XOF_LOCK:
+            start = self._counter
+            self._counter = start + calls
+        return start
+
     def getrandbits(self, k: int) -> int:
         n_bytes = (k + 7) // 8
-        block = hashlib.shake_256(self._seed + self._counter.to_bytes(8, "big")).digest(n_bytes)
-        self._counter += 1
+        counter = self._claim(1)
+        block = hashlib.shake_256(self._seed + counter.to_bytes(8, "big")).digest(n_bytes)
         return int.from_bytes(block, "big") >> (8 * n_bytes - k)
 
 

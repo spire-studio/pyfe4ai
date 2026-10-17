@@ -122,7 +122,8 @@ reference's integers for the same bits:
   width); the MPFR value, a dozen roundings at `p` bits, is within `2^-118`
   of `X`. A sample is returned when `X` is farther than
   `2^(max(s + 16 - 64 n, -100) + 1)` from every half-integer, where both
-  round alike; the others (about `2^-45` of them) are computed in Python with
+  round alike; the others (at most about `2^-45` of them, when `s` is just
+  below a multiple of 64; about `2^-62` at FullySec's `s = 47`) are computed in Python with
   the reference formula from the same `b1, b2` (`_box_muller_rint`, which the
   reference loop now calls as well).
 * **Tests** (`tests/test_native_gaussian_bigint.py`): known answers taken

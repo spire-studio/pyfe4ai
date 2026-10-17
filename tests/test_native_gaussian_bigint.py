@@ -299,3 +299,84 @@ def test_python_path_where_the_native_one_does_not_apply(spy, monkeypatch):
     assert py == nat and spy.calls == 0
     su.discrete_gaussian_bigint(sigma, 3)
     assert spy.calls == 1
+
+
+# -- review 2026-10 (91d0369): inputs the reference accepts, shared XofRandom ------
+
+
+@pytest.mark.parametrize("sigma, native", [(gp.xmpz(1000), True), (gp.xmpz(2 ** 200 + 7), True),
+                                           (gp.mpfr("1e-300000"), True), (gp.mpfr("1e-400000"), False)],
+                         ids=["xmpz", "xmpz-wide", "tiny-native", "tiny-beyond-2^20"])
+def test_native_path_accepts_what_the_reference_accepts(sigma, native, spy):
+    """An unhashable sigma (xmpz) is sampled natively; exponents beyond 2^20 keep the Python code."""
+    py, nat = _both(lambda: su.discrete_gaussian_bigint(sigma, 5, rng=su.XofRandom(b"\x01" * 32)))
+    assert py == nat and spy.calls == native
+
+
+def test_context_and_count_gates(spy, monkeypatch):
+    sigma = WIDTHS["tmife_toy"]
+    for ctx in ({"emax": 2 ** 16}, {"emin": -(2 ** 16)}, {"subnormalize": True}):
+        with gp.context(gp.get_context(), **ctx):
+            py, nat = _both(lambda: su.discrete_gaussian_bigint(sigma, 4, rng=su.XofRandom(b"ctx")))
+        assert py == nat
+    assert spy.calls == 0
+    monkeypatch.setattr(native_backend, "MAX_NATIVE_BIGINT_COUNT", 3)
+    su.discrete_gaussian_bigint(sigma, 4)
+    assert spy.calls == 0
+    with pytest.raises(ValueError, match="too many"):
+        native_backend.ext().gauss_bigint(2 ** 24 + 1, 160, b"\x01", 0)
+
+
+def test_shared_xof_random_never_draws_a_block_twice():
+    """XofRandom claims its counters atomically, and the native call claims all of
+    its calls before it runs: a thread drawing from the same XofRandom meanwhile
+    gets other blocks, and the native samples are the reference's from the claimed
+    counter (found as the one gap the other thread's blocks leave)."""
+    import hashlib
+    import threading
+
+    seed, count = b"\x02" * 32, 6000
+    rng = su.XofRandom(seed)
+    stop, outs = threading.Event(), []
+
+    def other():
+        while not stop.is_set():
+            outs.append(rng.getrandbits(64))
+
+    t = threading.Thread(target=other)
+    with native_backend.backend("native"):
+        t.start()
+        native = su.discrete_gaussian_bigint(2 ** 100, count, rng=rng)
+        stop.set()
+        t.join()
+    head = len(seed).to_bytes(8, "big") + seed
+    block = {int.from_bytes(hashlib.shake_256(head + c.to_bytes(8, "big")).digest(8), "big"): c
+             for c in range(rng._counter)}
+    used = [block[v] for v in outs]
+    assert len(set(used)) == len(used)
+    free = sorted(set(range(rng._counter)) - set(used))
+    assert free == list(range(free[0], free[0] + 2 * count))
+    ref = su.XofRandom(seed)
+    ref._counter = free[0]
+    with native_backend.backend("python"):
+        assert su.discrete_gaussian_bigint(2 ** 100, count, rng=ref) == native
+
+
+def test_xof_random_threads_share_blocks_never():
+    import threading
+
+    rng = su.XofRandom(b"\x03" * 32)
+    outs = [[] for _ in range(4)]
+
+    def draw(out):
+        for _ in range(3000):
+            out.append(rng.getrandbits(128))
+
+    threads = [threading.Thread(target=draw, args=(o,)) for o in outs]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    every = [v for o in outs for v in o]
+    ref = su.XofRandom(b"\x03" * 32)
+    assert sorted(every) == sorted(ref.getrandbits(128) for _ in range(12000)) and rng._counter == 12000

@@ -273,6 +273,10 @@ def gauss_bytes(count: int) -> int:
 #: ``MAX_NATIVE_BIGINT_PREC`` bits) are sampled natively by :func:`gaussian_bigint`.
 MAX_NATIVE_BIGINT_BITS = 448
 MAX_NATIVE_BIGINT_PREC = 768
+#: Largest exponent (in absolute value) of ``sig = mantissa 2^exponent`` and
+#: most samples per call sampled natively (more: the Python code).
+MAX_NATIVE_BIGINT_EXP = 2 ** 20
+MAX_NATIVE_BIGINT_COUNT = 2 ** 24
 #: Tests set this to widen the decision margin of :func:`gaussian_bigint` by
 #: ``2^k``, so that many samples take the exact Python formula.
 _bigint_widen = 0
@@ -293,7 +297,10 @@ def _bigint_width(sigma, prec: int):
         return None
     zeros = (mant & -mant).bit_length() - 1
     mant, exp = mant >> zeros, exp + zeros
-    if mant.bit_length() + exp > MAX_NATIVE_BIGINT_BITS or mant.bit_length() > MAX_NATIVE_BIGINT_PREC:
+    if (
+        mant.bit_length() + exp > MAX_NATIVE_BIGINT_BITS or mant.bit_length() > MAX_NATIVE_BIGINT_PREC
+        or abs(exp) > MAX_NATIVE_BIGINT_EXP
+    ):
         return None
     return sig, mant.to_bytes((mant.bit_length() + 7) // 8, "little"), exp
 
@@ -313,11 +320,18 @@ def gaussian_bigint(sigma, count: int, rng, prec: int):
     fraction words). The reference's MPFR value is within ``2^-118`` of
     ``X``; whenever ``X`` is farther than ``2^(max(s + 16 - 64 n, -100) + 1)``
     from every half-integer both round to the same integer. The other samples
-    (about one in ``2^45``) are computed here with the reference formula from
+    (at most about one in ``2^45``, when ``s`` is just below a multiple of 64;
+    about one in ``2^62`` at the ``s = 47`` of SIFE FullySec) are computed
+    here with the reference formula from
     the same ``b1, b2``. So for a given bit source the samples are the
-    reference's. Applies to widths below ``2^448`` under the default MPFR
-    context (round to nearest, no traps); any other *rng* (a replaced
-    ``sampling_utils._CSPRNG`` included) keeps the Python code.
+    reference's. Applies to widths below ``2^448`` (exponents within
+    ``2^20``) and up to ``2^24`` samples per call, under an MPFR context like
+    the default one (round to nearest, no traps, no subnormals, exponent range
+    at least ``2^20``); any other *rng* (a replaced
+    ``sampling_utils._CSPRNG`` included) keeps the Python code. The
+    ``XofRandom`` calls of the samples are claimed (its counter advanced, as
+    ``getrandbits`` claims one) before the extension runs, so a thread drawing
+    from the same ``XofRandom`` meanwhile gets other calls.
     """
     if _ext is None or get_backend() == "python" or not hasattr(_ext, "gauss_bigint"):
         return None
@@ -331,26 +345,33 @@ def gaussian_bigint(sigma, count: int, rng, prec: int):
         xof = rng
     else:
         return None
-    if prec > MAX_NATIVE_BIGINT_PREC:
+    if prec > MAX_NATIVE_BIGINT_PREC or count > MAX_NATIVE_BIGINT_COUNT:
         return None
     ctx = gp.get_context()
-    if ctx.round != gp.RoundToNearest or any(getattr(ctx, t) for t in _TRAPS):
+    if (
+        ctx.round != gp.RoundToNearest or any(getattr(ctx, t) for t in _TRAPS) or ctx.subnormalize
+        or ctx.emax < MAX_NATIVE_BIGINT_EXP or ctx.emin > -MAX_NATIVE_BIGINT_EXP
+    ):
         return None
-    width = _bigint_width(sigma, prec)
+    try:
+        width = _bigint_width(sigma, prec)
+    except TypeError:  # an unhashable sigma (gmpy2.xmpz): the same conversion, uncached
+        width = _bigint_width.__wrapped__(sigma, prec)
     if width is None:
         return None
     sig, mant, exp = width
     kwargs = {"threads": _threads, "widen": _bigint_widen}
     if xof is not None:
-        kwargs.update(xof_head=xof._seed, xof_counter=xof._counter)
+        if xof._counter + 2 * count > 2 ** 64:  # the reference raises OverflowError there
+            return None
+        # the calls of these samples, claimed as XofRandom.getrandbits claims one
+        kwargs.update(xof_head=xof._seed, xof_counter=xof._claim(2 * count))
     else:
         rnd = random_input(2 * count * ((prec + 7) // 8))
         if rnd is not None:
             kwargs["rnd"] = rnd
         kwargs.update(seed_kwargs())
     values, holes = _ext.gauss_bigint(count, prec, mant, exp, **kwargs)
-    if xof is not None:
-        xof._counter += 2 * count
     out = [v if v is None else gp.mpz(v) for v in values]
     if holes:
         from pyfe4ai.utils.sampling_utils import _box_muller_rint
