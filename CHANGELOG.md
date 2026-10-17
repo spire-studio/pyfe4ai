@@ -497,9 +497,10 @@ compatibility).
   public parameters and the cached record gain `q_factors`. The default stays
   the prime (records, public parameters and ciphertexts as before); the
   threshold MCFE refuses the option and the SIFE schemes do not read it.
-  Security review: `docs/rns_modulus_review.md`. Host, 10^4 elements, 3
-  clients, binary ciphertexts: client -9%, decryption -15%, online
-  aggregation -16% (`benchmarks/PERFORMANCE.md`). The NTT root search now
+  Security review: `docs/rns_modulus_review.md`. 10^4 elements, 3 clients,
+  binary ciphertexts: client -9% (docker -14%), decryption -15% (-17%),
+  online aggregation -16% (-18%); key derivation unchanged
+  (`benchmarks/PERFORMANCE.md`). The NTT root search now
   requires `root^n = -1 (mod q)`, which selects the same roots for every prime.
 
 - Opt-in exact discrete Gaussian sampler `"facct"`
