@@ -451,16 +451,33 @@ class EncryptedGradient:
     Produced by :func:`encrypt_gradient`.
     """
 
-    ciphertexts: list  # list of np.ndarray(dtype=object)
+    #: One entry per layer: an object array of per-element ciphertexts, or,
+    #: for the packed Ring-LWE MCFE schemes, a dict
+    #: ``{"shape", "first_chunk", "chunks"}`` (see
+    #: :meth:`pyfe4ai.schemes.mcfe.ring_lwe.MCFERingLWE.encrypt_lst_ndarray`).
+    ciphertexts: list
     shape: tuple
     precision: int
     mode: str
     nid: str
 
     def to_dict(self) -> dict:
-        """Serialise for network transfer (e.g. federated learning)."""
+        """Serialise for network transfer (e.g. federated learning).
+
+        A per-element layer is written as ``{"shape", "data"}`` with one
+        entry per index, a packed layer as
+        ``{"packed": {"shape", "first_chunk", "chunks"}}``.
+
+        Raises:
+            TypeError: If a packed chunk holds ``bytes`` (a binary ciphertext
+                format). These have no JSON form, and the dict returned here
+                is meant for ``json.dumps``.
+        """
         serialised_cts = []
         for ary in self.ciphertexts:
+            if isinstance(ary, dict):  # packed layer
+                serialised_cts.append({"packed": self._serialised_packed(ary)})
+                continue
             flat = {}
             for idx, _ in np.ndenumerate(ary):
                 flat[str(idx)] = ary[idx]
@@ -473,6 +490,20 @@ class EncryptedGradient:
             "ciphertexts": serialised_cts,
         }
 
+    @staticmethod
+    def _serialised_packed(layer: dict) -> dict:
+        for j, chunk in enumerate(layer["chunks"]):
+            if any(isinstance(v, (bytes, bytearray, memoryview)) for v in chunk.values()):
+                raise TypeError(
+                    "chunk {} of a packed layer is a binary ciphertext; to_dict() only "
+                    "serialises JSON-compatible chunks".format(j)
+                )
+        return {
+            "shape": list(layer["shape"]),
+            "first_chunk": layer["first_chunk"],
+            "chunks": list(layer["chunks"]),
+        }
+
     #: Largest number of elements :meth:`from_dict` accepts per array.
     MAX_ELEMENTS = 10 ** 7
 
@@ -483,35 +514,18 @@ class EncryptedGradient:
         Raises:
             ValueError: If an array's shape is invalid or has more than
                 :attr:`MAX_ELEMENTS` elements, or its entries do not cover
-                exactly the positions of that shape.
+                exactly the positions of that shape; if a packed layer does
+                not have the layout of :meth:`_packed_layers`; or if packed
+                and per-element layers are mixed.
         """
-        cts = []
-        for ct_dict in d["ciphertexts"]:
-            shape = ct_dict["shape"]
-            if (
-                not isinstance(shape, list) or len(shape) > 32
-                or any(not isinstance(v, int) or isinstance(v, bool) or v < 0 for v in shape)
-            ):
-                raise ValueError("invalid ciphertext shape {!r}".format(shape))
-            size = 1
-            for v in shape:
-                size *= v
-            if size > cls.MAX_ELEMENTS:
-                raise ValueError("ciphertext array has too many elements ({})".format(size))
-            shape = tuple(shape)
-            ary = np.empty(shape, dtype=object)
-            seen = set()
-            for key, val in ct_dict["data"].items():
-                idx = tuple(
-                    int(x) for x in key.strip("()").split(",") if x.strip()
-                )
-                if len(idx) != len(shape) or any(not 0 <= i < n for i, n in zip(idx, shape)):
-                    raise ValueError("ciphertext index {} outside the shape {}".format(key, shape))
-                ary[idx] = val
-                seen.add(idx)
-            if len(seen) != size:
-                raise ValueError("ciphertext array must have an entry for every element")
-            cts.append(ary)
+        layers = d["ciphertexts"]
+        packed = [isinstance(ct_dict, dict) and "packed" in ct_dict for ct_dict in layers]
+        if any(packed) and not all(packed):
+            raise ValueError("cannot mix packed and per-element ciphertext layers")
+        if any(packed):
+            cts = cls._packed_layers(layers)
+        else:
+            cts = [cls._element_layer(ct_dict) for ct_dict in layers]
         return cls(
             ciphertexts=cts,
             shape=tuple(d["shape"]),
@@ -519,6 +533,88 @@ class EncryptedGradient:
             mode=d["mode"],
             nid=d["nid"],
         )
+
+    @classmethod
+    def _checked_shape(cls, shape) -> tuple[tuple, int]:
+        """Return ``(shape, size)`` of a serialised shape, or raise ``ValueError``."""
+        if (
+            not isinstance(shape, list) or len(shape) > 32
+            or any(not isinstance(v, int) or isinstance(v, bool) or v < 0 for v in shape)
+        ):
+            raise ValueError("invalid ciphertext shape {!r}".format(shape))
+        size = 1
+        for v in shape:
+            size *= v
+        if size > cls.MAX_ELEMENTS:
+            raise ValueError("ciphertext array has too many elements ({})".format(size))
+        return tuple(shape), size
+
+    @classmethod
+    def _element_layer(cls, ct_dict: dict) -> np.ndarray:
+        """Rebuild a per-element layer ``{"shape", "data"}`` as an object array."""
+        shape, size = cls._checked_shape(ct_dict["shape"])
+        ary = np.empty(shape, dtype=object)
+        seen = set()
+        for key, val in ct_dict["data"].items():
+            idx = tuple(
+                int(x) for x in key.strip("()").split(",") if x.strip()
+            )
+            if len(idx) != len(shape) or any(not 0 <= i < n for i, n in zip(idx, shape)):
+                raise ValueError("ciphertext index {} outside the shape {}".format(key, shape))
+            ary[idx] = val
+            seen.add(idx)
+        if len(seen) != size:
+            raise ValueError("ciphertext array must have an entry for every element")
+        return ary
+
+    @classmethod
+    def _packed_layers(cls, layers: list) -> list:
+        """Check serialised packed layers against the layout of ``encrypt_lst_ndarray``.
+
+        Every layer is ``{"packed": {"shape", "first_chunk", "chunks"}}``.
+        The chunks of all layers are numbered consecutively from 0, so a
+        layer's ``first_chunk`` is the number of chunks before it. Each chunk
+        is a dict with a batch length ``k >= 1``; the ``k`` of a layer add up
+        to its number of elements, and every chunk but the last of a layer is
+        full (has the largest ``k``, i.e. ``ring_n``). The ciphertexts in the
+        chunks are checked by the scheme when decrypting.
+        """
+        out, next_chunk = [], 0
+        for wrapped in layers:
+            layer = wrapped["packed"]
+            if (
+                set(wrapped) != {"packed"} or not isinstance(layer, dict)
+                or set(layer) != {"shape", "first_chunk", "chunks"}
+            ):
+                raise ValueError("invalid packed ciphertext layer")
+            shape, size = cls._checked_shape(layer["shape"])
+            first, chunks = layer["first_chunk"], layer["chunks"]
+            if not isinstance(first, int) or isinstance(first, bool) or first != next_chunk:
+                raise ValueError(
+                    "packed layer has first chunk {!r}, expected {}".format(first, next_chunk)
+                )
+            if not isinstance(chunks, list) or not chunks:
+                raise ValueError("packed chunks must be a non-empty list")
+            for j, chunk in enumerate(chunks):
+                k = chunk.get("k") if isinstance(chunk, dict) else None
+                if not isinstance(k, int) or isinstance(k, bool) or k < 1:
+                    raise ValueError(
+                        "chunk {} of a packed layer is not a ciphertext with a batch "
+                        "length k >= 1".format(j)
+                    )
+            covered = sum(chunk["k"] for chunk in chunks)
+            if covered != size:
+                raise ValueError(
+                    "packed chunks cover {} elements, the shape {} has {}".format(covered, shape, size)
+                )
+            out.append({"shape": list(shape), "first_chunk": first, "chunks": list(chunks)})
+            next_chunk += len(chunks)
+        width = max((chunk["k"] for layer in out for chunk in layer["chunks"]), default=0)
+        if any(chunk["k"] != width for layer in out for chunk in layer["chunks"][:-1]):
+            raise ValueError(
+                "every chunk but the last of a packed layer must have the full width {}".format(width)
+            )
+        return out
 
 
 @dataclass

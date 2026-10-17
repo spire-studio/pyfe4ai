@@ -5,6 +5,22 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/) (pre-1.0: minor bumps may break
 compatibility).
 
+## [Unreleased]
+
+### Fixed
+
+- `EncryptedGradient.to_dict()` failed with `KeyError: ()` on the packed
+  ciphertext layers of the Ring-LWE MCFE schemes (`mcfe/ring_lwe` and its
+  threshold and decentralized variants), and `from_dict()` could not rebuild
+  them. Packed layers are now written as
+  `{"packed": {"shape", "first_chunk", "chunks"}}`; the per-element format
+  is unchanged. `from_dict()` checks the packed layout: shapes as for
+  per-element layers, chunks numbered consecutively across layers, each chunk
+  with a batch length `k >= 1`, the `k` of a layer adding up to its number of
+  elements, and only a layer's last chunk shorter than the others.
+  `to_dict()` raises `TypeError` for chunks holding `bytes` (a binary
+  ciphertext format has no JSON form).
+
 ## [0.3.0] — 2026-10-13
 
 Privacy fixes: every scheme that was insecure in v0.2.0 now implements a
@@ -757,6 +773,7 @@ before using them.
 
 Initial public release.
 
+[Unreleased]: https://github.com/spire-studio/pyfe4ai/compare/v0.3.0...HEAD
 [0.3.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/spire-studio/pyfe4ai/releases/tag/v0.1.0
