@@ -133,13 +133,22 @@ compatibility).
   blocks: statistical distance below `2^-128` per value) and read fewer XOF
   bytes (26 -> 11 per coefficient at an 80-bit `q`). **MCFE ciphertexts and
   functional key terms differ from v0.3.0.** Parameters, formats and the
-  cached parameter records do not change. The mode is now written to the
-  public parameters (`pp["label_hash"]`) and to every functional key or key
-  share; a key of another mode is refused. Public parameters and keys
-  without the field -- those of v0.3.0 -- are read as `"shake256-wide"`, so
-  v0.3.0 keys and ciphertexts stay usable; new setups get the v0.3.0 hash
-  with `label_hash="shake256-wide"` in the key generator config
-  (`"shake256-rejection"` keeps SHAKE-256 with rejection sampling). Python
+  cached parameter records do not change. The mode is bound to everything
+  that depends on it: the public parameters (`pp["label_hash"]`), the
+  clients' encryption keys, every functional key and threshold key share,
+  and every ciphertext (`label_hash`: the code of
+  `crypto_utils.LABEL_HASH_CODES`, also under the threshold variant's
+  HMAC tags). A client whose key and public parameters disagree refuses to
+  encrypt, and ciphertexts or keys of another mode are refused at
+  decryption, instead of decrypting to wrong sums (crypto review M5).
+  Anything without the field -- the data of v0.3.0 -- is read as
+  `"shake256-wide"`, so v0.3.0 public parameters, keys and ciphertexts stay
+  usable together; new setups get the v0.3.0 hash with
+  `label_hash="shake256-wide"` in the key generator config
+  (`"shake256-rejection"` keeps SHAKE-256 with rejection sampling). Size:
+  one small field per Ring-LWE chunk (unchanged 24.6 / 68.4 B per element,
+  binary / JSON); dense-LWE ciphertexts carry it per element (13.3 -> 30.3
+  B per element in JSON). Python
   (`hashlib`) and the native kernels give the same values (known-answer
   tests). Host, native, one thread, `standard`: MCFE Ring-LWE 10^4
   elements, binary, aggregator 7.40 -> 5.87 ms (key derivation 4.17 -> 2.65

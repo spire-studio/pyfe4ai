@@ -539,7 +539,8 @@ def test_threshold_value_formats_and_errors_identical(cfg, native_calls):
     q = int(pp["q"])
 
     def variant(f):
-        ct = {"ct0": [list(cts["c1"]["ct0"][0])], "ct1": list(cts["c1"]["ct1"]), "k": cts["c1"]["k"]}
+        ct = {"ct0": [list(cts["c1"]["ct0"][0])], "ct1": list(cts["c1"]["ct1"]), "k": cts["c1"]["k"],
+              "label_hash": cts["c1"]["label_hash"]}
         f(ct)
         return dict(cts, c1=_retag(kg, "c1", "L", ct))
 

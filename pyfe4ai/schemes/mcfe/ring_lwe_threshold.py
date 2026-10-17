@@ -81,6 +81,7 @@ import numpy as np
 
 from pyfe4ai.schemes.mcfe.labels import chunk_label
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWE
+from pyfe4ai.schemes.mcfe.ring_lwe import check_ciphertext_label_hashes
 from pyfe4ai.schemes.mcfe.ring_lwe import chunk_key_index
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
 from pyfe4ai.schemes.mcfe.labels import encode_label
@@ -144,9 +145,13 @@ def uniform_flooding_poly(bits: int, ring_n: int, seed: bytes) -> list:
 
 
 def _tag_payload(encoded_label: str, ct: dict) -> list:
-    """What a tMCFE-Ring-LWE ciphertext tag covers: the (chunk) label and the
-    ciphertext as serialised."""
-    return [encoded_label, ct.get("k"), ct.get("ct0"), ct.get("ct1")]
+    """What a tMCFE-Ring-LWE ciphertext tag covers: the (chunk) label, the
+    ciphertext as serialised and its ``label_hash`` code when it has one
+    (ciphertexts of versions <= 0.3.0 have none: their tags stay valid)."""
+    payload = [encoded_label, ct.get("k"), ct.get("ct0"), ct.get("ct1")]
+    if "label_hash" in ct:
+        payload.append(ct["label_hash"])
+    return payload
 
 
 def _flooding_poly(sigma: int, ring_n: int, rng) -> list:
@@ -335,6 +340,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
                 "z": z_shares[sid],
                 "z_chunks": [cs[sid] for cs in chunk_shares],
                 "label": key["label"],
+                "label_hash": key["label_hash"],
                 # one per server, weights and label: a re-sharing for another
                 # n_chunks (same key part) must not come with fresh noise
                 "noise_key": hmac.new(
@@ -429,6 +435,8 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             dict_ct, dk.get("mac_keys"), self.id, _TAG_DOMAIN,
             lambda nid, ct: _tag_payload(encoded, ct),
         )
+        # the key share of the public parameters' label hash
+        self._check_key_label_hash(dk)
         q = gp.mpz(self.pp["q"])
         ring_n = self.pp["ring_n"]
         delta = q // gp.mpz(self.pp["p"])
@@ -449,6 +457,9 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             batch = set(ks)
         if len(batch) != 1:
             raise FESchemeError("ciphertexts of different batch lengths")
+        # every (authenticated, well-formed) ciphertext of that label hash too:
+        # else the result would be wrong, not refused
+        check_ciphertext_label_hashes(dict_ct.values(), self.label_hash)
 
         if native is None:
             key_part = [delta * gp.mpz(v) % q for v in z_share]

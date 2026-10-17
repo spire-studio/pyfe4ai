@@ -223,7 +223,12 @@ def test_mcfe_ndarray_identical(sampler, stat_param):
         sampler.reset()  # the MCFE layer (no per-server tags of the threshold variant)
         enc[nid] = mcfe_rlwe.MCFERingLWE.encrypt_lst_ndarray(cl, grads[nid], label="r1")
         sampler.reset()
+        # the v0.3.0 values; the chunks also carry the label hash's code
+        assert all(ct.pop("label_hash") == 2 for layer in enc[nid] for ct in layer["chunks"])
         assert enc[nid] == ref_mcfe_encrypt_lst_ndarray(cl, grads[nid], "r1", sampler)
+        for layer in enc[nid]:
+            for ct in layer["chunks"]:
+                ct["label_hash"] = 2
     weights = {nid: [1] for nid in clients}
     n_chunks = agg.key_chunks(next(iter(enc.values())))
     dk = mcfe_rlwe.MCFERingLWEKeyGenerator.get_decryption_keys(  # unshared, also for the threshold variant

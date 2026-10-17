@@ -47,8 +47,13 @@ counter-mode SHA-256), mapped to ``Z_q`` as the key generator's
 :data:`~pyfe4ai.utils.crypto_utils.LABEL_HASHES`): by default rejection
 sampling mod q from SHAKE128 (exactly uniform, fewer XOF bytes). Versions
 <= 0.3.0 reduced ``bits(q) + 128``-bit SHAKE-256 blocks (``"shake256-wide"``,
-still selectable; public parameters without ``label_hash`` are read as that),
-so their ciphertexts differ.
+still selectable), so their ciphertexts differ. The mode is bound to the
+public parameters, the clients' encryption keys and every ciphertext
+(``label_hash``: the code of :data:`~pyfe4ai.utils.crypto_utils.LABEL_HASH_CODES`,
+absent for ``"shake256-wide"``); a missing field means ``"shake256-wide"``
+(the data of versions <= 0.3.0 stay readable), and encryption with a key of
+another mode or decryption of a ciphertext of another mode raises instead of
+returning a wrong sum. Functional keys ``sum y Z`` do not depend on the hash.
 """
 
 from __future__ import annotations
@@ -68,6 +73,7 @@ from pyfe4ai.schemes.profiles import STANDARD
 from pyfe4ai.utils import native_backend
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import DEFAULT_LABEL_HASH
+from pyfe4ai.utils.crypto_utils import LABEL_HASH_CODES
 from pyfe4ai.utils.crypto_utils import LEGACY_LABEL_HASH
 from pyfe4ai.utils.crypto_utils import check_label_hash
 from pyfe4ai.utils.crypto_utils import hash_to_zq_material
@@ -203,10 +209,10 @@ class MCFELWEKeyGenerator(IPFEAbsKeyGenerator):
         return pp
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
-        """Return the encryption key ``{z}`` of client *nid* (``None`` if unknown)."""
+        """Return the encryption key ``{z, label_hash}`` of client *nid* (``None`` if unknown)."""
         if nid not in self.msk["z"]:
             return None
-        return {"z": [[gp.digits(v) for v in z_j] for z_j in self.msk["z"][nid]]}
+        return {"z": [[gp.digits(v) for v in z_j] for z_j in self.msk["z"][nid]], "label_hash": self.label_hash}
 
     def _aggregate_key(self, fusion_weight: dict) -> list:
         """Return ``sum y_{i,j} Z_{i,j} mod q`` after validating the weights."""
@@ -263,6 +269,26 @@ class MCFELWE(IPFEAbsCrypto):
         self.dim = self.pp["n0"] + self.pp["m0"]
         self.label_hash = _label_hash(self.pp.get("label_hash", LEGACY_LABEL_HASH))
 
+    def _check_encryption_label_hash(self) -> None:
+        """Raise unless the encryption key was issued for the public parameters'
+        label hash (keys without ``label_hash``: ``"shake256-wide"``).
+
+        Raises:
+            FEKeyError: If they differ: the ciphertexts would decrypt to wrong
+                values.
+        """
+        key_mode = self.sk.get("label_hash", LEGACY_LABEL_HASH)
+        if key_mode != self.label_hash:
+            raise FEKeyError("the encryption key was issued for label hash {!r}, the public parameters say {!r}"
+                             .format(key_mode, self.label_hash))
+
+    def _ciphertext(self, c: list) -> dict:
+        """A ciphertext dict, bound to the label hash (no field for ``"shake256-wide"``,
+        as in versions <= 0.3.0)."""
+        if self.label_hash == LEGACY_LABEL_HASH:
+            return {"c": c}
+        return {"c": c, "label_hash": LABEL_HASH_CODES[self.label_hash]}
+
     def _hash_label(self, label: str) -> list:
         return hash_label(label, self.q, self.dim, self.label_hash)
 
@@ -285,6 +311,7 @@ class MCFELWE(IPFEAbsCrypto):
             raise FEKeyError("no public parameters provided for encryption")
         if not self._has_private_keys():
             raise FEKeyError("no encryption key provided")
+        self._check_encryption_label_hash()
         if len(lst_pt) > len(self.sk["z"]):
             raise FEValidationError("invalid size of input plaintext")
         if any(abs(strict_int(v, "plaintext")) > self.pp["bound_x"] for v in lst_pt):
@@ -296,14 +323,18 @@ class MCFELWE(IPFEAbsCrypto):
         for x_j, z_j in zip(lst_pt, z):
             v = dot_mod(z_j, h_l, self.q) + self.delta * int(x_j)
             c.append(int(round_to_q0(v, self.q, self.q0)))
-        return {"c": c}
+        return self._ciphertext(c)
 
     def _weighted_sum(self, dct_ct: dict, fusion_weight: dict) -> gp.mpz:
         """Return ``sum y_{i,j} c_{i,j} mod q0`` after checking the inputs match."""
         if dct_ct.keys() != fusion_weight.keys():
             raise FESchemeError("inconsistent input among ct and fusion weight")
+        code = LABEL_HASH_CODES[self.label_hash]
         acc = gp.mpz(0)
         for nid, ct in dct_ct.items():
+            if ct.get("label_hash", 0) != code:  # the hash this ciphertext was made with (none: v0.3.0's)
+                raise FESchemeError("the ciphertext of {} was produced with another label hash than the public "
+                                    "parameters' {!r}".format(nid, self.label_hash))
             if len(ct["c"]) != len(fusion_weight[nid]):
                 raise FESchemeError(
                     "ciphertext and fusion weight of {} differ in length".format(nid)
@@ -366,6 +397,7 @@ class MCFELWE(IPFEAbsCrypto):
                     raise FEKeyError("no public parameters provided for encryption")
                 if not self._has_private_keys():
                     raise FEKeyError("no encryption key provided")
+                self._check_encryption_label_hash()
                 if len(self.sk["z"]) < 1:
                     raise FEValidationError("invalid size of input plaintext")
                 if int(np.max(np.abs(ary))) > self.pp["bound_x"]:
@@ -373,7 +405,7 @@ class MCFELWE(IPFEAbsCrypto):
                 z = _mpz_cached(self, "_z_mpz", self.sk["z"], lambda rows: [[gp.mpz(v) for v in row] for row in rows])
                 dots = self._label_dots([_element_label(label, l, i) for i in np.ndindex(ary.shape)], z[0])
                 for (i, w), dot in zip(np.ndenumerate(ary), dots):
-                    ary_ct[i] = {"c": [int(round_to_q0(dot + self.delta * int(w), self.q, self.q0))]}
+                    ary_ct[i] = self._ciphertext([int(round_to_q0(dot + self.delta * int(w), self.q, self.q0))])
             else:
                 for i, w in np.ndenumerate(ary):
                     ary_ct[i] = self.encrypt([int(w)], _element_label(label, l, i))

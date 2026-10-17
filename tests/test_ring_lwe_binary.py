@@ -95,7 +95,7 @@ def test_binary_and_mixed_formats_decrypt(enc_backend, dec_backend):
     # malformed binary ciphertexts
     for bad in (b"", enc["c0"][0]["chunks"][1]["ct"][:-1], "not bytes", 5):
         tampered = {nid: [dict(layer, chunks=list(layer["chunks"])) for layer in enc[nid]] for nid in enc}
-        tampered["c1"][0]["chunks"][1] = {"ct": bad, "k": tampered["c1"][0]["chunks"][1]["k"]}
+        tampered["c1"][0]["chunks"][1] = dict(tampered["c1"][0]["chunks"][1], ct=bad)
         with native_backend.backend(dec_backend), pytest.raises(FESchemeError, match="malformed ciphertext of c1"):
             agg.decrypt_lst_ndarray_ct(tampered, dk=dk, fusion_weight=weights, label="r")
 
@@ -127,4 +127,4 @@ def test_ml_adapter_binary_round(name):
         out = aggregate_gradients(enc, w, {n: 1 for n in nids}, label="r")
     assert np.allclose(out, sum(g.values()))
     sample = enc["c0"].ciphertexts[0]["chunks"][0]
-    assert set(sample) == {"ct", "k"} and isinstance(sample["ct"], bytes)
+    assert set(sample) == {"ct", "k", "label_hash"} and isinstance(sample["ct"], bytes)

@@ -28,7 +28,7 @@ from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tmcfe_rlwe
 from pyfe4ai.utils import crypto_utils as cu
 from pyfe4ai.utils import native_backend
 from pyfe4ai.utils import ring_lwe_utils as rlu
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 
 pytestmark = pytest.mark.core
 
@@ -379,8 +379,8 @@ def test_defaults_and_v030_compatibility():
 
     old_kg, old_pp, _ = _rlwe("shake256-wide", mcfe_rlwe.MCFERingLWEKeyGenerator, mcfe_rlwe.MCFERingLWE)
     v030_pp = {k: v for k, v in old_pp.items() if k != "label_hash"}
-    v030 = {nid: mcfe_rlwe.MCFERingLWE({"id": nid, "precision": 2,
-                                        "keys": {"pp": v030_pp, "sk": old_kg.get_private_keys(nid)}})
+    v030 = {nid: mcfe_rlwe.MCFERingLWE({"id": nid, "precision": 2, "keys": {
+                "pp": v030_pp, "sk": {k: v for k, v in old_kg.get_private_keys(nid).items() if k != "label_hash"}}})
             for nid in clients}
     assert v030["c0"].label_hash == "shake256-wide"
     grads = {nid: np.random.default_rng(1).uniform(-1, 1, 30).round(2) for nid in clients}
@@ -400,3 +400,120 @@ def test_defaults_and_v030_compatibility():
     lkg.setup()
     lpp = {k: v for k, v in lkg.get_public_parameters().items() if k != "label_hash"}
     assert mcfe_lwe.MCFELWE({"id": "a", "keys": {"pp": lpp}}).label_hash == "shake256-wide"
+
+
+# ------------------------------------------- binding of the mode (review M5)
+
+def test_ring_mode_bound_to_keys_and_ciphertexts():
+    """Encryption keys carry the mode (a client with public parameters of
+    another mode refuses to encrypt); ciphertexts carry its code (none for
+    shake256-wide), and decryption refuses ciphertexts of another mode --
+    e.g. those of a client that still runs v0.3.0 -- instead of returning
+    wrong sums."""
+    kg, pp, clients = _rlwe(None, mcfe_rlwe.MCFERingLWEKeyGenerator, mcfe_rlwe.MCFERingLWE)
+    sk = kg.get_private_keys("c0")
+    assert sk["label_hash"] == pp["label_hash"] == "shake128-rejection"
+    for other in ({k: v for k, v in pp.items() if k != "label_hash"}, dict(pp, label_hash="shake256-rejection")):
+        stale = mcfe_rlwe.MCFERingLWE({"id": "c0", "precision": 2, "keys": {"pp": other, "sk": sk}})
+        for call in (lambda: stale.encrypt_lst_ndarray([np.zeros(5)], label="r"),
+                     lambda: stale.encrypt([[1, 2]], "r"),
+                     lambda: stale.precompute("r", [(5,)])):
+            with pytest.raises(FEKeyError):
+                call()
+    grads = {nid: np.random.default_rng(2).uniform(-1, 1, 70).round(2) for nid in clients}
+    weights = {nid: [1] for nid in clients}
+    for backend in ["python"] + (["native"] if native_backend.available() else []):
+        with native_backend.backend(backend):
+            cts = {nid: clients[nid].encrypt_lst_ndarray([grads[nid]], label="r") for nid in clients}
+            assert all(ct["label_hash"] == 2 for layer in cts["c0"] for ct in layer["chunks"])
+            dk = kg.get_decryption_keys("s", credentials={"fusion_weight": weights, "label": "r",
+                                                          "n_chunks": mcfe_rlwe.MCFERingLWE.key_chunks(cts["c0"])})
+            agg = mcfe_rlwe.MCFERingLWE({"id": "a", "precision": 2, "keys": {"pp": pp}})
+            assert np.allclose(agg.decrypt_lst_ndarray_ct(cts, dk=dk, fusion_weight=weights, label="r")[0],
+                               sum(grads.values()))
+            for tamper in (lambda ct: ct.pop("label_hash"), lambda ct: ct.update(label_hash=1),
+                           lambda ct: ct.update(label_hash="2")):
+                bad = {nid: [dict(layer, chunks=[dict(c) for c in layer["chunks"]]) for layer in v]
+                       for nid, v in cts.items()}
+                tamper(bad["c1"][0]["chunks"][0])
+                with pytest.raises(FESchemeError):
+                    agg.decrypt_lst_ndarray_ct(bad, dk=dk, fusion_weight=weights, label="r")
+    single = {nid: clients[nid].encrypt([[3, 4]], "s1") for nid in clients}
+    w2 = {nid: [1] for nid in clients}
+    dk1 = kg.get_decryption_keys("s", credentials={"fusion_weight": w2, "label": "s1"})
+    assert agg.decrypt(single, dk1, w2, "s1") == [9, 12]
+    single["c2"].pop("label_hash")
+    with pytest.raises(FESchemeError):
+        agg.decrypt(single, dk1, w2, "s1")
+
+
+def test_threshold_tags_and_key_shares_bind_the_mode():
+    kg, pp, clients = _rlwe(None, tmcfe_rlwe.ThresholdMCFERingLWEKeyGenerator, tmcfe_rlwe.ThresholdMCFERingLWE,
+                            32, s=3, t=2, lst_sid=["s0", "s1", "s2"], stat_param=40)
+    grads = {nid: np.random.default_rng(3).uniform(-1, 1, 40).round(2) for nid in clients}
+    cts = {nid: clients[nid].encrypt_lst_ndarray([grads[nid]], label="r") for nid in clients}
+    creds = {"fusion_weight": {nid: [1] for nid in clients}, "label": "r",
+             "n_chunks": tmcfe_rlwe.ThresholdMCFERingLWE.key_chunks(cts["c0"])}
+    dk = kg.get_decryption_keys("s0", credentials=creds)
+    assert dk["label_hash"] == "shake128-rejection"
+    srv = tmcfe_rlwe.ThresholdMCFERingLWE({"id": "s0", "precision": 2, "keys": {"pp": pp}})
+    srv.compute_lst_ndarray_ct(cts, creds, dk, ["s0", "s1"])
+    # the code is under the servers' tags: changing or dropping it breaks them
+    for tamper in (lambda ct: ct.pop("label_hash"), lambda ct: ct.update(label_hash=0)):
+        bad = {nid: [dict(layer, chunks=[dict(c) for c in layer["chunks"]]) for layer in v] for nid, v in cts.items()}
+        tamper(bad["c2"][0]["chunks"][0])
+        with pytest.raises(FESchemeError):
+            srv.compute_lst_ndarray_ct(bad, creds, dk, ["s0", "s1"])
+    # a key share of another mode (or of v0.3.0, without the field)
+    for share in (dict(dk, label_hash="shake256-wide"), {k: v for k, v in dk.items() if k != "label_hash"}):
+        with pytest.raises(FESchemeError):
+            srv.compute_lst_ndarray_ct(cts, creds, share, ["s0", "s1"])
+    # a server holding public parameters of v0.3.0's format
+    stale = tmcfe_rlwe.ThresholdMCFERingLWE(
+        {"id": "s0", "precision": 2, "keys": {"pp": {k: v for k, v in pp.items() if k != "label_hash"}}})
+    with pytest.raises(FESchemeError):
+        stale.compute_lst_ndarray_ct(cts, creds, dk, ["s0", "s1"])
+
+
+@pytest.mark.parametrize("backend", ["python", pytest.param("native", marks=needs_native)])
+def test_dense_mode_bound_to_keys_and_ciphertexts(backend):
+    nids = ["c0", "c1"]
+    kg = mcfe_lwe.MCFELWEKeyGenerator({"n": 2, "lst_nid": nids, "eta": 1, "bound_x": 50, "bound_y": 2})
+    kg.setup()
+    pp = kg.get_public_parameters()
+    sk = kg.get_private_keys("c0")
+    assert sk["label_hash"] == pp["label_hash"] == "shake128-rejection"
+    stale = mcfe_lwe.MCFELWE({"id": "c0", "precision": 2,
+                              "keys": {"pp": {k: v for k, v in pp.items() if k != "label_hash"}, "sk": sk}})
+    clients = {nid: mcfe_lwe.MCFELWE({"id": nid, "precision": 2, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
+               for nid in nids}
+    grads = {nid: np.random.default_rng(4).uniform(-0.5, 0.5, 6).round(2) for nid in nids}
+    weights = {nid: [1] for nid in nids}
+    dk = kg.get_decryption_keys("s", credentials={"fusion_weight": weights})
+    agg = mcfe_lwe.MCFELWE({"id": "a", "precision": 2, "keys": {"pp": pp}})
+    with native_backend.backend(backend):
+        for call in (lambda: stale.encrypt([1], "x"), lambda: stale.encrypt_lst_ndarray([grads["c0"]], label="r")):
+            with pytest.raises(FEKeyError):
+                call()
+        cts = {nid: clients[nid].encrypt_lst_ndarray([grads[nid]], label="r") for nid in nids}
+        assert all(ct["label_hash"] == 2 for ct in cts["c0"][0].ravel())
+        out = agg.decrypt_lst_ndarray_ct(cts, dk=dk, fusion_weight=weights, label="r")[0]
+        assert np.allclose(np.asarray(out, dtype=float), sum(grads.values()))
+        bad = {nid: [a.copy() for a in v] for nid, v in cts.items()}
+        bad["c1"][0][2] = {"c": bad["c1"][0][2]["c"]}  # as a v0.3.0 client would write it
+        with pytest.raises(FESchemeError):
+            agg.decrypt_lst_ndarray_ct(bad, dk=dk, fusion_weight=weights, label="r")
+    # all of v0.3.0's format (no field anywhere, shake256-wide) still decrypts
+    old = mcfe_lwe.MCFELWEKeyGenerator({"n": 2, "lst_nid": nids, "eta": 1, "bound_x": 50, "bound_y": 2,
+                                        "label_hash": "shake256-wide"})
+    old.setup()
+    opp = {k: v for k, v in old.get_public_parameters().items() if k != "label_hash"}
+    ocl = {nid: mcfe_lwe.MCFELWE({"id": nid, "precision": 2, "keys": {
+               "pp": opp, "sk": {k: v for k, v in old.get_private_keys(nid).items() if k != "label_hash"}}})
+           for nid in nids}
+    octs = {nid: ocl[nid].encrypt_lst_ndarray([grads[nid]], label="r") for nid in nids}
+    assert all(set(ct) == {"c"} for ct in octs["c0"][0].ravel())
+    oagg = mcfe_lwe.MCFELWE({"id": "a", "precision": 2, "keys": {"pp": opp}})
+    oout = oagg.decrypt_lst_ndarray_ct(octs, dk=old.get_decryption_keys("s", credentials={"fusion_weight": weights}),
+                                       fusion_weight=weights, label="r")[0]
+    assert np.allclose(np.asarray(oout, dtype=float), sum(grads.values()))

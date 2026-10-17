@@ -40,7 +40,8 @@ def test_key_shares(kg_config):
     kg = ThresholdMCFERingLWEKeyGenerator(kg_config)
     kg.setup()
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": {n: [1] for n in kg_config["lst_nid"]}, "label": "l"})
-    assert set(dk) == {"sk_y", "z", "z_chunks", "label", "noise_key", "sid", "lst_sid", "weights_id", "mac_keys"}
+    assert set(dk) == {"sk_y", "z", "z_chunks", "label", "label_hash", "noise_key", "sid", "lst_sid", "weights_id",
+                       "mac_keys"}
 
 
 @pytest.mark.parametrize("enrolled", [["sid_1", "sid_2"], ["sid_0", "sid_2"], ["sid_0", "sid_1", "sid_2"]])

@@ -31,10 +31,16 @@ label (:func:`~pyfe4ai.utils.crypto_utils.hash_to_zq_vector`), mapped to
 :data:`~pyfe4ai.utils.crypto_utils.LABEL_HASHES`): by default rejection
 sampling mod q from SHAKE128 (``"shake128-rejection"``: exactly uniform,
 fewer XOF bytes). Versions <= 0.3.0 reduced ``bits(q) + 128``-bit SHAKE-256
-blocks (``"shake256-wide"``, still selectable; public parameters and keys
-without a ``label_hash`` field are read as that), so their ciphertexts and
-key terms differ. Versions <= 0.2.0 masked inputs with a small public label
-scalar.
+blocks (``"shake256-wide"``, still selectable), so their ciphertexts and
+key terms differ. The mode is bound to everything that depends on it: the
+public parameters, the clients' encryption keys, every functional key (and
+threshold key share) and every ciphertext (``label_hash``: the code of
+:data:`~pyfe4ai.utils.crypto_utils.LABEL_HASH_CODES`, covered by the
+threshold variant's tags); a missing field means ``"shake256-wide"`` (the
+data of versions <= 0.3.0, which stay readable), and encryption with a key
+of another mode, or decryption of ciphertexts or with keys of another mode,
+raises instead of returning wrong sums. Versions <= 0.2.0 masked inputs with
+a small public label scalar.
 """
 
 from __future__ import annotations
@@ -94,6 +100,29 @@ def pp_label_hash(pp: dict) -> str:
         raise FEValidationError(str(exc)) from exc
 
 
+def ciphertext_label_hash(ct) -> str | None:
+    """The label hash a ciphertext dict was produced with (no ``label_hash``
+    field: ``"shake256-wide"``), or ``None`` for an unknown code."""
+    code = ct.get("label_hash", 0) if isinstance(ct, dict) else 0
+    if type(code) is not int or not 0 <= code < len(LABEL_HASH_CODES):
+        return None
+    return next(mode for mode, c in LABEL_HASH_CODES.items() if c == code)
+
+
+def check_ciphertext_label_hashes(cts, mode: str, who: str = "a client") -> None:
+    """Raise unless every ciphertext dict of *cts* was produced with *mode*.
+
+    Raises:
+        FESchemeError: For a ciphertext of another (or an unknown) label hash.
+    """
+    for ct in cts:
+        if ciphertext_label_hash(ct) != mode:
+            raise FESchemeError(
+                "a ciphertext of {} was produced with another label hash than the public parameters' {!r}".format(
+                    who, mode)
+            )
+
+
 def native_hash_kwargs(mode: str) -> dict:
     """The ``hash_mode`` keyword of the native pad kernels (none for the kernels' own ``"shake256-wide"``)."""
     return {"hash_mode": LABEL_HASH_CODES[mode]} if mode != LEGACY_LABEL_HASH else {}
@@ -148,6 +177,7 @@ class MCFERingLWEKeyGenerator(MIFERingLWEKeyGenerator):
         if sk is None:
             return None
         sk["u_prime"] = self.msk["u_prime"][nid]
+        sk["label_hash"] = self.label_hash
         return sk
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
@@ -240,6 +270,45 @@ class MCFERingLWE(MIFERingLWE):
         if dk.get("label_hash", LEGACY_LABEL_HASH) != self.label_hash:
             raise FESchemeError("the key was derived with another label hash than the public parameters")
 
+    def _encryption_label_hash(self) -> str:
+        """The label hash to encrypt with: the public parameters', which must
+        be the one the encryption key was issued for (keys without
+        ``label_hash``: ``"shake256-wide"``).
+
+        Raises:
+            FEKeyError: If they differ (e.g. public parameters of another
+                version than the key): the ciphertexts would decrypt to wrong
+                values.
+        """
+        mode = self.label_hash
+        key_mode = (self.sk or {}).get("label_hash", LEGACY_LABEL_HASH) if self._has_private_keys() else mode
+        if key_mode != mode:
+            raise FEKeyError(
+                "the encryption key was issued for label hash {!r}, the public parameters say {!r}".format(
+                    key_mode, mode)
+            )
+        return mode
+
+    def _mark(self, ct: dict) -> dict:
+        """Bind the label hash to a ciphertext (no field for ``"shake256-wide"``,
+        as in versions <= 0.3.0)."""
+        if self.label_hash != LEGACY_LABEL_HASH:
+            ct["label_hash"] = LABEL_HASH_CODES[self.label_hash]
+        return ct
+
+    def _mark_layers(self, layers: list) -> list:
+        for layer in layers:
+            for ct in layer["chunks"]:
+                self._mark(ct)
+        return layers
+
+    def _check_layers_label_hash(self, dict_ndarray_ct: dict) -> None:
+        mode = self.label_hash
+        for nid, layers in dict_ndarray_ct.items():
+            for layer in layers if isinstance(layers, (list, tuple)) else ():
+                chunks = layer.get("chunks") if isinstance(layer, dict) else None
+                check_ciphertext_label_hashes(chunks if isinstance(chunks, (list, tuple)) else (), mode, nid)
+
     def _decrypt_layer_native(self, ctx, dict_ndarray_ct, l, layer, dk, fusion_weight, sk_hats):
         """Layer *l* of :meth:`decrypt_lst_ndarray_ct` in one native call, with
         the checks of :meth:`_decrypt_with_key_term` per chunk; ``None`` if the
@@ -275,7 +344,8 @@ class MCFERingLWE(MIFERingLWE):
 
     def _pad(self, label) -> list:
         return label_pad(
-            self.sk["u_prime"], label, gp.mpz(self.pp["q"]), self.pp["eta"], self.pp["ring_n"], self.label_hash
+            self.sk["u_prime"], label, gp.mpz(self.pp["q"]), self.pp["eta"], self.pp["ring_n"],
+            self._encryption_label_hash(),
         )
 
     def encrypt(self, matrix_pt: list[list[int]], label: str) -> dict:
@@ -285,7 +355,7 @@ class MCFERingLWE(MIFERingLWE):
             raise FEKeyError("encryption key lacks u_prime")
         if not isinstance(label, str):
             raise FEValidationError("label must be a string")
-        return self._encrypt_rows(self._padded_rows(rows, extra_pad=self._pad(label)), len(rows[0]))
+        return self._mark(self._encrypt_rows(self._padded_rows(rows, extra_pad=self._pad(label)), len(rows[0])))
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict, label: str):
         """Recover the batch of inner products for a key bound to *label*.
@@ -299,6 +369,8 @@ class MCFERingLWE(MIFERingLWE):
         if dk.get("label") != label:
             raise FESchemeError("the key was derived for another label")
         self._check_key_label_hash(dk)
+        for nid, ct in dct_ct.items():
+            check_ciphertext_label_hashes((ct,), self.label_hash, nid)
         return self._decrypt_with_key_term(dct_ct, dk, dk["z"], fusion_weight)
 
     def _decrypt_with_key_term(self, dct_ct, dk, z, fusion_weight, sk_hats=None) -> list:
@@ -346,7 +418,8 @@ class MCFERingLWE(MIFERingLWE):
         if not isinstance(label, str):
             raise FEValidationError("need a string label for encrypt_lst_ndarray")
         if kwargs.get("precomputed") is not None:
-            return self._encrypt_precomputed(lst_ndarray, label, kwargs["precomputed"])
+            return self._mark_layers(self._encrypt_precomputed(lst_ndarray, label, kwargs["precomputed"]))
+        mode = self._encryption_label_hash()
         ring_n = self.pp["ring_n"]
         out, chunk = [], 0
         for ary_src in lst_ndarray:
@@ -357,7 +430,7 @@ class MCFERingLWE(MIFERingLWE):
                 u_prime = self.sk["u_prime"]
                 res = native_backend.ext().encrypt_tensor(
                     nkey, np.ascontiguousarray(ints, dtype=np.int64),
-                    [label_pad_material(u_prime, chunk_label(label, chunk + j), self.label_hash) for j in range(n_layer)],
+                    [label_pad_material(u_prime, chunk_label(label, chunk + j), mode) for j in range(n_layer)],
                     float(self.pp["sigma2"]), float(self.pp["sigma3"]),
                     native_backend.random_input(3 * native_backend.gauss_bytes(ring_n) * n_layer),
                     native_backend.get_threads(), self.ct_format == "binary", **native_backend.seed_kwargs(),
@@ -375,7 +448,7 @@ class MCFERingLWE(MIFERingLWE):
                 cts.append(self._encrypt_rows(rows, len(part)))
             out.append({"shape": list(np.shape(ary_src)), "first_chunk": chunk, "chunks": cts})
             chunk += n_layer
-        return out
+        return self._mark_layers(out)
 
     def _native_cts(self, res: list) -> list:
         if self.ct_format == "binary":
@@ -421,7 +494,8 @@ class MCFERingLWE(MIFERingLWE):
         nkey = self._native_encryption_key()
         if nkey is not None:
             cap = native_backend.ext().precompute_tensor(
-                nkey, [label_pad_material(u_prime, chunk_label(label, c), self.label_hash) for c in range(total)],
+                nkey, [label_pad_material(u_prime, chunk_label(label, c), self._encryption_label_hash())
+                       for c in range(total)],
                 float(self.pp["sigma2"]), float(self.pp["sigma3"]),
                 native_backend.random_input(3 * native_backend.gauss_bytes(ring_n) * total),
                 native_backend.get_threads(), **native_backend.seed_kwargs(),
@@ -495,6 +569,7 @@ class MCFERingLWE(MIFERingLWE):
         if dk.get("label") != label:
             raise FESchemeError("the key was derived for another label")
         self._check_key_label_hash(dk)
+        self._check_layers_label_hash(dict_ndarray_ct)
         sample = next(iter(dict_ndarray_ct.values()))
         if self.key_chunks(sample) > len(dk.get("z_chunks", [])):
             raise FEKeyError("the key covers fewer chunks than the ciphertexts")
