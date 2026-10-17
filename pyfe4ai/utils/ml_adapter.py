@@ -372,6 +372,12 @@ class FESchemeWrapper:
     variants, whose decryption is a multi-party protocol; use the scheme
     classes directly for those.
 
+    A wrapper can be pickled and copied (``multiprocessing``, Ray): the copy
+    carries the ``(nid, label)`` pairs used so far and refuses them as the
+    original does. Copies do not learn of labels used later by the original
+    or by other copies, so encrypt each client's gradient for a label through
+    one wrapper (for example, one worker per client).
+
     Args:
         scheme_type: ``"sife"``, ``"mife"``, ``"mcfe"`` or ``"quadratic"``.
         variant: Variant name within the family, e.g. ``"ddh"``, ``"lwe"``,
@@ -440,6 +446,22 @@ class FESchemeWrapper:
         self._encrypted_labels: set[tuple[str, str]] = set()
         self._label_lock = threading.Lock()
         self._aggregated: dict[str, dict] = {}
+
+    def __getstate__(self) -> dict:
+        """Pickling and copying: the state without the lock and the cached
+        crypto objects (rebuilt from the keys on use; they may hold native
+        objects), with a snapshot of the used ``(nid, label)`` pairs (the
+        copy refuses them too)."""
+        state = self.__dict__.copy()
+        del state["_label_lock"]
+        state["_encryptors"] = {}
+        with self._label_lock:
+            state["_encrypted_labels"] = set(self._encrypted_labels)
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+        self._label_lock = threading.Lock()
 
     # -- crypto instance management ----------------------------------------
 

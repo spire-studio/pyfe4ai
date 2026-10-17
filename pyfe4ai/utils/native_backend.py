@@ -45,7 +45,8 @@ measured), and the tests within ``2^-100`` of the threshold (about one in
 samples are the reference's (the known-answer tests of
 ``tests/test_sampling_facct.py`` hold natively). Building a table compares a
 few of its fixed-point thresholds with the Python formula and refuses a
-constant that is not precise enough.
+constant off by more than about ``2^-102`` there (a 53-bit one is off by
+about ``2^-55``).
 
 Random bytes. The extension draws them from a DRBG scoped to one call:
 every tensor-level call (``encrypt_tensor``, ``precompute_tensor``,

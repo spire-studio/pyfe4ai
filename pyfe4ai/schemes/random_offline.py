@@ -11,8 +11,8 @@ plaintext term. With the same random source the ciphertexts are those of the
 plain call. The precomputation holds the secret randomness of future
 ciphertexts: keep it like a key. It is one-time (see
 :mod:`pyfe4ai.schemes.one_time`): the online phase validates its input,
-then claims the precomputation atomically; copies, pickles and use in
-another process are refused.
+then claims the precomputation atomically; ``copy.copy``, ``copy.deepcopy``,
+pickling and use in another process are refused.
 
 A scheme provides ``_random_part()`` (draws ``r``; returns what the
 ciphertext needs of it) and ``_encrypt_with(lst_pt, part)`` (the ciphertext

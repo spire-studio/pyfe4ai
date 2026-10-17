@@ -112,7 +112,10 @@ def test_concurrent_use_of_a_native_precomputation_does_not_deadlock(tmp_path):
 
     if native_backend.ext() is None:
         pytest.skip("native extension not built")
-    env = dict(os.environ, PYTHONPATH=ROOT + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    # the native precomputation also under PYFE4AI_BACKEND=python (whose 3M-element
+    # Python precomputation would take minutes with the FACCT sampler)
+    env = dict(os.environ, PYFE4AI_BACKEND="native",
+               PYTHONPATH=ROOT + os.pathsep + os.environ.get("PYTHONPATH", ""))
     try:
         res = subprocess.run([sys.executable, "-c", _THREADS, str(tmp_path)], capture_output=True, text=True,
                              timeout=120, env=env)

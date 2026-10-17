@@ -280,6 +280,12 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                 z = [acc + y_row * u for acc, u in zip(z, u_row)]
         return {"sk_y": sk_y, "z": [gp.digits(v % self.q) for v in z]}
 
+    def __getstate__(self) -> dict:
+        """Pickling and copying without the native key cache (rebuilt on use)."""
+        state = self.__dict__.copy()
+        state.pop("_native_msk", None)
+        return state
+
     def _native_master_key(self):
         """``(context, sk rows, u rows)`` packed for the native backend, per
         client, computed once per master key; ``None`` for the Python path."""
@@ -366,6 +372,13 @@ class MIFERingLWE(IPFEAbsCrypto):
         if "u" not in self.sk:
             raise FEKeyError("encryption key lacks the one-time pad u")
         return rows
+
+    def __getstate__(self) -> dict:
+        """Pickling and copying without the key cache (it may hold native
+        objects; rebuilt on use)."""
+        state = self.__dict__.copy()
+        state.pop("_enc_key", None)
+        return state
 
     def _encryption_key(self) -> dict:
         """This slot's key in the form encryption uses, computed once per key:

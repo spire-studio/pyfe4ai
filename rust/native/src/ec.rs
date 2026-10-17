@@ -99,10 +99,14 @@ struct Table {
     baby: HashMap<[u8; 32], u64>,
 }
 
-/// The cached tables, per size: at most 16 tables / 128 MB, least recently used evicted.
-static TABLES: TableCache<u64, Table> = TableCache::new(16, 128 << 20);
+/// Bytes of one baby step (the 32-byte encoding and the index).
+const ENTRY: usize = std::mem::size_of::<([u8; 32], u64)>();
 
-/// (tables, estimated bytes) of the dlog table cache (diagnostics, tests).
+/// The cached tables, per size: at most 16 tables / 128 MB (see dlog.rs), least
+/// recently used evicted.
+static TABLES: TableCache<u64, Table> = TableCache::new(dlog::CACHE_TABLES, dlog::CACHE_BYTES);
+
+/// (tables, bytes) of the dlog table cache (diagnostics, tests).
 #[pyfunction]
 fn r255_dlog_cache() -> (usize, usize) {
     TABLES.stats()
@@ -110,8 +114,8 @@ fn r255_dlog_cache() -> (usize, usize) {
 
 /// The table for |x| <= bound.
 fn table(bound: u64) -> Arc<Table> {
-    let m = dlog::baby_steps(bound, true);
-    TABLES.get_or_build(m, m as usize * dlog::ENTRY_BYTES, || {
+    let m = dlog::baby_steps(bound, true, ENTRY);
+    TABLES.get_or_build(m, dlog::table_bytes(m, ENTRY), || {
         let mut baby = HashMap::with_capacity(m as usize);
         let mut p = RistrettoPoint::identity();
         for j in 0..m {

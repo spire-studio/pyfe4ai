@@ -145,12 +145,15 @@ def hash_to_group(message: str, tag: bytes, index: int = 0):
 #: process and bound) means fewer giant steps, each an addition and an
 #: encoding (about 0.15 ms in Python).
 _BABY_FACTOR = 16
+#: Most baby steps of a table of the pure-Python group (about 10 MB, 10 s to
+#: build; the extension's tables take up to 1,835,008): beyond, more giant steps.
+_MAX_BABY = 2 ** 16
 
 
 @functools.lru_cache(maxsize=16)
 def _dlog_table(bound: int) -> tuple:
     span = 2 * bound + 1
-    m = min(span, (math.isqrt(span) + 1) * _BABY_FACTOR)
+    m = min(span, (math.isqrt(span) + 1) * _BABY_FACTOR, _MAX_BABY)
     table, point = {}, IDENTITY
     for j in range(m):
         table[r255.encode(point)] = j

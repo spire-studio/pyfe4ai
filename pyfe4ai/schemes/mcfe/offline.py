@@ -14,7 +14,8 @@ and are known before the round, so:
   element. The ciphertexts are those of the plain call (the encryption is
   deterministic). Secret and one-time, as the masks of the Ring-LWE MCFE
   (see :mod:`pyfe4ai.schemes.one_time`: claimed atomically after the input
-  is validated; copies, pickles and use in another process are refused).
+  is validated; ``copy.copy``, ``copy.deepcopy``, pickling and use in
+  another process are refused).
 * :meth:`OfflineMCFEMixin.prepare_key` computes the key terms of every
   element label for a functional key; ``decrypt_lst_ndarray_ct`` with that
   key then only multiplies the ciphertexts and solves the discrete log.

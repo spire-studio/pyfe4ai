@@ -19,13 +19,14 @@ use ark_ec::{CurveGroup, PrimeGroup};
 use ark_ff::{BigInteger, Field, One, PrimeField, Zero};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
 use pyfe4ai_core::osrand;
-use pyfe4ai_core::sha256::sha256;
 use pyo3::basic::CompareOp;
 use pyo3::exceptions::{PyOSError, PyTypeError, PyValueError, PyZeroDivisionError};
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyBytes, PyInt};
+use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
+use std::hash::{BuildHasher, Hash, Hasher};
 use std::sync::{Arc, OnceLock};
 
 /// charm's type codes.
@@ -536,12 +537,27 @@ fn bls_multi_pair(py: Python<'_>, a: Vec<Bound<'_, Elem>>, b: Vec<Bound<'_, Elem
 struct GtTable {
     m: u64,
     giant: Gt,
-    baby: HashMap<[u8; 32], u64>,
+    baby: HashMap<u128, u64>,
 }
 
-/// The table key of a GT element: SHA-256 of its encoding (32 bytes instead of 576).
-fn gt_key(t: &Gt) -> [u8; 32] {
-    sha256(&[&serialize_val(&Val::Gt(*t))])
+/// Bytes of one baby step (key and index).
+const GT_ENTRY: usize = std::mem::size_of::<(u128, u64)>();
+
+/// The table key of a GT element: 128 bits of SipHash-1-3 over its Fq12
+/// coordinates (two inputs, domain-separated) under one random key per process
+/// (std's RandomState). Cheaper than hashing its 576-byte encoding; a false match
+/// among the at most 2^49 lookups of a dlog has probability below 2^-79 and
+/// cannot be aimed at, the key being unknown.
+fn gt_key(t: &Gt) -> u128 {
+    static KEY: OnceLock<RandomState> = OnceLock::new();
+    let key = KEY.get_or_init(RandomState::new);
+    let half = |domain: u8| {
+        let mut h = key.build_hasher();
+        domain.hash(&mut h);
+        t.hash(&mut h);
+        h.finish() as u128
+    };
+    (half(0) << 64) | half(1)
 }
 
 fn build_gt_table(base: Gt, m: u64) -> GtTable {
@@ -554,16 +570,16 @@ fn build_gt_table(base: Gt, m: u64) -> GtTable {
     GtTable { m, giant: -(base * Fr::from(m)), baby }
 }
 
-/// The cached tables, per (base, size): at most 16 tables / 128 MB, least
-/// recently used evicted.
-static GT_TABLES: TableCache<([u8; 32], u64), GtTable> = TableCache::new(16, 128 << 20);
+/// The cached tables, per (base, size): at most 16 tables / 128 MB (see dlog.rs),
+/// least recently used evicted.
+static GT_TABLES: TableCache<(u128, u64), GtTable> = TableCache::new(dlog::CACHE_TABLES, dlog::CACHE_BYTES);
 
 fn gt_table(base: Gt, bound: u64) -> Arc<GtTable> {
-    let m = dlog::baby_steps(bound, true);
-    GT_TABLES.get_or_build((gt_key(&base), m), m as usize * dlog::ENTRY_BYTES, || build_gt_table(base, m))
+    let m = dlog::baby_steps(bound, true, GT_ENTRY);
+    GT_TABLES.get_or_build((gt_key(&base), m), dlog::table_bytes(m, GT_ENTRY), || build_gt_table(base, m))
 }
 
-/// (tables, estimated bytes) of the GT dlog table cache (diagnostics, tests).
+/// (tables, bytes) of the GT dlog table cache (diagnostics, tests).
 #[pyfunction]
 fn bls_gt_dlog_cache() -> (usize, usize) {
     GT_TABLES.stats()
@@ -600,7 +616,7 @@ fn bls_gt_dlog(py: Python<'_>, base: &Bound<'_, Elem>, target: &Bound<'_, Elem>,
         if cache {
             gt_search(&gt_table(g, bound), g, h, bound)
         } else {
-            gt_search(&build_gt_table(g, dlog::baby_steps(bound, false)), g, h, bound)
+            gt_search(&build_gt_table(g, dlog::baby_steps(bound, false, GT_ENTRY)), g, h, bound)
         }
     }))
 }

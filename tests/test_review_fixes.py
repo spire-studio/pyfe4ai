@@ -122,6 +122,18 @@ def test_ristretto_hex_rule_and_dlog_cap(backend):
             ec_group.dlog(ec_group.from_hex(h), ec_group.MAX_DLOG_BOUND + 1)
 
 
+def test_python_ristretto_table_is_capped(monkeypatch):
+    monkeypatch.setattr(ec_group, "_MAX_BABY", 50)
+    ec_group._dlog_table.cache_clear()
+    try:
+        with native_backend.backend("python"):
+            for x in (-12345, 0, 19999):
+                assert ec_group.dlog(ec_group.mul_base(x), 20000) == x
+        assert ec_group._dlog_table(20000)[1] == 50
+    finally:
+        ec_group._dlog_table.cache_clear()
+
+
 # ----------------------------------------------------------------- threads
 
 def test_set_threads_is_capped():
@@ -179,6 +191,62 @@ def test_failed_encryption_releases_the_label():
     encrypt_gradient(np.full(10, 0.5), w, nid="c0", label="r1")  # the label was not consumed
     with pytest.raises(ValueError, match="already encrypted"):
         encrypt_gradient(np.full(10, 0.5), w, nid="c0", label="r1")
+
+
+@pytest.mark.parametrize("clone", ["pickle", "deepcopy", "copy"])
+def test_a_copied_wrapper_keeps_the_used_labels(clone):
+    import copy
+    import pickle
+
+    from pyfe4ai.utils.ml_adapter import FESchemeWrapper, aggregate_gradients, encrypt_gradient
+
+    nids = ["c0", "c1", "c2"]
+    w = FESchemeWrapper("mcfe", "ring_lwe", {"eta": 1, "n": 3, "lst_nid": nids, "ring_n": 64,
+                                             "sec_param": 64, "bound_x": 100, "bound_y": 2}, precision=2)
+    cts = {n: encrypt_gradient(np.full(10, 0.5), w, nid=n, label="r1") for n in nids[:2]}
+    twin = {"pickle": lambda x: pickle.loads(pickle.dumps(x)), "deepcopy": copy.deepcopy, "copy": copy.copy}[clone](w)
+    with pytest.raises(ValueError, match="already encrypted"):
+        encrypt_gradient(np.full(10, 0.5), twin, nid="c0", label="r1")
+    cts["c2"] = encrypt_gradient(np.full(10, 0.5), w, nid="c2", label="r1")  # the original is unaffected
+    assert ("c2", "r1") not in twin._encrypted_labels and twin._label_lock is not w._label_lock
+    assert np.allclose(aggregate_gradients(cts, w, {n: 1 for n in nids}, label="r1"), 1.5)
+    # after a whole round (native key caches in the key generator) the wrapper still copies
+    again = pickle.loads(pickle.dumps(w)) if clone == "pickle" else copy.deepcopy(w)
+    cts2 = {n: encrypt_gradient(np.full(10, 0.25), again, nid=n, label="r2") for n in nids}
+    assert np.allclose(aggregate_gradients(cts2, again, {n: 1 for n in nids}, label="r2"), 0.75)
+
+
+@pytest.mark.parametrize("backend", EC_BACKENDS)
+def test_ring_lwe_objects_pickle_after_use(backend):
+    import pickle
+
+    from pyfe4ai.schemes.mcfe import ring_lwe as mcfe_rlwe
+    from pyfe4ai.schemes.sife import ring_lwe as sife_rlwe
+
+    nids = ["a", "b"]
+    with native_backend.backend(backend):
+        kg = mcfe_rlwe.MCFERingLWEKeyGenerator({"n": 2, "lst_nid": nids, "eta": 1, "ring_n": 16, "sec_param": 64,
+                                                "bound_x": 10, "bound_y": 1})
+        kg.setup()
+        pp = kg.get_public_parameters()
+        enc = {n: mcfe_rlwe.MCFERingLWE({"id": n, "precision": 0, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}})
+               for n in nids}
+        cts = {n: enc[n].encrypt_lst_ndarray([np.arange(5)], label="L") for n in nids}
+        weights = {n: [1] for n in nids}
+        kg.get_decryption_keys("s", credentials={"fusion_weight": weights, "label": "L", "n_chunks": 1})
+        kg2, enc2 = pickle.loads(pickle.dumps(kg)), pickle.loads(pickle.dumps(enc))
+        cts2 = {n: enc2[n].encrypt_lst_ndarray([np.arange(5)], label="M") for n in nids}
+        dk = kg2.get_decryption_keys("s", credentials={"fusion_weight": weights, "label": "M", "n_chunks": 1})
+        agg = mcfe_rlwe.MCFERingLWE({"id": "s", "precision": 0, "keys": {"pp": pp}})
+        out = agg.compute_lst_ndarray_ct(cts2, dk=dk, fusion_weight=weights, label="M")
+        assert np.ravel(out[0]).tolist() == [0, 2, 4, 6, 8] and cts
+        skg = sife_rlwe.SIFERingLWEKeyGenerator({"eta": 1, "ring_n": 16, "sec_param": 64, "bound_x": 10,
+                                                 "bound_y": 1})
+        skg.setup()
+        s = sife_rlwe.SIFERingLWE({"keys": {"pp": skg.get_public_parameters(), "sk": skg.get_private_keys()},
+                                   "precision": 0})
+        s.encrypt([[1] * 16])
+        pickle.loads(pickle.dumps(s)).encrypt([[1] * 16])
 
 
 # --------------------------------------------------------- rounded sampler

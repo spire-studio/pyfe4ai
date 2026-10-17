@@ -31,7 +31,8 @@ compatibility).
   give `x - x'` without any key. The online phase now validates its input
   (shapes, and the plaintext bound where the plain call checks one), then
   checks and sets `used` under a per-object lock and moves the secret parts
-  out; copies, deep copies and pickles raise `TypeError`; a precomputation
+  out; `copy.copy`, `copy.deepcopy` and pickling raise `TypeError` (code
+  that copies the attributes deliberately is not prevented); a precomputation
   records the process that made it, refuses use in another one, and is
   invalidated in a forked child (`os.register_at_fork`). Refused inputs do
   not consume it. The native precomputation also refuses another process.
@@ -55,15 +56,27 @@ compatibility).
   and recorded it afterwards, so two concurrent calls for one client and
   label both succeeded and an aggregator could learn `gA - gB`. The pair is
   now reserved under a lock before encrypting and released if the
-  encryption fails; `precompute_gradient` checks it under the same lock.
+  encryption fails; `precompute_gradient` checks it under the same lock. A
+  wrapper can still be pickled and copied (`multiprocessing`, Ray): the copy
+  carries the pairs used so far and refuses them, but does not learn of
+  labels used later by the original or other copies, so each client's
+  gradient for a label goes through one wrapper. The cached crypto objects
+  are not copied (rebuilt from the keys), and the Ring-LWE key generator and
+  MIFE / SIFE Ring-LWE objects drop their native key caches when pickled
+  (since the native backend they could not be pickled after a native call).
 - **GT discrete-log tables bounded** (M3): the BLS12-381 baby-step tables
   were cached per base and bound for the life of the process, and SIFE
   FH-IPE builds one for a new base `e(k1, c1)` per decryption (megabytes
-  each). The GT and ristretto255 table caches now keep at most 16 tables /
-  128 MB (least recently used evicted), key GT tables by SHA-256 of the
-  encoding (32 instead of 576 bytes per step), and `gt_dlog(...,
-  cache=False)` (used by SIFE FH-IPE) solves with a table of about
-  `sqrt(2 bound + 1)` steps that is not kept.
+  each). The GT and ristretto255 table caches now keep at most 16 tables
+  and 128 MiB each (least recently used evicted; sizes counted as the hash
+  table allocates them), key GT tables by a 128-bit keyed SipHash of the
+  element (16 instead of 576 bytes per step; cached GT dlogs at bound 10^5
+  take 0.09 instead of 0.19 ms), and `gt_dlog(..., cache=False)` (used by
+  SIFE FH-IPE) solves with a table of about `sqrt(2 bound + 1)` steps that
+  is not kept. One table takes at most 96 MiB (1,835,008 baby steps): above
+  bounds of about `2^33` a dlog takes more giant steps (ristretto255 at
+  `10^11`: 0.25 s per dlog and 7 s to build the table, instead of 50 ms and
+  28 s with the uncapped 344 MB table).
 
 ### Performance
 
@@ -232,8 +245,9 @@ compatibility).
     `OverflowError`), canonical base64, and exactly the element's encoding
     length (trailing bytes were ignored).
   - Bounded discrete logarithms in GT and ristretto255 refuse bounds above
-    `2^48` with `ValueError` (`2 bound + 1` wrapped at `2^63`); one table
-    holds at most `2^21` baby steps.
+    `2^48` with `ValueError` (`2 bound + 1` wrapped at `2^63`); a native
+    table holds at most 1,835,008 baby steps (see above), a table of the
+    pure-Python ristretto255 fallback at most `2^16`.
   - Native size arithmetic is checked: `dense_dots` with sizes that overflow,
     `encrypt_precomputed` with a chunk index past the end and a `Delta` of 0
     raise `ValueError` instead of `PanicException` (a `BaseException` the

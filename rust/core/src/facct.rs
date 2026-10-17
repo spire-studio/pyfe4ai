@@ -12,7 +12,8 @@
 //! the exact threshold is asked from `exact(x, y)` (the Python formula;
 //! probability about 2^-99 per trial), so the decisions are always Python's.
 //! `check_table` compares a few thresholds with `exact` (the binding runs it
-//! when a table is built), so an imprecise c is refused, not used.
+//! when a table is built), so a grossly imprecise c (off by more than about
+//! 2^-102, such as a 53-bit one) is refused, not used.
 
 use crate::arith::{Word, U256};
 use crate::keccak::shake256;
@@ -256,9 +257,11 @@ fn accept(table: &Table, x: u64, y: u64, v: U256, exact: &dyn Fn(u64, u64) -> U2
 }
 
 /// Whether the fixed-point thresholds agree with `exact` to 2^-102 (relative to
-/// 2^192; the undecided band is 2^-100) at the corners and the middle of the
-/// (x, y) range: a wrong or imprecise c -- one not correct to about 2^-110 --
-/// fails. Points where exp_neg defers to `exact` anyway are skipped.
+/// 2^192) at the corners and the middle of the (x, y) range. It detects a
+/// constant off by more than about 2^-102 at those points -- a 53-bit c is off
+/// by about 2^-55 -- that is, errors that approach the 2^-100 band within which
+/// the decisions are deferred; it does not show the 2^-110 of a correct c (about
+/// 2^-119 measured). Points where exp_neg defers to `exact` anyway are skipped.
 pub fn check_table(table: &Table, exact: &dyn Fn(u64, u64) -> U256) -> bool {
     if table.k < 2 {
         return true; // y = 0 always: no acceptance test

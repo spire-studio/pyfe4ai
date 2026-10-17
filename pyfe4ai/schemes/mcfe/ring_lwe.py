@@ -338,8 +338,8 @@ class MCFERingLWE(MIFERingLWE):
 
         The result determines the encryption randomness: keep it as secret as
         the key, and use it once (an MCFE client encrypts at most once per
-        label). The use is atomic, and copies, pickles and use in another
-        process (after ``os.fork()``) are refused
+        label). The use is atomic, and ``copy.copy``, ``copy.deepcopy``,
+        pickling and use in another process (after ``os.fork()``) are refused
         (:mod:`pyfe4ai.schemes.one_time`). Natively each chunk is overwritten
         in memory when used; on the Python path the references to the chunks
         are dropped (Python integers cannot be wiped).

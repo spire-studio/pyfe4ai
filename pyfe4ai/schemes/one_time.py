@@ -13,7 +13,9 @@ process:
   in another one; after ``os.fork()`` the child's copies are also marked
   used and dropped (``os.register_at_fork``);
 * ``copy.copy``, ``copy.deepcopy`` and pickling raise ``TypeError``: a copy
-  would be a second, unused handle on the same randomness.
+  would be a second, unused handle on the same randomness. Code that clones
+  the object deliberately (copying its attributes) is not prevented; the
+  object is a handle on a secret, not a capability that cannot be forged.
 
 The schemes validate their inputs before they claim the precomputation, so
 refused inputs do not consume it.
