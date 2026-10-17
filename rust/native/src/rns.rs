@@ -18,6 +18,7 @@ use pyfe4ai_core::rns::{self, RnsKey, RnsPrecomputed, RnsRing};
 use pyfe4ai_core::{rlwe, Modulus, Word};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::sync::MutexExt;
 use pyo3::types::{PyBytes, PyList, PyTuple};
 use std::sync::{Arc, Mutex};
 
@@ -344,6 +345,13 @@ pub fn precompute_tensor(py: Python<'_>, key: &Bound<'_, RnsKeyObj>, pad_materia
     Ok(RnsPreObj { key: key.clone().unbind(), pre: Mutex::new(pre) })
 }
 
+/// The precomputation's lock, waited for detached from the interpreter: the call
+/// holding it runs its kernel with the GIL released, so a second thread
+/// blocking on it with the GIL attached would deadlock the process.
+fn lock_pre<'a>(py: Python<'_>, p: &'a RnsPreObj) -> PyResult<std::sync::MutexGuard<'a, RnsPrecomputed>> {
+    p.pre.lock_py_attached(py).map_err(|_| PyValueError::new_err("precomputation poisoned by a failed call"))
+}
+
 pub fn encrypt_precomputed(py: Python<'_>, key: &Bound<'_, RnsKeyObj>, pre: &Bound<'_, PyAny>, first: usize,
                            x: &Bound<'_, PyAny>, threads: usize, binary: bool) -> PyResult<Py<PyList>> {
     let p = pre.cast::<RnsPreObj>().map_err(|_| PyValueError::new_err("precomputed with another key"))?.borrow();
@@ -353,7 +361,7 @@ pub fn encrypt_precomputed(py: Python<'_>, key: &Bound<'_, RnsKeyObj>, pre: &Bou
     let xs = int64_buffer(x)?;
     let obj = key.get();
     let (r, k) = (&*obj.ring, &obj.key);
-    let mut guard = p.pre.lock().unwrap();
+    let mut guard = lock_pre(py, &p)?;
     let pc: &mut RnsPrecomputed = &mut guard;
     let n = r.n;
     let chunks = (xs.len() + n - 1) / n;
@@ -365,7 +373,7 @@ pub fn encrypt_precomputed(py: Python<'_>, key: &Bound<'_, RnsKeyObj>, pre: &Bou
 
 pub fn precomputed_info(py: Python<'_>, pre: &Bound<'_, RnsPreObj>) -> PyResult<Py<PyAny>> {
     let p = pre.borrow();
-    let g = p.pre.lock().unwrap();
+    let g = lock_pre(py, &p)?;
     let d = pyo3::types::PyDict::new(py);
     d.set_item("chunks", g.chunks())?;
     d.set_item("used", g.used.iter().filter(|&&u| u).count())?;
