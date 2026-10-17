@@ -1,0 +1,315 @@
+"""Packed layout of the adaptively secure Ring-LWE IPFE (BMMS21 Sec. 5 with Remark 1)."""
+
+import json
+import math
+import os
+import random
+
+import gmpy2 as gp
+import numpy as np
+import pytest
+
+from pyfe4ai.schemes.sife import fullysec_ring_lwe as fs
+from pyfe4ai.schemes.sife.fullysec_ring_lwe import SIFEFullySecRingLWE, SIFEFullySecRingLWEKeyGenerator
+from pyfe4ai.utils import native_backend
+from pyfe4ai.utils import ring_lwe_utils as rlu
+from pyfe4ai.utils import sampling_utils
+from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.utils.ml_adapter import EncryptedGradient, FESchemeWrapper, aggregate_gradients, encrypt_gradient
+
+CFG = {"eta": 3, "bound_x": 4, "bound_y": 4, "ndarray_layout": "packed"}
+RECORD = os.path.join("config", "authority", "SIFE_FULLYSEC_RING_LWE", "param.json")
+
+
+@pytest.fixture(autouse=True)
+def _param_cache_in_tmp(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+
+def _keys(cfg):
+    kg = SIFEFullySecRingLWEKeyGenerator(dict(cfg))
+    kg.setup()
+    pp = kg.get_public_parameters()
+    return kg, SIFEFullySecRingLWE({"keys": {"pp": pp, "sk": kg.get_private_keys()}}), pp
+
+
+@pytest.fixture(scope="module")
+def scheme(tmp_path_factory):
+    cwd = os.getcwd()
+    os.chdir(tmp_path_factory.mktemp("cache"))
+    try:
+        return _keys(CFG)
+    finally:
+        os.chdir(cwd)
+
+
+def _products(matrix, y):
+    return [sum(row[j] * w for row, w in zip(matrix, y)) for j in range(len(matrix[0]))]
+
+
+# -- parameters ---------------------------------------------------------------
+
+
+def test_elementwise_leveraging_is_the_previous_one():
+    assert rlu.bmms21_adaptive_leveraging(4, 4, 4096) == (8 * math.log2(9), 1)
+
+
+@pytest.mark.parametrize("l, X, n", [(1, 100, 4096), (4, 4, 4096), (10, 50, 8192), (40, 2, 32)])
+def test_packed_leveraging_ranges_over_the_span_of_the_differences(l, X, n):
+    lev, rank = rlu.bmms21_adaptive_leveraging(l, X, n, packed=True)
+    assert rank == min(l, n)
+    # at most D + 1 dimensions, each subspace spanned by D vectors of [-2X, 2X]^l
+    assert lev == pytest.approx(math.log2((rank + 1) * (4 * X + 1) ** (l * rank)))
+    # guessing both challenge matrices of k = n vectors would cost (2X + 1)^(2 l n)
+    assert lev < 2 * l * n * math.log2(2 * X + 1)
+
+
+@pytest.mark.parametrize("kappa, l, X, Y, n, m", [
+    (128, 10, 50, 50, 8192, 9),
+    (128, 4, 4, 4, 4096, 18),
+    (128, 1, 100, 1, 4096, 19),
+    (128, 3, 4, 4, 32, 8),
+])
+def test_packed_parameters_meet_the_constraints(kappa, l, X, Y, n, m):
+    P = rlu.bmms21_adaptive_parameters(kappa, l, X, Y, n, m, packed=True)
+    q, p = int(P["q"]), int(P["p"])
+    assert q % (2 * n) == 1 and gp.is_prime(q) and p == 2 * l * X * Y + 2
+    lev, D = rlu.bmms21_adaptive_leveraging(l, X, n, packed=True)
+    # Theorem 2 (k = 2), once per basis vector of the differences: D 2 delta + bad A
+    log2_delta = -(kappa + 3 + lev + math.log2(D))
+    ln_term = math.log(2 * m * n) + math.log1p(2.0 ** -log2_delta)
+    log2_root = 0.5 * math.log2(n * ln_term / math.pi)
+    eps = 2 * (math.log2(P["sigma_lhl"]) - log2_root) / math.log2(q) - 4 / m
+    bad = (2 * m - math.log2((q ** m - 1) * (q ** m - q)) / math.log2(q))
+    log2_bad = n - eps * n * math.log2(q) + n * bad * math.log2(q)
+    assert math.log2(D * 2 * 2.0 ** log2_delta + 2.0 ** log2_bad) + lev <= -kappa
+    # G3 -> G4: Lemma 1 along a basis B of the differences, ||B|| <= 2X sqrt(l D)
+    assert P["sigma1"] >= math.sqrt(2) * 2 * X * math.sqrt(l * D) * P["sigma_lhl"] * (1 - 1e-12)
+    # the differences are rational combinations of B: denominators (minors) below q
+    assert D * math.log2(2 * X * math.sqrt(D)) < math.log2(q)
+    # Theorem 1 and correctness as for one vector per ciphertext
+    C = math.sqrt(kappa) * P["sigma1"]
+    eta = math.sqrt((math.log(2 * (n + n * l)) + kappa * math.log(2)) / math.pi)
+    ratio = P["sigma"] * n * C * math.sqrt(l + 2) / P["sigma2"]
+    assert P["sigma"] * math.sqrt(1 - ratio ** 2) > eta
+    assert P["sigma3"] == pytest.approx(math.sqrt(m) * P["sigma2"])
+    noise = l * Y * (math.sqrt(kappa) * P["sigma3"] + m * n * kappa * P["sigma1"] * P["sigma2"])
+    assert noise < q // (2 * p)
+
+
+@pytest.mark.parametrize("l, X, Y, expected", [
+    (1, 100, 1, (4096, 19, 111)),
+    (4, 4, 4, (4096, 18, 111)),
+    (10, 50, 50, (8192, 9, 205)),
+])
+def test_standard_packed_parameters(l, X, Y, expected):
+    P = rlu.bmms21_adaptive_choice(128, l, X, Y, "auto", "auto", True, packed=True)
+    assert (P["ring_n"], P["m"], int(P["q"]).bit_length()) == expected
+    rlu.check_ring_lwe(P["ring_n"], P["q"], P["sigma"])
+    if l == 1:  # D = 1: the modulus, ring and m of one vector per ciphertext
+        E = rlu.bmms21_adaptive_choice(128, l, X, Y, "auto", "auto", True)
+        assert (E["ring_n"], E["m"], E["q"]) == (P["ring_n"], P["m"], P["q"])
+
+
+# -- records ------------------------------------------------------------------
+
+
+def test_packed_record_has_its_own_version_and_layout(scheme):
+    kg, _, pp = scheme
+    assert pp["ndarray_layout"] == "packed"
+    SIFEFullySecRingLWEKeyGenerator(dict(CFG))
+    record = json.load(open(RECORD))
+    assert record["param_version"] == "bmms21-sec5-packed/v1" and record["ndarray_layout"] == "packed"
+    expected = rlu.bmms21_adaptive_choice(kg.sec_param, 3, 4, 4, None, "auto", False, packed=True)
+    assert (record["m"], record["sigma1"]) == (expected["m"], expected["sigma1"])
+
+
+def test_switching_the_layout_regenerates_the_parameters():
+    elementwise = {k: v for k, v in CFG.items() if k != "ndarray_layout"}
+    kg = SIFEFullySecRingLWEKeyGenerator(dict(elementwise))
+    record = json.load(open(RECORD))
+    assert record["param_version"] == "bmms21-sec5/v2" and "ndarray_layout" not in record
+    kg.setup()
+    assert "ndarray_layout" not in kg.get_public_parameters()
+    packed = SIFEFullySecRingLWEKeyGenerator(dict(CFG))
+    assert packed.sigma1 > kg.sigma1  # sqrt(l D) and the larger leveraging
+    assert json.load(open(RECORD))["param_version"] == "bmms21-sec5-packed/v1"
+    again = SIFEFullySecRingLWEKeyGenerator(dict(elementwise))
+    assert json.load(open(RECORD))["param_version"] == "bmms21-sec5/v2" and again.sigma1 == kg.sigma1
+
+
+def test_a_record_relabelled_as_packed_is_regenerated():
+    kg = SIFEFullySecRingLWEKeyGenerator({k: v for k, v in CFG.items() if k != "ndarray_layout"})
+    record = json.load(open(RECORD))
+    record.update(param_version="bmms21-sec5-packed/v1", ndarray_layout="packed")
+    json.dump(record, open(RECORD, "w"))
+    packed = SIFEFullySecRingLWEKeyGenerator(dict(CFG))
+    assert packed.a_seed != kg.a_seed and packed.sigma1 > kg.sigma1
+
+
+def test_unknown_layout_is_refused():
+    with pytest.raises(FEValidationError, match="ndarray_layout"):
+        SIFEFullySecRingLWEKeyGenerator({**CFG, "ndarray_layout": "rows"})
+
+
+# -- scheme -------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("k", [1, 2, 17, 32])
+def test_matrix_round_trip(scheme, k):
+    kg, enc, pp = scheme
+    dec = SIFEFullySecRingLWE({"keys": {"pp": pp}})
+    rng = random.Random(k)
+    matrix = [[rng.randint(-4, 4) for _ in range(k)] for _ in range(3)]
+    matrix[0][0], matrix[1][0], matrix[2][0] = 4, -4, 4  # an extreme column
+    ct = enc.encrypt(matrix)
+    assert ct["k"] == k and len(ct["ct0"]) == kg.m and len(ct["ct"]) == 3
+    for y in ([4, -4, 4], [1, 0, -2], [0, 0, 0]):
+        dk = kg.get_decryption_keys("sid", credentials={"fusion_weight": y})
+        assert dec.decrypt(ct, dk, y) == _products(matrix, y)
+
+
+def test_vectors_still_decrypt_to_an_integer(scheme):
+    kg, enc, pp = scheme
+    y = [2, -3, 1]
+    dk = kg.get_decryption_keys("sid", credentials={"fusion_weight": y})
+    ct = enc.encrypt([4, 4, -4])
+    assert "k" not in ct and SIFEFullySecRingLWE({"keys": {"pp": pp}}).decrypt(ct, dk, y) == -8
+
+
+def test_matrix_plaintexts_are_validated(scheme):
+    _, enc, pp = scheme
+    n = pp["ring_n"]
+    for bad in ([[5], [0], [0]], [[1, 2], [1], [1, 2]], [[1], [1]], [[]] * 3,
+                [[0] * (n + 1)] * 3, [[True], [0], [0]]):
+        with pytest.raises(FEValidationError):
+            enc.encrypt(bad)
+
+
+def test_elementwise_parameters_refuse_matrices():
+    _, enc, pp = _keys({k: v for k, v in CFG.items() if k != "ndarray_layout"})
+    with pytest.raises(FEValidationError, match="packed"):
+        enc.encrypt([[1, 2], [3, 4], [0, 0]])
+    # nor do they decrypt a packed ciphertext
+    kg_p, enc_p, pp_p = _keys(CFG)
+    ct = enc_p.encrypt([[1, 2], [3, 4], [0, 0]])
+    dk = kg_p.get_decryption_keys("sid", credentials={"fusion_weight": [1, 1, 1]})
+    with pytest.raises(FEValidationError):
+        SIFEFullySecRingLWE({"keys": {"pp": pp}}).decrypt(ct, dk, [1, 1, 1])
+
+
+@pytest.mark.parametrize("k", [0, 33, True, "2", None])
+def test_tampered_batch_lengths_are_refused(scheme, k):
+    kg, enc, pp = scheme
+    ct = dict(enc.encrypt([[1, 2], [3, 4], [0, 0]]), k=k)
+    dk = kg.get_decryption_keys("sid", credentials={"fusion_weight": [1, 1, 1]})
+    with pytest.raises(FEValidationError):
+        SIFEFullySecRingLWE({"keys": {"pp": pp}}).decrypt(ct, dk, [1, 1, 1])
+
+
+def test_a_wrong_key_does_not_decrypt(scheme):
+    kg, enc, pp = scheme
+    matrix = [[1] * 32, [2] * 32, [3] * 32]
+    ct = enc.encrypt(matrix)
+    dk = kg.get_decryption_keys("sid", credentials={"fusion_weight": [1, 1, 1]})
+    dk = dict(dk, sk_y=[[gp.digits((int(v) + 1) % int(pp["q"])) for v in poly] for poly in dk["sk_y"]])
+    # random values: out of the bound l X Y = 48 only with probability 2/98 each
+    out = SIFEFullySecRingLWE({"keys": {"pp": pp}}).decrypt(ct, dk, [1, 1, 1])
+    assert out is None or out != _products(matrix, [1, 1, 1])
+
+
+# -- ndarray helper (eta = 1) ---------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def gradient_scheme(tmp_path_factory):
+    cwd = os.getcwd()
+    os.chdir(tmp_path_factory.mktemp("grad"))
+    try:
+        kg = SIFEFullySecRingLWEKeyGenerator({"eta": 1, "bound_x": 100, "bound_y": 1, "ndarray_layout": "packed"})
+        kg.setup()
+        pp = kg.get_public_parameters()
+        enc = SIFEFullySecRingLWE({"keys": {"pp": pp, "sk": kg.get_private_keys()}, "precision": 2})
+        dec = SIFEFullySecRingLWE({"keys": {"pp": pp}, "precision": 2})
+        return kg, enc, dec, pp
+    finally:
+        os.chdir(cwd)
+
+
+def test_ndarray_layers_are_packed_in_chunks_of_ring_n(gradient_scheme):
+    kg, enc, dec, pp = gradient_scheme
+    n = pp["ring_n"]
+    rng = np.random.default_rng(3)
+    layers = [rng.uniform(-1, 1, size=s).round(2) for s in ((5,), (3, 2 * n), (n + 1,))]
+    cts = enc.encrypt_lst_ndarray(layers)
+    assert [c["first_chunk"] for c in cts] == [0, 1, 7]
+    assert [[ch["k"] for ch in c["chunks"]] for c in cts] == [[5], [n] * 6, [n, 1]]
+    dk = kg.get_decryption_keys("sid", credentials={"fusion_weight": [1]})
+    out = dec.decrypt_lst_ndarray_ct(cts, dk=dk, fusion_weight=[1])
+    for got, want in zip(out, layers):
+        assert got.shape == want.shape and np.allclose(got, want)
+    # the serialised form is the one of the packed MCFE Ring-LWE layers
+    grad = EncryptedGradient(ciphertexts=cts, shape=(5,), precision=2, mode="decimal", nid="c")
+    back = EncryptedGradient.from_dict(json.loads(json.dumps(grad.to_dict())))
+    assert all(np.allclose(a, b) for a, b in
+               zip(dec.decrypt_lst_ndarray_ct(back.ciphertexts, dk=dk, fusion_weight=[1]), layers))
+
+
+def test_ndarray_chunk_failures_are_reported(gradient_scheme):
+    kg, enc, dec, pp = gradient_scheme
+    cts = enc.encrypt_lst_ndarray([np.zeros(10)])
+    dk = kg.get_decryption_keys("sid", credentials={"fusion_weight": [1]})
+    q = int(pp["q"])
+    chunk = cts[0]["chunks"][0]
+    chunk["ct"] = [[gp.digits((int(chunk["ct"][0][0]) + q // 2) % q)] + chunk["ct"][0][1:]]  # 0 -> p/2 > X
+    with pytest.raises(FESchemeError, match="element"):
+        dec.decrypt_lst_ndarray_ct(cts, dk=dk, fusion_weight=[1])
+    short = [dict(cts[0], shape=[11])]
+    with pytest.raises(FEValidationError, match="shape"):
+        dec.decrypt_lst_ndarray_ct(short, dk=dk, fusion_weight=[1])
+    with pytest.raises(FEValidationError):
+        enc.encrypt_lst_ndarray([np.zeros(0)])
+
+
+def test_gradient_aggregation_through_the_adapter():
+    wrapper = FESchemeWrapper("sife", "fullysec_ring_lwe",
+                              {"eta": 1, "bound_x": 100, "bound_y": 1, "ndarray_layout": "packed"},
+                              precision=2)
+    gradient = np.random.default_rng(5).uniform(-0.5, 0.5, size=(4, 25)).round(2)
+    enc = encrypt_gradient(gradient, wrapper, nid="c1")
+    assert len(enc.ciphertexts[0]["chunks"]) == math.ceil(gradient.size / wrapper.pp["ring_n"])
+    out = aggregate_gradients({"c1": enc}, wrapper, {"c1": [1]})
+    assert np.allclose(out, gradient)
+
+
+# -- Python vs native -----------------------------------------------------------
+
+
+@pytest.mark.skipif(not native_backend.available(), reason="Rust extension not built")
+def test_packed_identical_with_native_ntts(monkeypatch):
+    # m = 7: a 127-bit q (D = 2), within the native word sizes
+    kg, _, pp = _keys({"eta": 2, "ring_n": 64, "m": 7, "sec_param": 128, "bound_x": 1, "bound_y": 1,
+                       "ndarray_layout": "packed"})
+    with native_backend.backend("native"):
+        assert rlu._native_ring(gp.mpz(pp["q"]), pp["ring_n"], rlu._get_ntt_root(gp.mpz(pp["q"]), pp["ring_n"]))
+    matrix = [[(-1) ** j for j in range(64)], [j % 3 - 1 for j in range(64)]]
+
+    def run(backend):
+        monkeypatch.setattr(sampling_utils, "_CSPRNG", random.Random(11))
+        with native_backend.backend(backend):
+            return SIFEFullySecRingLWE({"keys": {"pp": pp, "sk": kg.get_private_keys()}}).encrypt(matrix)
+
+    py, nat = run("python"), run("native")
+    assert py == nat
+    y = [1, -1]
+    dk = kg.get_decryption_keys("s", credentials={"fusion_weight": y})
+    dec = SIFEFullySecRingLWE({"keys": {"pp": pp}})
+    with native_backend.backend("python"):
+        a = dec.decrypt(py, dk, y)
+    with native_backend.backend("native"):
+        b = dec.decrypt(py, dk, y)
+    assert a == b == _products(matrix, y)
+
+
+def test_layouts_are_listed():
+    assert fs.LAYOUTS == ("elementwise", "packed")

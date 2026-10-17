@@ -7,6 +7,24 @@ compatibility).
 
 ## [Unreleased]
 
+### Added
+
+- **`sife/fullysec_ring_lwe`: opt-in packed layout** (`ndarray_layout =
+  "packed"`). A ciphertext holds an `eta x k` matrix, `k <= ring_n` (BMMS21
+  Remark 1), and decrypts to the `k` inner products; the ndarray helper
+  packs `ring_n` elements per ciphertext in the `{"shape", "first_chunk",
+  "chunks"}` layout of the MCFE Ring-LWE schemes. The adaptive proof's
+  statistical games depend on the challenge only through the span `V` of the
+  differences, so the complexity leveraging ranges over the possible `V`
+  (`(D + 1)(4X + 1)^(l D)`, `D = min(eta, ring_n)`) instead of the
+  `(2X + 1)^(2 eta k)` challenge pairs, and `sigma1` gains `sqrt(D)`. With
+  `eta = 1` and `X = 100` (gradients) the parameters are those of the
+  elementwise layout (n = 4096, m = 19, 111-bit q), so one ciphertext
+  (1.15 MB of coefficients, 3.0 MB as JSON) carries 4096 elements instead of
+  one: 280 bytes and, with the time of one encryption spread over them,
+  under a millisecond per element. Own parameter record
+  (`bmms21-sec5-packed/v1`); the elementwise default is unchanged.
+
 ### Security
 
 - **MIFE-Ring-LWE** and the **Ring-LWE MCFE** schemes (`mcfe/ring_lwe` and

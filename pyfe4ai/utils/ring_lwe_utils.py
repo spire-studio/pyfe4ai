@@ -768,12 +768,36 @@ def _smoothing_log(dim: int, log2_inv_eps: float) -> float:
     return math.log(2 * dim) + log2_inv_eps * math.log(2)
 
 
+def bmms21_adaptive_leveraging(eta: int, bound_x, ring_n: int, packed: bool = False) -> tuple:
+    """``(log2 L, D)``: the complexity-leveraging factor ``L`` of BMMS21 Sec. 5 and
+    the rank ``D`` of the challenge differences that games G3* - G5* decompose.
+
+    One vector per ciphertext (``packed=False``): ``L = (2X + 1)^(2l)``, the
+    challenge pairs, and ``D = 1``. Up to ``ring_n`` vectors per ciphertext
+    (``packed=True``, Remark 1): the statistical games depend on the
+    challenge only through ``V = span(alpha^1, ..., alpha^k)`` of the
+    differences ``alpha^j = x1^j - x0^j`` (the keys they answer are those
+    with ``y`` orthogonal to ``V``), so guessing ``V`` suffices. ``V`` has a
+    dimension ``d <= D = min(l, ring_n)`` and is spanned by ``d`` vectors of
+    ``[-2X, 2X]^l``, so ``L = (D + 1) (4X + 1)^(l D)``, independent of the
+    number of packed vectors (guessing both challenge matrices would give
+    ``(2X + 1)^(2lk)``).
+    """
+    l = int(eta)
+    if not packed:
+        return 2 * l * math.log2(2 * int(bound_x) + 1), 1
+    rank = min(l, int(ring_n))
+    return l * rank * math.log2(4 * int(bound_x) + 1) + math.log2(rank + 1), rank
+
+
 def _bmms21_adaptive_widths(kappa: int, l: int, bound_x, bound_y, ring_n: int, m: int,
-                            log2_q: float) -> dict:
+                            log2_q: float, packed: bool = False) -> dict:
     """log2 of the Gaussian widths of BMMS21 Sec. 5 for a modulus of ``log2_q`` bits.
 
     Signed inputs ``|x| <= X``, ``|y| <= Y``: ``alpha = x1 - x0`` has entries of
-    at most ``2X`` and complexity leveraging ranges over ``(2X + 1)^(2l)``.
+    at most ``2X``; complexity leveraging ranges over ``L`` and the differences
+    have rank at most ``D`` (:func:`bmms21_adaptive_leveraging`; ``(2X + 1)^(2l)``
+    and 1 for one vector per ciphertext).
 
     * Theorem 1 (mhe-RLWE from RLWE with errors ``D_sigma``):
       ``sigma = 1.5 eta_eps(Z^(n + n l))`` with ``eps = 2^-kappa`` (at least
@@ -781,20 +805,21 @@ def _bmms21_adaptive_widths(kappa: int, l: int, bound_x, bound_y, ring_n: int, m
       so that ``sigma sqrt(1 - (sigma n C sqrt(l + 2) / sigma2)^2) > eta``;
     * Theorem 2 (Ring-LHL, ``k = 2``):
       ``sigma' = sqrt(n ln(2 m n (1 + 1/delta)) / pi) q^(2/m + eps/2)`` with
-      ``(2 delta + 2^n q^(-eps n) (q^2m / ((q^m - 1)(q^m - q)))^n) (2X + 1)^(2l)
-      <= 2^-kappa``;
-    * G3 -> G4 (Lemma 1 for ``sigma1^2 I - sigma'^2 alpha^T alpha``):
-      ``sigma1 = sqrt(2) ||alpha|| sigma'`` with ``||alpha|| <= 2X sqrt(l)``,
+      ``(2 D delta + 2^n q^(-eps n) (q^2m / ((q^m - 1)(q^m - q)))^n) L <= 2^-kappa``
+      (``D`` applications, one per basis vector of the differences);
+    * G3 -> G4 (Lemma 1 for ``sigma1^2 I - sigma'^2 B B^T``, ``B`` a basis of the
+      differences): ``sigma1 = sqrt(2) ||B|| sigma'`` with ``||B|| <= 2X sqrt(l D)``,
       so that ``Gamma >= sigma' / sqrt(2) > eta_eps'(Z^n)``;
     * ``sigma3 = sqrt(m) sigma2``.
     """
     n = ring_n
-    log2_lev = 2 * l * math.log2(2 * int(bound_x) + 1)
+    log2_lev, rank = bmms21_adaptive_leveraging(l, bound_x, n, packed)
     # 1.5 eta: Theorem 1 needs sigma sqrt(1 - 1/2) strictly above eta
     sigma = max(3.2, 1.5 * math.sqrt(_smoothing_log(n + n * l, kappa) / math.pi))
     # one bit of slack each for the factor (q^2m / ((q^m - 1)(q^m - q)))^n of the
-    # bad-matrix fraction and for ln(1 + 1/delta) ~ ln(1/delta)
-    log2_inv_delta = kappa + 3 + log2_lev
+    # bad-matrix fraction and for ln(1 + 1/delta) ~ ln(1/delta), and log2 D for the
+    # D applications of Theorem 2
+    log2_inv_delta = kappa + 3 + log2_lev + math.log2(rank)
     log2_q_eps = (n + kappa + 2 + log2_lev) / n  # eps log2 q, from 2^n q^(-eps n)
     log_sp = (
         0.5 * math.log2(n * _smoothing_log(m * n, log2_inv_delta) / math.pi)
@@ -803,7 +828,7 @@ def _bmms21_adaptive_widths(kappa: int, l: int, bound_x, bound_y, ring_n: int, m
     # Lemma 1 also needs sigma' / sqrt(2) above eta_eps'(Z^n), eps' = 2^-kappa / (n m lev)
     eta_g = math.sqrt(_smoothing_log(n, kappa + math.log2(n * m) + log2_lev) / math.pi)
     log_sp = max(log_sp, math.log2(math.sqrt(2) * eta_g) + 1e-9)
-    log_s1 = 0.5 + math.log2(2 * int(bound_x) * math.sqrt(l)) + log_sp
+    log_s1 = 0.5 + math.log2(2 * int(bound_x) * math.sqrt(l * rank)) + log_sp
     log_s2 = 0.5 + math.log2(sigma * n * math.sqrt(kappa) * math.sqrt(l + 2)) + log_s1
     return {
         "sigma": math.log2(sigma),
@@ -815,9 +840,9 @@ def _bmms21_adaptive_widths(kappa: int, l: int, bound_x, bound_y, ring_n: int, m
 
 
 def _bmms21_adaptive_slack(kappa: int, l: int, bound_x, bound_y, ring_n: int, m: int,
-                           log2_q: float) -> float:
+                           log2_q: float, packed: bool = False) -> float:
     """``log2(q / 2p) - log2(noise)`` (correctness of Appendix C.1, positive when met)."""
-    w = _bmms21_adaptive_widths(kappa, l, bound_x, bound_y, ring_n, m, log2_q)
+    w = _bmms21_adaptive_widths(kappa, l, bound_x, bound_y, ring_n, m, log2_q, packed)
     p = 2 * l * int(bound_x) * int(bound_y) + 2
     # l Y (sqrt(kappa) sigma3 + m n kappa sigma1 sigma2) = l Y sigma2 (2^u + 2^v), in log2
     u = 0.5 * math.log2(kappa) + w["sigma3"] - w["sigma2"]
@@ -828,20 +853,21 @@ def _bmms21_adaptive_slack(kappa: int, l: int, bound_x, bound_y, ring_n: int, m:
 
 
 def bmms21_adaptive_log2_q(sec_param: int, eta: int, bound_x, bound_y, ring_n: int,
-                           m: int) -> float | None:
+                           m: int, packed: bool = False) -> float | None:
     """Smallest ``log2 q`` meeting the constraints of BMMS21 Appendix C.1, or ``None``.
 
     All widths grow like ``q^(2/m)`` (the Ring-LHL bound on ``sigma'``) and the
     correctness noise like ``q^(4/m)``, so a modulus exists only for ``m > 4``;
-    the paper's ``m = 3`` has none.
+    the paper's ``m = 3`` has none. *packed*: up to ``ring_n`` vectors per
+    ciphertext (see :func:`bmms21_adaptive_leveraging`).
     """
     args = (int(sec_param), int(eta), bound_x, bound_y, int(ring_n), int(m))
-    if m <= 4 or _bmms21_adaptive_slack(*args, 4000.0) <= 0:
+    if m <= 4 or _bmms21_adaptive_slack(*args, 4000.0, packed) <= 0:
         return None
     lo, hi = 1.0, 4000.0
     while hi - lo > 1e-6:
         mid = (lo + hi) / 2
-        if _bmms21_adaptive_slack(*args, mid) > 0:
+        if _bmms21_adaptive_slack(*args, mid, packed) > 0:
             hi = mid
         else:
             lo = mid
@@ -849,8 +875,9 @@ def bmms21_adaptive_log2_q(sec_param: int, eta: int, bound_x, bound_y, ring_n: i
 
 
 def bmms21_adaptive_parameters(sec_param: int, eta: int, bound_x, bound_y, ring_n: int,
-                               m: int) -> dict:
-    """Parameters of the adaptively secure BMMS21 IPFE (Sec. 5) for ``m`` key polynomials.
+                               m: int, packed: bool = False) -> dict:
+    """Parameters of the adaptively secure BMMS21 IPFE (Sec. 5) for ``m`` key polynomials
+    (*packed*: up to ``ring_n`` vectors per ciphertext).
 
     Returns:
         Dict with ``p`` (``2 l X Y + 2``), ``q`` (NTT-friendly prime), ``m``,
@@ -860,7 +887,7 @@ def bmms21_adaptive_parameters(sec_param: int, eta: int, bound_x, bound_y, ring_
     Raises:
         FEValidationError: If no modulus meets the constraints (``m <= 4``).
     """
-    log2_q = bmms21_adaptive_log2_q(sec_param, eta, bound_x, bound_y, ring_n, m)
+    log2_q = bmms21_adaptive_log2_q(sec_param, eta, bound_x, bound_y, ring_n, m, packed)
     if log2_q is None:
         from pyfe4ai.utils.exceptions import FEValidationError
 
@@ -872,9 +899,9 @@ def bmms21_adaptive_parameters(sec_param: int, eta: int, bound_x, bound_y, ring_
         )
     q = next_ntt_prime(gp.mpz(2) ** math.ceil(log2_q), ring_n)
     exact = math.log2(int(q))
-    if _bmms21_adaptive_slack(int(sec_param), int(eta), bound_x, bound_y, ring_n, m, exact) <= 0:
+    if _bmms21_adaptive_slack(int(sec_param), int(eta), bound_x, bound_y, ring_n, m, exact, packed) <= 0:
         raise AssertionError("modulus does not meet the correctness bound")  # q only grew
-    widths = _bmms21_adaptive_widths(int(sec_param), int(eta), bound_x, bound_y, ring_n, m, exact)
+    widths = _bmms21_adaptive_widths(int(sec_param), int(eta), bound_x, bound_y, ring_n, m, exact, packed)
     if max(widths.values()) > 1000:
         from pyfe4ai.utils.exceptions import FEValidationError
 
@@ -885,7 +912,7 @@ def bmms21_adaptive_parameters(sec_param: int, eta: int, bound_x, bound_y, ring_
 
 
 def bmms21_adaptive_choice(sec_param: int, eta: int, bound_x, bound_y, ring_n, m,
-                           standard: bool) -> dict:
+                           standard: bool, packed: bool = False) -> dict:
     """Ring dimension and ``m`` of the adaptive BMMS21 IPFE, then its parameters.
 
     ``ring_n = "auto"`` tries the dimensions of :data:`RING_LWE_128_LOG_Q` in
@@ -895,7 +922,7 @@ def bmms21_adaptive_choice(sec_param: int, eta: int, bound_x, bound_y, ring_n, m
     set and ``ring_n`` or ``m`` is ``"auto"``. A small ``m`` keeps the ``l m``
     key polynomials and the ``m``-polynomial functional keys small; a larger
     one lowers ``q`` (``sigma'`` grows like ``q^(2/m)``) and can be passed
-    explicitly.
+    explicitly. *packed*: parameters for up to ``ring_n`` vectors per ciphertext.
     """
     from pyfe4ai.utils.exceptions import FEValidationError
 
@@ -906,21 +933,21 @@ def bmms21_adaptive_choice(sec_param: int, eta: int, bound_x, bound_y, ring_n, m
         ms = [int(m)]
     for n in dims:
         for mm in ms:
-            log2_q = bmms21_adaptive_log2_q(sec_param, eta, bound_x, bound_y, n, mm)
+            log2_q = bmms21_adaptive_log2_q(sec_param, eta, bound_x, bound_y, n, mm, packed)
             if log2_q is None:
                 continue
             bits = math.ceil(log2_q) + 1  # bits of the NTT prime just above 2^ceil(log2_q)
             # an explicit (ring_n, m) is left to the caller's check, which explains the refusal
             if standard and (ring_n == "auto" or m == "auto"):
-                widths = _bmms21_adaptive_widths(sec_param, eta, bound_x, bound_y, n, mm, log2_q)
+                widths = _bmms21_adaptive_widths(sec_param, eta, bound_x, bound_y, n, mm, log2_q, packed)
                 bound = ring_lwe_bound(n, 2.0 ** widths["sigma"])
                 if bound is None or bits > bound:
                     continue
-            params = bmms21_adaptive_parameters(sec_param, eta, bound_x, bound_y, n, mm)
+            params = bmms21_adaptive_parameters(sec_param, eta, bound_x, bound_y, n, mm, packed)
             params["ring_n"] = n
             return params
     if m != "auto":
-        bmms21_adaptive_parameters(sec_param, eta, bound_x, bound_y, dims[0], int(m))  # raises
+        bmms21_adaptive_parameters(sec_param, eta, bound_x, bound_y, dims[0], int(m), packed)  # raises
     where = "ring dimension up to {}".format(dims[-1]) if ring_n == "auto" else "ring_n = {}".format(dims[0])
     raise FEValidationError(
         "no {} and m up to {} reaches 128-bit security for these bounds; reduce bound_x, "
