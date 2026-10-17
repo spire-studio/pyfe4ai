@@ -167,16 +167,30 @@ fn bytes_to_words<W: Word>(b: &[u8], count: usize) -> PyResult<Vec<W>> {
         .collect())
 }
 
+/// A str of ASCII bytes, without UTF-8 decoding (as the C++ module builds them).
+fn ascii_str<'py>(py: Python<'py>, b: &[u8]) -> PyResult<Bound<'py, PyAny>> {
+    debug_assert!(b.is_ascii());
+    unsafe {
+        let o = pyo3::ffi::PyUnicode_New(b.len() as pyo3::ffi::Py_ssize_t, 127);
+        if o.is_null() {
+            return Err(PyErr::fetch(py));
+        }
+        std::ptr::copy_nonoverlapping(b.as_ptr(), pyo3::ffi::PyUnicode_1BYTE_DATA(o), b.len());
+        Ok(Bound::from_owned_ptr(py, o))
+    }
+}
+
 fn dec_list<'py, W: Word>(py: Python<'py>, vals: &[W]) -> PyResult<Bound<'py, PyList>> {
     let mut buf = Vec::with_capacity(40);
-    PyList::new(
-        py,
-        vals.iter().map(|v| {
+    let items = vals
+        .iter()
+        .map(|v| {
             buf.clear();
             format_dec(v.to_u128(), &mut buf);
-            PyString::new(py, std::str::from_utf8(&buf).unwrap())
-        }),
-    )
+            ascii_str(py, &buf)
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+    PyList::new(py, items)
 }
 
 /// Pre-formatted decimal strings of one polynomial (offsets into one buffer).
@@ -197,12 +211,12 @@ impl DecBuf {
         DecBuf { text, off }
     }
     fn list<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
-        PyList::new(
-            py,
-            self.off.windows(2).map(|w| {
-                PyString::new(py, std::str::from_utf8(&self.text[w[0] as usize..w[1] as usize]).unwrap())
-            }),
-        )
+        let items = self
+            .off
+            .windows(2)
+            .map(|w| ascii_str(py, &self.text[w[0] as usize..w[1] as usize]))
+            .collect::<PyResult<Vec<_>>>()?;
+        PyList::new(py, items)
     }
 }
 
@@ -576,15 +590,21 @@ fn gather<'py>(seq: &Bound<'py, PyAny>, n: usize) -> Option<Gathered<'py>> {
     }
     let mut g = Gathered { t: GText { text: Vec::with_capacity(n * 24), pos: Vec::with_capacity(n) }, slow: Vec::new() };
     for (i, ob) in items.into_iter().enumerate() {
-        match ob.cast_exact::<PyString>().ok().and_then(|s| s.to_str().ok().map(|t| t.as_bytes().to_vec())) {
-            Some(t) if t.is_ascii() && t.len() <= 39 => {
-                g.t.pos.push((g.t.text.len() as u32, t.len() as u32));
-                g.t.text.extend_from_slice(&t);
-            }
-            _ => {
-                g.t.pos.push((SLOW, 0));
-                g.slow.push((i, ob));
-            }
+        let p = ob.as_ptr();
+        let plain = unsafe {
+            pyo3::ffi::PyUnicode_CheckExact(p) != 0 && pyo3::ffi::PyUnicode_IS_ASCII(p) != 0
+                && pyo3::ffi::PyUnicode_GET_LENGTH(p) <= 39
+        };
+        if plain {
+            let t = unsafe {
+                std::slice::from_raw_parts(pyo3::ffi::PyUnicode_1BYTE_DATA(p) as *const u8,
+                                           pyo3::ffi::PyUnicode_GET_LENGTH(p) as usize)
+            };
+            g.t.pos.push((g.t.text.len() as u32, t.len() as u32));
+            g.t.text.extend_from_slice(t);
+        } else {
+            g.t.pos.push((SLOW, 0));
+            g.slow.push((i, ob));
         }
     }
     Some(g)
@@ -681,6 +701,14 @@ fn decrypt_tensor(py: Python<'_>, ctx: &Bound<'_, RingCtx>, chunks: &Bound<'_, P
             }
         }
     }
+    // every gathered text of the slots, parsed in parallel without the GIL
+    let texts: Vec<&GText> = slots.iter().flat_map(|row| row.iter()).flat_map(|slot| match slot {
+        Slot::Dec(gs) => gs.iter().map(|g| &g.t).collect::<Vec<_>>(),
+        Slot::Bin(_) => Vec::new(),
+    }).collect();
+    let parsed_cells: Vec<Mutex<Vec<Option<u128>>>> = (0..texts.len()).map(|_| Mutex::new(Vec::new())).collect();
+    py.detach(|| parallel_for(texts.len(), threads, |i| *parsed_cells[i].lock().unwrap() = parse(texts[i])));
+    let mut parsed = parsed_cells.into_iter().map(|m| m.into_inner().unwrap());
     let mut slot_vals: Vec<Vec<Vec<u128>>> = Vec::with_capacity(slots.len());
     for (j, row) in slots.iter().enumerate() {
         let mut out_row = Vec::with_capacity(s_count);
@@ -695,7 +723,7 @@ fn decrypt_tensor(py: Python<'_>, ctx: &Bound<'_, RingCtx>, chunks: &Bound<'_, P
                 Slot::Dec(gs) => {
                     let mut v = Vec::with_capacity((eta + 1) * n);
                     for g in gs {
-                        for (i, p) in parse(&g.t).into_iter().enumerate() {
+                        for (i, p) in parsed.next().unwrap().into_iter().enumerate() {
                             v.push(match p {
                                 Some(x) => x,
                                 None => {
