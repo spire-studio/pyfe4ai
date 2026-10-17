@@ -2,7 +2,9 @@
 
 Measurements of branch `perf/native-core` (2026-10-17) against v0.3.0 and
 against homomorphic encryption (TenSEAL 0.3.18, i.e. Microsoft SEAL) on the
-same workload. Raw numbers: `results/perf_native_core_2026-10-17.json`.
+same workload. Raw numbers: `results/perf_native_core_2026-10-17.json`
+(C++ backend, host and docker) and `results/perf_rust_linux_2026-10-17.json`
+(Rust backend in docker, DRBG and BLS12-381 measurements).
 
 ## Workload and method
 
@@ -22,7 +24,11 @@ Machines: *host* = Apple M2 Max, macOS, Python 3.13, clang; *docker* = the
 Linux aarch64 VM of Docker Desktop on the same machine (12 CPUs), PyFE4AI in
 the `pyfe4ai-pairing` image (Python 3.10, GCC 13), TenSEAL in `pyfe4ai-he`
 (Python 3.11, `whitepaper/scripts/he_baseline.py`, means of 9 rounds). The
-FE / HE comparison uses the docker numbers only.
+FE / HE comparison uses the docker numbers only. The Rust backend was built
+in a throwaway container of the same, unchanged `pyfe4ai-pairing` image with
+a rustup minimal toolchain (rustc 1.99.1, aarch64-unknown-linux-gnu) and the
+crates of the host's cache, offline. Docker timings drift by about 10% over
+a day; numbers compared with each other come from one session.
 
 ## MCFE over Ring-LWE (BMMS21), 10^4 elements, 3 clients
 
@@ -37,6 +43,10 @@ FE / HE comparison uses the docker numbers only.
 | native, binary, online, 4 threads | 0.21 | 2.02 | - | 24.6 |
 | TenSEAL CKKS, N = 8192 | 7.54 | 2.59 | - | 99.4 |
 | TenSEAL BFV, N = 4096 | 2.91 | 1.22 | - | 26.6 |
+
+*native* in these tables is the C++ backend (first session); the Rust
+backend in docker, with C++ and TenSEAL in one later session, is under
+*Rust backend* below (Rust binary: client 3.51 ms, aggregator 9.49 ms).
 
 Offline work per round (docker, one thread): 3.3 ms per client, 5.2 ms for
 the aggregator (key terms of 4 labels for 3 clients).
@@ -99,10 +109,38 @@ per round one label pad per client for the label and every chunk.
 `tests/test_rust_core.py` check them against the Python code bit for bit.
 `pyfe4ai._rust_native` (PyO3, `rust/native`) binds it with the interface
 of the C++ module; both pass the same bit-identity tests, and the Rust one
-is preferred when both are built (`PYFE4AI_NATIVE_IMPL`). Host, 10^4
-elements, one thread, same run: client 2.94 ms (C++ 3.38 ms, binary format;
-the difference is the DRBG below), aggregator 7.94 ms (C++ 7.42 ms). Kernel
-timings: NTT 0.10 / 0.028 ms (77 / 60-bit q), label pad 0.26 / 0.18 ms.
+is preferred when both are built (`PYFE4AI_NATIVE_IMPL`).
+
+Docker, 10^4 elements, commit `eb9cc29`, one session (medians of 3 runs of
+9 rounds; TenSEAL measured right after):
+
+| docker, 77-bit q, same session | client ms | aggregator ms | of which dkgen |
+| --- | ---: | ---: | ---: |
+| Rust, JSON ciphertexts | 4.37 | 12.07 | 5.19 |
+| Rust, binary | 3.51 | 9.49 | 4.89 |
+| Rust, binary, 4 threads | 1.54 | 4.83 | 2.14 |
+| Rust, binary, online after `--offline` | 0.25 | 4.51 | - |
+| Rust, binary, online, 4 threads | 0.26 | 2.34 | - |
+| C++, JSON / binary | 5.35 / 3.95 | 12.65 / 10.30 | 5.98 / 5.87 |
+| C++, binary, online | 0.28 | 4.32 | - |
+| TenSEAL CKKS, N = 8192 | 8.01 | 3.01 | - |
+| TenSEAL BFV, N = 4096 | 3.30 | 1.31 | - |
+
+Offline phase: Rust 3.50 ms per client and 5.27 ms for the aggregator
+(4 threads: 1.31 / 2.19 ms), C++ 3.86 / 6.07 ms. 10^5 elements, Rust,
+binary: client 30.4 / 8.5 / 5.2 ms with 1 / 4 / 8 threads, aggregator 60.7
+(dkgen 31.4) / 23.5 / 17.3 ms, online after `--offline` with 8 threads 0.91 /
+7.6 ms; TenSEAL CKKS 66.8 / 23.2 ms, BFV 26.2 / 11.4 ms.
+
+Rust is faster than C++ everywhere except the online decryption of the
+aggregator (+4% in docker, +9% on the host: 3.46 vs 3.18 ms), which spends
+its time in moving data between Python and the kernels (the kernels
+themselves are on par: forward NTT 0.095 ms, one decryption chunk of 3
+clients 0.58 ms). `eb9cc29` removed most of that gap (it was +20%): integers
+are read without Python-level `operator.index` / `%` and without the
+`OverflowError` that every negative key coefficient used to raise and drop,
+and binary ciphertexts are decoded per chunk without the GIL instead of
+being copied.
 
 ### Sampling randomness (DRBG)
 
@@ -116,15 +154,22 @@ per call, 0.32 ms per 4096-coefficient chunk; `getrandom` on Linux:
 which matters only for FIPS validation; the distribution is unchanged (the
 same Box-Muller consumption, checked by tests with an injected seed).
 
-| host (macOS), Rust, one thread | OS bytes | DRBG |
-| --- | ---: | ---: |
-| client, 10^4 elements, JSON / binary | 4.41 / 3.44 ms | 3.90 / 2.94 ms |
-| client offline phase (precompute), 10^4 | 3.37 ms | 2.79 ms |
-| client online phase, 10^4, binary | 0.23 ms | 0.23 ms |
-| client, 10^5 elements, binary | 28.96 ms | 25.16 ms |
-| client offline phase, 10^5 | 28.27 ms | 24.02 ms |
+Client, 10^4 elements, Rust, one thread; `8f09fc9` (OS bytes), `2b47eea`
+(the DRBG alone) and `a722be3` (the DRBG and faster string output),
+interleaved, medians of 3 runs of 9 rounds:
 
-Linux: pending (the Rust toolchain is not installed in the Linux container).
+| | macOS 8f09fc9 | macOS 2b47eea | macOS a722be3 | docker 8f09fc9 | docker 2b47eea | docker a722be3 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| JSON | 4.94 ms | 4.44 ms | 4.19 ms | 4.22 ms | 4.26 ms | 3.92 ms |
+| binary | 3.76 ms | 3.34 ms | 3.30 ms | 3.28 ms | 3.37 ms | 3.34 ms |
+| offline phase (precompute) | 3.78 ms | 3.16 ms | 3.15 ms | 3.22 ms | 3.20 ms | 3.20 ms |
+| online phase, binary | 0.28 ms | 0.30 ms | 0.28 ms | 0.21 ms | 0.21 ms | 0.21 ms |
+
+The DRBG saves 0.4 to 0.6 ms per 10^4 elements on macOS and nothing on
+Linux, where `getrandom` is already cheap (10^5 elements, docker: binary
+27.4 vs 28.1 ms, offline phase 26.4 vs 26.2 ms, within noise). The JSON
+difference between `2b47eea` and `a722be3` is the string output, not the
+DRBG.
 
 ### RNS (not adopted; needs a decision)
 
@@ -225,7 +270,7 @@ bytes for G1 / G2 / G_T, base64 behind charm's `"<type>:"` prefix), checked
 for subgroup membership on deserialisation. Not constant-time.
 
 Per operation (charm in the Docker image, Linux VM on the same Mac; Rust on
-the host):
+the host; all three in docker in the table after the next):
 
 | | BLS12-381 (Rust) | MNT224 (charm) | BN254 (charm) |
 | --- | ---: | ---: | ---: |
@@ -247,6 +292,25 @@ End to end, one setup + key + encryption + decryption round
 | MCFE FH-Multi-IPE | small / report | 889 / 889 ms | 79 / 82 ms | 11x |
 | dMCFE FH-Multi-IPE | small / report | 909 / 945 ms | 80 / 79 ms | 12x |
 | tMCFE FH-Multi-IPE | small / report | 1680 / 1565 ms | 137 / 136 ms | 12x |
+
+All in docker (one container with charm and the Rust extension, `report`
+profile, end to end):
+
+| scheme | v0.3 code, MNT224 (charm) | BLS12-381 (Rust) | this branch, MNT224 / BN254 (charm) |
+| --- | ---: | ---: | ---: |
+| Quadratic SGP | 334 ms | 38 ms | 273 / 201 ms |
+| Quadratic Quad | 538 ms | 69 ms | 554 / 537 ms |
+| MIFE FH-Multi-IPE | 361 ms | 26 ms | 373 / 437 ms |
+| MCFE FH-Multi-IPE | 947 ms | 86 ms | 998 / 1032 ms |
+| dMCFE FH-Multi-IPE | 1016 ms | 87 ms | 936 / 1018 ms |
+| tMCFE FH-Multi-IPE | 1726 ms | 151 ms | 1725 / 1833 ms |
+
+Per operation in docker: pairing 0.96 ms (MNT224 2.63, BN254 14.3), product
+of 8 pairings 3.3 ms (19.9 / 113.6), G2 exponentiation 0.41 ms (3.23 /
+0.90). The FL path of `bench_fl_compare.py --families pairing` (MCFE
+FH-Multi-IPE, `standard` profile, 5 elements, 3 clients): BN254 client 115
+ms, aggregator 3703 ms -> BLS12-381 24 ms and 186 ms; ciphertexts 858 ->
+1198 B per element (48-byte compressed G1 points against BN254's 33).
 
 This branch on charm (same scripts, `--pairing-group`): MNT224 162 / 301 /
 381 / 923 / 943 / 1657 ms and BN254 133 / 323 / 423 / 974 / 981 / 1756 ms

@@ -25,13 +25,17 @@ compatibility).
   states at its end (no state across calls); before, every sample byte was
   read from the OS. Same distribution. ChaCha20 is not an SP 800-90A DRBG
   (relevant only to FIPS validation). The C++ backend and the Python code
-  still read the OS for every byte.
+  still read the OS for every byte. Faster on macOS (0.4-0.6 ms per 10^4
+  elements, `getentropy`), unchanged on Linux (`getrandom` is cheap).
 - Ring-LWE in Python: `NTT(a)`, `NTT(pk)` and `NTT(sk_y)` cached, `r`
   transformed once, decryption products summed in the NTT domain (same
   outputs). Dense-LWE MCFE: keys parsed once per object.
 - MCFE Ring-LWE 10^4-element FL round (standard profile, 3 clients): client
   230 -> 3.4 ms, aggregator 368 -> 9.2 ms in a single thread (Linux,
-  binary ciphertexts); see `benchmarks/PERFORMANCE.md`.
+  binary ciphertexts); see `benchmarks/PERFORMANCE.md`. The Rust backend
+  reads Python integers and binary ciphertexts without per-value Python
+  calls or exceptions (online aggregation on par with C++ within 4% on
+  Linux).
 - **Pairings on BLS12-381 in Rust** (arkworks; `pyfe4ai.utils.bls12_381`
   behind charm's `PairingGroup` interface): a pairing takes 0.9 ms (charm:
   MNT224 2.4 ms, BN254 13.7 ms), G2 exponentiation 0.4 ms (3.2 / 0.9 ms).
