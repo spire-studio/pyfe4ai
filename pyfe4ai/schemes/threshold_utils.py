@@ -3,7 +3,24 @@ Shared threshold secret-sharing utilities for threshold FE schemes.
 
 Provides polynomial evaluation, Shamir secret sharing, Lagrange
 interpolation and modular centering used identically by both the
-LWE and Ring-LWE threshold variants.
+LWE and Ring-LWE threshold variants, and the replicated sharing
+(``sharing = "replicated"``) of the LWE / Ring-LWE threshold layers.
+
+Why the LWE layers offer a second sharing: they flood partial decryptions
+with noise that hides a small unknown (the decryption noise ``nu``) from
+whoever learns the result. With ``t - 1`` servers ``C`` corrupted, the
+honest partial ``lambda_k^E F(k) + e_k`` of a Shamir sharing equals
+something computable from ``C``'s shares and the result, plus ``e_k - M nu``
+with ``M = lambda_k^E prod_{j in C} (k - j) / (0 - j)``. That is a rational
+number whenever ``t < s``: for ``s = 3, t = 2``, ``C = {2}``,
+``E = {1, 3}`` it is ``3 / 4``, and four times the partial minus the
+computable part is ``4 e_k - 3 nu``, an integer whose residue mod 4 is
+``nu mod 4`` -- whatever the flooding width. A replicated sharing (one
+additive piece per ``(t - 1)``-subset ``T`` of the points, held by the
+servers outside ``T``) has reconstruction coefficients 0 and 1: ``M`` is 0
+or 1, and the flooding argument holds as stated. Its cost is
+``C(s - 1, t - 1)`` pieces per server instead of one share (2 for
+``s = 3, t = 2``; 6 for ``s = 5, t = 3``). See :func:`share_replicated`.
 
 Trust model of every threshold scheme: decryption servers are
 honest-but-curious. Fewer than ``t`` of them learn nothing beyond the result,
@@ -17,6 +34,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import itertools
 import json
 import random
 import secrets
@@ -24,7 +42,7 @@ import secrets
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.validation import int_vector
 
 _CSPRNG = random.SystemRandom()
@@ -102,6 +120,130 @@ def lagrange_at_zero(shares: dict[int, gp.mpz], modulus: gp.mpz) -> gp.mpz:
         lagrange = lagrange_coefficient_at_zero(x_j, xs, modulus)
         result = (result + gp.mpz(shares[x_j]) * lagrange) % modulus
     return result
+
+
+#: Ways the LWE / Ring-LWE threshold layers share a functional key (config
+#: entry ``sharing``): ``"shamir"`` (default) or ``"replicated"`` (see the
+#: module docstring).
+SHARING_SCHEMES = ("shamir", "replicated")
+
+
+def validate_sharing(sharing) -> str:
+    """Return *sharing* if it is one of :data:`SHARING_SCHEMES`, else raise."""
+    if sharing not in SHARING_SCHEMES:
+        raise FEValidationError(
+            "sharing must be one of {}, not {!r}".format(SHARING_SCHEMES, sharing)
+        )
+    return sharing
+
+
+def replicated_sets(points: list[int], threshold: int) -> list[tuple[int, ...]]:
+    """Index sets of a replicated sharing: the ``(t - 1)``-subsets of *points*, sorted."""
+    return list(itertools.combinations(sorted(points), threshold - 1))
+
+
+def _map_values(material, f):
+    if isinstance(material, dict):
+        return {key: _map_values(value, f) for key, value in material.items()}
+    if isinstance(material, (list, tuple)):
+        return [_map_values(value, f) for value in material]
+    return f(material)
+
+
+def _zip_values(a, b, f):
+    if isinstance(a, dict):
+        if set(a) != set(b):
+            raise FESchemeError("key pieces of different layouts")
+        return {key: _zip_values(a[key], b[key], f) for key in a}
+    if isinstance(a, (list, tuple)):
+        if not isinstance(b, (list, tuple)) or len(a) != len(b):
+            raise FESchemeError("key pieces of different layouts")
+        return [_zip_values(u, v, f) for u, v in zip(a, b)]
+    return f(a, b)
+
+
+def share_replicated(
+    material, threshold: int, points: list[int], modulus: gp.mpz
+) -> dict[tuple[int, ...], object]:
+    """Replicated sharing of every value in *material* (nested dicts and lists).
+
+    Draws one piece ``r_T`` per ``(t - 1)``-subset ``T`` of *points*, of the
+    layout of *material* (values as decimal strings), uniform subject to
+    ``sum_T r_T = material mod modulus``. The server at point ``x`` receives
+    the pieces with ``x`` not in ``T``: any ``t`` servers hold every piece,
+    any ``t - 1`` servers ``C`` miss exactly ``r_C``, which is uniform given
+    the others. With ``t = s`` this is additive sharing (one piece each).
+
+    Returns:
+        ``{T: piece}`` for every index set ``T``.
+    """
+    sets = replicated_sets(points, threshold)
+    modulus = gp.mpz(modulus)
+
+    def draw(_):
+        return gp.digits(gp.mpz(_CSPRNG.randrange(0, int(modulus))))
+
+    pieces = {T: _map_values(material, draw) for T in sets[1:]}
+    first = _map_values(material, lambda v: gp.mpz(v) % modulus)
+    for T in sets[1:]:
+        first = _zip_values(first, pieces[T], lambda a, b: (a - gp.mpz(b)) % modulus)
+    pieces[sets[0]] = _map_values(first, gp.digits)
+    return pieces
+
+
+def pieces_held(pieces: dict, point: int) -> list[dict]:
+    """The pieces of :func:`share_replicated` held by the server at *point*,
+    as ``[{"set": [...], "share": piece}]`` (JSON-friendly)."""
+    return [{"set": list(T), "share": piece} for T, piece in pieces.items() if point not in T]
+
+
+def replicated_assignment(
+    x_k: int, xs: list[int], points: list[int], threshold: int
+) -> list[tuple[int, ...]]:
+    """Index sets whose pieces the server at *x_k* adds up for enrolled points *xs*.
+
+    Piece ``r_T`` goes to the smallest enrolled point outside ``T``
+    (``|xs| >= t > |T|``, so there is one, and it holds ``r_T``): the
+    enrolled servers' sums add up to the secret, each piece counted once.
+    """
+    return [T for T in replicated_sets(points, threshold) if min(x for x in xs if x not in T) == x_k]
+
+
+def share_for_enrolled(
+    dk: dict, sid: str, lst_sid_enrolled: list[str], threshold: int, modulus: gp.mpz
+) -> tuple[dict, gp.mpz, str]:
+    """What server *sid* multiplies, by what, for a partial decryption for *lst_sid_enrolled*.
+
+    Returns ``(share, multiplier, tag)``. For a Shamir key share *dk*:
+    ``(dk, lambda, digits(lambda))``, ``lambda`` the Lagrange coefficient
+    at zero. For a replicated one (``dk["pieces"]``): *dk* with the sum of
+    the pieces of :func:`replicated_assignment` in place of the pieces,
+    multiplier 1 and a tag naming those pieces. Partial decryptions seed
+    their flooding noise with the tag: they depend on the enrolled set only
+    through it.
+
+    Raises:
+        FEKeyError: If *dk* lacks a piece the server must add.
+    """
+    sid_v = share_points(dk["lst_sid"])
+    xs = [sid_v[s] for s in lst_sid_enrolled]
+    if "pieces" not in dk:
+        lagrange = lagrange_coefficient_at_zero(sid_v[sid], xs, modulus)
+        return dk, lagrange, gp.digits(lagrange)
+    held = {tuple(piece["set"]): piece["share"] for piece in dk["pieces"]}
+    if not held:
+        raise FEKeyError("the key share holds no pieces")
+    assigned = replicated_assignment(sid_v[sid], xs, list(sid_v.values()), threshold)
+    missing = [T for T in assigned if T not in held]
+    if missing:
+        raise FEKeyError("the key share lacks the pieces {}".format(missing))
+    modulus = gp.mpz(modulus)
+    total = _map_values(next(iter(held.values())), lambda _: gp.mpz(0))
+    for T in assigned:
+        total = _zip_values(total, held[T], lambda a, b: (a + gp.mpz(b)) % modulus)
+    share = {key: value for key, value in dk.items() if key != "pieces"}
+    share.update(_map_values(total, gp.digits))
+    return share, gp.mpz(1), json.dumps(["replicated", [list(T) for T in assigned]])
 
 
 def share_points(lst_sid: list[str]) -> dict[str, int]:

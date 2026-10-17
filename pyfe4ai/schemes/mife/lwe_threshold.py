@@ -53,6 +53,21 @@ the same key part draws the same noise; a corrupted client varying its own
 that away to learn the other slots' part would take about ``2^(2 stat_param)``
 partial decryptions.
 
+Sharing (config entry ``sharing``): with the default ``"shamir"`` and
+``t < s`` the argument above does not hold. With ``t - 1`` servers ``C``
+corrupted, an honest partial is computable from ``C``'s shares and the result
+up to ``e_k - M nu``, ``M = lambda_k^E prod_{j in C} (k - j) / (0 - j)``, and
+``M`` is a non-integer rational for some ``(C, E, k)`` (6 of 18 for
+``s = 3, t = 2``): for ``M = r / d``, ``d`` times the difference is the small
+integer ``d e_k - r nu``, which gives ``nu mod d`` whatever ``sigma_f``;
+where ``M`` is an integer it reaches 4 (45 for ``s = 5, t = 3``), and the
+statistical distance of the flooding grows ``|M|``-fold. ``"replicated"`` shares the key additively over the ``(t - 1)``-subsets of
+the servers (see :func:`~pyfe4ai.schemes.threshold_utils.share_replicated`):
+each server of ``E`` adds up the pieces assigned to it, ``M`` is 0 or 1 and
+the smudging argument holds as stated, with ``q`` unchanged; a server holds
+``C(s - 1, t - 1)`` pieces instead of one share. With ``t = s`` both are
+sound (``M = 1``).
+
 Under the ``standard`` security profile ``lwe_n = "auto"`` picks the
 smallest dimension meeting :data:`pyfe4ai.utils.lwe_utils.WIDE_LWE_128_LOG_RATIO`
 at the enlarged ``q`` (``stat_param = 128``): about 6000 for ``X = Y = 50``
@@ -81,13 +96,16 @@ from pyfe4ai.schemes.threshold_utils import client_server_mac_keys
 from pyfe4ai.schemes.threshold_utils import tag_ciphertext
 from pyfe4ai.schemes.threshold_utils import ciphertexts_digest
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
-from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
+from pyfe4ai.schemes.threshold_utils import pieces_held
+from pyfe4ai.schemes.threshold_utils import share_for_enrolled
 from pyfe4ai.schemes.threshold_utils import share_points
+from pyfe4ai.schemes.threshold_utils import share_replicated
 from pyfe4ai.schemes.threshold_utils import share_secret
 from pyfe4ai.schemes.threshold_utils import validate_enrolled
 from pyfe4ai.schemes.threshold_utils import combine_consistently
 from pyfe4ai.schemes.threshold_utils import combine_elementwise
 from pyfe4ai.schemes.threshold_utils import validate_partial_decryptions
+from pyfe4ai.schemes.threshold_utils import validate_sharing
 from pyfe4ai.schemes.threshold_utils import validate_threshold
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.lwe_utils import GAUSSIAN_TAIL_CUT
@@ -131,11 +149,13 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
 
         Args:
             config: As for :class:`~pyfe4ai.schemes.mife.lwe.MIFELWEKeyGenerator`,
-                plus ``s`` (number of servers), ``t`` (threshold), ``lst_sid``
-                and ``stat_param`` (statistical parameter ``kappa`` of the
-                flooding).
+                plus ``s`` (number of servers), ``t`` (threshold), ``lst_sid``,
+                ``stat_param`` (statistical parameter ``kappa`` of the
+                flooding) and ``sharing`` (``"shamir"`` or ``"replicated"``,
+                see the module docstring).
         """
         self.t = config.get("t", CryptoCONST.tMIFE_T)
+        self.sharing = validate_sharing(config.get("sharing", "shamir"))
         s = config.get("s") or len(config.get("lst_sid", [])) or 1
         self.lst_sid = config.get("lst_sid", ["sid_{}".format(i) for i in range(s)])
         self.stat_param = int(config.get("stat_param", _DEFAULT_STAT_PARAM))
@@ -201,10 +221,12 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
         return sk
 
     def get_public_parameters(self) -> dict:
-        """Return the MIFE public parameters plus ``s``, ``t``, ``lst_sid``, ``sigma_f``."""
+        """Return the MIFE public parameters plus ``s``, ``t``, ``lst_sid``,
+        ``sigma_f`` and ``sharing``."""
         pp = super().get_public_parameters()
         pp.update(
-            {"s": self.s, "t": self.t, "lst_sid": list(self.lst_sid), "sigma_f": str(self.sigma_f)}
+            {"s": self.s, "t": self.t, "lst_sid": list(self.lst_sid), "sigma_f": str(self.sigma_f),
+             "sharing": self.sharing}
         )
         return pp
 
@@ -219,7 +241,9 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
             Dict with ``sk_y`` (per-slot share vectors), ``z`` (share of the
             pad term), ``sid``, ``lst_sid``, ``weights_id``, ``noise_key`` and
             ``mac_keys`` (``{nid: hex}``, to verify the clients' ciphertext
-            tags), or ``None`` if *sid* is unknown.
+            tags), or ``None`` if *sid* is unknown. With replicated sharing
+            ``sk_y`` and ``z`` are replaced by ``sharing`` and ``pieces``
+            (``[{"set": T, "share": {"sk_y": ..., "z": ...}}]``).
         """
         credentials = kwargs.get("credentials", None)
         if not credentials:
@@ -244,6 +268,17 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
     def _share_key(self, key: dict) -> dict:
         sid_v = share_points(self.lst_sid)
         points = list(sid_v.values())
+        if self.sharing == "replicated":
+            material = {"sk_y": {nid: list(vec) for nid, vec in key["sk_y"].items()}, "z": key["z"]}
+            pieces = share_replicated(material, self.t, points, self.q)
+            return {
+                sid: {
+                    "sharing": "replicated",
+                    "pieces": pieces_held(pieces, sid_v[sid]),
+                    "noise_key": secrets.token_hex(32),
+                }
+                for sid in self.lst_sid
+            }
         per_sid = {
             sid: {"sk_y": {}, "noise_key": secrets.token_hex(32)} for sid in self.lst_sid
         }
@@ -271,7 +306,7 @@ class ThresholdMIFELWE(MIFELWE):
         return out
 
     def share_decrypt(
-        self, dict_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list
+        self, dict_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list, _share=None
     ) -> dict:
         """Compute this server's flooded partial decryption.
 
@@ -291,47 +326,50 @@ class ThresholdMIFELWE(MIFELWE):
                 those of the key share, or a ciphertext's tag for this server
                 does not verify (it was not produced by that slot's client).
         """
-        if not dk or "sk_y" not in dk or "z" not in dk:
+        if not dk or not ("pieces" in dk or ("sk_y" in dk and "z" in dk)):
             raise FEKeyError("no decryption keys provided")
         if self.id not in dk["lst_sid"] or dk.get("sid") != self.id:
             raise FESchemeError("the key share does not belong to server {}".format(self.id))
+        if dk.get("sharing", "shamir") != self.pp.get("sharing", "shamir"):
+            raise FESchemeError("the key share is not of the sharing of the public parameters")
         validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
         check_fusion_weight(dk, credentials)
-        if set(dict_ct) != set(dk["sk_y"]):
+        q = gp.mpz(self.pp["q"])
+        # Shamir: (dk, lambda_k); replicated: the sum of the assigned pieces, 1
+        share, multiplier, tag = _share or share_for_enrolled(
+            dk, self.id, lst_sid_enrolled, self.pp["t"], q
+        )
+        if set(dict_ct) != set(share["sk_y"]):
             raise FESchemeError("need one ciphertext for every slot of the key")
         check_ciphertext_tags(dict_ct, dk.get("mac_keys"), self.id, _TAG_DOMAIN, _tag_payload)
 
-        q = gp.mpz(self.pp["q"])
         delta = q // gp.mpz(self.pp["p"])
-        key_part = delta * gp.mpz(dk["z"])
+        key_part = delta * gp.mpz(share["z"])
         c_y = gp.mpz(0)
         canonical = {}
         for nid, ct in dict_ct.items():
             ct0 = [v % q for v in digits_to_vector(ct["ct0"])]
             ct1 = [v % q for v in digits_to_vector(ct["ct1"])]
-            if len(ct0) != len(dk["sk_y"][nid]) or len(ct1) != self.pp["eta"]:
+            if len(ct0) != len(share["sk_y"][nid]) or len(ct1) != self.pp["eta"]:
                 raise FESchemeError("malformed ciphertext of {}".format(nid))
             canonical[nid] = [[int(v) for v in ct0], [int(v) for v in ct1]]
             y_vec = [gp.mpz(int(v)) for v in credentials[nid]]
-            key_part += vecdot_mod(ct0, [gp.mpz(v) for v in dk["sk_y"][nid]], q)
+            key_part += vecdot_mod(ct0, [gp.mpz(v) for v in share["sk_y"][nid]], q)
             c_y += vecdot_mod(y_vec, ct1, q)
 
-        sid_v = share_points(dk["lst_sid"])
-        lagrange = lagrange_coefficient_at_zero(
-            sid_v[self.id], [sid_v[s] for s in lst_sid_enrolled], q
-        )
         # the noise is seeded with what the key part depends on -- the ct0 values,
         # not their encoding, ct1, extra fields or other servers' tags -- so a
         # request for the same key part always draws the same noise
         ct_digest = ciphertexts_digest(canonical)
         key_inputs = ciphertexts_digest({nid: values[0] for nid, values in canonical.items()})
-        # the partial depends on the enrolled set only through lambda
-        context = json.dumps([key_inputs, gp.digits(lagrange)]).encode("utf-8")
+        # the partial depends on the enrolled set only through the tag (lambda,
+        # or the assigned pieces)
+        context = json.dumps([key_inputs, tag]).encode("utf-8")
         e_k = _flooding_noise(
             int(self.pp["sigma_f"]), XofRandom(bytes.fromhex(dk["noise_key"]) + context)
         )
         return {
-            "w": gp.digits((lagrange * key_part + e_k) % q),
+            "w": gp.digits((multiplier * key_part + e_k) % q),
             "c_y": gp.digits(c_y % q),
             "ct_digest": ct_digest,
             "sid": self.id,
@@ -389,12 +427,17 @@ class ThresholdMIFELWE(MIFELWE):
     ) -> list:
         """Partially decrypt every element of the slots' ndarray ciphertexts."""
         sample = next(iter(dict_ndarray_ct.values()))
+        share = None
+        if dk and "pieces" in dk and self.id in dk.get("lst_sid", []):
+            # the assigned pieces, added up once for all elements
+            validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
+            share = share_for_enrolled(dk, self.id, lst_sid_enrolled, self.pp["t"], gp.mpz(self.pp["q"]))
         lst_partial = []
         for l in range(len(sample)):
             ary_partial = np.empty(sample[l].shape, dtype=object)
             for i, _ in np.ndenumerate(sample[l]):
                 dct_ct = {nid: dict_ndarray_ct[nid][l][i] for nid in dict_ndarray_ct}
-                ary_partial[i] = self.share_decrypt(dct_ct, credentials, dk, lst_sid_enrolled)
+                ary_partial[i] = self.share_decrypt(dct_ct, credentials, dk, lst_sid_enrolled, _share=share)
             lst_partial.append(ary_partial)
         return lst_partial
 

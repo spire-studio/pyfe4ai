@@ -21,6 +21,24 @@ compatibility).
   profile keeps the same ring dimension for the benchmark configurations.
   Cached parameters of these schemes are re-derived (construction
   `acfgu18-bmms21/v5`).
+- **Threshold LWE layers** (`mife/lwe_threshold`, `mcfe/ring_lwe_threshold`,
+  `mcfe/lwe_threshold`): with the Shamir sharing and `t < s`, a coalition of
+  `t - 1` servers sees honest partial decryptions that differ from their
+  simulation from the result by `M nu`, with `M` a Lagrange product that is
+  a non-integer rational for some corrupted sets, enrolled sets and servers
+  (6 of 18 for `s = 3, t = 2`; 202 of 330 for `s = 5, t = 3`). For
+  `M = r / d`, `d` times the partial minus what the coalition can compute is
+  a small integer that reveals the decryption noise `nu mod d`, whatever the
+  flooding width (checked: `nu mod 4` in 20 of 20 tMIFE-LWE partials and 160
+  of 160 tMCFE-Ring-LWE coefficients for `s = 3, t = 2`, server 2 corrupted,
+  enrolled set {1, 3}). In tMCFE-LWE the same multipliers fix linear
+  relations among the flooding terms and narrow the error of its LWE
+  argument up to 5-fold (`s = 3, t = 2`). New config entry
+  `sharing = "replicated"`: the key is shared additively over the
+  `(t - 1)`-subsets of the servers, every multiplier is 0 or 1 and the
+  existing arguments hold, with `q`, `ring_n` and `lwe_n` unchanged; a
+  server holds `C(s - 1, t - 1)` key pieces instead of one share. The
+  default stays `"shamir"` (sound for `t = s`).
 
 ### Performance
 

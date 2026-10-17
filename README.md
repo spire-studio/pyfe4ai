@@ -140,7 +140,11 @@ See `examples/sife_minimal.py` for the full runnable version.
 > *experimental*, see the module docstrings). In tMIFE-LWE, tMCFE-Ring-LWE
 > and tMCFE-FH-Multi-IPE clients tag every ciphertext for every server
 > (HMAC, over the label too), and servers only decrypt ciphertexts tagged for
-> them under the label they serve. All threshold variants assume honest-but-curious servers (see
+> them under the label they serve. With `t < s`, the Shamir sharing of
+> tMIFE-LWE, tMCFE-LWE and tMCFE-Ring-LWE lets `t - 1` corrupted servers
+> read the decryption noise modulo small integers off honest partial
+> decryptions; `sharing = "replicated"` avoids this (see the module
+> docstrings). All threshold variants assume honest-but-curious servers (see
 > [Known Issues](#known-issues--security-notice)).
 
 > **⚠️ Research prototype.** Every scheme has been checked against its
@@ -264,7 +268,7 @@ side-channel hardening, trusted parameter cache) still apply.
     - `quadratic/`: quadratic functional encryption families
     - `status.py`: review status of every registered scheme (the table above)
     - `profiles.py`: `security_profile` (`"toy"` / `"standard"`)
-    - `threshold_utils.py`: Shamir sharing, client MAC tags and partial-decryption checks of the threshold schemes
+    - `threshold_utils.py`: Shamir and replicated sharing, client MAC tags and partial-decryption checks of the threshold schemes
     - `abdp15_lwe.py`: shared ABDP15 parameters and seeded public matrix of SIFE- and MIFE-LWE
   - `utils/`: utility modules
     - `crypto_constants.py`, `crypto_utils.py`: group generation and constants

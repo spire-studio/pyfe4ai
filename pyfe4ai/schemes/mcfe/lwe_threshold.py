@@ -47,6 +47,27 @@ sets containing server ``k`` carry independent noise; since the Lagrange
 coefficients are small rationals, ``r`` such sets allow averaging that
 reduces the noise by at most ``sqrt(r)``.
 
+Sharing (config entry ``sharing``): the argument above takes one answer
+carrying ``<sk_y, H(l)>``, with multiplier 1, per label and enrolled set.
+With the default ``"shamir"`` and ``t < s`` that is not what a coalition
+``C`` of ``t - 1`` servers sees: an honest answer is computable from ``C``'s
+shares up to ``M_k <sk_y, H(l)> + e_k``, ``M_k = lambda_k^E prod_{j in C}
+(k - j) / (0 - j)``, and several honest answers of one enrolled set carry
+multipliers other than 0 and 1 (rationals ``r_k / d_k``, or integers such as
+``-3`` and ``4``). Then ``d_k (w_k - known) - r_k v``, with ``v`` the
+combined value, is the small integer ``d_k e_k - r_k sum_E e_j``: the
+answers fix the noise terms up to multiples of ``D M`` (``D`` the common
+denominator; ``sum_E e_j`` modulo ``D``), and ``v`` is an LWE sample whose
+error is ``D |M|_2`` times narrower than the ``sigma_f`` of one answer of
+multiplier 1: ``sqrt(10)`` for ``s = 3, t = 2``, ``C = {2}``, ``E = {1, 3}``
+(``M = (3/4, 1/4)``), up to 5 for ``s = 3, t = 2`` and 79 for
+``s = 5, t = 3``. This is not a break, but the argument does not cover it.
+``"replicated"`` (see
+:func:`~pyfe4ai.schemes.threshold_utils.share_replicated`) makes every
+``M_k`` 0 or 1, with one honest answer of multiplier 1 per enrolled set; the
+other answers are computable up to their own noise. ``sigma_f`` and ``q``
+are unchanged. With ``t = s`` both are as described.
+
 Statistical smudging in the usual sense (noise hiding a small ciphertext
 error) does not apply, because these ciphertexts carry no LWE error, only
 rounding. ``sigma_f`` is the largest width that keeps decryption correct:
@@ -72,13 +93,16 @@ from pyfe4ai.schemes.mcfe.lwe import MCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.lwe import dot_mod
 from pyfe4ai.schemes.threshold_utils import check_fusion_weight
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
-from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
+from pyfe4ai.schemes.threshold_utils import pieces_held
+from pyfe4ai.schemes.threshold_utils import share_for_enrolled
 from pyfe4ai.schemes.threshold_utils import share_points
+from pyfe4ai.schemes.threshold_utils import share_replicated
 from pyfe4ai.schemes.threshold_utils import share_secret
 from pyfe4ai.schemes.threshold_utils import validate_enrolled
 from pyfe4ai.schemes.threshold_utils import combine_consistently
 from pyfe4ai.schemes.threshold_utils import combine_elementwise
 from pyfe4ai.schemes.threshold_utils import validate_partial_decryptions
+from pyfe4ai.schemes.threshold_utils import validate_sharing
 from pyfe4ai.schemes.threshold_utils import validate_threshold
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.lwe_utils import GAUSSIAN_TAIL_CUT
@@ -132,11 +156,13 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
 
         Args:
             config: As for :class:`~pyfe4ai.schemes.mcfe.lwe.MCFELWEKeyGenerator`,
-                plus ``s`` (number of decryption servers), ``t`` (threshold)
-                and ``lst_sid``.
+                plus ``s`` (number of decryption servers), ``t`` (threshold),
+                ``lst_sid`` and ``sharing`` (``"shamir"`` or
+                ``"replicated"``, see the module docstring).
         """
         super().__init__(config, **kwargs)
         self.t = config.get("t", CryptoCONST.tMCFE_T)
+        self.sharing = validate_sharing(config.get("sharing", "shamir"))
         if self.s is None:
             self.s = len(config.get("lst_sid", [])) or CryptoCONST.tMCFE_S
         self.lst_sid = config.get("lst_sid", ["sid_{}".format(i) for i in range(self.s)])
@@ -156,7 +182,8 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
         self.dict_dk = {}
 
     def get_public_parameters(self) -> dict:
-        """Return the MCFE public parameters plus ``s``, ``t``, ``lst_sid``, ``sigma_f``."""
+        """Return the MCFE public parameters plus ``s``, ``t``, ``lst_sid``,
+        ``sigma_f`` and ``sharing``."""
         pp = super().get_public_parameters()
         pp.update(
             {
@@ -164,6 +191,7 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
                 "t": self.t,
                 "lst_sid": list(self.lst_sid),
                 "sigma_f": gp.digits(gp.mpz(self.sigma_f)),
+                "sharing": self.sharing,
             }
         )
         return pp
@@ -183,7 +211,8 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
             Dict with ``sk_y`` (this server's share), ``sid``, ``lst_sid``,
             ``weights_id`` (digest of the weights) and ``noise_key`` (this
             server's secret key for deriving flooding noise), or ``None`` if
-            *sid* is unknown.
+            *sid* is unknown. With replicated sharing ``sk_y`` is replaced
+            by ``sharing`` and ``pieces`` (``[{"set": T, "share": {"sk_y": ...}}]``).
         """
         credentials = kwargs.get("credentials", None)
         if not credentials:
@@ -196,8 +225,11 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
         if identifier not in self.dict_dk:
             self.dict_dk[identifier] = self._share_key(self._aggregate_key(fusion_weight))
         share, noise_key = self.dict_dk[identifier][sid]
+        held = {"sk_y": [gp.digits(v) for v in share]} if self.sharing == "shamir" else {
+            "sharing": "replicated", "pieces": share,
+        }
         return {
-            "sk_y": [gp.digits(v) for v in share],
+            **held,
             "sid": sid,
             "lst_sid": list(self.lst_sid),
             "weights_id": identifier,
@@ -207,6 +239,9 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
     def _share_key(self, sk_y: list) -> dict:
         sid_v = share_points(self.lst_sid)
         points = list(sid_v.values())
+        if self.sharing == "replicated":
+            pieces = share_replicated({"sk_y": list(sk_y)}, self.t, points, self.q)
+            return {sid: (pieces_held(pieces, sid_v[sid]), secrets.token_hex(32)) for sid in self.lst_sid}
         shares = [share_secret(v, self.t, points, self.q) for v in sk_y]
         return {
             sid: ([sh[sid_v[sid]] for sh in shares], secrets.token_hex(32))
@@ -218,7 +253,7 @@ class ThresholdMCFELWE(MCFELWE):
     """Crypto operations for threshold ABMPSW20 LWE MCFE."""
 
     def share_decrypt(
-        self, dict_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list
+        self, dict_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list, _share=None
     ) -> dict:
         """Compute this server's noise-flooded partial decryption.
 
@@ -237,10 +272,12 @@ class ThresholdMCFELWE(MCFELWE):
             FESchemeError: If the enrolled set is invalid or the weights are
                 not those the key share was derived for.
         """
-        if not dk or "sk_y" not in dk:
+        if not dk or not ("sk_y" in dk or "pieces" in dk):
             raise FEKeyError("no decryption keys provided")
         if self.id not in dk["lst_sid"] or dk.get("sid") != self.id:
             raise FESchemeError("the key share does not belong to server {}".format(self.id))
+        if dk.get("sharing", "shamir") != self.pp.get("sharing", "shamir"):
+            raise FESchemeError("the key share is not of the sharing of the public parameters")
         fusion_weight = credentials.get("fusion_weight")
         label = credentials.get("label")
         if fusion_weight is None or label is None:
@@ -249,18 +286,19 @@ class ThresholdMCFELWE(MCFELWE):
         validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
         check_fusion_weight(dk, fusion_weight)
 
-        sid_v = share_points(dk["lst_sid"])
-        lagrange = lagrange_coefficient_at_zero(
-            sid_v[self.id], [sid_v[s] for s in lst_sid_enrolled], self.q
+        # Shamir: (dk, lambda_k); replicated: the sum of the assigned pieces, 1
+        share, multiplier, tag = _share or share_for_enrolled(
+            dk, self.id, lst_sid_enrolled, self.pp["t"], self.q
         )
-        share_term = dot_mod([gp.mpz(v) for v in dk["sk_y"]], self._hash_label(label), self.q)
-        # the partial depends on the enrolled set only through lambda
-        context = json.dumps([encoded, gp.digits(lagrange)]).encode("utf-8")
+        share_term = dot_mod([gp.mpz(v) for v in share["sk_y"]], self._hash_label(label), self.q)
+        # the partial depends on the enrolled set only through the tag (lambda,
+        # or the assigned pieces)
+        context = json.dumps([encoded, tag]).encode("utf-8")
         e_k = flooding_noise(
             int(self.pp["sigma_f"]),
             rng=XofRandom(bytes.fromhex(dk["noise_key"]) + context),
         )
-        w = (lagrange * share_term + e_k) % self.q
+        w = (multiplier * share_term + e_k) % self.q
         return {
             "w": gp.digits(w),
             "c_y": int(self._weighted_sum(dict_ct, fusion_weight)),
@@ -327,6 +365,11 @@ class ThresholdMCFELWE(MCFELWE):
         if not isinstance(label, str):
             raise FEValidationError("need a string label")
         sample = next(iter(dict_ndarray_ct.values()))
+        share = None
+        if dk and "pieces" in dk and self.id in dk.get("lst_sid", []):
+            # the assigned pieces, added up once for all elements
+            validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
+            share = share_for_enrolled(dk, self.id, lst_sid_enrolled, self.pp["t"], self.q)
         lst_partial = []
         for l in range(len(sample)):
             ary_partial = np.empty(sample[l].shape, dtype=object)
@@ -334,7 +377,7 @@ class ThresholdMCFELWE(MCFELWE):
                 dct_ct = {nid: dict_ndarray_ct[nid][l][i] for nid in dict_ndarray_ct}
                 elem_credentials = dict(credentials, label=_element_label(label, l, i))
                 ary_partial[i] = self.share_decrypt(
-                    dct_ct, elem_credentials, dk, lst_sid_enrolled
+                    dct_ct, elem_credentials, dk, lst_sid_enrolled, _share=share
                 )
             lst_partial.append(ary_partial)
         return lst_partial
