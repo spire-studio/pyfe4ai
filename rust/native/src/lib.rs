@@ -13,7 +13,7 @@ use pyfe4ai_core::rlwe::{self, EncKey, Precomputed, Randomness};
 use pyfe4ai_core::{osrand, parallel_for, with_ring, AnyRing, Ring, Word};
 use pyo3::exceptions::{PyNotImplementedError, PyOSError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyList, PyString, PyTuple};
+use pyo3::types::{PyBytes, PyInt, PyList, PyString, PyTuple};
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use std::sync::{Arc, Mutex};
@@ -86,7 +86,8 @@ fn u128_arg(ob: &Bound<'_, PyAny>) -> PyResult<u128> {
 }
 
 fn py_index<'py>(ob: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
-    ob.py().import("operator")?.getattr("index")?.call1((ob,))
+    // operator.index(ob)
+    unsafe { Bound::from_owned_ptr_or_err(ob.py(), pyo3::ffi::PyNumber_Index(ob.as_ptr())) }
 }
 
 /// int(str(ob)) % q (the semantics of canonical_ring_ciphertext).
@@ -95,33 +96,64 @@ fn str_int_mod(ob: &Bound<'_, PyAny>, q: &Bound<'_, PyAny>) -> PyResult<u128> {
     int.call1((ob.str()?,))?.rem(q)?.extract::<u128>()
 }
 
+/// ob % q for an exact int, without raising (None: not an exact int, or a
+/// negative value below -2^63); qv > 0.
+fn int_mod_fast(ob: &Bound<'_, PyAny>, qv: u128) -> Option<u128> {
+    let i = ob.cast_exact::<PyInt>().ok()?;
+    let mut overflow: std::os::raw::c_int = 0;
+    let v = unsafe { pyo3::ffi::PyLong_AsLongLongAndOverflow(i.as_ptr(), &mut overflow) };
+    let red = |x: u128| if x < qv { x } else { x % qv };
+    match overflow {
+        0 if v >= 0 => Some(red(v as u128)),
+        0 => match red(v.unsigned_abs() as u128) {
+            0 => Some(0),
+            m => Some(qv - m),
+        },
+        1 => i.extract::<u128>().ok().map(red), // fails (and is dropped) only at 2^128 and beyond
+        _ => None,
+    }
+}
+
 /// operator.index(ob) % q.
 fn index_mod(ob: &Bound<'_, PyAny>, q: &Bound<'_, PyAny>) -> PyResult<u128> {
-    py_index(ob)?.rem(q)?.extract::<u128>()
+    index_mod_q(ob, q, q.extract::<u128>()?)
+}
+
+fn index_mod_q(ob: &Bound<'_, PyAny>, q: &Bound<'_, PyAny>, qv: u128) -> PyResult<u128> {
+    if let Some(x) = int_mod_fast(ob, qv) {
+        return Ok(x);
+    }
+    let v = py_index(ob)?;
+    if let Some(x) = int_mod_fast(&v, qv) {
+        return Ok(x);
+    }
+    v.rem(q)?.extract::<u128>()
 }
 
 /// Values of a sequence mod q: decimal strings by the fast path, other strings
 /// as int(s), anything else by __index__ (str_semantics: int(str(v)) for all).
 fn read_values(seq: &Bound<'_, PyAny>, n: Option<usize>, q: &Bound<'_, PyAny>, qv: u128, str_semantics: bool)
     -> PyResult<Vec<u128>> {
-    let items: Vec<Bound<'_, PyAny>> = seq.try_iter()?.collect::<PyResult<_>>()?;
-    if let Some(n) = n {
-        if items.len() != n {
-            return Err(PyValueError::new_err(format!("expected {} values", n)));
-        }
-    }
-    items
-        .iter()
-        .map(|ob| {
-            if let Ok(s) = ob.cast::<PyString>() {
-                if let Some(v) = s.to_str().ok().and_then(|t| parse_dec(t.as_bytes(), qv)) {
-                    return Ok(v);
-                }
-                return str_int_mod(ob, q);
+    let one = |ob: &Bound<'_, PyAny>| -> PyResult<u128> {
+        if let Ok(s) = ob.cast::<PyString>() {
+            if let Some(v) = s.to_str().ok().and_then(|t| parse_dec(t.as_bytes(), qv)) {
+                return Ok(v);
             }
-            if str_semantics { str_int_mod(ob, q) } else { index_mod(ob, q) }
-        })
-        .collect()
+            return str_int_mod(ob, q);
+        }
+        if str_semantics { str_int_mod(ob, q) } else { index_mod_q(ob, q, qv) }
+    };
+    let check = |len: usize| match n {
+        Some(n) if n != len => Err(PyValueError::new_err(format!("expected {} values", n))),
+        _ => Ok(()),
+    };
+    if let Ok(list) = seq.cast::<PyList>() {
+        check(list.len())?;
+        return list.iter().map(|ob| one(&ob)).collect();
+    }
+    let items: Vec<Bound<'_, PyAny>> = seq.try_iter()?.collect::<PyResult<_>>()?;
+    check(items.len())?;
+    items.iter().map(one).collect()
 }
 
 fn get_ring(ctx: &Bound<'_, RingCtx>) -> Arc<AnyRing> {
@@ -147,11 +179,15 @@ fn ctx_info(py: Python<'_>, ctx: &Bound<'_, RingCtx>) -> PyResult<Py<PyAny>> {
 
 // Words cross the boundary as packed native-endian (little-endian) bytes.
 fn words_to_bytes<W: Word>(py: Python<'_>, w: &[W]) -> Py<PyBytes> {
-    let mut out = Vec::with_capacity(w.len() * (W::BITS as usize / 8));
-    for v in w {
-        out.extend_from_slice(&v.to_u128().to_le_bytes()[..W::BITS as usize / 8]);
-    }
-    PyBytes::new(py, &out).unbind()
+    let wb = W::BITS as usize / 8;
+    PyBytes::new_with(py, w.len() * wb, |out| {
+        for (o, v) in out.chunks_exact_mut(wb).zip(w) {
+            o.copy_from_slice(&v.to_u128().to_le_bytes()[..wb]);
+        }
+        Ok(())
+    })
+    .expect("allocating bytes")
+    .unbind()
 }
 
 fn bytes_to_words<W: Word>(b: &[u8], count: usize) -> PyResult<Vec<W>> {
@@ -613,7 +649,13 @@ fn gather<'py>(seq: &Bound<'py, PyAny>, n: usize) -> Option<Gathered<'py>> {
 
 enum Slot<'py> {
     Dec(Vec<Gathered<'py>>), // eta rows of ct0, then ct1
-    Bin(Vec<u8>),
+    Bin(Bound<'py, PyBytes>),
+}
+
+/// A slot's values: parsed decimal texts, or a binary ciphertext decoded later without the GIL.
+enum SlotVals<'a> {
+    Words(Vec<u128>),
+    Bin(&'a [u8]),
 }
 
 /// MIFERingLWE._decrypt_with_pad_term for every chunk of a layer (see the C++
@@ -662,7 +704,7 @@ fn decrypt_tensor(py: Python<'_>, ctx: &Bound<'_, RingCtx>, chunks: &Bound<'_, P
         let mut row = Vec::with_capacity(s_count);
         for pair in per {
             if let Ok(b) = pair.cast::<PyBytes>() {
-                row.push(Slot::Bin(b.as_bytes().to_vec()));
+                row.push(Slot::Bin(b.clone()));
                 continue;
             }
             let t = pair.cast::<PyTuple>().map_err(|_| fallback())?;
@@ -710,17 +752,13 @@ fn decrypt_tensor(py: Python<'_>, ctx: &Bound<'_, RingCtx>, chunks: &Bound<'_, P
     let parsed_cells: Vec<Mutex<Vec<Option<u128>>>> = (0..texts.len()).map(|_| Mutex::new(Vec::new())).collect();
     py.detach(|| parallel_for(texts.len(), threads, |i| *parsed_cells[i].lock().unwrap() = parse(texts[i])));
     let mut parsed = parsed_cells.into_iter().map(|m| m.into_inner().unwrap());
-    let mut slot_vals: Vec<Vec<Vec<u128>>> = Vec::with_capacity(slots.len());
+    let mut slot_vals: Vec<Vec<SlotVals<'_>>> = Vec::with_capacity(slots.len());
     for (j, row) in slots.iter().enumerate() {
         let mut out_row = Vec::with_capacity(s_count);
         for (s, slot) in row.iter().enumerate() {
             let malformed = || PyValueError::new_err(("malformed ciphertext", s, j));
-            let vals: Vec<u128> = match slot {
-                Slot::Bin(b) => {
-                    let mut v = vec![0u128; (eta + 1) * n];
-                    bin_read(b, qv, ring_logn(&ring), eta, &mut v).ok_or_else(malformed)?;
-                    v
-                }
+            let vals = match slot {
+                Slot::Bin(b) => SlotVals::Bin(b.as_bytes()),
                 Slot::Dec(gs) => {
                     let mut v = Vec::with_capacity((eta + 1) * n);
                     for g in gs {
@@ -737,7 +775,7 @@ fn decrypt_tensor(py: Python<'_>, ctx: &Bound<'_, RingCtx>, chunks: &Bound<'_, P
                             });
                         }
                     }
-                    v
+                    SlotVals::Words(v)
                 }
             };
             out_row.push(vals);
@@ -753,16 +791,35 @@ fn decrypt_tensor(py: Python<'_>, ctx: &Bound<'_, RingCtx>, chunks: &Bound<'_, P
         let ym: Vec<_> = y_rows.iter().flatten().map(|&v| m.to_mont(m.reduce_u128(v))).collect();
         let hats: Vec<Vec<_>> = sk_hats.iter().map(|h| bytes_to_words(h, n)).collect::<PyResult<_>>()?;
         let zw: Vec<Vec<_>> = zvals.iter().map(|z| z.iter().map(|v| m.reduce_u128(v.unwrap())).collect()).collect();
-        let sw: Vec<Vec<Vec<_>>> = slot_vals.iter().map(|row| row.iter().map(|v| v.iter().map(|&x| m.reduce_u128(x)).collect()).collect()).collect();
         let dw = m.reduce_u128(d);
+        let logn = r.logn;
         let outs: Vec<Mutex<(Vec<i64>, Vec<u8>, bool)>> = ks.iter().map(|&k| Mutex::new((vec![0; k as usize], vec![0; k as usize], true))).collect();
-        py.detach(|| parallel_for(sw.len(), threads, |j| {
-            let slot_refs: Vec<&[_]> = sw[j].iter().map(|v| v.as_slice()).collect();
+        // first malformed binary slot of each chunk
+        let bad: Vec<Mutex<Option<usize>>> = (0..slot_vals.len()).map(|_| Mutex::new(None)).collect();
+        py.detach(|| parallel_for(slot_vals.len(), threads, |j| {
+            let mut buf = vec![0u128; (eta + 1) * n];
+            let mut words = Vec::with_capacity(s_count);
+            for (s, sv) in slot_vals[j].iter().enumerate() {
+                words.push(match sv {
+                    SlotVals::Words(v) => v.iter().map(|&x| m.reduce_u128(x)).collect::<Vec<_>>(),
+                    SlotVals::Bin(b) => {
+                        if bin_read(b, qv, logn, eta, &mut buf).is_none() {
+                            *bad[j].lock().unwrap() = Some(s);
+                            return;
+                        }
+                        buf.iter().map(|&x| Word::from_u128(x)).collect()
+                    }
+                });
+            }
+            let slot_refs: Vec<&[_]> = words.iter().map(|v| v.as_slice()).collect();
             let hat_refs: Vec<&[_]> = hats.iter().map(|v| v.as_slice()).collect();
             let mut o = outs[j].lock().unwrap();
             let (ref mut vals, ref mut nn, ref mut ok) = *o;
             *ok = rlwe::decrypt_chunk(r, eta, &zw[j], &slot_refs, &ym, &hat_refs, dw, bound_v, vals, nn);
         }));
+        if let Some((j, s)) = bad.into_iter().enumerate().find_map(|(j, b)| b.into_inner().unwrap().map(|s| (j, s))) {
+            return Err(PyValueError::new_err(("malformed ciphertext", s, j)));
+        }
         let mut big = false;
         for (j, o) in outs.into_iter().enumerate() {
             let (v, nn, ok) = o.into_inner().unwrap();
@@ -778,10 +835,6 @@ fn decrypt_tensor(py: Python<'_>, ctx: &Bound<'_, RingCtx>, chunks: &Bound<'_, P
     let data = PyBytes::new(py, &values.iter().flat_map(|v| v.to_ne_bytes()).collect::<Vec<u8>>());
     let mask: Py<PyAny> = if none.iter().any(|&b| b == 1) { PyBytes::new(py, &none).into_any().unbind() } else { py.None() };
     Ok(PyTuple::new(py, [data.into_any().unbind(), mask])?.into_any().unbind())
-}
-
-fn ring_logn(r: &AnyRing) -> u32 {
-    with_ring!(r, x => x.logn)
 }
 
 /// MCFE key terms z'' of several labels as decimal strings.
