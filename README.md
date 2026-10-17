@@ -51,12 +51,14 @@ pip install -e ".[test,pairing]"
 [`Dockerfile.pairing`](Dockerfile.pairing)). The Docker image of
 [Pairing-Based Schemes](#pairing-based-schemes) has all of them.
 
-`pip install` also builds an optional C++ extension when a 64-bit GCC or
-Clang is available (`python setup.py build_ext --inplace` in a source
+`pip install` also builds an optional Rust extension when a Rust toolchain
+(`cargo`) is on the `PATH` (`python tools/build_rust.py` in a source
 checkout; `PYFE4AI_NO_NATIVE=1` skips it). It runs the Ring-LWE MIFE / MCFE
 and the dense-LWE MCFE hot paths natively -- 50x to 70x faster for the FL
 aggregation path -- with the same outputs as the Python code, which remains
-the fallback; see `pyfe4ai.utils.native_backend` and
+the fallback; it also provides ristretto255 for the `ddh_ristretto255`
+schemes and the BLS12-381 pairing group, the default of the pairing-based
+schemes. See `pyfe4ai.utils.native_backend` and
 [`benchmarks/PERFORMANCE.md`](benchmarks/PERFORMANCE.md).
 
 ## Usage

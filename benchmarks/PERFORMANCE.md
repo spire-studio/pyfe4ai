@@ -3,8 +3,11 @@
 Measurements of branch `perf/native-core` (2026-10-17) against v0.3.0 and
 against homomorphic encryption (TenSEAL 0.3.18, i.e. Microsoft SEAL) on the
 same workload. Raw numbers: `results/perf_native_core_2026-10-17.json`
-(C++ backend, host and docker) and `results/perf_rust_linux_2026-10-17.json`
-(Rust backend in docker, DRBG and BLS12-381 measurements).
+(first session: a C++ prototype of the native backend, host and docker) and
+`results/perf_rust_linux_2026-10-17.json` (the Rust backend in docker, DRBG
+and BLS12-381 measurements). The C++ prototype was removed once the Rust
+backend matched it (same kernels, same outputs, the same tests); its numbers
+stay here as measured.
 
 ## Workload and method
 
@@ -44,9 +47,9 @@ a day; numbers compared with each other come from one session.
 | TenSEAL CKKS, N = 8192 | 7.54 | 2.59 | - | 99.4 |
 | TenSEAL BFV, N = 4096 | 2.91 | 1.22 | - | 26.6 |
 
-*native* in these tables is the C++ backend (first session); the Rust
-backend in docker, with C++ and TenSEAL in one later session, is under
-*Rust backend* below (Rust binary: client 3.51 ms, aggregator 9.49 ms).
+*native* in these tables is the C++ prototype (first session); the Rust
+backend in docker, with the prototype and TenSEAL in one later session, is
+under *Rust backend* below (Rust binary: client 3.51 ms, aggregator 9.49 ms).
 
 Offline work per round (docker, one thread): 3.3 ms per client, 5.2 ms for
 the aggregator (key terms of 4 labels for 3 clients).
@@ -107,9 +110,9 @@ per round one label pad per client for the label and every chunk.
 
 `rust/core` (no dependencies) ports these kernels; its C ABI lets
 `tests/test_rust_core.py` check them against the Python code bit for bit.
-`pyfe4ai._rust_native` (PyO3, `rust/native`) binds it with the interface
-of the C++ module; both pass the same bit-identity tests, and the Rust one
-is preferred when both are built (`PYFE4AI_NATIVE_IMPL`).
+`pyfe4ai._rust_native` (PyO3, `rust/native`) binds it; it replaced the C++
+prototype after passing the same bit-identity tests and the comparison
+below (`pip install` builds it with cargo when a Rust toolchain is present).
 
 Docker, 10^4 elements, commit `eb9cc29`, one session (medians of 3 runs of
 9 rounds; TenSEAL measured right after):
@@ -121,8 +124,8 @@ Docker, 10^4 elements, commit `eb9cc29`, one session (medians of 3 runs of
 | Rust, binary, 4 threads | 1.54 | 4.83 | 2.14 |
 | Rust, binary, online after `--offline` | 0.25 | 4.51 | - |
 | Rust, binary, online, 4 threads | 0.26 | 2.34 | - |
-| C++, JSON / binary | 5.35 / 3.95 | 12.65 / 10.30 | 5.98 / 5.87 |
-| C++, binary, online | 0.28 | 4.32 | - |
+| C++ prototype, JSON / binary | 5.35 / 3.95 | 12.65 / 10.30 | 5.98 / 5.87 |
+| C++ prototype, binary, online | 0.28 | 4.32 | - |
 | TenSEAL CKKS, N = 8192 | 8.01 | 3.01 | - |
 | TenSEAL BFV, N = 4096 | 3.30 | 1.31 | - |
 

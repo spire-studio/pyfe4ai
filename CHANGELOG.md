@@ -9,33 +9,29 @@ compatibility).
 
 ### Performance
 
-- **Native backend**, two implementations of one interface: Rust
-  (`pyfe4ai._rust_native`, PyO3, built by `tools/build_rust.py` from `rust/`;
-  `rust/core` has no dependencies) and C++ (`pyfe4ai._rlwe_native`, built by
-  `setup.py`). `pyfe4ai.utils.native_backend` selects `auto` / `python` /
-  `native` (`PYFE4AI_BACKEND`), the implementation (`PYFE4AI_NATIVE_IMPL`,
-  Rust first) and threads (`PYFE4AI_THREADS`): Ring-LWE MIFE / MCFE
+- **Native backend** in Rust (`pyfe4ai._rust_native`, PyO3; sources in
+  `rust/`, `rust/core` has no dependencies), built by `pip install` when
+  cargo is available or by `tools/build_rust.py`.
+  `pyfe4ai.utils.native_backend` selects `auto` / `python` / `native`
+  (`PYFE4AI_BACKEND`) and threads (`PYFE4AI_THREADS`): Ring-LWE MIFE / MCFE
   encryption, decryption and key derivation of a whole tensor per call, with
   the GIL released and optional threads; dense-LWE MCFE label hashing and
-  dot products; ristretto255 (Rust). Same outputs as the Python code
+  dot products; ristretto255; BLS12-381 (below). Same outputs as the Python code
   (checked bit for bit by the tests); Python fallback for unsupported
   parameters.
-- **Sampling randomness of the Rust backend**: each tensor call expands one
+- **Sampling randomness of the native backend**: each tensor call expands one
   32-byte OS seed with ChaCha20, one stream per chunk, and wipes seed and
   states at its end (no state across calls); before, every sample byte was
   read from the OS. Same distribution. ChaCha20 is not an SP 800-90A DRBG
-  (relevant only to FIPS validation). The C++ backend and the Python code
-  still read the OS for every byte. Faster on macOS (0.4-0.6 ms per 10^4
+  (relevant only to FIPS validation). The Python code still reads the OS
+  for every byte. Faster on macOS (0.4-0.6 ms per 10^4
   elements, `getentropy`), unchanged on Linux (`getrandom` is cheap).
 - Ring-LWE in Python: `NTT(a)`, `NTT(pk)` and `NTT(sk_y)` cached, `r`
   transformed once, decryption products summed in the NTT domain (same
   outputs). Dense-LWE MCFE: keys parsed once per object.
 - MCFE Ring-LWE 10^4-element FL round (standard profile, 3 clients): client
-  230 -> 3.4 ms, aggregator 368 -> 9.2 ms in a single thread (Linux,
-  binary ciphertexts); see `benchmarks/PERFORMANCE.md`. The Rust backend
-  reads Python integers and binary ciphertexts without per-value Python
-  calls or exceptions (online aggregation on par with C++ within 4% on
-  Linux).
+  230 -> about 3.5 ms, aggregator 368 -> about 9.5 ms in a single thread
+  (Linux, binary ciphertexts); see `benchmarks/PERFORMANCE.md`.
 - **Pairings on BLS12-381 in Rust** (arkworks; `pyfe4ai.utils.bls12_381`
   behind charm's `PairingGroup` interface): a pairing takes 0.9 ms (charm:
   MNT224 2.4 ms, BN254 13.7 ms), G2 exponentiation 0.4 ms (3.2 / 0.9 ms).

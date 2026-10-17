@@ -1,14 +1,13 @@
 """Optional native backend of the Ring-LWE, dense-LWE and ristretto255 schemes.
 
-Two implementations of one interface: ``pyfe4ai._rust_native`` (Rust, built by
-``tools/build_rust.py`` from ``rust/``; it also has the ristretto255 group of
-the ``*/ddh_ristretto255`` schemes) and ``pyfe4ai._rlwe_native`` (C++, built
-by ``setup.py`` when a 64-bit GCC or Clang is available). The Rust one is
-used when both are built; ``PYFE4AI_NATIVE_IMPL=rust`` or ``cpp`` chooses.
-They run the Ring-LWE MIFE / MCFE hot paths -- NTTs,
-Gaussian sampling, label pads, the encryption, decryption and key-derivation
-loops of the ndarray helpers -- in C++, one call per tensor, with the GIL
-released and optionally several threads. The Python implementation stays the
+The extension ``pyfe4ai._rust_native`` (Rust and PyO3, sources in ``rust/``;
+built by ``pip install`` when a Rust toolchain is available, or in a source
+checkout by ``tools/build_rust.py``) runs the Ring-LWE MIFE / MCFE hot paths
+-- NTTs, Gaussian sampling, label pads, the encryption, decryption and
+key-derivation loops of the ndarray helpers -- one call per tensor, with the
+GIL released and optionally several threads. It also has the dense-LWE label
+sums, the ristretto255 group of the ``*/ddh_ristretto255`` schemes and the
+BLS12-381 pairing group (:mod:`pyfe4ai.utils.bls12_381`). The Python implementation stays the
 reference and the fallback: the native code computes the same values (same NTT
 root and tables, the same Box-Muller arithmetic on the same kind of random
 bytes, the same hash-to-``Z_q`` reduction), and ``tests/test_native_backend.py``
@@ -32,7 +31,7 @@ only for the default rounded Gaussian sampler with widths up to ``2^40``
 in Python), consuming seven random bytes per uniform as
 ``random.SystemRandom.random``.
 
-Random bytes. The Rust backend draws them from a DRBG scoped to one call:
+Random bytes. The extension draws them from a DRBG scoped to one call:
 every tensor-level call (``encrypt_tensor``, ``precompute_tensor``, and
 ``encrypt`` for one matrix) reads one 32-byte seed from the operating system
 (``getrandom`` / ``getentropy``, the source of :func:`os.urandom`) and expands
@@ -43,9 +42,9 @@ ends; no generator state outlives a call, which limits what a fork or a
 virtual-machine snapshot can duplicate to the call in progress, and the
 system is asked for 32 bytes per tensor instead of about 86 KB per chunk.
 ChaCha20 is a standard stream cipher, not an SP 800-90A DRBG, which matters
-only for FIPS validation. The C++ backend and the Python reference read the
-operating system for every byte (:func:`os.urandom` semantics); the
-distribution is the same either way.
+only for FIPS validation. The Python reference reads the operating system
+for every byte (:func:`os.urandom` semantics); the distribution is the same
+either way.
 
 ``set_threads(k)`` (or ``PYFE4AI_THREADS``) lets one call use ``k`` threads
 over the chunks of a tensor; the default is one.
@@ -59,24 +58,14 @@ import threading
 
 import gmpy2 as gp
 
-IMPLEMENTATIONS = {"rust": "pyfe4ai._rust_native", "cpp": "pyfe4ai._rlwe_native"}
-_ENV_IMPL = "PYFE4AI_NATIVE_IMPL"
-
-
 def _load():
-    """The extension module: the one ``PYFE4AI_NATIVE_IMPL`` names (``auto``:
-    Rust, else C++), or ``None`` with the import error."""
+    """The extension module, or ``None`` with the import error."""
     import importlib
 
-    choice = os.environ.get(_ENV_IMPL, "auto")
-    names = [IMPLEMENTATIONS[choice]] if choice in IMPLEMENTATIONS else list(IMPLEMENTATIONS.values())
-    error = None
-    for name in names:
-        try:
-            return importlib.import_module(name), None
-        except ImportError as exc:  # pragma: no cover - depends on the build
-            error = exc
-    return None, error
+    try:
+        return importlib.import_module("pyfe4ai._rust_native"), None
+    except ImportError as exc:  # pragma: no cover - depends on the build
+        return None, exc
 
 
 _ext, _IMPORT_ERROR = _load()
@@ -159,16 +148,14 @@ def set_threads(threads: int) -> None:
 
 
 def implementation() -> str | None:
-    """``"rust"``, ``"cpp"`` or ``None`` (no extension)."""
-    if _ext is None:
-        return None
-    return "rust" if _ext.__name__ == IMPLEMENTATIONS["rust"] else "cpp"
+    """``"rust"``, or ``None`` when the extension is not built."""
+    return None if _ext is None else "rust"
 
 
 def ec_ext():
-    """The extension's ristretto255 functions (Rust only), or ``None`` when the
-    Python group of :mod:`pyfe4ai.utils.ristretto255` applies."""
-    if _ext is None or get_backend() == "python" or not hasattr(_ext, "r255_mul"):
+    """The extension's ristretto255 functions, or ``None`` when the Python
+    group of :mod:`pyfe4ai.utils.ristretto255` applies."""
+    if _ext is None or get_backend() == "python":
         return None
     return _ext
 
@@ -197,14 +184,14 @@ def _sampler_is_rounded() -> bool:
 _random_override = None
 
 
-#: Tests set this to a 32-byte seed for the Rust backend's per-call DRBG (see
-#: the module docstring); ``None``: a fresh seed from the OS for every call.
+#: Tests set this to a 32-byte seed for the extension's per-call DRBG (see the
+#: module docstring); ``None``: a fresh seed from the OS for every call.
 _seed_override = None
 
 
 def seed_kwargs() -> dict:
-    """Keyword arguments of the Rust tensor calls: a test-injected DRBG seed, if any."""
-    if _seed_override is None or implementation() != "rust":
+    """Keyword arguments of the tensor calls: a test-injected DRBG seed, if any."""
+    if _seed_override is None:
         return {}
     return {"seed": _seed_override}
 

@@ -1,8 +1,8 @@
 //! pyfe4ai._rust_native: the Rust backend of pyfe4ai.utils.native_backend.
 //!
-//! The lattice functions have the names, arguments, results and errors of the
-//! C++ module pyfe4ai._rlwe_native, so the same Python glue and the same
-//! bit-identity tests run on either; `ec` adds ristretto255. Values cross the
+//! The lattice functions back the Ring-LWE and dense-LWE schemes (checked bit
+//! for bit against their Python code by the tests); `ec` adds ristretto255 and
+//! `pairing` BLS12-381. Values cross the
 //! boundary as Python ints, decimal strings (the ciphertext format) or packed
 //! little-endian words in bytes; the GIL is released around the kernels.
 
@@ -204,7 +204,7 @@ fn bytes_to_words<W: Word>(b: &[u8], count: usize) -> PyResult<Vec<W>> {
         .collect())
 }
 
-/// A str of ASCII bytes, without UTF-8 decoding (as the C++ module builds them).
+/// A str of ASCII bytes, without UTF-8 decoding.
 fn ascii_str<'py>(py: Python<'py>, b: &[u8]) -> PyResult<Bound<'py, PyAny>> {
     debug_assert!(b.is_ascii());
     unsafe {
@@ -658,8 +658,8 @@ enum SlotVals<'a> {
     Bin(&'a [u8]),
 }
 
-/// MIFERingLWE._decrypt_with_pad_term for every chunk of a layer (see the C++
-/// decrypt_tensor): returns (int64 bytes, None mask bytes | None).
+/// MIFERingLWE._decrypt_with_pad_term for every chunk of a layer: returns
+/// (int64 bytes, None mask bytes | None).
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 fn decrypt_tensor(py: Python<'_>, ctx: &Bound<'_, RingCtx>, chunks: &Bound<'_, PyAny>, zs: &Bound<'_, PyAny>,
