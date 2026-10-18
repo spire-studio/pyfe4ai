@@ -65,6 +65,7 @@ was shared with other jobs (load 3-5). Raw numbers:
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | `f82f7c9`, `t = 2` (Shamir, Gaussian flooding) | 215 | 41.3 | 42.1 | 105.1 | 4.7 | 257.6 |
 | integrated, `t = 2` (default: replicated, uniform) | 212 | 39.2 | 259.8 | 95.7 | 4.4 | 455.8 |
+| ... replicated sharing native (`perf/native-replicated`, against 9a43879, next section) | 212 | 41.5 | **43.4** | **72.6** | 4.9 | **193.8** |
 | integrated, `t = 2`, `flooding="gaussian"` (replicated) | 215 | 40.5 | 293.1 | 146.8 | 4.5 | 592.5 |
 | `f82f7c9`, `t = 3` (Shamir, Gaussian) | 215 | 41.1 | 49.6 | 104.9 | 5.7 | 371.7 |
 | integrated, `t = 3` (Shamir, uniform) | 212 | 39.2 | 43.2 | **57.9** | 5.5 | **223.7** |
@@ -82,14 +83,17 @@ What moved:
 * **Uniform flooding** (default of `mcfe/ring_lwe_threshold`) halves a
   partial decryption at `t = s` (105 -> 58 ms) and shrinks `q` 215 -> 212
   bits; with the Gaussian it is as before.
-* **Replicated sharing** (default for `t < s`, the Lagrange fix) costs: the
-  key shares are dealt in Python (42 -> 260 ms for the key and two chunk
-  keys of 3 servers) and a partial decryption first adds up the server's
-  pieces (+38 ms here; the sums are cached per key and enrolled set, and a
-  benchmark round, like an FL round, brings a new label and key). With
-  uniform flooding a replicated partial is still faster than the Shamir
-  partial of `f82f7c9`. Both run natively since `perf/native-replicated`
-  (next section): key shares 272 -> 43 ms, partial 101 -> 73 ms.
+* **Replicated sharing** (default for `t < s`, the Lagrange fix) cost, as
+  measured here on `7fc82d4` (the two `integrated, t = 2` rows): the key
+  shares were dealt in Python (42 -> 260 ms for the key and two chunk keys
+  of 3 servers) and a partial decryption first added up the server's pieces
+  in Python (+38 ms here; the sums are cached per key and enrolled set, and
+  a benchmark round, like an FL round, brings a new label and key). Both
+  run natively since `perf/native-replicated` (next section, measured
+  against 9a43879, `results/perf_native_replicated_2026-10-18.json`): key
+  shares 272 -> 43 ms, as Shamir's 42 ms on `f82f7c9`; partial 101 -> 73
+  ms, below the Shamir partial of `f82f7c9` (105 ms) and 15 ms above the
+  Shamir partial at `t = s` (58 ms); aggregator 479 -> 194 ms.
 * **RNS modulus** (opt-in): the aggregator -9% and the online aggregator
   -16% against the prime; the client gains nothing under FACCT (the noise,
   not the NTT, dominates it), unlike the -9% measured with the rounded
