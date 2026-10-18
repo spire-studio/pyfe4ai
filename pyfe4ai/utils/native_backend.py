@@ -33,7 +33,9 @@ the ``PYFE4AI_BACKEND`` environment variable:
 The native path applies to moduli below ``2^253`` with a ``2 ring_n``-th root
 of unity (all moduli the parameter generators derive, including the flooded
 moduli of ``mcfe/ring_lwe_threshold``), in 64-bit words below ``2^63``,
-128-bit words below ``2^125`` and 256-bit words above, and samples natively
+128-bit words below ``2^125`` and 256-bit words above -- and to the RNS
+moduli ``q = q1 q2`` of ``ring_modulus="rns"`` (MIFE / MCFE Ring-LWE), in two
+64-bit residues per coefficient --, and samples natively
 Gaussians of widths up to ``2^40`` inside its encryption calls (wider ones
 come from :func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint`)
 with the scheme's sampler (its recorded ``gaussian_sampler``, FACCT by
@@ -501,12 +503,24 @@ def sampling_ok(*sigmas, sampler: str) -> bool:
 
 class RingContext:
     """Native NTT context of ``Z_q[x] / (x^n + 1)`` (root and tables of
-    :func:`~pyfe4ai.utils.ring_lwe_utils.poly_mul`)."""
+    :func:`~pyfe4ai.utils.ring_lwe_utils.poly_mul`).
 
-    def __init__(self, q, ring_n: int, root) -> None:
+    With *factors* (an RNS modulus ``q = q1 q2``, see
+    :func:`~pyfe4ai.utils.ring_lwe_utils.register_rns_modulus`) the native
+    code runs one 64-bit NTT per factor, with the root ``root mod q_i``, and
+    converts to and from ``[0, q)`` (Garner) where values cross the
+    boundary; packed values are 128-bit words in ``[0, q)``.
+    """
+
+    def __init__(self, q, ring_n: int, root, factors=None) -> None:
         self.q = gp.mpz(q)
         self.ring_n = ring_n
-        self.cap = _ext.ctx_new(int(q), ring_n, int(root))
+        if factors is None:
+            self.cap = _ext.ctx_new(int(q), ring_n, int(root))
+        else:
+            self.cap = _ext.rns_ctx_new(
+                int(q), ring_n, [int(f) for f in factors], [int(root) % int(f) for f in factors]
+            )
         info = _ext.ctx_info(self.cap)
         self.word_bits = info["word_bits"]
         self.word_bytes = self.word_bits // 8
@@ -536,18 +550,19 @@ def ring_context(q, ring_n: int) -> RingContext | None:
     or no ``2 ring_n``-th root of unity)."""
     if _ext is None or get_backend() == "python":
         return None
-    key = (int(q), int(ring_n))
+    from pyfe4ai.utils.ring_lwe_utils import _get_ntt_root, rns_factors
+
+    factors = rns_factors(q)
+    key = (int(q), int(ring_n), factors)
     ctx = _contexts.get(key)
     if ctx is not None or key in _contexts:
         return ctx
-    from pyfe4ai.utils.ring_lwe_utils import _get_ntt_root
-
     ctx = None
-    if 2 < key[0] < MAX_NATIVE_Q:
+    if 2 < key[0] < MAX_NATIVE_Q and (factors is None or hasattr(_ext, "rns_ctx_new")):
         root = _get_ntt_root(gp.mpz(q), ring_n)
         if root is not None:
             try:
-                ctx = RingContext(q, ring_n, root)
+                ctx = RingContext(q, ring_n, root, factors)
             except ValueError:
                 ctx = None
     with _contexts_lock:

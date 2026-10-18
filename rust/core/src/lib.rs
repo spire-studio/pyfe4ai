@@ -14,6 +14,7 @@ pub mod keccak;
 pub mod ntt;
 pub mod osrand;
 pub mod rlwe;
+pub mod rns;
 pub mod shamir;
 pub mod sha256;
 pub mod sha512;
