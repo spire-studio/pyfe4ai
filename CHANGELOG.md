@@ -165,10 +165,10 @@ compatibility).
     Servers `1..t-1` store seeds only. The others store one full piece (the
     correction) and seeds.
   * **Partials.** Partial decryptions equal those of the replicated key
-    share with the same pieces.
-  * **Security.** The key shares hide the key computationally (SHAKE-256 as
-    a PRG on secret seeds, as the flooding noise already assumes) instead of
-    perfectly.
+    share holding the expanded pieces.
+  * **Security.** The key shares hide the key computationally (SHAKE-256
+    keyed by the secret seeds as a PRF, a standard keyed-sponge assumption)
+    instead of perfectly.
   * **Records.** The sharing has its own construction ids.
   * **Size and dealing, measured.** tMCFE-Ring-LWE under `standard`, 3
     clients, 2 chunk keys, `ring_n` 8192:

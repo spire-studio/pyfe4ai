@@ -80,8 +80,8 @@ The opt-in ``"replicated-seeded"`` (see
 :func:`~pyfe4ai.schemes.threshold_utils.share_replicated_seeded`) deals the
 same kind of pieces, all but one expanded from 32-byte seeds, with the
 partial decryptions of the replicated key share of the expanded pieces; the
-key shares hide ``sk_y`` computationally (SHAKE-256 as a PRG) rather than
-perfectly.
+key shares hide ``sk_y`` computationally (SHAKE-256 keyed by the seeds as a
+PRF) rather than perfectly.
 
 Statistical smudging in the usual sense (noise hiding a small ciphertext
 error) does not apply, because these ciphertexts carry no LWE error, only

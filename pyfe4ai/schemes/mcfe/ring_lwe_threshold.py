@@ -65,8 +65,8 @@ constructions they do not know. The opt-in ``"replicated-seeded"`` (see
 same kind of pieces, all but one expanded from 32-byte seeds: a server stores
 seeds and at most one full piece (the size of a Shamir key share), and its
 partial decryptions are those of the replicated key share of the expanded
-pieces; the key shares hide the key computationally (SHAKE-256 as a PRG, as
-for the flooding noise) rather than perfectly. It has its own record
+pieces; the key shares hide the key computationally (SHAKE-256 keyed by the
+seeds as a PRF) rather than perfectly. It has its own record
 (``bmms21-ibmcfe-replicated-seeded-smudging/v1``).
 
 With the native backend (:mod:`pyfe4ai.utils.native_backend`; moduli below

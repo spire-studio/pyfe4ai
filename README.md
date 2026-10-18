@@ -147,8 +147,8 @@ See `examples/sife_minimal.py` for the full runnable version.
 > [Known Issues](#known-issues--security-notice)). The opt-in
 > `sharing="replicated-seeded"` expands all key pieces but one from secret
 > 256-bit seeds, so a server stores at most one full piece; its key shares hide
-> the key only computationally (SHAKE-256 as a PRG), and full replicated sharing
-> stays the default for `t < s`. All threshold variants assume honest-but-curious servers (see
+> the key only computationally (SHAKE-256 keyed by the seeds as a PRF), and full
+> replicated sharing stays the default for `t < s`. All threshold variants assume honest-but-curious servers (see
 > [Known Issues](#known-issues--security-notice)).
 
 > **⚠️ Research prototype.** Every scheme has been checked against its
@@ -208,7 +208,7 @@ schemes over ristretto255 (`*/ddh_ristretto255`, selected with
 | `mife/fh_ipe_pairing` | reviewed | adapted | ACFGU18 Fig. 12 (k = 1) | one r per key shared by all slots; per-slot FH-IPFE as in mcfe/fh_ipe (LV16 padding of App. B); asymmetric pairing (default BLS12-381); keys carry a random id, never a digest of y |
 | `mife/fh_multi_ipe_pairing` | reviewed | adapted | DOT18 Sec. 3.1 (bounded, k-LIN, k = sec_level) | n >= 2 enforced (zero sharing r_i); no Remark B.1 SKE layer, so hiding assumes every slot contributes a ciphertext; slot i's client holds B^_i and can decode its own slot of a key; keys are group elements only, decryption does not need y |
 | `mife/ddh_threshold` | reviewed | adapted | ACFGU18 Fig. 4 + ABDP15 + Shamir (TAPFed setting) | the functional key (d_i, z) is Shamir-shared mod q; any t servers interpolate in the exponent (threshold-ElGamal style), as mcfe/ddh_threshold |
-| `mife/lwe_threshold` | experimental | ad-hoc | MIFE-LWE + replicated / Shamir sharing + smudging | MIFE layer as published; the threshold layer (statistical flooding, derandomised noise, enlarged q, clients' HMAC tags on ciphertexts so that servers only decrypt ciphertexts made by the clients, replicated key sharing for t < s, where Shamir shares let partials reveal the decryption noise modulo small integers) is our own; the opt-in sharing='replicated-seeded' expands all key pieces but one from secret 256-bit seeds and hides the key shares only computationally (SHAKE-256 as a PRG); full replicated sharing stays the default for t < s |
+| `mife/lwe_threshold` | experimental | ad-hoc | MIFE-LWE + replicated / Shamir sharing + smudging | MIFE layer as published; the threshold layer (statistical flooding, derandomised noise, enlarged q, clients' HMAC tags on ciphertexts so that servers only decrypt ciphertexts made by the clients, replicated key sharing for t < s, where Shamir shares let partials reveal the decryption noise modulo small integers) is our own; the opt-in sharing='replicated-seeded' expands all key pieces but one from secret 256-bit seeds and hides the key shares only computationally (SHAKE-256 keyed by the seeds as a PRF); full replicated sharing stays the default for t < s |
 | `mcfe/ddh` | reviewed | faithful | CDGPP18 |  |
 | `mcfe/ddh_ristretto255` | unreviewed | unknown | CDGPP18 in ristretto255 | ristretto255 (RFC 9496, about 126-bit security: Pollard rho in a group of order 2^252) instead of a 3072-bit Z_p^* subgroup; labels hashed with RFC 9380 hash_to_ristretto255; group arithmetic in Rust (curve25519-dalek) with the native extension, else in pure Python and not constant-time; new code, not yet reviewed |
 | `mcfe/lwe` | reviewed | adapted | ABMPSW20 Fig. 4, selective parameters | signed messages and weights (K = 2nXY + 1, centred decoding); t is a rounded continuous Gaussian |
@@ -221,9 +221,9 @@ schemes over ristretto255 (`*/ddh_ristretto255`, selected with
 | `mcfe/fh_multi_ipe_pairing_decentralized` | reviewed | adapted | NPS24 Fig. 1 (selective FH-DMCFE) | explicit tag-f, each client's key depends on (tag-f, y_i) only and is derived deterministically; one key per client and tag-f (enforced per client object); FH-IPFE = ACFGU18 Fig. 12 (n = 1, SXDH) with LV16 padding; asymmetric pairing (default BLS12-381); keys carry a random id, never a digest of y |
 | `mcfe/ddh_threshold` | reviewed | adapted | CDGPP18 + Shamir (TAPFed setting) | the aggregated key is Shamir-shared; any t servers interpolate in the exponent (threshold-ElGamal style) |
 | `mcfe/ddh_decentralized` | experimental | ad-hoc | ABMPSW20 Fig. 14 (MCFE1 = CDGPP18) + carry mask | Fig. 14 is stated for MCFEs without a discrete log in decryption; contributions are reduced mod q and masked by q rho_i (rho_i from a per-client key and H(y)) so that the carry of their sum stays hidden -- our own argument; MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) are sampled in-process |
-| `mcfe/lwe_threshold` | experimental | ad-hoc | ABMPSW20 Fig. 4 + replicated / Shamir sharing + flooding | MCFE layer as published; the threshold layer (replicated key sharing for t < s, Shamir for t = s) and its LWE-based flooding argument are our own (see the module docstring); the opt-in sharing='replicated-seeded' expands all key pieces but one from secret 256-bit seeds and hides the key shares only computationally (SHAKE-256 as a PRG); full replicated sharing stays the default for t < s |
+| `mcfe/lwe_threshold` | experimental | ad-hoc | ABMPSW20 Fig. 4 + replicated / Shamir sharing + flooding | MCFE layer as published; the threshold layer (replicated key sharing for t < s, Shamir for t = s) and its LWE-based flooding argument are our own (see the module docstring); the opt-in sharing='replicated-seeded' expands all key pieces but one from secret 256-bit seeds and hides the key shares only computationally (SHAKE-256 keyed by the seeds as a PRF); full replicated sharing stays the default for t < s |
 | `mcfe/lwe_decentralized` | reviewed | adapted | ABMPSW20 Fig. 14 (MCFE1 = Fig. 4) | MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) are sampled in-process |
-| `mcfe/ring_lwe_threshold` | experimental | ad-hoc | BMMS21 identity-based MCFE + replicated / Shamir sharing + smudging | MCFE layer as published; the threshold layer (statistical flooding, derandomised noise, enlarged q, clients' HMAC tags on ciphertexts, replicated key sharing for t < s, where Shamir shares let partials reveal the decryption noise modulo small integers) is our own; the opt-in sharing='replicated-seeded' expands all key pieces but one from secret 256-bit seeds and hides the key shares only computationally (SHAKE-256 as a PRG); full replicated sharing stays the default for t < s |
+| `mcfe/ring_lwe_threshold` | experimental | ad-hoc | BMMS21 identity-based MCFE + replicated / Shamir sharing + smudging | MCFE layer as published; the threshold layer (statistical flooding, derandomised noise, enlarged q, clients' HMAC tags on ciphertexts, replicated key sharing for t < s, where Shamir shares let partials reveal the decryption noise modulo small integers) is our own; the opt-in sharing='replicated-seeded' expands all key pieces but one from secret 256-bit seeds and hides the key shares only computationally (SHAKE-256 keyed by the seeds as a PRF); full replicated sharing stays the default for t < s |
 | `mcfe/ring_lwe_decentralized` | reviewed | adapted | BMMS21 Sec. 6 identity-based DMCFE (ABKW19 + GDSum) | GDSum realised as pairwise PRF zero-sum masks (its full specification is only in the ePrint version); pairwise secrets sampled in-process |
 | `mcfe/paillier_decentralized` | reviewed | adapted | ABMPSW20 Fig. 14 (MCFE1 = Fig. 3) | MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) are sampled in-process |
 | `quadratic/quad` | reviewed | adapted | Gay20 Fig. 4 over Fig. 8 (CPA) | signed inputs (discrete log in [-n m B^3, n m B^3]); CPA variant (no QANIZK); asymmetric pairing (default BLS12-381) |
@@ -489,12 +489,14 @@ see [`CHANGELOG.md`](CHANGELOG.md).
     unless they are created with `legacy_shamir="warn"`.
   * A server holds `C(s - 1, t - 1)` full pieces (126 at `(10, 5)`). The
     opt-in `sharing="replicated-seeded"` brings that down to at most one full
-    piece. It deals the same pieces with the same partial decryptions, but
-    expands all of them but one from secret 256-bit seeds. Its key shares
-    therefore hide the key only **computationally**, assuming SHAKE-256 is a
-    PRG on those seeds (the derandomised flooding noise already assumes
-    this), where full replicated sharing hides it perfectly. Full replicated
-    sharing stays the default for `t < s`.
+    piece. It deals pieces of the same kind, one per `(t - 1)`-subset and
+    assigned the same way, but expands all of them but one from secret
+    256-bit seeds; its partial decryptions are those of a replicated key
+    share holding the expanded pieces. Its key shares therefore hide the key
+    only **computationally**, assuming SHAKE-256 keyed by those seeds is a
+    PRF (a standard keyed-sponge assumption, of the kind the derandomised
+    flooding noise makes), where full replicated sharing hides it perfectly.
+    Full replicated sharing stays the default for `t < s`.
 * **Upgrading from v0.3.0** (LWE threshold layers with `t < s`):
   **re-share the threshold keys with this version.**
   * Run its key generator (`setup()`, then `get_private_keys` and

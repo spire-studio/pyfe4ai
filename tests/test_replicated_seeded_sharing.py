@@ -396,3 +396,95 @@ def test_seeded_sharing_has_its_own_parameter_records_and_small_key_shares():
     # six full pieces per server at (5, 3); seeded: one piece (servers 3..5) or none (1, 2)
     assert max(sizes["replicated-seeded"]) < max(sizes["replicated"]) / 4
     assert max(sizes["replicated-seeded"][:2]) < 1500
+
+
+# --------------------------------------------- review 2026-10 (rseeded): F1, F2, F4
+
+def _as_json(obj):
+    return json.loads(json.dumps(obj))
+
+
+@pytest.mark.parametrize("kind", ["mife", "ring", "lwe"])
+@pytest.mark.parametrize("sharing", ["replicated", "replicated-seeded"])
+def test_key_shares_of_integer_client_ids_survive_json_transport(kind, sharing):
+    """F1: the seeded expansion hashes the JSON names of dict keys, so a key share
+    expands to the same pieces before and after a JSON round trip."""
+    sids = ["s1", "s2", "s3"]
+    base = {"sec_param": 64, "eta": 1, "n": 2, "s": 3, "t": 2, "lst_nid": [0, 1], "lst_sid": sids,
+            "bound_x": 6, "bound_y": 6, "sharing": sharing}
+    if kind == "mife":
+        kg = ThresholdMIFELWEKeyGenerator(dict(base, lwe_n=16))
+        cls, x, want = ThresholdMIFELWE, [5], 25
+    elif kind == "ring":
+        kg = ThresholdMCFERingLWEKeyGenerator(dict(base, ring_n=16))
+        cls, x, want = ThresholdMCFERingLWE, [[5]], [25]
+    else:
+        kg = ThresholdMCFELWEKeyGenerator(dict(base, lwe_n=16, bound_u=2, label_modulus=8))
+        cls, x, want = ThresholdMCFELWE, [5], 25.0
+    kg.setup()
+    pp = kg.get_public_parameters()
+    y = {0: [2], 1: [3]}
+    cred = {"fusion_weight": y} if kind == "mife" else {"fusion_weight": y, "label": "L"}
+    if kind == "mife":
+        cts = {n: cls({"id": n, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}}).encrypt(x) for n in y}
+    else:
+        cts = {n: cls({"id": n, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}}).encrypt(x, "L") for n in y}
+    dks = {sid: kg.get_decryption_keys(sid, credentials=cred) for sid in sids}
+    for transport in (lambda o: o, _as_json):
+        t_dks, t_cts, t_cred, t_pp = (transport(o) for o in (dks, cts, cred, pp))
+        arg = t_cred["fusion_weight"] if kind == "mife" else t_cred
+        for enrolled in (["s1", "s2"], ["s1", "s3"], ["s2", "s3"], sids):
+            parts = {sid: cls({"id": sid, "keys": {"pp": t_pp, "dk": t_dks[sid]}}).share_decrypt(
+                t_cts, arg, t_dks[sid], enrolled) for sid in enrolled}
+            assert cls({"id": "c", "keys": {"pp": t_pp}}).combine_decrypt(parts) == want
+
+
+def test_seed_spelling_and_key_names_do_not_change_the_expansion():
+    """F1: a seed in upper case or with spaces, and an int client id or its JSON
+    string, name the same piece; ids that coincide in JSON are refused."""
+    seed = "ab" * SEED_BYTES
+    one = expand_seeded_piece(seed, (2,), {"sk_y": {0: 3, 1: 3}, "z": None}, Q)
+    again = expand_seeded_piece(" ".join([seed.upper()[:10], seed.upper()[10:]]), [2],
+                                {"sk_y": {"0": 3, "1": 3}, "z": None}, Q)
+    assert again == {"sk_y": {"0": one["sk_y"][0], "1": one["sk_y"][1]}, "z": one["z"]}
+    with pytest.raises(FEKeyError, match="same name"):
+        expand_seeded_piece(seed, (2,), {"sk_y": {0: 3, "0": 3}}, Q)
+    with pytest.raises(FEKeyError, match="same name"):
+        share_replicated_seeded({"sk_y": {1: [1], "1": [2]}}, 2, [1, 2, 3], Q)
+    with pytest.raises(FEKeyError):
+        expand_seeded_piece(seed, (2,), {("a", "b"): 3}, Q)
+
+
+def test_share_for_enrolled_dispatches_on_the_sharing_label():
+    """F2: a "replicated-seeded" key share goes through the seeded path even
+    without seeds (t = 1); another label with seeds is refused."""
+    sids = ["a", "b"]
+    sharing = share_replicated_seeded({"sk_y": [11, 12], "z": 13}, 1, [1, 2], Q)
+    assert sharing["seeds"] == {}
+    dk = {"sharing": "replicated-seeded", "lst_sid": sids, **seeded_pieces_held(sharing, 2)}
+    share, multiplier, tag = share_for_enrolled(dk, "b", ["b"], 1, Q)
+    assert (share["sk_y"], share["z"], multiplier) == (["11", "12"], "13", 1)
+    with pytest.raises(FEKeyError, match="layout"):
+        share_for_enrolled({k: v for k, v in dk.items() if k != "layout"}, "b", ["b"], 1, Q)
+    seeded = share_replicated_seeded({"sk_y": [11, 12], "z": 13}, 2, [1, 2, 3], Q)
+    dk = {"sharing": "replicated-seeded", "lst_sid": ["a", "b", "c"], **seeded_pieces_held(seeded, 1)}
+    with pytest.raises(FEKeyError, match="not replicated-seeded"):
+        share_for_enrolled(dict(dk, sharing="replicated"), "a", ["a", "b"], 2, Q)
+    with pytest.raises(FEKeyError):
+        share_for_enrolled({k: v for k, v in dk.items() if k != "sharing"}, "a", ["a", "b"], 2, Q)
+
+
+@pytest.mark.skipif(not native_backend.available(), reason="native extension not built")
+def test_a_native_context_of_another_modulus_is_refused():
+    """F4: the context's modulus must be the sharing's."""
+    from pyfe4ai.schemes.threshold_utils import _combine_pieces
+    from pyfe4ai.utils.ring_lwe_utils import next_ntt_prime
+
+    q = next_ntt_prime(gp.mpz(2) ** 200, 16)
+    with native_backend.backend("native"):
+        ctx = native_backend.ring_context(q, 16)
+    other = next_ntt_prime(q + 1, 16)
+    with pytest.raises(FESchemeError, match="another modulus"):
+        expand_seeded_piece("ab" * SEED_BYTES, (1,), {"z": 16}, other, ctx=ctx)
+    with pytest.raises(FESchemeError, match="another modulus"):
+        _combine_pieces({"z": 16}, [], [("ab" * SEED_BYTES, (1,))], other, ctx)

@@ -203,7 +203,7 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         "modulo small integers) is our own"
         "; the opt-in sharing='replicated-seeded' expands all key pieces but one from "
         "secret 256-bit seeds and hides the key shares only computationally (SHAKE-256 "
-        "as a PRG); full replicated sharing stays the default for t < s",
+        "keyed by the seeds as a PRF); full replicated sharing stays the default for t < s",
     ),
     # --- multi-client -------------------------------------------------------
     ("mcfe", "ddh"): SchemeStatus(_S + "mcfe.ddh", REVIEWED, FAITHFUL, "CDGPP18"),
@@ -273,7 +273,7 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         "own (see the module docstring)"
         "; the opt-in sharing='replicated-seeded' expands all key pieces but one from "
         "secret 256-bit seeds and hides the key shares only computationally (SHAKE-256 "
-        "as a PRG); full replicated sharing stays the default for t < s",
+        "keyed by the seeds as a PRF); full replicated sharing stays the default for t < s",
     ),
     ("mcfe", "lwe_decentralized"): SchemeStatus(
         _S + "mcfe.lwe_decentralized", REVIEWED, ADAPTED,
@@ -288,7 +288,7 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         "the decryption noise modulo small integers) is our own"
         "; the opt-in sharing='replicated-seeded' expands all key pieces but one from "
         "secret 256-bit seeds and hides the key shares only computationally (SHAKE-256 "
-        "as a PRG); full replicated sharing stays the default for t < s",
+        "keyed by the seeds as a PRF); full replicated sharing stays the default for t < s",
     ),
     ("mcfe", "ring_lwe_decentralized"): SchemeStatus(
         _S + "mcfe.ring_lwe_decentralized", REVIEWED, ADAPTED,

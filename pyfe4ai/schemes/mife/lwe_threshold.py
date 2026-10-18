@@ -87,7 +87,7 @@ The opt-in ``"replicated-seeded"`` (see
 same kind of pieces, all but one expanded from 32-byte seeds: a server stores
 seeds and at most one full piece, and its partial decryptions are those of
 the replicated key share of the expanded pieces; the key shares hide the key
-computationally (SHAKE-256 as a PRG, as for the flooding noise) rather than
+computationally (SHAKE-256 keyed by the seeds as a PRF) rather than
 perfectly. Its record is ``acfgu18-abdp15-replicated-seeded-smudging-seeded-a/v1``.
 
 Under the ``standard`` security profile ``lwe_n = "auto"`` picks the

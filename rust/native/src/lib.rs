@@ -225,6 +225,14 @@ fn words_to_bytes<W: Word>(py: Python<'_>, w: &[W]) -> Py<PyBytes> {
     .unbind()
 }
 
+/// Overwrite words that may be secret (seed-expanded key pieces) before they are freed.
+fn wipe_words<W: Word>(buf: &mut [W]) {
+    for v in buf.iter_mut() {
+        unsafe { std::ptr::write_volatile(v, W::ZERO) };
+    }
+    std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
+}
+
 fn bytes_to_words<W: Word>(b: &[u8], count: usize) -> PyResult<Vec<W>> {
     let wb = W::BITS as usize / 8;
     if b.len() != count * wb {
@@ -345,28 +353,38 @@ fn poly_mul(py: Python<'_>, ctx: &Bound<'_, RingCtx>, a: &[u8], b: &[u8]) -> PyR
     })
 }
 
-/// sum_i coeffs[i] rows[i] mod q as decimal strings.
+/// sum_i coeffs[i] rows[i] mod q as decimal strings. The copies of the rows and
+/// the accumulator are wiped (rows may be secret key pieces).
 #[pyfunction]
 fn lincomb(py: Python<'_>, ctx: &Bound<'_, RingCtx>, rows: &Bound<'_, PyAny>, coeffs: &Bound<'_, PyAny>)
     -> PyResult<Py<PyList>> {
     let q = ctx.get().q.bind(py);
     let ring = get_ring(ctx);
-    let rows: Vec<Vec<u8>> = rows.try_iter()?.map(|r| r?.extract::<Vec<u8>>()).collect::<PyResult<_>>()?;
-    with_ring!(&*ring, r => {
-        let ys = read_values(coeffs, None, q, &r.m, false)?;
-        if rows.len() != ys.len() {
-            return Err(PyValueError::new_err("one coefficient per row"));
-        }
-        let mut acc = vec![Word::ZERO; r.n];
-        for (row, &y) in rows.iter().zip(ys.iter()) {
-            let v = bytes_to_words(row, r.n)?;
-            let ym = r.m.to_mont(y);
-            for i in 0..r.n {
-                acc[i] = r.m.add(acc[i], r.m.mul(v[i], ym));
+    let mut rows: Vec<Vec<u8>> = rows.try_iter()?.map(|r| r?.extract::<Vec<u8>>()).collect::<PyResult<_>>()?;
+    let out = with_ring!(&*ring, r => {
+        (|| {
+            let ys = read_values(coeffs, None, q, &r.m, false)?;
+            if rows.len() != ys.len() {
+                return Err(PyValueError::new_err("one coefficient per row"));
             }
-        }
-        Ok(dec_list(py, &acc)?.unbind())
-    })
+            let mut acc = vec![Word::ZERO; r.n];
+            for (row, &y) in rows.iter().zip(ys.iter()) {
+                let mut v = bytes_to_words(row, r.n)?;
+                let ym = r.m.to_mont(y);
+                for i in 0..r.n {
+                    acc[i] = r.m.add(acc[i], r.m.mul(v[i], ym));
+                }
+                wipe_words(&mut v);
+            }
+            let out = dec_list(py, &acc).map(|l| l.unbind());
+            wipe_words(&mut acc);
+            out
+        })()
+    });
+    for row in rows.iter_mut() {
+        rlwe::wipe_bytes(row);
+    }
+    out
 }
 
 // ------------------------------------------------------------------ kernels
@@ -402,7 +420,9 @@ fn hash_to_zq_py(py: Python<'_>, ctx: &Bound<'_, RingCtx>, material: &[u8], coun
     with_ring!(&*ring, r => {
         let mut out = vec![Word::ZERO; count];
         py.detach(|| hash_to_zq(&r.m, material, &mut out));
-        Ok(words_to_bytes(py, &out))
+        let bytes = words_to_bytes(py, &out);
+        wipe_words(&mut out);
+        Ok(bytes)
     })
 }
 

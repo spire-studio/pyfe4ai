@@ -29,7 +29,7 @@ The opt-in ``sharing = "replicated-seeded"`` (:func:`share_replicated_seeded`)
 expands every piece but one from a 32-byte seed, so that a server holds seeds
 and at most one full piece; the pieces, and the partial decryptions, are
 those of a replicated sharing, but the key shares hide the key only
-computationally (SHAKE-256 as a pseudo-random generator).
+computationally (SHAKE-256 keyed by the seeds as a pseudo-random function).
 
 Trust model of every threshold scheme: decryption servers are
 honest-but-curious. Fewer than ``t`` of them learn nothing beyond the result,
@@ -270,15 +270,35 @@ def piece_layout(material):
     return None
 
 
-def _map_layout(layout, leaf, path=()):
-    """*layout* with every leaf replaced by ``leaf(path, length)`` (``None`` for a single value)."""
+def _json_key(key) -> str:
+    """*key* as JSON writes a dict key (``0`` becomes ``"0"``): what a key
+    share names it after a JSON round trip."""
+    try:
+        return next(iter(json.loads(json.dumps({key: None}))))
+    except (TypeError, ValueError):
+        raise FEKeyError("key pieces must name their entries by strings or numbers, not {!r}".format(key)) from None
+
+
+def _map_layout(layout, leaf, keys=(), path=()):
+    """*layout* with every leaf replaced by ``leaf(keys, path, length)``
+    (``None`` for a single value): *keys* index the layout as given, *path*
+    is their canonical form -- dict keys as JSON writes them, list indices as
+    ints -- so that a key share expands to the same pieces after a JSON round
+    trip (client ids ``0`` and ``"0"`` name the same entry, and may not both
+    occur)."""
     if isinstance(layout, dict):
-        return {key: _map_layout(value, leaf, path + (key,)) for key, value in layout.items()}
+        names = [_json_key(key) for key in layout]
+        if len(set(names)) != len(names):
+            raise FEKeyError("key pieces with entries of the same name in JSON: {}".format(sorted(names)))
+        return {
+            key: _map_layout(value, leaf, keys + (key,), path + (name,))
+            for (key, value), name in zip(layout.items(), names)
+        }
     if isinstance(layout, list):
-        return [_map_layout(value, leaf, path + (i,)) for i, value in enumerate(layout)]
+        return [_map_layout(value, leaf, keys + (i,), path + (i,)) for i, value in enumerate(layout)]
     if layout is not None and (isinstance(layout, bool) or not isinstance(layout, int) or layout < 0):
         raise FEKeyError("malformed layout of the key pieces")
-    return leaf(list(path), layout)
+    return leaf(keys, list(path), layout)
 
 
 def _select(layout, fields):
@@ -292,13 +312,21 @@ def _select(layout, fields):
         raise FEKeyError("malformed layout of the key pieces") from None
 
 
-def _check_seed(seed, index_set) -> None:
+def _check_seed(seed, index_set) -> str:
+    """*seed* as lower-case hex without spaces (``bytes.fromhex`` also reads
+    upper case and spaces, which would otherwise hash differently)."""
     try:
-        if len(bytes.fromhex(seed)) == SEED_BYTES:
-            return
+        raw = bytes.fromhex(seed)
+        if len(raw) == SEED_BYTES:
+            return raw.hex()
     except (TypeError, ValueError):
         pass
     raise FEKeyError("malformed seed of the key piece {}".format(list(index_set)))
+
+
+def _check_context(ctx, modulus) -> None:
+    if ctx is not None and gp.mpz(ctx.q) != modulus:
+        raise FESchemeError("the native ring context is for another modulus")
 
 
 def _leaf_input(seed: str, index_set, path: list, q_text: str) -> str:
@@ -312,7 +340,11 @@ def expand_seeded_piece(seed: str, index_set, layout, modulus, fields=None, ctx=
     ``hash_to_zq_vector(json([seed, T, p, q]), q, L)`` under the domain
     ``pyfe4ai/threshold/replicated-seeded/piece/v1``: SHAKE-256 blocks of
     ``bits(q) + 128`` bits reduced mod ``q``, each within ``2^-130`` of
-    uniform, and pseudo-random as long as the seed is secret.
+    uniform, and pseudo-random as long as the seed is secret (SHAKE-256 as a
+    PRF keyed by the seed, which follows a public prefix, on the inputs
+    ``(T, p, q)``). The seed is lower-case hex and the dict keys of ``p`` are
+    the strings JSON makes of them, so that a key share expands alike before
+    and after a JSON round trip.
 
     Args:
         seed: The piece's seed (hex, :data:`SEED_BYTES` bytes).
@@ -325,14 +357,16 @@ def expand_seeded_piece(seed: str, index_set, layout, modulus, fields=None, ctx=
 
     Raises:
         FEKeyError: For a malformed seed or layout.
+        FESchemeError: For a context of another modulus.
     """
     from pyfe4ai.utils.crypto_utils import hash_to_zq_material, hash_to_zq_vector
 
-    _check_seed(seed, index_set)
+    seed = _check_seed(seed, index_set)
     modulus = gp.mpz(modulus)
+    _check_context(ctx, modulus)
     q_text = gp.digits(modulus)
 
-    def leaf(path, length):
+    def leaf(keys, path, length):
         v, count = _leaf_input(seed, index_set, path, q_text), 1 if length is None else length
         if ctx is not None and count:
             from pyfe4ai.utils import native_backend
@@ -357,9 +391,9 @@ def _combine_pieces(layout, explicit: list, seeded: list, modulus, ctx=None, sub
     """
     from pyfe4ai.utils.crypto_utils import hash_to_zq_material, hash_to_zq_vector
 
-    for seed, T in seeded:
-        _check_seed(seed, T)
+    seeded = [(_check_seed(seed, T), T) for seed, T in seeded]
     modulus = gp.mpz(modulus)
+    _check_context(ctx, modulus)
     q_text = gp.digits(modulus)
     ext = None
     if ctx is not None:
@@ -367,12 +401,12 @@ def _combine_pieces(layout, explicit: list, seeded: list, modulus, ctx=None, sub
 
         ext = native_backend.ext()
 
-    def leaf(path, length):
+    def leaf(keys, path, length):
         count = 1 if length is None else length
         rows = []
         for piece in explicit:
             value = piece
-            for key in path:
+            for key in keys:
                 value = value[key]
             rows.append([value] if length is None else value)
         if ext is not None and count == ctx.ring_n and (rows or seeded):
@@ -411,11 +445,12 @@ def share_replicated_seeded(material, threshold: int, points: list[int], modulus
 
     Hiding is computational: a coalition ``C`` of ``t - 1`` servers other than
     ``T0`` holds ``r_T0`` and misses ``seed_C``, and ``r_T0`` is independent of
-    the key only once ``G(seed_C)`` is replaced by a uniform piece (a PRG
-    hybrid, SHAKE-256 keyed by a secret 256-bit seed -- the assumption the
-    flooding noise of the threshold layers makes already). ``C = T0`` holds
-    seeds only, which are independent of the key, as with
-    :func:`share_replicated`.
+    the key only once ``G(seed_C)`` is replaced by a uniform piece. That
+    hybrid takes SHAKE-256 to be a PRF keyed by the secret 256-bit seed, which
+    follows a public prefix and is expanded over many leaf paths (a standard
+    keyed-sponge assumption, of the kind the derandomised flooding noise of
+    the threshold layers makes with its key first). ``C = T0`` holds seeds
+    only, which are independent of the key, as with :func:`share_replicated`.
 
     Args:
         ctx: Native ring context of *modulus*: expand and add up its
@@ -572,6 +607,9 @@ def share_for_enrolled(
         cache.move_to_end(key)
         return cache[key][1]
     held = {tuple(piece["set"]): piece["share"] for piece in dk["pieces"]}
+    seeded = dk.get("sharing") == "replicated-seeded"
+    if not seeded and "seeds" in dk:
+        raise FEKeyError("seeds in a key share whose sharing is not replicated-seeded")
     seeds = {tuple(entry["set"]): entry["seed"] for entry in dk.get("seeds", [])}
     if not held and not seeds:
         raise FEKeyError("the key share holds no pieces")
@@ -583,7 +621,7 @@ def share_for_enrolled(
     def pick(piece):
         return piece if fields is None else {name: piece[name] for name in fields}
 
-    if seeds:  # seeded: expand the assigned seeds and add them up, natively if possible
+    if seeded:  # expand the assigned seeds and add them up, natively if possible
         ctx = None
         if ring_n is not None:
             from pyfe4ai.utils import native_backend
