@@ -76,6 +76,10 @@ The ``security_profile`` entry of a key generator's config selects one:
     ``mcfe/ddh_decentralized`` and the Paillier and MCFE2 key distributions)
     is 128, as ``kappa`` of the Ring-LWE schemes: a statistical distance of
     ``2^-128`` per sample, so that ``Q`` samples stay below ``Q 2^-128``.
+    That holds for exact Gaussians (the ``"facct"`` sampler, the default of
+    the lattice schemes) and for the MPFR path at ``bits(sigma) + 192`` bits;
+    the double-precision rounded sampler does not meet it (see the security
+    notes in the documentation).
 
     Values given explicitly in the config must not be weaker than the
     profile's.

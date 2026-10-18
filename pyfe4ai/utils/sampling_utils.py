@@ -142,6 +142,9 @@ def rand_bit_matrix(rows: int, cols: int) -> np.ndarray:
 
 # Above this width a double-precision sample no longer resolves the integers
 # (53-bit mantissa, samples up to ~2^4 sigma): its low bits would be constant.
+# Resolution only: below it the double path keeps the artifacts listed in
+# discrete_gaussian_matrix (shared Box-Muller radii, ties to even, the
+# 8.57 sigma cut).
 _DOUBLE_SAFE_SIGMA = 2 ** 40
 
 
@@ -150,15 +153,21 @@ def discrete_gaussian_matrix(
 ) -> list[list[gp.mpz]]:
     """Sample a matrix from the (rounded) discrete Gaussian distribution.
 
-    With the default sampler ``"rounded"``, samples are drawn from a CSPRNG
-    (``random.SystemRandom``, i.e. OS entropy) and rounded to the nearest
-    integer, so this sampler is suitable for LWE noise and secret-key
-    material. Widths above ``2^40`` are sampled with
+    With ``sampler="rounded"``, samples are Box-Muller normals in double
+    precision from a CSPRNG (``random.SystemRandom``, i.e. OS entropy; the
+    native kernels read their per-call DRBG) scaled by *sigma* and rounded
+    to the nearest integer. Widths above ``2^40`` are sampled with
     :func:`discrete_gaussian_bigint` (a double would leave the low bits of
-    every sample zero). Note it is a rounded *continuous* Gaussian rather
-    than a true discrete-Gaussian sampler, and it is not constant-time; this
-    is adequate for a research prototype but not for production side-channel
-    resistance. With ``sampler="facct"`` the samples come from
+    every sample zero). Besides being a rounded *continuous* Gaussian, the
+    double path has artifacts of its own: the two outputs of a pair share one
+    radius (rings that show in the tail), exact half-integer ties round to
+    even (about ``2^-53.8 sigma`` per sample), and no value exceeds about
+    ``8.57 sigma``. Per the crypto review of October 2026 one ciphertext's
+    noise is then about 2^-12..2^-4 and a key 2^-25..2^-15 from i.i.d.
+    ``D_{Z,sigma}``: fine for toy parameters and benchmarks, not for the
+    distributions of the security proofs (which is why the lattice schemes
+    default to ``"facct"``, see :func:`scheme_sampler`). It is not
+    constant-time either. With ``sampler="facct"`` the samples come from
     :func:`discrete_gaussian_facct` (exact ``D_{Z,sigma}``).
 
     Args:
@@ -274,7 +283,7 @@ class XofRandom:
 #: covers ``bits(sigma) + stat_param + ceil(log2 N) + 8`` for statistical
 #: parameters up to 128 and up to ``2^56`` samples per key: the dozen MPFR
 #: roundings of one sample stay below ``2^-(stat_param + log2 N + 8)`` in
-#: statistical distance from the ideal rounded Gaussian. (Up to v0.4 it was
+#: statistical distance from the ideal rounded Gaussian. (Before, it was
 #: 128, which the October 2026 crypto review found 2 to 19 bits short of the
 #: ``2^-128`` budgets of the DCR keys and masks and of the threshold flooding.)
 BIGINT_GUARD_BITS = 192

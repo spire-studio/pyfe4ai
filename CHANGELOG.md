@@ -32,6 +32,40 @@ compatibility).
 
 ### Security
 
+- **Exact Gaussians by default for the lattice MIFE / MCFE schemes.** The
+  October 2026 crypto review found the double-precision rounded sampler
+  (shared Box-Muller radii, ties to even, the 8.57 sigma cut) about
+  2^-12..2^-4 from i.i.d. `D_{Z,sigma}` per ciphertext and 2^-25..2^-15 per
+  key, against the 2^-128 budgets of BMMS21 (G1 -> G2, G3 -> G4) and of
+  ABMPSW20 (Lemmas 33-35). The Ring-LWE MIFE / MCFE family (`sife`, `mife`,
+  `mcfe` `ring_lwe`, the decentralized and threshold MCFE: keys and
+  encryption noise) and the dense-LWE MCFE keys `t` (`mcfe/lwe`,
+  `fullysec_lwe`, `lwe_threshold`, `lwe_decentralized`) now sample with
+  `"facct"` by default, record it as `gaussian_sampler` in their public
+  parameters, and ignore the library-wide choice
+  (`sampling_utils.scheme_sampler`); `gaussian_sampler = "rounded"` stays
+  selectable. Public parameters without the field (earlier versions) give
+  FACCT to new encryptions; decryption does not depend on it; parameter
+  records are unchanged.
+- **MPFR Gaussians at `bits(sigma) + 192` bits** (`BIGINT_GUARD_BITS`): the
+  DCR keys and masks and all threshold flooding were 2 to 19 bits short of
+  their budgets at `+ 128`. Since the threshold schemes derive a request's
+  flooding noise deterministically (a repeated request gets the same noise),
+  their decryption keys now carry `noise_version = 2` and a server refuses
+  keys of another version (issue new keys); the construction versions of
+  tMIFE-LWE (`acfgu18-abdp15-shamir-smudging-seeded-a/v4`) and
+  tMCFE-Ring-LWE (`bmms21-ibmcfe-shamir-smudging/v2`) bump.
+- **`XofRandom` counters**: each call claims its counter atomically (two
+  threads sharing an instance could draw the same block); the native
+  samplers no longer wrap a counter past 2^64 (they raise OverflowError, as
+  the reference), and a signal handler or finalizer drawing from an
+  `XofRandom` during a native draw no longer deadlocks (re-entrant use of
+  the instance being drawn raises RuntimeError; other threads wait).
+- Documentation: the per-sample `0.02 / sigma^2` figure holds for the ideal
+  rounded Gaussian only, not for its double-precision implementation; the
+  `2^-128` per sample of the `standard` profile holds for FACCT and the MPFR
+  path.
+
 - **MIFE-Ring-LWE** and the **Ring-LWE MCFE** schemes (`mcfe/ring_lwe` and
   its threshold and decentralized variants) now take the Gaussian widths of
   BMMS21 Sec. 4.2 for messages of norm `3X`: the MIFE compiler of ACFGU18
@@ -207,8 +241,9 @@ compatibility).
   (`gaussian_sampler = "facct"` for the keys and the encryption noise of
   both layouts, whatever the library-wide sampler; `pp` carries the key
   generator's choice as the encryptors' default). With the rounded sampler
-  the keys at `eta = 1` are about 2^-47 from `D_{Z,sigma1}`, a term the
-  adaptive proof does not budget. `gaussian_sampler = "rounded"` in the key
+  the keys at `eta = 1` are about 2^-47 from `D_{Z,sigma1}` for an ideal
+  rounded Gaussian and about 2^-12 with the double-precision path's
+  artifacts, terms the adaptive proof does not budget. `gaussian_sampler = "rounded"` in the key
   generator or crypto config restores the previous draws (the same keys and
   ciphertexts for the same random source). Measured (standard profile,
   medians of 3, load 6-17): setup 0.17 -> 0.65 s at `eta = 1` and 0.55 ->

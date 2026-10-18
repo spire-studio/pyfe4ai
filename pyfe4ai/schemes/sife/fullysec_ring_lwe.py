@@ -44,8 +44,10 @@ Deviations from the paper:
   :func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_facct`), whatever the
   library-wide default; ``"rounded"`` (a rounded continuous Gaussian, the
   library default) stays selectable. At ``eta = 1`` the rounded keys are
-  about ``2^-47`` from ``D_{Z,sigma1}`` in statistical distance, a term the
-  proof does not account for. Python FACCT is slower than the rounded
+  about ``2^-47`` from ``D_{Z,sigma1}`` in statistical distance for an ideal
+  rounded Gaussian and about ``2^-12`` with the double-precision path's
+  artifacts (crypto review, October 2026), terms the proof does not account
+  for. Python FACCT is slower than the rounded
   sampler at the key width ``sigma1`` but faster beyond ``2^40`` (the
   encryption widths), where the rounded sampler needs MPFR Box-Muller.
 
