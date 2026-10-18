@@ -84,8 +84,9 @@ servers, or none, can suffice (the aggregator alone reads ``nu`` modulo
 multiplies the statistical distance of the flooding by 4. ``"replicated"``
 (see :func:`~pyfe4ai.schemes.threshold_utils.share_replicated`) makes ``M`` 0
 or 1, so the argument holds as stated with ``q`` and ``ring_n`` unchanged; a
-server holds ``C(s - 1, t - 1)`` key pieces instead of one share, and its key
-share is drawn in Python. With ``t = s`` both are sound. An explicit
+server holds ``C(s - 1, t - 1)`` key pieces instead of one share (dealt and
+added up natively where the extension is built, with the values of the
+Python code). With ``t = s`` both are sound. An explicit
 ``"shamir"`` with ``t < s`` is refused under the ``standard`` profile and
 draws an ``FESecurityWarning`` under ``toy``; the replicated sharing has its
 own parameter records (``threshold_construction``

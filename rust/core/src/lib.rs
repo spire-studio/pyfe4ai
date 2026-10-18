@@ -13,6 +13,7 @@ pub mod gauss;
 pub mod keccak;
 pub mod ntt;
 pub mod osrand;
+pub mod replicated;
 pub mod rlwe;
 pub mod rns;
 pub mod shamir;

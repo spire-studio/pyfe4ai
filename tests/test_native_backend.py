@@ -633,8 +633,9 @@ def test_threshold_key_shares_identical(cfg, monkeypatch):
 
 def test_threshold_standard_profile_native(native_calls):
     """mcfe/ring_lwe_threshold under the standard profile (q of 212 bits,
-    ring_n 8192): encryption, keys, partials and combination native; the
-    replicated key shares (the default for t < s) are drawn in Python."""
+    ring_n 8192): encryption, keys, partials and combination native, and the
+    replicated key shares (the default for t < s): dealt once, and each
+    server's pieces added up once for all chunks."""
     nids, sids = ["c0", "c1", "c2"], ["s0", "s1", "s2"]
     kg = tmcfe_rlwe.ThresholdMCFERingLWEKeyGenerator({
         "n": 3, "lst_nid": nids, "s": 3, "t": 2, "lst_sid": sids, "eta": 1, "bound_x": 100, "bound_y": 1,
@@ -659,5 +660,5 @@ def test_threshold_standard_profile_native(native_calls):
     out = combiner.decrypt_lst_ndarray_ct(parts)[0]
     assert np.allclose(out, sum(grads.values()))
     for name, count in (("encrypt_tensor", 3), ("pad_terms", 1), ("shamir_share", 0), ("share_partial", 4),
-                        ("share_combine", 2)):
+                        ("share_combine", 2), ("zq_replicated_deal", 1), ("zq_sum", 2)):
         assert native_calls[name] == count, name

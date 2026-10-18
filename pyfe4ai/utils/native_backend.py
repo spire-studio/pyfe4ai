@@ -8,7 +8,11 @@ key-derivation loops of the ndarray helpers -- one call per tensor, with the
 GIL released and optionally several threads -- and of the threshold MCFE
 (``mcfe/ring_lwe_threshold``): the Shamir sharing of the functional key, the
 parsing, digests and NTT-domain products of a partial decryption and the
-combination. It also samples the wide rounded Gaussians of
+combination. The replicated key sharings of the three LWE threshold layers
+(``"replicated"``, the default for ``t < s``, and ``"replicated-seeded"``) are
+dealt and added up natively for any odd ``q`` below ``2^253``, with no NTT
+ring (:func:`~pyfe4ai.schemes.threshold_utils.share_replicated`,
+:func:`~pyfe4ai.schemes.threshold_utils.share_for_enrolled`). It also samples the wide rounded Gaussians of
 :func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint` (SIFE FullySec,
 ALS16 and the flooding noise of the threshold schemes; :func:`gaussian_bigint`)
 with the reference's integers, and has the dense-LWE label
@@ -59,9 +63,9 @@ about ``2^-55``).
 
 Random bytes. The extension draws them from a DRBG scoped to one call:
 every tensor-level call (``encrypt_tensor``, ``precompute_tensor``,
-``encrypt`` for one matrix, and ``shamir_share`` for a whole key, which reads
-stream 0 in order and draws each coefficient as
-``random.SystemRandom.randrange(0, q)`` does) reads one 32-byte seed from the operating system
+``encrypt`` for one matrix, and ``shamir_share`` and ``zq_replicated_deal``
+for a whole key, which read stream 0 in order and draw each coefficient or
+piece value as ``random.SystemRandom.randrange(0, q)`` does) reads one 32-byte seed from the operating system
 (``getrandom`` / ``getentropy``, the source of :func:`os.urandom`) and expands
 it with ChaCha20 (the ``rand_chacha`` crate), chunk ``c`` of the call reading
 stream ``c`` -- no two chunks, hence no two threads, share a stream. The seed,

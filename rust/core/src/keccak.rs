@@ -138,6 +138,19 @@ pub fn zq_reduce<W: Word>(m: &Modulus<W>, stream: &[u8], nb: usize, out: &mut [W
     }
 }
 
+/// Overwrite a long secret buffer before it is freed, with volatile writes of
+/// whole 64-bit words where it is aligned (rlwe::wipe_bytes writes bytes).
+pub fn wipe_long(buf: &mut [u8]) {
+    let (head, words, tail) = unsafe { buf.align_to_mut::<u64>() };
+    for b in head.iter_mut().chain(tail.iter_mut()) {
+        unsafe { std::ptr::write_volatile(b, 0) };
+    }
+    for w in words.iter_mut() {
+        unsafe { std::ptr::write_volatile(w, 0) };
+    }
+    std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
+}
+
 /// hash_to_zq_vector(material, q, count) for the encoded material, as words;
 /// the stream is wiped (the material may hold a secret seed).
 pub fn hash_to_zq<W: Word>(m: &Modulus<W>, material: &[u8], out: &mut [W]) {
@@ -145,7 +158,7 @@ pub fn hash_to_zq<W: Word>(m: &Modulus<W>, material: &[u8], out: &mut [W]) {
     let mut stream = vec![0u8; nb * out.len()];
     shake256(material, &mut stream);
     zq_reduce(m, &stream, nb, out);
-    crate::rlwe::wipe_bytes(&mut stream);
+    wipe_long(&mut stream);
 }
 
 /// How a label is hashed to Z_q (crypto_utils.LABEL_HASHES): the SHAKE-256
@@ -317,6 +330,16 @@ pub fn hash_to_zq_mode<W: Word>(m: &Modulus<W>, material: &[u8], mode: HashMode,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn long_wipes_clear_every_byte() {
+        for (len, off) in [(0usize, 0usize), (5, 1), (64, 0), (77, 3), (1000, 7)] {
+            let mut v = vec![0xa5u8; len + off];
+            wipe_long(&mut v[off..]);
+            assert!(v[off..].iter().all(|&b| b == 0));
+            assert!(v[..off].iter().all(|&b| b == 0xa5));
+        }
+    }
 
     fn hex(b: &[u8]) -> String {
         b.iter().map(|x| format!("{:02x}", x)).collect()

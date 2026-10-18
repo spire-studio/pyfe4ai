@@ -27,6 +27,7 @@ mod dlog;
 mod ec;
 mod msm;
 mod pairing;
+mod replicated;
 
 // ------------------------------------------------------------------ DRBG
 
@@ -2063,5 +2064,6 @@ fn _rust_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     ec::register(m)?;
     pairing::register(m)?;
     rns::register(m)?;
+    replicated::register(m)?;
     Ok(())
 }
