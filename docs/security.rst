@@ -48,15 +48,26 @@ those of the LWE problem that their security proof reduces to. The
 lattice-estimator table is read at the error width
 ``sigma' = sigma / (1 + B sqrt(eta))`` of that problem (``B = 2 X``, or
 ``4 X`` per slot of ``mife/lwe``), not at the wider ``sigma`` of the public
-key, which gives dimensions 40 to 55 percent larger. The proof is the second
+key. That makes the dimension 17 to 67 percent larger for
+``8 <= X = Y <= 1000``, and up to about twice as large at ``X = Y = 1``. The
+proof is the second
 generic theorem of the ABDP15 full version (ePrint 2015/017, written out in
 F. Bourse's PhD thesis, ENS 2017, Thm. 4.3.5), not Theorem 2 of the PKC 2015
 paper, whose simulation does not cover noisy LWE keys; this rests on the
-thesis until the full-version text has been checked. ``mife/lwe_threshold``
-has no tabulated dimension (up to 6144) at that width once its modulus is
-enlarged for flooding. A KL-divergence accounting of the flooding noise (in
-development, ``t = s`` only) would bring it to about 4864, so the refusal
-is to be re-evaluated when that is merged.
+thesis until the full-version text has been checked.
+
+``mife/lwe_threshold`` is refused, like the ALS16 schemes. Once its modulus
+is enlarged for flooding, it needs a dimension at the end of the table at
+that width (5952 to 6144 for ``X = Y <= 8``, with a public matrix of 6.7 to
+7.8 * 10^9 entries), or beyond it (``X = Y >= 20``).
+
+An opt-in KL-divergence accounting of the flooding noise (in development)
+would bring it to about 4864 for two clients, ``s = t = 3`` and ``2^40``
+flooded values. It applies only with ``flooding_accounting = "kl"``,
+``t = s`` and an explicit ``max_partial_decryptions`` budget; the public
+matrix would still have 4.1 * 10^9 entries (``"stream"`` mode), and the
+guarantee is weaker, about ``stat_param - 6.85`` bits. The refusal is to be
+re-evaluated when that accounting is merged.
 
 Threshold trust model
 ---------------------

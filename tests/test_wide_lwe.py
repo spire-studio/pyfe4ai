@@ -18,6 +18,10 @@ from pyfe4ai.utils.lwe_utils import (
 DIMS = sorted(next(iter(WIDE_LWE_128_LOG_RATIO.values())))
 
 
+def _PK_SIGMA(params):
+    return params["sigma_q"]
+
+
 def test_every_width_has_the_same_dimensions():
     assert all(sorted(row) == DIMS for row in WIDE_LWE_128_LOG_RATIO.values())
 
@@ -53,9 +57,9 @@ def test_auto_picks_the_smallest_dimension_that_passes():
         ratio = bound if n >= first_ok else bound + 1
         return {"lwe_n": n, "q": 2 ** (32 + ratio), "sigma_q": 2.0 ** 32}
 
-    assert wide_lwe_n(params_for)["lwe_n"] == first_ok
+    assert wide_lwe_n(params_for, _PK_SIGMA)["lwe_n"] == first_ok
     with pytest.raises(FEValidationError, match="no LWE dimension"):
-        wide_lwe_n(lambda n: {"lwe_n": n, "q": 2 ** 400, "sigma_q": 2.0 ** 32})
+        wide_lwe_n(lambda n: {"lwe_n": n, "q": 2 ** 400, "sigma_q": 2.0 ** 32}, _PK_SIGMA)
 
 
 def test_auto_reads_the_table_at_the_given_width():
@@ -66,12 +70,12 @@ def test_auto_reads_the_table_at_the_given_width():
     def params_for(n):
         return {"lwe_n": n, "q": q, "sigma_q": 2.0 ** 40}
 
-    assert wide_lwe_n(params_for)["lwe_n"] == DIMS[0]
+    assert wide_lwe_n(params_for, _PK_SIGMA)["lwe_n"] == DIMS[0]
     assert wide_lwe_n(params_for, lambda p: p["sigma_q"] / 2 ** 8)["lwe_n"] == DIMS[2]
 
 
 def test_auto_abdp15_parameters_meet_the_table():
-    params = abdp15_parameters(gp.mpz(50), gp.mpz(50), 2, "auto")
+    params = abdp15_parameters(gp.mpz(50), gp.mpz(50), 2, "auto", lwe_sigma=_PK_SIGMA)
     assert params["lwe_n"] in DIMS
     check_wide_lwe(params["lwe_n"], params["q"], params["sigma_q"])
     reduced = lambda p: abdp15_reduction_sigma(p["sigma_q"], 100, 2)  # noqa: E731
@@ -83,6 +87,20 @@ def test_reduction_width():
     # sigma >= (1 + B sqrt(eta)) sigma' (Bourse 2017, Thm. 8.2.2)
     assert abdp15_reduction_sigma(2.0 ** 30, 100, 4) == 2.0 ** 30 / 201
     assert abdp15_reduction_sigma(7.0, 0, 9) == 7.0
+
+
+def test_auto_needs_the_width():
+    # no silent fallback to the public key's width
+    with pytest.raises(ValueError, match="lwe_sigma"):
+        abdp15_parameters(gp.mpz(50), gp.mpz(50), 2, "auto")
+    with pytest.raises(TypeError):
+        wide_lwe_n(lambda n: {"lwe_n": n, "q": 2 ** 40, "sigma_q": 2.0 ** 32})
+
+
+def test_check_names_the_width_it_was_given():
+    with pytest.raises(FEValidationError) as err:
+        check_wide_lwe(DIMS[0], 2 ** 200, 2.0 ** 20, what="sigma'")
+    assert "log2(q / sigma') <= " in str(err.value) and "q / sigma)" not in str(err.value)
 
 
 def test_explicit_dimension_is_used_as_given():

@@ -297,6 +297,11 @@ def test_standard_selects_the_lwe_dimension_of_abdp15(scheme):
     assert profiles.resolve(dict(STANDARD), scheme)["lwe_n"] == "auto"
 
 
+def _PK_SIGMA(params):
+    """The old rule: the table read at the public key's own width."""
+    return params["sigma_q"]
+
+
 @pytest.mark.parametrize("kg_cls, config, spread", [
     (SIFELWEKeyGenerator, {"eta": 2, "bound_x": 50, "bound_y": 50}, 2),
     (MIFELWEKeyGenerator, {"n": 2, "eta": 1, "bound_x": 50, "bound_y": 50}, 4),
@@ -308,7 +313,8 @@ def test_standard_abdp15_meets_the_wide_lwe_table_at_the_reduction_width(kg_cls,
     check_wide_lwe(kg.lwe_n, kg.q, sigma_prime)
     # the table is read at sigma', not at the width sigma of the public key
     smaller = abdp15_parameters(
-        config["bound_x"], config["bound_y"], config.get("n", 1) * config["eta"], "auto"
+        config["bound_x"], config["bound_y"], config.get("n", 1) * config["eta"], "auto",
+        lwe_sigma=_PK_SIGMA,
     )
     assert smaller["lwe_n"] < kg.lwe_n
 
@@ -346,7 +352,7 @@ def test_standard_rederives_a_record_cached_under_the_old_rule(tmp_path, monkeyp
     kg = SIFELWEKeyGenerator(config)
     path = tmp_path / "config" / "authority" / kg._scheme_type / "param.json"
     record = json.loads(path.read_text())
-    old = kg._serialised(abdp15_parameters(gp.mpz(50), gp.mpz(50), 2, "auto"))
+    old = kg._serialised(abdp15_parameters(gp.mpz(50), gp.mpz(50), 2, "auto", lwe_sigma=_PK_SIGMA))
     assert old["lwe_n"] < kg.lwe_n
     path.write_text(json.dumps({**record, **old}))
     again = SIFELWEKeyGenerator(config)
@@ -381,7 +387,7 @@ TMIFE_CONFIG = {"n": 2, "eta": 1, "s": 3, "t": 2, "bound_x": 50, "bound_y": 50}
 
 
 def test_standard_refuses_threshold_mife_lwe():
-    with pytest.raises(FEValidationError, match="beyond the 128-bit table"):
+    with pytest.raises(FEValidationError, match="at the end of the 128-bit table or beyond it"):
         profiles.resolve(dict(STANDARD), ("mife", "lwe_threshold"))
     with pytest.raises(FEValidationError, match="no 'standard' parameter set"):
         ThresholdMIFELWEKeyGenerator({**TMIFE_CONFIG, **STANDARD})
@@ -391,7 +397,7 @@ def test_threshold_mife_lwe_has_no_128_bit_dimension_at_its_reduction_width():
     # why standard refuses it: at stat_param 128 the old rule (sigma) took 5952,
     # at sigma' no tabulated dimension is enough
     kg = ThresholdMIFELWEKeyGenerator({**TMIFE_CONFIG, "lwe_n": 16, "stat_param": 128})
-    assert wide_lwe_n(kg._threshold_parameters)["lwe_n"] == 5952
+    assert wide_lwe_n(kg._threshold_parameters, _PK_SIGMA)["lwe_n"] == 5952
     with pytest.raises(FEValidationError, match="no LWE dimension"):
         wide_lwe_n(kg._threshold_parameters, kg._table_sigma)
     with pytest.raises(FEValidationError, match="no LWE dimension"):

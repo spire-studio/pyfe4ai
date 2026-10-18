@@ -24,7 +24,9 @@ how far the two challenge vectors of the IPFE game differ per coordinate:
 reduction (ACFGU18, proof of Thm. 3) asks for ``x^(j,0) - x^(1,0) + x^(1,1)``
 against ``x^(j,1)``. The width ``sigma`` of ``pk`` itself is ``1 + B sqrt(eta)``
 times larger, so the dimension is larger than an attack on ``pk`` alone would
-need.
+need. The reduction and its width rest on F. Bourse's thesis (ENS 2017,
+Thm. 4.3.5 with Thm. 8.2.2) until the ABDP15 full version (ePrint 2015/017)
+has been checked.
 """
 
 from __future__ import annotations

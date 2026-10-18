@@ -48,9 +48,11 @@ The ``security_profile`` entry of a key generator's config selects one:
       a lattice estimator table for LWE with a uniform secret, read at the
       error width ``sigma' = sigma / (1 + B sqrt(eta))`` of the LWE problem the
       security proof reduces to (``B = 2 X``, or ``4 X`` in the slots of
-      ``mife/lwe``; see :mod:`pyfe4ai.schemes.abdp15_lwe`). That gives
-      ``lwe_n`` of about 1100 to 1700 for small bounds; reading the table at
-      the public key's own ``sigma`` would give about a third less. ``A``
+      ``mife/lwe``; see :mod:`pyfe4ai.schemes.abdp15_lwe`; the proof rests on
+      F. Bourse's thesis until the ABDP15 full version has been checked).
+      That gives ``lwe_n`` of about 1100 to 1700 for small bounds; reading the
+      table at the public key's own ``sigma`` would give 15 to 40 percent
+      less for ``X = Y >= 8``. ``A``
       (``m ~ lwe_n log2 q`` rows, 10^8 to 4 * 10^8 entries) is published as a
       seed; ``matrix_mode`` chooses between keeping it expanded in memory
       (about 0.1 to 0.3 s per encryption, 2 to 6 GB) and expanding it for
@@ -66,10 +68,13 @@ The ``security_profile`` entry of a key generator's config selects one:
     ``X = Y <= 50`` and ``eta <= 10``, and with ``m = 4 n log2 q`` as its
     Theorem 2 requires, the public matrix has 1 to 2 * 10^10 entries and a
     ciphertext 2.9 to 4.5 * 10^6 coordinates of 219 to 258 bits),
-    ``mife/lwe_threshold`` (its flooding-enlarged ``q`` needs an LWE dimension
-    beyond the table's 6144 at ``sigma'``, about 6500 for ``X = Y = 50``; to be
-    re-evaluated with the KL accounting of the flooding noise, under which it
-    would take about 4864) and
+    ``mife/lwe_threshold``. At ``sigma'`` its flooding-enlarged ``q`` needs
+    an LWE dimension at the end of the table or beyond it: 5952 to 6144 for
+    ``X = Y <= 8``, with ``A`` of 6.7 to 7.8 * 10^9 entries, and none up to
+    6144 from ``X = Y = 20`` on (about 6500 for ``X = Y = 50``). This is to
+    be re-evaluated with the opt-in KL accounting of the flooding noise,
+    ``t = s`` only, with an explicit budget and a weaker guarantee, under
+    which it would take about 4864. Also refused:
     ``mcfe/paillier_decentralized`` (its key shares are combined under a DCR
     modulus of more than 15000 bits).
 
@@ -144,9 +149,10 @@ _STANDARD_FIXED: dict = {}
 
 _REFUSED = {
     ("mife", "lwe_threshold"): "read at the width sigma / (1 + 4 X sqrt(eta)) of its security "
-    "reduction, the LWE of its flooding-enlarged q needs a dimension beyond the 128-bit table "
-    "(about 6500 for X = Y = 50 with stat_param 128, a public matrix of more than 8*10^9 "
-    "entries); use mife/ddh_threshold, or mcfe/ring_lwe_threshold with labels",
+    "reduction, the LWE of its flooding-enlarged q needs a dimension at the end of the 128-bit "
+    "table or beyond it (5952 to 6144 for X = Y <= 8, none up to 6144 from X = Y = 20 on: about "
+    "6500 for X = Y = 50 with stat_param 128), and a public matrix of 6.7*10^9 entries or more; "
+    "use mife/ddh_threshold, or mcfe/ring_lwe_threshold with labels",
     "lwe_matrix": "at a 128-bit dimension (lwe_n = 3328 to 4352 for X = Y <= 50, eta <= 10) its "
     "public matrix has 1 to 2*10^10 entries and every ciphertext m = 4 n log2 q = 2.9 to 4.5*10^6 "
     "coordinates of 219 to 258 bits (80 to 145 MB); use sife/fullysec_ring_lwe for adaptive "

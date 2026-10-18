@@ -206,7 +206,8 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         note="MIFE layer as published; the threshold layer (statistical flooding, "
         "derandomised noise, enlarged q, clients' HMAC tags on ciphertexts so that "
         "servers only decrypt ciphertexts made by the clients) is our own; standard "
-        "refuses it (no 128-bit dimension up to 6144 at the reduction width of mife/lwe)",
+        "refuses it (at the reduction width of mife/lwe it needs 5952 to 6144 for X = Y <= 8 "
+        "and more than the table's 6144 from X = Y = 20 on)",
     ),
     # --- multi-client -------------------------------------------------------
     ("mcfe", "ddh"): SchemeStatus(_S + "mcfe.ddh", REVIEWED, FAITHFUL, "CDGPP18"),

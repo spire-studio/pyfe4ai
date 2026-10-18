@@ -57,16 +57,23 @@ The ``standard`` security profile refuses this scheme. ``lwe_n = "auto"``
 reads :data:`pyfe4ai.utils.lwe_utils.WIDE_LWE_128_LOG_RATIO` at the width
 ``sigma / (1 + 4 X sqrt(eta))`` of the MIFE layer's security reduction (see
 :mod:`pyfe4ai.schemes.abdp15_lwe`). At the flooding-enlarged ``q`` of
-``stat_param = 128`` no tabulated dimension up to 6144 reaches 128 bits
-there; ``X = Y = 50`` would need about 6500. Read at ``sigma`` itself, the
+``stat_param = 128`` (two clients) that takes the end of the table or more:
+5952 for ``X = Y = 1`` and 6144 for ``X = Y = 8`` (``A`` of 6.7 and
+7.8 * 10^9 entries), and no tabulated dimension up to 6144 from
+``X = Y = 20`` on; ``X = Y = 50`` would need about 6500. Read at ``sigma`` itself, the
 earlier rule took 5952 for two clients (``q`` of 217 bits, ``m`` of
 1.3 * 10^6, ``A`` of 7.8 * 10^9 entries, so ``A`` had to be streamed):
 key generation took 38 minutes, one encryption 572 s, a batch of 64
-encryptions 679 s and a partial decryption 13 ms. A KL-divergence accounting
-of the flooding noise (in development, ``t = s`` only, valid for a bounded
-number of partial decryptions) would bring it within the table again: about
-4864 at ``sigma'`` for two clients and ``s = t = 3``, with ``q`` of 173 bits;
-the refusal is to be re-evaluated when that is merged.
+encryptions 679 s and a partial decryption 13 ms.
+
+A KL-divergence accounting of the flooding noise (in development) would bring
+it within the table again, but only as an opt-in: ``flooding_accounting =
+"kl"`` with ``t = s`` and an explicit ``max_partial_decryptions`` budget per
+server. For two clients, ``s = t = 3`` and ``N = 2^40`` flooded values it
+takes about 4864 at ``sigma'``, with ``q`` of 173 bits and ``A`` of
+4.1 * 10^9 entries, so ``"stream"`` mode. Its guarantee is weaker, about
+``stat_param - 6.85`` bits; with the default accounting the dimension stays
+as above. The refusal is to be re-evaluated when that is merged.
 """
 
 from __future__ import annotations
