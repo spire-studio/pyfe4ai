@@ -488,3 +488,51 @@ def test_a_native_context_of_another_modulus_is_refused():
         expand_seeded_piece("ab" * SEED_BYTES, (1,), {"z": 16}, other, ctx=ctx)
     with pytest.raises(FESchemeError, match="another modulus"):
         _combine_pieces({"z": 16}, [], [("ab" * SEED_BYTES, (1,))], other, ctx)
+
+
+# ----------------------------------- known answers (review 2026-10, merge note)
+
+_KAT_Q = gp.mpz("1606938044258990275541962092341162602522202993782792835305409")  # NTT prime, ring_n 16
+_KAT_SEED = bytes(range(SEED_BYTES)).hex()
+_KAT_LAYOUT = {"sk_y": {0: 16}, "z": None}
+_KAT = {  # sk_y[0][0], sk_y[0][1], sk_y[0][15], z of the piece T = (1, 3)
+    "sk_y0": [61827895361268681826978602155546844902722141212022489424889,
+              490158338356354870244415227195526463172686310644843968853602],
+    "sk_y15": 1226266075334687589031284114557675650097679021205223870649243,
+    "z": 1476506500760116723878922198686172379798486826954043406384388,
+}
+
+
+@pytest.mark.parametrize("backend", ["python", "native"])
+def test_seeded_expansion_known_answer(backend):
+    """Pins one seeded piece: the expansion is hash_to_zq_vector in its
+    "shake256-wide" mode (its default, not the label-hash default of the MCFE
+    key generators). A change of mode, domain, input encoding or reduction --
+    e.g. when merging exp/hash-and-flooding -- would silently change every
+    seeded key share; this test catches it on both backends."""
+    import hashlib
+
+    from pyfe4ai.schemes.threshold_utils import _combine_pieces
+
+    ctx = None
+    if backend == "native":
+        if not native_backend.available():
+            pytest.skip("native extension not built")
+        with native_backend.backend("native"):
+            ctx = native_backend.ring_context(_KAT_Q, 16)
+        assert ctx is not None
+    piece = expand_seeded_piece(_KAT_SEED, (1, 3), _KAT_LAYOUT, _KAT_Q, ctx=ctx)
+    leaf = [int(v) for v in piece["sk_y"][0]]
+    assert leaf[:2] == _KAT["sk_y0"] and leaf[15] == _KAT["sk_y15"] and int(piece["z"]) == _KAT["z"]
+    # the same values as sums (native: hash_to_zq + lincomb), and the dealer's negation
+    summed = _combine_pieces(_KAT_LAYOUT, [], [(_KAT_SEED, (1, 3))], _KAT_Q, ctx)
+    assert summed == {"sk_y": {0: [gp.digits(gp.mpz(v)) for v in leaf]}, "z": gp.digits(_KAT["z"])}
+    negated = _combine_pieces(_KAT_LAYOUT, [], [(_KAT_SEED, (1, 3))], _KAT_Q, ctx, subtract=True)
+    assert negated["z"] == gp.digits(_KAT_Q - _KAT["z"])
+    # and the format, spelled out: SHAKE-256 of the hash_to_zq_vector material,
+    # blocks of bits(q) + 128 bits, big-endian, reduced mod q
+    v = json.dumps([_KAT_SEED, [1, 3], ["sk_y", "0"], gp.digits(_KAT_Q)])
+    material = "|".join(["pyfe4ai/threshold/replicated-seeded/piece/v1", "zq-vector", str(len(v)), v])
+    nb = (int(_KAT_Q).bit_length() + 128 + 7) // 8
+    stream = hashlib.shake_256(material.encode("utf-8")).digest(16 * nb)
+    assert [int.from_bytes(stream[i * nb:(i + 1) * nb], "big") % int(_KAT_Q) for i in range(16)] == leaf
