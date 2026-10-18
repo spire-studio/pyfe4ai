@@ -383,11 +383,15 @@ compatibility).
   Theorem 2 of the PKC 2015 paper, cited so far, does not cover noisy LWE
   keys. Its simulation computes ciphertexts from the secret key without the
   noise term `<r, e>`, and changes the basis of noisy public keys with
-  coefficients in `Z_q`. The proof is instead the second generic theorem of
-  the revised full version (ePrint 2015/017, 2015-03-28), written out in
-  F. Bourse's PhD thesis (ENS 2017, Thm. 4.3.5 with Thms. 8.2.2, 8.2.3,
-  8.3.2), which needs `sigma >= (1 + B sqrt(eta)) sigma'`. These citations
-  rest on the thesis until the full-version text has been checked.
+  coefficients in `Z_q`. The proof is instead the full version (ePrint
+  2015/017, Oct. 2015), Thm. 4.4 with Thms. 6.6 and 6.7 (Construction 6.5,
+  Sec. 6.2), written out in F. Bourse's PhD thesis (ENS 2017, Thm. 4.3.5
+  with Thms. 8.2.2, 8.2.3, 8.3.2). The proof of Thm. 6.6 needs
+  `sigma >= (1 + B sqrt(eta)) sigma'`; the full version's Sec. 6.2 parameter
+  list states the stronger, sufficient `(l B + 1) sigma'`. The literal
+  `p > l B^2` of Thm. 4.4 is not needed for the Regev instance: the change of
+  basis works mod the LWE prime `q`, and decoding is of the integer inner
+  product. The `4X` per MIFE slot is the library's ACFGU18 composition.
   `lwe_n` grows by 17 to 67 percent for `8 <= X = Y <= 1000`, `eta <= 100`
   and up to 100 MIFE slots, and by 8 to 112 percent at `X = Y = 1`, where
   the old rule often stopped at the table's smallest dimension, 512. For

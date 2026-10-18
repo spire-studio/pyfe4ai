@@ -24,9 +24,29 @@ how far the two challenge vectors of the IPFE game differ per coordinate:
 reduction (ACFGU18, proof of Thm. 3) asks for ``x^(j,0) - x^(1,0) + x^(1,1)``
 against ``x^(j,1)``. The width ``sigma`` of ``pk`` itself is ``1 + B sqrt(eta)``
 times larger, so the dimension is larger than an attack on ``pk`` alone would
-need. The reduction and its width rest on F. Bourse's thesis (ENS 2017,
-Thm. 4.3.5 with Thm. 8.2.2) until the ABDP15 full version (ePrint 2015/017)
-has been checked.
+need.
+
+The reduction is the ABDP15 full version (ePrint 2015/017, Oct. 2015),
+Thm. 4.4 with Thms. 6.6 and 6.7 (Construction 6.5, Sec. 6.2), written out in
+F. Bourse's PhD thesis (ENS 2017), Thm. 4.3.5 with Thms. 8.2.2, 8.2.3,
+8.3.2. Its width is the condition derived in the proof of Thm. 6.6
+(= Bourse, Thm. 8.2.2); the parameter list of the full version's Sec. 6.2
+states the stronger, sufficient ``(l B + 1) sigma'``.
+
+Hypotheses of the papers that the library meets differently:
+
+* The literal ``p > l B^2`` of Thm. 4.4 / Sec. 6.2 is not needed for this
+  Regev instance. The change of basis acts on secret keys mod the LWE prime
+  ``q``, where ``||x1 - x0||^2 != 0`` with a wide margin. Decryption decodes
+  the integer inner product (``p > 2 eta X Y + 1``), so admissible keys are
+  orthogonal to ``x1 - x0`` over ``Z``. The last hybrid only needs ``a + b``
+  uniform mod ``p``.
+* The ``4 X`` per MIFE slot is the library's ACFGU18 composition; neither
+  text covers MIFE.
+* The thesis's LWE hardness bound (an absolute width above ``2 sqrt(n)``),
+  which the full version does not state, is met under ``standard``:
+  ``sigma' >= 2^16``, the smallest width of the table that ``standard``
+  enforces.
 
 The public keys' noise ``E`` -- the only Gaussian of these schemes (encryption
 draws a binary ``r``) -- enters the proof as LWE with noise ``D_{Z,sigma}``.

@@ -2,7 +2,7 @@
 LWE-Based Single-Input Inner-Product Functional Encryption
 | From "Simple Functional Encryption Schemes for Inner Products"
 | By Michel Abdalla, Florian Bourse, Angelo De Caro, David Pointcheval
-| Published in: PKC 2015; full version ePrint 2015/017 (revised 2015-03-28)
+| Published in: PKC 2015; full version ePrint 2015/017 (revised 2015-03-28, 2015-10-01)
 |
 | This module implements the generic simple FE construction instantiated
 | under the LWE assumption as a research-oriented Python prototype.
@@ -11,18 +11,23 @@ LWE-Based Single-Input Inner-Product Functional Encryption
 * setting:  Integer based
 * note:     prototype implementation with the common key generator / crypto API
 
-The scheme is the LWE instantiation as revised in the full version (written
-out in F. Bourse, PhD thesis, ENS 2017, Fig. 8.1): uniform secrets, binary
+The scheme is the LWE instantiation as revised in the full version
+(Construction 4.1 over the Regev scheme of Construction 6.5, Sec. 6.2;
+F. Bourse, PhD thesis, ENS 2017, Fig. 8.1): uniform secrets, binary
 ``r``, ``t(x) = x floor(q / p)`` and no ``r``-ary decomposition of the
 message. Theorem 2 of the proceedings version does not cover it: its
 simulation reuses encryption randomness through the secret key and changes
 the basis of noisy public keys with coefficients in ``Z_q``, and both steps
-fail for keys ``A s + e``. The full version proves selective IND-CPA with a
-second generic theorem (public-key and ciphertext reproducibility; Bourse,
-Thm. 4.3.5 with Thms. 8.2.2, 8.2.3, 8.3.2) under LWE with errors of width
-``sigma' = sigma / (1 + 2 X sqrt(eta))`` and for
-``m >= (n + eta + 1) log2 q + 2 log2(1 / eps)``. These claims rest on the
-thesis until the full-version text has been checked.
+fail for keys ``A s + e``.
+
+The full version proves selective IND-CPA with its Thm. 4.4, through public-key
+and ciphertext reproducibility (Thms. 6.6 and 6.7; Bourse, Thm. 4.3.5 with
+Thms. 8.2.2, 8.2.3, 8.3.2). The proof assumes LWE with errors of width
+``sigma' = sigma / (1 + 2 X sqrt(eta))``, the condition derived in the proof of
+Thm. 6.6; Sec. 6.2 lists the stronger ``(l B + 1) sigma'``. It also needs
+``m >= (n + eta + 1) log2 q + 2 log2(1 / eps)`` (proof of Thm. 6.7). See
+:mod:`pyfe4ai.schemes.abdp15_lwe` for the hypotheses that the library meets
+differently.
 
 The public matrix ``A`` is published as a seed and expanded with SHAKE-128;
 encryption computes ``A^T r`` and ``pk^T r`` exactly with numpy, either over

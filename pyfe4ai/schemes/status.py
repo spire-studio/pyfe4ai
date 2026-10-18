@@ -92,9 +92,9 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     ("sife", "lwe"): SchemeStatus(
         _S + "sife.lwe", REVIEWED, ADAPTED, "ABDP15 full version (ePrint 2015/017), LWE",
         note="the LWE instantiation as revised in the full version (no r-ary "
-        "decomposition); its selective IND-CPA proof is the full version's second "
-        "generic theorem (Bourse 2017 Thm. 4.3.5 with 8.2.2, 8.2.3, 8.3.2; the "
-        "full-version text not yet checked), not PKC Thm. 2, which does not cover noisy "
+        "decomposition); its selective IND-CPA proof is the full version's Thm. 4.4 "
+        "with Thms. 6.6 and 6.7 (Bourse 2017 Thm. 4.3.5 with 8.2.2, 8.2.3, 8.3.2), "
+        "not PKC Thm. 2, which does not cover noisy "
         "LWE keys; it reduces to LWE with errors sigma / (1 + 2X sqrt(eta)), the width "
         "standard reads the 128-bit table at; signed X/Y-bounded inputs with centred "
         "decoding; GoFE parameter recipe; pk noise E <- D_{Z,sigma_q} exactly (FACCT) under "

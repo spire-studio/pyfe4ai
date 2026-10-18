@@ -49,12 +49,27 @@ lattice-estimator table is read at the error width
 ``sigma' = sigma / (1 + B sqrt(eta))`` of that problem (``B = 2 X``, or
 ``4 X`` per slot of ``mife/lwe``), not at the wider ``sigma`` of the public
 key. That makes the dimension 17 to 67 percent larger for
-``8 <= X = Y <= 1000``, and up to about twice as large at ``X = Y = 1``. The
-proof is the second
-generic theorem of the ABDP15 full version (ePrint 2015/017, written out in
-F. Bourse's PhD thesis, ENS 2017, Thm. 4.3.5), not Theorem 2 of the PKC 2015
-paper, whose simulation does not cover noisy LWE keys; this rests on the
-thesis until the full-version text has been checked.
+``8 <= X = Y <= 1000``, and up to about twice as large at ``X = Y = 1``.
+
+The proof is the ABDP15 full version (ePrint 2015/017, Oct. 2015), Thm. 4.4
+with Thms. 6.6 and 6.7 (Construction 6.5, Sec. 6.2), written out in
+F. Bourse's PhD thesis (ENS 2017), Thm. 4.3.5 with Thms. 8.2.2, 8.2.3,
+8.3.2. It is not Theorem 2 of the PKC 2015 paper, whose simulation does not
+cover noisy LWE keys. The width ``sigma'`` is the condition derived in the
+proof of Thm. 6.6 (= Bourse, Thm. 8.2.2); the full version's Sec. 6.2
+parameter list states the stronger, sufficient ``(l B + 1) sigma'``.
+
+Hypotheses of the papers that the library meets differently:
+
+- The literal ``p > l B^2`` of Thm. 4.4 / Sec. 6.2 is not needed for the
+  Regev instance. The change of basis acts on secret keys mod the LWE prime
+  ``q``. The library decodes the integer inner product (``p > 2 eta X Y +
+  1``), so admissible keys are orthogonal to ``x1 - x0`` over ``Z``.
+- The ``4 X`` per slot of ``mife/lwe`` is the library's ACFGU18 composition,
+  covered by neither text.
+- The thesis's LWE hardness bound (an absolute width above ``2 sqrt(n)``;
+  not stated in the full version) is met under ``standard``:
+  ``sigma' >= 2^16``, the table's smallest width.
 
 ``mife/lwe_threshold`` is refused, like the ALS16 schemes. Once its modulus
 is enlarged for flooding (``stat_param = 128``), it needs a dimension at the

@@ -48,8 +48,8 @@ The ``security_profile`` entry of a key generator's config selects one:
       a lattice estimator table for LWE with a uniform secret, read at the
       error width ``sigma' = sigma / (1 + B sqrt(eta))`` of the LWE problem the
       security proof reduces to (``B = 2 X``, or ``4 X`` in the slots of
-      ``mife/lwe``; see :mod:`pyfe4ai.schemes.abdp15_lwe`; the proof rests on
-      F. Bourse's thesis until the ABDP15 full version has been checked).
+      ``mife/lwe``; ABDP15 full version, Thm. 4.4, with the width derived in
+      the proof of Thm. 6.6; see :mod:`pyfe4ai.schemes.abdp15_lwe`).
       That gives ``lwe_n`` of about 900 to 1700 for small bounds; reading the
       table at the public key's own ``sigma`` would give 14 to 40 percent
       less for ``X = Y >= 8``. ``A``

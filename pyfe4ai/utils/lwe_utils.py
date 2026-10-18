@@ -310,17 +310,29 @@ def wide_lwe_bound(lwe_n: int, sigma) -> int | None:
 def abdp15_reduction_sigma(sigma, diff_bound, eta: int) -> float:
     """Error width ``sigma'`` of the LWE problem that the ABDP15 proof reduces to.
 
-    The selective-security proof of the LWE instantiation (ABDP15 full
-    version, ePrint 2015/017 as revised on 2015-03-28; written out in
-    F. Bourse, PhD thesis, ENS 2017, Thm. 4.3.5 with Thms. 8.2.2, 8.2.3 and
-    8.3.2) rewrites the public keys as ``d_i pk + pk'_i`` for the difference
-    ``d = x1 - x0`` of the challenge vectors. It needs
-    ``sigma >= (1 + B sqrt(eta)) sigma'`` with ``|d_i| <= B``, and the scheme
-    is then as hard as LWE with errors of width ``sigma'``, not ``sigma``.
-    Theorem 2 of the proceedings version does not cover noisy LWE keys.
-    The full-version text has not been checked here: its ePrint record only
-    says that the 2015-03-28 revision reworked the LWE instantiation and added
-    a second generic theorem. The statement above rests on the thesis.
+    The selective-security proof of the LWE instantiation is the ABDP15 full
+    version (ePrint 2015/017, Oct. 2015), Thm. 4.4 with Thms. 6.6 and 6.7
+    (Construction 6.5, Sec. 6.2), written out in F. Bourse, PhD thesis, ENS
+    2017, Thm. 4.3.5 with Thms. 8.2.2, 8.2.3, 8.3.2. It rewrites the public
+    keys as ``d_i pk + pk'_i`` for the difference ``d = x1 - x0`` of the
+    challenge vectors.
+
+    It needs ``sigma >= (1 + B sqrt(eta)) sigma'`` with ``|d_i| <= B``: the
+    condition derived in the proof of Thm. 6.6 (= Bourse, Thm. 8.2.2). The
+    parameter list of the full version's Sec. 6.2 states the stronger,
+    sufficient ``sigma >= (l B + 1) sigma'``. The scheme is then as hard as
+    LWE with errors of width ``sigma'``, not ``sigma``.
+
+    Notes on how the library meets the paper's hypotheses:
+
+    * The literal ``p > l B^2`` of Thm. 4.4 / Sec. 6.2 is not needed for the
+      Regev instance. The change of basis acts on secret keys mod the LWE
+      prime ``q``, and decoding the integer inner product (``p > 2 eta X Y +
+      1``) makes admissible keys orthogonal to ``d`` over ``Z``.
+    * The thesis's LWE hardness bound (an absolute width above ``2 sqrt(n)``),
+      which the full version does not state, is met under ``standard``:
+      ``sigma' >= 2^16``, the table's smallest width.
+    * Theorem 2 of the proceedings version does not cover noisy LWE keys.
     """
     return float(sigma) / (1.0 + float(diff_bound) * math.sqrt(eta))
 

@@ -32,10 +32,12 @@ the selectively secure ABDP15 IPFE, whose two-step decryption is the same.
 All slots share ``A`` (secrets and pads are independent per slot). A
 decryption needs ciphertexts of every slot named in the key.
 
-Security of a slot's IPFE rests on the LWE proof of the ABDP15 full version
-(see :mod:`pyfe4ai.schemes.sife.lwe`), which reduces to LWE with errors of
-width ``sigma / (1 + 4 X sqrt(eta))`` here: the per-slot challenge vectors of
-the ACFGU18 reduction differ by up to ``4 X`` per coordinate. The pad makes
+Security of a slot's IPFE rests on the LWE proof of the ABDP15 full version,
+Thm. 4.4 with Thms. 6.6 and 6.7 (see :mod:`pyfe4ai.schemes.sife.lwe`). Here
+it reduces to LWE with errors of width ``sigma / (1 + 4 X sqrt(eta))``, since
+the per-slot challenge vectors of the ACFGU18 reduction differ by up to
+``4 X`` per coordinate; this composition is the library's own, and neither
+paper covers it. The pad makes
 the slot plaintexts ``w`` uniform mod ``q``; the proof only needs their
 difference to be short. ``standard`` reads the 128-bit table at that width.
 

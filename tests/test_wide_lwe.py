@@ -84,7 +84,7 @@ def test_auto_abdp15_parameters_meet_the_table():
 
 
 def test_reduction_width():
-    # sigma >= (1 + B sqrt(eta)) sigma' (Bourse 2017, Thm. 8.2.2)
+    # sigma >= (1 + B sqrt(eta)) sigma': proof of ABDP15 full version Thm. 6.6 (Bourse 2017, Thm. 8.2.2)
     assert abdp15_reduction_sigma(2.0 ** 30, 100, 4) == 2.0 ** 30 / 201
     assert abdp15_reduction_sigma(7.0, 0, 9) == 7.0
 
