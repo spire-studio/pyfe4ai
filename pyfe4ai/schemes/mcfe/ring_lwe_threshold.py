@@ -97,7 +97,16 @@ default. Servers refuse Shamir key shares with ``t < s`` unless created with
 case (another flooding derivation, see
 :func:`~pyfe4ai.utils.sampling_utils.check_flooding_version`);
 public parameters record ``threshold_construction`` and ``security_profile``,
-and servers refuse constructions they do not know.
+and servers refuse constructions they do not know. The opt-in
+``"replicated-seeded"`` (see
+:func:`~pyfe4ai.schemes.threshold_utils.share_replicated_seeded`) deals the
+same kind of pieces, all but one expanded from 32-byte seeds: a server stores
+seeds and at most one full piece (the size of a Shamir key share), and its
+partial decryptions are those of the replicated key share of the expanded
+pieces; the key shares hide the key computationally (SHAKE-256 keyed by the
+seeds as a PRF) rather than perfectly. It has its own records
+(``bmms21-ibmcfe-replicated-seeded-smudging-uniform/v1``, or
+``bmms21-ibmcfe-replicated-seeded-smudging/v1`` with the Gaussian flooding).
 
 With the native backend (:mod:`pyfe4ai.utils.native_backend`; moduli below
 ``2^253``, which includes the flooded ``q`` of the standard profile) the MCFE
@@ -135,10 +144,12 @@ from pyfe4ai.schemes.threshold_utils import tag_ciphertext
 from pyfe4ai.schemes.threshold_utils import ciphertexts_digest
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.schemes.threshold_utils import pieces_held
+from pyfe4ai.schemes.threshold_utils import seeded_pieces_held
 from pyfe4ai.schemes.threshold_utils import share_cache
 from pyfe4ai.schemes.threshold_utils import share_for_enrolled
 from pyfe4ai.schemes.threshold_utils import share_points
 from pyfe4ai.schemes.threshold_utils import share_replicated
+from pyfe4ai.schemes.threshold_utils import share_replicated_seeded
 from pyfe4ai.schemes.threshold_utils import share_secret
 from pyfe4ai.schemes.threshold_utils import validate_enrolled
 from pyfe4ai.schemes.threshold_utils import combine_consistently
@@ -172,12 +183,16 @@ _CONSTRUCTION_UNIFORM = "bmms21-ibmcfe-shamir-smudging-uniform/v1"
 # Shamir records (t < s) of versions <= 0.3.0 from being taken for them
 _CONSTRUCTION_REPLICATED = "bmms21-ibmcfe-replicated-smudging/v1"
 _CONSTRUCTION_REPLICATED_UNIFORM = "bmms21-ibmcfe-replicated-smudging-uniform/v1"
+_CONSTRUCTION_REPLICATED_SEEDED = "bmms21-ibmcfe-replicated-seeded-smudging/v1"
+_CONSTRUCTION_REPLICATED_SEEDED_UNIFORM = "bmms21-ibmcfe-replicated-seeded-smudging-uniform/v1"
 #: the parameter record (and public ``threshold_construction``) of a sharing and a flooding
 _CONSTRUCTION_IDS = {
     ("shamir", "gaussian"): _CONSTRUCTION,
     ("shamir", "uniform"): _CONSTRUCTION_UNIFORM,
     ("replicated", "gaussian"): _CONSTRUCTION_REPLICATED,
     ("replicated", "uniform"): _CONSTRUCTION_REPLICATED_UNIFORM,
+    ("replicated-seeded", "gaussian"): _CONSTRUCTION_REPLICATED_SEEDED,
+    ("replicated-seeded", "uniform"): _CONSTRUCTION_REPLICATED_SEEDED_UNIFORM,
 }
 _CONSTRUCTIONS = {construction: sharing for (sharing, _), construction in _CONSTRUCTION_IDS.items()}
 _TAG_DOMAIN = "pyfe4ai/tmcfe-ring-lwe/ciphertext-tag/v1"
@@ -252,7 +267,8 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
                 default ``"uniform"``, ``"gaussian"`` for the partial
                 decryptions of versions <= 0.3.0; see the module docstring)
                 and ``sharing`` (``"replicated"``, the default for ``t < s``,
-                or ``"shamir"``, the default for ``t = s``; see
+                ``"shamir"``, the default for ``t = s``, or the opt-in
+                ``"replicated-seeded"``; see
                 :func:`~pyfe4ai.schemes.threshold_utils.resolve_sharing`).
         """
         self.flooding = config.get("flooding", DEFAULT_FLOODING)
@@ -374,7 +390,10 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             ``sid``, ``lst_sid``, ``weights_id``, ``noise_key`` and
             ``mac_keys`` (``{nid: key}``), or ``None`` if *sid* is unknown.
             With replicated sharing the shares are replaced by ``sharing``
-            and ``pieces`` (``[{"set": T, "share": {"sk_y", "z", "z_chunks"}}]``).
+            and ``pieces`` (``[{"set": T, "share": {"sk_y", "z", "z_chunks"}}]``);
+            with ``"replicated-seeded"`` ``pieces`` holds the correction
+            piece (or nothing), and ``seeds`` (``[{"set": T, "seed": hex}]``)
+            and ``layout`` give the others.
         """
         credentials = kwargs.get("credentials", None)
         if not credentials:
@@ -413,6 +432,19 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
                 sid: {
                     "sharing": "replicated",
                     "pieces": pieces_held(pieces, sid_v[sid]),
+                    "label": key["label"],
+                    "noise_key": self._noise_key(sid, weights_id, key["label"]),
+                }
+                for sid in self.lst_sid
+            }
+        if self.sharing == "replicated-seeded":
+            material = {"sk_y": dict(key["sk_y"]), "z": key["z"], "z_chunks": list(key["z_chunks"])}
+            ctx = native_backend.ring_context(self.q, self.ring_n)  # expands the pieces natively
+            sharing = share_replicated_seeded(material, self.t, points, self.q, ctx=ctx)
+            return {
+                sid: {
+                    "sharing": "replicated-seeded",
+                    **seeded_pieces_held(sharing, sid_v[sid]),
                     "label": key["label"],
                     "noise_key": self._noise_key(sid, weights_id, key["label"]),
                 }
@@ -548,6 +580,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         share, multiplier, tag = _share or share_for_enrolled(
             dk, self.id, lst_sid_enrolled, self.pp["t"], q, fields=("sk_y", "z"), cache=share_cache(self),
             legacy_shamir=self.legacy_shamir, profile=self.pp.get("security_profile"),
+            ring_n=self.pp["ring_n"],
         )
         if set(dict_ct) != set(share["sk_y"]):
             raise FESchemeError("need one ciphertext for every client of the key")
@@ -738,7 +771,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
             packed_share = share_for_enrolled(
                 dk, self.id, lst_sid_enrolled, self.pp["t"], gp.mpz(self.pp["q"]),
-                fields=("sk_y", "z_chunks"), cache=share_cache(self),
+                fields=("sk_y", "z_chunks"), cache=share_cache(self), ring_n=self.pp["ring_n"],
             )
             z_chunks = packed_share[0]["z_chunks"]
         if self.key_chunks(sample) > len(z_chunks):

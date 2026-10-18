@@ -78,6 +78,12 @@ case (another flooding derivation, see
 :func:`~pyfe4ai.utils.sampling_utils.check_flooding_version`); public
 parameters record ``threshold_construction`` and ``security_profile``, and
 servers refuse constructions they do not know.
+The opt-in ``"replicated-seeded"`` (see
+:func:`~pyfe4ai.schemes.threshold_utils.share_replicated_seeded`) deals the
+same kind of pieces, all but one expanded from 32-byte seeds, with the
+partial decryptions of the replicated key share of the expanded pieces; the
+key shares hide ``sk_y`` computationally (SHAKE-256 keyed by the seeds as a
+PRF) rather than perfectly.
 
 Statistical smudging in the usual sense (noise hiding a small ciphertext
 error) does not apply, because these ciphertexts carry no LWE error, only
@@ -107,10 +113,12 @@ from pyfe4ai.schemes.threshold_utils import check_served_sharing
 from pyfe4ai.schemes.threshold_utils import legacy_shamir_policy
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.schemes.threshold_utils import pieces_held
+from pyfe4ai.schemes.threshold_utils import seeded_pieces_held
 from pyfe4ai.schemes.threshold_utils import share_cache
 from pyfe4ai.schemes.threshold_utils import share_for_enrolled
 from pyfe4ai.schemes.threshold_utils import share_points
 from pyfe4ai.schemes.threshold_utils import share_replicated
+from pyfe4ai.schemes.threshold_utils import share_replicated_seeded
 from pyfe4ai.schemes.threshold_utils import share_secret
 from pyfe4ai.schemes.threshold_utils import validate_enrolled
 from pyfe4ai.schemes.threshold_utils import combine_consistently
@@ -131,7 +139,9 @@ logger = logging.getLogger(__name__)
 # recorded in the public parameters (those of versions <= 0.3.0 have none)
 _CONSTRUCTION = "abmpsw20-shamir-flooding/v1"
 _CONSTRUCTION_REPLICATED = "abmpsw20-replicated-flooding/v1"
-_CONSTRUCTIONS = {_CONSTRUCTION: "shamir", _CONSTRUCTION_REPLICATED: "replicated"}
+_CONSTRUCTION_REPLICATED_SEEDED = "abmpsw20-replicated-seeded-flooding/v1"
+_CONSTRUCTIONS = {_CONSTRUCTION: "shamir", _CONSTRUCTION_REPLICATED: "replicated",
+                  _CONSTRUCTION_REPLICATED_SEEDED: "replicated-seeded"}
 
 
 def _with_code(ct, code: int):
@@ -186,7 +196,8 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
             config: As for :class:`~pyfe4ai.schemes.mcfe.lwe.MCFELWEKeyGenerator`,
                 plus ``s`` (number of decryption servers), ``t`` (threshold),
                 ``lst_sid`` and ``sharing`` (``"replicated"``, the default
-                for ``t < s``, or ``"shamir"``, the default for ``t = s``; see
+                for ``t < s``, ``"shamir"``, the default for ``t = s``, or
+                the opt-in ``"replicated-seeded"``; see
                 :func:`~pyfe4ai.schemes.threshold_utils.resolve_sharing`).
         """
         t = config.get("t", CryptoCONST.tMCFE_T)
@@ -224,7 +235,7 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
                 "lst_sid": list(self.lst_sid),
                 "sigma_f": gp.digits(gp.mpz(self.sigma_f)),
                 "sharing": self.sharing,
-                "threshold_construction": _CONSTRUCTION if self.sharing == "shamir" else _CONSTRUCTION_REPLICATED,
+                "threshold_construction": {v: k for k, v in _CONSTRUCTIONS.items()}[self.sharing],
                 "security_profile": self.security_profile,
             }
         )
@@ -246,7 +257,9 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
             ``weights_id`` (digest of the weights) and ``noise_key`` (this
             server's secret key for deriving flooding noise), or ``None`` if
             *sid* is unknown. With replicated sharing ``sk_y`` is replaced
-            by ``sharing`` and ``pieces`` (``[{"set": T, "share": {"sk_y": ...}}]``).
+            by ``sharing`` and ``pieces`` (``[{"set": T, "share": {"sk_y": ...}}]``);
+            with ``"replicated-seeded"`` by ``sharing``, ``pieces`` (the
+            correction piece, or nothing), ``seeds`` and ``layout``.
         """
         credentials = kwargs.get("credentials", None)
         if not credentials:
@@ -259,9 +272,12 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
         if identifier not in self.dict_dk:
             self.dict_dk[identifier] = self._share_key(self._aggregate_key(fusion_weight))
         share, noise_key = self.dict_dk[identifier][sid]
-        held = {"sk_y": [gp.digits(v) for v in share]} if self.sharing == "shamir" else {
-            "sharing": "replicated", "pieces": share,
-        }
+        if self.sharing == "shamir":
+            held = {"sk_y": [gp.digits(v) for v in share]}
+        elif self.sharing == "replicated":
+            held = {"sharing": "replicated", "pieces": share}
+        else:
+            held = {"sharing": "replicated-seeded", **share}
         return {
             **held,
             "sid": sid,
@@ -278,6 +294,9 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
         if self.sharing == "replicated":
             pieces = share_replicated({"sk_y": list(sk_y)}, self.t, points, self.q)
             return {sid: (pieces_held(pieces, sid_v[sid]), secrets.token_hex(32)) for sid in self.lst_sid}
+        if self.sharing == "replicated-seeded":
+            sharing = share_replicated_seeded({"sk_y": list(sk_y)}, self.t, points, self.q)
+            return {sid: (seeded_pieces_held(sharing, sid_v[sid]), secrets.token_hex(32)) for sid in self.lst_sid}
         shares = [share_secret(v, self.t, points, self.q) for v in sk_y]
         return {
             sid: ([sh[sid_v[sid]] for sh in shares], secrets.token_hex(32))

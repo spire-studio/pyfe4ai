@@ -66,7 +66,8 @@ pub fn keccak_f(a: &mut [u64; 25]) {
 
 const RATE: usize = 136;
 
-/// SHAKE-256(msg) truncated to out.len() bytes.
+/// SHAKE-256(msg) truncated to out.len() bytes. The state and the buffers are
+/// wiped on return (msg may hold a secret seed).
 pub fn shake256(msg: &[u8], out: &mut [u8]) {
     let mut a = [0u64; 25];
     let mut chunks = msg.chunks_exact(RATE);
@@ -85,9 +86,9 @@ pub fn shake256(msg: &[u8], out: &mut [u8]) {
         a[i] ^= u64::from_le_bytes(lane.try_into().unwrap());
     }
     let mut written = 0;
+    let mut block = [0u8; RATE];
     loop {
         keccak_f(&mut a);
-        let mut block = [0u8; RATE];
         for i in 0..RATE / 8 {
             block[8 * i..8 * i + 8].copy_from_slice(&a[i].to_le_bytes());
         }
@@ -98,6 +99,11 @@ pub fn shake256(msg: &[u8], out: &mut [u8]) {
             break;
         }
     }
+    for lane in a.iter_mut() {
+        unsafe { std::ptr::write_volatile(lane, 0) };
+    }
+    crate::rlwe::wipe_bytes(&mut last);
+    crate::rlwe::wipe_bytes(&mut block);
 }
 
 /// hash_to_zq_vector's block size: bits(q) + 128 bits, in bytes.
@@ -132,12 +138,14 @@ pub fn zq_reduce<W: Word>(m: &Modulus<W>, stream: &[u8], nb: usize, out: &mut [W
     }
 }
 
-/// hash_to_zq_vector(material, q, count) for the encoded material, as words.
+/// hash_to_zq_vector(material, q, count) for the encoded material, as words;
+/// the stream is wiped (the material may hold a secret seed).
 pub fn hash_to_zq<W: Word>(m: &Modulus<W>, material: &[u8], out: &mut [W]) {
     let nb = zq_block(m.bits);
     let mut stream = vec![0u8; nb * out.len()];
     shake256(material, &mut stream);
     zq_reduce(m, &stream, nb, out);
+    crate::rlwe::wipe_bytes(&mut stream);
 }
 
 /// How a label is hashed to Z_q (crypto_utils.LABEL_HASHES): the SHAKE-256
@@ -198,6 +206,7 @@ impl Sponge {
         for (i, lane) in last[..rate].chunks_exact(8).enumerate() {
             a[i] ^= u64::from_le_bytes(lane.try_into().unwrap());
         }
+        crate::rlwe::wipe_bytes(&mut last);
         Sponge { a, rate, block: [0u8; 168], pos: rate }
     }
 
@@ -216,6 +225,17 @@ impl Sponge {
             self.pos += take;
             written += take;
         }
+    }
+}
+
+impl Drop for Sponge {
+    /// The state and the output block are wiped, as in shake256 (the material
+    /// may be secret: the label pads hash the client's u').
+    fn drop(&mut self) {
+        for lane in self.a.iter_mut() {
+            unsafe { std::ptr::write_volatile(lane, 0) };
+        }
+        crate::rlwe::wipe_bytes(&mut self.block);
     }
 }
 
@@ -283,6 +303,7 @@ pub fn hash_to_zq_rej<W: Word>(m: &Modulus<W>, material: &[u8], rate: usize, out
             }
         }
     }
+    crate::rlwe::wipe_bytes(&mut buf);
 }
 
 /// hash_to_zq_vector(material, q, out.len(), mode) as words.
