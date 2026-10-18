@@ -28,7 +28,11 @@ compatibility).
   coefficients carries 4096 elements instead of one, 182 bytes and, with
   the time of one encryption spread over them, under a millisecond per
   element. Own parameter record (`bmms21-sec5-packed/v2`); the elementwise
-  parameters are unchanged.
+  parameters are unchanged. Packed `pp` of the first prototype record
+  (`bmms21-sec5-packed/v1`) with `eta = 1`, or with a `q` below the minor
+  bound, no longer match the packed derivation: encryptors and decryptors
+  refuse them and their ciphertexts, and the key generator regenerates such
+  records.
 
 ### Security
 
@@ -320,9 +324,12 @@ compatibility).
   (`gaussian_sampler = "facct"` for the keys and the encryption noise of
   both layouts, whatever the library-wide sampler; `pp` carries the key
   generator's choice as the encryptors' default). With the rounded sampler
-  the keys at `eta = 1` are about 2^-47 from `D_{Z,sigma1}` for an ideal
-  rounded Gaussian and about 2^-12 with the double-precision path's
-  artifacts, terms the adaptive proof does not budget. `gaussian_sampler = "rounded"` in the key
+  the keys are about 2^-47 (elementwise `eta = 1`, `X = 100`), 2^-44.5
+  (packed `eta = 1`) and 2^-40.5 (`eta = 4`, `X = Y = 4`) from
+  `D_{Z,sigma1}` for an ideal rounded Gaussian (`0.02 / sigma1^2` per sample
+  over `m n eta` samples), and about 2^-12 at `eta = 1` with the
+  double-precision path's artifacts, terms the adaptive proof does not
+  budget. `gaussian_sampler = "rounded"` in the key
   generator or crypto config restores the previous draws (the same keys and
   ciphertexts for the same random source). Measured (standard profile,
   medians of 3, load 6-17): setup 0.17 -> 0.65 s at `eta = 1` and 0.55 ->

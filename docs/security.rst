@@ -146,10 +146,12 @@ must use the same sampler.
 The key generator of a scheme that records its sampler publishes it in
 ``pp`` as the encryptors' default; public parameters without it (earlier
 versions) mean ``"facct"``, and decryption does not depend on it. With the rounded
-sampler, ``sife/fullysec_ring_lwe``'s keys at ``eta = 1`` are about 2^-47
-from ``D_{Z,sigma1}`` for the ideal rounded Gaussian (``0.02 / sigma1^2``
-over its ``m n eta`` key samples) and about 2^-12 with the double-precision
-path's artifacts, terms its adaptive proof does not budget.
+sampler, ``sife/fullysec_ring_lwe``'s keys are ``0.02 / sigma1^2`` per
+sample, over ``m n eta`` key samples, from ``D_{Z,sigma1}`` for the ideal
+rounded Gaussian -- in the standard configurations about 2^-47 (elementwise
+``eta = 1``, ``X = 100``), 2^-44.5 (packed ``eta = 1``) and 2^-40.5 (``eta =
+4``, ``X = Y = 4``) -- and about 2^-12 at ``eta = 1`` with the
+double-precision path's artifacts, terms its adaptive proof does not budget.
 
 Status API
 ----------

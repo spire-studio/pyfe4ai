@@ -43,11 +43,14 @@ Deviations from the paper:
   by default (``gaussian_sampler = "facct"``,
   :func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_facct`), whatever the
   library-wide default; ``"rounded"`` (a rounded continuous Gaussian, the
-  library default) stays selectable. At ``eta = 1`` the rounded keys are
-  about ``2^-47`` from ``D_{Z,sigma1}`` in statistical distance for an ideal
-  rounded Gaussian and about ``2^-12`` with the double-precision path's
-  artifacts (crypto review, October 2026), terms the proof does not account
-  for. Python FACCT is slower than the rounded
+  library default) stays selectable. Rounded keys are ``0.02 / sigma1^2``
+  per sample, over ``m n eta`` samples, from ``D_{Z,sigma1}`` in statistical
+  distance for an ideal rounded Gaussian -- in the standard configurations
+  from about ``2^-47`` (elementwise ``eta = 1``, ``X = 100``) over
+  ``2^-44.5`` (packed ``eta = 1``) to ``2^-40.5`` (``eta = 4``, ``X = Y =
+  4``), negligible above ``sigma1 = 2^40`` -- and about ``2^-12`` at ``eta =
+  1`` with the double-precision path's artifacts (crypto review, October
+  2026), terms the proof does not account for. Python FACCT is slower than the rounded
   sampler at the key width ``sigma1`` but faster beyond ``2^40`` (the
   encryption widths), where the rounded sampler needs MPFR Box-Muller.
 
@@ -388,16 +391,22 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
     def _packed(self) -> bool:
         """Whether *pp* holds packed parameters. The flag alone does not suffice:
         ``q``, ``p``, ``sigma2`` and ``sigma3`` must be the packed derivation for
-        the bounds, ``ring_n`` and ``m`` of *pp* (checked once per *pp*), since
-        elementwise widths cover one vector per ciphertext only.
+        the bounds, ``ring_n`` and ``m`` of *pp*, and ``a`` must have ``m``
+        polynomials, since elementwise widths cover one vector per ciphertext
+        only. The check is redone whenever one of these values changes.
 
         Raises:
             FEValidationError: If *pp* is flagged packed but its parameters are not.
         """
-        if self.pp.get("ndarray_layout", LAYOUTS[0]) != "packed":
+        pp = self.pp
+        if pp.get("ndarray_layout", LAYOUTS[0]) != "packed":
             return False
-        if self._cache.get("packed_pp") is not self.pp:
-            pp = self.pp
+        try:
+            key = tuple(str(pp[k]) for k in ("sec_param", "eta", "bound_x", "bound_y", "ring_n", "m",
+                                              "q", "p", "sigma2", "sigma3")) + (len(pp["a"]),)
+        except (KeyError, TypeError) as exc:
+            raise FEValidationError("public parameters flagged packed lack {}".format(exc)) from exc
+        if self._cache.get("packed_pp") != key:
             try:
                 expected = bmms21_adaptive_parameters(
                     int(pp["sec_param"]), int(pp["eta"]), int(pp["bound_x"]), int(pp["bound_y"]),
@@ -406,15 +415,16 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
                 same = (
                     int(pp["q"]) == int(expected["q"]) and int(pp["p"]) == int(expected["p"])
                     and float(pp["sigma2"]) == expected["sigma2"] and float(pp["sigma3"]) == expected["sigma3"]
+                    and len(pp["a"]) == int(pp["m"])
                 )
             except (KeyError, TypeError, ValueError, FEValidationError):
                 same = False
             if not same:
                 raise FEValidationError(
-                    "ndarray_layout = 'packed', but q, p and the widths of these public "
+                    "ndarray_layout = 'packed', but q, p, the widths or a of these public "
                     "parameters are not the packed ones for their bounds, ring_n and m"
                 )
-            self._cache["packed_pp"] = pp
+            self._cache["packed_pp"] = key
         return True
 
     def encrypt(self, lst_pt: list) -> dict:

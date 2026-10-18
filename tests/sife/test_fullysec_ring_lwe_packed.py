@@ -391,6 +391,19 @@ def test_a_packed_flag_on_elementwise_parameters_is_refused():
             SIFEFullySecRingLWE({"keys": {"pp": bad, "sk": kg_p.get_private_keys()}}).encrypt([[1], [1], [1]])
 
 
+def test_the_packed_check_follows_changes_of_pp():
+    kg, enc, pp = _keys(CFG)
+    enc.encrypt([[1], [1], [1]])  # checked and cached
+    pp["sigma2"] = pp["sigma2"] / 64  # the same dict, changed after the first use
+    with pytest.raises(FEValidationError, match="packed"):
+        enc.encrypt([[1], [1], [1]])
+    pp["sigma2"] = kg.sigma2
+    enc.encrypt([[1], [1], [1]])
+    pp["a"] = pp["a"][:-1]  # m - 1 public polynomials
+    with pytest.raises(FEValidationError, match="packed"):
+        enc.encrypt([[1], [1], [1]])
+
+
 def test_packed_parameters_survive_a_json_round_trip(scheme):
     kg, _, pp = scheme
     again = json.loads(json.dumps(pp))
