@@ -376,7 +376,13 @@ class FESchemeWrapper:
     carries the ``(nid, label)`` pairs used so far and refuses them as the
     original does. Copies do not learn of labels used later by the original
     or by other copies, so encrypt each client's gradient for a label through
-    one wrapper (for example, one worker per client).
+    one wrapper. A pickled wrapper carries everything it holds, the master
+    secret key and every client's key included: do not ship it to workers
+    that should only encrypt. Give such a worker its client's own crypto
+    object instead -- the scheme class built from ``wrapper.pp`` and
+    ``wrapper.kg.get_private_keys(nid)`` (e.g. ``MCFERingLWE({"id": nid,
+    "precision": p, "keys": {"pp": pp, "sk": sk}})`` for ``mcfe/ring_lwe``),
+    whose ``encrypt_lst_ndarray`` the worker calls.
 
     Args:
         scheme_type: ``"sife"``, ``"mife"``, ``"mcfe"`` or ``"quadratic"``.

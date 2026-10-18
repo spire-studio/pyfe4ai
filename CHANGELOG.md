@@ -60,7 +60,10 @@ compatibility).
   wrapper can still be pickled and copied (`multiprocessing`, Ray): the copy
   carries the pairs used so far and refuses them, but does not learn of
   labels used later by the original or other copies, so each client's
-  gradient for a label goes through one wrapper. The cached crypto objects
+  gradient for a label goes through one wrapper. A pickled wrapper carries
+  the master key and every client's key: ship workers their client's own
+  crypto object (the scheme class built from `wrapper.pp` and
+  `wrapper.kg.get_private_keys(nid)`), not the wrapper. The cached crypto objects
   are not copied (rebuilt from the keys), and the Ring-LWE key generator and
   MIFE / SIFE Ring-LWE objects drop their native key caches when pickled
   (since the native backend they could not be pickled after a native call).
