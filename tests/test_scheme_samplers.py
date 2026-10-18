@@ -181,3 +181,63 @@ def test_a_client_override_of_the_recorded_sampler():
     with pytest.raises(FEValidationError, match="standard profile"):
         mcfe_rlwe.MCFERingLWE({"id": "a", "keys": {"pp": standard_pp, "sk": kg.get_private_keys("a")},
                                "gaussian_sampler": "rounded"})
+
+
+# -- ABDP15 (sife / mife lwe, the MIFE layer of tMIFE-LWE): the public keys' noise E ----------
+
+
+def _abdp15_keygens(profile):
+    from pyfe4ai.schemes.mife.lwe import MIFELWEKeyGenerator
+    from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWEKeyGenerator
+    from pyfe4ai.schemes.sife.lwe import SIFELWEKeyGenerator
+
+    base = {"security_profile": profile} if profile == "standard" else {"lwe_n": 16}
+    return {
+        "sife/lwe": lambda c: SIFELWEKeyGenerator({"eta": 1, "bound_x": 4, "bound_y": 4, **base, **c}),
+        "mife/lwe": lambda c: MIFELWEKeyGenerator({"n": 2, "eta": 1, "bound_x": 4, "bound_y": 4, **base, **c}),
+        "mife/lwe_threshold": lambda c: ThresholdMIFELWEKeyGenerator(
+            {"n": 2, "eta": 1, "bound_x": 4, "bound_y": 4, "s": 3, "t": 2, **base, **c}),
+    }
+
+
+@pytest.fixture
+def abdp15_draws(monkeypatch):
+    from pyfe4ai.schemes import abdp15_lwe
+
+    d = _Draws()
+    monkeypatch.setattr(abdp15_lwe, "discrete_gaussian_matrix", d)
+    return d
+
+
+@pytest.mark.parametrize("name", ["sife/lwe", "mife/lwe", "mife/lwe_threshold"])
+def test_abdp15_standard_samples_the_public_key_noise_exactly(name, monkeypatch):
+    make = _abdp15_keygens("standard")[name]
+    monkeypatch.setattr(su, "_default_sampler", "rounded")  # the library-wide choice
+    with su.gaussian_sampler("rounded"):  # nor does a block apply under standard
+        kg = make({})
+    assert kg.gaussian_sampler == "facct"
+    pp = kg.get_public_parameters()
+    assert (pp["gaussian_sampler"], pp["security_profile"]) == ("facct", "standard")
+    with pytest.raises(FEValidationError, match="standard profile"):
+        make({"gaussian_sampler": "rounded"})
+
+
+def test_abdp15_standard_setup_draws_with_facct(abdp15_draws):
+    kg = _abdp15_keygens("standard")["sife/lwe"]({})
+    kg.setup()
+    assert abdp15_draws.samplers == ["facct"]  # E: one m x eta matrix
+
+
+@pytest.mark.parametrize("name", ["sife/lwe", "mife/lwe", "mife/lwe_threshold"])
+def test_abdp15_toy_follows_the_library_wide_choice(name, abdp15_draws, monkeypatch):
+    make = _abdp15_keygens("toy")[name]
+    monkeypatch.setattr(su, "_default_sampler", "rounded")
+    kg = make({})
+    kg.setup()
+    assert kg.gaussian_sampler == "rounded" and kg.get_public_parameters()["gaussian_sampler"] == "rounded"
+    assert set(abdp15_draws.samplers) == {"rounded"}
+    with su.gaussian_sampler("facct"):
+        assert make({}).gaussian_sampler == "facct"
+    monkeypatch.setattr(su, "_default_sampler", "facct")
+    assert make({}).gaussian_sampler == "facct"
+    assert make({"gaussian_sampler": "rounded"}).gaussian_sampler == "rounded"

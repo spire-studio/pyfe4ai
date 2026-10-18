@@ -338,6 +338,34 @@ How the default sampler changes each phase:
   (direct measurement, medians of 3: MCFE Ring-LWE 58 -> 40 ms, dense-LWE
   37 -> 32 ms).
 
+### ABDP15 public keys under `standard`
+
+`sife/lwe`, `mife/lwe` and the MIFE layer of `mife/lwe_threshold` now draw
+the noise `E` of their public keys with FACCT under `standard` (`"rounded"`
+refused; `toy` follows the library-wide choice). Key generation at the
+standard configurations, same code with `gaussian_sampler` set to either
+sampler after construction, medians of 2 interleaved runs (load 4-21, so
+the setup column is noisy; the `E` column is the time spent in
+`discrete_gaussian_matrix`):
+
+| config (standard) | lwe_n | m | log2 sigma_q | E samples | setup s: rounded / FACCT | E s: rounded / FACCT |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `sife/lwe` eta 1, X = Y = 4 | 640 | 30171 | 21.4 | 3.0e4 | 0.60 / 0.53 | 0.05 / 0.02 |
+| `sife/lwe` eta 10, X = Y = 50 | 896 | 68004 | 34.3 | 6.8e5 | 5.79 / 4.89 | 0.92 / 0.43 |
+| `sife/lwe` eta 10, X = Y = 256 | 1088 | 101087 | 42.5 | 1.0e6 | 11.70 / 11.07 | 0.81 / 0.61 |
+| `mife/lwe` 2 slots, eta 1, X = Y = 50 | 768 | 53965 | 32.7 | 1.1e5 | 10.03 / 3.13 | 0.23 / 0.11 |
+| `mife/lwe` 100 slots, eta 1, X = Y = 50 | 1024 | 93174 | 37.3 | 9.3e6 | 40.55 / 34.42 | 14.20 / 7.68 |
+
+FACCT is the faster of the two here: below 2^40 the rounded matrix sampler
+draws each value in Python (`SystemRandom.gauss`, 1.3-2.2 us per sample),
+above it goes through the native wide rounded sampler (0.8 us), while the
+native FACCT kernel takes 0.6-1.0 us per sample including the conversion to
+`mpz`. The rest of setup (expanding `A`, `A S`) is unchanged; the 10 s of
+the 2-slot rounded run is load. `mife/lwe_threshold` under `standard` (2 slots,
+lwe_n 5952, sigma_q 2^36.2) draws 2.6e6 samples, about 2 s of its 38 minutes.
+These are this branch's dimensions; `fix/abdp15-sigma-prime` raises lwe_n
+by 25-50 %, which scales `m` and the sample counts alike.
+
 ## Workload and method
 
 `bench_fl_compare.py`: every one of 3 clients encrypts a gradient of

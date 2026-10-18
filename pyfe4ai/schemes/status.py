@@ -92,8 +92,8 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     ("sife", "lwe"): SchemeStatus(
         _S + "sife.lwe", REVIEWED, ADAPTED, "ABDP15 Constructions 2 + 3 (LWE)",
         note="k = 0 (no r-ary decomposition); signed X/Y-bounded inputs with centred "
-        "decoding; GoFE parameter recipe; noise is a rounded continuous Gaussian; "
-        "A expanded from a public seed (SHAKE-128)",
+        "decoding; GoFE parameter recipe; pk noise E <- D_{Z,sigma_q} exactly (FACCT) under "
+        "standard, the library-wide sampler under toy; A expanded from a public seed (SHAKE-128)",
     ),
     ("sife", "paillier"): SchemeStatus(
         _S + "sife.paillier", REVIEWED, FAITHFUL, "ALS16 (DCR)",
@@ -157,7 +157,8 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         _S + "mife.lwe", REVIEWED, ADAPTED, "ACFGU18 Fig. 4 + ABDP15 (LWE)",
         note="ACFGU18 instantiates Fig. 4 with ALS16; here the selectively secure "
         "ABDP15 IPFE (same two-step decryption), with parameters for dimension n * eta "
-        "(footnote 14); slots share A, expanded from a public seed (SHAKE-128)",
+        "(footnote 14); slots share A, expanded from a public seed (SHAKE-128); pk noise "
+        "exact (FACCT) under standard",
     ),
     ("mife", "paillier"): SchemeStatus(
         _S + "mife.paillier", REVIEWED, ADAPTED, "ACFGU18 Fig. 4 + ALS16 (DCR, Fig. 9)",

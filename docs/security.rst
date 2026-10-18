@@ -75,8 +75,10 @@ samples ``D_{Z,sigma}`` exactly, to about 2^-185 per sample, for every width
 their sampler as ``gaussian_sampler`` in their public parameters: the
 Ring-LWE MIFE / MCFE family (``sife``, ``mife``, ``mcfe`` ``ring_lwe``, the
 decentralized and threshold MCFE), the dense-LWE MCFE keys ``t``
-(``mcfe/lwe``, ``fullysec_lwe``, ``lwe_threshold``, ``lwe_decentralized``)
-and ``sife/fullysec_ring_lwe``. For them, in this order: the
+(``mcfe/lwe``, ``fullysec_lwe``, ``lwe_threshold``, ``lwe_decentralized``),
+``sife/fullysec_ring_lwe`` and, under ``standard``, the noise ``E`` of the
+ABDP15 public keys (``sife/lwe``, ``mife/lwe`` and the MIFE layer of
+``mife/lwe_threshold``). For them, in this order: the
 ``gaussian_sampler`` of the key generator's or crypto object's config; else
 the one the public parameters record; else, under the ``toy`` profile only
 and not for ``sife/fullysec_ring_lwe``, the one a ``gaussian_sampler()``
@@ -86,11 +88,15 @@ them. The ``standard`` profile refuses ``"rounded"`` for them, and a crypto
 object whose config overrides a recorded ``"facct"`` with ``"rounded"``
 warns (``FESecurityWarning``; refused under ``standard``).
 
+ABDP15 under ``toy`` takes the ``gaussian_sampler`` of its key generator's
+config, else the library-wide choice below, and records it as well.
+
 ``"rounded"`` rounds a continuous Gaussian. It is the library-wide default,
 and so the sampler of the other lattice and DCR schemes unless chosen
-otherwise: ABDP15 SIFE / MIFE LWE (and the keys of tMIFE-LWE), ALS16
-(``sife`` / ``mife`` ``fullysec_lwe``) and the DCR schemes; the schemes above
-can select it under ``toy`` (``gaussian_sampler = "rounded"``). The *ideal* rounded Gaussian (exact uniforms and arithmetic) is
+otherwise: ALS16 (``sife`` / ``mife`` ``fullysec_lwe``), the DCR schemes and,
+under ``toy``, ABDP15 SIFE / MIFE LWE (and the keys of tMIFE-LWE); the
+schemes above can select it under ``toy`` (``gaussian_sampler =
+"rounded"``). The *ideal* rounded Gaussian (exact uniforms and arithmetic) is
 a mixture of centred discrete Gaussians, about ``0.02 / sigma^2`` from
 ``D_{Z,sigma}`` per sample: 2^-9 at ``sigma = 3.2``, about 2^-33 per sample at
 the Ring-LWE ``sigma1`` -- about 2^-18 for one MIFE key of ``eta ring_n``
@@ -116,7 +122,8 @@ samples. Its implementations add their own terms (crypto review, October
   (``FLOODING_SAMPLER``, recorded in their decryption keys), whatever the
   sampler selected elsewhere.
 
-The library-wide choice -- which applies to the other schemes only -- is
+The library-wide choice -- which applies to the other schemes and to ABDP15
+under ``toy`` only -- is
 made per call (``sampler=``), per context or per process:
 
 .. code-block:: python

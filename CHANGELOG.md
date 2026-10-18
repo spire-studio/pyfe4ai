@@ -47,10 +47,23 @@ compatibility).
   else `"facct"`; the process-wide choice and `PYFE4AI_GAUSSIAN_SAMPLER` do
   not apply). `gaussian_sampler = "rounded"` stays selectable under `toy`;
   `standard` refuses it, and a crypto object overriding a recorded
-  `"facct"` with it warns (`FESecurityWarning`). ABDP15, ALS16 and the DCR
-  schemes still follow the library-wide choice (rounded by default). Public parameters without the field (earlier versions) give
+  `"facct"` with it warns (`FESecurityWarning`). ALS16 and the DCR
+  schemes still follow the library-wide choice (rounded by default), and so
+  does ABDP15 under `toy` (below). Public parameters without the field (earlier versions) give
   FACCT to new encryptions; decryption does not depend on it; parameter
   records are unchanged.
+- **ABDP15 public keys sampled exactly under `standard`** (`sife/lwe`,
+  `mife/lwe` and the MIFE layer of `mife/lwe_threshold`): the noise `E` of
+  `pk = A S + E` -- the only Gaussian of these schemes -- is drawn with
+  `"facct"` under `standard`, where an explicit `gaussian_sampler =
+  "rounded"` is refused and a `gaussian_sampler()` block does not apply;
+  under `toy` it follows the config's `gaussian_sampler`, else the
+  library-wide choice (rounded by default). The public parameters record
+  `gaussian_sampler` and `security_profile`. Key generation does not get
+  slower: FACCT is native while the rounded matrix path draws in Python
+  below 2^40 (0.6-1.0 against 0.8-2.2 us per sample); standard setup of
+  `sife/lwe` (eta 10, X = Y = 50) 5.8 -> 4.9 s, `mife/lwe` (100 slots,
+  X = Y = 50) 40.6 -> 34.4 s (`benchmarks/PERFORMANCE.md`).
 - **MPFR Gaussians at `bits(sigma) + 320` bits** (`BIGINT_GUARD_BITS`,
   covering `stat_param + ceil(log2 N) + 8` for `stat_param` up to 256, now
   the largest accepted; up to 2^56 samples per key): the DCR keys and masks

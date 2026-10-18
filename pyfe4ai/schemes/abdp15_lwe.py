@@ -17,6 +17,15 @@ smallest dimension whose ``(q, sigma)`` meets
 :data:`pyfe4ai.utils.lwe_utils.WIDE_LWE_128_LOG_RATIO`, a lattice-estimator
 table for the LWE problem of ``pk``; an explicit ``lwe_n`` is checked against
 it.
+
+The public keys' noise ``E`` -- the only Gaussian of these schemes (encryption
+draws a binary ``r``) -- enters the proof as LWE with noise ``D_{Z,sigma}``.
+Under ``standard`` it is sampled exactly (``gaussian_sampler = "facct"``; an
+explicit ``"rounded"`` is refused, a ``gaussian_sampler()`` block ignored):
+the double-precision rounded sampler is far from ``D_{Z,sigma}`` over the
+``m eta`` samples of a key (crypto review, October 2026). Under ``toy`` it
+follows the config's ``gaussian_sampler``, else the library-wide choice. The
+public parameters record the sampler used.
 """
 
 from __future__ import annotations
@@ -34,8 +43,11 @@ from pyfe4ai.utils.lwe_matrix import check_matrix_mode
 from pyfe4ai.utils.lwe_utils import abdp15_parameters
 from pyfe4ai.utils.lwe_utils import check_wide_lwe
 from pyfe4ai.utils.matrix_utils import digits_to_matrix
+from pyfe4ai.utils.sampling_utils import PROOF_SAMPLER
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
+from pyfe4ai.utils.sampling_utils import get_gaussian_sampler
 from pyfe4ai.utils.sampling_utils import rand_bit_matrix
+from pyfe4ai.utils.sampling_utils import scheme_sampler
 
 DEFAULT_MATRIX_MODE = "memory"
 #: Plaintexts encrypted per pass over ``A`` by the ndarray helpers.
@@ -55,6 +67,11 @@ class ABDP15KeyGeneratorMixin(ParameterCacheMixin):
     def _init_abdp15(self, config: dict) -> None:
         self.lwe_n_config = config.get("lwe_n", 32)
         self.matrix_mode = check_matrix_mode(config.get("matrix_mode", DEFAULT_MATRIX_MODE))
+        # the noise E of pk: exact under standard, else the config's or the library-wide sampler
+        standard = self.security_profile == STANDARD
+        self.gaussian_sampler = scheme_sampler(
+            config, default=PROOF_SAMPLER if standard else get_gaussian_sampler(), profile=self.security_profile
+        )
         self._load_parameters()
         if self.security_profile == STANDARD:
             check_wide_lwe(self.lwe_n, self.q, self.sigma_q)
@@ -122,7 +139,7 @@ class ABDP15KeyGeneratorMixin(ParameterCacheMixin):
         product = self.A.times(joint)
         out = []
         for i in range(len(secret_keys)):
-            noise = discrete_gaussian_matrix(self.m, self.eta, self.sigma_q)
+            noise = discrete_gaussian_matrix(self.m, self.eta, self.sigma_q, sampler=self.gaussian_sampler)
             cols = slice(i * self.eta, (i + 1) * self.eta)
             out.append([
                 [gp.mpz((a + e) % q) for a, e in zip(row[cols], noise_row)]
@@ -131,8 +148,10 @@ class ABDP15KeyGeneratorMixin(ParameterCacheMixin):
         return out
 
     def _matrix_parameters(self) -> dict:
-        """Public parameters describing ``A``."""
-        return {"A_seed": self.a_seed, "m": self.m, "lwe_n": self.lwe_n}
+        """Public parameters describing ``A`` and the public keys: ``A``'s seed,
+        ``m``, ``lwe_n``, the sampler of the noise ``E`` and the profile."""
+        return {"A_seed": self.a_seed, "m": self.m, "lwe_n": self.lwe_n,
+                "gaussian_sampler": self.gaussian_sampler, "security_profile": self.security_profile}
 
 
 class ABDP15CryptoMixin:

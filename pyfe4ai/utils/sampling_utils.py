@@ -30,7 +30,8 @@ _SYSTEM_RANDOM = _CSPRNG
 #: or with the ``PYFE4AI_GAUSSIAN_SAMPLER`` environment variable. Exception:
 #: the schemes that record their sampler in their public parameters (see
 #: :func:`scheme_sampler`) default to ``"facct"`` and ignore the process-wide
-#: choice, and the threshold flooding is pinned (:data:`FLOODING_SAMPLER`).
+#: choice (ABDP15 only under ``standard``), and the threshold flooding is
+#: pinned (:data:`FLOODING_SAMPLER`).
 GAUSSIAN_SAMPLERS = ("rounded", "facct")
 _SAMPLER_ENV = "PYFE4AI_GAUSSIAN_SAMPLER"
 _default_sampler = os.environ.get(_SAMPLER_ENV, "rounded")
@@ -81,7 +82,9 @@ def gaussian_sampler(name: str):
 #: (the crypto review of October 2026 found the double-precision rounded
 #: sampler 2^-25..2^-4 from it per key or ciphertext, against 2^-128 budgets).
 #: SIFE FullySec Ring-LWE has the same default (its own ``DEFAULT_SAMPLER``,
-#: passed to :func:`scheme_sampler` with ``use_context=False``).
+#: passed to :func:`scheme_sampler` with ``use_context=False``), and so has the
+#: public keys' noise of ABDP15 under ``standard`` (under ``toy`` its default is
+#: the library-wide choice, :func:`get_gaussian_sampler`).
 PROOF_SAMPLER = "facct"
 
 
@@ -209,9 +212,10 @@ def discrete_gaussian_matrix(
     noise is then about 2^-12..2^-4 and a key 2^-25..2^-15 from i.i.d.
     ``D_{Z,sigma}``: fine for toy parameters and benchmarks, not for the
     distributions of the security proofs (which is why the Ring-LWE MIFE /
-    MCFE family, the dense-LWE MCFE keys and SIFE FullySec Ring-LWE default
-    to ``"facct"``, see :func:`scheme_sampler`; ABDP15, ALS16 and the DCR
-    schemes follow the library-wide choice). It is not
+    MCFE family, the dense-LWE MCFE keys, SIFE FullySec Ring-LWE and, under
+    ``standard``, the ABDP15 public keys default to ``"facct"``, see
+    :func:`scheme_sampler`; ALS16, the DCR schemes and ABDP15 under ``toy``
+    follow the library-wide choice). It is not
     constant-time either. With ``sampler="facct"`` the samples come from
     :func:`discrete_gaussian_facct` (exact ``D_{Z,sigma}``).
 

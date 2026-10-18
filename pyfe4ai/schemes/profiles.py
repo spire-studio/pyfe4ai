@@ -50,7 +50,9 @@ The ``security_profile`` entry of a key generator's config selects one:
       (``m ~ lwe_n log2 q`` rows, 5 * 10^7 to 10^8 entries) is published as a
       seed; ``matrix_mode`` chooses between keeping it expanded in memory
       (about 0.1 s per encryption, 1.5 to 3 GB) and expanding it for every
-      batch (``"stream"``: seconds per batch, about 0.5 GB). See
+      batch (``"stream"``: seconds per batch, about 0.5 GB). The noise ``E``
+      of the public keys is sampled exactly (``"facct"``; ``"rounded"`` is
+      refused). See
       :mod:`pyfe4ai.schemes.abdp15_lwe`. ``mife/lwe_threshold`` is selected
       the same way at its flooding-enlarged ``q`` (``lwe_n`` of about 6000
       with ``stat_param = 128``, ``A`` of about 8 * 10^9 entries), and
@@ -77,8 +79,9 @@ The ``security_profile`` entry of a key generator's config selects one:
     is 128, as ``kappa`` of the Ring-LWE schemes: a statistical distance of
     ``2^-128`` per sample, so that ``Q`` samples stay below ``Q 2^-128``.
     That holds for exact Gaussians (the ``"facct"`` sampler, the default of
-    the Ring-LWE MIFE / MCFE family, the dense-LWE MCFE keys and SIFE FullySec
-    Ring-LWE) and for the MPFR path at ``bits(sigma) + 320`` bits;
+    the Ring-LWE MIFE / MCFE family, the dense-LWE MCFE keys, SIFE FullySec
+    Ring-LWE and, under ``standard``, the ABDP15 public keys) and for the
+    MPFR path at ``bits(sigma) + 320`` bits;
     the double-precision rounded sampler does not meet it (see the security
     notes in the documentation).
 
