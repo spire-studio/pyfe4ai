@@ -338,8 +338,10 @@ def test_explicit_shamir_below_s_warns_under_toy_and_is_refused_under_standard(k
     with pytest.warns(FESecurityWarning, match="t = 2 < s = 3"):
         kg = _make(kind, 3, 2, sharing="shamir")
     assert kg.sharing == "shamir"
-    # refused before any parameter is derived (standard sizes would take long)
-    with pytest.raises(FEValidationError, match="Shamir sharing with t = 2 < s = 3"):
+    # refused before any parameter is derived (standard sizes would take long);
+    # tMIFE-LWE has no standard parameter set at all (ABDP15 reduction width)
+    match = "no 'standard' parameter set" if kind == "mife" else "Shamir sharing with t = 2 < s = 3"
+    with pytest.raises(FEValidationError, match=match):
         _make(kind, 3, 2, sharing="shamir", security_profile="standard", sec_param=128)
 
 

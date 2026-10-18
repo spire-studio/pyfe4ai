@@ -44,21 +44,21 @@ The ``security_profile`` entry of a key generator's config selects one:
       derivation is not post-quantum;
     * LWE with a seeded public matrix, the ABDP15 IPFE (``sife/lwe``,
       ``mife/lwe``): ``lwe_n = "auto"``, the smallest dimension whose
-      ``(q, sigma)`` meets :data:`~pyfe4ai.utils.lwe_utils.WIDE_LWE_128_LOG_RATIO`,
-      a lattice estimator table for the LWE problem of the public key
-      ``A S + E`` (``lwe_n`` of about 830 to 1100 for small bounds). ``A``
-      (``m ~ lwe_n log2 q`` rows, 5 * 10^7 to 10^8 entries) is published as a
+      ``(q, sigma')`` meets :data:`~pyfe4ai.utils.lwe_utils.WIDE_LWE_128_LOG_RATIO`,
+      a lattice estimator table for LWE with a uniform secret, read at the
+      error width ``sigma' = sigma / (1 + B sqrt(eta))`` of the LWE problem the
+      security proof reduces to (``B = 2 X``, or ``4 X`` in the slots of
+      ``mife/lwe``; see :mod:`pyfe4ai.schemes.abdp15_lwe`; the proof rests on
+      F. Bourse's thesis until the ABDP15 full version has been checked).
+      That gives ``lwe_n`` of about 900 to 1700 for small bounds; reading the
+      table at the public key's own ``sigma`` would give 14 to 40 percent
+      less for ``X = Y >= 8``. ``A``
+      (``m ~ lwe_n log2 q`` rows, 10^8 to 4 * 10^8 entries) is published as a
       seed; ``matrix_mode`` chooses between keeping it expanded in memory
-      (about 0.1 s per encryption, 1.5 to 3 GB) and expanding it for every
-      batch (``"stream"``: seconds per batch, about 0.5 GB). The noise ``E``
-      of the public keys is sampled exactly (``"facct"``; ``"rounded"`` is
-      refused). See
-      :mod:`pyfe4ai.schemes.abdp15_lwe`. ``mife/lwe_threshold`` is selected
-      the same way at its flooding-enlarged ``q`` (``lwe_n`` of about 6000
-      with ``stat_param = 128``, ``A`` of about 8 * 10^9 entries), and
-      ``standard`` fixes its ``matrix_mode`` to ``"stream"``: key generation
-      takes over half an hour, an encryption about 10 minutes, or about 11 s
-      each in batches of 64;
+      (about 0.1 to 0.3 s per encryption, 2 to 6 GB) and expanding it for
+      every batch (``"stream"``: seconds per batch, about 0.5 GB). The noise
+      ``E`` of the public keys is sampled exactly (``"facct"``;
+      ``"rounded"`` is refused);
     * pairing-based schemes: BLS12-381 (the Rust extension) -- about 120 to
       126-bit security after the exTNFS attacks on its 381-bit field
       (Barbulescu and Duquesne, J. Cryptol. 2019), **below** the 128-bit
@@ -69,7 +69,16 @@ The ``security_profile`` entry of a key generator's config selects one:
     dimension the lattice estimator puts at 128 bits, n = 3328 to 4352 for
     ``X = Y <= 50`` and ``eta <= 10``, and with ``m = 4 n log2 q`` as its
     Theorem 2 requires, the public matrix has 1 to 2 * 10^10 entries and a
-    ciphertext 2.9 to 4.5 * 10^6 coordinates of 219 to 258 bits) and
+    ciphertext 2.9 to 4.5 * 10^6 coordinates of 219 to 258 bits),
+    ``mife/lwe_threshold``. At ``sigma'`` its flooding-enlarged ``q``
+    (``stat_param = 128``, two clients) needs an LWE dimension at the very end
+    of the table (5888 to 6144, ``A`` of 6.5 to 7.8 * 10^9 entries) for a few
+    small bounds, e.g. ``X = Y`` in {1, 2, 3, 8, 10} at ``eta = 1``, and
+    beyond it for most others (``X = Y`` = 4 to 6, ``X = Y >= 12``, most
+    ``eta >= 2``; about 6500 for ``X = Y = 50``). This is to
+    be re-evaluated with the opt-in KL accounting of the flooding noise,
+    ``t = s`` only, with an explicit budget and a weaker guarantee, under
+    which it would take about 4864. Also refused:
     ``mcfe/paillier_decentralized`` (its key shares are combined under a DCR
     modulus of more than 15000 bits).
 
@@ -148,16 +157,17 @@ _STANDARD_MINIMA = {
 }
 STANDARD_PAIRING_GROUP = "BLS12-381"
 
-#: Settings the ``standard`` profile fixes for single schemes, with the reason.
-_STANDARD_FIXED = {
-    ("mife", "lwe_threshold"): (
-        {"matrix_mode": "stream"},
-        "its flooding noise needs lwe_n of about 6000 and a public matrix of about 8*10^9 "
-        "entries, more than 400 GB when kept in memory",
-    ),
-}
+#: Settings the ``standard`` profile fixes for single schemes, with the reason
+#: (``{scheme: ({key: value}, reason)}``).
+_STANDARD_FIXED: dict = {}
 
 _REFUSED = {
+    ("mife", "lwe_threshold"): "read at the width sigma / (1 + 4 X sqrt(eta)) of its security "
+    "reduction, the LWE of its flooding-enlarged q (stat_param 128) needs a dimension at the very "
+    "end of the 128-bit table (5888 to 6144, a public matrix of 6.5 to 7.8*10^9 entries) for a few "
+    "small bounds, e.g. X = Y in {1, 2, 3, 8, 10} at eta = 1, and beyond it for most others "
+    "(X = Y = 4 to 6, X = Y >= 12, most eta >= 2; about 6500 for X = Y = 50); use "
+    "mife/ddh_threshold, or mcfe/ring_lwe_threshold with labels",
     "lwe_matrix": "at a 128-bit dimension (lwe_n = 3328 to 4352 for X = Y <= 50, eta <= 10) its "
     "public matrix has 1 to 2*10^10 entries and every ciphertext m = 4 n log2 q = 2.9 to 4.5*10^6 "
     "coordinates of 219 to 258 bits (80 to 145 MB); use sife/fullysec_ring_lwe for adaptive "

@@ -7,7 +7,8 @@ LWE multi-input inner-product FE (selective security).
 | (ePrint 2017/972) -- Fig. 4 (transformation for bounded-norm inner
 | products), instantiated with the LWE IPFE of Abdalla, Bourse, De Caro,
 | Pointcheval, "Simple Functional Encryption Schemes for Inner Products",
-| PKC 2015, using the two-step decryption of ACFGU18 Section 4.2.
+| PKC 2015 (full version: ePrint 2015/017), using the two-step decryption
+| of ACFGU18 Section 4.2.
 
 * type:     private-key multi-input encryption (MIFE, LWE)
 * setting:  Integer based (Z_q, plaintext modulus p, Delta = floor(q / p))
@@ -30,6 +31,13 @@ IPFE (that is :mod:`pyfe4ai.schemes.mife.fullysec_lwe`); this module uses
 the selectively secure ABDP15 IPFE, whose two-step decryption is the same.
 All slots share ``A`` (secrets and pads are independent per slot). A
 decryption needs ciphertexts of every slot named in the key.
+
+Security of a slot's IPFE rests on the LWE proof of the ABDP15 full version
+(see :mod:`pyfe4ai.schemes.sife.lwe`), which reduces to LWE with errors of
+width ``sigma / (1 + 4 X sqrt(eta))`` here: the per-slot challenge vectors of
+the ACFGU18 reduction differ by up to ``4 X`` per coordinate. The pad makes
+the slot plaintexts ``w`` uniform mod ``q``; the proof only needs their
+difference to be short. ``standard`` reads the 128-bit table at that width.
 
 ``A`` is published as a seed and expanded with SHAKE-128; encryption runs
 in numpy over an ``A`` kept in memory or expanded per batch
@@ -74,6 +82,10 @@ class MIFELWEKeyGenerator(IPFEAbsKeyGenerator, ABDP15KeyGeneratorMixin):
 
     _scheme_type = CryptoCONST.TYPE_MIFE_LWE
     _construction = "acfgu18-abdp15-lwe-seeded-a/v2"
+    # ACFGU18, proof of Thm. 3: a slot's IPFE is challenged with
+    # x^(j,0) - x^(1,0) + x^(1,1) against x^(j,1), which differ by up to 4X
+    _challenge_spread = 4
+
     def __init__(self, config: dict, **kwargs) -> None:
         """Initialise the MIFE LWE key generator.
 
@@ -99,7 +111,10 @@ class MIFELWEKeyGenerator(IPFEAbsKeyGenerator, ABDP15KeyGeneratorMixin):
     def _derive(self) -> dict:
         # ACFGU18, footnote 14: the ALS16 parameters for vectors of dimension
         # n * eta, since decryption adds the noise of all n slots
-        return abdp15_parameters(self.bound_x, self.bound_y, self.n * self.eta, self.lwe_n_config)
+        return abdp15_parameters(
+            self.bound_x, self.bound_y, self.n * self.eta, self.lwe_n_config,
+            lwe_sigma=self._table_sigma,
+        )
 
     def setup(self) -> None:
         """Generate per-client secret keys and public keys (one pass over ``A``)."""

@@ -90,8 +90,13 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         note=_R255_NOTE.format(""),
     ),
     ("sife", "lwe"): SchemeStatus(
-        _S + "sife.lwe", REVIEWED, ADAPTED, "ABDP15 Constructions 2 + 3 (LWE)",
-        note="k = 0 (no r-ary decomposition); signed X/Y-bounded inputs with centred "
+        _S + "sife.lwe", REVIEWED, ADAPTED, "ABDP15 full version (ePrint 2015/017), LWE",
+        note="the LWE instantiation as revised in the full version (no r-ary "
+        "decomposition); its selective IND-CPA proof is the full version's second "
+        "generic theorem (Bourse 2017 Thm. 4.3.5 with 8.2.2, 8.2.3, 8.3.2; the "
+        "full-version text not yet checked), not PKC Thm. 2, which does not cover noisy "
+        "LWE keys; it reduces to LWE with errors sigma / (1 + 2X sqrt(eta)), the width "
+        "standard reads the 128-bit table at; signed X/Y-bounded inputs with centred "
         "decoding; GoFE parameter recipe; pk noise E <- D_{Z,sigma_q} exactly (FACCT) under "
         "standard, the library-wide sampler under toy; A expanded from a public seed (SHAKE-128)",
     ),
@@ -156,9 +161,11 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     ("mife", "lwe"): SchemeStatus(
         _S + "mife.lwe", REVIEWED, ADAPTED, "ACFGU18 Fig. 4 + ABDP15 (LWE)",
         note="ACFGU18 instantiates Fig. 4 with ALS16; here the selectively secure "
-        "ABDP15 IPFE (same two-step decryption), with parameters for dimension n * eta "
-        "(footnote 14); slots share A, expanded from a public seed (SHAKE-128); pk noise "
-        "exact (FACCT) under standard",
+        "ABDP15 IPFE (same two-step decryption; full-version proof, see sife/lwe), with "
+        "parameters for dimension n * eta (footnote 14); the slot challenges of the "
+        "ACFGU18 reduction differ by up to 4X, so standard reads the 128-bit table at "
+        "sigma / (1 + 4X sqrt(eta)); slots share A, expanded from a public seed (SHAKE-128); "
+        "pk noise exact (FACCT) under standard",
     ),
     ("mife", "paillier"): SchemeStatus(
         _S + "mife.paillier", REVIEWED, ADAPTED, "ACFGU18 Fig. 4 + ALS16 (DCR, Fig. 9)",
@@ -207,7 +214,9 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         "modulo small integers) is our own"
         "; the opt-in sharing='replicated-seeded' expands all key pieces but one from "
         "secret 256-bit seeds and hides the key shares only computationally (SHAKE-256 "
-        "keyed by the seeds as a PRF); full replicated sharing stays the default for t < s",
+        "keyed by the seeds as a PRF); full replicated sharing stays the default for t < s"
+        "; standard refuses it (at the reduction width of mife/lwe it needs the very end of the 128-bit "
+        "table, 5888 to 6144, for a few small bounds and more for most others)",
     ),
     # --- multi-client -------------------------------------------------------
     ("mcfe", "ddh"): SchemeStatus(_S + "mcfe.ddh", REVIEWED, FAITHFUL, "CDGPP18"),

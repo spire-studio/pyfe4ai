@@ -343,9 +343,10 @@ How the default sampler changes each phase:
 
 ### ABDP15 public keys under `standard`
 
-`sife/lwe`, `mife/lwe` and the MIFE layer of `mife/lwe_threshold` now draw
-the noise `E` of their public keys with FACCT under `standard` (`"rounded"`
-refused; `toy` follows the library-wide choice). Key generation at the
+`sife/lwe` and `mife/lwe` now draw the noise `E` of their public keys with
+FACCT under `standard` (`"rounded"` refused; `toy` follows the library-wide
+choice, also for the MIFE layer of `mife/lwe_threshold`, which `standard`
+refuses). Key generation at the
 standard configurations, same code with `gaussian_sampler` set to either
 sampler after construction, medians of 2 interleaved runs (load 4-21, so
 the setup column is noisy; the `E` column is the time spent in

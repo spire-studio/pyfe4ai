@@ -76,8 +76,9 @@ over the ``(t - 1)``-subsets of the servers (see
 ``E`` adds up the pieces assigned to it, ``M`` is 0 or 1 and the smudging
 argument holds as stated, with ``q`` unchanged; a server holds
 ``C(s - 1, t - 1)`` pieces instead of one share. With ``t = s`` both are sound
-(``M = 1``). An explicit ``"shamir"`` with ``t < s`` is refused under the
-``standard`` profile and draws an ``FESecurityWarning`` under ``toy``; the two
+(``M = 1``). An explicit ``"shamir"`` with ``t < s`` draws an
+``FESecurityWarning`` under ``toy`` (the ``standard`` profile refuses the
+scheme altogether, see below); the two
 sharings have their own parameter records (construction
 ``acfgu18-abdp15-replicated-smudging-seeded-a/v1`` for ``"replicated"``), so a
 record cached by an earlier version for ``t < s`` is not reused by the
@@ -96,15 +97,28 @@ the replicated key share of the expanded pieces; the key shares hide the key
 computationally (SHAKE-256 keyed by the seeds as a PRF) rather than
 perfectly. Its record is ``acfgu18-abdp15-replicated-seeded-smudging-seeded-a/v1``.
 
-Under the ``standard`` security profile ``lwe_n = "auto"`` picks the
-smallest dimension meeting :data:`pyfe4ai.utils.lwe_utils.WIDE_LWE_128_LOG_RATIO`
-at the enlarged ``q`` (``stat_param = 128``): about 6000 for ``X = Y = 50``
-(5952 for two clients: ``q`` of 217 bits, ``m`` of 1.3 * 10^6, ``A`` of
-7.8 * 10^9 entries). ``A`` then needs more than 400 GB in memory, so the
-profile fixes ``matrix_mode = "stream"``. Measured on one machine at that
-size: key generation 38 minutes (8.5 GB; the machine was busy), one
-encryption 572 s (3.9 GB), a batch of 64 encryptions 679 s (5.2 GB), a
-partial decryption 13 ms.
+The ``standard`` security profile refuses this scheme. ``lwe_n = "auto"``
+reads :data:`pyfe4ai.utils.lwe_utils.WIDE_LWE_128_LOG_RATIO` at the width
+``sigma / (1 + 4 X sqrt(eta))`` of the MIFE layer's security reduction (see
+:mod:`pyfe4ai.schemes.abdp15_lwe`). At the flooding-enlarged ``q`` of
+``stat_param = 128`` (two clients) that takes the very end of the table
+(5888 to 6144, ``A`` of 6.5 to 7.8 * 10^9 entries) for a few small bounds, e.g.
+``X = Y`` in {1, 2, 3, 8, 10} at ``eta = 1``, and more than the table's 6144
+for most others (``X = Y`` = 4 to 6, ``X = Y >= 12``, most ``eta >= 2``);
+``X = Y = 50`` would need about 6500. Read at ``sigma`` itself, the
+earlier rule took 5952 for two clients (``q`` of 217 bits, ``m`` of
+1.3 * 10^6, ``A`` of 7.8 * 10^9 entries, so ``A`` had to be streamed):
+key generation took 38 minutes, one encryption 572 s, a batch of 64
+encryptions 679 s and a partial decryption 13 ms.
+
+A KL-divergence accounting of the flooding noise (in development) would bring
+it within the table again, but only as an opt-in: ``flooding_accounting =
+"kl"`` with ``t = s`` and an explicit ``max_partial_decryptions`` budget per
+server. For two clients, ``s = t = 3`` and ``N = 2^40`` flooded values it
+takes about 4864 at ``sigma'``, with ``q`` of 173 bits and ``A`` of
+4.1 * 10^9 entries, so ``"stream"`` mode. Its guarantee is weaker, about
+``stat_param - 6.85`` bits; with the default accounting the dimension stays
+as above. The refusal is to be re-evaluated when that is merged.
 """
 
 from __future__ import annotations
@@ -219,7 +233,7 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
 
     def _derive(self) -> dict:
         if self.lwe_n_config == "auto":
-            return wide_lwe_n(self._threshold_parameters)
+            return wide_lwe_n(self._threshold_parameters, self._table_sigma)
         return self._threshold_parameters(int(self.lwe_n_config))
 
     def _threshold_parameters(self, lwe_n: int) -> dict:

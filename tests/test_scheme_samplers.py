@@ -209,7 +209,7 @@ def abdp15_draws(monkeypatch):
     return d
 
 
-@pytest.mark.parametrize("name", ["sife/lwe", "mife/lwe", "mife/lwe_threshold"])
+@pytest.mark.parametrize("name", ["sife/lwe", "mife/lwe"])
 def test_abdp15_standard_samples_the_public_key_noise_exactly(name, monkeypatch):
     make = _abdp15_keygens("standard")[name]
     monkeypatch.setattr(su, "_default_sampler", "rounded")  # the library-wide choice
@@ -220,6 +220,14 @@ def test_abdp15_standard_samples_the_public_key_noise_exactly(name, monkeypatch)
     assert (pp["gaussian_sampler"], pp["security_profile"]) == ("facct", "standard")
     with pytest.raises(FEValidationError, match="standard profile"):
         make({"gaussian_sampler": "rounded"})
+
+
+def test_tmife_lwe_is_refused_under_standard():
+    """The MIFE layer of tMIFE-LWE would sample E as mife/lwe does, but the
+    standard profile refuses the scheme (its reduction-width dimension)."""
+    for c in ({}, {"gaussian_sampler": "facct"}):
+        with pytest.raises(FEValidationError, match="no 'standard' parameter set for mife/lwe_threshold"):
+            _abdp15_keygens("standard")["mife/lwe_threshold"](c)
 
 
 def test_abdp15_standard_setup_draws_with_facct(abdp15_draws):

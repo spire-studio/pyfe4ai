@@ -56,8 +56,9 @@ compatibility).
   does ABDP15 under `toy` (below). Public parameters without the field (earlier versions) give
   FACCT to new encryptions; decryption does not depend on it; parameter
   records are unchanged.
-- **ABDP15 public keys sampled exactly under `standard`** (`sife/lwe`,
-  `mife/lwe` and the MIFE layer of `mife/lwe_threshold`): the noise `E` of
+- **ABDP15 public keys sampled exactly under `standard`** (`sife/lwe` and
+  `mife/lwe`; `mife/lwe_threshold`, whose MIFE layer would do the same, is
+  refused under `standard`, see the ABDP15 entry below): the noise `E` of
   `pk = A S + E` -- the only Gaussian of these schemes -- is drawn with
   `"facct"` under `standard`, where an explicit `gaussian_sampler =
   "rounded"` is refused and a `gaussian_sampler()` block does not apply;
@@ -240,6 +241,65 @@ compatibility).
       shares at all (their flooding derivation changed), so finish rounds
       encrypted under the old keys with v0.3.0 before upgrading; the leak
       remains for those rounds.
+- **ABDP15 LWE schemes** (`sife/lwe`, `mife/lwe`): the `standard` profile
+  now reads the 128-bit lattice-estimator table (`WIDE_LWE_128_LOG_RATIO`)
+  at the error width `sigma' = sigma / (1 + B sqrt(eta))` of the LWE problem
+  that their security proof reduces to, not at the public key's own `sigma`.
+  Here `B = 2X`; in the slots of `mife/lwe` `B = 4X`, because the ACFGU18
+  reduction challenges a slot with `x^(j,0) - x^(1,0) + x^(1,1)` against
+  `x^(j,1)` (`lwe_utils.abdp15_reduction_sigma`).
+  Theorem 2 of the PKC 2015 paper, cited so far, does not cover noisy LWE
+  keys. Its simulation computes ciphertexts from the secret key without the
+  noise term `<r, e>`, and changes the basis of noisy public keys with
+  coefficients in `Z_q`. The proof is instead the second generic theorem of
+  the revised full version (ePrint 2015/017, 2015-03-28), written out in
+  F. Bourse's PhD thesis (ENS 2017, Thm. 4.3.5 with Thms. 8.2.2, 8.2.3,
+  8.3.2), which needs `sigma >= (1 + B sqrt(eta)) sigma'`. These citations
+  rest on the thesis until the full-version text has been checked.
+  `lwe_n` grows by 17 to 67 percent for `8 <= X = Y <= 1000`, `eta <= 100`
+  and up to 100 MIFE slots, and by 8 to 112 percent at `X = Y = 1`, where
+  the old rule often stopped at the table's smallest dimension, 512. For
+  example 896 → 1280 and 1088 → 1536 for `eta = 10` and `X = Y = 50 / 256`,
+  and 1024 → 1408 for 100 MIFE slots of `eta = 1`. An explicit `lwe_n` is
+  checked at `sigma'`. An encryption costs about twice as much. No attack is
+  known: the old dimensions still meet the estimator for an attack on the
+  public key alone.
+  **Cached parameters:**
+  * Records cached for `lwe_n = "auto"`, in any profile, no longer match
+    their re-derivation. They are regenerated on load with a new seed for
+    `A`. Keys, public parameters and ciphertexts made under the old record
+    stop matching it, and the only sign is a logged error, so generate keys
+    again after upgrading.
+  * Records for an explicit `lwe_n`, such as the `toy` default 32, are kept.
+    Under `standard`, an explicit `lwe_n` that met only the old rule is
+    refused, for example 896 for `eta = 10` and `X = Y = 50`.
+  * `toy` `mife/lwe_threshold` with `lwe_n = "auto"` picks a larger
+    dimension (3456 → 3904 for `X = Y = 20` and `stat_param = 64`). It
+    raises where nothing up to 6144 fits, for example `stat_param = 128`
+    with `X = Y >= 20`.
+  * The construction ids are unchanged. Bumping them would regenerate the
+    same records, and the explicit ones as well.
+- **`mife/lwe_threshold` is refused under `standard`**, like ALS16 and
+  dMCFE-Paillier: no parameter set is both secure and usable in pure Python.
+  At `sigma'` its flooding-enlarged `q` (`stat_param = 128`, two clients)
+  needs a dimension at the very end of the table or beyond it.
+  * The very end (5888 to 6144, with `A` of 6.5 to 7.8 * 10^9 entries) for a
+    few small bounds, e.g. `X = Y` in {1, 2, 3, 8, 10} at `eta = 1`.
+  * Beyond it for most others: `X = Y` = 4 to 6, `X = Y >= 12` and most
+    `eta >= 2`. About 6500 for `X = Y = 50` (`q` of 217 bits), where the old
+    rule took 5952.
+  * `standard` therefore no longer fixes its `matrix_mode`. Use
+    `mife/ddh_threshold`, or `mcfe/ring_lwe_threshold` with labels.
+  * A KL-divergence accounting of the flooding noise (in development) would
+    bring it back within the table, but only as an opt-in. It needs
+    `flooding_accounting = "kl"`, `t = s` and an explicit budget of
+    `max_partial_decryptions` per server.
+  * Under that accounting it takes about 4864 at `sigma'`, for two clients,
+    `s = t = 3` and `N = 2^40` flooded values: `q` of 173 bits and `A` of
+    4.1 * 10^9 entries, so `matrix_mode = "stream"`. The guarantee is weaker,
+    about `stat_param - 6.85` bits. With the default accounting the
+    dimension stays as above.
+  * The refusal is to be re-evaluated when that accounting is merged.
 
 ### Performance
 

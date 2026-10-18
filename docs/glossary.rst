@@ -133,7 +133,9 @@ Configuration keys
       ABDP15 (``sife/lwe``, ``mife/lwe``, ``mife/lwe_threshold``) and
       ABMPSW20 (``mcfe/lwe`` family) schemes also take ``"auto"``, the
       ``standard`` choice: the smallest dimension whose derived modulus
-      meets the 128-bit lattice-estimator table.
+      meets the 128-bit lattice-estimator table (for ABDP15 read at the
+      error width of its security reduction, see
+      :func:`~pyfe4ai.utils.lwe_utils.abdp15_reduction_sigma`).
 
    ``ring_n``
       Ring-LWE ring dimension, a power of two; default
@@ -148,8 +150,7 @@ Configuration keys
       ``mife/lwe_threshold``) hold their seeded public matrix ``A``:
       ``"memory"`` (default) keeps it expanded, ``"stream"`` expands it again
       for every batch (little memory, slower). Accepted by key generator and
-      crypto configs; ``standard`` fixes ``"stream"`` for
-      ``mife/lwe_threshold``. See :mod:`pyfe4ai.schemes.abdp15_lwe`.
+      crypto configs. See :mod:`pyfe4ai.schemes.abdp15_lwe`.
 
    ``pairing_group_param``
       Pairing group of the pairing-based schemes; default ``"BLS12-381"``

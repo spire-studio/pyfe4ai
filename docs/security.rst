@@ -38,10 +38,38 @@ parameters: ``"toy"`` (the default) is fast and **not secure**;
 values below it. Its exceptions: the pairing-based schemes run on
 BLS12-381, about 120-126-bit after the exTNFS attacks (with a
 :class:`~pyfe4ai.utils.exceptions.FESecurityWarning`),
-and ``sife/fullysec_lwe``, ``mife/fullysec_lwe`` (ALS16) and
-``mcfe/paillier_decentralized`` are refused. :mod:`pyfe4ai.schemes.profiles`
-below gives the parameters per family, including ``matrix_mode`` for the
-ABDP15 LWE schemes.
+and ``sife/fullysec_lwe``, ``mife/fullysec_lwe`` (ALS16),
+``mife/lwe_threshold`` and ``mcfe/paillier_decentralized`` are refused.
+:mod:`pyfe4ai.schemes.profiles` below gives the parameters per family,
+including ``matrix_mode`` for the ABDP15 LWE schemes.
+
+For the ABDP15 LWE schemes (``sife/lwe``, ``mife/lwe``) the 128 bits are
+those of the LWE problem that their security proof reduces to. The
+lattice-estimator table is read at the error width
+``sigma' = sigma / (1 + B sqrt(eta))`` of that problem (``B = 2 X``, or
+``4 X`` per slot of ``mife/lwe``), not at the wider ``sigma`` of the public
+key. That makes the dimension 17 to 67 percent larger for
+``8 <= X = Y <= 1000``, and up to about twice as large at ``X = Y = 1``. The
+proof is the second
+generic theorem of the ABDP15 full version (ePrint 2015/017, written out in
+F. Bourse's PhD thesis, ENS 2017, Thm. 4.3.5), not Theorem 2 of the PKC 2015
+paper, whose simulation does not cover noisy LWE keys; this rests on the
+thesis until the full-version text has been checked.
+
+``mife/lwe_threshold`` is refused, like the ALS16 schemes. Once its modulus
+is enlarged for flooding (``stat_param = 128``), it needs a dimension at the
+very end of the table at that width (5888 to 6144, with a public matrix of
+6.5 to 7.8 * 10^9 entries) for a few small bounds, e.g. ``X = Y`` in
+{1, 2, 3, 8, 10} at ``eta = 1``, and beyond it for most others (``X = Y`` =
+4 to 6, ``X = Y >= 12``, most ``eta >= 2``).
+
+An opt-in KL-divergence accounting of the flooding noise (in development)
+would bring it to about 4864 for two clients, ``s = t = 3`` and ``2^40``
+flooded values. It applies only with ``flooding_accounting = "kl"``,
+``t = s`` and an explicit ``max_partial_decryptions`` budget; the public
+matrix would still have 4.1 * 10^9 entries (``"stream"`` mode), and the
+guarantee is weaker, about ``stat_param - 6.85`` bits. The refusal is to be
+re-evaluated when that accounting is merged.
 
 Threshold trust model
 ---------------------
@@ -77,8 +105,9 @@ Ring-LWE MIFE / MCFE family (``sife``, ``mife``, ``mcfe`` ``ring_lwe``, the
 decentralized and threshold MCFE), the dense-LWE MCFE keys ``t``
 (``mcfe/lwe``, ``fullysec_lwe``, ``lwe_threshold``, ``lwe_decentralized``),
 ``sife/fullysec_ring_lwe`` and, under ``standard``, the noise ``E`` of the
-ABDP15 public keys (``sife/lwe``, ``mife/lwe`` and the MIFE layer of
-``mife/lwe_threshold``). For them, in this order: the
+ABDP15 public keys (``sife/lwe`` and ``mife/lwe``; ``mife/lwe_threshold``,
+whose MIFE layer would do the same, is refused under ``standard``). For
+them, in this order: the
 ``gaussian_sampler`` of the key generator's or crypto object's config; else
 the one the public parameters record; else, under the ``toy`` profile only
 and not for ``sife/fullysec_ring_lwe``, the one a ``gaussian_sampler()``

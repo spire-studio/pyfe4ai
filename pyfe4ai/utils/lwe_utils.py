@@ -233,11 +233,15 @@ def resolve_lwe_n(lwe_n, modulus_for, default: int) -> int:
 #: key): the largest ``log2(q / sigma)`` for which LWE with a uniform secret,
 #: errors ``D_{Z, 2^s}`` and any number of samples costs at least 2^128
 #: operations, by the lattice estimator (commit 53da598, MATZOV cost model;
-#: primal uSVP and BDD, dual). This is the LWE problem of the ABDP15 public
-#: key ``A S + E``, whose errors are very wide (``sigma`` of 2^30 to 2^45 from
-#: the GoFE parameter recipe). At a fixed ratio the attacks get more expensive
-#: as ``sigma`` grows, so a scheme is held to the row of the largest width not
-#: above its own ``sigma``. Regenerate with ``tools/estimate_wide_lwe.py``.
+#: primal uSVP and BDD, dual). The ABDP15 public key ``A S + E`` has very
+#: wide errors (``sigma`` of 2^30 to 2^45 for small bounds from the GoFE
+#: parameter recipe, more for large ones);
+#: its key generators read the table at the narrower width ``sigma'`` of the
+#: LWE problem their security proof reduces to
+#: (:func:`abdp15_reduction_sigma`). At a fixed ratio the attacks get more
+#: expensive as the width grows, so a scheme is held to the row of the largest
+#: width not above the one it is checked at. Regenerate with
+#: ``tools/estimate_wide_lwe.py``.
 #:
 #: :meta hide-value:
 WIDE_LWE_128_LOG_RATIO = {
@@ -303,30 +307,56 @@ def wide_lwe_bound(lwe_n: int, sigma) -> int | None:
     return WIDE_LWE_128_LOG_RATIO[max(widths)][max(dims)]
 
 
-def check_wide_lwe(lwe_n: int, q, sigma) -> None:
-    """Raise unless LWE(lwe_n, q, sigma) meets :data:`WIDE_LWE_128_LOG_RATIO`."""
+def abdp15_reduction_sigma(sigma, diff_bound, eta: int) -> float:
+    """Error width ``sigma'`` of the LWE problem that the ABDP15 proof reduces to.
+
+    The selective-security proof of the LWE instantiation (ABDP15 full
+    version, ePrint 2015/017 as revised on 2015-03-28; written out in
+    F. Bourse, PhD thesis, ENS 2017, Thm. 4.3.5 with Thms. 8.2.2, 8.2.3 and
+    8.3.2) rewrites the public keys as ``d_i pk + pk'_i`` for the difference
+    ``d = x1 - x0`` of the challenge vectors. It needs
+    ``sigma >= (1 + B sqrt(eta)) sigma'`` with ``|d_i| <= B``, and the scheme
+    is then as hard as LWE with errors of width ``sigma'``, not ``sigma``.
+    Theorem 2 of the proceedings version does not cover noisy LWE keys.
+    The full-version text has not been checked here: its ePrint record only
+    says that the 2015-03-28 revision reworked the LWE instantiation and added
+    a second generic theorem. The statement above rests on the thesis.
+    """
+    return float(sigma) / (1.0 + float(diff_bound) * math.sqrt(eta))
+
+
+def check_wide_lwe(lwe_n: int, q, sigma, what: str = "sigma") -> None:
+    """Raise unless LWE(lwe_n, q, sigma) meets :data:`WIDE_LWE_128_LOG_RATIO`;
+    *what* names the width in the message."""
     bound = wide_lwe_bound(lwe_n, sigma)
     ratio = math.log2(int(q)) - math.log2(sigma)
     if bound is None or ratio > bound:
         from pyfe4ai.utils.exceptions import FEValidationError
 
         raise FEValidationError(
-            "lwe_n = {} with log2(q / sigma) = {:.1f} and sigma = 2^{:.1f} is below 128-bit "
-            "security (lattice estimator: log2(q / sigma) <= {} here; tabulated for "
-            "lwe_n >= {} and sigma >= 2^{})".format(
-                lwe_n, ratio, math.log2(sigma), "-" if bound is None else bound,
-                _WIDE_DIMS[0], min(WIDE_LWE_128_LOG_RATIO),
+            "lwe_n = {n} with log2(q / {w}) = {r:.1f} and {w} = 2^{s:.1f} is below 128-bit "
+            "security (lattice estimator: log2(q / {w}) <= {b} here; tabulated for "
+            "lwe_n >= {n0} and {w} >= 2^{s0})".format(
+                n=lwe_n, w=what, r=ratio, s=math.log2(sigma), b="-" if bound is None else bound,
+                n0=_WIDE_DIMS[0], s0=min(WIDE_LWE_128_LOG_RATIO),
             )
         )
 
 
-def wide_lwe_n(params_for) -> dict:
+def wide_lwe_n(params_for, lwe_sigma) -> dict:
     """``params_for(n)`` (a dict with ``q`` and ``sigma_q``) for the smallest
-    tabulated ``n`` that meets :data:`WIDE_LWE_128_LOG_RATIO`."""
+    tabulated ``n`` that meets :data:`WIDE_LWE_128_LOG_RATIO` at the width
+    ``lwe_sigma(params)``.
+
+    *lwe_sigma* has no default, so that a caller cannot fall back to the
+    public key's own width by omission. The ABDP15 key generators pass the
+    width of their security reduction (:func:`abdp15_reduction_sigma`).
+    """
     for lwe_n in _WIDE_DIMS:
         params = params_for(lwe_n)
-        bound = wide_lwe_bound(lwe_n, params["sigma_q"])
-        if bound is not None and math.log2(int(params["q"])) - math.log2(params["sigma_q"]) <= bound:
+        sigma = lwe_sigma(params)
+        bound = wide_lwe_bound(lwe_n, sigma)
+        if bound is not None and math.log2(int(params["q"])) - math.log2(sigma) <= bound:
             return params
     from pyfe4ai.utils.exceptions import FEValidationError
 
@@ -336,13 +366,26 @@ def wide_lwe_n(params_for) -> dict:
     )
 
 
-def abdp15_parameters(bound_x, bound_y, eta: int, lwe_n, extra_dimension: int | None = None) -> dict:
+def abdp15_parameters(
+    bound_x, bound_y, eta: int, lwe_n, extra_dimension: int | None = None, lwe_sigma=None
+) -> dict:
     """:func:`derive_lwe_parameters` as a dict, for *lwe_n* or, if it is
-    ``"auto"``, for the smallest dimension meeting :data:`WIDE_LWE_128_LOG_RATIO`.
+    ``"auto"``, for the smallest dimension meeting :data:`WIDE_LWE_128_LOG_RATIO`
+    at the width ``lwe_sigma(params)`` (see :func:`wide_lwe_n`; the key
+    generators pass the width of their security reduction,
+    :func:`abdp15_reduction_sigma`).
 
     Returns:
         Dict with ``lwe_n``, ``p``, ``q``, ``m``, ``sigma_q`` and ``l_sigma``.
+
+    Raises:
+        ValueError: For ``lwe_n = "auto"`` without *lwe_sigma*.
     """
+    if lwe_n == "auto" and lwe_sigma is None:
+        raise ValueError(
+            'lwe_n = "auto" needs lwe_sigma, the error width the 128-bit table is read at '
+            "(abdp15_reduction_sigma for the ABDP15 schemes)"
+        )
 
     def params_for(n: int) -> dict:
         p, q, m, sigma_q, l_sigma = derive_lwe_parameters(
@@ -351,7 +394,7 @@ def abdp15_parameters(bound_x, bound_y, eta: int, lwe_n, extra_dimension: int | 
         return {"lwe_n": n, "p": p, "q": q, "m": m, "sigma_q": sigma_q, "l_sigma": l_sigma}
 
     if lwe_n == "auto":
-        return wide_lwe_n(params_for)
+        return wide_lwe_n(params_for, lwe_sigma)
     return params_for(int(lwe_n))
 
 
