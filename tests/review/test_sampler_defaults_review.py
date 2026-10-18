@@ -32,16 +32,20 @@ def _cwd(tmp_path, monkeypatch):
     su.set_gaussian_sampler("rounded")
 
 
-def test_flooding_noise_does_not_follow_the_process_sampler():
+# integrate/perf-2026-10: the default tMCFE flooding became "uniform" (exp/hash-and-flooding),
+# which draws no Gaussian, so the default config alone no longer exercises the sampler pin
+@pytest.mark.parametrize("flooding", ["gaussian", "uniform"])
+def test_flooding_noise_does_not_follow_the_process_sampler(flooding):
     from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWE as T
     from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWEKeyGenerator as TK
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         kg = TK({"sec_param": 64, "eta": 1, "ring_n": 32, "bound_x": 4, "bound_y": 4, "n": 2, "lst_nid": N,
-                 "s": 3, "t": 2, "lst_sid": S})
+                 "s": 3, "t": 2, "lst_sid": S, "flooding": flooding})
         kg.setup()
     pp = kg.get_public_parameters()
+    assert pp["flooding"] == flooding
     cts = {n: T({"id": n, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}}).encrypt([[1, 2]], "L") for n in N}
     cred = {"fusion_weight": {n: [1] for n in N}, "label": "L"}
     dk = kg.get_decryption_keys("s0", credentials=cred)
