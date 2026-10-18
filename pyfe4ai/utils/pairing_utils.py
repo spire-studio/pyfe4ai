@@ -136,20 +136,25 @@ def matrix_inverse_mod(
     return inverse, det
 
 
-def bounded_discrete_log_gt(group: PairingGroup, base, target, bound: int) -> int:
+def bounded_discrete_log_gt(group: PairingGroup, base, target, bound: int, cache: bool = True) -> int:
     """Solve a bounded discrete logarithm in GT via baby-step giant-step.
 
         Args:
             group: Pairing group instance.
             base: Base for modular exponentiation.
             target: Target group element.
-            bound: Upper bound on absolute values.
+            bound: Upper bound on absolute values (at most 2^48).
+            cache: BLS12-381: keep the baby-step table for later calls with
+                this base (``False`` for a base used once; see
+                :func:`pyfe4ai.utils.bls12_381.gt_dlog`).
     """
     if bound < 0:
         raise ValueError("bound must be non-negative")
+    if bound > _bls.MAX_DLOG_BOUND:
+        raise ValueError("dlog bound above 2^48")
     if _bls.is_element(base):
-        # BLS12-381: baby-step table in Rust, built once per (base, bound)
-        found = _bls.gt_dlog(base, target, bound)
+        # BLS12-381: baby-step table in Rust
+        found = _bls.gt_dlog(base, target, bound, cache=cache)
         if found is None:
             raise ValueError("discrete log not found within configured bound")
         return found

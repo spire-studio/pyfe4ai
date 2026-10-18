@@ -44,12 +44,16 @@ FACCT sampler (``sampler="facct"``), which draws ``getrandbits`` in the order
 of :func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_facct` and makes
 its decisions -- inside the encryption calls, and for
 :func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_facct` itself
-(:func:`gaussian_facct`) --: the tables come from Python (:func:`facct_table`), the
-acceptance test is decided in fixed point with an error below ``2^-110``,
-and the rare tests that bound cannot decide (about one in ``2^99``) are
-handed to the Python formula, so for a given bit source the samples are the
-reference's (the known-answer tests of ``tests/test_sampling_facct.py`` hold
-natively).
+(:func:`gaussian_facct`) --: the tables come from Python (:func:`facct_table`,
+with ``c = 1 / (2 sigma^2)`` correct to a 128-bit mantissa), the acceptance
+test is decided in fixed point with an error below ``2^-110`` (about
+``2^-119`` measured), and the tests within ``2^-100`` of the threshold (about
+one in ``2^99``) are handed to the Python formula, so for a given bit source
+the samples are the reference's (the known-answer tests of
+``tests/test_sampling_facct.py`` hold natively). Building a table compares a
+few of its fixed-point thresholds with the Python formula and refuses a
+constant off by more than about ``2^-102`` there (a 53-bit one is off by
+about ``2^-55``).
 
 Random bytes. The extension draws them from a DRBG scoped to one call:
 every tensor-level call (``encrypt_tensor``, ``precompute_tensor``,
@@ -69,7 +73,10 @@ for every byte (:func:`os.urandom` semantics); the distribution is the same
 either way.
 
 ``set_threads(k)`` (or ``PYFE4AI_THREADS``) lets one call use ``k`` threads
-over the chunks of a tensor; the default is one.
+over the chunks of a tensor; the default is one, the most
+:data:`MAX_THREADS` (``set_threads`` refuses more, the environment variable
+is clamped to it, and a value that is not an integer raises ``ValueError``
+at import).
 """
 
 from __future__ import annotations
@@ -110,9 +117,24 @@ def _check_backend(name) -> str:
     return name
 
 
+#: Most threads one native call may use (``set_threads`` refuses more;
+#: ``PYFE4AI_THREADS`` is clamped to it).
+MAX_THREADS = max(64, 4 * (os.cpu_count() or 1))
+
+
+def _env_threads() -> int:
+    """``PYFE4AI_THREADS`` (default 1), clamped to ``1 .. MAX_THREADS``."""
+    value = os.environ.get(_ENV_THREADS, "").strip() or "1"
+    try:
+        threads = int(value)
+    except ValueError:
+        raise ValueError("{} must be an integer, got {!r}".format(_ENV_THREADS, value)) from None
+    return min(max(1, threads), MAX_THREADS)
+
+
 _state = threading.local()
 _default_backend = _check_backend(os.environ.get(_ENV_BACKEND, "auto"))
-_threads = max(1, int(os.environ.get(_ENV_THREADS, "1") or 1))
+_threads = _env_threads()
 
 
 def available() -> bool:
@@ -163,10 +185,11 @@ def get_threads() -> int:
 
 
 def set_threads(threads: int) -> None:
-    """Number of threads one native call may use (over the chunks of a tensor)."""
+    """Number of threads one native call may use (over the chunks of a tensor),
+    at most :data:`MAX_THREADS`."""
     global _threads
-    if isinstance(threads, bool) or not isinstance(threads, int) or threads < 1:
-        raise ValueError("threads must be a positive integer")
+    if isinstance(threads, bool) or not isinstance(threads, int) or not 1 <= threads <= MAX_THREADS:
+        raise ValueError("threads must be an integer between 1 and {}".format(MAX_THREADS))
     _threads = threads
 
 

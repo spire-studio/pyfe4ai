@@ -185,7 +185,10 @@ def test_entire_process_lst_ndarray(kg_config):
     lst_check_points = [[0, (0, 1)], [1, (1, 1, 1)], [2, (3, 1)]]
     lst_expected_inner_prod = []
     for cp in lst_check_points:
-        lst_x = [dict_tmife_n_x[nid][cp[0]][cp[1]] for nid in lst_nid]
+        # the inputs as encrypted: quantised to `precision` decimals (scale_to_int
+        # rounds); the unquantised product differs by up to 0.5e-3 * sum(y) = 0.015
+        lst_x = [float(np.rint(dict_tmife_n_x[nid][cp[0]][cp[1]] * 10 ** precision)) / 10 ** precision
+                 for nid in lst_nid]
         lst_y = list(dict_tmife_n_y.values())
         logger.debug("x[{}][{}]: {}".format(cp[0], cp[1], lst_x))
         logger.debug("y: {}".format(lst_y))
@@ -243,7 +246,7 @@ def test_entire_process_lst_ndarray(kg_config):
             dec_lst_ndarray = tmife_nid.decrypt_lst_ndarray_ct(dict_tmife_s_ct, label)
             assert isinstance(dec_lst_ndarray, list)
             assert (
-                abs(dec_lst_ndarray[cp[0]][cp[1]] - lst_expected_inner_prod[i]) < 1e-2
+                abs(dec_lst_ndarray[cp[0]][cp[1]] - lst_expected_inner_prod[i]) < 1e-6
             )
             logger.info(
                 "{}-{}-inner prod-{}".format(nid, cp, dec_lst_ndarray[cp[0]][cp[1]])

@@ -98,6 +98,65 @@ compatibility).
   profile keeps the same ring dimension for the benchmark configurations.
   Cached parameters of these schemes are re-derived (construction
   `acfgu18-bmms21/v5`).
+- **One-time precomputations are claimed atomically** (October 2026 crypto
+  review, H1 and M1; new `pyfe4ai.schemes.one_time`). The offline phases of
+  SIFE- / MIFE-Paillier and MIFE-DDH (`random_offline`), of MCFE-DDH /
+  Damgård / Paillier (`mcfe/offline`) and of the Ring-LWE MCFE (both
+  backends) checked `used` and set it later, so two threads could both
+  encrypt with one precomputation; `copy.copy` and `os.fork()` gave a second,
+  unused handle. Two ciphertexts with the same randomness or label masks
+  give `x - x'` without any key. The online phase now validates its input
+  (shapes, and the plaintext bound where the plain call checks one), then
+  checks and sets `used` under a per-object lock and moves the secret parts
+  out; `copy.copy`, `copy.deepcopy` and pickling raise `TypeError` (code
+  that copies the attributes deliberately is not prevented); a precomputation
+  records the process that made it, refuses use in another one, and is
+  invalidated in a forked child (`os.register_at_fork`). Refused inputs do
+  not consume it. The native precomputation also refuses another process.
+- **Native precomputation deadlock** (M2): `encrypt_precomputed` and
+  `precomputed_info` waited for the precomputation's mutex with the GIL
+  held while the call holding it ran detached, so two threads on one
+  precomputation hung the process. The lock is now waited for detached
+  (PyO3 `MutexExt::lock_py_attached`); the second call is refused with
+  `ValueError`, and a poisoned lock raises `ValueError` instead of
+  panicking.
+- **Native FACCT constant at full precision** (M4): `native_backend` passed
+  `c = 1 / (2 sigma^2)` to the Rust acceptance test rounded to 53 bits (the
+  negation ran in gmpy2's default context), about `2^-55` off where `2^-110`
+  was documented, so the native exact sampler's decisions could differ from
+  the reference for a given bit source and its output was about `2^-57` from
+  `D_{Z,sigma}` per sample. The mantissa is now negated exactly, and
+  `FacctTable` compares a few fixed-point thresholds with the exact formula
+  when it is built (`ValueError` for an imprecise constant).
+- **ML adapter: one ciphertext per client and label under threads** (M6,
+  since v0.3.0): `encrypt_gradient` checked `(nid, label)` before encrypting
+  and recorded it afterwards, so two concurrent calls for one client and
+  label both succeeded and an aggregator could learn `gA - gB`. The pair is
+  now reserved under a lock before encrypting and released if the
+  encryption fails; `precompute_gradient` checks it under the same lock. A
+  wrapper can still be pickled and copied (`multiprocessing`, Ray): the copy
+  carries the pairs used so far and refuses them, but does not learn of
+  labels used later by the original or other copies, so each client's
+  gradient for a label goes through one wrapper. A pickled wrapper carries
+  the master key and every client's key: ship workers their client's own
+  crypto object (the scheme class built from `wrapper.pp` and
+  `wrapper.kg.get_private_keys(nid)`), not the wrapper. The cached crypto objects
+  are not copied (rebuilt from the keys), and the Ring-LWE key generator and
+  MIFE / SIFE Ring-LWE objects drop their native key caches when pickled
+  (since the native backend they could not be pickled after a native call).
+- **GT discrete-log tables bounded** (M3): the BLS12-381 baby-step tables
+  were cached per base and bound for the life of the process, and SIFE
+  FH-IPE builds one for a new base `e(k1, c1)` per decryption (megabytes
+  each). The GT and ristretto255 table caches now keep at most 16 tables
+  and 128 MiB each (least recently used evicted; sizes counted as the hash
+  table allocates them), key GT tables by a 128-bit keyed SipHash of the
+  element (16 instead of 576 bytes per step; cached GT dlogs at bound 10^5
+  take 0.09 instead of 0.19 ms), and `gt_dlog(..., cache=False)` (used by
+  SIFE FH-IPE) solves with a table of about `sqrt(2 bound + 1)` steps that
+  is not kept. One table takes at most 96 MiB (1,835,008 baby steps): above
+  bounds of about `2^33` a dlog takes more giant steps (ristretto255 at
+  `10^11`: 0.25 s per dlog and 7 s to build the table, instead of 50 ms and
+  28 s with the uncapped 344 MB table).
 
 ### Performance
 
@@ -306,6 +365,44 @@ compatibility).
   elements, and only a layer's last chunk shorter than the others.
   `to_dict()` raises `TypeError` for chunks holding `bytes` (a binary
   ciphertext format has no JSON form).
+- Low-severity findings of the October 2026 crypto review
+  (`docs/review/crypto_review_2026-10.md`):
+  - BLS12-381 deserialisation accepts only canonical strings: a type tag `0`
+    to `3` (`"01"`, `" 1"`, `"+1"` were accepted, `"256"` raised
+    `OverflowError`), canonical base64, and exactly the element's encoding
+    length (trailing bytes were ignored).
+  - Bounded discrete logarithms in GT and ristretto255 refuse bounds above
+    `2^48` with `ValueError` (`2 bound + 1` wrapped at `2^63`); a native
+    table holds at most 1,835,008 baby steps (see above), a table of the
+    pure-Python ristretto255 fallback at most `2^16`.
+  - Native size arithmetic is checked: `dense_dots` with sizes that overflow,
+    `encrypt_precomputed` with a chunk index past the end and a `Delta` of 0
+    raise `ValueError` instead of `PanicException` (a `BaseException` the
+    fallbacks did not catch, and a panic poisoned the precomputation).
+  - ristretto255 ciphertext elements must be exactly 64 hex digits on both
+    backends (the extension accepted `"+f"`, Python spaces).
+  - `PYFE4AI_THREADS` must be an integer (`ValueError` at import otherwise)
+    and is clamped to `native_backend.MAX_THREADS`; `set_threads` refuses
+    more (a huge value made every native call raise `OverflowError`).
+  - The rounded Python sampler no longer uses `SystemRandom.gauss`, which
+    cached the second Box-Muller value in a global (`gauss_next`): a future
+    secret coefficient stayed in memory between calls, and parent and child
+    drew the same sample after `fork()`. Same arithmetic, the unused value
+    of the last pair is dropped.
+  - The Rust core overwrites `r`, `NTT(r)`, the products with it, the pads
+    `x + u + H` and the per-chunk buffers of a precomputation after use.
+  - `ZR ** k` on BLS12-381 reduces an integer `k` mod `r - 1` (it reduced
+    mod `r`: wrong for `|k| >= r`).
+  - `tests/mcfe/test_ddh_threshold.py` compared the decryption of quantised
+    inputs with the unquantised product at a tolerance below the
+    quantisation error (failed in about 0.35 % of runs).
+- Documentation claimed more than the code: the FACCT `2^-110` error holds
+  only for a constant passed to 128 bits (now the case and checked); the
+  Ring-LWE MCFE precomputation is overwritten when used natively, while the
+  Python path only drops its references; the tMCFE (Ring-LWE) and tMIFE
+  (LWE) docstrings now say that the flooding argument is statistical per
+  answer and gives no bound for many answers to varied ciphertexts of a
+  corrupted client (averaging is one way to combine them, not the only one).
 
 
 ## [0.3.0] — 2026-10-13

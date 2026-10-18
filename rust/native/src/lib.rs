@@ -17,11 +17,13 @@ use pyfe4ai_core::{osrand, parallel_for, with_ring, AnyRing, Modulus, Ring, Word
 use pyo3::intern;
 use pyo3::exceptions::{PyNotImplementedError, PyOSError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::sync::MutexExt;
 use pyo3::types::{PyBytes, PyInt, PyList, PyString, PyTuple};
 use rand_chacha::rand_core::{RngCore, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use std::sync::{Arc, Mutex};
 
+mod dlog;
 mod ec;
 mod msm;
 mod pairing;
@@ -169,6 +171,15 @@ fn index_mod<W: Word>(ob: &Bound<'_, PyAny>, q: &Bound<'_, PyAny>, m: &Modulus<W
         return Ok(x);
     }
     pyint_word(&v.rem(q)?)
+}
+
+/// Delta = floor(q / p) mod q, refused if 0 (a ValueError rather than a division by zero).
+fn delta_mod<W: Word>(ob: &Bound<'_, PyAny>, q: &Bound<'_, PyAny>, m: &Modulus<W>) -> PyResult<W> {
+    let d = index_mod(ob, q, m)?;
+    if d == W::ZERO {
+        return Err(PyValueError::new_err("Delta must be nonzero mod q"));
+    }
+    Ok(d)
 }
 
 /// Values of a sequence mod q: decimal strings by the fast path, other strings
@@ -473,7 +484,7 @@ fn enc_key(py: Python<'_>, ctx: &Bound<'_, RingCtx>, a: &Bound<'_, PyAny>, pk: &
                 }
                 Some(rows)
             };
-            let d = index_mod(delta, q, m)?;
+            let d = delta_mod(delta, q, m)?;
             AnyKey::$variant(EncKey::new($r, &av, &pk_rows, u_rows.as_deref(), d))
         }};
     }
@@ -1227,7 +1238,7 @@ fn decrypt_tensor_w<W: Word>(py: Python<'_>, r: &Ring<W>, q: &Bound<'_, PyAny>, 
     if eta == 0 || y_rows.iter().any(|y| y.len() != eta) {
         return Err(fallback());
     }
-    let dw = index_mod(delta, q, m)?;
+    let dw = delta_mod(delta, q, m)?;
     let bound_v: i128 = match py_index(bound)?.extract::<i64>() {
         Ok(b) => b as i128,
         Err(_) => if py_index(bound)?.gt(0)? { 1i128 << 126 } else { -1 },
@@ -1409,11 +1420,23 @@ enum AnyPre {
     W256(Precomputed<U256>),
 }
 
-/// The plaintext-independent part of an MCFE ndarray encryption (one-time).
+/// The plaintext-independent part of an MCFE ndarray encryption (one-time;
+/// usable only in the process that made it, not in a forked child).
 #[pyclass(module = "pyfe4ai._rust_native")]
 struct PrecomputedObj {
     key: Py<EncKeyObj>,
     pre: Mutex<AnyPre>,
+    pid: u32,
+}
+
+/// The precomputation's lock, waited for detached from the interpreter: the call
+/// holding it runs its kernel with the GIL released, so a second thread
+/// blocking on it with the GIL attached would deadlock the process.
+fn lock_pre<'a>(py: Python<'_>, p: &'a PrecomputedObj) -> PyResult<std::sync::MutexGuard<'a, AnyPre>> {
+    if p.pid != std::process::id() {
+        return Err(PyValueError::new_err("precomputation made in another process"));
+    }
+    p.pre.lock_py_attached(py).map_err(|_| PyValueError::new_err("precomputation poisoned by a failed call"))
 }
 
 #[pyfunction]
@@ -1442,7 +1465,7 @@ fn precompute_tensor(py: Python<'_>, key: &Bound<'_, EncKeyObj>, pad_materials: 
         (AnyRing::W256(r), AnyKey::W256(k)) => run!(r, k, W256),
         _ => unreachable!(),
     };
-    Ok(PrecomputedObj { key: key.clone().unbind(), pre: Mutex::new(pre) })
+    Ok(PrecomputedObj { key: key.clone().unbind(), pre: Mutex::new(pre), pid: std::process::id() })
 }
 
 #[pyfunction]
@@ -1455,7 +1478,7 @@ fn encrypt_precomputed(py: Python<'_>, key: &Bound<'_, EncKeyObj>, pre: &Bound<'
     }
     let xs = int64_buffer(x)?;
     let obj = key.get();
-    let mut guard = p.pre.lock().unwrap();
+    let mut guard = lock_pre(py, &p)?;
     macro_rules! run {
         ($r:expr, $k:expr, $pc:expr) => {{
             let n = $r.n;
@@ -1477,7 +1500,7 @@ fn encrypt_precomputed(py: Python<'_>, key: &Bound<'_, EncKeyObj>, pre: &Bound<'
 #[pyfunction]
 fn precomputed_info(py: Python<'_>, pre: &Bound<'_, PrecomputedObj>) -> PyResult<Py<PyAny>> {
     let p = pre.borrow();
-    let g = p.pre.lock().unwrap();
+    let g = lock_pre(py, &p)?;
     let (chunks, used) = match &*g {
         AnyPre::W64(x) => (x.chunks(), x.used.iter().filter(|&&u| u).count()),
         AnyPre::W128(x) => (x.chunks(), x.used.iter().filter(|&&u| u).count()),
@@ -1620,7 +1643,7 @@ fn share_partial(py: Python<'_>, ctx: &Bound<'_, RingCtx>, packed: Vec<Vec<u8>>,
         let ym: Vec<_> = y_rows.iter().flatten().map(|&v| m.to_mont(v)).collect();
         let zv = read_values(z, Some(n), &q, m, false)?;
         let ev = read_values(noise, Some(n), &q, m, false)?;
-        let (d, l) = (index_mod(delta, &q, m)?, index_mod(lagrange, &q, m)?);
+        let (d, l) = (delta_mod(delta, &q, m)?, index_mod(lagrange, &q, m)?);
         let (mut w, mut cy) = (vec![Word::ZERO; n], vec![Word::ZERO; n]);
         py.detach(|| {
             let sr: Vec<&[_]> = slots.iter().map(|v| v.as_slice()).collect();
@@ -1660,7 +1683,7 @@ fn share_combine(py: Python<'_>, ctx: &Bound<'_, RingCtx>, c_y: &Bound<'_, PyAny
                 None => return Ok(None),
             }
         }
-        let d = index_mod(delta, &q, m)?;
+        let d = delta_mod(delta, &q, m)?;
         let (mut out, mut none) = (vec![0i64; k], vec![0u8; k]);
         let wr: Vec<&[_]> = wv.iter().map(|v| v.as_slice()).collect();
         if !py.detach(|| rlwe::share_combine(m, &cy, &wr, d, bound_v, &mut out, &mut none)) {
@@ -1725,7 +1748,9 @@ fn shamir_share(py: Python<'_>, ctx: &Bound<'_, RingCtx>, values: &Bound<'_, PyA
 fn dense_dots(py: Python<'_>, materials: &Bound<'_, PyAny>, nb: usize, count: usize, key: &[u8], kl: usize,
               threads: usize) -> PyResult<Py<PyBytes>> {
     let mats = materials_of(materials)?.unwrap_or_default();
-    if nb == 0 || kl == 0 || key.len() != count * kl * 8 {
+    // checked sizes: count * kl * 8 is the key's length, nb * count the hash stream's
+    let key_len = count.checked_mul(kl).and_then(|v| v.checked_mul(8));
+    if nb == 0 || nb > 1 << 16 || kl == 0 || key_len != Some(key.len()) || nb.checked_mul(count).is_none() {
         return Err(PyValueError::new_err("inconsistent dense_dots arguments"));
     }
     let k: Vec<u64> = key.chunks_exact(8).map(|c| u64::from_le_bytes(c.try_into().unwrap())).collect();

@@ -42,6 +42,7 @@ from pyfe4ai.schemes.mcfe.labels import chunk_label, encode_label
 from pyfe4ai.schemes.ipfe import decoded_layer
 from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWE
 from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWEKeyGenerator
+from pyfe4ai.schemes.one_time import OneTimePrecomputation
 from pyfe4ai.utils import native_backend
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.crypto_utils import hash_to_zq_material
@@ -159,12 +160,15 @@ class MCFERingLWEKeyGenerator(MIFERingLWEKeyGenerator):
         }
 
 
-class RingLWEPrecomputation:
+class RingLWEPrecomputation(OneTimePrecomputation):
     """Offline phase of :meth:`MCFERingLWE.encrypt_lst_ndarray` for one label
     and fixed layer shapes (see :meth:`MCFERingLWE.precompute`). Secret and
-    one-time."""
+    one-time (:mod:`pyfe4ai.schemes.one_time`)."""
+
+    _secret = ("native", "rows")
 
     def __init__(self, owner, label: str, shapes: list, first_chunks: list, native=None, rows=None) -> None:
+        super().__init__()
         self.owner = owner
         self.key_src = owner._key_src()
         self.label = label
@@ -172,7 +176,6 @@ class RingLWEPrecomputation:
         self.first_chunks = first_chunks
         self.native = native  # (native key, capsule) or None
         self.rows = rows      # Python: [(pk r + e_0 + Delta (u + H), a r + e)] per chunk
-        self.used = False
 
     def __repr__(self) -> str:
         return "RingLWEPrecomputation(label={!r}, shapes={}, used={})".format(self.label, self.shapes, self.used)
@@ -335,7 +338,11 @@ class MCFERingLWE(MIFERingLWE):
 
         The result determines the encryption randomness: keep it as secret as
         the key, and use it once (an MCFE client encrypts at most once per
-        label); its values are wiped when used.
+        label). The use is atomic, and ``copy.copy``, ``copy.deepcopy``,
+        pickling and use in another process (after ``os.fork()``) are refused
+        (:mod:`pyfe4ai.schemes.one_time`). Natively each chunk is overwritten
+        in memory when used; on the Python path the references to the chunks
+        are dropped (Python integers cannot be wiped).
 
         Args:
             label: The label the layers will be encrypted under.
@@ -386,14 +393,18 @@ class MCFERingLWE(MIFERingLWE):
         if [tuple(np.shape(a)) for a in lst_ndarray] != pre.shapes:
             raise FEValidationError("layer shapes differ from the precomputed ones {}".format(pre.shapes))
         layers = [self._check_layer(a) for a in lst_ndarray]
-        pre.used = True
+        # atomic: of two callers one gets the chunks. The Python rows are moved
+        # out; the native capsule stays referenced (it marks and wipes its
+        # chunks itself, see precomputed_info).
+        (rows,) = pre._claim("rows")
+        native = pre.native
         ring_n = self.pp["ring_n"]
         q = gp.mpz(self.pp["q"])
         delta = q // gp.mpz(self.pp["p"])
         out = []
         for ints, first, shape in zip(layers, pre.first_chunks, pre.shapes):
-            if pre.native is not None:
-                nkey, cap = pre.native
+            if native is not None:
+                nkey, cap = native
                 res = native_backend.ext().encrypt_precomputed(
                     nkey, cap, first, np.ascontiguousarray(ints, dtype=np.int64),
                     native_backend.get_threads(), self.ct_format == "binary",
@@ -403,12 +414,11 @@ class MCFERingLWE(MIFERingLWE):
                 flat, cts = ints.tolist(), []
                 for j in range(math.ceil(len(flat) / ring_n)):
                     part = flat[j * ring_n:(j + 1) * ring_n]
-                    p_row, ct1 = pre.rows[first + j]
-                    pre.rows[first + j] = None
+                    p_row, ct1 = rows[first + j]
+                    rows[first + j] = None
                     ct0 = [(p + delta * x) % q for p, x in zip(p_row, part)] + p_row[len(part):]
                     cts.append(self._format_ciphertext([ct0], ct1, len(part)))
             out.append({"shape": list(shape), "first_chunk": first, "chunks": cts})
-        pre.rows = None
         return out
 
     def _key_src(self) -> tuple:

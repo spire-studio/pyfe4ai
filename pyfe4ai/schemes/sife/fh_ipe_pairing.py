@@ -251,7 +251,8 @@ class SIFEFHIPE(IPFEAbsCrypto):
         d2 = multi_pair(k2, c2)
 
         bound = int(self.pp["eta"] * gp.mpz(self.pp["bound_x"]) * gp.mpz(self.pp["bound_y"]))
-        return _bounded_discrete_log_gt(self.group, d1, d2, bound)
+        # d1 = e(k1, c1) is a new base for every decryption: no cached table
+        return _bounded_discrete_log_gt(self.group, d1, d2, bound, cache=False)
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
         """Not implemented for this scheme; raises :class:`NotImplementedError`."""

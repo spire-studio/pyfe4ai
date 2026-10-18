@@ -241,6 +241,8 @@ class MIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 class MIFEPaillier(OfflineRandomMixin, IPFEAbsCrypto):
     """Crypto operations for Paillier-based multi-input inner-product FE."""
 
+    _online_bound = "bound_x"  # checked by the online phase before the precomputation is used
+
     def __init__(self, config: dict, **kwargs) -> None:
         """Initialise the MIFE Paillier crypto object.
 

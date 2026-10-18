@@ -4,14 +4,18 @@
 operations the pairing-based schemes use, so the schemes run unchanged on
 BLS12-381 (arkworks, in :mod:`pyfe4ai._rust_native`): ``random(ZR | G1 | G2 |
 GT)``, ``init(type, value)``, ``order()``, ``serialize`` / ``deserialize``
-(``b"<type>:<base64 of the compressed encoding>"``; deserialisation checks
-the encoding and subgroup membership), ``hash(msg, G1 | G2)`` (RFC 9380
+(``b"<type>:<base64 of the compressed encoding>"``; deserialisation accepts
+only the canonical string -- a type tag ``0`` to ``3``, canonical base64 of
+exactly the element's encoding -- and checks the encoding and subgroup
+membership), ``hash(msg, G1 | G2)`` (RFC 9380
 hash_to_curve, suites BLS12381G1/G2_XMD:SHA-256_SSWU_RO_, with the domain
 separation tags of :data:`HASH_DST`), ``ismember``, ``groupType``; elements
 written multiplicatively (``*``, ``/``, ``**``), ZR elements with ``+ - * /
 **`` and ``int()``. Products of pairings (:func:`multi_pair`) take one final
-exponentiation; :func:`gt_dlog` is a bounded discrete logarithm in GT with a
-baby-step table built once per base and bound. Products of powers
+exponentiation; :func:`gt_dlog` is a bounded discrete logarithm in GT
+(bounds up to :data:`MAX_DLOG_BOUND`) with a baby-step table cached per base
+and bound (a few tables at most, least recently used evicted), or built for
+one call for a base used once. Products of powers
 (:func:`msm`) are one multi-scalar multiplication, powers of one base
 (:func:`pow_many`) share one table, and :meth:`PairingGroup.deserialize_many`
 decodes a list in one call.
@@ -28,6 +32,9 @@ import base64
 
 ZR, G1, G2, GT = 0, 1, 2, 3
 NAME = "BLS12-381"
+#: Largest bound of :func:`gt_dlog` (``ValueError`` above).
+MAX_DLOG_BOUND = 2 ** 48
+_TAGS = {b"0": ZR, b"1": G1, b"2": G2, b"3": GT}
 #: RFC 9380 domain separation tags of :meth:`PairingGroup.hash`.
 HASH_DST = {
     G1: b"PYFE4AI-V01-CS01-with-BLS12381G1_XMD:SHA-256_SSWU_RO_",
@@ -95,14 +102,14 @@ class PairingGroup:
     def deserialize(self, data, compression: bool = True):
         try:
             return self._ext.bls_deserialize(*_split(data))
-        except (ValueError, TypeError) as exc:
+        except (ValueError, TypeError, OverflowError) as exc:
             raise ValueError("invalid serialised BLS12-381 element") from exc
 
     def deserialize_many(self, items) -> list:
         """``[deserialize(x) for x in items]`` in one call; equal encodings are decoded once."""
         try:
             return self._ext.bls_deserialize_many([_split(data) for data in items])
-        except (ValueError, TypeError) as exc:
+        except (ValueError, TypeError, OverflowError) as exc:
             raise ValueError("invalid serialised BLS12-381 element") from exc
 
     def ismember(self, element) -> bool:
@@ -118,11 +125,18 @@ class PairingGroup:
 
 
 def _split(data) -> tuple:
-    """``(type, encoding)`` of a serialised element ``b"<type>:<base64>"`` (bytes or str)."""
+    """``(type, encoding)`` of a serialised element ``b"<type>:<base64>"`` (bytes or str):
+    the type one digit ``0`` to ``3``, the encoding canonical base64 (what
+    :meth:`PairingGroup.serialize` writes); the extension checks its length."""
     if isinstance(data, str):
         data = data.encode("ascii")
     kind, _, body = bytes(data).partition(b":")
-    return int(kind), base64.b64decode(body, validate=True)
+    if kind not in _TAGS:
+        raise ValueError("invalid type tag of a serialised BLS12-381 element")
+    raw = base64.b64decode(body, validate=True)
+    if base64.b64encode(raw) != body:
+        raise ValueError("non-canonical base64 in a serialised BLS12-381 element")
+    return _TAGS[kind], raw
 
 
 def pair(a, b):
@@ -146,9 +160,20 @@ def pow_many(base, scalars: list) -> list:
     return _require().bls_pow_many(base, list(scalars))
 
 
-def gt_dlog(base, target, bound: int):
-    """The x with base^x = target and |x| <= bound, or None."""
-    return _require().bls_gt_dlog(base, target, int(bound))
+def gt_dlog(base, target, bound: int, cache: bool = True):
+    """The x with base^x = target and |x| <= bound, or None.
+
+    With *cache* the baby-step table (about ``16 sqrt(2 bound + 1)`` steps) is
+    kept for later calls with this base and bound; pass ``cache=False`` for a
+    base used once (a table of about ``sqrt(2 bound + 1)`` steps, not kept).
+
+    Raises:
+        ValueError: If *bound* is negative or above :data:`MAX_DLOG_BOUND`.
+    """
+    bound = int(bound)
+    if not 0 <= bound <= MAX_DLOG_BOUND:
+        raise ValueError("dlog bound must be between 0 and 2^48, got {}".format(bound))
+    return _require().bls_gt_dlog(base, target, bound, bool(cache))
 
 
 def is_element(obj) -> bool:

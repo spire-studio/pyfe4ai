@@ -233,6 +233,14 @@ class SIFERingLWE(IPFEAbsCrypto):
         if self._has_private_keys():
             self.sk = self.keys["sk"]
 
+    def __getstate__(self) -> dict:
+        """Pickling and copying without the key caches (they may hold native
+        objects; rebuilt on use)."""
+        state = self.__dict__.copy()
+        state.pop("_enc_key", None)
+        state.pop("_nkey", None)
+        return state
+
     def _encryption_key(self) -> tuple:
         """``(pk, NTT(a), [NTT(pk_i)])`` of this key, computed once (the
         transforms are ``None`` without an NTT-friendly ``q``)."""

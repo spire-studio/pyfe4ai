@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import random
 import threading
@@ -194,6 +195,26 @@ def rand_bit_matrix(rows: int, cols: int) -> np.ndarray:
 _DOUBLE_SAFE_SIGMA = 2 ** 40
 
 
+def _rounded_gaussians(count: int, sigma: float) -> list:
+    """*count* values ``round(N(0, sigma^2))`` from :data:`_CSPRNG`.
+
+    The arithmetic of ``random.gauss`` (Box-Muller: ``cos`` then ``sin`` of one
+    pair of uniforms, consumed in that order), but the second value of the
+    last pair is dropped, not cached: ``gauss`` keeps it in the generator's
+    ``gauss_next``, where a future secret sample stays in memory between
+    calls and is drawn twice after ``fork()``.
+    """
+    rnd = _CSPRNG.random
+    out = []
+    while len(out) < count:
+        x2pi = rnd() * (2.0 * math.pi)
+        g2rad = math.sqrt(-2.0 * math.log(1.0 - rnd()))
+        out.append(gp.mpz(int(round(math.cos(x2pi) * g2rad * sigma))))
+        if len(out) < count:
+            out.append(gp.mpz(int(round(math.sin(x2pi) * g2rad * sigma))))
+    return out
+
+
 def discrete_gaussian_matrix(
     rows: int, cols: int, sigma: float, sampler: str | None = None
 ) -> list[list[gp.mpz]]:
@@ -232,10 +253,8 @@ def discrete_gaussian_matrix(
     if sigma > _DOUBLE_SAFE_SIGMA:
         flat = discrete_gaussian_bigint(sigma, rows * cols, sampler="rounded")
         return [flat[i * cols:(i + 1) * cols] for i in range(rows)]
-    return [
-        [gp.mpz(int(round(_CSPRNG.gauss(0.0, sigma)))) for _ in range(cols)]
-        for _ in range(rows)
-    ]
+    flat = _rounded_gaussians(rows * cols, sigma)
+    return [flat[i * cols:(i + 1) * cols] for i in range(rows)]
 
 
 # Guards the counter claims of every XofRandom. Its critical sections make no

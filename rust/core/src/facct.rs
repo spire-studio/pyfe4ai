@@ -291,7 +291,8 @@ fn shr_pair(hi: u128, lo: u128, s: u32) -> Option<u128> {
     }
 }
 
-/// exp(-a) in fixed point (F fractional bits) for a = c t; error below 2^-110.
+/// exp(-a) in fixed point (F fractional bits) for a = c t; error below 2^-110
+/// when c_mant 2^c_exp is c rounded down to 128 bits (check_table checks it).
 /// None if a is beyond the range this handles (the caller then uses `exact`).
 fn exp_neg(table: &Table, t: u128) -> Option<u128> {
     // a = c_mant t 2^c_exp with F fractional bits: (c_mant t) >> (-(c_exp + F))

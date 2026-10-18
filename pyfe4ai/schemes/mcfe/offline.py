@@ -12,14 +12,19 @@ and are known before the round, so:
   element label of given layer shapes; ``encrypt_lst_ndarray(...,
   precomputed=...)`` then only computes ``X(x)`` and one product per
   element. The ciphertexts are those of the plain call (the encryption is
-  deterministic). Secret and one-time, as the masks of the Ring-LWE MCFE.
+  deterministic). Secret and one-time, as the masks of the Ring-LWE MCFE
+  (see :mod:`pyfe4ai.schemes.one_time`: claimed atomically after the input
+  is validated; ``copy.copy``, ``copy.deepcopy``, pickling and use in
+  another process are refused).
 * :meth:`OfflineMCFEMixin.prepare_key` computes the key terms of every
   element label for a functional key; ``decrypt_lst_ndarray_ct`` with that
   key then only multiplies the ciphertexts and solves the discrete log.
 
 A scheme provides ``_label_mask(label)`` (one mask per slot),
 ``_encrypt_masked(lst_pt, masks)``, ``_key_term(dk, label)`` and
-``decrypt(..., term=...)`` with the checks of its plain methods.
+``decrypt(..., term=...)`` with the checks of its plain methods, and names
+in ``_online_bound`` the public parameter that bounds the plaintexts, if
+``_encrypt_masked`` checks one.
 """
 
 from __future__ import annotations
@@ -27,6 +32,8 @@ from __future__ import annotations
 import numpy as np
 
 from pyfe4ai.schemes.mcfe.labels import element_label
+from pyfe4ai.schemes.one_time import OneTimePrecomputation
+from pyfe4ai.schemes.random_offline import check_online_bound
 from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
 from pyfe4ai.utils.validation import scale_to_int
 
@@ -35,16 +42,18 @@ def _shapes(shapes) -> list:
     return [tuple(int(d) for d in s) if isinstance(s, (tuple, list)) else (int(s),) for s in shapes]
 
 
-class LabelPrecomputation:
+class LabelPrecomputation(OneTimePrecomputation):
     """A client's label masks for one label and fixed layer shapes. Secret, one-time."""
 
+    _secret = ("masks",)
+
     def __init__(self, owner, label: str, shapes: list, masks: list) -> None:
+        super().__init__()
         self.owner = owner
         self.key_id = id(owner.sk)
         self.label = label
         self.shapes = shapes
         self.masks = masks  # per layer: an object array of per-slot mask lists
-        self.used = False
 
     def __repr__(self) -> str:
         return "LabelPrecomputation(label={!r}, shapes={}, used={})".format(self.label, self.shapes, self.used)
@@ -93,14 +102,15 @@ class OfflineMCFEMixin:
         layers = [scale_to_int(a, self.precision) for a in lst_ndarray]
         if [tuple(np.shape(a)) for a in layers] != pre.shapes:
             raise FEValidationError("layer shapes differ from the precomputed ones {}".format(pre.shapes))
-        pre.used = True
+        check_online_bound(self, layers)
+        (all_masks,) = pre._claim()  # atomic: of two callers one gets the masks
         out = []
-        for ary, masks in zip(layers, pre.masks):
+        for ary, masks in zip(layers, all_masks):
             ary_ct = np.empty(ary.shape, dtype=object)
             for i, w in np.ndenumerate(ary):
                 ary_ct[i] = self._encrypt_masked([int(w)], masks[i])
+                masks[i] = None
             out.append(ary_ct)
-        pre.masks = None  # one-time
         return out
 
     def prepare_key(self, dk: dict, label: str, shapes) -> dict:

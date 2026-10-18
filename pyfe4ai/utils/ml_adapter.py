@@ -42,6 +42,7 @@ from __future__ import annotations
 import importlib
 import logging
 import numbers
+import threading
 from dataclasses import dataclass
 from fractions import Fraction
 from typing import Any
@@ -371,6 +372,18 @@ class FESchemeWrapper:
     variants, whose decryption is a multi-party protocol; use the scheme
     classes directly for those.
 
+    A wrapper can be pickled and copied (``multiprocessing``, Ray): the copy
+    carries the ``(nid, label)`` pairs used so far and refuses them as the
+    original does. Copies do not learn of labels used later by the original
+    or by other copies, so encrypt each client's gradient for a label through
+    one wrapper. A pickled wrapper carries everything it holds, the master
+    secret key and every client's key included: do not ship it to workers
+    that should only encrypt. Give such a worker its client's own crypto
+    object instead -- the scheme class built from ``wrapper.pp`` and
+    ``wrapper.kg.get_private_keys(nid)`` (e.g. ``MCFERingLWE({"id": nid,
+    "precision": p, "keys": {"pp": pp, "sk": sk}})`` for ``mcfe/ring_lwe``),
+    whose ``encrypt_lst_ndarray`` the worker calls.
+
     Args:
         scheme_type: ``"sife"``, ``"mife"``, ``"mcfe"`` or ``"quadratic"``.
         variant: Variant name within the family, e.g. ``"ddh"``, ``"lwe"``,
@@ -434,9 +447,27 @@ class FESchemeWrapper:
 
         # Cache for crypto instances per nid
         self._encryptors: dict[str, Any] = {}
-        # Labels used for encryption, per client, and weights aggregated, per label
+        # Labels used for encryption, per client (reserved before encrypting,
+        # under _label_lock), and weights aggregated, per label
         self._encrypted_labels: set[tuple[str, str]] = set()
+        self._label_lock = threading.Lock()
         self._aggregated: dict[str, dict] = {}
+
+    def __getstate__(self) -> dict:
+        """Pickling and copying: the state without the lock and the cached
+        crypto objects (rebuilt from the keys on use; they may hold native
+        objects), with a snapshot of the used ``(nid, label)`` pairs (the
+        copy refuses them too)."""
+        state = self.__dict__.copy()
+        del state["_label_lock"]
+        state["_encryptors"] = {}
+        with self._label_lock:
+            state["_encrypted_labels"] = set(self._encrypted_labels)
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+        self._label_lock = threading.Lock()
 
     # -- crypto instance management ----------------------------------------
 
@@ -711,8 +742,9 @@ def precompute_gradient(
     precompute = getattr(encryptor, "precompute", None)
     if precompute is None:
         raise ValueError("{}/{} has no offline encryption phase".format(wrapper.scheme_type, wrapper.variant))
-    if (nid, label) in wrapper._encrypted_labels:
-        raise ValueError("client {} already encrypted under label {!r}".format(nid, label))
+    with wrapper._label_lock:
+        if (nid, label) in wrapper._encrypted_labels:
+            raise ValueError("client {} already encrypted under label {!r}".format(nid, label))
     return precompute(label, [tuple(int(d) for d in np.shape(np.empty(shape)))])
 
 
@@ -744,18 +776,26 @@ def encrypt_gradient(
     if wrapper.has_label:
         if label is None:
             raise ValueError("MCFE schemes require a label for encryption")
-        if (nid, label) in wrapper._encrypted_labels:
-            raise ValueError(
-                "client {} already encrypted under label {!r}; use a fresh label "
-                "for every round".format(nid, label)
-            )
+        # reserve (nid, label) before encrypting: of two concurrent calls one
+        # encrypts, the other is refused; a failed encryption releases it
+        with wrapper._label_lock:
+            if (nid, label) in wrapper._encrypted_labels:
+                raise ValueError(
+                    "client {} already encrypted under label {!r}; use a fresh label "
+                    "for every round".format(nid, label)
+                )
+            wrapper._encrypted_labels.add((nid, label))
         kwargs["label"] = label
     if precomputed is not None:
         kwargs["precomputed"] = precomputed
 
-    cts = encryptor.encrypt_lst_ndarray([arr], **kwargs)
-    if wrapper.has_label:
-        wrapper._encrypted_labels.add((nid, label))
+    try:
+        cts = encryptor.encrypt_lst_ndarray([arr], **kwargs)
+    except BaseException:
+        if wrapper.has_label:
+            with wrapper._label_lock:
+                wrapper._encrypted_labels.discard((nid, label))
+        raise
 
     return EncryptedGradient(
         ciphertexts=cts,

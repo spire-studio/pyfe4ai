@@ -232,6 +232,8 @@ class MCFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 class MCFEPaillier(OfflineMCFEMixin, IPFEAbsCrypto):
     """Crypto operations for DCR-based multi-client inner-product FE (ABMPSW20 Fig. 3)."""
 
+    _online_bound = "bound_x"  # checked by the online phase before the precomputation is used
+
     def __init__(self, config: dict, **kwargs) -> None:
         """Initialise with ``keys.pp`` and, for clients, ``keys.sk``."""
         super().__init__(config, **kwargs)
