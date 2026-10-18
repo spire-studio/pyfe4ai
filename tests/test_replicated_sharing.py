@@ -374,3 +374,87 @@ def test_the_sharings_have_their_own_parameter_records():
     new = record(new_kg)
     assert new["threshold_construction"] == "bmms21-ibmcfe-replicated-smudging/v1"
     assert new["A_seed"] != old["A_seed"] and new_kg.q == old_kg.q
+
+
+# --------------------------------------- review 2026-10: F4, F5, F7
+
+@pytest.mark.parametrize("kind", sorted(_CONFIGS))
+@pytest.mark.parametrize("t", [True, False, 2.0, None])
+def test_a_threshold_must_be_an_integer(kind, t):
+    with pytest.raises(FEValidationError):
+        _make(kind, 3, t)
+
+
+def test_validate_threshold_refuses_bool():
+    from pyfe4ai.schemes.threshold_utils import validate_threshold
+
+    with pytest.raises(FEValidationError):
+        validate_threshold(True, ["a", "b"])
+    validate_threshold(1, ["a", "b"])
+
+
+def _v030(kg, sid, credentials):
+    """pp and a key share in the format of v0.3.0 (no ``sharing`` entry)."""
+    pp = {k: v for k, v in kg.get_public_parameters().items() if k != "sharing"}
+    dk = {k: v for k, v in kg.get_decryption_keys(sid, credentials=credentials).items() if k != "sharing"}
+    return pp, dk
+
+
+@pytest.mark.parametrize("kind", sorted(_CONFIGS))
+def test_shamir_key_shares_with_t_below_s_warn_when_served(kind):
+    import warnings
+
+    from pyfe4ai.utils.exceptions import FESecurityWarning
+
+    cls = {"mife": ThresholdMIFELWE, "ring": ThresholdMCFERingLWE, "lwe": ThresholdMCFELWE}[kind]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        kg = _make(kind, 3, 2, sharing="shamir")
+    kg.setup()
+    y = {nid: [1] for nid in kg.lst_nid}
+    cred = y if kind == "mife" else {"fusion_weight": y, "label": "L"}
+    pp, dk = _v030(kg, "sid_0", cred if kind != "mife" else {"fusion_weight": y})
+    if kind == "mife":
+        cts = {nid: cls({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt([1]) for nid in y}
+    else:
+        x = [[1]] if kind == "ring" else [1]
+        cts = {nid: cls({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(x, "L") for nid in y}
+    server = cls({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
+    with pytest.warns(FESecurityWarning, match="t = 2 < s = 3"):
+        server.share_decrypt(cts, cred, dk, ["sid_0", "sid_2"])
+    # Shamir at t = s is sound: no warning
+    kg = _make(kind, 3, 3)
+    kg.setup()
+    pp, dk = _v030(kg, "sid_0", cred if kind != "mife" else {"fusion_weight": y})
+    if kind == "mife":
+        cts = {nid: cls({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt([1]) for nid in y}
+    else:
+        cts = {nid: cls({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(x, "L") for nid in y}
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FESecurityWarning)
+        cls({"id": "sid_0", "keys": {"pp": pp, "dk": dk}}).share_decrypt(cts, cred, dk, ["sid_0", "sid_1", "sid_2"])
+
+
+def test_summed_shares_are_cached_per_key_share_and_assignment():
+    from collections import OrderedDict
+
+    from pyfe4ai.schemes import threshold_utils
+
+    points, t = [1, 2, 3], 2
+    pieces = share_replicated({"sk_y": [11, 12], "z": 13, "z_chunks": [[1, 2], [3, 4]]}, t, points, Q)
+    dk = {"sharing": "replicated", "lst_sid": ["a", "b", "c"], "pieces": pieces_held(pieces, 1)}
+    cache = OrderedDict()
+    first = share_for_enrolled(dk, "a", ["a", "b"], t, Q, cache=cache)
+    assert share_for_enrolled(dk, "a", ["a", "b"], t, Q, cache=cache) is first
+    # same assigned pieces for {1, 3}: the same entry
+    assert share_for_enrolled(dk, "a", ["a", "c"], t, Q, cache=cache) is first and len(cache) == 1
+    # another key share object (even with equal content) is summed again
+    again = share_for_enrolled(dict(dk), "a", ["a", "b"], t, Q, cache=cache)
+    assert again is not first and again == first
+    # only the requested fields
+    part = share_for_enrolled(dk, "a", ["a", "b"], t, Q, fields=("sk_y", "z"), cache=cache)
+    assert "z_chunks" not in part[0] and part[0]["z"] == first[0]["z"] and part[0]["sk_y"] == first[0]["sk_y"]
+    for i in range(threshold_utils.SHARE_CACHE_SIZE + 5):
+        share_for_enrolled(dict(dk), "a", ["a", "b"], t, Q, cache=cache)
+    assert len(cache) == threshold_utils.SHARE_CACHE_SIZE
+    assert share_for_enrolled(dk, "a", ["a", "b"], t, Q) == first  # no cache: same values

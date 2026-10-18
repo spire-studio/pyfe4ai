@@ -61,10 +61,13 @@ result up to ``e_k - M nu``,
 ``M = lambda_k^E prod_{j in C} (k - j) / (0 - j)``, and ``M`` is a non-integer
 rational for some ``(C, E, k)`` (6 of 18 for ``s = 3, t = 2``): for
 ``M = r / d``, ``d`` times the difference is the small integer
-``d e_k - r nu``, which gives ``nu mod d`` whatever ``sigma_f``; where ``M``
-is an integer it reaches 4 (45 for ``s = 5, t = 3``), and the statistical
-distance of the flooding grows ``|M|``-fold. ``"replicated"`` shares the key
-additively over the ``(t - 1)``-subsets of the servers (see
+``d e_k - r nu``, which gives ``nu mod d`` whatever ``sigma_f``. Fewer
+corrupted servers, or none, can suffice (the aggregator alone reads ``nu``
+modulo ``(s - 1)!`` for ``t = 1``), and combining the partials of several
+enrolled sets raises ``d`` (144 for ``s = 5, t = 3``); where ``M`` is an
+integer it reaches 4 (45 for ``s = 5, t = 3``), and the statistical distance
+of the flooding grows ``|M|``-fold. ``"replicated"`` shares the key additively
+over the ``(t - 1)``-subsets of the servers (see
 :func:`~pyfe4ai.schemes.threshold_utils.share_replicated`): each server of
 ``E`` adds up the pieces assigned to it, ``M`` is 0 or 1 and the smudging
 argument holds as stated, with ``q`` unchanged; a server holds
@@ -105,6 +108,7 @@ from pyfe4ai.schemes.threshold_utils import tag_ciphertext
 from pyfe4ai.schemes.threshold_utils import ciphertexts_digest
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.schemes.threshold_utils import pieces_held
+from pyfe4ai.schemes.threshold_utils import share_cache
 from pyfe4ai.schemes.threshold_utils import share_for_enrolled
 from pyfe4ai.schemes.threshold_utils import share_points
 from pyfe4ai.schemes.threshold_utils import share_replicated
@@ -350,7 +354,7 @@ class ThresholdMIFELWE(MIFELWE):
         q = gp.mpz(self.pp["q"])
         # Shamir: (dk, lambda_k); replicated: the sum of the assigned pieces, 1
         share, multiplier, tag = _share or share_for_enrolled(
-            dk, self.id, lst_sid_enrolled, self.pp["t"], q
+            dk, self.id, lst_sid_enrolled, self.pp["t"], q, cache=share_cache(self)
         )
         if set(dict_ct) != set(share["sk_y"]):
             raise FESchemeError("need one ciphertext for every slot of the key")
@@ -444,7 +448,9 @@ class ThresholdMIFELWE(MIFELWE):
         if dk and "pieces" in dk and self.id in dk.get("lst_sid", []):
             # the assigned pieces, added up once for all elements
             validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
-            share = share_for_enrolled(dk, self.id, lst_sid_enrolled, self.pp["t"], gp.mpz(self.pp["q"]))
+            share = share_for_enrolled(
+                dk, self.id, lst_sid_enrolled, self.pp["t"], gp.mpz(self.pp["q"]), cache=share_cache(self)
+            )
         lst_partial = []
         for l in range(len(sample)):
             ary_partial = np.empty(sample[l].shape, dtype=object)

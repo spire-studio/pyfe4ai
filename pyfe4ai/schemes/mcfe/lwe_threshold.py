@@ -62,8 +62,9 @@ multiples of ``D M`` (``D`` the common denominator; ``sum_E e_j`` modulo
 ``D``), and ``v`` is an LWE sample whose error is ``D |M|_2`` times narrower
 than the ``sigma_f`` of one answer of multiplier 1: ``sqrt(10)`` for
 ``s = 3, t = 2``, ``C = {2}``, ``E = {1, 3}`` (``M = (3/4, 1/4)``), up to 5
-for ``s = 3, t = 2`` and 79 for ``s = 5, t = 3``. This is not a break, but the
-argument does not cover it. ``"replicated"`` (see
+for ``s = 3, t = 2`` and 79 for ``s = 5, t = 3`` per enrolled set, and 9.1 and
+869 over all enrolled sets of one label. This is not a break, but the argument
+does not cover it. ``"replicated"`` (see
 :func:`~pyfe4ai.schemes.threshold_utils.share_replicated`) makes every ``M_k``
 0 or 1, with one honest answer of multiplier 1 per enrolled set; the other
 answers are computable up to their own noise. ``sigma_f`` and ``q`` are
@@ -97,6 +98,7 @@ from pyfe4ai.schemes.mcfe.lwe import dot_mod
 from pyfe4ai.schemes.threshold_utils import check_fusion_weight
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.schemes.threshold_utils import pieces_held
+from pyfe4ai.schemes.threshold_utils import share_cache
 from pyfe4ai.schemes.threshold_utils import share_for_enrolled
 from pyfe4ai.schemes.threshold_utils import share_points
 from pyfe4ai.schemes.threshold_utils import share_replicated
@@ -295,7 +297,7 @@ class ThresholdMCFELWE(MCFELWE):
 
         # Shamir: (dk, lambda_k); replicated: the sum of the assigned pieces, 1
         share, multiplier, tag = _share or share_for_enrolled(
-            dk, self.id, lst_sid_enrolled, self.pp["t"], self.q
+            dk, self.id, lst_sid_enrolled, self.pp["t"], self.q, cache=share_cache(self)
         )
         share_term = dot_mod([gp.mpz(v) for v in share["sk_y"]], self._hash_label(label), self.q)
         # the partial depends on the enrolled set only through the tag (lambda,
@@ -376,7 +378,7 @@ class ThresholdMCFELWE(MCFELWE):
         if dk and "pieces" in dk and self.id in dk.get("lst_sid", []):
             # the assigned pieces, added up once for all elements
             validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
-            share = share_for_enrolled(dk, self.id, lst_sid_enrolled, self.pp["t"], self.q)
+            share = share_for_enrolled(dk, self.id, lst_sid_enrolled, self.pp["t"], self.q, cache=share_cache(self))
         lst_partial = []
         for l in range(len(sample)):
             ary_partial = np.empty(sample[l].shape, dtype=object)

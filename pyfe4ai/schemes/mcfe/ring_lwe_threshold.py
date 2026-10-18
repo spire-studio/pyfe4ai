@@ -42,16 +42,18 @@ servers ``C`` corrupted an honest partial is computable from ``C``'s shares
 and the result up to ``e_k - M nu`` per coefficient,
 ``M = lambda_k^E prod_{j in C} (k - j) / (0 - j)``, a non-integer rational
 ``r / d`` for some ``(C, E, k)``, and ``d`` times the difference reveals
-``nu mod d`` coefficient by coefficient, whatever ``sigma_f`` (integer ``M``
-reach 4 for ``s = 3, t = 2``, which multiplies the statistical distance of the
-flooding by 4). ``"replicated"`` (see
-:func:`~pyfe4ai.schemes.threshold_utils.share_replicated`) makes ``M`` 0 or 1,
-so the argument holds as stated with ``q`` and ``ring_n`` unchanged; a server
-holds ``C(s - 1, t - 1)`` key pieces instead of one share, and its key share
-is drawn in Python. With ``t = s`` both are sound. An explicit ``"shamir"``
-with ``t < s`` is refused under the ``standard`` profile and draws an
-``FESecurityWarning`` under ``toy``; the replicated sharing has its own
-parameter record (``threshold_construction``
+``nu mod d`` coefficient by coefficient, whatever ``sigma_f``. Fewer corrupted
+servers, or none, can suffice (the aggregator alone reads ``nu`` modulo
+``(s - 1)!`` for ``t = 1``), and combining several enrolled sets raises ``d``
+(144 for ``s = 5, t = 3``); integer ``M`` reach 4 for ``s = 3, t = 2``, which
+multiplies the statistical distance of the flooding by 4. ``"replicated"``
+(see :func:`~pyfe4ai.schemes.threshold_utils.share_replicated`) makes ``M`` 0
+or 1, so the argument holds as stated with ``q`` and ``ring_n`` unchanged; a
+server holds ``C(s - 1, t - 1)`` key pieces instead of one share, and its key
+share is drawn in Python. With ``t = s`` both are sound. An explicit
+``"shamir"`` with ``t < s`` is refused under the ``standard`` profile and
+draws an ``FESecurityWarning`` under ``toy``; the replicated sharing has its
+own parameter record (``threshold_construction``
 ``bmms21-ibmcfe-replicated-smudging/v1``), so a record cached by an earlier
 version for ``t < s`` is not reused by the default.
 
@@ -86,6 +88,7 @@ from pyfe4ai.schemes.threshold_utils import tag_ciphertext
 from pyfe4ai.schemes.threshold_utils import ciphertexts_digest
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.schemes.threshold_utils import pieces_held
+from pyfe4ai.schemes.threshold_utils import share_cache
 from pyfe4ai.schemes.threshold_utils import share_for_enrolled
 from pyfe4ai.schemes.threshold_utils import share_points
 from pyfe4ai.schemes.threshold_utils import share_replicated
@@ -398,9 +401,10 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
         check_fusion_weight(dk, fusion_weight)
         q = gp.mpz(self.pp["q"])
-        # Shamir: (dk, lambda_k); replicated: the sum of the assigned pieces, 1
+        # Shamir: (dk, lambda_k); replicated: the sum of the assigned pieces
+        # (sk_y and z; the chunk keys come with _share), 1
         share, multiplier, tag = _share or share_for_enrolled(
-            dk, self.id, lst_sid_enrolled, self.pp["t"], q
+            dk, self.id, lst_sid_enrolled, self.pp["t"], q, fields=("sk_y", "z"), cache=share_cache(self)
         )
         if set(dict_ct) != set(share["sk_y"]):
             raise FESchemeError("need one ciphertext for every client of the key")
@@ -572,9 +576,12 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         packed_share = None
         z_chunks = (dk or {}).get("z_chunks", [])
         if dk and "pieces" in dk and self.id in dk.get("lst_sid", []):
-            # the assigned pieces, added up once for all chunks
+            # the assigned pieces (sk_y and the chunk keys), added up once for all chunks
             validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
-            packed_share = share_for_enrolled(dk, self.id, lst_sid_enrolled, self.pp["t"], gp.mpz(self.pp["q"]))
+            packed_share = share_for_enrolled(
+                dk, self.id, lst_sid_enrolled, self.pp["t"], gp.mpz(self.pp["q"]),
+                fields=("sk_y", "z_chunks"), cache=share_cache(self),
+            )
             z_chunks = packed_share[0]["z_chunks"]
         if self.key_chunks(sample) > len(z_chunks):
             raise FEKeyError("the key share covers fewer chunks than the ciphertexts")

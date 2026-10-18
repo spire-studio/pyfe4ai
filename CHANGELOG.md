@@ -22,36 +22,59 @@ compatibility).
   Cached parameters of these schemes are re-derived (construction
   `acfgu18-bmms21/v5`).
 - **Threshold LWE layers** (`mife/lwe_threshold`, `mcfe/ring_lwe_threshold`,
-  `mcfe/lwe_threshold`): with the Shamir sharing and `t < s`, a coalition of
-  `t - 1` servers sees honest partial decryptions that differ from their
-  simulation from the result by `M nu`, with `M` a Lagrange product that is
-  a non-integer rational for some corrupted sets, enrolled sets and servers
-  (6 of 18 for `s = 3, t = 2`; 202 of 330 for `s = 5, t = 3`). For
-  `M = r / d`, `d` times the partial minus what the coalition can compute is
-  a small integer that reveals the decryption noise `nu mod d`, whatever the
-  flooding width (checked: `nu mod 4` in 20 of 20 tMIFE-LWE partials and 160
-  of 160 tMCFE-Ring-LWE coefficients for `s = 3, t = 2`, server 2 corrupted,
-  enrolled set {1, 3}). In tMCFE-LWE the same multipliers fix linear
-  relations among the flooding terms and narrow the error of its LWE
-  argument up to 5-fold (`s = 3, t = 2`; 79-fold for `s = 5, t = 3`).
-  **v0.3.0 and earlier are affected** for every `t < s` with `s >= 3`
-  (`t = 1` included, where no server needs to be corrupted); `(s, t) =
-  (2, 1)` only through the integer multiplier 2. Not affected: `t = s`, and
-  the DDH and pairing threshold layers (exact interpolation in the
-  exponent). New config entry `sharing`: `"replicated"` shares the key
-  additively over the `(t - 1)`-subsets of the servers (piece `T` held by
-  the servers outside `T`, added by the smallest enrolled one), every
-  multiplier is 0 or 1 and the existing arguments hold, with `q`, `ring_n`
-  and `lwe_n` unchanged; a server holds `C(s - 1, t - 1)` key pieces
-  instead of one share. **It is the default for `t < s`**; `"shamir"`
-  stays the default for `t = s`, with unchanged outputs and cached
-  parameters. An explicit `"shamir"` with `t < s` is refused under
-  `standard` and draws an `FESecurityWarning` under `toy`. The replicated
-  sharing has its own parameter records (construction
-  `acfgu18-abdp15-replicated-smudging-seeded-a/v1`, threshold construction
-  `bmms21-ibmcfe-replicated-smudging/v1`), so records cached for `t < s`
-  by v0.3.0 are not reused; key shares for `t < s` have a new layout
-  (`sharing`, `pieces`), and their partial decryptions change.
+  `mcfe/lwe_threshold`): Lagrange-multiplier leak, **v0.3.0 and earlier are
+  affected** (severity High, practical impact Medium; details in the README,
+  Known Issues).
+  * **Mechanism.** The Shamir-shared key (the only sharing, so the default
+    for every `t < s`) makes an honest partial decryption differ from its
+    simulation from the result and a coalition's key shares by `M nu`. Here
+    `nu` is the decryption noise and `M` is a product of Lagrange
+    coefficients, a non-integer `r / d` for some corrupted set, enrolled set
+    and server whenever `s >= 3` and `t < s`: 6 of 18 cases for
+    `s = 3, t = 2`, 202 of 330 for `s = 5, t = 3`. Then `d` times the
+    partial minus the computable part reveals `nu mod d`, whatever the
+    flooding width.
+  * **Measured.** With `s = 3, t = 2`, server 2 corrupted and enrolled set
+    {1, 3}: `nu mod 4` in 20 of 20 tMIFE-LWE partials and 160 of 160
+    tMCFE-Ring-LWE coefficients.
+  * **Larger moduli.** Combining enrolled sets raises the modulus: 144 at
+    `(5, 3)`, about `2^25` at `(10, 6)`, at most `2^25.5` for `s <= 10`.
+    Fewer than `t - 1` corrupted servers can suffice, and for many `(s, t)`
+    none at all: the aggregator alone reads `nu` modulo `(s - 1)!` for
+    `t = 1`, 6 at `(5, 2)`, 120 at `(7, 2)` and 2 at `(6, 3)`, `(7, 4)` and
+    `(9, 5)`.
+  * **`(2, 1)`.** No residue leaks, only the integer multiplier 2. Integer
+    multipliers above 1 (up to 4 at `(3, 2)`) multiply the statistical
+    distance of the flooding.
+  * **Consequences.** With `nu` exact, tMIFE-LWE's `(sk_y, z)` would follow
+    by linear algebra. At the `standard` parameters the leak is partial
+    (about 25 bits per ciphertext at most for `s <= 10`), and no key or
+    plaintext recovery has been shown. In tMCFE-LWE the multipliers narrow
+    the error of its LWE argument, over the enrolled sets of one label, up
+    to 9-fold at `(3, 2)` and 869-fold at `(5, 3)`.
+  * **Not affected:** `t = s`, and the DDH and pairing threshold layers
+    (exact interpolation in the exponent).
+  * **New config entry `sharing`.** `"replicated"` shares the key
+    additively over the `(t - 1)`-subsets of the servers: piece `T` is held
+    by the servers outside `T` and added by the smallest enrolled one.
+    Every multiplier is 0 or 1 and the existing arguments hold, with `q`,
+    `ring_n` and `lwe_n` unchanged. A server holds `C(s - 1, t - 1)` key
+    pieces instead of one share, and keeps the sums of its pieces per
+    enrolled set in a small cache.
+  * **Defaults.** `"replicated"` **is the default for `t < s`**. `"shamir"`
+    stays the default for `t = s`, with unchanged outputs and cached
+    parameters.
+  * **Refusals and warnings.** An explicit `"shamir"` with `t < s` is
+    refused under `standard` and draws an `FESecurityWarning` under `toy`.
+    So does serving a Shamir key share with `t < s` (for example one of
+    v0.3.0). A threshold that is not an integer (also `t=True`) is refused
+    by every threshold scheme.
+  * **Records and key shares.** The replicated sharing has its own
+    parameter records (construction
+    `acfgu18-abdp15-replicated-smudging-seeded-a/v1`, threshold construction
+    `bmms21-ibmcfe-replicated-smudging/v1`), so records cached for `t < s`
+    by v0.3.0 are not reused. Key shares for `t < s` have a new layout
+    (`sharing`, `pieces`), and their partial decryptions change.
 
 ### Performance
 

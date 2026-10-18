@@ -428,32 +428,61 @@ limitations remain:
 | The ML adapter plays every party | `utils/ml_adapter.py` | `FESchemeWrapper` runs the key generator, so it holds the master key and acts as clients, authority and decryptor in one trust domain; use it for experiments, not as a deployment. By default `aggregate_gradients` needs a ciphertext and a non-zero weight for every enrolled client (`allow_partial=True` relaxes this), a client encrypts at most once per label and a label is aggregated with one weight vector; these checks are per wrapper object, and they do not stop very unequal weights (e.g. `(W, 1)` with `W` above twice the largest gradient entry), which separate two clients' gradients in one aggregate -- as with any inner-product FE, the weights are the key holder's choice. |
 
 **v0.3.0 and earlier are affected: Lagrange-multiplier leak in the threshold
-LWE layers** (fixed after v0.3.0, see [`CHANGELOG.md`](CHANGELOG.md)).
-`mife/lwe_threshold`, `mcfe/ring_lwe_threshold` and `mcfe/lwe_threshold`
-Shamir-shared the functional key. With `t < s`, an honest partial
-decryption differs from its simulation from the result and the shares of
-`t - 1` corrupted servers `C` by `M nu`, where `nu` is the decryption noise
-(it depends on the clients' secret LWE errors and encryption randomness)
-and `M = lambda_k^E prod_{j in C} (k - j) / (0 - j)`, a Lagrange product
-over the enrolled set `E`. For every `t < s` with `s >= 3` (`t = 1`
-included, where `C` is empty and anyone who sees the partials and the
-result can do it), `M` is a non-integer `r / d` for some `(C, E, k)` -- 6 of
-18 cases for `s = 3, t = 2`, 202 of 330 for `s = 5, t = 3` -- and then
-`d` times the partial minus the computable part reveals `nu mod d`, whatever
-the flooding width: for `s = 3, t = 2`, server 2 corrupted and `E = {1, 3}`,
-`nu mod 4` in every tMIFE-LWE partial and every tMCFE-Ring-LWE coefficient.
-Integer multipliers up to 4 (`s = 3, t = 2`; 45 for `s = 5, t = 3`; 2 for
-`s = 2, t = 1`) multiply the statistical distance of the flooding. In
-tMCFE-LWE, whose flooding argument is computational, the same multipliers
-fix exact relations among the flooding terms and narrow the error of its
-LWE argument up to 5-fold (`s = 3, t = 2`) or 79-fold (`s = 5, t = 3`).
-Not affected: `t = s`, and the DDH and pairing threshold layers
-(`mife/ddh_threshold`, `mcfe/ddh_threshold`,
-`mcfe/fh_multi_ipe_pairing_threshold`), which interpolate exactly in the
-exponent. The three layers now default to `sharing="replicated"` for
-`t < s` (multipliers 0 or 1; `q`, `ring_n` and `lwe_n` unchanged, a server
-holds `C(s - 1, t - 1)` key pieces); `sharing="shamir"` with `t < s` is
-refused under `standard` and draws an `FESecurityWarning` under `toy`.
+LWE layers** -- severity High, practical impact Medium; fixed after v0.3.0,
+see [`CHANGELOG.md`](CHANGELOG.md).
+
+* **What.** `mife/lwe_threshold`, `mcfe/ring_lwe_threshold` and
+  `mcfe/lwe_threshold` Shamir-shared the functional key, for every `t < s`.
+  An honest partial decryption `lambda_k^E F(k) + e_k` differs from its
+  simulation from the result and the key shares of a coalition `C` by
+  `M nu`: `nu` is the decryption noise, which depends on the clients'
+  secret LWE errors and encryption randomness, and `M` is a product of
+  Lagrange coefficients (`lambda_k^E prod_{j in C} (k - j) / (0 - j)` when
+  `|C| = t - 1`). Whenever `M = r / d` is not an integer, `d` times the
+  partial minus the computable part reveals `nu mod d`, whatever the
+  flooding width.
+* **Who can read it.** For every `t < s` with `s >= 3`:
+  * **`t - 1` corrupted servers.** For example, with `s = 3, t = 2`, server 2
+    corrupted and `E = {1, 3}`, they read `nu mod 4` from every tMIFE-LWE
+    partial and every tMCFE-Ring-LWE coefficient. Combining the partials of
+    all enrolled sets for one ciphertext raises the modulus: 4 at
+    `(s, t) = (3, 2)`, 144 at `(5, 3)`, about `2^25` at `(10, 6)`, and at
+    most `2^25.5` for `s <= 10`.
+  * **Fewer corrupted servers.** These can suffice: one corrupted server
+    gives modulus 3 at `(4, 3)` and 5 at `(5, 4)`.
+  * **No corrupted server at all**, for many `(s, t)`: the aggregator
+    alone, who sees the partials and the result, reads `nu` modulo
+    `(s - 1)!` for `t = 1`, 6 at `(5, 2)`, 2 at `(6, 3)`, 120 at `(7, 2)`,
+    2 at `(7, 4)` and 2 at `(9, 5)`.
+  * **`(s, t) = (2, 1)`.** No residue leaks, only the integer multiplier 2.
+    That multiplier, like the integer multipliers up to 4 at `(3, 2)` and 45
+    at `(5, 3)`, multiplies the statistical distance of the flooding.
+* **Consequences.** With `nu` known exactly, the tMIFE-LWE functional key
+  `(sk_y, z)` would follow from the partials by linear algebra. At the
+  `standard` parameters the leak is partial: at most about 25 bits of `nu`
+  per ciphertext for `s <= 10`, against a noise bound of about `2^67`
+  (tMIFE-LWE) or `2^71` (tMCFE-Ring-LWE) in the benchmark configurations. No key or plaintext recovery has been shown. In tMCFE-LWE,
+  whose flooding argument is computational, the same multipliers fix exact
+  relations among the flooding terms and narrow the error of its LWE
+  argument over the enrolled sets of one label, up to 9-fold at `(3, 2)`
+  and 869-fold at `(5, 3)`.
+* **Rating.** High, because it is the default for every `t < s`, it does
+  not depend on the flooding width, and it sometimes needs no corrupted
+  server. Practical impact Medium, because no key or plaintext recovery is
+  shown at `standard` parameters.
+* **Not affected.** `t = s`, and the DDH and pairing threshold layers
+  (`mife/ddh_threshold`, `mcfe/ddh_threshold`,
+  `mcfe/fh_multi_ipe_pairing_threshold`), which interpolate exactly in the
+  exponent.
+* **Fix.**
+  * For `t < s`, the three layers now default to `sharing="replicated"`.
+    Its multipliers are 0 or 1, so the flooding argument holds. `q`,
+    `ring_n` and `lwe_n` are unchanged; a server holds `C(s - 1, t - 1)` key
+    pieces.
+  * `sharing="shamir"` with `t < s` is refused under `standard` and draws
+    an `FESecurityWarning` under `toy`.
+  * Key shares of v0.3.0 with `t < s` still decrypt, but each server
+    warns. Generate new key shares with this version.
 
 Fixed in v0.3.0 (see [`CHANGELOG.md`](CHANGELOG.md)): every
 scheme previously marked *known-insecure* now implements a published

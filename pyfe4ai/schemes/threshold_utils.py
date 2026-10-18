@@ -16,7 +16,10 @@ with ``M = lambda_k^E prod_{j in C} (k - j) / (0 - j)``. That is a rational
 number whenever ``t < s``: for ``s = 3, t = 2``, ``C = {2}``,
 ``E = {1, 3}`` it is ``3 / 4``, and four times the partial minus the
 computable part is ``4 e_k - 3 nu``, an integer whose residue mod 4 is
-``nu mod 4`` -- whatever the flooding width. A replicated sharing (one
+``nu mod 4`` -- whatever the flooding width. Fewer corrupted servers, or
+none, can suffice: from the partials of several enrolled sets the aggregator
+alone reads ``nu`` modulo ``(s - 1)!`` for ``t = 1`` (6 for ``s = 5, t = 2``).
+A replicated sharing (one
 additive piece per ``(t - 1)``-subset ``T`` of the points, held by the
 servers outside ``T``) has reconstruction coefficients 0 and 1: ``M`` is 0
 or 1, and the flooding argument holds as stated. Its cost is
@@ -40,6 +43,7 @@ import json
 import random
 import secrets
 import warnings
+from collections import OrderedDict
 
 import gmpy2 as gp
 import numpy as np
@@ -157,12 +161,13 @@ def resolve_sharing(config: dict, s, t, scheme: str) -> str:
         scheme: Name of the scheme, for messages.
 
     Raises:
-        FEValidationError: For an unknown sharing, or ``"shamir"`` with
-            ``t < s`` under ``standard``.
+        FEValidationError: For a threshold that is not an integer (also a
+            ``bool``), an unknown sharing, or ``"shamir"`` with ``t < s``
+            under ``standard``.
     """
-    below = (
-        isinstance(t, int) and not isinstance(t, bool) and isinstance(s, int) and t < s
-    )
+    if isinstance(t, bool) or not isinstance(t, int):
+        raise FEValidationError("invalid threshold t={!r}: need an integer".format(t))
+    below = isinstance(s, int) and not isinstance(s, bool) and t < s
     sharing = config.get("sharing")
     if sharing is None:
         return "replicated" if below else "shamir"
@@ -253,18 +258,32 @@ def replicated_assignment(
     return [T for T in replicated_sets(points, threshold) if min(x for x in xs if x not in T) == x_k]
 
 
+#: Entries kept by a cache of :func:`share_for_enrolled` (per scheme object).
+SHARE_CACHE_SIZE = 16
+
+
 def share_for_enrolled(
-    dk: dict, sid: str, lst_sid_enrolled: list[str], threshold: int, modulus: gp.mpz
+    dk: dict, sid: str, lst_sid_enrolled: list[str], threshold: int, modulus: gp.mpz,
+    fields=None, cache=None,
 ) -> tuple[dict, gp.mpz, str]:
     """What server *sid* multiplies, by what, for a partial decryption for *lst_sid_enrolled*.
 
     Returns ``(share, multiplier, tag)``. For a Shamir key share *dk*:
     ``(dk, lambda, digits(lambda))``, ``lambda`` the Lagrange coefficient
-    at zero. For a replicated one (``dk["pieces"]``): *dk* with the sum of
-    the pieces of :func:`replicated_assignment` in place of the pieces,
-    multiplier 1 and a tag naming those pieces. Partial decryptions seed
-    their flooding noise with the tag: they depend on the enrolled set only
-    through it.
+    at zero; with ``t < s`` (a key share of versions <= 0.3.0, or an
+    explicit ``sharing="shamir"``) this draws an
+    :class:`~pyfe4ai.utils.exceptions.FESecurityWarning`. For a replicated
+    one (``dk["pieces"]``): *dk* with the sum of the pieces of
+    :func:`replicated_assignment` in place of the pieces (of the entries
+    *fields* only, if given), multiplier 1 and a tag naming those pieces.
+    Partial decryptions seed their flooding noise with the tag: they depend
+    on the enrolled set only through it.
+
+    Args:
+        cache: An :class:`~collections.OrderedDict` that keeps the sums of
+            the last :data:`SHARE_CACHE_SIZE` key shares and assignments,
+            for key shares that are not modified once handed in (they are
+            told apart by identity). The returned share must not be modified.
 
     Raises:
         FEKeyError: If *dk* lacks a piece the server must add.
@@ -272,22 +291,54 @@ def share_for_enrolled(
     sid_v = share_points(dk["lst_sid"])
     xs = [sid_v[s] for s in lst_sid_enrolled]
     if "pieces" not in dk:
+        if threshold < len(dk["lst_sid"]):
+            warnings.warn(
+                "server {}: a Shamir key share with t = {} < s = {} (the sharing of versions "
+                "<= 0.3.0) lets partial decryptions reveal the decryption noise modulo small "
+                "integers; re-share the key with sharing='replicated'".format(
+                    sid, threshold, len(dk["lst_sid"])
+                ),
+                FESecurityWarning,
+                stacklevel=3,
+            )
         lagrange = lagrange_coefficient_at_zero(sid_v[sid], xs, modulus)
         return dk, lagrange, gp.digits(lagrange)
+    assigned = replicated_assignment(sid_v[sid], xs, list(sid_v.values()), threshold)
+    fields = None if fields is None else tuple(fields)
+    key = (id(dk), id(dk["pieces"]), tuple(assigned), fields)
+    if cache is not None and key in cache and cache[key][0] is dk:
+        cache.move_to_end(key)
+        return cache[key][1]
     held = {tuple(piece["set"]): piece["share"] for piece in dk["pieces"]}
     if not held:
         raise FEKeyError("the key share holds no pieces")
-    assigned = replicated_assignment(sid_v[sid], xs, list(sid_v.values()), threshold)
     missing = [T for T in assigned if T not in held]
     if missing:
         raise FEKeyError("the key share lacks the pieces {}".format(missing))
     modulus = gp.mpz(modulus)
-    total = _map_values(next(iter(held.values())), lambda _: gp.mpz(0))
+
+    def pick(piece):
+        return piece if fields is None else {name: piece[name] for name in fields}
+
+    total = _map_values(pick(next(iter(held.values()))), lambda _: gp.mpz(0))
     for T in assigned:
-        total = _zip_values(total, held[T], lambda a, b: (a + gp.mpz(b)) % modulus)
+        total = _zip_values(total, pick(held[T]), lambda a, b: (a + gp.mpz(b)) % modulus)
     share = {key: value for key, value in dk.items() if key != "pieces"}
     share.update(_map_values(total, gp.digits))
-    return share, gp.mpz(1), json.dumps(["replicated", [list(T) for T in assigned]])
+    out = share, gp.mpz(1), json.dumps(["replicated", [list(T) for T in assigned]])
+    if cache is not None:
+        cache[key] = (dk, out)  # dk kept alive: its id is not reused while cached
+        while len(cache) > SHARE_CACHE_SIZE:
+            cache.popitem(last=False)
+    return out
+
+
+def share_cache(obj) -> OrderedDict:
+    """The :func:`share_for_enrolled` cache of scheme object *obj* (created on first use)."""
+    cache = getattr(obj, "_enrolled_share_cache", None)
+    if cache is None:
+        cache = obj._enrolled_share_cache = OrderedDict()
+    return cache
 
 
 def share_points(lst_sid: list[str]) -> dict[str, int]:
@@ -303,7 +354,7 @@ def share_points(lst_sid: list[str]) -> dict[str, int]:
 
 
 def validate_threshold(threshold: int, lst_sid: list[str]) -> None:
-    """Reject repeated server ids and thresholds outside ``1 <= t <= s``.
+    """Reject repeated server ids and thresholds outside ``1 <= t <= s`` (or ``bool``).
 
     Args:
         threshold: Minimum number of shares needed for reconstruction.
@@ -311,7 +362,7 @@ def validate_threshold(threshold: int, lst_sid: list[str]) -> None:
     """
     if len(set(lst_sid)) != len(lst_sid):
         raise FEValidationError("lst_sid contains duplicate server ids")
-    if not isinstance(threshold, int) or not 1 <= threshold <= len(lst_sid):
+    if isinstance(threshold, bool) or not isinstance(threshold, int) or not 1 <= threshold <= len(lst_sid):
         raise FEValidationError(
             "invalid threshold t={} for s={} decryption servers".format(
                 threshold, len(lst_sid)
