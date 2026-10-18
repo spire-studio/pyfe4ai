@@ -460,11 +460,11 @@ def native_calls(monkeypatch):
     return counts
 
 
-def _threshold(ring_n, bound_x, bound_y, stat_param, eta=1):
+def _threshold(ring_n, bound_x, bound_y, stat_param, eta=1, flooding="uniform"):
     nids, sids = ["c0", "c1", "c2"], ["s0", "s1", "s2"]
     kg = tmcfe_rlwe.ThresholdMCFERingLWEKeyGenerator({
         "n": 3, "lst_nid": nids, "s": 3, "t": 2, "lst_sid": sids, "eta": eta, "ring_n": ring_n,
-        "sec_param": 64, "bound_x": bound_x, "bound_y": bound_y, "stat_param": stat_param})
+        "sec_param": 64, "bound_x": bound_x, "bound_y": bound_y, "stat_param": stat_param, "flooding": flooding})
     kg.setup()
     pp = kg.get_public_parameters()
     clients = {nid: tmcfe_rlwe.ThresholdMCFERingLWE({"id": nid, "precision": 0,
@@ -485,10 +485,11 @@ def _both(fn):
     return py, nat
 
 
+@pytest.mark.parametrize("flooding", ["uniform", "gaussian"])
 @pytest.mark.parametrize("cfg", TCONFIGS, ids=str)
-def test_threshold_partials_and_combination_identical(cfg, native_calls):
+def test_threshold_partials_and_combination_identical(cfg, flooding, native_calls):
     ring_n, bound_x, bound_y, _ = cfg
-    kg, pp, clients, sids = _threshold(*cfg)
+    kg, pp, clients, sids = _threshold(*cfg, flooding=flooding)
     rng = np.random.default_rng(4)
     grads = {nid: [rng.integers(-bound_x, bound_x + 1, 2 * ring_n + 3), rng.integers(-bound_x, bound_x + 1, (2, 3))]
              for nid in clients}
@@ -547,7 +548,8 @@ def test_threshold_value_formats_and_errors_identical(cfg, native_calls):
     q = int(pp["q"])
 
     def variant(f):
-        ct = {"ct0": [list(cts["c1"]["ct0"][0])], "ct1": list(cts["c1"]["ct1"]), "k": cts["c1"]["k"]}
+        ct = {"ct0": [list(cts["c1"]["ct0"][0])], "ct1": list(cts["c1"]["ct1"]), "k": cts["c1"]["k"],
+              "label_hash": cts["c1"]["label_hash"]}
         f(ct)
         return dict(cts, c1=_retag(kg, "c1", "L", ct))
 

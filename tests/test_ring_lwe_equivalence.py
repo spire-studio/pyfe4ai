@@ -223,7 +223,11 @@ def test_mcfe_ndarray_identical(sampler, stat_param):
         sampler.reset()  # the MCFE layer (no per-server tags of the threshold variant)
         enc[nid] = mcfe_rlwe.MCFERingLWE.encrypt_lst_ndarray(cl, grads[nid], label="r1")
         sampler.reset()
+        # the v0.3.0 values; the layers also carry the label hash's code
+        assert all(layer.pop("label_hash") == 2 for layer in enc[nid])
         assert enc[nid] == ref_mcfe_encrypt_lst_ndarray(cl, grads[nid], "r1", sampler)
+        for layer in enc[nid]:
+            layer["label_hash"] = 2
     weights = {nid: [1] for nid in clients}
     n_chunks = agg.key_chunks(next(iter(enc.values())))
     dk = mcfe_rlwe.MCFERingLWEKeyGenerator.get_decryption_keys(  # unshared, also for the threshold variant
@@ -252,12 +256,13 @@ def test_mcfe_ndarray_bound_and_empty_errors(sampler):
         cl.encrypt_lst_ndarray([np.array([])], label="y")
 
 
+@pytest.mark.parametrize("flooding", ["uniform", "gaussian"])
 @pytest.mark.parametrize("stat_param", [64, 150])
-def test_threshold_share_decrypt_identical(sampler, monkeypatch, stat_param):
+def test_threshold_share_decrypt_identical(sampler, monkeypatch, stat_param, flooding):
     nids, sids = ["c0", "c1", "c2"], ["s0", "s1", "s2"]
     kg = tmcfe_rlwe.ThresholdMCFERingLWEKeyGenerator({
         "n": 3, "lst_nid": nids, "s": 3, "t": 2, "lst_sid": sids, "eta": 1, "ring_n": 32,
-        "sec_param": 64, "bound_x": 4, "bound_y": 4, "stat_param": stat_param})
+        "sec_param": 64, "bound_x": 4, "bound_y": 4, "stat_param": stat_param, "flooding": flooding})
     kg.setup()
     pp = kg.get_public_parameters()
     clients = {nid: tmcfe_rlwe.ThresholdMCFERingLWE({"id": nid, "precision": 0,

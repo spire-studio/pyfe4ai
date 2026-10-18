@@ -118,9 +118,10 @@ samples. Its implementations add their own terms (crypto review, October
   bits (``BIGINT_GUARD_BITS``: ``bits(sigma) + stat_param + ceil(log2 N) +
   8`` for every accepted ``stat_param``, at most 256, and up to 2^56 samples
   per key). At the earlier ``bits(sigma) + 128`` it was 2 to 19 bits short
-  of the budgets. The threshold schemes' flooding always uses it
+  of the budgets. The threshold schemes' Gaussian flooding always uses it
   (``FLOODING_SAMPLER``, recorded in their decryption keys), whatever the
-  sampler selected elsewhere.
+  sampler selected elsewhere; the default uniform flooding of
+  ``mcfe/ring_lwe_threshold`` uses no Gaussian sampler.
 
 The library-wide choice -- which applies to the other schemes and to ABDP15
 under ``toy`` only -- is
@@ -140,8 +141,13 @@ algorithm needs no secret-dependent branches, but CPython and big-integer
 arithmetic are not constant-time, so neither sampler resists timing side
 channels. For a given bit source its output is the same on every platform
 and on both backends, so it comes with known-answer tests. Parties that
-derive noise from a shared seed (the threshold schemes' flooding noise)
-must use the same sampler.
+derive noise from a shared seed (the Gaussian flooding noise of the
+threshold LWE schemes, and of ``mcfe/ring_lwe_threshold`` with
+``flooding="gaussian"``) must use the same sampler; the default
+``flooding="uniform"`` of ``mcfe/ring_lwe_threshold`` draws its noise
+without a Gaussian sampler (uniform on ``[-2^tau, 2^tau)`` from the seeded
+SHAKE-256 stream, the same statistical distance per coefficient, see the
+module).
 
 The key generator of a scheme that records its sampler publishes it in
 ``pp`` as the encryptors' default; public parameters without it (earlier

@@ -1,6 +1,6 @@
 //! Dense-LWE MCFE (ABMPSW20): <key, H(label)> per label, before reduction mod q.
 
-use crate::keccak::shake256;
+use crate::keccak::{shake256, Sponge};
 use crate::parallel_for;
 
 /// acc (al limbs) += a * b, little-endian 64-bit limbs.
@@ -23,6 +23,21 @@ fn mac_limbs(acc: &mut [u64], a: &[u64], b: &[u64]) {
             carry = (t >> 64) as u64;
             k += 1;
         }
+    }
+}
+
+/// The limbs of big-endian block p (nb bytes) into h, little-endian.
+#[inline]
+fn block_limbs(p: &[u8], h: &mut [u64]) {
+    let nb = p.len();
+    for (j, limb) in h.iter_mut().enumerate() {
+        let hi = nb - 8 * j;
+        let lo = hi.saturating_sub(8);
+        let mut v = 0u64;
+        for &b in &p[lo..hi] {
+            v = (v << 8) | b as u64;
+        }
+        *limb = v;
     }
 }
 
@@ -57,6 +72,41 @@ pub fn dense_dots(materials: &[&[u8]], nb: usize, count: usize, key: &[u64], kl:
                 *limb = v;
             }
             mac_limbs(&mut acc, &key[k * kl..(k + 1) * kl], &h);
+        }
+        *out[m].lock().unwrap() = acc;
+    });
+    out.into_iter().flat_map(|m| m.into_inner().unwrap()).collect()
+}
+
+/// dense_dots for the rejection modes of hash_to_zq_vector: the blocks are the
+/// candidates (nb bytes, big-endian) of SHAKE(material) with `rate` that lie
+/// below `limit` (floor(2^(8 nb) / q) q, nb big-endian bytes), unreduced, so the
+/// sums are congruent mod q to <key, hash_to_zq_vector(.., mode)>.
+#[allow(clippy::too_many_arguments)]
+pub fn dense_dots_rej(materials: &[&[u8]], nb: usize, limit: &[u8], rate: usize, count: usize, key: &[u64], kl: usize,
+                      threads: usize) -> Vec<u64> {
+    let hl = (nb + 7) / 8;
+    let sl = sum_limbs(nb, kl);
+    let out: Vec<std::sync::Mutex<Vec<u64>>> = (0..materials.len()).map(|_| std::sync::Mutex::new(Vec::new())).collect();
+    parallel_for(materials.len(), threads, |m| {
+        let mut sponge = Sponge::new(materials[m], rate);
+        let mut buf = vec![0u8; nb * 64];
+        let mut acc = vec![0u64; sl];
+        let mut h = vec![0u64; hl];
+        let mut k = 0;
+        while k < count {
+            sponge.squeeze(&mut buf);
+            for p in buf.chunks_exact(nb) {
+                if p >= limit {
+                    continue;
+                }
+                block_limbs(p, &mut h);
+                mac_limbs(&mut acc, &key[k * kl..(k + 1) * kl], &h);
+                k += 1;
+                if k == count {
+                    break;
+                }
+            }
         }
         *out[m].lock().unwrap() = acc;
     });

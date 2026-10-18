@@ -559,11 +559,14 @@ class EncryptedGradient:
                     "chunk {} of a packed layer is a binary ciphertext; to_dict() only "
                     "serialises JSON-compatible chunks".format(j)
                 )
-        return {
+        out = {
             "shape": list(layer["shape"]),
             "first_chunk": layer["first_chunk"],
             "chunks": list(layer["chunks"]),
         }
+        if "label_hash" in layer:  # the layer's label-hash code (MCFE Ring-LWE)
+            out["label_hash"] = layer["label_hash"]
+        return out
 
     #: Largest number of elements :meth:`from_dict` accepts per array.
     MAX_ELEMENTS = 10 ** 7
@@ -632,7 +635,8 @@ class EncryptedGradient:
     def _packed_layers(cls, layers: list) -> list:
         """Check serialised packed layers against the layout of ``encrypt_lst_ndarray``.
 
-        Every layer is ``{"packed": {"shape", "first_chunk", "chunks"}}``.
+        Every layer is ``{"packed": {"shape", "first_chunk", "chunks"}}``,
+        optionally with the layer's ``label_hash`` code (an int).
         The chunks of all layers are numbered consecutively from 0, so a
         layer's ``first_chunk`` is the number of chunks before it. Each chunk
         is a dict with a batch length ``k >= 1``; the ``k`` of a layer add up
@@ -645,7 +649,8 @@ class EncryptedGradient:
             layer = wrapped["packed"]
             if (
                 set(wrapped) != {"packed"} or not isinstance(layer, dict)
-                or set(layer) != {"shape", "first_chunk", "chunks"}
+                or set(layer) - {"label_hash"} != {"shape", "first_chunk", "chunks"}
+                or ("label_hash" in layer and type(layer["label_hash"]) is not int)
             ):
                 raise ValueError("invalid packed ciphertext layer")
             shape, size = cls._checked_shape(layer["shape"])
@@ -669,6 +674,8 @@ class EncryptedGradient:
                     "packed chunks cover {} elements, the shape {} has {}".format(covered, shape, size)
                 )
             out.append({"shape": list(shape), "first_chunk": first, "chunks": list(chunks)})
+            if "label_hash" in layer:
+                out[-1]["label_hash"] = layer["label_hash"]
             next_chunk += len(chunks)
         width = max((chunk["k"] for layer in out for chunk in layer["chunks"]), default=0)
         if any(chunk["k"] != width for layer in out for chunk in layer["chunks"][:-1]):

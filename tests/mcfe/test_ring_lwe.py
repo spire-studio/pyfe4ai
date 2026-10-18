@@ -52,10 +52,11 @@ def test_key_generator(kg_config):
     pp = kg.get_public_parameters()
     assert pp["eta"] == kg_config["eta"] and pp["ring_n"] == kg_config["ring_n"]
     sk = kg.get_private_keys("nid_0")
-    assert set(sk) == {"pk", "u", "u_prime"}
+    assert set(sk) == {"pk", "u", "u_prime", "label_hash"}
     y = {"nid_0": [1, -1], "nid_1": [0, 1], "nid_2": [1, 1]}
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y, "label": "l"})
-    assert set(dk) == {"sk_y", "z", "z_chunks", "label"} and dk["z_chunks"] == []
+    assert set(dk) == {"sk_y", "z", "z_chunks", "label", "label_hash"} and dk["z_chunks"] == []
+    assert dk["label_hash"] == pp["label_hash"] == "shake128-rejection"
     with pytest.raises(FEValidationError):
         kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y})  # no label
 

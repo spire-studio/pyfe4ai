@@ -23,8 +23,9 @@ Flooding: the exact key part differs from what the result and the
 ciphertexts determine by the decryption noise
 ``sum_row y_row (e'_row r + e_row) - e sum_row y_row s_row``, bounded per
 coefficient by ``B = n eta Y (2 ring_n 144 sigma1 sigma2 + 12 sigma3)``;
-``e_k <- D_{Z, 2^kappa B}`` per coefficient smudges it (statistical
-argument), with ``q`` enlarged so that ``s`` flooding terms still decode.
+flooding noise ``e_k`` per coefficient smudges it (statistical argument;
+uniform by default, Gaussian ``D_{Z, 2^kappa B}`` selectable, see below),
+with ``q`` enlarged so that ``s`` flooding terms still decode.
 Ciphertexts (and ndarray chunks) carry one HMAC tag per server over the
 (chunk) label and the ciphertext; servers only decrypt ciphertexts tagged
 for them under the label they serve, since ``w_k`` is linear in ``ct1``.
@@ -35,15 +36,45 @@ the same key part draws the same noise; a corrupted client varying its own
 per answer (a statistical distance of about ``2^-stat_param`` per
 coefficient, adding up over the answers); it does not bound what many
 answers to varied ``ct1`` reveal together: averaging them would take about
-``2^(2 stat_param)`` partial decryptions, but other ways of combining these
-noisy linear equations are not ruled out. The threshold layer is our own
-design.
+``2^(2 stat_param)`` partial decryptions with Gaussian noise (see below
+for the uniform default), but other ways of combining these noisy linear
+equations are not ruled out. The threshold layer is our own design.
+
+Flooding distribution (key generator config ``flooding``, a public
+parameter):
+
+* ``"uniform"`` (default): ``e_k`` uniform on ``[-2^tau, 2^tau)`` with
+  ``tau = bits(B) + kappa``, read from the same seeded XOF
+  (:func:`uniform_flooding_poly`). By the smudging lemma (Asharov et al.,
+  EUROCRYPT 2012, Lemma 2.1) the statistical distance per coefficient is
+  ``|E| / 2^(tau + 1) < 2^-(kappa + 1)``, the per-sample bound the Gaussian
+  meets as well; ``q`` holds ``s 2^tau`` instead of ``s 12 sigma_f`` (about
+  3 bits less), correctness needs no tail cut, and the sampler is exact and
+  integer-only (no ``mpfr``). Unlike the Gaussian it has no margin beyond
+  that bound: over ``N`` coefficients the distance is ``N 2^-(kappa + 1)``
+  (the Gaussian's is ``sqrt(N)`` times its per-sample bound), and telling
+  ``E`` from ``E + 1`` by repetition takes about ``2^(tau + 1)`` partial
+  decryptions instead of ``2^(2 kappa) B^2``. Parameter records
+  ``bmms21-ibmcfe-shamir-smudging-uniform/v1``; public parameters
+  ``flooding`` and ``flood_bits``.
+* ``"gaussian"``: ``e_k <- D_{Z, 2^kappa B}`` as described above, the only
+  flooding of versions <= 0.3.0 (public parameter ``sigma_f``; public
+  parameters without ``flooding`` are read as this), drawn by the pinned
+  :data:`~pyfe4ai.utils.sampling_utils.FLOODING_SAMPLER` at ``bits(sigma_f)
+  + 320`` bits (records ``bmms21-ibmcfe-shamir-smudging/v2``; the ``v1``
+  records of earlier versions are regenerated).
+
+Decryption key shares record the flooding they were issued for (``flooding``,
+with ``noise_version`` and ``noise_sampler``); a server refuses a share of
+another flooding than its public parameters', which would answer a request
+with a second, independent noise.
 
 With the native backend (:mod:`pyfe4ai.utils.native_backend`; moduli below
 ``2^253``, which includes the flooded ``q`` of the standard profile) the MCFE
 layer, the Shamir sharing of the key, the parsing, digests and NTT-domain
 products of a partial decryption and the combination run natively, with
-the values of the Python code; the flooding noise is always drawn by
+the values of the Python code; the flooding noise is drawn by
+:func:`uniform_flooding_poly` (SHAKE-256, in Python), or for the Gaussian by
 :func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint` (natively too,
 with the same samples).
 """
@@ -61,6 +92,7 @@ import numpy as np
 
 from pyfe4ai.schemes.mcfe.labels import chunk_label
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWE
+from pyfe4ai.schemes.mcfe.ring_lwe import check_ciphertext_label_hashes
 from pyfe4ai.schemes.mcfe.ring_lwe import chunk_key_index
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
 from pyfe4ai.schemes.mcfe.labels import encode_label
@@ -99,13 +131,49 @@ from pyfe4ai.utils.ring_lwe_utils import seeded_polynomial
 logger = logging.getLogger(__name__)
 
 _CONSTRUCTION = "bmms21-ibmcfe-shamir-smudging/v2"  # v2: flooding at bits + 320, sampler pinned
+_CONSTRUCTION_UNIFORM = "bmms21-ibmcfe-shamir-smudging-uniform/v1"
 _TAG_DOMAIN = "pyfe4ai/tmcfe-ring-lwe/ciphertext-tag/v1"
+_UNIFORM_DOMAIN = b"pyfe4ai/tmcfe-ring-lwe/uniform-flooding/v1"
+
+#: Flooding distributions of the partial decryptions.
+FLOODINGS = ("uniform", "gaussian")
+
+#: The key generator's default flooding.
+DEFAULT_FLOODING = "uniform"
+
+#: The flooding of versions <= 0.3.0 and of public parameters without ``flooding``.
+LEGACY_FLOODING = "gaussian"
+
+
+def uniform_flooding_poly(bits: int, ring_n: int, seed: bytes) -> list:
+    """*ring_n* integers uniform on ``[-2^bits, 2^bits)``, a function of *seed*:
+    coefficient ``i`` is block ``i`` of ``ceil((bits + 1) / 8)`` big-endian
+    bytes of SHAKE-256 over a domain tag, the seed's length and the seed, its
+    low ``bits + 1`` bits, minus ``2^bits``."""
+    nb = (bits + 8) // 8
+    mask, offset = (1 << (bits + 1)) - 1, 1 << bits
+    stream = hashlib.shake_256(_UNIFORM_DOMAIN + len(seed).to_bytes(8, "big") + seed).digest(nb * ring_n)
+    from_bytes = int.from_bytes
+    return [(from_bytes(stream[i:i + nb], "big") & mask) - offset for i in range(0, nb * ring_n, nb)]
 
 
 def _tag_payload(encoded_label: str, ct: dict) -> list:
-    """What a tMCFE-Ring-LWE ciphertext tag covers: the (chunk) label and the
-    ciphertext as serialised."""
-    return [encoded_label, ct.get("k"), ct.get("ct0"), ct.get("ct1")]
+    """What a tMCFE-Ring-LWE ciphertext tag covers: the (chunk) label, the
+    ciphertext as serialised and its ``label_hash`` code when it has one --
+    for an ndarray chunk its layer's code, see :func:`_chunk_with_code`
+    (ciphertexts of versions <= 0.3.0 have none: their tags stay valid)."""
+    payload = [encoded_label, ct.get("k"), ct.get("ct0"), ct.get("ct1")]
+    if "label_hash" in ct:
+        payload.append(ct["label_hash"])
+    return payload
+
+
+def _chunk_with_code(ct, layer) -> dict:
+    """An ndarray chunk as tagged and decrypted: with its layer's
+    ``label_hash`` code (layers, not chunks, carry it)."""
+    if isinstance(ct, dict) and isinstance(layer, dict) and "label_hash" in layer and "label_hash" not in ct:
+        return dict(ct, label_hash=layer["label_hash"])
+    return ct
 
 
 def _flooding_poly(sigma: int, ring_n: int, rng) -> list:
@@ -131,9 +199,14 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         Args:
             config: As for
                 :class:`~pyfe4ai.schemes.mcfe.ring_lwe.MCFERingLWEKeyGenerator`,
-                plus ``s``, ``t``, ``lst_sid`` and ``stat_param`` (``kappa`` of
-                the flooding).
+                plus ``s``, ``t``, ``lst_sid``, ``stat_param`` (``kappa`` of
+                the flooding) and ``flooding`` (one of :data:`FLOODINGS`,
+                default ``"uniform"``, ``"gaussian"`` for the partial
+                decryptions of versions <= 0.3.0; see the module docstring).
         """
+        self.flooding = config.get("flooding", DEFAULT_FLOODING)
+        if self.flooding not in FLOODINGS:
+            raise FEValidationError("unknown flooding {!r}; one of {}".format(self.flooding, ", ".join(FLOODINGS)))
         self.t = config.get("t", CryptoCONST.tMCFE_T)
         s = config.get("s") or len(config.get("lst_sid", [])) or 1
         self.lst_sid = config.get("lst_sid", ["sid_{}".format(i) for i in range(s)])
@@ -146,37 +219,50 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             )
         validate_threshold(self.t, self.lst_sid)
 
+    def _threshold_construction(self) -> str:
+        return _CONSTRUCTION if self.flooding == "gaussian" else _CONSTRUCTION_UNIFORM
+
     def _param_verification(self, param: dict) -> bool:
         if not (
             super()._param_verification(param)
-            and param.get("threshold_construction") == _CONSTRUCTION
+            and param.get("threshold_construction") == self._threshold_construction()
             and param.get("s") == self.s
             and param.get("stat_param") == self.stat_param
         ):
             return False
-        params = self._bmms21_tuple(self.ring_n)
-        return param.get("sigma_f") == str(self._flooded_modulus(self.ring_n, *params)[1])
+        flood = self._flooded_modulus(self.ring_n, *self._bmms21_tuple(self.ring_n))[1]
+        if self.flooding == "uniform":
+            return param.get("flooding") == "uniform" and param.get("flood_bits") == flood
+        return param.get("sigma_f") == str(flood)
 
     def _apply_parameters(self, param: dict) -> None:
         super()._apply_parameters(param)
-        self.sigma_f = int(param["sigma_f"])
+        if self.flooding == "uniform":
+            self.sigma_f, self.flood_bits = None, int(param["flood_bits"])
+        else:
+            self.sigma_f = int(param["sigma_f"])
 
     def _flooded_modulus(self, ring_n: int, p, q, sigma1, sigma2, sigma3) -> tuple:
-        """Return ``(q', sigma_f)``: the BMMS21 modulus *q* enlarged for flooding."""
+        """Return ``(q', flood)``: the BMMS21 modulus *q* enlarged for flooding,
+        and ``sigma_f`` (Gaussian) or ``tau`` (uniform on ``[-2^tau, 2^tau)``)."""
         noise_bound = self.n * self.eta * int(self.bound_y) * int(
             2 * ring_n * GAUSSIAN_TAIL_CUT ** 2 * sigma1 * sigma2
             + GAUSSIAN_TAIL_CUT * sigma3 + 1
         )
-        sigma_f = noise_bound << self.stat_param
-        budget = noise_bound + self.s * GAUSSIAN_TAIL_CUT * sigma_f
-        return next_ntt_prime(max(q, p * (2 * budget + 4)), ring_n), sigma_f
+        if self.flooding == "uniform":
+            flood = noise_bound.bit_length() + self.stat_param  # 2^flood > 2^stat_param B
+            budget = noise_bound + self.s * (1 << flood)
+        else:
+            flood = noise_bound << self.stat_param
+            budget = noise_bound + self.s * GAUSSIAN_TAIL_CUT * flood
+        return next_ntt_prime(max(q, p * (2 * budget + 4)), ring_n), flood
 
     def _modulus_for(self, ring_n: int):
         return self._flooded_modulus(ring_n, *self._bmms21_tuple(ring_n))[0]
 
     def _generate_and_save(self, param_file: str) -> None:
         super()._generate_and_save(param_file)
-        self.q, self.sigma_f = self._flooded_modulus(
+        self.q, flood = self._flooded_modulus(
             self.ring_n, self.p, self.q, self.sigma1, self.sigma2, self.sigma3
         )
         self.A = seeded_polynomial(self.a_seed, self.q, self.ring_n)
@@ -184,13 +270,18 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             param = json.load(f)
         param.update(
             {
-                "threshold_construction": _CONSTRUCTION,
+                "threshold_construction": self._threshold_construction(),
                 "s": self.s,
                 "stat_param": self.stat_param,
-                "sigma_f": str(self.sigma_f),
                 "q": gp.digits(self.q),
             }
         )
+        if self.flooding == "uniform":
+            self.sigma_f, self.flood_bits = None, flood
+            param.update({"flooding": "uniform", "flood_bits": flood})
+        else:
+            self.sigma_f = flood
+            param["sigma_f"] = str(flood)
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(param, f)
 
@@ -210,11 +301,14 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         return sk
 
     def get_public_parameters(self) -> dict:
-        """MCFE public parameters plus ``s``, ``t``, ``lst_sid`` and ``sigma_f``."""
+        """MCFE public parameters plus ``s``, ``t``, ``lst_sid``, ``flooding``
+        and ``flood_bits`` (uniform) or ``sigma_f`` (Gaussian)."""
         pp = super().get_public_parameters()
-        pp.update(
-            {"s": self.s, "t": self.t, "lst_sid": list(self.lst_sid), "sigma_f": str(self.sigma_f)}
-        )
+        pp.update({"s": self.s, "t": self.t, "lst_sid": list(self.lst_sid), "flooding": self.flooding})
+        if self.flooding == "uniform":
+            pp["flood_bits"] = self.flood_bits
+        else:
+            pp["sigma_f"] = str(self.sigma_f)
         return pp
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
@@ -270,6 +364,8 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
                 "label": key["label"],
                 "noise_version": FLOODING_NOISE_VERSION,
                 "noise_sampler": FLOODING_SAMPLER,
+                "flooding": self.flooding,
+                "label_hash": key["label_hash"],
                 # one per server, weights and label: a re-sharing for another
                 # n_chunks (same key part) must not come with fresh noise
                 "noise_key": hmac.new(
@@ -326,7 +422,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         for layer in out:
             for j, ct in enumerate(layer["chunks"]):
                 encoded = encode_label(chunk_label(kwargs["label"], layer["first_chunk"] + j))
-                tag_ciphertext(ct, mac_keys, _TAG_DOMAIN, _tag_payload(encoded, ct))
+                tag_ciphertext(ct, mac_keys, _TAG_DOMAIN, _tag_payload(encoded, _chunk_with_code(ct, layer)))
         return out
 
     def share_decrypt(
@@ -348,6 +444,11 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         if not dk or "sk_y" not in dk:
             raise FEKeyError("no decryption keys provided")
         check_flooding_version(dk)
+        flooding = self.pp.get("flooding", LEGACY_FLOODING)
+        if flooding not in FLOODINGS:
+            raise FEValidationError("unknown flooding {!r}".format(flooding))
+        if dk.get("flooding", LEGACY_FLOODING) != flooding:
+            raise FEKeyError("the key share was issued for another flooding than the public parameters'")
         if self.id not in dk["lst_sid"] or dk.get("sid") != self.id:
             raise FESchemeError("the key share does not belong to server {}".format(self.id))
         fusion_weight = credentials.get("fusion_weight")
@@ -365,6 +466,8 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             dict_ct, dk.get("mac_keys"), self.id, _TAG_DOMAIN,
             lambda nid, ct: _tag_payload(encoded, ct),
         )
+        # the key share of the public parameters' label hash
+        self._check_key_label_hash(dk)
         q = gp.mpz(self.pp["q"])
         ring_n = self.pp["ring_n"]
         delta = q // gp.mpz(self.pp["p"])
@@ -385,6 +488,9 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             batch = set(ks)
         if len(batch) != 1:
             raise FESchemeError("ciphertexts of different batch lengths")
+        # every (authenticated, well-formed) ciphertext of that label hash too:
+        # else the result would be wrong, not refused
+        check_ciphertext_label_hashes(dict_ct.values(), self.label_hash)
 
         if native is None:
             key_part = [delta * gp.mpz(v) % q for v in z_share]
@@ -418,9 +524,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         # same key part always draws the same noise
         # the partial depends on the enrolled set only through lambda
         context = json.dumps([key_inputs, encoded, gp.digits(lagrange)]).encode("utf-8")
-        noise = _flooding_poly(
-            int(self.pp["sigma_f"]), ring_n, XofRandom(bytes.fromhex(dk["noise_key"]) + context)
-        )
+        noise = self._flooding_noise(ring_n, bytes.fromhex(dk["noise_key"]) + context)
         if native is None:
             w = [gp.digits((lagrange * v + e) % q) for v, e in zip(key_part, noise)]
             c_y = [gp.digits(v) for v in c_y]
@@ -440,6 +544,18 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             "sid": self.id,
             "lst_sid_enrolled": list(lst_sid_enrolled),
         }
+
+    def _flooding_noise(self, ring_n: int, seed: bytes) -> list:
+        """The flooding polynomial of the public parameters' distribution, a function of *seed*."""
+        flooding = self.pp.get("flooding", LEGACY_FLOODING)
+        if flooding == "uniform":
+            bits = self.pp.get("flood_bits")
+            if type(bits) is not int or bits < 1:
+                raise FEValidationError("uniform flooding needs a positive integer flood_bits")
+            return uniform_flooding_poly(bits, ring_n, seed)
+        if flooding != "gaussian":
+            raise FEValidationError("unknown flooding {!r}".format(flooding))
+        return _flooding_poly(int(self.pp["sigma_f"]), ring_n, XofRandom(seed))
 
     def _native_inputs(self, ctx, dict_ct: dict, dk: dict, fusion_weight: dict, z_share) -> tuple | None:
         """The ciphertexts of :meth:`share_decrypt` read natively: ``(nids, ks,
@@ -533,7 +649,8 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         for l, layer in enumerate(sample):
             parts = []
             for j in range(len(layer["chunks"])):
-                dct_ct = {nid: dict_ndarray_ct[nid][l]["chunks"][j] for nid in dict_ndarray_ct}
+                dct_ct = {nid: _chunk_with_code(dict_ndarray_ct[nid][l]["chunks"][j], dict_ndarray_ct[nid][l])
+                          for nid in dict_ndarray_ct}
                 index = chunk_key_index(layer, j, len(dk["z_chunks"]))
                 parts.append(self.share_decrypt(
                     dct_ct, credentials, dk, lst_sid_enrolled,

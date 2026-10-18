@@ -592,6 +592,59 @@ natively instead of 76 ms (same samples); beyond that, a faster partial
 decryption needs a different flooding distribution or a smaller `sigma_f`,
 which change the scheme and need a review.
 
+## Label hash and threshold flooding (outputs differ from v0.3.0)
+
+Two defaults that change outputs or noise distributions (the v0.3.0
+behaviour stays selectable); the review (proof steps, security levels,
+rejected alternatives) is in the CHANGELOG entries and the module
+docstrings of `mcfe/ring_lwe`, `mcfe/lwe` and `mcfe/ring_lwe_threshold`.
+
+* `label_hash="shake128-rejection"` (default of the Ring-LWE and dense-LWE
+  MCFE key generators; `"shake256-wide"` is v0.3.0's, `"shake256-rejection"`
+  a third choice): the label hash samples by rejection mod `q` (exactly
+  uniform) instead of reducing `bits(q) + 128`-bit SHAKE-256 blocks: 11
+  instead of 26 bytes per coefficient at the 80-bit `q`, 25 instead of 40
+  per dense coordinate.
+* `flooding="uniform"` (default of `mcfe/ring_lwe_threshold`;
+  `"gaussian"` is v0.3.0's): partial decryptions are flooded with noise
+  uniform on `[-2^tau, 2^tau)` (`tau = bits(B) + stat_param`, same
+  per-coefficient statistical bound) read from the seeded XOF: 1.3 ms per
+  8192-coefficient polynomial in Python against 79 ms for the `mpfr`
+  Gaussian; `q` 215 -> 212 bits.
+
+Host (M2 Max, Python 3.13), native backend, one thread, `standard` profile,
+the scripts' defaults otherwise (3 clients; threshold `s = 3`, `t = 2`);
+`main` (810a4a5) and this branch interleaved, medians of the passes'
+medians (9 / 5 / 3 rounds for Ring-LWE / dense LWE / threshold). Other
+sessions were active (load average 3 to 6.3 on 12 cores).
+
+Options while they were opt-in (three passes):
+
+| 10^4 elements unless stated | client ms | aggregator ms | dkgen ms | partial ms / server |
+| --- | ---: | ---: | ---: | ---: |
+| `ring_lwe`, binary, `main` | 2.77 | 7.40 | 4.17 | |
+| `ring_lwe`, binary, `shake256-rejection` | 2.40 | 5.99 | 2.80 | |
+| `ring_lwe`, binary, `shake128-rejection` | 2.38 | 5.87 | 2.65 | |
+| `lwe` (200 elements), `main` | 153.0 | 160.3 | 4.0 | |
+| `lwe` (200 elements), `shake256-rejection` | 105.5 | 113.2 | 4.0 | |
+| `lwe` (200 elements), `shake128-rejection` | 94.5 | 101.9 | 4.1 | |
+| `ring_lwe_threshold`, `main` (Gaussian, 215-bit q) | 20.8 | 491.6 | 42.8 | 222.0 |
+| `ring_lwe_threshold`, `flooding="uniform"` (212-bit q) | 20.4 | 162.3 | 42.3 | 57.9 |
+| `ring_lwe_threshold`, uniform + `shake128-rejection` | 19.3 | 158.9 | 36.7 | 58.2 |
+
+The defaults, and the v0.3.0 settings on this branch (two passes):
+
+| | `main` | branch defaults | branch, `shake256-wide` (+ `gaussian`) |
+| --- | ---: | ---: | ---: |
+| `ring_lwe` binary: client / aggregator / dkgen ms | 2.80 / 7.51 / 4.20 | 2.42 / 5.99 / 2.68 | 2.83 / 7.50 / 4.25 |
+| `lwe` (200 elements): client / aggregator ms | 153.9 / 162.0 | 95.0 / 102.7 | |
+| `ring_lwe_threshold`: aggregator / partial ms | 490.4 / 221.8 | 158.0 / 58.3 | 490.2 / 221.3 |
+
+What is left of a uniform partial decryption (58 ms per server for two
+8192-coefficient chunks): the tag checks, `share_inputs` and `share_partial`
+(see above), no sampler. Raw numbers:
+`results/perf_hash_flooding_2026-10-17.json`.
+
 ## Dense LWE: MCFE of ABMPSW20 (`mcfe/lwe`), 200 elements
 
 `n0 + m0 = 7724`, 187-bit `q`. One LWE sample per element: the label of every

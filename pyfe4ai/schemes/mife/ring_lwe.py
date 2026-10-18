@@ -413,6 +413,10 @@ class MIFERingLWE(IPFEAbsCrypto):
         """The native ring context (see :mod:`pyfe4ai.utils.native_backend`), or ``None``."""
         return native_backend.ring_context(self.pp["q"], self.pp["ring_n"])
 
+    def _native_key_kwargs(self) -> dict:
+        """Extra keywords of the native ``enc_key`` (the MCFE's label hash)."""
+        return {}
+
     def _native_encryption_key(self):
         """This slot's native encryption key (``NTT(a)``, ``NTT(pk)``, ``u``), or
         ``None`` when encryption runs in Python (see :meth:`_native`; also for
@@ -427,7 +431,8 @@ class MIFERingLWE(IPFEAbsCrypto):
             q = gp.mpz(self.pp["q"])
             try:
                 nkey = native_backend.ext().enc_key(
-                    ctx.cap, self.A, self.sk["pk"], self.sk.get("u"), q // gp.mpz(self.pp["p"])
+                    ctx.cap, self.A, self.sk["pk"], self.sk.get("u"), q // gp.mpz(self.pp["p"]),
+                    **self._native_key_kwargs(),
                 )
             except (TypeError, ValueError, OverflowError):
                 nkey = None  # malformed key: the Python path reports it

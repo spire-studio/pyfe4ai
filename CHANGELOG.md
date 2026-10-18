@@ -337,6 +337,59 @@ compatibility).
   6.8 -> 6.0 s at `eta = 10`; one encryption 0.87 -> 0.74 s, 0.95 -> 0.83 s
   and 1.80 -> 1.56 s (above 2^40 FACCT is faster than the rounded MPFR
   Box-Muller). Other schemes keep the rounded default.
+- **MCFE label hash (breaking for ciphertext values):** the MCFE schemes that
+  hash labels to `Z_q` (`mcfe/ring_lwe` with its threshold and decentralized
+  variants -- label pads and GDSum masks -- and the dense-LWE MCFE family
+  `mcfe/lwe`, `fullysec_lwe`, `lwe_threshold`, `lwe_decentralized`) now
+  sample by rejection mod `q` from SHAKE128 (`label_hash="shake128-rejection"`,
+  the key generators' new default): candidates of `ceil(bits(q) / 8) + 1`
+  bytes, accepted below the largest multiple of `q`, so `H(u'_i, l)` and
+  `H(l)` are exactly uniform (v0.3.0 reduced `bits(q) + 128`-bit SHAKE-256
+  blocks: statistical distance below `2^-128` per value) and read fewer XOF
+  bytes (26 -> 11 per coefficient at an 80-bit `q`). **MCFE ciphertexts and
+  functional key terms differ from v0.3.0.** Parameters, formats and the
+  cached parameter records do not change. The mode is bound to everything
+  that depends on it: the public parameters (`pp["label_hash"]`), the
+  clients' encryption keys, every functional key and threshold key share,
+  every single-vector ciphertext and every ndarray layer, once per layer
+  (`label_hash`: the code of `crypto_utils.LABEL_HASH_CODES`; on a Ring-LWE
+  layer dict, on the first element of a dense-LWE layer; also under the
+  threshold variant's HMAC tags of every chunk). A client whose key and public parameters disagree refuses to
+  encrypt, and ciphertexts or keys of another mode are refused at
+  decryption, instead of decrypting to wrong sums (crypto review M5).
+  Anything without the field -- the data of v0.3.0 -- is read as
+  `"shake256-wide"`, so v0.3.0 public parameters, keys and ciphertexts stay
+  usable together; new setups get the v0.3.0 hash with
+  `label_hash="shake256-wide"` in the key generator config
+  (`"shake256-rejection"` keeps SHAKE-256 with rejection sampling). Size:
+  one small field per layer, so ciphertexts stay at 24.6 / 68.4 B per
+  element (Ring-LWE binary / JSON) and 13.3 B (dense LWE, JSON); the
+  ML adapter's `EncryptedGradient.to_dict` / `from_dict` keep it. Python
+  (`hashlib`) and the native kernels give the same values (known-answer
+  tests). Host, native, one thread, `standard`: MCFE Ring-LWE 10^4
+  elements, binary, aggregator 7.40 -> 5.87 ms (key derivation 4.17 -> 2.65
+  ms), client 2.77 -> 2.38 ms; dense-LWE MCFE 200 elements 153 / 160 -> 94 /
+  102 ms (client / aggregator).
+- **Threshold Ring-LWE MCFE flooding (breaking for partial decryptions and
+  `q`):** `mcfe/ring_lwe_threshold` now floods partial decryptions with noise
+  uniform on `[-2^tau, 2^tau)`, `tau = bits(B) + stat_param`
+  (`flooding="uniform"`, the new default), read from the request's seeded
+  SHAKE-256 stream: statistical distance below `2^-(stat_param + 1)` per
+  coefficient by the smudging lemma, the per-sample bound of the Gaussian;
+  no `mpfr` Box-Muller sampler (1.3 instead of 79 ms per 8192
+  coefficients), and `q` holds `s 2^tau` instead of `s 12 sigma_f` (215 ->
+  212 bits under `standard`). What it gives up against the Gaussian (the
+  margin beyond the per-sample bound) is in the module docstring. Its
+  parameter records are `bmms21-ibmcfe-shamir-smudging-uniform/v1`, so
+  cached v0.3.0 (Gaussian) records are re-derived; public parameters carry
+  `flooding` and `flood_bits`. **Partial decryptions and `q` differ from
+  v0.3.0**; `flooding="gaussian"` restores the Gaussian flooding of v0.3.0
+  (drawn at `bits(sigma_f) + 320` bits by the pinned flooding sampler since
+  this release, records `bmms21-ibmcfe-shamir-smudging/v2`, see below), and
+  public parameters without `flooding` are read as Gaussian. Decryption key
+  shares record the flooding they were issued for (`flooding`) and a server
+  refuses a share of another flooding than its public parameters'. 10^4 elements, `s = 3`, `t = 2`: partial decryption 222 -> 58 ms
+  per server, aggregator total 492 -> 162 ms.
 - **Pairing groups (breaking for pairing keys and ciphertexts):** every
   pairing-based scheme (SIFE FH-IPE and partial FH-IPE, MIFE FH-IPE and
   FH-Multi-IPE, MCFE / dMCFE / tMCFE FH-Multi-IPE, Quad, SGP, MIQFE) now

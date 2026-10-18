@@ -228,7 +228,8 @@ def test_flooding_noise_ignores_the_selected_sampler():
     from pyfe4ai.utils import sampling_utils as su
 
     kg = ThresholdMCFERingLWEKeyGenerator({"sec_param": 64, "n": 2, "lst_nid": NIDS, "s": 3, "lst_sid": SIDS, "t": 2,
-                                           "eta": 1, "ring_n": 16, "bound_x": 4, "bound_y": 5})
+                                           "eta": 1, "ring_n": 16, "bound_x": 4, "bound_y": 5,
+                                           "flooding": "gaussian"})  # the uniform default samples no Gaussian
     kg.setup()
     pp = kg.get_public_parameters()
     cts = {n: ThresholdMCFERingLWE({"id": n, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}}).encrypt([X[n]], "r1")
@@ -254,7 +255,7 @@ def test_stat_param_is_capped_by_the_mpfr_guard():
     from pyfe4ai.utils.exceptions import FEValidationError
 
     base = {"sec_param": 64, "n": 2, "lst_nid": NIDS, "s": 3, "lst_sid": SIDS, "t": 2, "eta": 1, "ring_n": 16,
-            "bound_x": 4, "bound_y": 5}
+            "bound_x": 4, "bound_y": 5, "flooding": "gaussian"}  # the MPFR guard: the Gaussian flooding
     kg = ThresholdMCFERingLWEKeyGenerator({**base, "stat_param": profiles.MAX_STAT_PARAM})
     sigma = int(kg.sigma_f)
     assert su.bigint_precision(sigma) - sigma.bit_length() >= profiles.MAX_STAT_PARAM + 56 + 8

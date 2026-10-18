@@ -315,29 +315,109 @@ def hash_to_zn2_star(v: str, n_mod: gp.mpz, domain: str = "") -> gp.mpz:
         counter += 1
 
 
-def hash_to_zq_material(v: str, domain: str = "") -> bytes:
-    """The SHAKE-256 input of :func:`hash_to_zq_vector` (also hashed natively,
-    see :mod:`pyfe4ai.utils.native_backend`)."""
-    return "|".join([domain, "zq-vector", str(len(v)), v]).encode("utf-8")
+#: How :func:`hash_to_zq_vector` maps a string to ``Z_q`` (the ``label_hash``
+#: setting of the MCFE schemes):
+#:
+#: * ``"shake256-wide"``: one SHAKE-256 stream cut into blocks of
+#:   ``bits(q) + 128`` bits, each reduced mod q (statistical distance below
+#:   ``2^-128`` per value); the only mode up to v0.3.0
+#:   (:data:`LEGACY_LABEL_HASH`);
+#: * ``"shake256-rejection"`` / ``"shake128-rejection"``: rejection sampling
+#:   mod q (exactly uniform) from a SHAKE-256 / SHAKE128 stream, see
+#:   :func:`zq_rejection_parameters`; ``"shake128-rejection"`` is the MCFE
+#:   key generators' default (:data:`DEFAULT_LABEL_HASH`).
+LABEL_HASHES = ("shake256-wide", "shake256-rejection", "shake128-rejection")
+
+#: The hash of versions <= 0.3.0, of :func:`hash_to_zq_vector` without a mode
+#: (e.g. the seeded Ring-LWE ``a``) and of MCFE public parameters and keys
+#: without a ``label_hash`` field.
+LEGACY_LABEL_HASH = "shake256-wide"
+
+#: The ``label_hash`` the MCFE key generators use unless configured.
+DEFAULT_LABEL_HASH = "shake128-rejection"
+
+#: The native backend's code of each label-hash mode.
+LABEL_HASH_CODES = {mode: code for code, mode in enumerate(LABEL_HASHES)}
 
 
-def hash_to_zq_vector(v: str, q: gp.mpz, length: int, domain: str = "") -> list:
+def check_label_hash(mode) -> str:
+    """Return *mode* if it is one of :data:`LABEL_HASHES`.
+
+    Raises:
+        ValueError: Otherwise.
+    """
+    if mode not in LABEL_HASHES:
+        raise ValueError("unknown label hash {!r}; one of {}".format(mode, ", ".join(LABEL_HASHES)))
+    return mode
+
+
+def hash_to_zq_material(v: str, domain: str = "", mode: str = LEGACY_LABEL_HASH) -> bytes:
+    """The XOF input of :func:`hash_to_zq_vector` (also hashed natively,
+    see :mod:`pyfe4ai.utils.native_backend`); the rejection modes use their
+    own tag, so no two modes share an input."""
+    tag = "zq-vector" if check_label_hash(mode) == "shake256-wide" else "zq-rej/v1"
+    return "|".join([domain, tag, str(len(v)), v]).encode("utf-8")
+
+
+def zq_rejection_parameters(q) -> tuple:
+    """``(nb, limit)`` of the rejection modes of :func:`hash_to_zq_vector`:
+    candidates are ``nb = ceil(bits(q) / 8) + 1`` big-endian bytes of the
+    stream, accepted below ``limit = floor(2^(8 nb) / q) q`` (more than
+    ``1 - 2^-8`` of them) and reduced mod q. ``q | limit``, so an accepted
+    candidate is uniform mod q."""
+    q = int(q)
+    nb = (q.bit_length() + 7) // 8 + 1
+    return nb, ((1 << (8 * nb)) // q) * q
+
+
+def _xof(mode: str):
+    return hashlib.shake_128 if mode == "shake128-rejection" else hashlib.shake_256
+
+
+def _rejection_sample(material: bytes, q, length: int, mode: str) -> list:
+    """The first *length* accepted candidates of the XOF(material) stream, mod q."""
+    q = gp.mpz(q)
+    nb, limit = zq_rejection_parameters(q)
+    limit_bytes = limit.to_bytes(nb, "big")  # equal-length big-endian bytes compare as numbers
+    from_bytes = _MPZ_FROM_BYTES or (lambda b, order: gp.mpz(int.from_bytes(b, order)))
+    xof = _xof(mode)
+    n_bytes = nb * (length + length // 64 + 16)
+    while True:
+        stream = xof(material).digest(n_bytes)  # a longer digest extends a shorter one
+        out = []
+        for i in range(0, n_bytes - nb + 1, nb):
+            block = stream[i:i + nb]
+            if block < limit_bytes:
+                out.append(from_bytes(block, "big") % q)
+                if len(out) == length:
+                    return out
+        n_bytes *= 2
+
+
+def hash_to_zq_vector(v: str, q: gp.mpz, length: int, domain: str = "", mode: str = LEGACY_LABEL_HASH) -> list:
     """Hash a string to a vector of *length* elements of ``Z_q`` (random oracle).
 
-    One SHAKE-256 output stream is cut into *length* blocks of ``bits(q) + 128``
-    bits, each reduced mod ``q``, hence statistically close to uniform.
-    Versions <= 0.2.0 made one SHAKE-256 call per coordinate, so their outputs
-    (and the ciphertexts of the schemes that hash labels this way) differ.
+    ``mode`` is one of :data:`LABEL_HASHES`. ``"shake256-wide"`` (the
+    default here, :data:`LEGACY_LABEL_HASH`) cuts one SHAKE-256 output stream into *length* blocks of ``bits(q) + 128`` bits, each
+    reduced mod q, hence statistically close to uniform. Versions <= 0.2.0
+    made one SHAKE-256 call per coordinate, so their outputs (and the
+    ciphertexts of the schemes that hash labels this way) differ. The
+    rejection modes are exactly uniform and read fewer XOF bytes
+    (:func:`zq_rejection_parameters`).
 
     Args:
         v: Input string.
         q: Modulus.
         length: Number of coordinates.
         domain: Domain-separation tag.
+        mode: Label-hash mode.
     """
+    material = hash_to_zq_material(v, domain, mode)
+    if mode != "shake256-wide":
+        return _rejection_sample(material, q, length, mode)
     q = gp.mpz(q)
     n_bytes = (int(q).bit_length() + 128 + 7) // 8
-    stream = hashlib.shake_256(hash_to_zq_material(v, domain)).digest(length * n_bytes)
+    stream = hashlib.shake_256(material).digest(length * n_bytes)
     if _MPZ_FROM_BYTES is not None:  # the same values, without a Python int per block
         return [_MPZ_FROM_BYTES(stream[i:i + n_bytes], "big") % q for i in range(0, length * n_bytes, n_bytes)]
     return [

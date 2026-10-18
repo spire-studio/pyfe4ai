@@ -49,7 +49,7 @@ def test_key_generator(kg_config):
     assert pp["lst_nid"] == kg_config["lst_nid"]
 
     sk = kg.get_private_keys("nid_0")
-    assert set(sk) == {"z", "s2"}
+    assert set(sk) == {"z", "s2", "label_hash"}
     assert len(sk["s2"]) == kg.dim
     assert all(sum(col) == 0 for col in zip(*kg.msk["s2"].values()))
 

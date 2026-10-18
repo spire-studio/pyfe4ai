@@ -4,11 +4,12 @@
 use crate::arith::{Word, U256};
 use crate::facct::{self, ByteBits, RandBits};
 use crate::gauss::{gauss_bytes, gauss_fill};
-use crate::keccak::{shake256, zq_block, zq_reduce};
+use crate::keccak::{hash_to_zq_mode, HashMode};
 use crate::ntt::Ring;
 use crate::{osrand, parallel_for};
 
-/// Key of one slot: NTT(a) and NTT(pk_row) in Montgomery form, the pads u_row, Delta.
+/// Key of one slot: NTT(a) and NTT(pk_row) in Montgomery form, the pads u_row, Delta,
+/// and how label pads are hashed (MCFE; HashMode::Wide256 unless set).
 #[derive(Clone, Debug)]
 pub struct EncKey<W: Word> {
     pub eta: usize,
@@ -17,6 +18,7 @@ pub struct EncKey<W: Word> {
     pub u: Option<Vec<W>>,
     pub delta: W,
     pub delta_m: W,
+    pub hash_mode: HashMode,
 }
 
 impl<W: Word> EncKey<W> {
@@ -36,6 +38,7 @@ impl<W: Word> EncKey<W> {
             u: u.map(|rows| rows.concat()),
             delta,
             delta_m: ring.m.to_mont(delta),
+            hash_mode: HashMode::Wide256,
         }
     }
 }
@@ -243,16 +246,11 @@ where
     }
 }
 
-/// The pad H_c = hash_to_zq_vector(material) plus u, mod q (MCFE w without x).
-fn pad_row<W: Word>(ring: &Ring<W>, u: &[W], material: Option<&[u8]>, out: &mut [W]) {
+/// The pad H_c = hash_to_zq_vector(material, mode) plus u, mod q (MCFE w without x).
+fn pad_row<W: Word>(ring: &Ring<W>, u: &[W], material: Option<&[u8]>, mode: HashMode, out: &mut [W]) {
     let n = ring.n;
     match material {
-        Some(mat) => {
-            let nb = zq_block(ring.m.bits);
-            let mut stream = vec![0u8; nb * n];
-            shake256(mat, &mut stream);
-            zq_reduce(&ring.m, &stream, nb, out);
-        }
+        Some(mat) => hash_to_zq_mode(&ring.m, mat, mode, &mut out[..n]),
         None => out.iter_mut().for_each(|v| *v = W::ZERO),
     }
     for i in 0..n {
@@ -281,7 +279,7 @@ where
     }
     let plain = |j: usize| {
         let mut w = vec![W::ZERO; n];
-        pad_row(ring, u, materials.map(|m| m[j]), &mut w);
+        pad_row(ring, u, materials.map(|m| m[j]), key.hash_mode, &mut w);
         let k0 = j * n;
         for i in 0..n.min(x.len() - k0) {
             w[i] = ring.m.add(w[i], ring.m.reduce_i128(x[k0 + i] as i128));
@@ -513,21 +511,20 @@ pub fn share_combine<W: Word>(
 
 /// MCFERingLWEKeyGenerator's z'' for several labels: base + sum_s sum_row
 /// ym[s eta + row] H_{s,l}[row] mod q, H_{s,l} = hash_to_zq_vector of
-/// materials[l][s] (eta n values, row-major); `emit(l, z)` from the workers.
+/// materials[l][s] (eta n values, row-major) with `mode`; `emit(l, z)` from the workers.
+#[allow(clippy::too_many_arguments)]
 pub fn pad_terms<W: Word, F>(
-    ring: &Ring<W>, base: &[W], materials: &[Vec<&[u8]>], ym: &[W], eta: usize, threads: usize, emit: F,
+    ring: &Ring<W>, base: &[W], materials: &[Vec<&[u8]>], ym: &[W], eta: usize, mode: HashMode, threads: usize,
+    emit: F,
 ) where
     F: Fn(usize, &[W]) + Sync,
 {
     let n = ring.n;
-    let nb = zq_block(ring.m.bits);
     parallel_for(materials.len(), threads, |l| {
         let mut z = base.to_vec();
-        let mut stream = vec![0u8; nb * n * eta];
         let mut h = vec![W::ZERO; n * eta];
         for (s, mat) in materials[l].iter().enumerate() {
-            shake256(mat, &mut stream);
-            zq_reduce(&ring.m, &stream, nb, &mut h);
+            hash_to_zq_mode(&ring.m, mat, mode, &mut h);
             for r in 0..eta {
                 let y = ym[s * eta + r];
                 let hr = &h[r * n..(r + 1) * n];
@@ -580,7 +577,7 @@ pub fn precompute<W: Word>(
     let data: Vec<std::sync::Mutex<Vec<W>>> = (0..chunks).map(|_| std::sync::Mutex::new(Vec::new())).collect();
     let pad = |j: usize| {
         let mut w = vec![W::ZERO; n];
-        pad_row(ring, u, Some(materials[j]), &mut w);
+        pad_row(ring, u, Some(materials[j]), key.hash_mode, &mut w);
         w
     };
     let collect = |data: Vec<std::sync::Mutex<Vec<W>>>| {

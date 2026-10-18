@@ -27,7 +27,8 @@ must publish a share; shares for other weights or labels do not combine.
 Deviation: the PKC version of BMMS21 states GDSum only through its property;
 this module realises it with pairwise PRF masks (SHAKE-256 keyed by
 pairwise secrets ``K_ij``, which this prototype samples in-process, as it
-does all other keys; a deployment would agree on them by key exchange).
+does all other keys; a deployment would agree on them by key exchange),
+hashed to ``Z_q`` like the label pads (the ``label_hash`` public parameter).
 Versions <= 0.2.0 used an ad-hoc label scalar instead.
 """
 
@@ -41,10 +42,11 @@ import gmpy2 as gp
 from pyfe4ai.schemes.mcfe.labels import chunk_label, encode_label
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWE
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
-from pyfe4ai.schemes.mcfe.ring_lwe import label_pad, label_pad_material
+from pyfe4ai.schemes.mcfe.ring_lwe import label_pad, label_pad_material, native_hash_kwargs
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils import native_backend
+from pyfe4ai.utils.crypto_utils import LEGACY_LABEL_HASH
 from pyfe4ai.utils.crypto_utils import hash_to_zq_material, hash_to_zq_vector
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul, transpose
@@ -55,20 +57,25 @@ logger = logging.getLogger(__name__)
 _GDSUM_DOMAIN = "pyfe4ai/dmcfe/ring_lwe/GDSum"
 
 
-def gdsum_material(pair_key: str, context: str) -> bytes:
-    """The hash input of one PRF term of :func:`gdsum_mask`."""
-    return hash_to_zq_material("{}|{}".format(pair_key, context), domain=_GDSUM_DOMAIN)
+def gdsum_material(pair_key: str, context: str, mode: str) -> bytes:
+    """The hash input of one PRF term of :func:`gdsum_mask` (*mode*: the
+    ``label_hash`` public parameter)."""
+    return hash_to_zq_material("{}|{}".format(pair_key, context), domain=_GDSUM_DOMAIN, mode=mode)
 
 
-def gdsum_mask(nid: str, pair_keys: dict, lst_nid: list, context: str, q, ring_n: int) -> list:
-    """Return ``M_i(context) = sum_{j>i} PRF(K_ij) - sum_{j<i} PRF(K_ji)`` in Z_q^ring_n."""
+def gdsum_mask(
+    nid: str, pair_keys: dict, lst_nid: list, context: str, q, ring_n: int, mode: str
+) -> list:
+    """Return ``M_i(context) = sum_{j>i} PRF(K_ij) - sum_{j<i} PRF(K_ji)`` in Z_q^ring_n
+    (the PRF: :func:`~pyfe4ai.utils.crypto_utils.hash_to_zq_vector` with the
+    ``label_hash`` *mode*)."""
     mask = [gp.mpz(0)] * ring_n
     pos = lst_nid.index(nid)
     for other in lst_nid:
         if other == nid:
             continue
         prf = hash_to_zq_vector(
-            "{}|{}".format(pair_keys[other], context), q, ring_n, domain=_GDSUM_DOMAIN
+            "{}|{}".format(pair_keys[other], context), q, ring_n, domain=_GDSUM_DOMAIN, mode=mode
         )
         sign = 1 if lst_nid.index(other) > pos else -1
         mask = [(m + sign * v) % q for m, v in zip(mask, prf)]
@@ -157,6 +164,7 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
             return {
                 "sk_y": sk_y, "z": terms[0], "z_chunks": terms[1:],
                 "label": label, "nid": self.id, "weights_id": weights_id,
+                "label_hash": self.label_hash,
             }
 
         def masked_pad_term(lab) -> list:
@@ -165,10 +173,10 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
             for y_row, u_row, h_row in zip(y, self.sk["u"], pad):
                 z = [acc + y_row * (gp.mpz(u) + h) for acc, u, h in zip(z, u_row, h_row)]
             context = "{}|{}".format(encode_label(lab), weights_id)
-            mask = gdsum_mask(self.id, self.sk["pair_keys"], lst_nid, context, q, ring_n)
+            mask = gdsum_mask(self.id, self.sk["pair_keys"], lst_nid, context, q, ring_n, self.label_hash)
             return [gp.digits((v + m) % q) for v, m in zip(z, mask)]
 
-        return {
+        share = {
             "sk_y": [gp.digits(v) for v in mat_vec_mul(transpose(s), y, q)],
             "z": masked_pad_term(label),
             "z_chunks": [masked_pad_term(chunk_label(label, c)) for c in range(n_chunks)],
@@ -176,31 +184,38 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
             "nid": self.id,
             "weights_id": weights_id,
         }
+        share["label_hash"] = self.label_hash
+        return share
 
     def _native_key_share(self, ctx, y: list, s: list, labels: list, weights_id: str) -> tuple:
         """The masked pad terms of *labels* and ``sk_y`` of
         :meth:`derive_function_decryption_key_share`, natively (the same values
         and strings): ``sum_r y_r (u_r + H_r(l)) + M_i(l)`` with the label pad
-        and the GDSum PRF terms expanded by the extension's ``pad_terms``."""
+        and the GDSum PRF terms expanded by the extension's ``pad_terms`` with
+        the ``label_hash`` of the public parameters (which the encryption key
+        must have been issued for, as in :meth:`_pad`)."""
         ext = native_backend.ext()
+        mode = self._encryption_label_hash()
+        hash_kw = native_hash_kwargs(mode)
         lst_nid = self.pp["lst_nid"]
         eta, ring_n = self.pp["eta"], self.pp["ring_n"]
         pos = lst_nid.index(self.id)
         others = [o for o in lst_nid if o != self.id]
         signs = [1 if lst_nid.index(o) > pos else -1 for o in others]
         base = ext.lincomb(ctx.cap, [ctx.pack(row) for row in self.sk["u"]], y)  # sum_r y_r u_r
-        pad_mats = [label_pad_material(self.sk["u_prime"], lab) for lab in labels]
+        pad_mats = [label_pad_material(self.sk["u_prime"], lab, mode) for lab in labels]
         mask_mats = [
-            [gdsum_material(self.sk["pair_keys"][o], "{}|{}".format(encode_label(lab), weights_id)) for o in others]
+            [gdsum_material(self.sk["pair_keys"][o], "{}|{}".format(encode_label(lab), weights_id), mode)
+             for o in others]
             for lab in labels
         ]
         threads = native_backend.get_threads()
         if eta == 1:  # one call: the pad (weight y) and the masks (weights +-1) as slots
             terms = ext.pad_terms(ctx.cap, base, [[p] + m for p, m in zip(pad_mats, mask_mats)],
-                                  [y] + [[sg] for sg in signs], 1, threads)
+                                  [y] + [[sg] for sg in signs], 1, threads, **hash_kw)
         else:
-            pads = ext.pad_terms(ctx.cap, base, [[p] for p in pad_mats], [y], eta, threads)
-            masks = ext.pad_terms(ctx.cap, [0] * ring_n, mask_mats, [[sg] for sg in signs], 1, threads)
+            pads = ext.pad_terms(ctx.cap, base, [[p] for p in pad_mats], [y], eta, threads, **hash_kw)
+            masks = ext.pad_terms(ctx.cap, [0] * ring_n, mask_mats, [[sg] for sg in signs], 1, threads, **hash_kw)
             terms = [ext.lincomb(ctx.cap, [ctx.pack(a), ctx.pack(b)], [1, 1]) for a, b in zip(pads, masks)]
         sk_y = ext.lincomb(ctx.cap, [ctx.pack(row) for row in s], y)
         return terms, sk_y
@@ -223,6 +238,8 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
             for sh in shares
         ):
             raise FESchemeError("key shares were derived for different weights or labels")
+        if any(sh.get("label_hash", LEGACY_LABEL_HASH) != self.label_hash for sh in shares):
+            raise FESchemeError("key shares were derived with another label hash than the public parameters")
         q = gp.mpz(self.pp["q"])
         ctx = native_backend.ring_context(q, self.pp["ring_n"])
 
@@ -234,9 +251,11 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
                 acc = [(a + gp.mpz(v)) % q for a, v in zip(acc, get(sh))]
             return [gp.digits(v) for v in acc]
 
-        return {
+        key = {
             "sk_y": {nid: sh["sk_y"] for nid, sh in dct_dk_shares.items()},
             "z": total(lambda sh: sh["z"]),
             "z_chunks": [total(lambda sh, c=c: sh["z_chunks"][c]) for c in range(len(first["z_chunks"]))],
             "label": first["label"],
         }
+        key["label_hash"] = self.label_hash
+        return key

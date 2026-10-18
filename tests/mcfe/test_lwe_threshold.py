@@ -48,7 +48,7 @@ def test_key_generator(kg_config):
     assert int(pp["sigma_f"]) >= 1
 
     sk_nid = kg.get_private_keys("nid_0")
-    assert list(sk_nid) == ["z"]
+    assert list(sk_nid) == ["z", "label_hash"]
 
     fusion_weight = {nid: [1] for nid in kg_config["lst_nid"]}
     dk_sid = kg.get_decryption_keys(
