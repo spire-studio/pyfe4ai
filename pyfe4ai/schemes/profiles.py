@@ -67,7 +67,9 @@ The ``security_profile`` entry of a key generator's config selects one:
     Theorem 2 requires, the public matrix has 1 to 2 * 10^10 entries and a
     ciphertext 2.9 to 4.5 * 10^6 coordinates of 219 to 258 bits),
     ``mife/lwe_threshold`` (its flooding-enlarged ``q`` needs an LWE dimension
-    beyond the table's 6144 at ``sigma'``, about 6500 for ``X = Y = 50``) and
+    beyond the table's 6144 at ``sigma'``, about 6500 for ``X = Y = 50``; to be
+    re-evaluated with the KL accounting of the flooding noise, under which it
+    would take about 4864) and
     ``mcfe/paillier_decentralized`` (its key shares are combined under a DCR
     modulus of more than 15000 bits).
 

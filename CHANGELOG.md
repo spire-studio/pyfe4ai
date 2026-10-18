@@ -48,7 +48,10 @@ compatibility).
   needs an LWE dimension beyond the table's 6144: about 6500 for
   `X = Y = 50`, where the old rule took 5952. `standard` therefore no longer
   fixes its `matrix_mode`. Use `mife/ddh_threshold`, or
-  `mcfe/ring_lwe_threshold` with labels.
+  `mcfe/ring_lwe_threshold` with labels. A KL-divergence accounting of the
+  flooding noise (in development, `t = s` only, for a bounded number of
+  partial decryptions) would bring it to about 4864 at `sigma'`; the refusal
+  is to be re-evaluated when that is merged.
 
 ### Performance
 

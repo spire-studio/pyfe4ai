@@ -62,7 +62,11 @@ there; ``X = Y = 50`` would need about 6500. Read at ``sigma`` itself, the
 earlier rule took 5952 for two clients (``q`` of 217 bits, ``m`` of
 1.3 * 10^6, ``A`` of 7.8 * 10^9 entries, so ``A`` had to be streamed):
 key generation took 38 minutes, one encryption 572 s, a batch of 64
-encryptions 679 s and a partial decryption 13 ms.
+encryptions 679 s and a partial decryption 13 ms. A KL-divergence accounting
+of the flooding noise (in development, ``t = s`` only, valid for a bounded
+number of partial decryptions) would bring it within the table again: about
+4864 at ``sigma'`` for two clients and ``s = t = 3``, with ``q`` of 173 bits;
+the refusal is to be re-evaluated when that is merged.
 """
 
 from __future__ import annotations

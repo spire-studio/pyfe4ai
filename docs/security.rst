@@ -54,7 +54,9 @@ F. Bourse's PhD thesis, ENS 2017, Thm. 4.3.5), not Theorem 2 of the PKC 2015
 paper, whose simulation does not cover noisy LWE keys; this rests on the
 thesis until the full-version text has been checked. ``mife/lwe_threshold``
 has no tabulated dimension (up to 6144) at that width once its modulus is
-enlarged for flooding.
+enlarged for flooding. A KL-divergence accounting of the flooding noise (in
+development, ``t = s`` only) would bring it to about 4864, so the refusal
+is to be re-evaluated when that is merged.
 
 Threshold trust model
 ---------------------
