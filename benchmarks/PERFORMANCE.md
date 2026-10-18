@@ -306,6 +306,38 @@ Per sample, by sigma:
 `XofRandom` costs one SHAKE-256 call per `getrandbits`, four or more per
 trial, as in the reference.
 
+## Exact Gaussians by default (branch `perf/sampler-defaults`)
+
+After the October 2026 crypto review, the Ring-LWE MIFE / MCFE family and
+the dense-LWE MCFE keys `t` sample with FACCT by default (recorded in `pp`;
+`gaussian_sampler = "rounded"` stays selectable), and the MPFR path runs at
+`bits(sigma) + 192` bits. `bench_fl_compare.py` (standard profile, 3
+clients, JSON ciphertexts, medians of 2 interleaved runs of 5 rounds,
+load 4-5.5) compares the parent commit d898446 (rounded default) with this
+branch:
+
+| MCFE Ring-LWE, 10^4 elements (80-bit q) | client ms | aggregator ms | setup ms |
+| --- | ---: | ---: | ---: |
+| rounded (before), 1 thread | 3.55 | 8.97 | 62 |
+| FACCT (default now), 1 thread | 18.87 | 9.20 | 44 |
+| rounded, 4 threads | 1.59 | 4.90 | |
+| FACCT, 4 threads | 6.96 | 4.96 | |
+| `--offline`, online phase: rounded / FACCT | 0.91 / 0.91 | 4.63 / 4.69 | |
+| `--offline`, offline phase: rounded / FACCT | 2.72 / 18.02 | 4.30 / 4.30 | |
+| dense-LWE MCFE (`mcfe/lwe`, 200 elements): rounded / FACCT | 153.96 / 153.94 | 161.49 / 161.43 | 37 / 35 |
+
+How the default sampler changes each phase:
+* **Client encryption:** the exact noise makes it about 5x slower: the
+  native kernel's FACCT reads about 50 bytes of ChaCha20 per trial (as in
+  phase 2's measurement). The offline phase absorbs it, so the online
+  client (0.91 ms) and the aggregator are unchanged.
+* **Dense-LWE MCFE:** only its keys `t` are Gaussian, so its rounds do not
+  move.
+* **Key generation:** faster, because the key widths now go through the
+  native `discrete_gaussian_facct` instead of Python's double sampler
+  (direct measurement, medians of 3: MCFE Ring-LWE 58 -> 40 ms, dense-LWE
+  37 -> 32 ms).
+
 ## Workload and method
 
 `bench_fl_compare.py`: every one of 3 clients encrypts a gradient of
