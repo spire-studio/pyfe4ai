@@ -289,12 +289,18 @@ def check_served_sharing(pp: dict, dk: dict, constructions: dict) -> None:
     of this version record ``threshold_construction``; it must be one of
     *constructions* (``{construction id: sharing}``) and name that sharing,
     so that artifacts of another construction (a later version, say) are
-    refused rather than misread.
+    refused rather than misread. Only Shamir public parameters may lack it
+    (those of versions <= 0.3.0); every version with the replicated sharing
+    records it, so replicated public parameters without it are refused.
     """
     sharing = dk.get("sharing", "shamir")
     if pp.get("sharing", "shamir") != sharing:
         raise FESchemeError("the key share is not of the sharing of the public parameters")
     construction = pp.get("threshold_construction")
+    if construction is None and sharing != "shamir":
+        raise FESchemeError(
+            "public parameters of the {} sharing must record threshold_construction".format(sharing)
+        )
     if construction is not None and constructions.get(construction) != sharing:
         raise FESchemeError(
             "unknown threshold construction {!r} for a {} key share; known: {}".format(

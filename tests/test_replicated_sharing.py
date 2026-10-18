@@ -480,6 +480,13 @@ def test_public_parameters_record_the_construction_and_profile(kind):
             bad = dict(pp, threshold_construction=other)
             with pytest.raises(FESchemeError, match="unknown threshold construction"):
                 cls({"id": "sid_0", "keys": {"pp": bad, "dk": dk}}).share_decrypt(cts, cred, dk, enrolled)
+        # no construction id: only Shamir public parameters of v0.3.0 lack it
+        bare = {k: v for k, v in pp.items() if k != "threshold_construction"}
+        if t == 2:
+            with pytest.raises(FESchemeError, match="must record threshold_construction"):
+                cls({"id": "sid_0", "keys": {"pp": bare, "dk": dk}}).share_decrypt(cts, cred, dk, enrolled)
+        else:
+            cls({"id": "sid_0", "keys": {"pp": bare, "dk": dk}}).share_decrypt(cts, cred, dk, enrolled)
 
 
 def test_summed_shares_are_cached_per_key_share_and_assignment():
