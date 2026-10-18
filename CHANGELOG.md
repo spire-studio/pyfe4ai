@@ -47,6 +47,23 @@ compatibility).
 
 ### Performance
 
+- **The exact FACCT sampler natively for any width below 2^448**:
+  `discrete_gaussian_facct` runs in Rust when `rng` is an `XofRandom` or
+  `None`, with the reference's `getrandbits` calls and decisions (the known
+  answers hold). Widths with `k <= 2^50` use the existing kernel; wider ones
+  use a multi-word kernel (`rust/core/src/facct_wide.rs`) whose acceptance
+  exponent comes from the exact product `c t` into the same fixed-point
+  exponential, with the Python threshold wherever the fixed point cannot
+  decide. SIFE FullySec Ring-LWE under its FACCT default (standard):
+  - eta 4 setup 2.2 -> 0.26 s;
+  - eta 10 setup 5.8 -> 1.05 s;
+  - one encryption 0.85 -> 0.15 s (eta 4) and 1.63 -> 0.43 s (eta 10), the
+    rounded sampler's times.
+
+  Per sample 7-12 us -> 0.6-1.1 us. Finding M4 of the October 2026 crypto
+  review is applied: the native FACCT tables take `c` with its full 128-bit
+  mantissa (it reached Rust with 53 bits), and a table is checked against
+  the exact thresholds when built.
 - **Native backend** in Rust (`pyfe4ai._rust_native`, PyO3; sources in
   `rust/`, `rust/core` has no dependencies), built by `pip install` when
   cargo is available or by `tools/build_rust.py`.

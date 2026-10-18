@@ -266,28 +266,45 @@ Under the FACCT default, setup is about 4x and encryption 4.5-5x the
 rounded times; per-element ciphertexts stay at 0.15-0.4 s each in either
 case.
 
-**Estimate, not implemented.**
-* **(A)** A Python-level dispatch of `discrete_gaussian_facct` to the
-  existing kernel for `k <= 2^50`, with the same `getrandbits` order and
-  decisions, so its known answers hold. An `XofRandom` would be sampled with
-  the GIL held, since the number of calls is data-dependent and cannot be
-  claimed in advance. It covers:
-  - every width of eta 1 packed and of eta 4 in both layouts;
-  - eta 1 per element except sigma3 (2^50.8).
+**Native FACCT (branch `perf/native-facct-wide`).** Done since, in two steps:
+* **(A)** e4d4f4e: `discrete_gaussian_facct` dispatches to the native
+  kernel for `k <= 2^50`.
+* **(B)** a9bdfc3: a multi-word kernel for `2^50 < k < 2^448`
+  (`rust/core/src/facct_wide.rs`, with its error argument).
 
-  Those configurations would come back to about their rounded times: setup
-  about 0.1-0.55 s, encryption about 0.11-0.2 s. eta 10 would be unchanged.
-* **(B)** A multi-limb FACCT up to 2^448:
-  - multi-limb y, z and `t = y (y + 2kx)`;
-  - the acceptance exponent from the exact product `c t`, then the same
-    120-bit `exp_neg` and margin;
-  - multi-limb outputs.
+Both make the reference's `getrandbits` calls in its order and its
+decisions, so the 22 known answers hold natively. An `XofRandom` is sampled
+with the GIL and its claim lock held; `rng=None` reads the per-call DRBG.
+Finding M4 of the crypto review is applied as on `fix/crypto-review-2026-10`
+(that branch is not merged): the mantissa of `neg_c` is negated exactly, and
+tables are checked against the exact thresholds when built.
 
-  It would also bring eta 10 back to about the rounded times: setup about
-  1.3-1.4 s, encryption about 0.5-0.6 s.
+Same setup as above, medians of 2 runs alternating the samplers (load
+3.4-4.7):
 
-(A) is a small change. (B) is a few hundred lines of Rust with its own
-error argument, and needs agreement tests at the wide widths.
+| configuration | layout | setup s: facct (Python / A / A+B) / rounded | encrypt s: facct (Python / A / A+B) / rounded |
+| --- | --- | ---: | ---: |
+| eta 1 | per element | 0.65 / 0.09 / 0.09 / 0.18 | 0.768 / 0.179 / 0.147 / 0.151 |
+| | packed | 0.40 / 0.06 / 0.05 / 0.09 | 0.548 / 0.103 / 0.101 / 0.099 |
+| eta 4 | per element | 2.17 / 0.26 / 0.26 / 0.47 | 0.848 / 0.157 / 0.154 / 0.155 |
+| | packed | 2.61 / 0.28 / 0.28 / 0.51 | 0.875 / 0.187 / 0.175 / 0.168 |
+| eta 10 | per element | 5.77 / 5.41 / 1.05 / 1.08 | 1.626 / 1.480 / 0.429 / 0.431 |
+| | packed | 6.29 / 5.79 / 1.11 / 1.20 | 1.750 / 1.586 / 0.493 / 0.486 |
+
+FullySec under its FACCT default is now as fast as with the rounded
+sampler. Setup is faster than with rounded: the rounded key widths (below
+2^40) use the Python double sampler.
+
+Per sample, by sigma:
+
+| sigma | Python FACCT | native FACCT, DRBG | native FACCT, XofRandom | native rounded |
+| --- | ---: | ---: | ---: | ---: |
+| 2^48.9 - 2^50.8 | 7.9-12.5 us | 0.60-0.82 us | 2.7 us | 0.57 us |
+| 2^66.7 - 2^98.4 | 7.0-7.3 us | 0.76-0.84 us | 2.3-2.7 us | 0.85-0.87 us |
+| 2^194.7 - 2^216.8 | 7.4-8.0 us | 0.88-1.09 us | 2.4-3.0 us | 1.97-1.99 us |
+
+`XofRandom` costs one SHAKE-256 call per `getrandbits`, four or more per
+trial, as in the reference.
 
 ## Workload and method
 
