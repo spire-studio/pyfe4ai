@@ -226,8 +226,11 @@ fn ctx_new(py: Python<'_>, q: &Bound<'_, PyAny>, n: usize, root: &Bound<'_, PyAn
 }
 
 #[pyfunction]
-fn ctx_info(py: Python<'_>, ctx: &Bound<'_, RingCtx>) -> PyResult<Py<PyAny>> {
-    let r = &ctx.get().ring;
+fn ctx_info(py: Python<'_>, ctx: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+    if let Ok(c) = ctx.cast::<rns::RnsCtx>() {
+        return rns::ctx_info(py, c);
+    }
+    let r = &ctx.cast::<RingCtx>()?.get().ring;
     let d = pyo3::types::PyDict::new(py);
     d.set_item("word_bits", r.word_bits())?;
     d.set_item("n", r.n())?;
@@ -318,7 +321,11 @@ impl DecBuf {
 }
 
 #[pyfunction]
-fn pack(py: Python<'_>, ctx: &Bound<'_, RingCtx>, values: &Bound<'_, PyAny>) -> PyResult<Py<PyBytes>> {
+fn pack(py: Python<'_>, ctx: &Bound<'_, PyAny>, values: &Bound<'_, PyAny>) -> PyResult<Py<PyBytes>> {
+    if let Ok(c) = ctx.cast::<rns::RnsCtx>() {
+        return rns::pack(py, c, values);
+    }
+    let ctx = ctx.cast::<RingCtx>()?;
     let q = ctx.get().q.bind(py);
     let ring = get_ring(ctx);
     with_ring!(&*ring, r => Ok(words_to_bytes(py, &read_values(values, None, q, &r.m, false)?)))
@@ -326,8 +333,11 @@ fn pack(py: Python<'_>, ctx: &Bound<'_, RingCtx>, values: &Bound<'_, PyAny>) -> 
 
 #[pyfunction]
 #[pyo3(signature = (ctx, data, as_digits=false))]
-fn unpack(py: Python<'_>, ctx: &Bound<'_, RingCtx>, data: &[u8], as_digits: bool) -> PyResult<Py<PyList>> {
-    let ring = get_ring(ctx);
+fn unpack(py: Python<'_>, ctx: &Bound<'_, PyAny>, data: &[u8], as_digits: bool) -> PyResult<Py<PyList>> {
+    if ctx.cast::<rns::RnsCtx>().is_ok() {
+        return rns::unpack(py, data, as_digits);
+    }
+    let ring = get_ring(ctx.cast::<RingCtx>()?);
     with_ring!(&*ring, r => unpack_w(py, r, data, as_digits))
 }
 
@@ -346,8 +356,11 @@ fn unpack_w<W: Word>(py: Python<'_>, _r: &Ring<W>, data: &[u8], as_digits: bool)
 
 #[pyfunction]
 #[pyo3(signature = (ctx, data, inverse=false))]
-fn ntt(py: Python<'_>, ctx: &Bound<'_, RingCtx>, data: &[u8], inverse: bool) -> PyResult<Py<PyBytes>> {
-    let ring = get_ring(ctx);
+fn ntt(py: Python<'_>, ctx: &Bound<'_, PyAny>, data: &[u8], inverse: bool) -> PyResult<Py<PyBytes>> {
+    if let Ok(c) = ctx.cast::<rns::RnsCtx>() {
+        return rns::ntt(py, c, data, inverse);
+    }
+    let ring = get_ring(ctx.cast::<RingCtx>()?);
     with_ring!(&*ring, r => {
         let x = bytes_to_words(data, r.n)?;
         let mut y = x.clone();
@@ -357,8 +370,11 @@ fn ntt(py: Python<'_>, ctx: &Bound<'_, RingCtx>, data: &[u8], inverse: bool) -> 
 }
 
 #[pyfunction]
-fn ntt_mont(py: Python<'_>, ctx: &Bound<'_, RingCtx>, data: &[u8]) -> PyResult<Py<PyBytes>> {
-    let ring = get_ring(ctx);
+fn ntt_mont(py: Python<'_>, ctx: &Bound<'_, PyAny>, data: &[u8]) -> PyResult<Py<PyBytes>> {
+    if let Ok(c) = ctx.cast::<rns::RnsCtx>() {
+        return rns::ntt_mont(py, c, data);
+    }
+    let ring = get_ring(ctx.cast::<RingCtx>()?);
     with_ring!(&*ring, r => {
         let x = bytes_to_words(data, r.n)?;
         let mut y = x.clone();
@@ -368,8 +384,11 @@ fn ntt_mont(py: Python<'_>, ctx: &Bound<'_, RingCtx>, data: &[u8]) -> PyResult<P
 }
 
 #[pyfunction]
-fn poly_mul(py: Python<'_>, ctx: &Bound<'_, RingCtx>, a: &[u8], b: &[u8]) -> PyResult<Py<PyBytes>> {
-    let ring = get_ring(ctx);
+fn poly_mul(py: Python<'_>, ctx: &Bound<'_, PyAny>, a: &[u8], b: &[u8]) -> PyResult<Py<PyBytes>> {
+    if let Ok(c) = ctx.cast::<rns::RnsCtx>() {
+        return rns::poly_mul(py, c, a, b);
+    }
+    let ring = get_ring(ctx.cast::<RingCtx>()?);
     with_ring!(&*ring, r => {
         let (x, y) = (bytes_to_words(a, r.n)?, bytes_to_words(b, r.n)?);
         Ok(words_to_bytes(py, &r.poly_mul(&x, &y)))
@@ -379,8 +398,12 @@ fn poly_mul(py: Python<'_>, ctx: &Bound<'_, RingCtx>, a: &[u8], b: &[u8]) -> PyR
 /// sum_i coeffs[i] rows[i] mod q as decimal strings. The copies of the rows and
 /// the accumulator are wiped (rows may be secret key pieces).
 #[pyfunction]
-fn lincomb(py: Python<'_>, ctx: &Bound<'_, RingCtx>, rows: &Bound<'_, PyAny>, coeffs: &Bound<'_, PyAny>)
+fn lincomb(py: Python<'_>, ctx: &Bound<'_, PyAny>, rows: &Bound<'_, PyAny>, coeffs: &Bound<'_, PyAny>)
     -> PyResult<Py<PyList>> {
+    if let Ok(c) = ctx.cast::<rns::RnsCtx>() {
+        return rns::lincomb(py, c, rows, coeffs);
+    }
+    let ctx = ctx.cast::<RingCtx>()?;
     let q = ctx.get().q.bind(py);
     let ring = get_ring(ctx);
     let mut rows: Vec<Vec<u8>> = rows.try_iter()?.map(|r| r?.extract::<Vec<u8>>()).collect::<PyResult<_>>()?;
@@ -445,10 +468,13 @@ fn hash_mode(code: u8) -> PyResult<HashMode> {
 /// 1 shake256-rejection, 2 shake128-rejection), packed words.
 #[pyfunction(name = "hash_to_zq")]
 #[pyo3(signature = (ctx, material, count, hash_mode=0))]
-fn hash_to_zq_py(py: Python<'_>, ctx: &Bound<'_, RingCtx>, material: &[u8], count: usize, hash_mode: u8)
+fn hash_to_zq_py(py: Python<'_>, ctx: &Bound<'_, PyAny>, material: &[u8], count: usize, hash_mode: u8)
     -> PyResult<Py<PyBytes>> {
-    let ring = get_ring(ctx);
     let mode = self::hash_mode(hash_mode)?;
+    if let Ok(c) = ctx.cast::<rns::RnsCtx>() {
+        return Ok(rns::hash_to_zq(py, c, material, count, mode));
+    }
+    let ring = get_ring(ctx.cast::<RingCtx>()?);
     with_ring!(&*ring, r => {
         let mut out = vec![Word::ZERO; count];
         py.detach(|| hash_to_zq_mode(&r.m, material, mode, &mut out));
@@ -492,9 +518,13 @@ macro_rules! with_key {
 
 #[pyfunction]
 #[pyo3(signature = (ctx, a, pk, u, delta, hash_mode=0))]
-fn enc_key(py: Python<'_>, ctx: &Bound<'_, RingCtx>, a: &Bound<'_, PyAny>, pk: &Bound<'_, PyAny>,
-           u: &Bound<'_, PyAny>, delta: &Bound<'_, PyAny>, hash_mode: u8) -> PyResult<EncKeyObj> {
+fn enc_key(py: Python<'_>, ctx: &Bound<'_, PyAny>, a: &Bound<'_, PyAny>, pk: &Bound<'_, PyAny>,
+           u: &Bound<'_, PyAny>, delta: &Bound<'_, PyAny>, hash_mode: u8) -> PyResult<Py<PyAny>> {
     let mode = self::hash_mode(hash_mode)?;
+    if let Ok(c) = ctx.cast::<rns::RnsCtx>() {
+        return Ok(Py::new(py, rns::enc_key(py, c, a, pk, u, delta, mode)?)?.into_any());
+    }
+    let ctx = ctx.cast::<RingCtx>()?;
     let q = ctx.get().q.bind(py);
     let ring = get_ring(ctx);
     let n = ring.n();
@@ -526,7 +556,7 @@ fn enc_key(py: Python<'_>, ctx: &Bound<'_, RingCtx>, a: &Bound<'_, PyAny>, pk: &
         AnyRing::W128(r) => build!(r, W128),
         AnyRing::W256(r) => build!(r, W256),
     };
-    Ok(EncKeyObj { ring, q: q.clone().unbind(), key })
+    Ok(Py::new(py, EncKeyObj { ring, q: q.clone().unbind(), key })?.into_any())
 }
 
 /// Given bytes (tests), else the call's DRBG streams.
@@ -1010,13 +1040,19 @@ macro_rules! with_noise {
     }};
 }
 
+// the RNS kernels' bindings use with_noise! and the helpers above
+mod rns;
+
 /// MIFERingLWE._encrypt_rows: (ct0, ct1) as decimal strings, or format-1 bytes.
 #[pyfunction]
 #[pyo3(signature = (key, w_rows, sigma2, sigma3, rnd, binary=false, seed=None, facct=None))]
 #[allow(clippy::too_many_arguments)]
-fn encrypt(py: Python<'_>, key: &Bound<'_, EncKeyObj>, w_rows: &Bound<'_, PyAny>, sigma2: f64, sigma3: f64,
+fn encrypt(py: Python<'_>, key: &Bound<'_, PyAny>, w_rows: &Bound<'_, PyAny>, sigma2: f64, sigma3: f64,
            rnd: &Bound<'_, PyAny>, binary: bool, seed: Option<Vec<u8>>, facct: FacctArg) -> PyResult<Py<PyAny>> {
-    let obj = key.get();
+    if let Ok(k) = key.cast::<rns::RnsKeyObj>() {
+        return rns::encrypt(py, k, w_rows, sigma2, sigma3, rnd, binary, seed, facct);
+    }
+    let obj = key.cast::<EncKeyObj>()?.get();
     let ring = obj.ring.clone();
     let n = ring.n();
     let qob = obj.q.bind(py);
@@ -1129,10 +1165,13 @@ fn materials_of(mats: &Bound<'_, PyAny>) -> PyResult<Option<Vec<Vec<u8>>>> {
 #[pyfunction]
 #[pyo3(signature = (key, x, pad_materials, sigma2, sigma3, rnd, threads, binary=false, seed=None, facct=None))]
 #[allow(clippy::too_many_arguments)]
-fn encrypt_tensor(py: Python<'_>, key: &Bound<'_, EncKeyObj>, x: &Bound<'_, PyAny>, pad_materials: &Bound<'_, PyAny>,
+fn encrypt_tensor(py: Python<'_>, key: &Bound<'_, PyAny>, x: &Bound<'_, PyAny>, pad_materials: &Bound<'_, PyAny>,
                   sigma2: f64, sigma3: f64, rnd: &Bound<'_, PyAny>, threads: usize, binary: bool,
                   seed: Option<Vec<u8>>, facct: FacctArg) -> PyResult<Py<PyList>> {
-    let obj = key.get();
+    if let Ok(k) = key.cast::<rns::RnsKeyObj>() {
+        return rns::encrypt_tensor(py, k, x, pad_materials, sigma2, sigma3, rnd, threads, binary, seed, facct);
+    }
+    let obj = key.cast::<EncKeyObj>()?.get();
     let xs = int64_buffer(x)?;
     let mats = materials_of(pad_materials)?;
     let rb: Option<Vec<u8>> = if rnd.is_none() { None } else { Some(rnd.extract()?) };
@@ -1243,21 +1282,55 @@ enum SlotVals<'a, W> {
 /// (int64 bytes, None mask bytes | None).
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-fn decrypt_tensor(py: Python<'_>, ctx: &Bound<'_, RingCtx>, chunks: &Bound<'_, PyAny>, zs: &Bound<'_, PyAny>,
+fn decrypt_tensor(py: Python<'_>, ctx: &Bound<'_, PyAny>, chunks: &Bound<'_, PyAny>, zs: &Bound<'_, PyAny>,
                   ks: Vec<i64>, sk_hats: Vec<Vec<u8>>, ys: &Bound<'_, PyAny>, delta: &Bound<'_, PyAny>,
                   bound: &Bound<'_, PyAny>, threads: usize) -> PyResult<Py<PyAny>> {
+    if let Ok(c) = ctx.cast::<rns::RnsCtx>() {
+        let (ring, q) = rns::ring_of(c);
+        return decrypt_tensor_w(py, &*ring, q.bind(py), chunks, zs, ks, sk_hats, ys, delta, bound, threads);
+    }
+    let ctx = ctx.cast::<RingCtx>()?;
     let q = ctx.get().q.bind(py).clone();
     let ring = get_ring(ctx);
     with_ring!(&*ring, r => decrypt_tensor_w(py, r, &q, chunks, zs, ks, sk_hats, ys, delta, bound, threads))
 }
 
+/// What decrypt_tensor_w needs of a ring: the arithmetic of the values (words
+/// mod q), the dimensions, the NTT-domain keys and the chunk kernel.
+trait TensorRing<W: Word>: Sync {
+    type Hat: Copy + Send + Sync;
+    fn modulus(&self) -> &Modulus<W>;
+    fn dims(&self) -> (usize, u32);
+    fn read_hat(&self, b: &[u8]) -> PyResult<Vec<Self::Hat>>;
+    #[allow(clippy::too_many_arguments)]
+    fn decrypt_chunk(&self, eta: usize, z: &[W], slots: &[&[W]], ym: &[W], hats: &[&[Self::Hat]], delta: W,
+                     bound: i128, out: &mut [i64], none: &mut [u8]) -> bool;
+}
+
+impl<W: Word> TensorRing<W> for Ring<W> {
+    type Hat = W;
+    fn modulus(&self) -> &Modulus<W> {
+        &self.m
+    }
+    fn dims(&self) -> (usize, u32) {
+        (self.n, self.logn)
+    }
+    fn read_hat(&self, b: &[u8]) -> PyResult<Vec<W>> {
+        bytes_to_words(b, self.n)
+    }
+    fn decrypt_chunk(&self, eta: usize, z: &[W], slots: &[&[W]], ym: &[W], hats: &[&[W]], delta: W, bound: i128,
+                     out: &mut [i64], none: &mut [u8]) -> bool {
+        rlwe::decrypt_chunk(self, eta, z, slots, ym, hats, delta, bound, out, none)
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
-fn decrypt_tensor_w<W: Word>(py: Python<'_>, r: &Ring<W>, q: &Bound<'_, PyAny>, chunks: &Bound<'_, PyAny>,
+fn decrypt_tensor_w<W: Word, R: TensorRing<W>>(py: Python<'_>, r: &R, q: &Bound<'_, PyAny>, chunks: &Bound<'_, PyAny>,
                              zs: &Bound<'_, PyAny>, ks: Vec<i64>, sk_hats: Vec<Vec<u8>>, ys: &Bound<'_, PyAny>,
                              delta: &Bound<'_, PyAny>, bound: &Bound<'_, PyAny>, threads: usize)
     -> PyResult<Py<PyAny>> {
-    let m = &r.m;
-    let n = r.n;
+    let m = r.modulus();
+    let (n, logn) = r.dims();
     let max_len = W::DEC_DIGITS + 1;
     let fallback = || PyNotImplementedError::new_err("input layout not handled natively");
     let chunk_items: Vec<Bound<'_, PyAny>> = chunks.try_iter()?.collect::<PyResult<_>>()?;
@@ -1371,9 +1444,8 @@ fn decrypt_tensor_w<W: Word>(py: Python<'_>, r: &Ring<W>, q: &Bound<'_, PyAny>, 
     let mut none = vec![0u8; total];
     let starts: Vec<usize> = ks.iter().scan(0usize, |acc, &k| { let s = *acc; *acc += k as usize; Some(s) }).collect();
     let ym: Vec<W> = y_rows.iter().flatten().map(|&v| m.to_mont(v)).collect();
-    let hats: Vec<Vec<W>> = sk_hats.iter().map(|h| bytes_to_words(h, n)).collect::<PyResult<_>>()?;
+    let hats: Vec<Vec<R::Hat>> = sk_hats.iter().map(|h| r.read_hat(h)).collect::<PyResult<_>>()?;
     let zw: Vec<Vec<W>> = zvals.into_iter().map(|z| z.into_iter().map(|v| v.unwrap()).collect()).collect();
-    let logn = r.logn;
     let outs: Vec<Mutex<(Vec<i64>, Vec<u8>, bool)>> = ks.iter().map(|&k| Mutex::new((vec![0; k as usize], vec![0; k as usize], true))).collect();
     // first malformed binary slot of each chunk
     let bad: Vec<Mutex<Option<usize>>> = (0..slot_vals.len()).map(|_| Mutex::new(None)).collect();
@@ -1393,10 +1465,10 @@ fn decrypt_tensor_w<W: Word>(py: Python<'_>, r: &Ring<W>, q: &Bound<'_, PyAny>, 
             });
         }
         let slot_refs: Vec<&[W]> = words.iter().map(|v| v.as_slice()).collect();
-        let hat_refs: Vec<&[W]> = hats.iter().map(|v| v.as_slice()).collect();
+        let hat_refs: Vec<&[R::Hat]> = hats.iter().map(|v| v.as_slice()).collect();
         let mut o = outs[j].lock().unwrap();
         let (ref mut vals, ref mut nn, ref mut ok) = *o;
-        *ok = rlwe::decrypt_chunk(r, eta, &zw[j], &slot_refs, &ym, &hat_refs, dw, bound_v, vals, nn);
+        *ok = r.decrypt_chunk(eta, &zw[j], &slot_refs, &ym, &hat_refs, dw, bound_v, vals, nn);
     }));
     if let Some((j, s)) = bad.into_iter().enumerate().find_map(|(j, b)| b.into_inner().unwrap().map(|s| (j, s))) {
         return Err(PyValueError::new_err(("malformed ciphertext", s, j)));
@@ -1420,9 +1492,13 @@ fn decrypt_tensor_w<W: Word>(py: Python<'_>, r: &Ring<W>, q: &Bound<'_, PyAny>, 
 #[pyfunction]
 #[pyo3(signature = (ctx, base, materials, ys, eta, threads, hash_mode=0))]
 #[allow(clippy::too_many_arguments)]
-fn pad_terms(py: Python<'_>, ctx: &Bound<'_, RingCtx>, base: &Bound<'_, PyAny>, materials: &Bound<'_, PyAny>,
+fn pad_terms(py: Python<'_>, ctx: &Bound<'_, PyAny>, base: &Bound<'_, PyAny>, materials: &Bound<'_, PyAny>,
              ys: &Bound<'_, PyAny>, eta: usize, threads: usize, hash_mode: u8) -> PyResult<Py<PyList>> {
     let mode = self::hash_mode(hash_mode)?;
+    if let Ok(c) = ctx.cast::<rns::RnsCtx>() {
+        return rns::pad_terms(py, c, base, materials, ys, eta, mode, threads);
+    }
+    let ctx = ctx.cast::<RingCtx>()?;
     let q = ctx.get().q.bind(py).clone();
     let ring = get_ring(ctx);
     let n = ring.n();
@@ -1478,9 +1554,14 @@ fn lock_pre<'a>(py: Python<'_>, p: &'a PrecomputedObj) -> PyResult<std::sync::Mu
 #[pyfunction]
 #[pyo3(signature = (key, pad_materials, sigma2, sigma3, rnd, threads, seed=None, facct=None))]
 #[allow(clippy::too_many_arguments)]
-fn precompute_tensor(py: Python<'_>, key: &Bound<'_, EncKeyObj>, pad_materials: &Bound<'_, PyAny>, sigma2: f64,
+fn precompute_tensor(py: Python<'_>, key: &Bound<'_, PyAny>, pad_materials: &Bound<'_, PyAny>, sigma2: f64,
                      sigma3: f64, rnd: &Bound<'_, PyAny>, threads: usize, seed: Option<Vec<u8>>, facct: FacctArg)
-    -> PyResult<PrecomputedObj> {
+    -> PyResult<Py<PyAny>> {
+    if let Ok(k) = key.cast::<rns::RnsKeyObj>() {
+        let pre = rns::precompute_tensor(py, k, pad_materials, sigma2, sigma3, rnd, threads, seed, facct)?;
+        return Ok(Py::new(py, pre)?.into_any());
+    }
+    let key = key.cast::<EncKeyObj>()?;
     let obj = key.get();
     let mats = materials_of(pad_materials)?.unwrap_or_default();
     let refs: Vec<&[u8]> = mats.iter().map(|v| v.as_slice()).collect();
@@ -1501,14 +1582,18 @@ fn precompute_tensor(py: Python<'_>, key: &Bound<'_, EncKeyObj>, pad_materials: 
         (AnyRing::W256(r), AnyKey::W256(k)) => run!(r, k, W256),
         _ => unreachable!(),
     };
-    Ok(PrecomputedObj { key: key.clone().unbind(), pre: Mutex::new(pre), pid: std::process::id() })
+    Ok(Py::new(py, PrecomputedObj { key: key.clone().unbind(), pre: Mutex::new(pre), pid: std::process::id() })?.into_any())
 }
 
 #[pyfunction]
 #[pyo3(signature = (key, pre, first, x, threads, binary=false))]
-fn encrypt_precomputed(py: Python<'_>, key: &Bound<'_, EncKeyObj>, pre: &Bound<'_, PrecomputedObj>, first: usize,
+fn encrypt_precomputed(py: Python<'_>, key: &Bound<'_, PyAny>, pre: &Bound<'_, PyAny>, first: usize,
                        x: &Bound<'_, PyAny>, threads: usize, binary: bool) -> PyResult<Py<PyList>> {
-    let p = pre.borrow();
+    if let Ok(k) = key.cast::<rns::RnsKeyObj>() {
+        return rns::encrypt_precomputed(py, k, pre, first, x, threads, binary);
+    }
+    let key = key.cast::<EncKeyObj>()?;
+    let p = pre.cast::<PrecomputedObj>().map_err(|_| PyValueError::new_err("precomputed with another key"))?.borrow();
     if !p.key.bind(py).is(key) {
         return Err(PyValueError::new_err("precomputed with another key"));
     }
@@ -1534,8 +1619,11 @@ fn encrypt_precomputed(py: Python<'_>, key: &Bound<'_, EncKeyObj>, pre: &Bound<'
 }
 
 #[pyfunction]
-fn precomputed_info(py: Python<'_>, pre: &Bound<'_, PrecomputedObj>) -> PyResult<Py<PyAny>> {
-    let p = pre.borrow();
+fn precomputed_info(py: Python<'_>, pre: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+    if let Ok(r) = pre.cast::<rns::RnsPreObj>() {
+        return rns::precomputed_info(py, r);
+    }
+    let p = pre.cast::<PrecomputedObj>()?.borrow();
     let g = lock_pre(py, &p)?;
     let (chunks, used) = match &*g {
         AnyPre::W64(x) => (x.chunks(), x.used.iter().filter(|&&u| u).count()),
@@ -1842,5 +1930,6 @@ fn _rust_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
     ec::register(m)?;
     pairing::register(m)?;
+    rns::register(m)?;
     Ok(())
 }

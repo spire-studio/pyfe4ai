@@ -42,8 +42,10 @@ def _find_primitive_root(q: gp.mpz, order: int) -> gp.mpz | None:
         root = gp.powmod(g, exponent, q)
         if root == 1:
             continue
-        # Verify: root^order == 1 mod q and root^(order/2) != 1 mod q
-        if gp.powmod(root, order, q) == 1 and gp.powmod(root, order // 2, q) != 1:
+        # root^order == 1 and root^(order/2) == -1 mod q: for a prime q the
+        # same roots as root^(order/2) != 1; for a product of primes the
+        # condition the negacyclic NTT needs (-1 modulo every prime)
+        if gp.powmod(root, order, q) == 1 and gp.powmod(root, order // 2, q) == q - 1:
             return root
     return None
 
@@ -264,14 +266,137 @@ _ntt_root_cache: dict[tuple[int, int], gp.mpz | None] = {}
 def _get_ntt_root(q: gp.mpz, ring_n: int) -> gp.mpz | None:
     """Look up (or compute and cache) a primitive 2n-th root of unity mod *q*.
 
+    For an RNS modulus (:func:`register_rns_modulus`) the root is the CRT of
+    the factors' roots (``root^n = -1`` modulo every factor).
+
         Args:
             q: Modulus (or second prime).
             ring_n: Polynomial ring dimension.
     """
     key = (int(q), ring_n)
     if key not in _ntt_root_cache:
-        _ntt_root_cache[key] = _find_primitive_root(q, 2 * ring_n)
+        factors = _rns_factors.get(key[0])
+        if factors is None:
+            _ntt_root_cache[key] = _find_primitive_root(q, 2 * ring_n)
+        else:
+            roots = [_find_primitive_root(gp.mpz(f), 2 * ring_n) for f in factors]
+            _ntt_root_cache[key] = None if None in roots else _crt(roots, factors)
     return _ntt_root_cache[key]
+
+
+def _crt(residues: list, moduli: tuple) -> gp.mpz:
+    """The ``x mod prod(moduli)`` with ``x = residues[i] mod moduli[i]``."""
+    x, m = gp.mpz(0), gp.mpz(1)
+    for r, f in zip(residues, moduli):
+        x += m * ((gp.mpz(r) - x) * gp.invert(m, f) % f)
+        m *= f
+    return x
+
+
+# ---------------------------------------------------------------------------
+# RNS moduli: q = q1 q2, a product of two NTT-friendly primes
+# ---------------------------------------------------------------------------
+
+#: ``ring_modulus`` of the selectively secure BMMS21 schemes (MIFE / MCFE /
+#: dMCFE Ring-LWE): ``"prime"`` (default) is an NTT-friendly prime, ``"rns"``
+#: a product of two (:func:`rns_ntt_modulus`; see docs/rns_modulus_review.md).
+RING_MODULI = ("prime", "rns")
+#: Largest bit length of an RNS factor (64-bit words of the native code, whose
+#: lazy butterflies need 4 q_i < 2^64).
+RNS_MAX_FACTOR_BITS = 62
+
+#: Known factorisations of RNS moduli, ``q -> (q1, q2)`` (see :func:`register_rns_modulus`).
+_rns_factors: dict[int, tuple] = {}
+
+
+def check_ring_modulus(value) -> str:
+    """Return *value* if it is one of :data:`RING_MODULI`."""
+    if value not in RING_MODULI:
+        from pyfe4ai.utils.exceptions import FEValidationError
+
+        raise FEValidationError("ring_modulus must be one of {}, got {!r}".format(RING_MODULI, value))
+    return value
+
+
+def register_rns_modulus(q, factors) -> tuple:
+    """Record that *q* is the product of the distinct primes *factors*.
+
+    The NTT root (:func:`_get_ntt_root`) and the native context of an RNS
+    modulus come from its factors, which the public parameters carry
+    (``q_factors``); without them a composite ``q`` has no NTT here.
+
+    Returns:
+        The factors as a tuple of ``mpz``.
+
+    Raises:
+        FEValidationError: Unless the factors are at least two distinct
+            primes whose product is *q*.
+    """
+    q = int(q)
+    try:
+        fs = tuple(gp.mpz(int(f)) for f in factors)
+    except (TypeError, ValueError) as exc:
+        from pyfe4ai.utils.exceptions import FEValidationError
+
+        raise FEValidationError("q_factors must be integers") from exc
+    if len(fs) < 2 or len(set(fs)) != len(fs) or math.prod(int(f) for f in fs) != q or not all(
+        f > 2 and gp.is_prime(f) for f in fs
+    ):
+        from pyfe4ai.utils.exceptions import FEValidationError
+
+        raise FEValidationError("q_factors must be distinct odd primes whose product is q")
+    if _rns_factors.get(q) != fs:
+        _rns_factors[q] = fs
+        for cache in (_ntt_root_cache, RingNTT._cache):  # computed without the factors
+            for key in [k for k in cache if k[0] == q]:
+                del cache[key]
+    return fs
+
+
+def rns_factors(q) -> tuple | None:
+    """The registered factors of *q* (:func:`register_rns_modulus`), or ``None``."""
+    return _rns_factors.get(int(q))
+
+
+def prev_ntt_prime(upper_bound, ring_n: int) -> gp.mpz | None:
+    """The largest prime ``q <= upper_bound`` with ``q = 1 (mod 2 ring_n)``, or ``None``."""
+    modulus = 2 * ring_n
+    candidate = int(upper_bound) - (int(upper_bound) - 1) % modulus
+    while candidate > modulus:
+        if gp.is_prime(candidate):
+            return gp.mpz(candidate)
+        candidate -= modulus
+    return None
+
+
+def rns_ntt_modulus(lower_bound, ring_n: int, p) -> tuple:
+    """``(q, (q1, q2))``: ``q = q1 q2 >= lower_bound`` with ``q1 < q2`` NTT primes.
+
+    ``q1`` is the largest NTT prime ``<= sqrt(lower_bound)`` and ``q2`` the
+    smallest one with ``q1 q2 >= lower_bound``, advanced while
+    ``gcd(floor(q / p), q) != 1`` (``Delta`` is then a unit, as for a prime
+    ``q``; see the review). Deterministic, so a cached record can be checked.
+
+    Raises:
+        FEValidationError: If a factor would exceed :data:`RNS_MAX_FACTOR_BITS`
+            bits or the bound is too small for two factors.
+    """
+    from pyfe4ai.utils.exceptions import FEValidationError
+
+    lower = gp.mpz(lower_bound)
+    q1 = prev_ntt_prime(gp.isqrt(lower), ring_n)
+    if q1 is None:
+        raise FEValidationError("q is too small for an RNS modulus at ring_n = {}".format(ring_n))
+    q2 = next_ntt_prime(-(-lower // q1), ring_n)
+    while q2 == q1 or gp.gcd((q1 * q2) // gp.mpz(p), q1 * q2) != 1:
+        q2 = next_ntt_prime(q2 + 1, ring_n)
+    if int(q2).bit_length() > RNS_MAX_FACTOR_BITS:
+        raise FEValidationError(
+            "an RNS modulus of two factors below 2^{} is too small here (q needs {} bits)".format(
+                RNS_MAX_FACTOR_BITS, int(lower).bit_length()
+            )
+        )
+    return q1 * q2, (q1, q2)
 
 
 def poly_mul(
@@ -690,7 +815,7 @@ def resolve_ring_n(ring_n, params_for) -> int:
 
 
 def bmms21_selective_parameters(sec_param: int, eta: int, bound_x, bound_y, ring_n: int, *,
-                                security_bound_x=None) -> dict:
+                                security_bound_x=None, ring_modulus: str = "prime") -> dict:
     """Parameters of the selectively secure BMMS21 IPFE (Sec. 4) per Sec. 4.2.
 
     For ``l = eta`` coordinates bounded by ``X`` (messages) and ``Y``
@@ -717,13 +842,17 @@ def bmms21_selective_parameters(sec_param: int, eta: int, bound_x, bound_y, ring
     messages of norm below ``3X`` (its Lemma 3 queries the IPFE with
     ``x^j - x^1 + x'^1``), although only ``X``-bounded results are decoded.
 
+    ``ring_modulus="rns"`` replaces the prime by the product of two NTT
+    primes above the same bound (:func:`rns_ntt_modulus`).
+
     Versions <= 0.2.0 used ``sigma = 1`` and ``sigma1 = 2 sqrt(l) X`` (the
     paper's Table 1 has the same gap), which miss both smoothing conditions.
 
     Returns:
         Dict with ``p``, ``q``, ``sigma``, ``sigma_prime``, ``sigma1``,
         ``sigma2``, ``sigma3`` and ``rlwe_width`` (``min(sigma, sigma')``, the
-        width the 128-bit table is read at).
+        width the 128-bit table is read at); with ``"rns"`` also
+        ``q_factors``.
     """
     l = int(eta)
     n = int(ring_n)
@@ -736,19 +865,26 @@ def bmms21_selective_parameters(sec_param: int, eta: int, bound_x, bound_y, ring
     sigma3 = math.sqrt(2.0) * sigma2
     p = gp.mpz(bound_x) * gp.mpz(bound_y) * gp.mpz(2 * l) + 2
     noise = float(l) * float(bound_y) * (2.0 * n * kappa * sigma1 * sigma2 + math.sqrt(kappa) * sigma3)
-    q = next_ntt_prime(gp.mpz(int(noise) + 1) * 2 * p + 1, n)
-    return {
+    lower = gp.mpz(int(noise) + 1) * 2 * p + 1
+    if check_ring_modulus(ring_modulus) == "rns":
+        q, factors = rns_ntt_modulus(lower, n, p)
+    else:
+        q, factors = next_ntt_prime(lower, n), None
+    out = {
         "p": p, "q": q, "sigma": sigma, "sigma_prime": sigma_prime,
         "sigma1": sigma1, "sigma2": sigma2, "sigma3": sigma3,
         "rlwe_width": min(sigma, sigma_prime),
     }
+    if factors is not None:
+        out["q_factors"] = factors
+    return out
 
 
 def bmms21_parameters(sec_param: int, eta: int, bound_x, bound_y, ring_n: int, *,
-                      security_bound_x=None) -> tuple:
+                      security_bound_x=None, ring_modulus: str = "prime") -> tuple:
     """``(p, q, sigma1, sigma2, sigma3)`` of :func:`bmms21_selective_parameters`."""
     P = bmms21_selective_parameters(sec_param, eta, bound_x, bound_y, ring_n,
-                                    security_bound_x=security_bound_x)
+                                    security_bound_x=security_bound_x, ring_modulus=ring_modulus)
     return P["p"], P["q"], P["sigma1"], P["sigma2"], P["sigma3"]
 
 

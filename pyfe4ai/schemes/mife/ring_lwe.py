@@ -57,6 +57,8 @@ from pyfe4ai.utils.ring_lwe_utils import CT_FORMATS
 from pyfe4ai.utils.ring_lwe_utils import canonical_ring_ciphertext
 from pyfe4ai.utils.ring_lwe_utils import encode_binary_ciphertext
 from pyfe4ai.utils.ring_lwe_utils import check_ring_lwe
+from pyfe4ai.utils.ring_lwe_utils import check_ring_modulus
+from pyfe4ai.utils.ring_lwe_utils import register_rns_modulus
 from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul
 from pyfe4ai.utils.ring_lwe_utils import poly_add
 from pyfe4ai.utils.ring_lwe_utils import poly_mul
@@ -91,12 +93,16 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                 ``ring_n`` (default
                 :data:`~pyfe4ai.utils.ring_lwe_utils.DEFAULT_RING_N`;
                 ``"auto"`` for the smallest dimension meeting the 128-bit
-                table, the ``standard`` profile's choice).
+                table, the ``standard`` profile's choice); ``ring_modulus``:
+                ``"prime"`` (default) or ``"rns"``, ``q`` the product of two
+                NTT primes (opt-in; see docs/rns_modulus_review.md).
         """
         super().__init__(config, **kwargs)
         self.eta = config.get("eta", CryptoCONST.MIFE_ETA)
         self.bound_x = gp.mpz(config.get("bound_x", 4))
         self.bound_y = gp.mpz(config.get("bound_y", 4))
+        self.ring_modulus = check_ring_modulus(config.get("ring_modulus", "prime"))
+        self.q_factors = None
         if not self.n:
             raise FEKeyError("need to provide number of clients")
         self.ring_n = resolve_ring_n(config.get("ring_n"), self._params_for)
@@ -111,7 +117,7 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         Fig. 4, see the module docstring)."""
         return bmms21_selective_parameters(
             self.sec_param, self.n * self.eta, self.bound_x, self.bound_y, ring_n,
-            security_bound_x=3 * self.bound_x,
+            security_bound_x=3 * self.bound_x, ring_modulus=self.ring_modulus,
         )
 
     def _bmms21_tuple(self, ring_n: int) -> tuple:
@@ -128,9 +134,16 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         """Modulus ``q`` that :meth:`_generate_and_save` derives for *ring_n*."""
         return self._bmms21_tuple(ring_n)[1]
 
+    def _factors_for(self, ring_n: int) -> list | None:
+        """The factors of the RNS modulus for *ring_n* as decimal strings, or ``None``."""
+        factors = self._bmms21(ring_n).get("q_factors")
+        return None if factors is None else [gp.digits(f) for f in factors]
+
     def _apply_parameters(self, param: dict) -> None:
         self.p = gp.mpz(param["p"])
         self.q = gp.mpz(param["q"])
+        if param.get("q_factors") is not None:
+            self.q_factors = register_rns_modulus(self.q, param["q_factors"])
         self.ring_n = int(param["ring_n"])
         self.sigma1 = float(param["sigma1"])
         self.sigma2 = float(param["sigma2"])
@@ -150,41 +163,44 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             and param.get("bound_x") == gp.digits(self.bound_x)
             and param.get("bound_y") == gp.digits(self.bound_y)
             and param.get("ring_n") == self.ring_n
+            and param.get("ring_modulus", "prime") == self.ring_modulus
         ):
             return False
         p, _, sigma1, sigma2, sigma3 = self._bmms21_tuple(self.ring_n)
         q = self._modulus_for(self.ring_n)
         return (param.get("p"), param.get("q")) == (gp.digits(p), gp.digits(q)) and (
             param.get("sigma1"), param.get("sigma2"), param.get("sigma3")
-        ) == (sigma1, sigma2, sigma3)
+        ) == (sigma1, sigma2, sigma3) and param.get("q_factors") == self._factors_for(self.ring_n)
 
     def _generate_and_save(self, param_file: str) -> None:
         # only the sum over all slots is decoded: size p (and the noise) as
         # for a single-input scheme of dimension n * eta (ACFGU18 Setup*),
         # with the widths for 3X (ACFGU18 Fig. 4)
         self.p, self.q, self.sigma1, self.sigma2, self.sigma3 = self._bmms21_tuple(self.ring_n)
+        factors = self._factors_for(self.ring_n)
+        if factors is not None:
+            self.q_factors = register_rns_modulus(self.q, factors)
         self.a_seed = secrets.token_hex(32)
         self.A = seeded_polynomial(self.a_seed, self.q, self.ring_n)
-
+        record = {
+            "construction": _CONSTRUCTION,
+            "sec_param": self.sec_param,
+            "eta": self.eta,
+            "n": self.n,
+            "ring_n": self.ring_n,
+            "bound_x": gp.digits(self.bound_x),
+            "bound_y": gp.digits(self.bound_y),
+            "p": gp.digits(self.p),
+            "q": gp.digits(self.q),
+            "sigma1": self.sigma1,
+            "sigma2": self.sigma2,
+            "sigma3": self.sigma3,
+            "A_seed": self.a_seed,
+        }
+        if factors is not None:  # the default's records stay as they were
+            record.update({"ring_modulus": self.ring_modulus, "q_factors": factors})
         with open(param_file, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "construction": _CONSTRUCTION,
-                    "sec_param": self.sec_param,
-                    "eta": self.eta,
-                    "n": self.n,
-                    "ring_n": self.ring_n,
-                    "bound_x": gp.digits(self.bound_x),
-                    "bound_y": gp.digits(self.bound_y),
-                    "p": gp.digits(self.p),
-                    "q": gp.digits(self.q),
-                    "sigma1": self.sigma1,
-                    "sigma2": self.sigma2,
-                    "sigma3": self.sigma3,
-                    "A_seed": self.a_seed,
-                },
-                f,
-            )
+            json.dump(record, f)
 
     def setup(self) -> None:
         sampler = self.gaussian_sampler
@@ -209,7 +225,7 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         logger.info("MIFE Ring-LWE (ACFGU18 / BMMS21) setup successfully")
 
     def get_public_parameters(self) -> dict:
-        return {
+        pp = {
             "A": [gp.digits(v) for v in self.A],
             "p": gp.digits(self.p),
             "q": gp.digits(self.q),
@@ -225,6 +241,9 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             "gaussian_sampler": self.gaussian_sampler,
             "security_profile": self.security_profile,
         }
+        if self.q_factors is not None:  # RNS: the NTT and the native code need them
+            pp["q_factors"] = [gp.digits(f) for f in self.q_factors]
+        return pp
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
         """Return client *nid*'s encryption key (``pk`` and its pad ``u``).
@@ -338,6 +357,8 @@ class MIFERingLWE(IPFEAbsCrypto):
         self.pp = self.keys["pp"]
         self.pp["A"]  # a public parameter set without a raises here, as before
         self.gaussian_sampler = scheme_sampler(config, self.pp)
+        if self.pp.get("q_factors") is not None:
+            register_rns_modulus(self.pp["q"], self.pp["q_factors"])
         self.ct_format = config.get("ct_format", "json")
         if self.ct_format not in CT_FORMATS or (self.ct_format == "binary" and not self._binary_ciphertexts):
             raise FEValidationError("unsupported ciphertext format {!r}".format(self.ct_format))

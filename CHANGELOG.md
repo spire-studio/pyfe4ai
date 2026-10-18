@@ -488,6 +488,22 @@ compatibility).
   option (its flooding is part of an LWE argument).
   `discrete_gaussian_bigint` takes an optional higher `precision` (at
   least its default `bits(sigma) + 320`).
+- Opt-in **RNS modulus** for the Ring-LWE MIFE, MCFE and decentralised MCFE:
+  `ring_modulus="rns"` in the key generator's configuration makes `q` the
+  product of two NTT primes above the same bound (`rns_ntt_modulus`; same bit
+  length and 128-bit check as the prime), so the native code runs two 64-bit
+  NTTs instead of one in 128-bit words, with the scheme's Gaussian sampler
+  (FACCT by default, or rounded) and label hash, as for the prime. Ciphertext formats are unchanged; the
+  public parameters and the cached record gain `q_factors`. The default stays
+  the prime (records, public parameters and ciphertexts as before); the
+  threshold MCFE and the SIFE schemes (`sife/ring_lwe`, `sife/fullysec_ring_lwe`)
+  refuse the option.
+  Security review: `docs/rns_modulus_review.md`. 10^4 elements, 3 clients,
+  binary ciphertexts: client -9% (docker -14%), decryption -15% (-17%),
+  online aggregation -16% (-18%); key derivation unchanged
+  (`benchmarks/PERFORMANCE.md`). The NTT root search now
+  requires `root^n = -1 (mod q)`, which selects the same roots for every prime.
+
 - Opt-in exact discrete Gaussian sampler `"facct"`
   (`sampling_utils.discrete_gaussian_facct`): FACCT-style double sampling
   (Zhao, Steinfeld and Sakzad 2020) with a CDT base computed for

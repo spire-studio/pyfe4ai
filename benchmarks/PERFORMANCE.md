@@ -459,7 +459,8 @@ per round one label pad per client for the label and every chunk.
 * Decryption: one forward NTT per client and chunk (`sum_i ct1_i sk_i` with
   a different key per client) against one decryption of the summed HE
   ciphertext. Scheme-inherent; it grows with the number of clients.
-* u128 arithmetic for `q > 2^62`: an NTT costs 4x the u64 one. See *RNS*.
+* u128 arithmetic for `q > 2^62`: an NTT costs 4x the u64 one (Rust: 3.4x).
+  See *RNS modulus* (opt-in: client -9%, online decryption -16%).
 * JSON ciphertexts: 0.36 ms of formatting per chunk on the client and the
   parsing on the aggregator; `ct_format="binary"` removes both and is 2.7x
   smaller (24.6 B per element, BFV 26.6, CKKS 99.4).
@@ -535,15 +536,67 @@ Linux, where `getrandom` is already cheap (10^5 elements, docker: binary
 difference between `2b47eea` and `a722be3` is the string output, not the
 DRBG.
 
-### RNS (not adopted; needs a decision)
+### RNS modulus (opt-in prototype, `ring_modulus="rns"`)
 
-With `q` a product of two NTT-friendly primes of about 39 bits, every NTT
-becomes two u64 NTTs (2 x 0.027 ms instead of 0.12 ms). Estimated from the
-kernel timings: client -17% (binary 3.4 -> about 2.9 ms), aggregator online
--25% (3.6 -> about 2.8 ms). It changes the parameters (composite `q`;
-BMMS21's analysis and the parameter derivation assume a prime) and the
-binary format, so it needs a security review first; the 60-bit-q rows show
-what u64 arithmetic gives.
+`q` as a product of two NTT primes of about 40 bits (`ring_lwe_utils.rns_ntt_modulus`;
+same bit length as the prime, same 128-bit check): every NTT becomes two
+u64 NTTs, values cross the boundary in `[0, q)` (Garner), so ciphertext
+formats are unchanged. Security review: `docs/rns_modulus_review.md` (MIFE,
+MCFE, dMCFE: same proofs; threshold refused; adaptive SIFE not covered).
+
+Kernels (host, n = 4096, an 80-bit prime against a 79-bit product of two
+40-bit primes, `cargo run --release --example rns_kernels`):
+forward / inverse NTT 0.091 / 0.085 ms in u128 words, 0.053 / 0.055 ms as
+two u64 NTTs (1.7x, not the 2.2x estimated from the C++ prototype's 0.12 ms);
+residues of n values 0.011 ms, Garner 0.005 ms; a client's 10^4-element
+encryption 2.2 -> 1.9 ms (-13%), one decryption chunk of 3 clients 0.53 ->
+0.41 ms (-23%). Label pads stay reduced mod q in u128 words and then split
+(faster than one reduction per prime, 0.13 ms).
+
+FL round (host, Apple M2 Max, 10^4 elements, 3 clients, standard profile,
+80-bit q; medians of 5 interleaved runs of 9 rounds, machine load 5 to 6
+from other sessions; `main` = 810a4a5, "prime" = this branch's default):
+
+| host | client ms | aggregator ms | of which dkgen | decryption |
+| --- | ---: | ---: | ---: | ---: |
+| binary, `main` | 2.73 | 7.29 | 4.11 | 3.17 |
+| binary, prime | 2.73 | 7.29 | 4.11 | 3.17 |
+| binary, RNS | **2.49** (-9%) | **6.81** (-7%) | 4.11 | **2.69** (-15%) |
+| binary, 4 threads, `main` / RNS | 1.04 / 0.96 (-7%) | 3.77 / 3.52 (-6%) | 1.80 / 1.80 | |
+| binary, online after `--offline`, `main` / RNS | 0.21 / 0.21 | 3.00 / **2.54** (-16%) | - | |
+| offline phase, `main` / RNS | 2.59 / 2.37 (-9%) | 4.12 / 4.16 | | |
+| JSON, `main` / RNS | 3.44 / 3.20 (-7%) | 8.82 / 8.38 (-5%) | 4.12 / 4.11 | |
+
+10 clients (86-bit q, 43 + 43 bits; binary, one thread, 3 interleaved runs):
+client 2.90 -> 2.62 ms (-10%), decryption 9.44 -> 7.77 ms (-18%),
+aggregator 22.8 -> 20.7 ms (-9%; key derivation 13.0 to 13.3 ms, unchanged).
+
+A first session (3 runs, load 6 to 9) gave client -11%, aggregator online
+-18%. Against the estimate (client -17%, aggregator online -25%): the NTT
+is about a third of a client's time (Gaussians, SHAKE-256 label pads and the
+output are unchanged) and the u128 NTT of the Rust backend was already
+faster than the estimate assumed; key derivation (label pads) does not use
+the NTT. Raw numbers: `results/rns_host_2026-10-17.json`.
+
+Docker (the `pyfe4ai-pairing` image, Python 3.10, GCC 13; Rust 1.99.1
+minimal toolchain in a throwaway container, crates of the host's cache,
+offline; branch at 6187953), same workload, medians of 5 interleaved runs
+of 9 rounds, VM load 1.7 to 2.5:
+
+| docker | client ms | aggregator ms | of which dkgen | decryption |
+| --- | ---: | ---: | ---: | ---: |
+| binary, `main` / prime / RNS | 3.59 / 3.65 / **3.10** (-14%) | 9.89 / 10.08 / **9.23** (-7%) | 5.05 / 5.17 / 5.19 | 4.75 / 4.91 / **3.96** (-17%) |
+| binary, 4 threads, `main` / RNS | 1.51 / 1.31 (-13%) | 4.99 / 4.65 (-7%) | 2.17 / 2.24 | |
+| binary, online after `--offline`, `main` / RNS | 0.23 / 0.23 | 4.59 / **3.74** (-18%) | - | |
+| offline phase, `main` / RNS | 3.44 / 2.94 (-15%) | 5.23 / 5.30 | | |
+| JSON, `main` / RNS | 4.43 / 3.91 (-12%) | 12.18 / 11.49 (-6%) | 5.17 / 5.27 | |
+| 10 clients (86-bit q), binary, `main` / RNS (3 runs) | 3.67 / 3.08 (-16%) | 29.98 / 27.23 (-9%) | 16.4 / 16.5 | 13.58 / 10.53 (-22%) |
+
+Kernels in docker: NTT 0.109 / 0.096 ms in u128 words, 0.064 / 0.065 ms as
+two u64 NTTs; encryption of 10^4 elements 2.96 -> 2.40 ms (-19%), one
+decryption chunk of 3 clients 0.68 -> 0.52 ms (-23%). The gain is larger
+than on the host (client -14% against -9%) and still below the estimate
+(-17% / -25%). Raw numbers: `results/rns_docker_2026-10-18.json`.
 
 ## Threshold MCFE over Ring-LWE (`mcfe/ring_lwe_threshold`), 10^4 elements
 

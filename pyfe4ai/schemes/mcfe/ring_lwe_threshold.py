@@ -315,7 +315,12 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
                 and, opt-in, ``flooding_accounting = "kl"`` with
                 ``max_partial_decryptions`` (``t = s``, Shamir sharing,
                 Gaussian flooding; see the module docstring).
+                ``ring_modulus`` must stay ``"prime"``: the flooded ``q``
+                (200+ bits) has no two-factor RNS form, and the flooding
+                sampler, not the NTT, dominates.
         """
+        if config.get("ring_modulus", "prime") != "prime":
+            raise FEValidationError("the threshold Ring-LWE MCFE supports ring_modulus 'prime' only")
         self.flooding_accounting, self.max_partial_decryptions = flooding_config(config)
         # the KL bound is for Gaussian flooding noise
         default_flooding = "gaussian" if self.flooding_accounting == KL else DEFAULT_FLOODING

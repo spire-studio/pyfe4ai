@@ -162,7 +162,7 @@ const FACCT_BLOCK: usize = 4096;
 /// Run `work(j, bits)` for every chunk with its FACCT bit source: given bytes
 /// are one stream read by the chunks in order (as the Python reference reads
 /// its source); the OS and the per-chunk DRBG streams give each worker its own.
-fn facct_chunks<G>(chunks: usize, threads: usize, rnd: &Randomness, work: G) -> Result<(), Error>
+pub(crate) fn facct_chunks<G>(chunks: usize, threads: usize, rnd: &Randomness, work: G) -> Result<(), Error>
 where
     G: Fn(usize, &mut dyn RandBits) + Sync,
 {
@@ -226,7 +226,7 @@ pub fn wipe_words<W: Word>(buf: &mut [W]) {
 
 /// Chunk j's random bytes: a slice of the given ones, or `own` filled from the OS
 /// or the chunk's stream (the caller wipes `own` after use).
-fn chunk_bytes<'b>(rnd: &Randomness<'b>, j: usize, per: usize, own: &'b mut Vec<u8>)
+pub(crate) fn chunk_bytes<'b>(rnd: &Randomness<'b>, j: usize, per: usize, own: &'b mut Vec<u8>)
     -> Result<&'b [u8], std::io::Error>
 where
     'b: 'b,

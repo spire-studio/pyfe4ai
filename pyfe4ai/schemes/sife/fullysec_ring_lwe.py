@@ -192,8 +192,16 @@ class SIFEFullySecRingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                 encryptors' default.
 
         Raises:
-            FEValidationError: For an unknown ``ndarray_layout`` or sampler.
+            FEValidationError: For an unknown ``ndarray_layout`` or sampler,
+                or a ``ring_modulus`` other than ``"prime"`` (the adaptive
+                proof's Ring-LHL, Theorem 2, is for a prime ``q``; see
+                docs/rns_modulus_review.md).
         """
+        if config.get("ring_modulus", "prime") != "prime":
+            raise FEValidationError(
+                "sife/fullysec_ring_lwe supports ring_modulus 'prime' only: its adaptive proof "
+                "(Ring-LHL) is for a prime q"
+            )
         super().__init__(config, **kwargs)
         self.eta = config.get("eta", CryptoCONST.SIFE_DEFAULT_ETA)
         self.bound_x = gp.mpz(config.get("bound_x", 4))

@@ -89,7 +89,11 @@ class SIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                 ``gaussian_sampler`` (``"facct"``, the default, or
                 ``"rounded"``; see
                 :func:`~pyfe4ai.utils.sampling_utils.scheme_sampler`).
+                ``ring_modulus`` must stay ``"prime"``: the opt-in RNS modulus
+                is implemented for the MIFE / MCFE family only.
         """
+        if config.get("ring_modulus", "prime") != "prime":
+            raise FEValidationError("sife/ring_lwe supports ring_modulus 'prime' only")
         super().__init__(config, **kwargs)
         self.gaussian_sampler = scheme_sampler(config, profile=self.security_profile)
         self.eta = config.get("eta", CryptoCONST.SIFE_DEFAULT_ETA)
