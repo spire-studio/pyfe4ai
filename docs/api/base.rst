@@ -30,3 +30,10 @@ Threshold Utilities
 .. automodule:: pyfe4ai.schemes.threshold_utils
    :members:
    :undoc-members:
+
+Flooding Accounting
+-------------------
+
+.. automodule:: pyfe4ai.schemes.flooding_accounting
+   :members:
+   :undoc-members:

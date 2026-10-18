@@ -24,6 +24,10 @@ the key shares of the ``t`` enrolled servers; ``partial_ms`` one server's
 ``compute_lst_ndarray_ct``; ``combine_ms`` the combiner's
 ``decrypt_lst_ndarray_ct``; ``aggregator_ms`` their sum over the ``t``
 servers on one machine.
+``--flooding-accounting kl --max-partial-decryptions Q`` runs it with the
+opt-in KL accounting of its flooding noise (see
+:mod:`pyfe4ai.schemes.flooding_accounting`; it needs ``--threshold`` equal
+to ``--servers``), one budget per server.
 
 The schemes write their parameter cache to ``./config``; the run happens in
 ``--workdir`` (default: a temporary directory) so a cache can be reused across
@@ -277,7 +281,13 @@ def measure_threshold(family: str, elements: int, clients: int, rounds: int, pre
     cls = {nid: crypto_cls({"id": nid, "precision": precision, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
            for nid in nids}
     enrolled = sids[:threshold]
-    srv = {sid: crypto_cls({"id": sid, "precision": precision, "keys": {"pp": pp}}) for sid in enrolled}
+    budget = {}
+    if pp.get("flooding_accounting") == "kl":  # one budget per server, kept by the deployment
+        from pyfe4ai.schemes.flooding_accounting import PartialDecryptionBudget
+
+        budget = {sid: {"partial_budget": PartialDecryptionBudget(pp["max_partial_decryptions"])} for sid in enrolled}
+    srv = {sid: crypto_cls({"id": sid, "precision": precision, "keys": {"pp": pp}, **budget.get(sid, {})})
+           for sid in enrolled}
     combiner = crypto_cls({"id": "combiner", "precision": precision, "keys": {"pp": pp}})
     weights = {nid: [1] for nid in nids}
     rng = np.random.default_rng(7)
@@ -405,6 +415,10 @@ def main() -> None:
     parser.add_argument("--clients", type=int, default=3)
     parser.add_argument("--servers", type=int, default=3, help="threshold family: servers s")
     parser.add_argument("--threshold", type=int, default=2, help="threshold family: threshold t")
+    parser.add_argument("--flooding-accounting", default=None, choices=["per-sample", "kl"],
+                        help="threshold family: accounting of the flooding noise (default: the scheme's)")
+    parser.add_argument("--max-partial-decryptions", type=int, default=None,
+                        help="threshold family: partial decryptions per server under --flooding-accounting kl")
     parser.add_argument("--rounds", type=int, default=5)
     parser.add_argument("--precision", type=int, default=2)
     parser.add_argument("--bound-x", type=int, default=None, help="default 10^precision (values in [-1, 1])")
@@ -447,6 +461,11 @@ def main() -> None:
                 extra["label_hash"] = args.label_hash
             if args.flooding and family == "ring_lwe_threshold":
                 extra["flooding"] = args.flooding
+            if family.endswith("_threshold"):
+                if args.flooding_accounting is not None:
+                    extra["flooding_accounting"] = args.flooding_accounting
+                if args.max_partial_decryptions is not None:
+                    extra["max_partial_decryptions"] = args.max_partial_decryptions
             fmt = args.ct_format if family in ("ring_lwe", "ring_lwe_decentralized") else "json"
             if family.endswith("_decentralized"):
                 row = measure_decentralized(family, elements, args.clients, args.rounds, args.precision, bound_x,

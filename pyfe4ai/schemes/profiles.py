@@ -75,10 +75,10 @@ The ``security_profile`` entry of a key generator's config selects one:
     of the table (5888 to 6144, ``A`` of 6.5 to 7.8 * 10^9 entries) for a few
     small bounds, e.g. ``X = Y`` in {1, 2, 3, 8, 10} at ``eta = 1``, and
     beyond it for most others (``X = Y`` = 4 to 6, ``X = Y >= 12``, most
-    ``eta >= 2``; about 6500 for ``X = Y = 50``). This is to
-    be re-evaluated with the opt-in KL accounting of the flooding noise,
-    ``t = s`` only, with an explicit budget and a weaker guarantee, under
-    which it would take about 4864. Also refused:
+    ``eta >= 2``; about 6500 for ``X = Y = 50``). The opt-in KL accounting
+    of the flooding noise (``t = s`` only, with an explicit budget and a
+    weaker guarantee) would take about 4864, but the refusal holds with
+    either accounting. Also refused:
     ``mcfe/paillier_decentralized`` (its key shares are combined under a DCR
     modulus of more than 15000 bits).
 
@@ -93,6 +93,22 @@ The ``security_profile`` entry of a key generator's config selects one:
     MPFR path at ``bits(sigma) + 320`` bits;
     the double-precision rounded sampler does not meet it (see the security
     notes in the documentation).
+
+    ``mcfe/ring_lwe_threshold`` with ``t = s`` (Shamir sharing, Gaussian
+    flooding) also accepts, as an explicit opt-in that the profile never
+    sets, ``flooding_accounting = "kl"`` with a mandatory
+    ``max_partial_decryptions`` (``mife/lwe_threshold`` takes it too, but only
+    under ``toy``: this profile refuses that scheme with either accounting). There ``stat_param`` bounds the Hellinger
+    distance between the adversary's real and simulated views of a run in
+    which every server produces at most that many partial decryptions,
+    instead of the per-sample statistical distance above:
+    ``stat_param - 6.85`` bits of statistical security in the bit-security
+    framework of Micciancio and Walter for decision games, or about
+    ``2^-65`` of total statistical distance read conventionally. The servers
+    count against the limit in a budget that the deployment gives them and
+    must keep across processes and restarts. A different and weaker
+    guarantee, with its own parameter records; see
+    :mod:`pyfe4ai.schemes.flooding_accounting`.
 
     Values given explicitly in the config must not be weaker than the
     profile's.

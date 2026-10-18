@@ -154,11 +154,17 @@ class ThresholdLWEConfig(LWEConfig, total=False):
 
     ``sharing``: ``"replicated"`` (the default for ``t < s``), ``"shamir"``
     (the default for ``t = s``) or ``"replicated-seeded"`` (opt-in).
+    ``flooding_accounting`` (``"per-sample"`` by default, or ``"kl"`` with
+    ``max_partial_decryptions`` and ``t = s``) chooses how
+    ``mife/lwe_threshold`` sizes its flooding noise; see
+    :mod:`pyfe4ai.schemes.flooding_accounting`.
     """
 
     t: int
     lst_sid: list[str]
     sharing: str
+    flooding_accounting: str
+    max_partial_decryptions: int
 
 
 class ThresholdMCFELWEConfig(MCFELWEConfig, total=False):
@@ -178,11 +184,17 @@ class ThresholdMCFERingLWEConfig(MCFERingLWEConfig, total=False):
 
     ``sharing``: ``"replicated"`` (the default for ``t < s``), ``"shamir"``
     (the default for ``t = s``) or ``"replicated-seeded"`` (opt-in).
+    ``flooding``: ``"uniform"`` (default) or ``"gaussian"``.
+    ``flooding_accounting`` and ``max_partial_decryptions`` as in
+    :class:`ThresholdLWEConfig` (``"kl"`` needs ``flooding = "gaussian"``).
     """
 
     t: int
     lst_sid: list[str]
     sharing: str
+    flooding: str
+    flooding_accounting: str
+    max_partial_decryptions: int
 
 
 class ThresholdPairingMultiIPEConfig(PairingMultiIPEConfig, total=False):

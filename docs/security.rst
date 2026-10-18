@@ -63,13 +63,14 @@ very end of the table at that width (5888 to 6144, with a public matrix of
 {1, 2, 3, 8, 10} at ``eta = 1``, and beyond it for most others (``X = Y`` =
 4 to 6, ``X = Y >= 12``, most ``eta >= 2``).
 
-An opt-in KL-divergence accounting of the flooding noise (in development)
-would bring it to about 4864 for two clients, ``s = t = 3`` and ``2^40``
-flooded values. It applies only with ``flooding_accounting = "kl"``,
-``t = s`` and an explicit ``max_partial_decryptions`` budget; the public
-matrix would still have 4.1 * 10^9 entries (``"stream"`` mode), and the
-guarantee is weaker, about ``stat_param - 6.85`` bits. The refusal is to be
-re-evaluated when that accounting is merged.
+The opt-in KL-divergence accounting of the flooding noise
+(:mod:`pyfe4ai.schemes.flooding_accounting`) would bring it to about 4864 for
+two clients, ``s = t = 3`` and ``2^40`` flooded values. It applies only with
+``flooding_accounting = "kl"``, ``t = s`` and an explicit
+``max_partial_decryptions`` budget; the public matrix would still have
+4.1 * 10^9 entries (``"stream"`` mode), and the guarantee is weaker, about
+``stat_param - 6.85`` bits. The refusal under ``standard`` holds with either
+accounting; ``"kl"`` applies to ``mife/lwe_threshold`` under ``toy``.
 
 Threshold trust model
 ---------------------

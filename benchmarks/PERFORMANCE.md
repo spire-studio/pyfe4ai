@@ -646,6 +646,52 @@ What is left of a uniform partial decryption (58 ms per server for two
 (see above), no sampler. Raw numbers:
 `results/perf_hash_flooding_2026-10-17.json`.
 
+### KL accounting of the flooding (opt-in, `flooding_accounting="kl"`)
+
+A smaller `sigma_f` for a run of at most `max_partial_decryptions = Q`
+partial decryptions per server, with `t = s` only (see
+`pyfe4ai.schemes.flooding_accounting`; a different, weaker guarantee than
+the default). `N = 3 * Q * 8192` flooded coefficients;
+`bench_fl_compare.py --families ring_lwe_threshold --threshold 3`, native,
+one thread, `standard`, local `main` (810a4a5) and the branch interleaved,
+3 passes of 5 rounds, medians. The load average was 7.5 to 10 on 12 cores,
+with other sessions active. `main` and the branch default run the same code
+and still differ by up to 13%, which shows the noise:
+
+| `ring_lwe_threshold`, ring_n 8192, `t = s = 3` | q bits | client ms | key shares | partial, per server | combine | aggregator ms | ct B/element |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `main` | 215 | 21.58 | 54.9 | 215.0 | 5.59 | 702.4 | 225.2 |
+| branch, default | 215 | 22.96 | 55.4 | 244.0 | 5.95 | 792.6 | 225.2 |
+| KL, `N = 2^53` (`Q` = 3.7 * 10^11) | 178 | 21.55 | 54.3 | 247.2 | 6.09 | 799.2 | 188.7 (-16%) |
+| KL, `N = 2^40` (`Q` = 4.5 * 10^7) | 171 | 21.80 | 51.6 | 241.8 | 5.98 | 779.4 | 182.3 (-19%) |
+| KL, `N = 2^30` (`Q` = 43 690) | 166 | 20.97 | 47.9 | 236.8 | 5.82 | 765.3 | 176.6 (-22%) |
+
+An earlier run with `t = 2`, which `"kl"` now refuses, gave the same
+picture at a lower load: client 21.3 ms for the default against 20.5 / 20.3 /
+19.6 ms for KL, and the same per-server partial times. Only the sizes gain:
+the words stay 256-bit, and the flooding sampler, which dominates a
+partial decryption, runs at `bits(sigma_f) + 128 + log2 N + 11` bits (354
+at `N = 2^53`, 328 by default), so it does not get faster.
+
+The same option on `mife/lwe_threshold` shrinks the LWE dimension.
+`benchmark_tmife_instantiations.py --security-profile standard --clients 2
+--bound 50 --cases lwe` (`X = Y = 50`, `s = 3`, streamed `A`), one run each,
+the two side by side. The runs used `t = 2`, before `"kl"` required
+`t = s`. The parameters, key generation and encryption do not depend on
+`t`. The machine was heavily loaded: load
+average 30 to 54 until the KL run ended, falling to 7 by the end of the
+default run. That favours the default run's encryption, so the ratios are
+conservative:
+
+| `mife/lwe_threshold`, `standard` | lwe_n | q bits | m | entries of `A` | key generation s | encryption s (2 clients) | peak RSS | public key per client | ciphertext per client |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| default | 5952 | 217 | 1 303 923 | 7.8 * 10^9 | 2836 | 1191 | 12.4 GB | 93 MB | 414 KB |
+| KL, `N = 2^40` (`Q` = 3.7 * 10^11) | 4352 | 172 | 757 593 | 3.3 * 10^9 | 1569 (-45%) | 622 (-48%) | 6.2 GB | 44 MB | 243 KB |
+
+Partial decryptions take milliseconds in both (one flooded scalar each);
+their measured 94 vs 281 ms for two servers, key shares included, reflect
+the load, not the parameters.
+
 ## Dense LWE: MCFE of ABMPSW20 (`mcfe/lwe`), 200 elements
 
 `n0 + m0 = 7724`, 187-bit `q`. One LWE sample per element: the label of every

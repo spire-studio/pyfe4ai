@@ -290,8 +290,8 @@ compatibility).
     rule took 5952.
   * `standard` therefore no longer fixes its `matrix_mode`. Use
     `mife/ddh_threshold`, or `mcfe/ring_lwe_threshold` with labels.
-  * A KL-divergence accounting of the flooding noise (in development) would
-    bring it back within the table, but only as an opt-in. It needs
+  * A KL-divergence accounting of the flooding noise would bring it back
+    within the table, but only as an opt-in. It needs
     `flooding_accounting = "kl"`, `t = s` and an explicit budget of
     `max_partial_decryptions` per server.
   * Under that accounting it takes about 4864 at `sigma'`, for two clients,
@@ -299,7 +299,8 @@ compatibility).
     4.1 * 10^9 entries, so `matrix_mode = "stream"`. The guarantee is weaker,
     about `stat_param - 6.85` bits. With the default accounting the
     dimension stays as above.
-  * The refusal is to be re-evaluated when that accounting is merged.
+  * That accounting is now merged (opt-in, see Added); the refusal under
+    `standard` stays with it too (a maintainer decision).
 
 ### Performance
 
@@ -446,6 +447,47 @@ compatibility).
     | `(10, 5)` | 3.4 MB instead of 428 MB | 2.0 s instead of 30 s |
   * **Native backend.** The pieces of the ring dimension are expanded and
     added up natively, with the values of the Python code.
+- Opt-in **KL accounting of the threshold flooding** for `mife/lwe_threshold`
+  and `mcfe/ring_lwe_threshold` with `t = s` (Shamir sharing):
+  `flooding_accounting="kl"` with a mandatory `max_partial_decryptions` Q
+  (`pyfe4ai.schemes.flooding_accounting`). `stat_param` then bounds the
+  Hellinger distance between the adversary's real and simulated views of a
+  run in which every server produces at most Q partial decryptions, instead
+  of the statistical distance per flooded value: `sigma_f = B sqrt(N
+  2^stat_param)` for `N = s Q k` flooded coefficients (KL at most
+  `2^-(stat_param + 1)`), a tail cut derived from `N` (16 instead of 12
+  `sigma_f` at `N = 2^53`), drawn by the pinned MPFR flooding sampler at
+  `bits(sigma) + max(320, stat_param + log2 N + 11)` bits.
+  That is `stat_param - 6.85` bits of statistical security in the
+  bit-security framework of Micciancio and Walter (decision games), or about
+  `2^-65` of total statistical distance at `stat_param = 128`: a different
+  and weaker guarantee than the default, valid only for the first Q partial
+  decryptions of every server. `t < s` is refused, because there some
+  enrolled sets of Shamir shares make an honest partial reveal the decryption
+  noise modulo a small integer (see the Lagrange entry); the replicated
+  sharings are not enabled for it either. `mcfe/ring_lwe_threshold` floods
+  with Gaussian noise under `"kl"` (its default there; `flooding="uniform"`
+  is refused with it). Each KL server needs a
+  `partial_budget` (`PartialDecryptionBudget`, limit at most Q, a count that
+  only grows) in its crypto config, which the deployment shares across
+  everything that answers for that server and keeps across restarts; the
+  server refuses without it and beyond the limit, and every partial counts,
+  repeated ones too; refused requests count nothing. Under `standard`
+  (`stat_param` 128), with `N = 2^53`, `mcfe/ring_lwe_threshold` (3
+  clients, `X = 100`) has a 178-bit instead of a 215-bit `q` (Gaussian
+  per-sample; 212 bits with the uniform default) at the same `ring_n`:
+  ciphertexts 16% smaller, partial decryptions as fast as before (the
+  sampler dominates). `mife/lwe_threshold` stays refused under `standard`
+  with either accounting (a maintainer decision): at `sigma'`, `N = 2^40`,
+  2 clients and `X = Y = 50` it would take `lwe_n` about 4864 (`q` of 173
+  bits, `A` of 4.1 * 10^9 entries); `"kl"` applies to it under `toy`. The
+  KL parameters have their own records (`*-smudging-kl/v2`) and `pp` fields
+  (`flooding_accounting`, `max_partial_decryptions`, `stat_param`,
+  `flood_tail_cut`). The default (per-sample) accounting, its records, `pp`
+  and partial decryptions are unchanged. `mcfe/lwe_threshold` refuses the
+  option (its flooding is part of an LWE argument).
+  `discrete_gaussian_bigint` takes an optional higher `precision` (at
+  least its default `bits(sigma) + 320`).
 - Opt-in exact discrete Gaussian sampler `"facct"`
   (`sampling_utils.discrete_gaussian_facct`): FACCT-style double sampling
   (Zhao, Steinfeld and Sakzad 2020) with a CDT base computed for

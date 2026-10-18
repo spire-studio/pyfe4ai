@@ -103,6 +103,7 @@ import secrets
 import gmpy2 as gp
 import numpy as np
 
+from pyfe4ai.schemes.flooding_accounting import PER_SAMPLE
 from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
 from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.schemes.mcfe.lwe import MCFELWE
@@ -199,7 +200,15 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
                 for ``t < s``, ``"shamir"``, the default for ``t = s``, or
                 the opt-in ``"replicated-seeded"``; see
                 :func:`~pyfe4ai.schemes.threshold_utils.resolve_sharing`).
+                ``flooding_accounting`` must be the default: the flooding
+                here is part of an LWE argument, not a statistical step that
+                a KL bound could account for.
         """
+        if config.get("flooding_accounting", PER_SAMPLE) != PER_SAMPLE or "max_partial_decryptions" in config:
+            raise FEValidationError(
+                "mcfe/lwe_threshold has no statistical flooding: flooding_accounting and "
+                "max_partial_decryptions do not apply"
+            )
         t = config.get("t", CryptoCONST.tMCFE_T)
         s = config.get("s") or len(config.get("lst_sid", [])) or CryptoCONST.tMCFE_S
         # before the parameters are derived: a refused config costs nothing

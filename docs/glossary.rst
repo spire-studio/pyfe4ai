@@ -80,6 +80,22 @@ Configuration keys
       the ABMPSW20 schemes, noise flooding of the threshold schemes, the
       masks of ``mcfe/ddh_decentralized`` and the Paillier and MCFE2 key
       distributions. Default 64; 128 (and at least 128) under ``standard``.
+      With ``flooding_accounting = "kl"`` (``mife/lwe_threshold``,
+      ``mcfe/ring_lwe_threshold``) it bounds the Hellinger distance of a
+      run of at most ``max_partial_decryptions`` partial decryptions per
+      server instead of the statistical distance per sample.
+
+   ``flooding_accounting``
+      How the threshold schemes ``mife/lwe_threshold`` and
+      ``mcfe/ring_lwe_threshold`` size their flooding noise:
+      ``"per-sample"`` (default; statistical distance ``2^-stat_param`` per
+      flooded value, no limit) or ``"kl"`` (opt-in, ``t = s`` only; a
+      bound for a whole run of at most ``max_partial_decryptions`` partial
+      decryptions per server, about ``stat_param - 7`` bits in the
+      bit-security sense of Micciancio and Walter; each server counts in
+      the ``partial_budget`` its deployment provides; much smaller ``q``
+      and, for ``mife/lwe_threshold``, ``lwe_n``). See
+      :mod:`pyfe4ai.schemes.flooding_accounting`.
 
    ``eta``
       Length of each client's input vector (an ``int``; MIFE-DDH also

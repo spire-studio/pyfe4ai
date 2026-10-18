@@ -398,7 +398,9 @@ def bigint_precision(sigma) -> int:
     return int(gp.ceil(gp.mpfr(sigma))).bit_length() + BIGINT_GUARD_BITS
 
 
-def discrete_gaussian_bigint(sigma, count: int, rng=None, sampler: str | None = None) -> list[gp.mpz]:
+def discrete_gaussian_bigint(
+    sigma, count: int, rng=None, sampler: str | None = None, precision: int | None = None
+) -> list[gp.mpz]:
     """Sample *count* integers from a rounded Gaussian of arbitrary width.
 
     Unlike :func:`discrete_gaussian_matrix`, *sigma* may exceed the range of
@@ -425,12 +427,19 @@ def discrete_gaussian_bigint(sigma, count: int, rng=None, sampler: str | None = 
             An :class:`XofRandom` gives derandomised sampling.
         sampler: ``"rounded"`` or ``"facct"``; ``None`` takes
             :func:`get_gaussian_sampler`.
+        precision: Bits of the rounded sampler, at least (and by default)
+            :func:`bigint_precision` ``= bits(sigma) + BIGINT_GUARD_BITS``;
+            FACCT has a fixed precision and ignores it.
     """
     if not sigma > 0:
         raise ValueError("sigma must be positive")
     if _resolve_sampler(sampler) == "facct":
         return discrete_gaussian_facct(sigma, count, rng=rng)
     prec = bigint_precision(sigma)
+    if precision is not None:
+        if int(precision) < prec:
+            raise ValueError("precision must be at least bits(sigma) + {} = {}".format(BIGINT_GUARD_BITS, prec))
+        prec = int(precision)
     if count > 0:
         from pyfe4ai.utils import native_backend
 
