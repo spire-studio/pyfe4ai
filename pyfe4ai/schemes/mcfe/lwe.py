@@ -125,7 +125,7 @@ class MCFELWEKeyGenerator(IPFEAbsKeyGenerator):
                 are ignored.
         """
         super().__init__(config, **kwargs)
-        self.gaussian_sampler = scheme_sampler(config)
+        self.gaussian_sampler = scheme_sampler(config, profile=self.security_profile)
         self.eta = config.get("eta", CryptoCONST.MCFE_ETA)
         self.bound_x = int(config.get("bound_x", 20))
         self.bound_y = int(config.get("bound_y", 20))
@@ -181,6 +181,7 @@ class MCFELWEKeyGenerator(IPFEAbsKeyGenerator):
             "stat_param": self.stat_param,
             "sec_param": self.sec_param,
             "gaussian_sampler": self.gaussian_sampler,
+            "security_profile": self.security_profile,
         }
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:

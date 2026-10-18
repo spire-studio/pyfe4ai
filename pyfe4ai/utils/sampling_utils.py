@@ -15,7 +15,9 @@ from typing import NamedTuple
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
+import warnings
+
+from pyfe4ai.utils.exceptions import FEKeyError, FESecurityWarning, FEValidationError
 
 _CSPRNG = random.SystemRandom()
 # The OS source of the module; a replaced _CSPRNG (tests) keeps the Python sampler.
@@ -79,22 +81,59 @@ def gaussian_sampler(name: str):
 PROOF_SAMPLER = "facct"
 
 
-def scheme_sampler(config: dict | None, pp: dict | None = None, default: str = PROOF_SAMPLER) -> str:
-    """The Gaussian sampler of a scheme object: ``config["gaussian_sampler"]``,
-    else that of its public parameters *pp*, else the one a
-    :func:`gaussian_sampler` block selects, else *default*. The process-wide
+def scheme_sampler(config: dict | None, pp: dict | None = None, default: str = PROOF_SAMPLER,
+                   profile: str | None = None, use_context: bool = True) -> str:
+    """The Gaussian sampler of a scheme object whose proofs need ``D_{Z,sigma}``.
+
+    In this order: ``config["gaussian_sampler"]``; else that of its public
+    parameters *pp*; else the one a :func:`gaussian_sampler` block selects
+    (not under the ``standard`` profile, nor with ``use_context=False``, as
+    for SIFE FullySec Ring-LWE); else *default*. The process-wide
     choice (:func:`set_gaussian_sampler`, ``PYFE4AI_GAUSSIAN_SAMPLER``) does
     not apply: these schemes record their sampler in their public parameters.
+    *profile* is the key generator's ``security_profile`` (crypto objects take
+    that of *pp*).
 
     Raises:
-        FEValidationError: For an unknown sampler.
+        FEValidationError: For an unknown sampler, and for an explicit
+            ``"rounded"`` under the ``standard`` profile (the double-precision
+            rounded sampler does not meet its ``2^-128`` budgets).
+
+    Warns:
+        FESecurityWarning: When a crypto object's config selects ``"rounded"``
+            although its public parameters record ``"facct"`` (toy profile).
     """
-    name = config.get("gaussian_sampler") if config else None
-    if name is None and pp:
-        name = pp.get("gaussian_sampler")
-    if name is None:
-        name = _sampler_override.get()
-    return _check_sampler(default if name is None else name)
+    if profile is None and pp:
+        profile = pp.get("security_profile")
+    standard = profile == "standard"
+    explicit = config.get("gaussian_sampler") if config else None
+    recorded = pp.get("gaussian_sampler") if pp else None
+    def checked(name) -> str:
+        if name not in GAUSSIAN_SAMPLERS:
+            raise FEValidationError(
+                "gaussian_sampler must be one of {}, got {!r}".format(GAUSSIAN_SAMPLERS, name)
+            )
+        return name
+
+    if explicit is not None:
+        name = checked(explicit)
+        if name != PROOF_SAMPLER and standard:
+            raise FEValidationError(
+                "gaussian_sampler = {!r} under the standard profile: the double-precision rounded sampler is "
+                "2^-25..2^-4 from D_{{Z,sigma}} per key or ciphertext, above the profile's 2^-128 budgets "
+                "(use 'facct', the default, or the toy profile)".format(name)
+            )
+        if name != PROOF_SAMPLER and recorded == PROOF_SAMPLER:
+            warnings.warn(
+                "gaussian_sampler = {!r} overrides the {!r} of the public parameters: these ciphertexts' "
+                "noise is not the D_{{Z,sigma}} the proof assumes".format(name, recorded),
+                FESecurityWarning, stacklevel=3,
+            )
+        return name
+    if recorded is not None:
+        return checked(recorded)
+    selected = None if (standard or not use_context) else _sampler_override.get()
+    return checked(default if selected is None else selected)
 
 
 def _resolve_sampler(sampler) -> str:

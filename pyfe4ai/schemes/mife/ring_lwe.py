@@ -100,7 +100,7 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         if not self.n:
             raise FEKeyError("need to provide number of clients")
         self.ring_n = resolve_ring_n(config.get("ring_n"), self._params_for)
-        self.gaussian_sampler = scheme_sampler(config)
+        self.gaussian_sampler = scheme_sampler(config, profile=self.security_profile)
         self._load_parameters()
         if self.security_profile == STANDARD:
             check_ring_lwe(self.ring_n, self.q, self._params_for(self.ring_n)[1])
@@ -223,6 +223,7 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             "sigma3": self.sigma3,
             "sec_param": self.sec_param,
             "gaussian_sampler": self.gaussian_sampler,
+            "security_profile": self.security_profile,
         }
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:

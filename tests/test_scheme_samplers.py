@@ -83,7 +83,7 @@ def test_rounded_stays_selectable(name, draws):
     assert set(draws.samplers) == {"rounded"}
     with su.gaussian_sampler("rounded"):  # an explicit block also selects it
         assert KEYGENS[name]({}).gaussian_sampler == "rounded"
-    with pytest.raises(FEValidationError, match="unknown Gaussian sampler"):
+    with pytest.raises(FEValidationError, match="gaussian_sampler"):
         KEYGENS[name]({"gaussian_sampler": "box-muller"})
 
 
@@ -138,3 +138,46 @@ def test_decryption_does_not_depend_on_the_sampler(sampler):
         agg = mcfe_rlwe.MCFERingLWE({"id": "agg", "precision": 0, "keys": {"pp": p}})
         out = agg.decrypt_lst_ndarray_ct(enc, dk=dk, fusion_weight=weights, label="L")
         assert np.array_equal(np.asarray(out[0]), xs["a"] + xs["b"])
+
+
+# -- the standard profile and overrides (crypto review re-check, F2 / F3) ------------------
+
+
+STANDARD_KEYGENS = {
+    "mcfe/ring_lwe": lambda c: mcfe_rlwe.MCFERingLWEKeyGenerator(
+        {"n": 2, "lst_nid": NIDS, "eta": 1, "bound_x": 100, "bound_y": 1, "security_profile": "standard", **c}),
+    "mcfe/lwe": lambda c: mcfe_lwe.MCFELWEKeyGenerator(
+        {"n": 2, "lst_nid": NIDS, "eta": 1, "bound_x": 100, "bound_y": 1, "security_profile": "standard", **c}),
+}
+
+
+@pytest.mark.parametrize("name", list(STANDARD_KEYGENS))
+def test_standard_refuses_the_rounded_sampler(name):
+    with pytest.raises(FEValidationError, match="standard profile"):
+        STANDARD_KEYGENS[name]({"gaussian_sampler": "rounded"})
+    # a gaussian_sampler() block does not weaken a standard key generator
+    with su.gaussian_sampler("rounded"):
+        kg = STANDARD_KEYGENS[name]({})
+    assert kg.gaussian_sampler == "facct"
+    assert kg.get_public_parameters()["security_profile"] == "standard"
+
+
+def test_a_client_override_of_the_recorded_sampler():
+    import warnings
+
+    from pyfe4ai.utils.exceptions import FESecurityWarning
+
+    kg, pp = _mcfe()  # toy
+    assert pp["gaussian_sampler"] == "facct" and pp["security_profile"] == "toy"
+    with pytest.warns(FESecurityWarning, match="overrides"):
+        enc = mcfe_rlwe.MCFERingLWE({"id": "a", "keys": {"pp": pp, "sk": kg.get_private_keys("a")},
+                                     "gaussian_sampler": "rounded"})
+    assert enc.gaussian_sampler == "rounded"
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # the recorded sampler itself: no warning
+        mcfe_rlwe.MCFERingLWE({"id": "a", "keys": {"pp": pp, "sk": kg.get_private_keys("a")},
+                               "gaussian_sampler": "facct"})
+    standard_pp = dict(pp, security_profile="standard")
+    with pytest.raises(FEValidationError, match="standard profile"):
+        mcfe_rlwe.MCFERingLWE({"id": "a", "keys": {"pp": standard_pp, "sk": kg.get_private_keys("a")},
+                               "gaussian_sampler": "rounded"})

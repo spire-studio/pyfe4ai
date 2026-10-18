@@ -108,7 +108,7 @@ from pyfe4ai.utils.ring_lwe_utils import check_ring_lwe
 from pyfe4ai.utils.ring_lwe_utils import decode_vector
 from pyfe4ai.utils.ring_lwe_utils import ntt_forward
 from pyfe4ai.utils.ring_lwe_utils import ntt_inverse
-from pyfe4ai.utils.sampling_utils import GAUSSIAN_SAMPLERS
+from pyfe4ai.utils.sampling_utils import scheme_sampler
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.validation import int_vector
@@ -127,12 +127,6 @@ LAYOUTS = ("elementwise", "packed")
 DEFAULT_SAMPLER = "facct"
 
 
-def _checked_sampler(name) -> str:
-    if name not in GAUSSIAN_SAMPLERS:
-        raise FEValidationError(
-            "gaussian_sampler must be one of {}, got {!r}".format(GAUSSIAN_SAMPLERS, name)
-        )
-    return name
 #: Resampling attempts for ``a`` and for a ciphertext before giving up.
 _MAX_TRIES = 64
 
@@ -208,7 +202,8 @@ class SIFEFullySecRingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             raise FEValidationError(
                 "ndarray_layout must be one of {}, got {!r}".format(LAYOUTS, self.ndarray_layout)
             )
-        self.gaussian_sampler = _checked_sampler(config.get("gaussian_sampler", DEFAULT_SAMPLER))
+        self.gaussian_sampler = scheme_sampler(config, default=DEFAULT_SAMPLER, profile=self.security_profile,
+                                               use_context=False)
         self._load_parameters()
         if self.security_profile == STANDARD:
             check_ring_lwe(self.ring_n, self.q, self.sigma)
@@ -329,6 +324,7 @@ class SIFEFullySecRingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             "sigma3": self.sigma3,
             "sec_param": self.sec_param,
             "gaussian_sampler": self.gaussian_sampler,
+            "security_profile": self.security_profile,
         }
         if self._packed():
             pp["ndarray_layout"] = self.ndarray_layout
@@ -375,9 +371,7 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
         self.pp = self.keys["pp"]
         if self._has_private_keys():
             self.sk = self.keys["sk"]
-        self.gaussian_sampler = _checked_sampler(
-            config.get("gaussian_sampler") or self.pp.get("gaussian_sampler", DEFAULT_SAMPLER)
-        )
+        self.gaussian_sampler = scheme_sampler(config, self.pp, default=DEFAULT_SAMPLER, use_context=False)
         self._cache = {}
 
     def _ring(self) -> tuple:

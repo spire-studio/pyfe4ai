@@ -91,7 +91,7 @@ class SIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                 :func:`~pyfe4ai.utils.sampling_utils.scheme_sampler`).
         """
         super().__init__(config, **kwargs)
-        self.gaussian_sampler = scheme_sampler(config)
+        self.gaussian_sampler = scheme_sampler(config, profile=self.security_profile)
         self.eta = config.get("eta", CryptoCONST.SIFE_DEFAULT_ETA)
         self.bound_x = gp.mpz(config.get("bound_x", 4))
         self.bound_y = gp.mpz(config.get("bound_y", 4))
@@ -185,6 +185,7 @@ class SIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             "sigma3": self.sigma3,
             "sec_param": self.sec_param,
             "gaussian_sampler": self.gaussian_sampler,
+            "security_profile": self.security_profile,
         }
 
     def get_private_keys(self, nid: str = "nid_default", **kwargs) -> dict | None:
