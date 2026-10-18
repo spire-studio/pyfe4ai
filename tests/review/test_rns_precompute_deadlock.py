@@ -29,7 +29,7 @@ _SCRIPT = textwrap.dedent(
     size = 1024 * 3000
     pre = cl.precompute("L", [(size,)])
     if pre.native is None:
-        print("python path"); os._exit(0)
+        print("python path", flush=True); os._exit(0)
     out, bar = [], threading.Barrier(2)
     def go():
         bar.wait()
@@ -47,7 +47,10 @@ _SCRIPT = textwrap.dedent(
 
 
 def test_concurrent_use_of_an_rns_precomputation_does_not_deadlock(tmp_path):
-    env = dict(os.environ, PYTHONPATH=ROOT + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    # the native precomputation also under PYFE4AI_BACKEND=python (whose 3M-element
+    # Python precomputation takes minutes with the FACCT sampler), as the prime twin
+    env = dict(os.environ, PYFE4AI_BACKEND="native",
+               PYTHONPATH=ROOT + os.pathsep + os.environ.get("PYTHONPATH", ""))
     try:
         res = subprocess.run([sys.executable, "-c", _SCRIPT, str(tmp_path)], capture_output=True, text=True,
                              timeout=150, env=env)
