@@ -203,10 +203,11 @@ def test_os_path_distribution():
     assert abs(sum(x * x for x in v) / len(v) / sigma ** 2 - 1) < 0.05
 
 
+@pytest.mark.filterwarnings("error::pytest.PytestUnhandledThreadExceptionWarning")
 def test_shared_xof_random_never_draws_a_block_twice():
-    """The native draw holds the XofRandom claim lock: a thread drawing from the
-    same XofRandom gets other blocks, and the native samples are the reference's
-    from the counter at which the draw ran."""
+    """A thread drawing from the XofRandom of a native draw waits for its end and
+    gets other blocks (it does not fail), and the native samples are the
+    reference's from the counter at which the draw ran."""
     seed, count = b"\x04" * 32, 3000
     sigma = WIDTHS["fullysec_eta4_elem_sigma2"]
     rng = su.XofRandom(seed)
@@ -320,3 +321,69 @@ def test_wide_tables_are_checked():
 def test_wide_xof_agreement_at_scale(name):
     py, nat = _both(lambda: su.discrete_gaussian_facct(WIDTHS[name], 5000, rng=su.XofRandom(b"scale" + name.encode())))
     assert py == nat
+
+
+# -- review 2026-10 of the wide native FACCT: counters near 2^64, re-entrant draws ----------
+
+
+def test_counter_near_2_64_behaves_as_the_reference():
+    """The reference raises OverflowError at call 2^64; the native draw must not
+    wrap to call 0 (it leaves such counters to the Python code)."""
+    for backend in ("python", "native"):
+        rng = su.XofRandom(b"\x05" * 32)
+        rng._counter = 2 ** 64 - 3
+        with native_backend.backend(backend), pytest.raises(OverflowError):
+            su.discrete_gaussian_facct(gp.mpz(2) ** 100, 2, rng=rng)
+        assert rng._counter >= 2 ** 64 - 3
+
+
+def test_a_busy_xof_random_refuses_other_draws():
+    rng = su.XofRandom(b"\x06" * 32)
+    seen = []
+
+    def draw(start):
+        with pytest.raises(RuntimeError, match="being drawn"):
+            rng.getrandbits(8)
+        seen.append(start)
+        return "result", 5
+
+    assert rng._claim_dynamic(draw) == "result" and seen == [0] and rng._counter == 5
+
+    def failing(start):
+        raise ValueError("boom")
+
+    with pytest.raises(ValueError):
+        rng._claim_dynamic(failing)
+    assert rng._counter == 5 and rng._busy is None  # released, nothing consumed
+    rng.getrandbits(8)
+    assert rng._counter == 6
+
+
+_SIGNAL = """
+import signal, sys, time
+from pyfe4ai.utils import native_backend as nb, sampling_utils as su
+other, rng = su.XofRandom(b"o" * 32), su.XofRandom(b"r" * 32)
+signal.signal(signal.SIGALRM, lambda *args: other.getrandbits(8))
+signal.setitimer(signal.ITIMER_REAL, 0.0005, 0.0005)
+t0 = time.time()
+with nb.backend("native"):
+    while time.time() - t0 < 1.5:
+        su.discrete_gaussian_facct(1e30, 1, rng=rng)
+signal.setitimer(signal.ITIMER_REAL, 0)
+print("ok", flush=True)
+"""
+
+
+@pytest.mark.skipif(not hasattr(__import__("signal"), "setitimer"), reason="needs setitimer")
+def test_a_signal_handler_drawing_from_another_xof_random_does_not_hang():
+    import os
+    import subprocess
+    import sys
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    env = dict(os.environ, PYTHONPATH=root + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    try:
+        res = subprocess.run([sys.executable, "-c", _SIGNAL], capture_output=True, text=True, timeout=60, env=env)
+    except subprocess.TimeoutExpired:
+        pytest.fail("a signal handler drawing from an XofRandom hung")
+    assert res.returncode == 0 and res.stdout.strip() == "ok", (res.returncode, res.stderr[-300:])

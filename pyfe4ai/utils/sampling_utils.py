@@ -6,6 +6,7 @@ import hashlib
 import os
 import random
 import threading
+import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import lru_cache
@@ -153,8 +154,11 @@ def discrete_gaussian_matrix(
     ]
 
 
-# Guards the counter claims of every XofRandom (a few bytecodes each); a
-# forked child gets a new one, as the parent's may be held at the fork.
+# Guards the counter claims of every XofRandom. Its critical sections make no
+# calls, so no signal handler or finalizer can run inside them (CPython runs
+# those only at calls and backward jumps) and none of them waits for it; it is
+# never held while drawing. A forked child gets a new one, as the parent's may
+# be held at the fork.
 _XOF_LOCK = threading.Lock()
 
 
@@ -174,7 +178,11 @@ class XofRandom:
     yields the same bits). The seed must be secret and unpredictable. Call
     ``c`` (from 0) hashes ``len(seed) || seed || c``; each call claims its
     ``c`` atomically, so threads sharing an instance never draw the same block
-    (which thread gets which block then depends on scheduling).
+    (which thread gets which block then depends on scheduling). While the
+    native sampler draws from an instance (a number of calls known only
+    afterwards), other threads' draws from it wait for the end, and a draw
+    from the same thread (a signal handler, a finalizer) raises
+    ``RuntimeError``.
 
     Args:
         seed: Secret seed bytes (at least 32 bytes of entropy).
@@ -183,21 +191,49 @@ class XofRandom:
     def __init__(self, seed: bytes) -> None:
         self._seed = len(seed).to_bytes(8, "big") + seed
         self._counter = 0
+        self._busy = None  # the thread drawing a number of calls known only afterwards
+
+    def _wait_or_refuse(self, owner, me) -> None:
+        if owner == me:
+            raise RuntimeError("this XofRandom is being drawn from by the native sampler in this thread")
+        time.sleep(0.0002)  # another thread's native draw: wait for its end
 
     def _claim(self, calls: int) -> int:
         """Reserve the next *calls* counters for the caller; returns the first."""
-        with _XOF_LOCK:
-            start = self._counter
-            self._counter = start + calls
-        return start
+        me = threading.get_ident()
+        while True:
+            with _XOF_LOCK:
+                owner = self._busy
+                start = self._counter
+                if owner is None:
+                    self._counter = start + calls
+            if owner is None:
+                return start
+            self._wait_or_refuse(owner, me)
 
     def _claim_dynamic(self, draw):
-        """``draw(start) -> (result, calls)`` with the counters locked: for a
-        draw whose number of calls depends on its results (the native FACCT);
-        the counter then advances by *calls*. Returns *result*."""
-        with _XOF_LOCK:
-            result, calls = draw(self._counter)
-            self._counter += calls
+        """``draw(start) -> (result, calls)`` for a draw whose number of calls
+        is known only afterwards (the native FACCT): the instance is marked
+        busy -- other threads' draws from it wait, this thread's raise -- while
+        *draw* runs without any lock held, then the counter advances by
+        *calls*. Returns *result*."""
+        me = threading.get_ident()
+        while True:
+            with _XOF_LOCK:
+                owner = self._busy
+                start = self._counter
+                if owner is None:
+                    self._busy = me
+            if owner is None:
+                break
+            self._wait_or_refuse(owner, me)
+        calls = 0
+        try:
+            result, calls = draw(start)
+        finally:
+            with _XOF_LOCK:
+                self._counter = start + calls
+                self._busy = None
         return result
 
     def getrandbits(self, k: int) -> int:

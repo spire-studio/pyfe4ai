@@ -142,23 +142,49 @@ impl<F: FnMut(&mut [u8]) -> usize> RandBits for ByteBits<F> {
 pub struct XofBits {
     head: Vec<u8>,
     counter: u64,
+    /// The counter passed 2^64 - 1: the next call has no 8-byte counter.
+    past_end: bool,
+    /// A call was made past the end (its bits are zeros; the caller reports an error).
+    overflowed: bool,
 }
 
 impl XofBits {
     pub fn new(seed: &[u8]) -> Self {
         let mut head = (seed.len() as u64).to_be_bytes().to_vec();
         head.extend_from_slice(seed);
-        XofBits { head, counter: 0 }
+        XofBits { head, counter: 0, past_end: false, overflowed: false }
     }
 
     /// The XofRandom whose `_seed` is `head` (len(seed) || seed) at call `counter`.
     pub fn at(head: &[u8], counter: u64) -> Self {
-        XofBits { head: head.to_vec(), counter }
+        XofBits { head: head.to_vec(), counter, past_end: false, overflowed: false }
     }
 
-    /// The next call's counter (the XofRandom's `_counter` after the draws so far).
-    pub fn counter(&self) -> u64 {
-        self.counter
+    /// The next call's counter (the XofRandom's `_counter` after the draws so
+    /// far; 2^64 once call 2^64 - 1 is made).
+    pub fn next_call(&self) -> u128 {
+        self.counter as u128 + self.past_end as u128
+    }
+
+    /// Whether a call needed a counter beyond 2^64 - 1 (where XofRandom raises
+    /// OverflowError); such calls read zeros.
+    pub fn overflowed(&self) -> bool {
+        self.overflowed
+    }
+
+    /// The hashed message of the next call, or None past the 64-bit counters.
+    fn next_message(&mut self) -> Option<Vec<u8>> {
+        if self.past_end {
+            self.overflowed = true;
+            return None;
+        }
+        let mut msg = self.head.clone();
+        msg.extend_from_slice(&self.counter.to_be_bytes());
+        match self.counter.checked_add(1) {
+            Some(c) => self.counter = c,
+            None => self.past_end = true,
+        }
+        Some(msg)
     }
 }
 
@@ -171,24 +197,23 @@ impl Drop for XofBits {
 impl RandBits for XofBits {
     fn getrandbits_into(&mut self, k: u32, out: &mut [u64]) {
         let n = k.div_ceil(8) as usize;
-        let mut msg = self.head.clone();
-        msg.extend_from_slice(&self.counter.to_be_bytes());
-        self.counter += 1;
         let mut tmp = [0u8; 8 * 16];
-        shake256(&msg, &mut tmp[..n]);
-        crate::rlwe::wipe_bytes(&mut msg);
+        if let Some(mut msg) = self.next_message() {
+            shake256(&msg, &mut tmp[..n]);
+            crate::rlwe::wipe_bytes(&mut msg);
+        }
         top_bits_into(&tmp[..n], k, out);
         crate::rlwe::wipe_bytes(&mut tmp);
     }
 
     fn getrandbits(&mut self, k: u32) -> U256 {
         let n = k.div_ceil(8) as usize;
-        let mut msg = self.head.clone();
-        msg.extend_from_slice(&self.counter.to_be_bytes());
-        self.counter += 1;
         let mut out = [0u8; 32];
-        if n > 0 {
-            shake256(&msg, &mut out[..n]);
+        if let Some(mut msg) = self.next_message() {
+            if n > 0 {
+                shake256(&msg, &mut out[..n]);
+            }
+            crate::rlwe::wipe_bytes(&mut msg);
         }
         top_bits(&out[..n], k)
     }
@@ -393,6 +418,16 @@ mod tests {
             let want = (-(t as f64) / 1024.0).exp();
             assert!((e - want).abs() < 1e-15 * want.max(1e-300) + 1e-30, "t = {t}: {e} vs {want}");
         }
+    }
+
+    #[test]
+    fn xof_counter_stops_at_64_bits() {
+        let mut x = XofBits::at(b"\x00\x00\x00\x00\x00\x00\x00\x01k", u64::MAX - 1);
+        x.getrandbits(8);
+        x.getrandbits(8); // counter 2^64 - 1: still a valid call
+        assert!(!x.overflowed() && x.next_call() == 1u128 << 64);
+        x.getrandbits(8);
+        assert!(x.overflowed() && x.next_call() == 1u128 << 64);
     }
 
     #[test]

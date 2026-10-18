@@ -311,6 +311,8 @@ def gaussian_facct(sigma, count: int, rng):
         kwargs.update(seed_kwargs())
         values, _ = draw_fn(make_table(sigma_q), count, **kwargs)
     elif type(rng) is su.XofRandom:
+        if rng._counter >= 2 ** 63:  # near the 64-bit counters: the reference's behaviour there
+            return None
         table = make_table(sigma_q)
 
         def draw(start):

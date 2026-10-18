@@ -749,7 +749,7 @@ fn gauss_bigint_approx(py: Python<'_>, prec: u32, sig_mant: &[u8], sig_exp: i64,
 #[pyo3(signature = (table, count, xof_head=None, xof_counter=0, rnd=None, seed=None, threads=1))]
 #[allow(clippy::too_many_arguments)]
 fn facct_draw(py: Python<'_>, table: &Bound<'_, FacctObj>, count: usize, xof_head: Option<Vec<u8>>, xof_counter: u64,
-              rnd: Option<Vec<u8>>, seed: Option<Vec<u8>>, threads: usize) -> PyResult<(Py<PyList>, u64)> {
+              rnd: Option<Vec<u8>>, seed: Option<Vec<u8>>, threads: usize) -> PyResult<(Py<PyList>, u128)> {
     const CHUNK: usize = 256;
     if count > MAX_BIGINT_COUNT {
         return Err(PyValueError::new_err("too many samples for one native call"));
@@ -762,7 +762,11 @@ fn facct_draw(py: Python<'_>, table: &Bound<'_, FacctObj>, count: usize, xof_hea
         let head = zeroize::Zeroizing::new(head);
         let mut bits = facct::XofBits::at(&head, xof_counter);
         facct::sample(&obj.table, &mut out, &mut bits, &exact); // the GIL stays held
-        bits.counter()
+        if bits.overflowed() {
+            exact_err(&err)?;
+            return Err(pyo3::exceptions::PyOverflowError::new_err("XofRandom counter beyond 64 bits"));
+        }
+        bits.next_call()
     } else if let Some(data) = rnd {
         let data = zeroize::Zeroizing::new(data);
         let mut at = 0usize;
@@ -776,7 +780,7 @@ fn facct_draw(py: Python<'_>, table: &Bound<'_, FacctObj>, count: usize, xof_hea
         if bits.failed {
             return Err(PyValueError::new_err("not enough random bytes"));
         }
-        bits.consumed() as u64
+        bits.consumed() as u128
     } else {
         let drbg = CallDrbg::new(seed.as_deref())?;
         let slots: Vec<Mutex<&mut [i64]>> = out.chunks_mut(CHUNK).map(Mutex::new).collect();
@@ -873,7 +877,7 @@ fn exact_wide_fn<'a>(obj: &'a FacctWideObj, err: &'a Mutex<Option<PyErr>>) -> im
 #[allow(clippy::too_many_arguments)]
 fn facct_draw_wide(py: Python<'_>, table: &Bound<'_, FacctWideObj>, count: usize, xof_head: Option<Vec<u8>>,
                    xof_counter: u64, rnd: Option<Vec<u8>>, seed: Option<Vec<u8>>, threads: usize)
-                   -> PyResult<(Py<PyList>, u64)> {
+                   -> PyResult<(Py<PyList>, u128)> {
     const CHUNK: usize = 256;
     const W: usize = facct_wide::W;
     if count > MAX_BIGINT_COUNT {
@@ -888,7 +892,11 @@ fn facct_draw_wide(py: Python<'_>, table: &Bound<'_, FacctWideObj>, count: usize
         let head = zeroize::Zeroizing::new(head);
         let mut bits = facct::XofBits::at(&head, xof_counter);
         facct_wide::sample(&obj.table, &mut mags, &mut neg, &mut bits, &exact); // the GIL stays held
-        bits.counter()
+        if bits.overflowed() {
+            exact_err(&err)?;
+            return Err(pyo3::exceptions::PyOverflowError::new_err("XofRandom counter beyond 64 bits"));
+        }
+        bits.next_call()
     } else if let Some(data) = rnd {
         let data = zeroize::Zeroizing::new(data);
         let mut at = 0usize;
@@ -902,7 +910,7 @@ fn facct_draw_wide(py: Python<'_>, table: &Bound<'_, FacctWideObj>, count: usize
         if bits.failed {
             return Err(PyValueError::new_err("not enough random bytes"));
         }
-        bits.consumed() as u64
+        bits.consumed() as u128
     } else {
         let drbg = CallDrbg::new(seed.as_deref())?;
         let slots: Vec<Mutex<(&mut [u64], &mut [u8])>> =
