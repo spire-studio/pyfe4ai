@@ -57,9 +57,11 @@ paper, whose simulation does not cover noisy LWE keys; this rests on the
 thesis until the full-version text has been checked.
 
 ``mife/lwe_threshold`` is refused, like the ALS16 schemes. Once its modulus
-is enlarged for flooding, it needs a dimension at the end of the table at
-that width (5952 to 6144 for ``X = Y <= 8``, with a public matrix of 6.7 to
-7.8 * 10^9 entries), or beyond it (``X = Y >= 20``).
+is enlarged for flooding (``stat_param = 128``), it needs a dimension at the
+very end of the table at that width (5888 to 6144, with a public matrix of
+6.5 to 7.8 * 10^9 entries) for a few small bounds, e.g. ``X = Y`` in
+{1, 2, 3, 8, 10} at ``eta = 1``, and beyond it for most others (``X = Y`` =
+4 to 6, ``X = Y >= 12``, most ``eta >= 2``).
 
 An opt-in KL-divergence accounting of the flooding noise (in development)
 would bring it to about 4864 for two clients, ``s = t = 3`` and ``2^40``

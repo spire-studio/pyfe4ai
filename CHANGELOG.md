@@ -62,11 +62,12 @@ compatibility).
 - **`mife/lwe_threshold` is refused under `standard`**, like ALS16 and
   dMCFE-Paillier: no parameter set is both secure and usable in pure Python.
   At `sigma'` its flooding-enlarged `q` (`stat_param = 128`, two clients)
-  needs a dimension at the end of the table or beyond it.
-  * 5952 for `X = Y = 1` and 6144 for `X = Y = 8`, with `A` of 6.7 * 10^9
-    and 7.8 * 10^9 entries.
-  * From `X = Y = 20` on, nothing up to 6144: about 6500 for `X = Y = 50`
-    (`q` of 217 bits), where the old rule took 5952.
+  needs a dimension at the very end of the table or beyond it.
+  * The very end (5888 to 6144, with `A` of 6.5 to 7.8 * 10^9 entries) for a
+    few small bounds, e.g. `X = Y` in {1, 2, 3, 8, 10} at `eta = 1`.
+  * Beyond it for most others: `X = Y` = 4 to 6, `X = Y >= 12` and most
+    `eta >= 2`. About 6500 for `X = Y = 50` (`q` of 217 bits), where the old
+    rule took 5952.
   * `standard` therefore no longer fixes its `matrix_mode`. Use
     `mife/ddh_threshold`, or `mcfe/ring_lwe_threshold` with labels.
   * A KL-divergence accounting of the flooding noise (in development) would

@@ -387,7 +387,7 @@ TMIFE_CONFIG = {"n": 2, "eta": 1, "s": 3, "t": 2, "bound_x": 50, "bound_y": 50}
 
 
 def test_standard_refuses_threshold_mife_lwe():
-    with pytest.raises(FEValidationError, match="at the end of the 128-bit table or beyond it"):
+    with pytest.raises(FEValidationError, match="very end of the 128-bit table"):
         profiles.resolve(dict(STANDARD), ("mife", "lwe_threshold"))
     with pytest.raises(FEValidationError, match="no 'standard' parameter set"):
         ThresholdMIFELWEKeyGenerator({**TMIFE_CONFIG, **STANDARD})

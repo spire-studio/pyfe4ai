@@ -57,10 +57,11 @@ The ``standard`` security profile refuses this scheme. ``lwe_n = "auto"``
 reads :data:`pyfe4ai.utils.lwe_utils.WIDE_LWE_128_LOG_RATIO` at the width
 ``sigma / (1 + 4 X sqrt(eta))`` of the MIFE layer's security reduction (see
 :mod:`pyfe4ai.schemes.abdp15_lwe`). At the flooding-enlarged ``q`` of
-``stat_param = 128`` (two clients) that takes the end of the table or more:
-5952 for ``X = Y = 1`` and 6144 for ``X = Y = 8`` (``A`` of 6.7 and
-7.8 * 10^9 entries), and no tabulated dimension up to 6144 from
-``X = Y = 20`` on; ``X = Y = 50`` would need about 6500. Read at ``sigma`` itself, the
+``stat_param = 128`` (two clients) that takes the very end of the table
+(5888 to 6144, ``A`` of 6.5 to 7.8 * 10^9 entries) for a few small bounds, e.g.
+``X = Y`` in {1, 2, 3, 8, 10} at ``eta = 1``, and more than the table's 6144
+for most others (``X = Y`` = 4 to 6, ``X = Y >= 12``, most ``eta >= 2``);
+``X = Y = 50`` would need about 6500. Read at ``sigma`` itself, the
 earlier rule took 5952 for two clients (``q`` of 217 bits, ``m`` of
 1.3 * 10^6, ``A`` of 7.8 * 10^9 entries, so ``A`` had to be streamed):
 key generation took 38 minutes, one encryption 572 s, a batch of 64
