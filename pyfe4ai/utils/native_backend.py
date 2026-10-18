@@ -358,7 +358,10 @@ _random_override = None
 
 
 #: Tests set this to a 32-byte seed for the extension's per-call DRBG (see the
-#: module docstring); ``None``: a fresh seed from the OS for every call.
+#: module docstring); ``None``: a fresh seed from the OS for every call. With
+#: it set, every call reads the streams of that one seed (``shamir_share`` and
+#: ``zq_replicated_deal`` stream 0), so every call draws the same randomness:
+#: tests only, never in use.
 _seed_override = None
 
 

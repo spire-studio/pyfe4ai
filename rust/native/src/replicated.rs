@@ -100,48 +100,55 @@ fn secret_list<'py, W: Word>(py: Python<'py>, words: &mut [W]) -> PyResult<Bound
 fn zq_replicated_deal(py: Python<'_>, q: &Bound<'_, PyAny>, values: &Bound<'_, PyAny>, n_random: usize,
                       rnd: &Bound<'_, PyAny>, seed: Option<Vec<u8>>) -> PyResult<Py<PyList>> {
     let qv = zq_arg(q)?;
-    let given: Option<Vec<u8>> = if rnd.is_none() { None } else { Some(rnd.extract()?) };
-    let drbg = CallDrbg::new(seed.as_deref())?;
-    with_zq!(qv, m => {
-        let mut vals = read_exact(values, q, &m)?;
-        let pieces = py.detach(|| match &given {
-            Some(b) => {
-                let mut pos = 0;
-                replicated::deal(&m, &vals, n_random, |out: &mut [u8]| {
-                    if pos + out.len() > b.len() {
-                        return false;
-                    }
-                    out.copy_from_slice(&b[pos..pos + out.len()]);
-                    pos += out.len();
-                    true
-                })
-            }
-            None => {
-                let mut rng = drbg.rng(0);
-                let res = replicated::deal(&m, &vals, n_random, |out: &mut [u8]| {
-                    rng.fill_bytes(out);
-                    true
-                });
-                wipe_rng(&mut rng);
-                res
-            }
-        });
-        wipe_words(&mut vals);
-        let mut pieces = pieces.ok_or_else(|| PyValueError::new_err("not enough random bytes"))?;
-        let mut lists = Vec::with_capacity(pieces.len());
-        let mut res = Ok(());
-        for piece in pieces.iter_mut() {
-            if res.is_ok() {
-                match secret_list(py, piece) {
-                    Ok(l) => lists.push(l),
-                    Err(e) => res = Err(e),
+    let mut given: Option<Vec<u8>> = if rnd.is_none() { None } else { Some(rnd.extract()?) };
+    // the values, the pieces, their digits and the caller's bytes are wiped after use, on every path
+    let out = (|| -> PyResult<Py<PyList>> {
+        let drbg = CallDrbg::new(seed.as_deref())?;
+        with_zq!(qv, m => {
+            let mut vals = read_exact(values, q, &m)?;
+            let pieces = py.detach(|| match &given {
+                Some(b) => {
+                    let mut pos = 0;
+                    replicated::deal(&m, &vals, n_random, |out: &mut [u8]| {
+                        if pos + out.len() > b.len() {
+                            return false;
+                        }
+                        out.copy_from_slice(&b[pos..pos + out.len()]);
+                        pos += out.len();
+                        true
+                    })
                 }
+                None => {
+                    let mut rng = drbg.rng(0);
+                    let res = replicated::deal(&m, &vals, n_random, |out: &mut [u8]| {
+                        rng.fill_bytes(out);
+                        true
+                    });
+                    wipe_rng(&mut rng);
+                    res
+                }
+            });
+            wipe_words(&mut vals);
+            let mut pieces = pieces.ok_or_else(|| PyValueError::new_err("not enough random bytes"))?;
+            let mut lists = Vec::with_capacity(pieces.len());
+            let mut res = Ok(());
+            for piece in pieces.iter_mut() {
+                if res.is_ok() {
+                    match secret_list(py, piece) {
+                        Ok(l) => lists.push(l),
+                        Err(e) => res = Err(e),
+                    }
+                }
+                wipe_words(piece);
             }
-            wipe_words(piece);
-        }
-        res?;
-        Ok(PyList::new(py, lists)?.unbind())
-    })
+            res?;
+            Ok(PyList::new(py, lists)?.unbind())
+        })
+    })();
+    if let Some(b) = given.as_mut() {
+        pyfe4ai_core::rlwe::wipe_bytes(b);
+    }
+    out
 }
 
 /// The sum mod q of the rows (count values each: ints or plain decimal

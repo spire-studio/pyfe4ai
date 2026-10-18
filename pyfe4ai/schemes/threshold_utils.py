@@ -278,8 +278,16 @@ def _share_replicated_native(material, sets: list, modulus: gp.mpz):
     """:func:`share_replicated` by the extension -- the same pieces for the
     same random bytes: each random value drawn as
     ``random.SystemRandom.randrange(0, q)`` draws it, from the call's DRBG
-    (or the test bytes of :func:`~pyfe4ai.utils.native_backend.random_input`),
-    in the order of the Python code -- or ``None`` when that code applies."""
+    (or the test bytes of :func:`~pyfe4ai.utils.native_backend.random_input`;
+    a test-installed DRBG seed, ``native_backend._seed_override``, makes every
+    call read stream 0 of that seed, as for the other tensor calls: tests
+    only), in the order of the Python code -- or ``None`` when that code
+    applies.
+
+    Raises:
+        RuntimeError: If the test bytes run out (they are bounded; the DRBG
+            is not).
+    """
     ext = _zq_native(modulus)
     if ext is None:
         return None
@@ -291,13 +299,21 @@ def _share_replicated_native(material, sets: list, modulus: gp.mpz):
         return None
     n_random = len(sets) - 1
     width = (int(modulus).bit_length() + 7) // 8
+    # test bytes (None otherwise): a draw is rejected with probability below
+    # 1/2, so 4 draws per value and 256 more run out with probability below
+    # 2^-180 (Hoeffding), also for q just above a power of two
+    draws = len(flat) * n_random
+    rnd = native_backend.random_input(width * (4 * draws + 256) if draws else 0)
     try:
-        out = ext.zq_replicated_deal(
-            int(modulus), flat, n_random, native_backend.random_input(4 * width * len(flat) * n_random + 64),
-            **native_backend.seed_kwargs(),
-        )
+        out = ext.zq_replicated_deal(int(modulus), flat, n_random, rnd, **native_backend.seed_kwargs())
     except TypeError:  # values other than ints and decimal strings: the Python code reads them
         return None
+    except ValueError as exc:
+        if rnd is None:
+            raise
+        raise RuntimeError(
+            "native_backend.random_input: the {} test bytes ran out".format(len(rnd))
+        ) from exc
     pieces = {T: _unflatten(layout, out[i + 1]) for i, T in enumerate(sets[1:])}
     pieces[sets[0]] = _unflatten(layout, out[0])
     return pieces
