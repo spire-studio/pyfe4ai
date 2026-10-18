@@ -8,6 +8,7 @@ pub mod capi;
 pub mod codec;
 pub mod dense;
 pub mod facct;
+pub mod facct_wide;
 pub mod gauss;
 pub mod keccak;
 pub mod ntt;

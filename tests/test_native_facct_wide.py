@@ -94,10 +94,10 @@ def _setup(tmp_path, monkeypatch):
 
 
 class _Spy:
-    """The extension, counting facct_draw calls."""
+    """The extension, counting facct_draw / facct_draw_wide calls."""
 
     def __init__(self, ext) -> None:
-        self._ext, self.calls = ext, 0
+        self._ext, self.calls, self.wide = ext, 0, 0
 
     def __getattr__(self, name):
         return getattr(self._ext, name)
@@ -105,6 +105,11 @@ class _Spy:
     def facct_draw(self, *args, **kwargs):
         self.calls += 1
         return self._ext.facct_draw(*args, **kwargs)
+
+    def facct_draw_wide(self, *args, **kwargs):
+        self.calls += 1
+        self.wide += 1
+        return self._ext.facct_draw_wide(*args, **kwargs)
 
 
 @pytest.fixture
@@ -142,6 +147,7 @@ def test_known_answers(name, spy):
             got = su.discrete_gaussian_facct(WIDTHS[name], 6, rng=su.XofRandom(KAT_SEED))
         assert [int(v) for v in got] == KAT[name] and all(type(v) is type(gp.mpz(0)) for v in got)
     assert spy.calls == (name in _native_widths())
+    assert spy.wide == (_k(WIDTHS[name]) > native_backend.MAX_NATIVE_FACCT_K and name in _native_widths())
 
 
 @pytest.mark.parametrize("name", list(WIDTHS))
@@ -245,3 +251,72 @@ def test_python_path_where_the_native_one_does_not_apply(spy, monkeypatch):
     with gp.context(gp.get_context(), round=gp.RoundDown, emax=1000):
         py, nat = _both(lambda: su.discrete_gaussian_facct(sigma, 20, rng=su.XofRandom(b"rd")))
     assert py == nat and spy.calls == 2
+
+
+# -- the wide kernel (k > 2^50): exact fallback, fixed-point decisions, table checks ---------
+
+
+WIDE = [name for name, s in WIDTHS.items() if _k(s) > native_backend.MAX_NATIVE_FACCT_K]
+
+
+def _wide_table(sigma, counter, c_exp_shift=0, mantissa_bits=128):
+    """The wide table of _facct_wide_table with a counting exact threshold (and
+    optionally a useless or an imprecise c); the counter is cleared after the
+    table's own check at construction."""
+    p = su._facct_params(su._exact(sigma))
+    mant, exp = p.neg_c.as_mantissa_exp()
+    mant, exp = -int(mant), int(exp)
+    shift = mant.bit_length() - mantissa_bits
+    mant = mant >> shift if shift > 0 else mant << -shift
+    mant, exp = mant << (128 - mantissa_bits), exp + shift - (128 - mantissa_bits)
+
+    def exact(x, y):
+        counter.append((x, y))
+        with gp.context(precision=su.FACCT_PRECISION + 64, round=gp.RoundToNearest):
+            return int(gp.floor(gp.exp(p.neg_c * (y * (y + 2 * p.k * x))) * (1 << su.FACCT_PRECISION)))
+
+    table = native_backend.ext().FacctWideTable(p.k, p.y_bits, list(p.cdt), mant, exp + c_exp_shift, exact)
+    counter.clear()
+    return table
+
+
+@pytest.mark.parametrize("name", ["fullysec_eta1_elem_sigma3", "fullysec_eta10_elem_sigma2", "tmcfe_wide"])
+def test_wide_fixed_point_test_decides_alone(name):
+    """The exact Python threshold is for about one test in 2^99: never here."""
+    calls = []
+    native_backend.ext().facct_draw_wide(_wide_table(WIDTHS[name], calls), 20000)
+    assert calls == []
+
+
+@pytest.mark.parametrize("name", ["fullysec_eta1_elem_sigma3", "fullysec_eta10_pack_sigma1", "tmife_std"])
+def test_wide_exact_fallback_gives_the_same_samples(name):
+    """A table whose fixed-point test always defers: every decision is the Python threshold's."""
+    calls = []
+    head = su.XofRandom(b"fallback/" + name.encode())._seed
+    nat, _ = native_backend.ext().facct_draw_wide(_wide_table(WIDTHS[name], calls, c_exp_shift=400), 300,
+                                                  xof_head=head, xof_counter=0)
+    assert calls  # deferred
+    with native_backend.backend("python"):
+        ref = su.discrete_gaussian_facct(WIDTHS[name], 300, rng=su.XofRandom(b"fallback/" + name.encode()))
+    assert nat == [int(v) for v in ref]
+
+
+@pytest.mark.parametrize("name", WIDE[:2] + ["tmcfe_std"])
+def test_wide_tables_with_a_53_bit_c_are_refused(name):
+    with pytest.raises(ValueError, match="disagrees"):
+        _wide_table(WIDTHS[name], [], mantissa_bits=53)
+
+
+def test_wide_tables_are_checked():
+    p = su._facct_params(su._exact(WIDTHS["tmcfe_std"]))
+    ext = native_backend.ext()
+    for k, y_bits in ((p.k, p.y_bits + 1), (2 ** 40, 40), (2 ** 448, 448)):
+        with pytest.raises(ValueError, match="unsupported"):
+            ext.FacctWideTable(k, y_bits, list(p.cdt), 1 << 127, -600, lambda x, y: 0)
+
+
+@pytest.mark.parametrize("name", ["fullysec_eta10_elem_sigma1", "fullysec_eta10_pack_sigma3", "tmife_std",
+                                  "tmcfe_wide"])
+def test_wide_xof_agreement_at_scale(name):
+    py, nat = _both(lambda: su.discrete_gaussian_facct(WIDTHS[name], 5000, rng=su.XofRandom(b"scale" + name.encode())))
+    assert py == nat

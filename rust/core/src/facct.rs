@@ -26,6 +26,23 @@ pub const CDT_SIZE: usize = 14;
 /// A `getrandbits` source: `k` bits (k <= 256) as an integer, as Python's.
 pub trait RandBits {
     fn getrandbits(&mut self, k: u32) -> U256;
+    /// getrandbits(k) for k <= 64 out.len(), into little-endian words (one call).
+    fn getrandbits_into(&mut self, k: u32, out: &mut [u64]);
+}
+
+/// The top k bits of the big-endian bytes (at most 128), into little-endian words.
+fn top_bits_into(bytes: &[u8], k: u32, out: &mut [u64]) {
+    let mut x = [0u64; 17];
+    for (i, &b) in bytes.iter().rev().enumerate() {
+        x[i / 8] |= (b as u64) << (8 * (i % 8));
+    }
+    let d = 8 * bytes.len() as u32 - k; // < 8
+    for (i, w) in out.iter_mut().enumerate() {
+        *w = if d == 0 { x[i] } else { (x[i] >> d) | (x[i + 1] << (64 - d)) };
+    }
+    for w in x.iter_mut() {
+        unsafe { std::ptr::write_volatile(w, 0) };
+    }
 }
 
 /// getrandbits over a byte stream, as `_OSRandomBuffer` and `random.getrandbits`
@@ -89,6 +106,16 @@ fn top_bits(bytes: &[u8], k: u32) -> U256 {
 }
 
 impl<F: FnMut(&mut [u8]) -> usize> RandBits for ByteBits<F> {
+    fn getrandbits_into(&mut self, k: u32, out: &mut [u64]) {
+        let n = k.div_ceil(8) as usize;
+        let mut tmp = [0u8; 8 * 16];
+        for b in tmp[..n].iter_mut() {
+            *b = self.byte();
+        }
+        top_bits_into(&tmp[..n], k, out);
+        crate::rlwe::wipe_bytes(&mut tmp);
+    }
+
     fn getrandbits(&mut self, k: u32) -> U256 {
         if k == 0 {
             return U256::ZERO;
@@ -142,6 +169,18 @@ impl Drop for XofBits {
 }
 
 impl RandBits for XofBits {
+    fn getrandbits_into(&mut self, k: u32, out: &mut [u64]) {
+        let n = k.div_ceil(8) as usize;
+        let mut msg = self.head.clone();
+        msg.extend_from_slice(&self.counter.to_be_bytes());
+        self.counter += 1;
+        let mut tmp = [0u8; 8 * 16];
+        shake256(&msg, &mut tmp[..n]);
+        crate::rlwe::wipe_bytes(&mut msg);
+        top_bits_into(&tmp[..n], k, out);
+        crate::rlwe::wipe_bytes(&mut tmp);
+    }
+
     fn getrandbits(&mut self, k: u32) -> U256 {
         let n = k.div_ceil(8) as usize;
         let mut msg = self.head.clone();
@@ -167,7 +206,7 @@ pub struct Table {
 }
 
 /// Fractional bits of the fixed-point exponential.
-const F: u32 = 120;
+pub(crate) const F: u32 = 120;
 const ONE: u128 = 1 << F;
 /// floor(ln 2 2^120).
 const LN2: u128 = 0xb17217f7d1cf79abc9e3b39803f2f6;
@@ -237,8 +276,14 @@ fn exp_neg(table: &Table, t: u128) -> Option<u128> {
         return None;
     }
     let a = shr_pair(hi, lo, s as u32)?;
+    Some(exp_neg_a(a))
+}
+
+/// exp(-a) in fixed point (F fractional bits) for a with F fractional bits;
+/// error below 2^-110 (0 for a >= 120).
+pub(crate) fn exp_neg_a(a: u128) -> u128 {
     if a >= 120 * ONE {
-        return Some(0); // exp(-a) < 2^-173: far below every threshold the tests can meet
+        return 0; // exp(-a) < 2^-173: far below every threshold the tests can meet
     }
     // a = m ln 2 + r, r in [0, ln 2): m from a float estimate, corrected exactly
     let mut m = ((a as f64) / (LN2 as f64)) as u128;
@@ -259,7 +304,7 @@ fn exp_neg(table: &Table, t: u128) -> Option<u128> {
         p = INV_FACT[i] - mul_f(p, r2);
     }
     let e = mul_f(EXP_J64[j], p);
-    Some(if m >= 128 { 0 } else { e >> m })
+    if m >= 128 { 0 } else { e >> m }
 }
 
 /// The acceptance decision `v < floor(2^192 exp(-c t))` of the Python sampler.

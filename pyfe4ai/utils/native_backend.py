@@ -230,6 +230,27 @@ def _facct_table(sigma_q):
     return _ext.FacctTable(k, params.y_bits, list(params.cdt), mant, exp + shift, exact)
 
 
+@functools.lru_cache(maxsize=64)
+def _facct_wide_table(sigma_q):
+    """:func:`_facct_table` for a wide width (``2^50 < k < 2^448``): the
+    extension's ``FacctWideTable`` (multi-word k, y and samples)."""
+    from pyfe4ai.utils import sampling_utils as su
+
+    params = su._facct_params(sigma_q)
+    mant, exp = params.neg_c.as_mantissa_exp()  # c = -neg_c exactly (finding M4)
+    mant, exp = -int(mant), int(exp)
+    shift = mant.bit_length() - 128
+    mant = mant >> shift if shift > 0 else mant << -shift
+    precision, neg_c, k = su.FACCT_PRECISION, params.neg_c, params.k
+    scale = 1 << precision
+
+    def exact(x: int, y: int) -> int:
+        with gp.context(precision=precision + 64, round=gp.RoundToNearest):
+            return int(gp.floor(gp.exp(neg_c * (y * (y + 2 * k * x))) * scale))
+
+    return _ext.FacctWideTable(k, params.y_bits, list(params.cdt), mant, exp + shift, exact)
+
+
 def facct_table(sigma):
     """Native tables of the exact sampler for *sigma* (see :func:`_facct_table`)."""
     from pyfe4ai.utils import sampling_utils as su
@@ -237,8 +258,10 @@ def facct_table(sigma):
     return _facct_table(su._exact(sigma))
 
 
-#: Largest FACCT double-sampling factor k of the native kernel (samples in an i64).
+#: Largest FACCT double-sampling factor k of the native kernel (samples in an i64)
+#: and, beyond it, of the wide kernel (k, y and samples in 64-bit words).
 MAX_NATIVE_FACCT_K = 2 ** 50
+MAX_NATIVE_FACCT_WIDE_K = 2 ** 448 - 1
 
 
 def gaussian_facct(sigma, count: int, rng):
@@ -255,8 +278,11 @@ def gaussian_facct(sigma, count: int, rng):
     ``rng=None`` with the module's OS source, from the per-call DRBG (stream
     ``c`` for samples ``256 c`` to ``256 c + 255``, on :func:`get_threads`
     threads; or :data:`_random_override` in the tests). Widths with ``k <=
-    2^50`` (``sigma`` below about ``2^49.8``); the MPFR context does not
-    matter (the reference sets its own).
+    2^50`` (``sigma`` below about ``2^49.8``) use the kernel of
+    ``rust/core/src/facct.rs``, wider ones up to ``k < 2^448`` (``sigma``
+    below about ``2^447.7``) that of ``facct_wide.rs`` (the same decisions,
+    with the error argument in its header); the MPFR context does not matter
+    (the reference sets its own).
     """
     if _ext is None or get_backend() == "python" or not hasattr(_ext, "facct_draw"):
         return None
@@ -269,7 +295,11 @@ def gaussian_facct(sigma, count: int, rng):
         k = su._facct_params(sigma_q).k
     except TypeError:  # an unhashable width: the Python code
         return None
-    if k > MAX_NATIVE_FACCT_K:
+    if k <= MAX_NATIVE_FACCT_K:
+        draw_fn, make_table = _ext.facct_draw, _facct_table
+    elif k <= MAX_NATIVE_FACCT_WIDE_K and hasattr(_ext, "facct_draw_wide"):
+        draw_fn, make_table = _ext.facct_draw_wide, _facct_wide_table
+    else:
         return None
     if rng is None:
         if su._OS_RANDOM is not su._OS_SOURCE:
@@ -279,12 +309,12 @@ def gaussian_facct(sigma, count: int, rng):
         if rnd is not None:
             kwargs["rnd"] = rnd
         kwargs.update(seed_kwargs())
-        values, _ = _ext.facct_draw(_facct_table(sigma_q), count, **kwargs)
+        values, _ = draw_fn(make_table(sigma_q), count, **kwargs)
     elif type(rng) is su.XofRandom:
-        table = _facct_table(sigma_q)
+        table = make_table(sigma_q)
 
         def draw(start):
-            values, end = _ext.facct_draw(table, count, xof_head=rng._seed, xof_counter=start)
+            values, end = draw_fn(table, count, xof_head=rng._seed, xof_counter=start)
             return values, end - start
 
         values = rng._claim_dynamic(draw)

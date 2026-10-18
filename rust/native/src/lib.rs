@@ -11,6 +11,7 @@ use pyfe4ai_core::gauss::{gauss_bytes, gauss_fill};
 use pyfe4ai_core::keccak::{hash_to_zq, shake256};
 use pyfe4ai_core::bigauss;
 use pyfe4ai_core::facct;
+use pyfe4ai_core::facct_wide;
 use pyfe4ai_core::rlwe::{self, EncKey, FacctNoise, Noise, Precomputed, Randomness};
 use pyfe4ai_core::{osrand, parallel_for, with_ring, AnyRing, Modulus, Ring, Word, U256};
 use pyo3::intern;
@@ -798,6 +799,139 @@ fn facct_draw(py: Python<'_>, table: &Bound<'_, FacctObj>, count: usize, xof_hea
         unsafe { std::ptr::write_volatile(v, 0) };
     }
     Ok((list, used))
+}
+
+/// The tables of discrete_gaussian_facct for a wide width (2^50 < k < 2^448,
+/// see pyfe4ai-core facct_wide) and `exact(x, y)`, the Python threshold.
+#[pyclass(frozen, module = "pyfe4ai._rust_native", name = "FacctWideTable")]
+struct FacctWideObj {
+    table: facct_wide::WideTable,
+    exact: Py<PyAny>,
+}
+
+#[pymethods]
+impl FacctWideObj {
+    /// The tables; a few fixed-point thresholds are checked against `exact`
+    /// (ValueError if c is not precise enough for the 2^-100 band).
+    #[new]
+    fn new(k: &Bound<'_, PyAny>, y_bits: u32, cdt: Vec<Bound<'_, PyAny>>, c_mant: u128, c_exp: i32, exact: Py<PyAny>)
+           -> PyResult<Self> {
+        let py = k.py();
+        let bad = || PyValueError::new_err("unsupported wide FACCT tables");
+        let kb = py_index(k)?
+            .call_method1(intern!(py, "to_bytes"), (8 * facct_wide::W, intern!(py, "little")))
+            .map_err(|_| bad())?;
+        let kb = kb.cast::<PyBytes>()?.as_bytes();
+        let mut kw = [0u64; facct_wide::W];
+        for (i, w) in kw.iter_mut().enumerate() {
+            *w = u64::from_le_bytes(kb[8 * i..8 * i + 8].try_into().unwrap());
+        }
+        if cdt.len() != facct::CDT_SIZE || !facct_wide::valid(&kw, y_bits) {
+            return Err(bad());
+        }
+        let mut t = [U256::ZERO; facct::CDT_SIZE];
+        for (dst, v) in t.iter_mut().zip(cdt.iter()) {
+            *dst = u256_arg(v)?;
+        }
+        let obj = FacctWideObj { table: facct_wide::WideTable { k: kw, y_bits, cdt: t, c_mant, c_exp }, exact };
+        let err = Mutex::new(None);
+        let consistent = facct_wide::check_table(&obj.table, &exact_wide_fn(&obj, &err));
+        exact_err(&err)?;
+        if !consistent {
+            return Err(PyValueError::new_err("FACCT tables: c disagrees with the exact acceptance thresholds"));
+        }
+        Ok(obj)
+    }
+}
+
+/// `exact` of a wide table as a closure for the kernel (with the GIL); a Python
+/// error is kept in `err`.
+fn exact_wide_fn<'a>(obj: &'a FacctWideObj, err: &'a Mutex<Option<PyErr>>) -> impl Fn(u64, &[u64]) -> U256 + Sync + 'a {
+    move |x, y| {
+        Python::attach(|py| {
+            let mut b = [0u8; 8 * facct_wide::W];
+            for (i, w) in y.iter().enumerate() {
+                b[8 * i..8 * i + 8].copy_from_slice(&w.to_le_bytes());
+            }
+            let yi = unsafe { Bound::from_owned_ptr_or_err(py, long_from_le(&b)) };
+            rlwe::wipe_bytes(&mut b);
+            match yi.and_then(|yi| obj.exact.call1(py, (x, yi))).and_then(|v| u256_arg(v.bind(py))) {
+                Ok(v) => v,
+                Err(e) => {
+                    err.lock().unwrap().get_or_insert(e);
+                    U256::ZERO
+                }
+            }
+        })
+    }
+}
+
+/// discrete_gaussian_facct for a wide table: as facct_draw, the samples as
+/// Python ints.
+#[pyfunction]
+#[pyo3(signature = (table, count, xof_head=None, xof_counter=0, rnd=None, seed=None, threads=1))]
+#[allow(clippy::too_many_arguments)]
+fn facct_draw_wide(py: Python<'_>, table: &Bound<'_, FacctWideObj>, count: usize, xof_head: Option<Vec<u8>>,
+                   xof_counter: u64, rnd: Option<Vec<u8>>, seed: Option<Vec<u8>>, threads: usize)
+                   -> PyResult<(Py<PyList>, u64)> {
+    const CHUNK: usize = 256;
+    const W: usize = facct_wide::W;
+    if count > MAX_BIGINT_COUNT {
+        return Err(PyValueError::new_err("too many samples for one native call"));
+    }
+    let obj = table.get();
+    let err = Mutex::new(None);
+    let exact = exact_wide_fn(obj, &err);
+    let mut mags = vec![0u64; W * count];
+    let mut neg = vec![0u8; count];
+    let used = if let Some(head) = xof_head {
+        let head = zeroize::Zeroizing::new(head);
+        let mut bits = facct::XofBits::at(&head, xof_counter);
+        facct_wide::sample(&obj.table, &mut mags, &mut neg, &mut bits, &exact); // the GIL stays held
+        bits.counter()
+    } else if let Some(data) = rnd {
+        let data = zeroize::Zeroizing::new(data);
+        let mut at = 0usize;
+        let mut bits = facct::ByteBits::new(256, |buf: &mut [u8]| {
+            let n = buf.len().min(data.len() - at);
+            buf[..n].copy_from_slice(&data[at..at + n]);
+            at += n;
+            n
+        });
+        py.detach(|| facct_wide::sample(&obj.table, &mut mags, &mut neg, &mut bits, &exact));
+        if bits.failed {
+            return Err(PyValueError::new_err("not enough random bytes"));
+        }
+        bits.consumed() as u64
+    } else {
+        let drbg = CallDrbg::new(seed.as_deref())?;
+        let slots: Vec<Mutex<(&mut [u64], &mut [u8])>> =
+            mags.chunks_mut(W * CHUNK).zip(neg.chunks_mut(CHUNK)).map(Mutex::new).collect();
+        py.detach(|| {
+            parallel_for(slots.len(), threads, |c| {
+                let mut offset = 0u64;
+                let mut bits = facct::ByteBits::new(4096, |buf: &mut [u8]| {
+                    drbg.fill_at(c as u64, offset, buf);
+                    offset += buf.len() as u64;
+                    buf.len()
+                });
+                let mut g = slots[c].lock().unwrap();
+                let (m, n) = &mut *g;
+                facct_wide::sample(&obj.table, m, n, &mut bits, &exact);
+            })
+        });
+        0
+    };
+    exact_err(&err)?;
+    let list = PyList::empty(py);
+    for i in 0..count {
+        list.append(mag_pyint(py, &mags[W * i..W * (i + 1)], neg[i] == 1)?)?;
+    }
+    for w in mags.iter_mut() {
+        unsafe { std::ptr::write_volatile(w, 0) };
+    }
+    rlwe::wipe_bytes(&mut neg);
+    Ok((list.unbind(), used))
 }
 
 /// The noise of an encryption call: FACCT with the tables of (sigma2, sigma3), else rounded.
@@ -1609,6 +1743,7 @@ fn _rust_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<EncKeyObj>()?;
     m.add_class::<PrecomputedObj>()?;
     m.add_class::<FacctObj>()?;
+    m.add_class::<FacctWideObj>()?;
     for f in [
         wrap_pyfunction!(ctx_new, m)?, wrap_pyfunction!(ctx_info, m)?, wrap_pyfunction!(pack, m)?,
         wrap_pyfunction!(unpack, m)?, wrap_pyfunction!(ntt, m)?, wrap_pyfunction!(ntt_mont, m)?,
@@ -1621,7 +1756,7 @@ fn _rust_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(drbg_bytes, m)?, wrap_pyfunction!(share_inputs, m)?, wrap_pyfunction!(share_partial, m)?,
         wrap_pyfunction!(share_combine, m)?, wrap_pyfunction!(shamir_share, m)?,
         wrap_pyfunction!(gauss_bigint, m)?, wrap_pyfunction!(gauss_bigint_approx, m)?,
-        wrap_pyfunction!(facct_draw, m)?,
+        wrap_pyfunction!(facct_draw, m)?, wrap_pyfunction!(facct_draw_wide, m)?,
     ] {
         m.add_function(f)?;
     }
