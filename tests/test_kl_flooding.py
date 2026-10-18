@@ -128,7 +128,7 @@ def test_kl_width_grows_with_the_square_root_of_the_run():
 
 
 def test_gaussian_tail_bound():
-    import mpmath
+    mpmath = pytest.importorskip("mpmath")  # not a dependency of the library
 
     for cut in (3, 12, 16, 20, 25):
         exact = float(mpmath.log(mpmath.erfc(cut / mpmath.sqrt(2)), 2))
