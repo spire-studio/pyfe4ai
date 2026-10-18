@@ -192,18 +192,6 @@ def describe() -> dict:
     return info
 
 
-def _sampler() -> str:
-    """The Gaussian sampler in effect (``"rounded"`` or ``"facct"``)."""
-    from pyfe4ai.utils import sampling_utils
-
-    current = getattr(sampling_utils, "get_gaussian_sampler", None)
-    return "rounded" if current is None else current()
-
-
-def _sampler_is_rounded() -> bool:
-    return _sampler() == "rounded"
-
-
 @functools.lru_cache(maxsize=64)
 def _facct_table(sigma_q):
     """The extension's tables of
@@ -325,10 +313,10 @@ def gaussian_facct(sigma, count: int, rng):
     return [gp.mpz(v) for v in values]
 
 
-def noise_kwargs(*sigmas, sampler: str | None = None) -> dict:
-    """Keyword arguments of the native encryption calls for *sampler* (default:
-    the one in effect): the FACCT tables of the widths, or nothing (rounded)."""
-    if (sampler or _sampler()) != "facct":
+def noise_kwargs(*sigmas, sampler: str) -> dict:
+    """Keyword arguments of the native encryption calls for the scheme's
+    *sampler*: the FACCT tables of the widths, or nothing (rounded)."""
+    if sampler != "facct":
         return {}
     return {"facct": tuple(facct_table(s) for s in sigmas)}
 
@@ -478,12 +466,11 @@ def gaussian_bigint(sigma, count: int, rng, prec: int):
     return out
 
 
-def sampling_ok(*sigmas, sampler: str | None = None) -> bool:
-    """Whether Gaussians of these widths may be sampled natively with *sampler*
-    (default: the one in effect): rounded, or FACCT when the extension has it."""
+def sampling_ok(*sigmas, sampler: str) -> bool:
+    """Whether Gaussians of these widths may be sampled natively with the
+    scheme's *sampler*: rounded, or FACCT when the extension has it."""
     if not all(0 < float(s) <= MAX_NATIVE_SIGMA for s in sigmas):
         return False
-    sampler = sampler or _sampler()
     return sampler == "rounded" or (sampler == "facct" and hasattr(_ext, "FacctTable"))
 
 
