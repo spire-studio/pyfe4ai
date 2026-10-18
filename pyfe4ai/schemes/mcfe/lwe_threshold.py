@@ -23,7 +23,8 @@ Construction (notation of :mod:`pyfe4ai.schemes.mcfe.lwe`):
   its Lagrange coefficient for ``E`` and flooding noise
   ``e_k <- D_{Z, sigma_f}`` (truncated at 12 sigma_f), plus
   ``sum y_{i,j} c_{i,j} mod q0`` for a consistency check. ``e_k`` is
-  derived from a per-server secret key, ``l`` and ``lambda_k``, so
+  derived from a per-server secret key, ``l``, ``lambda_k`` and the key
+  share's ``pp_binding`` (the public parameters it is bound to), so
   requests for the same label and coefficient get the same answer.
 * Combine:   ``v = sum_{k in E} w_k = <sk_y, H(l)> + sum e_k mod q``;
   decode ``mu' = sum y c - round_q0(v)`` as in the MCFE.
@@ -367,7 +368,7 @@ class ThresholdMCFELWE(MCFELWE):
         # field: "shake256-wide", the hash of versions <= 0.3.0)
         if dk.get("label_hash", LEGACY_LABEL_HASH) != self.label_hash:
             raise FESchemeError("the key share was derived with another label hash than the public parameters")
-        check_pp_binding(self.pp, dk, _BINDING_FIELDS, _BINDING_DEFAULTS)
+        binding = check_pp_binding(self.pp, dk, _BINDING_FIELDS, _BINDING_DEFAULTS)
         fusion_weight = credentials.get("fusion_weight")
         label = credentials.get("label")
         if fusion_weight is None or label is None:
@@ -384,7 +385,10 @@ class ThresholdMCFELWE(MCFELWE):
         share_term = dot_mod([gp.mpz(v) for v in share["sk_y"]], self._hash_label(label), self.q)
         # the partial depends on the enrolled set only through the tag (lambda,
         # or the assigned pieces)
-        context = json.dumps([encoded, tag]).encode("utf-8")
+        # and with the digest of this server's public parameters (the key share's
+        # pp_binding, checked above): under other parameters a request gets
+        # another noise, never the same noise with another key term
+        context = json.dumps([encoded, tag, binding]).encode("utf-8")
         e_k = flooding_noise(
             int(self.pp["sigma_f"]),
             rng=XofRandom(bytes.fromhex(dk["noise_key"]) + context),

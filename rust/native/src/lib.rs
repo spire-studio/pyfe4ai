@@ -199,19 +199,53 @@ fn read_values<W: Word>(seq: &Bound<'_, PyAny>, n: Option<usize>, q: &Bound<'_, 
         Some(n) if n != len => Err(PyValueError::new_err(format!("expected {} values", n))),
         _ => Ok(()),
     };
-    if let Ok(list) = seq.cast::<PyList>() {
-        check(list.len())?;
-        return list.iter().map(|ob| one(&ob)).collect();
+    // the values may be secret (x + u, pads): on a malformed value the ones
+    // parsed so far are wiped (reserved up front, so no reallocation leaves copies)
+    let mut out: Vec<W> = Vec::new();
+    let res = (|| -> PyResult<()> {
+        if let Ok(list) = seq.cast::<PyList>() {
+            check(list.len())?;
+            out.reserve_exact(list.len());
+            for ob in list.iter() {
+                out.push(one(&ob)?);
+            }
+            return Ok(());
+        }
+        let items: Vec<Bound<'_, PyAny>> = seq.try_iter()?.collect::<PyResult<_>>()?;
+        check(items.len())?;
+        out.reserve_exact(items.len());
+        for ob in items.iter() {
+            out.push(one(ob)?);
+        }
+        Ok(())
+    })();
+    match res {
+        Ok(()) => Ok(out),
+        Err(e) => {
+            rlwe::wipe_words(&mut out);
+            Err(e)
+        }
     }
-    let items: Vec<Bound<'_, PyAny>> = seq.try_iter()?.collect::<PyResult<_>>()?;
-    check(items.len())?;
-    items.iter().map(one).collect()
 }
 
-/// Rows of values (each of n values, or any length).
+/// Rows of values (each of n values, or any length); on a malformed row the
+/// rows parsed so far are wiped (they may be secret: x + u, pads).
 fn read_rows<W: Word>(rows: &Bound<'_, PyAny>, n: Option<usize>, q: &Bound<'_, PyAny>, m: &Modulus<W>)
     -> PyResult<Vec<Vec<W>>> {
-    rows.try_iter()?.map(|row| read_values(&row?, n, q, m, false)).collect()
+    let mut out: Vec<Vec<W>> = Vec::new();
+    let res = (|| -> PyResult<()> {
+        for row in rows.try_iter()? {
+            out.push(read_values(&row?, n, q, m, false)?);
+        }
+        Ok(())
+    })();
+    match res {
+        Ok(()) => Ok(out),
+        Err(e) => {
+            wipe_word_rows(&mut out);
+            Err(e)
+        }
+    }
 }
 
 fn get_ring(ctx: &Bound<'_, RingCtx>) -> Arc<AnyRing> {
@@ -1143,7 +1177,7 @@ fn encrypt(py: Python<'_>, key: &Bound<'_, PyAny>, w_rows: &Bound<'_, PyAny>, si
         let (mut c0, mut c1) = (vec![Word::ZERO; eta * n], vec![Word::ZERO; n]);
         let res = (|| -> PyResult<()> {
             if facct.is_some() {
-                let given: Option<Vec<u8>> = if rnd.is_none() { None } else { Some(rnd.extract()?) };
+                let mut given: Option<Vec<u8>> = if rnd.is_none() { None } else { Some(rnd.extract()?) };
                 let drbg = CallDrbg::new(seed.as_deref())?;
                 let (mut pos, mut offset) = (0usize, 0u64);
                 let mut bits = facct::ByteBits::new(4096, |buf: &mut [u8]| match &given {
@@ -1164,7 +1198,12 @@ fn encrypt(py: Python<'_>, key: &Bound<'_, PyAny>, w_rows: &Bound<'_, PyAny>, si
                         py.detach(|| rlwe::encrypt_chunk_facct(r, k, &w, nz, &mut bits, &mut c0, &mut c1));
                     }
                 });
-                if bits.failed {
+                let failed = bits.failed;
+                drop(bits);
+                if let Some(b) = given.as_mut() {
+                    rlwe::wipe_bytes(b); // the caller's bytes (a test hook): the samples' source
+                }
+                if failed {
                     return Err(PyValueError::new_err("not enough random bytes"));
                 }
             } else {
@@ -1177,6 +1216,7 @@ fn encrypt(py: Python<'_>, key: &Bound<'_, PyAny>, w_rows: &Bound<'_, PyAny>, si
                     rnd.extract::<Vec<u8>>()?
                 };
                 if rb.len() < need {
+                    rlwe::wipe_bytes(&mut rb);
                     return Err(PyValueError::new_err("not enough random bytes"));
                 }
                 py.detach(|| rlwe::encrypt_chunk(r, k, &w, sigma2, sigma3, &rb, &mut c0, &mut c1));
@@ -1916,37 +1956,46 @@ fn shamir_share(py: Python<'_>, ctx: &Bound<'_, RingCtx>, values: &Bound<'_, PyA
     if t < 1 {
         return Err(PyValueError::new_err("the threshold must be at least 1"));
     }
-    let given: Option<Vec<u8>> = if rnd.is_none() { None } else { Some(rnd.extract()?) };
+    let mut given: Option<Vec<u8>> = if rnd.is_none() { None } else { Some(rnd.extract()?) };
     let drbg = CallDrbg::new(seed.as_deref())?;
-    with_ring!(&*ring, r => {
-        let m = &r.m;
-        let secrets = read_values(values, None, &q, m, false)?;
-        let shares = py.detach(|| match &given {
-            Some(b) => {
-                let mut pos = 0;
-                pyfe4ai_core::shamir::share(m, &secrets, t, &points, |out: &mut [u8]| {
-                    if pos + out.len() > b.len() {
-                        return false;
-                    }
-                    out.copy_from_slice(&b[pos..pos + out.len()]);
-                    pos += out.len();
-                    true
-                })
-            }
-            None => {
-                let mut rng = drbg.rng(0);
-                let res = pyfe4ai_core::shamir::share(m, &secrets, t, &points, |out: &mut [u8]| {
-                    rng.fill_bytes(out);
-                    true
-                });
-                wipe_rng(&mut rng);
-                res
-            }
-        });
-        let shares = shares.ok_or_else(|| PyValueError::new_err("not enough random bytes"))?;
-        let lists = shares.iter().map(|s| DecBuf::new(s).list(py)).collect::<PyResult<Vec<_>>>()?;
-        Ok(PyList::new(py, lists)?.unbind())
-    })
+    // the secrets (key coefficients), the shares and the caller's bytes are wiped after use
+    let out = (|| -> PyResult<Py<PyList>> {
+        with_ring!(&*ring, r => {
+            let m = &r.m;
+            let mut secrets = read_values(values, None, &q, m, false)?;
+            let shares = py.detach(|| match &given {
+                Some(b) => {
+                    let mut pos = 0;
+                    pyfe4ai_core::shamir::share(m, &secrets, t, &points, |out: &mut [u8]| {
+                        if pos + out.len() > b.len() {
+                            return false;
+                        }
+                        out.copy_from_slice(&b[pos..pos + out.len()]);
+                        pos += out.len();
+                        true
+                    })
+                }
+                None => {
+                    let mut rng = drbg.rng(0);
+                    let res = pyfe4ai_core::shamir::share(m, &secrets, t, &points, |out: &mut [u8]| {
+                        rng.fill_bytes(out);
+                        true
+                    });
+                    wipe_rng(&mut rng);
+                    res
+                }
+            });
+            rlwe::wipe_words(&mut secrets);
+            let mut shares = shares.ok_or_else(|| PyValueError::new_err("not enough random bytes"))?;
+            let lists = shares.iter().map(|s| DecBuf::new(s).list(py)).collect::<PyResult<Vec<_>>>();
+            wipe_word_rows(&mut shares);
+            Ok(PyList::new(py, lists?)?.unbind())
+        })
+    })();
+    if let Some(b) = given.as_mut() {
+        rlwe::wipe_bytes(b);
+    }
+    out
 }
 
 // --------------------------------------------------------------- dense LWE

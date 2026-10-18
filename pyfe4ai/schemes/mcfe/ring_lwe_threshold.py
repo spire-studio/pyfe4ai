@@ -30,7 +30,8 @@ Ciphertexts (and ndarray chunks) carry one HMAC tag per server over the
 (chunk) label and the ciphertext; servers only decrypt ciphertexts tagged
 for them under the label they serve, since ``w_k`` is linear in ``ct1``.
 The noise is seeded with a per-server key (fixed per weights and label),
-``lambda_k``, the label or chunk and the ``ct1`` values, so a request for
+``lambda_k``, the label or chunk, the ``ct1`` values and the key share's
+``pp_binding`` (the public parameters it is bound to), so a request for
 the same key part draws the same noise; a corrupted client varying its own
 ``ct1`` draws fresh noise each time. The flooding argument is statistical
 per answer (a statistical distance of about ``2^-stat_param`` per
@@ -717,7 +718,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         # the key share of the public parameters' label hash
         self._check_key_label_hash(dk)
         # ... and of their modulus and flooding (width, tail cut, accounting)
-        check_pp_binding(self.pp, dk, _BINDING_FIELDS, _BINDING_DEFAULTS)
+        binding = check_pp_binding(self.pp, dk, _BINDING_FIELDS, _BINDING_DEFAULTS)
         ring_n = self.pp["ring_n"]
         delta = q // gp.mpz(self.pp["p"])
         z_share = share["z"] if _z_share is None else _z_share
@@ -769,7 +770,10 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         # same key part always draws the same noise
         # the partial depends on the enrolled set only through the tag (lambda,
         # or the assigned pieces)
-        context = json.dumps([key_inputs, encoded, tag]).encode("utf-8")
+        # and with the digest of this server's public parameters (the key share's
+        # pp_binding, checked above): under other parameters a request gets
+        # another noise, never the same noise with another key term
+        context = json.dumps([key_inputs, encoded, tag, binding]).encode("utf-8")
         seed = bytes.fromhex(dk["noise_key"]) + context
         flood, budget = self._kl_flooding()
         if flood is None:

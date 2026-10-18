@@ -542,19 +542,26 @@ def pp_binding(pp: dict, fields: tuple, defaults: dict | None = None) -> str:
     return hashlib.sha256(_PP_BINDING_DOMAIN + payload.encode("utf-8")).hexdigest()
 
 
-def check_pp_binding(pp: dict, dk: dict, fields: tuple, defaults: dict | None = None) -> None:
+def check_pp_binding(pp: dict, dk: dict, fields: tuple, defaults: dict | None = None) -> str:
     """Raise unless key share *dk* was issued for public parameters with *pp*'s
-    values of *fields* (see :func:`pp_binding`).
+    values of *fields* (see :func:`pp_binding`); return *pp*'s digest.
+
+    The servers also seed their flooding noise with the returned digest -- that
+    of their own public parameters, equal to the key share's once checked -- so
+    that even if this check were bypassed, a request answered under other
+    public parameters would get another noise, not an exact difference.
 
     Raises:
         FEKeyError: For a key share of other public parameters, or one without
             ``pp_binding`` (issue new key shares).
     """
-    if not hmac.compare_digest(str(dk.get("pp_binding", "")), pp_binding(pp, fields, defaults)):
+    digest = pp_binding(pp, fields, defaults)
+    if not hmac.compare_digest(str(dk.get("pp_binding", "")), digest):
         raise FEKeyError(
             "the key share was issued for other public parameters (modulus, flooding or label hash): "
             "issue new key shares"
         )
+    return digest
 
 
 def check_served_sharing(pp: dict, dk: dict, constructions: dict) -> None:

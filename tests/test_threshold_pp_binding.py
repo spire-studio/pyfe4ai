@@ -118,3 +118,42 @@ def test_dense_key_share_records_and_binds_the_label_hash():
         with pytest.raises(REFUSED):
             dense.ThresholdMCFELWE({"id": "s0", "keys": {"pp": bad_pp, "dk": bad_dk}}).share_decrypt(
                 cts, cred, bad_dk, SIDS)
+
+
+@pytest.mark.parametrize("bypass, leaks", [
+    (lambda pp, d, f, df=None: pp_binding(pp, f, df), False),  # the server's own digest seeds the noise
+    (lambda pp, d, f, df=None: "constant", True),  # control: one seed for both answers
+])
+def test_the_flooding_noise_follows_the_public_parameters(monkeypatch, bypass, leaks):
+    """Defence in depth: the noise is seeded with the digest of the server's own
+    public parameters. Even with both checks bypassed (a key share relabelled
+    for another label hash), one request answered under two label hashes gets
+    two noises, so ``w_A - w_B`` is not ``lambda <share, H_A(l) - H_B(l)>``; with
+    one seed for both (the control) it is."""
+    import gmpy2 as gp
+
+    from pyfe4ai.schemes.mcfe.lwe import dot_mod
+    from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
+
+    monkeypatch.setattr(dense, "check_pp_binding", bypass)
+    kg = dense.ThresholdMCFELWEKeyGenerator({"sec_param": 64, "n": 2, "lst_nid": NIDS, "eta": 1, "bound_x": 4,
+                                             "bound_y": 4, "s": 3, "t": 3, "lst_sid": SIDS})
+    kg.setup()
+    pp_a = kg.get_public_parameters()
+    other = "shake256-wide" if pp_a["label_hash"] != "shake256-wide" else "shake128-rejection"
+    pp_b = dict(pp_a, label_hash=other)
+    fw = {n: [1] for n in NIDS}
+    dk = kg.get_decryption_keys("s0", credentials={"fusion_weight": fw})
+    cts = {n: dense.ThresholdMCFELWE({"id": n, "keys": {"pp": pp_a, "sk": kg.get_private_keys(n)}}).encrypt([1], "L")
+           for n in NIDS}
+    cred = {"fusion_weight": fw, "label": "L"}
+    srv_a = dense.ThresholdMCFELWE({"id": "s0", "keys": {"pp": pp_a, "dk": dk}})
+    w_a = gp.mpz(srv_a.share_decrypt(cts, cred, dk, SIDS)["w"])
+    dk_b = dict(dk, label_hash=other)  # the key share claims the other hash
+    srv_b = dense.ThresholdMCFELWE({"id": "s0", "keys": {"pp": pp_b, "dk": dk_b}})
+    w_b = gp.mpz(srv_b.share_decrypt({n: {"c": ct["c"]} for n, ct in cts.items()}, cred, dk_b, SIDS)["w"])
+    q = gp.mpz(pp_a["q"])
+    share = [gp.mpz(v) for v in dk["sk_y"]]
+    lam = lagrange_coefficient_at_zero(1, [1, 2, 3], q)
+    exact = lam * (dot_mod(share, srv_a._hash_label("L"), q) - dot_mod(share, srv_b._hash_label("L"), q)) % q
+    assert ((w_a - w_b) % q == exact) is leaks

@@ -588,6 +588,22 @@ def test_native_error_paths_of_the_wiping_functions(modulus):
         ext.enc_key(cap, a, [a], [a, a], q // 7)
     with pytest.raises(ValueError):
         ext.enc_key(cap, a, [a], [a], q)  # Delta = q = 0 mod q
+    # a malformed later row (read_rows wipes the rows parsed before it)
+    with pytest.raises(TypeError):
+        ext.enc_key(cap, a, [a, a], [a, [object()] * n], q // 7)
+    key = ext.enc_key(cap, a, [a, a], [a, a], q // 7)
+    with pytest.raises(TypeError):
+        ext.encrypt(key, [a, [object()] * n], 3.0, 4.0, None)
+    tables = native_backend.noise_kwargs(3.0, 4.0, sampler="facct")["facct"]
+    with pytest.raises(ValueError, match="not enough random bytes"):
+        ext.encrypt(key, [a, a], 3.0, 4.0, b"\0" * 16, facct=tables)
+    with pytest.raises(ValueError, match="not enough random bytes"):
+        ext.encrypt(key, [a, a], 3.0, 4.0, b"\0" * 16)
+    assert ext.encrypt(key, [a, a], 3.0, 4.0, None, facct=tables) is not None
+    if modulus == "prime":  # Shamir dealing (prime contexts only)
+        with pytest.raises(ValueError, match="not enough random bytes"):
+            ext.shamir_share(cap, list(range(8)), 3, [1, 2, 3], b"\0" * 9)
+        assert len(ext.shamir_share(cap, list(range(8)), 3, [1, 2, 3], None)) == 3
 
 
 @native_only

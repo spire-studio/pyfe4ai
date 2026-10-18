@@ -47,7 +47,8 @@ only decrypts ciphertexts whose tags for it verify. A corrupted client can
 still put any ciphertext in its own slot, which reveals that slot's key part
 ``S_i y_i`` and nothing about the other slots; mixing authentic ciphertexts of
 different rounds is the usual multi-input functionality. The noise is seeded
-with the server's key, ``lambda_k`` and the ``ct0`` values, so a request for
+with the server's key, ``lambda_k``, the ``ct0`` values and the key share's
+``pp_binding`` (the public parameters it is bound to), so a request for
 the same key part draws the same noise; a corrupted client varying its own
 ``ct0`` changes the key part and so draws fresh noise each time. The flooding
 argument is statistical per answer (a statistical distance of about
@@ -508,7 +509,7 @@ class ThresholdMIFELWE(MIFELWE):
         kl = self.pp.get("flooding_accounting", PER_SAMPLE) == KL
         if construction is not None and (construction == _CONSTRUCTION_KL) != kl:
             raise FESchemeError("the public parameters' threshold_construction is not that of their accounting")
-        check_pp_binding(self.pp, dk, _BINDING_FIELDS, _BINDING_DEFAULTS)
+        binding = check_pp_binding(self.pp, dk, _BINDING_FIELDS, _BINDING_DEFAULTS)
         validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
         check_fusion_weight(dk, credentials)
         q = gp.mpz(self.pp["q"])
@@ -542,7 +543,10 @@ class ThresholdMIFELWE(MIFELWE):
         key_inputs = ciphertexts_digest({nid: values[0] for nid, values in canonical.items()})
         # the partial depends on the enrolled set only through the tag (lambda,
         # or the assigned pieces)
-        context = json.dumps([key_inputs, tag]).encode("utf-8")
+        # and with the digest of this server's public parameters (the key share's
+        # pp_binding, checked above): under other parameters a request gets
+        # another noise, never the same noise with another key term
+        context = json.dumps([key_inputs, tag, binding]).encode("utf-8")
         rng = XofRandom(bytes.fromhex(dk["noise_key"]) + context)
         flood, budget = self._kl_flooding()
         if flood is None:

@@ -252,7 +252,7 @@ pub fn encrypt(py: Python<'_>, key: &Bound<'_, RnsKeyObj>, w_rows: &Bound<'_, Py
     let res = (|| -> PyResult<()> {
         if facct.is_some() {
             // as the prime path: getrandbits from the given bytes or stream 0 of the call's DRBG
-            let given: Option<Vec<u8>> = if rnd.is_none() { None } else { Some(rnd.extract()?) };
+            let mut given: Option<Vec<u8>> = if rnd.is_none() { None } else { Some(rnd.extract()?) };
             let drbg = CallDrbg::new(seed.as_deref())?;
             let (mut pos, mut offset) = (0usize, 0u64);
             let mut bits = facct::ByteBits::new(4096, |buf: &mut [u8]| match &given {
@@ -273,7 +273,12 @@ pub fn encrypt(py: Python<'_>, key: &Bound<'_, RnsKeyObj>, w_rows: &Bound<'_, Py
                     py.detach(|| rns::encrypt_chunk_facct(r, k, &w, nz, &mut bits, &mut c0, &mut c1));
                 }
             });
-            if bits.failed {
+            let failed = bits.failed;
+            drop(bits);
+            if let Some(b) = given.as_mut() {
+                rlwe::wipe_bytes(b); // the caller's bytes (a test hook): the samples' source
+            }
+            if failed {
                 return Err(PyValueError::new_err("not enough random bytes"));
             }
         } else {
@@ -286,6 +291,7 @@ pub fn encrypt(py: Python<'_>, key: &Bound<'_, RnsKeyObj>, w_rows: &Bound<'_, Py
                 rnd.extract::<Vec<u8>>()?
             };
             if rb.len() < need {
+                rlwe::wipe_bytes(&mut rb);
                 return Err(PyValueError::new_err("not enough random bytes"));
             }
             py.detach(|| rns::encrypt_chunk(r, k, &w, sigma2, sigma3, &rb, &mut c0, &mut c1));

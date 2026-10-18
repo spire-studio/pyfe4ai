@@ -57,7 +57,13 @@ pub fn share<W: Word, F: FnMut(&mut [u8]) -> bool>(
         unsafe { std::ptr::write_volatile(c, W::ZERO) };
     }
     crate::rlwe::wipe_bytes(&mut buf);
-    if ok { Some(out) } else { None }
+    if ok {
+        return Some(out);
+    }
+    for row in out.iter_mut() {
+        crate::rlwe::wipe_words(row); // the shares of the secrets dealt before the bytes ran out
+    }
+    None
 }
 
 #[cfg(test)]

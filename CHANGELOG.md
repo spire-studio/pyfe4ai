@@ -162,8 +162,12 @@ compatibility).
   `w_A - w_B = lambda <share, H_A(l) - H_B(l)>` exactly (integration
   review, L1 and L3). Dense tMCFE-LWE key shares also record `label_hash`;
   tMIFE-LWE checks its `threshold_construction` against
-  `flooding_accounting`. Key shares issued before this change are refused:
-  issue new ones.
+  `flooding_accounting`. The derandomised flooding noise is seeded with the
+  digest as well (the server's own, equal to the share's after the check),
+  so answers under two parameter sets get independent noise even if the
+  check were bypassed; partial decryptions differ from those of earlier
+  builds for the same request. Key shares issued before this change are
+  refused: issue new ones.
 - **Exact Gaussians by default for the lattice MIFE / MCFE schemes.** The
   October 2026 crypto review found the double-precision rounded sampler
   (shared Box-Muller radii, ties to even, the 8.57 sigma cut) about
@@ -655,7 +659,9 @@ compatibility).
   parameters raise `FEValidationError` instead of `KeyError`; a
   `PartialDecryptionBudget` cannot be copied or pickled.
 - The native code wipes its copies of secret rows (pads, `x + u`, key
-  pieces, label materials holding `u'`) on every path, errors included, and
+  pieces, label materials holding `u'`, rows parsed before a malformed one,
+  the partial shares of a failed Shamir dealing, caller-supplied random
+  bytes of the FACCT encryption) on every path, errors included, and
   the encryption keys wipe their pads on drop; the native encryption key
   cached in a client key follows the label-hash mode.
 - `EncryptedGradient.to_dict()` failed with `KeyError: ()` on the packed
