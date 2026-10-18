@@ -19,13 +19,13 @@ same outputs, the same tests); its numbers stay here as measured.
 | family | native (Rust) | still Python |
 | --- | --- | --- |
 | MCFE Ring-LWE (`ring_lwe`, `ring_lwe_decentralized`) | ndarray encryption (rounded or FACCT noise), offline / online phases, key derivation, aggregation, single-vector label pads (every `label_hash` mode); dMCFE key shares and their combination; the same for the opt-in RNS modulus | setup |
-| MCFE Ring-LWE threshold | any `q` below 2^253 (the flooded `q` of `standard` has 212 bits: 256-bit words): ndarray encryption, key derivation, Shamir shares of the key, partial decryptions (parsing, digests, NTT-domain products), combination | ciphertext tags (JSON + HMAC), setup; the flooding noise is native since the wide-Gaussian sampler below; the replicated key sharing (default for `t < s`): its dealing and the sums of a server's pieces |
+| MCFE Ring-LWE threshold | any `q` below 2^253 (the flooded `q` of `standard` has 212 bits: 256-bit words): ndarray encryption, key derivation, Shamir shares of the key, the replicated key sharing (default for `t < s`, and `replicated-seeded`): dealing and the sums of a server's pieces, partial decryptions (parsing, digests, NTT-domain products), combination | ciphertext tags (JSON + HMAC), setup; the flooding noise is native since the wide-Gaussian sampler below |
 | MIFE Ring-LWE | encryption, key derivation, decryption (no ndarray helpers) | setup |
 | SIFE Ring-LWE | encryption, `<ct0, y>`, NTTs and products (also of setup) | decoding, setup sampling |
 | SIFE FullySec Ring-LWE | NTTs and products (`ring_lwe_utils` dispatch), the wide Gaussian noise (`discrete_gaussian_bigint`) | slot checks, string conversions |
 | MCFE dense LWE (`lwe`, `fullysec_lwe`, `lwe_decentralized`) | label hashing and dot products of ndarray encryption / decryption | rounding, decoding, key derivation, single vectors; dMCFE DCR key shares |
-| MCFE LWE threshold | ndarray encryption (as `lwe`) | partial decryptions (label hashed again in Python per element), flooding, combination, Shamir shares |
-| ABDP15 SIFE / MIFE LWE, MIFE LWE threshold, ALS16 | the wide Gaussians of ALS16 and the threshold flooding (`discrete_gaussian_bigint`); ABDP15 encryption: numpy matrix products | decryption, keys, big-integer matrix products of ALS16, Shamir shares |
+| MCFE LWE threshold | ndarray encryption (as `lwe`); the replicated key sharing (dealing, piece sums; any odd `q` below 2^253, no NTT ring) | partial decryptions (label hashed again in Python per element), flooding, combination, Shamir shares |
+| ABDP15 SIFE / MIFE LWE, MIFE LWE threshold, ALS16 | the wide Gaussians of ALS16 and the threshold flooding (`discrete_gaussian_bigint`); ABDP15 encryption: numpy matrix products; the replicated key sharing of the MIFE LWE threshold (dealing, piece sums) | decryption, keys, big-integer matrix products of ALS16, Shamir shares |
 | DDH over ristretto255 | MCFE ndarray encryption and decryption with dlog in one call each; group operations | MIFE / SIFE call per group operation |
 | DDH over Z_p^*, Damgård, Paillier | -- (gmpy2) | `powmod`; but the label masks / key terms (MCFE) and the randomness powers (SIFE / MIFE Paillier, MIFE DDH) can be computed offline (*Phase 2*), and the dlog tables are keyed by value |
 | Pairing schemes, quadratic FE | BLS12-381 group operations, `multi_pair`, products of powers and powers of one base (`multiexp`, `pow_many`), batch deserialisation, G_T dlog, hash to G1 / G2 | matrix algebra mod p, Shamir shares of tMCFE keys; the G_T dlog table is built once per base and bound |
@@ -88,7 +88,8 @@ What moved:
   pieces (+38 ms here; the sums are cached per key and enrolled set, and a
   benchmark round, like an FL round, brings a new label and key). With
   uniform flooding a replicated partial is still faster than the Shamir
-  partial of `f82f7c9`.
+  partial of `f82f7c9`. Both run natively since `perf/native-replicated`
+  (next section): key shares 272 -> 43 ms, partial 101 -> 73 ms.
 * **RNS modulus** (opt-in): the aggregator -9% and the online aggregator
   -16% against the prime; the client gains nothing under FACCT (the noise,
   not the NTT, dominates it), unlike the -9% measured with the rounded
@@ -106,6 +107,81 @@ What moved:
   `mife/lwe` 2 slots `eta = 1, X = Y = 50`: 768 -> 1152, 2.2 -> 5.5 s; 100
   slots: 1024 -> 1408, 31 -> 47 s. Encryption costs about twice as much
   (`m` grows with `lwe_n`; see the ABDP15 rows of the README).
+
+## Native replicated sharing (branch `perf/native-replicated`, 2026-10-18)
+
+The replicated key sharings of the three LWE threshold layers
+(`"replicated"`, the default for `t < s`, and `"replicated-seeded"`) are
+dealt and added up in the extension (`rust/core/src/replicated.rs`,
+`zq_replicated_deal` and `zq_sum`): any odd `q` below 2^253, with no NTT
+ring, so tMIFE-LWE and tMCFE-LWE are covered as well. The pieces, their
+order, the sums and the partial decryptions are the Python code's for the
+same random bytes (`tests/test_replicated_native.py`); key-share formats,
+construction ids, the noise derivation and the `pp_binding` digest are
+unchanged. `keccak::hash_to_zq` now wipes its SHAKE stream in 64-bit words.
+
+Host (M2 Max, Python 3.13), native backend, one thread, interleaved with
+`integrate/perf-2026-10` 9a43879 per configuration (load 3.5-8 for the
+Ring-LWE and dense-LWE rows, up to 22 for tMIFE). Raw numbers:
+`results/perf_native_replicated_2026-10-18.json`.
+
+FL path, `bench_fl_compare.py --families ring_lwe_threshold` (`standard`,
+3 clients, 10^4 elements, `ring_n` 8192, uniform flooding, medians of 3
+rounds):
+
+| tMCFE Ring-LWE, replicated | key shares ms | partial ms per server | aggregator ms |
+| --- | ---: | ---: | ---: |
+| `s = 3, t = 2`: 9a43879 / native | 271.8 / **43.4** | 101.5 / **72.6** | 479.3 / **193.8** |
+| `s = 5, t = 3` | 1190.8 / **110.0** | 127.5 / **74.3** | 1622.6 / **345.0** |
+| `s = 10, t = 5` | 26924 / **2172** | 444.8 / **127.5** | 30987 / **3130** |
+
+At `s = 3, t = 2` the key shares now cost what Shamir's did (42 ms on
+`f82f7c9`), and a partial decryption is 15 ms above the Shamir partial at
+`t = s` (58 ms): the native sum of the server's pieces, which are parsed
+from decimal strings.
+
+Per operation, `bench_replicated_sharing.py`: server 1 of `E = {1..t}`
+(it adds all `C(s-1, t-1)` of its pieces); dealing = all key shares of one
+key; cold = a new server object, as in an FL round with a new key; medians
+of 5 runs (3 at `s = 10`), 9a43879 / native, ms:
+
+| layer, `(s, t)` | dealing | sum of pieces | partial, cold | partial, cached |
+| --- | ---: | ---: | ---: | ---: |
+| tMCFE Ring-LWE (`standard`, 212-214-bit q, 2 chunk keys), (3, 2) | 275.7 / **42.0** | 38.6 / **9.5** | 70.7 / **41.1** | 31.4 / 31.9 |
+| (5, 3) | 1212 / **108** | 92.0 / **27.1** | 123.5 / **61.2** | 31.8 / 45.8 |
+| (10, 5) | 26257 / **2117** | 1741 / **297** | 1777 / **330** | 32.7 / 34.3 |
+| ... `replicated-seeded`, (3, 2) | 45.5 / 40.0 | 15.5 / 13.7 | 48.4 / 46.2 | 31.9 / 32.2 |
+| (5, 3) | 168.0 / 133.8 | 57.9 / 49.8 | 102.4 / 85.7 | 45.5 / 47.0 |
+| (10, 5) | 2238 / 1706 | 899 / 683 | 923 / 714 | 34.1 / 32.9 |
+| tMCFE-LWE (`standard`, 187-bit q, `sk_y` of 7724), (3, 2) | 40.1 / **8.2** | 8.7 / **2.2** | 13.1 / **6.9** | 4.6 / 4.6 |
+| (5, 3) | 161.3 / **18.4** | 20.8 / **4.1** | 25.4 / **8.6** | 4.6 / 4.6 |
+| (10, 5) | 3634 / **321** | 383.1 / **64.7** | 390.9 / **68.3** | 4.7 / 4.8 |
+| ... `replicated-seeded`, (10, 5) | 624.5 / **246.3** | 374.5 / **146.3** | 380.2 / **150.9** | 4.7 / 4.6 |
+| tMIFE-LWE (`toy`, `lwe_n` 1024, 147-149-bit q), (3, 2) | 20.6 / **4.5** | 3.4 / 2.2 | 8.5 / 7.8 | 3.2 / 7.0 |
+| (5, 3) | 83.4 / **6.2** | 8.2 / **1.6** | 11.3 / 10.4 | 3.1 / 5.9 |
+| (10, 5) | 1498 / **132** | 146.5 / **22.0** | 150.5 / **25.5** | 3.1 / 3.1 |
+| ... `replicated-seeded`, (10, 5) | 250.8 / **103.6** | 150.7 / **56.6** | 153.3 / **59.3** | 3.1 / 3.2 |
+
+The 10^4-element ndarray partial of tMCFE Ring-LWE with a cold cache:
+105.5 -> 71.0 ms at (3, 2), 175 -> 128 ms at (5, 3), 2234 -> 432 ms at
+(10, 5).
+
+Notes:
+* The plain replicated sharing gains 5-13x in dealing and 3-7x in the
+  sums (1.5x for the smallest tMIFE key); what is left of a sum is reading
+  the pieces' decimal strings and writing the result's (the key-share
+  format), not arithmetic.
+* `replicated-seeded` gains less: it was already summed natively for the
+  ring dimension (`lincomb`), and its cost is the SHAKE-256 expansion of
+  the seeds (now native for the dense-LWE layers too, and its stream wiped
+  in 64-bit words).
+* The "cached" column is the same on both (the cache returns the sum); the
+  few cells where it differs (45.8 ms at Ring-LWE (5, 3), 7.0 / 5.9 ms for
+  tMIFE) are load spikes of a shared machine, as is part of the cold
+  partial of those rows. A first run on 7fc82d4 under similar load gave
+  110 / 18 / 50 ms (dealing / sum / cold partial) for Ring-LWE (5, 3).
+* tMIFE-LWE is refused under `standard`, hence `toy` with `lwe_n` 1024
+  (3 slots of 1024 key coordinates).
 
 ## Phase 2 (branch `perf/phase2`)
 

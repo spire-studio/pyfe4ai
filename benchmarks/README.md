@@ -37,6 +37,11 @@ scheme families in the repository.
   format and offline phase as options; appends JSON records for before /
   after comparisons. Results and the comparison with HE are in
   [`PERFORMANCE.md`](PERFORMANCE.md).
+- `bench_replicated_sharing.py`: the replicated key sharing of the LWE
+  threshold layers (`replicated`, `replicated-seeded`): dealing, a server's
+  piece sums and its partial decryption with a cold cache, one JSON line per
+  configuration (see [`PERFORMANCE.md`](PERFORMANCE.md), *Native replicated
+  sharing*).
 - `bench_offline_potential.py`: per-element split of the DDH and DCR MCFE
   into label-dependent offline work and the online rest.
 - `fl_path_coverage.py`: not a timing benchmark. Runs the ML-adapter FL path

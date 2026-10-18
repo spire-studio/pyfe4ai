@@ -436,6 +436,27 @@ compatibility).
 
 ### Performance
 
+- **Replicated key sharing natively** (`mife/lwe_threshold`,
+  `mcfe/ring_lwe_threshold`, `mcfe/lwe_threshold`; `"replicated"`, the
+  default for `t < s`, and `"replicated-seeded"`): the extension deals the
+  pieces and adds up a server's pieces for any odd `q` below 2^253, with no
+  NTT ring (`zq_replicated_deal`, `zq_sum`).
+  * **Same outputs.** Pieces, their order, sums and partial decryptions are
+    those of the Python code for the same random bytes: the draws are
+    `SystemRandom.randrange` on the call's DRBG.
+  * **Unchanged.** Key-share formats and construction ids.
+  * **Fallback.** Values other than ints and decimal strings fall back to
+    the Python code.
+  * **Measured** (tMCFE Ring-LWE, `standard`, 10^4 elements):
+
+    | | key shares | partial per server (new key) |
+    | --- | --- | --- |
+    | `s = 3, t = 2` | 272 -> 43 ms | 101 -> 73 ms |
+    | `s = 10, t = 5` | 26.9 -> 2.2 s | 445 -> 128 ms |
+  * **Dense-LWE layers.** Dealing is 5-13x faster, the sums 3-7x
+    (`benchmarks/PERFORMANCE.md`).
+  * **Wipe.** `keccak::hash_to_zq` wipes its stream in 64-bit words.
+
 - **The exact FACCT sampler natively for any width below 2^448**:
   `discrete_gaussian_facct` runs in Rust when `rng` is an `XofRandom` or
   `None`, with the reference's `getrandbits` calls and decisions (the known
