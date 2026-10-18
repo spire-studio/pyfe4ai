@@ -988,6 +988,11 @@ def aggregate_gradients(
 # ---------------------------------------------------------------------------
 
 
+#: SIFE schemes whose ``encrypt`` takes an ``eta x k`` matrix (``k`` vectors
+#: in the ring's coefficients): a feature vector is one column of it.
+_MATRIX_PLAINTEXT_SIFE = {("sife", "ring_lwe")}
+
+
 def encrypt_features(
     features: np.ndarray | Any,
     wrapper: FESchemeWrapper,
@@ -1007,7 +1012,10 @@ def encrypt_features(
     quantized = qcfg.quantize_array(arr).tolist()
 
     encryptor = wrapper._get_encryptor(nid)
-    ct = encryptor.encrypt(quantized)
+    if (wrapper.scheme_type, wrapper.variant) in _MATRIX_PLAINTEXT_SIFE:
+        ct = encryptor.encrypt([[v] for v in quantized])  # one column: the feature vector
+    else:
+        ct = encryptor.encrypt(quantized)
 
     return EncryptedFeatures(
         ciphertext=ct,
@@ -1042,6 +1050,8 @@ def compute_linear(
 
     decryptor = wrapper._get_decryptor(sid)
     raw_result = decryptor.decrypt(encrypted.ciphertext, dk, q_weights)
+    if isinstance(raw_result, list):  # a matrix ciphertext of one column: its one inner product
+        raw_result = raw_result[0] if len(raw_result) == 1 else None
     if raw_result is None:
         raise FESchemeError(
             "the inner product does not decrypt (result outside the decryption bound, "

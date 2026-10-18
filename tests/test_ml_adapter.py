@@ -121,6 +121,20 @@ class TestEncryptedInference:
         assert restored.precision == enc.precision
 
 
+class TestEncryptedInferenceRingLWE:
+    """encrypt_features / compute_linear on SIFE Ring-LWE, whose encrypt takes a
+    matrix of eta rows: the feature vector is its one column."""
+
+    def test_inner_product(self):
+        wrapper = FESchemeWrapper(
+            "sife", "ring_lwe", {"sec_param": 64, "eta": 3, "ring_n": 32, "bound_x": 1000, "bound_y": 1000},
+            precision=2, qmode="decimal",
+        )
+        enc = encrypt_features(np.array([1.0, -2.0, 3.0]), wrapper)
+        assert enc.dim == 3 and enc.ciphertext["k"] == 1
+        assert abs(compute_linear(enc, wrapper, np.array([4.0, 5.0, -6.0])) - (4.0 - 10.0 - 18.0)) < 0.1
+
+
 # ── FL Aggregation (SIFE eta=1, single client) ────────────────────
 
 
