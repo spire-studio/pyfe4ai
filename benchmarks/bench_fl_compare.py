@@ -37,6 +37,7 @@ runs. Usage::
     python benchmarks/bench_fl_compare.py --families ring_lwe --backend native --threads 4
     python benchmarks/bench_fl_compare.py --families ring_lwe lwe --label-hash shake128-rejection
     python benchmarks/bench_fl_compare.py --families ring_lwe_threshold --flooding uniform
+    python benchmarks/bench_fl_compare.py --families ring_lwe --ring-modulus rns  # q = q1 q2 (opt-in)
 """
 
 from __future__ import annotations
@@ -168,6 +169,8 @@ def _scheme_params(pp: dict) -> dict:
                 )
             except (TypeError, ValueError):
                 pass
+    if "q_factors" in pp:  # an RNS modulus
+        out["q_factor_bits"] = [int(f).bit_length() for f in pp["q_factors"]]
     return out
 
 
@@ -433,6 +436,8 @@ def main() -> None:
     parser.add_argument("--label-hash", default=None,
                         help="label_hash of the MCFE Ring-LWE / dense-LWE families (default: the scheme's)")
     parser.add_argument("--flooding", default=None, help="flooding of ring_lwe_threshold (default: the scheme's)")
+    parser.add_argument("--ring-modulus", default="prime", choices=["prime", "rns"],
+                        help="ring_lwe / ring_lwe_decentralized: q an NTT prime (default) or a product of two (opt-in)")
     parser.add_argument("--workdir", default=None, help="directory holding ./config (default: temporary)")
     parser.add_argument("--json", default=None, help="append the results to this JSON file")
     parser.add_argument("--tag", default="", help="free-form label stored with every row")
@@ -461,6 +466,8 @@ def main() -> None:
                 extra["label_hash"] = args.label_hash
             if args.flooding and family == "ring_lwe_threshold":
                 extra["flooding"] = args.flooding
+            if args.ring_modulus != "prime" and family in ("ring_lwe", "ring_lwe_decentralized"):
+                extra["ring_modulus"] = args.ring_modulus  # rows and configs of the default stay as before
             if family.endswith("_threshold"):
                 if args.flooding_accounting is not None:
                     extra["flooding_accounting"] = args.flooding_accounting
