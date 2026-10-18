@@ -66,7 +66,7 @@ from pyfe4ai.utils.ring_lwe_utils import RingNTT
 from pyfe4ai.utils.ring_lwe_utils import transpose
 from pyfe4ai.utils import native_backend
 from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
+from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix, scheme_sampler
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.sampling_utils import rand_uniform_vector
 from pyfe4ai.utils.validation import int_vector
@@ -100,6 +100,7 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         if not self.n:
             raise FEKeyError("need to provide number of clients")
         self.ring_n = resolve_ring_n(config.get("ring_n"), self._params_for)
+        self.gaussian_sampler = scheme_sampler(config)
         self._load_parameters()
         if self.security_profile == STANDARD:
             check_ring_lwe(self.ring_n, self.q, self._params_for(self.ring_n)[1])
@@ -186,13 +187,14 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             )
 
     def setup(self) -> None:
+        sampler = self.gaussian_sampler
         sk = {
-            nid: discrete_gaussian_matrix(self.eta, self.ring_n, self.sigma1)
+            nid: discrete_gaussian_matrix(self.eta, self.ring_n, self.sigma1, sampler=sampler)
             for nid in self.lst_nid
         }
         pk = {}
         for nid in self.lst_nid:
-            noise = discrete_gaussian_matrix(self.eta, self.ring_n, self.sigma1)
+            noise = discrete_gaussian_matrix(self.eta, self.ring_n, self.sigma1, sampler=sampler)
             pk_nid = []
             for i in range(self.eta):
                 pk_i = poly_mul(self.A, sk[nid][i], self.q)
@@ -220,6 +222,7 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             "sigma2": self.sigma2,
             "sigma3": self.sigma3,
             "sec_param": self.sec_param,
+            "gaussian_sampler": self.gaussian_sampler,
         }
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
@@ -320,11 +323,14 @@ class MIFERingLWE(IPFEAbsCrypto):
                 ``"binary"`` (``ct``: bytes, see
                 :func:`~pyfe4ai.utils.ring_lwe_utils.encode_binary_ciphertext`;
                 about a third of the size, and faster to produce and read).
-                Decryption reads both formats.
+                Decryption reads both formats. ``gaussian_sampler``: that of
+                the encryption noise (default: that of ``pp``, else
+                ``"facct"``; see :func:`~pyfe4ai.utils.sampling_utils.scheme_sampler`).
         """
         super().__init__(config, **kwargs)
         self.pp = self.keys["pp"]
         self.pp["A"]  # a public parameter set without a raises here, as before
+        self.gaussian_sampler = scheme_sampler(config, self.pp)
         self.ct_format = config.get("ct_format", "json")
         if self.ct_format not in CT_FORMATS or (self.ct_format == "binary" and not self._binary_ciphertexts):
             raise FEValidationError("unsupported ciphertext format {!r}".format(self.ct_format))
@@ -398,7 +404,8 @@ class MIFERingLWE(IPFEAbsCrypto):
         ``None`` when encryption runs in Python (see :meth:`_native`; also for
         widths or a Gaussian sampler the native code does not reproduce)."""
         ctx = self._native()
-        if ctx is None or not native_backend.sampling_ok(self.pp["sigma2"], self.pp["sigma3"]):
+        if ctx is None or not native_backend.sampling_ok(self.pp["sigma2"], self.pp["sigma3"],
+                                                         sampler=self.gaussian_sampler):
             return None
         key = self._encryption_key()
         cached = key.get("native")
@@ -443,7 +450,7 @@ class MIFERingLWE(IPFEAbsCrypto):
                 nkey, w_rows, float(self.pp["sigma2"]), float(self.pp["sigma3"]),
                 native_backend.random_input(native_backend.gauss_bytes(ring_n) * (2 + len(w_rows))), binary,
                 **native_backend.seed_kwargs(),
-                **native_backend.noise_kwargs(self.pp["sigma2"], self.pp["sigma3"]),
+                **native_backend.noise_kwargs(self.pp["sigma2"], self.pp["sigma3"], sampler=self.gaussian_sampler),
             )
             return {"ct": out, "k": k} if binary else {"ct0": out[0], "ct1": out[1], "k": k}
         ct0, ct1 = self._encrypt_rows_python(w_rows)
@@ -466,8 +473,9 @@ class MIFERingLWE(IPFEAbsCrypto):
         delta = q // gp.mpz(self.pp["p"])
         key = self._encryption_key()
         ring = key["ring"]
-        r = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"])[0]
-        noise = discrete_gaussian_matrix(self.pp["eta"], ring_n, self.pp["sigma3"])
+        sampler = self.gaussian_sampler
+        r = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"], sampler=sampler)[0]
+        noise = discrete_gaussian_matrix(self.pp["eta"], ring_n, self.pp["sigma3"], sampler=sampler)
         r_hat = None if ring is None else ring.forward(r)
 
         def times_r(poly, poly_hat):
@@ -480,7 +488,7 @@ class MIFERingLWE(IPFEAbsCrypto):
         for i, w_row in enumerate(w_rows):
             prod = times_r(key["pk"][i], pk_hat[i])
             ct0.append([(c + e + delta * w) % q for c, e, w in zip(prod, noise[i], w_row)])
-        e = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"])[0]
+        e = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"], sampler=sampler)[0]
         return ct0, poly_add(times_r(self.A, key["a_hat"]), e, q)
 
     def encrypt(self, matrix_pt: list[list[int]]) -> dict:

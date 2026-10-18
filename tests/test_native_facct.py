@@ -126,7 +126,7 @@ def same_bytes_facct(monkeypatch):
                 py = fn()
             used = []
             original = native_backend.noise_kwargs
-            monkeypatch.setattr(native_backend, "noise_kwargs", lambda *s: used.append(original(*s)) or used[-1])
+            monkeypatch.setattr(native_backend, "noise_kwargs", lambda *s, **kw: used.append(original(*s, **kw)) or used[-1])
             with native_backend.backend("native"):
                 monkeypatch.setattr(native_backend, "_random_override", lambda n: data)
                 nat = fn()

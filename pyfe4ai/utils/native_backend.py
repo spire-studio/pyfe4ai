@@ -325,10 +325,10 @@ def gaussian_facct(sigma, count: int, rng):
     return [gp.mpz(v) for v in values]
 
 
-def noise_kwargs(*sigmas) -> dict:
-    """Keyword arguments of the native encryption calls for the sampler in
-    effect: the FACCT tables of the widths, or nothing (rounded)."""
-    if _sampler() != "facct":
+def noise_kwargs(*sigmas, sampler: str | None = None) -> dict:
+    """Keyword arguments of the native encryption calls for *sampler* (default:
+    the one in effect): the FACCT tables of the widths, or nothing (rounded)."""
+    if (sampler or _sampler()) != "facct":
         return {}
     return {"facct": tuple(facct_table(s) for s in sigmas)}
 
@@ -478,12 +478,13 @@ def gaussian_bigint(sigma, count: int, rng, prec: int):
     return out
 
 
-def sampling_ok(*sigmas) -> bool:
-    """Whether Gaussians of these widths may be sampled natively now: with the
-    rounded sampler, or with FACCT when the extension has it."""
+def sampling_ok(*sigmas, sampler: str | None = None) -> bool:
+    """Whether Gaussians of these widths may be sampled natively with *sampler*
+    (default: the one in effect): rounded, or FACCT when the extension has it."""
     if not all(0 < float(s) <= MAX_NATIVE_SIGMA for s in sigmas):
         return False
-    return _sampler_is_rounded() or (_sampler() == "facct" and hasattr(_ext, "FacctTable"))
+    sampler = sampler or _sampler()
+    return sampler == "rounded" or (sampler == "facct" and hasattr(_ext, "FacctTable"))
 
 
 class RingContext:

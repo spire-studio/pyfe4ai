@@ -51,7 +51,7 @@ from pyfe4ai.utils.ring_lwe_utils import (
     transpose,
 )
 from pyfe4ai.utils import native_backend
-from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
+from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix, scheme_sampler
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.validation import int_vector
 from pyfe4ai.utils.ring_lwe_utils import seeded_polynomial
@@ -85,9 +85,13 @@ class SIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                 ``bound_y`` and ``ring_n`` (default
                 :data:`~pyfe4ai.utils.ring_lwe_utils.DEFAULT_RING_N`;
                 ``"auto"`` for the smallest dimension meeting the 128-bit
-                table, the ``standard`` profile's choice).
+                table, the ``standard`` profile's choice) and
+                ``gaussian_sampler`` (``"facct"``, the default, or
+                ``"rounded"``; see
+                :func:`~pyfe4ai.utils.sampling_utils.scheme_sampler`).
         """
         super().__init__(config, **kwargs)
+        self.gaussian_sampler = scheme_sampler(config)
         self.eta = config.get("eta", CryptoCONST.SIFE_DEFAULT_ETA)
         self.bound_x = gp.mpz(config.get("bound_x", 4))
         self.bound_y = gp.mpz(config.get("bound_y", 4))
@@ -157,8 +161,8 @@ class SIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             )
 
     def setup(self) -> None:
-        sk = discrete_gaussian_matrix(self.eta, self.ring_n, self.sigma1)
-        noise = discrete_gaussian_matrix(self.eta, self.ring_n, self.sigma1)
+        sk = discrete_gaussian_matrix(self.eta, self.ring_n, self.sigma1, sampler=self.gaussian_sampler)
+        noise = discrete_gaussian_matrix(self.eta, self.ring_n, self.sigma1, sampler=self.gaussian_sampler)
         pk = []
         for i in range(self.eta):
             pk_i = _poly_mul(self.A, sk[i], self.q)
@@ -180,6 +184,7 @@ class SIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             "sigma2": self.sigma2,
             "sigma3": self.sigma3,
             "sec_param": self.sec_param,
+            "gaussian_sampler": self.gaussian_sampler,
         }
 
     def get_private_keys(self, nid: str = "nid_default", **kwargs) -> dict | None:
@@ -216,10 +221,13 @@ class SIFERingLWE(IPFEAbsCrypto):
 
         Args:
             config: Must contain ``keys`` with ``pp`` (public parameters) and
-                optionally ``sk`` (encryption keys).
+                optionally ``sk`` (encryption keys); ``gaussian_sampler``: that
+                of the encryption noise (default: that of ``pp``, else
+                ``"facct"``).
         """
         super().__init__(config, **kwargs)
         self.pp = self.keys["pp"]
+        self.gaussian_sampler = scheme_sampler(config, self.pp)
         self.A = [gp.mpz(v) for v in self.pp["A"]]
         if self._has_private_keys():
             self.sk = self.keys["sk"]
@@ -241,7 +249,8 @@ class SIFERingLWE(IPFEAbsCrypto):
         ``None`` when encryption runs in Python (no native context, or widths
         or a sampler the native code does not reproduce)."""
         ctx = native_backend.ring_context(self.pp["q"], self.pp["ring_n"])
-        if ctx is None or not native_backend.sampling_ok(self.pp["sigma2"], self.pp["sigma3"]):
+        if ctx is None or not native_backend.sampling_ok(self.pp["sigma2"], self.pp["sigma3"],
+                                                         sampler=self.gaussian_sampler):
             return None
         src = (id(self.sk["pk"]), id(self.A))
         cached = self.__dict__.get("_nkey")
@@ -280,14 +289,14 @@ class SIFERingLWE(IPFEAbsCrypto):
                 float(self.pp["sigma2"]), float(self.pp["sigma3"]),
                 native_backend.random_input(native_backend.gauss_bytes(ring_n) * (2 + self.pp["eta"])), False,
                 **native_backend.seed_kwargs(),
-                **native_backend.noise_kwargs(self.pp["sigma2"], self.pp["sigma3"]),
+                **native_backend.noise_kwargs(self.pp["sigma2"], self.pp["sigma3"], sampler=self.gaussian_sampler),
             )
             return {"ct0": ct0, "ct1": ct1, "k": k}
         pk, a_hat, pk_hat = self._encryption_key()
         ring = RingNTT.get(q, ring_n) if a_hat is not None else None
 
-        r = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"])[0]
-        noise = discrete_gaussian_matrix(self.pp["eta"], ring_n, self.pp["sigma3"])
+        r = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"], sampler=self.gaussian_sampler)[0]
+        noise = discrete_gaussian_matrix(self.pp["eta"], ring_n, self.pp["sigma3"], sampler=self.gaussian_sampler)
         # r is transformed once; NTT(pk_i) and NTT(a) are cached per key (the
         # same products as _poly_mul with the same samples)
         r_hat = None if ring is None else ring.forward(r)
@@ -299,7 +308,7 @@ class SIFERingLWE(IPFEAbsCrypto):
         ct0 = [_poly_add(a, b, q) for a, b in zip(ct0, centered)]
 
         ct1 = _poly_mul(self.A, r, q) if ring is None else ring.inverse(ring.mul(a_hat, r_hat))
-        e = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"])[0]
+        e = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"], sampler=self.gaussian_sampler)[0]
         ct1 = _poly_add(ct1, e, q)
 
         return {

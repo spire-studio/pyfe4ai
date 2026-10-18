@@ -56,7 +56,7 @@ class SeededGaussian:
     def reset(self) -> None:
         self.rng = random.Random(self.seed)
 
-    def __call__(self, rows: int, cols: int, sigma: float) -> list:
+    def __call__(self, rows: int, cols: int, sigma: float, sampler=None) -> list:
         return [[gp.mpz(int(round(self.rng.gauss(0.0, sigma)))) for _ in range(cols)] for _ in range(rows)]
 
 

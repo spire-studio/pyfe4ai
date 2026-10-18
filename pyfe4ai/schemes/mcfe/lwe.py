@@ -16,10 +16,11 @@ total number of slots, ``Delta = floor(q / K)``):
 
 * Setup:    ``H: labels -> Z_q^{n0 + m0}`` full-domain hash.
 * KeyGen:   ``Z_{i,j} = (s_{i,j}, t_{i,j})`` with ``s <- U(Z_q^{n0})`` and
-  ``t <- D_{Z^{m0}, sigma_t}`` (by default realised as a rounded
-  continuous Gaussian, while the statistical step of the proof, Lemma 34,
-  is stated for a true discrete Gaussian; the opt-in ``"facct"`` sampler
-  of :mod:`pyfe4ai.utils.sampling_utils` samples it exactly).
+  ``t <- D_{Z^{m0}, sigma_t}``, sampled exactly by default
+  (``gaussian_sampler = "facct"``, recorded in the public parameters), as
+  the statistical step of the proof (Lemma 34) assumes; ``"rounded"`` (a
+  rounded continuous Gaussian, 2^-25..2^-15 from it per key in the October
+  2026 crypto review) stays selectable.
 * Encrypt:  ``c_{i,j} = round_q0( Z_{i,j} . H(l) + Delta * x_{i,j} )``.
 * KeyDer:   ``sk_y = sum y_{i,j} Z_{i,j}`` (one aggregated vector, kept mod q).
 * Decrypt:  ``mu' = sum y_{i,j} c_{i,j} - round_q0( sk_y . H(l) ) mod q0``;
@@ -69,7 +70,7 @@ from pyfe4ai.utils.lwe_utils import decode_rounded_inner_product
 from pyfe4ai.utils.lwe_utils import resolve_lwe_n
 from pyfe4ai.utils.lwe_utils import round_to_q0
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
+from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix, scheme_sampler
 from pyfe4ai.utils.sampling_utils import rand_uniform_vector
 from pyfe4ai.utils.validation import scale_to_int
 from pyfe4ai.utils.validation import strict_int
@@ -117,10 +118,14 @@ class MCFELWEKeyGenerator(IPFEAbsKeyGenerator):
                 :data:`~pyfe4ai.utils.lwe_utils.DENSE_LWE_128_LOG_Q`, the
                 ``standard`` profile's choice), ``bound_x``, ``bound_y``,
                 ``stat_param`` (statistical parameter ``kappa``) and
-                ``sec_param`` (recorded only). The keys ``bound_u`` and
-                ``label_modulus`` of versions <= 0.2.0 are ignored.
+                ``sec_param`` (recorded only), ``gaussian_sampler`` (that of
+                the keys ``t``: ``"facct"``, the default, or ``"rounded"``;
+                see :func:`~pyfe4ai.utils.sampling_utils.scheme_sampler`).
+                The keys ``bound_u`` and ``label_modulus`` of versions <= 0.2.0
+                are ignored.
         """
         super().__init__(config, **kwargs)
+        self.gaussian_sampler = scheme_sampler(config)
         self.eta = config.get("eta", CryptoCONST.MCFE_ETA)
         self.bound_x = int(config.get("bound_x", 20))
         self.bound_y = int(config.get("bound_y", 20))
@@ -151,7 +156,7 @@ class MCFELWEKeyGenerator(IPFEAbsKeyGenerator):
         sigma_t = self.params["sigma_t"]
         self.msk = {"z": {}}
         for nid in self.lst_nid:
-            t_rows = discrete_gaussian_matrix(self.eta, m0, sigma_t)
+            t_rows = discrete_gaussian_matrix(self.eta, m0, sigma_t, sampler=self.gaussian_sampler)
             self.msk["z"][nid] = [
                 rand_uniform_vector(n0, self.q) + t_rows[j] for j in range(self.eta)
             ]
@@ -175,6 +180,7 @@ class MCFELWEKeyGenerator(IPFEAbsKeyGenerator):
             "bound_y": self.bound_y,
             "stat_param": self.stat_param,
             "sec_param": self.sec_param,
+            "gaussian_sampler": self.gaussian_sampler,
         }
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:

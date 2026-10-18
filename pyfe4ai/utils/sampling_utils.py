@@ -71,6 +71,32 @@ def gaussian_sampler(name: str):
         _sampler_override.reset(token)
 
 
+#: The sampler the Ring-LWE MIFE / MCFE family, the dense-LWE MCFE key ``t``
+#: and SIFE FullySec Ring-LWE use unless told otherwise: the exact
+#: ``D_{Z,sigma}`` their proofs assume (the crypto review of October 2026 found
+#: the double-precision rounded sampler 2^-25..2^-4 from it per key or
+#: ciphertext, against 2^-128 budgets).
+PROOF_SAMPLER = "facct"
+
+
+def scheme_sampler(config: dict | None, pp: dict | None = None, default: str = PROOF_SAMPLER) -> str:
+    """The Gaussian sampler of a scheme object: ``config["gaussian_sampler"]``,
+    else that of its public parameters *pp*, else the one a
+    :func:`gaussian_sampler` block selects, else *default*. The process-wide
+    choice (:func:`set_gaussian_sampler`, ``PYFE4AI_GAUSSIAN_SAMPLER``) does
+    not apply: these schemes record their sampler in their public parameters.
+
+    Raises:
+        FEValidationError: For an unknown sampler.
+    """
+    name = config.get("gaussian_sampler") if config else None
+    if name is None and pp:
+        name = pp.get("gaussian_sampler")
+    if name is None:
+        name = _sampler_override.get()
+    return _check_sampler(default if name is None else name)
+
+
 def _resolve_sampler(sampler) -> str:
     return get_gaussian_sampler() if sampler is None else _check_sampler(sampler)
 
