@@ -218,3 +218,46 @@ def test_keys_of_the_earlier_flooding_derivation_are_refused():
             share(server, cts, old)
     with pytest.raises(FEKeyError):
         check_flooding_version({"noise_version": 3})
+    with pytest.raises(FEKeyError, match="flooding sampler"):
+        check_flooding_version({"noise_version": FLOODING_NOISE_VERSION, "noise_sampler": "facct"})
+
+
+def test_flooding_noise_ignores_the_selected_sampler():
+    """The flooding sampler is pinned: one request gets the same noise whatever
+    sampler a gaussian_sampler() block or the process selects."""
+    from pyfe4ai.utils import sampling_utils as su
+
+    kg = ThresholdMCFERingLWEKeyGenerator({"sec_param": 64, "n": 2, "lst_nid": NIDS, "s": 3, "lst_sid": SIDS, "t": 2,
+                                           "eta": 1, "ring_n": 16, "bound_x": 4, "bound_y": 5})
+    kg.setup()
+    pp = kg.get_public_parameters()
+    cts = {n: ThresholdMCFERingLWE({"id": n, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}}).encrypt([X[n]], "r1")
+           for n in NIDS}
+    cred = {"fusion_weight": Y, "label": "r1"}
+    dk = kg.get_decryption_keys(SIDS[0], credentials=cred)
+    assert dk["noise_sampler"] == su.FLOODING_SAMPLER
+    server = ThresholdMCFERingLWE({"id": SIDS[0], "keys": {"pp": pp, "dk": dk}})
+    first = server.share_decrypt(cts, cred, dk, SIDS[:2])["w"]
+    with su.gaussian_sampler("facct"):
+        assert server.share_decrypt(cts, cred, dk, SIDS[:2])["w"] == first
+    default = su.get_gaussian_sampler()
+    try:
+        su.set_gaussian_sampler("facct")
+        assert server.share_decrypt(cts, cred, dk, SIDS[:2])["w"] == first
+    finally:
+        su.set_gaussian_sampler(default)
+
+
+def test_stat_param_is_capped_by_the_mpfr_guard():
+    from pyfe4ai.schemes import profiles
+    from pyfe4ai.utils import sampling_utils as su
+    from pyfe4ai.utils.exceptions import FEValidationError
+
+    base = {"sec_param": 64, "n": 2, "lst_nid": NIDS, "s": 3, "lst_sid": SIDS, "t": 2, "eta": 1, "ring_n": 16,
+            "bound_x": 4, "bound_y": 5}
+    kg = ThresholdMCFERingLWEKeyGenerator({**base, "stat_param": profiles.MAX_STAT_PARAM})
+    sigma = int(kg.sigma_f)
+    assert su.bigint_precision(sigma) - sigma.bit_length() >= profiles.MAX_STAT_PARAM + 56 + 8
+    for bad in (profiles.MAX_STAT_PARAM + 1, True, 64.0):
+        with pytest.raises(FEValidationError, match="stat_param"):
+            ThresholdMCFERingLWEKeyGenerator({**base, "stat_param": bad})

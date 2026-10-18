@@ -84,7 +84,9 @@ from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.sampling_utils import XofRandom
-from pyfe4ai.utils.sampling_utils import FLOODING_NOISE_VERSION, check_flooding_version, discrete_gaussian_bigint
+from pyfe4ai.utils.sampling_utils import (
+    FLOODING_NOISE_VERSION, FLOODING_SAMPLER, check_flooding_version, discrete_gaussian_bigint,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +119,7 @@ def flooding_noise(sigma: int, rng=None) -> int:
     """
     bound = GAUSSIAN_TAIL_CUT * sigma
     while True:
-        e = discrete_gaussian_bigint(sigma, 1, rng=rng)[0]
+        e = discrete_gaussian_bigint(sigma, 1, rng=rng, sampler=FLOODING_SAMPLER)[0]
         if abs(e) <= bound:
             return int(e)
 
@@ -203,6 +205,7 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
             "weights_id": identifier,
             "noise_key": noise_key,
             "noise_version": FLOODING_NOISE_VERSION,
+            "noise_sampler": FLOODING_SAMPLER,
         }
 
     def _share_key(self, sk_y: list) -> dict:

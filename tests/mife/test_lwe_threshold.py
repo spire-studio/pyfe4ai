@@ -55,7 +55,8 @@ def test_key_generator(kg_config):
 
     fusion_weight = {nid: [1] for nid in kg_config["lst_nid"]}
     dk_sid = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": fusion_weight})
-    assert set(dk_sid) == {"sk_y", "z", "sid", "lst_sid", "weights_id", "noise_key", "noise_version", "mac_keys"}
+    assert set(dk_sid) == {"sk_y", "z", "sid", "lst_sid", "weights_id", "noise_key", "noise_version", "noise_sampler",
+                           "mac_keys"}
     assert set(dk_sid["sk_y"]) == set(kg_config["lst_nid"])
     # server k holds client i's key for the tags meant for k, and only those
     assert dk_sid["mac_keys"] == {

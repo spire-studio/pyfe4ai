@@ -279,20 +279,28 @@ class XofRandom:
 
 
 #: Guard bits of the MPFR precision of :func:`discrete_gaussian_bigint`: its
-#: uniforms and arithmetic have ``bits(sigma) + BIGINT_GUARD_BITS`` bits. 192
-#: covers ``bits(sigma) + stat_param + ceil(log2 N) + 8`` for statistical
-#: parameters up to 128 and up to ``2^56`` samples per key: the dozen MPFR
-#: roundings of one sample stay below ``2^-(stat_param + log2 N + 8)`` in
-#: statistical distance from the ideal rounded Gaussian. (Before, it was
-#: 128, which the October 2026 crypto review found 2 to 19 bits short of the
-#: ``2^-128`` budgets of the DCR keys and masks and of the threshold flooding.)
-BIGINT_GUARD_BITS = 192
+#: uniforms and arithmetic have ``bits(sigma) + BIGINT_GUARD_BITS`` bits. 320
+#: covers ``bits(sigma) + stat_param + ceil(log2 N) + 8`` for every statistical
+#: parameter the key generators accept (at most
+#: :data:`~pyfe4ai.schemes.profiles.MAX_STAT_PARAM` = 256) and up to ``2^56``
+#: samples per key: the dozen MPFR roundings of one sample stay below
+#: ``2^-(stat_param + log2 N + 8)`` in statistical distance from the ideal
+#: rounded Gaussian. (It was 128, which the October 2026 crypto review found
+#: 2 to 19 bits short of the ``2^-128`` budgets of the DCR keys and masks and
+#: of the threshold flooding; then 192, which covered stat_param <= 128 only.)
+BIGINT_GUARD_BITS = 320
 
 
 #: Version of the flooding-noise derivation in the decryption keys of the
 #: threshold schemes (tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE): 2 since
-#: :data:`BIGINT_GUARD_BITS` is 192 (keys without the field are version 1).
+#: :data:`BIGINT_GUARD_BITS` grew (keys without the field are version 1).
 FLOODING_NOISE_VERSION = 2
+#: The sampler of the threshold flooding noise, whatever the process-wide or
+#: context choice: the MPFR rounded Gaussian (an ideal rounded Gaussian is a
+#: mixture of centred discrete Gaussians, which the flooding argument accepts).
+#: Recorded in the decryption keys as ``noise_sampler``, so that a server never
+#: answers one request with noises of two samplers.
+FLOODING_SAMPLER = "rounded"
 
 
 def check_flooding_version(dk) -> None:
@@ -309,11 +317,16 @@ def check_flooding_version(dk) -> None:
             "decryption key of flooding derivation {} (this version derives noise version {}): "
             "issue new decryption keys".format(version, FLOODING_NOISE_VERSION)
         )
+    if dk.get("noise_sampler") != FLOODING_SAMPLER:
+        raise FEKeyError(
+            "decryption key for the flooding sampler {!r} (this version floods with {!r}): "
+            "issue new decryption keys".format(dk.get("noise_sampler"), FLOODING_SAMPLER)
+        )
 
 
 def bigint_precision(sigma) -> int:
     """Bits of the uniforms and of the MPFR arithmetic of
-    :func:`discrete_gaussian_bigint` for *sigma*: ``bits(ceil(sigma)) + 192``."""
+    :func:`discrete_gaussian_bigint` for *sigma*: ``bits(ceil(sigma)) + 320``."""
     return int(gp.ceil(gp.mpfr(sigma))).bit_length() + BIGINT_GUARD_BITS
 
 
@@ -323,7 +336,7 @@ def discrete_gaussian_bigint(sigma, count: int, rng=None, sampler: str | None = 
     Unlike :func:`discrete_gaussian_matrix`, *sigma* may exceed the range of
     a double (e.g. the ``sqrt(kappa) * N^{5/2}`` widths of the DCR schemes):
     a Box-Muller sample is computed with ``gmpy2.mpfr`` at
-    ``bits(sigma) + 192`` bits of precision (:data:`BIGINT_GUARD_BITS`) from CSPRNG uniforms and rounded
+    ``bits(sigma) + 320`` bits of precision (:data:`BIGINT_GUARD_BITS`) from CSPRNG uniforms and rounded
     to the nearest integer. As with :func:`discrete_gaussian_matrix` this is
     a rounded continuous Gaussian, not an exact discrete-Gaussian sampler,
     and it is not constant-time. With ``sampler="facct"`` the samples come

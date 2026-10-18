@@ -311,7 +311,7 @@ trial, as in the reference.
 After the October 2026 crypto review, the Ring-LWE MIFE / MCFE family and
 the dense-LWE MCFE keys `t` sample with FACCT by default (recorded in `pp`;
 `gaussian_sampler = "rounded"` stays selectable), and the MPFR path runs at
-`bits(sigma) + 192` bits. `bench_fl_compare.py` (standard profile, 3
+`bits(sigma) + 320` bits. `bench_fl_compare.py` (standard profile, 3
 clients, JSON ciphertexts, medians of 2 interleaved runs of 5 rounds,
 load 4-5.5) compares the parent commit d898446 (rounded default) with this
 branch:

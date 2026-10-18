@@ -86,13 +86,15 @@ from pyfe4ai.utils.ring_lwe_utils import poly_mul
 from pyfe4ai.utils.ring_lwe_utils import RingNTT
 from pyfe4ai.utils.ring_lwe_utils import transpose
 from pyfe4ai.utils.sampling_utils import XofRandom
-from pyfe4ai.utils.sampling_utils import FLOODING_NOISE_VERSION, check_flooding_version, discrete_gaussian_bigint
+from pyfe4ai.utils.sampling_utils import (
+    FLOODING_NOISE_VERSION, FLOODING_SAMPLER, check_flooding_version, discrete_gaussian_bigint,
+)
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.ring_lwe_utils import seeded_polynomial
 
 logger = logging.getLogger(__name__)
 
-_CONSTRUCTION = "bmms21-ibmcfe-shamir-smudging/v2"  # v2: flooding at bits + 192
+_CONSTRUCTION = "bmms21-ibmcfe-shamir-smudging/v2"  # v2: flooding at bits + 320, sampler pinned
 _TAG_DOMAIN = "pyfe4ai/tmcfe-ring-lwe/ciphertext-tag/v1"
 
 
@@ -106,9 +108,9 @@ def _flooding_poly(sigma: int, ring_n: int, rng) -> list:
     """*ring_n* samples of ``D_{Z, sigma}`` cut at ``GAUSSIAN_TAIL_CUT sigma``, drawn in order."""
     bound = GAUSSIAN_TAIL_CUT * sigma
     # one call for ring_n samples draws what ring_n calls for one sample draw
-    out = [e for e in discrete_gaussian_bigint(sigma, ring_n, rng=rng) if abs(e) <= bound]
+    out = [e for e in discrete_gaussian_bigint(sigma, ring_n, rng=rng, sampler=FLOODING_SAMPLER) if abs(e) <= bound]
     while len(out) < ring_n:  # beyond the tail cut (rare): draw on, one at a time
-        e = discrete_gaussian_bigint(sigma, 1, rng=rng)[0]
+        e = discrete_gaussian_bigint(sigma, 1, rng=rng, sampler=FLOODING_SAMPLER)[0]
         if abs(e) <= bound:
             out.append(e)
     return out
@@ -263,6 +265,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
                 "z_chunks": [cs[sid] for cs in chunk_shares],
                 "label": key["label"],
                 "noise_version": FLOODING_NOISE_VERSION,
+                "noise_sampler": FLOODING_SAMPLER,
                 # one per server, weights and label: a re-sharing for another
                 # n_chunks (same key part) must not come with fresh noise
                 "noise_key": hmac.new(

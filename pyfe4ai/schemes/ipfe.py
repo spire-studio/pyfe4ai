@@ -149,6 +149,14 @@ class IPFEAbsKeyGenerator(metaclass=_ProfiledKeyGeneratorMeta):
         super().__init__()
         warn_if_known_insecure(type(self).__module__)
         self.security_profile = config.get("security_profile", profiles.TOY)
+        stat_param = config.get("stat_param")
+        if stat_param is not None and (
+            isinstance(stat_param, bool) or not isinstance(stat_param, int) or stat_param > profiles.MAX_STAT_PARAM
+        ):
+            raise FEValidationError(
+                "stat_param must be an integer of at most {} (the MPFR Gaussians' guard bits cover "
+                "no more), got {!r}".format(profiles.MAX_STAT_PARAM, stat_param)
+            )
         self.sec_param = config.get("sec_param", CryptoCONST.SEC_PARAM)
         self.n = config.get("n", None)
         self.s = config.get("s", None)

@@ -97,12 +97,14 @@ from pyfe4ai.utils.lwe_utils import wide_lwe_n
 from pyfe4ai.utils.matrix_utils import digits_to_vector
 from pyfe4ai.utils.matrix_utils import vecdot_mod
 from pyfe4ai.utils.sampling_utils import XofRandom
-from pyfe4ai.utils.sampling_utils import FLOODING_NOISE_VERSION, check_flooding_version, discrete_gaussian_bigint
+from pyfe4ai.utils.sampling_utils import (
+    FLOODING_NOISE_VERSION, FLOODING_SAMPLER, check_flooding_version, discrete_gaussian_bigint,
+)
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 
 logger = logging.getLogger(__name__)
 
-_CONSTRUCTION = "acfgu18-abdp15-shamir-smudging-seeded-a/v4"  # v4: flooding at bits + 192
+_CONSTRUCTION = "acfgu18-abdp15-shamir-smudging-seeded-a/v4"  # v4: flooding at bits + 320, sampler pinned
 _DEFAULT_STAT_PARAM = 64
 _TAG_DOMAIN = "pyfe4ai/tmife-lwe/ciphertext-tag/v1"
 
@@ -115,7 +117,7 @@ def _tag_payload(nid, ct: dict) -> list:
 def _flooding_noise(sigma: int, rng) -> int:
     bound = GAUSSIAN_TAIL_CUT * sigma
     while True:
-        e = discrete_gaussian_bigint(sigma, 1, rng=rng)[0]
+        e = discrete_gaussian_bigint(sigma, 1, rng=rng, sampler=FLOODING_SAMPLER)[0]
         if abs(e) <= bound:
             return int(e)
 
@@ -235,6 +237,7 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
         dk = dict(self.dict_dk[identifier][sid])
         dk.update({
             "noise_version": FLOODING_NOISE_VERSION,
+            "noise_sampler": FLOODING_SAMPLER,
             "sid": sid,
             "lst_sid": list(self.lst_sid),
             "weights_id": identifier,

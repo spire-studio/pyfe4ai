@@ -99,11 +99,13 @@ samples. Its implementations add their own terms (crypto review, October
   and benchmarks, not where a proof needs ``D_{Z,sigma}``;
 * the MPFR path (:func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint`,
   wider widths: the DCR keys and masks, all threshold flooding) differs from
-  the ideal rounded Gaussian only by its arithmetic, at ``bits(sigma) + 192``
-  bits (``BIGINT_GUARD_BITS``; ``bits(sigma) + stat_param +
-  ceil(log2 N) + 8`` for ``stat_param <= 128`` and up to 2^56 samples per
-  key). At the earlier ``bits(sigma) + 128`` it was 2 to 19 bits short of the
-  budgets.
+  the ideal rounded Gaussian only by its arithmetic, at ``bits(sigma) + 320``
+  bits (``BIGINT_GUARD_BITS``: ``bits(sigma) + stat_param + ceil(log2 N) +
+  8`` for every accepted ``stat_param``, at most 256, and up to 2^56 samples
+  per key). At the earlier ``bits(sigma) + 128`` it was 2 to 19 bits short
+  of the budgets. The threshold schemes' flooding always uses it
+  (``FLOODING_SAMPLER``, recorded in their decryption keys), whatever the
+  sampler selected elsewhere.
 
 The library-wide choice applies to the other schemes:
 

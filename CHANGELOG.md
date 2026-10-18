@@ -47,9 +47,12 @@ compatibility).
   selectable. Public parameters without the field (earlier versions) give
   FACCT to new encryptions; decryption does not depend on it; parameter
   records are unchanged.
-- **MPFR Gaussians at `bits(sigma) + 192` bits** (`BIGINT_GUARD_BITS`): the
-  DCR keys and masks and all threshold flooding were 2 to 19 bits short of
-  their budgets at `+ 128`. Since the threshold schemes derive a request's
+- **MPFR Gaussians at `bits(sigma) + 320` bits** (`BIGINT_GUARD_BITS`,
+  covering `stat_param + ceil(log2 N) + 8` for `stat_param` up to 256, now
+  the largest accepted; up to 2^56 samples per key): the DCR keys and masks
+  and all threshold flooding were 2 to 19 bits short of their budgets at
+  `+ 128`. The threshold flooding always uses this sampler (pinned, recorded
+  as `noise_sampler` in the decryption keys and checked with the version). Since the threshold schemes derive a request's
   flooding noise deterministically (a repeated request gets the same noise),
   their decryption keys now carry `noise_version = 2` and a server refuses
   keys of another version (issue new keys); the construction versions of

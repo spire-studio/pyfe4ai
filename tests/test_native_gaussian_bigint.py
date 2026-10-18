@@ -43,7 +43,7 @@ WIDTHS = {
 }
 
 KAT_SEED = b"pyfe4ai/discrete_gaussian_bigint/kat"
-KAT = {  # discrete_gaussian_bigint(sigma, 8, rng=XofRandom(KAT_SEED)) of the Python reference at bits(sigma) + 192
+KAT = {  # discrete_gaussian_bigint(sigma, 8, rng=XofRandom(KAT_SEED)) of the Python reference at bits(sigma) + 320
     'fullysec_rlwe_sigma2': [
         -172698322160239,
         9778769733971,
