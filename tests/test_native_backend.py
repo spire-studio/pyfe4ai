@@ -460,11 +460,14 @@ def native_calls(monkeypatch):
     return counts
 
 
-def _threshold(ring_n, bound_x, bound_y, stat_param, eta=1, flooding="uniform"):
+def _threshold(ring_n, bound_x, bound_y, stat_param, eta=1, sharing=None, flooding="uniform"):
     nids, sids = ["c0", "c1", "c2"], ["s0", "s1", "s2"]
-    kg = tmcfe_rlwe.ThresholdMCFERingLWEKeyGenerator({
+    config = {
         "n": 3, "lst_nid": nids, "s": 3, "t": 2, "lst_sid": sids, "eta": eta, "ring_n": ring_n,
-        "sec_param": 64, "bound_x": bound_x, "bound_y": bound_y, "stat_param": stat_param, "flooding": flooding})
+        "sec_param": 64, "bound_x": bound_x, "bound_y": bound_y, "stat_param": stat_param, "flooding": flooding}
+    if sharing:
+        config["sharing"] = sharing
+    kg = tmcfe_rlwe.ThresholdMCFERingLWEKeyGenerator(config)
     kg.setup()
     pp = kg.get_public_parameters()
     clients = {nid: tmcfe_rlwe.ThresholdMCFERingLWE({"id": nid, "precision": 0,
@@ -605,7 +608,8 @@ class _BytesSystemRandom(random.Random):
 def test_threshold_key_shares_identical(cfg, monkeypatch):
     from pyfe4ai.schemes import threshold_utils
 
-    kg, pp, clients, sids = _threshold(*cfg)
+    # the native Shamir sharing (the default for t = s; explicit here, t < s)
+    kg, pp, clients, sids = _threshold(*cfg, sharing="shamir")
     creds = {"fusion_weight": {nid: [1] for nid in clients}, "label": "L", "n_chunks": 2}
     key = _mcfe_keys(kg, "s0", creds)
     with native_backend.backend("python"):
@@ -629,7 +633,8 @@ def test_threshold_key_shares_identical(cfg, monkeypatch):
 
 def test_threshold_standard_profile_native(native_calls):
     """mcfe/ring_lwe_threshold under the standard profile (q of 212 bits,
-    ring_n 8192): encryption, keys, key shares, partials and combination native."""
+    ring_n 8192): encryption, keys, partials and combination native; the
+    replicated key shares (the default for t < s) are drawn in Python."""
     nids, sids = ["c0", "c1", "c2"], ["s0", "s1", "s2"]
     kg = tmcfe_rlwe.ThresholdMCFERingLWEKeyGenerator({
         "n": 3, "lst_nid": nids, "s": 3, "t": 2, "lst_sid": sids, "eta": 1, "bound_x": 100, "bound_y": 1,
@@ -653,6 +658,6 @@ def test_threshold_standard_profile_native(native_calls):
     combiner = tmcfe_rlwe.ThresholdMCFERingLWE({"id": "comb", "precision": 2, "keys": {"pp": pp}})
     out = combiner.decrypt_lst_ndarray_ct(parts)[0]
     assert np.allclose(out, sum(grads.values()))
-    for name, count in (("encrypt_tensor", 3), ("pad_terms", 1), ("shamir_share", 1), ("share_partial", 4),
+    for name, count in (("encrypt_tensor", 3), ("pad_terms", 1), ("shamir_share", 0), ("share_partial", 4),
                         ("share_combine", 2)):
         assert native_calls[name] == count, name

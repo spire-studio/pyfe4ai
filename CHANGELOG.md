@@ -72,8 +72,10 @@ compatibility).
   covering `stat_param + ceil(log2 N) + 8` for `stat_param` up to 256, now
   the largest accepted; up to 2^56 samples per key): the DCR keys and masks
   and all threshold flooding were 2 to 19 bits short of their budgets at
-  `+ 128`. The threshold flooding always uses this sampler (pinned, recorded
-  as `noise_sampler` in the decryption keys and checked with the version). Since the threshold schemes derive a request's
+  `+ 128`. The threshold Gaussian flooding always uses this sampler (pinned,
+  recorded as `noise_sampler` in the decryption keys and checked with the
+  version; the default uniform flooding of `mcfe/ring_lwe_threshold` uses no
+  Gaussian sampler). Since the threshold schemes derive a request's
   flooding noise deterministically (a repeated request gets the same noise),
   their decryption keys now carry `noise_version = 2` and a server refuses
   keys of another version (issue new keys); the construction versions of
@@ -161,6 +163,83 @@ compatibility).
   bounds of about `2^33` a dlog takes more giant steps (ristretto255 at
   `10^11`: 0.25 s per dlog and 7 s to build the table, instead of 50 ms and
   28 s with the uncapped 344 MB table).
+- **Threshold LWE layers** (`mife/lwe_threshold`, `mcfe/ring_lwe_threshold`,
+  `mcfe/lwe_threshold`): Lagrange-multiplier leak, **v0.3.0 and earlier are
+  affected** (severity High, practical impact Medium; details in the README,
+  Known Issues).
+  * **Mechanism.** The Shamir-shared key (the only sharing, so the default
+    for every `t < s`) makes an honest partial decryption differ from its
+    simulation from the result and a coalition's key shares by `M nu`. Here
+    `nu` is the decryption noise and `M` is a product of Lagrange
+    coefficients, a non-integer `r / d` for some corrupted set, enrolled set
+    and server whenever `s >= 3` and `t < s`: 6 of 18 cases for
+    `s = 3, t = 2`, 202 of 330 for `s = 5, t = 3`. Then `d` times the
+    partial minus the computable part reveals `nu mod d`, whatever the
+    flooding width.
+  * **Measured.** With `s = 3, t = 2`, server 2 corrupted and enrolled set
+    {1, 3}: `nu mod 4` in 20 of 20 tMIFE-LWE partials and 160 of 160
+    tMCFE-Ring-LWE coefficients.
+  * **Larger moduli.** Combining enrolled sets raises the modulus: 144 at
+    `(5, 3)`, about `2^25` at `(10, 6)`, at most `2^25.5` for `s <= 10`.
+    Fewer than `t - 1` corrupted servers can suffice, and for many `(s, t)`
+    none at all: the aggregator alone reads `nu` modulo `(s - 1)!` for
+    `t = 1`, 6 at `(5, 2)`, 120 at `(7, 2)` and 2 at `(6, 3)`, `(7, 4)` and
+    `(9, 5)`.
+  * **`(2, 1)`.** No residue leaks, only the integer multiplier 2. Integer
+    multipliers above 1 (up to 4 at `(3, 2)`) multiply the statistical
+    distance of the flooding.
+  * **Consequences.** With `nu` exact, tMIFE-LWE's `(sk_y, z)` would follow
+    by linear algebra. At the `standard` parameters the leak is partial
+    (about 25 bits per ciphertext at most for `s <= 10`), and no key or
+    plaintext recovery has been shown. In tMCFE-LWE the multipliers narrow
+    the error of its LWE argument, over the enrolled sets of one label, up
+    to 9-fold at `(3, 2)` and 869-fold at `(5, 3)`.
+  * **Not affected:** `t = s`, and the DDH and pairing threshold layers
+    (exact interpolation in the exponent).
+  * **New config entry `sharing`.** `"replicated"` shares the key
+    additively over the `(t - 1)`-subsets of the servers: piece `T` is held
+    by the servers outside `T` and added by the smallest enrolled one.
+    Every multiplier is 0 or 1 and the existing arguments hold, with `q`,
+    `ring_n` and `lwe_n` unchanged. A server holds `C(s - 1, t - 1)` key
+    pieces instead of one share, and keeps the sums of its pieces per
+    enrolled set in a small cache.
+  * **Defaults.** `"replicated"` **is the default for `t < s`**. `"shamir"`
+    stays the default for `t = s`, with unchanged outputs and cached
+    parameters.
+  * **Refusals and warnings.** The key generator refuses an explicit
+    `"shamir"` with `t < s` under `standard` and warns
+    (`FESecurityWarning`) under `toy`.
+  * **Servers refuse Shamir key shares with `t < s`** with
+    `FESchemeError`, unless the server's crypto config has
+    `legacy_shamir="warn"`. That opt-out serves them with an
+    `FESecurityWarning`, never with public parameters that record the
+    `standard` profile, and has no environment-variable counterpart. Key
+    shares of v0.3.0 are refused in any case (`FEKeyError`): their flooding
+    noise was drawn by another derivation (`noise_version`, see the entry on
+    the MPFR precision of the threshold flooding), so the opt-out applies to
+    Shamir `t < s` key shares issued by this version (explicit `sharing =
+    "shamir"` under `toy`).
+  * **Public parameters** of the three layers now record
+    `threshold_construction` and `security_profile`; servers refuse a
+    construction they do not know, or one of another sharing.
+  * **Thresholds.** A threshold that is not an integer (also `t=True`) is
+    refused by every threshold scheme.
+  * **Records and key shares.** The replicated sharing has its own
+    parameter records (construction
+    `acfgu18-abdp15-replicated-smudging-seeded-a/v1`, threshold construction
+    `bmms21-ibmcfe-replicated-smudging-uniform/v1` with the default uniform
+    flooding and `bmms21-ibmcfe-replicated-smudging/v1` with the Gaussian),
+    so records cached for `t < s` by v0.3.0 are not reused. Key shares for `t < s` have a new layout
+    (`sharing`, `pieces`), and their partial decryptions change.
+  * **Upgrade step** (LWE threshold layers with `t < s`): **re-share the
+    threshold keys with this version.**
+    * Run its key generator (`setup()`, new client keys and key shares).
+      This draws a new public matrix or polynomial, because of the new
+      record.
+    * Discard the old key shares. This version does not serve v0.3.0 key
+      shares at all (their flooding derivation changed), so finish rounds
+      encrypted under the old keys with v0.3.0 before upgrading; the leak
+      remains for those rounds.
 
 ### Performance
 
@@ -385,7 +464,8 @@ compatibility).
   `flooding` and `flood_bits`. **Partial decryptions and `q` differ from
   v0.3.0**; `flooding="gaussian"` restores the Gaussian flooding of v0.3.0
   (drawn at `bits(sigma_f) + 320` bits by the pinned flooding sampler since
-  this release, records `bmms21-ibmcfe-shamir-smudging/v2`, see below), and
+  this release, records `bmms21-ibmcfe-shamir-smudging/v2`, see the entry on
+  the MPFR precision of the threshold flooding), and
   public parameters without `flooding` are read as Gaussian. Decryption key
   shares record the flooding they were issued for (`flooding`) and a server
   refuses a share of another flooding than its public parameters'. 10^4 elements, `s = 3`, `t = 2`: partial decryption 222 -> 58 ms

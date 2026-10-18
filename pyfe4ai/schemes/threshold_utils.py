@@ -3,7 +3,28 @@ Shared threshold secret-sharing utilities for threshold FE schemes.
 
 Provides polynomial evaluation, Shamir secret sharing, Lagrange
 interpolation and modular centering used identically by both the
-LWE and Ring-LWE threshold variants.
+LWE and Ring-LWE threshold variants, and the replicated sharing
+(``sharing = "replicated"``, the default for ``t < s``, see
+:func:`resolve_sharing`) of the LWE / Ring-LWE threshold layers.
+
+Why the LWE layers offer a second sharing: they flood partial decryptions
+with noise that hides a small unknown (the decryption noise ``nu``) from
+whoever learns the result. With ``t - 1`` servers ``C`` corrupted, the
+honest partial ``lambda_k^E F(k) + e_k`` of a Shamir sharing equals
+something computable from ``C``'s shares and the result, plus ``e_k - M nu``
+with ``M = lambda_k^E prod_{j in C} (k - j) / (0 - j)``. That is a rational
+number whenever ``t < s``: for ``s = 3, t = 2``, ``C = {2}``,
+``E = {1, 3}`` it is ``3 / 4``, and four times the partial minus the
+computable part is ``4 e_k - 3 nu``, an integer whose residue mod 4 is
+``nu mod 4`` -- whatever the flooding width. Fewer corrupted servers, or
+none, can suffice: from the partials of several enrolled sets the aggregator
+alone reads ``nu`` modulo ``(s - 1)!`` for ``t = 1`` (6 for ``s = 5, t = 2``).
+A replicated sharing (one
+additive piece per ``(t - 1)``-subset ``T`` of the points, held by the
+servers outside ``T``) has reconstruction coefficients 0 and 1: ``M`` is 0
+or 1, and the flooding argument holds as stated. Its cost is
+``C(s - 1, t - 1)`` pieces per server instead of one share (2 for
+``s = 3, t = 2``; 6 for ``s = 5, t = 3``). See :func:`share_replicated`.
 
 Trust model of every threshold scheme: decryption servers are
 honest-but-curious. Fewer than ``t`` of them learn nothing beyond the result,
@@ -17,14 +38,17 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import itertools
 import json
 import random
 import secrets
+import warnings
+from collections import OrderedDict
 
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FESecurityWarning, FEValidationError
 from pyfe4ai.utils.validation import int_vector
 
 _CSPRNG = random.SystemRandom()
@@ -104,6 +128,283 @@ def lagrange_at_zero(shares: dict[int, gp.mpz], modulus: gp.mpz) -> gp.mpz:
     return result
 
 
+#: Ways the LWE / Ring-LWE threshold layers share a functional key (config
+#: entry ``sharing``): ``"shamir"`` or ``"replicated"`` (see the module
+#: docstring and :func:`resolve_sharing`).
+SHARING_SCHEMES = ("shamir", "replicated")
+
+
+def validate_sharing(sharing) -> str:
+    """Return *sharing* if it is one of :data:`SHARING_SCHEMES`, else raise."""
+    if sharing not in SHARING_SCHEMES:
+        raise FEValidationError(
+            "sharing must be one of {}, not {!r}".format(SHARING_SCHEMES, sharing)
+        )
+    return sharing
+
+
+def resolve_sharing(config: dict, s, t, scheme: str) -> str:
+    """The key sharing of a threshold LWE / Ring-LWE layer for *config*.
+
+    ``config["sharing"]`` if given, else ``"replicated"`` for ``t < s`` and
+    ``"shamir"`` for ``t = s`` (where the two are equally sound and Shamir
+    gives the outputs of versions <= 0.3.0). An explicit ``"shamir"`` with
+    ``t < s`` -- the sharing of versions <= 0.3.0, whose partial decryptions
+    reveal the decryption noise modulo small integers (module docstring) --
+    is refused under the ``standard`` profile and draws a
+    :class:`~pyfe4ai.utils.exceptions.FESecurityWarning` otherwise.
+
+    Args:
+        config: The key generator's (profile-resolved) config.
+        s: Number of servers.
+        t: Threshold (checked later by :func:`validate_threshold`).
+        scheme: Name of the scheme, for messages.
+
+    Raises:
+        FEValidationError: For a threshold that is not an integer (also a
+            ``bool``), an unknown sharing, or ``"shamir"`` with ``t < s``
+            under ``standard``.
+    """
+    if isinstance(t, bool) or not isinstance(t, int):
+        raise FEValidationError("invalid threshold t={!r}: need an integer".format(t))
+    below = isinstance(s, int) and not isinstance(s, bool) and t < s
+    sharing = config.get("sharing")
+    if sharing is None:
+        return "replicated" if below else "shamir"
+    validate_sharing(sharing)
+    if sharing == "shamir" and below:
+        message = (
+            "{}: Shamir sharing with t = {} < s = {} lets partial decryptions reveal the "
+            "decryption noise modulo small integers (versions <= 0.3.0); use "
+            "sharing='replicated' (the default for t < s)".format(scheme, t, s)
+        )
+        from pyfe4ai.schemes.profiles import STANDARD
+
+        if config.get("security_profile") == STANDARD:
+            raise FEValidationError(message)
+        warnings.warn(message, FESecurityWarning, stacklevel=4)
+    return sharing
+
+
+def replicated_sets(points: list[int], threshold: int) -> list[tuple[int, ...]]:
+    """Index sets of a replicated sharing: the ``(t - 1)``-subsets of *points*, sorted."""
+    return list(itertools.combinations(sorted(points), threshold - 1))
+
+
+def _map_values(material, f):
+    if isinstance(material, dict):
+        return {key: _map_values(value, f) for key, value in material.items()}
+    if isinstance(material, (list, tuple)):
+        return [_map_values(value, f) for value in material]
+    return f(material)
+
+
+def _zip_values(a, b, f):
+    if isinstance(a, dict):
+        if set(a) != set(b):
+            raise FESchemeError("key pieces of different layouts")
+        return {key: _zip_values(a[key], b[key], f) for key in a}
+    if isinstance(a, (list, tuple)):
+        if not isinstance(b, (list, tuple)) or len(a) != len(b):
+            raise FESchemeError("key pieces of different layouts")
+        return [_zip_values(u, v, f) for u, v in zip(a, b)]
+    return f(a, b)
+
+
+def share_replicated(
+    material, threshold: int, points: list[int], modulus: gp.mpz
+) -> dict[tuple[int, ...], object]:
+    """Replicated sharing of every value in *material* (nested dicts and lists).
+
+    Draws one piece ``r_T`` per ``(t - 1)``-subset ``T`` of *points*, of the
+    layout of *material* (values as decimal strings), uniform subject to
+    ``sum_T r_T = material mod modulus``. The server at point ``x`` receives
+    the pieces with ``x`` not in ``T``: any ``t`` servers hold every piece,
+    any ``t - 1`` servers ``C`` miss exactly ``r_C``, which is uniform given
+    the others. With ``t = s`` this is additive sharing (one piece each).
+
+    Returns:
+        ``{T: piece}`` for every index set ``T``.
+    """
+    sets = replicated_sets(points, threshold)
+    modulus = gp.mpz(modulus)
+
+    def draw(_):
+        return gp.digits(gp.mpz(_CSPRNG.randrange(0, int(modulus))))
+
+    pieces = {T: _map_values(material, draw) for T in sets[1:]}
+    first = _map_values(material, lambda v: gp.mpz(v) % modulus)
+    for T in sets[1:]:
+        first = _zip_values(first, pieces[T], lambda a, b: (a - gp.mpz(b)) % modulus)
+    pieces[sets[0]] = _map_values(first, gp.digits)
+    return pieces
+
+
+def pieces_held(pieces: dict, point: int) -> list[dict]:
+    """The pieces of :func:`share_replicated` held by the server at *point*,
+    as ``[{"set": [...], "share": piece}]`` (JSON-friendly)."""
+    return [{"set": list(T), "share": piece} for T, piece in pieces.items() if point not in T]
+
+
+def replicated_assignment(
+    x_k: int, xs: list[int], points: list[int], threshold: int
+) -> list[tuple[int, ...]]:
+    """Index sets whose pieces the server at *x_k* adds up for enrolled points *xs*.
+
+    Piece ``r_T`` goes to the smallest enrolled point outside ``T``
+    (``|xs| >= t > |T|``, so there is one, and it holds ``r_T``): the
+    enrolled servers' sums add up to the secret, each piece counted once.
+    """
+    return [T for T in replicated_sets(points, threshold) if min(x for x in xs if x not in T) == x_k]
+
+
+#: Entries kept by a cache of :func:`share_for_enrolled` (per scheme object).
+SHARE_CACHE_SIZE = 16
+
+#: What a server does with a Shamir key share whose ``t < s`` (crypto config
+#: entry ``legacy_shamir``): ``"refuse"`` (default) or ``"warn"`` (serve it
+#: with an :class:`~pyfe4ai.utils.exceptions.FESecurityWarning`). Key shares
+#: of versions <= 0.3.0 are refused before this applies (their flooding
+#: derivation, see :func:`~pyfe4ai.utils.sampling_utils.check_flooding_version`),
+#: so ``"warn"`` serves the explicit Shamir ``t < s`` shares of this version
+#: under ``toy``. There is deliberately no environment variable: the opt-out
+#: is per server object.
+LEGACY_SHAMIR_POLICIES = ("refuse", "warn")
+
+
+def legacy_shamir_policy(config: dict) -> str:
+    """The ``legacy_shamir`` entry of a server's crypto *config* (default ``"refuse"``)."""
+    policy = config.get("legacy_shamir")
+    if policy is None:
+        return "refuse"
+    if policy not in LEGACY_SHAMIR_POLICIES:
+        raise FEValidationError(
+            "legacy_shamir must be one of {}, not {!r}".format(LEGACY_SHAMIR_POLICIES, policy)
+        )
+    return policy
+
+
+def check_served_sharing(pp: dict, dk: dict, constructions: dict) -> None:
+    """Raise unless key share *dk* is of the sharing that *pp* describes.
+
+    ``pp["sharing"]`` must match the key share (both default to
+    ``"shamir"``, the only sharing of versions <= 0.3.0). Public parameters
+    of this version record ``threshold_construction``; it must be one of
+    *constructions* (``{construction id: sharing}``) and name that sharing,
+    so that artifacts of another construction (a later version, say) are
+    refused rather than misread. Only Shamir public parameters may lack it
+    (those of versions <= 0.3.0); every version with the replicated sharing
+    records it, so replicated public parameters without it are refused.
+    """
+    sharing = dk.get("sharing", "shamir")
+    if pp.get("sharing", "shamir") != sharing:
+        raise FESchemeError("the key share is not of the sharing of the public parameters")
+    construction = pp.get("threshold_construction")
+    if construction is None and sharing != "shamir":
+        raise FESchemeError(
+            "public parameters of the {} sharing must record threshold_construction".format(sharing)
+        )
+    if construction is not None and constructions.get(construction) != sharing:
+        raise FESchemeError(
+            "unknown threshold construction {!r} for a {} key share; known: {}".format(
+                construction, sharing, sorted(constructions)
+            )
+        )
+
+
+def share_for_enrolled(
+    dk: dict, sid: str, lst_sid_enrolled: list[str], threshold: int, modulus: gp.mpz,
+    fields=None, cache=None, legacy_shamir: str = "refuse", profile=None,
+) -> tuple[dict, gp.mpz, str]:
+    """What server *sid* multiplies, by what, for a partial decryption for *lst_sid_enrolled*.
+
+    Returns ``(share, multiplier, tag)``. For a Shamir key share *dk*:
+    ``(dk, lambda, digits(lambda))``, ``lambda`` the Lagrange coefficient
+    at zero. With ``t < s`` (a key share of versions <= 0.3.0, or an
+    explicit ``sharing="shamir"``) such a key share is refused, unless
+    *legacy_shamir* is ``"warn"`` and the public parameters do not record
+    the ``standard`` *profile*: then it is served with an
+    :class:`~pyfe4ai.utils.exceptions.FESecurityWarning`. For a replicated
+    one (``dk["pieces"]``): *dk* with the sum of the pieces of
+    :func:`replicated_assignment` in place of the pieces (of the entries
+    *fields* only, if given), multiplier 1 and a tag naming those pieces.
+    Partial decryptions seed their flooding noise with the tag: they depend
+    on the enrolled set only through it.
+
+    Args:
+        cache: An :class:`~collections.OrderedDict` that keeps the sums of
+            the last :data:`SHARE_CACHE_SIZE` key shares and assignments,
+            for key shares that are not modified once handed in (they are
+            told apart by identity). The returned share must not be modified.
+
+        legacy_shamir: ``"refuse"`` or ``"warn"`` (see
+            :data:`LEGACY_SHAMIR_POLICIES`).
+        profile: ``security_profile`` recorded in the public parameters
+            (``None`` for those of versions <= 0.3.0).
+
+    Raises:
+        FEKeyError: If *dk* lacks a piece the server must add.
+        FESchemeError: For a Shamir key share with ``t < s`` that is not
+            to be served.
+    """
+    sid_v = share_points(dk["lst_sid"])
+    xs = [sid_v[s] for s in lst_sid_enrolled]
+    if "pieces" not in dk:
+        if threshold < len(dk["lst_sid"]):
+            from pyfe4ai.schemes.profiles import STANDARD
+
+            message = (
+                "server {}: a Shamir key share with t = {} < s = {} (the sharing of versions "
+                "<= 0.3.0) lets partial decryptions reveal the decryption noise modulo small "
+                "integers; re-share the threshold keys with this version (sharing="
+                "'replicated')".format(sid, threshold, len(dk["lst_sid"]))
+            )
+            if legacy_shamir != "warn" or profile == STANDARD:
+                raise FESchemeError(
+                    message + "; during a migration only, a server created with "
+                    "legacy_shamir='warn' serves it (not under the standard profile)"
+                )
+            warnings.warn(message, FESecurityWarning, stacklevel=3)
+        lagrange = lagrange_coefficient_at_zero(sid_v[sid], xs, modulus)
+        return dk, lagrange, gp.digits(lagrange)
+    assigned = replicated_assignment(sid_v[sid], xs, list(sid_v.values()), threshold)
+    fields = None if fields is None else tuple(fields)
+    key = (id(dk), id(dk["pieces"]), tuple(assigned), fields)
+    if cache is not None and key in cache and cache[key][0] is dk:
+        cache.move_to_end(key)
+        return cache[key][1]
+    held = {tuple(piece["set"]): piece["share"] for piece in dk["pieces"]}
+    if not held:
+        raise FEKeyError("the key share holds no pieces")
+    missing = [T for T in assigned if T not in held]
+    if missing:
+        raise FEKeyError("the key share lacks the pieces {}".format(missing))
+    modulus = gp.mpz(modulus)
+
+    def pick(piece):
+        return piece if fields is None else {name: piece[name] for name in fields}
+
+    total = _map_values(pick(next(iter(held.values()))), lambda _: gp.mpz(0))
+    for T in assigned:
+        total = _zip_values(total, pick(held[T]), lambda a, b: (a + gp.mpz(b)) % modulus)
+    share = {key: value for key, value in dk.items() if key != "pieces"}
+    share.update(_map_values(total, gp.digits))
+    out = share, gp.mpz(1), json.dumps(["replicated", [list(T) for T in assigned]])
+    if cache is not None:
+        cache[key] = (dk, out)  # dk kept alive: its id is not reused while cached
+        while len(cache) > SHARE_CACHE_SIZE:
+            cache.popitem(last=False)
+    return out
+
+
+def share_cache(obj) -> OrderedDict:
+    """The :func:`share_for_enrolled` cache of scheme object *obj* (created on first use)."""
+    cache = getattr(obj, "_enrolled_share_cache", None)
+    if cache is None:
+        cache = obj._enrolled_share_cache = OrderedDict()
+    return cache
+
+
 def share_points(lst_sid: list[str]) -> dict[str, int]:
     """Map each decryption server to its Shamir evaluation point.
 
@@ -117,7 +418,7 @@ def share_points(lst_sid: list[str]) -> dict[str, int]:
 
 
 def validate_threshold(threshold: int, lst_sid: list[str]) -> None:
-    """Reject repeated server ids and thresholds outside ``1 <= t <= s``.
+    """Reject repeated server ids and thresholds outside ``1 <= t <= s`` (or ``bool``).
 
     Args:
         threshold: Minimum number of shares needed for reconstruction.
@@ -125,7 +426,7 @@ def validate_threshold(threshold: int, lst_sid: list[str]) -> None:
     """
     if len(set(lst_sid)) != len(lst_sid):
         raise FEValidationError("lst_sid contains duplicate server ids")
-    if not isinstance(threshold, int) or not 1 <= threshold <= len(lst_sid):
+    if isinstance(threshold, bool) or not isinstance(threshold, int) or not 1 <= threshold <= len(lst_sid):
         raise FEValidationError(
             "invalid threshold t={} for s={} decryption servers".format(
                 threshold, len(lst_sid)

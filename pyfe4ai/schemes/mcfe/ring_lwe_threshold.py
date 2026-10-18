@@ -69,6 +69,36 @@ with ``noise_version`` and ``noise_sampler``); a server refuses a share of
 another flooding than its public parameters', which would answer a request
 with a second, independent noise.
 
+Sharing (config entry ``sharing``; default ``"replicated"`` for ``t < s`` and
+``"shamir"`` for ``t = s``): with ``"shamir"`` and ``t < s`` -- the sharing of
+versions <= 0.3.0 -- the smudging argument does not hold: with ``t - 1``
+servers ``C`` corrupted an honest partial is computable from ``C``'s shares
+and the result up to ``e_k - M nu`` per coefficient,
+``M = lambda_k^E prod_{j in C} (k - j) / (0 - j)``, a non-integer rational
+``r / d`` for some ``(C, E, k)``, and ``d`` times the difference reveals
+``nu mod d`` coefficient by coefficient, whatever ``sigma_f``. Fewer corrupted
+servers, or none, can suffice (the aggregator alone reads ``nu`` modulo
+``(s - 1)!`` for ``t = 1``), and combining several enrolled sets raises ``d``
+(144 for ``s = 5, t = 3``); integer ``M`` reach 4 for ``s = 3, t = 2``, which
+multiplies the statistical distance of the flooding by 4. ``"replicated"``
+(see :func:`~pyfe4ai.schemes.threshold_utils.share_replicated`) makes ``M`` 0
+or 1, so the argument holds as stated with ``q`` and ``ring_n`` unchanged; a
+server holds ``C(s - 1, t - 1)`` key pieces instead of one share, and its key
+share is drawn in Python. With ``t = s`` both are sound. An explicit
+``"shamir"`` with ``t < s`` is refused under the ``standard`` profile and
+draws an ``FESecurityWarning`` under ``toy``; the replicated sharing has its
+own parameter records (``threshold_construction``
+``bmms21-ibmcfe-replicated-smudging-uniform/v1``, or
+``bmms21-ibmcfe-replicated-smudging/v1`` with the Gaussian flooding), so a
+record cached by an earlier version for ``t < s`` is not reused by the
+default. Servers refuse Shamir key shares with ``t < s`` unless created with
+``legacy_shamir = "warn"`` (never with public parameters that record the
+``standard`` profile); key shares of versions <= 0.3.0 are refused in any
+case (another flooding derivation, see
+:func:`~pyfe4ai.utils.sampling_utils.check_flooding_version`);
+public parameters record ``threshold_construction`` and ``security_profile``,
+and servers refuse constructions they do not know.
+
 With the native backend (:mod:`pyfe4ai.utils.native_backend`; moduli below
 ``2^253``, which includes the flooded ``q`` of the standard profile) the MCFE
 layer, the Shamir sharing of the key, the parsing, digests and NTT-domain
@@ -97,18 +127,24 @@ from pyfe4ai.schemes.mcfe.ring_lwe import chunk_key_index
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
 from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.schemes.threshold_utils import check_ciphertext_tags
+from pyfe4ai.schemes.threshold_utils import check_served_sharing
+from pyfe4ai.schemes.threshold_utils import legacy_shamir_policy
 from pyfe4ai.schemes.threshold_utils import check_fusion_weight
 from pyfe4ai.schemes.threshold_utils import client_server_mac_keys
 from pyfe4ai.schemes.threshold_utils import tag_ciphertext
 from pyfe4ai.schemes.threshold_utils import ciphertexts_digest
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
-from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
+from pyfe4ai.schemes.threshold_utils import pieces_held
+from pyfe4ai.schemes.threshold_utils import share_cache
+from pyfe4ai.schemes.threshold_utils import share_for_enrolled
 from pyfe4ai.schemes.threshold_utils import share_points
+from pyfe4ai.schemes.threshold_utils import share_replicated
 from pyfe4ai.schemes.threshold_utils import share_secret
 from pyfe4ai.schemes.threshold_utils import validate_enrolled
 from pyfe4ai.schemes.threshold_utils import combine_consistently
 from pyfe4ai.schemes.threshold_utils import partial_groups
 from pyfe4ai.schemes.threshold_utils import validate_partial_decryptions
+from pyfe4ai.schemes.threshold_utils import resolve_sharing
 from pyfe4ai.schemes.threshold_utils import validate_threshold
 from pyfe4ai.utils import native_backend
 from pyfe4ai.utils.crypto_constants import CryptoCONST
@@ -132,6 +168,18 @@ logger = logging.getLogger(__name__)
 
 _CONSTRUCTION = "bmms21-ibmcfe-shamir-smudging/v2"  # v2: flooding at bits + 320, sampler pinned
 _CONSTRUCTION_UNIFORM = "bmms21-ibmcfe-shamir-smudging-uniform/v1"
+# the parameters are those of the Shamir records; their own records keep cached
+# Shamir records (t < s) of versions <= 0.3.0 from being taken for them
+_CONSTRUCTION_REPLICATED = "bmms21-ibmcfe-replicated-smudging/v1"
+_CONSTRUCTION_REPLICATED_UNIFORM = "bmms21-ibmcfe-replicated-smudging-uniform/v1"
+#: the parameter record (and public ``threshold_construction``) of a sharing and a flooding
+_CONSTRUCTION_IDS = {
+    ("shamir", "gaussian"): _CONSTRUCTION,
+    ("shamir", "uniform"): _CONSTRUCTION_UNIFORM,
+    ("replicated", "gaussian"): _CONSTRUCTION_REPLICATED,
+    ("replicated", "uniform"): _CONSTRUCTION_REPLICATED_UNIFORM,
+}
+_CONSTRUCTIONS = {construction: sharing for (sharing, _), construction in _CONSTRUCTION_IDS.items()}
 _TAG_DOMAIN = "pyfe4ai/tmcfe-ring-lwe/ciphertext-tag/v1"
 _UNIFORM_DOMAIN = b"pyfe4ai/tmcfe-ring-lwe/uniform-flooding/v1"
 
@@ -200,15 +248,20 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             config: As for
                 :class:`~pyfe4ai.schemes.mcfe.ring_lwe.MCFERingLWEKeyGenerator`,
                 plus ``s``, ``t``, ``lst_sid``, ``stat_param`` (``kappa`` of
-                the flooding) and ``flooding`` (one of :data:`FLOODINGS`,
+                the flooding), ``flooding`` (one of :data:`FLOODINGS`,
                 default ``"uniform"``, ``"gaussian"`` for the partial
-                decryptions of versions <= 0.3.0; see the module docstring).
+                decryptions of versions <= 0.3.0; see the module docstring)
+                and ``sharing`` (``"replicated"``, the default for ``t < s``,
+                or ``"shamir"``, the default for ``t = s``; see
+                :func:`~pyfe4ai.schemes.threshold_utils.resolve_sharing`).
         """
         self.flooding = config.get("flooding", DEFAULT_FLOODING)
         if self.flooding not in FLOODINGS:
             raise FEValidationError("unknown flooding {!r}; one of {}".format(self.flooding, ", ".join(FLOODINGS)))
         self.t = config.get("t", CryptoCONST.tMCFE_T)
         s = config.get("s") or len(config.get("lst_sid", [])) or 1
+        self.sharing = resolve_sharing(config, s, self.t, "mcfe/ring_lwe_threshold")
+        self._threshold_construction = _CONSTRUCTION_IDS[(self.sharing, self.flooding)]
         self.lst_sid = config.get("lst_sid", ["sid_{}".format(i) for i in range(s)])
         self.stat_param = int(config.get("stat_param", 64))
         self.dict_dk = {}
@@ -219,13 +272,10 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             )
         validate_threshold(self.t, self.lst_sid)
 
-    def _threshold_construction(self) -> str:
-        return _CONSTRUCTION if self.flooding == "gaussian" else _CONSTRUCTION_UNIFORM
-
     def _param_verification(self, param: dict) -> bool:
         if not (
             super()._param_verification(param)
-            and param.get("threshold_construction") == self._threshold_construction()
+            and param.get("threshold_construction") == self._threshold_construction
             and param.get("s") == self.s
             and param.get("stat_param") == self.stat_param
         ):
@@ -270,7 +320,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             param = json.load(f)
         param.update(
             {
-                "threshold_construction": self._threshold_construction(),
+                "threshold_construction": self._threshold_construction,
                 "s": self.s,
                 "stat_param": self.stat_param,
                 "q": gp.digits(self.q),
@@ -301,10 +351,15 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         return sk
 
     def get_public_parameters(self) -> dict:
-        """MCFE public parameters plus ``s``, ``t``, ``lst_sid``, ``flooding``
-        and ``flood_bits`` (uniform) or ``sigma_f`` (Gaussian)."""
+        """MCFE public parameters plus ``s``, ``t``, ``lst_sid``, ``flooding``,
+        ``flood_bits`` (uniform) or ``sigma_f`` (Gaussian), ``sharing``,
+        ``threshold_construction`` and ``security_profile``."""
         pp = super().get_public_parameters()
-        pp.update({"s": self.s, "t": self.t, "lst_sid": list(self.lst_sid), "flooding": self.flooding})
+        pp.update(
+            {"s": self.s, "t": self.t, "lst_sid": list(self.lst_sid), "flooding": self.flooding,
+             "sharing": self.sharing, "threshold_construction": self._threshold_construction,
+             "security_profile": self.security_profile}
+        )
         if self.flooding == "uniform":
             pp["flood_bits"] = self.flood_bits
         else:
@@ -318,6 +373,8 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             Dict with shares ``sk_y``, ``z``, ``z_chunks`` and ``label``,
             ``sid``, ``lst_sid``, ``weights_id``, ``noise_key`` and
             ``mac_keys`` (``{nid: key}``), or ``None`` if *sid* is unknown.
+            With replicated sharing the shares are replaced by ``sharing``
+            and ``pieces`` (``[{"set": T, "share": {"sk_y", "z", "z_chunks"}}]``).
         """
         credentials = kwargs.get("credentials", None)
         if not credentials:
@@ -338,12 +395,29 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             "lst_sid": list(self.lst_sid),
             "weights_id": weights_id,
             "mac_keys": {nid: self.mac_keys[nid][sid] for nid in self.lst_nid},
+            # how the noise is drawn and what the key share is of (both sharings)
+            "noise_version": FLOODING_NOISE_VERSION,
+            "noise_sampler": FLOODING_SAMPLER,
+            "flooding": self.flooding,
+            "label_hash": self.label_hash,
         })
         return dk
 
     def _share_key(self, key: dict, weights_id: str) -> dict:
         sid_v = share_points(self.lst_sid)
         points = list(sid_v.values())
+        if self.sharing == "replicated":
+            material = {"sk_y": dict(key["sk_y"]), "z": key["z"], "z_chunks": list(key["z_chunks"])}
+            pieces = share_replicated(material, self.t, points, self.q)
+            return {
+                sid: {
+                    "sharing": "replicated",
+                    "pieces": pieces_held(pieces, sid_v[sid]),
+                    "label": key["label"],
+                    "noise_key": self._noise_key(sid, weights_id, key["label"]),
+                }
+                for sid in self.lst_sid
+            }
         polys = list(key["sk_y"].values()) + [key["z"]] + list(key["z_chunks"])
         shared = self._share_polys_native(polys, points)
         if shared is None:
@@ -362,20 +436,19 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
                 "z": z_shares[sid],
                 "z_chunks": [cs[sid] for cs in chunk_shares],
                 "label": key["label"],
-                "noise_version": FLOODING_NOISE_VERSION,
-                "noise_sampler": FLOODING_SAMPLER,
-                "flooding": self.flooding,
-                "label_hash": key["label_hash"],
-                # one per server, weights and label: a re-sharing for another
-                # n_chunks (same key part) must not come with fresh noise
-                "noise_key": hmac.new(
-                    bytes.fromhex(self._noise_masters[sid]),
-                    json.dumps([weights_id, key["label"]]).encode("utf-8"),
-                    hashlib.sha256,
-                ).hexdigest(),
+                "noise_key": self._noise_key(sid, weights_id, key["label"]),
             }
             for sid in self.lst_sid
         }
+
+    def _noise_key(self, sid: str, weights_id: str, label) -> str:
+        # one per server, weights and label: a re-sharing for another
+        # n_chunks (same key part) must not come with fresh noise
+        return hmac.new(
+            bytes.fromhex(self._noise_masters[sid]),
+            json.dumps([weights_id, label]).encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
 
     def _share_polys_native(self, polys: list, points: list) -> list | None:
         """:func:`share_secret` of every coefficient of *polys* in one native
@@ -399,7 +472,16 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
 
 
 class ThresholdMCFERingLWE(MCFERingLWE):
-    """Crypto operations for threshold BMMS21 identity-based MCFE over Ring-LWE."""
+    """Crypto operations for threshold BMMS21 identity-based MCFE over Ring-LWE.
+
+    A server refuses Shamir key shares with ``t < s`` (versions <= 0.3.0)
+    unless its config has ``legacy_shamir = "warn"`` (see
+    :data:`~pyfe4ai.schemes.threshold_utils.LEGACY_SHAMIR_POLICIES`).
+    """
+
+    def __init__(self, config: dict, **kwargs) -> None:
+        super().__init__(config, **kwargs)
+        self.legacy_shamir = legacy_shamir_policy(config)
 
     _binary_ciphertexts = False  # tags cover the JSON form of a ciphertext
 
@@ -427,7 +509,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
 
     def share_decrypt(
         self, dict_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list,
-        _z_share=None, _chunk=None, _sk_hats=None,
+        _z_share=None, _chunk=None, _sk_hats=None, _share=None,
     ) -> dict:
         """Compute this server's flooded partial decryption.
 
@@ -441,7 +523,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             Dict with ``w``, ``c_y``, ``k``, ``ct_digest``, ``sid`` and
             ``lst_sid_enrolled``.
         """
-        if not dk or "sk_y" not in dk:
+        if not dk or not ("sk_y" in dk or "pieces" in dk):
             raise FEKeyError("no decryption keys provided")
         check_flooding_version(dk)
         flooding = self.pp.get("flooding", LEGACY_FLOODING)
@@ -451,12 +533,23 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             raise FEKeyError("the key share was issued for another flooding than the public parameters'")
         if self.id not in dk["lst_sid"] or dk.get("sid") != self.id:
             raise FESchemeError("the key share does not belong to server {}".format(self.id))
+        check_served_sharing(self.pp, dk, _CONSTRUCTIONS)
+        construction = self.pp.get("threshold_construction")
+        if construction is not None and construction != _CONSTRUCTION_IDS.get((dk.get("sharing", "shamir"), flooding)):
+            raise FESchemeError("the public parameters' threshold_construction is not that of their flooding")
         fusion_weight = credentials.get("fusion_weight")
         if dk.get("label") != credentials.get("label"):
             raise FESchemeError("the key share was derived for another label")
         validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
         check_fusion_weight(dk, fusion_weight)
-        if set(dict_ct) != set(dk["sk_y"]):
+        q = gp.mpz(self.pp["q"])
+        # Shamir: (dk, lambda_k); replicated: the sum of the assigned pieces
+        # (sk_y and z; the chunk keys come with _share), 1
+        share, multiplier, tag = _share or share_for_enrolled(
+            dk, self.id, lst_sid_enrolled, self.pp["t"], q, fields=("sk_y", "z"), cache=share_cache(self),
+            legacy_shamir=self.legacy_shamir, profile=self.pp.get("security_profile"),
+        )
+        if set(dict_ct) != set(share["sk_y"]):
             raise FESchemeError("need one ciphertext for every client of the key")
         # only ciphertexts the clients tagged for this server under the label
         # (or chunk label) it serves: w is linear in ct1
@@ -468,13 +561,12 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         )
         # the key share of the public parameters' label hash
         self._check_key_label_hash(dk)
-        q = gp.mpz(self.pp["q"])
         ring_n = self.pp["ring_n"]
         delta = q // gp.mpz(self.pp["p"])
-        z_share = dk["z"] if _z_share is None else _z_share
+        z_share = share["z"] if _z_share is None else _z_share
         hats = {} if _sk_hats is None else _sk_hats
         ctx = native_backend.ring_context(q, ring_n)
-        native = None if ctx is None else self._native_inputs(ctx, dict_ct, dk, fusion_weight, z_share)
+        native = None if ctx is None else self._native_inputs(ctx, dict_ct, share, fusion_weight, z_share)
         if native is None:
             cts = {}
             for nid, ct in dict_ct.items():
@@ -505,36 +597,33 @@ class ThresholdMCFERingLWE(MCFERingLWE):
                 y_vec = [gp.mpz(int(v)) for v in fusion_weight[nid]]
                 c_y = poly_add(c_y, mat_vec_mul(transpose(ct0), y_vec, q), q)
                 if ring is None:
-                    key_part = poly_add(key_part, poly_mul(ct1, [gp.mpz(v) for v in dk["sk_y"][nid]], q), q)
+                    key_part = poly_add(key_part, poly_mul(ct1, [gp.mpz(v) for v in share["sk_y"][nid]], q), q)
                     continue
                 if nid not in hats:
-                    hats[nid] = ring.forward([gp.mpz(v) for v in dk["sk_y"][nid]])
+                    hats[nid] = ring.forward([gp.mpz(v) for v in share["sk_y"][nid]])
                 acc = ring.mul_add(acc, ring.forward(ct1), hats[nid])
             if acc is not None:
                 key_part = poly_add(key_part, ring.inverse(acc), q)
             ct_digest = ciphertexts_digest(cts)
             key_inputs = ciphertexts_digest({nid: ct1 for nid, (_, _, ct1) in cts.items()})
 
-        sid_v = share_points(dk["lst_sid"])
-        lagrange = lagrange_coefficient_at_zero(
-            sid_v[self.id], [sid_v[s] for s in lst_sid_enrolled], q
-        )
         # the noise is seeded with what the key part depends on -- the ct1
         # values and the key term (the label or chunk) -- so a request for the
         # same key part always draws the same noise
-        # the partial depends on the enrolled set only through lambda
-        context = json.dumps([key_inputs, encoded, gp.digits(lagrange)]).encode("utf-8")
+        # the partial depends on the enrolled set only through the tag (lambda,
+        # or the assigned pieces)
+        context = json.dumps([key_inputs, encoded, tag]).encode("utf-8")
         noise = self._flooding_noise(ring_n, bytes.fromhex(dk["noise_key"]) + context)
         if native is None:
-            w = [gp.digits((lagrange * v + e) % q) for v, e in zip(key_part, noise)]
+            w = [gp.digits((multiplier * v + e) % q) for v, e in zip(key_part, noise)]
             c_y = [gp.digits(v) for v in c_y]
         else:
             for nid in nids:  # NTT(sk_i share), cached across chunks
                 if ("native", nid) not in hats:
-                    hats[("native", nid)] = ctx.ntt_mont(dk["sk_y"][nid])
+                    hats[("native", nid)] = ctx.ntt_mont(share["sk_y"][nid])
             w, c_y = native_backend.ext().share_partial(
                 ctx.cap, packed, self.pp["eta"], [[int(v) for v in fusion_weight[nid]] for nid in nids],
-                [hats[("native", nid)] for nid in nids], z_share, delta, lagrange, noise,
+                [hats[("native", nid)] for nid in nids], z_share, delta, multiplier, noise,
             )
         return {
             "w": w,
@@ -642,7 +731,17 @@ class ThresholdMCFERingLWE(MCFERingLWE):
     ) -> list:
         """Partially decrypt every chunk of the clients' packed ndarray ciphertexts."""
         sample = next(iter(dict_ndarray_ct.values()))
-        if self.key_chunks(sample) > len(dk.get("z_chunks", [])):
+        packed_share = None
+        z_chunks = (dk or {}).get("z_chunks", [])
+        if dk and "pieces" in dk and self.id in dk.get("lst_sid", []):
+            # the assigned pieces (sk_y and the chunk keys), added up once for all chunks
+            validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
+            packed_share = share_for_enrolled(
+                dk, self.id, lst_sid_enrolled, self.pp["t"], gp.mpz(self.pp["q"]),
+                fields=("sk_y", "z_chunks"), cache=share_cache(self),
+            )
+            z_chunks = packed_share[0]["z_chunks"]
+        if self.key_chunks(sample) > len(z_chunks):
             raise FEKeyError("the key share covers fewer chunks than the ciphertexts")
         out = []
         sk_hats = {}  # NTT(sk_i), transformed once for all chunks
@@ -651,10 +750,10 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             for j in range(len(layer["chunks"])):
                 dct_ct = {nid: _chunk_with_code(dict_ndarray_ct[nid][l]["chunks"][j], dict_ndarray_ct[nid][l])
                           for nid in dict_ndarray_ct}
-                index = chunk_key_index(layer, j, len(dk["z_chunks"]))
+                index = chunk_key_index(layer, j, len(z_chunks))
                 parts.append(self.share_decrypt(
                     dct_ct, credentials, dk, lst_sid_enrolled,
-                    _z_share=dk["z_chunks"][index], _chunk=index, _sk_hats=sk_hats,
+                    _z_share=z_chunks[index], _chunk=index, _sk_hats=sk_hats, _share=packed_share,
                 ))
             out.append({"shape": layer["shape"], "parts": parts})
         return out

@@ -54,9 +54,12 @@ def test_key_generator(kg_config):
     dk_sid = kg.get_decryption_keys(
         "sid_0", credentials={"fusion_weight": fusion_weight, "label": "test-label"}
     )
-    # one share of the aggregated key, nothing per client
-    assert set(dk_sid) == {"sk_y", "sid", "lst_sid", "weights_id", "noise_key", "noise_version", "noise_sampler"}
-    assert len(dk_sid["sk_y"]) == kg.params["n0"] + kg.params["m0"]
+    # t < s: C(s - 1, t - 1) = 2 replicated pieces of the aggregated key, nothing per client
+    assert pp["sharing"] == "replicated"
+    assert set(dk_sid) == {"sharing", "pieces", "sid", "lst_sid", "weights_id", "noise_key", "noise_version",
+                           "noise_sampler"}
+    assert len(dk_sid["pieces"]) == 2
+    assert all(len(piece["share"]["sk_y"]) == kg.params["n0"] + kg.params["m0"] for piece in dk_sid["pieces"])
 
 
 def test_entire_process(kg_config):
@@ -213,36 +216,38 @@ def test_partial_decryptions_are_noise_flooded(kg_config):
     import gmpy2 as gp
 
     from pyfe4ai.schemes.mcfe.lwe import dot_mod
-    from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
+    from pyfe4ai.schemes.threshold_utils import share_for_enrolled
 
     dct_x = {nid: [1] for nid in kg_config["lst_nid"]}
     dct_y = {nid: [1] for nid in kg_config["lst_nid"]}
-    enrolled = ["sid_0", "sid_1"]
+    enrolled = ["sid_0", "sid_2"]
     kg, pp, dct_ct, partials, combiner = _round(kg_config, dct_x, dct_y, "flood", enrolled)
     credentials = {"fusion_weight": dct_y, "label": "flood"}
-    dk = kg.get_decryption_keys("sid_0", credentials=credentials)
-    server = ThresholdMCFELWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
+    dk = kg.get_decryption_keys("sid_2", credentials=credentials)
+    server = ThresholdMCFELWE({"id": "sid_2", "keys": {"pp": pp, "dk": dk}})
 
     # identical requests: identical answers (no averaging)
-    assert server.share_decrypt(dct_ct, credentials, dk, enrolled) == partials["sid_0"]
+    assert server.share_decrypt(dct_ct, credentials, dk, enrolled) == partials["sid_2"]
 
-    # the answer is not the exact linear value lambda <share, H(l)>
+    # the answer is not the exact linear value: multiplier <share, H(l)>, the
+    # share being the assigned key pieces (or the Shamir share, multiplier lambda)
     q = gp.mpz(pp["q"])
-    lam = lagrange_coefficient_at_zero(1, [1, 2], q)
-    exact = lam * dot_mod([gp.mpz(v) for v in dk["sk_y"]], server._hash_label("flood"), q) % q
-    noise = (gp.mpz(partials["sid_0"]["w"]) - exact) % q
+
+    def exact(lst):
+        share, multiplier, _ = share_for_enrolled(dk, "sid_2", lst, pp["t"], q)
+        return multiplier * dot_mod([gp.mpz(v) for v in share["sk_y"]], server._hash_label("flood"), q) % q
+
+    noise = (gp.mpz(partials["sid_2"]["w"]) - exact(enrolled)) % q
     assert noise != 0
     assert min(noise, q - noise) <= 12 * int(pp["sigma_f"])
 
-    # another enrolled set gets independent noise and still decrypts
-    other = ["sid_0", "sid_2"]
+    # another enrolled set (point 3 adds other pieces) gets independent noise and still decrypts
+    other = ["sid_1", "sid_2"]
     w_other = server.share_decrypt(dct_ct, credentials, dk, other)
-    lam_o = lagrange_coefficient_at_zero(1, [1, 3], q)
-    exact_o = lam_o * dot_mod([gp.mpz(v) for v in dk["sk_y"]], server._hash_label("flood"), q) % q
-    assert (gp.mpz(w_other["w"]) - exact_o) % q != noise
-    dk2 = kg.get_decryption_keys("sid_2", credentials=credentials)
-    server2 = ThresholdMCFELWE({"id": "sid_2", "keys": {"pp": pp, "dk": dk2}})
-    partials_o = {"sid_0": w_other, "sid_2": server2.share_decrypt(dct_ct, credentials, dk2, other)}
+    assert (gp.mpz(w_other["w"]) - exact(other)) % q != noise
+    dk1 = kg.get_decryption_keys("sid_1", credentials=credentials)
+    server1 = ThresholdMCFELWE({"id": "sid_1", "keys": {"pp": pp, "dk": dk1}})
+    partials_o = {"sid_2": w_other, "sid_1": server1.share_decrypt(dct_ct, credentials, dk1, other)}
     assert combiner.combine_decrypt(partials) == 3
     assert combiner.combine_decrypt(partials_o) == 3
 

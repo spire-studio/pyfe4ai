@@ -40,9 +40,16 @@ def test_key_shares(kg_config):
     kg = ThresholdMCFERingLWEKeyGenerator(kg_config)
     kg.setup()
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": {n: [1] for n in kg_config["lst_nid"]}, "label": "l"})
-    assert set(dk) == {"sk_y", "z", "z_chunks", "label", "label_hash", "noise_key", "noise_version", "noise_sampler",
-                       "flooding", "sid", "lst_sid", "weights_id",
-                       "mac_keys"}
+    # t < s: replicated sharing, C(s - 1, t - 1) = 2 pieces
+    common = {"label", "label_hash", "noise_key", "noise_version", "noise_sampler", "flooding", "sid", "lst_sid",
+              "weights_id", "mac_keys"}
+    assert set(dk) == {"sharing", "pieces"} | common
+    assert dk["sharing"] == "replicated" and len(dk["pieces"]) == 2
+    assert all(set(piece["share"]) == {"sk_y", "z", "z_chunks"} for piece in dk["pieces"])
+    shamir = ThresholdMCFERingLWEKeyGenerator(dict(kg_config, t=3))
+    shamir.setup()
+    dk = shamir.get_decryption_keys("sid_0", credentials={"fusion_weight": {n: [1] for n in kg_config["lst_nid"]}, "label": "l"})
+    assert set(dk) == {"sk_y", "z", "z_chunks"} | common
 
 
 @pytest.mark.parametrize("enrolled", [["sid_1", "sid_2"], ["sid_0", "sid_2"], ["sid_0", "sid_1", "sid_2"]])
@@ -58,14 +65,15 @@ def test_any_enrolled_set_decrypts_extreme_values(kg_config, enrolled):
 def test_partials_are_flooded_and_derandomised(kg_config):
     dct_x = {nid: [[1, 2]] for nid in kg_config["lst_nid"]}
     dct_y = {nid: [1] for nid in kg_config["lst_nid"]}
-    enrolled = ["sid_0", "sid_1"]
+    enrolled = ["sid_0", "sid_2"]
     kg, pp, dct_ct, partials, combiner = _round(kg_config, dct_x, dct_y, "lbl", enrolled)
     credentials = {"fusion_weight": dct_y, "label": "lbl"}
-    dk = kg.get_decryption_keys("sid_0", credentials=credentials)
-    server = ThresholdMCFERingLWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
-    assert server.share_decrypt(dct_ct, credentials, dk, enrolled) == partials["sid_0"]
-    other = server.share_decrypt(dct_ct, credentials, dk, ["sid_0", "sid_2"])
-    assert other["w"] != partials["sid_0"]["w"]
+    dk = kg.get_decryption_keys("sid_2", credentials=credentials)
+    server = ThresholdMCFERingLWE({"id": "sid_2", "keys": {"pp": pp, "dk": dk}})
+    assert server.share_decrypt(dct_ct, credentials, dk, enrolled) == partials["sid_2"]
+    # point 3 adds other key pieces for {2, 3}: another partial, fresh noise
+    other = server.share_decrypt(dct_ct, credentials, dk, ["sid_1", "sid_2"])
+    assert other["w"] != partials["sid_2"]["w"]
     assert combiner.combine_decrypt(partials) == [3, 6]
 
 
