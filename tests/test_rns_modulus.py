@@ -209,6 +209,16 @@ def test_threshold_and_unknown_values_refused():
         tmcfe_rlwe.ThresholdMCFERingLWEKeyGenerator(cfg)
     with pytest.raises(FEValidationError, match="ring_modulus"):
         mcfe_rlwe.MCFERingLWEKeyGenerator({"n": 3, "eta": 1, "ring_n": 16, "ring_modulus": "composite"})
+    # the SIFE schemes refuse it rather than ignore it (adaptive SIFE: Ring-LHL for prime q)
+    from pyfe4ai.schemes.sife import fullysec_ring_lwe as sife_fs
+    from pyfe4ai.schemes.sife import ring_lwe as sife_rlwe
+
+    sife = {"eta": 1, "ring_n": 16, "sec_param": 64, "bound_x": 3, "bound_y": 3, "ring_modulus": "rns"}
+    with pytest.raises(FEValidationError, match="ring_modulus"):
+        sife_rlwe.SIFERingLWEKeyGenerator(sife)
+    with pytest.raises(FEValidationError, match="ring_modulus"):
+        sife_fs.SIFEFullySecRingLWEKeyGenerator(sife)
+    assert sife_rlwe.SIFERingLWEKeyGenerator(dict(sife, ring_modulus="prime")).q.bit_length() > 0
 
 
 def test_parameter_cache():

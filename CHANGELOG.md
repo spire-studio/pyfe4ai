@@ -496,7 +496,8 @@ compatibility).
   (FACCT by default, or rounded) and label hash, as for the prime. Ciphertext formats are unchanged; the
   public parameters and the cached record gain `q_factors`. The default stays
   the prime (records, public parameters and ciphertexts as before); the
-  threshold MCFE refuses the option and the SIFE schemes do not read it.
+  threshold MCFE and the SIFE schemes (`sife/ring_lwe`, `sife/fullysec_ring_lwe`)
+  refuse the option.
   Security review: `docs/rns_modulus_review.md`. 10^4 elements, 3 clients,
   binary ciphertexts: client -9% (docker -14%), decryption -15% (-17%),
   online aggregation -16% (-18%); key derivation unchanged

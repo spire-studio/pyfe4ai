@@ -21,8 +21,8 @@ Fiore, Gay, Ursu, CRYPTO 2018 (`references/ACFGU18.pdf`).
 | `sife/fullysec_ring_lwe` (adaptive, Sec. 5) | **not safe without a new argument** | Thm. 2 (Ring-LHL) and App. B are stated and proved for prime `q` |
 
 The prototype (`ring_modulus="rns"`) is therefore offered for MIFE, MCFE and
-dMCFE Ring-LWE only; the threshold key generator refuses it, and the SIFE
-schemes do not read the option.
+dMCFE Ring-LWE only; the threshold key generator and the SIFE key generators
+(`sife/ring_lwe`, `sife/fullysec_ring_lwe`) refuse it.
 
 ## 1. Hardness of RLWE / mhe-RLWE with a composite `q`
 
