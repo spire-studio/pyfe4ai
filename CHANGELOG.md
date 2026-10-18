@@ -41,10 +41,14 @@ compatibility).
   `mcfe` `ring_lwe`, the decentralized and threshold MCFE: keys and
   encryption noise) and the dense-LWE MCFE keys `t` (`mcfe/lwe`,
   `fullysec_lwe`, `lwe_threshold`, `lwe_decentralized`) now sample with
-  `"facct"` by default, record it as `gaussian_sampler` in their public
-  parameters, and ignore the library-wide choice
-  (`sampling_utils.scheme_sampler`); `gaussian_sampler = "rounded"` stays
-  selectable. Public parameters without the field (earlier versions) give
+  `"facct"` by default and record it as `gaussian_sampler` in their public
+  parameters (`sampling_utils.scheme_sampler`: the config's sampler, else
+  the recorded one, else -- under `toy` -- a `gaussian_sampler()` block,
+  else `"facct"`; the process-wide choice and `PYFE4AI_GAUSSIAN_SAMPLER` do
+  not apply). `gaussian_sampler = "rounded"` stays selectable under `toy`;
+  `standard` refuses it, and a crypto object overriding a recorded
+  `"facct"` with it warns (`FESecurityWarning`). ABDP15, ALS16 and the DCR
+  schemes still follow the library-wide choice (rounded by default). Public parameters without the field (earlier versions) give
   FACCT to new encryptions; decryption does not depend on it; parameter
   records are unchanged.
 - **MPFR Gaussians at `bits(sigma) + 320` bits** (`BIGINT_GUARD_BITS`,

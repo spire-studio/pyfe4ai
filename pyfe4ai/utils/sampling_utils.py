@@ -23,11 +23,14 @@ _CSPRNG = random.SystemRandom()
 # The OS source of the module; a replaced _CSPRNG (tests) keeps the Python sampler.
 _SYSTEM_RANDOM = _CSPRNG
 
-#: Gaussian samplers: ``"rounded"`` (the default; a rounded continuous
-#: Gaussian) and ``"facct"`` (exact ``D_{Z,sigma}``, see
+#: Gaussian samplers: ``"rounded"`` (the library-wide default; a rounded
+#: continuous Gaussian) and ``"facct"`` (exact ``D_{Z,sigma}``, see
 #: :func:`discrete_gaussian_facct`). Select one per call (``sampler=``), per
 #: context (:func:`gaussian_sampler`), per process (:func:`set_gaussian_sampler`)
-#: or with the ``PYFE4AI_GAUSSIAN_SAMPLER`` environment variable.
+#: or with the ``PYFE4AI_GAUSSIAN_SAMPLER`` environment variable. Exception:
+#: the schemes that record their sampler in their public parameters (see
+#: :func:`scheme_sampler`) default to ``"facct"`` and ignore the process-wide
+#: choice, and the threshold flooding is pinned (:data:`FLOODING_SAMPLER`).
 GAUSSIAN_SAMPLERS = ("rounded", "facct")
 _SAMPLER_ENV = "PYFE4AI_GAUSSIAN_SAMPLER"
 _default_sampler = os.environ.get(_SAMPLER_ENV, "rounded")
@@ -73,11 +76,12 @@ def gaussian_sampler(name: str):
         _sampler_override.reset(token)
 
 
-#: The sampler the Ring-LWE MIFE / MCFE family, the dense-LWE MCFE key ``t``
-#: and SIFE FullySec Ring-LWE use unless told otherwise: the exact
-#: ``D_{Z,sigma}`` their proofs assume (the crypto review of October 2026 found
-#: the double-precision rounded sampler 2^-25..2^-4 from it per key or
-#: ciphertext, against 2^-128 budgets).
+#: The default of :func:`scheme_sampler`: the exact ``D_{Z,sigma}`` the proofs of
+#: the Ring-LWE MIFE / MCFE family and of the dense-LWE MCFE keys ``t`` assume
+#: (the crypto review of October 2026 found the double-precision rounded
+#: sampler 2^-25..2^-4 from it per key or ciphertext, against 2^-128 budgets).
+#: SIFE FullySec Ring-LWE has the same default (its own ``DEFAULT_SAMPLER``,
+#: passed to :func:`scheme_sampler` with ``use_context=False``).
 PROOF_SAMPLER = "facct"
 
 
@@ -204,8 +208,10 @@ def discrete_gaussian_matrix(
     ``8.57 sigma``. Per the crypto review of October 2026 one ciphertext's
     noise is then about 2^-12..2^-4 and a key 2^-25..2^-15 from i.i.d.
     ``D_{Z,sigma}``: fine for toy parameters and benchmarks, not for the
-    distributions of the security proofs (which is why the lattice schemes
-    default to ``"facct"``, see :func:`scheme_sampler`). It is not
+    distributions of the security proofs (which is why the Ring-LWE MIFE /
+    MCFE family, the dense-LWE MCFE keys and SIFE FullySec Ring-LWE default
+    to ``"facct"``, see :func:`scheme_sampler`; ABDP15, ALS16 and the DCR
+    schemes follow the library-wide choice). It is not
     constant-time either. With ``sampler="facct"`` the samples come from
     :func:`discrete_gaussian_facct` (exact ``D_{Z,sigma}``).
 

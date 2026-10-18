@@ -77,7 +77,8 @@ The ``security_profile`` entry of a key generator's config selects one:
     is 128, as ``kappa`` of the Ring-LWE schemes: a statistical distance of
     ``2^-128`` per sample, so that ``Q`` samples stay below ``Q 2^-128``.
     That holds for exact Gaussians (the ``"facct"`` sampler, the default of
-    the lattice schemes) and for the MPFR path at ``bits(sigma) + 320`` bits;
+    the Ring-LWE MIFE / MCFE family, the dense-LWE MCFE keys and SIFE FullySec
+    Ring-LWE) and for the MPFR path at ``bits(sigma) + 320`` bits;
     the double-precision rounded sampler does not meet it (see the security
     notes in the documentation).
 

@@ -212,7 +212,7 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     ("mcfe", "lwe"): SchemeStatus(
         _S + "mcfe.lwe", REVIEWED, ADAPTED, "ABMPSW20 Fig. 4, selective parameters",
         note="signed messages and weights (K = 2nXY + 1, centred decoding); "
-        "t is a rounded continuous Gaussian",
+        "t <- D_{Z,sigma_t} exactly (FACCT) by default, rounded selectable under toy",
     ),
     ("mcfe", "paillier"): SchemeStatus(
         _S + "mcfe.paillier", REVIEWED, FAITHFUL, "ABMPSW20 Fig. 3",
@@ -231,7 +231,7 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
     ("mcfe", "fullysec_lwe"): SchemeStatus(
         _S + "mcfe.fullysec_lwe", REVIEWED, ADAPTED, "ABMPSW20 Fig. 4, adaptive parameters",
         note="signed messages and weights (K = 2nXY + 1, centred decoding); "
-        "t is a rounded continuous Gaussian; m0 grows with n log2(2X + 1)",
+        "t <- D_{Z,sigma_t} exactly (FACCT) by default, rounded selectable under toy; m0 grows with n log2(2X + 1)",
     ),
     ("mcfe", "fh_multi_ipe_pairing"): SchemeStatus(
         _S + "mcfe.fh_multi_ipe_pairing", REVIEWED, ADAPTED,

@@ -71,17 +71,26 @@ Gaussian ``D_{Z,sigma}``. There are two samplers.
 
 ``"facct"`` (:func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_facct`)
 samples ``D_{Z,sigma}`` exactly, to about 2^-185 per sample, for every width
-(natively below ``2^448``). It is the default -- recorded as
-``gaussian_sampler`` in the public parameters, whatever the library-wide
-choice -- of the schemes whose proofs budget ``D_{Z,sigma}``: the Ring-LWE
-MIFE / MCFE family (``sife``, ``mife``, ``mcfe`` ``ring_lwe``, the
+(natively below ``2^448``). It is the default of these schemes, which record
+their sampler as ``gaussian_sampler`` in their public parameters: the
+Ring-LWE MIFE / MCFE family (``sife``, ``mife``, ``mcfe`` ``ring_lwe``, the
 decentralized and threshold MCFE), the dense-LWE MCFE keys ``t``
 (``mcfe/lwe``, ``fullysec_lwe``, ``lwe_threshold``, ``lwe_decentralized``)
-and ``sife/fullysec_ring_lwe``.
+and ``sife/fullysec_ring_lwe``. For them, in this order: the
+``gaussian_sampler`` of the key generator's or crypto object's config; else
+the one the public parameters record; else, under the ``toy`` profile only
+and not for ``sife/fullysec_ring_lwe``, the one a ``gaussian_sampler()``
+block selects; else ``"facct"``. The process-wide choice
+(``set_gaussian_sampler``, ``PYFE4AI_GAUSSIAN_SAMPLER``) does not apply to
+them. The ``standard`` profile refuses ``"rounded"`` for them, and a crypto
+object whose config overrides a recorded ``"facct"`` with ``"rounded"``
+warns (``FESecurityWarning``; refused under ``standard``).
 
-``"rounded"`` rounds a continuous Gaussian; it is the library-wide default
-elsewhere and selectable in those schemes (``gaussian_sampler =
-"rounded"``). The *ideal* rounded Gaussian (exact uniforms and arithmetic) is
+``"rounded"`` rounds a continuous Gaussian. It is the library-wide default,
+and so the sampler of the other lattice and DCR schemes unless chosen
+otherwise: ABDP15 SIFE / MIFE LWE (and the keys of tMIFE-LWE), ALS16
+(``sife`` / ``mife`` ``fullysec_lwe``) and the DCR schemes; the schemes above
+can select it under ``toy`` (``gaussian_sampler = "rounded"``). The *ideal* rounded Gaussian (exact uniforms and arithmetic) is
 a mixture of centred discrete Gaussians, about ``0.02 / sigma^2`` from
 ``D_{Z,sigma}`` per sample: 2^-9 at ``sigma = 3.2``, about 2^-33 per sample at
 the Ring-LWE ``sigma1`` -- about 2^-18 for one MIFE key of ``eta ring_n``
@@ -107,7 +116,8 @@ samples. Its implementations add their own terms (crypto review, October
   (``FLOODING_SAMPLER``, recorded in their decryption keys), whatever the
   sampler selected elsewhere.
 
-The library-wide choice applies to the other schemes:
+The library-wide choice -- which applies to the other schemes only -- is
+made per call (``sampler=``), per context or per process:
 
 .. code-block:: python
 
@@ -126,10 +136,9 @@ and on both backends, so it comes with known-answer tests. Parties that
 derive noise from a shared seed (the threshold schemes' flooding noise)
 must use the same sampler.
 
-The schemes above take ``gaussian_sampler = "rounded"`` in their key
-generator or crypto config to select the rounded sampler; the key generator
-publishes its choice in ``pp`` as the encryptors' default, and public
-parameters without it (earlier versions) mean ``"facct"``. With the rounded
+The key generator of a scheme that records its sampler publishes it in
+``pp`` as the encryptors' default; public parameters without it (earlier
+versions) mean ``"facct"``, and decryption does not depend on it. With the rounded
 sampler, ``sife/fullysec_ring_lwe``'s keys at ``eta = 1`` are about 2^-47
 from ``D_{Z,sigma1}`` for the ideal rounded Gaussian (``0.02 / sigma1^2``
 over its ``m n eta`` key samples) and about 2^-12 with the double-precision

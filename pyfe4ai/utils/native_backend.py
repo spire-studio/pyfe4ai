@@ -36,7 +36,9 @@ moduli of ``mcfe/ring_lwe_threshold``), in 64-bit words below ``2^63``,
 128-bit words below ``2^125`` and 256-bit words above, and samples natively
 Gaussians of widths up to ``2^40`` inside its encryption calls (wider ones
 come from :func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint`)
-with the sampler in effect: the default rounded Gaussian, consuming seven
+with the scheme's sampler (its recorded ``gaussian_sampler``, FACCT by
+default, see :func:`~pyfe4ai.utils.sampling_utils.scheme_sampler`): the
+rounded Gaussian, consuming seven
 random bytes per uniform as ``random.SystemRandom.random``, or the exact
 FACCT sampler (``sampler="facct"``), which draws ``getrandbits`` in the order
 of :func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_facct` and makes
