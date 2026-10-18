@@ -511,6 +511,8 @@ struct FacctObj {
 
 #[pymethods]
 impl FacctObj {
+    /// The tables; a few fixed-point thresholds are checked against `exact`
+    /// (ValueError if c is not precise enough for the 2^-100 band).
     #[new]
     fn new(k: u64, y_bits: u32, cdt: Vec<Bound<'_, PyAny>>, c_mant: u128, c_exp: i32, exact: Py<PyAny>) -> PyResult<Self> {
         if cdt.len() != facct::CDT_SIZE || k == 0 || k > 1 << 50 {
@@ -520,7 +522,14 @@ impl FacctObj {
         for (dst, v) in t.iter_mut().zip(cdt.iter()) {
             *dst = u256_arg(v)?;
         }
-        Ok(FacctObj { table: facct::Table { k, y_bits, cdt: t, c_mant, c_exp }, exact })
+        let obj = FacctObj { table: facct::Table { k, y_bits, cdt: t, c_mant, c_exp }, exact };
+        let err = Mutex::new(None);
+        let consistent = facct::check_table(&obj.table, &exact_fn(&obj, &err));
+        exact_err(&err)?;
+        if !consistent {
+            return Err(PyValueError::new_err("FACCT tables: c disagrees with the exact acceptance thresholds"));
+        }
+        Ok(obj)
     }
 }
 
@@ -723,6 +732,72 @@ fn gauss_bigint_approx(py: Python<'_>, prec: u32, sig_mant: &[u8], sig_exp: i64,
             Ok((v, sh, neg, p.words()).into_pyobject(py)?.into_any().unbind())
         }
     }
+}
+
+/// sampling_utils.discrete_gaussian_facct(sigma, count, rng) for the width of
+/// `table`, returning (samples, used):
+/// * rng an XofRandom (`xof_head` = its `_seed`, from call `xof_counter`): run
+///   with the GIL held -- the number of calls depends on the samples, so the
+///   caller holds the XofRandom claim lock -- and `used` is the counter after
+///   the last call;
+/// * `rnd` (tests): getrandbits over these bytes, as `_OSRandomBuffer` reads the
+///   OS stream; `used` is the number of bytes read;
+/// * else the call's DRBG, samples 256 c to 256 c + 255 from stream c (on
+///   `threads` threads); `used` is 0.
+#[pyfunction]
+#[pyo3(signature = (table, count, xof_head=None, xof_counter=0, rnd=None, seed=None, threads=1))]
+#[allow(clippy::too_many_arguments)]
+fn facct_draw(py: Python<'_>, table: &Bound<'_, FacctObj>, count: usize, xof_head: Option<Vec<u8>>, xof_counter: u64,
+              rnd: Option<Vec<u8>>, seed: Option<Vec<u8>>, threads: usize) -> PyResult<(Py<PyList>, u64)> {
+    const CHUNK: usize = 256;
+    if count > MAX_BIGINT_COUNT {
+        return Err(PyValueError::new_err("too many samples for one native call"));
+    }
+    let obj = table.get();
+    let err = Mutex::new(None);
+    let exact = exact_fn(obj, &err);
+    let mut out = vec![0i64; count];
+    let used = if let Some(head) = xof_head {
+        let head = zeroize::Zeroizing::new(head);
+        let mut bits = facct::XofBits::at(&head, xof_counter);
+        facct::sample(&obj.table, &mut out, &mut bits, &exact); // the GIL stays held
+        bits.counter()
+    } else if let Some(data) = rnd {
+        let data = zeroize::Zeroizing::new(data);
+        let mut at = 0usize;
+        let mut bits = facct::ByteBits::new(256, |buf: &mut [u8]| {
+            let n = buf.len().min(data.len() - at);
+            buf[..n].copy_from_slice(&data[at..at + n]);
+            at += n;
+            n
+        });
+        py.detach(|| facct::sample(&obj.table, &mut out, &mut bits, &exact));
+        if bits.failed {
+            return Err(PyValueError::new_err("not enough random bytes"));
+        }
+        bits.consumed() as u64
+    } else {
+        let drbg = CallDrbg::new(seed.as_deref())?;
+        let slots: Vec<Mutex<&mut [i64]>> = out.chunks_mut(CHUNK).map(Mutex::new).collect();
+        py.detach(|| {
+            parallel_for(slots.len(), threads, |c| {
+                let mut offset = 0u64;
+                let mut bits = facct::ByteBits::new(4096, |buf: &mut [u8]| {
+                    drbg.fill_at(c as u64, offset, buf);
+                    offset += buf.len() as u64;
+                    buf.len()
+                });
+                facct::sample(&obj.table, &mut slots[c].lock().unwrap(), &mut bits, &exact);
+            })
+        });
+        0
+    };
+    exact_err(&err)?;
+    let list = PyList::new(py, &out)?.unbind();
+    for v in out.iter_mut() {
+        unsafe { std::ptr::write_volatile(v, 0) };
+    }
+    Ok((list, used))
 }
 
 /// The noise of an encryption call: FACCT with the tables of (sigma2, sigma3), else rounded.
@@ -1546,6 +1621,7 @@ fn _rust_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(drbg_bytes, m)?, wrap_pyfunction!(share_inputs, m)?, wrap_pyfunction!(share_partial, m)?,
         wrap_pyfunction!(share_combine, m)?, wrap_pyfunction!(shamir_share, m)?,
         wrap_pyfunction!(gauss_bigint, m)?, wrap_pyfunction!(gauss_bigint_approx, m)?,
+        wrap_pyfunction!(facct_draw, m)?,
     ] {
         m.add_function(f)?;
     }

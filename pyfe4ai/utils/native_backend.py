@@ -40,7 +40,9 @@ with the sampler in effect: the default rounded Gaussian, consuming seven
 random bytes per uniform as ``random.SystemRandom.random``, or the exact
 FACCT sampler (``sampler="facct"``), which draws ``getrandbits`` in the order
 of :func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_facct` and makes
-its decisions: the tables come from Python (:func:`facct_table`), the
+its decisions -- inside the encryption calls, and for
+:func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_facct` itself
+(:func:`gaussian_facct`) --: the tables come from Python (:func:`facct_table`), the
 acceptance test is decided in fixed point with an error below ``2^-110``,
 and the rare tests that bound cannot decide (about one in ``2^99``) are
 handed to the Python formula, so for a given bit source the samples are the
@@ -212,8 +214,10 @@ def _facct_table(sigma_q):
     from pyfe4ai.utils import sampling_utils as su
 
     params = su._facct_params(sigma_q)
-    mant, exp = (-params.neg_c).as_mantissa_exp()
-    mant, exp = int(mant), int(exp)
+    # c = -neg_c exactly: negate the mantissa (negating the mpfr would round it
+    # to the context's 53 bits; crypto review 2026-10, finding M4)
+    mant, exp = params.neg_c.as_mantissa_exp()
+    mant, exp = -int(mant), int(exp)
     shift = mant.bit_length() - 128  # a 128-bit mantissa: truncated, or extended exactly
     mant = mant >> shift if shift > 0 else mant << -shift
     precision, neg_c, k = su.FACCT_PRECISION, params.neg_c, params.k
@@ -231,6 +235,62 @@ def facct_table(sigma):
     from pyfe4ai.utils import sampling_utils as su
 
     return _facct_table(su._exact(sigma))
+
+
+#: Largest FACCT double-sampling factor k of the native kernel (samples in an i64).
+MAX_NATIVE_FACCT_K = 2 ** 50
+
+
+def gaussian_facct(sigma, count: int, rng):
+    """:func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_facct` natively;
+    ``None`` when the Python code applies.
+
+    The extension draws ``getrandbits`` in the reference's order and makes its
+    decisions (fixed-point acceptance tests with the Python threshold for the
+    undecided ones; see :func:`_facct_table`), so for a given bit source the
+    samples are the reference's. Bits: from *rng* if it is an
+    :class:`~pyfe4ai.utils.sampling_utils.XofRandom` -- sampled with the GIL
+    and the XofRandom claim lock held, since the number of calls depends on
+    the samples, and its counter then advanced by the calls used -- else, for
+    ``rng=None`` with the module's OS source, from the per-call DRBG (stream
+    ``c`` for samples ``256 c`` to ``256 c + 255``, on :func:`get_threads`
+    threads; or :data:`_random_override` in the tests). Widths with ``k <=
+    2^50`` (``sigma`` below about ``2^49.8``); the MPFR context does not
+    matter (the reference sets its own).
+    """
+    if _ext is None or get_backend() == "python" or not hasattr(_ext, "facct_draw"):
+        return None
+    from pyfe4ai.utils import sampling_utils as su
+
+    if count <= 0 or count > MAX_NATIVE_BIGINT_COUNT:
+        return None
+    try:
+        sigma_q = su._exact(sigma)
+        k = su._facct_params(sigma_q).k
+    except TypeError:  # an unhashable width: the Python code
+        return None
+    if k > MAX_NATIVE_FACCT_K:
+        return None
+    if rng is None:
+        if su._OS_RANDOM is not su._OS_SOURCE:
+            return None
+        kwargs = {"threads": _threads}
+        rnd = random_input(512 * count + 4096)  # tests: a byte stream, as _OSRandomBuffer reads the OS
+        if rnd is not None:
+            kwargs["rnd"] = rnd
+        kwargs.update(seed_kwargs())
+        values, _ = _ext.facct_draw(_facct_table(sigma_q), count, **kwargs)
+    elif type(rng) is su.XofRandom:
+        table = _facct_table(sigma_q)
+
+        def draw(start):
+            values, end = _ext.facct_draw(table, count, xof_head=rng._seed, xof_counter=start)
+            return values, end - start
+
+        values = rng._claim_dynamic(draw)
+    else:
+        return None
+    return [gp.mpz(v) for v in values]
 
 
 def noise_kwargs(*sigmas) -> dict:

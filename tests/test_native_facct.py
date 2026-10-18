@@ -48,10 +48,11 @@ def test_same_samples_as_python(sigma):
 
 
 def _table(sigma, counter, c_exp_shift=0):
-    """facct_table with a counting exact threshold (and optionally a useless c)."""
+    """facct_table with a counting exact threshold (and optionally a useless c);
+    the counter is cleared after the table's own check at construction."""
     p = su._facct_params(su._exact(sigma))
-    mant, exp = (-p.neg_c).as_mantissa_exp()
-    mant, exp = int(mant), int(exp)
+    mant, exp = p.neg_c.as_mantissa_exp()
+    mant, exp = -int(mant), int(exp)
     shift = mant.bit_length() - 128
     mant = mant >> shift if shift > 0 else mant << -shift
 
@@ -60,7 +61,9 @@ def _table(sigma, counter, c_exp_shift=0):
         with gp.context(precision=su.FACCT_PRECISION + 64, round=gp.RoundToNearest):
             return int(gp.floor(gp.exp(p.neg_c * (y * (y + 2 * p.k * x))) * (1 << su.FACCT_PRECISION)))
 
-    return native_backend.ext().FacctTable(p.k, p.y_bits, list(p.cdt), mant, exp + shift + c_exp_shift, exact)
+    table = native_backend.ext().FacctTable(p.k, p.y_bits, list(p.cdt), mant, exp + shift + c_exp_shift, exact)
+    counter.clear()
+    return table
 
 
 @pytest.mark.parametrize("sigma", [3.2, 4030.5, 4.97e9])

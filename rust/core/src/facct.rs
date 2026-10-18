@@ -6,10 +6,14 @@
 //! then the sign) and the same decisions. The base CDT comes from Python (its
 //! MPFR tables). The acceptance test `v < floor(2^192 exp(-y (y + 2 k x) /
 //! (2 sigma^2)))` -- rounded twice to 256 bits by MPFR in Python -- is decided
-//! here with a fixed-point exp(-a) whose error is below 2^-110: whenever v is
-//! within 2^-100 (relative to 2^192) of the threshold, the exact threshold is
-//! asked from `exact(x, y)` (the Python formula; probability about 2^-99 per
-//! trial), so the decisions are always Python's.
+//! here with a fixed-point exp(-a) whose error is below 2^-110 (about 2^-119
+//! measured) provided the table's c = 1 / (2 sigma^2) is correct to its 128-bit
+//! mantissa: whenever v is within 2^-100 (relative to 2^192) of the threshold,
+//! the exact threshold is asked from `exact(x, y)` (the Python formula;
+//! probability about 2^-99 per trial), so the decisions are always Python's.
+//! `check_table` compares a few thresholds with `exact` (the binding runs it
+//! when a table is built), so a grossly imprecise c (off by more than about
+//! 2^-102, such as a 53-bit one) is refused, not used.
 
 use crate::arith::{Word, U256};
 use crate::keccak::shake256;
@@ -31,6 +35,8 @@ pub struct ByteBits<F: FnMut(&mut [u8]) -> usize> {
     buf: Vec<u8>,
     len: usize,
     pos: usize,
+    /// Bytes the refills delivered so far.
+    total: usize,
     /// The stream ended (or failed) before all bytes were read; the rest read as 0.
     pub failed: bool,
 }
@@ -39,11 +45,17 @@ impl<F: FnMut(&mut [u8]) -> usize> ByteBits<F> {
     /// `refill(buf)` writes the next bytes of the stream to buf and returns how
     /// many (0: none left).
     pub fn new(block: usize, refill: F) -> Self {
-        ByteBits { refill, buf: vec![0u8; block], len: 0, pos: 0, failed: false }
+        ByteBits { refill, buf: vec![0u8; block], len: 0, pos: 0, total: 0, failed: false }
+    }
+
+    /// Bytes of the stream read so far (by getrandbits).
+    pub fn consumed(&self) -> usize {
+        self.total - (self.len - self.pos)
     }
     fn byte(&mut self) -> u8 {
         if self.pos == self.len {
             self.len = if self.failed { 0 } else { (self.refill)(&mut self.buf) };
+            self.total += self.len;
             self.pos = 0;
             if self.len == 0 {
                 self.failed = true;
@@ -110,6 +122,22 @@ impl XofBits {
         let mut head = (seed.len() as u64).to_be_bytes().to_vec();
         head.extend_from_slice(seed);
         XofBits { head, counter: 0 }
+    }
+
+    /// The XofRandom whose `_seed` is `head` (len(seed) || seed) at call `counter`.
+    pub fn at(head: &[u8], counter: u64) -> Self {
+        XofBits { head: head.to_vec(), counter }
+    }
+
+    /// The next call's counter (the XofRandom's `_counter` after the draws so far).
+    pub fn counter(&self) -> u64 {
+        self.counter
+    }
+}
+
+impl Drop for XofBits {
+    fn drop(&mut self) {
+        crate::rlwe::wipe_bytes(&mut self.head); // holds the secret seed
     }
 }
 
@@ -249,6 +277,30 @@ fn accept(table: &Table, x: u64, y: u64, v: U256, exact: &dyn Fn(u64, u64) -> U2
         }
     }
     v < exact(x, y)
+}
+
+/// Whether the fixed-point thresholds agree with `exact` to 2^-102 (relative to
+/// 2^192) at the corners and the middle of the (x, y) range. It detects a
+/// constant off by more than about 2^-102 at those points -- a 53-bit c is off
+/// by about 2^-55 -- that is, errors that approach the 2^-100 band within which
+/// the decisions are deferred; it does not show the 2^-110 of a correct c (about
+/// 2^-119 measured). Points where exp_neg defers to `exact` anyway are skipped.
+pub fn check_table(table: &Table, exact: &dyn Fn(u64, u64) -> U256) -> bool {
+    if table.k < 2 {
+        return true; // y = 0 always: no acceptance test
+    }
+    let (xm, ym) = (CDT_SIZE as u64, table.k - 1);
+    for (x, y) in [(0, 1), (0, ym), (xm, 1), (xm, ym), (xm / 2, ym.div_ceil(2))] {
+        let t = y as u128 * (y as u128 + 2 * table.k as u128 * x as u128);
+        if let Some(e) = exp_neg(table, t) {
+            let (a, b) = (U256::from_u128(e).shl(PRECISION - F), exact(x, y));
+            let d = if a >= b { a.wsub(b) } else { b.wsub(a) };
+            if d >= U256::ONE.shl(PRECISION - 102) {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 /// `out.len()` samples of D_{Z,sigma} (discrete_gaussian_facct) from `bits`;

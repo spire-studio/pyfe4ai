@@ -191,6 +191,15 @@ class XofRandom:
             self._counter = start + calls
         return start
 
+    def _claim_dynamic(self, draw):
+        """``draw(start) -> (result, calls)`` with the counters locked: for a
+        draw whose number of calls depends on its results (the native FACCT);
+        the counter then advances by *calls*. Returns *result*."""
+        with _XOF_LOCK:
+            result, calls = draw(self._counter)
+            self._counter += calls
+        return result
+
     def getrandbits(self, k: int) -> int:
         n_bytes = (k + 7) // 8
         counter = self._claim(1)
@@ -305,6 +314,8 @@ class _OSRandomBuffer:
 
 
 _OS_RANDOM = _OSRandomBuffer()
+# The module's OS source; a replaced _OS_RANDOM (tests) keeps the Python sampler.
+_OS_SOURCE = _OS_RANDOM
 if hasattr(os, "register_at_fork"):
     os.register_at_fork(after_in_child=_OS_RANDOM._reset)
 
@@ -388,6 +399,12 @@ def discrete_gaussian_facct(sigma, count: int, rng=None) -> list[gp.mpz]:
     implementation that can be. It is also several times slower than the
     rounded sampler in Python.
 
+    With the native backend (:mod:`pyfe4ai.utils.native_backend`) the
+    extension draws the same ``getrandbits`` in the same order and makes the
+    same decisions when *rng* is an :class:`XofRandom` or ``None``
+    (:func:`~pyfe4ai.utils.native_backend.gaussian_facct`; with ``rng=None``
+    its bits come from the per-call DRBG).
+
     Args:
         sigma: Width (int, mpz, float, mpfr or mpq), > 0.
         count: Number of samples.
@@ -398,6 +415,12 @@ def discrete_gaussian_facct(sigma, count: int, rng=None) -> list[gp.mpz]:
         raise ValueError("sigma must be positive")
     if count < 0:
         raise ValueError("count must be non-negative")
+    if count > 0:
+        from pyfe4ai.utils import native_backend
+
+        native = native_backend.gaussian_facct(sigma, count, rng)
+        if native is not None:
+            return native
     params = _facct_params(_exact(sigma))
     rng = rng or _OS_RANDOM
     k, cdt, y_bits, neg_c = params.k, params.cdt, params.y_bits, params.neg_c
