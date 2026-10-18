@@ -86,13 +86,13 @@ from pyfe4ai.utils.ring_lwe_utils import poly_mul
 from pyfe4ai.utils.ring_lwe_utils import RingNTT
 from pyfe4ai.utils.ring_lwe_utils import transpose
 from pyfe4ai.utils.sampling_utils import XofRandom
-from pyfe4ai.utils.sampling_utils import discrete_gaussian_bigint
+from pyfe4ai.utils.sampling_utils import FLOODING_NOISE_VERSION, check_flooding_version, discrete_gaussian_bigint
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.ring_lwe_utils import seeded_polynomial
 
 logger = logging.getLogger(__name__)
 
-_CONSTRUCTION = "bmms21-ibmcfe-shamir-smudging/v1"
+_CONSTRUCTION = "bmms21-ibmcfe-shamir-smudging/v2"  # v2: flooding at bits + 192
 _TAG_DOMAIN = "pyfe4ai/tmcfe-ring-lwe/ciphertext-tag/v1"
 
 
@@ -262,6 +262,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
                 "z": z_shares[sid],
                 "z_chunks": [cs[sid] for cs in chunk_shares],
                 "label": key["label"],
+                "noise_version": FLOODING_NOISE_VERSION,
                 # one per server, weights and label: a re-sharing for another
                 # n_chunks (same key part) must not come with fresh noise
                 "noise_key": hmac.new(
@@ -339,6 +340,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         """
         if not dk or "sk_y" not in dk:
             raise FEKeyError("no decryption keys provided")
+        check_flooding_version(dk)
         if self.id not in dk["lst_sid"] or dk.get("sid") != self.id:
             raise FESchemeError("the key share does not belong to server {}".format(self.id))
         fusion_weight = credentials.get("fusion_weight")

@@ -55,7 +55,7 @@ def test_key_generator(kg_config):
         "sid_0", credentials={"fusion_weight": fusion_weight, "label": "test-label"}
     )
     # one share of the aggregated key, nothing per client
-    assert set(dk_sid) == {"sk_y", "sid", "lst_sid", "weights_id", "noise_key"}
+    assert set(dk_sid) == {"sk_y", "sid", "lst_sid", "weights_id", "noise_key", "noise_version"}
     assert len(dk_sid["sk_y"]) == kg.params["n0"] + kg.params["m0"]
 
 

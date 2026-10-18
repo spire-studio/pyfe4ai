@@ -2,7 +2,8 @@
 //! pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint.
 //!
 //! The reference draws b1 = getrandbits(p), then b2 = getrandbits(p), with
-//! p = bits(ceil(sigma)) + 128, and returns rint(z sig) (nearest, ties to even)
+//! p = bits(ceil(sigma)) + 192 (BIGINT_GUARD_BITS; the argument below needs
+//! + 128), and returns rint(z sig) (nearest, ties to even)
 //! for z = sqrt(-2 log u1) cos(2 pi u2), u1 = (b1 + 1) / 2^p, u2 = b2 / 2^p and
 //! sig = mpfr(sigma), every operation an MPFR one at p bits. Here
 //! X = sig sqrt(-2 ln u1) cos(2 pi u2) is evaluated in fixed point with n

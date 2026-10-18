@@ -181,3 +181,40 @@ def test_elementwise_combination_raises_scheme_errors_on_malformed_output(partia
 
     with pytest.raises(FESchemeError):
         combine_elementwise(partials, lambda groups, l, i: 1)
+
+
+
+def test_keys_of_the_earlier_flooding_derivation_are_refused():
+    """A key share issued before the flooding precision changed (no noise_version)
+    may have answered requests with the earlier noise: every threshold LWE server
+    refuses it, and new key shares carry the current version."""
+    from pyfe4ai.utils.exceptions import FEKeyError
+    from pyfe4ai.utils.sampling_utils import FLOODING_NOISE_VERSION, check_flooding_version
+
+    base = {"sec_param": 64, "n": 2, "lst_nid": NIDS, "s": 3, "lst_sid": SIDS, "t": 2, "eta": 1}
+    cases = [
+        (ThresholdMIFELWEKeyGenerator({**base, "lwe_n": 16, "bound_x": 4, "bound_y": 5}), ThresholdMIFELWE,
+         {"fusion_weight": Y}, lambda c, cts, dk: c.share_decrypt(cts, Y, dk, SIDS[:2]),
+         lambda kg, pp, n: ThresholdMIFELWE({"id": n, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}}).encrypt(X[n])),
+        (ThresholdMCFELWEKeyGenerator({**base, "lwe_n": 16}), ThresholdMCFELWE,
+         {"fusion_weight": Y, "label": "r1"},
+         lambda c, cts, dk: c.share_decrypt(cts, {"fusion_weight": Y, "label": "r1"}, dk, SIDS[:2]),
+         lambda kg, pp, n: ThresholdMCFELWE({"id": n, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}}).encrypt(X[n], "r1")),
+        (ThresholdMCFERingLWEKeyGenerator({**base, "ring_n": 16, "bound_x": 4, "bound_y": 5}), ThresholdMCFERingLWE,
+         {"fusion_weight": Y, "label": "r1"},
+         lambda c, cts, dk: c.share_decrypt(cts, {"fusion_weight": Y, "label": "r1"}, dk, SIDS[:2]),
+         lambda kg, pp, n: ThresholdMCFERingLWE({"id": n, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}}).encrypt([X[n]], "r1")),
+    ]
+    for kg, cls, cred, share, enc in cases:
+        kg.setup()
+        pp = kg.get_public_parameters()
+        cts = {n: enc(kg, pp, n) for n in NIDS}
+        dk = kg.get_decryption_keys(SIDS[0], credentials=cred)
+        assert dk["noise_version"] == FLOODING_NOISE_VERSION
+        server = cls({"id": SIDS[0], "keys": {"pp": pp, "dk": dk}})
+        share(server, cts, dk)  # accepted
+        old = {k: v for k, v in dk.items() if k != "noise_version"}
+        with pytest.raises(FEKeyError, match="flooding derivation 1"):
+            share(server, cts, old)
+    with pytest.raises(FEKeyError):
+        check_flooding_version({"noise_version": 3})

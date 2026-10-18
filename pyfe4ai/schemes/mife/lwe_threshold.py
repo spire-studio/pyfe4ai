@@ -97,12 +97,12 @@ from pyfe4ai.utils.lwe_utils import wide_lwe_n
 from pyfe4ai.utils.matrix_utils import digits_to_vector
 from pyfe4ai.utils.matrix_utils import vecdot_mod
 from pyfe4ai.utils.sampling_utils import XofRandom
-from pyfe4ai.utils.sampling_utils import discrete_gaussian_bigint
+from pyfe4ai.utils.sampling_utils import FLOODING_NOISE_VERSION, check_flooding_version, discrete_gaussian_bigint
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 
 logger = logging.getLogger(__name__)
 
-_CONSTRUCTION = "acfgu18-abdp15-shamir-smudging-seeded-a/v3"
+_CONSTRUCTION = "acfgu18-abdp15-shamir-smudging-seeded-a/v4"  # v4: flooding at bits + 192
 _DEFAULT_STAT_PARAM = 64
 _TAG_DOMAIN = "pyfe4ai/tmife-lwe/ciphertext-tag/v1"
 
@@ -234,6 +234,7 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
             self.dict_dk[identifier] = self._share_key(key)
         dk = dict(self.dict_dk[identifier][sid])
         dk.update({
+            "noise_version": FLOODING_NOISE_VERSION,
             "sid": sid,
             "lst_sid": list(self.lst_sid),
             "weights_id": identifier,
@@ -293,6 +294,7 @@ class ThresholdMIFELWE(MIFELWE):
         """
         if not dk or "sk_y" not in dk or "z" not in dk:
             raise FEKeyError("no decryption keys provided")
+        check_flooding_version(dk)
         if self.id not in dk["lst_sid"] or dk.get("sid") != self.id:
             raise FESchemeError("the key share does not belong to server {}".format(self.id))
         validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])

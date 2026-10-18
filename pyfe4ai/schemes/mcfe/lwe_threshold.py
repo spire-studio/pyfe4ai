@@ -84,7 +84,7 @@ from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.sampling_utils import XofRandom
-from pyfe4ai.utils.sampling_utils import discrete_gaussian_bigint
+from pyfe4ai.utils.sampling_utils import FLOODING_NOISE_VERSION, check_flooding_version, discrete_gaussian_bigint
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +202,7 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
             "lst_sid": list(self.lst_sid),
             "weights_id": identifier,
             "noise_key": noise_key,
+            "noise_version": FLOODING_NOISE_VERSION,
         }
 
     def _share_key(self, sk_y: list) -> dict:
@@ -239,6 +240,7 @@ class ThresholdMCFELWE(MCFELWE):
         """
         if not dk or "sk_y" not in dk:
             raise FEKeyError("no decryption keys provided")
+        check_flooding_version(dk)
         if self.id not in dk["lst_sid"] or dk.get("sid") != self.id:
             raise FESchemeError("the key share does not belong to server {}".format(self.id))
         fusion_weight = credentials.get("fusion_weight")

@@ -15,7 +15,7 @@ from typing import NamedTuple
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.utils.exceptions import FEValidationError
+from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
 
 _CSPRNG = random.SystemRandom()
 # The OS source of the module; a replaced _CSPRNG (tests) keeps the Python sampler.
@@ -243,13 +243,52 @@ class XofRandom:
         return int.from_bytes(block, "big") >> (8 * n_bytes - k)
 
 
+#: Guard bits of the MPFR precision of :func:`discrete_gaussian_bigint`: its
+#: uniforms and arithmetic have ``bits(sigma) + BIGINT_GUARD_BITS`` bits. 192
+#: covers ``bits(sigma) + stat_param + ceil(log2 N) + 8`` for statistical
+#: parameters up to 128 and up to ``2^56`` samples per key: the dozen MPFR
+#: roundings of one sample stay below ``2^-(stat_param + log2 N + 8)`` in
+#: statistical distance from the ideal rounded Gaussian. (Up to v0.4 it was
+#: 128, which the October 2026 crypto review found 2 to 19 bits short of the
+#: ``2^-128`` budgets of the DCR keys and masks and of the threshold flooding.)
+BIGINT_GUARD_BITS = 192
+
+
+#: Version of the flooding-noise derivation in the decryption keys of the
+#: threshold schemes (tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE): 2 since
+#: :data:`BIGINT_GUARD_BITS` is 192 (keys without the field are version 1).
+FLOODING_NOISE_VERSION = 2
+
+
+def check_flooding_version(dk) -> None:
+    """Refuse a threshold decryption key of another flooding derivation: it may
+    have answered a request with the noise of the earlier derivation, and a
+    second noise for the same request would let the answers be averaged.
+
+    Raises:
+        FEKeyError: For a key of another version (issue new keys).
+    """
+    version = dk.get("noise_version", 1) if isinstance(dk, dict) else None
+    if version != FLOODING_NOISE_VERSION:
+        raise FEKeyError(
+            "decryption key of flooding derivation {} (this version derives noise version {}): "
+            "issue new decryption keys".format(version, FLOODING_NOISE_VERSION)
+        )
+
+
+def bigint_precision(sigma) -> int:
+    """Bits of the uniforms and of the MPFR arithmetic of
+    :func:`discrete_gaussian_bigint` for *sigma*: ``bits(ceil(sigma)) + 192``."""
+    return int(gp.ceil(gp.mpfr(sigma))).bit_length() + BIGINT_GUARD_BITS
+
+
 def discrete_gaussian_bigint(sigma, count: int, rng=None, sampler: str | None = None) -> list[gp.mpz]:
     """Sample *count* integers from a rounded Gaussian of arbitrary width.
 
     Unlike :func:`discrete_gaussian_matrix`, *sigma* may exceed the range of
     a double (e.g. the ``sqrt(kappa) * N^{5/2}`` widths of the DCR schemes):
     a Box-Muller sample is computed with ``gmpy2.mpfr`` at
-    ``bits(sigma) + 128`` bits of precision from CSPRNG uniforms and rounded
+    ``bits(sigma) + 192`` bits of precision (:data:`BIGINT_GUARD_BITS`) from CSPRNG uniforms and rounded
     to the nearest integer. As with :func:`discrete_gaussian_matrix` this is
     a rounded continuous Gaussian, not an exact discrete-Gaussian sampler,
     and it is not constant-time. With ``sampler="facct"`` the samples come
@@ -275,7 +314,7 @@ def discrete_gaussian_bigint(sigma, count: int, rng=None, sampler: str | None = 
         raise ValueError("sigma must be positive")
     if _resolve_sampler(sampler) == "facct":
         return discrete_gaussian_facct(sigma, count, rng=rng)
-    prec = int(gp.ceil(gp.mpfr(sigma))).bit_length() + 128
+    prec = bigint_precision(sigma)
     if count > 0:
         from pyfe4ai.utils import native_backend
 

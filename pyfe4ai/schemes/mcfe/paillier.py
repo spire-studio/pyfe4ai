@@ -28,7 +28,7 @@ therefore derive a distinct label per element.
 
 Implementation notes: ``H`` is SHAKE-256 expanded to ``bits(N^2) + 128`` bits
 (the paper's implementation uses counter-mode SHA-256); ``D_{Z, sigma}`` is
-a rounded continuous Gaussian computed at ``bits(sigma) + 128`` bits of
+a rounded continuous Gaussian computed at ``bits(sigma) + 192`` bits of
 precision (:func:`pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint`).
 ``bit_length`` is the size of each prime and is far below any real security
 level by default.
