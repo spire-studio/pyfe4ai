@@ -18,8 +18,8 @@ same outputs, the same tests); its numbers stay here as measured.
 
 | family | native (Rust) | still Python |
 | --- | --- | --- |
-| MCFE Ring-LWE (`ring_lwe`, `ring_lwe_decentralized`) | ndarray encryption (rounded or FACCT noise), offline / online phases, key derivation, aggregation, single-vector label pads; dMCFE key shares and their combination | setup |
-| MCFE Ring-LWE threshold | any `q` below 2^253 (the flooded `q` of `standard` has 212 bits: 256-bit words): ndarray encryption, key derivation, Shamir shares of the key, partial decryptions (parsing, digests, NTT-domain products), combination | ciphertext tags (JSON + HMAC), setup; the flooding noise is native since the wide-Gaussian sampler below |
+| MCFE Ring-LWE (`ring_lwe`, `ring_lwe_decentralized`) | ndarray encryption (rounded or FACCT noise), offline / online phases, key derivation, aggregation, single-vector label pads (every `label_hash` mode); dMCFE key shares and their combination; the same for the opt-in RNS modulus | setup |
+| MCFE Ring-LWE threshold | any `q` below 2^253 (the flooded `q` of `standard` has 212 bits: 256-bit words): ndarray encryption, key derivation, Shamir shares of the key, partial decryptions (parsing, digests, NTT-domain products), combination | ciphertext tags (JSON + HMAC), setup; the flooding noise is native since the wide-Gaussian sampler below; the replicated key sharing (default for `t < s`): its dealing and the sums of a server's pieces |
 | MIFE Ring-LWE | encryption, key derivation, decryption (no ndarray helpers) | setup |
 | SIFE Ring-LWE | encryption, `<ct0, y>`, NTTs and products (also of setup) | decoding, setup sampling |
 | SIFE FullySec Ring-LWE | NTTs and products (`ring_lwe_utils` dispatch), the wide Gaussian noise (`discrete_gaussian_bigint`) | slot checks, string conversions |
@@ -29,6 +29,83 @@ same outputs, the same tests); its numbers stay here as measured.
 | DDH over ristretto255 | MCFE ndarray encryption and decryption with dlog in one call each; group operations | MIFE / SIFE call per group operation |
 | DDH over Z_p^*, Damgård, Paillier | -- (gmpy2) | `powmod`; but the label masks / key terms (MCFE) and the randomness powers (SIFE / MIFE Paillier, MIFE DDH) can be computed offline (*Phase 2*), and the dlog tables are keyed by value |
 | Pairing schemes, quadratic FE | BLS12-381 group operations, `multi_pair`, products of powers and powers of one base (`multiexp`, `pow_many`), batch deserialisation, G_T dlog, hash to G1 / G2 | matrix algebra mod p, Shamir shares of tMCFE keys; the G_T dlog table is built once per base and bound |
+
+## Integrated branch `integrate/perf-2026-10` (2026-10-18)
+
+The performance branches together with the October 2026 crypto-review
+fixes, the label hash `"shake128-rejection"` and the uniform tMCFE flooding
+by default, replicated key sharing by default for `t < s`, ABDP15 at the
+reduction width `sigma'`, and the opt-in KL accounting and RNS modulus.
+Host (M2 Max, Python 3.13), `bench_fl_compare.py` under `standard`, 3
+clients, native backend, interleaved with the integration base `f82f7c9`
+(`perf/sampler-defaults`, which already had FACCT by default): medians of
+3 runs of 5 rounds (3 for dense LWE and the threshold scheme); the machine
+was shared with other jobs (load 3-5). Raw numbers:
+`results/perf_integration_2026-10-18.json`.
+
+| MCFE Ring-LWE, 10^4 elements, 80-bit q, binary | client ms | aggregator ms (key derivation) |
+| --- | ---: | ---: |
+| `f82f7c9`, 1 thread | 17.93 | 7.54 (4.22) |
+| integrated (label hash `shake128-rejection`), 1 thread | 17.95 | **6.24 (2.85)** |
+| integrated, `label_hash="shake256-wide"` (v0.3.0's) | 18.37 | 8.30 (4.78) |
+| `f82f7c9` / integrated, 4 threads | 6.37 / 6.21 | 3.95 / 3.62 |
+| `--offline`, online phase: `f82f7c9` / integrated | 0.24 / 0.25 | 3.23 / 3.16 |
+| `--offline`, offline phase: `f82f7c9` / integrated | 18.22 / 17.78 | 4.35 / **2.88** |
+| integrated, `ring_modulus="rns"` (two 40-bit primes), 1 thread | 17.74 | 5.69 (2.84) |
+| integrated, `ring_modulus="rns"`, online / offline phase | 0.24 / 17.69 | **2.65** / 2.95 |
+| Python backend: `f82f7c9` / integrated | 349 / 360 | 164.5 / 164.3 |
+
+| other families | `f82f7c9` | integrated |
+| --- | ---: | ---: |
+| dMCFE Ring-LWE 10^4: client / key share per client / combination / aggregator ms | 18.35 / 4.90 / 2.04 / 5.24 | 17.72 / **3.28** / 2.31 / 5.45 |
+| dense-LWE MCFE (`mcfe/lwe`, 200 elements, `n0` 6656, 187-bit q): client / aggregator ms | 154.4 / 162.1 | **93.1 / 101.4** |
+| ... with `label_hash="shake256-wide"` | | 154.1 / 161.9 |
+
+| tMCFE Ring-LWE, 10^4 elements, `s = 3`, `ring_n` 8192 | q bits | client ms | key shares ms | partial ms per server | combine ms | aggregator ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `f82f7c9`, `t = 2` (Shamir, Gaussian flooding) | 215 | 41.3 | 42.1 | 105.1 | 4.7 | 257.6 |
+| integrated, `t = 2` (default: replicated, uniform) | 212 | 39.2 | 259.8 | 95.7 | 4.4 | 455.8 |
+| integrated, `t = 2`, `flooding="gaussian"` (replicated) | 215 | 40.5 | 293.1 | 146.8 | 4.5 | 592.5 |
+| `f82f7c9`, `t = 3` (Shamir, Gaussian) | 215 | 41.1 | 49.6 | 104.9 | 5.7 | 371.7 |
+| integrated, `t = 3` (Shamir, uniform) | 212 | 39.2 | 43.2 | **57.9** | 5.5 | **223.7** |
+| integrated, `t = 3`, `flooding="gaussian"` | 215 | 40.0 | 45.1 | 106.7 | 5.7 | 372.4 |
+
+What moved:
+* **Label hash.** Rejection sampling from SHAKE128 reads fewer XOF bytes:
+  MCFE key derivation 4.2 -> 2.9 ms (aggregator -17%), the offline
+  aggregator 4.35 -> 2.88 ms, the dMCFE key share 4.9 -> 3.3 ms and the
+  dense-LWE MCFE -40%. The client is unchanged: FACCT's noise dominates it
+  (about 15 of 18 ms; the offline phase absorbs it). With
+  `label_hash="shake256-wide"` key derivation is 0.5 ms slower than on
+  `f82f7c9`: the native SHAKE-256 path now wipes its state and output
+  stream (seed-expanded replicated sharing, review F3), byte by byte.
+* **Uniform flooding** (default of `mcfe/ring_lwe_threshold`) halves a
+  partial decryption at `t = s` (105 -> 58 ms) and shrinks `q` 215 -> 212
+  bits; with the Gaussian it is as before.
+* **Replicated sharing** (default for `t < s`, the Lagrange fix) costs: the
+  key shares are dealt in Python (42 -> 260 ms for the key and two chunk
+  keys of 3 servers) and a partial decryption first adds up the server's
+  pieces (+38 ms here; the sums are cached per key and enrolled set, and a
+  benchmark round, like an FL round, brings a new label and key). With
+  uniform flooding a replicated partial is still faster than the Shamir
+  partial of `f82f7c9`.
+* **RNS modulus** (opt-in): the aggregator -9% and the online aggregator
+  -16% against the prime; the client gains nothing under FACCT (the noise,
+  not the NTT, dominates it), unlike the -9% measured with the rounded
+  sampler (section *RNS modulus* below).
+* **SIFE FullySec Ring-LWE** (standard, FACCT default, native wide FACCT;
+  one run, load 4): `eta = 4, X = Y = 4` (`ring_n` 4096, `m` 17, 110-bit
+  q): setup 0.25 s, encrypt 0.12 s, decrypt 66 ms; `eta = 10, X = Y = 50`
+  (8192, `m` 8, 218 bits): 1.02 s, 0.31 s, 131 ms; packed `eta = 1, X =
+  100, Y = 1` (4096, `m` 12, 107 bits): 75 ms, 79 ms (19 us per element),
+  46 ms per ciphertext of 4096 elements.
+* **ABDP15 under `standard` at `sigma'`** (key generation with the exact
+  `E`; one run each, load 4-10): `sife/lwe` `eta = 1, X = Y = 4`: `lwe_n`
+  640 -> 704, setup 0.50 -> 0.67 s; `eta = 10, X = Y = 50`: 896 -> 1280,
+  4.1 -> 8.3 s; `eta = 10, X = Y = 256`: 1088 -> 1536, 8.8 -> 17.2 s;
+  `mife/lwe` 2 slots `eta = 1, X = Y = 50`: 768 -> 1152, 2.2 -> 5.5 s; 100
+  slots: 1024 -> 1408, 31 -> 47 s. Encryption costs about twice as much
+  (`m` grows with `lwe_n`; see the ABDP15 rows of the README).
 
 ## Phase 2 (branch `perf/phase2`)
 
