@@ -36,20 +36,23 @@ the same key part draws the same noise; a corrupted client varying its own
 design.
 
 ``flooding_accounting = "kl"`` with ``max_partial_decryptions = Q`` (opt-in,
-see :mod:`pyfe4ai.schemes.flooding_accounting`) sizes the noise for a run
-in which every server produces at most ``Q`` partial decryptions (one per
-ciphertext or chunk): ``KL <= 2^-stat_param`` for the ``N = s Q ring_n``
-flooded coefficients, i.e. ``sigma_f = B sqrt(N 2^(stat_param - 1))`` cut at
-20 ``sigma_f``, instead of a statistical distance ``2^-stat_param`` per
-coefficient. It is a different, weaker guarantee (about ``stat_param - 7``
-bits in the bit-security sense of Micciancio and Walter, ``2^-64.5`` of total
-statistical distance at ``stat_param = 128``), valid only up to the limit,
-which each server enforces; averaging the noise away would need about
-``N 2^(stat_param - 1)`` requests. Under ``standard`` (the benchmark's three
-clients, ``X = 100``, ``Y = 1``, ``s = 3``) ``N = 2^53`` gives a ``q`` of
+``t = s`` only, see :mod:`pyfe4ai.schemes.flooding_accounting`) sizes the
+noise for a run in which every server produces at most ``Q`` partial
+decryptions (one per ciphertext or chunk): ``KL <= 2^-(stat_param + 1)``
+for the ``N = s Q ring_n`` flooded coefficients, i.e.
+``sigma_f = B sqrt(N 2^stat_param)``, with a tail cut derived from ``N`` (16
+``sigma_f`` at ``N = 2^53``), instead of a statistical distance
+``2^-stat_param`` per coefficient. It is a different, weaker guarantee
+(``stat_param - 6.85`` bits in the bit-security sense of Micciancio and
+Walter, about ``2^-65`` of total statistical distance at
+``stat_param = 128``), valid only for the first ``Q`` partial decryptions
+of every server, which each server counts in the ``partial_budget`` its
+deployment gives it; averaging the noise away would need about
+``N 2^stat_param`` requests. Under ``standard`` (the benchmark's three
+clients, ``X = 100``, ``Y = 1``, ``s = t = 3``) ``N = 2^53`` gives a ``q`` of
 178 bits instead of 215, at the same ``ring_n`` 8192. These parameters
 have their own record (``threshold_construction``
-``bmms21-ibmcfe-shamir-smudging-kl/v1``).
+``bmms21-ibmcfe-shamir-smudging-kl/v2``).
 
 With the native backend (:mod:`pyfe4ai.utils.native_backend`; moduli below
 ``2^253``, which includes the flooded ``q`` of the standard profile) the MCFE
@@ -71,12 +74,13 @@ import gmpy2 as gp
 import numpy as np
 
 from pyfe4ai.schemes.flooding_accounting import KL
-from pyfe4ai.schemes.flooding_accounting import KL_TAIL_CUT
-from pyfe4ai.schemes.flooding_accounting import PartialDecryptionBudget
+from pyfe4ai.schemes.flooding_accounting import check_kl_threshold
 from pyfe4ai.schemes.flooding_accounting import flooding_config
 from pyfe4ai.schemes.flooding_accounting import kl_flooded_samples
 from pyfe4ai.schemes.flooding_accounting import kl_flooding
 from pyfe4ai.schemes.flooding_accounting import kl_flooding_width
+from pyfe4ai.schemes.flooding_accounting import kl_tail_cut
+from pyfe4ai.schemes.flooding_accounting import server_budget
 from pyfe4ai.schemes.mcfe.labels import chunk_label
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWE
 from pyfe4ai.schemes.mcfe.ring_lwe import chunk_key_index
@@ -115,7 +119,7 @@ from pyfe4ai.utils.ring_lwe_utils import seeded_polynomial
 logger = logging.getLogger(__name__)
 
 _CONSTRUCTION = "bmms21-ibmcfe-shamir-smudging/v1"
-_CONSTRUCTION_KL = "bmms21-ibmcfe-shamir-smudging-kl/v1"
+_CONSTRUCTION_KL = "bmms21-ibmcfe-shamir-smudging-kl/v2"
 _TAG_DOMAIN = "pyfe4ai/tmcfe-ring-lwe/ciphertext-tag/v1"
 
 
@@ -157,6 +161,8 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         self.lst_sid = config.get("lst_sid", ["sid_{}".format(i) for i in range(s)])
         self.stat_param = int(config.get("stat_param", 64))
         self.flooding_accounting, self.max_partial_decryptions = flooding_config(config)
+        if self.flooding_accounting == KL:
+            check_kl_threshold(self.t, s)
         self._threshold_construction = _CONSTRUCTION_KL if self.flooding_accounting == KL else _CONSTRUCTION
         self.dict_dk = {}
         super().__init__(dict(config, s=s), **kwargs)
@@ -197,7 +203,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         if self.flooding_accounting == KL:
             samples = kl_flooded_samples(self.s, self.max_partial_decryptions, ring_n)
             sigma_f = kl_flooding_width(noise_bound, samples, self.stat_param)
-            budget = noise_bound + self.s * KL_TAIL_CUT * sigma_f
+            budget = noise_bound + self.s * kl_tail_cut(samples, self.stat_param, sigma_f) * sigma_f
         else:
             sigma_f = noise_bound << self.stat_param
             budget = noise_bound + self.s * GAUSSIAN_TAIL_CUT * sigma_f
@@ -251,10 +257,11 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             {"s": self.s, "t": self.t, "lst_sid": list(self.lst_sid), "sigma_f": str(self.sigma_f)}
         )
         if self.flooding_accounting == KL:
+            samples = kl_flooded_samples(self.s, self.max_partial_decryptions, self.ring_n)
             pp.update({
                 **self._flooding_fields(),
                 "stat_param": self.stat_param,
-                "flood_tail_cut": KL_TAIL_CUT,
+                "flood_tail_cut": kl_tail_cut(samples, self.stat_param, self.sigma_f),
             })
         return pp
 
@@ -347,21 +354,26 @@ class ThresholdMCFERingLWE(MCFERingLWE):
     _binary_ciphertexts = False  # tags cover the JSON form of a ciphertext
 
     def __init__(self, config: dict, **kwargs) -> None:
-        """As :class:`~pyfe4ai.schemes.mcfe.ring_lwe.MCFERingLWE`; a server under
-        ``flooding_accounting = "kl"`` may take a shared ``partial_budget``
-        (:class:`~pyfe4ai.schemes.flooding_accounting.PartialDecryptionBudget`),
-        else it keeps its own."""
+        """As :class:`~pyfe4ai.schemes.mcfe.ring_lwe.MCFERingLWE`; under
+        ``flooding_accounting = "kl"`` a server needs ``partial_budget``, the
+        :class:`~pyfe4ai.schemes.flooding_accounting.PartialDecryptionBudget`
+        that its deployment keeps for it."""
         super().__init__(config, **kwargs)
         self._partial_budget = config.get("partial_budget")
+        flood = kl_flooding(self.pp, self.pp["ring_n"]) if getattr(self, "pp", None) else None
+        if flood is not None and self._partial_budget is not None:
+            server_budget(self.pp, self._partial_budget, flood)
 
     def _kl_flooding(self):
-        """KL flooding parameters and the partial decryption budget, or ``(None, None)``."""
+        """KL flooding parameters and the server's budget, or ``(None, None)``.
+
+        Raises:
+            FESchemeError: Under ``"kl"`` without a ``partial_budget``.
+        """
         flood = kl_flooding(self.pp, self.pp["ring_n"])
         if flood is None:
             return None, None
-        if self._partial_budget is None:
-            self._partial_budget = PartialDecryptionBudget(flood.max_partial_decryptions)
-        return flood, self._partial_budget
+        return flood, server_budget(self.pp, self._partial_budget, flood)
 
     def _mac_keys(self) -> dict:
         mac_keys = (self.sk or {}).get("mac_keys") if self._has_private_keys() else None
@@ -387,7 +399,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
 
     def share_decrypt(
         self, dict_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list,
-        _z_share=None, _chunk=None, _sk_hats=None, _budgeted=False,
+        _z_share=None, _chunk=None, _sk_hats=None,
     ) -> dict:
         """Compute this server's flooded partial decryption.
 
@@ -403,7 +415,8 @@ class ThresholdMCFERingLWE(MCFERingLWE):
 
         Raises:
             FESchemeError: Under ``flooding_accounting = "kl"`` also when the
-                server has produced ``max_partial_decryptions`` partials.
+                server has no ``partial_budget`` or its budget is spent
+                (refused requests consume nothing).
         """
         if not dk or "sk_y" not in dk:
             raise FEKeyError("no decryption keys provided")
@@ -482,8 +495,8 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         if flood is None:
             noise = _flooding_poly(int(self.pp["sigma_f"]), ring_n, rng)
         else:
-            if not _budgeted:
-                budget.consume(1)
+            flood.check_sampler()
+            budget.consume(1)
             noise = flood.sample(ring_n, rng)
         if native is None:
             w = [gp.digits((lagrange * v + e) % q) for v, e in zip(key_part, noise)]
@@ -589,13 +602,15 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         self, dict_ndarray_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list
     ) -> list:
         """Partially decrypt every chunk of the clients' packed ndarray ciphertexts
-        (under ``"kl"``, all of them count against the limit, checked first)."""
+        (under ``"kl"`` refused whole unless the budget covers all of them;
+        each partial produced then counts)."""
         sample = next(iter(dict_ndarray_ct.values()))
         if self.key_chunks(sample) > len(dk.get("z_chunks", [])):
             raise FEKeyError("the key share covers fewer chunks than the ciphertexts")
-        _, budget = self._kl_flooding()
-        if budget is not None:
-            budget.consume(sum(len(layer["chunks"]) for layer in sample))
+        flood, budget = self._kl_flooding()
+        if flood is not None:
+            flood.check_sampler()
+            budget.check(sum(len(layer["chunks"]) for layer in sample))
         out = []
         sk_hats = {}  # NTT(sk_i), transformed once for all chunks
         for l, layer in enumerate(sample):
@@ -606,7 +621,6 @@ class ThresholdMCFERingLWE(MCFERingLWE):
                 parts.append(self.share_decrypt(
                     dct_ct, credentials, dk, lst_sid_enrolled,
                     _z_share=dk["z_chunks"][index], _chunk=index, _sk_hats=sk_hats,
-                    _budgeted=budget is not None,
                 ))
             out.append({"shape": layer["shape"], "parts": parts})
         return out

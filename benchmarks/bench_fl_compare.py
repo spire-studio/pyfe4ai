@@ -26,7 +26,8 @@ the key shares of the ``t`` enrolled servers; ``partial_ms`` one server's
 servers on one machine.
 ``--flooding-accounting kl --max-partial-decryptions Q`` runs it with the
 opt-in KL accounting of its flooding noise (see
-:mod:`pyfe4ai.schemes.flooding_accounting`).
+:mod:`pyfe4ai.schemes.flooding_accounting`; it needs ``--threshold`` equal
+to ``--servers``), one budget per server.
 
 The schemes write their parameter cache to ``./config``; the run happens in
 ``--workdir`` (default: a temporary directory) so a cache can be reused across
@@ -275,7 +276,13 @@ def measure_threshold(family: str, elements: int, clients: int, rounds: int, pre
     cls = {nid: crypto_cls({"id": nid, "precision": precision, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
            for nid in nids}
     enrolled = sids[:threshold]
-    srv = {sid: crypto_cls({"id": sid, "precision": precision, "keys": {"pp": pp}}) for sid in enrolled}
+    budget = {}
+    if pp.get("flooding_accounting") == "kl":  # one budget per server, kept by the deployment
+        from pyfe4ai.schemes.flooding_accounting import PartialDecryptionBudget
+
+        budget = {sid: {"partial_budget": PartialDecryptionBudget(pp["max_partial_decryptions"])} for sid in enrolled}
+    srv = {sid: crypto_cls({"id": sid, "precision": precision, "keys": {"pp": pp}, **budget.get(sid, {})})
+           for sid in enrolled}
     combiner = crypto_cls({"id": "combiner", "precision": precision, "keys": {"pp": pp}})
     weights = {nid: [1] for nid in nids}
     rng = np.random.default_rng(7)

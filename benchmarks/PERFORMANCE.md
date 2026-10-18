@@ -251,29 +251,36 @@ distribution and need a review.
 ### KL accounting of the flooding (opt-in, `flooding_accounting="kl"`)
 
 A smaller `sigma_f` for a run of at most `max_partial_decryptions = Q`
-partial decryptions per server (see `pyfe4ai.schemes.flooding_accounting`;
-a different, weaker guarantee than the default). `N = 3 * Q * 8192` flooded
-coefficients; `bench_fl_compare.py --families ring_lwe_threshold`, native,
+partial decryptions per server, with `t = s` only (see
+`pyfe4ai.schemes.flooding_accounting`; a different, weaker guarantee than
+the default). `N = 3 * Q * 8192` flooded coefficients;
+`bench_fl_compare.py --families ring_lwe_threshold --threshold 3`, native,
 one thread, `standard`, local `main` (810a4a5) and the branch interleaved,
-3 passes of 5 rounds, medians (load average 5 to 9 on 12 cores: other
-sessions were active):
+3 passes of 5 rounds, medians. The load average was 7.5 to 10 on 12 cores,
+with other sessions active. `main` and the branch default run the same code
+and still differ by up to 13%, which shows the noise:
 
-| `ring_lwe_threshold`, ring_n 8192 | q bits | client ms | key shares | partial, per server | combine | aggregator ms | ct B/element |
+| `ring_lwe_threshold`, ring_n 8192, `t = s = 3` | q bits | client ms | key shares | partial, per server | combine | aggregator ms | ct B/element |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `main` | 215 | 21.30 | 43.0 | 228.1 | 4.65 | 504.2 | 225.2 |
-| branch, default | 215 | 21.26 | 43.1 | 227.0 | 4.59 | 501.9 | 225.2 |
-| KL, `N = 2^53` (`Q` = 3.7 * 10^11) | 178 | 20.46 | 44.6 | 229.7 | 4.49 | 508.9 | 188.5 (-16%) |
-| KL, `N = 2^40` (`Q` = 4.5 * 10^7) | 171 | 20.31 | 41.9 | 224.3 | 4.36 | 495.6 | 182.1 (-19%) |
-| KL, `N = 2^30` (`Q` = 43 690) | 166 | 19.56 | 39.0 | 217.6 | 4.11 | 478.6 | 176.5 (-22%) |
+| `main` | 215 | 21.58 | 54.9 | 215.0 | 5.59 | 702.4 | 225.2 |
+| branch, default | 215 | 22.96 | 55.4 | 244.0 | 5.95 | 792.6 | 225.2 |
+| KL, `N = 2^53` (`Q` = 3.7 * 10^11) | 178 | 21.55 | 54.3 | 247.2 | 6.09 | 799.2 | 188.7 (-16%) |
+| KL, `N = 2^40` (`Q` = 4.5 * 10^7) | 171 | 21.80 | 51.6 | 241.8 | 5.98 | 779.4 | 182.3 (-19%) |
+| KL, `N = 2^30` (`Q` = 43 690) | 166 | 20.97 | 47.9 | 236.8 | 5.82 | 765.3 | 176.6 (-22%) |
 
-Only the sizes gain: the words stay 256-bit, and the flooding sampler,
-which dominates a partial decryption, runs at `bits(sigma_f) + 128 + log2 N
-+ 8` bits (351 at `N = 2^53`, 328 by default), so it does not get faster.
+An earlier run with `t = 2`, which `"kl"` now refuses, gave the same
+picture at a lower load: client 21.3 ms for the default against 20.5 / 20.3 /
+19.6 ms for KL, and the same per-server partial times. Only the sizes gain:
+the words stay 256-bit, and the flooding sampler, which dominates a
+partial decryption, runs at `bits(sigma_f) + 128 + log2 N + 11` bits (354
+at `N = 2^53`, 328 by default), so it does not get faster.
 
 The same option on `mife/lwe_threshold` shrinks the LWE dimension.
 `benchmark_tmife_instantiations.py --security-profile standard --clients 2
---bound 50 --cases lwe` (`X = Y = 50`, `s = 3`, `t = 2`, streamed `A`), one
-run each, the two side by side. The machine was heavily loaded: load
+--bound 50 --cases lwe` (`X = Y = 50`, `s = 3`, streamed `A`), one run each,
+the two side by side. The runs used `t = 2`, before `"kl"` required
+`t = s`. The parameters, key generation and encryption do not depend on
+`t`. The machine was heavily loaded: load
 average 30 to 54 until the KL run ended, falling to 7 by the end of the
 default run. That favours the default run's encryption, so the ratios are
 conservative:

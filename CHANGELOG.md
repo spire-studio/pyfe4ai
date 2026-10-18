@@ -87,28 +87,36 @@ compatibility).
 ### Added
 
 - Opt-in **KL accounting of the threshold flooding** for `mife/lwe_threshold`
-  and `mcfe/ring_lwe_threshold`: `flooding_accounting="kl"` with a mandatory
-  `max_partial_decryptions` (`pyfe4ai.schemes.flooding_accounting`).
-  `stat_param` then bounds the KL divergence of the adversary's whole view
-  of a run in which every server produces at most that many partial
-  decryptions, instead of the statistical distance per flooded value:
-  `sigma_f = B sqrt(N 2^(stat_param - 1))` for `N = s * limit * k` flooded
-  coefficients, cut at 20 instead of 12 `sigma_f`, with the rounded sampler
-  at `bits(sigma) + stat_param + log2 N + 8` bits. This is about
-  `stat_param - 7` bits of statistical security in the bit-security
-  framework of Micciancio and Walter (decision games), or `2^-64.5` of total
-  statistical distance at `stat_param = 128`: a different and weaker
-  guarantee than the default, valid only up to the limit. Servers refuse
-  partial decryptions beyond it (every request counts; one budget per
-  server object, or a shared `partial_budget`). Under `standard`
+  and `mcfe/ring_lwe_threshold` with `t = s`: `flooding_accounting="kl"`
+  with a mandatory `max_partial_decryptions` Q
+  (`pyfe4ai.schemes.flooding_accounting`). `stat_param` then bounds the
+  Hellinger distance between the adversary's real and simulated views of a
+  run in which every server produces at most Q partial decryptions, instead
+  of the statistical distance per flooded value: `sigma_f = B sqrt(N
+  2^stat_param)` for `N = s Q k` flooded coefficients (KL at most
+  `2^-(stat_param + 1)`), a tail cut derived from `N` (16 instead of 12
+  `sigma_f` at `N = 2^53`), and the rounded sampler at `bits(sigma) +
+  stat_param + log2 N + 11` bits (FACCT up to `N = 2^(179 - stat_param)`).
+  That is `stat_param - 6.85` bits of statistical security in the
+  bit-security framework of Micciancio and Walter (decision games), or about
+  `2^-65` of total statistical distance at `stat_param = 128`: a different
+  and weaker guarantee than the default, valid only for the first Q partial
+  decryptions of every server. `t < s` is refused, because there some
+  enrolled sets make an honest partial reveal the decryption noise modulo a
+  small integer (see `fix/threshold-lagrange`). Each KL server needs a
+  `partial_budget` (`PartialDecryptionBudget`, limit at most Q, a count that
+  only grows) in its crypto config, which the deployment shares across
+  everything that answers for that server and keeps across restarts; the
+  server refuses without it and beyond the limit, and every partial counts,
+  repeated ones too; refused requests count nothing. Under `standard`
   (`stat_param` 128), with `N = 2^53`, `mcfe/ring_lwe_threshold` (3
   clients, `X = 100`) has a 178-bit instead of a 215-bit `q` at the same
   `ring_n`: ciphertexts 16% smaller, partial decryptions as fast as before
   (the sampler dominates). With `N = 2^40`, `mife/lwe_threshold` (2 clients,
   `X = Y = 50`) has `lwe_n` 4352 instead of 5952, a 172-bit `q` and 3.3
   instead of 7.8 * 10^9 entries of `A` (key generation and encryption 45%
-  faster, half the memory, in one measurement). The KL parameters have their own
-  records (`*-smudging-kl/v1`) and `pp` fields (`flooding_accounting`,
+  faster, half the memory, in one measurement). The KL parameters have their
+  own records (`*-smudging-kl/v2`) and `pp` fields (`flooding_accounting`,
   `max_partial_decryptions`, `stat_param`, `flood_tail_cut`). The default
   (per-sample) accounting, its records, `pp` and partial decryptions are
   unchanged. `mcfe/lwe_threshold` refuses the option (its flooding is part

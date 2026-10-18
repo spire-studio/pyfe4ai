@@ -1,6 +1,8 @@
 """KL accounting of the threshold flooding (``flooding_accounting = "kl"``):
-parameters, records, run-time limit, sampler, and that the default is untouched."""
+parameters, records, the t = s condition, the run-time limit, the sampler,
+and that the default is untouched."""
 
+import json
 import math
 import random
 
@@ -23,11 +25,13 @@ from pyfe4ai.utils.sampling_utils import XofRandom
 
 NIDS = ["nid_0", "nid_1", "nid_2"]
 SIDS = ["sid_0", "sid_1", "sid_2"]
+# the default accounting with t < s, as the existing threshold tests use it
 TMCFE = {"sec_param": 64, "eta": 1, "n": 3, "s": 3, "t": 2, "lst_nid": NIDS, "lst_sid": SIDS,
          "ring_n": 16, "bound_x": 4, "bound_y": 4}
 TMIFE = {"sec_param": 64, "eta": 1, "n": 3, "s": 3, "t": 2, "lst_nid": NIDS, "lst_sid": SIDS,
          "lwe_n": 16, "bound_x": 6, "bound_y": 6}
-KL = {"flooding_accounting": "kl", "max_partial_decryptions": 1000}
+# "kl" needs t = s
+KL = {"t": 3, "flooding_accounting": "kl", "max_partial_decryptions": 1000}
 KL_FIELDS = {"flooding_accounting", "max_partial_decryptions", "stat_param", "flood_tail_cut"}
 
 
@@ -43,6 +47,10 @@ def _tmcfe_noise_bound(kg) -> int:
 
 def _tmife_noise_bound(kg) -> int:
     return kg.n * kg.eta * int(kg.bound_y) * kg.m * int(GAUSSIAN_TAIL_CUT * kg.sigma_q + 1)
+
+
+def _budgets(pp, limit=None):
+    return {sid: fa.PartialDecryptionBudget(limit or pp["max_partial_decryptions"]) for sid in SIDS}
 
 
 # -- configuration -------------------------------------------------------------
@@ -68,17 +76,35 @@ def test_invalid_configs_are_refused(config, match):
         fa.flooding_config(config)
     for kg_cls, base in ((ThresholdMCFERingLWEKeyGenerator, TMCFE), (ThresholdMIFELWEKeyGenerator, TMIFE)):
         with pytest.raises(FEValidationError, match=match):
-            kg_cls({**base, **config})
+            kg_cls({**base, "t": 3, **config})
+
+
+@pytest.mark.parametrize("kg_cls, base", [
+    (ThresholdMCFERingLWEKeyGenerator, TMCFE), (ThresholdMIFELWEKeyGenerator, TMIFE),
+])
+@pytest.mark.parametrize("t", [1, 2])
+def test_kl_needs_t_equal_to_s(kg_cls, base, t):
+    with pytest.raises(FEValidationError, match="needs t = s"):
+        kg_cls({**base, **KL, "t": t})
+    kg_cls({**base, **KL})  # t = s = 3
+
+
+def test_kl_public_parameters_with_t_below_s_are_refused():
+    kg = ThresholdMIFELWEKeyGenerator({**TMIFE, **KL})
+    kg.setup()
+    pp = dict(kg.get_public_parameters(), t=2)
+    with pytest.raises(FESchemeError, match="t != s"):
+        fa.kl_flooding(pp, 1)
 
 
 def test_dense_lwe_threshold_refuses_the_option():
-    cfg = {"eta": 1, "n": 2, "s": 3, "t": 2, "lst_nid": NIDS[:2], "lst_sid": SIDS, "bound_x": 4, "bound_y": 4}
+    cfg = {"eta": 1, "n": 2, "s": 3, "t": 3, "lst_nid": NIDS[:2], "lst_sid": SIDS, "bound_x": 4, "bound_y": 4}
     for extra in (KL, {"max_partial_decryptions": 10}):
         with pytest.raises(FEValidationError, match="no statistical flooding"):
             ThresholdMCFELWEKeyGenerator({**cfg, **extra})
 
 
-# -- the width ------------------------------------------------------------------
+# -- width, tail cut, sampler -----------------------------------------------------
 
 
 @pytest.mark.parametrize("bound, samples, stat_param", [
@@ -86,10 +112,10 @@ def test_dense_lwe_threshold_refuses_the_option():
 ])
 def test_kl_width_is_the_smallest_meeting_the_bound(bound, samples, stat_param):
     sigma = fa.kl_flooding_width(bound, samples, stat_param)
-    # samples * bound^2 / (2 sigma^2) <= 2^-stat_param, exactly in integers
-    assert (samples * bound * bound) << stat_param <= 2 * sigma * sigma
-    assert (samples * bound * bound) << stat_param > 2 * (sigma - 1) * (sigma - 1)
-    assert fa.kl_divergence_log2(bound, samples, sigma) <= -stat_param + 1e-9
+    # samples * bound^2 / (2 sigma^2) <= 2^-(stat_param + 1), exactly in integers
+    assert (samples * bound * bound) << (stat_param + 1) <= 2 * sigma * sigma
+    assert (samples * bound * bound) << (stat_param + 1) > 2 * (sigma - 1) * (sigma - 1)
+    assert fa.kl_divergence_log2(bound, samples, sigma) <= -(stat_param + 1) + 1e-9
 
 
 def test_kl_width_grows_with_the_square_root_of_the_run():
@@ -99,12 +125,34 @@ def test_kl_width_grows_with_the_square_root_of_the_run():
     assert math.log2(fa.kl_flooding_width(bound, 2 ** 30, 130) / one) == pytest.approx(1, abs=1e-6)
 
 
+def test_gaussian_tail_bound():
+    import mpmath
+
+    for cut in (3, 12, 16, 20, 25):
+        exact = float(mpmath.log(mpmath.erfc(cut / mpmath.sqrt(2)), 2))
+        # Mills' ratio overshoots by a factor below 1 + 1 / cut^2
+        assert exact <= fa.gaussian_tail_log2(cut) <= exact + math.log2(1 + 1 / cut ** 2)
+
+
+@pytest.mark.parametrize("log_samples, stat_param, cut", [
+    (16, 64, 12), (53, 128, 16), (40, 128, 16), (30, 128, 15), (54, 256, 21), (155, 128, 20), (200, 256, 26),
+])
+def test_tail_cut_follows_the_run(log_samples, stat_param, cut):
+    samples = 2 ** log_samples
+    assert fa.kl_tail_cut(samples, stat_param) == cut
+    # N Pr[|D| > T sigma] (doubled) <= 2^-(stat_param + 6), and T - 1 would not do (above 12)
+    assert log_samples + 1 + fa.gaussian_tail_log2(cut) <= -(stat_param + 6)
+    if cut > GAUSSIAN_TAIL_CUT:
+        assert log_samples + 1 + fa.gaussian_tail_log2(cut - 1) > -(stat_param + 6)
+
+
 def test_sampler_precision():
     sigma = 2 ** 161 + 5
-    assert fa.kl_sampler_precision(sigma, 2 ** 53, 128) == 162 + 128 + 53 + 8
-    assert fa.kl_sampler_precision(sigma, 2 ** 53 + 1, 128) == 162 + 128 + 54 + 8
+    assert fa.kl_sampler_precision(sigma, 2 ** 53, 128) == 162 + 128 + 53 + 11
+    assert fa.kl_sampler_precision(sigma, 2 ** 53 + 1, 128) == 162 + 128 + 54 + 11
     # never below the sampler's own default bits(sigma) + 128
     assert fa.kl_sampler_precision(sigma, 10, 64) == 162 + 128
+    assert fa.facct_max_log_samples(128) == 51
 
 
 class _Recording(XofRandom):
@@ -130,29 +178,19 @@ def test_rounded_sampler_takes_a_higher_precision_only():
         sampling_utils.discrete_gaussian_bigint(2 ** 100, 8, rng=rng, sampler="rounded", precision=228)
 
 
-def test_kl_servers_sample_at_the_kl_precision(monkeypatch):
-    seen = []
-    real = sampling_utils.discrete_gaussian_bigint
-
-    def spy(sigma, count, rng=None, sampler=None, precision=None):
-        seen.append((int(sigma), precision))
-        return real(sigma, count, rng=rng, sampler=sampler, precision=precision)
-
-    monkeypatch.setattr(fa, "discrete_gaussian_bigint", spy)
-    _, pp, _, _, parts, expected, _ = _tmcfe_round({**TMCFE, **KL}, ["sid_0", "sid_1"])
-    sigma = int(pp["sigma_f"])
-    want = fa.kl_sampler_precision(sigma, 3 * 1000 * 16, 64)
-    assert seen and set(seen) == {(sigma, want)}
-
-
 def test_flooding_samples_respect_the_cut():
     values = fa.flooding_samples(1000, 4000, XofRandom(b"cut"), tail_cut=1)
     assert len(values) == 4000 and max(abs(v) for v in values) <= 1000
     assert any(abs(v) > 1000 for v in sampling_utils.discrete_gaussian_bigint(1000, 4000, rng=XofRandom(b"cut")))
 
 
+# -- the budget -------------------------------------------------------------------
+
+
 def test_budget():
     budget = fa.PartialDecryptionBudget(5)
+    budget.check(5)
+    assert budget.used == 0
     budget.consume()
     budget.consume(4)
     assert budget.used == 5 and budget.remaining == 0
@@ -163,8 +201,18 @@ def test_budget():
     with pytest.raises(FESchemeError):
         budget.consume(4)
     assert budget.used == 2  # a refused request consumes nothing
-    with pytest.raises(ValueError):
+    with pytest.raises(FEValidationError):
         budget.consume(-1)
+    with pytest.raises(AttributeError):
+        budget.used = 0  # the count only grows
+    with pytest.raises(AttributeError):
+        budget.limit = 10 ** 9
+
+
+@pytest.mark.parametrize("limit, used", [(0, 0), (-1, 0), (5, -1), (2, -10 ** 6), (5, 6), (True, 0), (5, 1.0), (5.0, 0)])
+def test_budget_values_are_validated(limit, used):
+    with pytest.raises(FEValidationError):
+        fa.PartialDecryptionBudget(limit, used=used)
 
 
 # -- the default is untouched ---------------------------------------------------
@@ -178,7 +226,6 @@ def test_default_tmcfe_parameters_and_pp_are_unchanged():
     kg.setup()
     pp = kg.get_public_parameters()
     assert not KL_FIELDS & set(pp)
-    import json
     with open("config/authority/{}/param.json".format(kg._scheme_type)) as f:
         record = json.load(f)
     assert record["threshold_construction"] == "bmms21-ibmcfe-shamir-smudging/v1"
@@ -202,30 +249,35 @@ def test_tmcfe_kl_parameters():
     bound = _tmcfe_noise_bound(kg)
     samples = kg.s * KL["max_partial_decryptions"] * kg.ring_n
     assert kg.sigma_f == fa.kl_flooding_width(bound, samples, kg.stat_param)
-    assert kg.q // kg.p >= 2 * (bound + kg.s * fa.KL_TAIL_CUT * kg.sigma_f) + 3
+    cut = fa.kl_tail_cut(samples, kg.stat_param, kg.sigma_f)
+    assert kg.q // kg.p >= 2 * (bound + kg.s * cut * kg.sigma_f) + 3
     kg.setup()
     pp = kg.get_public_parameters()
     assert {k: pp[k] for k in KL_FIELDS} == {
-        "flooding_accounting": "kl", "max_partial_decryptions": 1000, "stat_param": 64, "flood_tail_cut": 20,
+        "flooding_accounting": "kl", "max_partial_decryptions": 1000, "stat_param": 64, "flood_tail_cut": cut,
     }
     default = ThresholdMCFERingLWEKeyGenerator(dict(TMCFE))
     assert kg.sigma_f < default.sigma_f and kg.q < default.q
+    with pytest.raises(FESchemeError, match="flood_tail_cut"):
+        fa.kl_flooding(dict(pp, flood_tail_cut=cut + 1), pp["ring_n"])
 
 
 def test_tmife_kl_parameters():
     kg = ThresholdMIFELWEKeyGenerator({**TMIFE, **KL})
     bound = _tmife_noise_bound(kg)
-    assert kg.sigma_f == fa.kl_flooding_width(bound, kg.s * KL["max_partial_decryptions"], kg.stat_param)
-    assert kg.q // kg.p >= 2 * (bound + kg.s * fa.KL_TAIL_CUT * kg.sigma_f) + 3
-    assert kg._construction == "acfgu18-abdp15-shamir-smudging-kl/v1"
+    samples = kg.s * KL["max_partial_decryptions"]
+    assert kg.sigma_f == fa.kl_flooding_width(bound, samples, kg.stat_param)
+    cut = fa.kl_tail_cut(samples, kg.stat_param, kg.sigma_f)
+    assert kg.q // kg.p >= 2 * (bound + kg.s * cut * kg.sigma_f) + 3
+    assert kg._construction == "acfgu18-abdp15-shamir-smudging-kl/v2"
     assert kg._record_fields()["max_partial_decryptions"] == 1000
     kg.setup()
     pp = kg.get_public_parameters()
-    assert pp["flooding_accounting"] == "kl" and pp["flood_tail_cut"] == 20
+    assert pp["flooding_accounting"] == "kl" and pp["flood_tail_cut"] == cut
 
 
 @pytest.mark.parametrize("kg_cls, base", [
-    (ThresholdMCFERingLWEKeyGenerator, TMCFE), (ThresholdMIFELWEKeyGenerator, TMIFE),
+    (ThresholdMCFERingLWEKeyGenerator, {**TMCFE, "t": 3}), (ThresholdMIFELWEKeyGenerator, {**TMIFE, "t": 3}),
 ])
 def test_records_of_the_accountings_never_verify_for_each_other(kg_cls, base):
     seq = [base, {**base, **KL}, {**base, **KL, "max_partial_decryptions": 2000}, base, {**base, **KL}]
@@ -242,181 +294,254 @@ def test_records_of_the_accountings_never_verify_for_each_other(kg_cls, base):
 # -- round trips and the run-time limit -------------------------------------------
 
 
-def _tmcfe_round(cfg, enrolled, label="lbl", servers=None, budget=None):
+def _tmcfe_setup(cfg):
     kg = ThresholdMCFERingLWEKeyGenerator(cfg)
     kg.setup()
-    pp = kg.get_public_parameters()
+    return kg, kg.get_public_parameters()
+
+
+def _tmcfe_request(kg, pp, label="lbl"):
     x = {nid: [[random.randint(-4, 4) for _ in range(5)]] for nid in NIDS}
     y = {nid: [random.randint(-4, 4)] for nid in NIDS}
     cts = {nid: ThresholdMCFERingLWE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(x[nid], label)
            for nid in NIDS}
-    cred = {"fusion_weight": y, "label": label}
-    servers = servers or {}
-    parts = {}
-    for sid in enrolled:
-        dk = kg.get_decryption_keys(sid, credentials=cred)
-        srv = servers.setdefault(sid, ThresholdMCFERingLWE(
-            {"id": sid, "keys": {"pp": pp, "dk": dk}, **({"partial_budget": budget} if budget else {})}
-        ))
-        parts[sid] = srv.share_decrypt(cts, cred, dk, enrolled)
     expected = [sum(x[n][0][j] * y[n][0] for n in NIDS) for j in range(5)]
-    return kg, pp, cts, cred, parts, expected, servers
+    return cts, {"fusion_weight": y, "label": label}, expected
 
 
-@pytest.mark.parametrize("enrolled", [["sid_0", "sid_1"], ["sid_1", "sid_2"], ["sid_0", "sid_1", "sid_2"]])
-def test_tmcfe_kl_round_trip(enrolled):
-    _, pp, _, _, parts, expected, _ = _tmcfe_round({**TMCFE, **KL}, enrolled)
+def _tmcfe_server(kg, pp, sid, cred, budgets):
+    dk = kg.get_decryption_keys(sid, credentials=cred)
+    extra = {"partial_budget": budgets[sid]} if budgets else {}
+    return ThresholdMCFERingLWE({"id": sid, "keys": {"pp": pp, "dk": dk}, **extra}), dk
+
+
+def test_tmcfe_kl_round_trip():
+    kg, pp = _tmcfe_setup({**TMCFE, **KL})
+    budgets = _budgets(pp)
+    cts, cred, expected = _tmcfe_request(kg, pp)
+    parts = {}
+    for sid in SIDS:
+        srv, dk = _tmcfe_server(kg, pp, sid, cred, budgets)
+        parts[sid] = srv.share_decrypt(cts, cred, dk, SIDS)
     assert ThresholdMCFERingLWE({"id": "c", "keys": {"pp": pp}}).combine_decrypt(parts) == expected
+    assert all(budgets[sid].used == 1 for sid in SIDS)
 
 
-def test_tmcfe_kl_noise_is_derandomised_and_repeats_count():
-    kg, pp, cts, cred, parts, _, servers = _tmcfe_round({**TMCFE, **KL}, ["sid_0", "sid_1"])
-    dk = kg.get_decryption_keys("sid_0", credentials=cred)
-    again = servers["sid_0"].share_decrypt(cts, cred, dk, ["sid_0", "sid_1"])
-    assert again["w"] == parts["sid_0"]["w"]
-    assert servers["sid_0"]._partial_budget.used == 2  # repeated requests count too
+def test_tmcfe_kl_servers_need_a_budget():
+    kg, pp = _tmcfe_setup({**TMCFE, **KL})
+    cts, cred, _ = _tmcfe_request(kg, pp)
+    srv, dk = _tmcfe_server(kg, pp, "sid_0", cred, None)
+    with pytest.raises(FESchemeError, match="needs a partial_budget"):
+        srv.share_decrypt(cts, cred, dk, SIDS)
+    with pytest.raises(FEValidationError, match="more than max_partial_decryptions"):
+        ThresholdMCFERingLWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk},
+                              "partial_budget": fa.PartialDecryptionBudget(1001)})
+    with pytest.raises(FEValidationError, match="PartialDecryptionBudget"):
+        ThresholdMCFERingLWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}, "partial_budget": object()})
 
 
-def test_tmcfe_servers_refuse_beyond_the_limit():
-    cfg = {**TMCFE, "flooding_accounting": "kl", "max_partial_decryptions": 3}
-    kg, pp, cts, cred, _, _, servers = _tmcfe_round(cfg, ["sid_0", "sid_1"])
-    srv = servers["sid_0"]
-    dk = kg.get_decryption_keys("sid_0", credentials=cred)
-    srv.share_decrypt(cts, cred, dk, ["sid_0", "sid_2"])
-    srv.share_decrypt(cts, cred, dk, ["sid_0", "sid_1", "sid_2"])
-    with pytest.raises(FESchemeError, match="partial decryption limit reached"):
-        srv.share_decrypt(cts, cred, dk, ["sid_0", "sid_1"])
-    # a fresh object of the same server must be given the shared budget
-    shared = fa.PartialDecryptionBudget(3, used=srv._partial_budget.used)
-    other = ThresholdMCFERingLWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}, "partial_budget": shared})
-    with pytest.raises(FESchemeError, match="partial decryption limit reached"):
-        other.share_decrypt(cts, cred, dk, ["sid_0", "sid_1"])
+def test_tmcfe_budget_has_no_bypass():
+    kg, pp = _tmcfe_setup({**TMCFE, **KL})
+    cts, cred, _ = _tmcfe_request(kg, pp)
+    srv, dk = _tmcfe_server(kg, pp, "sid_0", cred, _budgets(pp))
+    with pytest.raises(TypeError):
+        srv.share_decrypt(cts, cred, dk, SIDS, _budgeted=True)
 
 
-def test_tmcfe_invalid_requests_consume_nothing():
-    cfg = {**TMCFE, "flooding_accounting": "kl", "max_partial_decryptions": 3}
-    kg, pp, cts, cred, _, _, servers = _tmcfe_round(cfg, ["sid_0", "sid_1"])
-    srv = servers["sid_0"]
-    dk = kg.get_decryption_keys("sid_0", credentials=cred)
+def test_tmcfe_kl_repeats_count_and_the_limit_holds_across_objects():
+    kg, pp = _tmcfe_setup({**TMCFE, **KL, "max_partial_decryptions": 3})
+    budgets = _budgets(pp)
+    cts, cred, _ = _tmcfe_request(kg, pp)
+    srv, dk = _tmcfe_server(kg, pp, "sid_0", cred, budgets)
+    first = srv.share_decrypt(cts, cred, dk, SIDS)
+    assert srv.share_decrypt(cts, cred, dk, SIDS)["w"] == first["w"]  # derandomised, but counted
+    # another object answering for the same server shares its budget
+    other, _ = _tmcfe_server(kg, pp, "sid_0", cred, budgets)
+    other.share_decrypt(cts, cred, dk, SIDS)
+    assert budgets["sid_0"].used == 3
+    for server in (srv, other):
+        with pytest.raises(FESchemeError, match="partial decryption limit reached"):
+            server.share_decrypt(cts, cred, dk, SIDS)
+
+
+def test_tmcfe_refused_requests_consume_nothing():
+    kg, pp = _tmcfe_setup({**TMCFE, **KL})
+    budgets = _budgets(pp)
+    cts, cred, _ = _tmcfe_request(kg, pp)
+    srv, dk = _tmcfe_server(kg, pp, "sid_0", cred, budgets)
+    for bad in (["sid_0", "sid_1"], ["sid_0", "sid_0", "sid_1"], ["sid_1", "sid_2"]):
+        with pytest.raises(FESchemeError):
+            srv.share_decrypt(cts, cred, dk, bad)
+    tampered = {nid: dict(ct) for nid, ct in cts.items()}
+    tampered["nid_0"]["tags"] = {sid: "00" * 32 for sid in SIDS}
     with pytest.raises(FESchemeError):
-        srv.share_decrypt(cts, cred, dk, ["sid_0"])  # below the threshold
-    assert srv._partial_budget.used == 1
+        srv.share_decrypt(tampered, cred, dk, SIDS)
+    assert budgets["sid_0"].used == 0
 
 
-def _ndarray_round(cfg, budget_limit=None):
-    kg = ThresholdMCFERingLWEKeyGenerator(cfg)
-    kg.setup()
-    pp = kg.get_public_parameters()
+def _ndarray_request(kg, pp):
     rng = np.random.default_rng(3)
     grads = {nid: [rng.uniform(-0.4, 0.4, (3, 7)).round(1), rng.uniform(-0.4, 0.4, (40,)).round(1)] for nid in NIDS}
     enc = {nid: ThresholdMCFERingLWE({"id": nid, "precision": 1, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
            .encrypt_lst_ndarray(grads[nid], label="round") for nid in NIDS}
     sample = ThresholdMCFERingLWE({"id": "c", "precision": 1, "keys": {"pp": pp}})
     cred = {"fusion_weight": {nid: [1] for nid in NIDS}, "label": "round", "n_chunks": sample.key_chunks(enc[NIDS[0]])}
-    return kg, pp, grads, enc, cred
+    return grads, enc, cred
 
 
-def test_tmcfe_ndarray_counts_every_chunk_up_front():
-    cfg = {**TMCFE, "bound_x": 10, "flooding_accounting": "kl", "max_partial_decryptions": 100}
-    kg, pp, grads, enc, cred = _ndarray_round(cfg)
+def test_tmcfe_ndarray_counts_every_chunk():
+    kg, pp = _tmcfe_setup({**TMCFE, **KL, "bound_x": 10, "max_partial_decryptions": 100})
+    grads, enc, cred = _ndarray_request(kg, pp)
     chunks = sum(len(layer["chunks"]) for layer in enc[NIDS[0]])
     assert chunks > 2
-    enrolled = ["sid_0", "sid_2"]
+    budgets = _budgets(pp)
     parts = {}
-    for sid in enrolled:
-        srv = ThresholdMCFERingLWE({"id": sid, "precision": 1, "keys": {"pp": pp}})
-        parts[sid] = srv.compute_lst_ndarray_ct(enc, cred, kg.get_decryption_keys(sid, credentials=cred), enrolled)
-        assert srv._partial_budget.used == chunks
+    for sid in SIDS:
+        srv = ThresholdMCFERingLWE({"id": sid, "precision": 1, "keys": {"pp": pp}, "partial_budget": budgets[sid]})
+        parts[sid] = srv.compute_lst_ndarray_ct(enc, cred, kg.get_decryption_keys(sid, credentials=cred), SIDS)
+        assert budgets[sid].used == chunks
     out = ThresholdMCFERingLWE({"id": "c", "precision": 1, "keys": {"pp": pp}}).decrypt_lst_ndarray_ct(parts)
     for got, *layers in zip(out, *(grads[n] for n in NIDS)):
         assert np.allclose(got, sum(layers), atol=0.05)
+    # refused whole when the budget does not cover every chunk
     short = fa.PartialDecryptionBudget(chunks - 1)
     srv = ThresholdMCFERingLWE({"id": "sid_0", "precision": 1, "keys": {"pp": pp}, "partial_budget": short})
+    dk = kg.get_decryption_keys("sid_0", credentials=cred)
     with pytest.raises(FESchemeError, match="partial decryption limit reached"):
-        srv.compute_lst_ndarray_ct(enc, cred, kg.get_decryption_keys("sid_0", credentials=cred), enrolled)
+        srv.compute_lst_ndarray_ct(enc, cred, dk, SIDS)
+    # and invalid requests consume nothing
+    with pytest.raises(FESchemeError):
+        srv.compute_lst_ndarray_ct(enc, cred, dk, ["sid_1", "sid_2"])
     assert short.used == 0
 
 
-def test_tmcfe_default_servers_have_no_limit():
-    _, pp, cts, cred, parts, expected, servers = _tmcfe_round(dict(TMCFE), ["sid_0", "sid_1"])
-    assert servers["sid_0"]._kl_flooding() == (None, None)
+def test_tmcfe_default_servers_need_no_budget():
+    kg, pp = _tmcfe_setup(dict(TMCFE))
+    cts, cred, expected = _tmcfe_request(kg, pp)
+    parts = {}
+    for sid in SIDS[:2]:
+        srv, dk = _tmcfe_server(kg, pp, sid, cred, None)
+        assert srv._kl_flooding() == (None, None)
+        parts[sid] = srv.share_decrypt(cts, cred, dk, SIDS[:2])
+    assert ThresholdMCFERingLWE({"id": "c", "keys": {"pp": pp}}).combine_decrypt(parts) == expected
+
+
+def test_tmcfe_kl_servers_sample_at_the_kl_precision(monkeypatch):
+    seen = []
+    real = sampling_utils.discrete_gaussian_bigint
+
+    def spy(sigma, count, rng=None, sampler=None, precision=None):
+        seen.append((int(sigma), precision))
+        return real(sigma, count, rng=rng, sampler=sampler, precision=precision)
+
+    monkeypatch.setattr(fa, "discrete_gaussian_bigint", spy)
+    kg, pp = _tmcfe_setup({**TMCFE, **KL})
+    cts, cred, _ = _tmcfe_request(kg, pp)
+    srv, dk = _tmcfe_server(kg, pp, "sid_0", cred, _budgets(pp))
+    srv.share_decrypt(cts, cred, dk, SIDS)
+    sigma = int(pp["sigma_f"])
+    assert seen and set(seen) == {(sigma, fa.kl_sampler_precision(sigma, 3 * 1000 * 16, 64))}
 
 
 def test_tmcfe_kl_with_facct_sampler():
     with sampling_utils.gaussian_sampler("facct"):
-        _, pp, _, _, parts, expected, _ = _tmcfe_round({**TMCFE, **KL}, ["sid_0", "sid_1"])
+        kg, pp = _tmcfe_setup({**TMCFE, **KL})
+        budgets = _budgets(pp)
+        cts, cred, expected = _tmcfe_request(kg, pp)
+        parts = {}
+        for sid in SIDS:
+            srv, dk = _tmcfe_server(kg, pp, sid, cred, budgets)
+            parts[sid] = srv.share_decrypt(cts, cred, dk, SIDS)
         assert ThresholdMCFERingLWE({"id": "c", "keys": {"pp": pp}}).combine_decrypt(parts) == expected
-        # N = 3 * 2^120 * 16 flooded samples exceed what FACCT's 2^-185 covers at stat_param 64
-        cfg = {**TMCFE, "flooding_accounting": "kl", "max_partial_decryptions": 2 ** 120}
+        # N = 3 * 2^120 * 16 flooded samples exceed what FACCT's 2^-185 covers at stat_param 64;
+        # the refusal consumes nothing
+        kg, pp = _tmcfe_setup({**TMCFE, **KL, "max_partial_decryptions": 2 ** 120})
+        budgets = _budgets(pp)
+        cts, cred, _ = _tmcfe_request(kg, pp)
+        srv, dk = _tmcfe_server(kg, pp, "sid_0", cred, budgets)
         with pytest.raises(FEValidationError, match="FACCT"):
-            _tmcfe_round(cfg, ["sid_0", "sid_1"])
+            srv.share_decrypt(cts, cred, dk, SIDS)
+        assert budgets["sid_0"].used == 0
 
 
 @pytest.mark.skipif(not native_backend.available(), reason="native extension not built")
 def test_tmcfe_kl_partials_identical_on_both_backends():
     with native_backend.backend("python"):
-        kg, pp, cts, cred, parts, expected, _ = _tmcfe_round({**TMCFE, "ring_n": 64, **KL}, ["sid_0", "sid_2"])
-    dk = kg.get_decryption_keys("sid_0", credentials=cred)
+        kg, pp = _tmcfe_setup({**TMCFE, **KL, "ring_n": 64})
+        cts, cred, _ = _tmcfe_request(kg, pp)
+        srv, dk = _tmcfe_server(kg, pp, "sid_0", cred, _budgets(pp))
+        python = srv.share_decrypt(cts, cred, dk, SIDS)
     with native_backend.backend("native"):
         assert native_backend.ring_context(pp["q"], pp["ring_n"]) is not None
-        native = ThresholdMCFERingLWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}}).share_decrypt(
-            cts, cred, dk, ["sid_0", "sid_2"])
-    assert native["w"] == parts["sid_0"]["w"] and native["c_y"] == parts["sid_0"]["c_y"]
+        srv, _ = _tmcfe_server(kg, pp, "sid_0", cred, _budgets(pp))
+        native = srv.share_decrypt(cts, cred, dk, SIDS)
+    assert native["w"] == python["w"] and native["c_y"] == python["c_y"]
 
 
-def _tmife_round(cfg, enrolled):
+def _tmife_setup(cfg):
     kg = ThresholdMIFELWEKeyGenerator(cfg)
     kg.setup()
     pp = kg.get_public_parameters()
+    encs = {nid: ThresholdMIFELWE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}) for nid in NIDS}
+    return kg, pp, encs
+
+
+def test_tmife_kl_round_trip():
+    kg, pp, encs = _tmife_setup({**TMIFE, **KL})
+    budgets = _budgets(pp)
     x = {nid: [random.randint(-6, 6)] for nid in NIDS}
     y = {nid: [random.randint(-6, 6)] for nid in NIDS}
-    cts = {nid: ThresholdMIFELWE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(x[nid])
-           for nid in NIDS}
-    servers, parts = {}, {}
-    for sid in enrolled:
+    cts = {nid: encs[nid].encrypt(x[nid]) for nid in NIDS}
+    parts = {}
+    for sid in SIDS:
         dk = kg.get_decryption_keys(sid, credentials={"fusion_weight": y})
-        servers[sid] = ThresholdMIFELWE({"id": sid, "keys": {"pp": pp, "dk": dk}})
-        parts[sid] = servers[sid].share_decrypt(cts, y, dk, enrolled)
-    return kg, pp, cts, y, parts, sum(x[n][0] * y[n][0] for n in NIDS), servers
+        srv = ThresholdMIFELWE({"id": sid, "keys": {"pp": pp, "dk": dk}, "partial_budget": budgets[sid]})
+        parts[sid] = srv.share_decrypt(cts, y, dk, SIDS)
+    assert ThresholdMIFELWE({"id": "c", "keys": {"pp": pp}}).combine_decrypt(parts) == sum(x[n][0] * y[n][0] for n in NIDS)
 
 
-@pytest.mark.parametrize("enrolled", [["sid_0", "sid_1"], ["sid_0", "sid_2"], ["sid_0", "sid_1", "sid_2"]])
-def test_tmife_kl_round_trip(enrolled):
-    _, pp, _, _, parts, expected, _ = _tmife_round({**TMIFE, **KL}, enrolled)
-    assert ThresholdMIFELWE({"id": "c", "keys": {"pp": pp}}).combine_decrypt(parts) == expected
-
-
-def test_tmife_servers_refuse_beyond_the_limit():
-    cfg = {**TMIFE, "flooding_accounting": "kl", "max_partial_decryptions": 2}
-    kg, pp, cts, y, parts, _, servers = _tmife_round(cfg, ["sid_0", "sid_1"])
+def test_tmife_servers_refuse_beyond_the_limit_and_without_a_budget():
+    kg, pp, encs = _tmife_setup({**TMIFE, **KL, "max_partial_decryptions": 2})
+    y = {nid: [1] for nid in NIDS}
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y})
-    again = servers["sid_0"].share_decrypt(cts, y, dk, ["sid_0", "sid_1"])
-    assert again["w"] == parts["sid_0"]["w"]
+    with pytest.raises(FESchemeError, match="needs a partial_budget"):
+        ThresholdMIFELWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}}).share_decrypt(
+            {nid: encs[nid].encrypt([1]) for nid in NIDS}, y, dk, SIDS)
+    budget = fa.PartialDecryptionBudget(2)
+    for i in range(2):
+        cts = {nid: encs[nid].encrypt([i]) for nid in NIDS}
+        ThresholdMIFELWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}, "partial_budget": budget}).share_decrypt(
+            cts, y, dk, SIDS)
+    srv = ThresholdMIFELWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}, "partial_budget": budget})
     with pytest.raises(FESchemeError, match="partial decryption limit reached"):
-        servers["sid_0"].share_decrypt(cts, y, dk, ["sid_0", "sid_1"])
+        srv.share_decrypt(cts, y, dk, SIDS)
+    with pytest.raises(TypeError):
+        srv.share_decrypt(cts, y, dk, SIDS, _budgeted=True)
 
 
 def test_tmife_ndarray_counts_every_element():
-    cfg = {**TMIFE, "bound_x": 50, "flooding_accounting": "kl", "max_partial_decryptions": 11}
-    kg = ThresholdMIFELWEKeyGenerator(cfg)
-    kg.setup()
-    pp = kg.get_public_parameters()
+    kg, pp, _ = _tmife_setup({**TMIFE, **KL, "bound_x": 50, "max_partial_decryptions": 11})
     x = {nid: [np.random.random_sample((2, 3)), np.random.random_sample((2, 2))] for nid in NIDS}
     y = {nid: [1] for nid in NIDS}
     enc = {nid: ThresholdMIFELWE({"id": nid, "precision": 1, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
            .encrypt_lst_ndarray(x[nid]) for nid in NIDS}
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y})
-    srv = ThresholdMIFELWE({"id": "sid_0", "precision": 1, "keys": {"pp": pp, "dk": dk}})
-    srv.compute_lst_ndarray_ct(enc, y, dk, ["sid_0", "sid_1"])
-    assert srv._partial_budget.used == 10  # one partial per element
+    budget = fa.PartialDecryptionBudget(11)
+    srv = ThresholdMIFELWE({"id": "sid_0", "precision": 1, "keys": {"pp": pp, "dk": dk}, "partial_budget": budget})
+    for bad in (["sid_0"], ["sid_0", "sid_0", "sid_1"], ["sid_1", "sid_2"]):
+        with pytest.raises(FESchemeError):
+            srv.compute_lst_ndarray_ct(enc, y, dk, bad)
+    assert budget.used == 0  # refused requests consume nothing
+    srv.compute_lst_ndarray_ct(enc, y, dk, SIDS)
+    assert budget.used == 10  # one partial per element
     with pytest.raises(FESchemeError, match="partial decryption limit reached"):
-        srv.compute_lst_ndarray_ct(enc, y, dk, ["sid_0", "sid_1"])  # 10 more do not fit
-    assert srv._partial_budget.used == 10
+        srv.compute_lst_ndarray_ct(enc, y, dk, SIDS)  # 10 more do not fit
+    assert budget.used == 10
 
 
 # -- the standard profile ---------------------------------------------------------
 
-STANDARD_TMCFE = {"n": 3, "lst_nid": NIDS, "eta": 1, "bound_x": 100, "bound_y": 1, "s": 3, "t": 2,
+STANDARD_TMCFE = {"n": 3, "lst_nid": NIDS, "eta": 1, "bound_x": 100, "bound_y": 1, "s": 3, "t": 3,
                   "lst_sid": SIDS, "security_profile": "standard"}
 
 
@@ -431,7 +556,8 @@ def test_standard_tmcfe_kl_keeps_the_ring_and_shrinks_q():
     assert kg.q == q and int(q).bit_length() <= ring_lwe_bound(kg.ring_n, width)
     assert int(default.q).bit_length() == 215 and int(kg.q).bit_length() == 178
     samples = 3 * q_per_server * 8192
-    assert fa.kl_divergence_log2(_tmcfe_noise_bound(kg), samples, kg.sigma_f) <= -128
+    assert fa.kl_divergence_log2(_tmcfe_noise_bound(kg), samples, kg.sigma_f) <= -129
+    assert fa.kl_tail_cut(samples, 128, kg.sigma_f) == 16
 
 
 def test_standard_kl_keeps_the_statistical_minimum():
@@ -442,7 +568,7 @@ def test_standard_kl_keeps_the_statistical_minimum():
 
 
 def test_standard_tmife_kl_dimension():
-    cfg = {"n": 2, "lst_nid": NIDS[:2], "eta": 1, "bound_x": 50, "bound_y": 50, "s": 3, "t": 2,
+    cfg = {"n": 2, "lst_nid": NIDS[:2], "eta": 1, "bound_x": 50, "bound_y": 50, "s": 3, "t": 3,
            "lst_sid": SIDS, "security_profile": "standard"}
     default = ThresholdMIFELWEKeyGenerator(dict(cfg))
     kg = ThresholdMIFELWEKeyGenerator({**cfg, "flooding_accounting": "kl", "max_partial_decryptions": 2 ** 40 // 3})

@@ -77,17 +77,20 @@ The ``security_profile`` entry of a key generator's config selects one:
     is 128, as ``kappa`` of the Ring-LWE schemes: a statistical distance of
     ``2^-128`` per sample, so that ``Q`` samples stay below ``Q 2^-128``.
 
-    ``mife/lwe_threshold`` and ``mcfe/ring_lwe_threshold`` also accept, as an
-    explicit opt-in that the profile never sets, ``flooding_accounting =
-    "kl"`` with a mandatory ``max_partial_decryptions``. There
-    ``stat_param`` bounds the KL divergence of the adversary's whole view of
-    a run in which every server produces at most that many partial
-    decryptions (the servers refuse more), instead of the per-sample
-    statistical distance above: about ``stat_param - 7`` bits of statistical
-    security in the bit-security framework of Micciancio and Walter for
-    decision games, or ``2^-64.5`` of total statistical distance read
-    conventionally. A different and weaker guarantee, with its own parameter
-    records; see :mod:`pyfe4ai.schemes.flooding_accounting`.
+    ``mife/lwe_threshold`` and ``mcfe/ring_lwe_threshold`` with ``t = s``
+    also accept, as an explicit opt-in that the profile never sets,
+    ``flooding_accounting = "kl"`` with a mandatory
+    ``max_partial_decryptions``. There ``stat_param`` bounds the Hellinger
+    distance between the adversary's real and simulated views of a run in
+    which every server produces at most that many partial decryptions,
+    instead of the per-sample statistical distance above:
+    ``stat_param - 6.85`` bits of statistical security in the bit-security
+    framework of Micciancio and Walter for decision games, or about
+    ``2^-65`` of total statistical distance read conventionally. The servers
+    count against the limit in a budget that the deployment gives them and
+    must keep across processes and restarts. A different and weaker
+    guarantee, with its own parameter records; see
+    :mod:`pyfe4ai.schemes.flooding_accounting`.
 
     Values given explicitly in the config must not be weaker than the
     profile's.

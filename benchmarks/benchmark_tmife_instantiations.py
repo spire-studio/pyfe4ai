@@ -5,7 +5,8 @@
 ``--clients 2 --bound 50`` the documented configuration: key generation
 takes tens of minutes and every encryption a pass over ``A``);
 ``--flooding-accounting kl --max-partial-decryptions Q`` selects the opt-in
-KL accounting of its flooding (:mod:`pyfe4ai.schemes.flooding_accounting`).
+KL accounting of its flooding (:mod:`pyfe4ai.schemes.flooding_accounting`;
+``--threshold 3``, i.e. ``t = s``), with one budget per server.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from _common import prepare_benchmark
 from _common import profile_value
 from _common import size_bytes
 from _common import stats
+from pyfe4ai.schemes.flooding_accounting import PartialDecryptionBudget
 from pyfe4ai.schemes.mife.ddh_threshold import ThresholdMIFE
 from pyfe4ai.schemes.mife.ddh_threshold import ThresholdMIFEKeyGenerator
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE
@@ -53,6 +55,10 @@ def _run_case(case: dict, rounds: int) -> dict:
         sk_by_nid = {nid: kg.get_private_keys(nid) for nid in case["lst_nid"]}
         # the ABDP15 schemes' encryptors hold A as the key generator does ("stream" under standard)
         extra = {"matrix_mode": kg.matrix_mode} if hasattr(kg, "matrix_mode") else {}
+        budgets = {}
+        if pp.get("flooding_accounting") == "kl":  # one budget per server, kept by the deployment
+            budgets = {sid: {"partial_budget": PartialDecryptionBudget(pp["max_partial_decryptions"])}
+                       for sid in case["lst_sid"]}
 
         encryptors = {}
         dct_ct = {}
@@ -68,7 +74,7 @@ def _run_case(case: dict, rounds: int) -> dict:
         t0 = time.perf_counter()
         for sid in enrolled:
             dk_sid = kg.get_decryption_keys(sid, credentials={"fusion_weight": case["y"]})
-            dec = case["crypto_cls"]({"id": sid, "keys": {"pp": pp, "dk": dk_sid}, **extra})
+            dec = case["crypto_cls"]({"id": sid, "keys": {"pp": pp, "dk": dk_sid}, **extra, **budgets.get(sid, {})})
             dct_partial[sid] = dec.share_decrypt(dct_ct, case["y"], dk_sid, enrolled)
         partial_times.append(time.perf_counter() - t0)
 
@@ -125,6 +131,7 @@ def main() -> None:
                         help="tMIFE/LWE: 'standard' takes lwe_n = 'auto' (see the module docstring)")
     parser.add_argument("--clients", type=int, default=3)
     parser.add_argument("--bound", type=int, default=None, help="bound_x = bound_y (default: per --profile)")
+    parser.add_argument("--threshold", type=int, default=2, help="tMIFE/LWE: threshold t of the s = 3 servers")
     parser.add_argument("--flooding-accounting", default=None, choices=["per-sample", "kl"])
     parser.add_argument("--max-partial-decryptions", type=int, default=None)
     args = parser.parse_args()
@@ -136,7 +143,7 @@ def main() -> None:
     bound = args.bound or profile_value(args.profile, {"small": 4, "medium": 8, "large": 12})
     dct_x = {nid: [1] for nid in lst_nid}
     dct_y = {nid: [1] for nid in lst_nid}
-    lwe_config = {"sec_param": 64, "eta": 1, "n": len(lst_nid), "s": 3, "t": 2, "lst_nid": lst_nid,
+    lwe_config = {"sec_param": 64, "eta": 1, "n": len(lst_nid), "s": 3, "t": args.threshold, "lst_nid": lst_nid,
                   "lst_sid": lst_sid, "lwe_n": lwe_n, "bound_x": bound, "bound_y": bound}
     if args.security_profile == "standard":
         del lwe_config["lwe_n"], lwe_config["sec_param"]
@@ -169,7 +176,7 @@ def main() -> None:
             "config": lwe_config,
             "lst_nid": lst_nid,
             "lst_sid": lst_sid,
-            "threshold": 2,
+            "threshold": args.threshold,
             "x": dct_x,
             "y": dct_y,
             "expected": len(lst_nid),

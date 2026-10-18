@@ -153,8 +153,9 @@ class ThresholdLWEConfig(LWEConfig, total=False):
     """Config for threshold LWE-based schemes.
 
     ``flooding_accounting`` (``"per-sample"`` by default, or ``"kl"`` with
-    ``max_partial_decryptions``) chooses how ``mife/lwe_threshold`` sizes its
-    flooding noise; see :mod:`pyfe4ai.schemes.flooding_accounting`.
+    ``max_partial_decryptions`` and ``t = s``) chooses how
+    ``mife/lwe_threshold`` sizes its flooding noise; see
+    :mod:`pyfe4ai.schemes.flooding_accounting`.
     """
 
     t: int
