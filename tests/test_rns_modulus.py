@@ -496,3 +496,64 @@ def test_rns_mife_facct_identical(same_bytes_facct):
     py, nat = same_bytes_facct(lambda: clients["c0"].encrypt(x), seed=9)
     assert py == nat
 
+
+
+def _negacyclic(a, b, q):
+    n = len(a)
+    out = [0] * n
+    for i, ai in enumerate(a):
+        if ai:
+            for j, bj in enumerate(b):
+                k = i + j
+                if k < n:
+                    out[k] += ai * bj
+                else:
+                    out[k - n] -= ai * bj
+    return [v % q for v in out]
+
+
+@native_only
+@pytest.mark.parametrize("mode", cu.LABEL_HASHES)
+def test_rns_drbg_path_facct_tensor_is_the_reference(mode):
+    """The production path (rnd=None, the call's DRBG): chunk j of an RNS
+    tensor encryption reads stream j from offset 0 and samples r, e_0, e as the
+    Python FACCT reference does, whatever the thread count; the offline /
+    online split gives the direct encryption (review of the integration)."""
+    rng = random.Random(7)
+    n = 64
+    q, fs = rlu.rns_ntt_modulus(gp.mpz(1) << 100, n, 7)
+    q, fs = int(q), tuple(int(f) for f in fs)
+    rlu.register_rns_modulus(q, fs)
+    ctx = native_backend.ring_context(q, n)
+    ext = native_backend.ext()
+    sig2 = 3.0e6
+    sig3 = 2 ** 0.5 * sig2
+    tables = native_backend.noise_kwargs(sig2, sig3, sampler="facct")["facct"]
+    delta = q // 7
+    a, pk, u = ([rng.randrange(q) for _ in range(n)] for _ in range(3))
+    key = ext.enc_key(ctx.cap, a, [pk], [u], delta, hash_mode=cu.LABEL_HASH_CODES[mode])
+    size = 3 * n + 5
+    x = np.array([rng.randint(-3, 3) for _ in range(size)], dtype=np.int64)
+    chunks = -(-size // n)
+    mats = [cu.hash_to_zq_material("lab|%d" % j, domain="t", mode=mode) for j in range(chunks)]
+    seed = bytes(rng.randrange(256) for _ in range(32))
+    for threads in (1, 3):
+        out = ext.encrypt_tensor(key, x, mats, sig2, sig3, None, threads, False, seed=seed, facct=tables)
+        for j in range(chunks):
+            h = [int(v) for v in cu.hash_to_zq_vector("lab|%d" % j, gp.mpz(q), n, domain="t", mode=mode)]
+            xs = [int(v) for v in x[j * n:(j + 1) * n]] + [0] * max(0, (j + 1) * n - size)
+            w = [(xs[i] + u[i] + h[i]) % q for i in range(n)]
+            with native_backend.backend("python"):
+                bits = _StreamBits(ext.drbg_bytes(seed, j, 1 << 16))
+                r = [int(v) for v in sampling_utils.discrete_gaussian_facct(sig2, n, rng=bits)]
+                e0 = [int(v) for v in sampling_utils.discrete_gaussian_facct(sig3, n, rng=bits)]
+                e1 = [int(v) for v in sampling_utils.discrete_gaussian_facct(sig2, n, rng=bits)]
+            pr, ar = _negacyclic(pk, r, q), _negacyclic(a, r, q)
+            ct0 = [(pr[i] + e0[i] + delta * w[i]) % q for i in range(n)]
+            ct1 = [(ar[i] + e1[i]) % q for i in range(n)]
+            assert [int(v) for v in out[j][0][0]] == ct0 and [int(v) for v in out[j][1]] == ct1, (j, threads)
+    pre = ext.precompute_tensor(key, mats, sig2, sig3, None, 2, seed=seed, facct=tables)
+    direct = ext.encrypt_tensor(key, x, mats, sig2, sig3, None, 2, False, seed=seed, facct=tables)
+    assert ext.encrypt_precomputed(key, pre, 0, x, 2) == direct
+    with pytest.raises(ValueError):
+        ext.encrypt_precomputed(key, pre, 0, x, 1)  # one-time

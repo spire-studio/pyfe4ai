@@ -664,3 +664,24 @@ def test_tmife_kl_dimension_at_the_reduction_width():
     assert (kg.lwe_n, int(kg.q).bit_length()) == (4864, 173)
     with pytest.raises(FEValidationError):
         ThresholdMIFELWEKeyGenerator(dict(cfg))
+
+
+def test_malformed_kl_public_parameters_raise_library_errors():
+    kg, pp = _tmcfe_setup({**TMCFE, **KL})
+    flood = fa.kl_flooding(pp, pp["ring_n"])
+    assert flood.max_partial_decryptions == KL["max_partial_decryptions"]
+    for bad in ({k: v for k, v in pp.items() if k != "stat_param"}, dict(pp, sigma_f="x"),
+                dict(pp, max_partial_decryptions=None), dict(pp, flood_tail_cut=0)):
+        with pytest.raises((FEValidationError, FESchemeError)):
+            fa.kl_flooding(bad, pp["ring_n"])
+
+
+def test_a_budget_cannot_be_copied_or_pickled():
+    import copy
+    import pickle
+
+    budget = fa.PartialDecryptionBudget(4)
+    for duplicate in (copy.copy, copy.deepcopy, pickle.dumps):
+        with pytest.raises(TypeError):
+            duplicate(budget)
+

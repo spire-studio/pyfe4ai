@@ -167,7 +167,9 @@ from pyfe4ai.schemes.mcfe.ring_lwe import chunk_key_index
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
 from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.schemes.threshold_utils import check_ciphertext_tags
+from pyfe4ai.schemes.threshold_utils import check_pp_binding
 from pyfe4ai.schemes.threshold_utils import check_served_sharing
+from pyfe4ai.schemes.threshold_utils import pp_binding
 from pyfe4ai.schemes.threshold_utils import legacy_shamir_policy
 from pyfe4ai.schemes.threshold_utils import check_fusion_weight
 from pyfe4ai.schemes.threshold_utils import client_server_mac_keys
@@ -229,6 +231,14 @@ _CONSTRUCTION_IDS = {
 }
 _CONSTRUCTIONS = {construction: sharing for (sharing, _), construction in _CONSTRUCTION_IDS.items()}
 _CONSTRUCTIONS[_CONSTRUCTION_KL] = "shamir"
+#: Public-parameter fields a key share is bound to (see
+#: :func:`~pyfe4ai.schemes.threshold_utils.pp_binding`): what its partial
+#: decryptions depend on beyond the sharing and the construction.
+_BINDING_FIELDS = (
+    "q", "p", "ring_n", "eta", "s", "t", "lst_sid", "flooding", "flood_bits", "sigma_f", "flood_tail_cut",
+    "flooding_accounting", "max_partial_decryptions", "stat_param", "label_hash",
+)
+_BINDING_DEFAULTS = {"flooding": "gaussian", "flooding_accounting": "per-sample", "label_hash": "shake256-wide"}
 
 
 def _construction_id(sharing: str, flooding: str, accounting: str) -> str | None:
@@ -429,6 +439,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         self.dict_dk = {}
         self.mac_keys = client_server_mac_keys(self.lst_nid, self.lst_sid)
         self._noise_masters = {sid: secrets.token_hex(32) for sid in self.lst_sid}
+        self._binding = pp_binding(self.get_public_parameters(), _BINDING_FIELDS, _BINDING_DEFAULTS)
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
         """Client *nid*'s MCFE keys plus ``mac_keys`` (``{sid: key}``) for the
@@ -500,6 +511,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             "noise_sampler": FLOODING_SAMPLER,
             "flooding": self.flooding,
             "label_hash": self.label_hash,
+            "pp_binding": self._binding,
         })
         return dk
 
@@ -678,6 +690,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         accounting = self.pp.get("flooding_accounting", PER_SAMPLE)
         if construction is not None and construction != _construction_id(dk.get("sharing", "shamir"), flooding, accounting):
             raise FESchemeError("the public parameters' threshold_construction is not that of their flooding")
+        self._flooding_width()  # malformed flooding parameters: a validation error first
         fusion_weight = credentials.get("fusion_weight")
         if dk.get("label") != credentials.get("label"):
             raise FESchemeError("the key share was derived for another label")
@@ -703,6 +716,8 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         )
         # the key share of the public parameters' label hash
         self._check_key_label_hash(dk)
+        # ... and of their modulus and flooding (width, tail cut, accounting)
+        check_pp_binding(self.pp, dk, _BINDING_FIELDS, _BINDING_DEFAULTS)
         ring_n = self.pp["ring_n"]
         delta = q // gp.mpz(self.pp["p"])
         z_share = share["z"] if _z_share is None else _z_share
@@ -783,17 +798,34 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             "lst_sid_enrolled": list(lst_sid_enrolled),
         }
 
-    def _flooding_noise(self, ring_n: int, seed: bytes) -> list:
-        """The flooding polynomial of the public parameters' distribution, a function of *seed*."""
+    def _flooding_width(self) -> int:
+        """``flood_bits`` (uniform) or ``sigma_f`` (Gaussian) of the public parameters.
+
+        Raises:
+            FEValidationError: For an unknown flooding or a malformed width.
+        """
         flooding = self.pp.get("flooding", LEGACY_FLOODING)
         if flooding == "uniform":
             bits = self.pp.get("flood_bits")
             if type(bits) is not int or bits < 1:
                 raise FEValidationError("uniform flooding needs a positive integer flood_bits")
-            return uniform_flooding_poly(bits, ring_n, seed)
+            return bits
         if flooding != "gaussian":
             raise FEValidationError("unknown flooding {!r}".format(flooding))
-        return _flooding_poly(int(self.pp["sigma_f"]), ring_n, XofRandom(seed))
+        try:
+            sigma = int(self.pp["sigma_f"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise FEValidationError("Gaussian flooding needs an integer sigma_f") from exc
+        if sigma < 1:
+            raise FEValidationError("Gaussian flooding needs a positive sigma_f")
+        return sigma
+
+    def _flooding_noise(self, ring_n: int, seed: bytes) -> list:
+        """The flooding polynomial of the public parameters' distribution, a function of *seed*."""
+        width = self._flooding_width()
+        if self.pp.get("flooding", LEGACY_FLOODING) == "uniform":
+            return uniform_flooding_poly(width, ring_n, seed)
+        return _flooding_poly(width, ring_n, XofRandom(seed))
 
     def _native_inputs(self, ctx, dict_ct: dict, dk: dict, fusion_weight: dict, z_share) -> tuple | None:
         """The ciphertexts of :meth:`share_decrypt` read natively: ``(nids, ks,

@@ -58,7 +58,7 @@ def test_key_generator(kg_config):
     # t < s: replicated sharing, C(s - 1, t - 1) = 2 pieces of (sk_y, z)
     assert pp["sharing"] == "replicated"
     assert set(dk_sid) == {"sharing", "pieces", "sid", "lst_sid", "weights_id", "noise_key", "noise_version",
-                           "noise_sampler", "mac_keys"}
+                           "noise_sampler", "mac_keys", "pp_binding"}
     assert len(dk_sid["pieces"]) == 2
     assert all(set(piece["share"]["sk_y"]) == set(kg_config["lst_nid"]) for piece in dk_sid["pieces"])
     # server k holds client i's key for the tags meant for k, and only those

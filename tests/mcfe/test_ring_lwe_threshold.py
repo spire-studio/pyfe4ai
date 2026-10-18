@@ -42,7 +42,7 @@ def test_key_shares(kg_config):
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": {n: [1] for n in kg_config["lst_nid"]}, "label": "l"})
     # t < s: replicated sharing, C(s - 1, t - 1) = 2 pieces
     common = {"label", "label_hash", "noise_key", "noise_version", "noise_sampler", "flooding", "sid", "lst_sid",
-              "weights_id", "mac_keys"}
+              "weights_id", "mac_keys", "pp_binding"}
     assert set(dk) == {"sharing", "pieces"} | common
     assert dk["sharing"] == "replicated" and len(dk["pieces"]) == 2
     assert all(set(piece["share"]) == {"sk_y", "z", "z_chunks"} for piece in dk["pieces"])

@@ -57,7 +57,7 @@ def test_key_generator(kg_config):
     # t < s: C(s - 1, t - 1) = 2 replicated pieces of the aggregated key, nothing per client
     assert pp["sharing"] == "replicated"
     assert set(dk_sid) == {"sharing", "pieces", "sid", "lst_sid", "weights_id", "noise_key", "noise_version",
-                           "noise_sampler"}
+                           "noise_sampler", "label_hash", "pp_binding"}
     assert len(dk_sid["pieces"]) == 2
     assert all(len(piece["share"]["sk_y"]) == kg.params["n0"] + kg.params["m0"] for piece in dk_sid["pieces"])
 

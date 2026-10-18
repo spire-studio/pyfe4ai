@@ -589,3 +589,17 @@ def test_dense_threshold_partials_check_the_layer():
     srv = tl.ThresholdMCFELWE({"id": "s0", "precision": 2, "keys": {"pp": pp}})
     with pytest.raises(FESchemeError, match="c1"):
         srv.compute_lst_ndarray_ct(bad, creds, kg.get_decryption_keys("s0", credentials=creds), sids[:2])
+
+
+@needs_native
+def test_native_encryption_key_cache_follows_the_label_hash():
+    """The native encryption key cached in a client's key carries the pads'
+    label-hash mode: a crypto object of another mode builds its own."""
+    kg, pp, clients = _rlwe("shake128-rejection", mcfe_rlwe.MCFERingLWEKeyGenerator, mcfe_rlwe.MCFERingLWE)
+    with native_backend.backend("native"):
+        first = clients["c0"]._native_encryption_key()
+        assert first is not None and clients["c0"]._native_encryption_key() is first
+        other = mcfe_rlwe.MCFERingLWE({"id": "c0", "precision": 2,
+                                       "keys": {"pp": dict(pp, label_hash="shake256-wide"), "sk": clients["c0"].sk}})
+        assert other._native_encryption_key() is not first
+

@@ -448,16 +448,16 @@ class MIFERingLWE(IPFEAbsCrypto):
             return None
         key = self._encryption_key()
         cached = key.get("native")
-        if cached is None or cached[0] is not ctx:
+        options = self._native_key_kwargs()  # the label-hash mode of the pads (MCFE)
+        if cached is None or cached[0] is not ctx or cached[2] != options:
             q = gp.mpz(self.pp["q"])
             try:
                 nkey = native_backend.ext().enc_key(
-                    ctx.cap, self.A, self.sk["pk"], self.sk.get("u"), q // gp.mpz(self.pp["p"]),
-                    **self._native_key_kwargs(),
+                    ctx.cap, self.A, self.sk["pk"], self.sk.get("u"), q // gp.mpz(self.pp["p"]), **options,
                 )
             except (TypeError, ValueError, OverflowError):
                 nkey = None  # malformed key: the Python path reports it
-            cached = key["native"] = (ctx, nkey)
+            cached = key["native"] = (ctx, nkey, options)
         return cached[1]
 
     def _padded_rows(self, matrix_pt, extra_pad=None) -> list:

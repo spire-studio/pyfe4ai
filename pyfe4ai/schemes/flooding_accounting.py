@@ -210,13 +210,22 @@ class KLFlooding:
     """
 
     def __init__(self, pp: dict, coefficients: int) -> None:
-        if int(pp["t"]) != int(pp["s"]):
+        try:
+            t, s = int(pp["t"]), int(pp["s"])
+            self.max_partial_decryptions = int(pp["max_partial_decryptions"])
+            self.stat_param = int(pp["stat_param"])
+            self.sigma = int(pp["sigma_f"])
+            self.tail_cut = int(pp["flood_tail_cut"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise FEValidationError(
+                "flooding_accounting='kl' public parameters need integer t, s, max_partial_decryptions, "
+                "stat_param, sigma_f and flood_tail_cut"
+            ) from exc
+        if t != s:
             raise FESchemeError("flooding_accounting='kl' public parameters with t != s")
-        self.max_partial_decryptions = int(pp["max_partial_decryptions"])
-        self.stat_param = int(pp["stat_param"])
-        self.sigma = int(pp["sigma_f"])
-        self.samples = kl_flooded_samples(int(pp["s"]), self.max_partial_decryptions, coefficients)
-        self.tail_cut = int(pp["flood_tail_cut"])
+        if min(self.max_partial_decryptions, self.stat_param, self.sigma, self.tail_cut) < 1:
+            raise FEValidationError("flooding_accounting='kl' public parameters with a non-positive value")
+        self.samples = kl_flooded_samples(s, self.max_partial_decryptions, coefficients)
         if self.tail_cut != kl_tail_cut(self.samples, self.stat_param, self.sigma):
             raise FESchemeError("flood_tail_cut does not match max_partial_decryptions and stat_param")
         self.precision = kl_sampler_precision(self.sigma, self.samples, self.stat_param)
@@ -285,7 +294,8 @@ class PartialDecryptionBudget:
     only if a server's count covers all its partial decryptions under the
     setup: a server that runs as several processes or restarts must share or
     persist it, for instance by subclassing with an atomic, durable
-    :meth:`consume` and starting from the stored ``used``.
+    :meth:`consume` and starting from the stored ``used``. A budget cannot be
+    copied or pickled (a copy would count separately).
 
     Args:
         limit: At most ``max_partial_decryptions`` of the public parameters.
@@ -305,6 +315,18 @@ class PartialDecryptionBudget:
             )
         # re-entrant: consume() holds it while it calls check()
         self._lock = threading.RLock()
+
+    def __copy__(self):
+        raise TypeError("a partial decryption budget cannot be copied: the copy would count separately")
+
+    def __deepcopy__(self, memo):
+        raise TypeError("a partial decryption budget cannot be copied: the copy would count separately")
+
+    def __reduce_ex__(self, protocol):
+        raise TypeError("a partial decryption budget cannot be pickled: persist its used count instead")
+
+    def __reduce__(self):
+        raise TypeError("a partial decryption budget cannot be pickled: persist its used count instead")
 
     @property
     def limit(self) -> int:

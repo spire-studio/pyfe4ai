@@ -376,6 +376,8 @@ def _xof(mode: str):
 
 def _rejection_sample(material: bytes, q, length: int, mode: str) -> list:
     """The first *length* accepted candidates of the XOF(material) stream, mod q."""
+    if length <= 0:
+        return []  # as the shake256-wide mode and the native kernels
     q = gp.mpz(q)
     nb, limit = zq_rejection_parameters(q)
     limit_bytes = limit.to_bytes(nb, "big")  # equal-length big-endian bytes compare as numbers

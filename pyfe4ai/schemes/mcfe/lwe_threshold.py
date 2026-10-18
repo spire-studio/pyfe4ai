@@ -110,7 +110,9 @@ from pyfe4ai.schemes.mcfe.lwe import MCFELWE
 from pyfe4ai.schemes.mcfe.lwe import MCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.lwe import dot_mod
 from pyfe4ai.schemes.threshold_utils import check_fusion_weight
+from pyfe4ai.schemes.threshold_utils import check_pp_binding
 from pyfe4ai.schemes.threshold_utils import check_served_sharing
+from pyfe4ai.schemes.threshold_utils import pp_binding
 from pyfe4ai.schemes.threshold_utils import legacy_shamir_policy
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.schemes.threshold_utils import pieces_held
@@ -128,6 +130,7 @@ from pyfe4ai.schemes.threshold_utils import validate_partial_decryptions
 from pyfe4ai.schemes.threshold_utils import resolve_sharing
 from pyfe4ai.schemes.threshold_utils import validate_threshold
 from pyfe4ai.utils.crypto_constants import CryptoCONST
+from pyfe4ai.utils.crypto_utils import LEGACY_LABEL_HASH
 from pyfe4ai.utils.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.utils.sampling_utils import XofRandom
@@ -143,6 +146,12 @@ _CONSTRUCTION_REPLICATED = "abmpsw20-replicated-flooding/v1"
 _CONSTRUCTION_REPLICATED_SEEDED = "abmpsw20-replicated-seeded-flooding/v1"
 _CONSTRUCTIONS = {_CONSTRUCTION: "shamir", _CONSTRUCTION_REPLICATED: "replicated",
                   _CONSTRUCTION_REPLICATED_SEEDED: "replicated-seeded"}
+#: Public-parameter fields a key share is bound to (see
+#: :func:`~pyfe4ai.schemes.threshold_utils.pp_binding`), the label hash among
+#: them: one key share answering a label under two label hashes with the same
+#: noise would give ``w_A - w_B = lambda <share, H_A(l) - H_B(l)>`` exactly.
+_BINDING_FIELDS = ("q", "q0", "K", "delta", "n0", "m0", "s", "t", "lst_sid", "sigma_f", "label_hash")
+_BINDING_DEFAULTS = {"label_hash": LEGACY_LABEL_HASH}
 
 
 def _with_code(ct, code: int):
@@ -232,6 +241,7 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
         """Sample the client keys and forget any previously shared keys."""
         super().setup()
         self.dict_dk = {}
+        self._binding = pp_binding(self.get_public_parameters(), _BINDING_FIELDS, _BINDING_DEFAULTS)
 
     def get_public_parameters(self) -> dict:
         """Return the MCFE public parameters plus ``s``, ``t``, ``lst_sid``,
@@ -295,6 +305,8 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
             "noise_key": noise_key,
             "noise_version": FLOODING_NOISE_VERSION,
             "noise_sampler": FLOODING_SAMPLER,
+            "label_hash": self.label_hash,
+            "pp_binding": self._binding,
         }
 
     def _share_key(self, sk_y: list) -> dict:
@@ -351,6 +363,11 @@ class ThresholdMCFELWE(MCFELWE):
         if self.id not in dk["lst_sid"] or dk.get("sid") != self.id:
             raise FESchemeError("the key share does not belong to server {}".format(self.id))
         check_served_sharing(self.pp, dk, _CONSTRUCTIONS)
+        # the key share of the public parameters' label hash (shares without the
+        # field: "shake256-wide", the hash of versions <= 0.3.0)
+        if dk.get("label_hash", LEGACY_LABEL_HASH) != self.label_hash:
+            raise FESchemeError("the key share was derived with another label hash than the public parameters")
+        check_pp_binding(self.pp, dk, _BINDING_FIELDS, _BINDING_DEFAULTS)
         fusion_weight = credentials.get("fusion_weight")
         label = credentials.get("label")
         if fusion_weight is None or label is None:

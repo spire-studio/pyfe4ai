@@ -142,6 +142,7 @@ import gmpy2 as gp
 import numpy as np
 
 from pyfe4ai.schemes.flooding_accounting import KL
+from pyfe4ai.schemes.flooding_accounting import PER_SAMPLE
 from pyfe4ai.schemes.flooding_accounting import check_kl_threshold
 from pyfe4ai.schemes.flooding_accounting import flooding_config
 from pyfe4ai.schemes.flooding_accounting import kl_flooded_samples
@@ -152,7 +153,9 @@ from pyfe4ai.schemes.flooding_accounting import server_budget
 from pyfe4ai.schemes.mife.lwe import MIFELWE
 from pyfe4ai.schemes.mife.lwe import MIFELWEKeyGenerator
 from pyfe4ai.schemes.threshold_utils import check_ciphertext_tags
+from pyfe4ai.schemes.threshold_utils import check_pp_binding
 from pyfe4ai.schemes.threshold_utils import check_served_sharing
+from pyfe4ai.schemes.threshold_utils import pp_binding
 from pyfe4ai.schemes.threshold_utils import legacy_shamir_policy
 from pyfe4ai.schemes.threshold_utils import check_fusion_weight
 from pyfe4ai.schemes.threshold_utils import client_server_mac_keys
@@ -196,6 +199,13 @@ _CONSTRUCTION_REPLICATED = "acfgu18-abdp15-replicated-smudging-seeded-a/v1"
 _CONSTRUCTION_REPLICATED_SEEDED = "acfgu18-abdp15-replicated-seeded-smudging-seeded-a/v1"
 _CONSTRUCTIONS = {_CONSTRUCTION: "shamir", _CONSTRUCTION_KL: "shamir", _CONSTRUCTION_REPLICATED: "replicated",
                   _CONSTRUCTION_REPLICATED_SEEDED: "replicated-seeded"}
+#: Public-parameter fields a key share is bound to (see
+#: :func:`~pyfe4ai.schemes.threshold_utils.pp_binding`).
+_BINDING_FIELDS = (
+    "q", "p", "lwe_n", "m", "eta", "n", "A_seed", "s", "t", "lst_sid", "sigma_f", "flood_tail_cut",
+    "flooding_accounting", "max_partial_decryptions", "stat_param",
+)
+_BINDING_DEFAULTS = {"flooding_accounting": "per-sample"}
 _DEFAULT_STAT_PARAM = 64
 _TAG_DOMAIN = "pyfe4ai/tmife-lwe/ciphertext-tag/v1"
 
@@ -246,6 +256,11 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
         self.flooding_accounting, self.max_partial_decryptions = flooding_config(config)
         if self.flooding_accounting == KL:
             check_kl_threshold(self.t, s)
+            if self.sharing != "shamir":
+                raise FEValidationError(
+                    "flooding_accounting='kl' accounts for the flooding of Shamir key shares (t = s), "
+                    "not sharing={!r}".format(self.sharing)
+                )
             self._construction = _CONSTRUCTION_KL
         self.dict_dk = {}
         super().__init__(dict(config, s=s), **kwargs)
@@ -307,6 +322,7 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
         super().setup()
         self.dict_dk = {}
         self.mac_keys = client_server_mac_keys(self.lst_nid, self.lst_sid)
+        self._binding = pp_binding(self.get_public_parameters(), _BINDING_FIELDS, _BINDING_DEFAULTS)
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
         """Return client *nid*'s MIFE encryption key plus ``mac_keys``
@@ -374,6 +390,7 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
             "lst_sid": list(self.lst_sid),
             "weights_id": identifier,
             "mac_keys": {nid: self.mac_keys[nid][sid] for nid in self.lst_nid},
+            "pp_binding": self._binding,
         })
         return dk
 
@@ -487,6 +504,11 @@ class ThresholdMIFELWE(MIFELWE):
         if self.id not in dk["lst_sid"] or dk.get("sid") != self.id:
             raise FESchemeError("the key share does not belong to server {}".format(self.id))
         check_served_sharing(self.pp, dk, _CONSTRUCTIONS)
+        construction = self.pp.get("threshold_construction")
+        kl = self.pp.get("flooding_accounting", PER_SAMPLE) == KL
+        if construction is not None and (construction == _CONSTRUCTION_KL) != kl:
+            raise FESchemeError("the public parameters' threshold_construction is not that of their accounting")
+        check_pp_binding(self.pp, dk, _BINDING_FIELDS, _BINDING_DEFAULTS)
         validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
         check_fusion_weight(dk, credentials)
         q = gp.mpz(self.pp["q"])

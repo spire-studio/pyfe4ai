@@ -516,6 +516,47 @@ def legacy_shamir_policy(config: dict) -> str:
     return policy
 
 
+#: Domain of :func:`pp_binding`.
+_PP_BINDING_DOMAIN = b"pyfe4ai/threshold/key-share-pp-binding/v1|"
+
+
+def pp_binding(pp: dict, fields: tuple, defaults: dict | None = None) -> str:
+    """Hex SHA-256 of the public-parameter *fields* a threshold key share is
+    bound to (canonical JSON of ``[[field, value], ...]``; a missing field takes
+    its value in *defaults* -- what its absence means, e.g. the label hash of
+    versions <= 0.3.0 -- else ``null``).
+
+    The key generator writes it into every key share (``pp_binding``) and a
+    server compares it with that of its own public parameters
+    (:func:`check_pp_binding`) before computing a partial decryption: one key
+    share answering a request under public parameters that differ in the
+    modulus, the flooding (distribution, width, tail cut, accounting and its
+    limit) or the label hash would give a second, differently derived answer
+    to the same request, and the difference of the two reveals key material
+    (with the label hash: ``lambda <share, H_A(l) - H_B(l)>`` exactly). The
+    sharing and the threshold construction are checked on their own
+    (:func:`check_served_sharing`).
+    """
+    defaults = defaults or {}
+    payload = json.dumps([[f, pp.get(f, defaults.get(f))] for f in fields], separators=(",", ":"), default=str)
+    return hashlib.sha256(_PP_BINDING_DOMAIN + payload.encode("utf-8")).hexdigest()
+
+
+def check_pp_binding(pp: dict, dk: dict, fields: tuple, defaults: dict | None = None) -> None:
+    """Raise unless key share *dk* was issued for public parameters with *pp*'s
+    values of *fields* (see :func:`pp_binding`).
+
+    Raises:
+        FEKeyError: For a key share of other public parameters, or one without
+            ``pp_binding`` (issue new key shares).
+    """
+    if not hmac.compare_digest(str(dk.get("pp_binding", "")), pp_binding(pp, fields, defaults)):
+        raise FEKeyError(
+            "the key share was issued for other public parameters (modulus, flooding or label hash): "
+            "issue new key shares"
+        )
+
+
 def check_served_sharing(pp: dict, dk: dict, constructions: dict) -> None:
     """Raise unless key share *dk* is of the sharing that *pp* describes.
 
