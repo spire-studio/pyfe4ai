@@ -21,6 +21,15 @@ pub struct EncKey<W: Word> {
     pub hash_mode: HashMode,
 }
 
+impl<W: Word> Drop for EncKey<W> {
+    /// The pads u are secret: wiped when the key goes.
+    fn drop(&mut self) {
+        if let Some(u) = self.u.as_mut() {
+            wipe_words(u);
+        }
+    }
+}
+
 impl<W: Word> EncKey<W> {
     /// From a, the eta pk rows and the pad rows (plain words mod q, n each) and Delta.
     pub fn new(ring: &Ring<W>, a: &[W], pk: &[Vec<W>], u: Option<&[Vec<W>]>, delta: W) -> Self {
@@ -533,7 +542,9 @@ pub fn pad_terms<W: Word, F>(
                 }
             }
         }
+        wipe_words(&mut h); // the pads of a client's u' (and dMCFE's GDSum terms)
         emit(l, &z);
+        wipe_words(&mut z);
     });
 }
 

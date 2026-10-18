@@ -187,6 +187,15 @@ pub struct RnsKey {
     pub hash_mode: HashMode,
 }
 
+impl Drop for RnsKey {
+    /// The pads u are secret: wiped when the key goes.
+    fn drop(&mut self) {
+        if let Some(u) = self.u.as_mut() {
+            wipe_words(u);
+        }
+    }
+}
+
 impl RnsKey {
     /// From a, the eta pk rows and the pad rows (standard values, n each) and Delta.
     pub fn new(ring: &RnsRing, a: &[u128], pk: &[Vec<u128>], u: Option<&[Vec<u128>]>, delta: u128) -> Self {

@@ -557,3 +557,54 @@ def test_rns_drbg_path_facct_tensor_is_the_reference(mode):
     assert ext.encrypt_precomputed(key, pre, 0, x, 2) == direct
     with pytest.raises(ValueError):
         ext.encrypt_precomputed(key, pre, 0, x, 1)  # one-time
+
+
+@native_only
+@pytest.mark.parametrize("modulus", ["rns", "prime"])
+def test_native_error_paths_of_the_wiping_functions(modulus):
+    """lincomb, pad_terms and enc_key copy secret rows (pads, u', key pieces)
+    and wipe them on every path: their refusals still raise as before."""
+    n = 16
+    if modulus == "rns":
+        q, fs = rlu.rns_ntt_modulus(gp.mpz(1) << 60, n, 7)
+        rlu.register_rns_modulus(q, fs)
+    else:
+        q = rlu.next_ntt_prime(gp.mpz(1) << 60, n)
+    q = int(q)
+    ctx = native_backend.ring_context(q, n)
+    ext, cap = native_backend.ext(), ctx.cap
+    row = ctx.pack(list(range(n)))
+    assert ext.lincomb(cap, [row, row], [1, 2]) == [str(3 * i % q) for i in range(n)]
+    with pytest.raises(ValueError, match="one coefficient per row"):
+        ext.lincomb(cap, [row, row], [1])
+    with pytest.raises(TypeError):
+        ext.lincomb(cap, [row, 3], [1, 1])
+    with pytest.raises(ValueError, match="one material per slot"):
+        ext.pad_terms(cap, [0] * n, [[b"a"]], [[1], [2]], 1, 1)
+    with pytest.raises(TypeError, match="materials must be bytes"):
+        ext.pad_terms(cap, [0] * n, [[b"a", 5]], [[1], [2]], 1, 1)
+    a = list(range(n))
+    with pytest.raises(ValueError, match="one pad row per pk row"):
+        ext.enc_key(cap, a, [a], [a, a], q // 7)
+    with pytest.raises(ValueError):
+        ext.enc_key(cap, a, [a], [a], q)  # Delta = q = 0 mod q
+
+
+@native_only
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="needs fork")
+def test_rns_precomputation_info_refuses_another_process():
+    _, pp, clients, _ = _setup(16, precision=2)
+    pre = clients["c0"].precompute("r", [(8,)])
+    cap = pre.native[1]
+    assert native_backend.ext().precomputed_info(cap)["used"] == 0
+    pid = os.fork()
+    if pid == 0:
+        try:
+            native_backend.ext().precomputed_info(cap)
+            os._exit(3)
+        except ValueError:
+            os._exit(0)
+        except BaseException:
+            os._exit(4)
+    _, status = os.waitpid(pid, 0)
+    assert os.WEXITSTATUS(status) == 0

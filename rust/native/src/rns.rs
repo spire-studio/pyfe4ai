@@ -7,7 +7,8 @@
 
 use super::{
     bytes_to_words, chunk_list, core_err, dec_list, delta_mod, exact_err, exact_fn, int64_buffer, materials_of,
-    py_index, randomness, read_rows, read_values, words_to_bytes, CallDrbg, ChunkOut, DecBuf, FacctArg, TensorRing,
+    py_index, randomness, read_rows, read_values, secret_byte_rows, secret_materials, wipe_byte_rows, wipe_materials,
+    wipe_word_rows, words_to_bytes, CallDrbg, ChunkOut, DecBuf, FacctArg, TensorRing,
 };
 use pyfe4ai_core::codec::{bin_size, bin_wb, bin_write};
 use pyfe4ai_core::facct;
@@ -16,7 +17,7 @@ use pyfe4ai_core::keccak::{hash_to_zq_mode, HashMode};
 use pyfe4ai_core::rlwe::{FacctNoise, Noise};
 use pyfe4ai_core::rns::{self, RnsKey, RnsPrecomputed, RnsRing};
 use pyfe4ai_core::{rlwe, Modulus, Word};
-use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::sync::MutexExt;
 use pyo3::types::{PyBytes, PyList, PyTuple};
@@ -108,14 +109,13 @@ pub fn lincomb(py: Python<'_>, ctx: &Bound<'_, RnsCtx>, rows: &Bound<'_, PyAny>,
     -> PyResult<Py<PyList>> {
     let c = ctx.get();
     let (r, m) = (&c.ring, &c.ring.m);
-    let rows: Vec<Vec<u8>> = rows.try_iter()?.map(|r| r?.extract::<Vec<u8>>()).collect::<PyResult<_>>()?;
-    let ys = read_values(coeffs, None, c.q.bind(py), m, false)?;
-    if rows.len() != ys.len() {
-        return Err(PyValueError::new_err("one coefficient per row"));
-    }
-    // the rows may be secret (a client's pads u): every copy is wiped
-    let mut rows = rows;
+    // the rows may be secret (a client's pads u): every copy is wiped, on errors too
+    let mut rows = secret_byte_rows(rows)?;
     let out = (|| {
+        let ys = read_values(coeffs, None, c.q.bind(py), m, false)?;
+        if rows.len() != ys.len() {
+            return Err(PyValueError::new_err("one coefficient per row"));
+        }
         let mut acc = vec![0u128; r.n];
         for (row, &y) in rows.iter().zip(ys.iter()) {
             let mut v: Vec<u128> = bytes_to_words(row, r.n)?;
@@ -129,9 +129,7 @@ pub fn lincomb(py: Python<'_>, ctx: &Bound<'_, RnsCtx>, rows: &Bound<'_, PyAny>,
         rlwe::wipe_words(&mut acc);
         out
     })();
-    for row in rows.iter_mut() {
-        rlwe::wipe_bytes(row);
-    }
+    wipe_byte_rows(&mut rows);
     out
 }
 
@@ -140,23 +138,24 @@ pub fn pad_terms(py: Python<'_>, ctx: &Bound<'_, RnsCtx>, base: &Bound<'_, PyAny
                  ys: &Bound<'_, PyAny>, eta: usize, mode: HashMode, threads: usize) -> PyResult<Py<PyList>> {
     let c = ctx.get();
     let (r, m, q) = (&*c.ring, &c.ring.m, c.q.bind(py));
-    let basev = read_values(base, Some(r.n), q, m, false)?;
-    let y_rows = read_rows(ys, Some(eta), q, m)?;
-    let mats: Vec<Vec<Vec<u8>>> = materials.try_iter()?.map(|row| {
-        let row = row?;
-        let v: Vec<Vec<u8>> = row.try_iter()?.map(|m| m?.cast::<PyBytes>().map(|b| b.as_bytes().to_vec())
-            .map_err(|_| PyTypeError::new_err("materials must be bytes"))).collect::<PyResult<_>>()?;
-        if v.len() != y_rows.len() {
-            return Err(PyValueError::new_err("one material per slot and label"));
+    // base (sum_r y_r u_r) and the materials (u', dMCFE's K_ij) are secret: wiped after use
+    let mut basev = read_values(base, Some(r.n), q, m, false)?;
+    let out = (|| {
+        let y_rows = read_rows(ys, Some(eta), q, m)?;
+        let mut mats = secret_materials(materials, y_rows.len())?;
+        let ym: Vec<u128> = y_rows.iter().flatten().map(|&v| m.to_mont(v)).collect();
+        let outs: Vec<Mutex<Option<DecBuf>>> = (0..mats.len()).map(|_| Mutex::new(None)).collect();
+        {
+            let refs: Vec<Vec<&[u8]>> = mats.iter().map(|row| row.iter().map(|v| v.as_slice()).collect()).collect();
+            py.detach(|| rns::pad_terms(r, &basev, &refs, &ym, eta, mode, threads,
+                |l, z| *outs[l].lock().unwrap() = Some(DecBuf::new(z))));
         }
-        Ok(v)
-    }).collect::<PyResult<_>>()?;
-    let ym: Vec<u128> = y_rows.iter().flatten().map(|&v| m.to_mont(v)).collect();
-    let refs: Vec<Vec<&[u8]>> = mats.iter().map(|row| row.iter().map(|v| v.as_slice()).collect()).collect();
-    let outs: Vec<Mutex<Option<DecBuf>>> = (0..refs.len()).map(|_| Mutex::new(None)).collect();
-    py.detach(|| rns::pad_terms(r, &basev, &refs, &ym, eta, mode, threads, |l, z| *outs[l].lock().unwrap() = Some(DecBuf::new(z))));
-    let lists = outs.into_iter().map(|o| o.into_inner().unwrap().unwrap().list(py)).collect::<PyResult<Vec<_>>>()?;
-    Ok(PyList::new(py, lists)?.unbind())
+        wipe_materials(&mut mats);
+        let lists = outs.into_iter().map(|o| o.into_inner().unwrap().unwrap().list(py)).collect::<PyResult<Vec<_>>>()?;
+        Ok(PyList::new(py, lists)?.unbind())
+    })();
+    rlwe::wipe_words(&mut basev);
+    out
 }
 
 impl TensorRing<u128> for RnsRing {
@@ -201,17 +200,21 @@ pub fn enc_key(py: Python<'_>, ctx: &Bound<'_, RnsCtx>, a: &Bound<'_, PyAny>, pk
     if pk_rows.is_empty() {
         return Err(PyValueError::new_err("pk needs at least one row"));
     }
-    let u_rows = if u.is_none() {
+    let mut u_rows = if u.is_none() {
         None
     } else {
-        let rows = read_rows(u, Some(n), q, m)?;
+        let mut rows = read_rows(u, Some(n), q, m)?;
         if rows.len() != pk_rows.len() {
+            wipe_word_rows(&mut rows);
             return Err(PyValueError::new_err("one pad row per pk row"));
         }
         Some(rows)
     };
-    let d = delta_mod(delta, q, m)?;
-    let mut key = RnsKey::new(&ring, &av, &pk_rows, u_rows.as_deref(), d);
+    let key = delta_mod(delta, q, m).map(|d| RnsKey::new(&ring, &av, &pk_rows, u_rows.as_deref(), d));
+    if let Some(rows) = u_rows.as_mut() {
+        wipe_word_rows(rows); // the key holds its own residues (wiped on drop)
+    }
+    let mut key = key?;
     key.hash_mode = mode;
     Ok(RnsKeyObj { ring, q: q.clone().unbind(), key })
 }
@@ -233,59 +236,65 @@ pub fn encrypt(py: Python<'_>, key: &Bound<'_, RnsKeyObj>, w_rows: &Bound<'_, Py
     let obj = key.get();
     let (r, k) = (&*obj.ring, &obj.key);
     let n = r.n;
-    let rows = read_rows(w_rows, Some(n), obj.q.bind(py), &r.m)?;
+    // the rows are x + u: the pad u is secret, so every copy is wiped, on errors too
+    let mut rows = read_rows(w_rows, Some(n), obj.q.bind(py), &r.m)?;
     let eta = k.eta;
     if rows.len() != eta {
+        wipe_word_rows(&mut rows);
         return Err(PyValueError::new_err("one plaintext row per pk row"));
     }
     let mut w = vec![0u64; eta * 2 * n];
     for (row, dst) in rows.iter().zip(w.chunks_exact_mut(2 * n)) {
         r.split(row, dst);
     }
+    wipe_word_rows(&mut rows);
     let (mut c0, mut c1) = (vec![0u128; eta * n], vec![0u128; n]);
-    if facct.is_some() {
-        // as the prime path: getrandbits from the given bytes or stream 0 of the call's DRBG
-        let given: Option<Vec<u8>> = if rnd.is_none() { None } else { Some(rnd.extract()?) };
-        let drbg = CallDrbg::new(seed.as_deref())?;
-        let (mut pos, mut offset) = (0usize, 0u64);
-        let mut bits = facct::ByteBits::new(4096, |buf: &mut [u8]| match &given {
-            Some(b) => {
-                let c = buf.len().min(b.len() - pos);
-                buf[..c].copy_from_slice(&b[pos..pos + c]);
-                pos += c;
-                c
+    let res = (|| -> PyResult<()> {
+        if facct.is_some() {
+            // as the prime path: getrandbits from the given bytes or stream 0 of the call's DRBG
+            let given: Option<Vec<u8>> = if rnd.is_none() { None } else { Some(rnd.extract()?) };
+            let drbg = CallDrbg::new(seed.as_deref())?;
+            let (mut pos, mut offset) = (0usize, 0u64);
+            let mut bits = facct::ByteBits::new(4096, |buf: &mut [u8]| match &given {
+                Some(b) => {
+                    let c = buf.len().min(b.len() - pos);
+                    buf[..c].copy_from_slice(&b[pos..pos + c]);
+                    pos += c;
+                    c
+                }
+                None => {
+                    drbg.fill_at(0, offset, buf);
+                    offset += buf.len() as u64;
+                    buf.len()
+                }
+            });
+            with_noise!(py, facct, noise, err, {
+                if let Noise::Facct(nz) = &noise {
+                    py.detach(|| rns::encrypt_chunk_facct(r, k, &w, nz, &mut bits, &mut c0, &mut c1));
+                }
+            });
+            if bits.failed {
+                return Err(PyValueError::new_err("not enough random bytes"));
             }
-            None => {
-                drbg.fill_at(0, offset, buf);
-                offset += buf.len() as u64;
-                buf.len()
-            }
-        });
-        with_noise!(py, facct, noise, err, {
-            if let Noise::Facct(nz) = &noise {
-                py.detach(|| rns::encrypt_chunk_facct(r, k, &w, nz, &mut bits, &mut c0, &mut c1));
-            }
-        });
-        if bits.failed {
-            rlwe::wipe_words(&mut w);
-            return Err(PyValueError::new_err("not enough random bytes"));
-        }
-    } else {
-        let need = gauss_bytes(n) * (2 + eta);
-        let mut rb = if rnd.is_none() {
-            let mut b = vec![0u8; need];
-            CallDrbg::new(seed.as_deref())?.fill(0, &mut b);
-            b
         } else {
-            rnd.extract::<Vec<u8>>()?
-        };
-        if rb.len() < need {
-            return Err(PyValueError::new_err("not enough random bytes"));
+            let need = gauss_bytes(n) * (2 + eta);
+            let mut rb = if rnd.is_none() {
+                let mut b = vec![0u8; need];
+                CallDrbg::new(seed.as_deref())?.fill(0, &mut b);
+                b
+            } else {
+                rnd.extract::<Vec<u8>>()?
+            };
+            if rb.len() < need {
+                return Err(PyValueError::new_err("not enough random bytes"));
+            }
+            py.detach(|| rns::encrypt_chunk(r, k, &w, sigma2, sigma3, &rb, &mut c0, &mut c1));
+            rlwe::wipe_bytes(&mut rb);
         }
-        py.detach(|| rns::encrypt_chunk(r, k, &w, sigma2, sigma3, &rb, &mut c0, &mut c1));
-        rlwe::wipe_bytes(&mut rb);
-    }
-    rlwe::wipe_words(&mut w); // x + u: the pad u is secret
+        Ok(())
+    })();
+    rlwe::wipe_words(&mut w);
+    res?;
     if binary {
         let mut out = Vec::new();
         bin_write(r.qbits, r.logn, eta, &c0, &c1, &mut out);
@@ -379,6 +388,9 @@ pub fn encrypt_precomputed(py: Python<'_>, key: &Bound<'_, RnsKeyObj>, pre: &Bou
 
 pub fn precomputed_info(py: Python<'_>, pre: &Bound<'_, RnsPreObj>) -> PyResult<Py<PyAny>> {
     let p = pre.borrow();
+    if p.pid != std::process::id() {
+        return Err(PyValueError::new_err("precomputed in another process (a fork)"));
+    }
     let g = lock_pre(py, &p)?;
     let d = pyo3::types::PyDict::new(py);
     d.set_item("chunks", g.chunks())?;

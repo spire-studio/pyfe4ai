@@ -395,6 +395,77 @@ fn poly_mul(py: Python<'_>, ctx: &Bound<'_, PyAny>, a: &[u8], b: &[u8]) -> PyRes
     })
 }
 
+/// The bytes of an iterable of bytes objects, copied; on a failure the copies
+/// made so far are wiped (they may be secret: pads, key pieces).
+fn secret_byte_rows(rows: &Bound<'_, PyAny>) -> PyResult<Vec<Vec<u8>>> {
+    let mut out: Vec<Vec<u8>> = Vec::new();
+    let res = (|| -> PyResult<()> {
+        for r in rows.try_iter()? {
+            out.push(r?.extract::<Vec<u8>>()?);
+        }
+        Ok(())
+    })();
+    match res {
+        Ok(()) => Ok(out),
+        Err(e) => {
+            wipe_byte_rows(&mut out);
+            Err(e)
+        }
+    }
+}
+
+fn wipe_byte_rows(rows: &mut [Vec<u8>]) {
+    for row in rows.iter_mut() {
+        rlwe::wipe_bytes(row);
+    }
+}
+
+fn wipe_word_rows<W: Word>(rows: &mut [Vec<W>]) {
+    for row in rows.iter_mut() {
+        rlwe::wipe_words(row);
+    }
+}
+
+/// The pad materials of pad_terms: per label one bytes object per slot (`slots`
+/// of them). They hash a client's u' (and dMCFE's pairwise keys): on a failure
+/// the copies made so far are wiped; the caller wipes them after use.
+fn secret_materials(materials: &Bound<'_, PyAny>, slots: usize) -> PyResult<Vec<Vec<Vec<u8>>>> {
+    let mut out: Vec<Vec<Vec<u8>>> = Vec::new();
+    let res = (|| -> PyResult<()> {
+        for row in materials.try_iter()? {
+            let mut v: Vec<Vec<u8>> = Vec::new();
+            let fill = || -> PyResult<()> {
+                for m in row?.try_iter()? {
+                    let b = m?;
+                    let b = b.cast::<PyBytes>().map_err(|_| PyTypeError::new_err("materials must be bytes"))?;
+                    v.push(b.as_bytes().to_vec());
+                }
+                if v.len() != slots {
+                    return Err(PyValueError::new_err("one material per slot and label"));
+                }
+                Ok(())
+            };
+            let res = fill();
+            out.push(v);
+            res?;
+        }
+        Ok(())
+    })();
+    match res {
+        Ok(()) => Ok(out),
+        Err(e) => {
+            wipe_materials(&mut out);
+            Err(e)
+        }
+    }
+}
+
+fn wipe_materials(mats: &mut [Vec<Vec<u8>>]) {
+    for row in mats.iter_mut() {
+        wipe_byte_rows(row);
+    }
+}
+
 /// sum_i coeffs[i] rows[i] mod q as decimal strings. The copies of the rows and
 /// the accumulator are wiped (rows may be secret key pieces).
 #[pyfunction]
@@ -406,7 +477,7 @@ fn lincomb(py: Python<'_>, ctx: &Bound<'_, PyAny>, rows: &Bound<'_, PyAny>, coef
     let ctx = ctx.cast::<RingCtx>()?;
     let q = ctx.get().q.bind(py);
     let ring = get_ring(ctx);
-    let mut rows: Vec<Vec<u8>> = rows.try_iter()?.map(|r| r?.extract::<Vec<u8>>()).collect::<PyResult<_>>()?;
+    let mut rows = secret_byte_rows(rows)?;
     let out = with_ring!(&*ring, r => {
         (|| {
             let ys = read_values(coeffs, None, q, &r.m, false)?;
@@ -427,9 +498,7 @@ fn lincomb(py: Python<'_>, ctx: &Bound<'_, PyAny>, rows: &Bound<'_, PyAny>, coef
             out
         })()
     });
-    for row in rows.iter_mut() {
-        rlwe::wipe_bytes(row);
-    }
+    wipe_byte_rows(&mut rows);
     out
 }
 
@@ -536,17 +605,22 @@ fn enc_key(py: Python<'_>, ctx: &Bound<'_, PyAny>, a: &Bound<'_, PyAny>, pk: &Bo
             if pk_rows.is_empty() {
                 return Err(PyValueError::new_err("pk needs at least one row"));
             }
-            let u_rows = if u.is_none() {
+            let mut u_rows = if u.is_none() {
                 None
             } else {
-                let rows = read_rows(u, Some(n), q, m)?;
+                let mut rows = read_rows(u, Some(n), q, m)?;
                 if rows.len() != pk_rows.len() {
+                    wipe_word_rows(&mut rows);
                     return Err(PyValueError::new_err("one pad row per pk row"));
                 }
                 Some(rows)
             };
-            let d = delta_mod(delta, q, m)?;
-            let mut key = EncKey::new($r, &av, &pk_rows, u_rows.as_deref(), d);
+            let d = delta_mod(delta, q, m);
+            let key = d.map(|d| EncKey::new($r, &av, &pk_rows, u_rows.as_deref(), d));
+            if let Some(rows) = u_rows.as_mut() {
+                wipe_word_rows(rows); // the key holds its own copy (wiped on drop)
+            }
+            let mut key = key?;
             key.hash_mode = mode;
             AnyKey::$variant(key)
         }};
@@ -1057,53 +1131,61 @@ fn encrypt(py: Python<'_>, key: &Bound<'_, PyAny>, w_rows: &Bound<'_, PyAny>, si
     let n = ring.n();
     let qob = obj.q.bind(py);
     with_key!(obj, r, k => {
-        let rows = read_rows(w_rows, Some(n), qob, &r.m)?;
+        // the rows are x + u: the pad u is secret, so every copy is wiped
+        let mut rows = read_rows(w_rows, Some(n), qob, &r.m)?;
         let eta = k.eta;
         if rows.len() != eta {
+            wipe_word_rows(&mut rows);
             return Err(PyValueError::new_err("one plaintext row per pk row"));
         }
-        let w: Vec<_> = rows.concat();
+        let mut w: Vec<_> = rows.concat();
+        wipe_word_rows(&mut rows);
         let (mut c0, mut c1) = (vec![Word::ZERO; eta * n], vec![Word::ZERO; n]);
-        if facct.is_some() {
-            let given: Option<Vec<u8>> = if rnd.is_none() { None } else { Some(rnd.extract()?) };
-            let drbg = CallDrbg::new(seed.as_deref())?;
-            let (mut pos, mut offset) = (0usize, 0u64);
-            let mut bits = facct::ByteBits::new(4096, |buf: &mut [u8]| match &given {
-                Some(b) => {
-                    let c = buf.len().min(b.len() - pos);
-                    buf[..c].copy_from_slice(&b[pos..pos + c]);
-                    pos += c;
-                    c
+        let res = (|| -> PyResult<()> {
+            if facct.is_some() {
+                let given: Option<Vec<u8>> = if rnd.is_none() { None } else { Some(rnd.extract()?) };
+                let drbg = CallDrbg::new(seed.as_deref())?;
+                let (mut pos, mut offset) = (0usize, 0u64);
+                let mut bits = facct::ByteBits::new(4096, |buf: &mut [u8]| match &given {
+                    Some(b) => {
+                        let c = buf.len().min(b.len() - pos);
+                        buf[..c].copy_from_slice(&b[pos..pos + c]);
+                        pos += c;
+                        c
+                    }
+                    None => {
+                        drbg.fill_at(0, offset, buf);
+                        offset += buf.len() as u64;
+                        buf.len()
+                    }
+                });
+                with_noise!(py, facct, noise, err, {
+                    if let Noise::Facct(nz) = &noise {
+                        py.detach(|| rlwe::encrypt_chunk_facct(r, k, &w, nz, &mut bits, &mut c0, &mut c1));
+                    }
+                });
+                if bits.failed {
+                    return Err(PyValueError::new_err("not enough random bytes"));
                 }
-                None => {
-                    drbg.fill_at(0, offset, buf);
-                    offset += buf.len() as u64;
-                    buf.len()
-                }
-            });
-            with_noise!(py, facct, noise, err, {
-                if let Noise::Facct(nz) = &noise {
-                    py.detach(|| rlwe::encrypt_chunk_facct(r, k, &w, nz, &mut bits, &mut c0, &mut c1));
-                }
-            });
-            if bits.failed {
-                return Err(PyValueError::new_err("not enough random bytes"));
-            }
-        } else {
-            let need = gauss_bytes(n) * (2 + eta);
-            let mut rb = if rnd.is_none() {
-                let mut b = vec![0u8; need];
-                CallDrbg::new(seed.as_deref())?.fill(0, &mut b);
-                b
             } else {
-                rnd.extract::<Vec<u8>>()?
-            };
-            if rb.len() < need {
-                return Err(PyValueError::new_err("not enough random bytes"));
+                let need = gauss_bytes(n) * (2 + eta);
+                let mut rb = if rnd.is_none() {
+                    let mut b = vec![0u8; need];
+                    CallDrbg::new(seed.as_deref())?.fill(0, &mut b);
+                    b
+                } else {
+                    rnd.extract::<Vec<u8>>()?
+                };
+                if rb.len() < need {
+                    return Err(PyValueError::new_err("not enough random bytes"));
+                }
+                py.detach(|| rlwe::encrypt_chunk(r, k, &w, sigma2, sigma3, &rb, &mut c0, &mut c1));
+                rlwe::wipe_bytes(&mut rb);
             }
-            py.detach(|| rlwe::encrypt_chunk(r, k, &w, sigma2, sigma3, &rb, &mut c0, &mut c1));
-            rlwe::wipe_bytes(&mut rb);
-        }
+            Ok(())
+        })();
+        rlwe::wipe_words(&mut w);
+        res?;
         if binary {
             let mut out = Vec::new();
             bin_write(ring.qbits(), r.logn, eta, &c0, &c1, &mut out);
@@ -1504,23 +1586,24 @@ fn pad_terms(py: Python<'_>, ctx: &Bound<'_, PyAny>, base: &Bound<'_, PyAny>, ma
     let n = ring.n();
     with_ring!(&*ring, r => {
         let m = &r.m;
-        let basev = read_values(base, Some(n), &q, m, false)?;
-        let y_rows = read_rows(ys, Some(eta), &q, m)?;
-        let mats: Vec<Vec<Vec<u8>>> = materials.try_iter()?.map(|row| {
-            let row = row?;
-            let v: Vec<Vec<u8>> = row.try_iter()?.map(|m| m?.cast::<PyBytes>().map(|b| b.as_bytes().to_vec())
-                .map_err(|_| PyTypeError::new_err("materials must be bytes"))).collect::<PyResult<_>>()?;
-            if v.len() != y_rows.len() {
-                return Err(PyValueError::new_err("one material per slot and label"));
+        // base (sum_r y_r u_r) and the materials (u', dMCFE's K_ij) are secret: wiped after use
+        let mut basev = read_values(base, Some(n), &q, m, false)?;
+        let out = (|| {
+            let y_rows = read_rows(ys, Some(eta), &q, m)?;
+            let mut mats = secret_materials(materials, y_rows.len())?;
+            let ym: Vec<_> = y_rows.iter().flatten().map(|&v| m.to_mont(v)).collect();
+            let outs: Vec<Mutex<Option<DecBuf>>> = (0..mats.len()).map(|_| Mutex::new(None)).collect();
+            {
+                let refs: Vec<Vec<&[u8]>> = mats.iter().map(|row| row.iter().map(|v| v.as_slice()).collect()).collect();
+                py.detach(|| rlwe::pad_terms(r, &basev, &refs, &ym, eta, mode, threads,
+                    |l, z| *outs[l].lock().unwrap() = Some(DecBuf::new(z))));
             }
-            Ok(v)
-        }).collect::<PyResult<_>>()?;
-        let ym: Vec<_> = y_rows.iter().flatten().map(|&v| m.to_mont(v)).collect();
-        let refs: Vec<Vec<&[u8]>> = mats.iter().map(|row| row.iter().map(|v| v.as_slice()).collect()).collect();
-        let outs: Vec<Mutex<Option<DecBuf>>> = (0..refs.len()).map(|_| Mutex::new(None)).collect();
-        py.detach(|| rlwe::pad_terms(r, &basev, &refs, &ym, eta, mode, threads, |l, z| *outs[l].lock().unwrap() = Some(DecBuf::new(z))));
-        let lists = outs.into_iter().map(|o| o.into_inner().unwrap().unwrap().list(py)).collect::<PyResult<Vec<_>>>()?;
-        Ok(PyList::new(py, lists)?.unbind())
+            wipe_materials(&mut mats);
+            let lists = outs.into_iter().map(|o| o.into_inner().unwrap().unwrap().list(py)).collect::<PyResult<Vec<_>>>()?;
+            Ok(PyList::new(py, lists)?.unbind())
+        })();
+        rlwe::wipe_words(&mut basev);
+        out
     })
 }
 
