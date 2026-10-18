@@ -152,8 +152,8 @@ class ThresholdDDHConfig(DDHConfig, total=False):
 class ThresholdLWEConfig(LWEConfig, total=False):
     """Config for threshold LWE-based schemes.
 
-    ``sharing``: ``"replicated"`` (the default for ``t < s``) or ``"shamir"``
-    (the default for ``t = s``).
+    ``sharing``: ``"replicated"`` (the default for ``t < s``), ``"shamir"``
+    (the default for ``t = s``) or ``"replicated-seeded"`` (opt-in).
     """
 
     t: int
@@ -164,8 +164,8 @@ class ThresholdLWEConfig(LWEConfig, total=False):
 class ThresholdMCFELWEConfig(MCFELWEConfig, total=False):
     """Config for threshold MCFE LWE-based schemes.
 
-    ``sharing``: ``"replicated"`` (the default for ``t < s``) or ``"shamir"``
-    (the default for ``t = s``).
+    ``sharing``: ``"replicated"`` (the default for ``t < s``), ``"shamir"``
+    (the default for ``t = s``) or ``"replicated-seeded"`` (opt-in).
     """
 
     t: int
@@ -176,8 +176,8 @@ class ThresholdMCFELWEConfig(MCFELWEConfig, total=False):
 class ThresholdMCFERingLWEConfig(MCFERingLWEConfig, total=False):
     """Config for threshold MCFE Ring-LWE-based schemes.
 
-    ``sharing``: ``"replicated"`` (the default for ``t < s``) or ``"shamir"``
-    (the default for ``t = s``).
+    ``sharing``: ``"replicated"`` (the default for ``t < s``), ``"shamir"``
+    (the default for ``t = s``) or ``"replicated-seeded"`` (opt-in).
     """
 
     t: int

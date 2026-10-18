@@ -157,6 +157,29 @@ compatibility).
 
 ### Added
 
+- Opt-in seed-expanded replicated key sharing for the threshold LWE layers
+  (`sharing="replicated-seeded"` in `mife/lwe_threshold`,
+  `mcfe/ring_lwe_threshold` and `mcfe/lwe_threshold`; defaults unchanged).
+  * **Construction.** The pieces are those of the replicated sharing, but
+    every piece except one is expanded from a 32-byte seed with SHAKE-256.
+    Servers `1..t-1` store seeds only. The others store one full piece (the
+    correction) and seeds.
+  * **Partials.** Partial decryptions equal those of the replicated key
+    share with the same pieces.
+  * **Security.** The key shares hide the key computationally (SHAKE-256 as
+    a PRG on secret seeds, as the flooding noise already assumes) instead of
+    perfectly.
+  * **Records.** The sharing has its own construction ids.
+  * **Size and dealing, measured.** tMCFE-Ring-LWE under `standard`, 3
+    clients, 2 chunk keys, `ring_n` 8192:
+
+    | `(s, t)` | largest key share | dealing |
+    | --- | --- | --- |
+    | `(3, 2)` | 3.4 MB instead of 6.8 MB | |
+    | `(5, 3)` | 3.4 MB instead of 20.3 MB | |
+    | `(10, 5)` | 3.4 MB instead of 428 MB | 2.0 s instead of 30 s |
+  * **Native backend.** The pieces of the ring dimension are expanded and
+    added up natively, with the values of the Python code.
 - Opt-in exact discrete Gaussian sampler `"facct"`
   (`sampling_utils.discrete_gaussian_facct`): FACCT-style double sampling
   (Zhao, Steinfeld and Sakzad 2020) with a CDT base computed for

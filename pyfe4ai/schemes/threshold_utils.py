@@ -25,6 +25,11 @@ servers outside ``T``) has reconstruction coefficients 0 and 1: ``M`` is 0
 or 1, and the flooding argument holds as stated. Its cost is
 ``C(s - 1, t - 1)`` pieces per server instead of one share (2 for
 ``s = 3, t = 2``; 6 for ``s = 5, t = 3``). See :func:`share_replicated`.
+The opt-in ``sharing = "replicated-seeded"`` (:func:`share_replicated_seeded`)
+expands every piece but one from a 32-byte seed, so that a server holds seeds
+and at most one full piece; the pieces, and the partial decryptions, are
+those of a replicated sharing, but the key shares hide the key only
+computationally (SHAKE-256 as a pseudo-random generator).
 
 Trust model of every threshold scheme: decryption servers are
 honest-but-curious. Fewer than ``t`` of them learn nothing beyond the result,
@@ -129,9 +134,9 @@ def lagrange_at_zero(shares: dict[int, gp.mpz], modulus: gp.mpz) -> gp.mpz:
 
 
 #: Ways the LWE / Ring-LWE threshold layers share a functional key (config
-#: entry ``sharing``): ``"shamir"`` or ``"replicated"`` (see the module
-#: docstring and :func:`resolve_sharing`).
-SHARING_SCHEMES = ("shamir", "replicated")
+#: entry ``sharing``): ``"shamir"``, ``"replicated"`` or the opt-in
+#: ``"replicated-seeded"`` (see the module docstring and :func:`resolve_sharing`).
+SHARING_SCHEMES = ("shamir", "replicated", "replicated-seeded")
 
 
 def validate_sharing(sharing) -> str:
@@ -246,6 +251,198 @@ def pieces_held(pieces: dict, point: int) -> list[dict]:
     return [{"set": list(T), "share": piece} for T, piece in pieces.items() if point not in T]
 
 
+#: Bytes of a seed of :func:`share_replicated_seeded` (256 bits: many seeds
+#: are dealt, and the LWE layers aim at post-quantum security).
+SEED_BYTES = 32
+_SEED_DOMAIN = "pyfe4ai/threshold/replicated-seeded/piece/v1"
+
+
+def piece_layout(material):
+    """The layout of *material* that :func:`expand_seeded_piece` follows:
+    dicts and lists of the same structure, a list of values replaced by its
+    length and a single value by ``None`` (JSON-friendly)."""
+    if isinstance(material, dict):
+        return {key: piece_layout(value) for key, value in material.items()}
+    if isinstance(material, (list, tuple)):
+        if all(not isinstance(value, (dict, list, tuple)) for value in material):
+            return len(material)
+        return [piece_layout(value) for value in material]
+    return None
+
+
+def _map_layout(layout, leaf, path=()):
+    """*layout* with every leaf replaced by ``leaf(path, length)`` (``None`` for a single value)."""
+    if isinstance(layout, dict):
+        return {key: _map_layout(value, leaf, path + (key,)) for key, value in layout.items()}
+    if isinstance(layout, list):
+        return [_map_layout(value, leaf, path + (i,)) for i, value in enumerate(layout)]
+    if layout is not None and (isinstance(layout, bool) or not isinstance(layout, int) or layout < 0):
+        raise FEKeyError("malformed layout of the key pieces")
+    return leaf(list(path), layout)
+
+
+def _select(layout, fields):
+    if not isinstance(layout, dict):
+        raise FEKeyError("malformed layout of the key pieces")
+    if fields is None:
+        return layout
+    try:
+        return {name: layout[name] for name in fields}
+    except KeyError:
+        raise FEKeyError("malformed layout of the key pieces") from None
+
+
+def _check_seed(seed, index_set) -> None:
+    try:
+        if len(bytes.fromhex(seed)) == SEED_BYTES:
+            return
+    except (TypeError, ValueError):
+        pass
+    raise FEKeyError("malformed seed of the key piece {}".format(list(index_set)))
+
+
+def _leaf_input(seed: str, index_set, path: list, q_text: str) -> str:
+    return json.dumps([seed, [int(x) for x in index_set], path, q_text])
+
+
+def expand_seeded_piece(seed: str, index_set, layout, modulus, fields=None, ctx=None):
+    """The piece ``r_T`` of a seeded replicated sharing, of *layout*, as ints mod *modulus*.
+
+    Every list of values (path ``p`` in *layout*, length ``L``) is
+    ``hash_to_zq_vector(json([seed, T, p, q]), q, L)`` under the domain
+    ``pyfe4ai/threshold/replicated-seeded/piece/v1``: SHAKE-256 blocks of
+    ``bits(q) + 128`` bits reduced mod ``q``, each within ``2^-130`` of
+    uniform, and pseudo-random as long as the seed is secret.
+
+    Args:
+        seed: The piece's seed (hex, :data:`SEED_BYTES` bytes).
+        index_set: The set ``T`` of the piece.
+        layout: :func:`piece_layout` of the shared material.
+        modulus: Modulus ``q``.
+        fields: Top-level entries to expand (all if ``None``).
+        ctx: A native ring context of *modulus* (any dimension): expand with
+            the extension's ``hash_to_zq``, which gives the same values.
+
+    Raises:
+        FEKeyError: For a malformed seed or layout.
+    """
+    from pyfe4ai.utils.crypto_utils import hash_to_zq_material, hash_to_zq_vector
+
+    _check_seed(seed, index_set)
+    modulus = gp.mpz(modulus)
+    q_text = gp.digits(modulus)
+
+    def leaf(path, length):
+        v, count = _leaf_input(seed, index_set, path, q_text), 1 if length is None else length
+        if ctx is not None and count:
+            from pyfe4ai.utils import native_backend
+
+            values = ctx.unpack(native_backend.ext().hash_to_zq(ctx.cap, hash_to_zq_material(v, _SEED_DOMAIN), count))
+        else:
+            values = hash_to_zq_vector(v, modulus, count, domain=_SEED_DOMAIN)
+        return values[0] if length is None else values
+
+    return _map_layout(_select(layout, fields), leaf)
+
+
+def _combine_pieces(layout, explicit: list, seeded: list, modulus, ctx=None, subtract=False):
+    """``sum(explicit) + sum(seeded)`` (``- sum(seeded)`` if *subtract*) mod
+    *modulus*, leaf by leaf, as decimal strings of *layout*.
+
+    *explicit* are pieces of *layout* (ints, mpz or decimal strings),
+    *seeded* ``(seed, T)`` pairs of :func:`expand_seeded_piece`. With a native
+    ring context *ctx*, leaves of its dimension are expanded and added up by
+    the extension (``hash_to_zq`` and ``lincomb``), with the values of the
+    Python code; the others in Python.
+    """
+    from pyfe4ai.utils.crypto_utils import hash_to_zq_material, hash_to_zq_vector
+
+    for seed, T in seeded:
+        _check_seed(seed, T)
+    modulus = gp.mpz(modulus)
+    q_text = gp.digits(modulus)
+    ext = None
+    if ctx is not None:
+        from pyfe4ai.utils import native_backend
+
+        ext = native_backend.ext()
+
+    def leaf(path, length):
+        count = 1 if length is None else length
+        rows = []
+        for piece in explicit:
+            value = piece
+            for key in path:
+                value = value[key]
+            rows.append([value] if length is None else value)
+        if ext is not None and count == ctx.ring_n and (rows or seeded):
+            packed = [ctx.pack(row) for row in rows] + [
+                ext.hash_to_zq(ctx.cap, hash_to_zq_material(_leaf_input(seed, T, path, q_text), _SEED_DOMAIN), count)
+                for seed, T in seeded
+            ]
+            sign = modulus - 1 if subtract else 1
+            return ext.lincomb(ctx.cap, packed, [1] * len(rows) + [sign] * len(seeded))
+        acc = [gp.mpz(0)] * count
+        for row in rows:
+            if len(row) != count:
+                raise FESchemeError("key pieces of different layouts")
+            acc = [a + gp.mpz(b) for a, b in zip(acc, row)]
+        for seed, T in seeded:
+            values = hash_to_zq_vector(_leaf_input(seed, T, path, q_text), modulus, count, domain=_SEED_DOMAIN)
+            acc = [a - b for a, b in zip(acc, values)] if subtract else [a + b for a, b in zip(acc, values)]
+        out = [gp.digits(a % modulus) for a in acc]
+        return out[0] if length is None else out
+
+    return _map_layout(layout, leaf)
+
+
+def share_replicated_seeded(material, threshold: int, points: list[int], modulus: gp.mpz, ctx=None) -> dict:
+    """Replicated sharing of *material* with pieces expanded from seeds.
+
+    The pieces are those of :func:`share_replicated` -- one per
+    ``(t - 1)``-subset ``T`` of *points*, held by the servers outside ``T``,
+    adding up to *material* mod *modulus* -- except that each piece but the
+    first, ``T0 = {1, ..., t - 1}``, is ``r_T = G(seed_T, T)``
+    (:func:`expand_seeded_piece`, a fresh :data:`SEED_BYTES`-byte seed per
+    piece) and the first is the correction ``r_T0 = material - sum r_T``.
+    A server stores the seeds of its pieces (``C(s - 1, t - 1)`` of them, one
+    fewer if it holds ``r_T0``) and ``r_T0`` if it lies outside ``T0``: the
+    servers ``1..t-1`` hold no full piece, the others one.
+
+    Hiding is computational: a coalition ``C`` of ``t - 1`` servers other than
+    ``T0`` holds ``r_T0`` and misses ``seed_C``, and ``r_T0`` is independent of
+    the key only once ``G(seed_C)`` is replaced by a uniform piece (a PRG
+    hybrid, SHAKE-256 keyed by a secret 256-bit seed -- the assumption the
+    flooding noise of the threshold layers makes already). ``C = T0`` holds
+    seeds only, which are independent of the key, as with
+    :func:`share_replicated`.
+
+    Args:
+        ctx: Native ring context of *modulus*: expand and add up its
+            dimension's leaves natively (same values).
+
+    Returns:
+        ``{"layout", "correction": (T0, r_T0 as decimal strings), "seeds": {T: hex}}``.
+    """
+    sets = replicated_sets(points, threshold)
+    layout = piece_layout(material)
+    seeds = {T: secrets.token_hex(SEED_BYTES) for T in sets[1:]}
+    correction = _combine_pieces(layout, [material], [(seeds[T], T) for T in sets[1:]], modulus, ctx, subtract=True)
+    return {"layout": layout, "correction": (sets[0], correction), "seeds": seeds}
+
+
+def seeded_pieces_held(sharing: dict, point: int) -> dict:
+    """What the server at *point* stores of a :func:`share_replicated_seeded`
+    sharing: ``{"pieces": [{"set", "share"}] (r_T0, or none), "seeds":
+    [{"set", "seed"}], "layout"}`` (JSON-friendly)."""
+    T0, correction = sharing["correction"]
+    return {
+        "pieces": [] if point in T0 else [{"set": list(T0), "share": correction}],
+        "seeds": [{"set": list(T), "seed": seed} for T, seed in sharing["seeds"].items() if point not in T],
+        "layout": sharing["layout"],
+    }
+
+
 def replicated_assignment(
     x_k: int, xs: list[int], points: list[int], threshold: int
 ) -> list[tuple[int, ...]]:
@@ -311,7 +508,7 @@ def check_served_sharing(pp: dict, dk: dict, constructions: dict) -> None:
 
 def share_for_enrolled(
     dk: dict, sid: str, lst_sid_enrolled: list[str], threshold: int, modulus: gp.mpz,
-    fields=None, cache=None, legacy_shamir: str = "refuse", profile=None,
+    fields=None, cache=None, legacy_shamir: str = "refuse", profile=None, ring_n=None,
 ) -> tuple[dict, gp.mpz, str]:
     """What server *sid* multiplies, by what, for a partial decryption for *lst_sid_enrolled*.
 
@@ -326,13 +523,17 @@ def share_for_enrolled(
     :func:`replicated_assignment` in place of the pieces (of the entries
     *fields* only, if given), multiplier 1 and a tag naming those pieces.
     Partial decryptions seed their flooding noise with the tag: they depend
-    on the enrolled set only through it.
+    on the enrolled set only through it. A seeded replicated key share
+    (``dk["seeds"]``, :func:`share_replicated_seeded`) gives what the
+    replicated key share of the expanded pieces gives, tag included.
 
     Args:
         cache: An :class:`~collections.OrderedDict` that keeps the sums of
             the last :data:`SHARE_CACHE_SIZE` key shares and assignments,
             for key shares that are not modified once handed in (they are
             told apart by identity). The returned share must not be modified.
+        ring_n: For seeded pieces: expand them natively when the extension
+            has a ring context of ``(modulus, ring_n)``.
 
         legacy_shamir: ``"refuse"`` or ``"warn"`` (see
             :data:`LEGACY_SHAMIR_POLICIES`).
@@ -340,7 +541,7 @@ def share_for_enrolled(
             (``None`` for those of versions <= 0.3.0).
 
     Raises:
-        FEKeyError: If *dk* lacks a piece the server must add.
+        FEKeyError: If *dk* lacks a piece (or its seed) the server must add.
         FESchemeError: For a Shamir key share with ``t < s`` that is not
             to be served.
     """
@@ -371,9 +572,10 @@ def share_for_enrolled(
         cache.move_to_end(key)
         return cache[key][1]
     held = {tuple(piece["set"]): piece["share"] for piece in dk["pieces"]}
-    if not held:
+    seeds = {tuple(entry["set"]): entry["seed"] for entry in dk.get("seeds", [])}
+    if not held and not seeds:
         raise FEKeyError("the key share holds no pieces")
-    missing = [T for T in assigned if T not in held]
+    missing = [T for T in assigned if T not in held and T not in seeds]
     if missing:
         raise FEKeyError("the key share lacks the pieces {}".format(missing))
     modulus = gp.mpz(modulus)
@@ -381,11 +583,23 @@ def share_for_enrolled(
     def pick(piece):
         return piece if fields is None else {name: piece[name] for name in fields}
 
-    total = _map_values(pick(next(iter(held.values()))), lambda _: gp.mpz(0))
-    for T in assigned:
-        total = _zip_values(total, pick(held[T]), lambda a, b: (a + gp.mpz(b)) % modulus)
-    share = {key: value for key, value in dk.items() if key != "pieces"}
-    share.update(_map_values(total, gp.digits))
+    if seeds:  # seeded: expand the assigned seeds and add them up, natively if possible
+        ctx = None
+        if ring_n is not None:
+            from pyfe4ai.utils import native_backend
+
+            ctx = native_backend.ring_context(modulus, ring_n)
+        summed = _combine_pieces(
+            _select(dk.get("layout"), fields), [pick(held[T]) for T in assigned if T in held],
+            [(seeds[T], T) for T in assigned if T not in held], modulus, ctx,
+        )
+    else:
+        total = _map_values(pick(next(iter(held.values()))), lambda _: gp.mpz(0))
+        for T in assigned:
+            total = _zip_values(total, pick(held[T]), lambda a, b: (a + gp.mpz(b)) % modulus)
+        summed = _map_values(total, gp.digits)
+    share = {key: value for key, value in dk.items() if key not in ("pieces", "seeds", "layout")}
+    share.update(summed)
     out = share, gp.mpz(1), json.dumps(["replicated", [list(T) for T in assigned]])
     if cache is not None:
         cache[key] = (dk, out)  # dk kept alive: its id is not reused while cached
