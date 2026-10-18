@@ -21,6 +21,34 @@ compatibility).
   profile keeps the same ring dimension for the benchmark configurations.
   Cached parameters of these schemes are re-derived (construction
   `acfgu18-bmms21/v5`).
+- **ABDP15 LWE schemes** (`sife/lwe`, `mife/lwe`): the `standard` profile
+  now reads the 128-bit lattice-estimator table (`WIDE_LWE_128_LOG_RATIO`)
+  at the error width `sigma' = sigma / (1 + B sqrt(eta))` of the LWE problem
+  that their security proof reduces to, not at the public key's own `sigma`.
+  Here `B = 2X`; in the slots of `mife/lwe` `B = 4X`, because the ACFGU18
+  reduction challenges a slot with `x^(j,0) - x^(1,0) + x^(1,1)` against
+  `x^(j,1)` (`lwe_utils.abdp15_reduction_sigma`).
+  Theorem 2 of the PKC 2015 paper, cited so far, does not cover noisy LWE
+  keys. Its simulation computes ciphertexts from the secret key without the
+  noise term `<r, e>`, and changes the basis of noisy public keys with
+  coefficients in `Z_q`. The proof is instead the second generic theorem of
+  the revised full version (ePrint 2015/017, 2015-03-28), written out in
+  F. Bourse's PhD thesis (ENS 2017, Thm. 4.3.5 with Thms. 8.2.2, 8.2.3,
+  8.3.2), which needs `sigma >= (1 + B sqrt(eta)) sigma'`. These citations
+  rest on the thesis until the full-version text has been checked.
+  `lwe_n` grows by 40 to 55 percent: 896 → 1280 and 1088 → 1536 for
+  `eta = 10` and `X = Y = 50 / 256`, and 1024 → 1408 for 100 MIFE slots of
+  `eta = 1`. An explicit `lwe_n` is checked at `sigma'`. An encryption costs
+  about twice as much. Cached `standard` parameters chosen by the old rule
+  are re-derived on load; `toy` parameters are unchanged. No attack is known:
+  the old dimensions still meet the estimator for an attack on the public
+  key alone.
+- **`mife/lwe_threshold` is refused under `standard`.** At `sigma'` its
+  flooding-enlarged `q` (217 bits for two clients with `stat_param = 128`)
+  needs an LWE dimension beyond the table's 6144: about 6500 for
+  `X = Y = 50`, where the old rule took 5952. `standard` therefore no longer
+  fixes its `matrix_mode`. Use `mife/ddh_threshold`, or
+  `mcfe/ring_lwe_threshold` with labels.
 
 ### Performance
 

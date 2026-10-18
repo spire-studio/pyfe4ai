@@ -53,15 +53,16 @@ the same key part draws the same noise; a corrupted client varying its own
 that away to learn the other slots' part would take about ``2^(2 stat_param)``
 partial decryptions.
 
-Under the ``standard`` security profile ``lwe_n = "auto"`` picks the
-smallest dimension meeting :data:`pyfe4ai.utils.lwe_utils.WIDE_LWE_128_LOG_RATIO`
-at the enlarged ``q`` (``stat_param = 128``): about 6000 for ``X = Y = 50``
-(5952 for two clients: ``q`` of 217 bits, ``m`` of 1.3 * 10^6, ``A`` of
-7.8 * 10^9 entries). ``A`` then needs more than 400 GB in memory, so the
-profile fixes ``matrix_mode = "stream"``. Measured on one machine at that
-size: key generation 38 minutes (8.5 GB; the machine was busy), one
-encryption 572 s (3.9 GB), a batch of 64 encryptions 679 s (5.2 GB), a
-partial decryption 13 ms.
+The ``standard`` security profile refuses this scheme. ``lwe_n = "auto"``
+reads :data:`pyfe4ai.utils.lwe_utils.WIDE_LWE_128_LOG_RATIO` at the width
+``sigma / (1 + 4 X sqrt(eta))`` of the MIFE layer's security reduction (see
+:mod:`pyfe4ai.schemes.abdp15_lwe`). At the flooding-enlarged ``q`` of
+``stat_param = 128`` no tabulated dimension up to 6144 reaches 128 bits
+there; ``X = Y = 50`` would need about 6500. Read at ``sigma`` itself, the
+earlier rule took 5952 for two clients (``q`` of 217 bits, ``m`` of
+1.3 * 10^6, ``A`` of 7.8 * 10^9 entries, so ``A`` had to be streamed):
+key generation took 38 minutes, one encryption 572 s, a batch of 64
+encryptions 679 s and a partial decryption 13 ms.
 """
 
 from __future__ import annotations
@@ -152,7 +153,7 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
 
     def _derive(self) -> dict:
         if self.lwe_n_config == "auto":
-            return wide_lwe_n(self._threshold_parameters)
+            return wide_lwe_n(self._threshold_parameters, self._table_sigma)
         return self._threshold_parameters(int(self.lwe_n_config))
 
     def _threshold_parameters(self, lwe_n: int) -> dict:

@@ -38,10 +38,23 @@ parameters: ``"toy"`` (the default) is fast and **not secure**;
 values below it. Its exceptions: the pairing-based schemes run on
 BLS12-381, about 120-126-bit after the exTNFS attacks (with a
 :class:`~pyfe4ai.utils.exceptions.FESecurityWarning`),
-and ``sife/fullysec_lwe``, ``mife/fullysec_lwe`` (ALS16) and
-``mcfe/paillier_decentralized`` are refused. :mod:`pyfe4ai.schemes.profiles`
-below gives the parameters per family, including ``matrix_mode`` for the
-ABDP15 LWE schemes.
+and ``sife/fullysec_lwe``, ``mife/fullysec_lwe`` (ALS16),
+``mife/lwe_threshold`` and ``mcfe/paillier_decentralized`` are refused.
+:mod:`pyfe4ai.schemes.profiles` below gives the parameters per family,
+including ``matrix_mode`` for the ABDP15 LWE schemes.
+
+For the ABDP15 LWE schemes (``sife/lwe``, ``mife/lwe``) the 128 bits are
+those of the LWE problem that their security proof reduces to. The
+lattice-estimator table is read at the error width
+``sigma' = sigma / (1 + B sqrt(eta))`` of that problem (``B = 2 X``, or
+``4 X`` per slot of ``mife/lwe``), not at the wider ``sigma`` of the public
+key, which gives dimensions 40 to 55 percent larger. The proof is the second
+generic theorem of the ABDP15 full version (ePrint 2015/017, written out in
+F. Bourse's PhD thesis, ENS 2017, Thm. 4.3.5), not Theorem 2 of the PKC 2015
+paper, whose simulation does not cover noisy LWE keys; this rests on the
+thesis until the full-version text has been checked. ``mife/lwe_threshold``
+has no tabulated dimension (up to 6144) at that width once its modulus is
+enlarged for flooding.
 
 Threshold trust model
 ---------------------

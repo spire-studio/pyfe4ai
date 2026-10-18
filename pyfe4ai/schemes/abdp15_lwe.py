@@ -13,10 +13,18 @@ entry with ``L = ceil(bits(q) / 31)``) and expanding it again for every batch
 (``m x eta`` per slot) are always held in memory.
 
 Under the ``standard`` security profile ``lwe_n = "auto"`` selects the
-smallest dimension whose ``(q, sigma)`` meets
+smallest dimension whose ``(q, sigma')`` meets
 :data:`pyfe4ai.utils.lwe_utils.WIDE_LWE_128_LOG_RATIO`, a lattice-estimator
-table for the LWE problem of ``pk``; an explicit ``lwe_n`` is checked against
-it.
+table for LWE with a uniform secret; an explicit ``lwe_n`` is checked against
+it. ``sigma' = sigma / (1 + B sqrt(eta))`` is the error width of the LWE
+problem the security proof reduces to
+(:func:`pyfe4ai.utils.lwe_utils.abdp15_reduction_sigma`), where ``B`` bounds
+how far the two challenge vectors of the IPFE game differ per coordinate:
+``2 X`` for ``sife/lwe``, and ``4 X`` in the slots of ``mife/lwe``, whose
+reduction (ACFGU18, proof of Thm. 3) asks for ``x^(j,0) - x^(1,0) + x^(1,1)``
+against ``x^(j,1)``. The width ``sigma`` of ``pk`` itself is ``1 + B sqrt(eta)``
+times larger, so the dimension is larger than an attack on ``pk`` alone would
+need.
 """
 
 from __future__ import annotations
@@ -32,6 +40,7 @@ from pyfe4ai.utils.lwe_matrix import LimbMatrix
 from pyfe4ai.utils.lwe_matrix import SeededMatrix
 from pyfe4ai.utils.lwe_matrix import check_matrix_mode
 from pyfe4ai.utils.lwe_utils import abdp15_parameters
+from pyfe4ai.utils.lwe_utils import abdp15_reduction_sigma
 from pyfe4ai.utils.lwe_utils import check_wide_lwe
 from pyfe4ai.utils.matrix_utils import digits_to_matrix
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
@@ -51,13 +60,25 @@ class ABDP15KeyGeneratorMixin(ParameterCacheMixin):
     """
 
     _construction = CONSTRUCTION
+    #: ``B / X``, where ``B`` bounds ``|x1_i - x0_i|`` for the challenge
+    #: vectors ``x0, x1`` of the IPFE security game (signed ``|x_i| <= X``).
+    _challenge_spread = 2
 
     def _init_abdp15(self, config: dict) -> None:
         self.lwe_n_config = config.get("lwe_n", 32)
         self.matrix_mode = check_matrix_mode(config.get("matrix_mode", DEFAULT_MATRIX_MODE))
         self._load_parameters()
         if self.security_profile == STANDARD:
-            check_wide_lwe(self.lwe_n, self.q, self.sigma_q)
+            check_wide_lwe(self.lwe_n, self.q, self._reduction_sigma(self.sigma_q), what="sigma'")
+
+    def _reduction_sigma(self, sigma_q) -> float:
+        """``sigma'``: the error width of the LWE problem the security proof
+        reduces to, at which the 128-bit table is read."""
+        return abdp15_reduction_sigma(sigma_q, self._challenge_spread * self.bound_x, self.eta)
+
+    def _table_sigma(self, params: dict) -> float:
+        """:meth:`_reduction_sigma` of derived *params*, for ``lwe_n = "auto"``."""
+        return self._reduction_sigma(params["sigma_q"])
 
     def _record_fields(self) -> dict:
         """Configuration a cached parameter file must match."""
@@ -94,7 +115,9 @@ class ABDP15KeyGeneratorMixin(ParameterCacheMixin):
 
     def _derive(self) -> dict:
         """Fresh parameters: ``lwe_n``, ``p``, ``q``, ``m``, ``sigma_q``, ``l_sigma``."""
-        return abdp15_parameters(self.bound_x, self.bound_y, self.eta, self.lwe_n_config)
+        return abdp15_parameters(
+            self.bound_x, self.bound_y, self.eta, self.lwe_n_config, lwe_sigma=self._table_sigma
+        )
 
     def _apply_parameters(self, param: dict) -> None:
         self.lwe_n = int(param["lwe_n"])
