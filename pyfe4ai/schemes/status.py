@@ -200,7 +200,10 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         "derandomised noise, enlarged q, clients' HMAC tags on ciphertexts so that "
         "servers only decrypt ciphertexts made by the clients, replicated key sharing "
         "for t < s, where Shamir shares let partials reveal the decryption noise "
-        "modulo small integers) is our own",
+        "modulo small integers) is our own"
+        "; the opt-in sharing='replicated-seeded' expands all key pieces but one from "
+        "secret 256-bit seeds and hides the key shares only computationally (SHAKE-256 "
+        "as a PRG); full replicated sharing stays the default for t < s",
     ),
     # --- multi-client -------------------------------------------------------
     ("mcfe", "ddh"): SchemeStatus(_S + "mcfe.ddh", REVIEWED, FAITHFUL, "CDGPP18"),
@@ -267,7 +270,10 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         _S + "mcfe.lwe_threshold", EXPERIMENTAL, AD_HOC, "ABMPSW20 Fig. 4 + replicated / Shamir sharing + flooding",
         note="MCFE layer as published; the threshold layer (replicated key sharing "
         "for t < s, Shamir for t = s) and its LWE-based flooding argument are our "
-        "own (see the module docstring)",
+        "own (see the module docstring)"
+        "; the opt-in sharing='replicated-seeded' expands all key pieces but one from "
+        "secret 256-bit seeds and hides the key shares only computationally (SHAKE-256 "
+        "as a PRG); full replicated sharing stays the default for t < s",
     ),
     ("mcfe", "lwe_decentralized"): SchemeStatus(
         _S + "mcfe.lwe_decentralized", REVIEWED, ADAPTED,
@@ -279,7 +285,10 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         note="MCFE layer as published; the threshold layer (statistical flooding, "
         "derandomised noise, enlarged q, clients' HMAC tags on ciphertexts, "
         "replicated key sharing for t < s, where Shamir shares let partials reveal "
-        "the decryption noise modulo small integers) is our own",
+        "the decryption noise modulo small integers) is our own"
+        "; the opt-in sharing='replicated-seeded' expands all key pieces but one from "
+        "secret 256-bit seeds and hides the key shares only computationally (SHAKE-256 "
+        "as a PRG); full replicated sharing stays the default for t < s",
     ),
     ("mcfe", "ring_lwe_decentralized"): SchemeStatus(
         _S + "mcfe.ring_lwe_decentralized", REVIEWED, ADAPTED,
