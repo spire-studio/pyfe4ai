@@ -67,6 +67,7 @@ multipliers are 0 or 1; after the merge allow ``"kl"`` for ``t < s`` with
 from __future__ import annotations
 
 import math
+import threading
 
 import gmpy2 as gp
 
@@ -264,13 +265,14 @@ class PartialDecryptionBudget:
     The deployment creates one per server and passes it to every crypto
     object that answers for that server (``partial_budget`` in the crypto
     config); its ``limit`` may not exceed the public parameters'
-    ``max_partial_decryptions``. The count only grows. Every partial
-    decryption a server produces counts, repeated ones too; refused
-    requests do not. The guarantee holds only if a server's count covers
-    all its partial decryptions under the setup: a server that runs as
-    several processes or restarts must share or persist it, for instance by
-    subclassing with an atomic, durable :meth:`consume` and starting from
-    the stored ``used``.
+    ``max_partial_decryptions``. The count only grows, and :meth:`consume`
+    checks and increments it as one step under a lock, so the threads of a
+    process can share a budget. Every partial decryption a server produces
+    counts, repeated ones too; refused requests do not. The guarantee holds
+    only if a server's count covers all its partial decryptions under the
+    setup: a server that runs as several processes or restarts must share or
+    persist it, for instance by subclassing with an atomic, durable
+    :meth:`consume` and starting from the stored ``used``.
 
     Args:
         limit: At most ``max_partial_decryptions`` of the public parameters.
@@ -288,6 +290,8 @@ class PartialDecryptionBudget:
                 "a partial decryption budget needs limit >= 1 and 0 <= used <= limit, "
                 "got limit = {}, used = {}".format(limit, used)
             )
+        # re-entrant: consume() holds it while it calls check()
+        self._lock = threading.RLock()
 
     @property
     def limit(self) -> int:
@@ -299,7 +303,8 @@ class PartialDecryptionBudget:
 
     @property
     def remaining(self) -> int:
-        return self._limit - self._used
+        with self._lock:
+            return self._limit - self._used
 
     def check(self, count: int = 1) -> None:
         """Raise unless *count* more partial decryptions fit (consumes nothing).
@@ -309,13 +314,14 @@ class PartialDecryptionBudget:
         """
         if _count(count, "count") < 0:
             raise FEValidationError("count must be non-negative")
-        if self._used + count > self._limit:
-            raise FESchemeError(
-                "partial decryption limit reached: {} of max_partial_decryptions = {} used, "
-                "{} requested; the KL flooding guarantee does not cover more".format(
-                    self._used, self._limit, count
+        with self._lock:
+            if self._used + count > self._limit:
+                raise FESchemeError(
+                    "partial decryption limit reached: {} of max_partial_decryptions = {} used, "
+                    "{} requested; the KL flooding guarantee does not cover more".format(
+                        self._used, self._limit, count
+                    )
                 )
-            )
 
     def consume(self, count: int = 1) -> None:
         """Account for *count* partial decryptions about to be produced.
@@ -323,8 +329,9 @@ class PartialDecryptionBudget:
         Raises:
             FESchemeError: If they would exceed the limit (nothing is consumed then).
         """
-        self.check(count)
-        self._used += count
+        with self._lock:  # check and increment as one step
+            self.check(count)
+            self._used += count
 
 
 def server_budget(pp: dict, budget, flood: KLFlooding):

@@ -5,6 +5,8 @@ and that the default is untouched."""
 import json
 import math
 import random
+import threading
+import time
 
 import numpy as np
 import pytest
@@ -207,6 +209,62 @@ def test_budget():
         budget.used = 0  # the count only grows
     with pytest.raises(AttributeError):
         budget.limit = 10 ** 9
+
+
+class _SlowCheck(fa.PartialDecryptionBudget):
+    """Widens the window between the check and the increment of consume()."""
+
+    def check(self, count: int = 1) -> None:
+        super().check(count)
+        time.sleep(0.002)
+
+
+def _race(consume, threads: int) -> tuple:
+    barrier = threading.Barrier(threads)
+    served, refused = [], []
+
+    def worker():
+        barrier.wait()
+        try:
+            consume()
+            served.append(1)
+        except FESchemeError:
+            refused.append(1)
+
+    pool = [threading.Thread(target=worker) for _ in range(threads)]
+    for th in pool:
+        th.start()
+    for th in pool:
+        th.join()
+    return len(served), len(refused)
+
+
+def test_budget_is_atomic_across_threads():
+    budget = _SlowCheck(10)
+    assert _race(budget.consume, 32) == (10, 22)
+    assert budget.used == 10 and budget.remaining == 0
+    budget = _SlowCheck(10, used=7)
+    assert _race(lambda: budget.consume(2), 16) == (1, 15)
+    assert budget.used == 9
+
+
+def test_servers_sharing_a_budget_across_threads_stay_within_it():
+    kg, pp = _tmcfe_setup({**TMCFE, **KL, "max_partial_decryptions": 3})
+    cts, cred, _ = _tmcfe_request(kg, pp)
+    dk = kg.get_decryption_keys("sid_0", credentials=cred)
+    budget = _SlowCheck(3)
+    servers = [ThresholdMCFERingLWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk}, "partial_budget": budget})
+               for _ in range(8)]
+    calls = iter(servers)
+    lock = threading.Lock()
+
+    def one():
+        with lock:
+            srv = next(calls)
+        srv.share_decrypt(cts, cred, dk, SIDS)
+
+    assert _race(one, 8) == (3, 5)
+    assert budget.used == 3
 
 
 @pytest.mark.parametrize("limit, used", [(0, 0), (-1, 0), (5, -1), (2, -10 ** 6), (5, 6), (True, 0), (5, 1.0), (5.0, 0)])
