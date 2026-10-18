@@ -77,7 +77,11 @@ argument holds as stated, with ``q`` unchanged; a server holds
 sharings have their own parameter records (construction
 ``acfgu18-abdp15-replicated-smudging-seeded-a/v1`` for ``"replicated"``), so a
 record cached by an earlier version for ``t < s`` is not reused by the
-default.
+default. Servers refuse Shamir key shares with ``t < s`` (also those of
+versions <= 0.3.0) unless created with ``legacy_shamir = "warn"``, for a
+migration only and never with public parameters that record the ``standard``
+profile; public parameters record ``threshold_construction`` and
+``security_profile``, and servers refuse constructions they do not know.
 
 Under the ``standard`` security profile ``lwe_n = "auto"`` picks the
 smallest dimension meeting :data:`pyfe4ai.utils.lwe_utils.WIDE_LWE_128_LOG_RATIO`
@@ -102,6 +106,8 @@ import numpy as np
 from pyfe4ai.schemes.mife.lwe import MIFELWE
 from pyfe4ai.schemes.mife.lwe import MIFELWEKeyGenerator
 from pyfe4ai.schemes.threshold_utils import check_ciphertext_tags
+from pyfe4ai.schemes.threshold_utils import check_served_sharing
+from pyfe4ai.schemes.threshold_utils import legacy_shamir_policy
 from pyfe4ai.schemes.threshold_utils import check_fusion_weight
 from pyfe4ai.schemes.threshold_utils import client_server_mac_keys
 from pyfe4ai.schemes.threshold_utils import tag_ciphertext
@@ -136,6 +142,7 @@ _CONSTRUCTION = "acfgu18-abdp15-shamir-smudging-seeded-a/v3"
 # the parameters are those of the Shamir record; its own record keeps cached
 # Shamir records (t < s) of versions <= 0.3.0 from being taken for it
 _CONSTRUCTION_REPLICATED = "acfgu18-abdp15-replicated-smudging-seeded-a/v1"
+_CONSTRUCTIONS = {_CONSTRUCTION: "shamir", _CONSTRUCTION_REPLICATED: "replicated"}
 _DEFAULT_STAT_PARAM = 64
 _TAG_DOMAIN = "pyfe4ai/tmife-lwe/ciphertext-tag/v1"
 
@@ -239,11 +246,12 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
 
     def get_public_parameters(self) -> dict:
         """Return the MIFE public parameters plus ``s``, ``t``, ``lst_sid``,
-        ``sigma_f`` and ``sharing``."""
+        ``sigma_f``, ``sharing``, ``threshold_construction`` and ``security_profile``."""
         pp = super().get_public_parameters()
         pp.update(
             {"s": self.s, "t": self.t, "lst_sid": list(self.lst_sid), "sigma_f": str(self.sigma_f),
-             "sharing": self.sharing}
+             "sharing": self.sharing, "threshold_construction": self._construction,
+             "security_profile": self.security_profile}
         )
         return pp
 
@@ -310,7 +318,16 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
 
 
 class ThresholdMIFELWE(MIFELWE):
-    """Crypto operations for threshold MIFE-LWE (ACFGU18 + Shamir + smudging)."""
+    """Crypto operations for threshold MIFE-LWE (ACFGU18 + Shamir + smudging).
+
+    A server refuses Shamir key shares with ``t < s`` (versions <= 0.3.0)
+    unless its config has ``legacy_shamir = "warn"`` (see
+    :data:`~pyfe4ai.schemes.threshold_utils.LEGACY_SHAMIR_POLICIES`).
+    """
+
+    def __init__(self, config: dict, **kwargs) -> None:
+        super().__init__(config, **kwargs)
+        self.legacy_shamir = legacy_shamir_policy(config)
 
     def _encrypt_batch(self, plaintexts: list) -> list:
         """MIFE ciphertexts with ``tags``: one HMAC tag per server."""
@@ -347,14 +364,14 @@ class ThresholdMIFELWE(MIFELWE):
             raise FEKeyError("no decryption keys provided")
         if self.id not in dk["lst_sid"] or dk.get("sid") != self.id:
             raise FESchemeError("the key share does not belong to server {}".format(self.id))
-        if dk.get("sharing", "shamir") != self.pp.get("sharing", "shamir"):
-            raise FESchemeError("the key share is not of the sharing of the public parameters")
+        check_served_sharing(self.pp, dk, _CONSTRUCTIONS)
         validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
         check_fusion_weight(dk, credentials)
         q = gp.mpz(self.pp["q"])
         # Shamir: (dk, lambda_k); replicated: the sum of the assigned pieces, 1
         share, multiplier, tag = _share or share_for_enrolled(
-            dk, self.id, lst_sid_enrolled, self.pp["t"], q, cache=share_cache(self)
+            dk, self.id, lst_sid_enrolled, self.pp["t"], q, cache=share_cache(self),
+            legacy_shamir=self.legacy_shamir, profile=self.pp.get("security_profile"),
         )
         if set(dict_ct) != set(share["sk_y"]):
             raise FESchemeError("need one ciphertext for every slot of the key")

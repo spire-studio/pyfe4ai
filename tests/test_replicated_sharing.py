@@ -400,39 +400,86 @@ def _v030(kg, sid, credentials):
     return pp, dk
 
 
-@pytest.mark.parametrize("kind", sorted(_CONFIGS))
-def test_shamir_key_shares_with_t_below_s_warn_when_served(kind):
+def _served(kind, s, t, sharing=None, v030=False):
+    """(scheme class, pp, key share of sid_0, ciphertexts, credentials) for one round."""
     import warnings
-
-    from pyfe4ai.utils.exceptions import FESecurityWarning
 
     cls = {"mife": ThresholdMIFELWE, "ring": ThresholdMCFERingLWE, "lwe": ThresholdMCFELWE}[kind]
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        kg = _make(kind, 3, 2, sharing="shamir")
+        kg = _make(kind, s, t, **({"sharing": sharing} if sharing else {}))
     kg.setup()
     y = {nid: [1] for nid in kg.lst_nid}
     cred = y if kind == "mife" else {"fusion_weight": y, "label": "L"}
-    pp, dk = _v030(kg, "sid_0", cred if kind != "mife" else {"fusion_weight": y})
-    if kind == "mife":
-        cts = {nid: cls({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt([1]) for nid in y}
+    keycred = {"fusion_weight": y} if kind == "mife" else cred
+    if v030:
+        pp, dk = _v030(kg, "sid_0", keycred)
+        pp.pop("threshold_construction"), pp.pop("security_profile")
     else:
-        x = [[1]] if kind == "ring" else [1]
+        pp, dk = kg.get_public_parameters(), kg.get_decryption_keys("sid_0", credentials=keycred)
+    x = [1] if kind != "ring" else [[1]]
+    if kind == "mife":
+        cts = {nid: cls({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(x) for nid in y}
+    else:
         cts = {nid: cls({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(x, "L") for nid in y}
-    server = cls({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
+    return cls, pp, dk, cts, cred
+
+
+@pytest.mark.parametrize("kind", sorted(_CONFIGS))
+@pytest.mark.parametrize("v030", [True, False], ids=["v030-pp", "pp"])
+def test_shamir_key_shares_with_t_below_s_are_refused_unless_legacy_warn(kind, v030):
+    from pyfe4ai.utils.exceptions import FESecurityWarning
+
+    cls, pp, dk, cts, cred = _served(kind, 3, 2, sharing="shamir", v030=v030)
+    with pytest.raises(FESchemeError, match="re-share the threshold keys"):
+        cls({"id": "sid_0", "keys": {"pp": pp, "dk": dk}}).share_decrypt(cts, cred, dk, ["sid_0", "sid_2"])
+    with pytest.raises(FESchemeError):
+        cls({"id": "sid_0", "legacy_shamir": "refuse", "keys": {"pp": pp, "dk": dk}}).share_decrypt(
+            cts, cred, dk, ["sid_0", "sid_2"])
+    server = cls({"id": "sid_0", "legacy_shamir": "warn", "keys": {"pp": pp, "dk": dk}})
     with pytest.warns(FESecurityWarning, match="t = 2 < s = 3"):
         server.share_decrypt(cts, cred, dk, ["sid_0", "sid_2"])
-    # Shamir at t = s is sound: no warning
-    kg = _make(kind, 3, 3)
-    kg.setup()
-    pp, dk = _v030(kg, "sid_0", cred if kind != "mife" else {"fusion_weight": y})
-    if kind == "mife":
-        cts = {nid: cls({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt([1]) for nid in y}
-    else:
-        cts = {nid: cls({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(x, "L") for nid in y}
+    # public parameters that record the standard profile: refused even so
+    standard = dict(pp, security_profile="standard")
+    with pytest.raises(FESchemeError, match="not under the standard profile"):
+        cls({"id": "sid_0", "legacy_shamir": "warn", "keys": {"pp": standard, "dk": dk}}).share_decrypt(
+            cts, cred, dk, ["sid_0", "sid_2"])
+    with pytest.raises(FEValidationError):
+        cls({"id": "sid_0", "legacy_shamir": "allow", "keys": {"pp": pp, "dk": dk}})
+
+
+@pytest.mark.parametrize("kind", sorted(_CONFIGS))
+@pytest.mark.parametrize("v030", [True, False], ids=["v030-pp", "pp"])
+def test_shamir_key_shares_at_t_equal_s_are_served_silently(kind, v030):
+    import warnings
+
+    from pyfe4ai.utils.exceptions import FESecurityWarning
+
+    cls, pp, dk, cts, cred = _served(kind, 3, 3, v030=v030)
     with warnings.catch_warnings():
         warnings.simplefilter("error", FESecurityWarning)
         cls({"id": "sid_0", "keys": {"pp": pp, "dk": dk}}).share_decrypt(cts, cred, dk, ["sid_0", "sid_1", "sid_2"])
+
+
+@pytest.mark.parametrize("kind", sorted(_CONFIGS))
+def test_public_parameters_record_the_construction_and_profile(kind):
+    want = {
+        "mife": ("acfgu18-abdp15-shamir-smudging-seeded-a/v3", "acfgu18-abdp15-replicated-smudging-seeded-a/v1"),
+        "ring": ("bmms21-ibmcfe-shamir-smudging/v1", "bmms21-ibmcfe-replicated-smudging/v1"),
+        "lwe": ("abmpsw20-shamir-flooding/v1", "abmpsw20-replicated-flooding/v1"),
+    }[kind]
+    for t, construction in ((3, want[0]), (2, want[1])):
+        cls, pp, dk, cts, cred = _served(kind, 3, t)
+        assert pp["threshold_construction"] == construction and pp["security_profile"] == "toy"
+        enrolled = ["sid_0", "sid_1", "sid_2"][:t]
+        server = cls({"id": "sid_0", "keys": {"pp": pp, "dk": dk}})
+        server.share_decrypt(cts, cred, dk, enrolled)
+        # a construction this version does not know (a later one, say), or
+        # one of the other sharing: refused, not guessed
+        for other in ("x-later-construction/v9", want[1 - (t == 2)]):
+            bad = dict(pp, threshold_construction=other)
+            with pytest.raises(FESchemeError, match="unknown threshold construction"):
+                cls({"id": "sid_0", "keys": {"pp": bad, "dk": dk}}).share_decrypt(cts, cred, dk, enrolled)
 
 
 def test_summed_shares_are_cached_per_key_share_and_assignment():

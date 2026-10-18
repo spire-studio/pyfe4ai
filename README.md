@@ -479,10 +479,29 @@ see [`CHANGELOG.md`](CHANGELOG.md).
     Its multipliers are 0 or 1, so the flooding argument holds. `q`,
     `ring_n` and `lwe_n` are unchanged; a server holds `C(s - 1, t - 1)` key
     pieces.
-  * `sharing="shamir"` with `t < s` is refused under `standard` and draws
-    an `FESecurityWarning` under `toy`.
-  * Key shares of v0.3.0 with `t < s` still decrypt, but each server
-    warns. Generate new key shares with this version.
+  * `sharing="shamir"` with `t < s` is refused by the key generator under
+    `standard` and draws an `FESecurityWarning` under `toy`.
+  * Servers refuse Shamir key shares with `t < s` (also those of v0.3.0)
+    unless they are created with `legacy_shamir="warn"`.
+* **Upgrading from v0.3.0** (LWE threshold layers with `t < s`):
+  **re-share the threshold keys with this version.**
+  * Run its key generator (`setup()`, then `get_private_keys` and
+    `get_decryption_keys`) and hand out the new client keys and key shares.
+    Discard the old key shares.
+  * The replicated sharing has its own parameter record, so this also draws
+    a new public matrix (or polynomial). Ciphertexts made under the old keys
+    still need the old key shares.
+  * Servers refuse old Shamir key shares with `t < s` (`FESchemeError`).
+  * Only during the migration, to finish rounds encrypted under the old
+    keys, create those servers with `legacy_shamir="warn"`, e.g.
+    `ThresholdMIFELWE({"id": sid, "legacy_shamir": "warn", "keys": {...}})`.
+    They then serve the old key shares with an `FESecurityWarning`, and the
+    leak remains for those rounds.
+  * There is no environment variable for this. Public parameters of this
+    version that record the `standard` profile are refused even with
+    `legacy_shamir="warn"`.
+  * Public parameters now record `threshold_construction` and
+    `security_profile`, and servers refuse constructions they do not know.
 
 Fixed in v0.3.0 (see [`CHANGELOG.md`](CHANGELOG.md)): every
 scheme previously marked *known-insecure* now implements a published

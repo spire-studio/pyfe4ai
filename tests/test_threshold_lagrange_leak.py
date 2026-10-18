@@ -10,8 +10,10 @@ mod 4 of four times the difference is ``nu mod 4``, whatever the flooding.
 Replicated sharing, the default for ``t < s``, makes ``M`` 0 or 1. The
 tests check the simulation itself (difference within the flooding range) and
 the residue attack, for the default and for ``sharing = "replicated"``; the
-explicit ``"shamir"`` cases (the sharing of v0.3.0, which now warns under
-``toy`` and is refused under ``standard``) are expected failures.
+explicit ``"shamir"`` cases (the sharing of v0.3.0: the key generator now
+warns under ``toy`` and refuses under ``standard``, servers refuse such key
+shares unless created with ``legacy_shamir = "warn"``, as here) are expected
+failures.
 
 Only names that exist in v0.3.0 / ``main`` 810a4a5 are imported, so that there
 these tests fail on the leak itself (``sharing`` is then an ignored config
@@ -39,6 +41,13 @@ SHARINGS = [
     "replicated",
     pytest.param("shamir", marks=pytest.mark.xfail(strict=True, reason="Shamir with t < s: rational multipliers")),
 ]
+
+
+# servers serve Shamir key shares with t < s (refused by default since the
+# fix), so that the Shamir cases show the leak rather than the refusal;
+# tests/test_replicated_sharing.py checks the refusal. Ignored where the
+# entry does not exist (v0.3.0 / main 810a4a5).
+SERVER = {"legacy_shamir": "warn"}
 
 
 def _with_sharing(cfg, sharing):
@@ -120,7 +129,7 @@ def _tmife_round(cfg, kg, pp, enrolled_sets):
     dks = {sid: kg.get_decryption_keys(sid, credentials={"fusion_weight": y}) for sid in SIDS}
     parts = {}
     for enrolled in enrolled_sets:
-        group = {sid: ThresholdMIFELWE({"id": sid, "keys": {"pp": pp, "dk": dks[sid]}}).share_decrypt(
+        group = {sid: ThresholdMIFELWE({"id": sid, **SERVER, "keys": {"pp": pp, "dk": dks[sid]}}).share_decrypt(
             cts, y, dks[sid], enrolled) for sid in enrolled}
         assert ThresholdMIFELWE({"id": "c", "keys": {"pp": pp}}).combine_decrypt(group) == sum(
             x[n][0] * y[n][0] for n in x)
@@ -201,7 +210,7 @@ def _tmcfe_ring_round(cfg, kg, pp, enrolled_sets, label):
     expected = [sum(x[nid][0][j] * y[nid][0] for nid in x) for j in range(k_len)]
     parts = {}
     for enrolled in enrolled_sets:
-        group = {sid: ThresholdMCFERingLWE({"id": sid, "keys": {"pp": pp, "dk": dks[sid]}}).share_decrypt(
+        group = {sid: ThresholdMCFERingLWE({"id": sid, **SERVER, "keys": {"pp": pp, "dk": dks[sid]}}).share_decrypt(
             cts, cred, dks[sid], enrolled) for sid in enrolled}
         assert ThresholdMCFERingLWE({"id": "c", "keys": {"pp": pp}}).combine_decrypt(group) == expected
         parts[tuple(enrolled)] = group
@@ -293,7 +302,7 @@ def test_tmcfe_lwe_honest_answers_carry_the_key_term_once(sharing):
 
         key_term = key_part({"sk_y": kg._aggregate_key(y)})[0]
         for enrolled in sorted({tuple(e) for _, e, _ in configs}):
-            group = {sid: ThresholdMCFELWE({"id": sid, "keys": {"pp": pp, "dk": dks[sid]}}).share_decrypt(
+            group = {sid: ThresholdMCFELWE({"id": sid, **SERVER, "keys": {"pp": pp, "dk": dks[sid]}}).share_decrypt(
                 cts, cred, dks[sid], list(enrolled)) for sid in enrolled}
             assert server.combine_decrypt(group) is not None
             for corrupted in SIDS:

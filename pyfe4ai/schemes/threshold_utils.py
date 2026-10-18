@@ -261,17 +261,60 @@ def replicated_assignment(
 #: Entries kept by a cache of :func:`share_for_enrolled` (per scheme object).
 SHARE_CACHE_SIZE = 16
 
+#: What a server does with a Shamir key share whose ``t < s`` (crypto config
+#: entry ``legacy_shamir``): ``"refuse"`` (default) or ``"warn"`` (serve it
+#: with an :class:`~pyfe4ai.utils.exceptions.FESecurityWarning`, for
+#: migrating from versions <= 0.3.0 only). There is deliberately no
+#: environment variable: the opt-out is per server object.
+LEGACY_SHAMIR_POLICIES = ("refuse", "warn")
+
+
+def legacy_shamir_policy(config: dict) -> str:
+    """The ``legacy_shamir`` entry of a server's crypto *config* (default ``"refuse"``)."""
+    policy = config.get("legacy_shamir")
+    if policy is None:
+        return "refuse"
+    if policy not in LEGACY_SHAMIR_POLICIES:
+        raise FEValidationError(
+            "legacy_shamir must be one of {}, not {!r}".format(LEGACY_SHAMIR_POLICIES, policy)
+        )
+    return policy
+
+
+def check_served_sharing(pp: dict, dk: dict, constructions: dict) -> None:
+    """Raise unless key share *dk* is of the sharing that *pp* describes.
+
+    ``pp["sharing"]`` must match the key share (both default to
+    ``"shamir"``, the only sharing of versions <= 0.3.0). Public parameters
+    of this version record ``threshold_construction``; it must be one of
+    *constructions* (``{construction id: sharing}``) and name that sharing,
+    so that artifacts of another construction (a later version, say) are
+    refused rather than misread.
+    """
+    sharing = dk.get("sharing", "shamir")
+    if pp.get("sharing", "shamir") != sharing:
+        raise FESchemeError("the key share is not of the sharing of the public parameters")
+    construction = pp.get("threshold_construction")
+    if construction is not None and constructions.get(construction) != sharing:
+        raise FESchemeError(
+            "unknown threshold construction {!r} for a {} key share; known: {}".format(
+                construction, sharing, sorted(constructions)
+            )
+        )
+
 
 def share_for_enrolled(
     dk: dict, sid: str, lst_sid_enrolled: list[str], threshold: int, modulus: gp.mpz,
-    fields=None, cache=None,
+    fields=None, cache=None, legacy_shamir: str = "refuse", profile=None,
 ) -> tuple[dict, gp.mpz, str]:
     """What server *sid* multiplies, by what, for a partial decryption for *lst_sid_enrolled*.
 
     Returns ``(share, multiplier, tag)``. For a Shamir key share *dk*:
     ``(dk, lambda, digits(lambda))``, ``lambda`` the Lagrange coefficient
-    at zero; with ``t < s`` (a key share of versions <= 0.3.0, or an
-    explicit ``sharing="shamir"``) this draws an
+    at zero. With ``t < s`` (a key share of versions <= 0.3.0, or an
+    explicit ``sharing="shamir"``) such a key share is refused, unless
+    *legacy_shamir* is ``"warn"`` and the public parameters do not record
+    the ``standard`` *profile*: then it is served with an
     :class:`~pyfe4ai.utils.exceptions.FESecurityWarning`. For a replicated
     one (``dk["pieces"]``): *dk* with the sum of the pieces of
     :func:`replicated_assignment` in place of the pieces (of the entries
@@ -285,22 +328,34 @@ def share_for_enrolled(
             for key shares that are not modified once handed in (they are
             told apart by identity). The returned share must not be modified.
 
+        legacy_shamir: ``"refuse"`` or ``"warn"`` (see
+            :data:`LEGACY_SHAMIR_POLICIES`).
+        profile: ``security_profile`` recorded in the public parameters
+            (``None`` for those of versions <= 0.3.0).
+
     Raises:
         FEKeyError: If *dk* lacks a piece the server must add.
+        FESchemeError: For a Shamir key share with ``t < s`` that is not
+            to be served.
     """
     sid_v = share_points(dk["lst_sid"])
     xs = [sid_v[s] for s in lst_sid_enrolled]
     if "pieces" not in dk:
         if threshold < len(dk["lst_sid"]):
-            warnings.warn(
+            from pyfe4ai.schemes.profiles import STANDARD
+
+            message = (
                 "server {}: a Shamir key share with t = {} < s = {} (the sharing of versions "
                 "<= 0.3.0) lets partial decryptions reveal the decryption noise modulo small "
-                "integers; re-share the key with sharing='replicated'".format(
-                    sid, threshold, len(dk["lst_sid"])
-                ),
-                FESecurityWarning,
-                stacklevel=3,
+                "integers; re-share the threshold keys with this version (sharing="
+                "'replicated')".format(sid, threshold, len(dk["lst_sid"]))
             )
+            if legacy_shamir != "warn" or profile == STANDARD:
+                raise FESchemeError(
+                    message + "; during a migration only, a server created with "
+                    "legacy_shamir='warn' serves it (not under the standard profile)"
+                )
+            warnings.warn(message, FESecurityWarning, stacklevel=3)
         lagrange = lagrange_coefficient_at_zero(sid_v[sid], xs, modulus)
         return dk, lagrange, gp.digits(lagrange)
     assigned = replicated_assignment(sid_v[sid], xs, list(sid_v.values()), threshold)

@@ -64,17 +64,34 @@ compatibility).
   * **Defaults.** `"replicated"` **is the default for `t < s`**. `"shamir"`
     stays the default for `t = s`, with unchanged outputs and cached
     parameters.
-  * **Refusals and warnings.** An explicit `"shamir"` with `t < s` is
-    refused under `standard` and draws an `FESecurityWarning` under `toy`.
-    So does serving a Shamir key share with `t < s` (for example one of
-    v0.3.0). A threshold that is not an integer (also `t=True`) is refused
-    by every threshold scheme.
+  * **Refusals and warnings.** The key generator refuses an explicit
+    `"shamir"` with `t < s` under `standard` and warns
+    (`FESecurityWarning`) under `toy`.
+  * **Servers refuse Shamir key shares with `t < s`** (also those of
+    v0.3.0) with `FESchemeError`, unless the server's crypto config has
+    `legacy_shamir="warn"`. That opt-out serves them with an
+    `FESecurityWarning`, never with public parameters that record the
+    `standard` profile, and has no environment-variable counterpart.
+  * **Public parameters** of the three layers now record
+    `threshold_construction` and `security_profile`; servers refuse a
+    construction they do not know, or one of another sharing.
+  * **Thresholds.** A threshold that is not an integer (also `t=True`) is
+    refused by every threshold scheme.
   * **Records and key shares.** The replicated sharing has its own
     parameter records (construction
     `acfgu18-abdp15-replicated-smudging-seeded-a/v1`, threshold construction
     `bmms21-ibmcfe-replicated-smudging/v1`), so records cached for `t < s`
     by v0.3.0 are not reused. Key shares for `t < s` have a new layout
     (`sharing`, `pieces`), and their partial decryptions change.
+  * **Upgrade step** (LWE threshold layers with `t < s`): **re-share the
+    threshold keys with this version.**
+    * Run its key generator (`setup()`, new client keys and key shares).
+      This draws a new public matrix or polynomial, because of the new
+      record.
+    * Discard the old key shares.
+    * Only to finish rounds encrypted under the old keys, during the
+      migration, create those servers with `legacy_shamir="warn"`. The leak
+      remains for those rounds.
 
 ### Performance
 

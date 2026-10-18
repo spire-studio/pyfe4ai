@@ -55,7 +55,12 @@ share is drawn in Python. With ``t = s`` both are sound. An explicit
 draws an ``FESecurityWarning`` under ``toy``; the replicated sharing has its
 own parameter record (``threshold_construction``
 ``bmms21-ibmcfe-replicated-smudging/v1``), so a record cached by an earlier
-version for ``t < s`` is not reused by the default.
+version for ``t < s`` is not reused by the default. Servers refuse Shamir key
+shares with ``t < s`` (also those of versions <= 0.3.0) unless created with
+``legacy_shamir = "warn"``, for a migration only and never with public
+parameters that record the ``standard`` profile; public parameters record
+``threshold_construction`` and ``security_profile``, and servers refuse
+constructions they do not know.
 
 With the native backend (:mod:`pyfe4ai.utils.native_backend`; moduli below
 ``2^253``, which includes the flooded ``q`` of the standard profile) the MCFE
@@ -82,6 +87,8 @@ from pyfe4ai.schemes.mcfe.ring_lwe import chunk_key_index
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
 from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.schemes.threshold_utils import check_ciphertext_tags
+from pyfe4ai.schemes.threshold_utils import check_served_sharing
+from pyfe4ai.schemes.threshold_utils import legacy_shamir_policy
 from pyfe4ai.schemes.threshold_utils import check_fusion_weight
 from pyfe4ai.schemes.threshold_utils import client_server_mac_keys
 from pyfe4ai.schemes.threshold_utils import tag_ciphertext
@@ -121,6 +128,7 @@ _CONSTRUCTION = "bmms21-ibmcfe-shamir-smudging/v1"
 # the parameters are those of the Shamir record; its own record keeps cached
 # Shamir records (t < s) of versions <= 0.3.0 from being taken for it
 _CONSTRUCTION_REPLICATED = "bmms21-ibmcfe-replicated-smudging/v1"
+_CONSTRUCTIONS = {_CONSTRUCTION: "shamir", _CONSTRUCTION_REPLICATED: "replicated"}
 _TAG_DOMAIN = "pyfe4ai/tmcfe-ring-lwe/ciphertext-tag/v1"
 
 
@@ -238,11 +246,13 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         return sk
 
     def get_public_parameters(self) -> dict:
-        """MCFE public parameters plus ``s``, ``t``, ``lst_sid``, ``sigma_f`` and ``sharing``."""
+        """MCFE public parameters plus ``s``, ``t``, ``lst_sid``, ``sigma_f``,
+        ``sharing``, ``threshold_construction`` and ``security_profile``."""
         pp = super().get_public_parameters()
         pp.update(
             {"s": self.s, "t": self.t, "lst_sid": list(self.lst_sid), "sigma_f": str(self.sigma_f),
-             "sharing": self.sharing}
+             "sharing": self.sharing, "threshold_construction": self._threshold_construction,
+             "security_profile": self.security_profile}
         )
         return pp
 
@@ -347,7 +357,16 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
 
 
 class ThresholdMCFERingLWE(MCFERingLWE):
-    """Crypto operations for threshold BMMS21 identity-based MCFE over Ring-LWE."""
+    """Crypto operations for threshold BMMS21 identity-based MCFE over Ring-LWE.
+
+    A server refuses Shamir key shares with ``t < s`` (versions <= 0.3.0)
+    unless its config has ``legacy_shamir = "warn"`` (see
+    :data:`~pyfe4ai.schemes.threshold_utils.LEGACY_SHAMIR_POLICIES`).
+    """
+
+    def __init__(self, config: dict, **kwargs) -> None:
+        super().__init__(config, **kwargs)
+        self.legacy_shamir = legacy_shamir_policy(config)
 
     _binary_ciphertexts = False  # tags cover the JSON form of a ciphertext
 
@@ -393,8 +412,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             raise FEKeyError("no decryption keys provided")
         if self.id not in dk["lst_sid"] or dk.get("sid") != self.id:
             raise FESchemeError("the key share does not belong to server {}".format(self.id))
-        if dk.get("sharing", "shamir") != self.pp.get("sharing", "shamir"):
-            raise FESchemeError("the key share is not of the sharing of the public parameters")
+        check_served_sharing(self.pp, dk, _CONSTRUCTIONS)
         fusion_weight = credentials.get("fusion_weight")
         if dk.get("label") != credentials.get("label"):
             raise FESchemeError("the key share was derived for another label")
@@ -404,7 +422,8 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         # Shamir: (dk, lambda_k); replicated: the sum of the assigned pieces
         # (sk_y and z; the chunk keys come with _share), 1
         share, multiplier, tag = _share or share_for_enrolled(
-            dk, self.id, lst_sid_enrolled, self.pp["t"], q, fields=("sk_y", "z"), cache=share_cache(self)
+            dk, self.id, lst_sid_enrolled, self.pp["t"], q, fields=("sk_y", "z"), cache=share_cache(self),
+            legacy_shamir=self.legacy_shamir, profile=self.pp.get("security_profile"),
         )
         if set(dict_ct) != set(share["sk_y"]):
             raise FESchemeError("need one ciphertext for every client of the key")

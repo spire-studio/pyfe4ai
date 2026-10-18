@@ -71,6 +71,11 @@ answers are computable up to their own noise. ``sigma_f`` and ``q`` are
 unchanged. With ``t = s`` both are as described. An explicit ``"shamir"`` with
 ``t < s`` is refused under the ``standard`` profile and draws an
 ``FESecurityWarning`` under ``toy`` (this scheme caches no parameters).
+Servers refuse Shamir key shares with ``t < s`` (also those of versions <=
+0.3.0) unless created with ``legacy_shamir = "warn"``, for a migration only
+and never with public parameters that record the ``standard`` profile; public
+parameters record ``threshold_construction`` and ``security_profile``, and
+servers refuse constructions they do not know.
 
 Statistical smudging in the usual sense (noise hiding a small ciphertext
 error) does not apply, because these ciphertexts carry no LWE error, only
@@ -96,6 +101,8 @@ from pyfe4ai.schemes.mcfe.lwe import MCFELWE
 from pyfe4ai.schemes.mcfe.lwe import MCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.lwe import dot_mod
 from pyfe4ai.schemes.threshold_utils import check_fusion_weight
+from pyfe4ai.schemes.threshold_utils import check_served_sharing
+from pyfe4ai.schemes.threshold_utils import legacy_shamir_policy
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.schemes.threshold_utils import pieces_held
 from pyfe4ai.schemes.threshold_utils import share_cache
@@ -116,6 +123,11 @@ from pyfe4ai.utils.sampling_utils import XofRandom
 from pyfe4ai.utils.sampling_utils import discrete_gaussian_bigint
 
 logger = logging.getLogger(__name__)
+
+# recorded in the public parameters (those of versions <= 0.3.0 have none)
+_CONSTRUCTION = "abmpsw20-shamir-flooding/v1"
+_CONSTRUCTION_REPLICATED = "abmpsw20-replicated-flooding/v1"
+_CONSTRUCTIONS = {_CONSTRUCTION: "shamir", _CONSTRUCTION_REPLICATED: "replicated"}
 
 
 def flooding_sigma(params: dict, n_slots: int, bound_y: int, s: int) -> int:
@@ -192,7 +204,7 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
 
     def get_public_parameters(self) -> dict:
         """Return the MCFE public parameters plus ``s``, ``t``, ``lst_sid``,
-        ``sigma_f`` and ``sharing``."""
+        ``sigma_f``, ``sharing``, ``threshold_construction`` and ``security_profile``."""
         pp = super().get_public_parameters()
         pp.update(
             {
@@ -201,6 +213,8 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
                 "lst_sid": list(self.lst_sid),
                 "sigma_f": gp.digits(gp.mpz(self.sigma_f)),
                 "sharing": self.sharing,
+                "threshold_construction": _CONSTRUCTION if self.sharing == "shamir" else _CONSTRUCTION_REPLICATED,
+                "security_profile": self.security_profile,
             }
         )
         return pp
@@ -259,7 +273,16 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
 
 
 class ThresholdMCFELWE(MCFELWE):
-    """Crypto operations for threshold ABMPSW20 LWE MCFE."""
+    """Crypto operations for threshold ABMPSW20 LWE MCFE.
+
+    A server refuses Shamir key shares with ``t < s`` (versions <= 0.3.0)
+    unless its config has ``legacy_shamir = "warn"`` (see
+    :data:`~pyfe4ai.schemes.threshold_utils.LEGACY_SHAMIR_POLICIES`).
+    """
+
+    def __init__(self, config: dict, **kwargs) -> None:
+        super().__init__(config, **kwargs)
+        self.legacy_shamir = legacy_shamir_policy(config)
 
     def share_decrypt(
         self, dict_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list, _share=None
@@ -285,8 +308,7 @@ class ThresholdMCFELWE(MCFELWE):
             raise FEKeyError("no decryption keys provided")
         if self.id not in dk["lst_sid"] or dk.get("sid") != self.id:
             raise FESchemeError("the key share does not belong to server {}".format(self.id))
-        if dk.get("sharing", "shamir") != self.pp.get("sharing", "shamir"):
-            raise FESchemeError("the key share is not of the sharing of the public parameters")
+        check_served_sharing(self.pp, dk, _CONSTRUCTIONS)
         fusion_weight = credentials.get("fusion_weight")
         label = credentials.get("label")
         if fusion_weight is None or label is None:
@@ -297,7 +319,8 @@ class ThresholdMCFELWE(MCFELWE):
 
         # Shamir: (dk, lambda_k); replicated: the sum of the assigned pieces, 1
         share, multiplier, tag = _share or share_for_enrolled(
-            dk, self.id, lst_sid_enrolled, self.pp["t"], self.q, cache=share_cache(self)
+            dk, self.id, lst_sid_enrolled, self.pp["t"], self.q, cache=share_cache(self),
+            legacy_shamir=self.legacy_shamir, profile=self.pp.get("security_profile"),
         )
         share_term = dot_mod([gp.mpz(v) for v in share["sk_y"]], self._hash_label(label), self.q)
         # the partial depends on the enrolled set only through the tag (lambda,
