@@ -44,3 +44,27 @@ Checked and holding:
 | R5-2 | info (availability, fails closed) | `ring_lwe_threshold.py` `_label_parts`: only a newly made label part is checked against the weights' current share set; a cached one is returned from an entry that another thread evicted right after `_weight_entry` returned it | `test_r5_2_a_cached_label_part_is_of_the_current_share_set` |
 
 Further informational items are in the round-5 report (records).
+
+## Re-check of b7944d4 (round-5 fixes)
+
+On `review/crypto-2026-10-tmcfe-defaults-recheck` (from b7944d4), with
+`tests/review/test_tmcfe_defaults_recheck.py`.
+
+R5-1 and R5-2 are fixed (the tests above pass on b7944d4; the probes of the
+adapter, the mixing matrix, the malformed split parts and the archived
+b51989f hashes are unchanged); R5-a, R5-b and R5-d are as described.
+
+R5-c (label parts of the last `LABEL_PARTS_KEPT` labels per sharing; a label
+asked for again later gets a second sharing of its terms with the same share
+set and noise key) leaks nothing: for one request an honest server's answers
+under the two sharings differ by `m_h Delta` times a sharing of zero, which
+every set of `t - 1` servers computes from its own label parts (Shamir: the
+zero polynomial is fixed by their `t - 1` points and `f(0) = 0`; replicated:
+they hold every piece but one, whose difference is minus the sum of the
+others) -- checked numerically for every corrupted set and honest server,
+Shamir 3-of-3 and replicated 2-of-3, both backends; the combiner sees only
+these zero-sharing values.
+
+| Id | Severity | Where | Test |
+| --- | --- | --- | --- |
+| R5-c' | medium (integrity, not confidentiality) | `ring_lwe_threshold.py` `_label_parts` (b7944d4) with `LABEL_PARTS_KEPT`: the partials of the two sharings of one label do not fail closed -- they decode inside the bound (p is about twice the bound: 99.7-99.9 % of the elements), so a round whose servers fetched their label parts on both sides of the eviction (16 later labels of the same weights issued in between) gives another aggregate without an error; only large ndarray requests fail, on the rare element outside the bound | `test_r5c_label_parts_of_one_round_fetched_across_its_eviction` |
