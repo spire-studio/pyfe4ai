@@ -70,8 +70,12 @@ pub fn unpack(py: Python<'_>, data: &[u8], as_digits: bool) -> PyResult<Py<PyLis
 
 pub fn ntt_mont(py: Python<'_>, ctx: &Bound<'_, RnsCtx>, data: &[u8]) -> PyResult<Py<PyBytes>> {
     let r = &ctx.get().ring;
-    let x: Vec<u128> = bytes_to_words(data, r.n)?;
-    Ok(words_to_bytes(py, &r.ntt_mont_std(&x)))
+    let mut x: Vec<u128> = bytes_to_words(data, r.n)?;
+    let mut y = r.ntt_mont_std(&x);
+    let out = words_to_bytes(py, &y);
+    rlwe::wipe_words(&mut x); // a key share and its NTT
+    rlwe::wipe_words(&mut y);
+    Ok(out)
 }
 
 /// The NTT mod q with the CRT root (ring_lwe_utils.ntt_forward / ntt_inverse):

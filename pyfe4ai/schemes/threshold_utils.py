@@ -47,6 +47,7 @@ import itertools
 import json
 import random
 import secrets
+import threading
 import warnings
 from collections import OrderedDict
 
@@ -435,6 +436,52 @@ def _bytes_leaves(material):
             yield from _bytes_leaves(value)
 
 
+def poly_kinds(material) -> set:
+    """The kinds of the polynomials of key material: ``"bytes"`` (bytes or
+    bytearray), ``"values"`` (a list or tuple of values; only its first
+    element is looked at) and ``"other"`` (anything else, e.g. a
+    ``memoryview``). The walk is over polynomials, not values."""
+    if isinstance(material, (bytes, bytearray)):
+        return {"bytes"}
+    if isinstance(material, dict):
+        return set().union(*(poly_kinds(v) for v in material.values()))
+    if isinstance(material, (list, tuple)):
+        if not material:
+            return set()
+        if isinstance(material[0], (dict, list, tuple, bytes, bytearray, memoryview)):
+            return set().union(*(poly_kinds(v) for v in material))
+        return {"values"}
+    if isinstance(material, (int, str)) or type(material).__name__ == "mpz":
+        return {"values"}  # a single value
+    return {"other"}
+
+
+def uniform_material(material, modulus):
+    """*material* with polynomials of one kind: bytes polynomials decoded to
+    values when it mixes them with value lists (what the Python dealing reads
+    them as), else unchanged.
+
+    Raises:
+        FEKeyError: For polynomials that are neither (``"other"``) or malformed bytes.
+    """
+    kinds = poly_kinds(material)
+    if "other" in kinds:
+        raise FEKeyError("malformed key material: polynomials must be value lists or bytes")
+    if kinds != {"bytes", "values"}:
+        return material
+    from pyfe4ai.utils.ring_lwe_utils import decode_values
+
+    width = _value_bytes(modulus)
+
+    def decode(leaf):
+        try:
+            return decode_values(leaf, modulus, len(leaf) // width)
+        except ValueError as exc:
+            raise FEKeyError("malformed binary key material") from exc
+
+    return _map_bytes(material, decode)
+
+
 def _has_bytes(material) -> bool:
     """Whether *material* holds binary polynomials (its first leaf is bytes;
     key material is of one kind throughout, and only the first path is
@@ -450,10 +497,11 @@ def _has_bytes(material) -> bool:
             return False
 
 
-def _sum_binary_pieces(pieces: list, modulus: gp.mpz):
+def _sum_binary_pieces(pieces: list, modulus: gp.mpz, skip_first: bool = False):
     """The sum mod q of binary pieces (:func:`binary_material`), leaf by leaf,
     as bytes: natively (``zq_sum``) where the extension is built, else in
-    Python with the same values.
+    Python with the same values. With *skip_first* the first piece only gives
+    the layout (the sum of the others; zeros if there are none).
 
     Raises:
         FESchemeError: For pieces of different layouts, or values that are not
@@ -468,6 +516,10 @@ def _sum_binary_pieces(pieces: list, modulus: gp.mpz):
         if not all(isinstance(leaf, (bytes, bytearray)) for leaf in leaves) or len({len(leaf) for leaf in leaves}) != 1:
             raise FESchemeError("key pieces of different layouts")
         count = len(leaves[0]) // wb
+        if skip_first:
+            leaves = leaves[1:]
+            if not leaves:
+                return bytes(count * wb)  # no assigned piece: 0
         try:
             if ext is not None:
                 return ext.zq_sum(q, count, [bytes(leaf) for leaf in leaves], [], False, True)
@@ -514,6 +566,7 @@ def share_replicated(
     """
     sets = replicated_sets(points, threshold)
     modulus = gp.mpz(modulus)
+    material = uniform_material(material, modulus)  # a mix of bytes and value lists: dealt as values
     if _has_bytes(material):  # binary key terms are dealt as binary pieces
         binary = True
     pieces = _share_replicated_native(material, sets, modulus, binary)
@@ -783,6 +836,10 @@ def replicated_assignment(
 #: Entries kept by a cache of :func:`share_for_enrolled` (per scheme object).
 SHARE_CACHE_SIZE = 16
 
+#: Guards the caches of :func:`share_for_enrolled` (lookups and evictions are
+#: several steps of an OrderedDict; the sums themselves run outside it).
+_SHARE_CACHE_LOCK = threading.Lock()
+
 #: What a server does with a Shamir key share whose ``t < s`` (crypto config
 #: entry ``legacy_shamir``): ``"refuse"`` (default) or ``"warn"`` (serve it
 #: with an :class:`~pyfe4ai.utils.exceptions.FESecurityWarning`). Key shares
@@ -945,9 +1002,12 @@ def share_for_enrolled(
     assigned = replicated_assignment(sid_v[sid], xs, list(sid_v.values()), threshold)
     fields = None if fields is None else tuple(fields)
     key = (id(dk), id(dk["pieces"]), tuple(assigned), fields)
-    if cache is not None and key in cache and cache[key][0] is dk:
-        cache.move_to_end(key)
-        return cache[key][1]
+    if cache is not None:
+        with _SHARE_CACHE_LOCK:  # get and move_to_end at once (threads share a server object)
+            hit = cache.get(key)
+            if hit is not None and hit[0] is dk:
+                cache.move_to_end(key)
+                return hit[1]
     held = {tuple(piece["set"]): piece["share"] for piece in dk["pieces"]}
     seeded = dk.get("sharing") == "replicated-seeded"
     if not seeded and "seeds" in dk:
@@ -973,22 +1033,35 @@ def share_for_enrolled(
             _select(dk.get("layout"), fields), [pick(held[T]) for T in assigned if T in held],
             [(seeds[T], T) for T in assigned if T not in held], modulus, ctx,
         )
-    elif _has_bytes(pick(next(iter(held.values())))):  # binary key shares: bytes in, bytes out
-        summed = _sum_binary_pieces([pick(held[T]) for T in assigned], modulus)
-    else:  # natively where possible, with the values of the Python code
-        summed = _sum_pieces_native(pick(next(iter(held.values()))), [pick(held[T]) for T in assigned], modulus)
-        if summed is None:
-            total = _map_values(pick(next(iter(held.values()))), lambda _: gp.mpz(0))
-            for T in assigned:
-                total = _zip_values(total, pick(held[T]), lambda a, b: (a + gp.mpz(b)) % modulus)
-            summed = _map_values(total, gp.digits)
+    else:
+        try:  # the layout of the server's pieces (it may be assigned none: the sum is then 0)
+            template = pick(next(iter(held.values())))
+            chosen = [pick(held[T]) for T in assigned]
+        except (KeyError, TypeError) as exc:
+            raise FEKeyError("malformed key pieces") from exc
+        kinds = poly_kinds([template] + chosen)
+        if "other" in kinds or len(kinds) > 1:
+            raise FEKeyError("malformed key pieces: polynomials of one kind (value lists or bytes) only")
+        if kinds == {"bytes"}:  # binary key shares: bytes in, bytes out
+            summed = _sum_binary_pieces([template] + chosen, modulus, skip_first=True)
+        else:  # natively where possible, with the values of the Python code
+            summed = _sum_pieces_native(template, chosen, modulus)
+            if summed is None:
+                try:
+                    total = _map_values(template, lambda _: gp.mpz(0))
+                    for piece in chosen:
+                        total = _zip_values(total, piece, lambda a, b: (a + gp.mpz(b)) % modulus)
+                except (ValueError, TypeError) as exc:
+                    raise FEKeyError("malformed key pieces") from exc
+                summed = _map_values(total, gp.digits)
     share = {key: value for key, value in dk.items() if key not in ("pieces", "seeds", "layout")}
     share.update(summed)
     out = share, gp.mpz(1), json.dumps(["replicated", [list(T) for T in assigned]])
     if cache is not None:
-        cache[key] = (dk, out)  # dk kept alive: its id is not reused while cached
-        while len(cache) > SHARE_CACHE_SIZE:
-            cache.popitem(last=False)
+        with _SHARE_CACHE_LOCK:
+            cache[key] = (dk, out)  # dk kept alive: its id is not reused while cached
+            while len(cache) > SHARE_CACHE_SIZE:
+                cache.popitem(last=False)
     return out
 
 

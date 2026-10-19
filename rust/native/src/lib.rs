@@ -386,12 +386,12 @@ fn pack(py: Python<'_>, ctx: &Bound<'_, PyAny>, values: &Bound<'_, PyAny>) -> Py
             if b.as_bytes().len() % wb != 0 {
                 return Err(PyValueError::new_err("not a whole number of values"));
             }
-            let mut v = threshold::read_poly(values, b.as_bytes().len() / wb, q, &r.m)?;
-            let out = words_to_bytes(py, &v);
-            rlwe::wipe_words(&mut v);
-            return Ok(out);
+            let v = threshold::SecretWords(threshold::read_poly(values, b.as_bytes().len() / wb, q, &r.m)?);
+            return Ok(words_to_bytes(py, &v));
         }
-        Ok(words_to_bytes(py, &read_values(values, None, q, &r.m, false)?))
+        // the values may be secret (key shares on their way to ntt_mont): wiped after packing
+        let v = threshold::SecretWords(read_values(values, None, q, &r.m, false)?);
+        Ok(words_to_bytes(py, &v))
     })
 }
 
@@ -447,9 +447,10 @@ fn ntt_mont(py: Python<'_>, ctx: &Bound<'_, PyAny>, data: &[u8]) -> PyResult<Py<
     }
     let ring = get_ring(ctx.cast::<RingCtx>()?);
     with_ring!(&*ring, r => {
-        let x = bytes_to_words(data, r.n)?;
-        let mut y = x.clone();
-        r.forward_mont(&x, &mut y);
+        // the input is a key share (the NTT(sk_y) cache of the threshold servers): both copies wiped
+        let x = threshold::SecretWords(bytes_to_words(data, r.n)?);
+        let mut y = threshold::SecretWords(x.0.clone());
+        r.forward_mont(&x, &mut y.0);
         Ok(words_to_bytes(py, &y))
     })
 }
@@ -1935,8 +1936,11 @@ fn share_inputs(py: Python<'_>, ctx: &Bound<'_, RingCtx>, keys: Vec<String>, ks:
 #[pyo3(signature = (ctx, packed, eta, ys, sk_hats, z, delta, lagrange, noise=None, flood=None))]
 #[allow(clippy::too_many_arguments)]
 fn share_partial(py: Python<'_>, ctx: &Bound<'_, RingCtx>, packed: Vec<Vec<u8>>, eta: usize, ys: &Bound<'_, PyAny>,
-                 sk_hats: Vec<Vec<u8>>, z: &Bound<'_, PyAny>, delta: &Bound<'_, PyAny>, lagrange: &Bound<'_, PyAny>,
+                 sk_hats: &Bound<'_, PyAny>, z: &Bound<'_, PyAny>, delta: &Bound<'_, PyAny>, lagrange: &Bound<'_, PyAny>,
                  noise: Option<&Bound<'_, PyAny>>, flood: Option<(u32, Vec<u8>)>) -> PyResult<(Py<PyList>, Py<PyList>)> {
+    // the secrets (the noise key's material, NTT(key share) copies, z, the noise) are wiped on every path
+    let flood = threshold::secret_flood(flood);
+    let sk_hats = threshold::secret_rows(sk_hats)?;
     let q = ctx.get().q.bind(py).clone();
     let ring = get_ring(ctx);
     if packed.is_empty() || packed.len() != sk_hats.len() || eta == 0 {
@@ -1945,23 +1949,21 @@ fn share_partial(py: Python<'_>, ctx: &Bound<'_, RingCtx>, packed: Vec<Vec<u8>>,
     with_ring!(&*ring, r => {
         let (n, m) = (r.n, &r.m);
         let slots: Vec<Vec<_>> = packed.iter().map(|b| bytes_to_words(b, (eta + 1) * n)).collect::<PyResult<_>>()?;
-        let hats: Vec<Vec<_>> = sk_hats.iter().map(|b| bytes_to_words(b, n)).collect::<PyResult<_>>()?;
+        let hats = threshold::secret_hats(&sk_hats, n)?;
         let y_rows = read_rows(ys, Some(eta), &q, m)?;
         if y_rows.len() != slots.len() {
             return Err(PyValueError::new_err("one weight row per client"));
         }
         let ym: Vec<_> = y_rows.iter().flatten().map(|&v| m.to_mont(v)).collect();
-        let mut zv = threshold::read_poly(z, n, &q, m)?;
-        let mut ev = threshold::noise_values(noise, flood, n, &q, m)?;
+        let zv = threshold::SecretWords(threshold::read_poly(z, n, &q, m)?);
+        let ev = threshold::noise_values(noise, flood.as_ref().map(|(b, mat)| (*b, mat.0.as_slice())), n, &q, m)?;
         let (d, l) = (delta_mod(delta, &q, m)?, index_mod(lagrange, &q, m)?);
         let (mut w, mut cy) = (vec![Word::ZERO; n], vec![Word::ZERO; n]);
         py.detach(|| {
             let sr: Vec<&[_]> = slots.iter().map(|v| v.as_slice()).collect();
-            let hr: Vec<&[_]> = hats.iter().map(|v| v.as_slice()).collect();
+            let hr: Vec<&[_]> = hats.iter().map(|v| &v[..]).collect();
             rlwe::share_partial(r, eta, &sr, &ym, &hr, &zv, d, l, &ev, &mut w, &mut cy);
         });
-        rlwe::wipe_words(&mut zv);
-        rlwe::wipe_words(&mut ev);
         Ok((DecBuf::new(&w).list(py)?.unbind(), DecBuf::new(&cy).list(py)?.unbind()))
     })
 }

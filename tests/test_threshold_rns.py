@@ -85,9 +85,13 @@ def test_ntt_and_products_identical(bits, k, n):
     b = [gp.mpz(rng.randrange(int(q))) for _ in range(n)]
     pa, pb = ctx.pack(a), ctx.pack(b)
     N = native_backend.ext()
-    assert ctx.unpack(N.ntt(ctx.cap, pa)) == [int(v) for v in rlu.ntt_forward([v % q for v in a], q, root)]
-    assert ctx.unpack(N.ntt(ctx.cap, pb, True)) == [int(v) for v in rlu.ntt_inverse(b, q, root)]
-    assert ctx.unpack(N.poly_mul(ctx.cap, pa, pb)) == [int(v) for v in rlu.poly_mul(a, b, q)]
+    with native_backend.backend("python"):  # the reference: the Python code on the composite q
+        fwd = [int(v) for v in rlu.ntt_forward([v % q for v in a], q, root)]
+        inv = [int(v) for v in rlu.ntt_inverse(b, q, root)]
+        prod = [int(v) for v in rlu.poly_mul(a, b, q)]
+    assert ctx.unpack(N.ntt(ctx.cap, pa)) == fwd
+    assert ctx.unpack(N.ntt(ctx.cap, pb, True)) == inv
+    assert ctx.unpack(N.poly_mul(ctx.cap, pa, pb)) == prod
 
 
 def _setup(t=2, ct_format="json", stat_param=150, ring_n=32, ring_modulus="rns", **extra):

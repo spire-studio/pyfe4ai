@@ -15,6 +15,48 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
 
+/// Words that hold secrets (key shares, NTT(key share), the noise), zeroed
+/// when dropped: on every path out of a binding, errors included.
+pub(crate) struct SecretWords<W: Word>(pub Vec<W>);
+
+impl<W: Word> Drop for SecretWords<W> {
+    fn drop(&mut self) {
+        wipe_words(&mut self.0);
+    }
+}
+
+impl<W: Word> std::ops::Deref for SecretWords<W> {
+    type Target = [W];
+    fn deref(&self) -> &[W] {
+        &self.0
+    }
+}
+
+/// Bytes that hold secrets (copies of NTT(key share), the noise key's
+/// material), zeroed when dropped.
+pub(crate) struct SecretBytes(pub Vec<u8>);
+
+impl Drop for SecretBytes {
+    fn drop(&mut self) {
+        wipe_bytes(&mut self.0);
+    }
+}
+
+/// The bytes objects of `rows` copied into SecretBytes (wiped however the
+/// call ends).
+pub(crate) fn secret_rows(rows: &Bound<'_, PyAny>) -> PyResult<Vec<SecretBytes>> {
+    let mut out = Vec::new();
+    for r in rows.try_iter()? {
+        out.push(SecretBytes(r?.extract::<Vec<u8>>()?));
+    }
+    Ok(out)
+}
+
+/// NTT(key share) words of `rows` (n words each), wiped however the call ends.
+pub(crate) fn secret_hats<W: Word>(rows: &[SecretBytes], n: usize) -> PyResult<Vec<SecretWords<W>>> {
+    rows.iter().map(|b| super::bytes_to_words(&b.0, n).map(SecretWords)).collect()
+}
+
 /// n values mod q: a sequence as read_values reads it, or bytes of n
 /// ceil(bits(q) / 8)-byte little-endian words, each below q.
 pub(crate) fn read_poly<W: Word>(ob: &Bound<'_, PyAny>, n: usize, q: &Bound<'_, PyAny>, m: &Modulus<W>)
@@ -32,21 +74,24 @@ pub(crate) fn read_poly<W: Word>(ob: &Bound<'_, PyAny>, n: usize, q: &Bound<'_, 
 }
 
 /// The flooding noise of a partial decryption: `count` values of the given
-/// list, or the uniform noise of `flood = (bits, material)` drawn here; the
-/// material is wiped.
-pub(crate) fn noise_values<W: Word>(noise: Option<&Bound<'_, PyAny>>, flood: Option<(u32, Vec<u8>)>, count: usize,
-                                    q: &Bound<'_, PyAny>, m: &Modulus<W>) -> PyResult<Vec<W>> {
+/// list, or the uniform noise of `flood = (bits, material)` drawn here (the
+/// caller holds the material in a SecretBytes).
+pub(crate) fn noise_values<W: Word>(noise: Option<&Bound<'_, PyAny>>, flood: Option<(u32, &[u8])>, count: usize,
+                                    q: &Bound<'_, PyAny>, m: &Modulus<W>) -> PyResult<SecretWords<W>> {
     match (noise, flood) {
-        (None, Some((bits, mut material))) => {
-            let mut out = vec![W::ZERO; count];
-            let res = threshold::uniform_flooding(m, bits, &material, &mut out);
-            wipe_bytes(&mut material);
-            res.map_err(PyValueError::new_err)?;
+        (None, Some((bits, material))) => {
+            let mut out = SecretWords(vec![W::ZERO; count]);
+            threshold::uniform_flooding(m, bits, material, &mut out.0).map_err(PyValueError::new_err)?;
             Ok(out)
         }
-        (Some(list), None) => read_values(list, Some(count), q, m, false),
+        (Some(list), None) => read_values(list, Some(count), q, m, false).map(SecretWords),
         _ => Err(PyValueError::new_err("give the noise or the uniform flooding (bits, material), not both")),
     }
+}
+
+/// The `flood` argument with its material held in a SecretBytes.
+pub(crate) fn secret_flood(flood: Option<(u32, Vec<u8>)>) -> Option<(u32, SecretBytes)> {
+    flood.map(|(bits, material)| (bits, SecretBytes(material)))
 }
 
 /// ceil(bits(q) / 8), the bytes of a value in the binary formats.
@@ -80,12 +125,12 @@ fn values_bytes<W: Word>(py: Python<'_>, vals: &[W], wb: usize) -> Py<PyBytes> {
 #[pyfunction]
 fn uniform_flooding(py: Python<'_>, ctx: &Bound<'_, RingCtx>, bits: u32, material: Vec<u8>, count: usize)
     -> PyResult<Py<PyList>> {
+    let material = SecretBytes(material);
     let q = ctx.get().q.bind(py).clone();
     let ring = get_ring(ctx);
     with_ring!(&*ring, r => {
-        let mut v = noise_values(None, Some((bits, material)), count, &q, &r.m)?;
+        let v = noise_values(None, Some((bits, &material.0)), count, &q, &r.m)?;
         let items = v.iter().map(|&x| super::word_pyint(py, x)).collect::<PyResult<Vec<_>>>();
-        wipe_words(&mut v);
         Ok(PyList::new(py, items?)?.unbind())
     })
 }
@@ -101,9 +146,12 @@ fn uniform_flooding(py: Python<'_>, ctx: &Bound<'_, RingCtx>, bits: u32, materia
 #[pyo3(signature = (ctx, cts, eta, ys, sk_hats, z, delta, lagrange, noise=None, flood=None))]
 #[allow(clippy::too_many_arguments)]
 fn share_partial_bin(py: Python<'_>, ctx: &Bound<'_, RingCtx>, cts: Vec<Vec<u8>>, eta: usize, ys: &Bound<'_, PyAny>,
-                     sk_hats: Vec<Vec<u8>>, z: &Bound<'_, PyAny>, delta: &Bound<'_, PyAny>,
+                     sk_hats: &Bound<'_, PyAny>, z: &Bound<'_, PyAny>, delta: &Bound<'_, PyAny>,
                      lagrange: &Bound<'_, PyAny>, noise: Option<&Bound<'_, PyAny>>, flood: Option<(u32, Vec<u8>)>)
     -> PyResult<(Py<PyBytes>, Py<PyBytes>, usize)> {
+    // the secrets (the noise key's material, NTT(key share) copies, z, the noise) are wiped on every path
+    let flood = secret_flood(flood);
+    let sk_hats = secret_rows(sk_hats)?;
     let q = ctx.get().q.bind(py).clone();
     let ring = get_ring(ctx);
     if cts.is_empty() || cts.len() != sk_hats.len() || eta == 0 {
@@ -122,24 +170,22 @@ fn share_partial_bin(py: Python<'_>, ctx: &Bound<'_, RingCtx>, cts: Vec<Vec<u8>>
         if let Some(i) = parsed.iter().position(|p| p.0 != k) {
             return Err(PyValueError::new_err(("malformed ciphertext", i)));
         }
-        let hats: Vec<Vec<_>> = sk_hats.iter().map(|b| super::bytes_to_words(b, n)).collect::<PyResult<_>>()?;
+        let hats = secret_hats(&sk_hats, n)?;
         let y_rows = read_rows(ys, Some(eta), &q, m)?;
         if y_rows.len() != parsed.len() {
             return Err(PyValueError::new_err("one weight row per client"));
         }
         let ym: Vec<_> = y_rows.iter().flatten().map(|&v| m.to_mont(v)).collect();
-        let mut zv = read_poly(z, n, &q, m)?;
-        let mut ev = noise_values(noise, flood, k, &q, m)?;
+        let zv = SecretWords(read_poly(z, n, &q, m)?);
+        let ev = noise_values(noise, flood.as_ref().map(|(b, mat)| (*b, mat.0.as_slice())), k, &q, m)?;
         let (d, l) = (delta_mod(delta, &q, m)?, index_mod(lagrange, &q, m)?);
         let (mut w, mut cy) = (vec![Word::ZERO; k], vec![Word::ZERO; k]);
         py.detach(|| {
             let c0: Vec<&[_]> = parsed.iter().map(|p| p.1.as_slice()).collect();
             let c1: Vec<&[_]> = parsed.iter().map(|p| p.2.as_slice()).collect();
-            let hr: Vec<&[_]> = hats.iter().map(|v| v.as_slice()).collect();
+            let hr: Vec<&[_]> = hats.iter().map(|v| &v[..]).collect();
             threshold::share_partial_k(r, eta, &c0, &c1, &ym, &hr, &zv, d, l, &ev, &mut w, &mut cy);
         });
-        wipe_words(&mut zv);
-        wipe_words(&mut ev);
         let wb = value_bytes(m.bits);
         Ok((values_bytes(py, &w, wb), values_bytes(py, &cy, wb), k))
     })

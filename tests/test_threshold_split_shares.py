@@ -285,3 +285,45 @@ def test_binary_partial_digests_known_answer():
     assert ct_digest == hashlib.sha256(
         b"pyfe4ai/tmcfe-ring-lwe/ct-digest/v2|" + b"".join(name(n) + (2).to_bytes(4, "big") + digests[1] + digests[2]
                                                           for n in (b'"a"', b'"b"'))).hexdigest()
+
+
+@pytest.mark.parametrize("split", [False, True])
+def test_binary_replicated_shares_with_a_server_assigned_no_piece(split):
+    """All three servers enrolled at t = 2: one is assigned no piece (its sum
+    is 0, in the binary layout of its pieces); the result decrypts and both
+    backends agree."""
+    kg, pp = _setup(t=2, sharing="replicated")
+    clients = {nid: _obj(pp, nid, kg) for nid in NIDS}
+    cts = {nid: cl.encrypt([[1, 2, 3]], "L") for nid, cl in clients.items()}
+    creds = {"fusion_weight": WEIGHTS, "label": "L", **({"key_part": "label"} if split else {})}
+    dks = {sid: kg.get_decryption_keys(sid, credentials=creds) for sid in SIDS}
+    out = {}
+    for name in BACKENDS:
+        with native_backend.backend(name):
+            srv = _servers(kg, pp) if split else {sid: _obj(pp, sid) for sid in SIDS}
+            parts = {sid: srv[sid].share_decrypt(cts, creds, dks[sid], SIDS) for sid in SIDS}
+            assert srv["s0"].combine_decrypt(parts) == [sum(WEIGHTS[nid][0] * v for nid in NIDS) for v in (1, 2, 3)]
+        out[name] = parts
+    if NATIVE:
+        assert out["python"] == out["native"]
+
+
+def test_the_generators_weight_store_is_bounded(monkeypatch):
+    """The key generator keeps the sharings of sk_y for the last
+    WEIGHT_SHARINGS_KEPT weights; weights issued again after that get a new
+    share set, which servers holding the old weight part refuse."""
+    monkeypatch.setattr(tm, "WEIGHT_SHARINGS_KEPT", 1)
+    kg, pp = _setup(t=3)
+    other = {nid: [2] for nid in NIDS}
+    first = kg.get_weight_key_share("s0", credentials={"fusion_weight": WEIGHTS})
+    kg.get_weight_key_share("s0", credentials={"fusion_weight": other})
+    assert len(kg.dict_weight_shares) == 1
+    again = kg.get_weight_key_share("s0", credentials={"fusion_weight": WEIGHTS})
+    assert again["share_set_id"] != first["share_set_id"]
+    clients = {nid: _obj(pp, nid, kg) for nid in NIDS}
+    cts = {nid: cl.encrypt([[1, 2, 3]], "L") for nid, cl in clients.items()}
+    creds = {"fusion_weight": WEIGHTS, "label": "L", "key_part": "label"}
+    srv = _obj(pp, "s0")
+    srv.add_weight_key_share(first)
+    with pytest.raises(FEKeyError, match="add_weight_key_share"):
+        srv.share_decrypt(cts, creds, kg.get_decryption_keys("s0", credentials=creds), SIDS)

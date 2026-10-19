@@ -49,7 +49,16 @@ compatibility).
   profile, 3 clients, 10^4 values, 1 thread: per-round key shares 3.38 MB
   and about 45 ms -> 443 KB and 16 ms (`s = t = 3`), 6.75 MB -> 886 KB and
   13 ms (`t = 2`); with RNS and binary ciphertexts a server's partial
-  decryption takes 7 ms (`NTT(sk_y)` cached across labels).
+  decryption takes 7 ms (`NTT(sk_y)` cached across labels). The key
+  generator keeps the sharings of `sk_y` for the last 64 weights.
+  Crypto-review fixes: secrets of the native partial decryptions (z, the
+  noise and its key material, NTT(key share) and its copies, `ntt_mont`'s
+  buffers) are wiped on every path; key material mixing binary and value
+  polynomials is dealt as values (natively as in Python); malformed key
+  shares (other polynomial kinds, mixed replicated pieces) raise
+  `FEKeyError`; clients, servers and combiners refuse public parameters
+  changed in place after they were made; the weight-share stores and caches
+  are locked.
 - **`sife/fullysec_ring_lwe`: opt-in packed layout** (`ndarray_layout =
   "packed"`, experimental: the leveraging argument is the project's own,
   independently checked, not externally reviewed). A ciphertext holds an
