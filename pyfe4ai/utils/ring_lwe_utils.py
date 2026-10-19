@@ -669,6 +669,115 @@ def decode_binary_ciphertext(data, q, eta: int, ring_n: int) -> tuple:
     return rows[:eta], rows[eta]
 
 
+#: Binary format 2, of the threshold Ring-LWE MCFE with ``ct_format="binary"``
+#: public parameters (:func:`encode_threshold_ciphertext`).
+_BIN2_VERSION = 2
+_BIN2_HEADER = 14
+
+
+def _bin2_head(wb: int, eta: int, ring_n: int, k: int) -> bytes:
+    return _BIN_MAGIC + bytes([_BIN2_VERSION, wb, eta & 0xFF, eta >> 8, ring_n.bit_length() - 1, 0]) + int(
+        k).to_bytes(4, "little")
+
+
+def encode_threshold_ciphertext(ct0: list, ct1: list, k: int, q, ring_n: int) -> bytes:
+    """Binary format 2 of a ciphertext with batch length *k*.
+
+    ``b"PFRL"``, version 2, ``wb = ceil(bits(q) / 8)``, ``eta`` (2 bytes,
+    little-endian), ``log2 ring_n``, a zero byte and ``k`` (4 bytes,
+    little-endian); then the first ``k`` coefficients of each ``ct0`` row and
+    the ``ring_n`` coefficients of ``ct1``, as ``wb``-byte little-endian
+    integers in ``[0, q)``. Decryption reads only the first ``k`` coefficients
+    of ``ct0`` (coefficient-wise), while ``ct1`` enters a ring product.
+    """
+    q = int(q)
+    wb = (q.bit_length() + 7) // 8
+    rows = [row[:k] for row in ct0] + [ct1]
+    return _bin2_head(wb, len(ct0), ring_n, k) + b"".join((int(v) % q).to_bytes(wb, "little") for row in rows for v in row)
+
+
+def threshold_ciphertext_from_format1(data, k: int, q, eta: int, ring_n: int) -> bytes:
+    """Format 2 (:func:`encode_threshold_ciphertext`) of a format-1 ciphertext
+    whose values are below q (as this library writes them; a reader of format
+    2 checks that again).
+
+    Raises:
+        ValueError: If *data* is not a format-1 ciphertext of these parameters.
+    """
+    wb = (int(q).bit_length() + 7) // 8
+    data = bytes(data)
+    head = _BIN_MAGIC + bytes([_BIN_VERSION, wb, eta & 0xFF, eta >> 8, ring_n.bit_length() - 1, 0])
+    row = ring_n * wb
+    if len(data) != _BIN_HEADER + (eta + 1) * row or data[:_BIN_HEADER] != head or not 1 <= k <= ring_n:
+        raise ValueError("not a format-1 ciphertext of these parameters")
+    view = memoryview(data)
+    parts = [_bin2_head(wb, eta, ring_n, k)]
+    parts += [view[_BIN_HEADER + r * row:_BIN_HEADER + r * row + k * wb] for r in range(eta)]
+    parts.append(view[_BIN_HEADER + eta * row:])
+    return b"".join(parts)
+
+
+def threshold_ciphertext_header(data, q, eta: int, ring_n: int) -> int:
+    """The batch length ``k`` of a format-2 ciphertext of these parameters
+    (header and length checked; the values are not).
+
+    Raises:
+        ValueError: If the header or the length does not match.
+    """
+    wb = (int(q).bit_length() + 7) // 8
+    if not isinstance(data, (bytes, bytearray, memoryview)):
+        raise ValueError("a format-2 ciphertext is bytes")
+    data = memoryview(data)
+    if len(data) < _BIN2_HEADER:
+        raise ValueError("not a format-2 ciphertext of these parameters")
+    k = int.from_bytes(data[10:_BIN2_HEADER], "little")
+    if (
+        bytes(data[:10]) != _bin2_head(wb, eta, ring_n, 0)[:10] or not 1 <= k <= ring_n
+        or len(data) != _BIN2_HEADER + (eta * k + ring_n) * wb
+    ):
+        raise ValueError("not a format-2 ciphertext of these parameters")
+    return k
+
+
+def decode_values(data, q, count: int) -> list:
+    """*count* ``ceil(bits(q) / 8)``-byte little-endian integers, each strictly
+    below *q* (a value ``>= q`` would be a second encoding of one below it).
+
+    Raises:
+        ValueError: For another length or a value ``>= q``.
+    """
+    q = int(q)
+    wb = (q.bit_length() + 7) // 8
+    if not isinstance(data, (bytes, bytearray, memoryview)) or len(data) != count * wb:
+        raise ValueError("expected {} values of {} bytes".format(count, wb))
+    data = bytes(data)
+    out = [int.from_bytes(data[i:i + wb], "little") for i in range(0, count * wb, wb)]
+    if any(v >= q for v in out):
+        raise ValueError("a value is not below q")
+    return out
+
+
+def encode_values(values, q) -> bytes:
+    """Integers in ``[0, q)`` (reduced mod q) as ``ceil(bits(q) / 8)``-byte little-endian words."""
+    q = int(q)
+    wb = (q.bit_length() + 7) // 8
+    return b"".join((int(v) % q).to_bytes(wb, "little") for v in values)
+
+
+def decode_threshold_ciphertext(data, q, eta: int, ring_n: int) -> tuple:
+    """``(k, ct0, ct1)`` of a format-2 ciphertext: ``eta`` rows of ``k``
+    coefficients and ``ring_n`` coefficients, all strictly below q.
+
+    Raises:
+        ValueError: If the header, the length or a value does not match.
+    """
+    k = threshold_ciphertext_header(data, q, eta, ring_n)
+    wb = (int(q).bit_length() + 7) // 8
+    data = bytes(data)
+    vals = decode_values(data[_BIN2_HEADER:], q, eta * k + ring_n)
+    return k, [vals[r * k:(r + 1) * k] for r in range(eta)], vals[eta * k:]
+
+
 def canonical_ring_ciphertext(ct, q, eta: int, ring_n: int) -> tuple:
     """Return ``(k, ct0, ct1)`` of a BMMS21 ciphertext with coefficients in ``[0, q)``.
 

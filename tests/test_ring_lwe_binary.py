@@ -108,7 +108,7 @@ def test_formats_are_validated():
         "n": 2, "lst_nid": nids, "s": 2, "t": 2, "lst_sid": sids, "eta": 1, "ring_n": 16,
         "sec_param": 64, "bound_x": 2, "bound_y": 2})
     kg.setup()
-    with pytest.raises(FEValidationError):  # tags cover the JSON form
+    with pytest.raises(FEValidationError):  # JSON public parameters: format 2 needs ct_format="binary" at the key generator
         tmcfe_rlwe.ThresholdMCFERingLWE({"id": "c0", "ct_format": "binary",
                                          "keys": {"pp": kg.get_public_parameters()}})
 

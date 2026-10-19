@@ -97,7 +97,11 @@ server changes the result unnoticed. ``combine_decrypt`` accepts partial
 decryptions for several enrolled sets and raises if they disagree (see
 :func:`~pyfe4ai.schemes.threshold_utils.combine_consistently`). In
 tMIFE-LWE, tMCFE-Ring-LWE and tMCFE-FH-Multi-IPE, servers only decrypt
-ciphertexts carrying their clients' MAC tags.
+ciphertexts carrying their clients' MAC tags. With the opt-in binary
+ciphertexts of tMCFE-Ring-LWE (``ct_format="binary"``) the tags also cover
+the digest of the public parameters, and the encoding is unique (values
+strictly below ``q``), so that the flooding noise, seeded with the
+ciphertexts' bytes, cannot be redrawn by re-encoding a ciphertext.
 
 ML adapter
 ----------

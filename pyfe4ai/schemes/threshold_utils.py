@@ -1120,6 +1120,40 @@ def check_ciphertext_tags(dict_ct: dict, mac_keys: dict, sid: str, domain: str, 
             )
 
 
+def tag_ciphertext_message(ct: dict, mac_keys: dict, message: bytes) -> dict:
+    """Add ``tags`` to *ct*: HMAC-SHA256 (hex) of the raw *message* under each
+    server's key of *mac_keys*, and return it (binary ciphertexts, whose tag
+    messages are bytes rather than JSON)."""
+    ct["tags"] = {sid: hmac.new(bytes.fromhex(key), message, hashlib.sha256).hexdigest() for sid, key in mac_keys.items()}
+    return ct
+
+
+def check_ciphertext_tag_messages(dict_ct: dict, mac_keys: dict, sid: str, message_of) -> None:
+    """:func:`check_ciphertext_tags` for tags over raw messages
+    (:func:`tag_ciphertext_message`): ``message_of(nid, ct)`` returns the
+    bytes a ciphertext's tag covers, or raises ``ValueError`` (``KeyError``,
+    ``TypeError``) for a malformed one.
+
+    Raises:
+        FESchemeError: For a missing, malformed or wrong tag.
+    """
+    for nid, ct in dict_ct.items():
+        ok = False
+        tags = ct.get("tags") if isinstance(ct, dict) else None
+        tag = tags.get(sid) if isinstance(tags, dict) else None
+        key = (mac_keys or {}).get(nid)
+        if isinstance(tag, str) and isinstance(key, str):
+            try:
+                expected = hmac.new(bytes.fromhex(key), message_of(nid, ct), hashlib.sha256).hexdigest()
+                ok = hmac.compare_digest(tag.encode("utf-8"), expected.encode("utf-8"))
+            except (KeyError, TypeError, ValueError):
+                ok = False
+        if not ok:
+            raise FESchemeError(
+                "the ciphertext of {} is not authenticated for server {}".format(nid, sid)
+            )
+
+
 def check_fusion_weight(dk: dict, fusion_weight: dict) -> None:
     """Raise unless *fusion_weight* are the weights the key share *dk* is for."""
     if dk.get("weights_id") != fusion_weight_id(fusion_weight):

@@ -28,6 +28,7 @@ mod ec;
 mod msm;
 mod pairing;
 mod replicated;
+mod threshold;
 
 // ------------------------------------------------------------------ DRBG
 
@@ -1869,12 +1870,14 @@ fn share_inputs(py: Python<'_>, ctx: &Bound<'_, RingCtx>, keys: Vec<String>, ks:
 /// ThresholdMCFERingLWE.share_decrypt of one chunk with its noise drawn: (w, c_y)
 /// as decimal strings, from share_inputs' packed ciphertexts, the weights (one
 /// row of eta per client), the NTT(sk share)s of ntt_mont, the z share, Delta,
-/// the Lagrange coefficient and the noise (n values).
+/// the Lagrange coefficient and the noise (n values), or `flood = (bits,
+/// material)` for the uniform noise drawn here (threshold::uniform_flooding).
 #[pyfunction]
+#[pyo3(signature = (ctx, packed, eta, ys, sk_hats, z, delta, lagrange, noise=None, flood=None))]
 #[allow(clippy::too_many_arguments)]
 fn share_partial(py: Python<'_>, ctx: &Bound<'_, RingCtx>, packed: Vec<Vec<u8>>, eta: usize, ys: &Bound<'_, PyAny>,
                  sk_hats: Vec<Vec<u8>>, z: &Bound<'_, PyAny>, delta: &Bound<'_, PyAny>, lagrange: &Bound<'_, PyAny>,
-                 noise: &Bound<'_, PyAny>) -> PyResult<(Py<PyList>, Py<PyList>)> {
+                 noise: Option<&Bound<'_, PyAny>>, flood: Option<(u32, Vec<u8>)>) -> PyResult<(Py<PyList>, Py<PyList>)> {
     let q = ctx.get().q.bind(py).clone();
     let ring = get_ring(ctx);
     if packed.is_empty() || packed.len() != sk_hats.len() || eta == 0 {
@@ -1889,8 +1892,8 @@ fn share_partial(py: Python<'_>, ctx: &Bound<'_, RingCtx>, packed: Vec<Vec<u8>>,
             return Err(PyValueError::new_err("one weight row per client"));
         }
         let ym: Vec<_> = y_rows.iter().flatten().map(|&v| m.to_mont(v)).collect();
-        let zv = read_values(z, Some(n), &q, m, false)?;
-        let ev = read_values(noise, Some(n), &q, m, false)?;
+        let mut zv = threshold::read_poly(z, n, &q, m)?;
+        let mut ev = threshold::noise_values(noise, flood, n, &q, m)?;
         let (d, l) = (delta_mod(delta, &q, m)?, index_mod(lagrange, &q, m)?);
         let (mut w, mut cy) = (vec![Word::ZERO; n], vec![Word::ZERO; n]);
         py.detach(|| {
@@ -1898,6 +1901,8 @@ fn share_partial(py: Python<'_>, ctx: &Bound<'_, RingCtx>, packed: Vec<Vec<u8>>,
             let hr: Vec<&[_]> = hats.iter().map(|v| v.as_slice()).collect();
             rlwe::share_partial(r, eta, &sr, &ym, &hr, &zv, d, l, &ev, &mut w, &mut cy);
         });
+        rlwe::wipe_words(&mut zv);
+        rlwe::wipe_words(&mut ev);
         Ok((DecBuf::new(&w).list(py)?.unbind(), DecBuf::new(&cy).list(py)?.unbind()))
     })
 }
@@ -2065,5 +2070,6 @@ fn _rust_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     pairing::register(m)?;
     rns::register(m)?;
     replicated::register(m)?;
+    threshold::register(m)?;
     Ok(())
 }

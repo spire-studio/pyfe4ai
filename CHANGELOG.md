@@ -9,6 +9,20 @@ compatibility).
 
 ### Added
 
+- **`mcfe/ring_lwe_threshold`: opt-in binary ciphertexts** (key generator
+  config `ct_format = "binary"`, published in the public parameters; JSON
+  stays the default and unchanged). Format 2 truncates the `ct0` rows to the
+  batch length, keeps `ct1` whole and refuses any value `>= q` (a second
+  encoding would let a client redraw the flooding noise for one key part);
+  tags v2 cover the public parameters' digest, the (chunk) label, the label
+  hash code, `k` and SHA-256 digests of the bytes; partial decryptions are
+  binary and cover the first `k` coefficients. `ct_format` enters the key
+  shares' `pp_binding` (JSON digests unchanged), so a key share serves one
+  format; every mix of formats is refused. Under `standard` (3 clients,
+  10^4 values, `s = t = 3`, 1 thread, host): ciphertexts 225 -> 71 bytes per
+  element, partial decryptions 222 -> 54, server 60 -> 19 ms, client 44 ->
+  30 ms. The uniform flooding noise is now drawn natively on both formats
+  (same values).
 - **`sife/fullysec_ring_lwe`: opt-in packed layout** (`ndarray_layout =
   "packed"`, experimental: the leveraging argument is the project's own,
   independently checked, not externally reviewed). A ciphertext holds an

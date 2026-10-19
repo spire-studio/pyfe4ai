@@ -215,6 +215,24 @@ impl<W: Word> Ring<W> {
         }
     }
 
+    /// acc += a b pointwise in the NTT domain, a in the form of forward_mont.
+    #[inline]
+    pub fn pw_mul_add(&self, acc: &mut [W], a: &[W], b: &[W]) {
+        let m = &self.m;
+        for ((s, &x), &y) in acc.iter_mut().zip(a).zip(b) {
+            *s = m.add(*s, m.mul(x, y));
+        }
+    }
+
+    /// out = a b pointwise in the NTT domain, a in the form of forward_mont.
+    #[inline]
+    pub fn pw_mul(&self, out: &mut [W], a: &[W], b: &[W]) {
+        let m = &self.m;
+        for ((o, &x), &y) in out.iter_mut().zip(a).zip(b) {
+            *o = m.mul(x, y);
+        }
+    }
+
     /// The negacyclic product (for tests).
     pub fn poly_mul(&self, a: &[W], b: &[W]) -> Vec<W> {
         let (mut fa, mut fb, mut out) = (vec![W::ZERO; self.n], vec![W::ZERO; self.n], vec![W::ZERO; self.n]);

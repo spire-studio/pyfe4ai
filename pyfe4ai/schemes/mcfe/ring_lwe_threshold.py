@@ -27,8 +27,9 @@ flooding noise ``e_k`` per coefficient smudges it (statistical argument;
 uniform by default, Gaussian ``D_{Z, 2^kappa B}`` selectable, see below),
 with ``q`` enlarged so that ``s`` flooding terms still decode.
 Ciphertexts (and ndarray chunks) carry one HMAC tag per server over the
-(chunk) label and the ciphertext; servers only decrypt ciphertexts tagged
-for them under the label they serve, since ``w_k`` is linear in ``ct1``.
+(chunk) label and the ciphertext (see "Ciphertext format" below); servers
+only decrypt ciphertexts tagged for them under the label they serve, since
+``w_k`` is linear in ``ct1``.
 The noise is seeded with a per-server key (fixed per weights and label),
 ``lambda_k``, the label or chunk, the ``ct1`` values and the key share's
 ``pp_binding`` (the public parameters it is bound to), so a request for
@@ -132,12 +133,36 @@ uniform default), at the same ``ring_n`` 8192. These parameters
 have their own record (``threshold_construction``
 ``bmms21-ibmcfe-shamir-smudging-kl/v2``).
 
+Ciphertext format (key generator config ``ct_format``, a public parameter;
+:data:`CT_FORMATS`): ``"json"`` (default; decimal strings, tags over the
+JSON form, as in versions <= 0.3.0) or the opt-in ``"binary"``: format 2 of
+:func:`~pyfe4ai.utils.ring_lwe_utils.encode_threshold_ciphertext` -- the
+``ct0`` rows truncated to the batch length ``k`` (decryption reads them
+coefficient-wise), ``ct1`` whole, every value a ``ceil(bits(q)/8)``-byte
+word strictly below ``q`` -- and binary partial decryptions of the first
+``k`` coefficients (about 71 and 54 bytes per element at 215 bits instead
+of 225 and 222). Tags (v2) are HMAC-SHA256 under the client-server key of
+:func:`binary_tag_message`: the public parameters' digest
+(:func:`~pyfe4ai.schemes.threshold_utils.pp_binding` over
+:func:`binding_fields`), the (chunk) label, the ciphertext's label hash
+code, ``k`` and SHA-256 digests of the ``ct0`` and ``ct1`` bytes; the noise
+is seeded with digests of the ``ct1`` bytes (:func:`binary_request_digests`).
+A format-2 encoding is unique -- a value ``>= q`` is refused, also under a
+valid tag -- so no client can re-encode one request to draw a second noise
+for the same key part; the first ``k`` noise values are those of the full
+draw (a prefix of the SHAKE stream for the uniform noise), so answers for
+another ``k`` agree on their common coefficients. The format is bound to the
+key shares (``ct_format`` enters ``pp_binding`` where the public parameters
+have it; JSON digests are unchanged): a key share is served in one format
+only. Under binary public parameters JSON ciphertexts, format 1, v1 tags and
+JSON partial decryptions are refused, and under JSON ones every binary form.
+
 With the native backend (:mod:`pyfe4ai.utils.native_backend`; moduli below
 ``2^253``, which includes the flooded ``q`` of the standard profile) the MCFE
 layer, the Shamir sharing of the key, the parsing, digests and NTT-domain
 products of a partial decryption and the combination run natively, with
-the values of the Python code; the flooding noise is drawn by
-:func:`uniform_flooding_poly` (SHAKE-256, in Python), or for the Gaussian by
+the values of the Python code; the uniform flooding noise is drawn natively
+too (:func:`uniform_flooding_poly`'s values), the Gaussian by
 :func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint` (natively too,
 with the same samples).
 """
@@ -168,6 +193,7 @@ from pyfe4ai.schemes.mcfe.ring_lwe import check_ciphertext_label_hashes
 from pyfe4ai.schemes.mcfe.ring_lwe import chunk_key_index
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
 from pyfe4ai.schemes.mcfe.labels import encode_label
+from pyfe4ai.schemes.threshold_utils import check_ciphertext_tag_messages
 from pyfe4ai.schemes.threshold_utils import check_ciphertext_tags
 from pyfe4ai.schemes.threshold_utils import check_pp_binding
 from pyfe4ai.schemes.threshold_utils import check_served_sharing
@@ -176,6 +202,7 @@ from pyfe4ai.schemes.threshold_utils import legacy_shamir_policy
 from pyfe4ai.schemes.threshold_utils import check_fusion_weight
 from pyfe4ai.schemes.threshold_utils import client_server_mac_keys
 from pyfe4ai.schemes.threshold_utils import tag_ciphertext
+from pyfe4ai.schemes.threshold_utils import tag_ciphertext_message
 from pyfe4ai.schemes.threshold_utils import ciphertexts_digest
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.schemes.threshold_utils import pieces_held
@@ -197,6 +224,11 @@ from pyfe4ai.utils.crypto_constants import CryptoCONST
 from pyfe4ai.utils.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.utils.lwe_utils import decode_scaled
 from pyfe4ai.utils.ring_lwe_utils import canonical_ring_ciphertext
+from pyfe4ai.utils.ring_lwe_utils import decode_threshold_ciphertext
+from pyfe4ai.utils.ring_lwe_utils import decode_values
+from pyfe4ai.utils.ring_lwe_utils import encode_values
+from pyfe4ai.utils.ring_lwe_utils import threshold_ciphertext_from_format1
+from pyfe4ai.utils.ring_lwe_utils import threshold_ciphertext_header
 from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul
 from pyfe4ai.utils.ring_lwe_utils import next_ntt_prime
 from pyfe4ai.utils.ring_lwe_utils import poly_add
@@ -241,6 +273,37 @@ _BINDING_FIELDS = (
     "flooding_accounting", "max_partial_decryptions", "stat_param", "label_hash",
 )
 _BINDING_DEFAULTS = {"flooding": "gaussian", "flooding_accounting": "per-sample", "label_hash": "shake256-wide"}
+#: Fields bound only where the public parameters have them (the digests of
+#: public parameters without them, of earlier versions too, stay as they were).
+_OPTIONAL_BINDING_FIELDS = ("ct_format", "q_factors")
+
+
+def binding_fields(pp: dict) -> tuple:
+    """The public-parameter fields a key share of *pp* is bound to:
+    :data:`_BINDING_FIELDS` and those of :data:`_OPTIONAL_BINDING_FIELDS` that
+    *pp* has (``ct_format`` of binary public parameters, ``q_factors`` of an
+    RNS modulus)."""
+    return _BINDING_FIELDS + tuple(f for f in _OPTIONAL_BINDING_FIELDS if f in pp)
+
+
+#: Ciphertext formats of the threshold scheme (key generator config
+#: ``ct_format``, a public parameter): ``"json"`` (default; decimal strings,
+#: tags over the JSON form) and ``"binary"`` (format 2 of
+#: :func:`~pyfe4ai.utils.ring_lwe_utils.encode_threshold_ciphertext`, tags
+#: over its digests, binary partial decryptions).
+CT_FORMATS = ("json", "binary")
+
+
+def pp_ct_format(pp: dict) -> str:
+    """The ciphertext format of threshold public parameters (absent: ``"json"``).
+
+    Raises:
+        FEValidationError: For another value.
+    """
+    fmt = pp.get("ct_format", "json")
+    if fmt not in CT_FORMATS:
+        raise FEValidationError("unknown ciphertext format {!r}; one of {}".format(fmt, ", ".join(CT_FORMATS)))
+    return fmt
 
 
 def _construction_id(sharing: str, flooding: str, accounting: str) -> str | None:
@@ -251,6 +314,12 @@ def _construction_id(sharing: str, flooding: str, accounting: str) -> str | None
     return _CONSTRUCTION_IDS.get((sharing, flooding))
 _TAG_DOMAIN = "pyfe4ai/tmcfe-ring-lwe/ciphertext-tag/v1"
 _UNIFORM_DOMAIN = b"pyfe4ai/tmcfe-ring-lwe/uniform-flooding/v1"
+# binary public parameters (format 2): what the tags and the noise seeds hash
+_TAG_DOMAIN_BIN = b"pyfe4ai/tmcfe-ring-lwe/ciphertext-tag/v2-binary|"
+_CT0_DOMAIN = b"pyfe4ai/tmcfe-ring-lwe/ct0/v2|"
+_CT1_DOMAIN = b"pyfe4ai/tmcfe-ring-lwe/ct1/v2|"
+_KEY_INPUTS_DOMAIN = b"pyfe4ai/tmcfe-ring-lwe/key-inputs/v2|"
+_CT_DIGEST_DOMAIN = b"pyfe4ai/tmcfe-ring-lwe/ct-digest/v2|"
 
 #: Flooding distributions of the partial decryptions.
 FLOODINGS = ("uniform", "gaussian")
@@ -272,6 +341,75 @@ def uniform_flooding_poly(bits: int, ring_n: int, seed: bytes) -> list:
     stream = hashlib.shake_256(_UNIFORM_DOMAIN + len(seed).to_bytes(8, "big") + seed).digest(nb * ring_n)
     from_bytes = int.from_bytes
     return [(from_bytes(stream[i:i + nb], "big") & mask) - offset for i in range(0, nb * ring_n, nb)]
+
+
+def uniform_flooding_material(seed: bytes) -> bytes:
+    """The SHAKE-256 input of :func:`uniform_flooding_poly` for *seed* (the
+    native backend draws the noise from it)."""
+    return _UNIFORM_DOMAIN + len(seed).to_bytes(8, "big") + seed
+
+
+def binary_ciphertext_digests(ct: dict, q, eta: int, ring_n: int) -> tuple:
+    """``(k, d0, d1)`` of a format-2 ciphertext dict: its batch length and
+    ``d0 = SHA-256(domain || header || ct0 rows)``, ``d1 = SHA-256(domain ||
+    ct1)`` (the values are checked when read: :func:`~pyfe4ai.utils.ring_lwe_utils.decode_threshold_ciphertext`).
+
+    Raises:
+        ValueError: Unless ``ct["ct"]`` is a format-2 ciphertext of these
+            parameters whose batch length is ``ct["k"]``.
+    """
+    data = ct["ct"]
+    k = threshold_ciphertext_header(data, q, eta, ring_n)
+    if type(ct.get("k")) is not int or ct["k"] != k:
+        raise ValueError("the ciphertext's k is not its header's")
+    split = 14 + eta * k * ((int(q).bit_length() + 7) // 8)
+    view = memoryview(data)
+    d0 = hashlib.sha256(_CT0_DOMAIN)
+    d0.update(view[:split])
+    d1 = hashlib.sha256(_CT1_DOMAIN)
+    d1.update(view[split:])
+    return k, d0.digest(), d1.digest()
+
+
+def binary_tag_message(pp_digest: bytes, encoded_label: str, ct: dict, digests: tuple) -> bytes:
+    """What the tag of a format-2 ciphertext covers (HMAC-SHA256 under the
+    client-server key): a domain, the digest of the public parameters
+    (:func:`~pyfe4ai.schemes.threshold_utils.pp_binding` over
+    :func:`binding_fields`), the (chunk) label, the ciphertext's ``label_hash``
+    code (for an ndarray chunk its layer's; see :func:`_chunk_with_code`), the
+    batch length and the digests of :func:`binary_ciphertext_digests`.
+
+    Raises:
+        ValueError: For a label hash code that is not a byte.
+    """
+    k, d0, d1 = digests
+    code = ct.get("label_hash", 0)
+    if type(code) is not int or not 0 <= code < 256:
+        raise ValueError("malformed label hash code")
+    label = encoded_label.encode("utf-8")
+    return (_TAG_DOMAIN_BIN + pp_digest + len(label).to_bytes(4, "big") + label + bytes([code])
+            + k.to_bytes(4, "big") + d0 + d1)
+
+
+def _client_ids(dict_ct) -> list:
+    """The client ids of a request as ``(json.dumps(nid) bytes, nid)``, sorted."""
+    return sorted((json.dumps(nid).encode("utf-8"), nid) for nid in dict_ct)
+
+
+def binary_request_digests(digests: dict) -> tuple:
+    """``(ct_digest, key_inputs)`` (hex) of a request of format-2 ciphertexts
+    from their :func:`binary_ciphertext_digests` ``{nid: (k, d0, d1)}``:
+    SHA-256 over the client ids (``json.dumps``, sorted) with ``(k, d0, d1)``
+    each, and over the ids with ``d1`` only -- the values the key part depends
+    on, so the flooding noise is seeded with them (a format-2 encoding is
+    unique: no re-encoding of one request draws fresh noise)."""
+    ct_digest, key_inputs = hashlib.sha256(_CT_DIGEST_DOMAIN), hashlib.sha256(_KEY_INPUTS_DOMAIN)
+    for name, nid in _client_ids(digests):
+        k, d0, d1 = digests[nid]
+        prefix = len(name).to_bytes(4, "big") + name
+        ct_digest.update(prefix + k.to_bytes(4, "big") + d0 + d1)
+        key_inputs.update(prefix + d1)
+    return ct_digest.hexdigest(), key_inputs.hexdigest()
 
 
 def _tag_payload(encoded_label: str, ct: dict) -> list:
@@ -326,7 +464,10 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
                 :func:`~pyfe4ai.schemes.threshold_utils.resolve_sharing`)
                 and, opt-in, ``flooding_accounting = "kl"`` with
                 ``max_partial_decryptions`` (``t = s``, Shamir sharing,
-                Gaussian flooding; see the module docstring).
+                Gaussian flooding; see the module docstring) and
+                ``ct_format`` (one of :data:`CT_FORMATS`, default
+                ``"json"``; ``"binary"`` is published in the public
+                parameters, and their clients and servers use format 2).
                 ``ring_modulus`` must stay ``"prime"``: the flooded ``q``
                 (200+ bits) has no two-factor RNS form, and the flooding
                 sampler, not the NTT, dominates.
@@ -352,6 +493,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         self._threshold_construction = _construction_id(self.sharing, self.flooding, self.flooding_accounting)
         self.lst_sid = config.get("lst_sid", ["sid_{}".format(i) for i in range(s)])
         self.stat_param = int(config.get("stat_param", 64))
+        self.ct_format = pp_ct_format({"ct_format": config.get("ct_format", "json")})
         self.dict_dk = {}
         super().__init__(dict(config, s=s), **kwargs)
         if len(self.lst_sid) != self.s:
@@ -441,7 +583,8 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         self.dict_dk = {}
         self.mac_keys = client_server_mac_keys(self.lst_nid, self.lst_sid)
         self._noise_masters = {sid: secrets.token_hex(32) for sid in self.lst_sid}
-        self._binding = pp_binding(self.get_public_parameters(), _BINDING_FIELDS, _BINDING_DEFAULTS)
+        pp = self.get_public_parameters()
+        self._binding = pp_binding(pp, binding_fields(pp), _BINDING_DEFAULTS)
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
         """Client *nid*'s MCFE keys plus ``mac_keys`` (``{sid: key}``) for the
@@ -454,7 +597,8 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
     def get_public_parameters(self) -> dict:
         """MCFE public parameters plus ``s``, ``t``, ``lst_sid``, ``flooding``,
         ``flood_bits`` (uniform) or ``sigma_f`` (Gaussian), ``sharing``,
-        ``threshold_construction``, ``security_profile`` and, under ``"kl"``,
+        ``threshold_construction``, ``security_profile``, ``ct_format`` (only
+        ``"binary"``; absent means ``"json"``) and, under ``"kl"``,
         ``flooding_accounting``, ``max_partial_decryptions``, ``stat_param`` and
         ``flood_tail_cut``."""
         pp = super().get_public_parameters()
@@ -467,6 +611,8 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             pp["flood_bits"] = self.flood_bits
         else:
             pp["sigma_f"] = str(self.sigma_f)
+        if self.ct_format != "json":  # the public parameters of JSON stay as they were
+            pp["ct_format"] = self.ct_format
         if self.flooding_accounting == KL:
             samples = kl_flooded_samples(self.s, self.max_partial_decryptions, self.ring_n)
             pp.update({
@@ -606,15 +752,29 @@ class ThresholdMCFERingLWE(MCFERingLWE):
     :data:`~pyfe4ai.schemes.threshold_utils.LEGACY_SHAMIR_POLICIES`).
     """
 
-    _binary_ciphertexts = False  # tags cover the JSON form of a ciphertext
+    _binary_ciphertexts = False  # format 1 only as the step before format 2 (binary public parameters)
 
     def __init__(self, config: dict, **kwargs) -> None:
         """As :class:`~pyfe4ai.schemes.mcfe.ring_lwe.MCFERingLWE`; under
         ``flooding_accounting = "kl"`` a server needs ``partial_budget``, the
         :class:`~pyfe4ai.schemes.flooding_accounting.PartialDecryptionBudget`
         that its deployment keeps for it; ``legacy_shamir`` as in the class
-        docstring."""
-        super().__init__(config, **kwargs)
+        docstring. The ciphertext format is that of the public parameters
+        (``ct_format``, :func:`pp_ct_format`); a ``ct_format`` in *config*
+        must name the same.
+
+        Raises:
+            FEValidationError: For a ``ct_format`` other than the public parameters'.
+        """
+        pp = (config.get("keys") or {}).get("pp") or {}
+        self.threshold_format = pp_ct_format(pp)
+        if config.get("ct_format", self.threshold_format) != self.threshold_format:
+            raise FEValidationError(
+                "ct_format {!r} is not the public parameters' {!r}".format(config.get("ct_format"), self.threshold_format)
+            )
+        binary = self.threshold_format == "binary"
+        self._binary_ciphertexts = binary  # the MCFE layer writes format 1, converted to format 2
+        super().__init__(dict(config, ct_format="binary" if binary else "json"), **kwargs)
         self.legacy_shamir = legacy_shamir_policy(config)
         self._partial_budget = config.get("partial_budget")
         flood = kl_flooding(self.pp, self.pp["ring_n"]) if getattr(self, "pp", None) else None
@@ -640,20 +800,40 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             raise FEKeyError("encryption key lacks the ciphertext MAC keys")
         return mac_keys
 
+    def _pp_digest(self) -> str:
+        """:func:`~pyfe4ai.schemes.threshold_utils.pp_binding` of the public parameters (hex)."""
+        return pp_binding(self.pp, binding_fields(self.pp), _BINDING_DEFAULTS)
+
+    def _tag(self, ct: dict, mac_keys: dict, encoded_label: str, coded: dict, pp_digest=None) -> dict:
+        """Tag *ct* for every server: the JSON payload, or for binary public
+        parameters its format-2 form (converted from format 1 here) and
+        :func:`binary_tag_message`. *coded* is *ct* as tagged (with its layer's
+        label hash code)."""
+        if self.threshold_format != "binary":
+            return tag_ciphertext(ct, mac_keys, _TAG_DOMAIN, _tag_payload(encoded_label, coded))
+        q, eta, ring_n = self.pp["q"], self.pp["eta"], self.pp["ring_n"]
+        ct["ct"] = threshold_ciphertext_from_format1(ct["ct"], ct["k"], q, eta, ring_n)
+        coded = dict(coded, ct=ct["ct"])
+        digests = binary_ciphertext_digests(coded, q, eta, ring_n)
+        digest = bytes.fromhex(pp_digest or self._pp_digest())
+        return tag_ciphertext_message(ct, mac_keys, binary_tag_message(digest, encoded_label, coded, digests))
+
     def encrypt(self, matrix_pt: list[list[int]], label: str) -> dict:
-        """MCFE encryption under *label*, tagged for every server."""
+        """MCFE encryption under *label*, tagged for every server (format 2
+        for binary public parameters)."""
         mac_keys = self._mac_keys()
         ct = super().encrypt(matrix_pt, label)
-        return tag_ciphertext(ct, mac_keys, _TAG_DOMAIN, _tag_payload(encode_label(label), ct))
+        return self._tag(ct, mac_keys, encode_label(label), ct)
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
         """Packed ndarray encryption; every chunk is tagged under its chunk label."""
         mac_keys = self._mac_keys()
         out = super().encrypt_lst_ndarray(lst_ndarray, **kwargs)
+        pp_digest = self._pp_digest() if self.threshold_format == "binary" else None
         for layer in out:
             for j, ct in enumerate(layer["chunks"]):
                 encoded = encode_label(chunk_label(kwargs["label"], layer["first_chunk"] + j))
-                tag_ciphertext(ct, mac_keys, _TAG_DOMAIN, _tag_payload(encoded, _chunk_with_code(ct, layer)))
+                self._tag(ct, mac_keys, encoded, _chunk_with_code(ct, layer), pp_digest)
         return out
 
     def share_decrypt(
@@ -712,40 +892,70 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         # (or chunk label) it serves: w is linear in ct1
         tag_label = credentials["label"] if _chunk is None else chunk_label(credentials["label"], _chunk)
         encoded = encode_label(tag_label)
-        check_ciphertext_tags(
-            dict_ct, dk.get("mac_keys"), self.id, _TAG_DOMAIN,
-            lambda nid, ct: _tag_payload(encoded, ct),
-        )
+        binary = self.threshold_format == "binary"
+        q_int, eta, ring_n = int(q), self.pp["eta"], self.pp["ring_n"]
+        digests = {}
+        if binary:  # format 2 only: tags over the parameters' digest, label, code, k and the bytes' digests
+            pp_digest = bytes.fromhex(self._pp_digest())
+
+            def message_of(nid, ct):
+                if not isinstance(ct, dict) or "ct0" in ct or "ct1" in ct:
+                    raise ValueError("not a format-2 ciphertext")
+                digests[nid] = binary_ciphertext_digests(ct, q_int, eta, ring_n)
+                return binary_tag_message(pp_digest, encoded, ct, digests[nid])
+
+            check_ciphertext_tag_messages(dict_ct, dk.get("mac_keys"), self.id, message_of)
+        else:
+            for nid, ct in dict_ct.items():  # no binary ciphertexts under JSON public parameters
+                if isinstance(ct, dict) and "ct" in ct:
+                    raise FESchemeError("the ciphertext of {} is binary; the public parameters' format is JSON".format(nid))
+            check_ciphertext_tags(
+                dict_ct, dk.get("mac_keys"), self.id, _TAG_DOMAIN,
+                lambda nid, ct: _tag_payload(encoded, ct),
+            )
         # the key share of the public parameters' label hash
         self._check_key_label_hash(dk)
-        # ... and of their modulus and flooding (width, tail cut, accounting)
-        binding = check_pp_binding(self.pp, dk, _BINDING_FIELDS, _BINDING_DEFAULTS)
-        ring_n = self.pp["ring_n"]
+        # ... and of their modulus and flooding (width, tail cut, accounting), format and factors
+        binding = check_pp_binding(self.pp, dk, binding_fields(self.pp), _BINDING_DEFAULTS)
         delta = q // gp.mpz(self.pp["p"])
         z_share = share["z"] if _z_share is None else _z_share
         hats = {} if _sk_hats is None else _sk_hats
         ctx = native_backend.ring_context(q, ring_n)
-        native = None if ctx is None else self._native_inputs(ctx, dict_ct, share, fusion_weight, z_share)
-        if native is None:
-            cts = {}
-            for nid, ct in dict_ct.items():
-                try:
-                    cts[nid] = canonical_ring_ciphertext(ct, int(q), self.pp["eta"], ring_n)
-                except FESchemeError as exc:
-                    raise FESchemeError("malformed ciphertext of {}".format(nid)) from exc
-            batch = {k for k, _, _ in cts.values()}
+        native = cts = None
+        if binary:
+            batch = {d[0] for d in digests.values()}
+            ct_digest, key_inputs = binary_request_digests(digests)
         else:
-            nids, ks, packed, ct_digest, key_inputs = native
-            batch = set(ks)
+            native = None if ctx is None else self._native_inputs(ctx, dict_ct, share, fusion_weight, z_share)
+            if native is None:
+                cts = {}
+                for nid, ct in dict_ct.items():
+                    try:
+                        cts[nid] = canonical_ring_ciphertext(ct, q_int, eta, ring_n)
+                    except FESchemeError as exc:
+                        raise FESchemeError("malformed ciphertext of {}".format(nid)) from exc
+                batch = {k for k, _, _ in cts.values()}
+            else:
+                nids, ks, packed, ct_digest, key_inputs = native
+                batch = set(ks)
         if len(batch) != 1:
             raise FESchemeError("ciphertexts of different batch lengths")
+        k = batch.pop()
         # every (authenticated, well-formed) ciphertext of that label hash too:
         # else the result would be wrong, not refused
         check_ciphertext_label_hashes(dict_ct.values(), self.label_hash)
+        if binary and ctx is None:  # the Python reading of format 2 (strict)
+            cts = {}
+            for nid, ct in dict_ct.items():
+                try:
+                    _, ct0, ct1 = decode_threshold_ciphertext(ct["ct"], q_int, eta, ring_n)
+                except ValueError as exc:
+                    raise FESchemeError("malformed ciphertext of {}".format(nid)) from exc
+                cts[nid] = (k, ct0, ct1)
 
-        if native is None:
+        if cts is not None:
             key_part = [delta * gp.mpz(v) % q for v in z_share]
-            c_y = [gp.mpz(0)] * ring_n
+            c_y = [gp.mpz(0)] * len(next(iter(cts.values()))[1][0])  # n (JSON) or k (format 2)
             # sum_i ct1_i sk_i in the NTT domain, NTT(sk_i) cached across chunks
             # (_sk_hats); the same sum mod q as adding poly_mul(ct1_i, sk_i)
             ring = RingNTT.get(q, ring_n)
@@ -763,8 +973,9 @@ class ThresholdMCFERingLWE(MCFERingLWE):
                 acc = ring.mul_add(acc, ring.forward(ct1), hats[nid])
             if acc is not None:
                 key_part = poly_add(key_part, ring.inverse(acc), q)
-            ct_digest = ciphertexts_digest(cts)
-            key_inputs = ciphertexts_digest({nid: ct1 for nid, (_, _, ct1) in cts.items()})
+            if not binary:
+                ct_digest = ciphertexts_digest(cts)
+                key_inputs = ciphertexts_digest({nid: ct1 for nid, (_, _, ct1) in cts.items()})
 
         # the noise is seeded with what the key part depends on -- the ct1
         # values and the key term (the label or chunk) -- so a request for the
@@ -776,28 +987,58 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         # another noise, never the same noise with another key term
         context = json.dumps([key_inputs, encoded, tag, binding]).encode("utf-8")
         seed = bytes.fromhex(dk["noise_key"]) + context
+        # format 2 outputs the first k coefficients only, with the first k noise
+        # values (for the uniform noise a prefix of the SHAKE stream, for the
+        # others those of the full draw): an answer for another k is a prefix
+        # or an extension of this one, never a second noise
+        count = k if binary else ring_n
         flood, budget = self._kl_flooding()
-        if flood is None:
-            noise = self._flooding_noise(ring_n, seed)
-        else:
+        if flood is not None:
             flood.check_sampler()
             budget.consume(1)
-            noise = flood.sample(ring_n, XofRandom(seed))
-        if native is None:
-            w = [gp.digits((multiplier * v + e) % q) for v, e in zip(key_part, noise)]
-            c_y = [gp.digits(v) for v in c_y]
+            noise_args = {"noise": flood.sample(ring_n, XofRandom(seed))[:count]}
+        elif self.pp.get("flooding", LEGACY_FLOODING) == "uniform":
+            width = self._flooding_width()
+            if ctx is not None and width < q.bit_length():  # drawn natively, the same values
+                noise_args = {"flood": (width, uniform_flooding_material(seed))}
+            else:
+                noise_args = {"noise": uniform_flooding_poly(width, count, seed)}
         else:
-            for nid in nids:  # NTT(sk_i share), cached across chunks
+            noise_args = {"noise": self._flooding_noise(ring_n, seed)[:count]}
+        if cts is not None:
+            noise = noise_args.get("noise")
+            if noise is None:
+                noise = uniform_flooding_poly(noise_args["flood"][0], count, seed)
+            values = [(multiplier * v + e) % q for v, e in zip(key_part, noise)]
+            if binary:
+                w, c_y = encode_values(values, q), encode_values(c_y, q)
+            else:
+                w, c_y = [gp.digits(v) for v in values], [gp.digits(v) for v in c_y]
+        else:
+            ids = nids if native is not None else [nid for _, nid in _client_ids(dict_ct)]
+            for nid in ids:  # NTT(sk_i share), cached across chunks
                 if ("native", nid) not in hats:
                     hats[("native", nid)] = ctx.ntt_mont(share["sk_y"][nid])
-            w, c_y = native_backend.ext().share_partial(
-                ctx.cap, packed, self.pp["eta"], [[int(v) for v in fusion_weight[nid]] for nid in nids],
-                [hats[("native", nid)] for nid in nids], z_share, delta, multiplier, noise,
-            )
+            ys = [[int(v) for v in fusion_weight[nid]] for nid in ids]
+            sk_hats = [hats[("native", nid)] for nid in ids]
+            if native is not None:
+                w, c_y = native_backend.ext().share_partial(
+                    ctx.cap, packed, eta, ys, sk_hats, z_share, delta, multiplier, **noise_args,
+                )
+            else:
+                try:
+                    w, c_y, _ = native_backend.ext().share_partial_bin(
+                        ctx.cap, [dict_ct[nid]["ct"] for nid in ids], eta, ys, sk_hats, z_share, delta, multiplier,
+                        **noise_args,
+                    )
+                except ValueError as exc:
+                    if exc.args[:1] == ("malformed ciphertext",):
+                        raise FESchemeError("malformed ciphertext of {}".format(ids[exc.args[1]])) from exc
+                    raise
         return {
             "w": w,
             "c_y": c_y,
-            "k": batch.pop(),
+            "k": k,
             "ct_digest": ct_digest,
             "sid": self.id,
             "lst_sid_enrolled": list(lst_sid_enrolled),
@@ -888,6 +1129,12 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         validate_partial_decryptions(dict_ct_prime, self.pp["t"])
         partials = list(dict_ct_prime.values())
         first = partials[0]
+        # binary public parameters: bytes only; JSON: sequences only
+        binary = self.threshold_format == "binary"
+        values_type = (bytes, bytearray) if binary else (list, tuple)
+        if any(not isinstance(p.get("w"), values_type) or not isinstance(p.get("c_y"), values_type) for p in partials):
+            raise FESchemeError("partial decryptions not in the public parameters' format ({})".format(
+                self.threshold_format))
         if any(
             (p["c_y"], p["ct_digest"], p["k"]) != (first["c_y"], first["ct_digest"], first["k"])
             for p in partials
@@ -901,6 +1148,8 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             * gp.mpz(self.pp["bound_x"]) * gp.mpz(self.pp["bound_y"])
         )
         ctx = native_backend.ring_context(q, self.pp["ring_n"])
+        if binary:
+            return self._combine_binary(ctx, first, partials, q, delta, bound)
         if ctx is not None and type(first["k"]) is int:
             out = native_backend.ext().share_combine(
                 ctx.cap, first["c_y"], [p["w"] for p in partials], delta, bound, first["k"]
@@ -911,6 +1160,32 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         for part in partials:
             total = [(a - gp.mpz(v)) % q for a, v in zip(total, part["w"])]
         return [decode_scaled(v, delta, q, bound) for v in total[: int(first["k"])]]
+
+    def _combine_binary(self, ctx, first: dict, partials: list, q, delta, bound) -> list | None:
+        """:meth:`_combine_group` of binary partial decryptions (``k`` values of
+        ``ceil(bits(q) / 8)`` bytes each, strictly below q).
+
+        Raises:
+            FESchemeError: For a malformed partial decryption.
+        """
+        k = first["k"]
+        if type(k) is not int or not 1 <= k <= self.pp["ring_n"]:
+            raise FESchemeError("malformed partial decryption")
+        if ctx is not None:
+            try:
+                out = native_backend.ext().share_combine_bin(
+                    ctx.cap, bytes(first["c_y"]), [bytes(p["w"]) for p in partials], delta, bound, k)
+            except ValueError as exc:
+                raise FESchemeError("malformed partial decryption") from exc
+            if out is not None:  # else a value beyond an int64: decoded below
+                return out
+        try:
+            total = decode_values(first["c_y"], q, k)
+            for part in partials:
+                total = [(a - v) % q for a, v in zip(total, decode_values(part["w"], q, k))]
+        except ValueError as exc:
+            raise FESchemeError("malformed partial decryption") from exc
+        return [decode_scaled(gp.mpz(v), delta, q, bound) for v in total]
 
     def compute_lst_ndarray_ct(
         self, dict_ndarray_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list
