@@ -67,7 +67,18 @@ compatibility).
   are locked, and their locks (and `native_backend`'s context lock) are
   replaced in a forked child, as the parent's may be held at the fork; the
   native readings of a key share whose value list holds bytes raise
-  `FEKeyError` too.
+  `FEKeyError` too. Re-check fixes: every key-share polynomial is checked to
+  be `ring_n` values or `ring_n` words when dealt and when served, and values
+  must be ints or decimal strings (a short `z` no longer gives a shorter
+  answer, floats are no longer truncated; `FEKeyError` on both backends);
+  combiners check that JSON partials hold `k` values; a label part cached by
+  the key generator is issued again for the current share set once the
+  weights' sharing was dropped (`WEIGHT_SHARINGS_KEPT`).
+- Pickled scheme objects are not portable across versions of pyfe4ai (keep
+  them within one version, e.g. for multiprocessing or Ray): the threshold
+  Ring-LWE MCFE key generator, clients and servers record a state version and
+  refuse a state pickled by another version with a clear error (create the
+  object again).
 - **`sife/fullysec_ring_lwe`: opt-in packed layout** (`ndarray_layout =
   "packed"`, experimental: the leveraging argument is the project's own,
   independently checked, not externally reviewed). A ciphertext holds an

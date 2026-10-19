@@ -365,6 +365,8 @@ def _share_replicated_native(material, sets: list, modulus: gp.mpz, binary: bool
     except TypeError:  # values other than ints and decimal strings: the Python code reads them
         return None
     except ValueError as exc:
+        if binary and "binary values" in str(exc):  # bytes that are not whole words below q
+            raise FEKeyError("malformed binary key material") from exc
         if rnd is None:
             raise
         raise RuntimeError(
@@ -435,6 +437,21 @@ def _bytes_leaves(material):
     elif isinstance(material, (list, tuple)):
         for value in material:
             yield from _bytes_leaves(value)
+
+
+def strict_mpz(value):
+    """A key-share value as ``mpz``: an int, an ``mpz`` or a decimal string
+    (floats and other types are refused rather than truncated).
+
+    Raises:
+        FEKeyError: For any other value.
+    """
+    if isinstance(value, float) or not (isinstance(value, (int, str)) or type(value).__name__ == "mpz"):
+        raise FEKeyError("malformed key share: values are ints or decimal strings, not {}".format(type(value).__name__))
+    try:
+        return gp.mpz(value)
+    except (ValueError, TypeError) as exc:
+        raise FEKeyError("malformed key share value") from exc
 
 
 def poly_kinds(material) -> set:
@@ -577,7 +594,14 @@ def share_replicated(
         from pyfe4ai.utils.ring_lwe_utils import decode_values
 
         width = _value_bytes(modulus)
-        material = _map_bytes(material, lambda leaf: decode_values(leaf, modulus, len(leaf) // width))
+
+        def decode(leaf):
+            try:
+                return decode_values(leaf, modulus, len(leaf) // width)
+            except ValueError as exc:
+                raise FEKeyError("malformed binary key material") from exc
+
+        material = _map_bytes(material, decode)
     if binary:
         return {T: binary_material(piece, modulus) for T, piece in share_replicated(material, threshold, points, modulus).items()}
 
@@ -1060,7 +1084,7 @@ def share_for_enrolled(
                 try:
                     total = _map_values(template, lambda _: gp.mpz(0))
                     for piece in chosen:
-                        total = _zip_values(total, piece, lambda a, b: (a + gp.mpz(b)) % modulus)
+                        total = _zip_values(total, piece, lambda a, b: (a + strict_mpz(b)) % modulus)
                 except (ValueError, TypeError) as exc:
                     raise FEKeyError("malformed key pieces") from exc
                 summed = _map_values(total, gp.digits)

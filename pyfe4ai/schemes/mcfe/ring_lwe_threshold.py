@@ -178,11 +178,17 @@ independent of the keys, and the noise is seeded as for a full key share;
 parameters every polynomial of the Shamir and replicated key shares is bytes
 (``ceil(bits(q)/8)``-byte words, strictly below ``q``; the seeded sharing keeps
 decimal strings). Key material mixing both kinds is dealt as values; key shares
-whose polynomials are of another kind (e.g. ``memoryview``), or replicated
-pieces mixing kinds, are refused (``FEKeyError``). The key generator keeps the
-sharings of ``sk_y`` for the last :data:`WEIGHT_SHARINGS_KEPT` weights: weights
-issued again after that come with a new share set, which servers holding the
+whose polynomials are of another kind (e.g. ``memoryview``) or length, hold
+values other than ints and decimal strings, or replicated pieces mixing kinds,
+are refused (``FEKeyError``). The key generator keeps the sharings of ``sk_y``
+for the last :data:`WEIGHT_SHARINGS_KEPT` weights: weights issued again after
+that come with a new share set -- their weight part and every label part
+issued from then on, cached label parts included -- which servers holding the
 old weight part refuse until given the new one.
+
+The threshold objects (key generator, clients, servers) are not portable across
+versions of pyfe4ai: a state pickled by another version is refused when loaded
+(create the object again).
 
 Modulus (key generator config ``ring_modulus``): an NTT prime (default) or
 the opt-in ``"rns"``: ``q`` the product of NTT primes below ``2^62``, as
@@ -257,6 +263,7 @@ from pyfe4ai.schemes.threshold_utils import ciphertexts_digest
 from pyfe4ai.schemes.threshold_utils import fusion_weight_id
 from pyfe4ai.schemes.threshold_utils import pieces_held
 from pyfe4ai.schemes.threshold_utils import poly_kinds
+from pyfe4ai.schemes.threshold_utils import strict_mpz
 from pyfe4ai.schemes.threshold_utils import uniform_material
 from pyfe4ai.schemes.threshold_utils import seeded_pieces_held
 from pyfe4ai.schemes.threshold_utils import share_cache
@@ -480,12 +487,27 @@ def _poly_values(poly, q, ring_n: int) -> list:
             return [gp.mpz(v) for v in decode_values(poly, q, ring_n)]
         except ValueError as exc:
             raise FEKeyError("malformed binary key share") from exc
-    if not isinstance(poly, (list, tuple)):
-        raise FEKeyError("malformed key share: a polynomial is a list of values or bytes")
-    try:
-        return [gp.mpz(v) for v in poly]
-    except (ValueError, TypeError) as exc:
-        raise FEKeyError("malformed key share") from exc
+    if not isinstance(poly, (list, tuple)) or len(poly) != ring_n:
+        raise FEKeyError("malformed key share: a polynomial is ring_n values or ring_n words of bytes")
+    return [strict_mpz(v) for v in poly]
+
+
+def _check_key_polys(polys, q, ring_n: int) -> None:
+    """Raise unless every polynomial is ``ring_n`` values (a list or tuple) or
+    ``ring_n`` words of ``ceil(bits(q)/8)`` bytes: a shorter one would be
+    served as a shorter answer, a longer one read in part.
+
+    Raises:
+        FEKeyError: Otherwise.
+    """
+    words = ring_n * ((int(q).bit_length() + 7) // 8)
+    for poly in polys:
+        if isinstance(poly, (bytes, bytearray)):
+            ok = len(poly) == words
+        else:
+            ok = isinstance(poly, (list, tuple)) and len(poly) == ring_n
+        if not ok:
+            raise FEKeyError("malformed key share: a polynomial is ring_n values or ring_n words of bytes")
 
 
 #: Guards the weight-share stores and the NTT(sk_y) cache (key generators and
@@ -500,6 +522,30 @@ def _reset_store_lock() -> None:
 
 if hasattr(os, "register_at_fork"):
     os.register_at_fork(after_in_child=_reset_store_lock)
+
+#: The version of the pickled state of the threshold objects: a state pickled
+#: by another version of pyfe4ai (other attributes, other derivations) is
+#: refused when loaded.
+_STATE_VERSION = "pyfe4ai/tmcfe-ring-lwe/state/2026-10"
+
+
+def _versioned_state(state: dict) -> dict:
+    return dict(state, _state_version=_STATE_VERSION)
+
+
+def _check_state(obj, state: dict) -> None:
+    """Load *state* into *obj*, refusing one pickled by another version.
+
+    Raises:
+        FESchemeError: For a state of another version (or of none).
+    """
+    if not isinstance(state, dict) or state.get("_state_version") != _STATE_VERSION:
+        raise FESchemeError(
+            "this {} was pickled by an incompatible version of pyfe4ai; create the object again".format(
+                type(obj).__name__)
+        )
+    obj.__dict__.update(state)
+
 
 #: Weights whose shares of ``sk_y`` a key generator keeps (least recently used
 #: out): a label part for weights no longer kept comes with a new share set,
@@ -723,6 +769,12 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(param, f)
 
+    def __getstate__(self) -> dict:
+        return _versioned_state(super().__getstate__())
+
+    def __setstate__(self, state) -> None:
+        _check_state(self, state)
+
     def setup(self) -> None:
         """MCFE setup and the client-server MAC keys; forgets previously shared keys."""
         super().setup()
@@ -821,25 +873,29 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
                 raise FEValidationError("a label key share needs the label's term or chunk keys")
             ident += [part, label_term]
         ident = json.dumps(ident)
-        if ident not in self.dict_dk:
-            if part == "label":
-                self.dict_dk[ident] = self._label_part(credentials, weights_id, n_chunks, label_term)
-            else:
-                key = super().get_decryption_keys(sid, credentials=credentials)
-                self.dict_dk[ident] = self._share_key(key, weights_id)
+        if part == "label":
+            # of the weights' current share set: a cached label part whose sharing of sk_y was
+            # evicted (WEIGHT_SHARINGS_KEPT) is issued again, for the new set
+            entry = self._weight_entry(credentials.get("fusion_weight"))
+            cached = self.dict_dk.get(ident)
+            if cached is None or cached[sid].get("share_set_id") != entry["share_set_id"]:
+                self.dict_dk[ident] = self._label_part(credentials, weights_id, n_chunks, label_term, entry)
+        elif ident not in self.dict_dk:
+            key = super().get_decryption_keys(sid, credentials=credentials)
+            self.dict_dk[ident] = self._share_key(key, weights_id)
         dk = dict(self.dict_dk[ident][sid])
         dk.update(self._share_fields(sid, weights_id))
         return dk
 
-    def _label_part(self, credentials: dict, weights_id: str, n_chunks: int, label_term: bool) -> dict:
+    def _label_part(self, credentials: dict, weights_id: str, n_chunks: int, label_term: bool, entry: dict) -> dict:
         """``{sid: label part}``: shares of the terms ``z''`` of the label (if
         *label_term*) and of its chunks, computed for these labels only (binary
-        end to end for binary public parameters)."""
+        end to end for binary public parameters), of the share set of *entry*
+        (:meth:`_weight_entry`)."""
         label = credentials.get("label")
         if not isinstance(label, str):
             raise FEValidationError("identity-based MCFE keys need a string label")
         fusion_weight = credentials.get("fusion_weight")
-        entry = self._weight_entry(fusion_weight)
         labels = ([label] if label_term else []) + [chunk_label(label, c) for c in range(n_chunks)]
         binary = self.ct_format == "binary" and self.sharing != "replicated-seeded"
         # the terms on the MIFE key's z (validated weights; sk_y is the weight part's)
@@ -906,8 +962,14 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         }
         with _STORE_LOCK:  # of two threads making it, both return the one kept
             entry = store.setdefault(weights_id, made)
+            evicted = []
             while len(store) > WEIGHT_SHARINGS_KEPT:
-                store.popitem(last=False)
+                evicted.append(store.popitem(last=False)[0])
+        if evicted:  # their cached label parts belong to sharings that are gone
+            for ident in list(self.dict_dk):
+                key = json.loads(ident)
+                if len(key) > 3 and key[0] in evicted:
+                    self.dict_dk.pop(ident, None)
         return entry
 
     def _share_fields(self, sid: str, weights_id: str) -> dict:
@@ -941,6 +1003,12 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         sid_v = share_points(self.lst_sid)
         points = list(sid_v.values())
         binary = self.ct_format == "binary" and self.sharing != "replicated-seeded"
+        try:  # every polynomial ring_n values or ring_n words (a misaligned one is never dealt)
+            polys = list(material.get("sk_y", {}).values()) + ([material["z"]] if "z" in material else []) + list(
+                material.get("z_chunks", []))
+        except (AttributeError, TypeError) as exc:
+            raise FEKeyError("malformed key material") from exc
+        _check_key_polys(polys, self.q, self.ring_n)
         if self.sharing == "replicated":
             pieces = share_replicated(material, self.t, points, self.q, binary=binary)
             return {sid: {"sharing": "replicated", "pieces": pieces_held(pieces, sid_v[sid])} for sid in self.lst_sid}
@@ -956,8 +1024,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         shared = self._share_polys_native(polys, points, binary)
         if shared is None:
             def share_poly(coeffs) -> dict:
-                values = _poly_values(coeffs, self.q, self.ring_n) if isinstance(coeffs, (bytes, bytearray)) else coeffs
-                shares = [share_secret(gp.mpz(v), self.t, points, self.q) for v in values]
+                shares = [share_secret(v, self.t, points, self.q) for v in _poly_values(coeffs, self.q, self.ring_n)]
                 if binary:
                     return {sid: encode_values([sh[sid_v[sid]] for sh in shares], self.q) for sid in self.lst_sid}
                 return {sid: [gp.digits(sh[sid_v[sid]]) for sh in shares] for sid in self.lst_sid}
@@ -1004,11 +1071,14 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             raise FEKeyError("key material mixing binary and value polynomials")
         else:
             flat = [v for poly in polys for v in poly]
-        out = native_backend.ext().shamir_share(
-            ctx.cap, flat, self.t, points,
-            native_backend.random_input(4 * width * len(flat) * (self.t - 1) + 64),
-            **native_backend.seed_kwargs(), **({"binary": True} if binary else {}),
-        )
+        try:
+            out = native_backend.ext().shamir_share(
+                ctx.cap, flat, self.t, points,
+                native_backend.random_input(4 * width * len(flat) * (self.t - 1) + 64),
+                **native_backend.seed_kwargs(), **({"binary": True} if binary else {}),
+            )
+        except (ValueError, TypeError) as exc:  # values that are not ints / decimal strings, or not below q
+            raise FEKeyError("malformed key material") from exc
         unit = width if binary else 1
         shared, start = [], 0
         for poly in polys:
@@ -1139,7 +1209,10 @@ class ThresholdMCFERingLWE(MCFERingLWE):
     def __getstate__(self) -> dict:
         state = super().__getstate__()
         state.pop("_hat_cache", None)  # native contexts
-        return state
+        return _versioned_state(state)
+
+    def __setstate__(self, state) -> None:
+        _check_state(self, state)
 
     def add_weight_key_share(self, share: dict) -> None:
         """Keep this server's weight key share
@@ -1315,8 +1388,9 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         z_share = share.get("z") if _z_share is None else _z_share
         if z_share is None:
             raise FEKeyError("the key share has no term of the label itself (label_term=False): chunks only")
-        if "other" in poly_kinds([z_share, share["sk_y"]]):  # e.g. memoryview: neither values nor bytes
-            raise FEKeyError("malformed key share: polynomials must be value lists or bytes")
+        if not isinstance(share.get("sk_y"), dict) or "other" in poly_kinds([z_share, share["sk_y"]]):
+            raise FEKeyError("malformed key share: polynomials must be value lists or bytes")  # e.g. memoryview
+        _check_key_polys([z_share, *share["sk_y"].values()], q, ring_n)
         hats = {} if _sk_hats is None else _sk_hats
         ctx = _native_ring(q, ring_n)
         native = cts = None
@@ -1554,6 +1628,10 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         ctx = _native_ring(q, self.pp["ring_n"])
         if binary:
             return self._combine_binary(ctx, first, partials, q, delta, bound)
+        k = first["k"]  # JSON: every partial holds at least k values (a shorter one would give a shorter result)
+        if type(k) is not int or not 1 <= k <= self.pp["ring_n"] or any(
+                len(p["w"]) < k or len(p["c_y"]) < k for p in partials):
+            raise FESchemeError("malformed partial decryption")
         if ctx is not None and type(first["k"]) is int:
             out = native_backend.ext().share_combine(
                 ctx.cap, first["c_y"], [p["w"] for p in partials], delta, bound, first["k"]

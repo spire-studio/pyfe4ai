@@ -128,6 +128,7 @@ impl RnsRing {
         let mut out = vec![0u64; 2 * self.n];
         self.split(x, &mut r);
         self.forward_mont(&r, &mut out);
+        wipe_words(&mut r); // the residues of a key (share)
         out
     }
 

@@ -23,8 +23,9 @@ docs/review/crypto_review_2026-10_tmcfe_recheck.md). Fail on 02ae981:
 * I11 (info): objects pickled by b51989f (no ``ct_format`` / ``threshold_format``
   / ``_pp_snapshot``) do not work after loading: ``AttributeError`` since
   5af955b, ``FESchemeError("the public parameters changed ...")`` since 02ae981
-  for clients and servers, although nothing changed. Whether old pickles must
-  load is a compatibility decision; the test encodes "they keep working".
+  for clients and servers, although nothing changed. Coordinator's decision:
+  no compatibility layer, a clear error when such a pickle is loaded (the test
+  was changed accordingly with the fix).
 """
 
 from __future__ import annotations
@@ -187,28 +188,38 @@ def test_i10_a_cached_label_part_is_served_after_its_sharing_was_evicted(monkeyp
     assert _obj(pp, "agg").combine_decrypt(parts) == [3, 6, 9]
 
 
-def _as_b51989f(obj, missing):
-    """*obj* as a pickle of b51989f loads: without the attributes added since."""
-    state = dict(obj.__getstate__() or obj.__dict__)
-    for name in missing:
-        state.pop(name, None)
-    old = object.__new__(type(obj))
-    old.__dict__.update(state)
-    return pickle.loads(pickle.dumps(old))
+def _b51989f_pickle(obj, missing, monkeypatch):
+    """A pickle of *obj* as b51989f wrote it: its state without the attributes
+    added since (and without a state version)."""
+    state = {k: v for k, v in obj.__getstate__().items() if k not in missing and k != "_state_version"}
+    with monkeypatch.context() as m:
+        m.setattr(type(obj), "__getstate__", lambda self: state)
+        return pickle.dumps(obj)
 
 
-def test_i11_objects_pickled_by_b51989f_keep_working():
+def test_i11_objects_pickled_by_b51989f_are_refused_clearly(monkeypatch):
+    """Coordinator's decision (2026-10-19, the user can override): pickled scheme
+    objects are not portable across versions (b51989f is unreleased; v0.3.0
+    threshold key shares are refused anyway), so no compatibility layer, but a
+    clear error when such a pickle is loaded instead of an AttributeError or a
+    misleading "public parameters changed"."""
+    from pyfe4ai.utils.exceptions import FESchemeError
+
     kg, pp = _setup(t=2, sharing="replicated")
     client = _obj(pp, "c0", kg.get_private_keys("c0"))
     server = _obj(pp, "s0")
-    old_kg = _as_b51989f(kg, ("ct_format", "dict_weight_shares"))
-    old_client = _as_b51989f(client, ("_binary_ciphertexts", "_pp_snapshot", "threshold_format"))
-    old_server = _as_b51989f(server, ("_binary_ciphertexts", "_pp_snapshot", "threshold_format"))
+    for obj, missing in ((kg, ("ct_format", "dict_weight_shares")),
+                         (client, ("_binary_ciphertexts", "_pp_snapshot", "threshold_format")),
+                         (server, ("_binary_ciphertexts", "_pp_snapshot", "threshold_format"))):
+        data = _b51989f_pickle(obj, missing, monkeypatch)
+        with pytest.raises(FESchemeError, match="incompatible version of pyfe4ai"):
+            pickle.loads(data)
+    # pickles of this version load and work
     creds = {"fusion_weight": {nid: [1] for nid in NIDS}, "label": "L"}
     cts = {nid: _obj(pp, nid, kg.get_private_keys(nid)).encrypt([[1, 2, 3]], "L") for nid in NIDS}
-    old_client.encrypt([[1, 2, 3]], "M")
-    old_server.share_decrypt(cts, creds, kg.get_decryption_keys("s0", credentials=creds), SIDS[:2])
-    old_kg.get_decryption_keys("s0", credentials={"fusion_weight": {nid: [1] for nid in NIDS}, "label": "N"})
+    pickle.loads(pickle.dumps(client)).encrypt([[1, 2, 3]], "M")
+    pickle.loads(pickle.dumps(server)).share_decrypt(cts, creds, kg.get_decryption_keys("s0", credentials=creds), SIDS[:2])
+    pickle.loads(pickle.dumps(kg)).get_decryption_keys("s0", credentials={"fusion_weight": {nid: [1] for nid in NIDS}, "label": "N"})
 
 
 def test_i10_i11_controls_pass_on_the_fix():

@@ -484,6 +484,9 @@ pub fn share_partial<W: Word>(
         }
         c_y[i] = cy;
     }
+    // the key part: the products of the ciphertexts with the key shares
+    wipe_words(&mut acc);
+    wipe_words(&mut kp);
 }
 
 /// ThresholdMCFERingLWE._combine_group: c_y - sum_k w_k mod q, decoded (see
