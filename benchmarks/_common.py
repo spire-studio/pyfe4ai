@@ -47,7 +47,16 @@ BENCHMARK_HEADER = [
 
 
 def size_bytes(obj: object) -> int:
-    return len(json.dumps(obj, sort_keys=True, default=str).encode("utf-8"))
+    """Size of *obj* as JSON, bytes values (binary formats) counted at their length."""
+    raw = []
+
+    def default(value):
+        if isinstance(value, (bytes, bytearray)):
+            raw.append(len(value))
+            return ""
+        return str(value)
+
+    return len(json.dumps(obj, sort_keys=True, default=default).encode("utf-8")) + sum(raw)
 
 
 def size_summary(values: list[int]) -> tuple[int, int]:

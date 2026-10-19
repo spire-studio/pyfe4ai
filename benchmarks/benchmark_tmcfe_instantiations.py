@@ -60,6 +60,9 @@ def _run_case(case: dict, rounds: int) -> dict:
         for sid in enrolled:
             dk_sid = kg.get_decryption_keys(sid, credentials=dk_credentials)
             dec = case["crypto_cls"]({"id": sid, "keys": {"pp": pp, "dk": dk_sid}})
+            # tMCFE/RingLWE: a label key share (split key shares, its default) completes the weight key share
+            if hasattr(dec, "has_weight_key_share") and not dec.has_weight_key_share(dk_sid):
+                dec.add_weight_key_share(kg.get_weight_key_share(sid, credentials=dk_credentials))
             dct_partial[sid] = dec.share_decrypt(dct_ct, share_credentials, dk_sid, enrolled, *share_extra)
         partial_times.append(time.perf_counter() - t0)
 

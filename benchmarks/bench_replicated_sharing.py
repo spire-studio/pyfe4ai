@@ -3,7 +3,10 @@ decryptions with a cold share-sum cache (a new server object per call, as an
 FL round with a new key), server 1 of E = {1..t} (it adds C(s-1, t-1) pieces).
 
   ring: tMCFE-Ring-LWE, standard, 3 clients, X = 100, Y = 1, 2 chunk keys
-        (10^4-element ndarray); also the 10^4 ndarray partial
+        (10^4-element ndarray); also the 10^4 ndarray partial. Whole key shares
+        as JSON on a prime q (key_shares="full", ct_format="json",
+        ring_modulus="prime"), comparable with earlier runs; the scheme's
+        default split binary key shares on an RNS q: bench_fl_compare.py
   mife: tMIFE-LWE, toy (standard refuses it), 3 clients, X = Y = 50, lwe_n 1024
   lwe:  tMCFE-LWE, standard, 3 clients, X = 100, Y = 1
 
@@ -22,7 +25,8 @@ nids, sids = ["c0", "c1", "c2"], ["s%d" % i for i in range(s)]
 base = {"n": 3, "lst_nid": nids, "s": s, "t": t, "lst_sid": sids, "eta": 1, "sharing": sharing}
 if kind == "ring":
     from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWE as S, ThresholdMCFERingLWEKeyGenerator as K
-    kg = K(dict(base, bound_x=100, bound_y=1, security_profile="standard"))
+    kg = K(dict(base, bound_x=100, bound_y=1, security_profile="standard", key_shares="full", ct_format="json",
+                ring_modulus="prime"))
 elif kind == "mife":
     from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE as S, ThresholdMIFELWEKeyGenerator as K
     kg = K(dict(base, bound_x=50, bound_y=50, lwe_n=1024))

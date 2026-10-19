@@ -17,18 +17,18 @@ Reported per family (medians over the counted rounds):
   length), per element.
 
 The threshold family ``ring_lwe_threshold`` (``mcfe/ring_lwe_threshold``,
-``--servers`` servers, threshold ``--threshold``) has no single aggregator
-(:mod:`~pyfe4ai.utils.ml_adapter` refuses it) and runs on the scheme
-classes: ``client_ms`` is one client's ``encrypt_lst_ndarray``; ``dkgen_ms``
-the key shares of the ``t`` enrolled servers; ``partial_ms`` one server's
-``compute_lst_ndarray_ct``; ``combine_ms`` the combiner's
-``decrypt_lst_ndarray_ct``; ``aggregator_ms`` their sum over the ``t``
-servers on one machine.
-``--ct-format binary`` and ``--ring-modulus rns`` select its opt-in binary
-ciphertexts and RNS modulus (key generator config), ``--split-key-shares``
-its split key shares: the weight part issued once before the rounds
-(``weight_shares_ms``), per round only the label part
-(``key_part="label"``, ``label_term=False``).
+``--servers`` servers, threshold ``--threshold``) runs on the scheme classes,
+for the time of each party (:func:`~pyfe4ai.utils.ml_adapter.aggregate_gradients`
+runs the same steps in one process): ``client_ms`` is one client's
+``encrypt_lst_ndarray``; ``dkgen_ms`` the key shares of the ``t`` enrolled
+servers; ``partial_ms`` one server's ``compute_lst_ndarray_ct``;
+``combine_ms`` the combiner's ``decrypt_lst_ndarray_ct``; ``aggregator_ms``
+their sum over the ``t`` servers on one machine. It runs with the scheme's
+defaults -- binary ciphertexts, an RNS modulus and split key shares: the
+weight part issued once before the rounds (``weight_shares_ms``), per round
+only the label part (``label_term=False``) -- unless ``--ct-format json``,
+``--ring-modulus prime`` or ``--key-shares full`` select the options of
+earlier versions.
 ``--flooding-accounting kl --max-partial-decryptions Q`` runs it with the
 opt-in KL accounting of its flooding noise (see
 :mod:`pyfe4ai.schemes.flooding_accounting`; it needs ``--threshold`` equal
@@ -41,7 +41,9 @@ runs. Usage::
     python benchmarks/bench_fl_compare.py --families ring_lwe --elements 10000 --json out.json
     python benchmarks/bench_fl_compare.py --families ring_lwe --backend native --threads 4
     python benchmarks/bench_fl_compare.py --families ring_lwe lwe --label-hash shake128-rejection
-    python benchmarks/bench_fl_compare.py --families ring_lwe_threshold --flooding uniform
+    python benchmarks/bench_fl_compare.py --families ring_lwe_threshold  # binary, RNS, split key shares
+    python benchmarks/bench_fl_compare.py --families ring_lwe_threshold --ct-format json --ring-modulus prime \
+        --key-shares full  # the options of earlier versions
     python benchmarks/bench_fl_compare.py --families ring_lwe --ring-modulus rns  # q = q1 q2 (opt-in)
 """
 
@@ -263,8 +265,7 @@ def measure(family: str, elements: int, clients: int, rounds: int, precision: in
 
 
 def measure_threshold(family: str, elements: int, clients: int, rounds: int, precision: int, bound_x: int,
-                      profile: str, servers: int, threshold: int, extra: dict | None = None,
-                      split: bool = False) -> dict:
+                      profile: str, servers: int, threshold: int, extra: dict | None = None) -> dict:
     """:func:`measure` for a threshold scheme, on its classes (see the module docstring)."""
     import importlib
 
@@ -280,13 +281,15 @@ def measure_threshold(family: str, elements: int, clients: int, rounds: int, pre
                security_profile=profile, **_bounds(family, bound_x), **(extra or {}))
     row = {"family": family, "scheme": "/".join(key), "profile": profile, "elements": elements,
            "clients": clients, "servers": servers, "threshold": threshold, "rounds": rounds,
-           "precision": precision, "bound_x": bound_x, "ct_format": "json", "split_key_shares": split,
-           **(extra or {})}
+           "precision": precision, "bound_x": bound_x, **(extra or {})}
     t0 = time.perf_counter()
     kg = getattr(mod, kg_name)(cfg)
     kg.setup()
     row["setup_s"] = time.perf_counter() - t0
     pp = kg.get_public_parameters()
+    split = getattr(kg, "key_shares", "full") == "split"
+    row.update(ct_format=pp.get("ct_format", "json"), ring_modulus="rns" if pp.get("q_factors") else "prime",
+               key_shares="split" if split else "full", split_key_shares=split)
     row.update(_scheme_params(pp))
     cls = {nid: crypto_cls({"id": nid, "precision": precision, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
            for nid in nids}
@@ -316,8 +319,8 @@ def measure_threshold(family: str, elements: int, clients: int, rounds: int, pre
         enc = {nid: cls[nid].encrypt_lst_ndarray([g], label=label) for nid, g in grads.items()}
         t1 = time.perf_counter()
         creds = {"fusion_weight": weights, "label": label, "n_chunks": cls[nids[0]].key_chunks(enc[nids[0]])}
-        if split:
-            creds.update(key_part="label", label_term=False)
+        if split:  # the label part (the default key_part): chunk keys only
+            creds.update(label_term=False)
         dks = {sid: kg.get_decryption_keys(sid, credentials=creds) for sid in enrolled}
         t2 = time.perf_counter()
         parts, one = {}, []
@@ -442,19 +445,23 @@ def main() -> None:
     parser.add_argument("--profile", default="standard", choices=["standard", "toy"])
     parser.add_argument("--backend", default="auto", choices=["auto", "python", "native"])
     parser.add_argument("--threads", type=int, default=1)
-    parser.add_argument("--ct-format", default="json", choices=["json", "binary"],
-                        help="ciphertext format of the Ring-LWE schemes")
+    parser.add_argument("--ct-format", default=None, choices=["json", "binary"],
+                        help="ciphertext format of the Ring-LWE schemes (default: json; ring_lwe_threshold: "
+                             "the scheme's, binary)")
     parser.add_argument("--offline", action="store_true",
                         help="Ring-LWE, DDH, Damgard and Paillier MCFE: precompute client masks and the "
                              "aggregator's key before each round; client_ms / aggregator_ms are then the online phase")
     parser.add_argument("--label-hash", default=None,
                         help="label_hash of the MCFE Ring-LWE / dense-LWE families (default: the scheme's)")
     parser.add_argument("--flooding", default=None, help="flooding of ring_lwe_threshold (default: the scheme's)")
-    parser.add_argument("--ring-modulus", default="prime", choices=["prime", "rns"],
+    parser.add_argument("--ring-modulus", default=None, choices=["prime", "rns"],
                         help="ring_lwe / ring_lwe_decentralized: q an NTT prime (default) or a product of two "
-                             "(opt-in); ring_lwe_threshold: of four")
-    parser.add_argument("--split-key-shares", action="store_true",
-                        help="ring_lwe_threshold: weight key shares once, label parts per round (opt-in)")
+                             "(opt-in); ring_lwe_threshold: the scheme's (rns, three or four factors)")
+    parser.add_argument("--key-shares", default=None, choices=["split", "full"],
+                        help="ring_lwe_threshold: weight key shares once and label parts per round (the "
+                             "scheme's default for the Shamir and replicated sharings) or whole key shares")
+    parser.add_argument("--split-key-shares", action="store_const", const="split", dest="key_shares",
+                        help="the same as --key-shares split")
     parser.add_argument("--workdir", default=None, help="directory holding ./config (default: temporary)")
     parser.add_argument("--json", default=None, help="append the results to this JSON file")
     parser.add_argument("--tag", default="", help="free-form label stored with every row")
@@ -483,22 +490,25 @@ def main() -> None:
                 extra["label_hash"] = args.label_hash
             if args.flooding and family == "ring_lwe_threshold":
                 extra["flooding"] = args.flooding
-            if args.ring_modulus != "prime" and family in ("ring_lwe", "ring_lwe_decentralized", "ring_lwe_threshold"):
+            if args.ring_modulus == "rns" and family in ("ring_lwe", "ring_lwe_decentralized"):
                 extra["ring_modulus"] = args.ring_modulus  # rows and configs of the default stay as before
-            if args.ct_format != "json" and family == "ring_lwe_threshold":
-                extra["ct_format"] = args.ct_format  # a public parameter of the threshold scheme
+            if family == "ring_lwe_threshold":  # options of the key generator (the scheme's defaults if not given)
+                for name, value in (("ring_modulus", args.ring_modulus), ("ct_format", args.ct_format),
+                                    ("key_shares", args.key_shares)):
+                    if value is not None:
+                        extra[name] = value
             if family.endswith("_threshold"):
                 if args.flooding_accounting is not None:
                     extra["flooding_accounting"] = args.flooding_accounting
                 if args.max_partial_decryptions is not None:
                     extra["max_partial_decryptions"] = args.max_partial_decryptions
-            fmt = args.ct_format if family in ("ring_lwe", "ring_lwe_decentralized") else "json"
+            fmt = (args.ct_format or "json") if family in ("ring_lwe", "ring_lwe_decentralized") else "json"
             if family.endswith("_decentralized"):
                 row = measure_decentralized(family, elements, args.clients, args.rounds, args.precision, bound_x,
                                             args.profile, fmt, extra)
             elif family.endswith("_threshold"):
                 row = measure_threshold(family, elements, args.clients, args.rounds, args.precision, bound_x,
-                                        args.profile, args.servers, args.threshold, extra, args.split_key_shares)
+                                        args.profile, args.servers, args.threshold, extra)
             else:
                 row = measure(family, elements, args.clients, args.rounds, args.precision, bound_x, args.profile,
                               fmt, args.offline and family in OFFLINE_FAMILIES, extra)
