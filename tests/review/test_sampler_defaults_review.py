@@ -42,7 +42,7 @@ def test_flooding_noise_does_not_follow_the_process_sampler(flooding):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         kg = TK({"sec_param": 64, "eta": 1, "ring_n": 32, "bound_x": 4, "bound_y": 4, "n": 2, "lst_nid": N,
-                 "s": 3, "t": 2, "lst_sid": S, "flooding": flooding})
+                 "s": 3, "t": 2, "lst_sid": S, "flooding": flooding, "key_shares": "full"})
         kg.setup()
     pp = kg.get_public_parameters()
     assert pp["flooding"] == flooding

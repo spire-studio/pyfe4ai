@@ -32,11 +32,14 @@ def _ring(**extra):
     cts = {n: ring.ThresholdMCFERingLWE({"id": n, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}}).encrypt([[1]], "L")
            for n in NIDS}
     cred = {"fusion_weight": {n: [1] for n in NIDS}, "label": "L"}
-    dk = kg.get_decryption_keys("s0", credentials=cred)
+    dk = kg.get_decryption_keys("s0", credentials=cred)  # the label part (split key shares, the default)
+    weight = kg.get_weight_key_share("s0", credentials=cred)
     budget = {"partial_budget": fa.PartialDecryptionBudget(pp["max_partial_decryptions"])} if "max_partial_decryptions" in pp else {}
 
     def serve(p):
-        return ring.ThresholdMCFERingLWE({"id": "s0", **budget, "keys": {"pp": p}}).share_decrypt(cts, cred, dk, SIDS)
+        server = ring.ThresholdMCFERingLWE({"id": "s0", **budget, "keys": {"pp": p}})
+        server.add_weight_key_share(weight)
+        return server.share_decrypt(cts, cred, dk, SIDS)
 
     return pp, dk, serve
 

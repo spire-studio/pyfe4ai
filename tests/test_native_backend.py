@@ -207,9 +207,9 @@ def _setup(eta, ring_n, sec_param, bound_x, bound_y, stat_param=None, mcfe=True,
     nids = ["c{}".format(i) for i in range(n)]
     cfg = {"n": n, "lst_nid": nids, "eta": eta, "ring_n": ring_n, "sec_param": sec_param,
            "bound_x": bound_x, "bound_y": bound_y}
-    if stat_param is not None:
+    if stat_param is not None:  # the JSON ciphertexts these tests read (binary: test_threshold_binary.py)
         kg_cls, cls = tmcfe_rlwe.ThresholdMCFERingLWEKeyGenerator, tmcfe_rlwe.ThresholdMCFERingLWE
-        cfg.update(s=3, t=2, lst_sid=["s0", "s1", "s2"], stat_param=stat_param)
+        cfg.update(s=3, t=2, lst_sid=["s0", "s1", "s2"], stat_param=stat_param, ct_format="json")
     elif mcfe:
         kg_cls, cls = mcfe_rlwe.MCFERingLWEKeyGenerator, mcfe_rlwe.MCFERingLWE
     else:
@@ -461,10 +461,14 @@ def native_calls(monkeypatch):
 
 
 def _threshold(ring_n, bound_x, bound_y, stat_param, eta=1, sharing=None, flooding="uniform"):
+    """A threshold MCFE of JSON ciphertexts and whole key shares, whose values
+    these tests vary (binary, RNS and split key shares, the defaults:
+    test_threshold_binary.py, test_threshold_rns.py, test_threshold_split_shares.py)."""
     nids, sids = ["c0", "c1", "c2"], ["s0", "s1", "s2"]
     config = {
         "n": 3, "lst_nid": nids, "s": 3, "t": 2, "lst_sid": sids, "eta": eta, "ring_n": ring_n,
-        "sec_param": 64, "bound_x": bound_x, "bound_y": bound_y, "stat_param": stat_param, "flooding": flooding}
+        "sec_param": 64, "bound_x": bound_x, "bound_y": bound_y, "stat_param": stat_param, "flooding": flooding,
+        "ct_format": "json", "key_shares": "full"}
     if sharing:
         config["sharing"] = sharing
     kg = tmcfe_rlwe.ThresholdMCFERingLWEKeyGenerator(config)
@@ -631,18 +635,23 @@ def test_threshold_key_shares_identical(cfg, monkeypatch):
     assert shares["s0"]["z"] != nat["s0"]["z"]
 
 
-def test_threshold_standard_profile_native(native_calls):
+@pytest.mark.parametrize("legacy", [False, True], ids=["defaults", "json-prime-full"])
+def test_threshold_standard_profile_native(native_calls, legacy):
     """mcfe/ring_lwe_threshold under the standard profile (q of 212 bits,
     ring_n 8192): encryption, keys, partials and combination native, and the
-    replicated key shares (the default for t < s): dealt once, and each
-    server's pieces added up once for all chunks."""
+    replicated key shares (the default for t < s): dealt once (the weight
+    and the label part once each with the default split key shares), and
+    each server's pieces added up once for all chunks; with the defaults
+    (binary, four RNS factors) and the options of earlier versions."""
     nids, sids = ["c0", "c1", "c2"], ["s0", "s1", "s2"]
-    kg = tmcfe_rlwe.ThresholdMCFERingLWEKeyGenerator({
+    options = {"ct_format": "json", "ring_modulus": "prime", "key_shares": "full"} if legacy else {}
+    kg = tmcfe_rlwe.ThresholdMCFERingLWEKeyGenerator(dict({
         "n": 3, "lst_nid": nids, "s": 3, "t": 2, "lst_sid": sids, "eta": 1, "bound_x": 100, "bound_y": 1,
-        "security_profile": "standard"})
+        "security_profile": "standard"}, **options))
     kg.setup()
     pp = kg.get_public_parameters()
     assert int(pp["q"]).bit_length() > 200 and native_backend.ring_context(pp["q"], pp["ring_n"]).word_bits == 256
+    assert (pp.get("ct_format"), len(pp.get("q_factors") or [])) == ((None, 0) if legacy else ("binary", 4))
     rng = np.random.default_rng(2)
     grads = {nid: rng.uniform(-1, 1, 9000).round(2) for nid in nids}
     clients = {nid: tmcfe_rlwe.ThresholdMCFERingLWE({"id": nid, "precision": 2,
@@ -653,12 +662,17 @@ def test_threshold_standard_profile_native(native_calls):
              "n_chunks": clients["c0"].key_chunks(enc["c0"])}
     parts = {}
     for sid in sids[1:]:
-        dk = kg.get_decryption_keys(sid, credentials=creds)
         server = tmcfe_rlwe.ThresholdMCFERingLWE({"id": sid, "precision": 2, "keys": {"pp": pp}})
+        if not legacy:
+            server.add_weight_key_share(kg.get_weight_key_share(sid, credentials=creds))
+        dk = kg.get_decryption_keys(sid, credentials=dict(creds, label_term=False))
         parts[sid] = server.compute_lst_ndarray_ct(enc, creds, dk, sids[1:])
     combiner = tmcfe_rlwe.ThresholdMCFERingLWE({"id": "comb", "precision": 2, "keys": {"pp": pp}})
     out = combiner.decrypt_lst_ndarray_ct(parts)[0]
     assert np.allclose(out, sum(grads.values()))
-    for name, count in (("encrypt_tensor", 3), ("pad_terms", 1), ("shamir_share", 0), ("share_partial", 4),
-                        ("share_combine", 2), ("zq_replicated_deal", 1), ("zq_sum", 2)):
+    partial, combine = ("share_partial", "share_combine") if legacy else ("share_partial_bin", "share_combine_bin")
+    # binary pieces are added up per polynomial (sk_y of 3 clients, 2 chunk keys), once per server
+    sums = 2 if legacy else 2 * (3 + creds["n_chunks"])
+    for name, count in (("encrypt_tensor", 3), ("pad_terms", 1), ("shamir_share", 0), (partial, 4),
+                        (combine, 2), ("zq_replicated_deal", 1 if legacy else 2), ("zq_sum", sums)):
         assert native_calls[name] == count, name

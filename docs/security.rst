@@ -97,11 +97,20 @@ server changes the result unnoticed. ``combine_decrypt`` accepts partial
 decryptions for several enrolled sets and raises if they disagree (see
 :func:`~pyfe4ai.schemes.threshold_utils.combine_consistently`). In
 tMIFE-LWE, tMCFE-Ring-LWE and tMCFE-FH-Multi-IPE, servers only decrypt
-ciphertexts carrying their clients' MAC tags. With the opt-in binary
-ciphertexts of tMCFE-Ring-LWE (``ct_format="binary"``) the tags also cover
-the digest of the public parameters, and the encoding is unique (values
-strictly below ``q``), so that the flooding noise, seeded with the
-ciphertexts' bytes, cannot be redrawn by re-encoding a ciphertext.
+ciphertexts carrying their clients' MAC tags. With the binary ciphertexts of
+tMCFE-Ring-LWE (``ct_format="binary"``, its default; ``"json"`` selects the
+format of earlier versions) the tags also cover the digest of the public
+parameters, and the encoding is unique (values strictly below ``q``), so that
+the flooding noise, seeded with the ciphertexts' bytes, cannot be redrawn by
+re-encoding a ciphertext. Its key shares are split by default: a server keeps
+its share of the label-independent part of the key once per weights and
+receives the shares of the round's label terms per round; a linear sharing
+reused with fresh sharings of the label terms is a sharing of each round's
+key, the shares of ``t - 1`` servers stay independent of the keys, and the
+noise is seeded as for a whole key share (``key_shares="full"`` issues whole
+key shares). A server refuses a label part without the weight part of the
+same weights and share set, and key shares, ciphertexts and partial
+decryptions of another format or other public parameters.
 
 ML adapter
 ----------
@@ -109,7 +118,12 @@ ML adapter
 :class:`~pyfe4ai.utils.ml_adapter.FESchemeWrapper` runs the key generator
 itself, so it holds the master secret key and plays clients, key authority
 and decryptor in one trust domain: use it for experiments, not as a
-deployment (see :mod:`pyfe4ai.utils.ml_adapter`).
+deployment (see :mod:`pyfe4ai.utils.ml_adapter`). For
+``mcfe/ring_lwe_threshold`` it also runs the decryption servers, so the
+threshold adds no protection there; the separate steps
+(:func:`~pyfe4ai.utils.ml_adapter.partial_decrypt_gradients`,
+:func:`~pyfe4ai.utils.ml_adapter.combine_partial_decryptions`) show the
+messages of a deployment, whose servers run in their own trust domains.
 
 Gaussian sampling
 -----------------

@@ -20,6 +20,18 @@ Provides two high-level APIs that hide FE complexity from ML engineers:
 PyTorch is optional — functions accept both :class:`numpy.ndarray` and
 ``torch.Tensor`` inputs.
 
+**Threshold MCFE** (``mcfe/ring_lwe_threshold``): the wrapper also runs the
+``s`` decryption servers. :func:`prepare_aggregation` (or
+:func:`aggregate_gradients` without ``prepared``) gives each enrolled server
+its label key share of the round and, once per weights, its weight key share
+(the scheme's split key shares, its default); :func:`aggregate_gradients`
+then has the servers decrypt partially and combines their answers. The two
+steps are also separate functions -- :func:`partial_decrypt_gradients` per
+server, :func:`combine_partial_decryptions` at the combiner -- whose
+:class:`ThresholdPartial` serialises like :class:`EncryptedGradient`
+(binary ciphertexts and partial decryptions, the scheme's default format, as
+base64).
+
 **Single trust domain.** A :class:`FESchemeWrapper` runs the key generator
 itself, so it holds the master secret key and plays every party (clients,
 key authority, decryptor). It is meant for experiments and for code that
@@ -39,6 +51,7 @@ for any weights.
 
 from __future__ import annotations
 
+import base64
 import importlib
 import logging
 import numbers
@@ -265,6 +278,11 @@ _SCHEME_REGISTRY: dict[tuple[str, str], tuple[str, str, str]] = {
 # Schemes whose encrypt/decrypt require a label argument.
 _LABEL_SCHEMES = frozenset({"mcfe"})
 
+#: Threshold variants whose decryption servers the wrapper runs (FL helpers).
+_SERVED_THRESHOLD = frozenset({("mcfe", "ring_lwe_threshold")})
+
+_BYTES = (bytes, bytearray, memoryview)
+
 #: Instantiations selected with the ``group`` entry of a key-generator config:
 #: ``{group: {(family, variant): variant in that group}}``. ``"modp"`` (or no
 #: entry) keeps the 3072-bit ``Z_p^*`` subgroup of the ``ddh`` variants.
@@ -273,14 +291,18 @@ _GROUP_VARIANTS = {
 }
 
 
-def _require_single_decryptor(wrapper: "FESchemeWrapper", api: str) -> None:
+def _require_single_decryptor(wrapper: "FESchemeWrapper", api: str, served_threshold: bool = False) -> None:
     """Reject variants whose decryption is a multi-party protocol.
 
     The high-level helpers derive one functional key from the key generator
     and decrypt in one shot. Decentralized variants have no central key
     derivation (each client contributes a key share) and threshold variants
-    need partial decryptions from at least ``t`` servers, so neither fits.
+    need partial decryptions from at least ``t`` servers, so neither fits --
+    but for the helpers that run the servers of :data:`_SERVED_THRESHOLD`
+    (*served_threshold*).
     """
+    if served_threshold and _serves_threshold(wrapper):
+        return
     if wrapper.variant.endswith("_decentralized"):
         raise NotImplementedError(
             "{}() does not support '{}/{}': decentralized schemes have no "
@@ -300,6 +322,19 @@ def _require_single_decryptor(wrapper: "FESchemeWrapper", api: str) -> None:
                 api, wrapper.scheme_type, wrapper.variant
             )
         )
+
+
+def _serves_threshold(wrapper: "FESchemeWrapper") -> bool:
+    """Whether the wrapper runs the decryption servers of its scheme."""
+    return (wrapper.scheme_type, wrapper.variant) in _SERVED_THRESHOLD
+
+
+def _require_served_threshold(wrapper: "FESchemeWrapper", api: str) -> None:
+    if not _serves_threshold(wrapper):
+        raise NotImplementedError(
+            "{}() is for the threshold MCFE whose servers the wrapper runs ({}), not '{}/{}'".format(
+                api, ", ".join(sorted("/".join(key) for key in _SERVED_THRESHOLD)), wrapper.scheme_type,
+                wrapper.variant))
 
 
 def _require_labelled_aggregation(wrapper: "FESchemeWrapper", api: str) -> None:
@@ -332,6 +367,16 @@ def _to_numpy(data: Any) -> np.ndarray:
     if _HAS_TORCH and isinstance(data, torch.Tensor):
         return data.detach().cpu().numpy()
     return np.asarray(data)
+
+
+def _from_base64(value: Any, what: str) -> bytes:
+    """The bytes of a strict base64 string (as ``to_dict`` writes them)."""
+    if not isinstance(value, str):
+        raise ValueError("{} is not a base64 string".format(what))
+    try:
+        return base64.b64decode(value.encode("ascii"), validate=True)
+    except ValueError as exc:  # binascii.Error, non-ASCII text
+        raise ValueError("{} is not base64".format(what)) from exc
 
 
 def tensor_to_ndarray(t: Any) -> np.ndarray:
@@ -370,7 +415,10 @@ class FESchemeWrapper:
     elements or rounds), and :func:`aggregate_gradients` and
     :func:`compute_linear` refuse the ``*_decentralized`` and ``*_threshold``
     variants, whose decryption is a multi-party protocol; use the scheme
-    classes directly for those.
+    classes directly for those. The exception is ``mcfe/ring_lwe_threshold``,
+    whose ``s`` decryption servers the wrapper runs (see the module
+    docstring): :func:`aggregate_gradients` and :func:`prepare_aggregation`
+    take it, with the enrolled ``servers``.
 
     A wrapper can be pickled and copied (``multiprocessing``, Ray): the copy
     carries the ``(nid, label)`` pairs used so far and refuses them as the
@@ -445,8 +493,9 @@ class FESchemeWrapper:
         self.kg.setup()
         self.pp = self.kg.get_public_parameters()
 
-        # Cache for crypto instances per nid
+        # Cache for crypto instances per nid, and the threshold servers per sid
         self._encryptors: dict[str, Any] = {}
+        self._servers: dict[str, Any] = {}
         # Labels used for encryption, per client (reserved before encrypting,
         # under _label_lock), and weights aggregated, per label
         self._encrypted_labels: set[tuple[str, str]] = set()
@@ -456,17 +505,20 @@ class FESchemeWrapper:
     def __getstate__(self) -> dict:
         """Pickling and copying: the state without the lock and the cached
         crypto objects (rebuilt from the keys on use; they may hold native
-        objects), with a snapshot of the used ``(nid, label)`` pairs (the
-        copy refuses them too)."""
+        objects; threshold servers get their weight key shares again), with a
+        snapshot of the used ``(nid, label)`` pairs (the copy refuses them
+        too)."""
         state = self.__dict__.copy()
         del state["_label_lock"]
         state["_encryptors"] = {}
+        state["_servers"] = {}
         with self._label_lock:
             state["_encrypted_labels"] = set(self._encrypted_labels)
         return state
 
     def __setstate__(self, state: dict) -> None:
         self.__dict__.update(state)
+        self.__dict__.setdefault("_servers", {})
         self._label_lock = threading.Lock()
 
     # -- crypto instance management ----------------------------------------
@@ -490,6 +542,23 @@ class FESchemeWrapper:
         return self._crypto_cls(
             dict(self.crypto_options, id=sid, precision=self.qconfig.precision, keys={"pp": self.pp})
         )
+
+    def _get_server(self, sid: str) -> Any:
+        """Decryption server *sid* of the threshold scheme, made on first use
+        (it keeps the weight key shares it is given).
+
+        Raises:
+            ValueError: If *sid* is not a server of the public parameters.
+        """
+        if sid not in (self.pp.get("lst_sid") or []):
+            raise ValueError("{!r} is not one of the servers {}".format(sid, self.pp.get("lst_sid")))
+        with self._label_lock:  # one object per server: the one given its weight key shares
+            server = self._servers.get(sid)
+            if server is None:
+                server = self._servers[sid] = self._crypto_cls(
+                    dict(self.crypto_options, id=sid, precision=self.qconfig.precision, keys={"pp": self.pp})
+                )
+        return server
 
     def get_decryption_keys(self, sid: str, **credentials) -> dict:
         """Derive functional decryption keys.
@@ -527,12 +596,13 @@ class EncryptedGradient:
 
         A per-element layer is written as ``{"shape", "data"}`` with one
         entry per index, a packed layer as
-        ``{"packed": {"shape", "first_chunk", "chunks"}}``.
+        ``{"packed": {"shape", "first_chunk", "chunks"}}``. Chunk fields
+        holding bytes (binary ciphertexts, e.g. the default format of
+        ``mcfe/ring_lwe_threshold``) are written as base64 strings and named
+        in the layer's ``"base64"`` list; :meth:`from_dict` decodes them.
 
         Raises:
-            TypeError: If a packed chunk holds ``bytes`` (a binary ciphertext
-                format). These have no JSON form, and the dict returned here
-                is meant for ``json.dumps``.
+            TypeError: If a binary field of one chunk is not bytes in another.
         """
         serialised_cts = []
         for ary in self.ciphertexts:
@@ -553,19 +623,22 @@ class EncryptedGradient:
 
     @staticmethod
     def _serialised_packed(layer: dict) -> dict:
-        for j, chunk in enumerate(layer["chunks"]):
-            if any(isinstance(v, (bytes, bytearray, memoryview)) for v in chunk.values()):
-                raise TypeError(
-                    "chunk {} of a packed layer is a binary ciphertext; to_dict() only "
-                    "serialises JSON-compatible chunks".format(j)
-                )
+        binary = sorted({key for chunk in layer["chunks"] for key, v in chunk.items() if isinstance(v, _BYTES)})
+        chunks = list(layer["chunks"])
+        if binary:
+            for j, chunk in enumerate(chunks):
+                if any(not isinstance(chunk.get(key), _BYTES) for key in binary):
+                    raise TypeError("chunk {} of a packed layer lacks the binary fields {} of the others".format(j, binary))
+                chunks[j] = dict(chunk, **{key: base64.b64encode(bytes(chunk[key])).decode("ascii") for key in binary})
         out = {
             "shape": list(layer["shape"]),
             "first_chunk": layer["first_chunk"],
-            "chunks": list(layer["chunks"]),
+            "chunks": chunks,
         }
         if "label_hash" in layer:  # the layer's label-hash code (MCFE Ring-LWE)
             out["label_hash"] = layer["label_hash"]
+        if binary:
+            out["base64"] = binary
         return out
 
     #: Largest number of elements :meth:`from_dict` accepts per array.
@@ -636,7 +709,9 @@ class EncryptedGradient:
         """Check serialised packed layers against the layout of ``encrypt_lst_ndarray``.
 
         Every layer is ``{"packed": {"shape", "first_chunk", "chunks"}}``,
-        optionally with the layer's ``label_hash`` code (an int).
+        optionally with the layer's ``label_hash`` code (an int) and
+        ``base64``, the chunk fields written as base64 (decoded to bytes;
+        every chunk has them as strict base64 strings).
         The chunks of all layers are numbered consecutively from 0, so a
         layer's ``first_chunk`` is the number of chunks before it. Each chunk
         is a dict with a batch length ``k >= 1``; the ``k`` of a layer add up
@@ -649,10 +724,16 @@ class EncryptedGradient:
             layer = wrapped["packed"]
             if (
                 set(wrapped) != {"packed"} or not isinstance(layer, dict)
-                or set(layer) - {"label_hash"} != {"shape", "first_chunk", "chunks"}
+                or set(layer) - {"label_hash", "base64"} != {"shape", "first_chunk", "chunks"}
                 or ("label_hash" in layer and type(layer["label_hash"]) is not int)
             ):
                 raise ValueError("invalid packed ciphertext layer")
+            encoded = layer.get("base64", [])
+            if (
+                not isinstance(encoded, list) or ("base64" in layer and not encoded)
+                or any(not isinstance(key, str) or key == "k" for key in encoded) or len(set(encoded)) != len(encoded)
+            ):
+                raise ValueError("invalid packed ciphertext layer: base64 names the chunk fields written as base64")
             shape, size = cls._checked_shape(layer["shape"])
             first, chunks = layer["first_chunk"], layer["chunks"]
             if not isinstance(first, int) or isinstance(first, bool) or first != next_chunk:
@@ -661,6 +742,7 @@ class EncryptedGradient:
                 )
             if not isinstance(chunks, list) or not chunks:
                 raise ValueError("packed chunks must be a non-empty list")
+            chunks = list(chunks)
             for j, chunk in enumerate(chunks):
                 k = chunk.get("k") if isinstance(chunk, dict) else None
                 if not isinstance(k, int) or isinstance(k, bool) or k < 1:
@@ -668,6 +750,9 @@ class EncryptedGradient:
                         "chunk {} of a packed layer is not a ciphertext with a batch "
                         "length k >= 1".format(j)
                     )
+                if encoded:
+                    chunks[j] = dict(chunk, **{key: _from_base64(chunk.get(key), "chunk {} field {!r}".format(j, key))
+                                               for key in encoded})
             covered = sum(chunk["k"] for chunk in chunks)
             if covered != size:
                 raise ValueError(
@@ -844,7 +929,9 @@ def _integer_weights(weights: dict, qconfig: QuantizationConfig) -> tuple[dict, 
 
 @dataclass
 class PreparedAggregation:
-    """A functional key derived before the round (:func:`prepare_aggregation`)."""
+    """A functional key derived before the round (:func:`prepare_aggregation`);
+    for a threshold MCFE the key shares of the enrolled ``servers``
+    (``dk = {sid: key share}``) and ``sid`` the combiner."""
 
     label: str | None
     sid: str
@@ -853,13 +940,16 @@ class PreparedAggregation:
     n_chunks: int | None
     dk: dict
     allow_partial: bool
+    servers: list | None = None
 
 
-def _aggregation_key(wrapper, weights, label, sid, nids, allow_partial, n_chunks_fn):
+def _aggregation_key(wrapper, weights, label, sid, nids, allow_partial, n_chunks_fn, servers=None):
     """Policy checks of :func:`aggregate_gradients` and the functional key:
     ``(fusion_weight, weight_scale, dk)``; *nids* are the clients whose
     ciphertexts will be aggregated, ``n_chunks_fn()`` the number of packed
-    chunks a key must cover (``None``: not a packed scheme)."""
+    chunks a key must cover (``None``: not a packed scheme). For a threshold
+    MCFE run by the wrapper ``dk`` holds the key shares of the enrolled
+    *servers* (:func:`_server_key_shares`)."""
     # Normalise weights to {nid: [w]} format for eta=1 schemes
     fusion_weight, weight_scale = _integer_weights(weights, wrapper.qconfig)
     if wrapper.scheme_type == "sife":
@@ -898,8 +988,50 @@ def _aggregation_key(wrapper, weights, label, sid, nids, allow_partial, n_chunks
     if n_chunks is not None:
         # identity-based schemes issue one key term per packed chunk
         credentials["n_chunks"] = n_chunks
+    if servers is not None:
+        return fusion_weight, weight_scale, _server_key_shares(wrapper, credentials, servers)
     dk = wrapper.kg.get_decryption_keys(sid, credentials=credentials)
     return fusion_weight, weight_scale, dk
+
+
+def _enrolled_servers(wrapper, servers) -> list:
+    """The servers whose partial decryptions a threshold aggregation combines:
+    *servers* (at least ``t`` distinct servers of the public parameters) or
+    the first ``t`` of ``lst_sid``.
+
+    Raises:
+        ValueError: For other servers.
+        NotImplementedError: Under ``flooding_accounting = "kl"``, whose
+            servers need a partial-decryption budget of their own.
+    """
+    if wrapper.pp.get("flooding_accounting", "per-sample") != "per-sample":
+        raise NotImplementedError(
+            "flooding_accounting={!r}: every server needs a partial_budget of its own; run the servers "
+            "with the scheme classes".format(wrapper.pp.get("flooding_accounting"))
+        )
+    lst_sid, t = list(wrapper.pp["lst_sid"]), int(wrapper.pp["t"])
+    if servers is None:
+        return lst_sid[:t]
+    servers = list(servers)
+    if len(servers) < t or len(set(servers)) != len(servers) or not set(servers) <= set(lst_sid):
+        raise ValueError("servers must be at least t = {} distinct servers of {}".format(t, lst_sid))
+    return servers
+
+
+def _server_key_shares(wrapper, credentials: dict, servers: list) -> dict:
+    """``{sid: key share}`` of the enrolled servers for the round (by default
+    label key shares, with the chunk keys only), each server given its weight
+    key share first where it lacks it: once per weights and share set."""
+    out = {}
+    for sid in servers:
+        dk = wrapper.kg.get_decryption_keys(sid, credentials=dict(credentials, label_term=False))
+        server = wrapper._get_server(sid)
+        if not server.has_weight_key_share(dk):
+            server.add_weight_key_share(
+                wrapper.kg.get_weight_key_share(sid, credentials={"fusion_weight": credentials["fusion_weight"]})
+            )
+        out[sid] = dk
+    return out
 
 
 def prepare_aggregation(
@@ -910,6 +1042,7 @@ def prepare_aggregation(
     sid: str = "sid_agg",
     label: str | None = None,
     allow_partial: bool = False,
+    servers: list | None = None,
 ) -> PreparedAggregation:
     """Derive the functional key of an aggregation before the ciphertexts arrive.
 
@@ -918,9 +1051,17 @@ def prepare_aggregation(
     ciphertexts; :func:`aggregate_gradients` with ``prepared=`` then only
     decrypts. The same policy checks apply, with the clients of *weights* as
     those whose ciphertexts will be aggregated.
+
+    For ``mcfe/ring_lwe_threshold`` the key shares of the enrolled *servers*
+    (default: the first ``t`` of the public parameters' ``lst_sid``): their
+    label key shares of the round, each server given its weight key share
+    once per weights; *sid* is the combiner.
     """
     _require_labelled_aggregation(wrapper, "prepare_aggregation")
-    _require_single_decryptor(wrapper, "prepare_aggregation")
+    _require_single_decryptor(wrapper, "prepare_aggregation", served_threshold=True)
+    if servers is not None and not _serves_threshold(wrapper):
+        raise ValueError("servers are those of a threshold MCFE")
+    enrolled = _enrolled_servers(wrapper, servers) if _serves_threshold(wrapper) else None
     decryptor = wrapper._get_decryptor(sid)
     n_chunks = None
     if getattr(decryptor, "key_chunks", None) is not None:
@@ -928,12 +1069,12 @@ def prepare_aggregation(
         size = int(np.prod(np.shape(np.empty(shape)), dtype=np.int64))
         n_chunks = max(1, -(-size // ring_n))
     fusion_weight, weight_scale, dk = _aggregation_key(
-        wrapper, weights, label, sid, list(weights), allow_partial, lambda: n_chunks
+        wrapper, weights, label, sid, list(weights), allow_partial, lambda: n_chunks, enrolled
     )
     prepare_key = getattr(decryptor, "prepare_key", None)
     if prepare_key is not None:  # element-wise MCFE: the label terms of the key too
         dk = prepare_key(dk, label, [tuple(int(d) for d in np.shape(np.empty(shape)))])
-    return PreparedAggregation(label, sid, fusion_weight, weight_scale, n_chunks, dk, allow_partial)
+    return PreparedAggregation(label, sid, fusion_weight, weight_scale, n_chunks, dk, allow_partial, enrolled)
 
 
 def aggregate_gradients(
@@ -945,6 +1086,7 @@ def aggregate_gradients(
     label: str | None = None,
     allow_partial: bool = False,
     prepared: PreparedAggregation | None = None,
+    servers: list | None = None,
 ) -> np.ndarray:
     """Decrypt and aggregate encrypted gradients from multiple clients.
 
@@ -963,13 +1105,22 @@ def aggregate_gradients(
                 (so would very unequal weights; see the module docstring).
             prepared: A key from :func:`prepare_aggregation` (online phase);
                 *weights*, if given, and *label* must match it.
+            servers: ``mcfe/ring_lwe_threshold``: the servers whose partial
+                decryptions are combined (default: those of *prepared*, or
+                the first ``t`` of ``lst_sid``); the wrapper runs them
+                (:func:`partial_decrypt_gradients`,
+                :func:`combine_partial_decryptions`) and *sid* is the
+                combiner.
 
         Raises:
             ValueError: If the policy above is violated, or SIFE is given
                 more than one client.
     """
     _require_labelled_aggregation(wrapper, "aggregate_gradients")
-    _require_single_decryptor(wrapper, "aggregate_gradients")
+    _require_single_decryptor(wrapper, "aggregate_gradients", served_threshold=True)
+    threshold = _serves_threshold(wrapper)
+    if servers is not None and not threshold:
+        raise ValueError("servers are those of a threshold MCFE")
     decryptor = None
 
     def n_chunks_fn():
@@ -987,9 +1138,12 @@ def aggregate_gradients(
     if prepared is None:
         if weights is None:
             raise ValueError("need the weights (or a prepared aggregation)")
+        enrolled = _enrolled_servers(wrapper, servers) if threshold else None
         fusion_weight, weight_scale, dk = _aggregation_key(
-            wrapper, weights, label, sid, list(encrypted), allow_partial, n_chunks_fn
+            wrapper, weights, label, sid, list(encrypted), allow_partial, n_chunks_fn, enrolled
         )
+        if threshold:
+            prepared = PreparedAggregation(label, sid, fusion_weight, weight_scale, None, dk, allow_partial, enrolled)
     else:
         n_chunks = n_chunks_fn()
         if prepared.label != label:
@@ -1000,7 +1154,16 @@ def aggregate_gradients(
             raise ValueError("the prepared key is for the clients {}".format(sorted(prepared.fusion_weight)))
         if n_chunks is not None and (prepared.n_chunks or 0) < n_chunks:
             raise ValueError("the prepared key covers fewer chunks than the ciphertexts")
+        if threshold and servers is not None and list(servers) != prepared.servers:
+            raise ValueError("the prepared key shares are for the servers {}".format(prepared.servers))
         fusion_weight, weight_scale, dk = prepared.fusion_weight, prepared.weight_scale, prepared.dk
+
+    if threshold:  # the servers the wrapper runs, then the combiner
+        partials = {
+            server: partial_decrypt_gradients(encrypted, wrapper, prepared, server=server)
+            for server in prepared.servers
+        }
+        return combine_partial_decryptions(partials, wrapper, prepared)
 
     if wrapper.scheme_type in ("mcfe", "mife"):
         # Multi-client: {nid: [array_per_layer]}
@@ -1023,11 +1186,167 @@ def aggregate_gradients(
             enc.ciphertexts, dk=dk, fusion_weight=fw_list
         )
 
+    return _aggregated(result_arrays, weight_scale)
+
+
+def _aggregated(result_arrays: list, weight_scale: int) -> np.ndarray:
+    """The decrypted layers, scaled back from integer weights; one layer as is."""
     if weight_scale != 1:
         result_arrays = [np.asarray(ary, dtype=np.float64) / weight_scale for ary in result_arrays]
     if result_arrays and len(result_arrays) == 1:
         return result_arrays[0]
     return np.array(result_arrays)
+
+
+# ---------------------------------------------------------------------------
+# Threshold MCFE: partial decryptions of the servers the wrapper runs
+# ---------------------------------------------------------------------------
+
+#: Fields of one partial decryption (one chunk) of a :class:`ThresholdPartial`.
+_PARTIAL_FIELDS = frozenset({"w", "c_y", "k", "ct_digest", "sid", "lst_sid_enrolled"})
+
+
+@dataclass
+class ThresholdPartial:
+    """One server's partial decryptions of a round's gradients (threshold
+    MCFE), from :func:`partial_decrypt_gradients` for
+    :func:`combine_partial_decryptions`."""
+
+    sid: str
+    label: str
+    #: :meth:`~pyfe4ai.schemes.mcfe.ring_lwe_threshold.ThresholdMCFERingLWE.compute_lst_ndarray_ct`
+    #: of the clients' gradients: per layer ``{"shape", "parts"}``, one partial
+    #: decryption per chunk (``w`` and ``c_y`` bytes for binary public
+    #: parameters, lists of decimal strings for JSON ones).
+    layers: list
+
+    def to_dict(self) -> dict:
+        """Serialise for transfer: ``{"sid", "label", "format", "layers"}``,
+        binary ``w`` and ``c_y`` (``format = "binary"``) as base64 strings.
+
+        Raises:
+            TypeError: If the partial decryptions mix binary and JSON values.
+        """
+        parts = [part for layer in self.layers for part in layer["parts"]]
+        binary = [isinstance(part["w"], _BYTES) and isinstance(part["c_y"], _BYTES) for part in parts]
+        if any(binary) and not all(binary):
+            raise TypeError("partial decryptions mixing binary and JSON values")
+        fmt = "binary" if binary and all(binary) else "json"
+
+        def written(part):
+            if fmt == "json":
+                return dict(part, w=list(part["w"]), c_y=list(part["c_y"]), lst_sid_enrolled=list(part["lst_sid_enrolled"]))
+            return dict(part, w=base64.b64encode(bytes(part["w"])).decode("ascii"),
+                        c_y=base64.b64encode(bytes(part["c_y"])).decode("ascii"),
+                        lst_sid_enrolled=list(part["lst_sid_enrolled"]))
+
+        return {
+            "sid": self.sid,
+            "label": self.label,
+            "format": fmt,
+            "layers": [{"shape": list(layer["shape"]), "parts": [written(p) for p in layer["parts"]]}
+                       for layer in self.layers],
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> ThresholdPartial:
+        """Deserialise from :meth:`to_dict`, checking the layout (the combiner
+        checks the values).
+
+        Raises:
+            ValueError: For another layout, a partial decryption of another
+                server, or ``w`` / ``c_y`` not of the format (strict base64
+                for ``"binary"``, lists of strings for ``"json"``).
+        """
+        if not isinstance(d, dict) or set(d) != {"sid", "label", "format", "layers"}:
+            raise ValueError("invalid partial decryption: keys sid, label, format and layers")
+        sid, label, fmt, layers = d["sid"], d["label"], d["format"], d["layers"]
+        if not isinstance(sid, str) or not isinstance(label, str) or fmt not in ("binary", "json"):
+            raise ValueError("invalid partial decryption: sid and label are strings, format binary or json")
+        if not isinstance(layers, list) or not layers:
+            raise ValueError("invalid partial decryption: layers must be a non-empty list")
+        out = []
+        for l, layer in enumerate(layers):
+            if not isinstance(layer, dict) or set(layer) != {"shape", "parts"}:
+                raise ValueError("invalid partial decryption: layer {} has keys shape and parts".format(l))
+            shape, _ = EncryptedGradient._checked_shape(layer["shape"])
+            if not isinstance(layer["parts"], list) or not layer["parts"]:
+                raise ValueError("invalid partial decryption: layer {} has no parts".format(l))
+            parts = []
+            for j, part in enumerate(layer["parts"]):
+                where = "partial decryption ({}, chunk {})".format(l, j)
+                if not isinstance(part, dict) or set(part) != _PARTIAL_FIELDS:
+                    raise ValueError("invalid {}: keys {}".format(where, sorted(_PARTIAL_FIELDS)))
+                k, enrolled = part["k"], part["lst_sid_enrolled"]
+                if type(k) is not int or k < 1 or not isinstance(part["ct_digest"], str) or part["sid"] != sid:
+                    raise ValueError("invalid {}: k >= 1, a ct_digest and this server's sid".format(where))
+                if not isinstance(enrolled, list) or not all(isinstance(v, str) for v in enrolled):
+                    raise ValueError("invalid {}: lst_sid_enrolled is a list of server ids".format(where))
+                if fmt == "binary":
+                    values = {key: _from_base64(part[key], "{} {}".format(where, key)) for key in ("w", "c_y")}
+                else:
+                    if any(not isinstance(part[key], list) or not all(isinstance(v, str) for v in part[key])
+                           for key in ("w", "c_y")):
+                        raise ValueError("invalid {}: w and c_y are lists of decimal strings".format(where))
+                    values = {"w": list(part["w"]), "c_y": list(part["c_y"])}
+                parts.append(dict(part, lst_sid_enrolled=list(enrolled), **values))
+            out.append({"shape": list(shape), "parts": parts})
+        return cls(sid=sid, label=label, layers=out)
+
+
+def partial_decrypt_gradients(
+    encrypted: dict[str, EncryptedGradient],
+    wrapper: FESchemeWrapper,
+    prepared: PreparedAggregation,
+    *,
+    server: str,
+) -> ThresholdPartial:
+    """Server *server*'s partial decryptions of the clients' gradients for a
+    prepared threshold aggregation (``mcfe/ring_lwe_threshold``; the wrapper
+    runs the server, with its key share of *prepared*, see
+    :func:`prepare_aggregation`).
+
+    Raises:
+        ValueError: If *server* is not enrolled in *prepared*, or the clients
+            are not those of its weights.
+    """
+    _require_served_threshold(wrapper, "partial_decrypt_gradients")
+    if not prepared.servers or server not in prepared.servers:
+        raise ValueError("server {!r} is not enrolled in the prepared aggregation ({})".format(server, prepared.servers))
+    if set(encrypted) != set(prepared.fusion_weight):
+        raise ValueError("the prepared key is for the clients {}".format(sorted(prepared.fusion_weight)))
+    layers = wrapper._get_server(server).compute_lst_ndarray_ct(
+        {nid: enc.ciphertexts for nid, enc in encrypted.items()},
+        {"fusion_weight": prepared.fusion_weight, "label": prepared.label},
+        prepared.dk[server],
+        prepared.servers,
+    )
+    return ThresholdPartial(sid=server, label=prepared.label, layers=layers)
+
+
+def combine_partial_decryptions(
+    partials: dict[str, ThresholdPartial],
+    wrapper: FESchemeWrapper,
+    prepared: PreparedAggregation,
+) -> np.ndarray:
+    """Combine the enrolled servers' partial decryptions
+    (:func:`partial_decrypt_gradients`) into the weighted sum of the
+    gradients, as :func:`aggregate_gradients` returns it.
+
+    Raises:
+        ValueError: Unless *partials* are those of the prepared servers for
+            its label.
+        FESchemeError: If they do not combine (see
+            :meth:`~pyfe4ai.schemes.mcfe.ring_lwe_threshold.ThresholdMCFERingLWE.decrypt_lst_ndarray_ct`).
+    """
+    _require_served_threshold(wrapper, "combine_partial_decryptions")
+    if set(partials) != set(prepared.servers or []) or any(
+            p.sid != sid or p.label != prepared.label for sid, p in partials.items()):
+        raise ValueError("need the partial decryptions of the servers {} for label {!r}".format(
+            prepared.servers, prepared.label))
+    combiner = wrapper._get_decryptor(prepared.sid)
+    return _aggregated(combiner.decrypt_lst_ndarray_ct({sid: p.layers for sid, p in partials.items()}),
+                       prepared.weight_scale)
 
 
 # ---------------------------------------------------------------------------

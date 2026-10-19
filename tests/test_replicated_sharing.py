@@ -190,6 +190,16 @@ def test_sharing_must_match_the_public_parameters():
         ThresholdMIFELWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk_bad}}).share_decrypt(cts, y, dk_bad, sids[:2])
 
 
+def _ring_server(kg, pp, sid, cred):
+    """``(server, key share)``: a tMCFE Ring-LWE server with its weight key
+    share (split key shares, the default) and its label key share for *cred*."""
+    server = ThresholdMCFERingLWE({"id": sid, "keys": {"pp": pp}})
+    dk = kg.get_decryption_keys(sid, credentials=cred)
+    if not server.has_weight_key_share(dk):
+        server.add_weight_key_share(kg.get_weight_key_share(sid, credentials=cred))
+    return server, dk
+
+
 @pytest.mark.parametrize("s,t", [(3, 2), (4, 3)])
 def test_tmcfe_ring_lwe_replicated_decrypts_for_every_enrolled_set(s, t):
     sids = ["sid_%d" % i for i in range(s)]
@@ -205,11 +215,10 @@ def test_tmcfe_ring_lwe_replicated_decrypts_for_every_enrolled_set(s, t):
         cts = {nid: ThresholdMCFERingLWE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(x[nid], label)
                for nid in cfg["lst_nid"]}
         cred = {"fusion_weight": y, "label": label}
-        dks = {sid: kg.get_decryption_keys(sid, credentials=cred) for sid in sids}
-        assert all(len(dk["pieces"]) == comb(s - 1, t - 1) for dk in dks.values())
+        servers = {sid: _ring_server(kg, pp, sid, cred) for sid in sids}
+        assert all(len(dk["pieces"]) == comb(s - 1, t - 1) for _, dk in servers.values())
         for enrolled in _enrolled_sets(sids, t):
-            group = {sid: ThresholdMCFERingLWE({"id": sid, "keys": {"pp": pp, "dk": dks[sid]}}).share_decrypt(
-                cts, cred, dks[sid], enrolled) for sid in enrolled}
+            group = {sid: servers[sid][0].share_decrypt(cts, cred, servers[sid][1], enrolled) for sid in enrolled}
             assert ThresholdMCFERingLWE({"id": "c", "keys": {"pp": pp}}).combine_decrypt(group) == [sign * 48] * 5
 
 
@@ -227,9 +236,8 @@ def test_tmcfe_ring_lwe_replicated_ndarrays_decrypt():
     cred = {"fusion_weight": y, "label": "nd", "n_chunks": ThresholdMCFERingLWE.key_chunks(nd_cts["a"])}
     partials = {}
     for sid in ["sid_0", "sid_2"]:
-        dk = kg.get_decryption_keys(sid, credentials=cred)
-        partials[sid] = ThresholdMCFERingLWE({"id": sid, "keys": {"pp": pp, "dk": dk}}).compute_lst_ndarray_ct(
-            nd_cts, cred, dk, ["sid_0", "sid_2"])
+        server, dk = _ring_server(kg, pp, sid, cred)
+        partials[sid] = server.compute_lst_ndarray_ct(nd_cts, cred, dk, ["sid_0", "sid_2"])
     out = ThresholdMCFERingLWE({"id": "c", "precision": 0, "keys": {"pp": pp}}).decrypt_lst_ndarray_ct(partials)
     assert np.array_equal(out[0], 4 * (np.arange(40, dtype=float).reshape(5, 8) - 20))
 
@@ -288,8 +296,7 @@ def test_tmcfe_ring_lwe_replicated_partials_agree_across_backends():
     cred = {"fusion_weight": y, "label": "x"}
     for enrolled in _enrolled_sets(sids, 2):
         for sid in enrolled:
-            dk = kg.get_decryption_keys(sid, credentials=cred)
-            server = ThresholdMCFERingLWE({"id": sid, "keys": {"pp": pp, "dk": dk}})
+            server, dk = _ring_server(kg, pp, sid, cred)
             with native_backend.backend("python"):
                 a = server.share_decrypt(cts, cred, dk, enrolled)
             with native_backend.backend("native"):
@@ -302,8 +309,10 @@ def test_tmcfe_ring_lwe_replicated_partials_agree_across_backends():
 _CONFIGS = {
     "mife": (ThresholdMIFELWEKeyGenerator, {"sec_param": 64, "eta": 1, "n": 2, "lst_nid": ["c0", "c1"],
                                             "lwe_n": 16, "bound_x": 6, "bound_y": 6}),
+    # the options of v0.3.0, whose public parameters and key shares some tests below take
     "ring": (ThresholdMCFERingLWEKeyGenerator, {"sec_param": 64, "eta": 1, "n": 2, "lst_nid": ["a", "b"],
-                                                "ring_n": 16, "bound_x": 4, "bound_y": 4}),
+                                                "ring_n": 16, "bound_x": 4, "bound_y": 4, "ct_format": "json",
+                                                "ring_modulus": "prime", "key_shares": "full"}),
     "lwe": (ThresholdMCFELWEKeyGenerator, {"sec_param": 64, "eta": 1, "n": 2, "lst_nid": ["c0", "c1"],
                                            "lwe_n": 16, "bound_x": 6, "bound_y": 6}),
 }
@@ -354,7 +363,7 @@ def test_the_sharings_have_their_own_parameter_records():
     from pyfe4ai.utils.exceptions import FESecurityWarning
 
     def record(kg):
-        with open(os.path.join(kg.config_folder, kg._scheme_type, "param.json"), encoding="utf-8") as f:
+        with open(os.path.join(kg.config_folder, kg._scheme_type, kg._param_file_name()), encoding="utf-8") as f:
             return json.load(f)
 
     with pytest.warns(FESecurityWarning):

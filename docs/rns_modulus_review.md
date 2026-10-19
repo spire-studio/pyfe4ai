@@ -17,12 +17,13 @@ Fiore, Gay, Ursu, CRYPTO 2018 (`references/ACFGU18.pdf`).
 | `mife/ring_lwe` (ACFGU18 compiler) | safe | ACFGU18 Sec. 3.3 / Fig. 4 works over any `Z_L` |
 | `mcfe/ring_lwe` (identity-based MCFE) | safe | BMMS21 Sec. 6, Thm. 5, App. D.2: additive group `Z_q` only |
 | `mcfe/ring_lwe_decentralized` (GDSum) | safe | BMMS21 App. D.4: masks cancel in `Z_q`, any `q` |
-| `mcfe/ring_lwe_threshold` (own design) | safe, opt-in (2026-10, section 10) | Shamir over `Z_q` is Shamir over each `F_{q_i}` (CRT) when every `q_i > s` (checked); replicated sharing, flooding, label hash and decoding are independent of the factorisation |
+| `mcfe/ring_lwe_threshold` (own design) | safe, the default since 2026-10 (section 10) | Shamir over `Z_q` is Shamir over each `F_{q_i}` (CRT) when every `q_i > s` (checked); replicated sharing, flooding, label hash and decoding are independent of the factorisation |
 | `sife/fullysec_ring_lwe` (adaptive, Sec. 5) | **not safe without a new argument** | Thm. 2 (Ring-LHL) and App. B are stated and proved for prime `q` |
 
 The prototype (`ring_modulus="rns"`) was first offered for MIFE, MCFE and
-dMCFE Ring-LWE only; the threshold MCFE takes it since the re-review of
-section 10 (four factors at its 212 to 218 bits). The SIFE key generators
+dMCFE Ring-LWE only (opt-in there); the threshold MCFE takes it since the
+re-review of section 10 (four factors at its 212 to 218 bits) and has it as
+its default (`ring_modulus="prime"` selectable). The SIFE key generators
 (`sife/ring_lwe`, `sife/fullysec_ring_lwe`) refuse it.
 
 ## 1. Hardness of RLWE / mhe-RLWE with a composite `q`
@@ -209,7 +210,16 @@ last would exceed 62 bits (`rns_ntt_modulus_for`, then
 product `>= L` that is none of them, advanced until `gcd(floor(q / p), q) = 1`;
 for `k = 2` the modulus of the earlier sections). Above 248 bits the modulus
 has five or more factors and runs on the Python path (the key generator
-warns). Item by item:
+warns; `ring_modulus="prime"` stays native below `2^253`).
+
+RNS is the threshold MCFE's default (2026-10, with binary ciphertexts and
+split key shares; `ring_modulus="prime"` selects the prime of earlier
+versions, whose records stay in `param.json`). Its moduli have at least three
+factors (`MIN_RNS_FACTORS`): with two, a flooded `q` below `2^124` (the `toy`
+profile's, e.g. 115 bits) got the two-prime context of the MIFE / MCFE
+prototype, which has none of the threshold kernels, and ran on the Python
+path; with three it runs on the 256-bit ring. The arguments below hold for any
+number of factors above `s`. Item by item:
 
 * **RLWE hardness, MCFE layer**: sections 1, 3 and 4 (any modulus; the
   estimator reads `q` by size, and `q` has the bit length of the prime).

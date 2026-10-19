@@ -269,9 +269,10 @@ def _mcfe(ring_n=32, sec_param=128, bound_x=100, bound_y=1, eta=1, stat_param=No
     cfg = {"n": 3, "lst_nid": nids, "eta": eta, "ring_n": ring_n, "sec_param": sec_param, "bound_x": bound_x,
            "bound_y": bound_y, "label_hash": "shake256-wide"}
     mod = mcfe_rlwe
-    if stat_param is not None:
+    if stat_param is not None:  # the prime rings and JSON ciphertexts of the C ABI's kernels
         mod = tmcfe_rlwe
-        cfg.update(s=3, t=2, lst_sid=["s0", "s1", "s2"], stat_param=stat_param)
+        cfg.update(s=3, t=2, lst_sid=["s0", "s1", "s2"], stat_param=stat_param, ct_format="json",
+                   ring_modulus="prime")
     kg_cls = mod.ThresholdMCFERingLWEKeyGenerator if stat_param is not None else mod.MCFERingLWEKeyGenerator
     cls = mod.ThresholdMCFERingLWE if stat_param is not None else mod.MCFERingLWE
     kg = kg_cls(cfg)

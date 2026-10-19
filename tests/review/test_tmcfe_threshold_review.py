@@ -48,6 +48,9 @@ def _cwd(tmp_path, monkeypatch):
 def _setup(t, sharing, ct_format="binary", **extra):
     cfg = dict(n=3, lst_nid=NIDS, s=3, t=t, lst_sid=SIDS, eta=1, ring_n=32, sec_param=64, bound_x=100, bound_y=3,
                stat_param=64, ct_format=ct_format, sharing=sharing, **extra)
+    # the defaults when these tests were written: a prime q, whole key shares (split ones: key_part="label")
+    cfg.setdefault("ring_modulus", "prime")
+    cfg.setdefault("key_shares", "full")
     kg = tm.ThresholdMCFERingLWEKeyGenerator(cfg)
     kg.setup()
     return kg, kg.get_public_parameters()

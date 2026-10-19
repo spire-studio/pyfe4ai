@@ -54,6 +54,8 @@ def _cwd(tmp_path, monkeypatch):
 def _setup(t=3, sharing="shamir", ct_format="json", **extra):
     cfg = dict(n=3, lst_nid=NIDS, s=3, t=t, lst_sid=SIDS, eta=1, ring_n=N, sec_param=64, bound_x=100, bound_y=3,
                stat_param=64, ct_format=ct_format, sharing=sharing, **extra)
+    # whole key shares, the default when these tests were written (split ones: key_part="label")
+    cfg.setdefault("key_shares", "full")
     kg = tm.ThresholdMCFERingLWEKeyGenerator(cfg)
     kg.setup()
     return kg, kg.get_public_parameters()

@@ -86,8 +86,10 @@ def _mcfe_lwe():
 
 
 def _mcfe_ring():
+    # JSON partials (tampered below) of whole key shares, as for the other schemes here
     kg = ThresholdMCFERingLWEKeyGenerator({"sec_param": 64, "n": 2, "lst_nid": NIDS, "s": 3, "lst_sid": SIDS, "t": 2,
-                                           "eta": 1, "ring_n": 16, "bound_x": 4, "bound_y": 5})
+                                           "eta": 1, "ring_n": 16, "bound_x": 4, "bound_y": 5,
+                                           "ct_format": "json", "key_shares": "full"})
     kg.setup()
     pp = kg.get_public_parameters()
     cts = {n: ThresholdMCFERingLWE({"id": n, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}}).encrypt([X[n]], "r1") for n in NIDS}
@@ -200,7 +202,8 @@ def test_keys_of_the_earlier_flooding_derivation_are_refused():
          {"fusion_weight": Y, "label": "r1"},
          lambda c, cts, dk: c.share_decrypt(cts, {"fusion_weight": Y, "label": "r1"}, dk, SIDS[:2]),
          lambda kg, pp, n: ThresholdMCFELWE({"id": n, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}}).encrypt(X[n], "r1")),
-        (ThresholdMCFERingLWEKeyGenerator({**base, "ring_n": 16, "bound_x": 4, "bound_y": 5}), ThresholdMCFERingLWE,
+        (ThresholdMCFERingLWEKeyGenerator({**base, "ring_n": 16, "bound_x": 4, "bound_y": 5, "key_shares": "full"}),
+         ThresholdMCFERingLWE,
          {"fusion_weight": Y, "label": "r1"},
          lambda c, cts, dk: c.share_decrypt(cts, {"fusion_weight": Y, "label": "r1"}, dk, SIDS[:2]),
          lambda kg, pp, n: ThresholdMCFERingLWE({"id": n, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}}).encrypt([X[n]], "r1")),
@@ -229,7 +232,8 @@ def test_flooding_noise_ignores_the_selected_sampler():
 
     kg = ThresholdMCFERingLWEKeyGenerator({"sec_param": 64, "n": 2, "lst_nid": NIDS, "s": 3, "lst_sid": SIDS, "t": 2,
                                            "eta": 1, "ring_n": 16, "bound_x": 4, "bound_y": 5,
-                                           "flooding": "gaussian"})  # the uniform default samples no Gaussian
+                                           "flooding": "gaussian",  # the uniform default samples no Gaussian
+                                           "key_shares": "full"})
     kg.setup()
     pp = kg.get_public_parameters()
     cts = {n: ThresholdMCFERingLWE({"id": n, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}}).encrypt([X[n]], "r1")

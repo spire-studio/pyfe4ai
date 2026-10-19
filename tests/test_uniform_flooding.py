@@ -66,9 +66,9 @@ def test_uniform_poly_is_uniform():
     assert abs(wide.mean()) < 0.02 and abs(wide.var() - 1 / 3) < 0.02
 
 
-def _kg(flooding=None, ring_n=32, stat_param=40, bound_x=100):
+def _kg(flooding=None, ring_n=32, stat_param=40, bound_x=100, **options):
     cfg = {"n": 3, "lst_nid": NIDS, "eta": 1, "ring_n": ring_n, "sec_param": 64, "bound_x": bound_x, "bound_y": 1,
-           "s": 3, "t": 2, "lst_sid": SIDS, "stat_param": stat_param}
+           "s": 3, "t": 2, "lst_sid": SIDS, "stat_param": stat_param, **options}
     if flooding is not None:
         cfg["flooding"] = flooding
     kg = tm.ThresholdMCFERingLWEKeyGenerator(cfg)
@@ -95,6 +95,16 @@ def test_parameters_and_records():
         _kg("laplace")
 
 
+def _server(kg, pp, sid, creds):
+    """``(server, key share)``: server *sid* with its weight key share where
+    its key share (a label part, the default) needs one."""
+    srv = tm.ThresholdMCFERingLWE({"id": sid, "precision": 2, "keys": {"pp": pp}})
+    dk = kg.get_decryption_keys(sid, credentials=creds)
+    if not srv.has_weight_key_share(dk):
+        srv.add_weight_key_share(kg.get_weight_key_share(sid, credentials=creds))
+    return srv, dk
+
+
 def _round(pp, kg, backend, ring_n=32, size=70, enrolled=("s0", "s2")):
     clients = {nid: tm.ThresholdMCFERingLWE({"id": nid, "precision": 2, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
                for nid in NIDS}
@@ -106,9 +116,8 @@ def _round(pp, kg, backend, ring_n=32, size=70, enrolled=("s0", "s2")):
                  "n_chunks": tm.ThresholdMCFERingLWE.key_chunks(cts["c0"])}
         parts = {}
         for sid in enrolled:
-            srv = tm.ThresholdMCFERingLWE({"id": sid, "precision": 2, "keys": {"pp": pp}})
-            parts[sid] = srv.compute_lst_ndarray_ct(cts, creds, kg.get_decryption_keys(sid, credentials=creds),
-                                                    list(enrolled))
+            srv, dk = _server(kg, pp, sid, creds)
+            parts[sid] = srv.compute_lst_ndarray_ct(cts, creds, dk, list(enrolled))
         out = tm.ThresholdMCFERingLWE({"id": "x", "precision": 2, "keys": {"pp": pp}}).decrypt_lst_ndarray_ct(parts)
     assert np.allclose(out[0], sum(grads.values()))
     return cts, creds, parts
@@ -125,8 +134,7 @@ def test_uniform_round_trip(backend, stat_param, bound_x):
 def test_partials_identical_across_backends_and_repeatable():
     kg, pp = _kg("uniform", ring_n=64, stat_param=128)
     cts, creds, _ = _round(pp, kg, "python", ring_n=64, size=130)
-    dk = kg.get_decryption_keys("s1", credentials=creds)
-    srv = tm.ThresholdMCFERingLWE({"id": "s1", "precision": 2, "keys": {"pp": pp}})
+    srv, dk = _server(kg, pp, "s1", creds)
     outs = []
     for name in ("python", "native", "native"):
         with native_backend.backend(name):
@@ -140,7 +148,8 @@ def test_partials_identical_across_backends_and_repeatable():
 
 def test_noise_is_the_seeded_uniform_polynomial():
     """w - lambda * (key part) equals uniform_flooding_poly of the request's
-    seed: the Gaussian sampler is not involved."""
+    seed: the Gaussian sampler is not involved; binary partials (the
+    default) draw the first k values of each chunk (16 and 4 of 20)."""
     kg, pp = _kg("uniform", ring_n=16, stat_param=40)
     calls = []
     real = tm.uniform_flooding_poly
@@ -154,23 +163,23 @@ def test_noise_is_the_seeded_uniform_polynomial():
     with mock.patch.object(tm, "uniform_flooding_poly", spy), \
             mock.patch.object(tm, "_flooding_poly", side_effect=AssertionError("Gaussian flooding used")):
         _round(pp, kg, "python", ring_n=16, size=20)
-    assert calls and all(c == (pp["flood_bits"], 16) for c in calls)
+    assert calls and set(calls) == {(pp["flood_bits"], 16), (pp["flood_bits"], 4)}
 
 
 def test_malformed_flooding_parameters_refused():
     kg, pp = _kg("uniform", ring_n=16)
     cts, creds, _ = _round(pp, kg, "python", ring_n=16, size=10)
-    dk = kg.get_decryption_keys("s0", credentials=creds)
     for bad in ({"flood_bits": 0}, {"flood_bits": "96"}, {"flooding": "laplace"}):
-        srv = tm.ThresholdMCFERingLWE({"id": "s0", "precision": 2, "keys": {"pp": dict(pp, **bad)}})
+        srv, dk = _server(kg, dict(pp, **bad), "s0", creds)
         with pytest.raises(FEValidationError):
             srv.compute_lst_ndarray_ct(cts, creds, dk, ["s0", "s1"])
 
 
 def test_gaussian_and_v030_parameters_still_decrypt():
     """flooding="gaussian" and public parameters without ``flooding`` (as
-    v0.3.0 wrote them): the Gaussian sampler, correct sums."""
-    kg, pp = _kg("gaussian", ring_n=16)
+    v0.3.0 wrote them, with its JSON format and prime modulus): the Gaussian
+    sampler, correct sums."""
+    kg, pp = _kg("gaussian", ring_n=16, ct_format="json", ring_modulus="prime")
     _round(pp, kg, "python", ring_n=16, size=20)
     v030 = {k: v for k, v in pp.items() if k != "flooding"}
     import unittest.mock as mock

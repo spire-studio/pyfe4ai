@@ -198,7 +198,8 @@ def _layer(kind, s, t, sharing):
         kg = ThresholdMIFELWEKeyGenerator(dict(base, lwe_n=16))
         cls = ThresholdMIFELWE
     elif kind == "ring":
-        kg = ThresholdMCFERingLWEKeyGenerator(dict(base, ring_n=16))
+        # JSON values and whole key shares, as the other schemes here (sent as JSON below)
+        kg = ThresholdMCFERingLWEKeyGenerator(dict(base, ring_n=16, ct_format="json", key_shares="full"))
         cls = ThresholdMCFERingLWE
     else:
         kg = ThresholdMCFELWEKeyGenerator(dict(base, lwe_n=16, bound_u=2, label_modulus=8))

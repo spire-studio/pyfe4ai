@@ -315,6 +315,7 @@ def test_threshold_and_decentralised_round_trip(mode):
     parts = {}
     for sid in enrolled:
         srv = tmcfe_rlwe.ThresholdMCFERingLWE({"id": sid, "precision": 2, "keys": {"pp": pp}})
+        srv.add_weight_key_share(kg.get_weight_key_share(sid, credentials=creds))  # split key shares, the default
         parts[sid] = srv.compute_lst_ndarray_ct(cts, creds, kg.get_decryption_keys(sid, credentials=creds), enrolled)
     comb = tmcfe_rlwe.ThresholdMCFERingLWE({"id": "c", "precision": 2, "keys": {"pp": pp}})
     assert np.allclose(comb.decrypt_lst_ndarray_ct(parts)[0], sum(grads.values()))
@@ -476,8 +477,9 @@ def test_ml_adapter_keeps_the_layer_marker():
 
 
 def test_threshold_tags_and_key_shares_bind_the_mode():
+    # whole key shares, as v0.3.0's below (a label part of another mode does not complete its weight part)
     kg, pp, clients = _rlwe(None, tmcfe_rlwe.ThresholdMCFERingLWEKeyGenerator, tmcfe_rlwe.ThresholdMCFERingLWE,
-                            32, s=3, t=2, lst_sid=["s0", "s1", "s2"], stat_param=40)
+                            32, s=3, t=2, lst_sid=["s0", "s1", "s2"], stat_param=40, key_shares="full")
     grads = {nid: np.random.default_rng(3).uniform(-1, 1, 40).round(2) for nid in clients}
     cts = {nid: clients[nid].encrypt_lst_ndarray([grads[nid]], label="r") for nid in clients}
     assert cts["c0"][0]["label_hash"] == 2

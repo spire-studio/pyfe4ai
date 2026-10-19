@@ -106,7 +106,7 @@ def test_formats_are_validated():
     nids, sids = ["c0", "c1"], ["s0", "s1"]
     kg = tmcfe_rlwe.ThresholdMCFERingLWEKeyGenerator({
         "n": 2, "lst_nid": nids, "s": 2, "t": 2, "lst_sid": sids, "eta": 1, "ring_n": 16,
-        "sec_param": 64, "bound_x": 2, "bound_y": 2})
+        "sec_param": 64, "bound_x": 2, "bound_y": 2, "ct_format": "json"})
     kg.setup()
     with pytest.raises(FEValidationError):  # JSON public parameters: format 2 needs ct_format="binary" at the key generator
         tmcfe_rlwe.ThresholdMCFERingLWE({"id": "c0", "ct_format": "binary",

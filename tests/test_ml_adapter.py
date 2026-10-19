@@ -484,12 +484,37 @@ def test_packed_layers_of_several_tensors_round_trip():
     assert restored.ciphertexts == layers
 
 
-def test_binary_chunks_are_refused_by_to_dict():
-    """Chunks with bytes values (a binary ciphertext format) have no JSON form."""
-    layer = {"shape": [2], "first_chunk": 0, "chunks": [{"ct": b"\x00\x01", "k": 2}]}
-    enc = EncryptedGradient(ciphertexts=[layer], shape=(2,), precision=1, mode="decimal", nid="a")
-    with pytest.raises(TypeError, match="binary"):
-        enc.to_dict()
+def test_binary_chunks_are_written_as_base64():
+    """Chunk fields holding bytes (binary ciphertexts) are base64 strings named
+    in the layer's ``base64`` list, decoded strictly by from_dict."""
+    import json
+
+    layer = {"shape": [3], "first_chunk": 0, "label_hash": 2,
+             "chunks": [{"ct": b"\x00\x01\xff", "k": 2, "tags": {"s0": "ab"}}, {"ct": bytearray(b"\x07"), "k": 1}]}
+    enc = EncryptedGradient(ciphertexts=[layer], shape=(3,), precision=1, mode="decimal", nid="a")
+    sent = json.loads(json.dumps(enc.to_dict()))
+    assert sent["ciphertexts"][0]["packed"]["base64"] == ["ct"]
+    assert sent["ciphertexts"][0]["packed"]["chunks"][0] == {"ct": "AAH/", "k": 2, "tags": {"s0": "ab"}}
+    restored = EncryptedGradient.from_dict(sent)
+    assert restored.ciphertexts == [dict(layer, chunks=[layer["chunks"][0], {"ct": b"\x07", "k": 1}])]
+    assert isinstance(restored.ciphertexts[0]["chunks"][1]["ct"], bytes)
+    # a chunk without the binary field of the others
+    mixed = dict(layer, chunks=[layer["chunks"][0], {"ct": "x", "k": 1}])
+    with pytest.raises(TypeError, match="binary fields"):
+        EncryptedGradient(ciphertexts=[mixed], shape=(3,), precision=1, mode="decimal", nid="a").to_dict()
+    # not base64, a missing field, a bad field list
+    packed = sent["ciphertexts"][0]["packed"]
+    for bad, match in (
+        (dict(packed, chunks=[dict(packed["chunks"][0], ct="AA=H"), packed["chunks"][1]]), "not base64"),
+        (dict(packed, chunks=[dict(packed["chunks"][0], ct="AAé/"), packed["chunks"][1]]), "not base64"),
+        (dict(packed, chunks=[{"k": 2}, packed["chunks"][1]]), "base64 string"),
+        (dict(packed, base64=[]), "base64"),
+        (dict(packed, base64=["k"]), "base64"),
+        (dict(packed, base64=["ct", "ct"]), "base64"),
+        (dict(packed, base64="ct"), "base64"),
+    ):
+        with pytest.raises(ValueError, match=match):
+            EncryptedGradient.from_dict(dict(sent, ciphertexts=[{"packed": bad}]))
 
 
 @pytest.mark.parametrize("layers, match", [

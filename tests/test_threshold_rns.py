@@ -112,9 +112,11 @@ def test_ntt_and_products_identical(bits, k, n):
 
 
 def _setup(t=2, ct_format="json", stat_param=150, ring_n=32, ring_modulus="rns", **extra):
+    """Whole key shares (split ones, with RNS moduli too: test_threshold_split_shares.py,
+    test_threshold_defaults.py)."""
     config = {"n": 3, "lst_nid": NIDS, "s": 3, "t": t, "lst_sid": SIDS, "eta": 1, "ring_n": ring_n, "sec_param": 64,
               "bound_x": 100, "bound_y": 3, "stat_param": stat_param, "ct_format": ct_format,
-              "ring_modulus": ring_modulus, **extra}
+              "ring_modulus": ring_modulus, "key_shares": "full", **extra}
     kg = tm.ThresholdMCFERingLWEKeyGenerator(config)
     kg.setup()
     return kg, kg.get_public_parameters()

@@ -379,7 +379,7 @@ def test_seeded_sharing_has_its_own_parameter_records_and_small_key_shares():
     import os
 
     def record(kg):
-        with open(os.path.join(kg.config_folder, kg._scheme_type, "param.json"), encoding="utf-8") as f:
+        with open(os.path.join(kg.config_folder, kg._scheme_type, kg._param_file_name()), encoding="utf-8") as f:
             return json.load(f)
 
     sids = ["sid_%d" % i for i in range(5)]
@@ -387,8 +387,9 @@ def test_seeded_sharing_has_its_own_parameter_records_and_small_key_shares():
                                          "bound_x": 6, "bound_y": 6, "s": 5, "t": 3, "lst_sid": sids,
                                          "sharing": "replicated-seeded"})
     assert record(mife)["construction"] == "acfgu18-abdp15-replicated-seeded-smudging-seeded-a/v1"
+    # whole key shares as JSON for both sharings: the sizes below compare like with like
     base = {"sec_param": 64, "eta": 1, "n": 2, "lst_nid": ["a", "b"], "ring_n": 16, "bound_x": 4, "bound_y": 4,
-            "s": 5, "t": 3, "lst_sid": sids}
+            "s": 5, "t": 3, "lst_sid": sids, "ct_format": "json", "key_shares": "full"}
     seeded = ThresholdMCFERingLWEKeyGenerator(dict(base, sharing="replicated-seeded"))
     # the default uniform flooding
     assert record(seeded)["threshold_construction"] == "bmms21-ibmcfe-replicated-seeded-smudging-uniform/v1"
@@ -423,8 +424,8 @@ def test_key_shares_of_integer_client_ids_survive_json_transport(kind, sharing):
     if kind == "mife":
         kg = ThresholdMIFELWEKeyGenerator(dict(base, lwe_n=16))
         cls, x, want = ThresholdMIFELWE, [5], 25
-    elif kind == "ring":
-        kg = ThresholdMCFERingLWEKeyGenerator(dict(base, ring_n=16))
+    elif kind == "ring":  # JSON values and whole key shares, transported as JSON below
+        kg = ThresholdMCFERingLWEKeyGenerator(dict(base, ring_n=16, ct_format="json", key_shares="full"))
         cls, x, want = ThresholdMCFERingLWE, [[5]], [25]
     else:
         kg = ThresholdMCFELWEKeyGenerator(dict(base, lwe_n=16, bound_u=2, label_modulus=8))

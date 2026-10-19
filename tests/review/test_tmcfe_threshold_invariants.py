@@ -46,6 +46,7 @@ def _cwd(tmp_path, monkeypatch):
 def _setup(t=3, ring_modulus="prime", eta=2, ring_n=32, **extra):
     cfg = dict(n=3, lst_nid=NIDS, s=3, t=t, lst_sid=SIDS, eta=eta, ring_n=ring_n, sec_param=64, bound_x=100,
                bound_y=3, stat_param=64, ct_format="binary", ring_modulus=ring_modulus, **extra)
+    cfg.setdefault("key_shares", "full")  # the default when these tests were written (split: key_part="label")
     kg = tm.ThresholdMCFERingLWEKeyGenerator(cfg)
     kg.setup()
     pp = kg.get_public_parameters()
@@ -212,8 +213,7 @@ def test_rns_with_other_sharings_and_floodings(case, ct_format):
           for nid in NIDS}
     enc = {nid: cl[nid].encrypt_lst_ndarray(g[nid], label="r") for nid in NIDS}
     creds = {"fusion_weight": w, "label": "r", "n_chunks": cl["c0"].key_chunks(enc["c0"])}
-    if split:
-        creds["key_part"] = "label"
+    creds["key_part"] = "label" if split else "full"
     dks = {sid: kg.get_decryption_keys(sid, credentials=creds) for sid in SIDS}
     outs = []
     for name in BACKENDS:

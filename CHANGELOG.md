@@ -9,9 +9,10 @@ compatibility).
 
 ### Added
 
-- **`mcfe/ring_lwe_threshold`: opt-in binary ciphertexts** (key generator
-  config `ct_format = "binary"`, published in the public parameters; JSON
-  stays the default and unchanged). Format 2 truncates the `ct0` rows to the
+- **`mcfe/ring_lwe_threshold`: binary ciphertexts** (key generator config
+  `ct_format = "binary"`, published in the public parameters; the default
+  since the change below, `"json"` selects the unchanged format of earlier
+  versions). Format 2 truncates the `ct0` rows to the
   batch length, keeps `ct1` whole and refuses any value `>= q` (a second
   encoding would let a client redraw the flooding noise for one key part);
   tags v2 cover the public parameters' digest, the (chunk) label, the label
@@ -23,8 +24,9 @@ compatibility).
   element, partial decryptions 222 -> 54, server 60 -> 19 ms, client 44 ->
   30 ms. The uniform flooding noise is now drawn natively on both formats
   (same values).
-- **`mcfe/ring_lwe_threshold`: opt-in RNS modulus** (`ring_modulus="rns"`;
-  the prime stays the default): the flooded `q` is a product of NTT primes
+- **`mcfe/ring_lwe_threshold`: RNS modulus** (`ring_modulus="rns"`; the
+  default since the change below, `"prime"` selectable): the flooded `q` is a
+  product of NTT primes
   below 2^62, four of about 54 bits under `standard`
   (`rns_ntt_modulus_for`: `k = max(2, ceil(bits / 60))` factors, but four
   of up to 62 bits up to 248 bits, the most the native ring holds, with a
@@ -43,7 +45,8 @@ compatibility).
   values, `s = t = 3`, 1 thread: partial decryption 19 -> 11 ms (binary),
   57 -> 45 ms (JSON); client 30 -> 26.5 ms.
 - **`mcfe/ring_lwe_threshold`: per-round key shares of the label terms only**
-  (opt-in; full key shares stay the default). `get_weight_key_share` issues
+  (the default since the change below; `key_part="full"` or
+  `key_shares="full"` for whole key shares). `get_weight_key_share` issues
   the shares of the label-independent `sk_y` once per weights; servers keep
   them (`add_weight_key_share`), and `get_decryption_keys(...,
   key_part="label")` then shares only `z` and `z_chunks` (`label_term=False`:
@@ -74,6 +77,19 @@ compatibility).
   combiners check that JSON partials hold `k` values; a label part cached by
   the key generator is issued again for the current share set once the
   weights' sharing was dropped (`WEIGHT_SHARINGS_KEPT`).
+- **ML adapter: `mcfe/ring_lwe_threshold`.** `FESchemeWrapper` runs the
+  threshold scheme's decryption servers: `prepare_aggregation` and
+  `aggregate_gradients` (new `servers=`, default the first `t` of `lst_sid`)
+  give each enrolled server its label key share for the round and, once per
+  weights and share set, its weight key share, then combine the partial
+  decryptions. The steps are also separate functions,
+  `partial_decrypt_gradients` (one server) and `combine_partial_decryptions`,
+  whose `ThresholdPartial` has `to_dict` / `from_dict` (binary `w` and `c_y`
+  as base64, layout checked). `EncryptedGradient.to_dict` writes chunk fields
+  holding bytes (binary ciphertexts) as base64 strings named in the layer's
+  `base64` list instead of refusing them; `from_dict` decodes them strictly.
+  Under `flooding_accounting = "kl"` the adapter refuses the scheme (a
+  budget per server); the other threshold variants stay refused.
 - Pickled scheme objects are not portable across versions of pyfe4ai (keep
   them within one version, e.g. for multiprocessing or Ray): the threshold
   Ring-LWE MCFE key generator, clients and servers record a state version and
@@ -650,6 +666,30 @@ compatibility).
 
 ### Changed
 
+- **`mcfe/ring_lwe_threshold` defaults: binary ciphertexts, an RNS modulus
+  and split key shares**, under both profiles. A key generator without these
+  options publishes `ct_format = "binary"` and an RNS `q` with at least three
+  factors (`MIN_RNS_FACTORS`: the `toy` profile's flooded `q` below `2^124`
+  had two, the MIFE / MCFE prototype's context, and ran on the Python path),
+  and issues split key shares (new config `key_shares`, `"split"` by default,
+  `"full"` for the replicated-seeded sharing): `get_decryption_keys` returns
+  the label part unless `key_part="full"`, and servers need the weight part
+  (`get_weight_key_share`, `add_weight_key_share`; new
+  `has_weight_key_share`) first. `ct_format="json"`, `ring_modulus="prime"`
+  and `key_shares="full"` select the formats of earlier versions; their
+  public parameters, records (`param.json`; the defaults' are
+  `param-rns.json`), ciphertexts and key shares keep working, and the
+  construction ids are unchanged. Mixes fail closed with messages that name
+  the fix (a label part without its weight part; JSON ciphertexts under
+  binary public parameters, and the other way round). The RNS modulus of the
+  MIFE / MCFE / dMCFE Ring-LWE schemes stays opt-in. Label parts are kept
+  with the weight sharing they complete (dropped with it, without scanning
+  the other keys) and are made again when another thread evicted that
+  sharing meanwhile; the native Shamir dealing reports exhausted test bytes
+  as such rather than as malformed key material. The threshold objects'
+  state version changed: pickles of the previous one are refused.
+  `bench_fl_compare.py` runs the threshold family with the scheme's defaults
+  (`--ct-format`, `--ring-modulus`, `--key-shares` override them).
 - **`sife/fullysec_ring_lwe` samples exact Gaussians by default**
   (`gaussian_sampler = "facct"` for the keys and the encryption noise of
   both layouts, whatever the library-wide sampler; `pp` carries the key

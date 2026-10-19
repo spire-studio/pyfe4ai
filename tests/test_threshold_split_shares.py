@@ -96,7 +96,8 @@ def test_split_rounds_decrypt_and_backends_agree(t, sharing, ct_format, label_te
 
 def test_split_parts_are_smaller_and_a_weight_part_is_reused(monkeypatch):
     kg, pp = _setup(t=3)
-    full = kg.get_decryption_keys("s0", credentials={"fusion_weight": WEIGHTS, "label": "L", "n_chunks": 2})
+    full = kg.get_decryption_keys("s0", credentials={"fusion_weight": WEIGHTS, "label": "L", "n_chunks": 2,
+                                                     "key_part": "full"})
     weight = kg.get_weight_key_share("s0", credentials={"fusion_weight": WEIGHTS})
     label = kg.get_decryption_keys("s0", credentials={"fusion_weight": WEIGHTS, "label": "L", "n_chunks": 2,
                                                       "key_part": "label", "label_term": False})
@@ -206,7 +207,7 @@ def test_malformed_binary_key_shares_are_refused(name, sharing, t):
     clients = {nid: _obj(pp, nid, kg) for nid in NIDS}
     cts = {nid: cl.encrypt([[1, 2, 3]], "L") for nid, cl in clients.items()}
     creds = {"fusion_weight": WEIGHTS, "label": "L"}
-    dk = kg.get_decryption_keys("s0", credentials=creds)
+    dk = kg.get_decryption_keys("s0", credentials=dict(creds, key_part="full"))  # sk_y and z in one share
     q = int(pp["q"])
     wb = (q.bit_length() + 7) // 8
 
@@ -295,7 +296,7 @@ def test_binary_replicated_shares_with_a_server_assigned_no_piece(split):
     kg, pp = _setup(t=2, sharing="replicated")
     clients = {nid: _obj(pp, nid, kg) for nid in NIDS}
     cts = {nid: cl.encrypt([[1, 2, 3]], "L") for nid, cl in clients.items()}
-    creds = {"fusion_weight": WEIGHTS, "label": "L", **({"key_part": "label"} if split else {})}
+    creds = {"fusion_weight": WEIGHTS, "label": "L", "key_part": "label" if split else "full"}
     dks = {sid: kg.get_decryption_keys(sid, credentials=creds) for sid in SIDS}
     out = {}
     for name in BACKENDS:

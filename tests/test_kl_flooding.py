@@ -28,8 +28,9 @@ from pyfe4ai.utils.sampling_utils import XofRandom
 NIDS = ["nid_0", "nid_1", "nid_2"]
 SIDS = ["sid_0", "sid_1", "sid_2"]
 # the default accounting with t < s, as the existing threshold tests use it
+# whole key shares: the servers below are given one key share (split ones: test_threshold_split_shares.py)
 TMCFE = {"sec_param": 64, "eta": 1, "n": 3, "s": 3, "t": 2, "lst_nid": NIDS, "lst_sid": SIDS,
-         "ring_n": 16, "bound_x": 4, "bound_y": 4}
+         "ring_n": 16, "bound_x": 4, "bound_y": 4, "key_shares": "full"}
 TMIFE = {"sec_param": 64, "eta": 1, "n": 3, "s": 3, "t": 2, "lst_nid": NIDS, "lst_sid": SIDS,
          "lwe_n": 16, "bound_x": 6, "bound_y": 6}
 # "kl" needs t = s
@@ -289,7 +290,7 @@ def test_default_tmcfe_parameters_and_pp_are_unchanged():
     kg.setup()
     pp = kg.get_public_parameters()
     assert not KL_FIELDS & set(pp)
-    with open("config/authority/{}/param.json".format(kg._scheme_type)) as f:
+    with open("config/authority/{}/{}".format(kg._scheme_type, kg._param_file_name())) as f:
         record = json.load(f)
     assert record["threshold_construction"] == "bmms21-ibmcfe-replicated-smudging/v1"
     assert "flooding_accounting" not in record and "max_partial_decryptions" not in record

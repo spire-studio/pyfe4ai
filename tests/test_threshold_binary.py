@@ -34,8 +34,11 @@ def _cwd(tmp_path, monkeypatch):
 
 
 def _setup(t=2, ct_format="binary", flooding="uniform", ring_n=32, eta=1, **extra):
+    """Whole key shares (split ones: test_threshold_split_shares.py); *ct_format*
+    ``None`` leaves it to the default (binary)."""
     config = {"n": 3, "lst_nid": NIDS, "s": 3, "t": t, "lst_sid": SIDS, "eta": eta, "ring_n": ring_n,
-              "sec_param": 64, "bound_x": 100, "bound_y": 3, "stat_param": 64, "flooding": flooding, **extra}
+              "sec_param": 64, "bound_x": 100, "bound_y": 3, "stat_param": 64, "flooding": flooding,
+              "key_shares": "full", **extra}
     if ct_format is not None:
         config["ct_format"] = ct_format
     kg = tm.ThresholdMCFERingLWEKeyGenerator(config)
@@ -172,7 +175,9 @@ def test_binary_keeps_the_noise_of_one_key_part():
 
 
 def test_json_public_parameters_are_unchanged():
-    kg, pp, clients = _setup(ct_format=None)
+    """With the options of versions <= 0.3.0 (JSON, a prime q) the public
+    parameters and their binding are those of these versions."""
+    kg, pp, clients = _setup(ct_format="json", ring_modulus="prime")
     assert "ct_format" not in pp
     assert tm.binding_fields(pp) == tm._BINDING_FIELDS
     assert kg._binding == pp_binding(pp, tm._BINDING_FIELDS, tm._BINDING_DEFAULTS)
@@ -223,7 +228,7 @@ def test_binary_refuses_non_canonical_values_even_when_tagged(name):
 
 def test_mixed_formats_are_refused():
     kg, pp, clients = _setup(t=3)
-    kgj, ppj, clientsj = _setup(t=3, ct_format=None)
+    kgj, ppj, clientsj = _setup(t=3, ct_format="json")
     creds = {"fusion_weight": {nid: [1] for nid in NIDS}, "label": "L"}
     cts = {nid: cl.encrypt([[1, 2, 3]], "L") for nid, cl in clients.items()}
     ctsj = {nid: cl.encrypt([[1, 2, 3]], "L") for nid, cl in clientsj.items()}
@@ -236,7 +241,7 @@ def test_mixed_formats_are_refused():
                "k": k, "label_hash": cts["c1"]["label_hash"]}
     as_json = tag_ciphertext(as_json, kg.get_private_keys("c1")["mac_keys"], tm._TAG_DOMAIN,
                              tm._tag_payload(encode_label("L"), as_json))
-    with pytest.raises(FESchemeError, match="not authenticated"):
+    with pytest.raises(FESchemeError, match="is JSON; the public parameters' format is binary"):
         srv.share_decrypt(dict(cts, c1=as_json), creds, dk, SIDS)
     # format 1 under binary public parameters, tagged with a v2 message: refused
     f1 = rlu.encode_binary_ciphertext([row + [0] * (ring_n - k) for row in ct0], ct1, q, ring_n)
@@ -295,7 +300,7 @@ def test_key_shares_are_bound_to_one_format():
     """A key share of binary public parameters is refused by a server of the
     same parameters without ct_format, and the other way round."""
     kg, pp, clients = _setup(t=3)
-    kgj, ppj, _ = _setup(t=3, ct_format=None)
+    kgj, ppj, _ = _setup(t=3, ct_format="json")
     creds = {"fusion_weight": {nid: [1] for nid in NIDS}, "label": "L"}
     cts = {nid: cl.encrypt([[1, 2, 3]], "L") for nid, cl in clients.items()}
     dk, dkj = kg.get_decryption_keys("s0", credentials=creds), kgj.get_decryption_keys("s0", credentials=creds)
@@ -326,7 +331,7 @@ def test_partials_must_be_of_the_parameters_format(name):
                     {"w": q.to_bytes(wb, "little") + parts["s0"]["w"][wb:]}):
             with pytest.raises(FESchemeError):
                 comb.combine_decrypt(dict(parts, s0=dict(parts["s0"], **bad)))
-        kgj, ppj, clientsj = _setup(t=3, ct_format=None)
+        kgj, ppj, clientsj = _setup(t=3, ct_format="json")
         ctsj = {nid: cl.encrypt([[1, 2, 3]], "L") for nid, cl in clientsj.items()}
         partsj = {sid: _obj(ppj, sid).share_decrypt(ctsj, creds, kgj.get_decryption_keys(sid, credentials=creds), SIDS)
                   for sid in SIDS}

@@ -192,8 +192,10 @@ def test_tmife_lwe_honest_partials_are_simulatable(sharing):
 # ------------------------------------------------------------- tMCFE-Ring-LWE
 
 def _tmcfe_ring(sharing, flooding="gaussian"):
+    # whole key shares and JSON values: the simulation below rebuilds the partials from them
     cfg = {"sec_param": 64, "eta": 1, "n": 3, "s": 3, "t": 2, "lst_nid": ["a", "b", "c"],
-           "lst_sid": SIDS, "ring_n": 16, "bound_x": 4, "bound_y": 4, "flooding": flooding}
+           "lst_sid": SIDS, "ring_n": 16, "bound_x": 4, "bound_y": 4, "flooding": flooding,
+           "ct_format": "json", "key_shares": "full"}
     kg = ThresholdMCFERingLWEKeyGenerator(_with_sharing(cfg, sharing))
     kg.setup()
     return cfg, kg, kg.get_public_parameters()

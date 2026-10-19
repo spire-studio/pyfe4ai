@@ -18,6 +18,10 @@ parameters (see *Security Profiles* in the top-level README).
 - `mcfe_lwe_minimal.py`: minimal `MCFE/LWE`
 - `mcfe_lwe_decentralized_demo.py`: decentralized `dMCFE/LWE`
 - `mcfe_lwe_threshold_demo.py`: threshold `tMCFE/LWE` (experimental threshold layer)
+- `mcfe_ring_lwe_threshold_demo.py`: threshold `tMCFE/Ring-LWE` (experimental threshold layer):
+  federated rounds with the default split key shares (a weight key share per
+  server once, a label key share per round), then the same through the ML
+  adapter with ciphertexts and partial decryptions sent as JSON
 - `mife_lwe_threshold_demo.py`: threshold `tMIFE/LWE` (experimental threshold layer)
 
 ## ML / Privacy-Preserving AI

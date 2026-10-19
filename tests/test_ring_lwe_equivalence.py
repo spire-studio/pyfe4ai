@@ -162,7 +162,9 @@ def _mife(eta: int, ring_n: int, bound_x: int = 3, bound_y: int = 3, n: int = 3,
            "bound_x": bound_x, "bound_y": bound_y}
     if stat_param is not None:
         kg_cls, crypto_cls = tmcfe_rlwe.ThresholdMCFERingLWEKeyGenerator, tmcfe_rlwe.ThresholdMCFERingLWE
-        cfg.update(s=3, t=2, lst_sid=["s0", "s1", "s2"], stat_param=stat_param)
+        # the format and modulus of v0.3.0, whose code these tests compare with
+        cfg.update(s=3, t=2, lst_sid=["s0", "s1", "s2"], stat_param=stat_param, ct_format="json",
+                   ring_modulus="prime")
     kg = kg_cls(cfg)
     kg.setup()
     pp = kg.get_public_parameters()
@@ -262,7 +264,8 @@ def test_threshold_share_decrypt_identical(sampler, monkeypatch, stat_param, flo
     nids, sids = ["c0", "c1", "c2"], ["s0", "s1", "s2"]
     kg = tmcfe_rlwe.ThresholdMCFERingLWEKeyGenerator({
         "n": 3, "lst_nid": nids, "s": 3, "t": 2, "lst_sid": sids, "eta": 1, "ring_n": 32,
-        "sec_param": 64, "bound_x": 4, "bound_y": 4, "stat_param": stat_param, "flooding": flooding})
+        "sec_param": 64, "bound_x": 4, "bound_y": 4, "stat_param": stat_param, "flooding": flooding,
+        "ct_format": "json", "ring_modulus": "prime", "key_shares": "full"})  # as in v0.3.0
     kg.setup()
     pp = kg.get_public_parameters()
     clients = {nid: tmcfe_rlwe.ThresholdMCFERingLWE({"id": nid, "precision": 0,

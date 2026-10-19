@@ -302,7 +302,7 @@ SCHEME_STATUS: dict[tuple[str, str], SchemeStatus] = {
         "; the opt-in sharing='replicated-seeded' expands all key pieces but one from "
         "secret 256-bit seeds and hides the key shares only computationally (SHAKE-256 "
         "keyed by the seeds as a PRF); full replicated sharing stays the default for t < s"
-        "; opt-in ct_format='binary' (format-2 ciphertexts with ct0 cut to the batch length and every value strictly below q, tags over the parameters' digest and the bytes, binary partials and key shares), ring_modulus='rns' (q a product of NTT primes, each above s) and split key shares (sk_y once per weights, the label terms per round)",
+        "; by default binary ciphertexts (format 2: ct0 cut to the batch length and every value strictly below q, tags over the parameters' digest and the bytes, binary partials and key shares), an RNS modulus (q a product of at least three NTT primes, each above s) and split key shares (sk_y once per weights, the label terms per round); ct_format='json', ring_modulus='prime' and key_shares='full' select the formats of earlier versions",
     ),
     ("mcfe", "ring_lwe_decentralized"): SchemeStatus(
         _S + "mcfe.ring_lwe_decentralized", REVIEWED, ADAPTED,

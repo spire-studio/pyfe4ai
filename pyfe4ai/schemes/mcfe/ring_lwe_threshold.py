@@ -8,7 +8,23 @@ flooded partial decryptions.
 | Aggregation for Privacy-Preserving Federated Learning", IEEE TDSC 2024.
 
 * type:     identity-based multi-client encryption, threshold functional decryption
-* setting:  R_q = Z_q[x] / (x^ring_n + 1), q an NTT-friendly prime
+* setting:  R_q = Z_q[x] / (x^ring_n + 1), q a product of NTT-friendly primes
+  (default) or an NTT-friendly prime
+
+Defaults (both security profiles, ``standard`` and ``toy``): binary
+ciphertexts, key shares and partial decryptions (``ct_format="binary"``), an
+RNS modulus (``ring_modulus="rns"``) and key shares split into a weight part
+per weights and a label part per label (``key_shares="split"``; whole key
+shares for the replicated-seeded sharing). Each is selectable as before --
+``ct_format="json"``, ``ring_modulus="prime"``, ``key_shares="full"`` or
+``key_part="full"`` per call -- and public parameters, parameter records,
+ciphertexts and key shares of the earlier defaults (no ``ct_format``: JSON; no
+``q_factors``: a prime) keep working where they did. The defaults change no
+construction id; their parameter records are ``param-rns.json`` (a folder's
+``param.json`` is the prime's). What does not match fails closed: a server
+refuses ciphertexts, partial decryptions and key shares of the other format or
+of other public parameters (``pp_binding``), and a label part without its
+weight part (:meth:`ThresholdMCFERingLWE.add_weight_key_share`).
 
 Construction (notation of :mod:`pyfe4ai.schemes.mife.ring_lwe`):
 
@@ -134,8 +150,9 @@ have their own record (``threshold_construction``
 ``bmms21-ibmcfe-shamir-smudging-kl/v2``).
 
 Ciphertext format (key generator config ``ct_format``, a public parameter;
-:data:`CT_FORMATS`): ``"json"`` (default; decimal strings, tags over the
-JSON form, as in versions <= 0.3.0) or the opt-in ``"binary"``: format 2 of
+:data:`CT_FORMATS`): ``"json"`` (decimal strings, tags over the JSON form,
+as in versions <= 0.3.0; public parameters without ``ct_format``) or
+``"binary"`` (the default): format 2 of
 :func:`~pyfe4ai.utils.ring_lwe_utils.encode_threshold_ciphertext` -- the
 ``ct0`` rows truncated to the batch length ``k`` (decryption reads them
 coefficient-wise), ``ct1`` whole, every value a ``ceil(bits(q)/8)``-byte
@@ -160,14 +177,19 @@ A client, server or combiner fixes its format when it is made and refuses to
 work once the bound fields or the format of its public parameters (the
 caller's dict) have changed: one key part, one derivation.
 
-Key shares per round (opt-in): a key share for ``(y, l)`` is the label-
-independent ``sk_y`` and the label's terms ``z''_l`` (and of its chunks).
+Key shares per round (key generator config ``key_shares``,
+:data:`KEY_SHARES`; ``"split"`` by default): a key share for ``(y, l)`` is the
+label-independent ``sk_y`` and the label's terms ``z''_l`` (and of its chunks).
 :meth:`ThresholdMCFERingLWEKeyGenerator.get_weight_key_share` issues the
 shares of ``sk_y`` once per weights (servers keep them:
 :meth:`ThresholdMCFERingLWE.add_weight_key_share`), and
-``get_decryption_keys(..., key_part="label")`` the shares of the label terms
-only (``label_term=False`` leaves out the label's own ``z``, which only single
-ciphertexts need): two of six polynomials per round for two chunks. Both
+``get_decryption_keys`` (``key_part="label"``, the default with split key
+shares) the shares of the label terms only (``label_term=False`` leaves out
+the label's own ``z``, which only single ciphertexts need): two of six
+polynomials per round for two chunks; per round a server needs nothing else
+from the key generator. ``key_shares="full"`` (or ``key_part="full"`` per
+call) issues whole key shares, as in versions <= 0.3.0; the replicated-seeded
+sharing has only these. Both
 parts are of one sharing (Shamir points or replicated sets) and carry a
 ``share_set_id``; a server combines a label part only with the weight part of
 the same weights, share set, sharing, binding, flooding, noise derivation and
@@ -178,26 +200,33 @@ independent of the keys, and the noise is seeded as for a full key share;
 parameters every polynomial of the Shamir and replicated key shares is bytes
 (``ceil(bits(q)/8)``-byte words, strictly below ``q``; the seeded sharing keeps
 decimal strings). Key material mixing both kinds is dealt as values; key shares
-whose polynomials are of another kind (e.g. ``memoryview``) or length, hold
-values other than ints and decimal strings, or replicated pieces mixing kinds,
-are refused (``FEKeyError``). The key generator keeps the sharings of ``sk_y``
-for the last :data:`WEIGHT_SHARINGS_KEPT` weights: weights issued again after
-that come with a new share set -- their weight part and every label part
-issued from then on, cached label parts included -- which servers holding the
-old weight part refuse until given the new one.
+whose polynomials are neither bytes nor lists or tuples (e.g. ``memoryview``),
+are of another length, hold values other than ints, ``mpz`` and decimal
+strings, or are replicated pieces mixing kinds, are refused (``FEKeyError``).
+The key generator keeps the sharings of ``sk_y`` for the last
+:data:`WEIGHT_SHARINGS_KEPT` weights: weights issued again after that come
+with a new share set -- their weight part and every label part issued from
+then on -- which servers holding the old weight part refuse until given the
+new one. A label part is of the weights' share set current when it is issued
+(one made while another thread evicted that sharing is made again for the new
+set) and is kept with that sharing, and dropped with it.
 
 The threshold objects (key generator, clients, servers) are not portable across
 versions of pyfe4ai: a state pickled by another version is refused when loaded
 (create the object again).
 
-Modulus (key generator config ``ring_modulus``): an NTT prime (default) or
-the opt-in ``"rns"``: ``q`` the product of NTT primes below ``2^62``, as
-many as make each at most 60 bits (four for the 212 to 218 bits of the
+Modulus (key generator config ``ring_modulus``): ``"rns"`` (the default):
+``q`` the product of NTT primes below ``2^62``, at least
+:data:`MIN_RNS_FACTORS` (three: the native threshold kernels run on the
+256-bit ring, also for the smaller ``q`` of the ``toy`` profile) and as many
+as make each at most 60 bits (four for the 212 to 218 bits of the
 ``standard`` profile, about 54 bits each), but four up to 248 bits, the most
 the native ring holds (above, five or more on the Python path, with a
-warning; :func:`~pyfe4ai.utils.ring_lwe_utils.rns_ntt_modulus_for`), of the bit length of
-the prime and above the same bound, published as ``q_factors`` (bound to the
-key shares). Every factor must exceed ``s`` (:func:`check_rns_servers`):
+warning -- ``"prime"`` stays native below ``2^253``;
+:func:`~pyfe4ai.utils.ring_lwe_utils.rns_ntt_modulus_for`), of the bit length
+of the prime and above the same bound, published as ``q_factors`` (bound to
+the key shares); or ``"prime"``, an NTT prime (the modulus of earlier
+versions). Every factor must exceed ``s`` (:func:`check_rns_servers`):
 Shamir sharing over ``Z_q`` is then one field sharing per factor (CRT), with
 units for points and differences; the replicated sharing, the flooding (an
 argument over the integers), the label hash (exact rejection sampling on
@@ -350,11 +379,27 @@ def binding_fields(pp: dict) -> tuple:
 
 
 #: Ciphertext formats of the threshold scheme (key generator config
-#: ``ct_format``, a public parameter): ``"json"`` (default; decimal strings,
-#: tags over the JSON form) and ``"binary"`` (format 2 of
-#: :func:`~pyfe4ai.utils.ring_lwe_utils.encode_threshold_ciphertext`, tags
+#: ``ct_format``, a public parameter): ``"json"`` (decimal strings, tags over
+#: the JSON form; the only format of versions <= 0.3.0, and that of public
+#: parameters without ``ct_format``) and ``"binary"`` (the default: format 2
+#: of :func:`~pyfe4ai.utils.ring_lwe_utils.encode_threshold_ciphertext`, tags
 #: over its digests, binary partial decryptions).
 CT_FORMATS = ("json", "binary")
+#: ``ct_format`` of a key generator whose config has none.
+DEFAULT_CT_FORMAT = "binary"
+#: ``ring_modulus`` of a key generator whose config has none (``"prime"``
+#: selectable; see the module docstring).
+DEFAULT_RING_MODULUS = "rns"
+#: Fewest factors of an RNS modulus of the threshold scheme: its native
+#: kernels run on the 256-bit ring (two factors below ``2^124`` would get the
+#: two-prime context of the MIFE / MCFE prototype, which has none of them).
+MIN_RNS_FACTORS = 3
+#: How a key generator issues key shares (config ``key_shares``): ``"split"``
+#: (the default for the Shamir and replicated sharings) -- a weight part per
+#: weights (:meth:`ThresholdMCFERingLWEKeyGenerator.get_weight_key_share`) and
+#: a label part per label -- or ``"full"`` (whole key shares per label, as in
+#: versions <= 0.3.0; the only kind of the replicated-seeded sharing).
+KEY_SHARES = ("split", "full")
 
 
 def pp_ct_format(pp: dict) -> str:
@@ -476,8 +521,9 @@ def binary_request_digests(digests: dict) -> tuple:
 
 
 def _poly_values(poly, q, ring_n: int) -> list:
-    """A key-share polynomial as ``mpz``: decimal strings / ints, or binary
-    (``ceil(bits(q)/8)``-byte words, strictly below q).
+    """A key-share polynomial as ``mpz``: a list or tuple of ``ring_n`` ints,
+    ``mpz`` or decimal strings (:func:`~pyfe4ai.schemes.threshold_utils.strict_mpz`),
+    or binary (``ceil(bits(q)/8)``-byte words, strictly below q).
 
     Raises:
         FEKeyError: For malformed binary values.
@@ -526,7 +572,7 @@ if hasattr(os, "register_at_fork"):
 #: The version of the pickled state of the threshold objects: a state pickled
 #: by another version of pyfe4ai (other attributes, other derivations) is
 #: refused when loaded.
-_STATE_VERSION = "pyfe4ai/tmcfe-ring-lwe/state/2026-10"
+_STATE_VERSION = "pyfe4ai/tmcfe-ring-lwe/state/2026-10-2"
 
 
 def _versioned_state(state: dict) -> dict:
@@ -626,17 +672,29 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
                 :func:`~pyfe4ai.schemes.threshold_utils.resolve_sharing`)
                 and, opt-in, ``flooding_accounting = "kl"`` with
                 ``max_partial_decryptions`` (``t = s``, Shamir sharing,
-                Gaussian flooding; see the module docstring) and
+                Gaussian flooding; see the module docstring);
                 ``ct_format`` (one of :data:`CT_FORMATS`, default
-                ``"json"``; ``"binary"`` is published in the public
-                parameters, and their clients and servers use format 2).
-                ``ring_modulus``: ``"prime"`` (default) or the opt-in
-                ``"rns"``: the flooded ``q`` is a product of NTT primes below
-                2^62 (four for the 212 to 218 bits of the ``standard``
-                profile, four up to 248 bits;
+                ``"binary"``, published in the public parameters, whose
+                clients and servers then use format 2; ``"json"`` for the
+                format of versions <= 0.3.0);
+                ``ring_modulus``: ``"rns"`` (default): the flooded ``q`` is
+                a product of at least :data:`MIN_RNS_FACTORS` NTT primes
+                below 2^62 (four for the 212 to 218 bits of the
+                ``standard`` profile, four up to 248 bits;
                 :func:`~pyfe4ai.utils.ring_lwe_utils.rns_ntt_modulus_for`),
-                each above ``s``, published as ``q_factors``; its parameter
-                record is ``param-rns.json``, beside the prime's ``param.json``.
+                each above ``s``, published as ``q_factors``, with the
+                parameter record ``param-rns.json``; or ``"prime"``, an NTT
+                prime (record ``param.json``, as in earlier versions);
+                ``key_shares`` (one of :data:`KEY_SHARES`): ``"split"``, the
+                default for the Shamir and replicated sharings, or
+                ``"full"``, the default (and only choice) for
+                ``"replicated-seeded"`` -- what
+                :meth:`get_decryption_keys` issues without a ``key_part``.
+
+        Raises:
+            FEValidationError: For an unknown ``ct_format``,
+                ``ring_modulus`` or ``key_shares``, or ``key_shares="split"``
+                with the ``"replicated-seeded"`` sharing.
         """
         self.flooding_accounting, self.max_partial_decryptions = flooding_config(config)
         # the KL bound is for Gaussian flooding noise
@@ -657,9 +715,16 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         self._threshold_construction = _construction_id(self.sharing, self.flooding, self.flooding_accounting)
         self.lst_sid = config.get("lst_sid", ["sid_{}".format(i) for i in range(s)])
         self.stat_param = int(config.get("stat_param", 64))
-        self.ct_format = pp_ct_format({"ct_format": config.get("ct_format", "json")})
+        self.ct_format = pp_ct_format({"ct_format": config.get("ct_format", DEFAULT_CT_FORMAT)})
+        self.key_shares = config.get("key_shares", "full" if self.sharing == "replicated-seeded" else "split")
+        if self.key_shares not in KEY_SHARES:
+            raise FEValidationError(
+                "key_shares must be one of {}, not {!r}".format(", ".join(KEY_SHARES), self.key_shares))
+        if self.key_shares == "split" and self.sharing == "replicated-seeded":
+            raise FEValidationError("split key shares need the sharing 'shamir' or 'replicated'; "
+                                    "use key_shares='full' with 'replicated-seeded'")
         self.dict_dk = {}
-        super().__init__(dict(config, s=s), **kwargs)
+        super().__init__(dict(config, s=s, ring_modulus=config.get("ring_modulus", DEFAULT_RING_MODULUS)), **kwargs)
         if len(self.lst_sid) != self.s:
             raise FEValidationError(
                 "lst_sid has {} servers but s={}".format(len(self.lst_sid), self.s)
@@ -733,7 +798,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             budget = noise_bound + self.s * GAUSSIAN_TAIL_CUT * flood
         lower = max(q, p * (2 * budget + 4))
         if self.ring_modulus == "rns":
-            q_rns, factors = rns_ntt_modulus_for(lower, ring_n, p)
+            q_rns, factors = rns_ntt_modulus_for(lower, ring_n, p, MIN_RNS_FACTORS)
             return q_rns, flood, factors
         return next_ntt_prime(lower, ring_n), flood, None
 
@@ -827,13 +892,16 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         Args:
             sid: The server.
             **kwargs: ``credentials`` with ``fusion_weight``, ``label``,
-                optionally ``n_chunks`` and ``key_part``: ``"full"``
-                (default) or ``"label"`` -- only the label's terms ``z``
-                and ``z_chunks``, the per-round part; the label-independent
-                ``sk_y`` comes once per weights from
-                :meth:`get_weight_key_share` -- and, with ``"label"``,
-                ``label_term`` (default ``True``; ``False`` leaves out ``z``,
-                which only single ciphertexts of the label itself need).
+                optionally ``n_chunks`` and ``key_part``: ``"label"`` --
+                only the label's terms ``z`` and ``z_chunks``, the per-round
+                part; the label-independent ``sk_y`` comes once per weights
+                from :meth:`get_weight_key_share` -- or ``"full"``, a whole
+                key share (default: ``"label"`` if the config's
+                ``key_shares`` is ``"split"``, the default but for the
+                replicated-seeded sharing, else ``"full"``) and, with
+                ``"label"``, ``label_term`` (default ``True``; ``False``
+                leaves out ``z``, which only single ciphertexts of the label
+                itself need).
 
         Returns:
             Dict with shares ``sk_y``, ``z``, ``z_chunks`` and ``label``,
@@ -845,7 +913,10 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             piece (or nothing), and ``seeds`` (``[{"set": T, "seed": hex}]``)
             and ``layout`` give the others. A label part has ``part =
             "label"`` and ``share_set_id`` (that of the weight part it
-            completes) and no ``sk_y``. With binary public parameters
+            completes, the weights' current share set when it is issued)
+            and no ``sk_y``; label parts are kept with that sharing of
+            ``sk_y`` (later calls return the same shares) and dropped with
+            it. With binary public parameters
             (``ct_format="binary"``) every polynomial of the Shamir and
             replicated sharings is bytes (``ceil(bits(q)/8)``-byte words, the
             same values).
@@ -861,7 +932,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         if sid not in self.lst_sid:
             logger.error("invalid sid: {}".format(sid))
             return None
-        part = credentials.get("key_part", "full")
+        part = credentials.get("key_part", "label" if self.key_shares == "split" else "full")
         if part not in ("full", "label"):
             raise FEValidationError("key_part must be 'full' or 'label', not {!r}".format(part))
         label_term = bool(credentials.get("label_term", True))
@@ -874,18 +945,46 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             ident += [part, label_term]
         ident = json.dumps(ident)
         if part == "label":
-            # of the weights' current share set: a cached label part whose sharing of sk_y was
-            # evicted (WEIGHT_SHARINGS_KEPT) is issued again, for the new set
-            entry = self._weight_entry(credentials.get("fusion_weight"))
-            cached = self.dict_dk.get(ident)
-            if cached is None or cached[sid].get("share_set_id") != entry["share_set_id"]:
-                self.dict_dk[ident] = self._label_part(credentials, weights_id, n_chunks, label_term, entry)
-        elif ident not in self.dict_dk:
-            key = super().get_decryption_keys(sid, credentials=credentials)
-            self.dict_dk[ident] = self._share_key(key, weights_id)
-        dk = dict(self.dict_dk[ident][sid])
+            parts = self._label_parts(credentials, weights_id, n_chunks, label_term, ident)
+        else:
+            if ident not in self.dict_dk:
+                key = super().get_decryption_keys(sid, credentials=credentials)
+                self.dict_dk[ident] = self._share_key(key, weights_id)
+            parts = self.dict_dk[ident]
+        dk = dict(parts[sid])
         dk.update(self._share_fields(sid, weights_id))
         return dk
+
+    #: Attempts of :meth:`_label_parts` to issue a label part for a share set
+    #: that is not evicted while the label part is made.
+    _LABEL_PART_ATTEMPTS = 8
+
+    def _label_parts(self, credentials: dict, weights_id: str, n_chunks: int, label_term: bool, ident: str) -> dict:
+        """``{sid: label part}`` for *ident*, of the weights' current share set:
+        kept with that sharing of ``sk_y`` (:meth:`_weight_entry`; evicted
+        with it, without a scan of the other keys), made on first use. A label
+        part made while another thread evicted its sharing is made again for
+        the weights' new share set, so none is issued for a sharing the key
+        generator no longer hands out.
+
+        Raises:
+            FESchemeError: If the sharing was evicted during every attempt
+                (more than :data:`WEIGHT_SHARINGS_KEPT` weights in use at once).
+        """
+        fusion_weight = credentials.get("fusion_weight")
+        for _ in range(self._LABEL_PART_ATTEMPTS):
+            entry = self._weight_entry(fusion_weight)
+            with _STORE_LOCK:
+                parts = entry["label_parts"].get(ident)
+            if parts is not None:
+                return parts
+            made = self._label_part(credentials, weights_id, n_chunks, label_term, entry)
+            with _STORE_LOCK:  # still the weights' current share set: keep it (of two threads, one wins)
+                if self.dict_weight_shares.get(weights_id) is entry:
+                    return entry["label_parts"].setdefault(ident, made)
+        raise FESchemeError(
+            "the sharing of these weights was evicted while their label part was made, {} times: more than "
+            "WEIGHT_SHARINGS_KEPT = {} weights in use at once".format(self._LABEL_PART_ATTEMPTS, WEIGHT_SHARINGS_KEPT))
 
     def _label_part(self, credentials: dict, weights_id: str, n_chunks: int, label_term: bool, entry: dict) -> dict:
         """``{sid: label part}``: shares of the terms ``z''`` of the label (if
@@ -941,7 +1040,9 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         return share
 
     def _weight_entry(self, fusion_weight) -> dict:
-        """The sharing of ``sk_y`` for the weights, made on first use."""
+        """The sharing of ``sk_y`` for the weights, made on first use:
+        ``{"weights_id", "share_set_id", "shares", "label_parts"}`` (the label
+        parts issued for it, see :meth:`_label_parts`)."""
         if self.sharing == "replicated-seeded":
             raise FEValidationError("split key shares need the sharing 'shamir' or 'replicated'")
         weights_id = fusion_weight_id(fusion_weight)
@@ -959,17 +1060,12 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             "weights_id": weights_id,
             "share_set_id": secrets.token_hex(16),
             "shares": self._share_material({"sk_y": dict(key["sk_y"])}),
+            "label_parts": {},
         }
         with _STORE_LOCK:  # of two threads making it, both return the one kept
             entry = store.setdefault(weights_id, made)
-            evicted = []
-            while len(store) > WEIGHT_SHARINGS_KEPT:
-                evicted.append(store.popitem(last=False)[0])
-        if evicted:  # their cached label parts belong to sharings that are gone
-            for ident in list(self.dict_dk):
-                key = json.loads(ident)
-                if len(key) > 3 and key[0] in evicted:
-                    self.dict_dk.pop(ident, None)
+            while len(store) > WEIGHT_SHARINGS_KEPT:  # with their label parts
+                store.popitem(last=False)
         return entry
 
     def _share_fields(self, sid: str, weights_id: str) -> dict:
@@ -1071,14 +1167,19 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             raise FEKeyError("key material mixing binary and value polynomials")
         else:
             flat = [v for poly in polys for v in poly]
+        rnd = native_backend.random_input(4 * width * len(flat) * (self.t - 1) + 64)
         try:
             out = native_backend.ext().shamir_share(
-                ctx.cap, flat, self.t, points,
-                native_backend.random_input(4 * width * len(flat) * (self.t - 1) + 64),
+                ctx.cap, flat, self.t, points, rnd,
                 **native_backend.seed_kwargs(), **({"binary": True} if binary else {}),
             )
-        except (ValueError, TypeError) as exc:  # values that are not ints / decimal strings, or not below q
+        except TypeError as exc:  # values that are not ints / decimal strings
             raise FEKeyError("malformed key material") from exc
+        except ValueError as exc:
+            if rnd is not None and "not enough random bytes" in str(exc):  # a test's random bytes, not the key's
+                raise RuntimeError(
+                    "native_backend.random_input: the {} test bytes ran out".format(len(rnd))) from exc
+            raise FEKeyError("malformed key material") from exc  # values not below q, misaligned words
         unit = width if binary else 1
         shared, start = [], 0
         for poly in polys:
@@ -1233,6 +1334,15 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             while len(store) > self.WEIGHT_SHARES_KEPT:
                 store.popitem(last=False)
 
+    def has_weight_key_share(self, dk: dict) -> bool:
+        """Whether this server keeps the weight key share that the label key
+        share *dk* completes (same weights and share set): ``False`` means
+        :meth:`add_weight_key_share` first. A full key share needs none."""
+        if not isinstance(dk, dict) or dk.get("part") != "label":
+            return True
+        with _STORE_LOCK:
+            return (dk.get("weights_id"), dk.get("share_set_id")) in self.__dict__.get("_weight_shares", {})
+
     def _key_parts(self, dk):
         """``(dk, weight)``: a full key share and ``None``, or a label part and
         the weight part kept for it.
@@ -1248,7 +1358,10 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         with _STORE_LOCK:
             weight = self.__dict__.get("_weight_shares", {}).get((dk.get("weights_id"), dk.get("share_set_id")))
         if weight is None:
-            raise FEKeyError("no weight key share for these weights and share set: add_weight_key_share first")
+            raise FEKeyError(
+                "a label key share needs this server's weight key share of the same weights and share set: "
+                "add_weight_key_share(key_generator.get_weight_key_share(sid, credentials={'fusion_weight': ...})) "
+                "first (key shares are split by default; key_part='full' issues whole ones)")
         for field in self._SPLIT_FIELDS:
             if weight.get(field, "shamir" if field == "sharing" else None) != dk.get(
                     field, "shamir" if field == "sharing" else None):
@@ -1370,6 +1483,12 @@ class ThresholdMCFERingLWE(MCFERingLWE):
                     raise ValueError("not a format-2 ciphertext")
                 digests[nid] = binary_ciphertext_digests(ct, q_int, eta, ring_n)
                 return binary_tag_message(pp_digest, encoded, ct, digests[nid])
+
+            for nid, ct in dict_ct.items():  # no JSON ciphertexts under binary public parameters
+                if isinstance(ct, dict) and ("ct0" in ct or "ct1" in ct):
+                    raise FESchemeError(
+                        "the ciphertext of {} is JSON; the public parameters' format is binary (ct_format, the "
+                        "default): encrypt with these public parameters".format(nid))
 
             check_ciphertext_tag_messages(dict_ct, dk.get("mac_keys"), self.id, message_of)
         else:

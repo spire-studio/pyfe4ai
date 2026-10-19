@@ -42,8 +42,9 @@ def _cwd(tmp_path, monkeypatch):
 
 
 def _kg(**extra):
+    # the defaults when these tests were written: JSON, a prime q, whole key shares
     cfg = dict(n=3, lst_nid=NIDS, s=3, t=2, lst_sid=SIDS, eta=1, ring_n=32, sec_param=64, bound_x=100, bound_y=3,
-               stat_param=64)
+               stat_param=64, ct_format="json", ring_modulus="prime", key_shares="full")
     cfg.update(extra)
     return tm.ThresholdMCFERingLWEKeyGenerator(cfg)
 
