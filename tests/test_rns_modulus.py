@@ -203,10 +203,12 @@ def test_decentralized_rns(backend):
         assert np.allclose(out[0], sum(g[0] for g in grads.values()))
 
 
-def test_threshold_and_unknown_values_refused():
+def test_unknown_values_refused():
+    # the threshold MCFE takes "rns" too (its flooded q has more factors: tests/test_threshold_rns.py)
     cfg = {"n": 3, "eta": 1, "ring_n": 16, "bound_x": 10, "bound_y": 1, "s": 3, "t": 2, "ring_modulus": "rns"}
+    assert len(tmcfe_rlwe.ThresholdMCFERingLWEKeyGenerator(cfg).q_factors) >= 2
     with pytest.raises(FEValidationError, match="ring_modulus"):
-        tmcfe_rlwe.ThresholdMCFERingLWEKeyGenerator(cfg)
+        tmcfe_rlwe.ThresholdMCFERingLWEKeyGenerator(dict(cfg, ring_modulus="composite"))
     with pytest.raises(FEValidationError, match="ring_modulus"):
         mcfe_rlwe.MCFERingLWEKeyGenerator({"n": 3, "eta": 1, "ring_n": 16, "ring_modulus": "composite"})
     # the SIFE schemes refuse it rather than ignore it (adaptive SIFE: Ring-LHL for prime q)

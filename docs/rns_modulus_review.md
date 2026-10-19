@@ -17,11 +17,12 @@ Fiore, Gay, Ursu, CRYPTO 2018 (`references/ACFGU18.pdf`).
 | `mife/ring_lwe` (ACFGU18 compiler) | safe | ACFGU18 Sec. 3.3 / Fig. 4 works over any `Z_L` |
 | `mcfe/ring_lwe` (identity-based MCFE) | safe | BMMS21 Sec. 6, Thm. 5, App. D.2: additive group `Z_q` only |
 | `mcfe/ring_lwe_decentralized` (GDSum) | safe | BMMS21 App. D.4: masks cancel in `Z_q`, any `q` |
-| `mcfe/ring_lwe_threshold` (own design) | safe in principle, not adopted | Shamir over `Z_q` is Shamir over each `F_{q_i}` (CRT) when every `q_i > s`; no speed case (212-bit `q`, flooding sampler dominates) |
+| `mcfe/ring_lwe_threshold` (own design) | safe, opt-in (2026-10, section 10) | Shamir over `Z_q` is Shamir over each `F_{q_i}` (CRT) when every `q_i > s` (checked); replicated sharing, flooding, label hash and decoding are independent of the factorisation |
 | `sife/fullysec_ring_lwe` (adaptive, Sec. 5) | **not safe without a new argument** | Thm. 2 (Ring-LHL) and App. B are stated and proved for prime `q` |
 
-The prototype (`ring_modulus="rns"`) is therefore offered for MIFE, MCFE and
-dMCFE Ring-LWE only; the threshold key generator and the SIFE key generators
+The prototype (`ring_modulus="rns"`) was first offered for MIFE, MCFE and
+dMCFE Ring-LWE only; the threshold MCFE takes it since the re-review of
+section 10 (four factors at its 212 to 218 bits). The SIFE key generators
 (`sife/ring_lwe`, `sife/fullysec_ring_lwe`) refuse it.
 
 ## 1. Hardness of RLWE / mhe-RLWE with a composite `q`
@@ -193,3 +194,55 @@ RLWE width of Sec. 4.2 that the table is read at):
 
 The estimator gives the composite modulus and the prime of the same size
 the same cost (it reads `q` only through its size), all far above 128 bits.
+
+## 10. Threshold MCFE re-review (2026-10)
+
+Since section 6 the default flooding is uniform (integer, native) and the
+default sharing for `t < s` is replicated (multipliers 0 and 1); the flooded
+`q` (212 to 218 bits under `standard`) is now the product of
+`k = max(2, ceil(bits / 60))` NTT primes (`rns_ntt_modulus(..., factors=k)`:
+`k - 1` largest NTT primes below `L^(1/k)`, the last the smallest with a
+product `>= L` that is none of them, advanced until `gcd(floor(q / p), q) = 1`;
+for `k = 2` the modulus of the earlier sections). Item by item:
+
+* **RLWE hardness, MCFE layer**: sections 1, 3 and 4 (any modulus; the
+  estimator reads `q` by size, and `q` has the bit length of the prime).
+* **Shamir sharing** (`t = s`, the default there): CRT, one field sharing per
+  factor; the points `1..s` and their differences are units when every
+  `q_i > s`, which the key generator and every server check
+  (`check_rns_servers`; the factors are about `2^54`). The Lagrange
+  coefficients are units.
+* **The Lagrange leak** (`docs/security.rst`, threshold layers) concerns the
+  rational multiplier `M` of the decryption noise on the integers: 0 or 1 for
+  the replicated sharing and 1 for Shamir with `t = s`, whatever the
+  factorisation of `q`.
+* **Replicated and seeded sharing**: additive in `Z_q` (pieces uniform mod
+  `q`; seeded pieces `hash_to_zq_vector` mod `q`, within `2^-130` of uniform
+  per value for any `q`).
+* **Flooding**: the smudging bound (uniform: `|nu| / 2^(tau + 1)` per value;
+  Gaussian: the statistical distance of `D_{Z, sigma_f}` and its shift by `nu`) is a statement
+  about integers; reducing mod `q` is a function of the sum and cannot
+  increase the statistical distance. The decoding budget
+  `s 2^tau + B < q / (2p)` uses the size of `q` only.
+* **Label hash**: `"shake128-rejection"` samples exactly uniformly on
+  `[0, q)` for any `q`; `"shake256-wide"` within `2^-128` per value.
+* **Binding and noise derivation**: `q` is in `pp_binding` (and with it the
+  noise context); `q_factors` is added where present, so key shares of a
+  prime `q` and of an RNS `q` never serve each other's public parameters,
+  and the digests of prime public parameters are unchanged. Construction ids
+  are unchanged (the sharing and flooding constructions are the same); the
+  parameter records carry `ring_modulus` and `q_factors` and are recomputed
+  and compared on load.
+* **FACCT and the Gaussian flooding sampler**: integer samples, independent
+  of `q`; the native kernels reduce them mod each factor.
+* **NTT root**: the CRT of the factors' roots with `root^n = -1` mod every
+  factor (section 8); the native ring runs one 64-bit NTT per factor and
+  returns standard values, so every result equals the Python code on the
+  composite `q` (tests/test_threshold_rns.py compares NTTs, products,
+  encryption, key shares and partial decryptions).
+
+Measured (standard profile, 3 clients, 10^4 values, `s = t = 3`, 1 thread,
+host): NTT of 8192 coefficients 1.33 ms (256-bit words) -> 0.59 ms (four
+64-bit primes, conversions included), product 4.19 -> 1.47 ms; partial
+decryption with binary ciphertexts 19 -> 11 ms, JSON 57 -> 45 ms; client 30
+-> 26.5 ms.

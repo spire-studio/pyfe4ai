@@ -38,8 +38,9 @@ The native path applies to moduli below ``2^253`` with a ``2 ring_n``-th root
 of unity (all moduli the parameter generators derive, including the flooded
 moduli of ``mcfe/ring_lwe_threshold``), in 64-bit words below ``2^63``,
 128-bit words below ``2^125`` and 256-bit words above -- and to the RNS
-moduli ``q = q1 q2`` of ``ring_modulus="rns"`` (MIFE / MCFE Ring-LWE), in two
-64-bit residues per coefficient --, and samples natively
+moduli of ``ring_modulus="rns"``: ``q = q1 q2`` (MIFE / MCFE Ring-LWE), in two
+64-bit residues per coefficient, and the products of up to four primes of
+the threshold MCFE, whose 256-bit ring runs one 64-bit NTT per prime --, and samples natively
 Gaussians of widths up to ``2^40`` inside its encryption calls (wider ones
 come from :func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint`)
 with the scheme's sampler (its recorded ``gaussian_sampler``, FACCT by
@@ -512,20 +513,31 @@ class RingContext:
     """Native NTT context of ``Z_q[x] / (x^n + 1)`` (root and tables of
     :func:`~pyfe4ai.utils.ring_lwe_utils.poly_mul`).
 
-    With *factors* (an RNS modulus ``q = q1 q2``, see
+    With *factors* (an RNS modulus, see
     :func:`~pyfe4ai.utils.ring_lwe_utils.register_rns_modulus`) the native
     code runs one 64-bit NTT per factor, with the root ``root mod q_i``, and
     converts to and from ``[0, q)`` (Garner) where values cross the
-    boundary; packed values are 128-bit words in ``[0, q)``.
+    boundary. Two factors with ``q < 2^124`` (the MIFE / MCFE prototype)
+    get the context of their own kernels (``legacy_rns``; packed values are
+    128-bit words); other RNS moduli (up to four factors, ``q < 2^253``: the
+    threshold MCFE) a ring context whose kernels are those of a prime ring,
+    with the values of a ring mod q.
     """
+
+    legacy_rns = False
 
     def __init__(self, q, ring_n: int, root, factors=None) -> None:
         self.q = gp.mpz(q)
         self.ring_n = ring_n
         if factors is None:
             self.cap = _ext.ctx_new(int(q), ring_n, int(root))
-        else:
+        elif len(factors) == 2 and int(q).bit_length() <= 124 and hasattr(_ext, "rns_ctx_new"):
             self.cap = _ext.rns_ctx_new(
+                int(q), ring_n, [int(f) for f in factors], [int(root) % int(f) for f in factors]
+            )
+            self.legacy_rns = True
+        else:
+            self.cap = _ext.ctx_new_rns(
                 int(q), ring_n, [int(f) for f in factors], [int(root) % int(f) for f in factors]
             )
         info = _ext.ctx_info(self.cap)
@@ -565,7 +577,7 @@ def ring_context(q, ring_n: int) -> RingContext | None:
     if ctx is not None or key in _contexts:
         return ctx
     ctx = None
-    if 2 < key[0] < MAX_NATIVE_Q and (factors is None or hasattr(_ext, "rns_ctx_new")):
+    if 2 < key[0] < MAX_NATIVE_Q and (factors is None or hasattr(_ext, "ctx_new_rns")):
         root = _get_ntt_root(gp.mpz(q), ring_n)
         if root is not None:
             try:

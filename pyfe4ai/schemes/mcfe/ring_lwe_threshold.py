@@ -157,6 +157,23 @@ have it; JSON digests are unchanged): a key share is served in one format
 only. Under binary public parameters JSON ciphertexts, format 1, v1 tags and
 JSON partial decryptions are refused, and under JSON ones every binary form.
 
+Modulus (key generator config ``ring_modulus``): an NTT prime (default) or
+the opt-in ``"rns"``: ``q`` the product of NTT primes below ``2^62``, as
+many as make each at most 60 bits (four for the 212 to 218 bits of the
+``standard`` profile, about 54 bits each;
+:func:`~pyfe4ai.utils.ring_lwe_utils.rns_ntt_modulus`), of the bit length of
+the prime and above the same bound, published as ``q_factors`` (bound to the
+key shares). Every factor must exceed ``s`` (:func:`check_rns_servers`):
+Shamir sharing over ``Z_q`` is then one field sharing per factor (CRT), with
+units for points and differences; the replicated sharing, the flooding (an
+argument over the integers), the label hash (exact rejection sampling on
+``[0, q)``) and the decoding bound do not depend on the factorisation (see
+docs/rns_modulus_review.md). The parameter record carries ``ring_modulus``
+and ``q_factors``; the construction ids are those of the prime modulus. The
+native backend runs the 256-bit kernels with one 64-bit NTT per factor
+(NTT-domain values are residue tuples), with the values of the Python code
+on the composite ``q``.
+
 With the native backend (:mod:`pyfe4ai.utils.native_backend`; moduli below
 ``2^253``, which includes the flooded ``q`` of the standard profile) the MCFE
 layer, the Shamir sharing of the key, the parsing, digests and NTT-domain
@@ -230,7 +247,11 @@ from pyfe4ai.utils.ring_lwe_utils import encode_values
 from pyfe4ai.utils.ring_lwe_utils import threshold_ciphertext_from_format1
 from pyfe4ai.utils.ring_lwe_utils import threshold_ciphertext_header
 from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul
+from pyfe4ai.utils.ring_lwe_utils import bmms21_selective_parameters
 from pyfe4ai.utils.ring_lwe_utils import next_ntt_prime
+from pyfe4ai.utils.ring_lwe_utils import register_rns_modulus
+from pyfe4ai.utils.ring_lwe_utils import rns_factor_count
+from pyfe4ai.utils.ring_lwe_utils import rns_ntt_modulus
 from pyfe4ai.utils.ring_lwe_utils import poly_add
 from pyfe4ai.utils.ring_lwe_utils import poly_mul
 from pyfe4ai.utils.ring_lwe_utils import RingNTT
@@ -412,6 +433,27 @@ def binary_request_digests(digests: dict) -> tuple:
     return ct_digest.hexdigest(), key_inputs.hexdigest()
 
 
+def _native_ring(q, ring_n: int):
+    """The native ring context the threshold kernels take for ``(q, ring_n)``
+    (prime, or an RNS modulus of :func:`~pyfe4ai.utils.native_backend.ring_context`
+    other than the two-prime context of the MIFE / MCFE prototype, which has
+    kernels of its own), or ``None`` for the Python path."""
+    ctx = native_backend.ring_context(q, ring_n)
+    return None if ctx is None or ctx.legacy_rns else ctx
+
+
+def check_rns_servers(s, factors) -> None:
+    """Raise unless every factor of an RNS modulus exceeds the number of servers
+    *s*: Shamir sharing over ``Z_q = prod F_{q_i}`` (CRT) needs the points
+    ``1..s`` and their differences to be units mod every factor.
+
+    Raises:
+        FEValidationError: If ``s >= min q_i``.
+    """
+    if factors and int(s) >= min(int(f) for f in factors):
+        raise FEValidationError("an RNS modulus needs every factor above the number of servers s = {}".format(s))
+
+
 def _tag_payload(encoded_label: str, ct: dict) -> list:
     """What a tMCFE-Ring-LWE ciphertext tag covers: the (chunk) label, the
     ciphertext as serialised and its ``label_hash`` code when it has one --
@@ -468,12 +510,12 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
                 ``ct_format`` (one of :data:`CT_FORMATS`, default
                 ``"json"``; ``"binary"`` is published in the public
                 parameters, and their clients and servers use format 2).
-                ``ring_modulus`` must stay ``"prime"``: the flooded ``q``
-                (200+ bits) has no two-factor RNS form, and the flooding
-                sampler, not the NTT, dominates.
+                ``ring_modulus``: ``"prime"`` (default) or the opt-in
+                ``"rns"``: the flooded ``q`` is a product of NTT primes below
+                2^62 (four for the 212 to 218 bits of the ``standard``
+                profile; :func:`~pyfe4ai.utils.ring_lwe_utils.rns_ntt_modulus`),
+                each above ``s``, published as ``q_factors``.
         """
-        if config.get("ring_modulus", "prime") != "prime":
-            raise FEValidationError("the threshold Ring-LWE MCFE supports ring_modulus 'prime' only")
         self.flooding_accounting, self.max_partial_decryptions = flooding_config(config)
         # the KL bound is for Gaussian flooding noise
         default_flooding = "gaussian" if self.flooding_accounting == KL else DEFAULT_FLOODING
@@ -501,6 +543,19 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
                 "lst_sid has {} servers but s={}".format(len(self.lst_sid), self.s)
             )
         validate_threshold(self.t, self.lst_sid)
+        check_rns_servers(self.s, self.q_factors)
+
+    def _bmms21(self, ring_n: int) -> dict:
+        """The MCFE parameters; with a prime ``q`` also for ``ring_modulus="rns"``
+        (only a lower bound of the flooded modulus, see :meth:`_flooded_modulus`)."""
+        return bmms21_selective_parameters(
+            self.sec_param, self.n * self.eta, self.bound_x, self.bound_y, ring_n,
+            security_bound_x=3 * self.bound_x,
+        )
+
+    def _factors_for(self, ring_n: int) -> list | None:
+        factors = self._flooded_modulus(ring_n, *self._bmms21_tuple(ring_n))[2]
+        return None if factors is None else [gp.digits(f) for f in factors]
 
     def _param_verification(self, param: dict) -> bool:
         if not (
@@ -530,8 +585,10 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         return {"flooding_accounting": KL, "max_partial_decryptions": self.max_partial_decryptions}
 
     def _flooded_modulus(self, ring_n: int, p, q, sigma1, sigma2, sigma3) -> tuple:
-        """Return ``(q', flood)``: the BMMS21 modulus *q* enlarged for flooding,
-        and ``sigma_f`` (Gaussian) or ``tau`` (uniform on ``[-2^tau, 2^tau)``)."""
+        """Return ``(q', flood, factors)``: the BMMS21 modulus *q* enlarged for
+        flooding (an NTT prime, or for ``ring_modulus="rns"`` a product of
+        NTT primes, ``factors``; else ``None``), and ``sigma_f`` (Gaussian) or
+        ``tau`` (uniform on ``[-2^tau, 2^tau)``)."""
         noise_bound = self.n * self.eta * int(self.bound_y) * int(
             2 * ring_n * GAUSSIAN_TAIL_CUT ** 2 * sigma1 * sigma2
             + GAUSSIAN_TAIL_CUT * sigma3 + 1
@@ -546,19 +603,26 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         else:
             flood = noise_bound << self.stat_param
             budget = noise_bound + self.s * GAUSSIAN_TAIL_CUT * flood
-        return next_ntt_prime(max(q, p * (2 * budget + 4)), ring_n), flood
+        lower = max(q, p * (2 * budget + 4))
+        if self.ring_modulus == "rns":
+            q_rns, factors = rns_ntt_modulus(lower, ring_n, p, rns_factor_count(lower))
+            return q_rns, flood, factors
+        return next_ntt_prime(lower, ring_n), flood, None
 
     def _modulus_for(self, ring_n: int):
         return self._flooded_modulus(ring_n, *self._bmms21_tuple(ring_n))[0]
 
     def _generate_and_save(self, param_file: str) -> None:
         super()._generate_and_save(param_file)
-        self.q, flood = self._flooded_modulus(
+        self.q, flood, factors = self._flooded_modulus(
             self.ring_n, self.p, self.q, self.sigma1, self.sigma2, self.sigma3
         )
         self.A = seeded_polynomial(self.a_seed, self.q, self.ring_n)
         with open(param_file, "r", encoding="utf-8") as f:
             param = json.load(f)
+        if factors is not None:  # the default's records stay as they were
+            self.q_factors = register_rns_modulus(self.q, factors)
+            param.update({"ring_modulus": "rns", "q_factors": [gp.digits(f) for f in factors]})
         param.update(
             {
                 "threshold_construction": self._threshold_construction,
@@ -727,7 +791,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         """:func:`share_secret` of every coefficient of *polys* in one native
         call (coefficients drawn as ``share_secret`` draws them, in the same
         order), as ``[{sid: shares}]``; ``None`` when the Python path applies."""
-        ctx = native_backend.ring_context(self.q, self.ring_n)
+        ctx = _native_ring(self.q, self.ring_n)
         if ctx is None:
             return None
         flat = [v for poly in polys for v in poly]
@@ -775,6 +839,8 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         binary = self.threshold_format == "binary"
         self._binary_ciphertexts = binary  # the MCFE layer writes format 1, converted to format 2
         super().__init__(dict(config, ct_format="binary" if binary else "json"), **kwargs)
+        if self.pp.get("q_factors") is not None:
+            check_rns_servers(self.pp.get("s", len(self.pp.get("lst_sid", []))), self.pp["q_factors"])
         self.legacy_shamir = legacy_shamir_policy(config)
         self._partial_budget = config.get("partial_budget")
         flood = kl_flooding(self.pp, self.pp["ring_n"]) if getattr(self, "pp", None) else None
@@ -920,7 +986,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         delta = q // gp.mpz(self.pp["p"])
         z_share = share["z"] if _z_share is None else _z_share
         hats = {} if _sk_hats is None else _sk_hats
-        ctx = native_backend.ring_context(q, ring_n)
+        ctx = _native_ring(q, ring_n)
         native = cts = None
         if binary:
             batch = {d[0] for d in digests.values()}
@@ -1147,7 +1213,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             self.pp["n"] * self.pp["eta"]
             * gp.mpz(self.pp["bound_x"]) * gp.mpz(self.pp["bound_y"])
         )
-        ctx = native_backend.ring_context(q, self.pp["ring_n"])
+        ctx = _native_ring(q, self.pp["ring_n"])
         if binary:
             return self._combine_binary(ctx, first, partials, q, delta, bound)
         if ctx is not None and type(first["k"]) is int:

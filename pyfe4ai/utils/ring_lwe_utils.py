@@ -369,34 +369,53 @@ def prev_ntt_prime(upper_bound, ring_n: int) -> gp.mpz | None:
     return None
 
 
-def rns_ntt_modulus(lower_bound, ring_n: int, p) -> tuple:
-    """``(q, (q1, q2))``: ``q = q1 q2 >= lower_bound`` with ``q1 < q2`` NTT primes.
+def rns_ntt_modulus(lower_bound, ring_n: int, p, factors: int = 2) -> tuple:
+    """``(q, (q_1, ..., q_k))``: ``q = q_1 ... q_k >= lower_bound``, a product of
+    ``k = factors`` distinct NTT primes, in increasing order.
 
-    ``q1`` is the largest NTT prime ``<= sqrt(lower_bound)`` and ``q2`` the
-    smallest one with ``q1 q2 >= lower_bound``, advanced while
+    ``k - 1`` factors are the largest NTT primes ``<= floor(lower_bound^(1/k))``
+    (descending), the last the smallest NTT prime with a product
+    ``>= lower_bound`` that is not one of them, advanced while
     ``gcd(floor(q / p), q) != 1`` (``Delta`` is then a unit, as for a prime
-    ``q``; see the review). Deterministic, so a cached record can be checked.
+    ``q``; see the review). For ``k = 2``: ``q1`` the largest NTT prime
+    ``<= sqrt(lower_bound)``, ``q2`` the smallest with ``q1 q2 >=
+    lower_bound``, as in earlier versions. Deterministic, so a cached record
+    can be checked.
 
     Raises:
         FEValidationError: If a factor would exceed :data:`RNS_MAX_FACTOR_BITS`
-            bits or the bound is too small for two factors.
+            bits or the bound is too small for *factors* factors.
     """
     from pyfe4ai.utils.exceptions import FEValidationError
 
-    lower = gp.mpz(lower_bound)
-    q1 = prev_ntt_prime(gp.isqrt(lower), ring_n)
-    if q1 is None:
-        raise FEValidationError("q is too small for an RNS modulus at ring_n = {}".format(ring_n))
-    q2 = next_ntt_prime(-(-lower // q1), ring_n)
-    while q2 == q1 or gp.gcd((q1 * q2) // gp.mpz(p), q1 * q2) != 1:
-        q2 = next_ntt_prime(q2 + 1, ring_n)
-    if int(q2).bit_length() > RNS_MAX_FACTOR_BITS:
+    lower, k = gp.mpz(lower_bound), int(factors)
+    if k < 2:
+        raise FEValidationError("an RNS modulus has at least two factors")
+    chosen, top = [], gp.iroot(lower, k)[0]
+    for _ in range(k - 1):
+        f = prev_ntt_prime(top, ring_n)
+        if f is None:
+            raise FEValidationError("q is too small for an RNS modulus of {} factors at ring_n = {}".format(k, ring_n))
+        chosen.append(f)
+        top = f - 1
+    rest = math.prod(int(f) for f in chosen)
+    last = next_ntt_prime(-(-lower // rest), ring_n)
+    while last in chosen or gp.gcd((rest * last) // gp.mpz(p), rest * last) != 1:
+        last = next_ntt_prime(last + 1, ring_n)
+    if int(last).bit_length() > RNS_MAX_FACTOR_BITS:
         raise FEValidationError(
-            "an RNS modulus of two factors below 2^{} is too small here (q needs {} bits)".format(
-                RNS_MAX_FACTOR_BITS, int(lower).bit_length()
+            "an RNS modulus of {} factors below 2^{} is too small here (q needs {} bits)".format(
+                k, RNS_MAX_FACTOR_BITS, int(lower).bit_length()
             )
         )
-    return q1 * q2, (q1, q2)
+    return gp.mpz(rest) * last, tuple(sorted(chosen + [last]))
+
+
+def rns_factor_count(lower_bound) -> int:
+    """The number of RNS factors of :func:`rns_ntt_modulus` for a modulus of
+    the bit length of *lower_bound*: two, or more so that each is at most 60
+    bits (four for the 212 to 218 bits of the flooded threshold moduli)."""
+    return max(2, -(-int(gp.mpz(lower_bound)).bit_length() // 60))
 
 
 def poly_mul(

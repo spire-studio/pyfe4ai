@@ -70,10 +70,7 @@ fn encrypt_chunk_with<W: Word>(
     }
     ring.forward(&r, &mut rh);
     for row in 0..key.eta {
-        let pkh = &key.pk_hat[row * n..(row + 1) * n];
-        for i in 0..n {
-            t[i] = m.mul(pkh[i], rh[i]);
-        }
+        ring.pw_mul(&mut t, &key.pk_hat[row * n..(row + 1) * n], &rh);
         let out = &mut ct0[row * n..(row + 1) * n];
         ring.inverse(&t, out);
         draw(true, &mut smp);
@@ -82,9 +79,7 @@ fn encrypt_chunk_with<W: Word>(
             out[i] = m.add(m.add(out[i], m.reduce_i128(smp[i] as i128)), m.mul(wr[i], key.delta_m));
         }
     }
-    for i in 0..n {
-        t[i] = m.mul(key.a_hat[i], rh[i]);
-    }
+    ring.pw_mul(&mut t, &key.a_hat, &rh);
     ring.inverse(&t, ct1);
     draw(false, &mut smp);
     for i in 0..n {
@@ -438,10 +433,7 @@ pub fn decrypt_chunk<W: Word>(
             }
         }
         ring.forward(&slot[eta * n..(eta + 1) * n], &mut xh);
-        let skh = sk_hats[s];
-        for i in 0..n {
-            acc[i] = m.add(acc[i], m.mul(skh[i], xh[i]));
-        }
+        ring.pw_mul_add(&mut acc, sk_hats[s], &xh);
     }
     ring.inverse(&acc, &mut rhs);
     for i in 0..out.len() {
@@ -477,9 +469,7 @@ pub fn share_partial<W: Word>(
     let (mut acc, mut xh, mut kp) = (vec![W::ZERO; n], vec![W::ZERO; n], vec![W::ZERO; n]);
     for (slot, skh) in slots.iter().zip(sk_hats) {
         ring.forward(&slot[eta * n..(eta + 1) * n], &mut xh);
-        for i in 0..n {
-            acc[i] = m.add(acc[i], m.mul(skh[i], xh[i]));
-        }
+        ring.pw_mul_add(&mut acc, skh, &xh);
     }
     ring.inverse(&acc, &mut kp);
     let (dm, lm) = (m.to_mont(delta), m.to_mont(lambda));

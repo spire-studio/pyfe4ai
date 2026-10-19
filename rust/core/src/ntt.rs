@@ -23,9 +23,221 @@ pub struct Ring<W: Word> {
     fwd_p: Vec<W>,
     inv: Vec<W>,
     inv_p: Vec<W>,
+    /// For a composite q = p_0 ... p_{k-1} (Ring::new_rns): the NTT per prime.
+    pub rns: Option<Box<Rns>>,
+}
+
+/// The RNS backend of a ring for a composite q = p_0 ... p_{k-1}: distinct NTT
+/// primes p_j = 1 mod 2n below 2^62, k <= BITS / 64, and the residues of the
+/// CRT root (ring_lwe_utils._get_ntt_root). Coefficients stay standard values
+/// in [0, q); an NTT-domain value is a word whose 64-bit limb j is the residue
+/// mod p_j of the NTT mod q (the negacyclic NTT mod q is the CRT of the
+/// primes' NTTs), so products in the NTT domain are k 64-bit products.
+#[derive(Clone, Debug)]
+pub struct Rns {
+    pub rings: Vec<Ring<u64>>,
+    /// 2^(64 i) mod p_j (i = 0..3) and Shoup quotients, per prime.
+    limb: Vec<[(u64, u64); 4]>,
+    /// inv[j][i] = p_i^-1 mod p_j (i < j) and Shoup quotient (Garner).
+    inv: Vec<Vec<(u64, u64)>>,
+}
+
+impl Rns {
+    /// x mod p_j of a 256-bit value (its limbs).
+    #[inline(always)]
+    fn residue(&self, j: usize, l: &[u64; 4]) -> u64 {
+        let m = &self.rings[j].m;
+        let c = &self.limb[j];
+        let p = m.q;
+        let red = |x: u64| {
+            let x = if x >= 2 * p { x - 2 * p } else { x };
+            if x >= p { x - p } else { x }
+        };
+        // each Shoup product is below 2p < 2^63
+        let a = red(m.shoup(l[0], c[0].0, c[0].1) + m.shoup(l[1], c[1].0, c[1].1));
+        let b = red(m.shoup(l[2], c[2].0, c[2].1) + m.shoup(l[3], c[3].0, c[3].1));
+        m.add(a, b)
+    }
+
+    /// The value in [0, q) of residues r (Garner's mixed radix).
+    #[inline(always)]
+    fn join(&self, r: &[u64]) -> U256 {
+        let k = self.rings.len();
+        let mut v = [0u64; 4];
+        for j in 0..k {
+            let m = &self.rings[j].m;
+            let p = m.q;
+            let mut t = r[j];
+            for i in 0..j {
+                let vi = if v[i] >= p { v[i] % p } else { v[i] };
+                let (c, cp) = self.inv[j][i];
+                let d = m.sub(t, vi);
+                let x = m.shoup(d, c, cp);
+                t = if x >= p { x - p } else { x };
+            }
+            v[j] = t;
+        }
+        let mut acc = U256::from_u128(v[k - 1] as u128);
+        for i in (0..k - 1).rev() {
+            acc = acc.mul_small_add(self.rings[i].m.q, v[i]).0; // < q: no carry
+        }
+        acc
+    }
+
+    fn forward<W: Word>(&self, input: &[W], out: &mut [W], mont: bool) {
+        let n = input.len();
+        let k = self.rings.len();
+        let mut res = vec![0u64; k * n];
+        let mut t = vec![0u64; n];
+        for (i, x) in input.iter().enumerate() {
+            let l = x.to_u256().0;
+            for j in 0..k {
+                res[j * n + i] = self.residue(j, &l);
+            }
+        }
+        for (j, rg) in self.rings.iter().enumerate() {
+            t.copy_from_slice(&res[j * n..(j + 1) * n]);
+            if mont {
+                rg.forward_mont(&t, &mut res[j * n..(j + 1) * n]);
+            } else {
+                rg.forward(&t, &mut res[j * n..(j + 1) * n]);
+            }
+        }
+        for (i, o) in out.iter_mut().enumerate() {
+            let mut limbs = [0u64; 4];
+            for j in 0..k {
+                limbs[j] = res[j * n + i];
+            }
+            *o = W::from_u256(U256(limbs));
+        }
+        // the input may be secret (key shares, r)
+        crate::rlwe::wipe_words(&mut res);
+        crate::rlwe::wipe_words(&mut t);
+    }
+
+    fn inverse<W: Word>(&self, input: &[W], out: &mut [W]) {
+        let n = input.len();
+        let k = self.rings.len();
+        let mut res = vec![0u64; k * n];
+        let mut t = vec![0u64; n];
+        for (i, x) in input.iter().enumerate() {
+            let l = x.to_u256().0;
+            for j in 0..k {
+                res[j * n + i] = l[j];
+            }
+        }
+        for (j, rg) in self.rings.iter().enumerate() {
+            t.copy_from_slice(&res[j * n..(j + 1) * n]);
+            rg.inverse(&t, &mut res[j * n..(j + 1) * n]);
+        }
+        let mut r = [0u64; 4];
+        for (i, o) in out.iter_mut().enumerate() {
+            for j in 0..k {
+                r[j] = res[j * n + i];
+            }
+            *o = W::from_u256(self.join(&r[..k]));
+        }
+        crate::rlwe::wipe_words(&mut res);
+        crate::rlwe::wipe_words(&mut t);
+    }
 }
 
 impl<W: Word> Ring<W> {
+    /// The ring for a composite q = primes[0] ... primes[k-1] (distinct NTT
+    /// primes below 2^62, 2 <= k <= BITS / 64) and the residues of the CRT
+    /// root mod each prime; see [`Rns`]. q must be odd and below the word limit.
+    pub fn new_rns(q: W, n: usize, primes: &[u64], roots: &[u64]) -> Result<Self, &'static str> {
+        let k = primes.len();
+        if k < 2 || k as u32 > W::BITS / 64 || roots.len() != k {
+            return Err("an RNS modulus has 2 to BITS / 64 primes, one root each");
+        }
+        if n < 2 || !n.is_power_of_two() || n > (1 << 24) {
+            return Err("n must be a power of two in [2, 2^24]");
+        }
+        if q < W::from_u128(3) || !q.bit0() || q.bits() > W::MAX_Q_BITS {
+            return Err("unsupported q: need an odd q below the word limit");
+        }
+        let mut prod = U256::ONE;
+        for (i, &p) in primes.iter().enumerate() {
+            if p >> 62 != 0 || primes[..i].contains(&p) {
+                return Err("the factors of q must be distinct primes below 2^62");
+            }
+            let (next, carry) = prod.mul_small_add(p, 0);
+            if carry != 0 {
+                return Err("q must be the product of the primes");
+            }
+            prod = next;
+        }
+        if prod != q.to_u256() {
+            return Err("q must be the product of the primes");
+        }
+        let rings = primes.iter().zip(roots).map(|(&p, &rt)| Ring::<u64>::new(p, n, rt)).collect::<Result<Vec<_>, _>>()?;
+        let limb = rings.iter().map(|rg| {
+            let m = &rg.m;
+            let c1 = m.rmod; // 2^64 mod p
+            let c2 = m.mulp(c1, c1);
+            let c3 = m.mulp(c2, c1);
+            let one = m.reduce(1);
+            [one, c1, c2, c3].map(|c| (c, m.shoup_quot(c)))
+        }).collect();
+        let mut inv = Vec::with_capacity(k);
+        for (j, rg) in rings.iter().enumerate() {
+            let m = &rg.m;
+            let mut row = Vec::with_capacity(j);
+            for &pi in &primes[..j] {
+                let c = m.pow(m.reduce(pi), m.q - 2); // p_j is prime (Ring::new checked n^-1 the same way)
+                if m.mulp(c, m.reduce(pi)) != 1 {
+                    return Err("the factors of q must be coprime");
+                }
+                row.push((c, m.shoup_quot(c)));
+            }
+            inv.push(row);
+        }
+        Ok(Ring {
+            m: Modulus::<W>::new(q),
+            n,
+            logn: n.trailing_zeros(),
+            q,
+            lazy: false,
+            br: Vec::new(),
+            twist: Vec::new(),
+            twist_p: Vec::new(),
+            scale: Vec::new(),
+            scale_p: Vec::new(),
+            fwd: Vec::new(),
+            fwd_p: Vec::new(),
+            inv: Vec::new(),
+            inv_p: Vec::new(),
+            rns: Some(Box::new(Rns { rings, limb, inv })),
+        })
+    }
+
+    /// NTT-domain values as the NTT mod q in [0, q) (what ring_lwe_utils.ntt_forward
+    /// returns): the CRT of the residues for an RNS ring, unchanged otherwise.
+    pub fn ntt_to_std(&self, x: &mut [W]) {
+        if let Some(r) = &self.rns {
+            let k = r.rings.len();
+            for v in x.iter_mut() {
+                let l = v.to_u256().0;
+                *v = W::from_u256(r.join(&l[..k]));
+            }
+        }
+    }
+
+    /// The inverse of ntt_to_std (the NTT mod q as NTT-domain values).
+    pub fn ntt_from_std(&self, x: &mut [W]) {
+        if let Some(r) = &self.rns {
+            let k = r.rings.len();
+            for v in x.iter_mut() {
+                let l = v.to_u256().0;
+                let mut limbs = [0u64; 4];
+                for (j, o) in limbs.iter_mut().enumerate().take(k) {
+                    *o = r.residue(j, &l);
+                }
+                *v = W::from_u256(U256(limbs));
+            }
+        }
+    }
     /// The ring for an NTT prime q (q = 1 mod 2n) and a primitive 2n-th root of unity.
     pub fn new(q: W, n: usize, root: W) -> Result<Self, &'static str> {
         if n < 2 || !n.is_power_of_two() || n > (1 << 24) {
@@ -64,6 +276,7 @@ impl<W: Word> Ring<W> {
             fwd_p: Vec::new(),
             inv: Vec::new(),
             inv_p: Vec::new(),
+            rns: None,
         };
         let (mut t, mut u) = (W::ONE, W::ONE);
         for i in 0..n {
@@ -166,8 +379,12 @@ impl<W: Word> Ring<W> {
         if v >= q { v.wsub(q) } else { v }
     }
 
-    /// ring_lwe_utils.ntt_forward: twist, bit-reverse, stages; out in [0, q).
+    /// ring_lwe_utils.ntt_forward: twist, bit-reverse, stages; out in [0, q)
+    /// (for an RNS ring: per-prime residues, see [`Rns`]).
     pub fn forward(&self, input: &[W], out: &mut [W]) {
+        if let Some(r) = &self.rns {
+            return r.forward(input, out, false);
+        }
         for i in 0..self.n {
             let b = self.br[i] as usize;
             out[i] = self.m.shoup(input[b], self.twist[b], self.twist_p[b]);
@@ -188,6 +405,9 @@ impl<W: Word> Ring<W> {
 
     /// ring_lwe_utils.ntt_inverse: bit-reverse, stages, times n^-1 untwist[i]; out in [0, q).
     pub fn inverse(&self, input: &[W], out: &mut [W]) {
+        if let Some(r) = &self.rns {
+            return r.inverse(input, out);
+        }
         for i in 0..self.n {
             out[i] = input[self.br[i] as usize];
         }
@@ -209,6 +429,9 @@ impl<W: Word> Ring<W> {
 
     /// Forward NTT in Montgomery form (the key format of encryption / decryption).
     pub fn forward_mont(&self, input: &[W], out: &mut [W]) {
+        if let Some(r) = &self.rns {
+            return r.forward(input, out, true);
+        }
         self.forward(input, out);
         for v in out.iter_mut() {
             *v = self.m.to_mont(*v);
@@ -218,6 +441,16 @@ impl<W: Word> Ring<W> {
     /// acc += a b pointwise in the NTT domain, a in the form of forward_mont.
     #[inline]
     pub fn pw_mul_add(&self, acc: &mut [W], a: &[W], b: &[W]) {
+        if let Some(r) = &self.rns {
+            for ((s, &x), &y) in acc.iter_mut().zip(a).zip(b) {
+                let (mut l, xa, ya) = (s.to_u256().0, x.to_u256().0, y.to_u256().0);
+                for (j, rg) in r.rings.iter().enumerate() {
+                    l[j] = rg.m.add(l[j], rg.m.mul(xa[j], ya[j]));
+                }
+                *s = W::from_u256(U256(l));
+            }
+            return;
+        }
         let m = &self.m;
         for ((s, &x), &y) in acc.iter_mut().zip(a).zip(b) {
             *s = m.add(*s, m.mul(x, y));
@@ -227,6 +460,17 @@ impl<W: Word> Ring<W> {
     /// out = a b pointwise in the NTT domain, a in the form of forward_mont.
     #[inline]
     pub fn pw_mul(&self, out: &mut [W], a: &[W], b: &[W]) {
+        if let Some(r) = &self.rns {
+            for ((o, &x), &y) in out.iter_mut().zip(a).zip(b) {
+                let (xa, ya) = (x.to_u256().0, y.to_u256().0);
+                let mut l = [0u64; 4];
+                for (j, rg) in r.rings.iter().enumerate() {
+                    l[j] = rg.m.mul(xa[j], ya[j]);
+                }
+                *o = W::from_u256(U256(l));
+            }
+            return;
+        }
         let m = &self.m;
         for ((o, &x), &y) in out.iter_mut().zip(a).zip(b) {
             *o = m.mul(x, y);
@@ -236,6 +480,14 @@ impl<W: Word> Ring<W> {
     /// The negacyclic product (for tests).
     pub fn poly_mul(&self, a: &[W], b: &[W]) -> Vec<W> {
         let (mut fa, mut fb, mut out) = (vec![W::ZERO; self.n], vec![W::ZERO; self.n], vec![W::ZERO; self.n]);
+        if self.rns.is_some() {
+            self.forward_mont(a, &mut fa);
+            self.forward(b, &mut fb);
+            let mut prod = vec![W::ZERO; self.n];
+            self.pw_mul(&mut prod, &fa, &fb);
+            self.inverse(&prod, &mut out);
+            return out;
+        }
         self.forward(a, &mut fa);
         self.forward(b, &mut fb);
         for i in 0..self.n {
@@ -270,6 +522,18 @@ impl AnyRing {
             Ok(AnyRing::W128(Ring::new(u128::from_u256(q), n, u128::from_u256(root))?))
         } else {
             Ok(AnyRing::W256(Ring::new(q, n, root)?))
+        }
+    }
+    /// The ring of a composite q (Ring::new_rns): 128-bit words for two primes
+    /// and q < 2^125, 256-bit words for up to four primes and q < 2^253.
+    pub fn new_rns(q: U256, n: usize, primes: &[u64], roots: &[u64]) -> Result<Self, &'static str> {
+        let bits = q.bits();
+        if primes.len() <= 2 && bits <= u128::MAX_Q_BITS {
+            Ok(AnyRing::W128(Ring::new_rns(u128::from_u256(q), n, primes, roots)?))
+        } else if primes.len() <= 4 && bits <= U256::MAX_Q_BITS {
+            Ok(AnyRing::W256(Ring::new_rns(q, n, primes, roots)?))
+        } else {
+            Err("an RNS modulus has at most four primes and q below 2^253")
         }
     }
     pub fn word_bits(&self) -> u32 {
@@ -311,7 +575,7 @@ macro_rules! with_ring {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::arith::tests::{slow_mulmod, u256, Lcg};
 
@@ -439,5 +703,79 @@ mod tests {
         }
         assert!(AnyRing::new(ntt_prime(254, 16), 16, U256::from_u128(3)).is_err());
         assert_eq!(u256("97"), U256::from_u128(97));
+    }
+
+    /// Distinct NTT primes of `bits` bits for dimension n (the first ones above 2^(bits - 1)).
+    pub(crate) fn rns_primes(bits: u32, n: usize, k: usize) -> Vec<u64> {
+        let mut out = Vec::new();
+        let mut c = ntt_prime(bits, n);
+        while out.len() < k {
+            out.push(c.0[0]);
+            c = c.wadd(U256::from_u128(2 * n as u128));
+            while !is_prime(c) {
+                c = c.wadd(U256::from_u128(2 * n as u128));
+            }
+        }
+        out
+    }
+
+    pub(crate) fn rns_ring(bits: u32, n: usize, k: usize) -> (AnyRing, U256) {
+        let ps = rns_primes(bits, n, k);
+        let roots: Vec<u64> = ps.iter().map(|&p| primitive_root(p, n)).collect();
+        let q = ps.iter().fold(U256::ONE, |acc, &p| acc.mul_small_add(p, 0).0);
+        (AnyRing::new_rns(q, n, &ps, &roots).unwrap(), q)
+    }
+
+    #[test]
+    fn rns_products_match_schoolbook() {
+        for &(bits, n, k) in &[(30u32, 8usize, 2usize), (50, 16, 2), (40, 16, 3), (54, 32, 4), (61, 16, 4)] {
+            let (ring, q) = rns_ring(bits, n, k);
+            assert_eq!(ring.word_bits(), if k <= 2 && q.bits() <= 125 { 128 } else { 256 });
+            let mut rng = Lcg(q.0[0] as u128 ^ 0x5eed);
+            let a: Vec<U256> = (0..n).map(|_| rng.below(q)).collect();
+            let mut b: Vec<U256> = (0..n).map(|_| rng.below(q)).collect();
+            b[0] = q.wsub(U256::ONE);
+            let want = schoolbook(&a, &b, q);
+            with_ring!(&ring, r => {
+                let aw: Vec<_> = a.iter().map(|&v| Word::from_u256(v)).collect();
+                let bw: Vec<_> = b.iter().map(|&v| Word::from_u256(v)).collect();
+                let got: Vec<U256> = r.poly_mul(&aw, &bw).iter().map(|v| v.to_u256()).collect();
+                assert_eq!(got, want, "bits {} n {} k {}", bits, n, k);
+                let mut f = aw.clone();
+                let mut back = aw.clone();
+                r.forward(&aw, &mut f);
+                r.inverse(&f, &mut back);
+                assert_eq!(back, aw);
+                // the NTT-domain values read as the NTT mod q and back
+                let mut std = f.clone();
+                r.ntt_to_std(&mut std);
+                assert!(std.iter().all(|v| v.to_u256() < q));
+                r.ntt_from_std(&mut std);
+                assert_eq!(std, f);
+                // sums of products in the NTT domain
+                let (mut fa, mut fb, mut acc) = (aw.clone(), bw.clone(), vec![Word::ZERO; n]);
+                r.forward_mont(&aw, &mut fa);
+                r.forward(&bw, &mut fb);
+                r.pw_mul_add(&mut acc, &fa, &fb);
+                r.pw_mul_add(&mut acc, &fa, &fb);
+                let mut two = aw.clone();
+                r.inverse(&acc, &mut two);
+                let m = Modulus::<U256>::new(q);
+                assert_eq!(two.iter().map(|v| v.to_u256()).collect::<Vec<_>>(),
+                           want.iter().map(|&v| m.add(v, v)).collect::<Vec<_>>());
+            });
+        }
+        // refused: a wrong product, repeated or too large factors, too many factors
+        let ps = rns_primes(50, 16, 3);
+        let roots: Vec<u64> = ps.iter().map(|&p| primitive_root(p, 16)).collect();
+        let q = ps.iter().fold(U256::ONE, |acc, &p| acc.mul_small_add(p, 0).0);
+        assert!(AnyRing::new_rns(q.wadd(U256::from_u128(2)), 16, &ps, &roots).is_err());
+        assert!(AnyRing::new_rns(q, 16, &[ps[0], ps[0], ps[1]], &roots).is_err());
+        assert!(AnyRing::new_rns(q, 16, &ps[..1], &roots[..1]).is_err());
+        assert!(Ring::<u128>::new_rns(q.to_u128(), 16, &ps, &roots).is_err()); // three limbs in a u128
+        let big = rns_primes(63, 16, 2);
+        let qb = big.iter().fold(U256::ONE, |acc, &p| acc.mul_small_add(p, 0).0);
+        let rb: Vec<u64> = big.iter().map(|&p| primitive_root(p, 16)).collect();
+        assert!(AnyRing::new_rns(qb, 16, &big, &rb).is_err());
     }
 }

@@ -177,7 +177,10 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         # for a single-input scheme of dimension n * eta (ACFGU18 Setup*),
         # with the widths for 3X (ACFGU18 Fig. 4)
         self.p, self.q, self.sigma1, self.sigma2, self.sigma3 = self._bmms21_tuple(self.ring_n)
-        factors = self._factors_for(self.ring_n)
+        # the factors of this q (_factors_for: those of the derived modulus, a
+        # subclass's flooded one for the threshold MCFE)
+        base = self._bmms21(self.ring_n).get("q_factors")
+        factors = None if base is None else [gp.digits(f) for f in base]
         if factors is not None:
             self.q_factors = register_rns_modulus(self.q, factors)
         self.a_seed = secrets.token_hex(32)

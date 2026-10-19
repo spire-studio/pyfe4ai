@@ -208,6 +208,59 @@ mod tests {
         assert!(uniform_flooding(&m, 0, material, &mut out).is_err());
     }
 
+    /// share_partial_k on an RNS ring of four primes: the schoolbook values mod q.
+    #[test]
+    fn partial_on_an_rns_ring() {
+        use crate::arith::tests::{slow_mulmod, Lcg};
+        use crate::ntt::tests::rns_ring;
+        use crate::with_ring;
+        let (n, eta, k) = (16usize, 2usize, 5usize);
+        let (ring, q) = rns_ring(54, n, 4);
+        let mut rng = Lcg(0xfeed);
+        let poly = |rng: &mut Lcg| (0..n).map(|_| rng.below(q)).collect::<Vec<U256>>();
+        let (ct0s, ct1s, sks): (Vec<_>, Vec<_>, Vec<_>) = (0..3)
+            .map(|_| ((0..eta).flat_map(|_| poly(&mut rng)).collect::<Vec<U256>>(), poly(&mut rng), poly(&mut rng)))
+            .fold((vec![], vec![], vec![]), |mut acc, (a, b, c)| { acc.0.push(a); acc.1.push(b); acc.2.push(c); acc });
+        let ys: Vec<U256> = (0..3 * eta).map(|i| U256::from_u128(i as u128 + 2)).collect();
+        let (z, noise) = (poly(&mut rng), poly(&mut rng));
+        let (delta, lambda) = (U256::from_u128(12345), q.wsub(U256::from_u128(7)));
+        let m = Modulus::<U256>::new(q);
+        let mut want_w = vec![U256::ZERO; k];
+        let mut key: Vec<U256> = z.iter().map(|&v| slow_mulmod(v, delta, q)).collect();
+        for s in 0..3 {
+            for i in 0..n {
+                for j in 0..n {
+                    let p = slow_mulmod(ct1s[s][i], sks[s][j], q);
+                    if i + j < n { key[i + j] = m.add(key[i + j], p) } else { key[i + j - n] = m.sub(key[i + j - n], p) }
+                }
+            }
+        }
+        let mut want_cy = vec![U256::ZERO; k];
+        for i in 0..k {
+            want_w[i] = m.add(slow_mulmod(key[i], lambda, q), noise[i]);
+            for s in 0..3 {
+                for r in 0..eta {
+                    want_cy[i] = m.add(want_cy[i], slow_mulmod(ct0s[s][r * n + i], ys[s * eta + r], q));
+                }
+            }
+        }
+        with_ring!(&ring, r => {
+            let cv = |v: &[U256]| v.iter().map(|&x| Word::from_u256(x)).collect::<Vec<_>>();
+            let ct0k: Vec<Vec<_>> = ct0s.iter().map(|c| (0..eta).flat_map(|row| cv(&c[row * n..row * n + k])).collect()).collect();
+            let ct1w: Vec<Vec<_>> = ct1s.iter().map(|c| cv(c)).collect();
+            let hats: Vec<Vec<_>> = sks.iter().map(|c| { let mut h = cv(c); r.forward_mont(&cv(c), &mut h); h }).collect();
+            let ym: Vec<_> = ys.iter().map(|&y| r.m.to_mont(Word::from_u256(y))).collect();
+            let (mut w, mut cy) = (vec![Word::ZERO; k], vec![Word::ZERO; k]);
+            let c0: Vec<&[_]> = ct0k.iter().map(|v| v.as_slice()).collect();
+            let c1: Vec<&[_]> = ct1w.iter().map(|v| v.as_slice()).collect();
+            let hr: Vec<&[_]> = hats.iter().map(|v| v.as_slice()).collect();
+            share_partial_k(r, eta, &c0, &c1, &ym, &hr, &cv(&z), Word::from_u256(delta), Word::from_u256(lambda),
+                            &cv(&noise[..k]), &mut w, &mut cy);
+            assert_eq!(w.iter().map(|v| v.to_u256()).collect::<Vec<_>>(), want_w);
+            assert_eq!(cy.iter().map(|v| v.to_u256()).collect::<Vec<_>>(), want_cy);
+        });
+    }
+
     #[test]
     fn format_2_round_trip_and_strictness() {
         let q: u128 = (1 << 100) + 0x3_0001;

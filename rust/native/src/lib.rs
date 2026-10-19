@@ -261,6 +261,17 @@ fn ctx_new(py: Python<'_>, q: &Bound<'_, PyAny>, n: usize, root: &Bound<'_, PyAn
     Ok(RingCtx { ring: Arc::new(ring), q: py_index(q)?.unbind() })
 }
 
+/// A ring for a composite q = primes[0] ... primes[k-1] (AnyRing::new_rns: one
+/// 64-bit NTT per prime under the standard-value kernels; 2 <= k <= 4 primes
+/// below 2^62, roots the residues of the CRT root). The kernels of a RingCtx
+/// run on it unchanged, with the values of a ring mod q.
+#[pyfunction]
+fn ctx_new_rns(py: Python<'_>, q: &Bound<'_, PyAny>, n: usize, primes: Vec<u64>, roots: Vec<u64>) -> PyResult<RingCtx> {
+    let qv = u256_arg(q)?;
+    let ring = py.detach(|| AnyRing::new_rns(qv, n, &primes, &roots)).map_err(PyValueError::new_err)?;
+    Ok(RingCtx { ring: Arc::new(ring), q: py_index(q)?.unbind() })
+}
+
 #[pyfunction]
 fn ctx_info(py: Python<'_>, ctx: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
     if let Ok(c) = ctx.cast::<rns::RnsCtx>() {
@@ -271,6 +282,10 @@ fn ctx_info(py: Python<'_>, ctx: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
     d.set_item("word_bits", r.word_bits())?;
     d.set_item("n", r.n())?;
     d.set_item("q_bits", r.qbits())?;
+    let primes: Option<Vec<u64>> = with_ring!(&**r, rg => rg.rns.as_ref().map(|b| b.rings.iter().map(|x| x.q).collect()));
+    if let Some(p) = primes {
+        d.set_item("rns", p)?;
+    }
     Ok(d.into_any().unbind())
 }
 
@@ -398,9 +413,16 @@ fn ntt(py: Python<'_>, ctx: &Bound<'_, PyAny>, data: &[u8], inverse: bool) -> Py
     }
     let ring = get_ring(ctx.cast::<RingCtx>()?);
     with_ring!(&*ring, r => {
-        let x = bytes_to_words(data, r.n)?;
+        let mut x = bytes_to_words(data, r.n)?;
         let mut y = x.clone();
-        if inverse { r.inverse(&x, &mut y) } else { r.forward(&x, &mut y) }
+        // NTT-domain values cross as the NTT mod q (an RNS ring holds residues)
+        if inverse {
+            r.ntt_from_std(&mut x);
+            r.inverse(&x, &mut y)
+        } else {
+            r.forward(&x, &mut y);
+            r.ntt_to_std(&mut y);
+        }
         Ok(words_to_bytes(py, &y))
     })
 }
@@ -2051,7 +2073,7 @@ fn _rust_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<FacctObj>()?;
     m.add_class::<FacctWideObj>()?;
     for f in [
-        wrap_pyfunction!(ctx_new, m)?, wrap_pyfunction!(ctx_info, m)?, wrap_pyfunction!(pack, m)?,
+        wrap_pyfunction!(ctx_new, m)?, wrap_pyfunction!(ctx_new_rns, m)?, wrap_pyfunction!(ctx_info, m)?, wrap_pyfunction!(pack, m)?,
         wrap_pyfunction!(unpack, m)?, wrap_pyfunction!(ntt, m)?, wrap_pyfunction!(ntt_mont, m)?,
         wrap_pyfunction!(poly_mul, m)?, wrap_pyfunction!(lincomb, m)?, wrap_pyfunction!(gauss, m)?,
         wrap_pyfunction!(shake256_py, m)?, wrap_pyfunction!(hash_to_zq_py, m)?, wrap_pyfunction!(random_bytes, m)?,

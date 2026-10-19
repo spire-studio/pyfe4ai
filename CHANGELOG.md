@@ -23,6 +23,19 @@ compatibility).
   element, partial decryptions 222 -> 54, server 60 -> 19 ms, client 44 ->
   30 ms. The uniform flooding noise is now drawn natively on both formats
   (same values).
+- **`mcfe/ring_lwe_threshold`: opt-in RNS modulus** (`ring_modulus="rns"`;
+  the prime stays the default): the flooded `q` is a product of NTT primes
+  below 2^62, four of about 54 bits under `standard`
+  (`rns_ntt_modulus(..., factors=k)`, `k = max(2, ceil(bits / 60))`; for two
+  factors the modulus of earlier versions), of the prime's bit length. Every
+  factor must exceed `s` (checked by key generators and servers); the record
+  carries `ring_modulus` and `q_factors`, which `pp_binding` covers where
+  present. The native 256-bit ring gains an RNS backend (`ctx_new_rns`, up to
+  four primes): one 64-bit NTT per factor, NTT-domain values as residue
+  tuples, results equal to the Python code on the composite `q`. Re-review in
+  docs/rns_modulus_review.md section 10. Standard profile, 3 clients, 10^4
+  values, `s = t = 3`, 1 thread: partial decryption 19 -> 11 ms (binary),
+  57 -> 45 ms (JSON); client 30 -> 26.5 ms.
 - **`sife/fullysec_ring_lwe`: opt-in packed layout** (`ndarray_layout =
   "packed"`, experimental: the leveraging argument is the project's own,
   independently checked, not externally reviewed). A ciphertext holds an
