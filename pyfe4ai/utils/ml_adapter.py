@@ -57,6 +57,7 @@ import logging
 import numbers
 import threading
 from dataclasses import dataclass
+from dataclasses import replace
 from fractions import Fraction
 from typing import Any
 
@@ -1122,7 +1123,9 @@ def aggregate_gradients(
                 the first ``t`` of ``lst_sid``); the wrapper runs them
                 (:func:`partial_decrypt_gradients`,
                 :func:`combine_partial_decryptions`) and *sid* is the
-                combiner.
+                combiner. If their label key shares turn out to be of
+                different sharings (``MixedSharingsError``), all servers
+                fetch them again and decrypt once more.
 
         Raises:
             ValueError: If the policy above is violated, or SIFE is given
@@ -1155,7 +1158,8 @@ def aggregate_gradients(
             wrapper, weights, label, sid, list(encrypted), allow_partial, n_chunks_fn, enrolled
         )
         if threshold:
-            prepared = PreparedAggregation(label, sid, fusion_weight, weight_scale, None, dk, allow_partial, enrolled)
+            prepared = PreparedAggregation(label, sid, fusion_weight, weight_scale, n_chunks_fn(), dk, allow_partial,
+                                           enrolled)
     else:
         n_chunks = n_chunks_fn()
         if prepared.label != label:
@@ -1171,11 +1175,22 @@ def aggregate_gradients(
         fusion_weight, weight_scale, dk = prepared.fusion_weight, prepared.weight_scale, prepared.dk
 
     if threshold:  # the servers the wrapper runs, then the combiner
-        partials = {
-            server: partial_decrypt_gradients(encrypted, wrapper, prepared, server=server)
-            for server in prepared.servers
-        }
-        return combine_partial_decryptions(partials, wrapper, prepared)
+        from pyfe4ai.schemes.mcfe.ring_lwe_threshold import MixedSharingsError
+
+        for attempt in (0, 1):
+            partials = {
+                server: partial_decrypt_gradients(encrypted, wrapper, prepared, server=server)
+                for server in prepared.servers
+            }
+            try:
+                return combine_partial_decryptions(partials, wrapper, prepared)
+            except MixedSharingsError:
+                if attempt:
+                    raise
+                # the label's parts were shared again between the servers' fetches: all servers fetch them again
+                credentials = {"fusion_weight": prepared.fusion_weight, "label": prepared.label,
+                               "n_chunks": prepared.n_chunks}
+                prepared = replace(prepared, dk=_server_key_shares(wrapper, credentials, prepared.servers))
 
     if wrapper.scheme_type in ("mcfe", "mife"):
         # Multi-client: {nid: [array_per_layer]}
@@ -1215,7 +1230,7 @@ def _aggregated(result_arrays: list, weight_scale: int) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 #: Fields of one partial decryption (one chunk) of a :class:`ThresholdPartial`.
-_PARTIAL_FIELDS = frozenset({"w", "c_y", "k", "ct_digest", "sid", "lst_sid_enrolled"})
+_PARTIAL_FIELDS = frozenset({"w", "c_y", "k", "ct_digest", "sid", "lst_sid_enrolled", "sharing_id"})
 
 
 @dataclass
@@ -1229,7 +1244,8 @@ class ThresholdPartial:
     #: :meth:`~pyfe4ai.schemes.mcfe.ring_lwe_threshold.ThresholdMCFERingLWE.compute_lst_ndarray_ct`
     #: of the clients' gradients: per layer ``{"shape", "parts"}``, one partial
     #: decryption per chunk (``w`` and ``c_y`` bytes for binary public
-    #: parameters, lists of decimal strings for JSON ones).
+    #: parameters, lists of decimal strings for JSON ones; ``sharing_id``
+    #: that of the server's key share, or ``None``).
     layers: list
 
     def to_dict(self) -> dict:
@@ -1294,6 +1310,9 @@ class ThresholdPartial:
                     raise ValueError("invalid {}: k >= 1, a ct_digest and this server's sid".format(where))
                 if not isinstance(enrolled, list) or not all(isinstance(v, str) for v in enrolled):
                     raise ValueError("invalid {}: lst_sid_enrolled is a list of server ids".format(where))
+                sharing_id = part["sharing_id"]
+                if sharing_id is not None and not (isinstance(sharing_id, str) and 0 < len(sharing_id) <= 128):
+                    raise ValueError("invalid {}: sharing_id is a string (or null)".format(where))
                 if fmt == "binary":
                     values = {key: _from_base64(part[key], "{} {}".format(where, key)) for key in ("w", "c_y")}
                 else:
@@ -1349,7 +1368,12 @@ def combine_partial_decryptions(
         ValueError: Unless *partials* are those of the prepared servers for
             its label.
         FESchemeError: If they do not combine (see
-            :meth:`~pyfe4ai.schemes.mcfe.ring_lwe_threshold.ThresholdMCFERingLWE.decrypt_lst_ndarray_ct`).
+            :meth:`~pyfe4ai.schemes.mcfe.ring_lwe_threshold.ThresholdMCFERingLWE.decrypt_lst_ndarray_ct`);
+            :class:`~pyfe4ai.schemes.mcfe.ring_lwe_threshold.MixedSharingsError`
+            if their label parts are of different sharings (the key generator
+            shared the label again between the servers' fetches): prepare the
+            round again and have all servers decrypt with the new key shares
+            (:func:`aggregate_gradients` does this once by itself).
     """
     _require_served_threshold(wrapper, "combine_partial_decryptions")
     if set(partials) != set(prepared.servers or []) or any(

@@ -26,7 +26,8 @@ refuses ciphertexts and key shares of the other format or of other public
 parameters (``pp_binding``), and a label part without its weight part
 (:meth:`ThresholdMCFERingLWE.add_weight_key_share`); a combiner refuses partial
 decryptions of the other format (partial decryptions carry no digest of the
-public parameters; servers are honest-but-curious, see below).
+public parameters; servers are honest-but-curious, see below) and partial
+decryptions of different sharings of one key (:class:`MixedSharingsError`).
 
 Construction (notation of :mod:`pyfe4ai.schemes.mife.ring_lwe`):
 
@@ -213,8 +214,15 @@ new one. A label part is of the weights' share set current when it is issued
 (one made or cached while another thread evicted that sharing is made again
 for the new set) and is kept with that sharing, and dropped with it; per
 sharing the label parts of the last :data:`LABEL_PARTS_KEPT` labels are kept
-(a label asked for again later gets a new sharing of its terms, whose answers
-do not combine with those of the first).
+(a label asked for again later gets a new sharing of its terms). Every sharing
+the key generator issues -- whole key shares, or the label parts of one label
+-- has a random ``sharing_id``, which the servers' partial decryptions carry:
+partials of two sharings of one key would decode to a wrong value inside the
+decoding bound rather than fail, so combiners refuse a mix
+(:class:`MixedSharingsError`; fetch the label parts again for all servers).
+The two sharings' answers of one server differ by its share of a sharing of
+zero, which ``t - 1`` servers compute from their own parts: a second sharing
+reveals nothing.
 
 The threshold objects (key generator, clients, servers) are not portable across
 versions of pyfe4ai: a state pickled by another version is refused when loaded
@@ -577,7 +585,7 @@ if hasattr(os, "register_at_fork"):
 #: The version of the pickled state of the threshold objects: a state pickled
 #: by another version of pyfe4ai (other attributes, other derivations) is
 #: refused when loaded.
-_STATE_VERSION = "pyfe4ai/tmcfe-ring-lwe/state/2026-10-2"
+_STATE_VERSION = "pyfe4ai/tmcfe-ring-lwe/state/2026-10-3"
 
 
 def _versioned_state(state: dict) -> dict:
@@ -606,10 +614,29 @@ WEIGHT_SHARINGS_KEPT = 64
 #: Labels whose label parts a key generator keeps per sharing of ``sk_y``
 #: (least recently used out; the servers of one label get the same shares while
 #: it is kept). A label part asked for again after that is a new sharing of the
-#: same terms (same share set and noise key): servers' answers from the two
-#: sharings do not combine, so a round's key shares are issued while its label
-#: is among the last :data:`LABEL_PARTS_KEPT` of its weights.
+#: same terms (same share set and noise key) with another ``sharing_id``:
+#: combiners refuse partial decryptions of the two sharings
+#: (:class:`MixedSharingsError`), and the servers then fetch the label's parts
+#: again, all from the new sharing.
 LABEL_PARTS_KEPT = 16
+
+
+#: The message of :class:`MixedSharingsError`.
+MIXED_SHARINGS = ("partials come from different sharings of the label's key; fetch the label parts again from "
+                  "the key generator for all servers")
+
+
+class MixedSharingsError(FESchemeError):
+    """Partial decryptions of different sharings of one key were combined.
+
+    Every sharing a key generator issues (whole key shares, or the label parts
+    of one label) has a random ``sharing_id``, which the servers' partial
+    decryptions carry. Shares of two sharings of the same key do not
+    reconstruct it: combined, their partials would decode to a wrong value
+    inside the decoding bound rather than fail. This happens when the label
+    parts of one round are fetched on both sides of their eviction
+    (:data:`LABEL_PARTS_KEPT`); fetch them again for all servers.
+    """
 
 
 def _native_ring(q, ring_n: int):
@@ -929,7 +956,10 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             completes, the weights' current share set when it is issued)
             and no ``sk_y``; label parts are kept with that sharing of
             ``sk_y`` (later calls return the same shares, for the last
-            :data:`LABEL_PARTS_KEPT` labels) and dropped with it. With binary public parameters
+            :data:`LABEL_PARTS_KEPT` labels) and dropped with it. Every key
+            share part of one sharing has its ``sharing_id`` (the partial
+            decryptions carry it; combiners refuse partials of different
+            sharings). With binary public parameters
             (``ct_format="binary"``) every polynomial of the Shamir and
             replicated sharings is bytes (``ceil(bits(q)/8)``-byte words, the
             same values).
@@ -1024,9 +1054,10 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         terms = self._label_terms(self._key_z(fusion_weight), fusion_weight, labels, binary=binary)
         material = {"z": terms[0]} if label_term else {}
         material["z_chunks"] = list(terms[1:] if label_term else terms)
+        sharing_id = secrets.token_hex(16)  # this sharing of the terms (another one if they are shared again)
         return {
             sid: dict(shares, label=label, noise_key=self._noise_key(sid, weights_id, label), part="label",
-                      share_set_id=entry["share_set_id"], label_hash=self.label_hash)
+                      share_set_id=entry["share_set_id"], label_hash=self.label_hash, sharing_id=sharing_id)
             for sid, shares in self._share_material(material).items()
         }
 
@@ -1108,8 +1139,10 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
 
     def _share_key(self, key: dict, weights_id: str) -> dict:
         material = {"sk_y": dict(key["sk_y"]), "z": key["z"], "z_chunks": list(key["z_chunks"])}
+        sharing_id = secrets.token_hex(16)
         return {
-            sid: dict(shares, label=key["label"], noise_key=self._noise_key(sid, weights_id, key["label"]))
+            sid: dict(shares, label=key["label"], noise_key=self._noise_key(sid, weights_id, key["label"]),
+                      sharing_id=sharing_id)
             for sid, shares in self._share_material(material).items()
         }
 
@@ -1454,8 +1487,9 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             lst_sid_enrolled: The servers whose partials will be combined.
 
         Returns:
-            Dict with ``w``, ``c_y``, ``k``, ``ct_digest``, ``sid`` and
-            ``lst_sid_enrolled``.
+            Dict with ``w``, ``c_y``, ``k``, ``ct_digest``, ``sid``,
+            ``lst_sid_enrolled`` and ``sharing_id`` (that of the key share,
+            ``None`` for key shares without one).
 
         Raises:
             FESchemeError: Under ``flooding_accounting = "kl"`` also when the
@@ -1467,6 +1501,9 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         if not dk or not ("sk_y" in dk or "pieces" in dk or weight is not None):
             raise FEKeyError("no decryption keys provided")
         check_flooding_version(dk)
+        sharing_id = dk.get("sharing_id")  # of the shares' sharing (key shares of earlier versions: none)
+        if sharing_id is not None and not isinstance(sharing_id, str):
+            raise FEKeyError("malformed key share: sharing_id is a string")
         flooding = self.pp.get("flooding", LEGACY_FLOODING)
         if flooding not in FLOODINGS:
             raise FEValidationError("unknown flooding {!r}".format(flooding))
@@ -1661,6 +1698,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             "ct_digest": ct_digest,
             "sid": self.id,
             "lst_sid_enrolled": list(lst_sid_enrolled),
+            "sharing_id": sharing_id,
         }
 
     def _flooding_width(self) -> int:
@@ -1743,7 +1781,9 @@ class ThresholdMCFERingLWE(MCFERingLWE):
 
         Raises:
             FESchemeError: If fewer than ``t`` shares are given or the shares
-                do not match the enrolled set they were computed for.
+                do not match the enrolled set they were computed for;
+                :class:`MixedSharingsError` if they are of different sharings
+                (``sharing_id``).
         """
         self._check_parameters_unchanged()
         validate_partial_decryptions(dict_ct_prime, self.pp["t"])
@@ -1755,6 +1795,12 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         if any(not isinstance(p.get("w"), values_type) or not isinstance(p.get("c_y"), values_type) for p in partials):
             raise FESchemeError("partial decryptions not in the public parameters' format ({})".format(
                 self.threshold_format))
+        # shares of two sharings of one key do not reconstruct it (their partials would decode to a wrong value)
+        sharing_ids = [p.get("sharing_id") for p in partials]
+        if any(i is not None and not isinstance(i, str) for i in sharing_ids):
+            raise FESchemeError("malformed partial decryption: sharing_id is a string")
+        if len(set(sharing_ids)) > 1:
+            raise MixedSharingsError(MIXED_SHARINGS)
         if any(
             (p["c_y"], p["ct_digest"], p["k"]) != (first["c_y"], first["ct_digest"], first["k"])
             for p in partials

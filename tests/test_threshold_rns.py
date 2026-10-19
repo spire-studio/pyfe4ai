@@ -219,4 +219,6 @@ def test_encryption_and_key_shares_identical(stat_param, monkeypatch):
     py, nat = both(lambda: kg._share_key(key, "w"),
                    lambda: monkeypatch.setattr(threshold_utils, "_CSPRNG", _BytesSystemRandom(ByteStream(6))),
                    lambda: monkeypatch.setattr(native_backend, "_random_override", ByteStream(6).take))
+    for shares in (py, nat):  # each sharing has its own random sharing_id (not drawn from the dealing's bytes)
+        assert len({part.pop("sharing_id") for part in shares.values()}) == 1
     assert py == nat

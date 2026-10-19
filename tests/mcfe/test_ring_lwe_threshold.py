@@ -64,7 +64,7 @@ def test_key_shares(kg_config):
               "pp_binding"}
     # t < s: replicated sharing, C(s - 1, t - 1) = 2 pieces; split by default: the label part of the round ...
     dk = kg.get_decryption_keys("sid_0", credentials=creds)
-    assert set(dk) == {"sharing", "pieces", "part", "share_set_id", "label", "noise_key"} | common
+    assert set(dk) == {"sharing", "pieces", "part", "share_set_id", "label", "noise_key", "sharing_id"} | common
     assert dk["part"] == "label" and dk["sharing"] == "replicated" and len(dk["pieces"]) == 2
     assert all(set(piece["share"]) == {"z", "z_chunks"} for piece in dk["pieces"])
     # ... and the weight part, once per weights
@@ -74,12 +74,12 @@ def test_key_shares(kg_config):
     assert all(set(piece["share"]) == {"sk_y"} for piece in weight["pieces"])
     # whole key shares on request, per call or for the key generator
     full = kg.get_decryption_keys("sid_0", credentials=dict(creds, key_part="full"))
-    assert set(full) == {"sharing", "pieces", "label", "noise_key"} | common
+    assert set(full) == {"sharing", "pieces", "label", "noise_key", "sharing_id"} | common
     assert all(set(piece["share"]) == {"sk_y", "z", "z_chunks"} for piece in full["pieces"])
     shamir = ThresholdMCFERingLWEKeyGenerator(dict(kg_config, t=3, key_shares="full"))
     shamir.setup()
     dk = shamir.get_decryption_keys("sid_0", credentials=creds)
-    assert set(dk) == {"sk_y", "z", "z_chunks", "label", "noise_key"} | common
+    assert set(dk) == {"sk_y", "z", "z_chunks", "label", "noise_key", "sharing_id"} | common
 
 
 @pytest.mark.parametrize("options", [{}, LEGACY], ids=["defaults", "legacy"])

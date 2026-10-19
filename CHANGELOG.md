@@ -90,8 +90,10 @@ compatibility).
   `base64` list instead of refusing them; `from_dict` decodes them strictly.
   A server lacking the weight part of a prepared round (a copied wrapper's
   new server objects, or a part its store dropped) is given it again when
-  the round is decrypted. `PreparedAggregation` holds key material (the
-  servers' label key shares). Under `flooding_accounting = "kl"` the adapter
+  the round is decrypted; when the combiner finds label parts of different
+  sharings, `aggregate_gradients` has all servers fetch them again and
+  decrypt once more (the separate steps raise `MixedSharingsError`).
+  `PreparedAggregation` holds key material (the servers' label key shares). Under `flooding_accounting = "kl"` the adapter
   refuses the scheme (a budget per server); the other threshold variants stay
   refused.
 - Pickled scheme objects are not portable across versions of pyfe4ai (keep
@@ -691,13 +693,19 @@ compatibility).
   the other keys) and are made again when another thread evicted that
   sharing meanwhile -- also a cached one --, and kept for the last
   `LABEL_PARTS_KEPT` (16) labels per weights (a label asked for again later
-  gets a new sharing of its terms, with the same share set and noise key,
-  whose answers do not combine with those of the first); the native Shamir
+  gets a new sharing of its terms, with the same share set and noise key).
+  Every sharing the key generator issues (whole key shares, or the label
+  parts of one label) has a random `sharing_id`, which the partial
+  decryptions carry; combiners refuse partials of different sharings
+  (`MixedSharingsError`: fetch the label parts again for all servers), which
+  would otherwise decode to a wrong value inside the decoding bound (a round
+  whose servers fetch their label parts before and after its eviction); the
+  two sharings' answers reveal nothing beyond one of them. The native Shamir
   dealing reports exhausted test bytes as such rather than as malformed key
   material. RNS parameter records of 120 bits or less (two factors before)
   are regenerated with three factors (a new `q`); public parameters with two
   factors are still served, on the Python path. The threshold objects'
-  state version changed: pickles of the previous one are refused.
+  state version changed: pickles of earlier ones are refused.
   `bench_fl_compare.py` runs the threshold family with the scheme's defaults
   (`--ct-format`, `--ring-modulus`, `--key-shares` override them).
 - **`sife/fullysec_ring_lwe` samples exact Gaussians by default**

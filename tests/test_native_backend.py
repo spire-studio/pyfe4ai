@@ -623,6 +623,9 @@ def test_threshold_key_shares_identical(cfg, monkeypatch):
         monkeypatch.setattr(native_backend, "_random_override", ByteStream(6).take)
         nat = kg._share_key(key, "w")
         monkeypatch.setattr(native_backend, "_random_override", None)
+    # the same shares; each sharing has its own random sharing_id (not drawn from the dealing's bytes)
+    assert len({part.pop("sharing_id") for part in py.values()}) == 1
+    assert len({part.pop("sharing_id") for part in nat.values()}) == 1
     assert py == nat
     with native_backend.backend("native"):  # the DRBG: shares still reconstruct the key
         shares = kg._share_key(key, "w")

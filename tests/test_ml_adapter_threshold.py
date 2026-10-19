@@ -198,6 +198,45 @@ def test_threshold_policy_and_errors():
         partial_decrypt_gradients(enc, plain, prepared, server="sid_0")
 
 
+def test_label_parts_of_mixed_sharings_are_fetched_again_once(monkeypatch):
+    """Review round 5 re-check (R5-c'): a prepared round whose label parts are
+    of two sharings (the key generator shared the label again between the
+    servers' fetches) is refused by the combiner; aggregate_gradients then has
+    all servers fetch them again and decrypt once more."""
+    from dataclasses import replace
+
+    from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
+    from pyfe4ai.utils import ml_adapter
+
+    monkeypatch.setattr(tm, "LABEL_PARTS_KEPT", 1)
+    w = _wrapper()
+    grads = _grads(4)
+    prepared = prepare_aggregation(w, WEIGHTS, shape=SHAPE, label="a")
+    creds = {"fusion_weight": prepared.fusion_weight, "label": "a", "n_chunks": prepared.n_chunks, "label_term": False}
+    w.kg.get_decryption_keys("sid_0", credentials=dict(creds, label="x"))  # another label of the weights: evicts a's
+    again = w.kg.get_decryption_keys("sid_1", credentials=creds)  # sid_1's part of a, shared again
+    assert again["sharing_id"] != prepared.dk["sid_0"]["sharing_id"]
+    mixed = replace(prepared, dk=dict(prepared.dk, sid_1=again))
+    enc = {nid: encrypt_gradient(grads[nid], w, nid=nid, label="a") for nid in NIDS}
+    parts = {sid: partial_decrypt_gradients(enc, w, mixed, server=sid) for sid in mixed.servers}
+    with pytest.raises(tm.MixedSharingsError, match="fetch the label parts again"):
+        combine_partial_decryptions(parts, w, mixed)
+    fetched = []
+    real = w.kg.get_decryption_keys
+
+    def spy(sid, **kwargs):
+        fetched.append(sid)
+        return real(sid, **kwargs)
+
+    monkeypatch.setattr(w.kg, "get_decryption_keys", spy)
+    np.testing.assert_allclose(aggregate_gradients(enc, w, label="a", prepared=mixed), _expected(grads), atol=1e-9)
+    assert fetched == ["sid_0", "sid_1"]
+    # mixed again after the second fetch: refused, not retried
+    monkeypatch.setattr(ml_adapter, "_server_key_shares", lambda *args: mixed.dk)
+    with pytest.raises(tm.MixedSharingsError):
+        aggregate_gradients(enc, w, label="a", prepared=mixed)
+
+
 def test_other_threshold_variants_are_still_refused():
     w = FESchemeWrapper("mcfe", "ddh_threshold", {"sec_param": 128, "eta": 1, "n": 2, "s": 2, "t": 2,
                                                   "lst_nid": NIDS[:2], "lst_sid": SIDS[:2]})
@@ -223,6 +262,9 @@ def _with_part(d, **change):
 def test_threshold_partial_layout_is_checked():
     d = _partial_dict()
     assert ThresholdPartial.from_dict(d).to_dict() == d
+    assert isinstance(d["layers"][0]["parts"][0]["sharing_id"], str)
+    bare = _with_part(d, sharing_id=None)  # key shares without an id (earlier versions)
+    assert ThresholdPartial.from_dict(bare).layers[0]["parts"][0]["sharing_id"] is None
     bads = [
         (dict(d, extra=1), "keys"),
         (dict(d, format="xml"), "format"),
@@ -236,6 +278,9 @@ def test_threshold_partial_layout_is_checked():
         (_with_part(d, sid="sid_1"), "sid"),
         (_with_part(d, ct_digest=5), "ct_digest"),
         (_with_part(d, lst_sid_enrolled="sid_0"), "lst_sid_enrolled"),
+        (_with_part(d, sharing_id=5), "sharing_id"),
+        (_with_part(d, sharing_id=""), "sharing_id"),
+        (_with_part(d, sharing_id="x" * 129), "sharing_id"),
         (_with_part(d, w="not base64!"), "base64"),
         (_with_part(d, c_y=["1", "2"]), "base64"),
         (dict(_with_part(d, w=["1"], c_y=["2"]), format="json"), "lists of decimal strings"),  # others binary

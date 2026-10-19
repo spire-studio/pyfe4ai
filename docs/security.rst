@@ -111,7 +111,14 @@ noise is seeded as for a whole key share (``key_shares="full"`` issues whole
 key shares). A server refuses a label part without the weight part of the
 same weights and share set, and key shares and ciphertexts of another format
 or other public parameters; a combiner refuses partial decryptions of another
-format. Partial decryptions carry no digest of the public parameters, so a
+format, and partial decryptions of different sharings of one key: every
+sharing the key generator issues has a random ``sharing_id`` that the
+partials carry, since partials of two sharings (a label shared again after it
+left the key generator's cache, ``LABEL_PARTS_KEPT``) would decode to a wrong
+value inside the decoding bound rather than fail. A second sharing reveals
+nothing: one server's answers under the two sharings differ by its share of
+a sharing of zero, which ``t - 1`` servers compute from their own parts.
+Partial decryptions carry no digest of the public parameters, so a
 combiner given those of another deployment of the same format is not warned
 (it holds no secret; under the honest-but-curious model above the servers
 send the partials of its deployment).
