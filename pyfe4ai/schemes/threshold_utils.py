@@ -45,6 +45,7 @@ import hashlib
 import hmac
 import itertools
 import json
+import os
 import random
 import secrets
 import threading
@@ -839,6 +840,15 @@ SHARE_CACHE_SIZE = 16
 #: Guards the caches of :func:`share_for_enrolled` (lookups and evictions are
 #: several steps of an OrderedDict; the sums themselves run outside it).
 _SHARE_CACHE_LOCK = threading.Lock()
+
+
+def _reset_share_cache_lock() -> None:
+    global _SHARE_CACHE_LOCK
+    _SHARE_CACHE_LOCK = threading.Lock()  # a forked child: the parent's may be held by another thread
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_share_cache_lock)
 
 #: What a server does with a Shamir key share whose ``t < s`` (crypto config
 #: entry ``legacy_shamir``): ``"refuse"`` (default) or ``"warn"`` (serve it

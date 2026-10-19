@@ -226,23 +226,33 @@ def test_unknown_values_refused():
 def test_parameter_cache():
     base = {"n": 3, "eta": 1, "ring_n": 16, "sec_param": 128, "bound_x": 100, "bound_y": 1}
     folder = os.path.join("config", "authority", mcfe_rlwe.MCFERingLWEKeyGenerator._scheme_type, "param.json")
+    rns_file = os.path.join(os.path.dirname(folder), "param-rns.json")
     prime = mcfe_rlwe.MCFERingLWEKeyGenerator(dict(base))
     rec_prime = json.load(open(folder))
     assert "ring_modulus" not in rec_prime and "q_factors" not in rec_prime  # the default's records are unchanged
     prime.setup()
     assert "q_factors" not in prime.get_public_parameters()
-    rns = mcfe_rlwe.MCFERingLWEKeyGenerator(dict(base, ring_modulus="rns"))  # the prime record does not verify
-    rec = json.load(open(folder))
+    rns = mcfe_rlwe.MCFERingLWEKeyGenerator(dict(base, ring_modulus="rns"))  # a record of its own, beside the prime's
+    assert json.load(open(folder)) == rec_prime
+    rec = json.load(open(rns_file))
     assert rec["ring_modulus"] == "rns" and int(rec["q"]) == int(rec["q_factors"][0]) * int(rec["q_factors"][1])
     assert rec["q"] != rec_prime["q"] and rns.q == int(rec["q"])
     again = mcfe_rlwe.MCFERingLWEKeyGenerator(dict(base, ring_modulus="rns"))
     assert again.a_seed == rns.a_seed  # loaded
+    # alternating the configurations loads both records instead of regenerating them
+    assert mcfe_rlwe.MCFERingLWEKeyGenerator(dict(base)).a_seed == prime.a_seed
+    assert mcfe_rlwe.MCFERingLWEKeyGenerator(dict(base, ring_modulus="rns")).a_seed == rns.a_seed
     # a record with other factors (or without them) is regenerated
     for tamper in (lambda r: r.update(q_factors=list(reversed(r["q_factors"]))), lambda r: r.pop("q_factors")):
         r = dict(rec)
         tamper(r)
-        json.dump(r, open(folder, "w"))
+        json.dump(r, open(rns_file, "w"))
         assert mcfe_rlwe.MCFERingLWEKeyGenerator(dict(base, ring_modulus="rns")).a_seed != rec["A_seed"]
+    # a prime record in the RNS file (or the other way round) is not taken
+    json.dump(rec_prime, open(rns_file, "w"))
+    assert mcfe_rlwe.MCFERingLWEKeyGenerator(dict(base, ring_modulus="rns")).a_seed != rec_prime["A_seed"]
+    json.dump(rec, open(folder, "w"))
+    assert mcfe_rlwe.MCFERingLWEKeyGenerator(dict(base)).a_seed != rec["A_seed"]
     assert mcfe_rlwe.MCFERingLWEKeyGenerator(dict(base)).q == prime.q
 
 

@@ -187,8 +187,9 @@ old weight part refuse until given the new one.
 Modulus (key generator config ``ring_modulus``): an NTT prime (default) or
 the opt-in ``"rns"``: ``q`` the product of NTT primes below ``2^62``, as
 many as make each at most 60 bits (four for the 212 to 218 bits of the
-``standard`` profile, about 54 bits each;
-:func:`~pyfe4ai.utils.ring_lwe_utils.rns_ntt_modulus`), of the bit length of
+``standard`` profile, about 54 bits each), but four up to 248 bits, the most
+the native ring holds (above, five or more on the Python path, with a
+warning; :func:`~pyfe4ai.utils.ring_lwe_utils.rns_ntt_modulus_for`), of the bit length of
 the prime and above the same bound, published as ``q_factors`` (bound to the
 key shares). Every factor must exceed ``s`` (:func:`check_rns_servers`):
 Shamir sharing over ``Z_q`` is then one field sharing per factor (CRT), with
@@ -196,7 +197,8 @@ units for points and differences; the replicated sharing, the flooding (an
 argument over the integers), the label hash (exact rejection sampling on
 ``[0, q)``) and the decoding bound do not depend on the factorisation (see
 docs/rns_modulus_review.md). The parameter record carries ``ring_modulus``
-and ``q_factors``; the construction ids are those of the prime modulus. The
+and ``q_factors`` (file ``param-rns.json``, beside the prime's
+``param.json``); the construction ids are those of the prime modulus. The
 native backend runs the 256-bit kernels with one 64-bit NTT per factor
 (NTT-domain values are residue tuples), with the values of the Python code
 on the composite ``q``.
@@ -217,6 +219,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import secrets
 import threading
 from collections import OrderedDict
@@ -282,8 +285,8 @@ from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul
 from pyfe4ai.utils.ring_lwe_utils import bmms21_selective_parameters
 from pyfe4ai.utils.ring_lwe_utils import next_ntt_prime
 from pyfe4ai.utils.ring_lwe_utils import register_rns_modulus
-from pyfe4ai.utils.ring_lwe_utils import rns_factor_count
-from pyfe4ai.utils.ring_lwe_utils import rns_ntt_modulus
+from pyfe4ai.utils.ring_lwe_utils import RNS_NATIVE_FACTORS
+from pyfe4ai.utils.ring_lwe_utils import rns_ntt_modulus_for
 from pyfe4ai.utils.ring_lwe_utils import poly_add
 from pyfe4ai.utils.ring_lwe_utils import poly_mul
 from pyfe4ai.utils.ring_lwe_utils import RingNTT
@@ -489,6 +492,15 @@ def _poly_values(poly, q, ring_n: int) -> list:
 #: servers; several steps of a dict each). The sharing and the NTTs run outside it.
 _STORE_LOCK = threading.Lock()
 
+
+def _reset_store_lock() -> None:
+    global _STORE_LOCK
+    _STORE_LOCK = threading.Lock()  # a forked child: the parent's may be held by another thread
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_store_lock)
+
 #: Weights whose shares of ``sk_y`` a key generator keeps (least recently used
 #: out): a label part for weights no longer kept comes with a new share set,
 #: which servers holding the old weight part refuse until given the new one.
@@ -575,8 +587,10 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
                 ``ring_modulus``: ``"prime"`` (default) or the opt-in
                 ``"rns"``: the flooded ``q`` is a product of NTT primes below
                 2^62 (four for the 212 to 218 bits of the ``standard``
-                profile; :func:`~pyfe4ai.utils.ring_lwe_utils.rns_ntt_modulus`),
-                each above ``s``, published as ``q_factors``.
+                profile, four up to 248 bits;
+                :func:`~pyfe4ai.utils.ring_lwe_utils.rns_ntt_modulus_for`),
+                each above ``s``, published as ``q_factors``; its parameter
+                record is ``param-rns.json``, beside the prime's ``param.json``.
         """
         self.flooding_accounting, self.max_partial_decryptions = flooding_config(config)
         # the KL bound is for Gaussian flooding noise
@@ -606,6 +620,12 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             )
         validate_threshold(self.t, self.lst_sid)
         check_rns_servers(self.s, self.q_factors)
+        if self.q_factors is not None and len(self.q_factors) > RNS_NATIVE_FACTORS:
+            logger.warning(
+                "ring_modulus='rns': q (%d bits) has %d factors, more than the native ring's %d; "
+                "the kernels run on the Python path (the prime modulus is native below 2^253)",
+                int(self.q).bit_length(), len(self.q_factors), RNS_NATIVE_FACTORS,
+            )
 
     def _bmms21(self, ring_n: int) -> dict:
         """The MCFE parameters; with a prime ``q`` also for ``ring_modulus="rns"``
@@ -667,7 +687,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             budget = noise_bound + self.s * GAUSSIAN_TAIL_CUT * flood
         lower = max(q, p * (2 * budget + 4))
         if self.ring_modulus == "rns":
-            q_rns, factors = rns_ntt_modulus(lower, ring_n, p, rns_factor_count(lower))
+            q_rns, factors = rns_ntt_modulus_for(lower, ring_n, p)
             return q_rns, flood, factors
         return next_ntt_prime(lower, ring_n), flood, None
 
@@ -1207,7 +1227,10 @@ class ThresholdMCFERingLWE(MCFERingLWE):
                 return ctx.ntt_mont(bytes(poly))
             except ValueError as exc:
                 raise FEKeyError("malformed binary key share") from exc
-        return ctx.ntt_mont(poly)
+        try:
+            return ctx.ntt_mont(poly)
+        except (TypeError, ValueError) as exc:  # e.g. a value list holding bytes
+            raise FEKeyError("malformed key share") from exc
 
     def share_decrypt(
         self, dict_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list,
@@ -1397,21 +1420,24 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             ys = [[int(v) for v in fusion_weight[nid]] for nid in ids]
             sk_hats = [hats[("native", nid)] for nid in ids]
             if native is not None:
-                w, c_y = native_backend.ext().share_partial(
-                    ctx.cap, packed, eta, ys, sk_hats, z_share, delta, multiplier, **noise_args,
-                )
+                try:  # the ciphertexts are read already: what the call reads is the key share's
+                    w, c_y = native_backend.ext().share_partial(
+                        ctx.cap, packed, eta, ys, sk_hats, z_share, delta, multiplier, **noise_args,
+                    )
+                except (TypeError, ValueError) as exc:
+                    raise FEKeyError("malformed key share") from exc
             else:
                 try:
                     w, c_y, _ = native_backend.ext().share_partial_bin(
                         ctx.cap, [dict_ct[nid]["ct"] for nid in ids], eta, ys, sk_hats, z_share, delta, multiplier,
                         **noise_args,
                     )
-                except ValueError as exc:
+                except (TypeError, ValueError) as exc:
                     if exc.args[:1] == ("malformed ciphertext",):
                         raise FESchemeError("malformed ciphertext of {}".format(ids[exc.args[1]])) from exc
                     if isinstance(z_share, (bytes, bytearray)):
                         raise FEKeyError("malformed binary key share") from exc
-                    raise
+                    raise FEKeyError("malformed key share") from exc
         return {
             "w": w,
             "c_y": c_y,

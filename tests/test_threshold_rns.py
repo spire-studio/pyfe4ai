@@ -70,8 +70,25 @@ def test_rns_modulus(bits, ring_n):
         rlu.rns_ntt_modulus(lower, ring_n, 602, 1)
 
 
+@pytest.mark.parametrize("bits", [241, 244, 247, 248])
+def test_rns_modulus_up_to_248_bits_has_four_factors(bits):
+    """Four factors below 2^62 up to 248 bits (the native ring holds four),
+    rather than the five of 60 bits each; one more where the last would exceed
+    62 bits (bounds just below 2^248)."""
+    for lower in ((gp.mpz(1) << (bits - 1)) + 12345, (gp.mpz(1) << bits) - (gp.mpz(1) << (bits - 8))):
+        assert rlu.rns_factor_count(lower) == 4
+        q, fs = rlu.rns_ntt_modulus_for(lower, 16, 602)
+        assert q >= lower and q == np.prod([int(f) for f in fs], dtype=object)
+        assert all(int(f).bit_length() <= rlu.RNS_MAX_FACTOR_BITS for f in fs)
+        assert len(fs) == (4 if q.bit_length() <= 248 else 5)
+    assert rlu.rns_factor_count(gp.mpz(1) << 248) == 5  # 249 bits: five
+    q, fs = rlu.rns_ntt_modulus_for((gp.mpz(1) << 248) - 1, 16, 602)  # a last factor of 63 bits: five instead
+    assert len(fs) == 5 and q >= (gp.mpz(1) << 248) - 1
+
+
 @needs_native
-@pytest.mark.parametrize("bits,k,n", [(133, 3, 16), (133, 3, 1024), (215, 4, 16), (215, 4, 8192), (240, 4, 64)])
+@pytest.mark.parametrize("bits,k,n", [(133, 3, 16), (133, 3, 1024), (215, 4, 16), (215, 4, 8192), (240, 4, 64),
+                                      (247, 4, 64)])
 def test_ntt_and_products_identical(bits, k, n):
     q, fs = rlu.rns_ntt_modulus((gp.mpz(1) << (bits - 1)) + 7, n, 602, k)
     rlu.register_rns_modulus(q, fs)
@@ -115,14 +132,18 @@ def test_parameters_records_and_binding():
     kg, pp = _setup()
     factors = [int(f) for f in pp["q_factors"]]
     assert len(factors) == 4 and int(pp["q"]) == np.prod(factors, dtype=object)
-    with open(os.path.join(kg.config_folder, kg._scheme_type, "param.json"), encoding="utf-8") as f:
+    folder = os.path.join(kg.config_folder, kg._scheme_type)
+    with open(os.path.join(folder, "param-rns.json"), encoding="utf-8") as f:
         record = json.load(f)
     assert record["ring_modulus"] == "rns" and record["q_factors"] == pp["q_factors"] and record["q"] == pp["q"]
     again, pp2 = _setup()  # the cached RNS record verifies: same q, factors and a
     assert (pp2["q"], pp2["q_factors"], pp2["A"]) == (pp["q"], pp["q_factors"], pp["A"])
-    prime, ppp = _setup(ring_modulus="prime")  # does not take the RNS record
+    prime, ppp = _setup(ring_modulus="prime")  # does not take the RNS record (a file of its own)
     assert prime.q_factors is None and "q_factors" not in ppp and ppp["q"] != pp["q"]
     assert int(ppp["q"]).bit_length() == int(pp["q"]).bit_length()
+    with open(os.path.join(folder, "param.json"), encoding="utf-8") as f:
+        assert "q_factors" not in json.load(f)
+    assert _setup(ring_modulus="prime")[1]["A"] == ppp["A"]  # both records kept: loaded, not regenerated
     third, pp3 = _setup()  # nor the RNS configuration the prime record
     assert pp3["q"] == pp["q"] and pp3["q_factors"] == pp["q_factors"]
     # q_factors is bound to the key shares; the digests of prime parameters are unchanged

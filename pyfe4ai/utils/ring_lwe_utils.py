@@ -304,6 +304,10 @@ RING_MODULI = ("prime", "rns")
 #: Largest bit length of an RNS factor (64-bit words of the native code, whose
 #: lazy butterflies need 4 q_i < 2^64).
 RNS_MAX_FACTOR_BITS = 62
+#: Most factors of an RNS modulus that the native 256-bit ring holds (an
+#: NTT-domain value keeps one residue per 64-bit limb); moduli with more run on
+#: the Python path.
+RNS_NATIVE_FACTORS = 4
 
 #: Known factorisations of RNS moduli, ``q -> (q1, q2)`` (see :func:`register_rns_modulus`).
 _rns_factors: dict[int, tuple] = {}
@@ -414,8 +418,31 @@ def rns_ntt_modulus(lower_bound, ring_n: int, p, factors: int = 2) -> tuple:
 def rns_factor_count(lower_bound) -> int:
     """The number of RNS factors of :func:`rns_ntt_modulus` for a modulus of
     the bit length of *lower_bound*: two, or more so that each is at most 60
-    bits (four for the 212 to 218 bits of the flooded threshold moduli)."""
-    return max(2, -(-int(gp.mpz(lower_bound)).bit_length() // 60))
+    bits (four for the 212 to 218 bits of the flooded threshold moduli) --
+    but :data:`RNS_NATIVE_FACTORS` (four, of up to :data:`RNS_MAX_FACTOR_BITS`
+    bits) up to 248 bits, the most the native ring holds, rather than five."""
+    bits = int(gp.mpz(lower_bound)).bit_length()
+    k = max(2, -(-bits // 60))
+    if k > RNS_NATIVE_FACTORS and bits <= RNS_NATIVE_FACTORS * RNS_MAX_FACTOR_BITS:
+        k = RNS_NATIVE_FACTORS
+    return k
+
+
+def rns_ntt_modulus_for(lower_bound, ring_n: int, p) -> tuple:
+    """:func:`rns_ntt_modulus` with :func:`rns_factor_count` factors, or one
+    more where the last factor would exceed :data:`RNS_MAX_FACTOR_BITS` bits
+    (bounds just below ``2^248`` with four factors). Deterministic.
+
+    Raises:
+        FEValidationError: As :func:`rns_ntt_modulus` for both counts.
+    """
+    from pyfe4ai.utils.exceptions import FEValidationError
+
+    k = rns_factor_count(lower_bound)
+    try:
+        return rns_ntt_modulus(lower_bound, ring_n, p, k)
+    except FEValidationError:
+        return rns_ntt_modulus(lower_bound, ring_n, p, k + 1)
 
 
 def poly_mul(
@@ -791,7 +818,6 @@ def decode_threshold_ciphertext(data, q, eta: int, ring_n: int) -> tuple:
         ValueError: If the header, the length or a value does not match.
     """
     k = threshold_ciphertext_header(data, q, eta, ring_n)
-    wb = (int(q).bit_length() + 7) // 8
     data = bytes(data)
     vals = decode_values(data[_BIN2_HEADER:], q, eta * k + ring_n)
     return k, [vals[r * k:(r + 1) * k] for r in range(eta)], vals[eta * k:]

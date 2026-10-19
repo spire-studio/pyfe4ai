@@ -48,3 +48,26 @@ configurations in one folder regenerate each other's record); RNS moduli above
 the checked invariants: format-2 refusals behind valid tags, one key part one
 noise, tag refusals, the RNS ring on edge values against the Python backend,
 RNS with the seeded, KL, Gaussian replicated and split constructions.
+
+## Round 3: the remaining items (`fix/tmcfe-threshold-review`)
+
+The fixes of 02ae981 were re-checked twice; the verdicts and the re-check's
+own findings (L2b, I2b, I10, I11) are in
+`docs/review/crypto_review_2026-10_tmcfe_recheck.md` (5f502ab). This review's
+re-check of 02ae981 agrees (every test above passes on both backends, the
+probes pass, the five suite configurations pass) and adds that 02ae981 also
+fixed a defect the review had missed: binary replicated key shares of a server
+that an enrolled set larger than `t` assigns no piece raised `IndexError`
+(test
+`test_threshold_split_shares.py::test_binary_replicated_shares_with_a_server_assigned_no_piece`).
+
+On `fix/tmcfe-threshold-review` (from 5f502ab), with
+`tests/review/test_tmcfe_threshold_round3.py` (fails on 02ae981 and 5f502ab,
+passes here):
+
+| Id | Severity | Where (02ae981) | Fix | Test |
+| --- | --- | --- | --- | --- |
+| I7 | info | `schemes/ipfe.py` `_load_parameters`: one `param.json` per scheme type | `ParameterCacheMixin._param_file_name`; the MIFE / MCFE Ring-LWE family (threshold included) keeps RNS records in `param-rns.json` | `test_i7_prime_and_rns_records_do_not_overwrite_each_other` |
+| I8 | info | `utils/ring_lwe_utils.py` `rns_factor_count`: five 60-bit factors from 241 bits, one more than the native ring holds | four factors of up to 62 bits up to 248 bits (`RNS_NATIVE_FACTORS`), a fifth only where the last would exceed 62 bits (`rns_ntt_modulus_for`); above, a warning (Python path) | `test_i8_rns_moduli_up_to_248_bits_run_natively` |
+| N1 | low | `ring_lwe_threshold._STORE_LOCK`, `threshold_utils._SHARE_CACHE_LOCK` (new in 02ae981), `native_backend._contexts_lock` (earlier): not replaced in a forked child; a fork while another thread holds one deadlocks the child's next use | `os.register_at_fork(after_in_child=...)` makes new locks, as for `sampling_utils._XOF_LOCK` | `test_n1_module_locks_are_new_in_a_forked_child` |
+| I2b (native part) | info | `ring_lwe_threshold._ntt_mont` and the native `share_partial` / `share_partial_bin` calls: a value list holding a bytes element passes `poly_kinds` (first element only) and the native readings raise `TypeError` | those errors raise `FEKeyError` ("malformed key share"); the ciphertexts are read before, so their errors stay `FESchemeError` | `test_i2b_native_a_value_list_holding_bytes_is_a_key_error` |

@@ -139,6 +139,13 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         factors = self._bmms21(ring_n).get("q_factors")
         return None if factors is None else [gp.digits(f) for f in factors]
 
+    def _param_file_name(self) -> str:
+        """``param.json`` for the prime modulus (the records of earlier
+        versions), ``param-rns.json`` for ``ring_modulus="rns"``: a folder holds
+        one record of each, so alternating the two configurations loads them
+        instead of regenerating each other's."""
+        return "param.json" if self.ring_modulus == "prime" else "param-{}.json".format(self.ring_modulus)
+
     def _apply_parameters(self, param: dict) -> None:
         self.p = gp.mpz(param["p"])
         self.q = gp.mpz(param["q"])

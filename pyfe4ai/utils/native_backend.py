@@ -563,6 +563,15 @@ _contexts: dict = {}
 _contexts_lock = threading.Lock()
 
 
+def _reset_contexts_lock() -> None:
+    global _contexts_lock
+    _contexts_lock = threading.Lock()  # a forked child: the parent's may be held while a context is built
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_contexts_lock)
+
+
 def ring_context(q, ring_n: int) -> RingContext | None:
     """The native context for ``(q, ring_n)``, or ``None`` when the Python
     path applies (backend ``"python"``, extension not built, ``q >= 2^253``

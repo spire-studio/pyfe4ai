@@ -167,7 +167,8 @@ only, any `q`.
 * Parameter cache: `_param_verification` recomputes `q` and its factors from
   the configuration and compares them; the record carries
   `"ring_modulus": "rns"` and `q_factors`, absent for the default (whose
-  records are unchanged). A prime record never verifies for an RNS
+  records are unchanged), and is kept in `param-rns.json` beside the
+  prime's `param.json`. A prime record never verifies for an RNS
   configuration and vice versa; a planted cache cannot choose the factors.
   The factors are public (there is no trapdoor in them; 40-bit factors of an
   80-bit `q` are found instantly anyway).
@@ -200,10 +201,15 @@ the same cost (it reads `q` only through its size), all far above 128 bits.
 Since section 6 the default flooding is uniform (integer, native) and the
 default sharing for `t < s` is replicated (multipliers 0 and 1); the flooded
 `q` (212 to 218 bits under `standard`) is now the product of
-`k = max(2, ceil(bits / 60))` NTT primes (`rns_ntt_modulus(..., factors=k)`:
+`k = max(2, ceil(bits / 60))` NTT primes, but `k = 4` (factors up to 62 bits)
+up to 248 bits, the most the native ring holds, with a fifth only where the
+last would exceed 62 bits (`rns_ntt_modulus_for`, then
+`rns_ntt_modulus(..., factors=k)`:
 `k - 1` largest NTT primes below `L^(1/k)`, the last the smallest with a
 product `>= L` that is none of them, advanced until `gcd(floor(q / p), q) = 1`;
-for `k = 2` the modulus of the earlier sections). Item by item:
+for `k = 2` the modulus of the earlier sections). Above 248 bits the modulus
+has five or more factors and runs on the Python path (the key generator
+warns). Item by item:
 
 * **RLWE hardness, MCFE layer**: sections 1, 3 and 4 (any modulus; the
   estimator reads `q` by size, and `q` has the bit length of the prime).
@@ -232,7 +238,9 @@ for `k = 2` the modulus of the earlier sections). Item by item:
   and the digests of prime public parameters are unchanged. Construction ids
   are unchanged (the sharing and flooding constructions are the same); the
   parameter records carry `ring_modulus` and `q_factors` and are recomputed
-  and compared on load.
+  and compared on load; RNS records live in `param-rns.json`, beside the
+  prime's `param.json` (alternating the configurations in one folder loads
+  both).
 * **FACCT and the Gaussian flooding sampler**: integer samples, independent
   of `q`; the native kernels reduce them mod each factor.
 * **NTT root**: the CRT of the factors' roots with `root^n = -1` mod every
