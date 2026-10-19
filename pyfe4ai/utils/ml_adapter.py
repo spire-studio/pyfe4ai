@@ -931,7 +931,11 @@ def _integer_weights(weights: dict, qconfig: QuantizationConfig) -> tuple[dict, 
 class PreparedAggregation:
     """A functional key derived before the round (:func:`prepare_aggregation`);
     for a threshold MCFE the key shares of the enrolled ``servers``
-    (``dk = {sid: key share}``) and ``sid`` the combiner."""
+    (``dk = {sid: key share}``) and ``sid`` the combiner.
+
+    ``dk`` is key material (a functional key, or the servers' label key shares
+    with their MAC and noise keys): keep it where the wrapper is, and do not
+    send, log or store it elsewhere."""
 
     label: str | None
     sid: str
@@ -1025,13 +1029,19 @@ def _server_key_shares(wrapper, credentials: dict, servers: list) -> dict:
     out = {}
     for sid in servers:
         dk = wrapper.kg.get_decryption_keys(sid, credentials=dict(credentials, label_term=False))
-        server = wrapper._get_server(sid)
-        if not server.has_weight_key_share(dk):
-            server.add_weight_key_share(
-                wrapper.kg.get_weight_key_share(sid, credentials={"fusion_weight": credentials["fusion_weight"]})
-            )
+        _serving(wrapper, sid, dk, credentials["fusion_weight"])
         out[sid] = dk
     return out
+
+
+def _serving(wrapper, sid: str, dk: dict, fusion_weight: dict):
+    """Server *sid* of the wrapper, given the weight key share that the label
+    key share *dk* completes where it lacks it (first use, a copied wrapper's
+    new server objects, or a weight part its store dropped)."""
+    server = wrapper._get_server(sid)
+    if not server.has_weight_key_share(dk):
+        server.add_weight_key_share(wrapper.kg.get_weight_key_share(sid, credentials={"fusion_weight": fusion_weight}))
+    return server
 
 
 def prepare_aggregation(
@@ -1055,7 +1065,9 @@ def prepare_aggregation(
     For ``mcfe/ring_lwe_threshold`` the key shares of the enrolled *servers*
     (default: the first ``t`` of the public parameters' ``lst_sid``): their
     label key shares of the round, each server given its weight key share
-    once per weights; *sid* is the combiner.
+    once per weights (again where a copy of the wrapper or the server's store
+    lacks it when the round is decrypted); *sid* is the combiner. The result
+    holds key material (see :class:`PreparedAggregation`).
     """
     _require_labelled_aggregation(wrapper, "prepare_aggregation")
     _require_single_decryptor(wrapper, "prepare_aggregation", served_threshold=True)
@@ -1315,7 +1327,7 @@ def partial_decrypt_gradients(
         raise ValueError("server {!r} is not enrolled in the prepared aggregation ({})".format(server, prepared.servers))
     if set(encrypted) != set(prepared.fusion_weight):
         raise ValueError("the prepared key is for the clients {}".format(sorted(prepared.fusion_weight)))
-    layers = wrapper._get_server(server).compute_lst_ndarray_ct(
+    layers = _serving(wrapper, server, prepared.dk[server], prepared.fusion_weight).compute_lst_ndarray_ct(
         {nid: enc.ciphertexts for nid, enc in encrypted.items()},
         {"fusion_weight": prepared.fusion_weight, "label": prepared.label},
         prepared.dk[server],

@@ -22,9 +22,11 @@ ciphertexts and key shares of the earlier defaults (no ``ct_format``: JSON; no
 ``q_factors``: a prime) keep working where they did. The defaults change no
 construction id; their parameter records are ``param-rns.json`` (a folder's
 ``param.json`` is the prime's). What does not match fails closed: a server
-refuses ciphertexts, partial decryptions and key shares of the other format or
-of other public parameters (``pp_binding``), and a label part without its
-weight part (:meth:`ThresholdMCFERingLWE.add_weight_key_share`).
+refuses ciphertexts and key shares of the other format or of other public
+parameters (``pp_binding``), and a label part without its weight part
+(:meth:`ThresholdMCFERingLWE.add_weight_key_share`); a combiner refuses partial
+decryptions of the other format (partial decryptions carry no digest of the
+public parameters; servers are honest-but-curious, see below).
 
 Construction (notation of :mod:`pyfe4ai.schemes.mife.ring_lwe`):
 
@@ -208,8 +210,11 @@ The key generator keeps the sharings of ``sk_y`` for the last
 with a new share set -- their weight part and every label part issued from
 then on -- which servers holding the old weight part refuse until given the
 new one. A label part is of the weights' share set current when it is issued
-(one made while another thread evicted that sharing is made again for the new
-set) and is kept with that sharing, and dropped with it.
+(one made or cached while another thread evicted that sharing is made again
+for the new set) and is kept with that sharing, and dropped with it; per
+sharing the label parts of the last :data:`LABEL_PARTS_KEPT` labels are kept
+(a label asked for again later gets a new sharing of its terms, whose answers
+do not combine with those of the first).
 
 The threshold objects (key generator, clients, servers) are not portable across
 versions of pyfe4ai: a state pickled by another version is refused when loaded
@@ -598,6 +603,14 @@ def _check_state(obj, state: dict) -> None:
 #: which servers holding the old weight part refuse until given the new one.
 WEIGHT_SHARINGS_KEPT = 64
 
+#: Labels whose label parts a key generator keeps per sharing of ``sk_y``
+#: (least recently used out; the servers of one label get the same shares while
+#: it is kept). A label part asked for again after that is a new sharing of the
+#: same terms (same share set and noise key): servers' answers from the two
+#: sharings do not combine, so a round's key shares are issued while its label
+#: is among the last :data:`LABEL_PARTS_KEPT` of its weights.
+LABEL_PARTS_KEPT = 16
+
 
 def _native_ring(q, ring_n: int):
     """The native ring context the threshold kernels take for ``(q, ring_n)``
@@ -915,8 +928,8 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             "label"`` and ``share_set_id`` (that of the weight part it
             completes, the weights' current share set when it is issued)
             and no ``sk_y``; label parts are kept with that sharing of
-            ``sk_y`` (later calls return the same shares) and dropped with
-            it. With binary public parameters
+            ``sk_y`` (later calls return the same shares, for the last
+            :data:`LABEL_PARTS_KEPT` labels) and dropped with it. With binary public parameters
             (``ct_format="binary"``) every polynomial of the Shamir and
             replicated sharings is bytes (``ceil(bits(q)/8)``-byte words, the
             same values).
@@ -962,10 +975,12 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
     def _label_parts(self, credentials: dict, weights_id: str, n_chunks: int, label_term: bool, ident: str) -> dict:
         """``{sid: label part}`` for *ident*, of the weights' current share set:
         kept with that sharing of ``sk_y`` (:meth:`_weight_entry`; evicted
-        with it, without a scan of the other keys), made on first use. A label
-        part made while another thread evicted its sharing is made again for
-        the weights' new share set, so none is issued for a sharing the key
-        generator no longer hands out.
+        with it, without a scan of the other keys; the last
+        :data:`LABEL_PARTS_KEPT` labels), made on first use. A label part,
+        cached or made, is handed out only while its sharing is the weights'
+        current one (checked under the lock): one whose sharing another thread
+        evicted meanwhile is made again for the weights' new share set, so none
+        is issued for a sharing the key generator no longer hands out.
 
         Raises:
             FESchemeError: If the sharing was evicted during every attempt
@@ -975,13 +990,21 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         for _ in range(self._LABEL_PART_ATTEMPTS):
             entry = self._weight_entry(fusion_weight)
             with _STORE_LOCK:
-                parts = entry["label_parts"].get(ident)
-            if parts is not None:
-                return parts
+                if self.dict_weight_shares.get(weights_id) is not entry:
+                    continue  # evicted since _weight_entry returned it: the weights' new share set
+                cached = entry["label_parts"]
+                parts = cached.pop(ident, None)
+                if parts is not None:
+                    cached[ident] = parts  # most recently used
+                    return parts
             made = self._label_part(credentials, weights_id, n_chunks, label_term, entry)
             with _STORE_LOCK:  # still the weights' current share set: keep it (of two threads, one wins)
                 if self.dict_weight_shares.get(weights_id) is entry:
-                    return entry["label_parts"].setdefault(ident, made)
+                    cached = entry["label_parts"]
+                    parts = cached.setdefault(ident, made)
+                    while len(cached) > LABEL_PARTS_KEPT:
+                        del cached[next(iter(cached))]
+                    return parts
         raise FESchemeError(
             "the sharing of these weights was evicted while their label part was made, {} times: more than "
             "WEIGHT_SHARINGS_KEPT = {} weights in use at once".format(self._LABEL_PART_ATTEMPTS, WEIGHT_SHARINGS_KEPT))

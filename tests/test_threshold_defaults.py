@@ -9,9 +9,9 @@
 * Whatever does not match fails closed with a message naming the fix.
 * Info items of review round 4: label parts are issued for the weights'
   current share set only, even when another thread evicts it meanwhile
-  (I-b); they are kept with that sharing and dropped with it (I-c); the native
-  Shamir dealing tells a test's exhausted random bytes from malformed key
-  material (I-d).
+  (I-b); they are kept with that sharing and dropped with it (I-c), for the
+  last ``LABEL_PARTS_KEPT`` labels (round 5, R5-c); the native Shamir dealing
+  tells a test's exhausted random bytes from malformed key material (I-d).
 """
 
 from __future__ import annotations
@@ -367,6 +367,27 @@ def test_i_c_label_parts_go_with_their_sharing(monkeypatch):
     assert [e["label_parts"] for e in kg.dict_weight_shares.values()] == [{}] and len(kg.dict_dk) == 1
     again = kg.get_decryption_keys("s0", credentials=creds)
     assert again["share_set_id"] != first["share_set_id"]
+
+
+def test_label_parts_of_the_last_labels_are_kept(monkeypatch):
+    """Review round 5 (R5-c): per sharing of sk_y the label parts of the last
+    LABEL_PARTS_KEPT labels are kept (least recently used out); a label asked
+    for again later gets a new sharing of its terms, with the same share set
+    and noise key."""
+    monkeypatch.setattr(tm, "LABEL_PARTS_KEPT", 2)
+    kg, _ = _setup()
+    creds = {lab: {"fusion_weight": WEIGHTS, "label": lab} for lab in ("L0", "L1", "L2", "L3")}
+    first = kg.get_decryption_keys("s0", credentials=creds["L0"])
+    first_l1 = kg.get_decryption_keys("s0", credentials=creds["L1"])
+    assert kg.get_decryption_keys("s1", credentials=creds["L0"])["pieces"]  # a hit: L0 most recent
+    kg.get_decryption_keys("s0", credentials=creds["L2"])  # drops L1, not L0
+    entry = next(iter(kg.dict_weight_shares.values()))
+    assert [json.loads(i)[1] for i in entry["label_parts"]] == ["L0", "L2"]
+    assert kg.get_decryption_keys("s0", credentials=creds["L0"]) == first
+    again = kg.get_decryption_keys("s0", credentials=creds["L1"])  # dropped: a new sharing of its terms
+    assert len(entry["label_parts"]) == 2
+    assert again["pieces"] != first_l1["pieces"]
+    assert (again["share_set_id"], again["noise_key"]) == (first_l1["share_set_id"], first_l1["noise_key"])
 
 
 @needs_native

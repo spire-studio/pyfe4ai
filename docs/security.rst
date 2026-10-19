@@ -109,8 +109,12 @@ reused with fresh sharings of the label terms is a sharing of each round's
 key, the shares of ``t - 1`` servers stay independent of the keys, and the
 noise is seeded as for a whole key share (``key_shares="full"`` issues whole
 key shares). A server refuses a label part without the weight part of the
-same weights and share set, and key shares, ciphertexts and partial
-decryptions of another format or other public parameters.
+same weights and share set, and key shares and ciphertexts of another format
+or other public parameters; a combiner refuses partial decryptions of another
+format. Partial decryptions carry no digest of the public parameters, so a
+combiner given those of another deployment of the same format is not warned
+(it holds no secret; under the honest-but-curious model above the servers
+send the partials of its deployment).
 
 ML adapter
 ----------
