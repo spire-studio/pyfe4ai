@@ -67,6 +67,7 @@ from pyfe4ai.utils.crypto_utils import check_label_hash
 from pyfe4ai.utils.crypto_utils import hash_to_zq_material
 from pyfe4ai.utils.crypto_utils import hash_to_zq_vector
 from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.utils.ring_lwe_utils import encode_values
 from pyfe4ai.utils.validation import scale_to_int
 
 logger = logging.getLogger(__name__)
@@ -213,17 +214,25 @@ class MCFERingLWEKeyGenerator(MIFERingLWEKeyGenerator):
         fusion_weight = credentials.get("fusion_weight")
         key = super().get_decryption_keys(sid, credentials={"fusion_weight": fusion_weight})
         labels = [label] + [chunk_label(label, c) for c in range(n_chunks)]
+        terms = self._label_terms(key["z"], fusion_weight, labels)
+        return self._with_label_hash({"sk_y": key["sk_y"], "z": terms[0], "z_chunks": terms[1:], "label": label})
+
+    def _label_terms(self, base, fusion_weight: dict, labels: list, binary: bool = False) -> list:
+        """``z'' = base + sum_i y_i H(u'_i, l)`` of every label of *labels* as
+        decimal strings (*base*: the MIFE key's ``z``; weights already
+        validated), natively in one call where possible (same values); with
+        *binary* as bytes of ``ceil(bits(q) / 8)``-byte words."""
         ctx = native_backend.ring_context(self.q, self.ring_n)
-        if ctx is not None:  # z'' of every label in one native call (same values)
-            terms = native_backend.ext().pad_terms(
-                ctx.cap, key["z"],
+        if ctx is not None and not (binary and ctx.legacy_rns):
+            return native_backend.ext().pad_terms(
+                ctx.cap, base,
                 [[label_pad_material(self.msk["u_prime"][nid], lab, self.label_hash) for nid in self.lst_nid]
                  for lab in labels],
                 [[int(v) for v in fusion_weight[nid]] for nid in self.lst_nid],
                 self.eta, native_backend.get_threads(), **native_hash_kwargs(self.label_hash),
+                **({"binary": True} if binary else {}),
             )
-            return self._with_label_hash({"sk_y": key["sk_y"], "z": terms[0], "z_chunks": terms[1:], "label": label})
-        base = [gp.mpz(v) for v in key["z"]]
+        base = [gp.mpz(v) for v in base]
 
         def pad_term(lab) -> list:
             z = list(base)
@@ -231,14 +240,11 @@ class MCFERingLWEKeyGenerator(MIFERingLWEKeyGenerator):
                 pad = label_pad(self.msk["u_prime"][nid], lab, self.q, self.eta, self.ring_n, self.label_hash)
                 for y_row, pad_row in zip(fusion_weight[nid], pad):
                     z = [acc + int(y_row) * h for acc, h in zip(z, pad_row)]
+            if binary:
+                return encode_values(z, self.q)
             return [gp.digits(v % self.q) for v in z]
 
-        return self._with_label_hash({
-            "sk_y": key["sk_y"],
-            "z": pad_term(label),
-            "z_chunks": [pad_term(chunk_label(label, c)) for c in range(n_chunks)],
-            "label": label,
-        })
+        return [pad_term(lab) for lab in labels]
 
     def _with_label_hash(self, key: dict) -> dict:
         """The key, marked with its ``label_hash``."""

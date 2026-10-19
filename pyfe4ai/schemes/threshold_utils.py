@@ -274,7 +274,54 @@ def _unflatten(layout, flat: list):
     return out
 
 
-def _share_replicated_native(material, sets: list, modulus: gp.mpz):
+def _value_bytes(modulus) -> int:
+    return (int(modulus).bit_length() + 7) // 8
+
+
+def _unflatten_bytes(layout, blob: bytes, wb: int):
+    """*blob* (the values of :func:`_flatten_like` as ``wb``-byte words) in the
+    structure of *layout*, every list of values (or single value) one bytes
+    object."""
+    pos = 0
+
+    def build(node):
+        nonlocal pos
+        if isinstance(node, dict):
+            return {key: build(value) for key, value in node.items()}
+        if isinstance(node, list):
+            return [build(value) for value in node]
+        if node == 0:  # an empty list (no chunk keys) stays a list
+            return []
+        count = 1 if node is None else node
+        pos += count * wb
+        return blob[pos - count * wb:pos]
+
+    out = build(layout)
+    if pos != len(blob):
+        raise FESchemeError("key pieces of different layouts")
+    return out
+
+
+def _map_polys(material, f):
+    """*material* with every list of values (a polynomial) or bytes leaf replaced by ``f(leaf)``."""
+    if isinstance(material, dict):
+        return {key: _map_polys(value, f) for key, value in material.items()}
+    if isinstance(material, (list, tuple)) and (not material or any(isinstance(v, (dict, list, tuple)) for v in material)):
+        return [_map_polys(value, f) for value in material]
+    return f(material)
+
+
+def binary_material(material, modulus):
+    """*material* (nested dicts and lists of values) with every polynomial as
+    ``ceil(bits(q) / 8)``-byte little-endian words (values reduced mod q):
+    the binary key shares of the threshold Ring-LWE MCFE."""
+    from pyfe4ai.utils.ring_lwe_utils import encode_values
+
+    q = int(modulus)
+    return _map_polys(material, lambda leaf: encode_values(leaf if isinstance(leaf, (list, tuple)) else [leaf], q))
+
+
+def _share_replicated_native(material, sets: list, modulus: gp.mpz, binary: bool = False):
     """:func:`share_replicated` by the extension -- the same pieces for the
     same random bytes: each random value drawn as
     ``random.SystemRandom.randrange(0, q)`` draws it, from the call's DRBG
@@ -293,19 +340,26 @@ def _share_replicated_native(material, sets: list, modulus: gp.mpz):
         return None
     from pyfe4ai.utils import native_backend
 
-    layout = piece_layout(material)
-    flat = []
-    if not _flatten_like(layout, material, flat):
-        return None
-    n_random = len(sets) - 1
     width = (int(modulus).bit_length() + 7) // 8
+    if _has_bytes(material):  # binary key terms: dealt as bytes, out as bytes
+        layout = _bytes_layout(material, width)
+        if layout is None:
+            return None
+        flat, binary = b"".join(_bytes_leaves(material)), True
+    else:
+        layout = piece_layout(material)
+        flat = []
+        if not _flatten_like(layout, material, flat):
+            return None
+    n_random = len(sets) - 1
     # test bytes (None otherwise): a draw is rejected with probability below
     # 1/2, so 4 draws per value and 256 more run out with probability below
     # 2^-180 (Hoeffding), also for q just above a power of two
-    draws = len(flat) * n_random
+    draws = (len(flat) // width if isinstance(flat, bytes) else len(flat)) * n_random
     rnd = native_backend.random_input(width * (4 * draws + 256) if draws else 0)
     try:
-        out = ext.zq_replicated_deal(int(modulus), flat, n_random, rnd, **native_backend.seed_kwargs())
+        out = ext.zq_replicated_deal(
+            int(modulus), flat, n_random, rnd, **native_backend.seed_kwargs(), **({"binary": True} if binary else {}))
     except TypeError:  # values other than ints and decimal strings: the Python code reads them
         return None
     except ValueError as exc:
@@ -314,6 +368,11 @@ def _share_replicated_native(material, sets: list, modulus: gp.mpz):
         raise RuntimeError(
             "native_backend.random_input: the {} test bytes ran out".format(len(rnd))
         ) from exc
+    if binary:
+        wb = _value_bytes(modulus)
+        pieces = {T: _unflatten_bytes(layout, out[i + 1], wb) for i, T in enumerate(sets[1:])}
+        pieces[sets[0]] = _unflatten_bytes(layout, out[0], wb)
+        return pieces
     pieces = {T: _unflatten(layout, out[i + 1]) for i, T in enumerate(sets[1:])}
     pieces[sets[0]] = _unflatten(layout, out[0])
     return pieces
@@ -339,8 +398,98 @@ def _sum_pieces_native(template, pieces: list, modulus: gp.mpz):
         return None
 
 
+def _bytes_layout(material, width: int):
+    """The :func:`piece_layout` of binary key material (a bytes leaf: its
+    number of values), or ``None`` for leaves that are not whole words."""
+    if isinstance(material, (bytes, bytearray)):
+        return len(material) // width if len(material) % width == 0 else None
+    if isinstance(material, dict):
+        out = {key: _bytes_layout(value, width) for key, value in material.items()}
+        return None if any(v is None for v in out.values()) else out
+    if isinstance(material, (list, tuple)):
+        out = [_bytes_layout(value, width) for value in material]
+        return None if any(v is None for v in out) else out
+    return None
+
+
+def _map_bytes(material, f):
+    """*material* with every bytes leaf replaced by ``f(leaf)``."""
+    if isinstance(material, (bytes, bytearray)):
+        return f(material)
+    if isinstance(material, dict):
+        return {key: _map_bytes(value, f) for key, value in material.items()}
+    if isinstance(material, (list, tuple)):
+        return [_map_bytes(value, f) for value in material]
+    return material
+
+
+def _bytes_leaves(material):
+    """The bytes leaves of *material* in the order of :func:`_flatten_like`."""
+    if isinstance(material, (bytes, bytearray)):
+        yield bytes(material)
+    elif isinstance(material, dict):
+        for value in material.values():
+            yield from _bytes_leaves(value)
+    elif isinstance(material, (list, tuple)):
+        for value in material:
+            yield from _bytes_leaves(value)
+
+
+def _has_bytes(material) -> bool:
+    if isinstance(material, (bytes, bytearray)):
+        return True
+    if isinstance(material, dict):
+        return any(_has_bytes(v) for v in material.values())
+    if isinstance(material, (list, tuple)):
+        return any(_has_bytes(v) for v in material)
+    return False
+
+
+def _sum_binary_pieces(pieces: list, modulus: gp.mpz):
+    """The sum mod q of binary pieces (:func:`binary_material`), leaf by leaf,
+    as bytes: natively (``zq_sum``) where the extension is built, else in
+    Python with the same values.
+
+    Raises:
+        FESchemeError: For pieces of different layouts, or values that are not
+            whole words below q.
+    """
+    from pyfe4ai.utils.ring_lwe_utils import decode_values, encode_values
+
+    q, wb = int(modulus), _value_bytes(modulus)
+    ext = _zq_native(modulus)
+
+    def add(*leaves):
+        if not all(isinstance(leaf, (bytes, bytearray)) for leaf in leaves) or len({len(leaf) for leaf in leaves}) != 1:
+            raise FESchemeError("key pieces of different layouts")
+        count = len(leaves[0]) // wb
+        try:
+            if ext is not None:
+                return ext.zq_sum(q, count, [bytes(leaf) for leaf in leaves], [], False, True)
+            total = [0] * count
+            for leaf in leaves:
+                total = [a + b for a, b in zip(total, decode_values(leaf, q, count))]
+            return encode_values(total, q)
+        except ValueError as exc:
+            raise FESchemeError("malformed binary key piece") from exc
+
+    def walk(nodes):
+        first = nodes[0]
+        if isinstance(first, dict):
+            if any(not isinstance(n, dict) or set(n) != set(first) for n in nodes):
+                raise FESchemeError("key pieces of different layouts")
+            return {key: walk([n[key] for n in nodes]) for key in first}
+        if isinstance(first, (list, tuple)):
+            if any(not isinstance(n, (list, tuple)) or len(n) != len(first) for n in nodes):
+                raise FESchemeError("key pieces of different layouts")
+            return [walk([n[i] for n in nodes]) for i in range(len(first))]
+        return add(*nodes)
+
+    return walk(pieces)
+
+
 def share_replicated(
-    material, threshold: int, points: list[int], modulus: gp.mpz
+    material, threshold: int, points: list[int], modulus: gp.mpz, binary: bool = False
 ) -> dict[tuple[int, ...], object]:
     """Replicated sharing of every value in *material* (nested dicts and lists).
 
@@ -352,16 +501,26 @@ def share_replicated(
     the others. With ``t = s`` this is additive sharing (one piece each).
     With the native backend the pieces are drawn and the correction computed
     by the extension, with the values of the Python code for the same random
-    bytes (:func:`_share_replicated_native`).
+    bytes (:func:`_share_replicated_native`). With *binary* every
+    polynomial of a piece is bytes (:func:`binary_material`; the same values).
 
     Returns:
         ``{T: piece}`` for every index set ``T``.
     """
     sets = replicated_sets(points, threshold)
     modulus = gp.mpz(modulus)
-    pieces = _share_replicated_native(material, sets, modulus)
+    if _has_bytes(material):  # binary key terms are dealt as binary pieces
+        binary = True
+    pieces = _share_replicated_native(material, sets, modulus, binary)
     if pieces is not None:
         return pieces
+    if _has_bytes(material):  # the Python code on their values
+        from pyfe4ai.utils.ring_lwe_utils import decode_values
+
+        width = _value_bytes(modulus)
+        material = _map_bytes(material, lambda leaf: decode_values(leaf, modulus, len(leaf) // width))
+    if binary:
+        return {T: binary_material(piece, modulus) for T, piece in share_replicated(material, threshold, points, modulus).items()}
 
     def draw(_):
         return gp.digits(gp.mpz(_CSPRNG.randrange(0, int(modulus))))
@@ -809,6 +968,8 @@ def share_for_enrolled(
             _select(dk.get("layout"), fields), [pick(held[T]) for T in assigned if T in held],
             [(seeds[T], T) for T in assigned if T not in held], modulus, ctx,
         )
+    elif _has_bytes(pick(next(iter(held.values())))):  # binary key shares: bytes in, bytes out
+        summed = _sum_binary_pieces([pick(held[T]) for T in assigned], modulus)
     else:  # natively where possible, with the values of the Python code
         summed = _sum_pieces_native(pick(next(iter(held.values()))), [pick(held[T]) for T in assigned], modulus)
         if summed is None:

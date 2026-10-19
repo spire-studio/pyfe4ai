@@ -36,6 +36,20 @@ compatibility).
   docs/rns_modulus_review.md section 10. Standard profile, 3 clients, 10^4
   values, `s = t = 3`, 1 thread: partial decryption 19 -> 11 ms (binary),
   57 -> 45 ms (JSON); client 30 -> 26.5 ms.
+- **`mcfe/ring_lwe_threshold`: per-round key shares of the label terms only**
+  (opt-in; full key shares stay the default). `get_weight_key_share` issues
+  the shares of the label-independent `sk_y` once per weights; servers keep
+  them (`add_weight_key_share`), and `get_decryption_keys(...,
+  key_part="label")` then shares only `z` and `z_chunks` (`label_term=False`:
+  chunk keys only). Both parts carry a `share_set_id`; a label part is
+  combined only with the weight part of the same weights, share set, sharing,
+  binding, flooding, noise derivation and MAC keys. With binary public
+  parameters the key-share polynomials are bytes (Shamir and replicated
+  sharing; dealt, added up and read natively, the same values). Standard
+  profile, 3 clients, 10^4 values, 1 thread: per-round key shares 3.38 MB
+  and about 45 ms -> 443 KB and 16 ms (`s = t = 3`), 6.75 MB -> 886 KB and
+  13 ms (`t = 2`); with RNS and binary ciphertexts a server's partial
+  decryption takes 7 ms (`NTT(sk_y)` cached across labels).
 - **`sife/fullysec_ring_lwe`: opt-in packed layout** (`ndarray_layout =
   "packed"`, experimental: the leveraging argument is the project's own,
   independently checked, not externally reviewed). A ciphertext holds an

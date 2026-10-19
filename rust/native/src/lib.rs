@@ -379,7 +379,20 @@ fn pack(py: Python<'_>, ctx: &Bound<'_, PyAny>, values: &Bound<'_, PyAny>) -> Py
     let ctx = ctx.cast::<RingCtx>()?;
     let q = ctx.get().q.bind(py);
     let ring = get_ring(ctx);
-    with_ring!(&*ring, r => Ok(words_to_bytes(py, &read_values(values, None, q, &r.m, false)?)))
+    with_ring!(&*ring, r => {
+        // binary key-share polynomials: ceil(bits(q) / 8)-byte words, each below q
+        if let Ok(b) = values.cast::<PyBytes>() {
+            let wb = threshold::value_bytes_of(&r.m);
+            if b.as_bytes().len() % wb != 0 {
+                return Err(PyValueError::new_err("not a whole number of values"));
+            }
+            let mut v = threshold::read_poly(values, b.as_bytes().len() / wb, q, &r.m)?;
+            let out = words_to_bytes(py, &v);
+            rlwe::wipe_words(&mut v);
+            return Ok(out);
+        }
+        Ok(words_to_bytes(py, &read_values(values, None, q, &r.m, false)?))
+    })
 }
 
 #[pyfunction]
@@ -1634,14 +1647,18 @@ fn decrypt_tensor_w<W: Word, R: TensorRing<W>>(py: Python<'_>, r: &R, q: &Bound<
     Ok(PyTuple::new(py, [data.into_any().unbind(), mask])?.into_any().unbind())
 }
 
-/// MCFE key terms z'' of several labels as decimal strings.
+/// MCFE key terms z'' of several labels as decimal strings, or with `binary`
+/// (RingCtx only) as bytes of ceil(bits(q) / 8)-byte words.
 #[pyfunction]
-#[pyo3(signature = (ctx, base, materials, ys, eta, threads, hash_mode=0))]
+#[pyo3(signature = (ctx, base, materials, ys, eta, threads, hash_mode=0, binary=false))]
 #[allow(clippy::too_many_arguments)]
 fn pad_terms(py: Python<'_>, ctx: &Bound<'_, PyAny>, base: &Bound<'_, PyAny>, materials: &Bound<'_, PyAny>,
-             ys: &Bound<'_, PyAny>, eta: usize, threads: usize, hash_mode: u8) -> PyResult<Py<PyList>> {
+             ys: &Bound<'_, PyAny>, eta: usize, threads: usize, hash_mode: u8, binary: bool) -> PyResult<Py<PyList>> {
     let mode = self::hash_mode(hash_mode)?;
     if let Ok(c) = ctx.cast::<rns::RnsCtx>() {
+        if binary {
+            return Err(PyValueError::new_err("binary key terms need a ring context"));
+        }
         return rns::pad_terms(py, c, base, materials, ys, eta, mode, threads);
     }
     let ctx = ctx.cast::<RingCtx>()?;
@@ -1656,6 +1673,26 @@ fn pad_terms(py: Python<'_>, ctx: &Bound<'_, PyAny>, base: &Bound<'_, PyAny>, ma
             let y_rows = read_rows(ys, Some(eta), &q, m)?;
             let mut mats = secret_materials(materials, y_rows.len())?;
             let ym: Vec<_> = y_rows.iter().flatten().map(|&v| m.to_mont(v)).collect();
+            if binary {
+                let wb = threshold::value_bytes_of(m);
+                let outs: Vec<Mutex<Vec<u8>>> = (0..mats.len()).map(|_| Mutex::new(Vec::new())).collect();
+                {
+                    let refs: Vec<Vec<&[u8]>> = mats.iter().map(|row| row.iter().map(|v| v.as_slice()).collect()).collect();
+                    py.detach(|| rlwe::pad_terms(r, &basev, &refs, &ym, eta, mode, threads, |l, z| {
+                        let mut buf = Vec::with_capacity(z.len() * wb);
+                        pyfe4ai_core::threshold::write_values(z, wb, &mut buf);
+                        *outs[l].lock().unwrap() = buf;
+                    }));
+                }
+                wipe_materials(&mut mats);
+                let blobs: Vec<Py<PyBytes>> = outs.into_iter().map(|o| {
+                    let mut buf = o.into_inner().unwrap();
+                    let out = PyBytes::new(py, &buf).unbind();
+                    rlwe::wipe_bytes(&mut buf); // the key terms are secret
+                    out
+                }).collect();
+                return Ok(PyList::new(py, blobs)?.unbind());
+            }
             let outs: Vec<Mutex<Option<DecBuf>>> = (0..mats.len()).map(|_| Mutex::new(None)).collect();
             {
                 let refs: Vec<Vec<&[u8]>> = mats.iter().map(|row| row.iter().map(|v| v.as_slice()).collect()).collect();
@@ -1975,10 +2012,13 @@ fn share_combine(py: Python<'_>, ctx: &Bound<'_, RingCtx>, c_y: &Bound<'_, PyAny
 /// strings) per point. The coefficients are drawn as SystemRandom.randrange(0, q)
 /// draws them, from the given bytes (tests; ValueError if they run out) or the
 /// call's DRBG (stream 0, read sequentially).
+/// With `binary`, one bytes object per point instead: the shares as
+/// ceil(bits(q) / 8)-byte little-endian words.
 #[pyfunction]
-#[pyo3(signature = (ctx, values, t, points, rnd, seed=None))]
+#[pyo3(signature = (ctx, values, t, points, rnd, seed=None, binary=false))]
+#[allow(clippy::too_many_arguments)]
 fn shamir_share(py: Python<'_>, ctx: &Bound<'_, RingCtx>, values: &Bound<'_, PyAny>, t: usize, points: Vec<u64>,
-                rnd: &Bound<'_, PyAny>, seed: Option<Vec<u8>>) -> PyResult<Py<PyList>> {
+                rnd: &Bound<'_, PyAny>, seed: Option<Vec<u8>>, binary: bool) -> PyResult<Py<PyList>> {
     let q = ctx.get().q.bind(py).clone();
     let ring = get_ring(ctx);
     if t < 1 {
@@ -1990,7 +2030,17 @@ fn shamir_share(py: Python<'_>, ctx: &Bound<'_, RingCtx>, values: &Bound<'_, PyA
     let out = (|| -> PyResult<Py<PyList>> {
         with_ring!(&*ring, r => {
             let m = &r.m;
-            let mut secrets = read_values(values, None, &q, m, false)?;
+            // binary key terms: one bytes object of ceil(bits(q) / 8)-byte words, each below q
+            let mut secrets = match values.cast::<PyBytes>() {
+                Ok(b) => {
+                    let wb = threshold::value_bytes_of(m);
+                    if b.as_bytes().len() % wb != 0 {
+                        return Err(PyValueError::new_err("not a whole number of values"));
+                    }
+                    threshold::read_poly(values, b.as_bytes().len() / wb, &q, m)?
+                }
+                Err(_) => read_values(values, None, &q, m, false)?,
+            };
             let shares = py.detach(|| match &given {
                 Some(b) => {
                     let mut pos = 0;
@@ -2015,6 +2065,12 @@ fn shamir_share(py: Python<'_>, ctx: &Bound<'_, RingCtx>, values: &Bound<'_, PyA
             });
             rlwe::wipe_words(&mut secrets);
             let mut shares = shares.ok_or_else(|| PyValueError::new_err("not enough random bytes"))?;
+            if binary {
+                let wb = threshold::value_bytes_of(m);
+                let blobs: Vec<Py<PyBytes>> = shares.iter().map(|s| threshold::secret_bytes(py, s, wb)).collect();
+                wipe_word_rows(&mut shares);
+                return Ok(PyList::new(py, blobs)?.unbind());
+            }
             let lists = shares.iter().map(|s| DecBuf::new(s).list(py)).collect::<PyResult<Vec<_>>>();
             wipe_word_rows(&mut shares);
             Ok(PyList::new(py, lists?)?.unbind())

@@ -157,6 +157,25 @@ have it; JSON digests are unchanged): a key share is served in one format
 only. Under binary public parameters JSON ciphertexts, format 1, v1 tags and
 JSON partial decryptions are refused, and under JSON ones every binary form.
 
+Key shares per round (opt-in): a key share for ``(y, l)`` is the label-
+independent ``sk_y`` and the label's terms ``z''_l`` (and of its chunks).
+:meth:`ThresholdMCFERingLWEKeyGenerator.get_weight_key_share` issues the
+shares of ``sk_y`` once per weights (servers keep them:
+:meth:`ThresholdMCFERingLWE.add_weight_key_share`), and
+``get_decryption_keys(..., key_part="label")`` the shares of the label terms
+only (``label_term=False`` leaves out the label's own ``z``, which only single
+ciphertexts need): two of six polynomials per round for two chunks. Both
+parts are of one sharing (Shamir points or replicated sets) and carry a
+``share_set_id``; a server combines a label part only with the weight part of
+the same weights, share set, sharing, binding, flooding, noise derivation and
+MAC keys. A linear sharing of ``sk_y`` reused with fresh sharings of the label
+terms is a sharing of each round's key, the shares of ``t - 1`` servers stay
+independent of the keys, and the noise is seeded as for a full key share;
+``NTT(sk_y)`` of a kept weight part is computed once. With binary public
+parameters every polynomial of the Shamir and replicated key shares is bytes
+(``ceil(bits(q)/8)``-byte words, strictly below ``q``; the seeded sharing keeps
+decimal strings).
+
 Modulus (key generator config ``ring_modulus``): an NTT prime (default) or
 the opt-in ``"rns"``: ``q`` the product of NTT primes below ``2^62``, as
 many as make each at most 60 bits (four for the 212 to 218 bits of the
@@ -191,6 +210,7 @@ import hmac
 import json
 import logging
 import secrets
+from collections import OrderedDict
 
 import gmpy2 as gp
 import numpy as np
@@ -209,6 +229,7 @@ from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWE
 from pyfe4ai.schemes.mcfe.ring_lwe import check_ciphertext_label_hashes
 from pyfe4ai.schemes.mcfe.ring_lwe import chunk_key_index
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
+from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWEKeyGenerator
 from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.schemes.threshold_utils import check_ciphertext_tag_messages
 from pyfe4ai.schemes.threshold_utils import check_ciphertext_tags
@@ -433,6 +454,21 @@ def binary_request_digests(digests: dict) -> tuple:
     return ct_digest.hexdigest(), key_inputs.hexdigest()
 
 
+def _poly_values(poly, q, ring_n: int) -> list:
+    """A key-share polynomial as ``mpz``: decimal strings / ints, or binary
+    (``ceil(bits(q)/8)``-byte words, strictly below q).
+
+    Raises:
+        FEKeyError: For malformed binary values.
+    """
+    if isinstance(poly, (bytes, bytearray)):
+        try:
+            return [gp.mpz(v) for v in decode_values(poly, q, ring_n)]
+        except ValueError as exc:
+            raise FEKeyError("malformed binary key share") from exc
+    return [gp.mpz(v) for v in poly]
+
+
 def _native_ring(q, ring_n: int):
     """The native ring context the threshold kernels take for ``(q, ring_n)``
     (prime, or an RNS modulus of :func:`~pyfe4ai.utils.native_backend.ring_context`
@@ -645,6 +681,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         """MCFE setup and the client-server MAC keys; forgets previously shared keys."""
         super().setup()
         self.dict_dk = {}
+        self.dict_weight_shares = {}
         self.mac_keys = client_server_mac_keys(self.lst_nid, self.lst_sid)
         self._noise_masters = {sid: secrets.token_hex(32) for sid in self.lst_sid}
         pp = self.get_public_parameters()
@@ -689,6 +726,17 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Return server *sid*'s share of the key for ``(y, label, n_chunks)``.
 
+        Args:
+            sid: The server.
+            **kwargs: ``credentials`` with ``fusion_weight``, ``label``,
+                optionally ``n_chunks`` and ``key_part``: ``"full"``
+                (default) or ``"label"`` -- only the label's terms ``z``
+                and ``z_chunks``, the per-round part; the label-independent
+                ``sk_y`` comes once per weights from
+                :meth:`get_weight_key_share` -- and, with ``"label"``,
+                ``label_term`` (default ``True``; ``False`` leaves out ``z``,
+                which only single ciphertexts of the label itself need).
+
         Returns:
             Dict with shares ``sk_y``, ``z``, ``z_chunks`` and ``label``,
             ``sid``, ``lst_sid``, ``weights_id``, ``noise_key`` and
@@ -697,7 +745,17 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             and ``pieces`` (``[{"set": T, "share": {"sk_y", "z", "z_chunks"}}]``);
             with ``"replicated-seeded"`` ``pieces`` holds the correction
             piece (or nothing), and ``seeds`` (``[{"set": T, "seed": hex}]``)
-            and ``layout`` give the others.
+            and ``layout`` give the others. A label part has ``part =
+            "label"`` and ``share_set_id`` (that of the weight part it
+            completes) and no ``sk_y``. With binary public parameters
+            (``ct_format="binary"``) every polynomial of the Shamir and
+            replicated sharings is bytes (``ceil(bits(q)/8)``-byte words, the
+            same values).
+
+        Raises:
+            FEValidationError: For an unknown ``key_part``, a label part with
+                neither ``z`` nor chunk keys, or ``key_part="label"`` with the
+                ``"replicated-seeded"`` sharing.
         """
         credentials = kwargs.get("credentials", None)
         if not credentials:
@@ -705,15 +763,101 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         if sid not in self.lst_sid:
             logger.error("invalid sid: {}".format(sid))
             return None
+        part = credentials.get("key_part", "full")
+        if part not in ("full", "label"):
+            raise FEValidationError("key_part must be 'full' or 'label', not {!r}".format(part))
+        label_term = bool(credentials.get("label_term", True))
         weights_id = fusion_weight_id(credentials.get("fusion_weight"))
-        ident = json.dumps(
-            [weights_id, credentials.get("label"), int(credentials.get("n_chunks", 0))]
-        )
+        n_chunks = int(credentials.get("n_chunks", 0))
+        ident = [weights_id, credentials.get("label"), n_chunks]
+        if part == "label":
+            if not label_term and not n_chunks:
+                raise FEValidationError("a label key share needs the label's term or chunk keys")
+            ident += [part, label_term]
+        ident = json.dumps(ident)
         if ident not in self.dict_dk:
-            key = super().get_decryption_keys(sid, credentials=credentials)
-            self.dict_dk[ident] = self._share_key(key, weights_id)
+            if part == "label":
+                self.dict_dk[ident] = self._label_part(credentials, weights_id, n_chunks, label_term)
+            else:
+                key = super().get_decryption_keys(sid, credentials=credentials)
+                self.dict_dk[ident] = self._share_key(key, weights_id)
         dk = dict(self.dict_dk[ident][sid])
-        dk.update({
+        dk.update(self._share_fields(sid, weights_id))
+        return dk
+
+    def _label_part(self, credentials: dict, weights_id: str, n_chunks: int, label_term: bool) -> dict:
+        """``{sid: label part}``: shares of the terms ``z''`` of the label (if
+        *label_term*) and of its chunks, computed for these labels only (binary
+        end to end for binary public parameters)."""
+        label = credentials.get("label")
+        if not isinstance(label, str):
+            raise FEValidationError("identity-based MCFE keys need a string label")
+        fusion_weight = credentials.get("fusion_weight")
+        entry = self._weight_entry(fusion_weight)
+        labels = ([label] if label_term else []) + [chunk_label(label, c) for c in range(n_chunks)]
+        binary = self.ct_format == "binary" and self.sharing != "replicated-seeded"
+        # the terms on the MIFE key's z (validated weights; sk_y is the weight part's)
+        terms = self._label_terms(self._key_z(fusion_weight), fusion_weight, labels, binary=binary)
+        material = {"z": terms[0]} if label_term else {}
+        material["z_chunks"] = list(terms[1:] if label_term else terms)
+        return {
+            sid: dict(shares, label=label, noise_key=self._noise_key(sid, weights_id, label), part="label",
+                      share_set_id=entry["share_set_id"], label_hash=self.label_hash)
+            for sid, shares in self._share_material(material).items()
+        }
+
+    def get_weight_key_share(self, sid: str, **kwargs) -> dict | None:
+        """Return server *sid*'s share of the label-independent part of the key
+        for the weights ``y``: the shares of ``sk_y`` (``{nid: sk_{i,y}}``,
+        or replicated pieces of it), issued once per weights (later calls
+        return the same shares), with ``part = "weights"``, ``share_set_id``
+        and the fields of :meth:`get_decryption_keys`. Servers keep it
+        (:meth:`ThresholdMCFERingLWE.add_weight_key_share`); per label they
+        then need only ``get_decryption_keys(..., key_part="label")``.
+
+        The shares of ``sk_y`` serve every label: a linear sharing reused with
+        fresh sharings of the label terms is a sharing of each round's key, and
+        ``t - 1`` servers' shares stay independent of the keys (each sharing
+        has its own randomness); the flooding noise is seeded as before.
+
+        Args:
+            sid: The server.
+            **kwargs: ``credentials`` with ``fusion_weight``.
+
+        Raises:
+            FEValidationError: With the ``"replicated-seeded"`` sharing.
+        """
+        credentials = kwargs.get("credentials", None)
+        if not credentials:
+            raise FEKeyError("need credentials for Threshold MCFE Ring-LWE")
+        if sid not in self.lst_sid:
+            logger.error("invalid sid: {}".format(sid))
+            return None
+        entry = self._weight_entry(credentials.get("fusion_weight"))
+        share = dict(entry["shares"][sid], part="weights", share_set_id=entry["share_set_id"])
+        share.update(self._share_fields(sid, entry["weights_id"]))
+        return share
+
+    def _weight_entry(self, fusion_weight) -> dict:
+        """The sharing of ``sk_y`` for the weights, made on first use."""
+        if self.sharing == "replicated-seeded":
+            raise FEValidationError("split key shares need the sharing 'shamir' or 'replicated'")
+        weights_id = fusion_weight_id(fusion_weight)
+        store = self.__dict__.setdefault("dict_weight_shares", {})
+        entry = store.get(weights_id)
+        if entry is None:
+            # the MIFE key of the weights (sk_y; its z is the label terms' base)
+            key = MIFERingLWEKeyGenerator.get_decryption_keys(self, None, credentials={"fusion_weight": fusion_weight})
+            entry = store[weights_id] = {
+                "weights_id": weights_id,
+                "share_set_id": secrets.token_hex(16),
+                "shares": self._share_material({"sk_y": dict(key["sk_y"])}),
+            }
+        return entry
+
+    def _share_fields(self, sid: str, weights_id: str) -> dict:
+        """The fields of every key share part of server *sid*."""
+        return {
             "sid": sid,
             "lst_sid": list(self.lst_sid),
             "weights_id": weights_id,
@@ -724,59 +868,58 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             "flooding": self.flooding,
             "label_hash": self.label_hash,
             "pp_binding": self._binding,
-        })
-        return dk
+        }
 
     def _share_key(self, key: dict, weights_id: str) -> dict:
+        material = {"sk_y": dict(key["sk_y"]), "z": key["z"], "z_chunks": list(key["z_chunks"])}
+        return {
+            sid: dict(shares, label=key["label"], noise_key=self._noise_key(sid, weights_id, key["label"]))
+            for sid, shares in self._share_material(material).items()
+        }
+
+    def _share_material(self, material: dict) -> dict:
+        """``{sid: shares}`` of *material* (entries of ``sk_y``, ``z``,
+        ``z_chunks``) in the sharing: Shamir shares in the structure of
+        *material*, or ``sharing`` and the pieces of the replicated (seeded)
+        sharing; binary polynomials for binary public parameters (Shamir and
+        replicated)."""
         sid_v = share_points(self.lst_sid)
         points = list(sid_v.values())
+        binary = self.ct_format == "binary" and self.sharing != "replicated-seeded"
         if self.sharing == "replicated":
-            material = {"sk_y": dict(key["sk_y"]), "z": key["z"], "z_chunks": list(key["z_chunks"])}
-            pieces = share_replicated(material, self.t, points, self.q)
-            return {
-                sid: {
-                    "sharing": "replicated",
-                    "pieces": pieces_held(pieces, sid_v[sid]),
-                    "label": key["label"],
-                    "noise_key": self._noise_key(sid, weights_id, key["label"]),
-                }
-                for sid in self.lst_sid
-            }
+            pieces = share_replicated(material, self.t, points, self.q, binary=binary)
+            return {sid: {"sharing": "replicated", "pieces": pieces_held(pieces, sid_v[sid])} for sid in self.lst_sid}
         if self.sharing == "replicated-seeded":
-            material = {"sk_y": dict(key["sk_y"]), "z": key["z"], "z_chunks": list(key["z_chunks"])}
             ctx = native_backend.ring_context(self.q, self.ring_n)  # expands the pieces natively
             sharing = share_replicated_seeded(material, self.t, points, self.q, ctx=ctx)
-            return {
-                sid: {
-                    "sharing": "replicated-seeded",
-                    **seeded_pieces_held(sharing, sid_v[sid]),
-                    "label": key["label"],
-                    "noise_key": self._noise_key(sid, weights_id, key["label"]),
-                }
-                for sid in self.lst_sid
-            }
-        polys = list(key["sk_y"].values()) + [key["z"]] + list(key["z_chunks"])
-        shared = self._share_polys_native(polys, points)
+            return {sid: {"sharing": "replicated-seeded", **seeded_pieces_held(sharing, sid_v[sid])}
+                    for sid in self.lst_sid}
+        sk_y = material.get("sk_y", {})
+        polys = list(sk_y.values()) + ([material["z"]] if "z" in material else []) + list(material.get("z_chunks", []))
+        shared = self._share_polys_native(polys, points, binary)
         if shared is None:
             def share_poly(coeffs) -> dict:
-                shares = [share_secret(gp.mpz(v), self.t, points, self.q) for v in coeffs]
+                values = _poly_values(coeffs, self.q, self.ring_n) if isinstance(coeffs, (bytes, bytearray)) else coeffs
+                shares = [share_secret(gp.mpz(v), self.t, points, self.q) for v in values]
+                if binary:
+                    return {sid: encode_values([sh[sid_v[sid]] for sh in shares], self.q) for sid in self.lst_sid}
                 return {sid: [gp.digits(sh[sid_v[sid]]) for sh in shares] for sid in self.lst_sid}
 
             shared = [share_poly(poly) for poly in polys]
-        n_sk = len(key["sk_y"])
-        sk_shares = dict(zip(key["sk_y"], shared[:n_sk]))
-        z_shares = shared[n_sk]
-        chunk_shares = shared[n_sk + 1:]
-        return {
-            sid: {
-                "sk_y": {nid: sk_shares[nid][sid] for nid in sk_shares},
-                "z": z_shares[sid],
-                "z_chunks": [cs[sid] for cs in chunk_shares],
-                "label": key["label"],
-                "noise_key": self._noise_key(sid, weights_id, key["label"]),
-            }
-            for sid in self.lst_sid
-        }
+        out = {sid: {} for sid in self.lst_sid}
+        pos = 0
+        if "sk_y" in material:
+            for sid in self.lst_sid:
+                out[sid]["sk_y"] = {nid: shared[pos + i][sid] for i, nid in enumerate(sk_y)}
+            pos += len(sk_y)
+        if "z" in material:
+            for sid in self.lst_sid:
+                out[sid]["z"] = shared[pos][sid]
+            pos += 1
+        if "z_chunks" in material:
+            for sid in self.lst_sid:
+                out[sid]["z_chunks"] = [cs[sid] for cs in shared[pos:]]
+        return out
 
     def _noise_key(self, sid: str, weights_id: str, label) -> str:
         # one per server, weights and label: a re-sharing for another
@@ -787,25 +930,33 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             hashlib.sha256,
         ).hexdigest()
 
-    def _share_polys_native(self, polys: list, points: list) -> list | None:
+    def _share_polys_native(self, polys: list, points: list, binary: bool = False) -> list | None:
         """:func:`share_secret` of every coefficient of *polys* in one native
         call (coefficients drawn as ``share_secret`` draws them, in the same
-        order), as ``[{sid: shares}]``; ``None`` when the Python path applies."""
+        order), as ``[{sid: shares}]`` (with *binary* each share polynomial as
+        bytes); ``None`` when the Python path applies."""
         ctx = _native_ring(self.q, self.ring_n)
         if ctx is None:
             return None
-        flat = [v for poly in polys for v in poly]
         width = (int(self.q).bit_length() + 7) // 8
+        if all(isinstance(poly, (bytes, bytearray)) for poly in polys):  # binary key terms
+            flat = b"".join(polys)
+            polys = [range(len(poly) // width) for poly in polys]  # their lengths in values
+        else:
+            flat = [v for poly in polys for v in poly]
         out = native_backend.ext().shamir_share(
             ctx.cap, flat, self.t, points,
             native_backend.random_input(4 * width * len(flat) * (self.t - 1) + 64),
-            **native_backend.seed_kwargs(),
+            **native_backend.seed_kwargs(), **({"binary": True} if binary else {}),
         )
+        unit = width if binary else 1
         shared, start = [], 0
         for poly in polys:
-            shared.append({sid: out[i][start:start + len(poly)] for i, sid in enumerate(self.lst_sid)})
+            shared.append({sid: out[i][start * unit:(start + len(poly)) * unit] for i, sid in enumerate(self.lst_sid)})
             start += len(poly)
         return shared
+
+
 
 
 class ThresholdMCFERingLWE(MCFERingLWE):
@@ -902,6 +1053,102 @@ class ThresholdMCFERingLWE(MCFERingLWE):
                 self._tag(ct, mac_keys, encoded, _chunk_with_code(ct, layer), pp_digest)
         return out
 
+    #: Weight key shares a server keeps (:meth:`add_weight_key_share`).
+    WEIGHT_SHARES_KEPT = 16
+
+    #: Fields in which the weight and the label part of a key share must agree.
+    _SPLIT_FIELDS = ("sid", "lst_sid", "weights_id", "share_set_id", "sharing", "mac_keys", "noise_version",
+                     "noise_sampler", "flooding", "label_hash", "pp_binding")
+
+    def __getstate__(self) -> dict:
+        state = super().__getstate__()
+        state.pop("_hat_cache", None)  # native contexts
+        return state
+
+    def add_weight_key_share(self, share: dict) -> None:
+        """Keep this server's weight key share
+        (:meth:`ThresholdMCFERingLWEKeyGenerator.get_weight_key_share`) for
+        the label key shares (``key_part="label"``) of the same weights and
+        share set; the last :data:`WEIGHT_SHARES_KEPT` are kept. ``NTT(sk_y)``
+        of the shares is cached across labels.
+
+        Raises:
+            FEKeyError: Unless *share* is a weight key share of this server.
+        """
+        if not isinstance(share, dict) or share.get("part") != "weights" or share.get("sid") != self.id:
+            raise FEKeyError("not a weight key share of server {}".format(self.id))
+        store = self.__dict__.setdefault("_weight_shares", OrderedDict())
+        store[(share.get("weights_id"), share.get("share_set_id"))] = share
+        store.move_to_end((share.get("weights_id"), share.get("share_set_id")))
+        while len(store) > self.WEIGHT_SHARES_KEPT:
+            store.popitem(last=False)
+
+    def _key_parts(self, dk):
+        """``(dk, weight)``: a full key share and ``None``, or a label part and
+        the weight part kept for it.
+
+        Raises:
+            FEKeyError: For a weight part alone, a label part without its
+                weight part, or parts that do not belong together.
+        """
+        if not isinstance(dk, dict) or dk.get("part") is None:
+            return dk, None
+        if dk.get("part") != "label":
+            raise FEKeyError("a weight key share decrypts together with a label key share (key_part='label')")
+        weight = self.__dict__.get("_weight_shares", {}).get((dk.get("weights_id"), dk.get("share_set_id")))
+        if weight is None:
+            raise FEKeyError("no weight key share for these weights and share set: add_weight_key_share first")
+        for field in self._SPLIT_FIELDS:
+            if weight.get(field, "shamir" if field == "sharing" else None) != dk.get(
+                    field, "shamir" if field == "sharing" else None):
+                raise FEKeyError("the weight and the label key share do not belong together ({})".format(field))
+        return dk, weight
+
+    def _enrolled_share(self, dk, weight, lst_sid_enrolled, q, fields):
+        """:func:`~pyfe4ai.schemes.threshold_utils.share_for_enrolled` of a key
+        share, or of the label part and its weight part (``sk_y``; summed once
+        per weight part and enrolled set)."""
+        kwargs = dict(cache=share_cache(self), legacy_shamir=self.legacy_shamir,
+                      profile=self.pp.get("security_profile"), ring_n=self.pp["ring_n"])
+        if weight is None:
+            return share_for_enrolled(dk, self.id, lst_sid_enrolled, self.pp["t"], q, fields=fields, **kwargs)
+        held = dk["pieces"][0]["share"] if dk.get("pieces") else dk  # a label part may lack z (label_term=False)
+        label_fields = tuple(f for f in fields if f != "sk_y" and f in held)
+        share, multiplier, tag = share_for_enrolled(dk, self.id, lst_sid_enrolled, self.pp["t"], q,
+                                                    fields=label_fields, **kwargs)
+        wshare, wmult, wtag = share_for_enrolled(weight, self.id, lst_sid_enrolled, self.pp["t"], q,
+                                                 fields=("sk_y",), **kwargs)
+        if (wmult, wtag) != (multiplier, tag):
+            raise FEKeyError("the weight and the label key share are of different sharings")
+        share = dict(share, sk_y=wshare["sk_y"])
+        return share, multiplier, tag
+
+    def _sk_hat(self, ctx, poly, persistent: bool) -> bytes:
+        """``NTT(sk share)`` for the native kernels; cached across labels for
+        the shares of a kept weight part (*persistent*)."""
+        if not persistent:
+            return self._ntt_mont(ctx, poly)
+        cache = self.__dict__.setdefault("_hat_cache", OrderedDict())
+        key = (id(poly), id(ctx))
+        hit = cache.get(key)
+        if hit is not None and hit[0] is poly and hit[1] is ctx:
+            cache.move_to_end(key)
+            return hit[2]
+        hat = self._ntt_mont(ctx, poly)
+        cache[key] = (poly, ctx, hat)  # poly and ctx kept alive: their ids are not reused while cached
+        while len(cache) > 64:
+            cache.popitem(last=False)
+        return hat
+
+    @staticmethod
+    def _ntt_mont(ctx, poly) -> bytes:
+        if isinstance(poly, (bytes, bytearray)):
+            try:
+                return ctx.ntt_mont(bytes(poly))
+            except ValueError as exc:
+                raise FEKeyError("malformed binary key share") from exc
+        return ctx.ntt_mont(poly)
+
     def share_decrypt(
         self, dict_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list,
         _z_share=None, _chunk=None, _sk_hats=None, _share=None,
@@ -923,7 +1170,8 @@ class ThresholdMCFERingLWE(MCFERingLWE):
                 server has no ``partial_budget`` or its budget is spent
                 (refused requests consume nothing).
         """
-        if not dk or not ("sk_y" in dk or "pieces" in dk):
+        dk, weight = self._key_parts(dk)
+        if not dk or not ("sk_y" in dk or "pieces" in dk or weight is not None):
             raise FEKeyError("no decryption keys provided")
         check_flooding_version(dk)
         flooding = self.pp.get("flooding", LEGACY_FLOODING)
@@ -947,11 +1195,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         q = gp.mpz(self.pp["q"])
         # Shamir: (dk, lambda_k); replicated: the sum of the assigned pieces
         # (sk_y and z; the chunk keys come with _share), 1
-        share, multiplier, tag = _share or share_for_enrolled(
-            dk, self.id, lst_sid_enrolled, self.pp["t"], q, fields=("sk_y", "z"), cache=share_cache(self),
-            legacy_shamir=self.legacy_shamir, profile=self.pp.get("security_profile"),
-            ring_n=self.pp["ring_n"],
-        )
+        share, multiplier, tag = _share or self._enrolled_share(dk, weight, lst_sid_enrolled, q, ("sk_y", "z"))
         if set(dict_ct) != set(share["sk_y"]):
             raise FESchemeError("need one ciphertext for every client of the key")
         # only ciphertexts the clients tagged for this server under the label
@@ -984,7 +1228,9 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         # ... and of their modulus and flooding (width, tail cut, accounting), format and factors
         binding = check_pp_binding(self.pp, dk, binding_fields(self.pp), _BINDING_DEFAULTS)
         delta = q // gp.mpz(self.pp["p"])
-        z_share = share["z"] if _z_share is None else _z_share
+        z_share = share.get("z") if _z_share is None else _z_share
+        if z_share is None:
+            raise FEKeyError("the key share has no term of the label itself (label_term=False): chunks only")
         hats = {} if _sk_hats is None else _sk_hats
         ctx = _native_ring(q, ring_n)
         native = cts = None
@@ -1020,7 +1266,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
                 cts[nid] = (k, ct0, ct1)
 
         if cts is not None:
-            key_part = [delta * gp.mpz(v) % q for v in z_share]
+            key_part = [delta * v % q for v in _poly_values(z_share, q, ring_n)]
             c_y = [gp.mpz(0)] * len(next(iter(cts.values()))[1][0])  # n (JSON) or k (format 2)
             # sum_i ct1_i sk_i in the NTT domain, NTT(sk_i) cached across chunks
             # (_sk_hats); the same sum mod q as adding poly_mul(ct1_i, sk_i)
@@ -1032,10 +1278,10 @@ class ThresholdMCFERingLWE(MCFERingLWE):
                 y_vec = [gp.mpz(int(v)) for v in fusion_weight[nid]]
                 c_y = poly_add(c_y, mat_vec_mul(transpose(ct0), y_vec, q), q)
                 if ring is None:
-                    key_part = poly_add(key_part, poly_mul(ct1, [gp.mpz(v) for v in share["sk_y"][nid]], q), q)
+                    key_part = poly_add(key_part, poly_mul(ct1, _poly_values(share["sk_y"][nid], q, ring_n), q), q)
                     continue
                 if nid not in hats:
-                    hats[nid] = ring.forward([gp.mpz(v) for v in share["sk_y"][nid]])
+                    hats[nid] = ring.forward(_poly_values(share["sk_y"][nid], q, ring_n))
                 acc = ring.mul_add(acc, ring.forward(ct1), hats[nid])
             if acc is not None:
                 key_part = poly_add(key_part, ring.inverse(acc), q)
@@ -1082,9 +1328,9 @@ class ThresholdMCFERingLWE(MCFERingLWE):
                 w, c_y = [gp.digits(v) for v in values], [gp.digits(v) for v in c_y]
         else:
             ids = nids if native is not None else [nid for _, nid in _client_ids(dict_ct)]
-            for nid in ids:  # NTT(sk_i share), cached across chunks
+            for nid in ids:  # NTT(sk_i share), cached across chunks (and labels, for a kept weight part)
                 if ("native", nid) not in hats:
-                    hats[("native", nid)] = ctx.ntt_mont(share["sk_y"][nid])
+                    hats[("native", nid)] = self._sk_hat(ctx, share["sk_y"][nid], weight is not None)
             ys = [[int(v) for v in fusion_weight[nid]] for nid in ids]
             sk_hats = [hats[("native", nid)] for nid in ids]
             if native is not None:
@@ -1100,6 +1346,8 @@ class ThresholdMCFERingLWE(MCFERingLWE):
                 except ValueError as exc:
                     if exc.args[:1] == ("malformed ciphertext",):
                         raise FESchemeError("malformed ciphertext of {}".format(ids[exc.args[1]])) from exc
+                    if isinstance(z_share, (bytes, bytearray)):
+                        raise FEKeyError("malformed binary key share") from exc
                     raise
         return {
             "w": w,
@@ -1261,14 +1509,13 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         each partial produced then counts)."""
         sample = next(iter(dict_ndarray_ct.values()))
         packed_share = None
-        z_chunks = (dk or {}).get("z_chunks", [])
-        if dk and "pieces" in dk and self.id in dk.get("lst_sid", []):
+        label_dk, weight = self._key_parts(dk) if dk else (dk, None)
+        z_chunks = (label_dk or {}).get("z_chunks", [])
+        if label_dk and "pieces" in label_dk and self.id in label_dk.get("lst_sid", []):
             # the assigned pieces (sk_y and the chunk keys), added up once for all chunks
-            validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
-            packed_share = share_for_enrolled(
-                dk, self.id, lst_sid_enrolled, self.pp["t"], gp.mpz(self.pp["q"]),
-                fields=("sk_y", "z_chunks"), cache=share_cache(self), ring_n=self.pp["ring_n"],
-            )
+            validate_enrolled(self.id, label_dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
+            packed_share = self._enrolled_share(label_dk, weight, lst_sid_enrolled, gp.mpz(self.pp["q"]),
+                                                ("sk_y", "z_chunks"))
             z_chunks = packed_share[0]["z_chunks"]
         if self.key_chunks(sample) > len(z_chunks):
             raise FEKeyError("the key share covers fewer chunks than the ciphertexts")

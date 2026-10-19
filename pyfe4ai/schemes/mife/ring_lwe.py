@@ -275,18 +275,7 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         credentials = kwargs.get("credentials", None)
         if not credentials:
             raise FEKeyError("need credentials for MIFE Ring-LWE decryption key generation")
-        fusion_weight = credentials.get("fusion_weight")
-        if not isinstance(fusion_weight, dict):
-            raise FEValidationError("invalid fusion weights provided, need a dict")
-
-        ys = {}
-        for nid in self.lst_nid:
-            if nid not in fusion_weight:
-                raise FEValidationError("fusion weight missing client {}".format(nid))
-            ys[nid] = int_vector(
-                fusion_weight[nid], "fusion weight of {}".format(nid),
-                length=self.eta, bound=int(self.bound_y),
-            )
+        ys = self._key_weights(credentials.get("fusion_weight"))
         native = self._native_master_key()
         if native is not None:  # the same sums mod q, as decimal strings
             ctx, sk_rows, u_rows = native
@@ -305,6 +294,37 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             for y_row, u_row in zip(y_vec, self.msk["u"][nid]):
                 z = [acc + y_row * u for acc, u in zip(z, u_row)]
         return {"sk_y": sk_y, "z": [gp.digits(v % self.q) for v in z]}
+
+    def _key_weights(self, fusion_weight) -> dict:
+        """The validated weights ``{nid: y_i}`` of a functional key."""
+        if not isinstance(fusion_weight, dict):
+            raise FEValidationError("invalid fusion weights provided, need a dict")
+        ys = {}
+        for nid in self.lst_nid:
+            if nid not in fusion_weight:
+                raise FEValidationError("fusion weight missing client {}".format(nid))
+            ys[nid] = int_vector(
+                fusion_weight[nid], "fusion weight of {}".format(nid),
+                length=self.eta, bound=int(self.bound_y),
+            )
+        return ys
+
+    def _key_z(self, fusion_weight) -> list:
+        """The ``z = sum_i sum_row y_{i,row} u_{i,row}`` of :meth:`get_decryption_keys`
+        alone, as decimal strings (the same values)."""
+        ys = self._key_weights(fusion_weight)
+        native = self._native_master_key()
+        if native is not None:
+            ctx, _, u_rows = native
+            return native_backend.ext().lincomb(
+                ctx.cap, [row for nid in self.lst_nid for row in u_rows[nid]],
+                [v for nid in self.lst_nid for v in ys[nid]],
+            )
+        z = [gp.mpz(0)] * self.ring_n
+        for nid in self.lst_nid:
+            for y_row, u_row in zip(ys[nid], self.msk["u"][nid]):
+                z = [acc + gp.mpz(y_row) * u for acc, u in zip(z, u_row)]
+        return [gp.digits(v % self.q) for v in z]
 
     def __getstate__(self) -> dict:
         """Pickling and copying without the native key cache (rebuilt on use)."""

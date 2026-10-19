@@ -7,13 +7,13 @@
 //! materials are wiped before they are freed; the Python strings returned
 //! cannot be.
 
-use super::{index_mod, secret_byte_rows, u256_arg, wipe_byte_rows, wipe_rng, wipe_word_rows, CallDrbg, DecBuf};
+use super::{index_mod, secret_byte_rows, threshold, u256_arg, wipe_byte_rows, wipe_rng, wipe_word_rows, CallDrbg, DecBuf};
 use pyfe4ai_core::replicated;
 use pyfe4ai_core::rlwe::wipe_words;
 use pyfe4ai_core::{Modulus, Word, U256};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyList, PyString};
+use pyo3::types::{PyBytes, PyList, PyString};
 use rand_chacha::rand_core::RngCore;
 use zeroize::Zeroize;
 
@@ -44,9 +44,20 @@ fn zq_arg(q: &Bound<'_, PyAny>) -> PyResult<U256> {
     Ok(v)
 }
 
-/// Values mod q of plain decimal strings and ints (operator.index); a
-/// TypeError for anything else.
+/// Values mod q of plain decimal strings and ints (operator.index), or of a
+/// bytes object of ceil(bits(q) / 8)-byte little-endian words each below q
+/// (binary key shares; ValueError otherwise); a TypeError for anything else.
 fn read_exact<W: Word>(seq: &Bound<'_, PyAny>, q: &Bound<'_, PyAny>, m: &Modulus<W>) -> PyResult<Vec<W>> {
+    if let Ok(b) = seq.cast::<PyBytes>() {
+        let wb = threshold::value_bytes(m.bits);
+        let data = b.as_bytes();
+        let mut out = vec![W::ZERO; data.len() / wb.max(1)];
+        if data.len() % wb != 0 || pyfe4ai_core::threshold::read_strict(data, m.q, wb, &mut out).is_none() {
+            wipe_words(&mut out);
+            return Err(PyValueError::new_err("binary values must be whole words below q"));
+        }
+        return Ok(out);
+    }
     let one = |ob: Bound<'_, PyAny>| -> PyResult<W> {
         if let Ok(s) = ob.cast::<PyString>() {
             return s
@@ -89,16 +100,28 @@ fn secret_list<'py, W: Word>(py: Python<'py>, words: &mut [W]) -> PyResult<Bound
     out
 }
 
+/// Secret words as decimal strings, or with `binary` as one bytes object of
+/// ceil(bits(q) / 8)-byte words; the words are wiped.
+fn secret_out<'py, W: Word>(py: Python<'py>, words: &mut [W], m: &Modulus<W>, binary: bool) -> PyResult<Bound<'py, PyAny>> {
+    if binary {
+        let out = threshold::values_bytes_pub(py, words, threshold::value_bytes(m.bits));
+        wipe_words(words);
+        return Ok(out.into_bound(py).into_any());
+    }
+    Ok(secret_list(py, words)?.into_any())
+}
+
 /// threshold_utils.share_replicated over flat values: `[correction, r_1, ...,
 /// r_k]` as lists of decimal strings, the k = n_random random pieces drawn
 /// piece by piece, value by value, as SystemRandom.randrange(0, q) draws them,
 /// from the given bytes (tests; ValueError if they run out) or the call's
 /// DRBG (stream 0, read sequentially), and the correction the values minus
 /// their sum.
+/// With `binary`, each piece is one bytes object of ceil(bits(q) / 8)-byte words.
 #[pyfunction]
-#[pyo3(signature = (q, values, n_random, rnd, seed=None))]
+#[pyo3(signature = (q, values, n_random, rnd, seed=None, binary=false))]
 fn zq_replicated_deal(py: Python<'_>, q: &Bound<'_, PyAny>, values: &Bound<'_, PyAny>, n_random: usize,
-                      rnd: &Bound<'_, PyAny>, seed: Option<Vec<u8>>) -> PyResult<Py<PyList>> {
+                      rnd: &Bound<'_, PyAny>, seed: Option<Vec<u8>>, binary: bool) -> PyResult<Py<PyList>> {
     let qv = zq_arg(q)?;
     let mut given: Option<Vec<u8>> = if rnd.is_none() { None } else { Some(rnd.extract()?) };
     // the values, the pieces, their digits and the caller's bytes are wiped after use, on every path
@@ -134,7 +157,7 @@ fn zq_replicated_deal(py: Python<'_>, q: &Bound<'_, PyAny>, values: &Bound<'_, P
             let mut res = Ok(());
             for piece in pieces.iter_mut() {
                 if res.is_ok() {
-                    match secret_list(py, piece) {
+                    match secret_out(py, piece, &m, binary) {
                         Ok(l) => lists.push(l),
                         Err(e) => res = Err(e),
                     }
@@ -156,10 +179,12 @@ fn zq_replicated_deal(py: Python<'_>, q: &Bound<'_, PyAny>, values: &Bound<'_, P
 /// count) (shake256-wide) of every material, as decimal strings: the sums of
 /// threshold_utils.share_for_enrolled and _combine_pieces. TypeError for other
 /// values, ValueError for rows of another length.
+/// Rows may also be bytes (binary key shares, see read_exact); with `binary`
+/// the sum is one bytes object of ceil(bits(q) / 8)-byte words.
 #[pyfunction]
-#[pyo3(signature = (q, count, rows, materials, subtract=false))]
+#[pyo3(signature = (q, count, rows, materials, subtract=false, binary=false))]
 fn zq_sum(py: Python<'_>, q: &Bound<'_, PyAny>, count: usize, rows: &Bound<'_, PyAny>, materials: &Bound<'_, PyAny>,
-          subtract: bool) -> PyResult<Py<PyList>> {
+          subtract: bool, binary: bool) -> PyResult<Py<PyAny>> {
     let qv = zq_arg(q)?;
     let mut materials = secret_byte_rows(materials)?; // they hold the seeds: wiped on every path
     let out = with_zq!(qv, m => {
@@ -178,9 +203,9 @@ fn zq_sum(py: Python<'_>, q: &Bound<'_, PyAny>, count: usize, rows: &Bound<'_, P
         let res = read.and_then(|()| {
             let mats: Vec<&[u8]> = materials.iter().map(|v| v.as_slice()).collect();
             let mut acc = py.detach(|| replicated::sum(&m, count, &words, &mats, subtract));
-            let list = secret_list(py, &mut acc).map(|l| l.unbind());
+            let out = secret_out(py, &mut acc, &m, binary).map(|o| o.unbind());
             wipe_words(&mut acc);
-            list
+            out
         });
         wipe_word_rows(&mut words);
         res

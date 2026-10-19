@@ -8,7 +8,8 @@
 
 use super::{delta_mod, get_ring, index_mod, py_index, read_rows, read_values, RingCtx};
 use pyfe4ai_core::rlwe::{wipe_bytes, wipe_words};
-use pyfe4ai_core::threshold::{self, value_bytes};
+pub(crate) use pyfe4ai_core::threshold::value_bytes;
+use pyfe4ai_core::threshold;
 use pyfe4ai_core::{with_ring, Modulus, Word};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -46,6 +47,21 @@ pub(crate) fn noise_values<W: Word>(noise: Option<&Bound<'_, PyAny>>, flood: Opt
         (Some(list), None) => read_values(list, Some(count), q, m, false),
         _ => Err(PyValueError::new_err("give the noise or the uniform flooding (bits, material), not both")),
     }
+}
+
+/// ceil(bits(q) / 8), the bytes of a value in the binary formats.
+pub(crate) fn value_bytes_of<W: Word>(m: &Modulus<W>) -> usize {
+    value_bytes(m.bits)
+}
+
+/// Secret values (key shares) as wb-byte little-endian words (the caller
+/// wipes its words; the returned bytes object cannot be).
+pub(crate) fn secret_bytes<W: Word>(py: Python<'_>, vals: &[W], wb: usize) -> Py<PyBytes> {
+    values_bytes(py, vals, wb)
+}
+
+pub(crate) fn values_bytes_pub<W: Word>(py: Python<'_>, vals: &[W], wb: usize) -> Py<PyBytes> {
+    values_bytes(py, vals, wb)
 }
 
 fn values_bytes<W: Word>(py: Python<'_>, vals: &[W], wb: usize) -> Py<PyBytes> {
