@@ -31,8 +31,9 @@ in this directory reproduce them (see `README.md`), for example
 
 | workload | v0.3.0 or Python path | current |
 | --- | ---: | ---: |
-| threshold MCFE (`mcfe/ring_lwe_threshold`), 10^4 elements, `s = 3, t = 2` (replicated sharing): client / key shares / partial decryption per server / aggregator | 213.5 / 275.9 / 528 / 1348 ms | 41.5 / 43.4 / 72.6 / 193.8 ms |
-| ... `t = 3` (Shamir): client / key shares / partial / aggregator | | 39.2 / 43.2 / 57.9 / 223.7 ms |
+| threshold MCFE (`mcfe/ring_lwe_threshold`), 10^4 elements, `s = 3, t = 2` (replicated sharing): client / key shares / partial decryption per server / aggregator | 213.5 / 275.9 / 528 / 1348 ms | 37.9 / 39.4 / 61.7 / 167.9 ms |
+| ... `t = 3` (Shamir): client / key shares / partial / aggregator | | 38.2 / 41.8 / 51.9 / 203.6 ms |
+| ... opt-in binary ciphertexts, RNS modulus and per-round label key shares (`ct_format="binary"`, `ring_modulus="rns"`, `key_part="label"`), `t = 2` / `t = 3` | | 25.9 / 10.1 / 7.5 / 26.6 ms; 25.8 / 13.0 / 7.1 / 35.8 ms |
 | decentralized MCFE (`mcfe/ring_lwe_decentralized`), 10^4 elements: client / key share per client / aggregator | | 17.7 / 3.28 / 5.45 ms |
 | dense-LWE MCFE (`mcfe/lwe`), 200 elements: client / aggregator | 1021 / 1030 ms | 93.1 / 101.4 ms |
 | DDH MCFE, per element: client / aggregator / ciphertext | 10.75 / 11.10 ms, 936 B (3072-bit group) | 0.069 / 0.139 ms, 75 B (`ddh_ristretto255`) |
@@ -41,7 +42,9 @@ in this directory reproduce them (see `README.md`), for example
 | pairing schemes, one round of setup, keys, encryption and decryption: SGP / Quad / MCFE FH-Multi-IPE | 320 / 506 / 889 ms (charm MNT224) | 30 / 48 / 47 ms (BLS12-381) |
 
 - The threshold MCFE's Python-path column was measured at the same 212-bit
-  `q` before the native 256-bit words.
+  `q` before the native 256-bit words. With the opt-ins its ciphertexts take
+  71 B per element (225 as JSON) and a server's key share per round 0.89 /
+  0.44 MB at `t = 2` / `t = 3` (6.75 / 3.38 MB), plus the weight part once.
 - The v0.3.0 pairing timings come from charm in the Docker image on the same
   Mac.
 
