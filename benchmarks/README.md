@@ -35,13 +35,12 @@ scheme families in the repository.
 - `bench_fl_compare.py`: the FL aggregation round (`encrypt_gradient` +
   `aggregate_gradients`) per scheme family, with backend, threads, ciphertext
   format and offline phase as options; appends JSON records for before /
-  after comparisons. Results and the comparison with HE are in
+  after comparisons. Headline results are in
   [`PERFORMANCE.md`](PERFORMANCE.md).
 - `bench_replicated_sharing.py`: the replicated key sharing of the LWE
   threshold layers (`replicated`, `replicated-seeded`): dealing, a server's
   piece sums and its partial decryption with a cold cache, one JSON line per
-  configuration (see [`PERFORMANCE.md`](PERFORMANCE.md), *Native replicated
-  sharing*).
+  configuration.
 - `bench_offline_potential.py`: per-element split of the DDH and DCR MCFE
   into label-dependent offline work and the online rest.
 - `fl_path_coverage.py`: not a timing benchmark. Runs the ML-adapter FL path

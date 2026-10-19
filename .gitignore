@@ -168,3 +168,5 @@ scripts/
 *.log.*
 .claude
 paper
+# Local benchmark output (kept out of the repository)
+benchmarks/results/

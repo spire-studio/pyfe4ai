@@ -109,8 +109,8 @@ compatibility).
   refuse the option.
   Security review: `docs/rns_modulus_review.md`. 10^4 elements, 3 clients,
   binary ciphertexts: client -9% (docker -14%), decryption -15% (-17%),
-  online aggregation -16% (-18%); key derivation unchanged
-  (`benchmarks/PERFORMANCE.md`). The NTT root search now
+  online aggregation -16% (-18%); key derivation unchanged.
+  The NTT root search now
   requires `root^n = -1 (mod q)`, which selects the same roots for every prime.
 
 - Opt-in exact discrete Gaussian sampler `"facct"`
@@ -200,7 +200,7 @@ compatibility).
   slower: FACCT is native while the rounded matrix path draws in Python
   below 2^40 (0.6-1.0 against 0.8-2.2 us per sample); standard setup of
   `sife/lwe` (eta 10, X = Y = 50) 5.8 -> 4.9 s, `mife/lwe` (100 slots,
-  X = Y = 50) 40.6 -> 34.4 s (`benchmarks/PERFORMANCE.md`).
+  X = Y = 50) 40.6 -> 34.4 s.
 - **MPFR Gaussians at `bits(sigma) + 320` bits** (`BIGINT_GUARD_BITS`,
   covering `stat_param + ceil(log2 N) + 8` for `stat_param` up to 256, now
   the largest accepted; up to 2^56 samples per key): the DCR keys and masks
@@ -457,8 +457,7 @@ compatibility).
     | --- | --- | --- |
     | `s = 3, t = 2` | 272 -> 43 ms | 101 -> 73 ms |
     | `s = 10, t = 5` | 26.9 -> 2.2 s | 445 -> 128 ms |
-  * **Dense-LWE layers.** Dealing is 5-13x faster, the sums 3-7x
-    (`benchmarks/PERFORMANCE.md`).
+  * **Dense-LWE layers.** Dealing is 5-13x faster, the sums 3-7x.
   * **Wipe.** `keccak::hash_to_zq` wipes its stream in 64-bit words.
 
 - **The exact FACCT sampler natively for any width below 2^448**:
@@ -500,7 +499,7 @@ compatibility).
   outputs). Dense-LWE MCFE: keys parsed once per object.
 - MCFE Ring-LWE 10^4-element FL round (standard profile, 3 clients): client
   230 -> about 3.5 ms, aggregator 368 -> about 9.5 ms in a single thread
-  (Linux, binary ciphertexts); see `benchmarks/PERFORMANCE.md`.
+  (Linux, binary ciphertexts).
 - **Threshold Ring-LWE MCFE natively under `standard`**: 256-bit words in
   `rust/core` for moduli up to 2^253 (the flooded `q` has 212 bits at
   `ring_n` 8192, beyond the 125-bit words), so its encryption and key
@@ -536,7 +535,7 @@ compatibility).
   instead of `f^r = 1`). Keys and ciphertexts are unchanged; charm groups
   keep the loops. End to end (`report`, host): MIFE / MCFE / dMCFE / tMCFE
   FH-Multi-IPE 24 / 79 / 79 / 138 -> 18 / 47 / 48 / 70 ms, SGP 35 -> 30 ms,
-  Quad 65 -> 48 ms (setup 16 -> 6 ms); see `benchmarks/PERFORMANCE.md`.
+  Quad 65 -> 48 ms (setup 16 -> 6 ms).
 - **u64 words for moduli of 62 and 63 bits** (the NTT keeps its values in
   [0, q) there instead of Harvey's lazy [0, 4q)): the `bound_x = 2`
   configuration, at 63 bits since the 3X fix, is back in 64-bit words --
