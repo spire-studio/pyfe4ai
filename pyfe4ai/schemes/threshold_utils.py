@@ -436,13 +436,18 @@ def _bytes_leaves(material):
 
 
 def _has_bytes(material) -> bool:
-    if isinstance(material, (bytes, bytearray)):
-        return True
-    if isinstance(material, dict):
-        return any(_has_bytes(v) for v in material.values())
-    if isinstance(material, (list, tuple)):
-        return any(_has_bytes(v) for v in material)
-    return False
+    """Whether *material* holds binary polynomials (its first leaf is bytes;
+    key material is of one kind throughout, and only the first path is
+    walked, not every value)."""
+    while True:
+        if isinstance(material, (bytes, bytearray)):
+            return True
+        if isinstance(material, dict) and material:
+            material = next(iter(material.values()))
+        elif isinstance(material, (list, tuple)) and material:
+            material = material[0]
+        else:
+            return False
 
 
 def _sum_binary_pieces(pieces: list, modulus: gp.mpz):
