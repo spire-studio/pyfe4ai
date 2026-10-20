@@ -23,3 +23,32 @@ it bit for bit. The backend is chosen per process, per block or with the
 
 .. automodule:: pyfe4ai.backend
    :members:
+
+The interface
+-------------
+
+The scheme and primitive layers call the operations of
+:mod:`pyfe4ai.backend.interface` on :func:`pyfe4ai.backend.ops` and
+:func:`pyfe4ai.backend.ring`, never the extension:
+:class:`~pyfe4ai.backend.python_impl.PythonBackend` implements every
+operation in Python (the reference), and
+:class:`~pyfe4ai.backend.native_impl.NativeBackend` subclasses it with the
+extension's kernels, keeping the reference for every input they do not take.
+``tests/test_backend_interface.py`` checks both: that no module outside
+:mod:`pyfe4ai.backend` reaches the extension, and that each operation gives
+the same outputs (for the same random bytes) in both implementations.
+
+.. automodule:: pyfe4ai.backend.interface
+   :members:
+
+Python implementation
+---------------------
+
+.. automodule:: pyfe4ai.backend.python_impl
+   :members:
+
+Native implementation
+---------------------
+
+.. automodule:: pyfe4ai.backend.native_impl
+   :members:

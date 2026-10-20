@@ -73,7 +73,11 @@ change in any version without notice:
   :mod:`pyfe4ai.core.one_time`, :mod:`pyfe4ai.core.constants`;
 * :mod:`pyfe4ai.schemes.common`, :mod:`pyfe4ai.schemes.threshold` and
   the helpers of the scheme modules other than their classes;
-* :mod:`pyfe4ai.primitives` and the rest of :mod:`pyfe4ai.backend`;
+* :mod:`pyfe4ai.primitives` and the rest of :mod:`pyfe4ai.backend`: the
+  interface the scheme and primitive layers call (:func:`pyfe4ai.backend.ops`,
+  :func:`pyfe4ai.backend.ring`, :mod:`pyfe4ai.backend.interface`) and its
+  two implementations (:mod:`pyfe4ai.backend.python_impl`,
+  :mod:`pyfe4ai.backend.native_impl`);
 * ``pyfe4ai._validation`` and the native extension ``pyfe4ai._rust_native``.
 
 The package is organised in layers:
@@ -87,8 +91,9 @@ The package is organised in layers:
   :mod:`pyfe4ai.schemes.common` and :mod:`pyfe4ai.schemes.threshold`;
 * :mod:`pyfe4ai.primitives` -- lattices, Gaussian sampling, hashing, groups
   and pairings;
-* :mod:`pyfe4ai.backend` -- selection of the native (Rust) or Python
-  implementation, and threads;
+* :mod:`pyfe4ai.backend` -- the operations the schemes and primitives take
+  from a backend (:mod:`pyfe4ai.backend.interface`), their native (Rust)
+  and Python implementations, the selection between them, and threads;
 * :mod:`pyfe4ai.ml` -- the ML adapter (encrypted inference, federated
   aggregation) and quantization.
 

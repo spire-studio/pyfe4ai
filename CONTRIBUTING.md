@@ -82,6 +82,38 @@ the Docker image above before changing pairing-based or quadratic schemes.
 - Say how `security_profile="standard"` sizes its parameters (or why it is
   refused) and add a test to `tests/test_security_profiles.py`.
 
+### Adding or changing a backend operation
+
+The scheme and primitive layers reach the Rust extension only through the
+backend interface (`pyfe4ai/backend/interface.py`): they call
+`pyfe4ai.backend.ops()` and `pyfe4ai.backend.ring(q, ring_n)`, and
+`tests/test_backend_interface.py` fails on any other use (an import of
+`pyfe4ai._rust_native` or of the implementation modules, `ext()`, `.cap`,
+...). To accelerate a computation:
+
+- Declare the operation in `interface.py` (on `Backend`, or on `Ring` if it
+  works in `Z_q[x] / (x^n + 1)`), with its contract: outputs, the
+  randomness of each implementation (source, bytes per sample, order), the
+  errors, and which inputs are secret.
+- Implement the reference in `python_impl.py` (`PythonBackend` /
+  `PythonRing`), moving the Python code the scheme ran, with its sources of
+  randomness (or taking them as arguments), and make the scheme call the
+  operation.
+- Implement it in `native_impl.py` (`NativeBackend` / `RingContext`):
+  check what the kernel takes (moduli, widths, value types, sizes) and
+  return `super()` (the reference) otherwise; draw random bytes with
+  `random_input` and `seed_kwargs` (the tests' hooks) and threads from
+  `pyfe4ai.backend._threads`; map the kernel's errors to the reference's;
+  wipe secret copies in the Rust code.
+- Where the scheme's Python steps differ from one native call (another
+  order of checks, element by element), keep both step sequences and let
+  the scheme ask the backend which applies (`Ring.native`,
+  `Backend.batched_layers`, ...), as the decryption and threshold kernels
+  do; document the scheme steps as the reference.
+- Add a case to `tests/test_backend_interface.py`: the same inputs (and
+  random bytes) through both implementations, the same outputs, and a spy
+  that the native kernel ran.
+
 ## Reporting Bugs
 
 When filing a bug report, please include:

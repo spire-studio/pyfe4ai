@@ -268,6 +268,40 @@ not compatible with v0.3.0, and modules moved and classes were renamed
   to keep an existing cache, move `./config/authority` there or set
   `PYFE4AI_CACHE_DIR=./config`. The cache is trusted (see the README's
   known issues): it must not be writable by others.
+- **Backend interface** (`pyfe4ai.backend`): the scheme and primitive
+  layers no longer call the native extension `pyfe4ai._rust_native`; they
+  call the operations of `pyfe4ai.backend.interface` (ring contexts, NTTs
+  and products, linear combinations and label terms, the Ring-LWE
+  encryption and decryption kernels, the Gaussian samplers, the dealing and
+  sums of the threshold key sharings, the threshold MCFE kernels,
+  ristretto255, the dense-LWE label sums, the BLS12-381 kernels) on
+  `pyfe4ai.backend.ops()` and `pyfe4ai.backend.ring(q, ring_n)`. Two
+  implementations stand behind it: `pyfe4ai.backend.python_impl` (the
+  reference) and `pyfe4ai.backend.native_impl` (the extension), which keeps
+  the reference for every input its kernels do not take; "native or
+  Python" is decided there only. No output, random draw, error or
+  serialized format changes, and the selection (`PYFE4AI_BACKEND`,
+  `set_backend`, `backend`, `active_backend`), the threads and `describe()`
+  are as before (`PYFE4AI_BACKEND=native` without the extension still runs
+  the Python implementation; `set_backend("native")` and
+  `backend("native")` raise `ImportError`). The internal names moved:
+
+  | Old | New |
+  |---|---|
+  | `pyfe4ai.backend`: `RingContext`, `ring_context`, `facct_table`, `noise_kwargs`, `sampling_ok`, `random_input`, `seed_kwargs`, `gauss_bytes`, `MAX_NATIVE_SIGMA`, `MAX_NATIVE_Q`, `MAX_NATIVE_FACCT_K`, `MAX_NATIVE_FACCT_WIDE_K`, `MAX_NATIVE_BIGINT_BITS`, `MAX_NATIVE_BIGINT_PREC`, `MAX_NATIVE_BIGINT_EXP`, `MAX_NATIVE_BIGINT_COUNT` | `pyfe4ai.backend.native_impl` (the test hooks `_random_override`, `_seed_override` and `ext()` stay in `pyfe4ai.backend`) |
+  | `pyfe4ai.backend.gaussian_bigint`, `gaussian_facct` (`None` where the Python code applied) | `pyfe4ai.backend.ops().gaussian_bigint`, `.gaussian_facct` (always the samples; `discrete_gaussian_bigint` and `discrete_gaussian_facct` call them) |
+  | `pyfe4ai.backend.ec_ext()` | the ristretto255 operations of `pyfe4ai.backend.ops()` (`r255_add`, `r255_mul`, `r255_hash`, `r255_dlog`, ...) |
+  | `pyfe4ai.primitives.lattice.ring_lwe_utils._native_ring`, `_native_ntt` | `pyfe4ai.backend.ops().ntt`, `.poly_mul` (the Python NTT: `_ntt_forward_reference`, `_ntt_inverse_reference`, `_poly_mul_reference`) |
+  | `pyfe4ai.schemes.mcfe.ring_lwe.native_hash_kwargs` | `pyfe4ai.backend.native_impl.hash_kwargs` |
+  | `pyfe4ai.schemes.threshold.sharing._zq_native` | `pyfe4ai.backend.ops().zq_kernels(q)` |
+  | `pyfe4ai.primitives.pairing.bls12_381._ext` (the extension module) | `bls12_381._kernels` (`pyfe4ai.backend.native_impl.Bls12381Kernels`, from `pyfe4ai.backend.ops().bls12_381()`) |
+  | `MIFERingLWE._native()`, `_native_key_kwargs()`, `_encrypt_rows_python()`, `_format_ciphertext()`; `MIFERingLWEKeyGenerator._native_master_key()` | `MIFERingLWE._ring()`, `_pad_hash_mode()`, the ring's `encrypt_rows` (the reference: `pyfe4ai.backend.python_impl.PythonRing._encrypt_reference`); `MIFERingLWEKeyGenerator._prepared_master_key()` |
+
+  The reference encryption draws its Gaussian rows through
+  `pyfe4ai.backend.python_impl.discrete_gaussian_matrix` (the same function
+  of `pyfe4ai.primitives.sampling`, the same source): code that replaced a
+  scheme module's `discrete_gaussian_matrix` to fix the encryption noise
+  replaces it there.
 - **Repository layout**: `Dockerfile.pairing` moved to
   `docker/Dockerfile.pairing` (`docker build -f docker/Dockerfile.pairing
   -t pyfe4ai-pairing .`); the parameter estimators moved to
