@@ -7,7 +7,10 @@
 //! materials are wiped before they are freed; the Python strings returned
 //! cannot be.
 
-use super::{index_mod, secret_byte_rows, threshold, u256_arg, wipe_byte_rows, wipe_rng, wipe_word_rows, CallDrbg, DecBuf};
+use crate::drbg::{wipe_rng, CallDrbg};
+use crate::secret::{secret_byte_rows, wipe_byte_rows, wipe_word_rows};
+use crate::threshold;
+use crate::values::{index_mod, u256_arg, DecBuf};
 use pyfe4ai_core::replicated;
 use pyfe4ai_core::rlwe::wipe_words;
 use pyfe4ai_core::{Modulus, Word, U256};

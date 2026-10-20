@@ -1,14 +1,19 @@
 //! The lattice functions of the extension for an RNS modulus q = q1 q2
 //! (pyfe4ai-core `rns`): a context, encryption keys and precomputations of
-//! their own classes, which the functions of lib.rs dispatch to. Values
-//! cross the boundary as for a prime modulus (Python ints, decimal strings,
-//! format-1 bytes, packed 128-bit words in [0, q)); only the NTT-domain keys
-//! (`ntt_mont`) hold residues (2n 64-bit words).
+//! their own classes, which the functions of `ring`, `hashing`, `mife` and
+//! `mcfe` dispatch to. Values cross the boundary as for a prime modulus
+//! (Python ints, decimal strings, format-1 bytes, packed 128-bit words in
+//! [0, q)); only the NTT-domain keys (`ntt_mont`) hold residues (2n 64-bit
+//! words).
 
-use super::{
-    bytes_to_words, chunk_list, core_err, dec_list, delta_mod, exact_err, exact_fn, int64_buffer, materials_of,
-    py_index, randomness, read_rows, read_values, secret_byte_rows, secret_materials, wipe_byte_rows, wipe_materials,
-    wipe_word_rows, words_to_bytes, CallDrbg, ChunkOut, DecBuf, FacctArg, TensorRing,
+use crate::drbg::{randomness, CallDrbg};
+use crate::mcfe::{chunk_list, core_err, ChunkOut};
+use crate::mife::TensorRing;
+use crate::sampling::{exact_err, exact_fn, with_noise, FacctArg};
+use crate::secret::{secret_byte_rows, secret_materials, wipe_byte_rows, wipe_materials, wipe_word_rows};
+use crate::values::{
+    bytes_to_words, dec_list, delta_mod, int64_buffer, materials_of, py_index, read_rows, read_values, words_to_bytes,
+    DecBuf,
 };
 use pyfe4ai_core::codec::{bin_size, bin_wb, bin_write};
 use pyfe4ai_core::facct;
