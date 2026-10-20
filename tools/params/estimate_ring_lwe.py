@@ -21,7 +21,7 @@ sigma = 3.2: 2^125.1 at n = 4096, log2 q = 109).
 
 Needs SageMath. Usage::
 
-    python tools/estimate_ring_lwe.py --estimator /path/to/lattice-estimator
+    python tools/params/estimate_ring_lwe.py --estimator /path/to/lattice-estimator
 """
 
 from __future__ import annotations

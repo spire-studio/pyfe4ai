@@ -172,7 +172,7 @@ def decode_lwe_inner_product(value: gp.mpz, p: gp.mpz, q: gp.mpz) -> int:
 #: cost model; primal uSVP and BDD, dual, dual hybrid). The error width is the
 #: ``sigma_e`` of :func:`abmpsw20_lwe_parameters`, so this bounds the LWE
 #: problem of the ABMPSW20 security proof. Regenerate with
-#: ``tools/estimate_dense_lwe.py``.
+#: ``tools/params/estimate_dense_lwe.py``.
 #:
 #: :meta hide-value:
 DENSE_LWE_128_LOG_Q = {
@@ -241,7 +241,7 @@ def resolve_lwe_n(lwe_n, modulus_for, default: int) -> int:
 #: (:func:`abdp15_reduction_sigma`). At a fixed ratio the attacks get more
 #: expensive as the width grows, so a scheme is held to the row of the largest
 #: width not above the one it is checked at. Regenerate with
-#: ``tools/estimate_wide_lwe.py``.
+#: ``tools/params/estimate_wide_lwe.py``.
 #:
 #: :meta hide-value:
 WIDE_LWE_128_LOG_RATIO = {

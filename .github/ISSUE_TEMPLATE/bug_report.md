@@ -18,7 +18,7 @@ Describe the problem briefly.
 - pyfe4ai version or commit (`python -c "import pyfe4ai; print(pyfe4ai.__version__)"`, `git rev-parse --short HEAD`):
 - OS and architecture:
 - Python version:
-- Environment setup (conda `environment.yml`, pip, Docker `Dockerfile.pairing`):
+- Environment setup (conda `environment.yml`, pip, Docker `docker/Dockerfile.pairing`):
 - `charm-crypto-framework` version and `pairing_group_param` (pairing schemes only):
 
 ## Scheme

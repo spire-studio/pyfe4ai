@@ -3,11 +3,11 @@
 The table ``RING_LWE_128_LOG_Q`` bounds ``log2 q`` (it was computed for
 ``q = 2^k``); this runs the lattice estimator on the exact composite ``q``
 of the FL configurations and on the prime it replaces, with the attacks and
-settings of ``tools/estimate_ring_lwe.py``. Two steps, since the estimator
+settings of ``tools/params/estimate_ring_lwe.py``. Two steps, since the estimator
 needs SageMath and the moduli need pyfe4ai::
 
-    python tools/estimate_rns_modulus.py derive moduli.json
-    python tools/estimate_rns_modulus.py estimate moduli.json --estimator /path/to/lattice-estimator
+    python tools/params/estimate_rns_modulus.py derive moduli.json
+    python tools/params/estimate_rns_modulus.py estimate moduli.json --estimator /path/to/lattice-estimator
 
 (the second under Sage's Python, e.g. with the ``sage-lwe`` environment's
 ``bin`` on ``PATH``). Results: docs/rns_modulus_review.md, section 9.

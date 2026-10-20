@@ -1,14 +1,19 @@
+# Conda environment for development and CI. The Python dependencies are
+# declared once, in pyproject.toml; install them, with the package, into the
+# activated environment:
+#
+#   conda env create -f environment.yml
+#   conda activate pyfe4ai
+#   pip install -e ".[test]"           # ".[test,pairing]" for charm-crypto
+#
+# Only what conda provides better than pip is listed here: the Python
+# version and gmpy2 built against conda-forge's GMP, MPFR and MPC.
+# Pairing curves other than BLS12-381 need charm-crypto-framework and its
+# system dependencies (PBC; see the README).
 name: pyfe4ai
 channels:
   - conda-forge
 dependencies:
   - python=3.10
   - pip
-  - pytest
-  - numpy
   - gmpy2
-#
-# Notes:
-# - This environment covers the core integer-group schemes and tests verified locally.
-# - Pairing-based schemes (e.g. fh_ipe_pairing.py, quadratic families)
-#   additionally require charm-crypto-framework and its system dependencies.

@@ -22,7 +22,7 @@ game G2: LWE in dimension ``n0`` modulo the scheme's ``q``).
 
 Needs SageMath. Usage::
 
-    python tools/estimate_dense_lwe.py --estimator /path/to/lattice-estimator
+    python tools/params/estimate_dense_lwe.py --estimator /path/to/lattice-estimator
 """
 
 from __future__ import annotations

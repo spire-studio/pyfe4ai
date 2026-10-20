@@ -34,7 +34,7 @@ parameters (see *Security Profiles* in the top-level README).
 ## Pairing-Based Examples (need `charm-crypto-framework`)
 
 Install it with `pip install -e ".[pairing]"` (needs GMP, OpenSSL and PBC
-first) or run the examples in the `Dockerfile.pairing` image; see *Quick Start*
+first) or run the examples in the `docker/Dockerfile.pairing` image; see *Quick Start*
 and *Pairing-Based Schemes* in the top-level README.
 
 - `mife_fh_multi_ipe_minimal.py`: `MIFE/FHMultiIPE` example

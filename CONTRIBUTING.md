@@ -25,11 +25,11 @@ pip install -e ".[test]"           # the package itself, so examples import it
 
 For the pairing-based schemes, also run `pip install -e ".[test,pairing]"`.
 `charm-crypto-framework` is built from source and needs GMP, OpenSSL and PBC
-1.0.0 first (see *Quick Start* in `README.md`); `Dockerfile.pairing` builds an
+1.0.0 first (see *Quick Start* in `README.md`); `docker/Dockerfile.pairing` builds an
 image with all of them:
 
 ```bash
-docker build -f Dockerfile.pairing -t pyfe4ai-pairing .
+docker build -f docker/Dockerfile.pairing -t pyfe4ai-pairing .
 docker run --rm pyfe4ai-pairing
 ```
 

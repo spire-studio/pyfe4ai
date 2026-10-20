@@ -29,7 +29,7 @@ its default (`ring_modulus="prime"` selectable). The SIFE key generators
 ## 1. Hardness of RLWE / mhe-RLWE with a composite `q`
 
 * Concrete security, as PyFE4AI uses it. `RING_LWE_128_LOG_Q` was produced
-  with the lattice estimator for LWE with `q = 2^k` (`tools/estimate_ring_lwe.py`),
+  with the lattice estimator for LWE with `q = 2^k` (`tools/params/estimate_ring_lwe.py`),
   i.e. already for a composite modulus: the attacks it models (primal uSVP,
   BDD, hybrids, dual) see `q` only as a number. The 128-bit bound is a bound
   on `log2 q` whatever the factorisation, which is also how the Homomorphic
@@ -181,7 +181,7 @@ only, any `q`.
 ## 9. 128-bit check of the composite moduli
 
 Lattice estimator (commit 53da598, `third_party/lattice-estimator`), the
-attacks and settings of `tools/estimate_ring_lwe.py` (MATZOV cost model,
+attacks and settings of `tools/params/estimate_ring_lwe.py` (MATZOV cost model,
 primal uSVP / BDD / BDD hybrid, dual / dual hybrid; secret and errors
 `D_{Z, sigma}`, unlimited samples, `jobs=1`), run on the exact moduli of the
 FL configurations (3 or 10 clients, `eta = 1`, `bound_y = 1`; `sigma` the

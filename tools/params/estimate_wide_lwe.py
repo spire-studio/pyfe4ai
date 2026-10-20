@@ -23,7 +23,7 @@ own ``sigma``.
 
 Needs SageMath. Usage::
 
-    python tools/estimate_wide_lwe.py --estimator /path/to/lattice-estimator
+    python tools/params/estimate_wide_lwe.py --estimator /path/to/lattice-estimator
 """
 
 from __future__ import annotations

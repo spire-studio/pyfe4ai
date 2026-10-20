@@ -904,7 +904,7 @@ def check_ring_n(ring_n) -> int:
 #: bits. A scheme is held to the row of the largest width not above the
 #: smallest width among the RLWE problems its proof relies on: wider
 #: Gaussians only make the attacks more expensive. Regenerate with
-#: ``tools/estimate_ring_lwe.py``.
+#: ``tools/params/estimate_ring_lwe.py``.
 #:
 #: :meta hide-value:
 RING_LWE_128_LOG_Q = {
