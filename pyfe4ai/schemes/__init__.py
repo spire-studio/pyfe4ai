@@ -1,3 +1,2 @@
-"""Cryptographic scheme implementations for pyfe4ai."""
-
-from pyfe4ai.schemes.common.config_types import *  # noqa: F401,F403 — re-export TypedDicts
+"""Cryptographic scheme implementations for pyfe4ai (their configurations:
+:mod:`pyfe4ai.core.config`)."""

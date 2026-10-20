@@ -7,7 +7,7 @@ Provides polynomial evaluation, Shamir secret sharing, Lagrange
 interpolation and modular centering used identically by both the
 LWE and Ring-LWE threshold variants, and the replicated sharing
 (``sharing = "replicated"``, the default for ``t < s``, see
-:func:`resolve_sharing`) of the LWE / Ring-LWE threshold layers.
+:func:`~pyfe4ai.core.config.resolve_sharing`) of the LWE / Ring-LWE threshold layers.
 
 Why the LWE layers offer a second sharing: they flood partial decryptions
 with noise that hides a small unknown (the decryption noise ``nu``) from
@@ -44,11 +44,10 @@ import itertools
 import json
 import random
 import secrets
-import warnings
 
 import gmpy2 as gp
 
-from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FESecurityWarning, FEValidationError
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.core.formats.threshold import KeyPiece
 from pyfe4ai.core.formats.threshold import KeySeed
 from pyfe4ai.core.formats.threshold import ThresholdKeyShare
@@ -197,64 +196,6 @@ def check_rns_servers(s, factors) -> None:
     """
     if factors and int(s) >= min(int(f) for f in factors):
         raise FEValidationError("an RNS modulus needs every factor above the number of servers s = {}".format(s))
-
-
-#: Ways the LWE / Ring-LWE threshold layers share a functional key (config
-#: entry ``sharing``): ``"shamir"``, ``"replicated"`` or the opt-in
-#: ``"replicated-seeded"`` (see the module docstring and :func:`resolve_sharing`).
-SHARING_SCHEMES = ("shamir", "replicated", "replicated-seeded")
-
-
-def validate_sharing(sharing) -> str:
-    """Return *sharing* if it is one of :data:`SHARING_SCHEMES`, else raise."""
-    if sharing not in SHARING_SCHEMES:
-        raise FEValidationError(
-            "sharing must be one of {}, not {!r}".format(SHARING_SCHEMES, sharing)
-        )
-    return sharing
-
-
-def resolve_sharing(config: dict, s, t, scheme: str) -> str:
-    """The key sharing of a threshold LWE / Ring-LWE layer for *config*.
-
-    ``config["sharing"]`` if given, else ``"replicated"`` for ``t < s`` and
-    ``"shamir"`` for ``t = s`` (where the two are equally sound and Shamir
-    gives the outputs of versions <= 0.3.0). An explicit ``"shamir"`` with
-    ``t < s`` -- the sharing of versions <= 0.3.0, whose partial decryptions
-    reveal the decryption noise modulo small integers (module docstring) --
-    is refused under the ``standard`` profile and draws a
-    :class:`~pyfe4ai.core.exceptions.FESecurityWarning` otherwise.
-
-    Args:
-        config: The key generator's (profile-resolved) config.
-        s: Number of servers.
-        t: Threshold (checked later by :func:`validate_threshold`).
-        scheme: Name of the scheme, for messages.
-
-    Raises:
-        FEValidationError: For a threshold that is not an integer (also a
-            ``bool``), an unknown sharing, or ``"shamir"`` with ``t < s``
-            under ``standard``.
-    """
-    if isinstance(t, bool) or not isinstance(t, int):
-        raise FEValidationError("invalid threshold t={!r}: need an integer".format(t))
-    below = isinstance(s, int) and not isinstance(s, bool) and t < s
-    sharing = config.get("sharing")
-    if sharing is None:
-        return "replicated" if below else "shamir"
-    validate_sharing(sharing)
-    if sharing == "shamir" and below:
-        message = (
-            "{}: Shamir sharing with t = {} < s = {} lets partial decryptions reveal the "
-            "decryption noise modulo small integers (versions <= 0.3.0); use "
-            "sharing='replicated' (the default for t < s)".format(scheme, t, s)
-        )
-        from pyfe4ai.core.profiles import STANDARD
-
-        if config.get("security_profile") == STANDARD:
-            raise FEValidationError(message)
-        warnings.warn(message, FESecurityWarning, stacklevel=4)
-    return sharing
 
 
 def replicated_sets(points: list[int], threshold: int) -> list[tuple[int, ...]]:

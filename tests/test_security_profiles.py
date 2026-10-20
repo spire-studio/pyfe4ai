@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from pyfe4ai import FESecurityWarning
+from pyfe4ai.core import config as configs
 from pyfe4ai.core import profiles
 from pyfe4ai.core import status as st
 from pyfe4ai.core.base import IPFEAbsKeyGenerator
@@ -59,8 +60,8 @@ def test_every_registered_scheme_has_a_kind():
 
 @pytest.mark.parametrize("config", [{"eta": 3}, {"eta": 3, "security_profile": "toy"}])
 def test_toy_returns_the_config_itself(config):
-    assert profiles.resolve(config, ("sife", "ddh")) is config
-    assert profiles.resolve(config, None) is config
+    assert configs.resolve(config, ("sife", "ddh")) is config
+    assert configs.resolve(config, None) is config
 
 
 def test_default_profile_keeps_toy_parameters():
@@ -76,7 +77,7 @@ def test_unknown_profile_is_rejected():
 
 def test_standard_does_not_modify_the_callers_config():
     config = {"eta": 3, **STANDARD}
-    profiles.resolve(config, ("sife", "ddh"))
+    configs.resolve(config, ("sife", "ddh"))
     assert config == {"eta": 3, **STANDARD}
 
 
@@ -89,7 +90,7 @@ def test_standard_does_not_modify_the_callers_config():
     ],
 )
 def test_standard_presets(scheme, expected):
-    out = profiles.resolve(dict(STANDARD), scheme)
+    out = configs.resolve(dict(STANDARD), scheme)
     assert {k: out[k] for k in expected} == expected
 
 
@@ -105,7 +106,7 @@ def test_standard_presets(scheme, expected):
 )
 def test_standard_rejects_weaker_explicit_values(scheme, weak):
     with pytest.raises(FEValidationError, match="profile needs"):
-        profiles.resolve({**STANDARD, **weak}, scheme)
+        configs.resolve({**STANDARD, **weak}, scheme)
 
 
 @pytest.mark.parametrize("scheme", [
@@ -115,15 +116,15 @@ def test_standard_rejects_weaker_explicit_values(scheme, weak):
 def test_standard_statistical_parameter_is_128(scheme):
     """stat_param kept its default 64 (and accepted any explicit value) under
     standard: a 2^-64 distance per sample, against a 128-bit claim."""
-    assert profiles.resolve(dict(STANDARD), scheme)["stat_param"] == 128
-    assert profiles.resolve({**STANDARD, "stat_param": 160}, scheme)["stat_param"] == 160
+    assert configs.resolve(dict(STANDARD), scheme)["stat_param"] == 128
+    assert configs.resolve({**STANDARD, "stat_param": 160}, scheme)["stat_param"] == 160
     for weak in (64, 1):
         with pytest.raises(FEValidationError, match="stat_param"):
-            profiles.resolve({**STANDARD, "stat_param": weak}, scheme)
+            configs.resolve({**STANDARD, "stat_param": weak}, scheme)
 
 
 def test_standard_accepts_stronger_explicit_values():
-    out = profiles.resolve({**STANDARD, "bit_length": 2048}, ("mife", "paillier"))
+    out = configs.resolve({**STANDARD, "bit_length": 2048}, ("mife", "paillier"))
     assert out["bit_length"] == 2048
 
 
@@ -137,16 +138,16 @@ def test_standard_accepts_stronger_explicit_values():
 )
 def test_standard_refuses_schemes_without_a_feasible_parameter_set(scheme):
     with pytest.raises(FEValidationError, match="no 'standard' parameter set"):
-        profiles.resolve(dict(STANDARD), scheme)
+        configs.resolve(dict(STANDARD), scheme)
 
 
 def test_standard_pairing_uses_bls12_381_and_warns():
     with pytest.warns(FESecurityWarning, match="120 to 126-bit"):
-        out = profiles.resolve(dict(STANDARD), ("quadratic", "miqfe"))
+        out = configs.resolve(dict(STANDARD), ("quadratic", "miqfe"))
     assert out["pairing_group_param"] == "BLS12-381"
     for other in ("MNT224", "BN254"):
         with pytest.raises(FEValidationError, match="BLS12-381"):
-            profiles.resolve({**STANDARD, "pairing_group_param": other}, ("sife", "fh_ipe_pairing"))
+            configs.resolve({**STANDARD, "pairing_group_param": other}, ("sife", "fh_ipe_pairing"))
 
 
 def test_unregistered_key_generator_has_no_standard_parameters():
@@ -232,7 +233,7 @@ MCFE_LWE_CONFIG = {"n": 2, "eta": 1, "bound_x": 50, "bound_y": 50}
 
 @pytest.mark.parametrize("scheme", MCFE_LWE)
 def test_standard_selects_the_lwe_dimension_of_mcfe_lwe(scheme):
-    assert profiles.resolve(dict(STANDARD), scheme)["lwe_n"] == "auto"
+    assert configs.resolve(dict(STANDARD), scheme)["lwe_n"] == "auto"
 
 
 def test_dense_lwe_table_grows_with_the_dimension():
@@ -296,7 +297,7 @@ def test_toy_dmcfe_lwe_sizes_its_modulus_by_the_key_shares():
 
 @pytest.mark.parametrize("scheme", [("sife", "lwe"), ("mife", "lwe")])
 def test_standard_selects_the_lwe_dimension_of_abdp15(scheme):
-    assert profiles.resolve(dict(STANDARD), scheme)["lwe_n"] == "auto"
+    assert configs.resolve(dict(STANDARD), scheme)["lwe_n"] == "auto"
 
 
 def _PK_SIGMA(params):
@@ -391,7 +392,7 @@ TMIFE_CONFIG = {"n": 2, "eta": 1, "s": 3, "t": 2, "bound_x": 50, "bound_y": 50}
 
 def test_standard_refuses_threshold_mife_lwe():
     with pytest.raises(FEValidationError, match="very end of the 128-bit table"):
-        profiles.resolve(dict(STANDARD), ("mife", "lwe_threshold"))
+        configs.resolve(dict(STANDARD), ("mife", "lwe_threshold"))
     with pytest.raises(FEValidationError, match="no 'standard' parameter set"):
         ThresholdMIFELWEKeyGenerator({**TMIFE_CONFIG, **STANDARD})
 

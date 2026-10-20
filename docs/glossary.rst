@@ -3,8 +3,9 @@ Glossary
 
 Parameter names and conventions used across the PyFE4AI schemes. Key
 generators take a configuration dict (``SIFEKeyGenerator(config)``); the
-accepted keys per family are listed in :mod:`pyfe4ai.schemes.common.config_types`
-and in each key generator's ``__init__``.
+accepted keys of every scheme, their defaults and the refused combinations
+are listed on :doc:`configuration` (from the config classes of
+:mod:`pyfe4ai.core.config`).
 
 Scheme taxonomy
 ---------------

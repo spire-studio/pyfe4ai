@@ -79,16 +79,14 @@ import threading
 
 import gmpy2 as gp
 
+from pyfe4ai.core.config import KL
+from pyfe4ai.core.config import PER_SAMPLE
 from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
 from pyfe4ai.primitives.lattice.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.primitives.sampling import BIGINT_GUARD_BITS
 from pyfe4ai.primitives.sampling import FACCT_PRECISION
 from pyfe4ai.primitives.sampling import FLOODING_SAMPLER
 from pyfe4ai.primitives.sampling import discrete_gaussian_bigint
-
-PER_SAMPLE = "per-sample"
-KL = "kl"
-FLOODING_ACCOUNTINGS = (PER_SAMPLE, KL)
 
 # each of the tail cut and the sampler may cost HD^2 <= 2^-(lambda + _SIDE_MARGIN)
 # per side of the hybrid, i.e. HD <= 2^(-lambda/2) / 8
@@ -99,49 +97,6 @@ _SIDE_MARGIN = 6
 _SAMPLER_MARGIN = 11
 # FACCT samples are within about 2^-(FACCT_PRECISION - 7) of D_{Z,sigma}
 _FACCT_LOG_DEVIATION = FACCT_PRECISION - 7
-
-
-def flooding_config(config: dict) -> tuple[str, int | None]:
-    """``(flooding_accounting, max_partial_decryptions)`` of a key generator config.
-
-    Raises:
-        FEValidationError: For an unknown accounting, ``"kl"`` without a
-            positive integer ``max_partial_decryptions``, or a limit given
-            with the per-sample accounting (it would not change any
-            parameter there).
-    """
-    accounting = config.get("flooding_accounting", PER_SAMPLE)
-    if accounting not in FLOODING_ACCOUNTINGS:
-        raise FEValidationError(
-            "unknown flooding_accounting {!r}; use one of {}".format(accounting, FLOODING_ACCOUNTINGS)
-        )
-    limit = config.get("max_partial_decryptions")
-    if accounting == PER_SAMPLE:
-        if limit is not None:
-            raise FEValidationError(
-                "max_partial_decryptions applies to flooding_accounting='kl' only"
-            )
-        return accounting, None
-    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
-        raise FEValidationError(
-            "flooding_accounting='kl' needs max_partial_decryptions, the number of partial "
-            "decryptions each server may produce (a positive int), got {!r}".format(limit)
-        )
-    return accounting, limit
-
-
-def check_kl_threshold(t: int, s: int) -> None:
-    """Refuse ``"kl"`` for ``t < s`` (see the module docstring).
-
-    Raises:
-        FEValidationError: Unless ``t == s``.
-    """
-    if t != s:
-        raise FEValidationError(
-            "flooding_accounting='kl' needs t = s (got t = {}, s = {}): for t < s the Lagrange "
-            "coefficients of some enrolled sets make an honest partial decryption reveal the "
-            "decryption noise modulo a small integer, whatever the flooding width".format(t, s)
-        )
 
 
 def kl_flooded_samples(servers: int, max_partial_decryptions: int, coefficients: int) -> int:

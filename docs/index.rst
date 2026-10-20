@@ -90,6 +90,7 @@ Contents
    :maxdepth: 2
 
    security
+   configuration
    glossary
    api/index
 

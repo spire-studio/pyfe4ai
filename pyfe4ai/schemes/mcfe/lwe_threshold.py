@@ -104,6 +104,8 @@ import gmpy2 as gp
 import numpy as np
 
 from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.config import check_no_flooding_options
+from pyfe4ai.core.config import resolve_sharing
 from pyfe4ai.core.exceptions import FEKeyError, FEValidationError, warn_at_caller
 from pyfe4ai.primitives.lattice.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.primitives.sampling import XofRandom
@@ -127,7 +129,6 @@ from pyfe4ai.core.versions import TMCFE_LWE_CONSTRUCTIONS
 from pyfe4ai.schemes.threshold.binding import check_pp_binding
 from pyfe4ai.schemes.threshold.binding import fusion_weight_id
 from pyfe4ai.schemes.threshold.binding import pp_binding
-from pyfe4ai.schemes.threshold.kl import PER_SAMPLE
 from pyfe4ai.schemes.threshold.roles import check_key_share_server
 from pyfe4ai.schemes.threshold.roles import check_request
 from pyfe4ai.schemes.threshold.roles import combine_consistently
@@ -139,7 +140,6 @@ from pyfe4ai.schemes.threshold.roles import noise_seed
 from pyfe4ai.schemes.threshold.roles import validate_enrolled
 from pyfe4ai.schemes.threshold.roles import validate_partial_decryptions
 from pyfe4ai.schemes.threshold.sharing import deal_replicated
-from pyfe4ai.schemes.threshold.sharing import resolve_sharing
 from pyfe4ai.schemes.threshold.sharing import share_for_enrolled
 from pyfe4ai.schemes.threshold.sharing import share_points
 from pyfe4ai.schemes.threshold.sharing import share_secret
@@ -181,16 +181,12 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
                 ``lst_sid`` and ``sharing`` (``"replicated"``, the default
                 for ``t < s``, ``"shamir"``, the default for ``t = s``, or
                 the opt-in ``"replicated-seeded"``; see
-                :func:`~pyfe4ai.schemes.threshold.sharing.resolve_sharing`).
+                :func:`~pyfe4ai.core.config.resolve_sharing`).
                 ``flooding_accounting`` must be the default: the flooding
                 here is part of an LWE argument, not a statistical step that
                 a KL bound could account for.
         """
-        if config.get("flooding_accounting", PER_SAMPLE) != PER_SAMPLE or "max_partial_decryptions" in config:
-            raise FEValidationError(
-                "mcfe/lwe_threshold has no statistical flooding: flooding_accounting and "
-                "max_partial_decryptions do not apply"
-            )
+        check_no_flooding_options(config)
         t = config.get("t", CryptoCONST.tMCFE_T)
         s = config.get("s") or len(config.get("lst_sid", [])) or CryptoCONST.tMCFE_S
         # before the parameters are derived: a refused config costs nothing

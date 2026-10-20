@@ -12,6 +12,7 @@ import time
 import numpy as np
 import pytest
 
+from pyfe4ai.core import config as configs
 from pyfe4ai.schemes.threshold import kl as fa
 from pyfe4ai.schemes.mcfe.lwe_threshold import ThresholdMCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWE
@@ -62,9 +63,9 @@ def _budgets(pp, limit=None):
 
 
 def test_default_accounting_is_per_sample():
-    assert fa.flooding_config({}) == ("per-sample", None)
-    assert fa.flooding_config({"flooding_accounting": "per-sample"}) == ("per-sample", None)
-    assert fa.flooding_config(KL) == ("kl", 1000)
+    assert configs.flooding_config({}) == ("per-sample", None)
+    assert configs.flooding_config({"flooding_accounting": "per-sample"}) == ("per-sample", None)
+    assert configs.flooding_config(KL) == ("kl", 1000)
 
 
 @pytest.mark.parametrize("config, match", [
@@ -78,7 +79,7 @@ def test_default_accounting_is_per_sample():
 ])
 def test_invalid_configs_are_refused(config, match):
     with pytest.raises(FEValidationError, match=match):
-        fa.flooding_config(config)
+        configs.flooding_config(config)
     for kg_cls, base in ((ThresholdMCFERingLWEKeyGenerator, TMCFE), (ThresholdMIFELWEKeyGenerator, TMIFE)):
         with pytest.raises(FEValidationError, match=match):
             kg_cls({**base, "t": 3, **config})

@@ -112,14 +112,15 @@ The ``security_profile`` entry of a key generator's config selects one:
 
     Values given explicitly in the config must not be weaker than the
     profile's.
+
+The profile's rules -- its minima, presets and refusals -- are applied by
+:func:`pyfe4ai.core.config.resolve` when a key generator is built; this
+module names the profiles and the kind of every scheme.
 """
 
 from __future__ import annotations
 
-import warnings
-
 from pyfe4ai.core.status import status_for_module
-from pyfe4ai.core.exceptions import FESecurityWarning, FEValidationError
 
 TOY = "toy"
 STANDARD = "standard"
@@ -160,38 +161,6 @@ STANDARD_STAT_PARAM = 128
 #: cover ``stat_param + ceil(log2 N) + 8`` up to this value.
 MAX_STAT_PARAM = 256
 
-#: Minimum value of each size parameter under ``standard``; also its default.
-#: ``stat_param`` is ignored by the schemes that do not use it.
-_STANDARD_MINIMA = {
-    "dl": {"sec_param": 3072, "modulus_length": 3072, "stat_param": STANDARD_STAT_PARAM},
-    # ristretto255 is fixed (about 126-bit security); nothing to size
-    "ec": {},
-    "dcr": {"bit_length": STANDARD_DCR_PRIME_BITS, "stat_param": STANDARD_STAT_PARAM},
-    "ring_lwe": {"sec_param": 128, "stat_param": STANDARD_STAT_PARAM},
-    "lwe": {"stat_param": STANDARD_STAT_PARAM},
-    "lwe_abdp15": {"stat_param": STANDARD_STAT_PARAM},
-}
-STANDARD_PAIRING_GROUP = "BLS12-381"
-
-#: Settings the ``standard`` profile fixes for single schemes, with the reason
-#: (``{scheme: ({key: value}, reason)}``).
-_STANDARD_FIXED: dict = {}
-
-_REFUSED = {
-    ("mife", "lwe_threshold"): "read at the width sigma / (1 + 4 X sqrt(eta)) of its security "
-    "reduction, the LWE of its flooding-enlarged q (stat_param 128) needs a dimension at the very "
-    "end of the 128-bit table (5888 to 6144, a public matrix of 6.5 to 7.8*10^9 entries) for a few "
-    "small bounds, e.g. X = Y in {1, 2, 3, 8, 10} at eta = 1, and beyond it for most others "
-    "(X = Y = 4 to 6, X = Y >= 12, most eta >= 2; about 6500 for X = Y = 50); use "
-    "mife/ddh_threshold, or mcfe/ring_lwe_threshold with labels",
-    "lwe_matrix": "at a 128-bit dimension (lwe_n = 3328 to 4352 for X = Y <= 50, eta <= 10) its "
-    "public matrix has 1 to 2*10^10 entries and every ciphertext m = 4 n log2 q = 2.9 to 4.5*10^6 "
-    "coordinates of 219 to 258 bits (80 to 145 MB); use sife/fullysec_ring_lwe for adaptive "
-    "security, or the Ring-LWE scheme of the same family",
-    ("mcfe", "paillier_decentralized"): "its key shares would be combined under a DCR modulus "
-    "of more than 15000 bits; use mcfe/ddh_decentralized",
-}
-
 
 def scheme_of(cls: type) -> tuple | None:
     """Return the registered ``(family, variant)`` that *cls* implements or extends."""
@@ -200,64 +169,3 @@ def scheme_of(cls: type) -> tuple | None:
         if found is not None:
             return found[0]
     return None
-
-
-def resolve(config: dict, scheme: tuple | None) -> dict:
-    """Return *config* completed with the presets of its ``security_profile``.
-
-    Args:
-        config: A key generator's configuration; returned unchanged (the same
-            object) for the ``toy`` profile, otherwise copied.
-        scheme: ``(family, variant)`` of the key generator, or ``None`` if it
-            is not a registered scheme.
-
-    Raises:
-        FEValidationError: For an unknown profile, a scheme the profile does
-            not support, or an explicit value weaker than the profile's.
-    """
-    profile = config.get("security_profile", TOY)
-    if profile not in PROFILES:
-        raise FEValidationError("unknown security_profile {!r}; use one of {}".format(profile, PROFILES))
-    if profile == TOY:
-        return config
-    kind = SCHEME_KIND.get(scheme)
-    if kind is None:
-        raise FEValidationError("no '{}' parameters for {}".format(profile, scheme))
-    reason = _REFUSED.get(scheme) or _REFUSED.get(kind)
-    if reason:
-        raise FEValidationError(
-            "no '{}' parameter set for {}/{}: {}".format(profile, scheme[0], scheme[1], reason)
-        )
-    out = dict(config)
-    if kind == "pairing":
-        group = out.setdefault("pairing_group_param", STANDARD_PAIRING_GROUP)
-        if group != STANDARD_PAIRING_GROUP:
-            raise FEValidationError(
-                "the '{}' profile uses pairing group {}, got {!r}".format(profile, STANDARD_PAIRING_GROUP, group)
-            )
-        warnings.warn(
-            "{}/{}: BLS12-381 gives about 120 to 126-bit security after the exTNFS "
-            "attacks, below the 128-bit target of the '{}' profile".format(*scheme, profile),
-            FESecurityWarning,
-            stacklevel=3,
-        )
-        return out
-    for key, minimum in _STANDARD_MINIMA[kind].items():
-        value = out.setdefault(key, minimum)
-        if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
-            raise FEValidationError(
-                "the '{}' profile needs {} >= {}, got {!r}".format(profile, key, minimum, value)
-            )
-    if kind == "ring_lwe":
-        out.setdefault("ring_n", "auto")
-    if kind in ("lwe", "lwe_abdp15"):
-        out.setdefault("lwe_n", "auto")
-    fixed, why = _STANDARD_FIXED.get(scheme, ({}, ""))
-    for key, value in fixed.items():
-        if out.setdefault(key, value) != value:
-            raise FEValidationError(
-                "the '{}' profile needs {}={!r} for {}/{}: {}".format(
-                    profile, key, value, scheme[0], scheme[1], why
-                )
-            )
-    return out

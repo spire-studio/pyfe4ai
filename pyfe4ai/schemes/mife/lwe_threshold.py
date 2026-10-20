@@ -142,6 +142,12 @@ import gmpy2 as gp
 import numpy as np
 
 from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.config import KL
+from pyfe4ai.core.config import PER_SAMPLE
+from pyfe4ai.core.config import check_kl_sharing
+from pyfe4ai.core.config import check_kl_threshold
+from pyfe4ai.core.config import flooding_config
+from pyfe4ai.core.config import resolve_sharing
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai.primitives.lattice.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.primitives.lattice.lwe_utils import abdp15_parameters
@@ -178,10 +184,6 @@ from pyfe4ai.schemes.threshold.binding import fusion_weight_id
 from pyfe4ai.schemes.threshold.binding import pp_binding
 from pyfe4ai.schemes.threshold.binding import tag_ciphertext
 from pyfe4ai.schemes.threshold.codec import ciphertexts_digest
-from pyfe4ai.schemes.threshold.kl import KL
-from pyfe4ai.schemes.threshold.kl import PER_SAMPLE
-from pyfe4ai.schemes.threshold.kl import check_kl_threshold
-from pyfe4ai.schemes.threshold.kl import flooding_config
 from pyfe4ai.schemes.threshold.kl import kl_flooded_samples
 from pyfe4ai.schemes.threshold.kl import kl_flooding
 from pyfe4ai.schemes.threshold.kl import kl_flooding_width
@@ -198,7 +200,6 @@ from pyfe4ai.schemes.threshold.roles import noise_seed
 from pyfe4ai.schemes.threshold.roles import validate_enrolled
 from pyfe4ai.schemes.threshold.roles import validate_partial_decryptions
 from pyfe4ai.schemes.threshold.sharing import deal_replicated
-from pyfe4ai.schemes.threshold.sharing import resolve_sharing
 from pyfe4ai.schemes.threshold.sharing import share_for_enrolled
 from pyfe4ai.schemes.threshold.sharing import share_points
 from pyfe4ai.schemes.threshold.sharing import share_secret
@@ -232,7 +233,7 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
                 flooding), ``sharing`` (``"replicated"``, the default for
                 ``t < s``, ``"shamir"``, the default for ``t = s``, or the
                 opt-in ``"replicated-seeded"``; see
-                :func:`~pyfe4ai.schemes.threshold.sharing.resolve_sharing`)
+                :func:`~pyfe4ai.core.config.resolve_sharing`)
                 and, opt-in, ``flooding_accounting = "kl"`` with
                 ``max_partial_decryptions`` (``t = s``, Shamir sharing; see
                 the module docstring).
@@ -249,11 +250,7 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
         self.flooding_accounting, self.max_partial_decryptions = flooding_config(config)
         if self.flooding_accounting == KL:
             check_kl_threshold(self.t, s)
-            if self.sharing != "shamir":
-                raise FEValidationError(
-                    "flooding_accounting='kl' accounts for the flooding of Shamir key shares (t = s), "
-                    "not sharing={!r}".format(self.sharing)
-                )
+            check_kl_sharing(self.sharing)
             self._construction = TMIFE_LWE_CONSTRUCTION_KL
         self.dict_dk = {}
         super().__init__(dict(config, s=s), **kwargs)

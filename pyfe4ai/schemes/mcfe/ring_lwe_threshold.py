@@ -181,7 +181,7 @@ work once the bound fields or the format of its public parameters (the
 caller's dict) have changed: one key part, one derivation.
 
 Key shares per round (key generator config ``key_shares``,
-:data:`KEY_SHARES`; ``"split"`` by default): a key share for ``(y, l)`` is the
+:data:`~pyfe4ai.core.config.KEY_SHARES`; ``"split"`` by default): a key share for ``(y, l)`` is the
 label-independent ``sk_y`` and the label's terms ``z''_l`` (and of its chunks).
 :meth:`ThresholdMCFERingLWEKeyGenerator.get_weight_key_share` issues the
 shares of ``sk_y`` once per weights (servers keep them:
@@ -281,6 +281,17 @@ import numpy as np
 
 from pyfe4ai import backend as native_backend
 from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.config import DEFAULT_CT_FORMAT
+from pyfe4ai.core.config import DEFAULT_FLOODING
+from pyfe4ai.core.config import DEFAULT_RING_MODULUS
+from pyfe4ai.core.config import FLOODINGS
+from pyfe4ai.core.config import KL
+from pyfe4ai.core.config import PER_SAMPLE
+from pyfe4ai.core.config import check_kl_flooding
+from pyfe4ai.core.config import check_kl_threshold
+from pyfe4ai.core.config import flooding_config
+from pyfe4ai.core.config import resolve_sharing
+from pyfe4ai.core.config import threshold_key_shares
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai.primitives.lattice.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.primitives.lattice.lwe_utils import decode_scaled
@@ -368,10 +379,6 @@ from pyfe4ai.schemes.threshold.codec import poly_kinds
 from pyfe4ai.schemes.threshold.codec import read_binary_ciphertexts
 from pyfe4ai.schemes.threshold.codec import read_json_ciphertexts
 from pyfe4ai.schemes.threshold.codec import uniform_material
-from pyfe4ai.schemes.threshold.kl import KL
-from pyfe4ai.schemes.threshold.kl import PER_SAMPLE
-from pyfe4ai.schemes.threshold.kl import check_kl_threshold
-from pyfe4ai.schemes.threshold.kl import flooding_config
 from pyfe4ai.schemes.threshold.kl import kl_flooded_samples
 from pyfe4ai.schemes.threshold.kl import kl_flooding
 from pyfe4ai.schemes.threshold.kl import kl_flooding_width
@@ -391,35 +398,16 @@ from pyfe4ai.schemes.threshold.roles import validate_enrolled
 from pyfe4ai.schemes.threshold.roles import validate_partial_decryptions
 from pyfe4ai.schemes.threshold.sharing import check_rns_servers
 from pyfe4ai.schemes.threshold.sharing import deal_replicated
-from pyfe4ai.schemes.threshold.sharing import resolve_sharing
 from pyfe4ai.schemes.threshold.sharing import share_for_enrolled
 from pyfe4ai.schemes.threshold.sharing import share_polys
 from pyfe4ai.schemes.threshold.sharing import validate_threshold
 
 logger = logging.getLogger(__name__)
 
-#: ``ct_format`` of a key generator whose config has none.
-DEFAULT_CT_FORMAT = "binary"
-#: ``ring_modulus`` of a key generator whose config has none (``"prime"``
-#: selectable; see the module docstring).
-DEFAULT_RING_MODULUS = "rns"
 #: Fewest factors of an RNS modulus of the threshold scheme. Its native
 #: kernels run on the 256-bit ring (two factors below ``2^124`` would get the
 #: two-prime context of the MIFE / MCFE prototype, which has none of them).
 MIN_RNS_FACTORS = 3
-#: How a key generator issues key shares (config ``key_shares``): ``"split"``
-#: (the default for the Shamir and replicated sharings) -- a weight part per
-#: weights (:meth:`ThresholdMCFERingLWEKeyGenerator.get_weight_key_share`) and
-#: a label part per label -- or ``"full"`` (whole key shares per label, as in
-#: versions <= 0.3.0; the only kind of the replicated-seeded sharing).
-KEY_SHARES = ("split", "full")
-
-
-#: Flooding distributions of the partial decryptions.
-FLOODINGS = ("uniform", "gaussian")
-
-#: The key generator's default flooding.
-DEFAULT_FLOODING = "uniform"
 
 
 def _native_ring(q, ring_n: int):
@@ -443,13 +431,13 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             config: As for
                 :class:`~pyfe4ai.schemes.mcfe.ring_lwe.MCFERingLWEKeyGenerator`,
                 plus ``s``, ``t``, ``lst_sid``, ``stat_param`` (``kappa`` of
-                the flooding), ``flooding`` (one of :data:`FLOODINGS`,
+                the flooding), ``flooding`` (one of :data:`~pyfe4ai.core.config.FLOODINGS`,
                 default ``"uniform"``, ``"gaussian"`` for the partial
                 decryptions of versions <= 0.3.0 and under ``"kl"``; see the
                 module docstring), ``sharing`` (``"replicated"``, the default
                 for ``t < s``, ``"shamir"``, the default for ``t = s``, or the
                 opt-in ``"replicated-seeded"``; see
-                :func:`~pyfe4ai.schemes.threshold.sharing.resolve_sharing`)
+                :func:`~pyfe4ai.core.config.resolve_sharing`)
                 and, opt-in, ``flooding_accounting = "kl"`` with
                 ``max_partial_decryptions`` (``t = s``, Shamir sharing,
                 Gaussian flooding; see the module docstring);
@@ -465,7 +453,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
                 each above ``s``, published as ``q_factors``, with the
                 parameter record ``param-rns.json``; or ``"prime"``, an NTT
                 prime (record ``param.json``, as in earlier versions);
-                ``key_shares`` (one of :data:`KEY_SHARES`): ``"split"``, the
+                ``key_shares`` (one of :data:`~pyfe4ai.core.config.KEY_SHARES`): ``"split"``, the
                 default for the Shamir and replicated sharings, or
                 ``"full"``, the default (and only choice) for
                 ``"replicated-seeded"`` -- what
@@ -487,23 +475,13 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         self.sharing = resolve_sharing(config, s, self.t, "mcfe/ring_lwe_threshold")
         if self.flooding_accounting == KL:
             check_kl_threshold(self.t, s)
-            if self.flooding != "gaussian" or self.sharing != "shamir":
-                raise FEValidationError(
-                    "flooding_accounting='kl' accounts for Gaussian flooding of Shamir key shares "
-                    "(t = s): got flooding={!r}, sharing={!r}".format(self.flooding, self.sharing)
-                )
+            check_kl_flooding(self.flooding, self.sharing)
         self._threshold_construction = tmcfe_ring_lwe_construction_id(
             self.sharing, self.flooding, self.flooding_accounting)
         self.lst_sid = config.get("lst_sid", ["sid_{}".format(i) for i in range(s)])
         self.stat_param = int(config.get("stat_param", 64))
         self.ct_format = pp_ct_format({"ct_format": config.get("ct_format", DEFAULT_CT_FORMAT)})
-        self.key_shares = config.get("key_shares", "full" if self.sharing == "replicated-seeded" else "split")
-        if self.key_shares not in KEY_SHARES:
-            raise FEValidationError(
-                "key_shares must be one of {}, not {!r}".format(", ".join(KEY_SHARES), self.key_shares))
-        if self.key_shares == "split" and self.sharing == "replicated-seeded":
-            raise FEValidationError("split key shares need the sharing 'shamir' or 'replicated'; "
-                                    "use key_shares='full' with 'replicated-seeded'")
+        self.key_shares = threshold_key_shares(config, self.sharing)
         self.dict_dk = {}
         super().__init__(dict(config, s=s, ring_modulus=config.get("ring_modulus", DEFAULT_RING_MODULUS)), **kwargs)
         if len(self.lst_sid) != self.s:

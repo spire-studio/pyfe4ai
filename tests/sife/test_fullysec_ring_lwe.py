@@ -7,7 +7,7 @@ import random
 import gmpy2 as gp
 import pytest
 
-from pyfe4ai.core import profiles
+from pyfe4ai.core import config as configs
 from pyfe4ai.schemes.sife.fullysec_ring_lwe import (
     SIFEFullySecRingLWE,
     SIFEFullySecRingLWEKeyGenerator,
@@ -175,7 +175,7 @@ def test_slot_independence_detects_a_multiple_of_a():
 
 
 def test_standard_profile_presets_ring_parameters():
-    out = profiles.resolve({"security_profile": "standard"}, ("sife", "fullysec_ring_lwe"))
+    out = configs.resolve({"security_profile": "standard"}, ("sife", "fullysec_ring_lwe"))
     assert out["ring_n"] == "auto" and out["sec_param"] == 128
 
 

@@ -11,7 +11,7 @@ from os import path
 
 import numpy as np
 
-from pyfe4ai.core import profiles
+from pyfe4ai.core import config as configs, profiles
 from pyfe4ai.core import versions
 from pyfe4ai.core.status import warn_if_known_insecure
 from pyfe4ai.core.constants import CryptoCONST
@@ -175,11 +175,11 @@ class ParameterCacheMixin:
 
 
 class _ProfiledKeyGeneratorMeta(ABCMeta):
-    """Completes the config with its security profile before ``__init__`` runs.
+    """Converts the config to its scheme's config class and completes it with
+    its security profile before ``__init__`` runs (:mod:`pyfe4ai.core.config`).
 
     The whole ``__init__`` chain of a key generator then sees the presets of
-    :mod:`pyfe4ai.core.profiles`; a config without ``security_profile`` is
-    passed on unchanged.
+    the profile; a config without ``security_profile`` keeps its values.
     """
 
     def __call__(cls, *args, **kwargs):
@@ -191,12 +191,13 @@ class _ProfiledKeyGeneratorMeta(ABCMeta):
             kwargs["config"] = cls._resolved(kwargs["config"])
         return super().__call__(*args, **kwargs)
 
-    def _resolved(cls, config) -> dict:
+    def _resolved(cls, config) -> configs.SchemeConfig:
         if not isinstance(config, Mapping):
             raise FEValidationError(
                 "a key generator config must be a mapping, got {}".format(type(config).__name__)
             )
-        return profiles.resolve(dict(config), profiles.scheme_of(cls))
+        scheme = profiles.scheme_of(cls)
+        return configs.resolve(configs.config_class(scheme)(config), scheme)
 
 
 class IPFEAbsKeyGenerator(metaclass=_ProfiledKeyGeneratorMeta):
@@ -206,9 +207,10 @@ class IPFEAbsKeyGenerator(metaclass=_ProfiledKeyGeneratorMeta):
     :meth:`get_private_keys`, and :meth:`get_decryption_keys`.
 
     Args:
-        config: Scheme configuration dict.  Expected keys vary by scheme;
-            common keys include ``sec_param``, ``eta``, ``n``, ``s``, ``lst_nid``,
-            ``security_profile`` (see :mod:`pyfe4ai.core.profiles`) and
+        config: Scheme configuration (a mapping, converted to the scheme's
+            config class of :mod:`pyfe4ai.core.config`). Expected keys vary by
+            scheme; common keys include ``sec_param``, ``eta``, ``n``, ``s``,
+            ``lst_nid``, ``security_profile`` (see :mod:`pyfe4ai.core.profiles`) and
             ``cache_dir`` (the parameter cache directory, see
             :func:`cache_dir`).
     """

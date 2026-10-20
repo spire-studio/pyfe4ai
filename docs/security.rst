@@ -41,7 +41,9 @@ BLS12-381, about 120-126-bit after the exTNFS attacks (with a
 and ``sife/fullysec_lwe``, ``mife/fullysec_lwe`` (ALS16),
 ``mife/lwe_threshold`` and ``mcfe/paillier_decentralized`` are refused.
 :mod:`pyfe4ai.core.profiles` below gives the parameters per family,
-including ``matrix_mode`` for the ABDP15 LWE schemes.
+including ``matrix_mode`` for the ABDP15 LWE schemes; :doc:`configuration`
+lists every option with its default under each profile, and the option
+combinations that are refused.
 
 For the ABDP15 LWE schemes (``sife/lwe``, ``mife/lwe``) the 128 bits are
 those of the LWE problem that their security proof reduces to. The

@@ -26,8 +26,10 @@ The status and security-profile modules are documented on
 
 The package is organised in layers:
 
-* :mod:`pyfe4ai.core` -- base classes and the parameter cache, security
-  profiles, review status, one-time precomputations, exceptions;
+* :mod:`pyfe4ai.core` -- base classes and the parameter cache, the
+  configurations (:mod:`pyfe4ai.core.config`), the serialized objects
+  (:mod:`pyfe4ai.core.formats`) and their versions (:mod:`pyfe4ai.core.versions`),
+  security profiles, review status, one-time precomputations, exceptions;
 * ``pyfe4ai.schemes`` -- the schemes by family (``sife``, ``mife``,
   ``mcfe``, ``quadratic``), with the components several families share in
   :mod:`pyfe4ai.schemes.common` and :mod:`pyfe4ai.schemes.threshold`;
@@ -47,7 +49,7 @@ The package is organised in layers:
    mcfe
    quadratic
    common
-   config_types
+   config
    primitives
    backend
    ml
