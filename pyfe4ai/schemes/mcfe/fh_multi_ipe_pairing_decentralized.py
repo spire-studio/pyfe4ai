@@ -155,13 +155,14 @@ class DecentralizedMCFEFHMultiIPE(MCFEFHMultiIPE):
         """
         if set(dct_dk_shares) != set(self.pp["lst_nid"]):
             raise FESchemeError("key shares of all clients are required")
-        shares = {nid: FHKeyEntry(sh) for nid, sh in dct_dk_shares.items()}
-        first = next(iter(shares.values()))
-        if any(sh.tag_f != first.tag_f for sh in shares.values()):
+        shares = [FHKeyEntry(sh) for sh in dct_dk_shares.values()]
+        first = shares[0]
+        if any(sh.tag_f != first.tag_f for sh in shares):
             raise FESchemeError("key shares were derived for different function tags")
-        if any(sh.get("nid", nid) != nid for nid, sh in shares.items()):
+        if any(FHKeyEntry(sh).get("nid", nid) != nid for nid, sh in dct_dk_shares.items()):
             raise FESchemeError("key share filed under the wrong client id")
         return MCFEFHFunctionalKey.new(
-            dk={nid: FHKeyEntry.new(k=sh.k, z=sh.z).to_dict() for nid, sh in shares.items()},
+            dk={nid: FHKeyEntry.new(k=FHKeyEntry(sh).k, z=FHKeyEntry(sh).z).to_dict()
+                for nid, sh in dct_dk_shares.items()},
             tag_f=first.tag_f,
         ).to_dict()

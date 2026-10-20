@@ -196,8 +196,8 @@ class MIFE(OfflineRandomMixin, IPFEAbsCrypto):
         :mod:`pyfe4ai.core.one_time`)."""
         p = gp.mpz(self.pp["p"])
         r = gp.mpz(_CSPRNG.randrange(int(gp.mpz(self.pp["q"]))))
-        h = MIFEDDHEncryptionKey(self.sk).h
-        return gp.powmod(gp.mpz(self.pp["g"]), r, p), [gp.powmod(gp.mpz(h_j), r, p) for h_j in h]
+        g_r = gp.powmod(gp.mpz(self.pp["g"]), r, p)
+        return g_r, [gp.powmod(gp.mpz(h_j), r, p) for h_j in MIFEDDHEncryptionKey(self.sk).h]
 
     def _encrypt_with(self, lst_pt: list, part: tuple) -> dict:
         """``(g^r, g^{x_j + u_j} h_j^r)`` for the randomness part *part*;

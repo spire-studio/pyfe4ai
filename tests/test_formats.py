@@ -58,7 +58,17 @@ def check(obj, cls):
     positions = [cls.FIELDS.index(key) for key in obj]
     assert positions == sorted(positions), "{} out of order: {}".format(cls.__name__, list(obj))
     if not _has_bytes(obj):
-        assert json.loads(json.dumps(obj)) == json.loads(json.dumps(cls.from_dict(obj).to_dict()))
+        back = json.loads(json.dumps(obj))
+        assert back == _as_json(obj) and list(back) == list(obj), "{} changes through JSON".format(cls.__name__)
+
+
+def _as_json(obj):
+    """*obj* as JSON gives it back: tuples are lists (nothing else may change)."""
+    if isinstance(obj, dict):
+        return {k: _as_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_as_json(v) for v in obj]
+    return obj
 
 
 def record_file(kg):
@@ -142,6 +152,16 @@ def test_equality_and_repr():
     assert repr(_Point.from_dict({"x": 1, "y": 2})) == "_Point('x', 'y')"
     with pytest.raises(TypeError):
         hash(_Point.from_dict({}))
+
+
+def test_the_check_refuses_what_json_changes():
+    check({"x": 1, "y": "2"}, _Point)
+    with pytest.raises(AssertionError, match="changes through JSON"):
+        check({"x": {1: 2}, "y": "2"}, _Point)  # int keys come back as strings
+    with pytest.raises(AssertionError, match="out of order"):
+        check({"y": 1, "x": 2}, _Point)
+    with pytest.raises(AssertionError, match="undeclared"):
+        check({"x": 1, "w": 2}, _Point)
 
 
 def test_order_must_name_every_field():
@@ -433,3 +453,34 @@ def test_threshold_binary_ciphertexts_round_trip():
     assert binary.threshold_ciphertext_header(data, q, 2, n) == k
     assert binary.decode_threshold_ciphertext(data, q, 2, n) == (k, ct0, ct1)
     assert binary.decode_values(binary.encode_values(ct1, q), q, n) == ct1
+
+
+# ---------------------------------------------------------------------------
+# malformed input: the exceptions of earlier versions, in the same order
+
+
+def test_dmcfe_fh_combines_malformed_share_sets_as_before():
+    if not pairing_available(GROUP):
+        pytest.skip("no backend for pairing group {}".format(GROUP))
+    from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import (
+        DecentralizedMCFEFHMultiIPE, DecentralizedMCFEFHMultiIPEKeyGenerator)
+
+    kg = DecentralizedMCFEFHMultiIPEKeyGenerator({"eta": 1, "n": 2, "pairing_group_param": GROUP})
+    kg.setup()
+    pp = kg.get_public_parameters()
+    with pytest.raises(IndexError):  # not a StopIteration leaking out
+        DecentralizedMCFEFHMultiIPE({"id": "c", "keys": {"pp": dict(pp, lst_nid=[])}}).combine_function_decryption_key_share({})
+    with pytest.raises(AttributeError, match="'values'"):
+        DecentralizedMCFEFHMultiIPE({"id": "c", "keys": {"pp": pp}}).combine_function_decryption_key_share(
+            list(pp["lst_nid"]))
+
+
+def test_mife_ddh_encryption_reads_the_parameters_before_the_key():
+    from pyfe4ai.schemes.mife.ddh import MIFE, MIFEKeyGenerator
+
+    kg = MIFEKeyGenerator({"sec_param": 128, "eta": 1, "n": 2})
+    kg.setup()
+    pp = {k: v for k, v in kg.get_public_parameters().items() if k != "g"}
+    sk = {k: v for k, v in kg.get_private_keys("nid_0").items() if k != "h"}
+    with pytest.raises(KeyError, match="'g'"):
+        MIFE({"id": "nid_0", "keys": {"pp": pp, "sk": sk}}).encrypt([1])
