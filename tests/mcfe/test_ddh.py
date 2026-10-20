@@ -5,8 +5,8 @@ import logging
 
 import gmpy2 as gp
 
-from pyfe4ai.schemes.mcfe.ddh import MCFE
-from pyfe4ai.schemes.mcfe.ddh import MCFEKeyGenerator
+from pyfe4ai.schemes.mcfe.ddh import MCFEDDH
+from pyfe4ai.schemes.mcfe.ddh import MCFEDDHKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.base import cache_dir
 from tests.log_config import init_logging_config
@@ -28,7 +28,7 @@ def kg_config(request):
 
 
 def test_key_generator(kg_config):
-    kg = MCFEKeyGenerator(kg_config)
+    kg = MCFEDDHKeyGenerator(kg_config)
 
     assert kg.sec_param == kg_config["sec_param"]
     assert kg.n == kg_config["n"]
@@ -69,7 +69,7 @@ def test_entire_process(kg_config):
     precision = 3
     label = "test-label"
 
-    kg = MCFEKeyGenerator(kg_config)
+    kg = MCFEDDHKeyGenerator(kg_config)
     kg.setup()
 
     # prepare input
@@ -92,7 +92,7 @@ def test_entire_process(kg_config):
             "precision": precision,
             "keys": {"pp": _pp, "sk": _sk_nid},
         }
-        crypto_nid = MCFE(_config_nid)
+        crypto_nid = MCFEDDH(_config_nid)
         ct_nid = crypto_nid.encrypt(dct_x[nid], label)
         assert isinstance(ct_nid, dict)
         assert "c" in ct_nid
@@ -104,7 +104,7 @@ def test_entire_process(kg_config):
         "precision": precision,
         "keys": {"pp": _pp},
     }
-    crypto_sid = MCFE(_config_sid)
+    crypto_sid = MCFEDDH(_config_sid)
     dk = kg.get_decryption_keys(_config_sid["id"], credentials={"fusion_weight": dct_y})
     computed_inner_prod = crypto_sid.decrypt(dct_ct, dk, dct_y, label)
     logger.info(
@@ -118,7 +118,7 @@ def test_entire_process(kg_config):
 
 def _run_full_vector_round(n, eta, precision=3, label="test-label-full"):
     lst_nid = ["nid_{}".format(i) for i in range(n)]
-    kg = MCFEKeyGenerator(
+    kg = MCFEDDHKeyGenerator(
         {"sec_param": 256, "lst_nid": lst_nid, "eta": eta, "n": n, "s": 1}
     )
     kg.setup()
@@ -132,7 +132,7 @@ def _run_full_vector_round(n, eta, precision=3, label="test-label-full"):
 
     dct_ct = {}
     for nid in lst_nid:
-        crypto_nid = MCFE(
+        crypto_nid = MCFEDDH(
             {
                 "id": nid,
                 "precision": precision,
@@ -142,7 +142,7 @@ def _run_full_vector_round(n, eta, precision=3, label="test-label-full"):
         dct_ct[nid] = crypto_nid.encrypt(dct_x[nid], label)
         assert len(dct_ct[nid]["c"]) == eta
 
-    crypto_sid = MCFE({"id": "sid_0", "precision": precision, "keys": {"pp": pp}})
+    crypto_sid = MCFEDDH({"id": "sid_0", "precision": precision, "keys": {"pp": pp}})
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
     return expected, crypto_sid.decrypt(dct_ct, dk, dct_y, label)
 
@@ -164,7 +164,7 @@ def test_client_keys_are_independent():
     """Regression (N6): every client used to receive the same ``w`` / ``g_a``,
     so one client could strip the mask of another client's ciphertext."""
     lst_nid = ["nid_0", "nid_1", "nid_2"]
-    kg = MCFEKeyGenerator(
+    kg = MCFEDDHKeyGenerator(
         {"sec_param": 256, "lst_nid": lst_nid, "eta": 2, "n": 3, "s": 1}
     )
     kg.setup()
@@ -179,7 +179,7 @@ def test_decryption_key_is_aggregated():
     with two labels, solve for the client's plaintexts. The key must be the
     single aggregated element ``sum_i y_i s_i`` of Z_q^2."""
     lst_nid = ["nid_0", "nid_1"]
-    kg = MCFEKeyGenerator(
+    kg = MCFEDDHKeyGenerator(
         {"sec_param": 256, "lst_nid": lst_nid, "eta": 1, "n": 2, "s": 1}
     )
     kg.setup()
@@ -196,18 +196,18 @@ def test_decryption_key_is_aggregated():
 def test_label_binding():
     """Ciphertexts must only decrypt under the label they were created with."""
     lst_nid = ["nid_0", "nid_1"]
-    kg = MCFEKeyGenerator(
+    kg = MCFEDDHKeyGenerator(
         {"sec_param": 256, "lst_nid": lst_nid, "eta": 1, "n": 2, "s": 1}
     )
     kg.setup()
     pp = kg.get_public_parameters()
     clients = {
-        nid: MCFE({"id": nid, "precision": 3, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
+        nid: MCFEDDH({"id": nid, "precision": 3, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
         for nid in lst_nid
     }
     dct_y = {nid: [1] for nid in lst_nid}
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
-    decryptor = MCFE({"id": "sid_0", "precision": 3, "keys": {"pp": pp}})
+    decryptor = MCFEDDH({"id": "sid_0", "precision": 3, "keys": {"pp": pp}})
 
     ct_a = {nid: clients[nid].encrypt([7], "label-a") for nid in lst_nid}
     assert decryptor.decrypt(ct_a, dk, dct_y, "label-a") == 14
@@ -218,14 +218,14 @@ def test_malformed_inputs_rejected():
     from pyfe4ai.core.exceptions import FEKeyError, FEValidationError
 
     lst_nid = ["nid_0", "nid_1"]
-    kg = MCFEKeyGenerator(
+    kg = MCFEDDHKeyGenerator(
         {"sec_param": 256, "lst_nid": lst_nid, "eta": 1, "n": 2, "s": 1}
     )
     kg.setup()
     pp = kg.get_public_parameters()
     dct_y = {nid: [-1] for nid in lst_nid}
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
-    decryptor = MCFE({"id": "sid_0", "precision": 3, "keys": {"pp": pp}})
+    decryptor = MCFEDDH({"id": "sid_0", "precision": 3, "keys": {"pp": pp}})
     ct = {nid: {"c": ["0"]} for nid in lst_nid}
     with pytest.raises(FEValidationError):
         decryptor.decrypt(ct, dk, dct_y, "label")
@@ -236,7 +236,7 @@ def test_malformed_inputs_rejected():
 def test_unknown_client_in_fusion_weight_rejected():
     from pyfe4ai.core.exceptions import FEValidationError
 
-    kg = MCFEKeyGenerator(
+    kg = MCFEDDHKeyGenerator(
         {"sec_param": 256, "lst_nid": ["nid_0", "nid_1"], "eta": 1, "n": 2, "s": 1}
     )
     kg.setup()
@@ -257,7 +257,7 @@ def test_ndarray_helpers_round_trip_and_do_not_reuse_labels():
 
     lst_nid = ["nid_0", "nid_1"]
     precision = 2
-    kg = MCFEKeyGenerator(
+    kg = MCFEDDHKeyGenerator(
         {"sec_param": 256, "lst_nid": lst_nid, "eta": 1, "n": 2, "s": 1}
     )
     kg.setup()
@@ -267,14 +267,14 @@ def test_ndarray_helpers_round_trip_and_do_not_reuse_labels():
         "nid_1": [np.array([1.0, 0.25, -0.75, 0.0]), np.array([[0.1, 0.2]])],
     }
     cts = {
-        nid: MCFE(
+        nid: MCFEDDH(
             {"id": nid, "precision": precision, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}
         ).encrypt_lst_ndarray(grads[nid], label="round-1")
         for nid in lst_nid
     }
     dct_y = {"nid_0": [1], "nid_1": [2]}
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
-    decryptor = MCFE({"id": "sid_0", "precision": precision, "keys": {"pp": pp}})
+    decryptor = MCFEDDH({"id": "sid_0", "precision": precision, "keys": {"pp": pp}})
     out = decryptor.decrypt_lst_ndarray_ct(cts, dk, dct_y, "round-1")
     for layer in range(2):
         np.testing.assert_allclose(

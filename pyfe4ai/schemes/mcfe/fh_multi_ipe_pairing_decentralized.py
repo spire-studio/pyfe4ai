@@ -39,8 +39,8 @@ import json
 import logging
 import secrets
 
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPE
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEKeyGenerator
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEPairing
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEPairingKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.formats.pairing import FHCiphertext
 from pyfe4ai.core.formats.pairing import FHClientKey
@@ -56,7 +56,7 @@ logger = logging.getLogger(__name__)
 _KEY_RNG_DOMAIN = b"pyfe4ai/fh-dmcfe/DKeyGen|"
 
 
-class DecentralizedMCFEFHMultiIPEKeyGenerator(MCFEFHMultiIPEKeyGenerator):
+class DecentralizedMCFEFHMultiIPEPairingKeyGenerator(MCFEFHMultiIPEPairingKeyGenerator):
     """Setup of the NPS24 selectively function-hiding DMCFE."""
 
     _scheme_type = CryptoCONST.TYPE_DMCFE_FH_MULTI_IPE
@@ -88,7 +88,7 @@ class DecentralizedMCFEFHMultiIPEKeyGenerator(MCFEFHMultiIPEKeyGenerator):
         )
 
 
-class DecentralizedMCFEFHMultiIPE(MCFEFHMultiIPE):
+class DecentralizedMCFEFHMultiIPEPairing(MCFEFHMultiIPEPairing):
     """Encryption, key derivation and decryption of the NPS24 FH-DMCFE."""
 
     def __init__(self, config: dict, **kwargs) -> None:

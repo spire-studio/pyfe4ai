@@ -91,7 +91,7 @@ def _random_ob_matrix(
     return b, b_star
 
 
-class MIFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
+class MIFEFHMultiIPEPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
     """Key generator for function-hiding multi-slot multi-input IPE over pairings."""
 
     _scheme_type = CryptoCONST.TYPE_MIFE_FH_MULTI_IPE
@@ -268,7 +268,7 @@ class MIFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         return MIFEFHMultiIPEFunctionalKey.new(dk=dk).to_dict()
 
 
-class MIFEFHMultiIPE(IPFEAbsCrypto):
+class MIFEFHMultiIPEPairing(IPFEAbsCrypto):
     """Crypto operations for function-hiding multi-slot multi-input IPE over pairings."""
 
     def __init__(self, config: dict, **kwargs) -> None:

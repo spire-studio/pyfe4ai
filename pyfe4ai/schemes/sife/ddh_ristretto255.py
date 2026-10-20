@@ -33,7 +33,7 @@ from pyfe4ai._validation import int_vector
 logger = logging.getLogger(__name__)
 
 
-class SIFERistretto255KeyGenerator(ECDDHKeyGeneratorBase):
+class SIFEDDHRistretto255KeyGenerator(ECDDHKeyGeneratorBase):
     """Key generator for DDH-based single-input inner-product FE over ristretto255."""
 
     def __init__(self, config: dict, **kwargs) -> None:
@@ -71,7 +71,7 @@ class SIFERistretto255KeyGenerator(ECDDHKeyGeneratorBase):
         return SIFEDDHFunctionalKey.new(z=z, y=y).to_dict()
 
 
-class SIFERistretto255(ECDDHCryptoBase):
+class SIFEDDHRistretto255(ECDDHCryptoBase):
     """Crypto operations for DDH-based single-input inner-product FE over ristretto255."""
 
     def encrypt(self, lst_pt: list) -> dict:

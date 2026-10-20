@@ -13,7 +13,7 @@ import pytest
 from pyfe4ai.schemes.mcfe.damgard_ddh import MCFEDamgardKeyGenerator
 from pyfe4ai.schemes.mcfe.paillier import MCFEPaillierKeyGenerator
 from pyfe4ai.schemes.sife.damgard_ddh import SIFEDamgardKeyGenerator
-from pyfe4ai.schemes.sife.ddh import SIFEKeyGenerator
+from pyfe4ai.schemes.sife.ddh import SIFEDDHKeyGenerator
 from pyfe4ai.schemes.sife.paillier import SIFEPaillierKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.base import cache_dir
@@ -43,37 +43,37 @@ DDH = {"sec_param": 128, "eta": 2}
 
 
 def test_corrupted_cache_is_regenerated():
-    SIFEKeyGenerator(dict(DDH))
+    SIFEDDHKeyGenerator(dict(DDH))
     with open(_param_file(CryptoCONST.TYPE_SIFE), "w") as f:
         f.write('{"sec_param": 128, "group": ')  # truncated write
-    kg = SIFEKeyGenerator(dict(DDH))
+    kg = SIFEDDHKeyGenerator(dict(DDH))
     assert int(kg.p).bit_length() == 128
     with open(_param_file(CryptoCONST.TYPE_SIFE)) as f:
         assert json.load(f)["sec_param"] == 128
 
 
 def test_cache_writes_leave_no_temporary_files():
-    SIFEKeyGenerator(dict(DDH))
+    SIFEDDHKeyGenerator(dict(DDH))
     assert os.listdir(os.path.dirname(_param_file(CryptoCONST.TYPE_SIFE))) == ["param.json"]
 
 
 def test_planted_dl_group_is_replaced():
-    SIFEKeyGenerator(dict(DDH))
+    SIFEDDHKeyGenerator(dict(DDH))
 
     def plant(record):
         record["group"] = {"p": "23", "q": "11", "r": "2"}
         record["g"] = "4"
 
     _rewrite(CryptoCONST.TYPE_SIFE, plant)
-    kg = SIFEKeyGenerator(dict(DDH))
+    kg = SIFEDDHKeyGenerator(dict(DDH))
     assert int(kg.p).bit_length() == 128 and gp.is_prime(kg.p) and gp.powmod(kg.g, kg.q, kg.p) == 1
 
 
 def test_dl_group_with_an_element_of_the_wrong_order_is_replaced():
-    kg = SIFEKeyGenerator(dict(DDH))
+    kg = SIFEDDHKeyGenerator(dict(DDH))
     p = int(kg.p)
     _rewrite(CryptoCONST.TYPE_SIFE, lambda r: r.update(g=str(p - 1)))  # order 2
-    assert SIFEKeyGenerator(dict(DDH)).g != p - 1
+    assert SIFEDDHKeyGenerator(dict(DDH)).g != p - 1
 
 
 def test_planted_damgard_groups_are_replaced():
@@ -119,7 +119,7 @@ def test_planted_group_with_a_small_subgroup_is_replaced():
     """Regression: the cofactor r came from the cache and the size of q was not
     checked, so p = r q + 1 with a 32-bit q passed (discrete logs in the order-q
     subgroup then take seconds)."""
-    SIFEKeyGenerator(dict(DDH))
+    SIFEDDHKeyGenerator(dict(DDH))
     p, q, r = _prime_with_small_subgroup(128)
     h = gp.mpz(2)
     g = gp.powmod(h, r, p)
@@ -129,7 +129,7 @@ def test_planted_group_with_a_small_subgroup_is_replaced():
         record["g"] = str(g)
 
     _rewrite(CryptoCONST.TYPE_SIFE, plant)
-    kg = SIFEKeyGenerator(dict(DDH))
+    kg = SIFEDDHKeyGenerator(dict(DDH))
     assert int(kg.q).bit_length() == 127 and int(kg.r) == 2
 
 
@@ -321,10 +321,10 @@ def test_records_go_to_the_cache_directory_not_the_working_directory(tmp_path, m
     from pyfe4ai.ml import FESchemeWrapper
 
     monkeypatch.setenv("PYFE4AI_CACHE_DIR", str(tmp_path / "env"))
-    SIFEKeyGenerator(dict(DDH))
+    SIFEDDHKeyGenerator(dict(DDH))
     record = tmp_path / "env" / "authority" / CryptoCONST.TYPE_SIFE / "param.json"
     assert record.exists()
-    SIFEKeyGenerator(dict(DDH, cache_dir=str(tmp_path / "explicit")))
+    SIFEDDHKeyGenerator(dict(DDH, cache_dir=str(tmp_path / "explicit")))
     assert (tmp_path / "explicit" / "authority" / CryptoCONST.TYPE_SIFE / "param.json").exists()
     FESchemeWrapper("mcfe", "ddh", dict(DDH, n=2, cache_dir=str(tmp_path / "wrapper")))
     assert (tmp_path / "wrapper" / "authority" / CryptoCONST.TYPE_MCFE / "param.json").exists()
@@ -333,8 +333,8 @@ def test_records_go_to_the_cache_directory_not_the_working_directory(tmp_path, m
     moved = tmp_path / "moved" / "authority" / CryptoCONST.TYPE_SIFE
     moved.mkdir(parents=True)
     (moved / "param.json").write_bytes(record.read_bytes())
-    kg = SIFEKeyGenerator(dict(DDH, cache_dir=str(tmp_path / "moved")))
+    kg = SIFEDDHKeyGenerator(dict(DDH, cache_dir=str(tmp_path / "moved")))
     assert str(kg.p) == json.loads(record.read_text())["group"]["p"]
     assert (moved / "param.json").read_bytes() == record.read_bytes()
     with pytest.raises(FEValidationError, match="cache_dir"):
-        SIFEKeyGenerator(dict(DDH, cache_dir=5))
+        SIFEDDHKeyGenerator(dict(DDH, cache_dir=5))

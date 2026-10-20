@@ -673,16 +673,16 @@ class CryptoConfig(dict):
 # SIFE
 
 
-class SIFEConfig(DDHConfig):
-    """Config of :class:`~pyfe4ai.schemes.sife.ddh.SIFEKeyGenerator`."""
+class SIFEDDHConfig(DDHConfig):
+    """Config of :class:`~pyfe4ai.schemes.sife.ddh.SIFEDDHKeyGenerator`."""
 
     SCHEME = ("sife", "ddh")
     CRYPTO = _DLOG
     eta = ETA(default=5)
 
 
-class SIFERistretto255Config(RistrettoConfig):
-    """Config of :class:`~pyfe4ai.schemes.sife.ddh_ristretto255.SIFERistretto255KeyGenerator`."""
+class SIFEDDHRistretto255Config(RistrettoConfig):
+    """Config of :class:`~pyfe4ai.schemes.sife.ddh_ristretto255.SIFEDDHRistretto255KeyGenerator`."""
 
     SCHEME = ("sife", "ddh_ristretto255")
     CRYPTO = _DLOG
@@ -744,23 +744,23 @@ class SIFEFullySecLWEConfig(LWEConfig):
     bound_y = BOUND_Y(default=20, allowed="a non-negative int")
 
 
-class SIFEDynamicConfig(DDHConfig):
-    """Config of :class:`~pyfe4ai.schemes.sife.ddh_dynamic.SIFEDynamicKeyGenerator`."""
+class SIFEDDHDynamicConfig(DDHConfig):
+    """Config of :class:`~pyfe4ai.schemes.sife.ddh_dynamic.SIFEDDHDynamicKeyGenerator`."""
 
     SCHEME = ("sife", "ddh_dynamic")
     CRYPTO = _DLOG
     eta = ETA(default=5, doc="the largest number of inputs (keys may cover a prefix)")
 
 
-class SIFEFHIPEConfig(PairingIPEConfig):
-    """Config of :class:`~pyfe4ai.schemes.sife.fh_ipe_pairing.SIFEFHIPEKeyGenerator`."""
+class SIFEFHIPEPairingConfig(PairingIPEConfig):
+    """Config of :class:`~pyfe4ai.schemes.sife.fh_ipe_pairing.SIFEFHIPEPairingKeyGenerator`."""
 
     SCHEME = ("sife", "fh_ipe_pairing")
     eta = ETA(default=5)
 
 
-class SIFEPartFHIPEConfig(SchemeConfig):
-    """Config of :class:`~pyfe4ai.schemes.sife.part_fh_ipe_pairing.SIFEPartFHIPEKeyGenerator`."""
+class SIFEPartFHIPEPairingConfig(SchemeConfig):
+    """Config of :class:`~pyfe4ai.schemes.sife.part_fh_ipe_pairing.SIFEPartFHIPEPairingKeyGenerator`."""
 
     SCHEME = ("sife", "part_fh_ipe_pairing")
     sec_param = PairingIPEConfig.sec_param
@@ -777,16 +777,16 @@ class SIFEPartFHIPEConfig(SchemeConfig):
 # MIFE
 
 
-class MIFEConfig(DDHConfig):
-    """Config of :class:`~pyfe4ai.schemes.mife.ddh.MIFEKeyGenerator`."""
+class MIFEDDHConfig(DDHConfig):
+    """Config of :class:`~pyfe4ai.schemes.mife.ddh.MIFEDDHKeyGenerator`."""
 
     SCHEME = ("mife", "ddh")
     CRYPTO = _DLOG
     eta = ETA(allowed="a positive int, or one per client (a dict keyed by ``lst_nid``)")
 
 
-class MIFERistretto255Config(RistrettoConfig):
-    """Config of :class:`~pyfe4ai.schemes.mife.ddh_ristretto255.MIFERistretto255KeyGenerator`."""
+class MIFEDDHRistretto255Config(RistrettoConfig):
+    """Config of :class:`~pyfe4ai.schemes.mife.ddh_ristretto255.MIFEDDHRistretto255KeyGenerator`."""
 
     SCHEME = ("mife", "ddh_ristretto255")
     CRYPTO = _DLOG
@@ -829,22 +829,22 @@ class MIFEFullySecLWEConfig(LWEConfig):
     bound_y = BOUND_Y(default=20, allowed="a non-negative int")
 
 
-class MIFEFHIPEConfig(PairingIPEConfig):
-    """Config of :class:`~pyfe4ai.schemes.mife.fh_ipe_pairing.MIFEFHIPEKeyGenerator`."""
+class MIFEFHIPEPairingConfig(PairingIPEConfig):
+    """Config of :class:`~pyfe4ai.schemes.mife.fh_ipe_pairing.MIFEFHIPEPairingKeyGenerator`."""
 
     SCHEME = ("mife", "fh_ipe_pairing")
 
 
-class MIFEFHMultiIPEConfig(PairingIPEConfig):
-    """Config of :class:`~pyfe4ai.schemes.mife.fh_multi_ipe_pairing.MIFEFHMultiIPEKeyGenerator`."""
+class MIFEFHMultiIPEPairingConfig(PairingIPEConfig):
+    """Config of :class:`~pyfe4ai.schemes.mife.fh_multi_ipe_pairing.MIFEFHMultiIPEPairingKeyGenerator`."""
 
     SCHEME = ("mife", "fh_multi_ipe_pairing")
     n = SchemeConfig.n(allowed="an int >= 2")
     sec_level = Option("``k`` of the k-Lin assumption", default=2, allowed="a positive int")
 
 
-class ThresholdMIFEConfig(MIFEConfig, ThresholdConfig):
-    """Config of :class:`~pyfe4ai.schemes.mife.ddh_threshold.ThresholdMIFEKeyGenerator`."""
+class ThresholdMIFEDDHConfig(MIFEDDHConfig, ThresholdConfig):
+    """Config of :class:`~pyfe4ai.schemes.mife.ddh_threshold.ThresholdMIFEDDHKeyGenerator`."""
 
     SCHEME = ("mife", "ddh_threshold")
 
@@ -863,16 +863,16 @@ class ThresholdMIFELWEConfig(MIFELWEConfig, ThresholdSharingConfig):
 # MCFE
 
 
-class MCFEConfig(DDHConfig):
-    """Config of :class:`~pyfe4ai.schemes.mcfe.ddh.MCFEKeyGenerator`."""
+class MCFEDDHConfig(DDHConfig):
+    """Config of :class:`~pyfe4ai.schemes.mcfe.ddh.MCFEDDHKeyGenerator`."""
 
     SCHEME = ("mcfe", "ddh")
     CRYPTO = _DLOG
     eta = ETA(allowed="a positive int, or one per client (a dict of ``n`` entries)")
 
 
-class MCFERistretto255Config(RistrettoConfig):
-    """Config of :class:`~pyfe4ai.schemes.mcfe.ddh_ristretto255.MCFERistretto255KeyGenerator`."""
+class MCFEDDHRistretto255Config(RistrettoConfig):
+    """Config of :class:`~pyfe4ai.schemes.mcfe.ddh_ristretto255.MCFEDDHRistretto255KeyGenerator`."""
 
     SCHEME = ("mcfe", "ddh_ristretto255")
     CRYPTO = _DLOG
@@ -915,37 +915,37 @@ class MCFEFullySecLWEConfig(MCFELWEConfig):
     SCHEME = ("mcfe", "fullysec_lwe")
 
 
-class MCFEFHMultiIPEConfig(PairingIPEConfig):
-    """Config of :class:`~pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing.MCFEFHMultiIPEKeyGenerator`."""
+class MCFEFHMultiIPEPairingConfig(PairingIPEConfig):
+    """Config of :class:`~pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing.MCFEFHMultiIPEPairingKeyGenerator`."""
 
     SCHEME = ("mcfe", "fh_multi_ipe_pairing")
     bound_x = BOUND_X(default=10)
     bound_y = BOUND_Y(default=10)
 
 
-class ThresholdMCFEFHMultiIPEConfig(MCFEFHMultiIPEConfig, ThresholdConfig):
-    """Config of :class:`~pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold.ThresholdMCFEFHMultiIPEKeyGenerator`."""
+class ThresholdMCFEFHMultiIPEPairingConfig(MCFEFHMultiIPEPairingConfig, ThresholdConfig):
+    """Config of :class:`~pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold.ThresholdMCFEFHMultiIPEPairingKeyGenerator`."""
 
     SCHEME = ("mcfe", "fh_multi_ipe_pairing_threshold")
 
 
-class DecentralizedMCFEFHMultiIPEConfig(MCFEFHMultiIPEConfig):
-    """Config of :class:`~pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized.DecentralizedMCFEFHMultiIPEKeyGenerator`."""
+class DecentralizedMCFEFHMultiIPEPairingConfig(MCFEFHMultiIPEPairingConfig):
+    """Config of :class:`~pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized.DecentralizedMCFEFHMultiIPEPairingKeyGenerator`."""
 
     SCHEME = ("mcfe", "fh_multi_ipe_pairing_decentralized")
     n = SchemeConfig.n(allowed="an int >= 2 (checked by ``setup``)")
 
 
-class ThresholdMCFEConfig(MCFEConfig, ThresholdConfig):
-    """Config of :class:`~pyfe4ai.schemes.mcfe.ddh_threshold.ThresholdMCFEKeyGenerator`."""
+class ThresholdMCFEDDHConfig(MCFEDDHConfig, ThresholdConfig):
+    """Config of :class:`~pyfe4ai.schemes.mcfe.ddh_threshold.ThresholdMCFEDDHKeyGenerator`."""
 
     SCHEME = ("mcfe", "ddh_threshold")
     eta = ETA
     s = S(default=Derived("``len(lst_sid)``, else 3"))
 
 
-class DecentralizedMCFEConfig(MCFEConfig):
-    """Config of :class:`~pyfe4ai.schemes.mcfe.ddh_decentralized.DecentralizedMCFEKeyGenerator`."""
+class DecentralizedMCFEDDHConfig(MCFEDDHConfig):
+    """Config of :class:`~pyfe4ai.schemes.mcfe.ddh_decentralized.DecentralizedMCFEDDHKeyGenerator`."""
 
     SCHEME = ("mcfe", "ddh_decentralized")
     n = SchemeConfig.n(allowed="an int >= 2")
@@ -1029,8 +1029,8 @@ class QuadraticSGPConfig(SchemeConfig):
     bound = BOUND(default=16, doc="bound on the entries of ``x``, ``y`` and the function matrix")
 
 
-class MultiInputQuadraticConfig(SchemeConfig):
-    """Config of :class:`~pyfe4ai.schemes.quadratic.miqfe.MultiInputQuadraticKeyGenerator`."""
+class QuadraticMIQFEConfig(SchemeConfig):
+    """Config of :class:`~pyfe4ai.schemes.quadratic.miqfe.QuadraticMIQFEKeyGenerator`."""
 
     SCHEME = ("quadratic", "miqfe")
     sec_param = PairingIPEConfig.sec_param

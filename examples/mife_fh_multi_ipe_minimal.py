@@ -1,5 +1,5 @@
-from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPE
-from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPEKeyGenerator
+from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPEPairing
+from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPEPairingKeyGenerator
 
 
 def main() -> None:
@@ -15,7 +15,7 @@ def main() -> None:
         "pairing_group_param": "MNT224",
     }
 
-    kg = MIFEFHMultiIPEKeyGenerator(config)
+    kg = MIFEFHMultiIPEPairingKeyGenerator(config)
     kg.setup()
 
     dct_x = {
@@ -30,12 +30,12 @@ def main() -> None:
     pp = kg.get_public_parameters()
     dct_ct = {}
     for nid in config["lst_nid"]:
-        encryptor = MIFEFHMultiIPE(
+        encryptor = MIFEFHMultiIPEPairing(
             {"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}
         )
         dct_ct[nid] = encryptor.encrypt(dct_x[nid])
 
-    decryptor = MIFEFHMultiIPE({"id": "sid_0", "keys": {"pp": pp}})
+    decryptor = MIFEFHMultiIPEPairing({"id": "sid_0", "keys": {"pp": pp}})
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
     result = decryptor.decrypt(dct_ct, dk)
 

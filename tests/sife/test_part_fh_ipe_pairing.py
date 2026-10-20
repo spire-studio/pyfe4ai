@@ -8,8 +8,8 @@ from pyfe4ai.core.base import cache_dir
 
 skip_unless_available()
 
-from pyfe4ai.schemes.sife.part_fh_ipe_pairing import SIFEPartFHIPE
-from pyfe4ai.schemes.sife.part_fh_ipe_pairing import SIFEPartFHIPEKeyGenerator
+from pyfe4ai.schemes.sife.part_fh_ipe_pairing import SIFEPartFHIPEPairing
+from pyfe4ai.schemes.sife.part_fh_ipe_pairing import SIFEPartFHIPEPairingKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST
 
 
@@ -26,7 +26,7 @@ def kg_config():
 
 
 def test_key_generator(kg_config):
-    kg = SIFEPartFHIPEKeyGenerator(kg_config)
+    kg = SIFEPartFHIPEPairingKeyGenerator(kg_config)
 
     config_folder = os.path.join(cache_dir(), "authority", CryptoCONST.TYPE_SIFE_PART_FH_IPE)
     assert os.path.exists(config_folder)
@@ -47,11 +47,11 @@ def test_key_generator(kg_config):
 
 
 def test_public_and_secret_encryption(kg_config):
-    kg = SIFEPartFHIPEKeyGenerator(kg_config)
+    kg = SIFEPartFHIPEPairingKeyGenerator(kg_config)
     kg.setup()
     pp = kg.get_public_parameters()
-    crypto = SIFEPartFHIPE({"id": "nid_default", "keys": {"pp": pp}})
-    decryptor = SIFEPartFHIPE({"id": "sid_0", "keys": {"pp": pp}})
+    crypto = SIFEPartFHIPEPairing({"id": "nid_default", "keys": {"pp": pp}})
+    decryptor = SIFEPartFHIPEPairing({"id": "sid_0", "keys": {"pp": pp}})
 
     y = [random.randint(-kg_config["bound"], kg_config["bound"]) for _ in range(kg_config["eta"])]
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y})
@@ -76,10 +76,10 @@ def test_subspace_dimension_must_be_proper(kg_config):
     from pyfe4ai.core.exceptions import FEValidationError
 
     with pytest.raises(FEValidationError):
-        SIFEPartFHIPEKeyGenerator(dict(kg_config, subspace_dim=kg_config["eta"]))
+        SIFEPartFHIPEPairingKeyGenerator(dict(kg_config, subspace_dim=kg_config["eta"]))
     default_cfg = {k: v for k, v in kg_config.items() if k != "subspace_dim"}
     # keys leak M^T y: the default keeps k = 1
-    assert SIFEPartFHIPEKeyGenerator(dict(default_cfg, eta=3)).subspace_dim == 1
+    assert SIFEPartFHIPEPairingKeyGenerator(dict(default_cfg, eta=3)).subspace_dim == 1
 
 
 def test_adapter_encryptor_gets_no_master_key():

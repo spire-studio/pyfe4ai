@@ -18,7 +18,7 @@ import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe as mcfe_rlwe
 from pyfe4ai.schemes.mcfe.damgard_ddh import MCFEDamgard, MCFEDamgardKeyGenerator
-from pyfe4ai.schemes.mcfe.ddh import MCFE, MCFEKeyGenerator
+from pyfe4ai.schemes.mcfe.ddh import MCFEDDH, MCFEDDHKeyGenerator
 from pyfe4ai.schemes.mife import paillier as mife_paillier
 from pyfe4ai.schemes.sife import paillier as sife_paillier
 from pyfe4ai import backend as native_backend
@@ -75,7 +75,7 @@ def _ring_lwe():
 CASES = {
     "sife/paillier": _sife,
     "mife/paillier": _mife_paillier,
-    "mcfe/ddh": _mcfe(MCFEKeyGenerator, MCFE, {"sec_param": 256, "bound_x": 20, "bound_y": 3}),
+    "mcfe/ddh": _mcfe(MCFEDDHKeyGenerator, MCFEDDH, {"sec_param": 256, "bound_x": 20, "bound_y": 3}),
     "mcfe/damgard": _mcfe(MCFEDamgardKeyGenerator, MCFEDamgard, {"sec_param": 256, "bound": 20}),
     "mcfe/ring_lwe": _ring_lwe,
 }

@@ -363,20 +363,20 @@ pip install -e ".[test,pairing]"
 
 <span class="cm"># run the core test suite</span>
 python -m pytest -m core -q</pre></div>
-      <div class="codebox"><pre><span class="kw">from</span> pyfe4ai <span class="kw">import</span> SIFE, SIFEKeyGenerator
+      <div class="codebox"><pre><span class="kw">from</span> pyfe4ai <span class="kw">import</span> SIFEDDH, SIFEDDHKeyGenerator
 
 x, y = [<span class="st">2</span>, <span class="st">1</span>, <span class="st">3</span>], [<span class="st">4</span>, <span class="st">5</span>, <span class="st">6</span>]
 
 <span class="cm"># sec_param = 128 is a toy modulus size: fast, NOT secure. For a</span>
 <span class="cm"># 3072-bit group pass {"security_profile": "standard", "eta": 3}.</span>
-kg = SIFEKeyGenerator({<span class="st">"sec_param"</span>: <span class="st">128</span>, <span class="st">"eta"</span>: <span class="st">3</span>})
+kg = SIFEDDHKeyGenerator({<span class="st">"sec_param"</span>: <span class="st">128</span>, <span class="st">"eta"</span>: <span class="st">3</span>})
 kg.<span class="fn">setup</span>()
 pp, sk = kg.<span class="fn">get_public_parameters</span>(), kg.<span class="fn">get_private_keys</span>()
 dk = kg.<span class="fn">get_decryption_keys</span>(<span class="st">"sid_0"</span>,
         credentials={<span class="st">"fusion_weight"</span>: y})
 
-ct = SIFE({<span class="st">"precision"</span>: <span class="st">3</span>, <span class="st">"keys"</span>: {<span class="st">"pp"</span>: pp, <span class="st">"sk"</span>: sk}}).<span class="fn">encrypt</span>(x)
-result = SIFE({<span class="st">"precision"</span>: <span class="st">3</span>, <span class="st">"keys"</span>: {<span class="st">"pp"</span>: pp}}).<span class="fn">decrypt</span>(ct, dk, y)
+ct = SIFEDDH({<span class="st">"precision"</span>: <span class="st">3</span>, <span class="st">"keys"</span>: {<span class="st">"pp"</span>: pp, <span class="st">"sk"</span>: sk}}).<span class="fn">encrypt</span>(x)
+result = SIFEDDH({<span class="st">"precision"</span>: <span class="st">3</span>, <span class="st">"keys"</span>: {<span class="st">"pp"</span>: pp}}).<span class="fn">decrypt</span>(ct, dk, y)
 <span class="fn">print</span>(result)  <span class="cm"># 31 = ⟨x, y⟩</span></pre></div>
     </div>
   </div>

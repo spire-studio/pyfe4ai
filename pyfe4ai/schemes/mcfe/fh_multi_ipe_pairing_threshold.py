@@ -35,8 +35,8 @@ import secrets
 
 import numpy as np
 
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPE
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEKeyGenerator
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEPairing
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEPairingKeyGenerator
 from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
 from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.schemes.threshold.binding import check_ciphertext_tags
@@ -73,7 +73,7 @@ def _tag_payload(nid, ct: dict) -> list:
     return [ct.get("label"), ct.get("ct")]
 
 
-class ThresholdMCFEFHMultiIPEKeyGenerator(MCFEFHMultiIPEKeyGenerator):
+class ThresholdMCFEFHMultiIPEPairingKeyGenerator(MCFEFHMultiIPEPairingKeyGenerator):
     """Key generator: FH-MCFE setup and Shamir-shared functional keys."""
 
     _scheme_type = CryptoCONST.TYPE_TMCFE_FH_MULTI_IPE
@@ -83,7 +83,7 @@ class ThresholdMCFEFHMultiIPEKeyGenerator(MCFEFHMultiIPEKeyGenerator):
 
         Args:
             config: As for
-                :class:`~pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing.MCFEFHMultiIPEKeyGenerator`,
+                :class:`~pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing.MCFEFHMultiIPEPairingKeyGenerator`,
                 plus ``s``, ``t`` and ``lst_sid``.
         """
         self.t = config.get("t", CryptoCONST.tMCFE_T)
@@ -190,7 +190,7 @@ class ThresholdMCFEFHMultiIPEKeyGenerator(MCFEFHMultiIPEKeyGenerator):
         }
 
 
-class ThresholdMCFEFHMultiIPE(MCFEFHMultiIPE):
+class ThresholdMCFEFHMultiIPEPairing(MCFEFHMultiIPEPairing):
     """Crypto operations for the threshold FH-MCFE."""
 
     def encrypt(self, lst_pt: list, label: str) -> dict:

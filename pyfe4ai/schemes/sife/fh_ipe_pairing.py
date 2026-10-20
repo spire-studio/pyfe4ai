@@ -66,7 +66,7 @@ _matrix_inverse_mod = matrix_inverse_mod
 _bounded_discrete_log_gt = bounded_discrete_log_gt
 
 
-class SIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
+class SIFEFHIPEPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
     """Key generator for function-hiding inner-product encryption over pairings."""
 
     _scheme_type = CryptoCONST.TYPE_SIFE_FH_IPE
@@ -195,7 +195,7 @@ class SIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         ).to_dict()
 
 
-class SIFEFHIPE(IPFEAbsCrypto):
+class SIFEFHIPEPairing(IPFEAbsCrypto):
     """Crypto operations for function-hiding inner-product encryption over pairings."""
 
     def __init__(self, config: dict, **kwargs) -> None:

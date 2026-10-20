@@ -20,7 +20,7 @@ from pyfe4ai.schemes.mcfe.lwe import MCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.lwe_decentralized import DecentralizedMCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.lwe_threshold import ThresholdMCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWEKeyGenerator
-from pyfe4ai.schemes.sife.ddh import SIFE, SIFEKeyGenerator
+from pyfe4ai.schemes.sife.ddh import SIFEDDH, SIFEDDHKeyGenerator
 from pyfe4ai.schemes.sife.ring_lwe import SIFERingLWE, SIFERingLWEKeyGenerator
 from pyfe4ai.primitives.groups.integer_groups import RFC3526_PRIMES, generate_group_primes
 from pyfe4ai.core.exceptions import FEValidationError
@@ -65,14 +65,14 @@ def test_toy_returns_the_config_itself(config):
 
 
 def test_default_profile_keeps_toy_parameters():
-    kg = SIFEKeyGenerator({"eta": 3})
+    kg = SIFEDDHKeyGenerator({"eta": 3})
     assert kg.security_profile == "toy"
     assert kg.sec_param == 128 and int(kg.p).bit_length() == 128
 
 
 def test_unknown_profile_is_rejected():
     with pytest.raises(FEValidationError, match="unknown security_profile"):
-        SIFEKeyGenerator({"eta": 3, "security_profile": "high"})
+        SIFEDDHKeyGenerator({"eta": 3, "security_profile": "high"})
 
 
 def test_standard_does_not_modify_the_callers_config():
@@ -170,7 +170,7 @@ def test_unregistered_key_generator_has_no_standard_parameters():
 
 
 def test_subclass_inherits_the_scheme_of_its_base():
-    class MySIFE(SIFEKeyGenerator):
+    class MySIFE(SIFEDDHKeyGenerator):
         pass
 
     assert profiles.scheme_of(MySIFE) == ("sife", "ddh")
@@ -191,13 +191,13 @@ def test_rfc3526_primes(bits, c):
 
 
 def test_standard_sife_ddh_round_trip():
-    kg = SIFEKeyGenerator({"eta": 3, **STANDARD})
+    kg = SIFEDDHKeyGenerator({"eta": 3, **STANDARD})
     kg.setup()
     assert kg.sec_param == 3072 and kg.p == RFC3526_PRIMES[3072]
     pp = kg.get_public_parameters()
-    enc = SIFE({"keys": {"pp": pp, "sk": kg.get_private_keys()}})
+    enc = SIFEDDH({"keys": {"pp": pp, "sk": kg.get_private_keys()}})
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": [3, 2, -1]})
-    assert SIFE({"keys": {"pp": pp}}).decrypt(enc.encrypt([1, 2, 3]), dk, [3, 2, -1]) == 4
+    assert SIFEDDH({"keys": {"pp": pp}}).decrypt(enc.encrypt([1, 2, 3]), dk, [3, 2, -1]) == 4
 
 
 def test_standard_sife_ring_lwe_round_trip():
@@ -470,7 +470,7 @@ def test_a_read_only_mapping_config_gets_the_profile_too():
     MappingProxyType kept a 128-bit group while recording "standard"."""
     from types import MappingProxyType
 
-    kg = SIFEKeyGenerator(MappingProxyType({"eta": 2, **STANDARD}))
+    kg = SIFEDDHKeyGenerator(MappingProxyType({"eta": 2, **STANDARD}))
     assert kg.sec_param == 3072 and int(kg.p).bit_length() == 3072
 
 
@@ -485,4 +485,4 @@ def test_a_config_that_is_not_a_mapping_is_refused():
             return self.d.get(key, default)
 
     with pytest.raises(FEValidationError, match="mapping"):
-        SIFEKeyGenerator(Config({"eta": 2, **STANDARD}))
+        SIFEDDHKeyGenerator(Config({"eta": 2, **STANDARD}))

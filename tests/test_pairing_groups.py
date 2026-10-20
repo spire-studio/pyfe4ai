@@ -99,13 +99,13 @@ def test_standard_profile_uses_bls12_381(key):
 
 
 def test_standard_profile_fh_ipe_round_trip():
-    from pyfe4ai.schemes.sife.fh_ipe_pairing import SIFEFHIPE
+    from pyfe4ai.schemes.sife.fh_ipe_pairing import SIFEFHIPEPairing
 
     _need("BLS12-381")
     with pytest.warns(Warning):
         kg = _key_generator(("sife", "fh_ipe_pairing"))(dict(_CONFIG, security_profile="standard"))
     kg.setup()
     pp = kg.get_public_parameters()
-    enc = SIFEFHIPE({"keys": {"pp": pp, "sk": kg.get_private_keys()}})
+    enc = SIFEFHIPEPairing({"keys": {"pp": pp, "sk": kg.get_private_keys()}})
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": [2, -1]})
-    assert SIFEFHIPE({"keys": {"pp": pp}}).decrypt(enc.encrypt([3, 1]), dk, [2, -1]) == 5
+    assert SIFEFHIPEPairing({"keys": {"pp": pp}}).decrypt(enc.encrypt([3, 1]), dk, [2, -1]) == 5

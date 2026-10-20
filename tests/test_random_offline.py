@@ -46,7 +46,7 @@ CASES = {
     "sife/paillier": lambda: _sife()[1],
     "mife/paillier": lambda: _mife(mife_paillier, "MIFEPaillierKeyGenerator", "MIFEPaillier",
                                    {"bit_length": 256, "bound_x": 20, "bound_y": 3})[1]["a"],
-    "mife/ddh": lambda: _mife(mife_ddh, "MIFEKeyGenerator", "MIFE", {"sec_param": 256, "bound_x": 20, "bound_y": 3})[1]["a"],
+    "mife/ddh": lambda: _mife(mife_ddh, "MIFEDDHKeyGenerator", "MIFEDDH", {"sec_param": 256, "bound_x": 20, "bound_y": 3})[1]["a"],
 }
 
 

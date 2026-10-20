@@ -79,8 +79,8 @@ def test_configs_are_dicts_with_declared_options():
     assert cfg.n == 3 and cfg.t == 3 and cfg.eta == 1 and cfg.ring_modulus == "rns" and cfg.ct_format == "binary"
     assert cfg.sharing is None and cfg.key_shares is None  # derived by the key generator
     assert configs.MCFERingLWEConfig().ring_modulus == "prime"
-    assert repr(configs.SIFEConfig(eta=3)) == "SIFEConfig({'eta': 3})"
-    assert configs.SIFEConfig.eta.default == 5 and configs.MIFEConfig.eta.default == 1
+    assert repr(configs.SIFEDDHConfig(eta=3)) == "SIFEDDHConfig({'eta': 3})"
+    assert configs.SIFEDDHConfig.eta.default == 5 and configs.MIFEDDHConfig.eta.default == 1
     with pytest.raises(TypeError):
         configs.ETA(defualt=3)
 
@@ -107,7 +107,7 @@ def test_key_generators_get_their_config_class():
 
 
 def test_resolve_keeps_the_class_and_copies_under_standard():
-    toy = configs.MCFEConfig(n=2)
+    toy = configs.MCFEDDHConfig(n=2)
     assert configs.resolve(toy, ("mcfe", "ddh")) is toy
     std = configs.MCFERingLWEConfig(n=2, security_profile="standard")
     out = configs.resolve(std, ("mcfe", "ring_lwe"))

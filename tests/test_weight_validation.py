@@ -160,14 +160,14 @@ def test_rationals_are_checked_exactly():
 
 def test_mcfe_ddh_refuses_fractional_inputs(tmp_path, monkeypatch):
     """MCFE-DDH used gp.mpz(v), which truncates 2.5 to 2."""
-    from pyfe4ai.schemes.mcfe.ddh import MCFE, MCFEKeyGenerator
+    from pyfe4ai.schemes.mcfe.ddh import MCFEDDH, MCFEDDHKeyGenerator
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
-    kg = MCFEKeyGenerator({"sec_param": 128, "eta": 1, "n": 2, "lst_nid": NIDS})
+    kg = MCFEDDHKeyGenerator({"sec_param": 128, "eta": 1, "n": 2, "lst_nid": NIDS})
     kg.setup()
     with pytest.raises(FEValidationError):
         kg.get_decryption_keys("s", credentials={"fusion_weight": {"nid_0": [1.5], "nid_1": [1]}})
-    c = MCFE({"id": "nid_0", "keys": {"pp": kg.get_public_parameters(), "sk": kg.get_private_keys("nid_0")}})
+    c = MCFEDDH({"id": "nid_0", "keys": {"pp": kg.get_public_parameters(), "sk": kg.get_private_keys("nid_0")}})
     with pytest.raises(FEValidationError):
         c.encrypt([2.5], "l")

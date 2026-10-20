@@ -34,7 +34,7 @@ AGGREGATION = {
     ("mcfe", "ring_lwe"): {"sec_param": 64, "ring_n": 16, "bound_x": 2, "bound_y": 2, **_MULTI},
 }
 
-MIFE = {
+MIFEDDH = {
     "ddh": {"sec_param": 128, **_MULTI},
     "damgard": {"sec_param": 64, "modulus_length": 64, "bound": 10, **_MULTI},
     "lwe": {"sec_param": 64, "lwe_n": 16, "bound_x": 6, "bound_y": 6, **_MULTI},
@@ -92,9 +92,9 @@ def test_aggregation_reports_the_element_that_does_not_decrypt(key, monkeypatch)
         aggregate_gradients(encrypted, wrapper, weights, label=label)
 
 
-@pytest.mark.parametrize("variant", sorted(MIFE))
+@pytest.mark.parametrize("variant", sorted(MIFEDDH))
 def test_mife_ndarray_reports_the_element_that_does_not_decrypt(variant, monkeypatch):
-    wrapper = FESchemeWrapper("mife", variant, MIFE[variant], precision=0)
+    wrapper = FESchemeWrapper("mife", variant, MIFEDDH[variant], precision=0)
     dct_ct = {nid: wrapper._get_encryptor(nid).encrypt_lst_ndarray([GRADIENT]) for nid in NIDS}
     weights = {nid: [1] for nid in NIDS}
     dk = wrapper.kg.get_decryption_keys("sid_0", credentials={"fusion_weight": weights})
@@ -134,7 +134,7 @@ def test_pairing_ndarray_helpers_raise_instead_of_nan(monkeypatch):
     from tests.pairing_group import GROUP, skip_unless_available
 
     skip_unless_available()
-    from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPE
+    from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPEPairing
     from pyfe4ai.schemes.quadratic.quad import QuadraticQuad, QuadraticQuadKeyGenerator
     from pyfe4ai.schemes.quadratic.sgp import QuadraticSGP, QuadraticSGPKeyGenerator
 
@@ -146,7 +146,7 @@ def test_pairing_ndarray_helpers_raise_instead_of_nan(monkeypatch):
     dk = wrapper.kg.get_decryption_keys("sid_0", credentials={"fusion_weight": weights})
     decryptor = wrapper._get_decryptor("sid_0")
     np.testing.assert_allclose(decryptor.decrypt_lst_ndarray_ct(dct_ct, dk=dk)[0], 2 * GRADIENT)
-    _fail_second_element(monkeypatch, MIFEFHMultiIPE)
+    _fail_second_element(monkeypatch, MIFEFHMultiIPEPairing)
     with pytest.raises(FESchemeError, match=FAILED):
         decryptor.decrypt_lst_ndarray_ct(dct_ct, dk=dk)
 

@@ -7,8 +7,8 @@ from contextlib import contextmanager
 
 import gmpy2 as gp
 
-from pyfe4ai.schemes.sife.ddh_dynamic import SIFEDynamic
-from pyfe4ai.schemes.sife.ddh_dynamic import SIFEDynamicKeyGenerator
+from pyfe4ai.schemes.sife.ddh_dynamic import SIFEDDHDynamic
+from pyfe4ai.schemes.sife.ddh_dynamic import SIFEDDHDynamicKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.base import cache_dir
 
@@ -37,7 +37,7 @@ def kg_config():
 
 
 def test_key_generator(kg_config):
-    kg = SIFEDynamicKeyGenerator(kg_config)
+    kg = SIFEDDHDynamicKeyGenerator(kg_config)
 
     assert kg.sec_param == kg_config["sec_param"]
     assert kg.eta == kg_config["eta"]
@@ -62,7 +62,7 @@ def test_key_generator(kg_config):
 
 
 def test_entire_process(kg_config):
-    kg = SIFEDynamicKeyGenerator(kg_config)
+    kg = SIFEDDHDynamicKeyGenerator(kg_config)
     kg.setup()
     precision = 3
 
@@ -84,7 +84,7 @@ def test_entire_process(kg_config):
         "precision": precision,
         "keys": {"pp": pp, "sk": sk_nid},
     }
-    crypto_nid = SIFEDynamic(config_nid)
+    crypto_nid = SIFEDDHDynamic(config_nid)
     ct_nid = crypto_nid.encrypt(x)
     assert isinstance(ct_nid, dict)
     assert "ct0" in ct_nid
@@ -96,7 +96,7 @@ def test_entire_process(kg_config):
         "precision": precision,
         "keys": {"pp": pp},
     }
-    crypto_sid = SIFEDynamic(config_sid)
+    crypto_sid = SIFEDDHDynamic(config_sid)
     dk = kg.get_decryption_keys(config_sid["id"], credentials={"fusion_weight": y})
     computed_inner_prod = crypto_sid.decrypt(ct_nid, dk, y)
     logger.info("<{},{}> expected inner-prod = {}".format(x, y, expected_inner_prod))

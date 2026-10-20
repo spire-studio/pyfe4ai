@@ -80,12 +80,12 @@ def test_ristretto255_hex_parsing_is_the_same_on_both_backends():
     from pyfe4ai.schemes.mcfe import ddh_ristretto255 as mcfe_ec
 
     nids = ["a", "b"]
-    kg = mcfe_ec.MCFERistretto255KeyGenerator({"n": 2, "lst_nid": nids})
+    kg = mcfe_ec.MCFEDDHRistretto255KeyGenerator({"n": 2, "lst_nid": nids})
     kg.setup()
     pp = kg.get_public_parameters()
-    cl = {n: mcfe_ec.MCFERistretto255({"precision": 0, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}})
+    cl = {n: mcfe_ec.MCFEDDHRistretto255({"precision": 0, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}})
           for n in nids}
-    agg = mcfe_ec.MCFERistretto255({"precision": 0, "dlog_bound": 1000, "keys": {"pp": pp}})
+    agg = mcfe_ec.MCFEDDHRistretto255({"precision": 0, "dlog_bound": 1000, "keys": {"pp": pp}})
     enc = {n: cl[n].encrypt_lst_ndarray([np.array([3, 40])], label="r") for n in nids}
     dk = kg.get_decryption_keys("s", credentials={"fusion_weight": {n: [1] for n in nids}})
     w = {n: [1] for n in nids}

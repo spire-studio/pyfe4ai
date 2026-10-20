@@ -95,7 +95,7 @@ def _fusion_weight_id(fusion_weight: dict) -> str:
     )
 
 
-class ThresholdMCFEKeyGenerator(DDHKeyGeneratorBase):
+class ThresholdMCFEDDHKeyGenerator(DDHKeyGeneratorBase):
     """Key generator for threshold DDH-based multi-client inner-product FE."""
 
     _scheme_type = CryptoCONST.TYPE_TMCFE
@@ -245,7 +245,7 @@ class ThresholdMCFEKeyGenerator(DDHKeyGeneratorBase):
         return {sid: [shares[0][sid_v[sid]], shares[1][sid_v[sid]]] for sid in self.lst_sid}
 
 
-class ThresholdMCFE(IPFEAbsCrypto):
+class ThresholdMCFEDDH(IPFEAbsCrypto):
     """Crypto operations for threshold DDH-based multi-client inner-product FE."""
 
     def __init__(self, config: dict) -> None:

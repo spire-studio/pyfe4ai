@@ -153,7 +153,7 @@ class FHContext:
             return None
 
 
-class MCFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator):
+class MCFEFHMultiIPEPairingKeyGenerator(IPFEAbsKeyGenerator):
     """Key generator for the AGT21b function-hiding MCFE."""
 
     def __init__(self, config: dict, **kwargs) -> None:
@@ -244,7 +244,7 @@ class MCFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator):
         return MCFEFHFunctionalKey.new(dk=dk, key_id=secrets.token_hex(16)).to_dict()
 
 
-class MCFEFHMultiIPE(IPFEAbsCrypto):
+class MCFEFHMultiIPEPairing(IPFEAbsCrypto):
     """Crypto operations for the AGT21b function-hiding MCFE."""
 
     def __init__(self, config: dict, **kwargs) -> None:

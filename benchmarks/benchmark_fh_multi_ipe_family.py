@@ -11,14 +11,14 @@ from _common import prepare_benchmark
 from _common import profile_value
 from _common import size_bytes
 from _common import stats
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPE
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEKeyGenerator
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import DecentralizedMCFEFHMultiIPE
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import DecentralizedMCFEFHMultiIPEKeyGenerator
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold import ThresholdMCFEFHMultiIPE
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold import ThresholdMCFEFHMultiIPEKeyGenerator
-from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPE
-from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPEKeyGenerator
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEPairing
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEPairingKeyGenerator
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import DecentralizedMCFEFHMultiIPEPairing
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import DecentralizedMCFEFHMultiIPEPairingKeyGenerator
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold import ThresholdMCFEFHMultiIPEPairing
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold import ThresholdMCFEFHMultiIPEPairingKeyGenerator
+from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPEPairing
+from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPEPairingKeyGenerator
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP
 
 ROUNDS = 3
@@ -34,7 +34,7 @@ def _bench_mife(cfg: dict, x: dict[str, list[int]], y: dict[str, list[int]], rou
     clients = len(x)
 
     for _ in range(rounds):
-        kg = MIFEFHMultiIPEKeyGenerator(cfg)
+        kg = MIFEFHMultiIPEPairingKeyGenerator(cfg)
         t0 = time.perf_counter()
         kg.setup()
         setup_times.append(time.perf_counter() - t0)
@@ -44,9 +44,9 @@ def _bench_mife(cfg: dict, x: dict[str, list[int]], y: dict[str, list[int]], rou
 
         t0 = time.perf_counter()
         for nid in x:
-            enc = MIFEFHMultiIPE({"id": nid, "keys": {"pp": pp, "sk": sk_by_nid[nid]}})
+            enc = MIFEFHMultiIPEPairing({"id": nid, "keys": {"pp": pp, "sk": sk_by_nid[nid]}})
             cts[nid] = enc.encrypt(x[nid])
-        dec = MIFEFHMultiIPE({"id": "sid_0", "keys": {"pp": pp}})
+        dec = MIFEFHMultiIPEPairing({"id": "sid_0", "keys": {"pp": pp}})
         dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y})
         result = dec.decrypt(cts, dk)
         end_to_end_times.append(time.perf_counter() - t0)
@@ -83,7 +83,7 @@ def _bench_mcfe(cfg: dict, x: dict[str, list[int]], y: dict[str, list[int]], lab
     clients = len(x)
 
     for _ in range(rounds):
-        kg = MCFEFHMultiIPEKeyGenerator(cfg)
+        kg = MCFEFHMultiIPEPairingKeyGenerator(cfg)
         t0 = time.perf_counter()
         kg.setup()
         setup_times.append(time.perf_counter() - t0)
@@ -93,9 +93,9 @@ def _bench_mcfe(cfg: dict, x: dict[str, list[int]], y: dict[str, list[int]], lab
 
         t0 = time.perf_counter()
         for nid in x:
-            enc = MCFEFHMultiIPE({"id": nid, "keys": {"pp": pp, "sk": sk_by_nid[nid]}})
+            enc = MCFEFHMultiIPEPairing({"id": nid, "keys": {"pp": pp, "sk": sk_by_nid[nid]}})
             cts[nid] = enc.encrypt(x[nid], label)
-        dec = MCFEFHMultiIPE({"id": "sid_0", "keys": {"pp": pp}})
+        dec = MCFEFHMultiIPEPairing({"id": "sid_0", "keys": {"pp": pp}})
         dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y})
         result = dec.decrypt(cts, dk, y, label)
         end_to_end_times.append(time.perf_counter() - t0)
@@ -133,7 +133,7 @@ def _bench_dmcfe(cfg: dict, x: dict[str, list[int]], y: dict[str, list[int]], la
     clients = len(x)
 
     for _ in range(rounds):
-        kg = DecentralizedMCFEFHMultiIPEKeyGenerator(cfg)
+        kg = DecentralizedMCFEFHMultiIPEPairingKeyGenerator(cfg)
         t0 = time.perf_counter()
         kg.setup()
         setup_times.append(time.perf_counter() - t0)
@@ -144,10 +144,10 @@ def _bench_dmcfe(cfg: dict, x: dict[str, list[int]], y: dict[str, list[int]], la
 
         t0 = time.perf_counter()
         for nid in x:
-            actor = DecentralizedMCFEFHMultiIPE({"id": nid, "keys": {"pp": pp, "sk": sk_by_nid[nid]}})
+            actor = DecentralizedMCFEFHMultiIPEPairing({"id": nid, "keys": {"pp": pp, "sk": sk_by_nid[nid]}})
             cts[nid] = actor.encrypt(x[nid], label)
             shares[nid] = actor.derive_function_decryption_key_share(y[nid], "bench")
-        dec = DecentralizedMCFEFHMultiIPE({"id": "sid_0", "keys": {"pp": pp}})
+        dec = DecentralizedMCFEFHMultiIPEPairing({"id": "sid_0", "keys": {"pp": pp}})
         dk = dec.combine_function_decryption_key_share(shares)
         result = dec.decrypt(cts, dk, y, label)
         end_to_end_times.append(time.perf_counter() - t0)
@@ -188,7 +188,7 @@ def _bench_tmcfe(cfg: dict, x: dict[str, list[int]], y: dict[str, list[int]], la
     threshold = cfg["t"]
 
     for _ in range(rounds):
-        kg = ThresholdMCFEFHMultiIPEKeyGenerator(cfg)
+        kg = ThresholdMCFEFHMultiIPEPairingKeyGenerator(cfg)
         t0 = time.perf_counter()
         kg.setup()
         setup_times.append(time.perf_counter() - t0)
@@ -199,7 +199,7 @@ def _bench_tmcfe(cfg: dict, x: dict[str, list[int]], y: dict[str, list[int]], la
 
         t0 = time.perf_counter()
         for nid in x:
-            enc = ThresholdMCFEFHMultiIPE({"id": nid, "keys": {"pp": pp, "sk": sk_by_nid[nid]}})
+            enc = ThresholdMCFEFHMultiIPEPairing({"id": nid, "keys": {"pp": pp, "sk": sk_by_nid[nid]}})
             cts[nid] = enc.encrypt(x[nid], label)
             encs[nid] = enc
         credentials = {"fusion_weight": y, "label": label}
@@ -207,7 +207,7 @@ def _bench_tmcfe(cfg: dict, x: dict[str, list[int]], y: dict[str, list[int]], la
         partials = {}
         for sid in enrolled:
             dk_sid = kg.get_decryption_keys(sid, credentials=credentials)
-            dec = ThresholdMCFEFHMultiIPE({"id": sid, "keys": {"pp": pp, "dk": dk_sid}})
+            dec = ThresholdMCFEFHMultiIPEPairing({"id": sid, "keys": {"pp": pp, "dk": dk_sid}})
             partials[sid] = dec.share_decrypt(cts, credentials, dk_sid, enrolled, label)
         result = encs["nid_0"].combine_decrypt(partials)
         end_to_end_times.append(time.perf_counter() - t0)

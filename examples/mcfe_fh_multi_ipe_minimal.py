@@ -1,5 +1,5 @@
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPE
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEKeyGenerator
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEPairing
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEPairingKeyGenerator
 
 
 def main() -> None:
@@ -15,7 +15,7 @@ def main() -> None:
     }
     label = "demo-label"
 
-    kg = MCFEFHMultiIPEKeyGenerator(config)
+    kg = MCFEFHMultiIPEPairingKeyGenerator(config)
     kg.setup()
 
     dct_x = {"nid_0": [1, -2], "nid_1": [0, 3]}
@@ -24,12 +24,12 @@ def main() -> None:
     pp = kg.get_public_parameters()
     dct_ct = {}
     for nid in config["lst_nid"]:
-        encryptor = MCFEFHMultiIPE(
+        encryptor = MCFEFHMultiIPEPairing(
             {"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}
         )
         dct_ct[nid] = encryptor.encrypt(dct_x[nid], label)
 
-    decryptor = MCFEFHMultiIPE({"id": "sid_0", "keys": {"pp": pp}})
+    decryptor = MCFEFHMultiIPEPairing({"id": "sid_0", "keys": {"pp": pp}})
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
     result = decryptor.decrypt(dct_ct, dk, dct_y, label)
 

@@ -46,7 +46,7 @@ from pyfe4ai._validation import int_vector, scale_to_int
 logger = logging.getLogger(__name__)
 
 
-class MIFERistretto255KeyGenerator(ECDDHKeyGeneratorBase):
+class MIFEDDHRistretto255KeyGenerator(ECDDHKeyGeneratorBase):
     """Key generator for DDH-based multi-input inner-product FE over ristretto255."""
 
     def __init__(self, config: dict, **kwargs) -> None:
@@ -111,7 +111,7 @@ class MIFERistretto255KeyGenerator(ECDDHKeyGeneratorBase):
         return MIFEDDHFunctionalKey.new(d=d, z=eg.scalar_str(z), weights_id=fusion_weight_id(fusion_weight)).to_dict()
 
 
-class MIFERistretto255(ECDDHCryptoBase):
+class MIFEDDHRistretto255(ECDDHCryptoBase):
     """Crypto operations for DDH-based multi-input inner-product FE over ristretto255."""
 
     def encrypt(self, lst_pt: list) -> dict:

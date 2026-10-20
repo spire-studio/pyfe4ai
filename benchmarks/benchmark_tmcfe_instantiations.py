@@ -11,8 +11,8 @@ from _common import prepare_benchmark
 from _common import profile_value
 from _common import size_bytes
 from _common import stats
-from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFE
-from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFEKeyGenerator
+from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFEDDH
+from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFEDDHKeyGenerator
 from pyfe4ai.schemes.mcfe.lwe_threshold import ThresholdMCFELWE
 from pyfe4ai.schemes.mcfe.lwe_threshold import ThresholdMCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWE
@@ -129,8 +129,8 @@ def main() -> None:
     cases = [
         {
             "name": "tMCFE/DDH",
-            "kg_cls": ThresholdMCFEKeyGenerator,
-            "crypto_cls": ThresholdMCFE,
+            "kg_cls": ThresholdMCFEDDHKeyGenerator,
+            "crypto_cls": ThresholdMCFEDDH,
             "config": {"sec_param": 128, "eta": 1, "n": 3, "s": 3, "t": 2, "lst_nid": lst_nid, "lst_sid": lst_sid},
             "label": "bench-tmcfe-ddh",
             "share_decrypt_mode": "fusion_weight_only",

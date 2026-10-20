@@ -5,7 +5,7 @@ import os
 import pytest
 
 from pyfe4ai.schemes.mcfe.damgard_ddh import MCFEDamgard, MCFEDamgardKeyGenerator
-from pyfe4ai.schemes.mcfe.ddh import MCFE, MCFEKeyGenerator
+from pyfe4ai.schemes.mcfe.ddh import MCFEDDH, MCFEDDHKeyGenerator
 from pyfe4ai.schemes.mcfe.paillier import MCFEPaillier, MCFEPaillierKeyGenerator
 from pyfe4ai.core.exceptions import FEValidationError
 from pyfe4ai.ml import (
@@ -18,7 +18,7 @@ from pyfe4ai.ml import (
 
 NIDS = ["c0", "c1", "c2"]
 SCHEMES = {
-    "ddh": (MCFEKeyGenerator, MCFE, {"sec_param": 256, "bound_x": 20, "bound_y": 3}),
+    "ddh": (MCFEDDHKeyGenerator, MCFEDDH, {"sec_param": 256, "bound_x": 20, "bound_y": 3}),
     "damgard": (MCFEDamgardKeyGenerator, MCFEDamgard, {"sec_param": 256, "bound": 20}),
     "paillier": (MCFEPaillierKeyGenerator, MCFEPaillier, {"bit_length": 256, "bound_x": 20, "bound_y": 3}),
 }

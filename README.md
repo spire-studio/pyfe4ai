@@ -82,7 +82,7 @@ of the pairing-based schemes. `PYFE4AI_BACKEND=python` (or
 ## Usage
 
 ```python
-from pyfe4ai import SIFE, SIFEKeyGenerator
+from pyfe4ai import SIFEDDH, SIFEDDHKeyGenerator
 
 x = [2, 1, 3]
 y = [4, 5, 6]
@@ -91,18 +91,18 @@ y = [4, 5, 6]
 # security level: 128 keeps the demo fast but is NOT secure. For a 3072-bit
 # group, replace "sec_param": 128 with "security_profile": "standard" (see
 # Security Profiles; an explicit sec_param below 3072 is then refused).
-kg = SIFEKeyGenerator({"sec_param": 128, "eta": len(x)})
+kg = SIFEDDHKeyGenerator({"sec_param": 128, "eta": len(x)})
 kg.setup()
 pp = kg.get_public_parameters()
 sk = kg.get_private_keys()
 dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y})
 
 # Encrypt (needs pp + sk)
-encryptor = SIFE({"precision": 3, "keys": {"pp": pp, "sk": sk}})
+encryptor = SIFEDDH({"precision": 3, "keys": {"pp": pp, "sk": sk}})
 ct = encryptor.encrypt(x)
 
 # Decrypt (needs pp + dk)
-decryptor = SIFE({"precision": 3, "keys": {"pp": pp}})
+decryptor = SIFEDDH({"precision": 3, "keys": {"pp": pp}})
 result = decryptor.decrypt(ct, dk, y)
 print("<x, y> =", result)   # → 31
 ```
@@ -260,7 +260,7 @@ parameters aiming at 128-bit classical security and rejects explicit values
 below them with `FEValidationError`:
 
 ```python
-kg = SIFEKeyGenerator({"eta": 3, "security_profile": "standard"})  # 3072-bit group
+kg = SIFEDDHKeyGenerator({"eta": 3, "security_profile": "standard"})  # 3072-bit group
 ```
 
 | Family | `standard` parameters | Measured cost (one core, 2 clients) |
@@ -339,6 +339,23 @@ accurate for the scheme:
 - `lwe`: LWE-based instantiation
 - `paillier`: Paillier-based instantiation
 - `damgard_ddh`: Damgard-style DDH instantiation
+
+A scheme is identified by `<family>/<variant>` (`sife/ddh`, `mcfe/damgard`,
+`mcfe/ring_lwe_threshold`; the variant is the module name, but `damgard`
+for `damgard_ddh.py`). Its classes are named after that id, one name per
+class: `Threshold` or `Decentralized` for those variants, then the family
+(`SIFE`, `MIFE`, `MCFE`, `Quadratic`), then the rest of the variant in
+CamelCase with its acronyms in capitals; the key generator adds
+`KeyGenerator`, the config class `Config`:
+
+| Scheme | Crypto class | Key generator |
+|---|---|---|
+| `sife/ddh` | `SIFEDDH` | `SIFEDDHKeyGenerator` |
+| `mcfe/ring_lwe` | `MCFERingLWE` | `MCFERingLWEKeyGenerator` |
+| `mcfe/ring_lwe_threshold` | `ThresholdMCFERingLWE` | `ThresholdMCFERingLWEKeyGenerator` |
+| `mcfe/ddh_decentralized` | `DecentralizedMCFEDDH` | `DecentralizedMCFEDDHKeyGenerator` |
+| `mife/fh_multi_ipe_pairing` | `MIFEFHMultiIPEPairing` | `MIFEFHMultiIPEPairingKeyGenerator` |
+| `quadratic/miqfe` | `QuadraticMIQFE` | `QuadraticMIQFEKeyGenerator` |
 
 ## Running Tests
 

@@ -37,7 +37,7 @@ def _damgard():
 
 
 def _ddh():
-    from pyfe4ai.schemes.mife.ddh import MIFE, MIFEKeyGenerator
+    from pyfe4ai.schemes.mife.ddh import MIFEDDH, MIFEDDHKeyGenerator
 
     cfg = {"sec_param": 128, "eta": 2, "n": 3, "s": 1, "lst_nid": NIDS}
 
@@ -51,7 +51,7 @@ def _ddh():
     def expected(pp, value):
         return gp.powmod(gp.mpz(pp["g"]), gp.mpz(value), gp.mpz(pp["p"]))
 
-    return MIFEKeyGenerator, MIFE, cfg, slot_value, expected
+    return MIFEDDHKeyGenerator, MIFEDDH, cfg, slot_value, expected
 
 
 def _paillier():

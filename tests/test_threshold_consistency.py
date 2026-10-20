@@ -26,10 +26,10 @@ def test_disagreeing_groups_are_rejected():
 
 import gmpy2 as gp
 
-from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFE, ThresholdMCFEKeyGenerator
+from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFEDDH, ThresholdMCFEDDHKeyGenerator
 from pyfe4ai.schemes.mcfe.lwe_threshold import ThresholdMCFELWE, ThresholdMCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWE, ThresholdMCFERingLWEKeyGenerator
-from pyfe4ai.schemes.mife.ddh_threshold import ThresholdMIFE, ThresholdMIFEKeyGenerator
+from pyfe4ai.schemes.mife.ddh_threshold import ThresholdMIFEDDH, ThresholdMIFEDDHKeyGenerator
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE, ThresholdMIFELWEKeyGenerator
 
 NIDS = ["nid_0", "nid_1"]
@@ -40,14 +40,14 @@ Y = {"nid_0": [2], "nid_1": [5]}  # <x, y> = -4
 
 
 def _mife_ddh():
-    kg = ThresholdMIFEKeyGenerator({"sec_param": 64, "n": 2, "lst_nid": NIDS, "s": 3, "lst_sid": SIDS, "t": 2, "eta": 1})
+    kg = ThresholdMIFEDDHKeyGenerator({"sec_param": 64, "n": 2, "lst_nid": NIDS, "s": 3, "lst_sid": SIDS, "t": 2, "eta": 1})
     kg.setup()
     pp = kg.get_public_parameters()
-    cts = {n: ThresholdMIFE({"id": n, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}}).encrypt(X[n]) for n in NIDS}
+    cts = {n: ThresholdMIFEDDH({"id": n, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}}).encrypt(X[n]) for n in NIDS}
     dks = {s: kg.get_decryption_keys(s, credentials={"fusion_weight": Y}) for s in SIDS}
-    share = lambda s, e: ThresholdMIFE({"id": s, "keys": {"pp": pp, "dk": dks[s]}}).share_decrypt(cts, Y, dks[s], e)
+    share = lambda s, e: ThresholdMIFEDDH({"id": s, "keys": {"pp": pp, "dk": dks[s]}}).share_decrypt(cts, Y, dks[s], e)
     tamper = lambda part: dict(part, w=gp.digits(gp.mpz(part["w"]) * gp.mpz(pp["g"]) % gp.mpz(pp["p"])))
-    return ThresholdMIFE({"id": "c", "keys": {"pp": pp}}), share, tamper
+    return ThresholdMIFEDDH({"id": "c", "keys": {"pp": pp}}), share, tamper
 
 
 def _mife_lwe():
@@ -64,14 +64,14 @@ def _mife_lwe():
 
 
 def _mcfe_ddh():
-    kg = ThresholdMCFEKeyGenerator({"sec_param": 64, "n": 2, "lst_nid": NIDS, "s": 3, "lst_sid": SIDS, "t": 2, "eta": 1})
+    kg = ThresholdMCFEDDHKeyGenerator({"sec_param": 64, "n": 2, "lst_nid": NIDS, "s": 3, "lst_sid": SIDS, "t": 2, "eta": 1})
     kg.setup()
     pp = kg.get_public_parameters()
-    cts = {n: ThresholdMCFE({"id": n, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}}).encrypt(X[n], "r1") for n in NIDS}
+    cts = {n: ThresholdMCFEDDH({"id": n, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}}).encrypt(X[n], "r1") for n in NIDS}
     dks = {s: kg.get_decryption_keys(s, credentials={"fusion_weight": Y}) for s in SIDS}
-    share = lambda s, e: ThresholdMCFE({"id": s, "keys": {"pp": pp, "dk": dks[s]}}).share_decrypt(cts, Y, dks[s], e, label="r1")
+    share = lambda s, e: ThresholdMCFEDDH({"id": s, "keys": {"pp": pp, "dk": dks[s]}}).share_decrypt(cts, Y, dks[s], e, label="r1")
     tamper = lambda part: dict(part, u_d=gp.digits(gp.mpz(part["u_d"]) * gp.mpz(pp["g"]) % gp.mpz(pp["p"])))
-    return ThresholdMCFE({"id": "c", "keys": {"pp": pp}}), share, tamper
+    return ThresholdMCFEDDH({"id": "c", "keys": {"pp": pp}}), share, tamper
 
 
 def _mcfe_lwe():

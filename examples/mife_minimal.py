@@ -1,7 +1,7 @@
 """Minimal end-to-end example for the MIFE scheme."""
 
-from pyfe4ai.schemes.mife.ddh import MIFE
-from pyfe4ai.schemes.mife.ddh import MIFEKeyGenerator
+from pyfe4ai.schemes.mife.ddh import MIFEDDH
+from pyfe4ai.schemes.mife.ddh import MIFEDDHKeyGenerator
 
 
 def main() -> None:
@@ -14,7 +14,7 @@ def main() -> None:
         "nid_1": [5],
     }
 
-    kg = MIFEKeyGenerator(
+    kg = MIFEDDHKeyGenerator(
         {
             "sec_param": 128,
             "eta": 1,
@@ -28,7 +28,7 @@ def main() -> None:
     pp = kg.get_public_parameters()
     ciphertexts = {}
     for nid, vec in x.items():
-        encryptor = MIFE(
+        encryptor = MIFEDDH(
             {
                 "id": nid,
                 "precision": 3,
@@ -37,7 +37,7 @@ def main() -> None:
         )
         ciphertexts[nid] = encryptor.encrypt(vec)
 
-    decryptor = MIFE(
+    decryptor = MIFEDDH(
         {
             "id": "sid_0",
             "precision": 3,

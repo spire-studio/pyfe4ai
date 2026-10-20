@@ -12,8 +12,8 @@ from _common import prepare_benchmark
 from _common import profile_value
 from _common import size_bytes
 from _common import stats
-from pyfe4ai.schemes.mcfe.ddh_decentralized import DecentralizedMCFE
-from pyfe4ai.schemes.mcfe.ddh_decentralized import DecentralizedMCFEKeyGenerator
+from pyfe4ai.schemes.mcfe.ddh_decentralized import DecentralizedMCFEDDH
+from pyfe4ai.schemes.mcfe.ddh_decentralized import DecentralizedMCFEDDHKeyGenerator
 from pyfe4ai.schemes.mcfe.lwe_decentralized import DecentralizedMCFELWE
 from pyfe4ai.schemes.mcfe.lwe_decentralized import DecentralizedMCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe_decentralized import DecentralizedMCFERingLWE
@@ -131,8 +131,8 @@ def main() -> None:
     cases = [
         {
             "name": "dMCFE/DDH",
-            "kg_cls": DecentralizedMCFEKeyGenerator,
-            "crypto_cls": DecentralizedMCFE,
+            "kg_cls": DecentralizedMCFEDDHKeyGenerator,
+            "crypto_cls": DecentralizedMCFEDDH,
             "config": {"sec_param": 128, "eta": 1, "n": 3, "s": 1, "lst_nid": lst_nid},
             "label": "bench-dmcfe-ddh",
             "lst_nid": lst_nid,

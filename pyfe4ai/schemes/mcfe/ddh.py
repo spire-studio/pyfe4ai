@@ -58,7 +58,7 @@ def _hash_label(label, p: gp.mpz) -> list:
     return [hash_to_qr_group(encoded, p, index=k, domain=_LABEL_HASH_DOMAIN) for k in (0, 1)]
 
 
-class MCFEKeyGenerator(DDHKeyGeneratorBase):
+class MCFEDDHKeyGenerator(DDHKeyGeneratorBase):
     """Key generator for DDH-based multi-client inner-product FE."""
 
     _scheme_type = CryptoCONST.TYPE_MCFE
@@ -177,7 +177,7 @@ class MCFEKeyGenerator(DDHKeyGeneratorBase):
         return MCFEDDHFunctionalKey.new(d=[gp.digits(d_k % self.q) for d_k in d]).to_dict()
 
 
-class MCFE(OfflineMCFEMixin, IPFEAbsCrypto):
+class MCFEDDH(OfflineMCFEMixin, IPFEAbsCrypto):
     """Crypto operations for DDH-based multi-client inner-product FE."""
 
     def __init__(self, config: dict) -> None:

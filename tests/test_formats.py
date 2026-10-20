@@ -186,14 +186,14 @@ from tests.pairing_group import GROUP  # noqa: E402
 
 
 def _sife_ddh():
-    from pyfe4ai.schemes.sife.ddh import SIFE, SIFEKeyGenerator
+    from pyfe4ai.schemes.sife.ddh import SIFEDDH, SIFEDDHKeyGenerator
 
-    kg = SIFEKeyGenerator({"sec_param": 128, "eta": 3})
+    kg = SIFEDDHKeyGenerator({"sec_param": 128, "eta": 3})
     kg.setup()
     pp, sk = kg.get_public_parameters(), kg.get_private_keys()
     dk = kg.get_decryption_keys("s", credentials={"fusion_weight": [1, 2, 3]})
-    ct = SIFE({"keys": {"pp": pp, "sk": sk}}).encrypt([1, 2, 3])
-    assert SIFE({"keys": {"pp": pp}}).decrypt(json.loads(json.dumps(ct)), dk, [1, 2, 3]) == 14
+    ct = SIFEDDH({"keys": {"pp": pp, "sk": sk}}).encrypt([1, 2, 3])
+    assert SIFEDDH({"keys": {"pp": pp}}).decrypt(json.loads(json.dumps(ct)), dk, [1, 2, 3]) == 14
     return [(record_file(kg), dl.DDHRecord), (record_file(kg)["group"], dl.DLGroupRecord),
             (pp, dl.SIFEDDHParameters), (sk, dl.SIFEDDHEncryptionKey), (dk, dl.SIFEDDHFunctionalKey),
             (ct, dl.SIFEDDHCiphertext)]
@@ -238,37 +238,37 @@ def _mcfe_paillier():
 
 
 def _tmcfe_ddh():
-    from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFE, ThresholdMCFEKeyGenerator
+    from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFEDDH, ThresholdMCFEDDHKeyGenerator
 
     nids, sids = ["nid_0", "nid_1"], ["sid_0", "sid_1"]
-    kg = ThresholdMCFEKeyGenerator({"sec_param": 128, "lst_nid": nids, "lst_sid": sids, "eta": 1, "n": 2,
+    kg = ThresholdMCFEDDHKeyGenerator({"sec_param": 128, "lst_nid": nids, "lst_sid": sids, "eta": 1, "n": 2,
                                     "s": 2, "t": 2})
     kg.setup()
     pp = kg.get_public_parameters()
     y = {nid: [1] for nid in nids}
-    cts = {nid: ThresholdMCFE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt([1], "l")
+    cts = {nid: ThresholdMCFEDDH({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt([1], "l")
            for nid in nids}
     dks = {sid: kg.get_decryption_keys(sid, credentials={"fusion_weight": y}) for sid in sids}
-    partials = {sid: ThresholdMCFE({"id": sid, "keys": {"pp": pp}}).share_decrypt(cts, y, dks[sid], sids, "l")
+    partials = {sid: ThresholdMCFEDDH({"id": sid, "keys": {"pp": pp}}).share_decrypt(cts, y, dks[sid], sids, "l")
                 for sid in sids}
-    assert ThresholdMCFE({"id": "c", "keys": {"pp": pp}}).combine_decrypt(json.loads(json.dumps(partials))) == 2
+    assert ThresholdMCFEDDH({"id": "c", "keys": {"pp": pp}}).combine_decrypt(json.loads(json.dumps(partials))) == 2
     return [(record_file(kg), dl.DDHRecord), (pp, dl.TMCFEDDHParameters),
             (kg.get_private_keys("nid_0"), dl.MCFEDDHEncryptionKey), (dks["sid_0"], threshold.TMCFEDDHKeyShare),
             (cts["nid_0"], dl.MCFEDDHCiphertext), (partials["sid_0"], threshold.TMCFEDDHPartial)]
 
 
 def _dmcfe_ddh():
-    from pyfe4ai.schemes.mcfe.ddh_decentralized import DecentralizedMCFE, DecentralizedMCFEKeyGenerator
+    from pyfe4ai.schemes.mcfe.ddh_decentralized import DecentralizedMCFEDDH, DecentralizedMCFEDDHKeyGenerator
 
     nids = ["nid_0", "nid_1"]
-    kg = DecentralizedMCFEKeyGenerator({"sec_param": 128, "eta": 1, "n": 2, "lst_nid": nids})
+    kg = DecentralizedMCFEDDHKeyGenerator({"sec_param": 128, "eta": 1, "n": 2, "lst_nid": nids})
     kg.setup()
     pp = kg.get_public_parameters()
     y = {nid: [1] for nid in nids}
-    clients = {nid: DecentralizedMCFE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
+    clients = {nid: DecentralizedMCFEDDH({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
                for nid in nids}
     shares = {nid: c.derive_function_decryption_key_share(y) for nid, c in clients.items()}
-    combiner = DecentralizedMCFE({"id": "c", "keys": {"pp": pp}})
+    combiner = DecentralizedMCFEDDH({"id": "c", "keys": {"pp": pp}})
     dk = combiner.combine_function_decryption_key_share(json.loads(json.dumps(shares)))
     cts = {nid: c.encrypt([2], "l") for nid, c in clients.items()}
     assert combiner.decrypt(cts, dk, y, "l") == 4
@@ -338,23 +338,23 @@ def _tmcfe_fh():
     if not pairing_available(GROUP):
         pytest.skip("no backend for pairing group {}".format(GROUP))
     from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold import (
-        ThresholdMCFEFHMultiIPE, ThresholdMCFEFHMultiIPEKeyGenerator)
+        ThresholdMCFEFHMultiIPEPairing, ThresholdMCFEFHMultiIPEPairingKeyGenerator)
 
     nids, sids = ["nid_0", "nid_1"], ["sid_0", "sid_1"]
-    kg = ThresholdMCFEFHMultiIPEKeyGenerator({"sec_param": 64, "eta": 1, "n": 2, "lst_nid": nids, "lst_sid": sids,
+    kg = ThresholdMCFEFHMultiIPEPairingKeyGenerator({"sec_param": 64, "eta": 1, "n": 2, "lst_nid": nids, "lst_sid": sids,
                                               "s": 2, "t": 2, "bound_x": 4, "bound_y": 4,
                                               "pairing_group_param": GROUP})
     kg.setup()
     pp = kg.get_public_parameters()
     y = {nid: [1] for nid in nids}
     sk = kg.get_private_keys("nid_0")
-    cts = {nid: ThresholdMCFEFHMultiIPE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(
+    cts = {nid: ThresholdMCFEFHMultiIPEPairing({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(
         [2], "l") for nid in nids}
     dks = {sid: kg.get_decryption_keys(sid, credentials={"fusion_weight": y}) for sid in sids}
-    partials = {sid: ThresholdMCFEFHMultiIPE({"id": sid, "keys": {"pp": pp}}).share_decrypt(cts, y, dks[sid], sids,
+    partials = {sid: ThresholdMCFEFHMultiIPEPairing({"id": sid, "keys": {"pp": pp}}).share_decrypt(cts, y, dks[sid], sids,
                                                                                                "l")
                 for sid in sids}
-    assert ThresholdMCFEFHMultiIPE({"id": "c", "keys": {"pp": pp}}).combine_decrypt(partials, "l") == 4
+    assert ThresholdMCFEFHMultiIPEPairing({"id": "c", "keys": {"pp": pp}}).combine_decrypt(partials, "l") == 4
     return [(pp, pairing.TMCFEFHParameters), (sk, pairing.FHClientKey), (sk["imsk"], pairing.FHMasterKey),
             (dks["sid_0"], threshold.TMCFEFHKeyShare), (cts["nid_0"], pairing.FHCiphertext),
             (partials["sid_0"], threshold.TMCFEFHPartial)]
@@ -364,14 +364,14 @@ def _dmcfe_fh():
     if not pairing_available(GROUP):
         pytest.skip("no backend for pairing group {}".format(GROUP))
     from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import (
-        DecentralizedMCFEFHMultiIPE, DecentralizedMCFEFHMultiIPEKeyGenerator)
+        DecentralizedMCFEFHMultiIPEPairing, DecentralizedMCFEFHMultiIPEPairingKeyGenerator)
 
     nids = ["nid_0", "nid_1"]
-    kg = DecentralizedMCFEFHMultiIPEKeyGenerator({"sec_param": 64, "eta": 1, "n": 2, "lst_nid": nids,
+    kg = DecentralizedMCFEFHMultiIPEPairingKeyGenerator({"sec_param": 64, "eta": 1, "n": 2, "lst_nid": nids,
                                                   "bound_x": 4, "bound_y": 4, "pairing_group_param": GROUP})
     kg.setup()
     pp = kg.get_public_parameters()
-    clients = {nid: DecentralizedMCFEFHMultiIPE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
+    clients = {nid: DecentralizedMCFEFHMultiIPEPairing({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
                for nid in nids}
     shares = {nid: c.derive_function_decryption_key_share({nid: [1] for nid in nids}, "f") for nid, c in
               clients.items()}
@@ -463,24 +463,24 @@ def test_dmcfe_fh_combines_malformed_share_sets_as_before():
     if not pairing_available(GROUP):
         pytest.skip("no backend for pairing group {}".format(GROUP))
     from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import (
-        DecentralizedMCFEFHMultiIPE, DecentralizedMCFEFHMultiIPEKeyGenerator)
+        DecentralizedMCFEFHMultiIPEPairing, DecentralizedMCFEFHMultiIPEPairingKeyGenerator)
 
-    kg = DecentralizedMCFEFHMultiIPEKeyGenerator({"eta": 1, "n": 2, "pairing_group_param": GROUP})
+    kg = DecentralizedMCFEFHMultiIPEPairingKeyGenerator({"eta": 1, "n": 2, "pairing_group_param": GROUP})
     kg.setup()
     pp = kg.get_public_parameters()
     with pytest.raises(IndexError):  # not a StopIteration leaking out
-        DecentralizedMCFEFHMultiIPE({"id": "c", "keys": {"pp": dict(pp, lst_nid=[])}}).combine_function_decryption_key_share({})
+        DecentralizedMCFEFHMultiIPEPairing({"id": "c", "keys": {"pp": dict(pp, lst_nid=[])}}).combine_function_decryption_key_share({})
     with pytest.raises(AttributeError, match="'values'"):
-        DecentralizedMCFEFHMultiIPE({"id": "c", "keys": {"pp": pp}}).combine_function_decryption_key_share(
+        DecentralizedMCFEFHMultiIPEPairing({"id": "c", "keys": {"pp": pp}}).combine_function_decryption_key_share(
             list(pp["lst_nid"]))
 
 
 def test_mife_ddh_encryption_reads_the_parameters_before_the_key():
-    from pyfe4ai.schemes.mife.ddh import MIFE, MIFEKeyGenerator
+    from pyfe4ai.schemes.mife.ddh import MIFEDDH, MIFEDDHKeyGenerator
 
-    kg = MIFEKeyGenerator({"sec_param": 128, "eta": 1, "n": 2})
+    kg = MIFEDDHKeyGenerator({"sec_param": 128, "eta": 1, "n": 2})
     kg.setup()
     pp = {k: v for k, v in kg.get_public_parameters().items() if k != "g"}
     sk = {k: v for k, v in kg.get_private_keys("nid_0").items() if k != "h"}
     with pytest.raises(KeyError, match="'g'"):
-        MIFE({"id": "nid_0", "keys": {"pp": pp, "sk": sk}}).encrypt([1])
+        MIFEDDH({"id": "nid_0", "keys": {"pp": pp, "sk": sk}}).encrypt([1])

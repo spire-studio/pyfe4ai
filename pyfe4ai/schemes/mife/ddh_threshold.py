@@ -33,7 +33,7 @@ import logging
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.schemes.mife.ddh import MIFE, MIFEKeyGenerator
+from pyfe4ai.schemes.mife.ddh import MIFEDDH, MIFEDDHKeyGenerator
 from pyfe4ai.schemes.threshold.binding import check_fusion_weight
 from pyfe4ai.schemes.threshold.roles import validate_enrolled
 from pyfe4ai.schemes.threshold.roles import combine_consistently
@@ -57,7 +57,7 @@ from pyfe4ai._validation import scale_to_int
 logger = logging.getLogger(__name__)
 
 
-class ThresholdMIFEKeyGenerator(MIFEKeyGenerator):
+class ThresholdMIFEDDHKeyGenerator(MIFEDDHKeyGenerator):
     """MIFE-DDH setup plus Shamir-shared functional keys."""
 
     _scheme_type = CryptoCONST.TYPE_TMIFE
@@ -66,7 +66,7 @@ class ThresholdMIFEKeyGenerator(MIFEKeyGenerator):
         """Initialise the key generator.
 
         Args:
-            config: As for :class:`~pyfe4ai.schemes.mife.ddh.MIFEKeyGenerator`,
+            config: As for :class:`~pyfe4ai.schemes.mife.ddh.MIFEDDHKeyGenerator`,
                 plus ``t`` and ``lst_sid`` (``s`` decryption servers).
         """
         self.t = config.get("t", CryptoCONST.tMCFE_T)
@@ -138,7 +138,7 @@ class ThresholdMIFEKeyGenerator(MIFEKeyGenerator):
         }
 
 
-class ThresholdMIFE(MIFE):
+class ThresholdMIFEDDH(MIFEDDH):
     """Encryption (with quantisation) and threshold decryption."""
 
     def _quantise(self, values) -> list:

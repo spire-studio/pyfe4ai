@@ -60,7 +60,7 @@ logger = logging.getLogger(__name__)
 _CSPRNG = random.SystemRandom()
 
 
-class MIFEKeyGenerator(DDHKeyGeneratorBase):
+class MIFEDDHKeyGenerator(DDHKeyGeneratorBase):
     """Key generator for DDH-based multi-input inner-product FE."""
 
     _scheme_type = CryptoCONST.TYPE_MIFE
@@ -151,7 +151,7 @@ class MIFEKeyGenerator(DDHKeyGeneratorBase):
         ).to_dict()
 
 
-class MIFE(OfflineRandomMixin, IPFEAbsCrypto):
+class MIFEDDH(OfflineRandomMixin, IPFEAbsCrypto):
     """Crypto operations for DDH-based multi-input inner-product FE."""
 
     def __init__(self, config: dict) -> None:

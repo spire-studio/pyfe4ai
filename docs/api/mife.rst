@@ -5,9 +5,8 @@ MIFE — Multi-Input Functional Encryption
    :no-members:
 
 The key generator and crypto class of every scheme below are importable
-from :mod:`pyfe4ai.schemes.mife`, where ``MIFEDamgardDDH`` (and
-``MIFEDamgardDDHKeyGenerator``) is an alias of
-:class:`~pyfe4ai.schemes.mife.damgard_ddh.MIFEDamgard`.
+from :mod:`pyfe4ai.schemes.mife` under their own names (one name per class,
+no aliases).
 
 DDH
 ---

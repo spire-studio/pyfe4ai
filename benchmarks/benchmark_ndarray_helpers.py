@@ -14,14 +14,14 @@ from _common import prepare_benchmark
 from _common import resolve_rounds
 from _common import resolve_shape
 from _common import stats
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPE
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEKeyGenerator
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import DecentralizedMCFEFHMultiIPE
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import DecentralizedMCFEFHMultiIPEKeyGenerator
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold import ThresholdMCFEFHMultiIPE
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold import ThresholdMCFEFHMultiIPEKeyGenerator
-from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPE
-from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPEKeyGenerator
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEPairing
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEPairingKeyGenerator
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import DecentralizedMCFEFHMultiIPEPairing
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import DecentralizedMCFEFHMultiIPEPairingKeyGenerator
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold import ThresholdMCFEFHMultiIPEPairing
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold import ThresholdMCFEFHMultiIPEPairingKeyGenerator
+from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPEPairing
+from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPEPairingKeyGenerator
 from pyfe4ai.schemes.quadratic.quad import QuadraticQuad
 from pyfe4ai.schemes.quadratic.quad import QuadraticQuadKeyGenerator
 from pyfe4ai.schemes.quadratic.sgp import QuadraticSGP
@@ -137,14 +137,14 @@ def _bench_mife_fh_multi_ipe() -> dict:
     )
 
     for _ in range(ROUNDS):
-        kg = MIFEFHMultiIPEKeyGenerator(cfg)
+        kg = MIFEFHMultiIPEPairingKeyGenerator(cfg)
         kg.setup()
         pp = kg.get_public_parameters()
         dct_ct = {}
 
         t0 = time.perf_counter()
         for nid in cfg["lst_nid"]:
-            enc = MIFEFHMultiIPE(
+            enc = MIFEFHMultiIPEPairing(
                 {
                     "id": nid,
                     "precision": PRECISION,
@@ -154,7 +154,7 @@ def _bench_mife_fh_multi_ipe() -> dict:
             dct_ct[nid] = enc.encrypt_lst_ndarray(dct_x[nid])
         encrypt_t = time.perf_counter() - t0
 
-        dec = MIFEFHMultiIPE({"id": "sid_0", "precision": PRECISION, "keys": {"pp": pp}})
+        dec = MIFEFHMultiIPEPairing({"id": "sid_0", "precision": PRECISION, "keys": {"pp": pp}})
         dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
 
         t0 = time.perf_counter()
@@ -219,14 +219,14 @@ def _bench_mcfe_fh_multi_ipe(name: str, decentralized: bool = False, threshold: 
 
     for _ in range(ROUNDS):
         if decentralized:
-            kg = DecentralizedMCFEFHMultiIPEKeyGenerator(base_cfg)
-            actor_cls = DecentralizedMCFEFHMultiIPE
+            kg = DecentralizedMCFEFHMultiIPEPairingKeyGenerator(base_cfg)
+            actor_cls = DecentralizedMCFEFHMultiIPEPairing
         elif threshold:
-            kg = ThresholdMCFEFHMultiIPEKeyGenerator(base_cfg)
-            actor_cls = ThresholdMCFEFHMultiIPE
+            kg = ThresholdMCFEFHMultiIPEPairingKeyGenerator(base_cfg)
+            actor_cls = ThresholdMCFEFHMultiIPEPairing
         else:
-            kg = MCFEFHMultiIPEKeyGenerator(base_cfg)
-            actor_cls = MCFEFHMultiIPE
+            kg = MCFEFHMultiIPEPairingKeyGenerator(base_cfg)
+            actor_cls = MCFEFHMultiIPEPairing
         kg.setup()
         pp = kg.get_public_parameters()
 

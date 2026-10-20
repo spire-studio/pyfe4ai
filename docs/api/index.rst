@@ -10,12 +10,12 @@ Top-level package
 ``pyfe4ai`` re-exports the DDH schemes of the three main families and the
 status API:
 
-* :class:`~pyfe4ai.schemes.sife.ddh.SIFE`,
-  :class:`~pyfe4ai.schemes.sife.ddh.SIFEKeyGenerator`,
-  :class:`~pyfe4ai.schemes.mife.ddh.MIFE`,
-  :class:`~pyfe4ai.schemes.mife.ddh.MIFEKeyGenerator`,
-  :class:`~pyfe4ai.schemes.mcfe.ddh.MCFE` and
-  :class:`~pyfe4ai.schemes.mcfe.ddh.MCFEKeyGenerator`;
+* :class:`~pyfe4ai.schemes.sife.ddh.SIFEDDH`,
+  :class:`~pyfe4ai.schemes.sife.ddh.SIFEDDHKeyGenerator`,
+  :class:`~pyfe4ai.schemes.mife.ddh.MIFEDDH`,
+  :class:`~pyfe4ai.schemes.mife.ddh.MIFEDDHKeyGenerator`,
+  :class:`~pyfe4ai.schemes.mcfe.ddh.MCFEDDH` and
+  :class:`~pyfe4ai.schemes.mcfe.ddh.MCFEDDHKeyGenerator`;
 * :class:`~pyfe4ai.core.status.SchemeStatus` and
   :func:`~pyfe4ai.core.status.get_scheme_status`;
 * :class:`~pyfe4ai.core.exceptions.FESecurityWarning`;

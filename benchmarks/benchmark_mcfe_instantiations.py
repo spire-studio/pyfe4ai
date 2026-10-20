@@ -13,8 +13,8 @@ from _common import size_bytes
 from _common import stats
 from pyfe4ai.schemes.mcfe.damgard_ddh import MCFEDamgard
 from pyfe4ai.schemes.mcfe.damgard_ddh import MCFEDamgardKeyGenerator
-from pyfe4ai.schemes.mcfe.ddh import MCFE
-from pyfe4ai.schemes.mcfe.ddh import MCFEKeyGenerator
+from pyfe4ai.schemes.mcfe.ddh import MCFEDDH
+from pyfe4ai.schemes.mcfe.ddh import MCFEDDHKeyGenerator
 from pyfe4ai.schemes.mcfe.fullysec_lwe import MCFEFullySecLWE
 from pyfe4ai.schemes.mcfe.fullysec_lwe import MCFEFullySecLWEKeyGenerator
 from pyfe4ai.schemes.mcfe.lwe import MCFELWE
@@ -142,8 +142,8 @@ def main() -> None:
     cases = [
         {
             "name": "MCFE/DDH",
-            "kg_cls": MCFEKeyGenerator,
-            "crypto_cls": MCFE,
+            "kg_cls": MCFEDDHKeyGenerator,
+            "crypto_cls": MCFEDDH,
             "config": {"sec_param": 256, "eta": eta, "n": 3, "s": 1, "lst_nid": lst_nid},
             "label": "bench-mcfe-ddh",
             "precision": 3,

@@ -4,7 +4,7 @@ import os
 import pytest
 
 from pyfe4ai.schemes.mcfe.lwe import MCFELWEKeyGenerator
-from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFEKeyGenerator
+from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFEDDHKeyGenerator
 from pyfe4ai.schemes.threshold.sharing import validate_threshold
 from pyfe4ai.core.exceptions import FEValidationError
 

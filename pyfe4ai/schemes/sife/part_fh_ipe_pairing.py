@@ -15,7 +15,7 @@ public key is ``([a]_1, [U a]_1, V^T M, M)`` and ``msk = (b, U, V)``.
 
 * Enc(t):   ``[c = a r ; (-V^T M t ; M t) + U c]_1`` for ``t in Z^k``.
 * Enc'(x):  the same with ``(-V^T x ; x)``; needs ``V``, so it is run by the
-  key generator (:meth:`SIFEPartFHIPEKeyGenerator.sec_encrypt`).
+  key generator (:meth:`SIFEPartFHIPEPairingKeyGenerator.sec_encrypt`).
 * KeyGen(y): ``[(-U^T w ; w)]_2`` with ``w = (b s ; y + V b s)``.
 * Dec:      ``prod_j e(ct_j, sk_j) = [<x, y>]_T`` and a bounded discrete log.
 
@@ -180,7 +180,7 @@ def _deserialize_vec(group: PairingGroup, vec: list[str]):
     return deserialize_many(group, vec)
 
 
-class SIFEPartFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
+class SIFEPartFHIPEPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
     """Key generator for partially function-hiding inner-product encryption over pairings."""
 
     _scheme_type = CryptoCONST.TYPE_SIFE_PART_FH_IPE
@@ -336,7 +336,7 @@ class SIFEPartFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         return PartFHIPEFunctionalKey.new(k=_serialize_vec(self.group, _g2_pow_vec(self.group, g2, key))).to_dict()
 
 
-class SIFEPartFHIPE(IPFEAbsCrypto):
+class SIFEPartFHIPEPairing(IPFEAbsCrypto):
     """Crypto operations for partially function-hiding inner-product encryption over pairings."""
 
     def __init__(self, config: dict, **kwargs) -> None:

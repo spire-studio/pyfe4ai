@@ -52,16 +52,16 @@ class TestKeyErrors:
 
     def test_crypto_init_no_keys(self):
         """IPFEAbsCrypto raises FEKeyError when config has no 'keys'."""
-        from pyfe4ai.schemes.sife.ddh import SIFE
+        from pyfe4ai.schemes.sife.ddh import SIFEDDH
 
         with pytest.raises(FEKeyError, match="no keys"):
-            SIFE({"keys": None})
+            SIFEDDH({"keys": None})
 
     def test_sife_dk_no_credentials(self):
-        """SIFEKeyGenerator.get_decryption_keys raises on missing credentials."""
-        from pyfe4ai.schemes.sife.ddh import SIFEKeyGenerator
+        """SIFEDDHKeyGenerator.get_decryption_keys raises on missing credentials."""
+        from pyfe4ai.schemes.sife.ddh import SIFEDDHKeyGenerator
 
-        kg = SIFEKeyGenerator({"sec_param": 128, "eta": 3})
+        kg = SIFEDDHKeyGenerator({"sec_param": 128, "eta": 3})
         kg.setup()
         with pytest.raises(FEKeyError, match="credentials"):
             kg.get_decryption_keys("sid_1")
@@ -75,47 +75,47 @@ class TestValidationErrors:
     """Schemes must reject invalid inputs with FEValidationError."""
 
     def test_mife_invalid_eta_type(self):
-        """MIFEKeyGenerator rejects non-int/non-dict eta."""
-        from pyfe4ai.schemes.mife.ddh import MIFEKeyGenerator
+        """MIFEDDHKeyGenerator rejects non-int/non-dict eta."""
+        from pyfe4ai.schemes.mife.ddh import MIFEDDHKeyGenerator
 
         with pytest.raises(FEValidationError, match="invalid parameter"):
-            MIFEKeyGenerator({"sec_param": 128, "eta": "bad", "n": 2, "s": 1,
+            MIFEDDHKeyGenerator({"sec_param": 128, "eta": "bad", "n": 2, "s": 1,
                               "lst_nid": ["a", "b"]})
 
     def test_sife_dk_invalid_fusion_weights(self):
-        """SIFEKeyGenerator.get_decryption_keys rejects non-list fusion weights."""
-        from pyfe4ai.schemes.sife.ddh import SIFEKeyGenerator
+        """SIFEDDHKeyGenerator.get_decryption_keys rejects non-list fusion weights."""
+        from pyfe4ai.schemes.sife.ddh import SIFEDDHKeyGenerator
 
-        kg = SIFEKeyGenerator({"sec_param": 128, "eta": 3})
+        kg = SIFEDDHKeyGenerator({"sec_param": 128, "eta": 3})
         kg.setup()
         with pytest.raises(FEValidationError, match="fusion weight must be a sequence"):
             kg.get_decryption_keys("sid_1", credentials={"fusion_weight": "not_a_list"})
 
     def test_sife_dk_fusion_weight_length_mismatch(self):
-        """SIFEKeyGenerator.get_decryption_keys rejects wrong-length fusion weights."""
-        from pyfe4ai.schemes.sife.ddh import SIFEKeyGenerator
+        """SIFEDDHKeyGenerator.get_decryption_keys rejects wrong-length fusion weights."""
+        from pyfe4ai.schemes.sife.ddh import SIFEDDHKeyGenerator
 
-        kg = SIFEKeyGenerator({"sec_param": 128, "eta": 3})
+        kg = SIFEDDHKeyGenerator({"sec_param": 128, "eta": 3})
         kg.setup()
         with pytest.raises(FEValidationError, match="must have 3 entries"):
             kg.get_decryption_keys("sid_1", credentials={"fusion_weight": [1, 2]})
 
     def test_sife_encrypt_plaintext_length(self):
         """SIFE.encrypt rejects plaintext with wrong length."""
-        from pyfe4ai.schemes.sife.ddh import SIFE, SIFEKeyGenerator
+        from pyfe4ai.schemes.sife.ddh import SIFEDDH, SIFEDDHKeyGenerator
 
-        kg = SIFEKeyGenerator({"sec_param": 128, "eta": 3})
+        kg = SIFEDDHKeyGenerator({"sec_param": 128, "eta": 3})
         kg.setup()
         pp = kg.get_public_parameters()
         sk = kg.get_private_keys()
-        crypto = SIFE({"keys": {"pp": pp, "sk": sk}})
+        crypto = SIFEDDH({"keys": {"pp": pp, "sk": sk}})
         with pytest.raises(FEValidationError, match="must have 3 entries"):
             crypto.encrypt([1, 2, 3, 4])  # eta=3 but 4 elements
 
 
 def test_duplicate_client_ids_rejected():
     """A repeated id in lst_nid silently merged two clients' keys."""
-    from pyfe4ai.schemes.mcfe.ddh import MCFEKeyGenerator
+    from pyfe4ai.schemes.mcfe.ddh import MCFEDDHKeyGenerator
 
     with pytest.raises(FEValidationError, match="duplicate"):
-        MCFEKeyGenerator({"sec_param": 128, "n": 3, "lst_nid": ["a", "a", "b"]})
+        MCFEDDHKeyGenerator({"sec_param": 128, "n": 3, "lst_nid": ["a", "a", "b"]})

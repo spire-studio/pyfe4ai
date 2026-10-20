@@ -33,11 +33,11 @@ except ImportError:  # pragma: no cover
 
 _SCHEME_REGISTRY: dict[tuple[str, str], tuple[str, str, str]] = {
     # ---- SIFE ----------------------------------------------------------
-    ("sife", "ddh"): ("pyfe4ai.schemes.sife.ddh", "SIFEKeyGenerator", "SIFE"),
+    ("sife", "ddh"): ("pyfe4ai.schemes.sife.ddh", "SIFEDDHKeyGenerator", "SIFEDDH"),
     ("sife", "ddh_ristretto255"): (
         "pyfe4ai.schemes.sife.ddh_ristretto255",
-        "SIFERistretto255KeyGenerator",
-        "SIFERistretto255",
+        "SIFEDDHRistretto255KeyGenerator",
+        "SIFEDDHRistretto255",
     ),
     ("sife", "lwe"): ("pyfe4ai.schemes.sife.lwe", "SIFELWEKeyGenerator", "SIFELWE"),
     ("sife", "paillier"): (
@@ -67,25 +67,25 @@ _SCHEME_REGISTRY: dict[tuple[str, str], tuple[str, str, str]] = {
     ),
     ("sife", "ddh_dynamic"): (
         "pyfe4ai.schemes.sife.ddh_dynamic",
-        "SIFEDynamicKeyGenerator",
-        "SIFEDynamic",
+        "SIFEDDHDynamicKeyGenerator",
+        "SIFEDDHDynamic",
     ),
     ("sife", "fh_ipe_pairing"): (
         "pyfe4ai.schemes.sife.fh_ipe_pairing",
-        "SIFEFHIPEKeyGenerator",
-        "SIFEFHIPE",
+        "SIFEFHIPEPairingKeyGenerator",
+        "SIFEFHIPEPairing",
     ),
     ("sife", "part_fh_ipe_pairing"): (
         "pyfe4ai.schemes.sife.part_fh_ipe_pairing",
-        "SIFEPartFHIPEKeyGenerator",
-        "SIFEPartFHIPE",
+        "SIFEPartFHIPEPairingKeyGenerator",
+        "SIFEPartFHIPEPairing",
     ),
     # ---- MIFE ----------------------------------------------------------
-    ("mife", "ddh"): ("pyfe4ai.schemes.mife.ddh", "MIFEKeyGenerator", "MIFE"),
+    ("mife", "ddh"): ("pyfe4ai.schemes.mife.ddh", "MIFEDDHKeyGenerator", "MIFEDDH"),
     ("mife", "ddh_ristretto255"): (
         "pyfe4ai.schemes.mife.ddh_ristretto255",
-        "MIFERistretto255KeyGenerator",
-        "MIFERistretto255",
+        "MIFEDDHRistretto255KeyGenerator",
+        "MIFEDDHRistretto255",
     ),
     ("mife", "lwe"): ("pyfe4ai.schemes.mife.lwe", "MIFELWEKeyGenerator", "MIFELWE"),
     ("mife", "paillier"): (
@@ -110,18 +110,18 @@ _SCHEME_REGISTRY: dict[tuple[str, str], tuple[str, str, str]] = {
     ),
     ("mife", "fh_ipe_pairing"): (
         "pyfe4ai.schemes.mife.fh_ipe_pairing",
-        "MIFEFHIPEKeyGenerator",
-        "MIFEFHIPE",
+        "MIFEFHIPEPairingKeyGenerator",
+        "MIFEFHIPEPairing",
     ),
     ("mife", "fh_multi_ipe_pairing"): (
         "pyfe4ai.schemes.mife.fh_multi_ipe_pairing",
-        "MIFEFHMultiIPEKeyGenerator",
-        "MIFEFHMultiIPE",
+        "MIFEFHMultiIPEPairingKeyGenerator",
+        "MIFEFHMultiIPEPairing",
     ),
     ("mife", "ddh_threshold"): (
         "pyfe4ai.schemes.mife.ddh_threshold",
-        "ThresholdMIFEKeyGenerator",
-        "ThresholdMIFE",
+        "ThresholdMIFEDDHKeyGenerator",
+        "ThresholdMIFEDDH",
     ),
     ("mife", "lwe_threshold"): (
         "pyfe4ai.schemes.mife.lwe_threshold",
@@ -129,11 +129,11 @@ _SCHEME_REGISTRY: dict[tuple[str, str], tuple[str, str, str]] = {
         "ThresholdMIFELWE",
     ),
     # ---- MCFE ----------------------------------------------------------
-    ("mcfe", "ddh"): ("pyfe4ai.schemes.mcfe.ddh", "MCFEKeyGenerator", "MCFE"),
+    ("mcfe", "ddh"): ("pyfe4ai.schemes.mcfe.ddh", "MCFEDDHKeyGenerator", "MCFEDDH"),
     ("mcfe", "ddh_ristretto255"): (
         "pyfe4ai.schemes.mcfe.ddh_ristretto255",
-        "MCFERistretto255KeyGenerator",
-        "MCFERistretto255",
+        "MCFEDDHRistretto255KeyGenerator",
+        "MCFEDDHRistretto255",
     ),
     ("mcfe", "lwe"): ("pyfe4ai.schemes.mcfe.lwe", "MCFELWEKeyGenerator", "MCFELWE"),
     ("mcfe", "paillier"): (
@@ -158,28 +158,28 @@ _SCHEME_REGISTRY: dict[tuple[str, str], tuple[str, str, str]] = {
     ),
     ("mcfe", "fh_multi_ipe_pairing"): (
         "pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing",
-        "MCFEFHMultiIPEKeyGenerator",
-        "MCFEFHMultiIPE",
+        "MCFEFHMultiIPEPairingKeyGenerator",
+        "MCFEFHMultiIPEPairing",
     ),
     ("mcfe", "fh_multi_ipe_pairing_threshold"): (
         "pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold",
-        "ThresholdMCFEFHMultiIPEKeyGenerator",
-        "ThresholdMCFEFHMultiIPE",
+        "ThresholdMCFEFHMultiIPEPairingKeyGenerator",
+        "ThresholdMCFEFHMultiIPEPairing",
     ),
     ("mcfe", "fh_multi_ipe_pairing_decentralized"): (
         "pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized",
-        "DecentralizedMCFEFHMultiIPEKeyGenerator",
-        "DecentralizedMCFEFHMultiIPE",
+        "DecentralizedMCFEFHMultiIPEPairingKeyGenerator",
+        "DecentralizedMCFEFHMultiIPEPairing",
     ),
     ("mcfe", "ddh_threshold"): (
         "pyfe4ai.schemes.mcfe.ddh_threshold",
-        "ThresholdMCFEKeyGenerator",
-        "ThresholdMCFE",
+        "ThresholdMCFEDDHKeyGenerator",
+        "ThresholdMCFEDDH",
     ),
     ("mcfe", "ddh_decentralized"): (
         "pyfe4ai.schemes.mcfe.ddh_decentralized",
-        "DecentralizedMCFEKeyGenerator",
-        "DecentralizedMCFE",
+        "DecentralizedMCFEDDHKeyGenerator",
+        "DecentralizedMCFEDDH",
     ),
     ("mcfe", "lwe_threshold"): (
         "pyfe4ai.schemes.mcfe.lwe_threshold",
@@ -219,8 +219,8 @@ _SCHEME_REGISTRY: dict[tuple[str, str], tuple[str, str, str]] = {
     ),
     ("quadratic", "miqfe"): (
         "pyfe4ai.schemes.quadratic.miqfe",
-        "MultiInputQuadraticKeyGenerator",
-        "MultiInputQuadratic",
+        "QuadraticMIQFEKeyGenerator",
+        "QuadraticMIQFE",
     ),
 }
 

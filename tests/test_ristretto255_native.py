@@ -70,12 +70,12 @@ def test_group_operations_identical():
 
 def test_mcfe_ndarray_identical():
     nids = ["a", "b", "c"]
-    kg = mcfe_ec.MCFERistretto255KeyGenerator({"n": 3, "lst_nid": nids})
+    kg = mcfe_ec.MCFEDDHRistretto255KeyGenerator({"n": 3, "lst_nid": nids})
     kg.setup()
     pp = kg.get_public_parameters()
-    clients = {n: mcfe_ec.MCFERistretto255({"precision": 2, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}})
+    clients = {n: mcfe_ec.MCFEDDHRistretto255({"precision": 2, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}})
                for n in nids}
-    agg = mcfe_ec.MCFERistretto255({"precision": 2, "keys": {"pp": pp}})
+    agg = mcfe_ec.MCFEDDHRistretto255({"precision": 2, "keys": {"pp": pp}})
     rng = np.random.default_rng(1)
     grads = {n: [rng.uniform(-1, 1, (3, 4)).round(2), rng.uniform(-1, 1, 5).round(2)] for n in nids}
     enc = {}
@@ -93,7 +93,7 @@ def test_mcfe_ndarray_identical():
     for name in ("python", "native"):
         with native_backend.backend(name), pytest.raises(FEValidationError, match="malformed ciphertext element of b"):
             agg.decrypt_lst_ndarray_ct(enc, dk, weights, "r")
-    small = mcfe_ec.MCFERistretto255({"precision": 2, "dlog_bound": 10, "keys": {"pp": pp}})
+    small = mcfe_ec.MCFEDDHRistretto255({"precision": 2, "dlog_bound": 10, "keys": {"pp": pp}})
     for name in ("python", "native"):
         with native_backend.backend(name), pytest.raises(FESchemeError, match="does not decrypt"):
             small.decrypt_lst_ndarray_ct({n: enc[n][:1] for n in nids}, dk, weights, "r")

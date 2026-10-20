@@ -141,11 +141,11 @@ def test_bounded_dlog():
 # --------------------------------------------------------------- the schemes
 
 def test_sife_round_trip_and_checks():
-    kg = sife_ec.SIFERistretto255KeyGenerator({"eta": 4})
+    kg = sife_ec.SIFEDDHRistretto255KeyGenerator({"eta": 4})
     kg.setup()
     pp = kg.get_public_parameters()
-    enc = sife_ec.SIFERistretto255({"keys": {"pp": pp, "sk": kg.get_private_keys()}})
-    dec = sife_ec.SIFERistretto255({"keys": {"pp": pp}})
+    enc = sife_ec.SIFEDDHRistretto255({"keys": {"pp": pp, "sk": kg.get_private_keys()}})
+    dec = sife_ec.SIFEDDHRistretto255({"keys": {"pp": pp}})
     x, y = [3, -4, 0, 7], [2, 5, -1, 1]
     ct = enc.encrypt(x)
     dk = kg.get_decryption_keys("s", credentials={"fusion_weight": y})
@@ -157,18 +157,18 @@ def test_sife_round_trip_and_checks():
     with pytest.raises(FEValidationError):
         enc.encrypt([1, 2])
     with pytest.raises(FEKeyError):
-        sife_ec.SIFERistretto255({"keys": {"pp": dict(pp, group="modp")}})
+        sife_ec.SIFEDDHRistretto255({"keys": {"pp": dict(pp, group="modp")}})
     with pytest.raises(FEValidationError):
-        sife_ec.SIFERistretto255KeyGenerator({"group": "modp"})
+        sife_ec.SIFEDDHRistretto255KeyGenerator({"group": "modp"})
 
 
 def test_mife_round_trip_and_pads():
     nids = ["a", "b"]
-    kg = mife_ec.MIFERistretto255KeyGenerator({"n": 2, "lst_nid": nids, "eta": 2})
+    kg = mife_ec.MIFEDDHRistretto255KeyGenerator({"n": 2, "lst_nid": nids, "eta": 2})
     kg.setup()
     pp = kg.get_public_parameters()
-    clients = {n: mife_ec.MIFERistretto255({"keys": {"pp": pp, "sk": kg.get_private_keys(n)}}) for n in nids}
-    agg = mife_ec.MIFERistretto255({"keys": {"pp": pp}})
+    clients = {n: mife_ec.MIFEDDHRistretto255({"keys": {"pp": pp, "sk": kg.get_private_keys(n)}}) for n in nids}
+    agg = mife_ec.MIFEDDHRistretto255({"keys": {"pp": pp}})
     x = {"a": [5, -2], "b": [1, 9]}
     y = {"a": [1, 2], "b": [-3, 1]}
     cts = {n: clients[n].encrypt(x[n]) for n in nids}
@@ -183,11 +183,11 @@ def test_mife_round_trip_and_pads():
 
 def test_mcfe_round_trip_labels_and_errors():
     nids = ["a", "b", "c"]
-    kg = mcfe_ec.MCFERistretto255KeyGenerator({"n": 3, "lst_nid": nids, "eta": 2})
+    kg = mcfe_ec.MCFEDDHRistretto255KeyGenerator({"n": 3, "lst_nid": nids, "eta": 2})
     kg.setup()
     pp = kg.get_public_parameters()
-    clients = {n: mcfe_ec.MCFERistretto255({"keys": {"pp": pp, "sk": kg.get_private_keys(n)}}) for n in nids}
-    agg = mcfe_ec.MCFERistretto255({"keys": {"pp": pp}})
+    clients = {n: mcfe_ec.MCFEDDHRistretto255({"keys": {"pp": pp, "sk": kg.get_private_keys(n)}}) for n in nids}
+    agg = mcfe_ec.MCFEDDHRistretto255({"keys": {"pp": pp}})
     x = {"a": [5, -2], "b": [1, 9], "c": [0, -7]}
     y = {"a": [1, 2], "b": [-3, 1], "c": [2, 2]}
     cts = {n: clients[n].encrypt(x[n], "L1") for n in nids}
@@ -225,21 +225,21 @@ def test_wrapper_selects_the_group_and_aggregates():
 
 
 def test_modp_key_generators_refuse_another_group():
-    from pyfe4ai.schemes.mcfe.ddh import MCFEKeyGenerator
+    from pyfe4ai.schemes.mcfe.ddh import MCFEDDHKeyGenerator
 
     with pytest.raises(FEValidationError, match="ddh_ristretto255"):
-        MCFEKeyGenerator({"n": 2, "sec_param": 256, "group": "ristretto255"})
-    MCFEKeyGenerator({"n": 2, "sec_param": 256, "group": "modp"})
+        MCFEDDHKeyGenerator({"n": 2, "sec_param": 256, "group": "ristretto255"})
+    MCFEDDHKeyGenerator({"n": 2, "sec_param": 256, "group": "modp"})
 
 
 def test_ndarray_failure_is_reported():
     nids = ["a", "b"]
-    kg = mcfe_ec.MCFERistretto255KeyGenerator({"n": 2, "lst_nid": nids})
+    kg = mcfe_ec.MCFEDDHRistretto255KeyGenerator({"n": 2, "lst_nid": nids})
     kg.setup()
     pp = kg.get_public_parameters()
-    clients = {n: mcfe_ec.MCFERistretto255({"precision": 0, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}})
+    clients = {n: mcfe_ec.MCFEDDHRistretto255({"precision": 0, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}})
                for n in nids}
-    agg = mcfe_ec.MCFERistretto255({"precision": 0, "dlog_bound": 50, "keys": {"pp": pp}})
+    agg = mcfe_ec.MCFEDDHRistretto255({"precision": 0, "dlog_bound": 50, "keys": {"pp": pp}})
     enc = {n: clients[n].encrypt_lst_ndarray([np.array([3, 40])], label="r") for n in nids}
     dk = kg.get_decryption_keys("s", credentials={"fusion_weight": {n: [1] for n in nids}})
     with pytest.raises(FESchemeError, match=r"element \(1,\) of layer 0"):  # 80 > dlog_bound

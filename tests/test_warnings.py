@@ -17,7 +17,7 @@ import pytest
 from pyfe4ai.core.base import cache_dir
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.exceptions import FESecurityWarning, FEWarning
-from pyfe4ai.schemes.sife.ddh import SIFE, SIFEKeyGenerator
+from pyfe4ai.schemes.sife.ddh import SIFEDDH, SIFEDDHKeyGenerator
 
 DDH = {"sec_param": 128, "eta": 2}
 NIDS, SIDS = ["c0", "c1", "c2"], ["s0", "s1", "s2"]
@@ -46,8 +46,8 @@ def test_fe_warning_is_a_user_warning_apart_from_the_security_warning():
 
 
 def test_a_record_that_no_longer_verifies_is_regenerated_with_a_warning():
-    SIFEKeyGenerator(dict(DDH))
-    _no_fe_warning(lambda: SIFEKeyGenerator(dict(DDH)))  # a matching record: no warning
+    SIFEDDHKeyGenerator(dict(DDH))
+    _no_fe_warning(lambda: SIFEDDHKeyGenerator(dict(DDH)))  # a matching record: no warning
     path = _param_file(CryptoCONST.TYPE_SIFE)
     with open(path) as f:
         record = json.load(f)
@@ -55,24 +55,24 @@ def test_a_record_that_no_longer_verifies_is_regenerated_with_a_warning():
     with open(path, "w") as f:
         json.dump(record, f)
     with pytest.warns(FEWarning, match="regenerated"):
-        kg = SIFEKeyGenerator(dict(DDH))
+        kg = SIFEDDHKeyGenerator(dict(DDH))
     assert int(kg.p).bit_length() == 128
 
 
 def test_an_unreadable_record_is_regenerated_with_a_warning():
-    SIFEKeyGenerator(dict(DDH))
+    SIFEDDHKeyGenerator(dict(DDH))
     with open(_param_file(CryptoCONST.TYPE_SIFE), "w") as f:
         f.write('{"sec_param": 128, "group": ')  # truncated write
     with pytest.warns(FEWarning, match="unreadable.*regenerated"):
-        SIFEKeyGenerator(dict(DDH))
+        SIFEDDHKeyGenerator(dict(DDH))
 
 
 def test_a_decryption_out_of_range_warns():
-    kg = SIFEKeyGenerator(dict(DDH))
+    kg = SIFEDDHKeyGenerator(dict(DDH))
     kg.setup()
     pp = kg.get_public_parameters()
-    ct = SIFE({"id": "c", "precision": 0, "keys": {"pp": pp, "sk": kg.get_private_keys()}}).encrypt([5, 5])
-    server = SIFE({"id": "s", "precision": 0, "dlog_bound": 10, "keys": {"pp": pp}})
+    ct = SIFEDDH({"id": "c", "precision": 0, "keys": {"pp": pp, "sk": kg.get_private_keys()}}).encrypt([5, 5])
+    server = SIFEDDH({"id": "s", "precision": 0, "dlog_bound": 10, "keys": {"pp": pp}})
     dk = kg.get_decryption_keys("s", credentials={"fusion_weight": [5, 5]})
     with pytest.warns(FEWarning, match="out of bound"):
         assert server.decrypt(ct, dk, [5, 5]) is None
@@ -144,10 +144,10 @@ def test_the_warnings_point_at_the_application_call():
         assert combiner.combine_decrypt(parts) is None
         assert combiner.combine_decrypt([parts]) is None  # another call site: shown again
         assert kg.get_decryption_keys("s9", credentials=creds) is None
-        SIFEKeyGenerator(dict(DDH))
+        SIFEDDHKeyGenerator(dict(DDH))
         with open(_param_file(CryptoCONST.TYPE_SIFE), "w") as f:
             f.write("{")
-        SIFEKeyGenerator(dict(DDH))
+        SIFEDDHKeyGenerator(dict(DDH))
     fe = [w for w in caught if issubclass(w.category, FEWarning)]
     assert [w.filename for w in fe] == [__file__] * 4, [(w.filename, str(w.message)[:40]) for w in fe]
     assert len({w.lineno for w in fe if "disagree" in str(w.message)}) == 2

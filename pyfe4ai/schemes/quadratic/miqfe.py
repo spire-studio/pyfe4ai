@@ -236,7 +236,7 @@ def _dims(n: int, m: int, k: int) -> dict:
     return {"D": 4 * m + 2 * k + 17, "ipfe1": m * n + 3 * m + 4, "m1": m * m * n + 2, "m2": 1}
 
 
-class MultiInputQuadraticKeyGenerator(IPFEAbsKeyGenerator):
+class QuadraticMIQFEKeyGenerator(IPFEAbsKeyGenerator):
     """Setup and key generation of the AGT22 MIFE for quadratic functions."""
 
     _scheme_type = CryptoCONST.TYPE_QUADRATIC_MIQFE
@@ -389,7 +389,7 @@ class MultiInputQuadraticKeyGenerator(IPFEAbsKeyGenerator):
         ).to_dict()
 
 
-class MultiInputQuadratic(IPFEAbsCrypto):
+class QuadraticMIQFE(IPFEAbsCrypto):
     """Encryption with ``EK_i`` and decryption of the AGT22 MIFE."""
 
     def __init__(self, config: dict, **kwargs) -> None:

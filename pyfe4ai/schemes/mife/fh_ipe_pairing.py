@@ -79,7 +79,7 @@ class _Group:
         return deserialize_many(self.group, texts)
 
 
-class MIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator):
+class MIFEFHIPEPairingKeyGenerator(IPFEAbsKeyGenerator):
     """Key generator for the ACFGU18 function-hiding MIFE."""
 
     _scheme_type = CryptoCONST.TYPE_MIFE_FH_IPE
@@ -158,7 +158,7 @@ class MIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator):
         ).to_dict()
 
 
-class MIFEFHIPE(IPFEAbsCrypto):
+class MIFEFHIPEPairing(IPFEAbsCrypto):
     """Crypto operations for the ACFGU18 function-hiding MIFE."""
 
     def __init__(self, config: dict, **kwargs) -> None:

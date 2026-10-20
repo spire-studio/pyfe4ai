@@ -16,10 +16,10 @@ import warnings
 
 import pytest
 
-from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFEKeyGenerator
+from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFEDDHKeyGenerator
 from pyfe4ai.schemes.mcfe.lwe_threshold import ThresholdMCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWEKeyGenerator
-from pyfe4ai.schemes.mife.ddh_threshold import ThresholdMIFEKeyGenerator
+from pyfe4ai.schemes.mife.ddh_threshold import ThresholdMIFEDDHKeyGenerator
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWEKeyGenerator
 
 NIDS, SIDS = ["nid_0", "nid_1", "nid_2"], ["sid_0", "sid_1", "sid_2"]
@@ -31,9 +31,9 @@ CREDS = {"fusion_weight": {nid: [1] for nid in NIDS}, "label": "L"}
 
 def _pairing():
     from tests.pairing_group import GROUP
-    from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold import ThresholdMCFEFHMultiIPEKeyGenerator
+    from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold import ThresholdMCFEFHMultiIPEPairingKeyGenerator
 
-    kg = ThresholdMCFEFHMultiIPEKeyGenerator({"sec_param": 64, "eta": 1, "n": 3, "s": 3, "t": 2, "lst_nid": NIDS,
+    kg = ThresholdMCFEFHMultiIPEPairingKeyGenerator({"sec_param": 64, "eta": 1, "n": 3, "s": 3, "t": 2, "lst_nid": NIDS,
                                               "lst_sid": SIDS, "bound_x": 4, "bound_y": 4,
                                               "pairing_group_param": GROUP})
     return kg.get_decryption_keys
@@ -48,8 +48,8 @@ SITES = {
     "tMCFE-Ring-LWE weight part": lambda: ThresholdMCFERingLWEKeyGenerator(
         dict(n=3, lst_nid=NIDS, s=3, t=2, lst_sid=SIDS, eta=1, ring_n=32, sec_param=64, bound_x=100, bound_y=3,
              stat_param=64)).get_weight_key_share,
-    "tMIFE-DDH": lambda: ThresholdMIFEKeyGenerator(dict(DDH)).get_decryption_keys,
-    "tMCFE-DDH": lambda: ThresholdMCFEKeyGenerator(dict(DDH)).get_decryption_keys,
+    "tMIFE-DDH": lambda: ThresholdMIFEDDHKeyGenerator(dict(DDH)).get_decryption_keys,
+    "tMCFE-DDH": lambda: ThresholdMCFEDDHKeyGenerator(dict(DDH)).get_decryption_keys,
     "tMCFE-FH-pairing": _pairing,
 }
 

@@ -43,8 +43,8 @@ import secrets
 
 import gmpy2 as gp
 
-from pyfe4ai.schemes.mcfe.ddh import MCFE
-from pyfe4ai.schemes.mcfe.ddh import MCFEKeyGenerator
+from pyfe4ai.schemes.mcfe.ddh import MCFEDDH
+from pyfe4ai.schemes.mcfe.ddh import MCFEDDHKeyGenerator
 from pyfe4ai.schemes.mcfe.decentralize import combine_contributions
 from pyfe4ai.schemes.mcfe.decentralize import encrypt_contribution
 from pyfe4ai.schemes.mcfe.decentralize import generate_mcfe2_modulus
@@ -76,7 +76,7 @@ def _carry_mask(key_hex: str, label: str, index: int, bits: int) -> gp.mpz:
     return gp.mpz(int.from_bytes(digest, "big") >> (8 * n_bytes - bits))
 
 
-class DecentralizedMCFEKeyGenerator(MCFEKeyGenerator):
+class DecentralizedMCFEDDHKeyGenerator(MCFEDDHKeyGenerator):
     """Sets up CDGPP18 client keys and zero-sum MCFE2 keys (ABMPSW20 Fig. 14)."""
 
     _holds_dcr_modulus = True  # never cached under standard (see ParameterCacheMixin)
@@ -88,7 +88,7 @@ class DecentralizedMCFEKeyGenerator(MCFEKeyGenerator):
         """Initialise the key generator.
 
         Args:
-            config: As for :class:`~pyfe4ai.schemes.mcfe.ddh.MCFEKeyGenerator`
+            config: As for :class:`~pyfe4ai.schemes.mcfe.ddh.MCFEDDHKeyGenerator`
                 (``sec_param``, ``eta``, ``n``, ``lst_nid``), plus ``stat_param``
                 for MCFE2.
         """
@@ -161,7 +161,7 @@ class DecentralizedMCFEKeyGenerator(MCFEKeyGenerator):
         )
 
 
-class DecentralizedMCFE(MCFE):
+class DecentralizedMCFEDDH(MCFEDDH):
     """CDGPP18 encryption / decryption with decentralised key derivation."""
 
     def derive_function_decryption_key_share(self, fusion_weight: dict) -> dict:

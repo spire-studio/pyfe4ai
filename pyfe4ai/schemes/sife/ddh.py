@@ -39,7 +39,7 @@ from pyfe4ai._validation import int_vector
 logger = logging.getLogger(__name__)
 
 
-class SIFEKeyGenerator(DDHKeyGeneratorBase):
+class SIFEDDHKeyGenerator(DDHKeyGeneratorBase):
     """Key generator for DDH-based single-input inner-product FE."""
 
     _scheme_type = CryptoCONST.TYPE_SIFE
@@ -119,7 +119,7 @@ class SIFEKeyGenerator(DDHKeyGeneratorBase):
         return sum(gp.mul(s_i, y_i) for s_i, y_i in zip(self.msk["s"], y)) % self.q
 
 
-class SIFE(IPFEAbsCrypto):
+class SIFEDDH(IPFEAbsCrypto):
     """Crypto operations for DDH-based single-input inner-product FE."""
 
     def __init__(self, config: dict, **kwargs) -> None:
@@ -193,7 +193,7 @@ class SIFE(IPFEAbsCrypto):
 
         Args:
             dct_ct: Ciphertext dict from :meth:`encrypt`.
-            dk: Decryption key dict from :meth:`SIFEKeyGenerator.get_decryption_keys`.
+            dk: Decryption key dict from :meth:`SIFEDDHKeyGenerator.get_decryption_keys`.
             fusion_weight: Integer weight vector y (the key's weights).
 
         Returns:

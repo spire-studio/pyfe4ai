@@ -128,14 +128,63 @@ upgrade notes first.**
 
   | Old | New |
   |---|---|
-  | `pyfe4ai.schemes.config_types` (v0.3.0; `schemes.common.config_types` in development builds): `FEBaseConfig`; `DDHConfig`, `DamgardDDHConfig`, `LWEConfig`, `RingLWEConfig`, `PaillierConfig`, `PairingIPEConfig`, `CryptoConfig`; `MCFELWEConfig`, `MCFERingLWEConfig`, `ThresholdMCFELWEConfig`, `ThresholdMCFERingLWEConfig`, `QuadraticQuadConfig`, `QuadraticSGPConfig`, `MultiInputQuadraticConfig` | `pyfe4ai.core.config`: `SchemeConfig`; the same names |
-  | the same module: `PairingMultiIPEConfig`, `PartFHIPEConfig`, `ThresholdDDHConfig`, `ThresholdLWEConfig`, `ThresholdPairingMultiIPEConfig` | `pyfe4ai.core.config`: `MIFEFHMultiIPEConfig`, `SIFEPartFHIPEConfig`, `ThresholdConfig` (and `ThresholdMIFEConfig`, `ThresholdMCFEConfig`), `ThresholdSharingConfig` (and `ThresholdMIFELWEConfig`), `ThresholdMCFEFHMultiIPEConfig` |
+  | `pyfe4ai.schemes.config_types` (v0.3.0; `schemes.common.config_types` in development builds): `FEBaseConfig`; `DDHConfig`, `DamgardDDHConfig`, `LWEConfig`, `RingLWEConfig`, `PaillierConfig`, `PairingIPEConfig`, `CryptoConfig`; `MCFELWEConfig`, `MCFERingLWEConfig`, `ThresholdMCFELWEConfig`, `ThresholdMCFERingLWEConfig`, `QuadraticQuadConfig`, `QuadraticSGPConfig`, `MultiInputQuadraticConfig` | `pyfe4ai.core.config`: `SchemeConfig`; the same names, but `QuadraticMIQFEConfig` (see Class names) |
+  | the same module: `PairingMultiIPEConfig`, `PartFHIPEConfig`, `ThresholdDDHConfig`, `ThresholdLWEConfig`, `ThresholdPairingMultiIPEConfig` | `pyfe4ai.core.config`: `MIFEFHMultiIPEPairingConfig`, `SIFEPartFHIPEPairingConfig`, `ThresholdConfig` (and `ThresholdMIFEDDHConfig`, `ThresholdMCFEDDHConfig`), `ThresholdSharingConfig` (and `ThresholdMIFELWEConfig`), `ThresholdMCFEFHMultiIPEPairingConfig` |
   | `pyfe4ai.schemes.profiles` (v0.3.0; `core.profiles` in development builds): `resolve`, `STANDARD_PAIRING_GROUP`, `_STANDARD_MINIMA`, `_STANDARD_FIXED`, `_REFUSED` | `pyfe4ai.core.config`: `resolve`, `STANDARD_PAIRING_GROUP`, `STANDARD_MINIMA`, `STANDARD_FIXED`, `REFUSED` (and `STANDARD_PRESETS`) |
   | `pyfe4ai.utils.ring_lwe_utils.canonical_ring_ciphertext` (v0.3.0) | `pyfe4ai.core.formats.binary.canonical_ring_ciphertext` |
   | `pyfe4ai.schemes.abdp15_lwe.CONSTRUCTION` (v0.3.0); the record ids of the other schemes (private constants) | `pyfe4ai.core.versions`: `SIFE_LWE_RECORD`, `MIFE_LWE_RECORD`, `SIFE_FULLYSEC_LWE_RECORD`, ..., `DMCFE_PAILLIER_RECORD` (the same values) |
   | added after v0.3.0 (development builds): `threshold.kl`: `PER_SAMPLE`, `KL`, `FLOODING_ACCOUNTINGS`, `flooding_config`, `check_kl_threshold` | `pyfe4ai.core.config` |
   | added after v0.3.0: `primitives.lattice.ring_lwe_utils`: `encode_binary_ciphertext`, `decode_binary_ciphertext`, `encode_threshold_ciphertext`, `decode_threshold_ciphertext`, `threshold_ciphertext_from_format1`, `threshold_ciphertext_header`, `encode_values`, `decode_values` | `pyfe4ai.core.formats.binary` |
   | added after v0.3.0: `primitives.lattice.ring_lwe_utils.CT_FORMATS`; `primitives.sampling`: `FLOODING_NOISE_VERSION`, `check_flooding_version`; `mcfe.ring_lwe`: `pp_label_hash`, `ciphertext_label_hash`, `check_ciphertext_label_hashes`; `mcfe.ring_lwe_threshold.LEGACY_FLOODING` | `pyfe4ai.core.versions` |
+- **Class names**: the classes of every scheme are named after its id
+  `family/variant`, one name per class: `Threshold` or `Decentralized` for
+  the variants with that suffix, then the family (`SIFE`, `MIFE`, `MCFE`,
+  `Quadratic`), then the rest of the variant in CamelCase with its acronyms
+  in capitals; the key generator adds `KeyGenerator`, the config class
+  `Config` (`mcfe/ring_lwe`: `MCFERingLWE`, `MCFERingLWEKeyGenerator`,
+  `MCFERingLWEConfig`). The classes below are renamed (each with its
+  `...KeyGenerator`); the aliases that the family packages exported
+  (`DMCFE`, `DMCFELWE`, `DMCFERingLWE`, `DynamicSIFE`, `SIFEDamgardDDH`,
+  `MIFEDamgardDDH`, `MCFEDamgardDDH` and their `...KeyGenerator`) are
+  removed, and no alias remains at an old name. `pyfe4ai.schemes.sife`,
+  `.mife`, `.mcfe` and `.quadratic` export the classes of every scheme of
+  their family (now also `SIFEDDHRistretto255`, `SIFEFullySecRingLWE`,
+  `MIFEDDHRistretto255` and `MCFEDDHRistretto255`). Serialized keys,
+  shares, ciphertexts, partial decryptions and parameter records contain
+  no class name and are unchanged (the scheme-type folders of the parameter
+  cache, such as `authority/SIFE/`, keep their names). Objects pickled by an
+  earlier version that refer to a renamed class do not load
+  (`AttributeError`); the threshold MCFE over Ring-LWE keeps its names, and
+  its pickled key generators, clients and servers of earlier versions are
+  refused as before ("pickled by an incompatible version of pyfe4ai").
+
+  | Scheme | Old (v0.3.0) | New |
+  |---|---|---|
+  | `sife/ddh` | `SIFE`, `SIFEKeyGenerator` | `SIFEDDH`, `SIFEDDHKeyGenerator` |
+  | `sife/ddh_dynamic` | `SIFEDynamic` (alias `DynamicSIFE`) | `SIFEDDHDynamic` |
+  | `sife/damgard` | `SIFEDamgard` (alias `SIFEDamgardDDH`) | `SIFEDamgard` |
+  | `sife/fh_ipe_pairing` | `SIFEFHIPE` | `SIFEFHIPEPairing` |
+  | `sife/part_fh_ipe_pairing` | `SIFEPartFHIPE` | `SIFEPartFHIPEPairing` |
+  | `mife/ddh` | `MIFE` | `MIFEDDH` |
+  | `mife/damgard` | `MIFEDamgard` (alias `MIFEDamgardDDH`) | `MIFEDamgard` |
+  | `mife/fh_ipe_pairing` | `MIFEFHIPE` | `MIFEFHIPEPairing` |
+  | `mife/fh_multi_ipe_pairing` | `MIFEFHMultiIPE` | `MIFEFHMultiIPEPairing` |
+  | `mife/ddh_threshold` | `ThresholdMIFE` | `ThresholdMIFEDDH` |
+  | `mcfe/ddh` | `MCFE` | `MCFEDDH` |
+  | `mcfe/damgard` | `MCFEDamgard` (alias `MCFEDamgardDDH`) | `MCFEDamgard` |
+  | `mcfe/fh_multi_ipe_pairing` | `MCFEFHMultiIPE` | `MCFEFHMultiIPEPairing` |
+  | `mcfe/fh_multi_ipe_pairing_threshold` | `ThresholdMCFEFHMultiIPE` | `ThresholdMCFEFHMultiIPEPairing` |
+  | `mcfe/fh_multi_ipe_pairing_decentralized` | `DecentralizedMCFEFHMultiIPE` | `DecentralizedMCFEFHMultiIPEPairing` |
+  | `mcfe/ddh_threshold` | `ThresholdMCFE` | `ThresholdMCFEDDH` |
+  | `mcfe/ddh_decentralized` | `DecentralizedMCFE` (alias `DMCFE`) | `DecentralizedMCFEDDH` |
+  | `mcfe/lwe_decentralized` | `DecentralizedMCFELWE` (alias `DMCFELWE`) | `DecentralizedMCFELWE` |
+  | `mcfe/ring_lwe_decentralized` | `DecentralizedMCFERingLWE` (alias `DMCFERingLWE`) | `DecentralizedMCFERingLWE` |
+  | `quadratic/miqfe` | `MultiInputQuadratic` | `QuadraticMIQFE` |
+  | `sife/ddh_ristretto255`, `mife/ddh_ristretto255`, `mcfe/ddh_ristretto255` (added after v0.3.0) | `SIFERistretto255`, `MIFERistretto255`, `MCFERistretto255` | `SIFEDDHRistretto255`, `MIFEDDHRistretto255`, `MCFEDDHRistretto255` |
+  | config classes (`pyfe4ai.core.config`; `MultiInputQuadraticConfig` in v0.3.0, the others added after it) | `MultiInputQuadraticConfig`; `SIFEConfig`, `MIFEConfig`, `MCFEConfig`, `ThresholdMIFEConfig`, `ThresholdMCFEConfig`, `DecentralizedMCFEConfig`, `SIFEDynamicConfig`, `SIFERistretto255Config`, `MIFERistretto255Config`, `MCFERistretto255Config`, `SIFEFHIPEConfig`, `SIFEPartFHIPEConfig`, `MIFEFHIPEConfig`, `MIFEFHMultiIPEConfig`, `MCFEFHMultiIPEConfig`, `ThresholdMCFEFHMultiIPEConfig`, `DecentralizedMCFEFHMultiIPEConfig` | the crypto class's new name with `Config`: `QuadraticMIQFEConfig`; `SIFEDDHConfig`, `MIFEDDHConfig`, `MCFEDDHConfig`, `ThresholdMIFEDDHConfig`, `ThresholdMCFEDDHConfig`, `DecentralizedMCFEDDHConfig`, `SIFEDDHDynamicConfig`, `SIFEDDHRistretto255Config`, `MIFEDDHRistretto255Config`, `MCFEDDHRistretto255Config`, `SIFEFHIPEPairingConfig`, `SIFEPartFHIPEPairingConfig`, `MIFEFHIPEPairingConfig`, `MIFEFHMultiIPEPairingConfig`, `MCFEFHMultiIPEPairingConfig`, `ThresholdMCFEFHMultiIPEPairingConfig`, `DecentralizedMCFEFHMultiIPEPairingConfig` |
+
+  The other schemes keep their class names (`SIFELWE`, `MCFERingLWE`,
+  `ThresholdMCFERingLWE`, `DecentralizedMCFEPaillier`, `QuadraticSGP`, ...).
 - **Logging**: the library no longer configures logging or writes log
   files. `pyfe4ai.logger.init_logging_config()` and the packaged
   `config.yaml` (console and rotating files under `./logs/`) are removed;

@@ -56,7 +56,7 @@ def hash_label(label) -> list:
     return [eg.hash_to_group(encoded, _LABEL_DST, index=k) for k in (0, 1)]
 
 
-class MCFERistretto255KeyGenerator(ECDDHKeyGeneratorBase):
+class MCFEDDHRistretto255KeyGenerator(ECDDHKeyGeneratorBase):
     """Key generator for DDH-based multi-client inner-product FE over ristretto255."""
 
     def __init__(self, config: dict, **kwargs) -> None:
@@ -119,7 +119,7 @@ class MCFERistretto255KeyGenerator(ECDDHKeyGeneratorBase):
         return MCFEDDHFunctionalKey.new(d=[eg.scalar_str(d_k) for d_k in d]).to_dict()
 
 
-class MCFERistretto255(ECDDHCryptoBase):
+class MCFEDDHRistretto255(ECDDHCryptoBase):
     """Crypto operations for DDH-based multi-client inner-product FE over ristretto255."""
 
     def _key(self) -> list:

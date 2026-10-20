@@ -13,8 +13,8 @@ from _common import size_bytes
 from _common import stats
 from pyfe4ai.schemes.mife.damgard_ddh import MIFEDamgard
 from pyfe4ai.schemes.mife.damgard_ddh import MIFEDamgardKeyGenerator
-from pyfe4ai.schemes.mife.ddh import MIFE
-from pyfe4ai.schemes.mife.ddh import MIFEKeyGenerator
+from pyfe4ai.schemes.mife.ddh import MIFEDDH
+from pyfe4ai.schemes.mife.ddh import MIFEDDHKeyGenerator
 from pyfe4ai.schemes.mife.fullysec_lwe import MIFEFullySecLWE
 from pyfe4ai.schemes.mife.fullysec_lwe import MIFEFullySecLWEKeyGenerator
 from pyfe4ai.schemes.mife.lwe import MIFELWE
@@ -140,8 +140,8 @@ def main() -> None:
     cases = [
         {
             "name": "MIFE/DDH",
-            "kg_cls": MIFEKeyGenerator,
-            "crypto_cls": MIFE,
+            "kg_cls": MIFEDDHKeyGenerator,
+            "crypto_cls": MIFEDDH,
             "config": {"sec_param": 256, "eta": eta, "n": 3, "s": 1, "lst_nid": lst_nid},
             "precision": 3,
             "lst_nid": lst_nid,

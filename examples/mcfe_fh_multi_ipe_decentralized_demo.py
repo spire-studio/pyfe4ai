@@ -1,5 +1,5 @@
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import DecentralizedMCFEFHMultiIPE
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import DecentralizedMCFEFHMultiIPEKeyGenerator
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import DecentralizedMCFEFHMultiIPEPairing
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import DecentralizedMCFEFHMultiIPEPairingKeyGenerator
 
 
 def main() -> None:
@@ -15,7 +15,7 @@ def main() -> None:
     }
     label = "decentralized-demo-label"
 
-    kg = DecentralizedMCFEFHMultiIPEKeyGenerator(config)
+    kg = DecentralizedMCFEFHMultiIPEPairingKeyGenerator(config)
     kg.setup()
 
     dct_x = {
@@ -33,14 +33,14 @@ def main() -> None:
     dct_ct = {}
     dct_dk_shares = {}
     for nid in config["lst_nid"]:
-        crypto_nid = DecentralizedMCFEFHMultiIPE(
+        crypto_nid = DecentralizedMCFEFHMultiIPEPairing(
             {"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}
         )
         dct_ct[nid] = crypto_nid.encrypt(dct_x[nid], label)
         # each client derives its key from its own weights and the function tag
         dct_dk_shares[nid] = crypto_nid.derive_function_decryption_key_share(dct_y[nid], "weights-v1")
 
-    decryptor = DecentralizedMCFEFHMultiIPE({"id": "sid_0", "keys": {"pp": pp}})
+    decryptor = DecentralizedMCFEFHMultiIPEPairing({"id": "sid_0", "keys": {"pp": pp}})
     dk = decryptor.combine_function_decryption_key_share(dct_dk_shares)
     result = decryptor.decrypt(dct_ct, dk, dct_y, label)
 

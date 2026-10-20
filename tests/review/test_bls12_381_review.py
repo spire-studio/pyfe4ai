@@ -39,13 +39,13 @@ _LEAK = textwrap.dedent(
     import os, random, resource, sys
     os.chdir(sys.argv[1])
     os.environ["PYFE4AI_CACHE_DIR"] = os.path.join(sys.argv[1], "config")
-    from pyfe4ai.schemes.sife.fh_ipe_pairing import SIFEFHIPE, SIFEFHIPEKeyGenerator
-    kg = SIFEFHIPEKeyGenerator({"sec_param": 64, "eta": 10, "bound_x": 100, "bound_y": 100,
+    from pyfe4ai.schemes.sife.fh_ipe_pairing import SIFEFHIPEPairing, SIFEFHIPEPairingKeyGenerator
+    kg = SIFEFHIPEPairingKeyGenerator({"sec_param": 64, "eta": 10, "bound_x": 100, "bound_y": 100,
                                 "pairing_group_param": "BLS12-381"})
     kg.setup()
     pp = kg.get_public_parameters()
-    enc = SIFEFHIPE({"id": "nid_default", "keys": {"pp": pp, "sk": kg.get_private_keys()}})
-    dec = SIFEFHIPE({"id": "sid_0", "keys": {"pp": pp}})
+    enc = SIFEFHIPEPairing({"id": "nid_default", "keys": {"pp": pp, "sk": kg.get_private_keys()}})
+    dec = SIFEFHIPEPairing({"id": "sid_0", "keys": {"pp": pp}})
     y = [random.randint(-100, 100) for _ in range(10)]
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y})
     def rss():

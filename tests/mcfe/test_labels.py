@@ -27,14 +27,14 @@ def test_encodings_are_disjoint():
 
 
 def _schemes():
-    from pyfe4ai.schemes.mcfe.ddh import MCFE, MCFEKeyGenerator
+    from pyfe4ai.schemes.mcfe.ddh import MCFEDDH, MCFEDDHKeyGenerator
     from pyfe4ai.schemes.mcfe.damgard_ddh import MCFEDamgard, MCFEDamgardKeyGenerator
     from pyfe4ai.schemes.mcfe.lwe import MCFELWE, MCFELWEKeyGenerator
     from pyfe4ai.schemes.mcfe.paillier import MCFEPaillier, MCFEPaillierKeyGenerator
 
     base = {"sec_param": 64, "eta": 1, "n": 2, "lst_nid": ["nid_0", "nid_1"]}
     return [
-        (MCFEKeyGenerator, MCFE, dict(base, sec_param=128)),
+        (MCFEDDHKeyGenerator, MCFEDDH, dict(base, sec_param=128)),
         (MCFEDamgardKeyGenerator, MCFEDamgard, dict(base, modulus_length=64, bound=10)),
         (MCFELWEKeyGenerator, MCFELWE, dict(base, lwe_n=8, bound_x=4, bound_y=4)),
         (MCFEPaillierKeyGenerator, MCFEPaillier, dict(base, bit_length=64, bound_x=10, bound_y=10)),

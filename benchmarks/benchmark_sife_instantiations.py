@@ -17,8 +17,8 @@ from _common import prepare_benchmark
 from _common import profile_value
 from pyfe4ai.schemes.sife.damgard_ddh import SIFEDamgard
 from pyfe4ai.schemes.sife.damgard_ddh import SIFEDamgardKeyGenerator
-from pyfe4ai.schemes.sife.ddh import SIFE
-from pyfe4ai.schemes.sife.ddh import SIFEKeyGenerator
+from pyfe4ai.schemes.sife.ddh import SIFEDDH
+from pyfe4ai.schemes.sife.ddh import SIFEDDHKeyGenerator
 from pyfe4ai.schemes.sife.fullysec_lwe import SIFEFullySecLWE
 from pyfe4ai.schemes.sife.fullysec_lwe import SIFEFullySecLWEKeyGenerator
 from pyfe4ai.schemes.sife.lwe import SIFELWE
@@ -137,8 +137,8 @@ def main() -> None:
     cases = [
         {
             "name": "SIFE/DDH",
-            "kg_cls": SIFEKeyGenerator,
-            "crypto_cls": SIFE,
+            "kg_cls": SIFEDDHKeyGenerator,
+            "crypto_cls": SIFEDDH,
             "config": {"sec_param": sec_param_ddh, "eta": eta},
             "x": vector_x,
             "y": vector_y,

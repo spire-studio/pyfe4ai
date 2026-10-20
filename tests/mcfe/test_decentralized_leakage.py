@@ -11,7 +11,7 @@ import random
 import gmpy2 as gp
 import pytest
 
-from pyfe4ai.schemes.mcfe.ddh_decentralized import DecentralizedMCFE, DecentralizedMCFEKeyGenerator
+from pyfe4ai.schemes.mcfe.ddh_decentralized import DecentralizedMCFEDDH, DecentralizedMCFEDDHKeyGenerator
 from pyfe4ai.schemes.mcfe.decentralize import combine_contributions
 from pyfe4ai.schemes.mcfe.lwe_decentralized import DecentralizedMCFELWE, DecentralizedMCFELWEKeyGenerator
 
@@ -31,18 +31,18 @@ def _shares(kg, crypto_cls, weights):
 
 
 def test_ddh_shares_hide_the_carry_of_the_reduced_contributions():
-    kg = DecentralizedMCFEKeyGenerator({"sec_param": 64, "n": 3, "lst_nid": NIDS, "eta": 2})
+    kg = DecentralizedMCFEDDHKeyGenerator({"sec_param": 64, "n": 3, "lst_nid": NIDS, "eta": 2})
     kg.setup()
     rng = random.Random(4)
     quotients = []
     for _ in range(4):
         weights = {nid: [rng.randint(-9, 9) for _ in range(2)] for nid in NIDS}
-        pp, shares = _shares(kg, DecentralizedMCFE, weights)
+        pp, shares = _shares(kg, DecentralizedMCFEDDH, weights)
         q = (gp.mpz(pp["p"]) - 1) // 2
         sums = combine_contributions(pp["n2_mod"], {n: s["c"] for n, s in shares.items()}, NIDS)
         quotients += [int(v // q) for v in sums]
         # repeated derivation for the same weights gives the same share (no averaging)
-        assert _shares(kg, DecentralizedMCFE, weights)[1] == shares
+        assert _shares(kg, DecentralizedMCFEDDH, weights)[1] == shares
     # the bare carry lies in 0..n-1; with masking the quotient is spread over 2^stat_param n
     assert min(quotients) > len(NIDS)
 

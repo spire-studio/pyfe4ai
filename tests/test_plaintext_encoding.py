@@ -59,20 +59,20 @@ def test_scaling_keeps_integers_exact_and_refuses_overflow():
 
 
 def test_ndarray_helpers_round_and_refuse_nan(tmp_path, monkeypatch):
-    from pyfe4ai.schemes.mcfe.ddh import MCFE, MCFEKeyGenerator
+    from pyfe4ai.schemes.mcfe.ddh import MCFEDDH, MCFEDDHKeyGenerator
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
     nids = ["nid_0", "nid_1"]
-    kg = MCFEKeyGenerator({"sec_param": 128, "eta": 1, "n": 2, "lst_nid": nids})
+    kg = MCFEDDHKeyGenerator({"sec_param": 128, "eta": 1, "n": 2, "lst_nid": nids})
     kg.setup()
     pp = kg.get_public_parameters()
-    clients = {nid: MCFE({"id": nid, "precision": 2, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
+    clients = {nid: MCFEDDH({"id": nid, "precision": 2, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
                for nid in nids}
     cts = {nid: c.encrypt_lst_ndarray([np.array([0.57, -0.29])], label="r") for nid, c in clients.items()}
     dct_y = {nid: [1] for nid in nids}
     dk = kg.get_decryption_keys("sid", credentials={"fusion_weight": dct_y})
-    out = MCFE({"id": "sid", "precision": 2, "keys": {"pp": pp}}).decrypt_lst_ndarray_ct(cts, dk, dct_y, "r")
+    out = MCFEDDH({"id": "sid", "precision": 2, "keys": {"pp": pp}}).decrypt_lst_ndarray_ct(cts, dk, dct_y, "r")
     assert np.allclose(out[0], [1.14, -0.58])
     with pytest.raises(FEValidationError, match="NaN"):
         clients["nid_0"].encrypt_lst_ndarray([np.array([np.nan])], label="r2")
