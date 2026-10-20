@@ -70,7 +70,9 @@ change in any version without notice:
   :mod:`pyfe4ai.core.formats` and :mod:`pyfe4ai.core.versions` (the
   classes that describe the serialized objects and their version markers;
   the serialized formats themselves are documented and versioned there),
-  :mod:`pyfe4ai.core.one_time`, :mod:`pyfe4ai.core.constants`;
+  :mod:`pyfe4ai.core.one_time`, :mod:`pyfe4ai.core.forksafe` (the fork
+  handler; what threads, copies and ``fork`` do is on :doc:`../threading`),
+  :mod:`pyfe4ai.core.constants`;
 * :mod:`pyfe4ai.schemes.common`, :mod:`pyfe4ai.schemes.threshold` and
   the helpers of the scheme modules other than their classes;
 * :mod:`pyfe4ai.primitives` and the rest of :mod:`pyfe4ai.backend`: the
@@ -85,7 +87,8 @@ The package is organised in layers:
 * :mod:`pyfe4ai.core` -- base classes and the parameter cache, the
   configurations (:mod:`pyfe4ai.core.config`), the serialized objects
   (:mod:`pyfe4ai.core.formats`) and their versions (:mod:`pyfe4ai.core.versions`),
-  security profiles, review status, one-time precomputations, exceptions;
+  security profiles, review status, one-time precomputations, the fork
+  handler, exceptions;
 * ``pyfe4ai.schemes`` -- the schemes by family (``sife``, ``mife``,
   ``mcfe``, ``quadratic``), with the components several families share in
   :mod:`pyfe4ai.schemes.common` and :mod:`pyfe4ai.schemes.threshold`;

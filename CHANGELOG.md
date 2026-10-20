@@ -160,7 +160,7 @@ not compatible with v0.3.0, and modules moved and classes were renamed
   `core.exceptions`, `pyfe4ai.ml`, the backend selection of
   `pyfe4ai.backend` and a few named entry points) and the internal ones
   (`core.base`, `core.formats`, `core.versions`, `core.one_time`,
-  `schemes.common`, `schemes.threshold`, `primitives`, ...), which may change
+  `core.forksafe`, `schemes.common`, `schemes.threshold`, `primitives`, ...), which may change
   without notice.
 - **Scheme registry** (`pyfe4ai.core.registry`): one entry per scheme,
   `SCHEMES`, the single source of what the library records about it -- its
