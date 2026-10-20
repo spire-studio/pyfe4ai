@@ -12,7 +12,7 @@ from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FESecurityWarning
 from pyfe4ai.primitives.hashing import LABEL_HASH_CODES
 from pyfe4ai.primitives.hashing import LEGACY_LABEL_HASH
 from pyfe4ai.primitives.sampling import FLOODING_SAMPLER
-from pyfe4ai.schemes.threshold import kl
+from pyfe4ai.core import config
 
 
 def test_absent_markers_mean_the_derivations_of_earlier_versions():
@@ -71,7 +71,7 @@ def test_flooding_derivation_and_distribution():
 
 
 def test_construction_ids_and_sharings():
-    assert kl.KL == "kl" and kl.PER_SAMPLE == "per-sample"
+    assert config.KL == "kl" and config.PER_SAMPLE == "per-sample"
     assert versions.tmcfe_ring_lwe_construction_id("shamir", "gaussian", "kl") == versions.TMCFE_RING_LWE_CONSTRUCTION_KL
     assert versions.tmcfe_ring_lwe_construction_id("replicated", "gaussian", "kl") is None
     assert versions.tmcfe_ring_lwe_construction_id("replicated", "uniform", "per-sample") == \
@@ -146,3 +146,54 @@ def test_state_versions():
         versions.check_state(_State(), {"a": 1}, "v")
     assert pickle.loads(pickle.dumps(versions.MixedSharingsError(versions.MIXED_SHARINGS))).args == (
         versions.MIXED_SHARINGS,)
+
+
+def test_declared_absences_are_the_ones_versions_applies():
+    """Every field a record declares with a meaning when absent
+    (``Field(absent=...)``) has the default that core.versions (or the
+    scheme, through core.config) applies to it."""
+    import importlib
+    import inspect
+
+    from pyfe4ai.core.formats import lwe, ring_lwe
+    from pyfe4ai.core.formats.record import Record, _REQUIRED
+
+    seen = set()
+    for name in ("lwe", "ring_lwe", "dl", "pairing", "threshold"):
+        module = importlib.import_module("pyfe4ai.core.formats." + name)
+        for _, cls in inspect.getmembers(module, inspect.isclass):
+            if not (issubclass(cls, Record) and cls.__module__ == module.__name__):
+                continue
+            for field_name, field in cls._fields.items():
+                if field.absent is _REQUIRED:
+                    continue
+                seen.add(field_name)
+                absent = field.absent
+                if field_name == "label_hash" and cls in (lwe.MCFELWECiphertext, ring_lwe.RingLWECiphertext):
+                    assert absent is None, cls  # code 0 alone, the layer's code in a layer (see the doc)
+                elif field_name == "label_hash" and cls is ring_lwe.RingLWELayer:
+                    assert absent == 0 and versions.ciphertext_label_hash({}) == LEGACY_LABEL_HASH
+                elif field_name == "label_hash":
+                    assert absent == versions.key_label_hash({}) == versions.pp_label_hash({}) == LEGACY_LABEL_HASH
+                elif field_name == "sharing":
+                    assert absent == versions.LEGACY_SHARING
+                elif field_name == "flooding":
+                    assert absent == versions.LEGACY_FLOODING == versions.pp_flooding({})
+                elif field_name == "ct_format":
+                    assert absent == versions.pp_ct_format({})
+                elif field_name in ("ring_modulus", "ndarray_layout"):
+                    assert absent == versions.RECORD_ABSENT[field_name]
+                elif field_name == "flooding_accounting":
+                    assert absent == config.PER_SAMPLE
+                elif field_name == "noise_version":
+                    for dk in ({}, {"noise_version": absent}):
+                        with pytest.raises(FEKeyError, match="flooding derivation 1"):
+                            versions.check_flooding_version(dk)
+                elif field_name == "sharing_id":
+                    assert absent is None and versions.key_share_sharing_id({}) is None
+                elif field_name == "part":
+                    assert absent is None and versions.key_share_part({}) is None
+                else:
+                    assert field_name in ("threshold_construction", "q_factors", "max_partial_decryptions"), field_name
+                    assert absent is None
+    assert {"label_hash", "sharing", "flooding", "noise_version", "sharing_id"} <= seen

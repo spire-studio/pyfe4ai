@@ -16,9 +16,9 @@ code of earlier versions did:
 So the checks a scheme makes when it reads a key or a ciphertext stay where
 they are, with their exceptions; what a record adds is one declaration of
 every field, its order on the wire and what its absence means
-(``Field(absent=...)``: the derivation of earlier versions that a missing
-marker stands for, applied by :mod:`pyfe4ai.core.versions`, never silently
-by attribute access). :meth:`Record.new` builds the dict of a new object in
+(``Field(absent=...)``: the default of earlier versions that a missing
+marker stands for, documented here and applied by :mod:`pyfe4ai.core.versions`,
+never silently by attribute access). :meth:`Record.new` builds the dict of a new object in
 the declared order.
 """
 
@@ -39,8 +39,10 @@ class Field:
     Args:
         doc: What the field holds (its type and encoding).
         absent: What a missing field means, for fields that versions or
-            options leave out (documentation, and the value
-            :mod:`pyfe4ai.core.versions` reads for it). Reading a missing
+            options leave out: documentation of the default that
+            :mod:`pyfe4ai.core.versions` (or the scheme) applies, which
+            ``tests/test_versions.py`` checks against it; ``None`` where it
+            depends on the context (the doc says how). Reading a missing
             field raises ``KeyError`` as ``d[name]`` does, whatever it means.
     """
 

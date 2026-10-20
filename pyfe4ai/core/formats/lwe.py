@@ -251,4 +251,5 @@ class MCFELWECiphertext(Record):
     only its first element carries it)."""
 
     c = Field("ints")
-    label_hash = Field("int code", absent=0)
+    label_hash = Field("int code; absent, code 0 (versions <= 0.3.0) for a single ciphertext and the "
+                       "layer's code for an element of an ndarray layer", absent=None)

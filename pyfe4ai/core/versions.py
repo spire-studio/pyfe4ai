@@ -277,7 +277,9 @@ def check_legacy_shamir(sid: str, threshold: int, s: int, legacy_shamir: str, pr
 
     Warns:
         FESecurityWarning: When it is served; attributed to the caller of
-            :func:`~pyfe4ai.schemes.threshold.sharing.share_for_enrolled`.
+            the function that calls
+            :func:`~pyfe4ai.schemes.threshold.sharing.share_for_enrolled` (as in
+            earlier versions).
     """
     if threshold >= s:
         return

@@ -163,6 +163,11 @@ def _recording(cls, seen):
 
 @pytest.mark.parametrize("scheme", sorted(MINIMAL), ids="/".join)
 def test_key_generators_read_declared_options_only(scheme, monkeypatch):
+    """The options a key generator reads from its converted config (built from
+    a minimal config, then set up) are declared. Reads of a copy (a base
+    class given ``dict(config, ...)``) and of branches the minimal config
+    does not take are not seen; the inventory of every option's reads is the
+    config-matrix probe of the batch-3 records."""
     _skip_without_pairing(scheme)
     seen = set()
     original, key_generator = configs.config_class, generator(scheme)
@@ -196,3 +201,25 @@ def test_declared_defaults_are_the_key_generators(scheme):
         assert value == option.default, (name, value, option.default)
         checked += 1
     assert checked
+
+
+def test_accepted_values_are_the_codes():
+    """The accepted values the classes declare (and the documentation page
+    shows) are the code's own constants, in their order."""
+    from pyfe4ai.primitives.hashing import LABEL_HASHES
+    from pyfe4ai.primitives.lattice.lwe_matrix import MATRIX_MODES
+    from pyfe4ai.primitives.lattice.ring_lwe_utils import RING_MODULI
+    from pyfe4ai.primitives.sampling import GAUSSIAN_SAMPLERS
+    from pyfe4ai.schemes.sife.fullysec_ring_lwe import LAYOUTS
+
+    assert configs.LABEL_HASH.allowed == LABEL_HASHES
+    assert configs.MATRIX_MODE.allowed == MATRIX_MODES
+    assert configs.GAUSSIAN_SAMPLER.allowed == GAUSSIAN_SAMPLERS
+    assert configs.RING_MODULUS.allowed == RING_MODULI
+    assert configs.SIFEFullySecRingLWEConfig.ndarray_layout.allowed == LAYOUTS
+    assert configs.SchemeConfig.security_profile.allowed == profiles.PROFILES
+    for cls in configs.config_classes().values():
+        for name, option in list(cls.OPTIONS.items()) + list(cls.CRYPTO.items()):
+            if name in ("gaussian_sampler", "label_hash", "matrix_mode") and isinstance(option.allowed, tuple):
+                assert set(option.allowed) <= set({"gaussian_sampler": GAUSSIAN_SAMPLERS, "label_hash": LABEL_HASHES,
+                                                   "matrix_mode": MATRIX_MODES}[name]), (cls.__name__, name)

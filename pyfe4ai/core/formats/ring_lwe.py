@@ -315,7 +315,9 @@ class RingLWECiphertext(Record):
     ct1 = Field("polynomial (JSON)")
     ct = Field("bytes (binary formats)")
     k = Field("int, the batch length")
-    label_hash = Field("int code (:data:`~pyfe4ai.primitives.hashing.LABEL_HASH_CODES`)", absent=0)
+    label_hash = Field("int code (:data:`~pyfe4ai.primitives.hashing.LABEL_HASH_CODES`); absent, code 0 "
+                       "(versions <= 0.3.0) for a single ciphertext and the layer's code for a chunk of a "
+                       "packed layer", absent=None)
     tags = Field("``{server: hex HMAC}`` (threshold MCFE)")
 
 

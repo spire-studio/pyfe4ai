@@ -497,7 +497,7 @@ MATRIX_MODE = Option(
     allowed=("memory", "stream"),
 )
 GAUSSIAN_SAMPLER = Option(
-    "sampler of the Gaussian key noise", default="facct", allowed=("facct", "rounded"),
+    "sampler of the Gaussian key noise", default="facct", allowed=("rounded", "facct"),
     standard="``rounded`` refused",
 )
 LIBRARY_SAMPLER = GAUSSIAN_SAMPLER(
@@ -638,7 +638,7 @@ _DLOG = {"dlog_bound": Option(
 )}
 _RING_CRYPTO = {"gaussian_sampler": Option(
     "sampler of the encryption noise", default=Derived("the public parameters' sampler, else ``facct``"),
-    allowed=("facct", "rounded"),
+    allowed=("rounded", "facct"),
 )}
 _CT_FORMAT = {"ct_format": Option(
     "ciphertext format: JSON lists, or the binary format 1", default="json", allowed=("json", "binary"),
@@ -1068,7 +1068,8 @@ COMBINATIONS = (
     Combination("pairing schemes", "``security_profile = 'standard'`` with ``pairing_group_param`` "
                 "other than ``BLS12-381``", "``FEValidationError``; with ``BLS12-381`` a "
                 "``FESecurityWarning`` (about 120 to 126-bit security)"),
-    Combination("``sife/lwe``, ``mife/lwe``, ``mife/lwe_threshold``, the Ring-LWE schemes",
+    Combination("``sife/lwe``, ``mife/lwe``, the MCFE LWE schemes (``mcfe/lwe``, ``fullysec_lwe``, "
+                "``lwe_threshold``, ``lwe_decentralized``), the Ring-LWE schemes",
                 "``security_profile = 'standard'`` with ``gaussian_sampler = 'rounded'`` (also a crypto "
                 "object's, for public parameters made under ``standard``)", "``FEValidationError``"),
     Combination("Ring-LWE schemes", "``security_profile = 'standard'`` with an explicit ``ring_n`` whose "
@@ -1078,8 +1079,9 @@ COMBINATIONS = (
                 "128-bit table, or bounds too large for any tabulated dimension", "``FEValidationError``"),
     Combination("``sife/ring_lwe``, ``sife/fullysec_ring_lwe``", "``ring_modulus`` other than ``prime``",
                 "``FEValidationError``"),
-    Combination("``mife/ring_lwe`` and the MCFE Ring-LWE schemes", "``ring_modulus = 'rns'`` with a "
-                "modulus above about 124 bits (large bounds)", "``FEValidationError``"),
+    Combination("``mife/ring_lwe``, ``mcfe/ring_lwe``, ``mcfe/ring_lwe_decentralized``", "``ring_modulus = "
+                "'rns'`` with a modulus that two NTT primes below 2^62 cannot hold (above about 124 bits; large "
+                "bounds)", "``FEValidationError``"),
     Combination("``sife/fullysec_ring_lwe``", "``m <= 4``", "``FEValidationError``"),
     Combination("``mife/lwe_threshold``, ``mcfe/lwe_threshold``, ``mcfe/ring_lwe_threshold``",
                 "``sharing = 'shamir'`` with ``t < s``", "``FEValidationError`` under ``standard``, "
@@ -1111,8 +1113,8 @@ COMBINATIONS = (
                 "``FEValidationError``"),
     Combination("``mcfe/ddh``", "``eta`` as a dict whose length is not ``n``", "``FEValidationError``"),
     Combination("``mcfe/ddh_decentralized``", "``eta`` as a dict", "``FEValidationError``"),
-    Combination("decentralised MCFE (DDH, DCR, Ring-LWE; FH at ``setup``)", "``n < 2``",
-                "``FEValidationError``"),
+    Combination("decentralised MCFE (DDH, DCR, LWE, Ring-LWE, FH)", "``n < 2``",
+                "``FEValidationError`` at ``setup``"),
     Combination("``mife/fh_multi_ipe_pairing``", "``n = 1``", "``FEKeyError``"),
     Combination("``quadratic/miqfe``", "no ``n``", "``FEValidationError``"),
     Combination("Damgard and Paillier schemes", "bounds too large for the modulus (``2 n eta bound^2`` "

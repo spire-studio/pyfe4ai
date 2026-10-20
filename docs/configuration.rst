@@ -59,7 +59,7 @@ Refused and constrained combinations
    * - pairing schemes
      - ``security_profile = 'standard'`` with ``pairing_group_param`` other than ``BLS12-381``
      - ``FEValidationError``; with ``BLS12-381`` a ``FESecurityWarning`` (about 120 to 126-bit security)
-   * - ``sife/lwe``, ``mife/lwe``, ``mife/lwe_threshold``, the Ring-LWE schemes
+   * - ``sife/lwe``, ``mife/lwe``, the MCFE LWE schemes (``mcfe/lwe``, ``fullysec_lwe``, ``lwe_threshold``, ``lwe_decentralized``), the Ring-LWE schemes
      - ``security_profile = 'standard'`` with ``gaussian_sampler = 'rounded'`` (also a crypto object's, for public parameters made under ``standard``)
      - ``FEValidationError``
    * - Ring-LWE schemes
@@ -71,8 +71,8 @@ Refused and constrained combinations
    * - ``sife/ring_lwe``, ``sife/fullysec_ring_lwe``
      - ``ring_modulus`` other than ``prime``
      - ``FEValidationError``
-   * - ``mife/ring_lwe`` and the MCFE Ring-LWE schemes
-     - ``ring_modulus = 'rns'`` with a modulus above about 124 bits (large bounds)
+   * - ``mife/ring_lwe``, ``mcfe/ring_lwe``, ``mcfe/ring_lwe_decentralized``
+     - ``ring_modulus = 'rns'`` with a modulus that two NTT primes below 2^62 cannot hold (above about 124 bits; large bounds)
      - ``FEValidationError``
    * - ``sife/fullysec_ring_lwe``
      - ``m <= 4``
@@ -119,9 +119,9 @@ Refused and constrained combinations
    * - ``mcfe/ddh_decentralized``
      - ``eta`` as a dict
      - ``FEValidationError``
-   * - decentralised MCFE (DDH, DCR, Ring-LWE; FH at ``setup``)
+   * - decentralised MCFE (DDH, DCR, LWE, Ring-LWE, FH)
      - ``n < 2``
-     - ``FEValidationError``
+     - ``FEValidationError`` at ``setup``
    * - ``mife/fh_multi_ipe_pairing``
      - ``n = 1``
      - ``FEKeyError``
@@ -358,7 +358,7 @@ Crypto objects also take:
      - sampler of the Gaussian key noise
      - the library-wide sampler (``rounded`` unless ``PYFE4AI_GAUSSIAN_SAMPLER``, ``set_gaussian_sampler`` or a ``gaussian_sampler()`` block says otherwise); ``facct`` under ``standard``
      - ``rounded`` refused
-     - ``facct``, ``rounded``
+     - ``rounded``, ``facct``
 
 Crypto objects also take:
 
@@ -509,7 +509,7 @@ Crypto objects also take:
      - sampler of the Gaussian key noise
      - ``'facct'``
      - ``rounded`` refused
-     - ``facct``, ``rounded``
+     - ``rounded``, ``facct``
 
 Crypto objects also take:
 
@@ -523,7 +523,7 @@ Crypto objects also take:
    * - gaussian_sampler
      - sampler of the encryption noise
      - the public parameters' sampler, else ``facct``
-     - ``facct``, ``rounded``
+     - ``rounded``, ``facct``
 
 ``sife/fullysec_ring_lwe``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -577,7 +577,7 @@ Crypto objects also take:
      - sampler of the Gaussian key noise
      - ``'facct'``
      - ``rounded`` refused
-     - ``facct``, ``rounded``
+     - ``rounded``, ``facct``
    * - m
      - number of key polynomials
      - ``'auto'``
@@ -601,7 +601,7 @@ Crypto objects also take:
    * - gaussian_sampler
      - sampler of the encryption noise
      - the public parameters' sampler, else ``facct``
-     - ``facct``, ``rounded``
+     - ``rounded``, ``facct``
 
 ``sife/fullysec_lwe``
 ~~~~~~~~~~~~~~~~~~~~~
@@ -921,7 +921,7 @@ Crypto objects also take:
      - sampler of the Gaussian key noise
      - the library-wide sampler (``rounded`` unless ``PYFE4AI_GAUSSIAN_SAMPLER``, ``set_gaussian_sampler`` or a ``gaussian_sampler()`` block says otherwise); ``facct`` under ``standard``
      - ``rounded`` refused
-     - ``facct``, ``rounded``
+     - ``rounded``, ``facct``
 
 Crypto objects also take:
 
@@ -1072,7 +1072,7 @@ Crypto objects also take:
      - sampler of the Gaussian key noise
      - ``'facct'``
      - ``rounded`` refused
-     - ``facct``, ``rounded``
+     - ``rounded``, ``facct``
 
 Crypto objects also take:
 
@@ -1086,7 +1086,7 @@ Crypto objects also take:
    * - gaussian_sampler
      - sampler of the encryption noise
      - the public parameters' sampler, else ``facct``
-     - ``facct``, ``rounded``
+     - ``rounded``, ``facct``
    * - ct_format
      - ciphertext format: JSON lists, or the binary format 1
      - ``'json'``
@@ -1354,7 +1354,7 @@ Crypto objects also take:
      - sampler of the Gaussian key noise
      - the library-wide sampler (``rounded`` unless ``PYFE4AI_GAUSSIAN_SAMPLER``, ``set_gaussian_sampler`` or a ``gaussian_sampler()`` block says otherwise); ``facct`` under ``standard``
      - ``rounded`` refused
-     - ``facct``, ``rounded``
+     - ``rounded``, ``facct``
    * - flooding_accounting
      - accounting of the flooding noise: per sample, or the opt-in KL bound of a run
      - ``'per-sample'``
@@ -1526,7 +1526,7 @@ Crypto objects also take:
      - sampler of the Gaussian key noise
      - ``'facct'``
      - ``rounded`` refused
-     - ``facct``, ``rounded``
+     - ``rounded``, ``facct``
    * - label_hash
      - hash of the labels onto the key space
      - ``'shake128-rejection'``
@@ -1673,7 +1673,7 @@ Crypto objects also take:
      - sampler of the Gaussian key noise
      - ``'facct'``
      - ``rounded`` refused
-     - ``facct``, ``rounded``
+     - ``rounded``, ``facct``
    * - label_hash
      - hash of the labels onto the key space
      - ``'shake128-rejection'``
@@ -1692,7 +1692,7 @@ Crypto objects also take:
    * - gaussian_sampler
      - sampler of the encryption noise
      - the public parameters' sampler, else ``facct``
-     - ``facct``, ``rounded``
+     - ``rounded``, ``facct``
    * - ct_format
      - ciphertext format: JSON lists, or the binary format 1
      - ``'json'``
@@ -1745,7 +1745,7 @@ Crypto objects also take:
      - sampler of the Gaussian key noise
      - ``'facct'``
      - ``rounded`` refused
-     - ``facct``, ``rounded``
+     - ``rounded``, ``facct``
    * - label_hash
      - hash of the labels onto the key space
      - ``'shake128-rejection'``
@@ -2072,7 +2072,7 @@ Crypto objects also take:
      - sampler of the Gaussian key noise
      - ``'facct'``
      - ``rounded`` refused
-     - ``facct``, ``rounded``
+     - ``rounded``, ``facct``
    * - label_hash
      - hash of the labels onto the key space
      - ``'shake128-rejection'``
@@ -2150,7 +2150,7 @@ Crypto objects also take:
      - sampler of the Gaussian key noise
      - ``'facct'``
      - ``rounded`` refused
-     - ``facct``, ``rounded``
+     - ``rounded``, ``facct``
    * - label_hash
      - hash of the labels onto the key space
      - ``'shake128-rejection'``
@@ -2229,7 +2229,7 @@ Crypto objects also take:
      - sampler of the Gaussian key noise
      - ``'facct'``
      - ``rounded`` refused
-     - ``facct``, ``rounded``
+     - ``rounded``, ``facct``
    * - label_hash
      - hash of the labels onto the key space
      - ``'shake128-rejection'``
@@ -2273,7 +2273,7 @@ Crypto objects also take:
    * - gaussian_sampler
      - sampler of the encryption noise
      - the public parameters' sampler, else ``facct``
-     - ``facct``, ``rounded``
+     - ``rounded``, ``facct``
    * - ct_format
      - ciphertext format (must be the public parameters')
      - the public parameters' format
@@ -2344,7 +2344,7 @@ Crypto objects also take:
      - sampler of the Gaussian key noise
      - ``'facct'``
      - ``rounded`` refused
-     - ``facct``, ``rounded``
+     - ``rounded``, ``facct``
    * - label_hash
      - hash of the labels onto the key space
      - ``'shake128-rejection'``
@@ -2363,7 +2363,7 @@ Crypto objects also take:
    * - gaussian_sampler
      - sampler of the encryption noise
      - the public parameters' sampler, else ``facct``
-     - ``facct``, ``rounded``
+     - ``rounded``, ``facct``
    * - ct_format
      - ciphertext format: JSON lists, or the binary format 1
      - ``'json'``
