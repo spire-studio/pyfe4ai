@@ -35,6 +35,8 @@ pub fn gauss_fill(buf: &[u8], sigma: f64, out: &mut [i64]) {
     let fcos: F = std::hint::black_box(COS);
     let fsin: F = std::hint::black_box(SIN);
     let flog: F = std::hint::black_box(LOG);
+    // random.TWOPI = 2.0 * math.pi, with Python's digits of pi (the same f64 as consts::PI)
+    #[allow(clippy::approx_constant)]
     const TWOPI: f64 = 2.0 * 3.141592653589793;
     let count = out.len();
     let mut i = 0;
