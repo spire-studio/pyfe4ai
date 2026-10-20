@@ -2,9 +2,11 @@
 entry, the declarations against what the key generators read and use, and
 the documentation page rendered from them."""
 
+import ast
 import importlib
 import os
 import re
+from pathlib import Path
 
 import gmpy2 as gp
 import pytest
@@ -223,3 +225,68 @@ def test_accepted_values_are_the_codes():
             if name in ("gaussian_sampler", "label_hash", "matrix_mode") and isinstance(option.allowed, tuple):
                 assert set(option.allowed) <= set({"gaussian_sampler": GAUSSIAN_SAMPLERS, "label_hash": LABEL_HASHES,
                                                    "matrix_mode": MATRIX_MODES}[name]), (cls.__name__, name)
+
+
+# ---------------------------------------------------------------------------
+# options are read with config.get (review item I3-d of batch 3)
+
+_CONFIG_NAME = re.compile(r"(^|_)(config|cfg|conf|options)$", re.IGNORECASE)
+
+
+def _option_names() -> set:
+    names = set(configs.SchemeConfig.OPTIONS) | set(configs.CryptoConfig.OPTIONS)
+    for cls in configs.config_classes().values():
+        names |= set(cls.OPTIONS) | set(cls.CRYPTO)
+    return names
+
+
+def _attribute_reads(source: str, names: set) -> list:
+    """``(line, receiver, option)`` of every attribute of a config-like name
+    (``config``, ``self.keygen_config``, ``cfg``, ...) read as an option."""
+    out = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load) and node.attr in names:
+            receiver = node.value
+            name = receiver.id if isinstance(receiver, ast.Name) else getattr(receiver, "attr", None)
+            if name and _CONFIG_NAME.search(name):
+                out.append((node.lineno, name, node.attr))
+    return out
+
+
+def test_library_code_reads_no_option_as_an_attribute():
+    """The library reads options with ``config.get(name, default)``, the
+    default written where it is read; the defaults declared with
+    :class:`~pyfe4ai.core.config.Option` only document them and must not
+    become behaviour through an attribute read (``config.ring_n``). No
+    module of pyfe4ai reads an option as an attribute of a config."""
+    names = _option_names()
+    assert {"ring_n", "eta", "sharing", "ct_format", "cache_dir"} <= names
+    assert _attribute_reads("def f(config, self):\n    return config.ring_n, self.keygen_config.eta, cfg.x\n",
+                            names) == [(2, "config", "ring_n"), (2, "keygen_config", "eta")]
+    package = Path(configs.__file__).resolve().parents[1]
+    hits = []
+    for path in sorted(package.rglob("*.py")):
+        for line, receiver, option in _attribute_reads(path.read_text(encoding="utf-8"), names):
+            hits.append("{}:{}: {}.{}".format(path.relative_to(package.parent), line, receiver, option))
+    assert not hits, hits
+
+
+@pytest.mark.parametrize("scheme", sorted(MINIMAL), ids="/".join)
+def test_key_generators_read_no_option_as_an_attribute(scheme, monkeypatch):
+    """At run time: building and setting up every key generator reads no
+    option of its config object as an attribute."""
+    _skip_without_pairing(scheme)
+    reads = []
+    original = configs.Option.__get__
+
+    def get(self, config, owner=None):
+        if config is not None:
+            reads.append(self.name)
+        return original(self, config, owner)
+
+    monkeypatch.setattr(configs.Option, "__get__", get)
+    assert configs.MCFERingLWEConfig(n=2).ring_modulus == "prime" and reads == ["ring_modulus"]
+    reads.clear()
+    kg = generator(scheme)(dict(MINIMAL[scheme]))
+    kg.setup()
+    assert not reads, reads
