@@ -269,7 +269,7 @@ def measure_threshold(family: str, elements: int, clients: int, rounds: int, pre
     """:func:`measure` for a threshold scheme, on its classes (see the module docstring)."""
     import importlib
 
-    from pyfe4ai.ml import _SCHEME_REGISTRY
+    from pyfe4ai.ml.wrapper import _SCHEME_REGISTRY
 
     key, base_cfg, _ = FAMILIES[family]
     mod_path, kg_name, crypto_name = _SCHEME_REGISTRY[key]
@@ -365,7 +365,7 @@ def measure_decentralized(family: str, elements: int, clients: int, rounds: int,
     share for the round, the aggregator combines them and decrypts the sum."""
     import importlib
 
-    from pyfe4ai.ml import _SCHEME_REGISTRY
+    from pyfe4ai.ml.wrapper import _SCHEME_REGISTRY
 
     key, base_cfg, _ = FAMILIES[family]
     mod_path, kg_name, crypto_name = _SCHEME_REGISTRY[key]

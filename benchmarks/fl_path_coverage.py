@@ -1,6 +1,6 @@
 """Enumerate which ML-adapter registry entries support the FL aggregation path.
 
-For every ``(scheme_type, variant)`` in ``pyfe4ai.ml._SCHEME_REGISTRY``
+For every ``(scheme_type, variant)`` in ``pyfe4ai.ml.wrapper._SCHEME_REGISTRY``
 this script builds a :class:`FESchemeWrapper` with the variant's own test
 configuration (``eta`` forced to 1, because the FL helpers are defined for
 ``eta = 1``), encrypts one small integer gradient per client with
@@ -33,11 +33,11 @@ import numpy as np
 
 import pyfe4ai
 from pyfe4ai.ml import (
-    _SCHEME_REGISTRY,
     FESchemeWrapper,
     aggregate_gradients,
     encrypt_gradient,
 )
+from pyfe4ai.ml.wrapper import _SCHEME_REGISTRY
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, pairing_available
 
 NIDS = ["nid_0", "nid_1", "nid_2"]

@@ -65,7 +65,7 @@ the Docker image above before changing pairing-based or quadratic schemes.
 
 - Cite the paper with the figure or section you implement, in the module
   docstring and in the PR, and list every deviation from it.
-- Register the scheme in `_SCHEME_REGISTRY` (`pyfe4ai/ml/`),
+- Register the scheme in `_SCHEME_REGISTRY` (`pyfe4ai/ml/wrapper.py`),
   `SCHEME_STATUS` (`pyfe4ai/core/status.py`) and `SCHEME_KIND`
   (`pyfe4ai/core/profiles.py`); tests check that the three agree.
 - A construction of our own, with no published scheme to check it against,

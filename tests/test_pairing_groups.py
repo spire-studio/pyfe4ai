@@ -5,7 +5,7 @@ import importlib
 import pytest
 
 from pyfe4ai.core.exceptions import FEValidationError
-from pyfe4ai.ml import _SCHEME_REGISTRY
+from pyfe4ai.ml.wrapper import _SCHEME_REGISTRY
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP
 from pyfe4ai.primitives.pairing.pairing_backend import PairingGroup, check_asymmetric, pairing_available
 

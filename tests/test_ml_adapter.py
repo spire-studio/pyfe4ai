@@ -9,12 +9,12 @@ from pyfe4ai.ml import (
     EncryptedFeatures,
     EncryptedGradient,
     FESchemeWrapper,
-    _to_numpy,
     aggregate_gradients,
     compute_linear,
     encrypt_features,
     encrypt_gradient,
 )
+from pyfe4ai.ml.wrapper import _to_numpy
 
 
 # ── helpers ────────────────────────────────────────────────────────

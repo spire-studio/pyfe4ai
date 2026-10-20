@@ -8,7 +8,7 @@ import pytest
 
 from pyfe4ai import FESecurityWarning, get_scheme_status
 from pyfe4ai.core import status as st
-from pyfe4ai.ml import _SCHEME_REGISTRY
+from pyfe4ai.ml.wrapper import _SCHEME_REGISTRY
 
 README = Path(__file__).resolve().parents[1] / "README.md"
 

@@ -206,7 +206,7 @@ def test_label_parts_of_mixed_sharings_are_fetched_again_once(monkeypatch):
     from dataclasses import replace
 
     from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
-    from pyfe4ai import ml as ml_adapter
+    from pyfe4ai.ml import gradients as ml_gradients
 
     monkeypatch.setattr(tm, "LABEL_PARTS_KEPT", 1)
     w = _wrapper()
@@ -232,7 +232,7 @@ def test_label_parts_of_mixed_sharings_are_fetched_again_once(monkeypatch):
     np.testing.assert_allclose(aggregate_gradients(enc, w, label="a", prepared=mixed), _expected(grads), atol=1e-9)
     assert fetched == ["sid_0", "sid_1"]
     # mixed again after the second fetch: refused, not retried
-    monkeypatch.setattr(ml_adapter, "_server_key_shares", lambda *args: mixed.dk)
+    monkeypatch.setattr(ml_gradients, "_server_key_shares", lambda *args: mixed.dk)
     with pytest.raises(tm.MixedSharingsError):
         aggregate_gradients(enc, w, label="a", prepared=mixed)
 
