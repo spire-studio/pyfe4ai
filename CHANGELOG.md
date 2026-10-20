@@ -7,864 +7,433 @@ compatibility).
 
 ## [Unreleased]
 
-### Added
+An optional native backend in Rust, the fixes of a cryptographic code review
+of October 2026 -- among them a leak in the threshold LWE layers of v0.3.0 --,
+exact Gaussian sampling by default, and faster defaults for the threshold MCFE
+over Ring-LWE. PyFE4AI remains an experimental research prototype under
+active development: interfaces, defaults and serialized formats change between
+versions, and it is not recommended for production use. **Several formats are
+not compatible with v0.3.0; read the upgrade notes first.**
 
-- **`mcfe/ring_lwe_threshold`: binary ciphertexts** (key generator config
-  `ct_format = "binary"`, published in the public parameters; the default
-  since the change below, `"json"` selects the unchanged format of earlier
-  versions). Format 2 truncates the `ct0` rows to the
-  batch length, keeps `ct1` whole and refuses any value `>= q` (a second
-  encoding would let a client redraw the flooding noise for one key part);
-  tags v2 cover the public parameters' digest, the (chunk) label, the label
-  hash code, `k` and SHA-256 digests of the bytes; partial decryptions are
-  binary and cover the first `k` coefficients. `ct_format` enters the key
-  shares' `pp_binding` (JSON digests unchanged), so a key share serves one
-  format; every mix of formats is refused. Under `standard` (3 clients,
-  10^4 values, `s = t = 3`, 1 thread, host): ciphertexts 225 -> 71 bytes per
-  element, partial decryptions 222 -> 54, server 60 -> 19 ms, client 44 ->
-  30 ms. The uniform flooding noise is now drawn natively on both formats
-  (same values).
-- **`mcfe/ring_lwe_threshold`: RNS modulus** (`ring_modulus="rns"`; the
-  default since the change below, `"prime"` selectable): the flooded `q` is a
-  product of NTT primes
-  below 2^62, four of about 54 bits under `standard`
-  (`rns_ntt_modulus_for`: `k = max(2, ceil(bits / 60))` factors, but four
-  of up to 62 bits up to 248 bits, the most the native ring holds, with a
-  fifth only where the last would exceed 62 bits; above 248 bits five or
-  more, on the Python path, with a warning; for two factors the modulus of
-  earlier versions), of the prime's bit length. Every factor must exceed `s`
-  (checked by key generators and servers); the record carries
-  `ring_modulus` and `q_factors`, which `pp_binding` covers where present.
-  RNS records of the MIFE / MCFE Ring-LWE family (threshold included) are
-  kept in `param-rns.json`, beside the prime's `param.json`, so that
-  alternating the two configurations in one config folder no longer
-  regenerates each other's record. The native 256-bit ring gains an RNS backend (`ctx_new_rns`, up to
-  four primes): one 64-bit NTT per factor, NTT-domain values as residue
-  tuples, results equal to the Python code on the composite `q`. Re-review in
-  docs/rns_modulus_review.md section 10. Standard profile, 3 clients, 10^4
-  values, `s = t = 3`, 1 thread: partial decryption 19 -> 11 ms (binary),
-  57 -> 45 ms (JSON); client 30 -> 26.5 ms.
-- **`mcfe/ring_lwe_threshold`: per-round key shares of the label terms only**
-  (the default since the change below; `key_part="full"` or
-  `key_shares="full"` for whole key shares). `get_weight_key_share` issues
-  the shares of the label-independent `sk_y` once per weights; servers keep
-  them (`add_weight_key_share`), and `get_decryption_keys(...,
-  key_part="label")` then shares only `z` and `z_chunks` (`label_term=False`:
-  chunk keys only). Both parts carry a `share_set_id`; a label part is
-  combined only with the weight part of the same weights, share set, sharing,
-  binding, flooding, noise derivation and MAC keys. With binary public
-  parameters the key-share polynomials are bytes (Shamir and replicated
-  sharing; dealt, added up and read natively, the same values). Standard
-  profile, 3 clients, 10^4 values, 1 thread: per-round key shares 3.38 MB
-  and about 45 ms -> 443 KB and 16 ms (`s = t = 3`), 6.75 MB -> 886 KB and
-  13 ms (`t = 2`); with RNS and binary ciphertexts a server's partial
-  decryption takes 7 ms (`NTT(sk_y)` cached across labels). The key
-  generator keeps the sharings of `sk_y` for the last 64 weights.
-  Crypto-review fixes: secrets of the native partial decryptions (z, the
-  noise and its key material, NTT(key share) and its copies, `ntt_mont`'s
-  buffers) are wiped on every path; key material mixing binary and value
-  polynomials is dealt as values (natively as in Python); malformed key
-  shares (other polynomial kinds, mixed replicated pieces) raise
-  `FEKeyError`; clients, servers and combiners refuse public parameters
-  changed in place after they were made; the weight-share stores and caches
-  are locked, and their locks (and `native_backend`'s context lock) are
-  replaced in a forked child, as the parent's may be held at the fork; the
-  native readings of a key share whose value list holds bytes raise
-  `FEKeyError` too. Re-check fixes: every key-share polynomial is checked to
-  be `ring_n` values or `ring_n` words when dealt and when served, and values
-  must be ints or decimal strings (a short `z` no longer gives a shorter
-  answer, floats are no longer truncated; `FEKeyError` on both backends);
-  combiners check that JSON partials hold `k` values; a label part cached by
-  the key generator is issued again for the current share set once the
-  weights' sharing was dropped (`WEIGHT_SHARINGS_KEPT`).
-- **ML adapter: `mcfe/ring_lwe_threshold`.** `FESchemeWrapper` runs the
-  threshold scheme's decryption servers: `prepare_aggregation` and
-  `aggregate_gradients` (new `servers=`, default the first `t` of `lst_sid`)
-  give each enrolled server its label key share for the round and, once per
-  weights and share set, its weight key share, then combine the partial
-  decryptions. The steps are also separate functions,
-  `partial_decrypt_gradients` (one server) and `combine_partial_decryptions`,
-  whose `ThresholdPartial` has `to_dict` / `from_dict` (binary `w` and `c_y`
-  as base64, layout checked). `EncryptedGradient.to_dict` writes chunk fields
-  holding bytes (binary ciphertexts) as base64 strings named in the layer's
-  `base64` list instead of refusing them; `from_dict` decodes them strictly.
-  A server lacking the weight part of a prepared round (a copied wrapper's
-  new server objects, or a part its store dropped) is given it again when
-  the round is decrypted; when the combiner finds label parts of different
-  sharings, `aggregate_gradients` has all servers fetch them again and
-  decrypt once more (the separate steps raise `MixedSharingsError`).
-  `PreparedAggregation` holds key material (the servers' label key shares). Under `flooding_accounting = "kl"` the adapter
-  refuses the scheme (a budget per server); the other threshold variants stay
-  refused.
-- Pickled scheme objects are not portable across versions of pyfe4ai (keep
-  them within one version, e.g. for multiprocessing or Ray): the threshold
-  Ring-LWE MCFE key generator, clients and servers record a state version and
-  refuse a state pickled by another version with a clear error (create the
-  object again).
-- **`sife/fullysec_ring_lwe`: opt-in packed layout** (`ndarray_layout =
-  "packed"`, experimental: the leveraging argument is the project's own,
-  independently checked, not externally reviewed). A ciphertext holds an
-  `eta x k` matrix, `k <= ring_n` (BMMS21 Remark 1), and decrypts to the
-  `k` inner products; the ndarray helper
-  packs `ring_n` elements per ciphertext in the `{"shape", "first_chunk",
-  "chunks"}` layout of the MCFE Ring-LWE schemes. The adaptive proof's
-  statistical games depend on the challenge only through the span `V` of the
-  differences, so the complexity leveraging ranges over the possible `V`
-  (`(D + 1)(4X + 1)^(l D)`, `D = min(eta, ring_n)`) instead of the
-  `(2X + 1)^(2 eta k)` challenge pairs, and `sigma1` gains `sqrt(D)`; G5*
-  also needs `q > (2X sqrt(D))^D`, which the parameters enforce, and `pp`
-  flagged packed must hold the packed derivation. For `eta = 1`, `V` is
-  `{0}` or `Q` (two guesses) with the basis `[1]` of norm 1 instead of
-  `2X`: with `X = 100` (gradients) n = 4096, m = 12 and a 107-bit q
-  (elementwise: m = 19, 111 bits), so one ciphertext of 0.75 MB of
-  coefficients carries 4096 elements instead of one, 182 bytes and, with
-  the time of one encryption spread over them, under a millisecond per
-  element. Own parameter record (`bmms21-sec5-packed/v2`); the elementwise
-  parameters are unchanged. Packed `pp` of the first prototype record
-  (`bmms21-sec5-packed/v1`) with `eta = 1`, or with a `q` below the minor
-  bound, no longer match the packed derivation: encryptors and decryptors
-  refuse them and their ciphertexts, and the key generator regenerates such
-  records.
-- Opt-in seed-expanded replicated key sharing for the threshold LWE layers
-  (`sharing="replicated-seeded"` in `mife/lwe_threshold`,
-  `mcfe/ring_lwe_threshold` and `mcfe/lwe_threshold`; defaults unchanged).
-  * **Construction.** The pieces are those of the replicated sharing, but
-    every piece except one is expanded from a 32-byte seed with SHAKE-256.
-    Servers `1..t-1` store seeds only. The others store one full piece (the
-    correction) and seeds.
-  * **Partials.** Partial decryptions equal those of the replicated key
-    share holding the expanded pieces.
-  * **Security.** The key shares hide the key computationally (SHAKE-256
-    keyed by the secret seeds as a PRF, a standard keyed-sponge assumption)
-    instead of perfectly.
-  * **Records.** The sharing has its own construction ids.
-  * **Size and dealing, measured.** tMCFE-Ring-LWE under `standard`, 3
-    clients, 2 chunk keys, `ring_n` 8192:
+### Breaking changes and upgrade notes
 
-    | `(s, t)` | largest key share | dealing |
-    | --- | --- | --- |
-    | `(3, 2)` | 3.4 MB instead of 6.8 MB | |
-    | `(5, 3)` | 3.4 MB instead of 20.3 MB | |
-    | `(10, 5)` | 3.4 MB instead of 428 MB | 2.0 s instead of 30 s |
-  * **Native backend.** The pieces of the ring dimension are expanded and
-    added up natively, with the values of the Python code.
-- Opt-in **KL accounting of the threshold flooding** for `mife/lwe_threshold`
-  and `mcfe/ring_lwe_threshold` with `t = s` (Shamir sharing):
-  `flooding_accounting="kl"` with a mandatory `max_partial_decryptions` Q
-  (`pyfe4ai.schemes.flooding_accounting`). `stat_param` then bounds the
-  Hellinger distance between the adversary's real and simulated views of a
-  run in which every server produces at most Q partial decryptions, instead
-  of the statistical distance per flooded value: `sigma_f = B sqrt(N
-  2^stat_param)` for `N = s Q k` flooded coefficients (KL at most
-  `2^-(stat_param + 1)`), a tail cut derived from `N` (16 instead of 12
-  `sigma_f` at `N = 2^53`), drawn by the pinned MPFR flooding sampler at
-  `bits(sigma) + max(320, stat_param + log2 N + 11)` bits.
-  That is `stat_param - 6.85` bits of statistical security in the
-  bit-security framework of Micciancio and Walter (decision games), or about
-  `2^-65` of total statistical distance at `stat_param = 128`: a different
-  and weaker guarantee than the default, valid only for the first Q partial
-  decryptions of every server. `t < s` is refused, because there some
-  enrolled sets of Shamir shares make an honest partial reveal the decryption
-  noise modulo a small integer (see the Lagrange entry); the replicated
-  sharings are not enabled for it either. `mcfe/ring_lwe_threshold` floods
-  with Gaussian noise under `"kl"` (its default there; `flooding="uniform"`
-  is refused with it). Each KL server needs a
-  `partial_budget` (`PartialDecryptionBudget`, limit at most Q, a count that
-  only grows) in its crypto config, which the deployment shares across
-  everything that answers for that server and keeps across restarts; the
-  server refuses without it and beyond the limit, and every partial counts,
-  repeated ones too; refused requests count nothing. Under `standard`
-  (`stat_param` 128), with `N = 2^53`, `mcfe/ring_lwe_threshold` (3
-  clients, `X = 100`) has a 178-bit instead of a 215-bit `q` (Gaussian
-  per-sample; 212 bits with the uniform default) at the same `ring_n`:
-  ciphertexts 16% smaller, partial decryptions as fast as before (the
-  sampler dominates). `mife/lwe_threshold` stays refused under `standard`
-  with either accounting (a maintainer decision): at `sigma'`, `N = 2^40`,
-  2 clients and `X = Y = 50` it would take `lwe_n` about 4864 (`q` of 173
-  bits, `A` of 4.1 * 10^9 entries); `"kl"` applies to it under `toy`. The
-  KL parameters have their own records (`*-smudging-kl/v2`) and `pp` fields
-  (`flooding_accounting`, `max_partial_decryptions`, `stat_param`,
-  `flood_tail_cut`). The default (per-sample) accounting, its records, `pp`
-  and partial decryptions are unchanged. `mcfe/lwe_threshold` refuses the
-  option (its flooding is part of an LWE argument).
-  `discrete_gaussian_bigint` takes an optional higher `precision` (at
-  least its default `bits(sigma) + 320`).
-- Opt-in **RNS modulus** for the Ring-LWE MIFE, MCFE and decentralised MCFE:
-  `ring_modulus="rns"` in the key generator's configuration makes `q` the
-  product of two NTT primes above the same bound (`rns_ntt_modulus`; same bit
-  length and 128-bit check as the prime), so the native code runs two 64-bit
-  NTTs instead of one in 128-bit words, with the scheme's Gaussian sampler
-  (FACCT by default, or rounded) and label hash, as for the prime. Ciphertext formats are unchanged; the
-  public parameters and the cached record gain `q_factors`. The default stays
-  the prime (records, public parameters and ciphertexts as before); the
-  threshold MCFE and the SIFE schemes (`sife/ring_lwe`, `sife/fullysec_ring_lwe`)
-  refuse the option.
-  Security review: `docs/rns_modulus_review.md`. 10^4 elements, 3 clients,
-  binary ciphertexts: client -9% (docker -14%), decryption -15% (-17%),
-  online aggregation -16% (-18%); key derivation unchanged.
-  The NTT root search now
-  requires `root^n = -1 (mod q)`, which selects the same roots for every prime.
+- **Re-key the threshold LWE layers** (`mife/lwe_threshold`,
+  `mcfe/ring_lwe_threshold`, `mcfe/lwe_threshold`). This release refuses
+  every key share issued by v0.3.0 (`FEKeyError`): the derandomised flooding
+  noise has a new derivation (decryption keys carry `noise_version = 2`; new
+  construction ids), and key shares are bound to their public parameters
+  (`pp_binding`, see Security). For `t < s` the key is also shared
+  differently (replicated sharing, see Security) under new parameter
+  records, so `setup()` draws a new public matrix or polynomial. To upgrade:
+  1. finish the rounds encrypted under the old keys with v0.3.0 (the leak
+     described under Security remains for those rounds);
+  2. run this release's key generator (`setup()`, `get_private_keys`,
+     `get_decryption_keys`) and hand out the new client keys and key shares;
+  3. discard the old key shares.
+- **Shamir sharing with `t < s` is refused** by the key generators of these
+  layers under `standard` and warns (`FESecurityWarning`) under `toy`.
+  Servers refuse Shamir key shares with `t < s` (`FESchemeError`) unless
+  their crypto config has `legacy_shamir="warn"`, which never applies to
+  public parameters of the `standard` profile and has no environment
+  variable. `"shamir"` stays the default for `t = s`, with unchanged outputs.
+- **New defaults of `mcfe/ring_lwe_threshold`** (both profiles):
+  * binary ciphertexts and partial decryptions (`ct_format="binary"`);
+  * an RNS modulus (`ring_modulus="rns"`): `q` is a product of at least three
+    NTT primes below `2^62` (four of about 54 bits under `standard`), each
+    above `s`;
+  * split key shares (`key_shares="split"`): a server first receives its
+    share of the label-independent part of the key once per weight vector
+    (`get_weight_key_share` at the key generator, `add_weight_key_share` at
+    the server; `has_weight_key_share`), then per round only the shares of
+    the label terms, which `get_decryption_keys` returns unless
+    `key_part="full"`. The key generator keeps the sharings of the last 64
+    weight vectors (`WEIGHT_SHARINGS_KEPT`); weights issued again after that
+    get a new share set, and their servers need the new weight part;
+  * uniform flooding of the partial decryptions (`flooding="uniform"`, noise
+    on `[-2^tau, 2^tau)` with `tau = bits(B) + stat_param`, read from the
+    request's seeded SHAKE-256 stream): the same statistical distance per
+    coefficient as the Gaussian, and `q` of 212 instead of 215 bits under
+    `standard` (what it gives up against the Gaussian beyond that bound is in
+    the module docstring).
 
-- Opt-in exact discrete Gaussian sampler `"facct"`
-  (`sampling_utils.discrete_gaussian_facct`): FACCT-style double sampling
-  (Zhao, Steinfeld and Sakzad 2020) with a CDT base computed for
-  `sigma / k`, so every width is sampled exactly as requested, to about
-  2^-185 statistical distance per sample. Select it with `sampler="facct"`
-  on `discrete_gaussian_matrix` / `discrete_gaussian_bigint`, the
-  `gaussian_sampler()` context manager, `set_gaussian_sampler()` or
-  `PYFE4AI_GAUSSIAN_SAMPLER=facct`. The default stays the rounded
-  continuous Gaussian. Its output for a given bit source is platform
-  independent (known-answer tests included); it reads `os.urandom` in
-  64 KiB blocks (fork- and thread-safe). Not constant-time in CPython.
-- `benchmarks/benchmark_sampling.py`: rounded vs exact sampler, per width
-  and (`--e2e`) per MCFE Ring-LWE round.
-
-- `ct_format="binary"` for Ring-LWE MIFE / MCFE ciphertexts (crypto config;
-  `FESchemeWrapper(crypto_options=...)`): a versioned compact encoding, 37%
-  of the JSON size. JSON stays the default; decryption reads both.
-- Offline / online MCFE Ring-LWE: `MCFERingLWE.precompute(label, shapes)` and
-  `encrypt_lst_ndarray(..., precomputed=...)`; ML adapter
-  `precompute_gradient`, `encrypt_gradient(precomputed=...)`,
-  `prepare_aggregation` and `aggregate_gradients(prepared=...)`.
-- `benchmarks/bench_fl_compare.py` (per-family FL timings as JSON) and
-  `benchmarks/bench_offline_potential.py`.
-- `pyfe4ai.utils.pairing_backend.multiexp(bases, exps, group=None)`,
-  `pow_many(base, exps, group=None)` and `deserialize_many(group,
-  encodings)`, native on BLS12-381 and loops on charm groups;
-  `PairingGroup.deserialize_many` on BLS12-381.
-- `sife/`, `mife/`, `mcfe/ddh_ristretto255` (status *unreviewed*): the DDH
-  constructions in the prime-order group ristretto255 (RFC 9496; labels
-  hashed with RFC 9380 `hash_to_ristretto255`), selected with
-  `group="ristretto255"` on the `ddh` variants. About 126-bit security;
-  0.07 ms per element and client for MCFE on the Rust backend (3072-bit
-  group: 10.8 ms), 75 instead of 936 bytes per element.
+  `ct_format="json"`, `ring_modulus="prime"`, `key_shares="full"` and
+  `flooding="gaussian"` select the formats of v0.3.0 (JSON ciphertexts, a
+  prime `q`, whole key shares, Gaussian flooding); re-keying is still
+  required (above). Cached v0.3.0 parameter records are re-derived; RNS
+  records are kept in `param-rns.json`, beside the prime's `param.json`.
+  Mixed formats are refused with a message that names the fix (a label part
+  without its weight part, JSON ciphertexts under binary public parameters,
+  and the other way round). The opt-in `sharing="replicated-seeded"` issues
+  whole key shares.
+- **Sharing ids** (`mcfe/ring_lwe_threshold`). Every sharing the key
+  generator issues -- whole key shares, or the label parts of one label --
+  has a random `sharing_id`, which the partial decryptions carry. Partials of
+  two sharings of one key would decode to a wrong value inside the decoding
+  bound rather than fail, so combiners refuse them (`MixedSharingsError`:
+  fetch the label parts again for all servers; the ML adapter's
+  `aggregate_gradients` does this once by itself). A label part asked for
+  again after it left the key generator's cache (the last 16 labels per
+  weight vector, `LABEL_PARTS_KEPT`) is a new sharing. **Store and transmit
+  the `sharing_id` with every key share and partial decryption**: partials
+  without one combine only with each other, so a layer that drops it on all
+  sides would let two sharings be mixed unnoticed.
+- **MCFE label hash** (`mcfe/ring_lwe` and its threshold and decentralized
+  variants; the dense-LWE MCFE family `mcfe/lwe`, `fullysec_lwe`,
+  `lwe_threshold`, `lwe_decentralized`): labels are hashed to `Z_q` by
+  rejection sampling from SHAKE128 (`label_hash="shake128-rejection"`, the
+  new default), exactly uniform and cheaper, so **MCFE ciphertexts and
+  functional-key terms differ from v0.3.0**. Data without the field -- that
+  of v0.3.0 -- is read as `"shake256-wide"`, the v0.3.0 hash, so v0.3.0
+  public parameters, keys and ciphertexts keep working together;
+  `label_hash="shake256-wide"` gives new setups the old hash. The mode is
+  recorded in the public parameters, client keys, functional keys, key shares
+  and ciphertext layers, and data of different modes is refused instead of
+  decrypting to wrong sums.
+- **ABDP15 LWE dimensions** (`sife/lwe`, `mife/lwe`; see Security): records
+  cached for `lwe_n = "auto"`, in any profile, no longer match their
+  re-derivation and are regenerated on load with a new seed for `A`. Keys,
+  public parameters and ciphertexts made under the old record stop matching
+  it, and the only sign is a logged error: **generate keys again after
+  upgrading.** Records for an explicit `lwe_n` (such as the `toy` default 32)
+  are kept; under `standard` an explicit `lwe_n` that meets only the old rule
+  is refused. Under `toy`, `mife/lwe_threshold` with `lwe_n = "auto"` picks a
+  larger dimension (3456 -> 3904 for `X = Y = 20`, `stat_param = 64`) and
+  raises where nothing up to 6144 fits.
+- **Ring-LWE MIFE / MCFE parameters** (`mife/ring_lwe`, `mcfe/ring_lwe` and
+  its threshold and decentralized variants) are sized for messages of norm
+  `3X` (see Security): cached parameters are re-derived (construction
+  `acfgu18-bmms21/v5`), and `q` grows by 3 to 4 bits.
+- **Pairing groups:** every pairing-based scheme defaults to BLS12-381 from
+  the Rust extension, under both profiles. Toy keys, public parameters and
+  ciphertexts of earlier versions (MNT224) cannot be read on it; pass
+  `pairing_group_param="MNT224"`, with charm-crypto installed, to keep using
+  them. Under `standard` BLS12-381 replaces BN254 (about 100-bit) and still
+  emits a `FESecurityWarning` (about 120-126-bit security). Without the Rust
+  extension the pairing-based schemes need charm-crypto and an explicit
+  group.
+- **Exact Gaussian sampling by default** (FACCT, see Security) for the
+  Ring-LWE MIFE / MCFE family (keys and encryption noise), the dense-LWE
+  MCFE keys `t`, `sife/fullysec_ring_lwe` and, under `standard`, the
+  public-key noise of ABDP15 (`sife/lwe`, `mife/lwe`). These schemes record
+  `gaussian_sampler` in their public parameters and ignore the process-wide
+  choice (`set_gaussian_sampler`, `PYFE4AI_GAUSSIAN_SAMPLER`); `standard`
+  refuses `gaussian_sampler="rounded"` for them, `toy` still accepts it.
+  Formats are unchanged; public parameters without the field (earlier
+  versions) give FACCT to new encryptions.
+- **Refused under `standard`**, besides the ALS16 schemes and
+  `mcfe/paillier_decentralized`: `mife/lwe_threshold` (no parameter set is
+  both secure and usable, see Security), an explicit `sharing="shamir"` with
+  `t < s`, `gaussian_sampler="rounded"` for the schemes above, and ABDP15
+  dimensions below the new rule. Both profiles refuse `stat_param` above 256
+  and thresholds that are not integers (also `t=True`).
+- **Pickles are not portable across versions.** Keep pickled scheme objects
+  within one version (e.g. for multiprocessing or Ray); the threshold
+  Ring-LWE MCFE key generator, clients and servers refuse a state pickled by
+  another version with a clear error (create the object again).
+- The threshold LWE layers record `threshold_construction` and
+  `security_profile` in their public parameters, and servers refuse
+  constructions they do not know or of another sharing. The `ddh` key
+  generators refuse a `group` other than `"modp"` instead of ignoring it
+  (ristretto255 is the `ddh_ristretto255` variant, see Added).
 
 ### Security
 
-- **Threshold key shares are bound to their public parameters**
-  (`mife/lwe_threshold`, `mcfe/ring_lwe_threshold`, `mcfe/lwe_threshold`):
-  every key share carries `pp_binding`, a digest of the public-parameter
-  fields its partial decryptions depend on (modulus and dimension, servers
-  and threshold, flooding distribution and width, tail cut, flooding
-  accounting and its limit, label hash; a missing field as its documented
-  default), and a server refuses a share whose digest is not that of its own
-  public parameters. Served under parameters that differ in one of them, a
-  share would answer a request a second time with another derivation; for
-  the label hash of the dense tMCFE-LWE that gave
-  `w_A - w_B = lambda <share, H_A(l) - H_B(l)>` exactly (integration
-  review, L1 and L3). Dense tMCFE-LWE key shares also record `label_hash`;
-  tMIFE-LWE checks its `threshold_construction` against
-  `flooding_accounting`. The derandomised flooding noise is seeded with the
-  digest as well (the server's own, equal to the share's after the check),
-  so answers under two parameter sets get independent noise even if the
-  check were bypassed; partial decryptions differ from those of earlier
-  builds for the same request. Key shares issued before this change are
-  refused: issue new ones.
-- **Exact Gaussians by default for the lattice MIFE / MCFE schemes.** The
-  October 2026 crypto review found the double-precision rounded sampler
-  (shared Box-Muller radii, ties to even, the 8.57 sigma cut) about
-  2^-12..2^-4 from i.i.d. `D_{Z,sigma}` per ciphertext and 2^-25..2^-15 per
-  key, against the 2^-128 budgets of BMMS21 (G1 -> G2, G3 -> G4) and of
-  ABMPSW20 (Lemmas 33-35). The Ring-LWE MIFE / MCFE family (`sife`, `mife`,
-  `mcfe` `ring_lwe`, the decentralized and threshold MCFE: keys and
-  encryption noise) and the dense-LWE MCFE keys `t` (`mcfe/lwe`,
-  `fullysec_lwe`, `lwe_threshold`, `lwe_decentralized`) now sample with
-  `"facct"` by default and record it as `gaussian_sampler` in their public
-  parameters (`sampling_utils.scheme_sampler`: the config's sampler, else
-  the recorded one, else -- under `toy` -- a `gaussian_sampler()` block,
-  else `"facct"`; the process-wide choice and `PYFE4AI_GAUSSIAN_SAMPLER` do
-  not apply). `gaussian_sampler = "rounded"` stays selectable under `toy`;
-  `standard` refuses it, and a crypto object overriding a recorded
-  `"facct"` with it warns (`FESecurityWarning`). ALS16 and the DCR
-  schemes still follow the library-wide choice (rounded by default), and so
-  does ABDP15 under `toy` (below). Public parameters without the field (earlier versions) give
-  FACCT to new encryptions; decryption does not depend on it; parameter
-  records are unchanged.
-- **ABDP15 public keys sampled exactly under `standard`** (`sife/lwe` and
-  `mife/lwe`; `mife/lwe_threshold`, whose MIFE layer would do the same, is
-  refused under `standard`, see the ABDP15 entry below): the noise `E` of
-  `pk = A S + E` -- the only Gaussian of these schemes -- is drawn with
-  `"facct"` under `standard`, where an explicit `gaussian_sampler =
-  "rounded"` is refused and a `gaussian_sampler()` block does not apply;
-  under `toy` it follows the config's `gaussian_sampler`, else the
-  library-wide choice (rounded by default). The public parameters record
-  `gaussian_sampler` and `security_profile`. Key generation does not get
-  slower: FACCT is native while the rounded matrix path draws in Python
-  below 2^40 (0.6-1.0 against 0.8-2.2 us per sample); standard setup of
-  `sife/lwe` (eta 10, X = Y = 50) 5.8 -> 4.9 s, `mife/lwe` (100 slots,
-  X = Y = 50) 40.6 -> 34.4 s.
-- **MPFR Gaussians at `bits(sigma) + 320` bits** (`BIGINT_GUARD_BITS`,
-  covering `stat_param + ceil(log2 N) + 8` for `stat_param` up to 256, now
-  the largest accepted; up to 2^56 samples per key): the DCR keys and masks
-  and all threshold flooding were 2 to 19 bits short of their budgets at
-  `+ 128`. The threshold Gaussian flooding always uses this sampler (pinned,
-  recorded as `noise_sampler` in the decryption keys and checked with the
-  version; the default uniform flooding of `mcfe/ring_lwe_threshold` uses no
-  Gaussian sampler). Since the threshold schemes derive a request's
-  flooding noise deterministically (a repeated request gets the same noise),
-  their decryption keys now carry `noise_version = 2` and a server refuses
-  keys of another version (issue new keys); the construction versions of
-  tMIFE-LWE (`acfgu18-abdp15-shamir-smudging-seeded-a/v4`) and
-  tMCFE-Ring-LWE (`bmms21-ibmcfe-shamir-smudging/v2`) bump.
-- **`XofRandom` counters**: each call claims its counter atomically (two
-  threads sharing an instance could draw the same block); the native
-  samplers no longer wrap a counter past 2^64 (they raise OverflowError, as
-  the reference), and a signal handler or finalizer drawing from an
-  `XofRandom` during a native draw no longer deadlocks (re-entrant use of
-  the instance being drawn raises RuntimeError; other threads wait).
-- Documentation: the per-sample `0.02 / sigma^2` figure holds for the ideal
-  rounded Gaussian only, not for its double-precision implementation; the
-  `2^-128` per sample of the `standard` profile holds for FACCT and the MPFR
-  path.
+Fixes from a cryptographic code review of the schemes and of the new native
+code (October 2026), and from the follow-up checks of the fixes.
 
-- **MIFE-Ring-LWE** and the **Ring-LWE MCFE** schemes (`mcfe/ring_lwe` and
-  its threshold and decentralized variants) now take the Gaussian widths of
-  BMMS21 Sec. 4.2 for messages of norm `3X`: the MIFE compiler of ACFGU18
-  (Fig. 4, footnote 12) needs an IPFE that is secure for that bound, since
-  the hybrids of its Lemma 3 encrypt `x^j - x^1 + x'^1` in one slot. Up to
-  v0.3.0 the widths were sized for `X` and dimension `n * eta`, which meets
-  the condition only for nine or more clients (with three clients `sigma1`
-  was 0.58 of the required width). No attack is known. The plaintext modulus
-  `p` is still sized for `X`; `q` grows by 3 to 4 bits, and the `standard`
-  profile keeps the same ring dimension for the benchmark configurations.
-  Cached parameters of these schemes are re-derived (construction
-  `acfgu18-bmms21/v5`).
-- **One-time precomputations are claimed atomically** (October 2026 crypto
-  review, H1 and M1; new `pyfe4ai.schemes.one_time`). The offline phases of
-  SIFE- / MIFE-Paillier and MIFE-DDH (`random_offline`), of MCFE-DDH /
-  Damgård / Paillier (`mcfe/offline`) and of the Ring-LWE MCFE (both
-  backends) checked `used` and set it later, so two threads could both
-  encrypt with one precomputation; `copy.copy` and `os.fork()` gave a second,
-  unused handle. Two ciphertexts with the same randomness or label masks
-  give `x - x'` without any key. The online phase now validates its input
-  (shapes, and the plaintext bound where the plain call checks one), then
-  checks and sets `used` under a per-object lock and moves the secret parts
-  out; `copy.copy`, `copy.deepcopy` and pickling raise `TypeError` (code
-  that copies the attributes deliberately is not prevented); a precomputation
-  records the process that made it, refuses use in another one, and is
-  invalidated in a forked child (`os.register_at_fork`). Refused inputs do
-  not consume it. The native precomputation also refuses another process.
-- **Native precomputation deadlock** (M2): `encrypt_precomputed` and
-  `precomputed_info` waited for the precomputation's mutex with the GIL
-  held while the call holding it ran detached, so two threads on one
-  precomputation hung the process. The lock is now waited for detached
-  (PyO3 `MutexExt::lock_py_attached`); the second call is refused with
-  `ValueError`, and a poisoned lock raises `ValueError` instead of
-  panicking.
-- **Native FACCT constant at full precision** (M4): `native_backend` passed
-  `c = 1 / (2 sigma^2)` to the Rust acceptance test rounded to 53 bits (the
-  negation ran in gmpy2's default context), about `2^-55` off where `2^-110`
-  was documented, so the native exact sampler's decisions could differ from
-  the reference for a given bit source and its output was about `2^-57` from
-  `D_{Z,sigma}` per sample. The mantissa is now negated exactly, and
-  `FacctTable` compares a few fixed-point thresholds with the exact formula
-  when it is built (`ValueError` for an imprecise constant).
-- **ML adapter: one ciphertext per client and label under threads** (M6,
-  since v0.3.0): `encrypt_gradient` checked `(nid, label)` before encrypting
-  and recorded it afterwards, so two concurrent calls for one client and
-  label both succeeded and an aggregator could learn `gA - gB`. The pair is
-  now reserved under a lock before encrypting and released if the
-  encryption fails; `precompute_gradient` checks it under the same lock. A
-  wrapper can still be pickled and copied (`multiprocessing`, Ray): the copy
-  carries the pairs used so far and refuses them, but does not learn of
-  labels used later by the original or other copies, so each client's
-  gradient for a label goes through one wrapper. A pickled wrapper carries
-  the master key and every client's key: ship workers their client's own
-  crypto object (the scheme class built from `wrapper.pp` and
-  `wrapper.kg.get_private_keys(nid)`), not the wrapper. The cached crypto objects
-  are not copied (rebuilt from the keys), and the Ring-LWE key generator and
-  MIFE / SIFE Ring-LWE objects drop their native key caches when pickled
-  (since the native backend they could not be pickled after a native call).
-- **GT discrete-log tables bounded** (M3): the BLS12-381 baby-step tables
-  were cached per base and bound for the life of the process, and SIFE
-  FH-IPE builds one for a new base `e(k1, c1)` per decryption (megabytes
-  each). The GT and ristretto255 table caches now keep at most 16 tables
-  and 128 MiB each (least recently used evicted; sizes counted as the hash
-  table allocates them), key GT tables by a 128-bit keyed SipHash of the
-  element (16 instead of 576 bytes per step; cached GT dlogs at bound 10^5
-  take 0.09 instead of 0.19 ms), and `gt_dlog(..., cache=False)` (used by
-  SIFE FH-IPE) solves with a table of about `sqrt(2 bound + 1)` steps that
-  is not kept. One table takes at most 96 MiB (1,835,008 baby steps): above
-  bounds of about `2^33` a dlog takes more giant steps (ristretto255 at
-  `10^11`: 0.25 s per dlog and 7 s to build the table, instead of 50 ms and
-  28 s with the uncapped 344 MB table).
-- **Threshold LWE layers** (`mife/lwe_threshold`, `mcfe/ring_lwe_threshold`,
-  `mcfe/lwe_threshold`): Lagrange-multiplier leak, **v0.3.0 and earlier are
-  affected** (severity High, practical impact Medium; details in the README,
-  Known Issues).
-  * **Mechanism.** The Shamir-shared key (the only sharing, so the default
-    for every `t < s`) makes an honest partial decryption differ from its
-    simulation from the result and a coalition's key shares by `M nu`. Here
-    `nu` is the decryption noise and `M` is a product of Lagrange
-    coefficients, a non-integer `r / d` for some corrupted set, enrolled set
-    and server whenever `s >= 3` and `t < s`: 6 of 18 cases for
-    `s = 3, t = 2`, 202 of 330 for `s = 5, t = 3`. Then `d` times the
-    partial minus the computable part reveals `nu mod d`, whatever the
-    flooding width.
-  * **Measured.** With `s = 3, t = 2`, server 2 corrupted and enrolled set
-    {1, 3}: `nu mod 4` in 20 of 20 tMIFE-LWE partials and 160 of 160
-    tMCFE-Ring-LWE coefficients.
-  * **Larger moduli.** Combining enrolled sets raises the modulus: 144 at
-    `(5, 3)`, about `2^25` at `(10, 6)`, at most `2^25.5` for `s <= 10`.
-    Fewer than `t - 1` corrupted servers can suffice, and for many `(s, t)`
-    none at all: the aggregator alone reads `nu` modulo `(s - 1)!` for
-    `t = 1`, 6 at `(5, 2)`, 120 at `(7, 2)` and 2 at `(6, 3)`, `(7, 4)` and
-    `(9, 5)`.
-  * **`(2, 1)`.** No residue leaks, only the integer multiplier 2. Integer
-    multipliers above 1 (up to 4 at `(3, 2)`) multiply the statistical
-    distance of the flooding.
-  * **Consequences.** With `nu` exact, tMIFE-LWE's `(sk_y, z)` would follow
-    by linear algebra. At the `standard` parameters the leak is partial
-    (about 25 bits per ciphertext at most for `s <= 10`), and no key or
-    plaintext recovery has been shown. In tMCFE-LWE the multipliers narrow
-    the error of its LWE argument, over the enrolled sets of one label, up
-    to 9-fold at `(3, 2)` and 869-fold at `(5, 3)`.
-  * **Not affected:** `t = s`, and the DDH and pairing threshold layers
-    (exact interpolation in the exponent).
-  * **New config entry `sharing`.** `"replicated"` shares the key
-    additively over the `(t - 1)`-subsets of the servers: piece `T` is held
-    by the servers outside `T` and added by the smallest enrolled one.
-    Every multiplier is 0 or 1 and the existing arguments hold, with `q`,
-    `ring_n` and `lwe_n` unchanged. A server holds `C(s - 1, t - 1)` key
-    pieces instead of one share, and keeps the sums of its pieces per
-    enrolled set in a small cache.
-  * **Defaults.** `"replicated"` **is the default for `t < s`**. `"shamir"`
-    stays the default for `t = s`, with unchanged outputs and cached
-    parameters.
-  * **Refusals and warnings.** The key generator refuses an explicit
-    `"shamir"` with `t < s` under `standard` and warns
-    (`FESecurityWarning`) under `toy`.
-  * **Servers refuse Shamir key shares with `t < s`** with
-    `FESchemeError`, unless the server's crypto config has
-    `legacy_shamir="warn"`. That opt-out serves them with an
-    `FESecurityWarning`, never with public parameters that record the
-    `standard` profile, and has no environment-variable counterpart. Key
-    shares of v0.3.0 are refused in any case (`FEKeyError`): their flooding
-    noise was drawn by another derivation (`noise_version`, see the entry on
-    the MPFR precision of the threshold flooding), so the opt-out applies to
-    Shamir `t < s` key shares issued by this version (explicit `sharing =
-    "shamir"` under `toy`).
-  * **Public parameters** of the three layers now record
-    `threshold_construction` and `security_profile`; servers refuse a
-    construction they do not know, or one of another sharing.
-  * **Thresholds.** A threshold that is not an integer (also `t=True`) is
-    refused by every threshold scheme.
-  * **Records and key shares.** The replicated sharing has its own
-    parameter records (construction
-    `acfgu18-abdp15-replicated-smudging-seeded-a/v1`, threshold construction
-    `bmms21-ibmcfe-replicated-smudging-uniform/v1` with the default uniform
-    flooding and `bmms21-ibmcfe-replicated-smudging/v1` with the Gaussian),
-    so records cached for `t < s` by v0.3.0 are not reused. Key shares for `t < s` have a new layout
-    (`sharing`, `pieces`), and their partial decryptions change.
-  * **Upgrade step** (LWE threshold layers with `t < s`): **re-share the
-    threshold keys with this version.**
-    * Run its key generator (`setup()`, new client keys and key shares).
-      This draws a new public matrix or polynomial, because of the new
-      record.
-    * Discard the old key shares. This version does not serve v0.3.0 key
-      shares at all (their flooding derivation changed), so finish rounds
-      encrypted under the old keys with v0.3.0 before upgrading; the leak
-      remains for those rounds.
-- **ABDP15 LWE schemes** (`sife/lwe`, `mife/lwe`): the `standard` profile
-  now reads the 128-bit lattice-estimator table (`WIDE_LWE_128_LOG_RATIO`)
-  at the error width `sigma' = sigma / (1 + B sqrt(eta))` of the LWE problem
-  that their security proof reduces to, not at the public key's own `sigma`.
-  Here `B = 2X`; in the slots of `mife/lwe` `B = 4X`, because the ACFGU18
-  reduction challenges a slot with `x^(j,0) - x^(1,0) + x^(1,1)` against
-  `x^(j,1)` (`lwe_utils.abdp15_reduction_sigma`).
-  Theorem 2 of the PKC 2015 paper, cited so far, does not cover noisy LWE
-  keys. Its simulation computes ciphertexts from the secret key without the
-  noise term `<r, e>`, and changes the basis of noisy public keys with
-  coefficients in `Z_q`. The proof is instead the full version (ePrint
-  2015/017, Oct. 2015), Thm. 4.4 with Thms. 6.6 and 6.7 (Construction 6.5,
-  Sec. 6.2), written out in F. Bourse's PhD thesis (ENS 2017, Thm. 4.3.5
-  with Thms. 8.2.2, 8.2.3, 8.3.2). The proof of Thm. 6.6 needs
-  `sigma >= (1 + B sqrt(eta)) sigma'`; the full version's Sec. 6.2 parameter
-  list states the stronger, sufficient `(l B + 1) sigma'`. The literal
-  `p > l B^2` of Thm. 4.4 is not needed for the Regev instance: the change of
-  basis works mod the LWE prime `q`, and decoding is of the integer inner
-  product. The `4X` per MIFE slot is the library's ACFGU18 composition.
-  `lwe_n` grows by 17 to 67 percent for `8 <= X = Y <= 1000`, `eta <= 100`
-  and up to 100 MIFE slots, and by 8 to 112 percent at `X = Y = 1`, where
-  the old rule often stopped at the table's smallest dimension, 512. For
-  example 896 → 1280 and 1088 → 1536 for `eta = 10` and `X = Y = 50 / 256`,
-  and 1024 → 1408 for 100 MIFE slots of `eta = 1`. An explicit `lwe_n` is
-  checked at `sigma'`. An encryption costs about twice as much. No attack is
-  known: the old dimensions still meet the estimator for an attack on the
-  public key alone.
-  **Cached parameters:**
-  * Records cached for `lwe_n = "auto"`, in any profile, no longer match
-    their re-derivation. They are regenerated on load with a new seed for
-    `A`. Keys, public parameters and ciphertexts made under the old record
-    stop matching it, and the only sign is a logged error, so generate keys
-    again after upgrading.
-  * Records for an explicit `lwe_n`, such as the `toy` default 32, are kept.
-    Under `standard`, an explicit `lwe_n` that met only the old rule is
-    refused, for example 896 for `eta = 10` and `X = Y = 50`.
-  * `toy` `mife/lwe_threshold` with `lwe_n = "auto"` picks a larger
-    dimension (3456 → 3904 for `X = Y = 20` and `stat_param = 64`). It
-    raises where nothing up to 6144 fits, for example `stat_param = 128`
-    with `X = Y >= 20`.
-  * The construction ids are unchanged. Bumping them would regenerate the
-    same records, and the explicit ones as well.
+- **Threshold LWE layers: Lagrange-multiplier leak; v0.3.0 and earlier are
+  affected** (`mife/lwe_threshold`, `mcfe/ring_lwe_threshold`,
+  `mcfe/lwe_threshold` with `t < s`; severity High, practical impact
+  Medium).
+  * **Mechanism.** These layers Shamir-shared the functional key for every
+    `t < s`. An honest partial decryption then differs from its simulation
+    (from the result and a coalition's key shares) by `M nu`, where `nu` is
+    the decryption noise and `M` a product of Lagrange coefficients. For
+    `s >= 3` and `t < s`, `M = r / d` is not an integer for some corrupted
+    set, enrolled set and server, and `d` times the partial minus the
+    computable part reveals `nu mod d`, whatever the flooding width.
+  * **Who can read it.** With `s = 3, t = 2`, server 2 corrupted and enrolled
+    set {1, 3}, `nu mod 4` was read from every tMIFE-LWE partial and every
+    tMCFE-Ring-LWE coefficient. Combining enrolled sets raises the modulus
+    (144 at `(5, 3)`, about `2^25` at `(10, 6)`, at most `2^25.5` for
+    `s <= 10`). Fewer than `t - 1` corrupted servers can suffice, and for
+    many `(s, t)` none: the aggregator alone reads `nu` modulo `(s - 1)!` for
+    `t = 1`, 6 at `(5, 2)` and 120 at `(7, 2)`. At `(2, 1)` no residue leaks;
+    integer multipliers above 1 (up to 4 at `(3, 2)`) multiply the
+    statistical distance of the flooding.
+  * **Consequences.** With `nu` exact, the tMIFE-LWE functional key would
+    follow from the partials by linear algebra. At the `standard` parameters
+    the leak is partial -- at most about 25 bits of `nu` per ciphertext for
+    `s <= 10`, against noise bounds of about `2^67` (tMIFE-LWE) and `2^71`
+    (tMCFE-Ring-LWE) -- and no key or plaintext recovery has been shown. In
+    tMCFE-LWE the multipliers narrow the error of its LWE argument, up to
+    9-fold at `(3, 2)` and 869-fold at `(5, 3)`.
+  * **Not affected:** `t = s`, and the DDH and pairing threshold layers,
+    which interpolate exactly in the exponent.
+  * **Fix.** For `t < s` the key is shared additively over the
+    `(t - 1)`-subsets of the servers (`sharing="replicated"`, the new
+    default): piece `T` is held by the servers outside `T` and added by the
+    smallest enrolled one, every multiplier is 0 or 1 and the flooding
+    argument holds, with `q`, `ring_n` and `lwe_n` unchanged. A server holds
+    `C(s - 1, t - 1)` key pieces instead of one share (126 at `(10, 5)`); the
+    opt-in `sharing="replicated-seeded"` (see Added) stores at most one full
+    piece. Re-key as described in the upgrade notes; the README's Known
+    Issues has the details.
+- **Exact discrete Gaussians.** The double-precision rounded sampler (shared
+  Box-Muller radii, ties to even, nothing beyond 8.57 sigma) is about
+  `2^-12` to `2^-4` from i.i.d. `D_{Z,sigma}` per ciphertext and `2^-25` to
+  `2^-15` per key, against the `2^-128` budgets of the BMMS21 and ABMPSW20
+  proofs. The schemes listed in the upgrade notes now sample with FACCT
+  (Zhao, Steinfeld and Sakzad 2020; about `2^-185` per sample). ALS16, the
+  DCR schemes and ABDP15 under `toy` still follow the library-wide sampler,
+  rounded by default (README, Known Issues).
+- **ABDP15 LWE schemes sized by the proof that covers them** (`sife/lwe`,
+  `mife/lwe`). Theorem 2 of the PKC 2015 paper, cited so far, does not cover
+  noisy LWE keys. The proof is that of the full version (ePrint 2015/017,
+  Oct. 2015: Thm. 4.4 with Thms. 6.6 and 6.7), written out in F. Bourse's PhD
+  thesis (ENS 2017, Thm. 4.3.5 with Thms. 8.2.2, 8.2.3, 8.3.2). It reduces to
+  LWE with error width `sigma' = sigma / (1 + B sqrt(eta))` (`B = 2X`, and
+  `4X` per slot of `mife/lwe` in the library's ACFGU18 composition), and
+  `standard` now reads the 128-bit lattice-estimator table at `sigma'`
+  instead of `sigma`: `lwe_n` grows by 17 to 67 percent for
+  `8 <= X = Y <= 1000`, e.g. 896 -> 1280 for `eta = 10`, `X = Y = 50`, and
+  1024 -> 1408 for 100 MIFE slots of `eta = 1`; an encryption costs about
+  twice as much. No attack is known: the old dimensions still meet the
+  estimator for an attack on the public key alone.
 - **`mife/lwe_threshold` is refused under `standard`**, like ALS16 and
-  dMCFE-Paillier: no parameter set is both secure and usable in pure Python.
-  At `sigma'` its flooding-enlarged `q` (`stat_param = 128`, two clients)
-  needs a dimension at the very end of the table or beyond it.
-  * The very end (5888 to 6144, with `A` of 6.5 to 7.8 * 10^9 entries) for a
-    few small bounds, e.g. `X = Y` in {1, 2, 3, 8, 10} at `eta = 1`.
-  * Beyond it for most others: `X = Y` = 4 to 6, `X = Y >= 12` and most
-    `eta >= 2`. About 6500 for `X = Y = 50` (`q` of 217 bits), where the old
-    rule took 5952.
-  * `standard` therefore no longer fixes its `matrix_mode`. Use
-    `mife/ddh_threshold`, or `mcfe/ring_lwe_threshold` with labels.
-  * A KL-divergence accounting of the flooding noise would bring it back
-    within the table, but only as an opt-in. It needs
-    `flooding_accounting = "kl"`, `t = s` and an explicit budget of
-    `max_partial_decryptions` per server.
-  * Under that accounting it takes about 4864 at `sigma'`, for two clients,
-    `s = t = 3` and `N = 2^40` flooded values: `q` of 173 bits and `A` of
-    4.1 * 10^9 entries, so `matrix_mode = "stream"`. The guarantee is weaker,
-    about `stat_param - 6.85` bits. With the default accounting the
-    dimension stays as above.
-  * That accounting is now merged (opt-in, see Added); the refusal under
-    `standard` stays with it too (a maintainer decision).
+  dMCFE-Paillier: at `sigma'` its flooding-enlarged `q` needs a dimension at
+  the very end of the 128-bit table (5888 to 6144) for a few small bounds and
+  beyond it for most others. Use `mife/ddh_threshold`, or
+  `mcfe/ring_lwe_threshold` with labels. The opt-in KL accounting (see
+  Added) would bring it within the table, but the refusal stays with it.
+- **Ring-LWE MIFE / MCFE sized for `3X`.** The ACFGU18 MIFE compiler needs a
+  single-input scheme secure for messages of norm `3X` (Fig. 4, footnote 12).
+  Up to v0.3.0 the BMMS21 widths were sized for `X`, which met the condition
+  only for nine or more clients (with three clients `sigma1` was 0.58 of the
+  required width). No attack is known.
+- **Threshold key shares bound to their public parameters.** Every key share
+  of the threshold LWE layers carries `pp_binding`, a digest of the
+  public-parameter fields its partial decryptions depend on (modulus and
+  dimension, servers and threshold, flooding distribution, width and
+  accounting, label hash, and the formats of the threshold MCFE), and a
+  server refuses a share bound to other parameters; the derandomised
+  flooding noise is seeded with the digest as well. A share served under
+  parameters that differ in one of these fields would answer a request a
+  second time under another derivation; for the label hash of the dense
+  tMCFE-LWE that gave an exact linear relation on the key share.
+- **Wide Gaussians at `bits(sigma) + 320` bits of MPFR precision**
+  (`BIGINT_GUARD_BITS`): the DCR keys and masks and all threshold flooding
+  were 2 to 19 bits short of their budgets at `+ 128`. The threshold
+  Gaussian flooding always uses this sampler, recorded in the decryption
+  keys.
+- **ML adapter: one ciphertext per client and label under threads** (since
+  v0.3.0). `encrypt_gradient` checked `(nid, label)` before encrypting and
+  recorded it afterwards, so two concurrent calls for one client and label
+  both succeeded and an aggregator could learn `gA - gB`. The pair is now
+  reserved under a lock first. A pickled or copied wrapper refuses the pairs
+  used so far but does not learn of later ones, so send each client's
+  gradient for a label through one wrapper. A pickled wrapper also carries
+  the master key and every client's key: ship a worker its client's own
+  crypto object (built from `wrapper.pp` and
+  `wrapper.kg.get_private_keys(nid)`), not the wrapper.
+- **`XofRandom` counters** are claimed atomically: two threads sharing an
+  instance could draw the same SHAKE block.
+- **The rounded Python sampler no longer uses `SystemRandom.gauss`**, which
+  kept the second Box-Muller value in a global: a future secret coefficient
+  stayed in memory between calls, and parent and child drew the same sample
+  after `fork()`.
+- **New code hardened during the review** (no released version affected):
+  the precomputations of the offline / online APIs are strictly one-time
+  (claimed under a lock, refused in another process, invalidated in a
+  forked child, not copyable or picklable); the native code wipes secret
+  rows, pads, key pieces and noise material on every path, errors included,
+  takes the exact sampler's constant at full precision and checks its
+  tables, checks sizes (`ValueError` instead of a panic) and never waits for
+  a lock while holding the GIL; binary threshold ciphertexts have a unique
+  encoding (values `>= q` refused, tags over the public parameters' digest
+  and the bytes), so a client cannot redraw the flooding noise of a key part
+  by re-encoding a ciphertext; servers and combiners refuse public
+  parameters changed in place and malformed key shares (`FEKeyError`);
+  BLS12-381 and ristretto255 decoders accept only canonical encodings, and
+  their discrete-log caches are bounded in size.
 
 ### Performance
 
-- **Replicated key sharing natively** (`mife/lwe_threshold`,
-  `mcfe/ring_lwe_threshold`, `mcfe/lwe_threshold`; `"replicated"`, the
-  default for `t < s`, and `"replicated-seeded"`): the extension deals the
-  pieces and adds up a server's pieces for any odd `q` below 2^253, with no
-  NTT ring (`zq_replicated_deal`, `zq_sum`).
-  * **Same outputs.** Pieces, their order, sums and partial decryptions are
-    those of the Python code for the same random bytes: the draws are
-    `SystemRandom.randrange` on the call's DRBG.
-  * **Unchanged.** Key-share formats and construction ids.
-  * **Fallback.** Values other than ints and decimal strings fall back to
-    the Python code.
-  * **Measured** (tMCFE Ring-LWE, `standard`, 10^4 elements):
+Measured on an Apple M2 Max, one thread, `security_profile="standard"`,
+three clients, with the Rust extension (`benchmarks/PERFORMANCE.md` has the
+method and more rows):
 
-    | | key shares | partial per server (new key) |
-    | --- | --- | --- |
-    | `s = 3, t = 2` | 272 -> 43 ms | 101 -> 73 ms |
-    | `s = 10, t = 5` | 26.9 -> 2.2 s | 445 -> 128 ms |
-  * **Dense-LWE layers.** Dealing is 5-13x faster, the sums 3-7x.
-  * **Wipe.** `keccak::hash_to_zq` wipes its stream in 64-bit words.
+| workload | v0.3.0 (Python) | this release |
+| --- | ---: | ---: |
+| MCFE Ring-LWE, 10^4 gradient elements: client / aggregator | 197.5 / 280.0 ms | 17.95 / 6.24 ms |
+| ... online, after `precompute_gradient` / `prepare_aggregation` | | 0.25 / 3.16 ms |
+| threshold MCFE Ring-LWE, 10^4 elements, `s = 3, t = 2`: client / key shares per round / partial decryption per server / aggregator | 213.5 / 275.9 / 528 / 1348 ms ¹ | 26.7 / 10.7 / 8.5 / 29.1 ms |
+| dense-LWE MCFE (`mcfe/lwe`), 200 elements: client / aggregator | 1021 / 1030 ms | 93.1 / 101.4 ms |
+| DDH MCFE, per element: client / aggregator / ciphertext | 10.75 / 11.10 ms, 936 B | 0.069 / 0.139 ms, 75 B ² |
+| SGP / Quad / MCFE FH-Multi-IPE, one round | 320 / 506 / 889 ms ³ | 30 / 48 / 47 ms |
 
-- **The exact FACCT sampler natively for any width below 2^448**:
-  `discrete_gaussian_facct` runs in Rust when `rng` is an `XofRandom` or
-  `None`, with the reference's `getrandbits` calls and decisions (the known
-  answers hold). Widths with `k <= 2^50` use the existing kernel; wider ones
-  use a multi-word kernel (`rust/core/src/facct_wide.rs`) whose acceptance
-  exponent comes from the exact product `c t` into the same fixed-point
-  exponential, with the Python threshold wherever the fixed point cannot
-  decide. SIFE FullySec Ring-LWE under its FACCT default (standard):
-  - eta 4 setup 2.2 -> 0.26 s;
-  - eta 10 setup 5.8 -> 1.05 s;
-  - one encryption 0.85 -> 0.15 s (eta 4) and 1.63 -> 0.43 s (eta 10), the
-    rounded sampler's times.
+¹ The Python path at the same 212-bit `q`. ² `mcfe/ddh_ristretto255`
+against the 3072-bit `Z_p^*` group. ³ charm-crypto on MNT224 (Docker, same
+Mac) against BLS12-381.
 
-  Per sample 7-12 us -> 0.6-1.1 us. Finding M4 of the October 2026 crypto
-  review is applied: the native FACCT tables take `c` with its full 128-bit
-  mantissa (it reached Rust with 53 bits), and a table is checked against
-  the exact thresholds when built.
-- **Native backend** in Rust (`pyfe4ai._rust_native`, PyO3; sources in
-  `rust/`, `rust/core` has no dependencies), built by `pip install` when
-  cargo is available or by `tools/build_rust.py`.
-  `pyfe4ai.utils.native_backend` selects `auto` / `python` / `native`
-  (`PYFE4AI_BACKEND`) and threads (`PYFE4AI_THREADS`): Ring-LWE MIFE / MCFE
-  encryption, decryption and key derivation of a whole tensor per call, with
-  the GIL released and optional threads; dense-LWE MCFE label hashing and
-  dot products; ristretto255; BLS12-381 (below). Same outputs as the Python code
-  (checked bit for bit by the tests); Python fallback for unsupported
-  parameters.
-- **Sampling randomness of the native backend**: each tensor call expands one
-  32-byte OS seed with ChaCha20, one stream per chunk, and wipes seed and
-  states at its end (no state across calls); before, every sample byte was
-  read from the OS. Same distribution. ChaCha20 is not an SP 800-90A DRBG
-  (relevant only to FIPS validation). The Python code still reads the OS
-  for every byte. Faster on macOS (0.4-0.6 ms per 10^4
-  elements, `getentropy`), unchanged on Linux (`getrandom` is cheap).
-- Ring-LWE in Python: `NTT(a)`, `NTT(pk)` and `NTT(sk_y)` cached, `r`
-  transformed once, decryption products summed in the NTT domain (same
-  outputs). Dense-LWE MCFE: keys parsed once per object.
-- MCFE Ring-LWE 10^4-element FL round (standard profile, 3 clients): client
-  230 -> about 3.5 ms, aggregator 368 -> about 9.5 ms in a single thread
-  (Linux, binary ciphertexts).
-- **Threshold Ring-LWE MCFE natively under `standard`**: 256-bit words in
-  `rust/core` for moduli up to 2^253 (the flooded `q` has 212 bits at
-  `ring_n` 8192, beyond the 125-bit words), so its encryption and key
-  derivation run natively; so do the Shamir sharing of the key, the parsing,
-  digests and NTT-domain products of a partial decryption, and the
-  combination, with the values of the Python code (Shamir coefficients drawn
-  as `SystemRandom.randrange(0, q)` draws them, from the per-call DRBG). The
-  flooding noise is still `discrete_gaussian_bigint`, drawn in one call per
-  polynomial (same draws); ciphertext tags are serialised once for all
-  servers (same tags). 10^4 elements, 3 clients, `s = 3`, `t = 2` (host):
-  client 213.5 -> 19.6 ms, key shares 276 -> 41 ms, partial decryption 528 ->
-  211 ms per server (three quarters of it the flooding sampler), combination
-  18.0 -> 4.3 ms.
-- **Pairings on BLS12-381 in Rust** (arkworks; `pyfe4ai.utils.bls12_381`
-  behind charm's `PairingGroup` interface): a pairing takes 0.9 ms (charm:
-  MNT224 2.4 ms, BN254 13.7 ms), G2 exponentiation 0.4 ms (3.2 / 0.9 ms).
-  Products of pairings take one final exponentiation (`multi_pair`; a
-  product of 8: 2.6 ms, charm MNT224 19.4 ms). The bounded discrete log in
-  GT keeps its baby-step table per base and bound. SGP decryption pairs
-  `a_i` with `prod_j b_j^{F_ij}` (2 n + 1 pairings instead of 2 n^2 pairings
-  and n^2 GT exponentiations). End to end (`report` profile) SGP 320 -> 36
-  ms, Quad 506 -> 67 ms, MIFE / MCFE / dMCFE / tMCFE FH-Multi-IPE 425 /
-  889 / 945 / 1565 -> 25 / 82 / 79 / 136 ms (charm MNT224 in Docker before,
-  same Mac).
-- **Products of powers on BLS12-381 in one native call**: every product of
-  powers in the pairing schemes is one multi-scalar multiplication (Straus
-  over the GLV decomposition in G1 / G2, Pippenger from 512 terms, a
-  Frobenius decomposition of the exponent in GT), powers of one base share
-  one table, and vectors of group elements are decoded in one call (equal
-  encodings once). Single exponentiations: G2 0.37 -> 0.16 ms (arkworks
-  used plain double-and-add in G2), GT 0.49 -> 0.22 ms; GT deserialisation
-  0.81 -> 0.08 ms (membership by `f^p = f^u` in the cyclotomic subgroup
-  instead of `f^r = 1`). Keys and ciphertexts are unchanged; charm groups
-  keep the loops. End to end (`report`, host): MIFE / MCFE / dMCFE / tMCFE
-  FH-Multi-IPE 24 / 79 / 79 / 138 -> 18 / 47 / 48 / 70 ms, SGP 35 -> 30 ms,
-  Quad 65 -> 48 ms (setup 16 -> 6 ms).
-- **u64 words for moduli of 62 and 63 bits** (the NTT keeps its values in
-  [0, q) there instead of Harvey's lazy [0, 4q)): the `bound_x = 2`
-  configuration, at 63 bits since the 3X fix, is back in 64-bit words --
-  client 2.77 -> 2.04 ms, aggregator 7.25 -> 5.14 ms (10^4 elements).
-- **The exact FACCT sampler in Rust**: `sampler="facct"` keeps the Ring-LWE
-  encryption native, with the getrandbits calls and decisions of
-  `discrete_gaussian_facct` (its known answers hold natively; the rare
-  acceptance tests the fixed-point bound cannot decide use the Python
-  formula). 10^4 elements: 355 ms (Python) -> 18.3 ms; 0.45 us per sample.
-  The default stays the rounded sampler.
-- `ring_lwe_utils` NTTs and `poly_mul` run natively when the extension has a
-  context for (q, n) and the caller's root (the same values): SIFE Ring-LWE
-  encrypts natively (200 -> 16 ms, eta 10), SIFE FullySec Ring-LWE decrypts
-  in 67 instead of 290 ms; dMCFE Ring-LWE key shares and their combination
-  are native (25.3 -> 4.7 ms per client, 12.6 -> 2.0 ms); single-vector MCFE
-  label pads are hashed natively.
-- **Offline phases for Z_p^* and DCR**: `precompute(label, shapes)` /
-  `encrypt_lst_ndarray(..., precomputed=...)` and `prepare_key(dk, label,
-  shapes)` for MCFE-DDH, MCFE-Damgard and MCFE-Paillier (and their
-  decentralized variants; used by `precompute_gradient` and
-  `prepare_aggregation`), `precompute(shapes)` for SIFE- / MIFE-Paillier
-  and MIFE-DDH; the same ciphertexts. Online, 20 elements: client 212 /
-  212 / 717 -> 0.67 / 0.67 / 0.39 ms, aggregator 220 / 225 / 717 -> 4.6 /
-  6.9 / 0.9 ms. Discrete-log tables are keyed by value (the old string
-  keys are still read).
+- **Native backend** (`pyfe4ai._rust_native`, see Added): the Ring-LWE MIFE
+  / MCFE encryption, decryption and key derivation of a whole tensor per
+  call, with the GIL released and optional threads (4 threads: MCFE client
+  6.2 ms, aggregator 3.6 ms); the threshold MCFE (256-bit words for moduli
+  up to `2^253`, the RNS ring, Shamir and replicated dealing, partial
+  decryption and combination); the dense-LWE MCFE label sums; the exact
+  FACCT sampler (0.45 to 1.1 us per sample instead of 7 to 12 us) and the
+  wide MPFR Gaussians (0.55 to 2 us instead of 8 to 12 us); ristretto255; and
+  BLS12-381 pairings (0.9 ms; charm MNT224 2.4 ms) with multi-scalar
+  multiplication for every product of powers. The outputs are those of the
+  Python code, which the tests check bit for bit; unsupported parameters
+  fall back to Python.
+- **Threshold MCFE defaults**: ciphertexts of 71 instead of 222 bytes per
+  element, a server's key shares per round of 0.89 / 0.44 MB at
+  `t = 2` / `t = 3` instead of 6.75 / 3.38 MB (plus the weight part once).
+  With the options of v0.3.0 the same round takes 39.1 / 40.9 / 65.4 /
+  177.0 ms on the native backend.
+- **Replicated sharing natively**: key shares at `(s, t) = (3, 2)` 272 -> 43
+  ms, at `(10, 5)` 26.9 -> 2.2 s (tMCFE Ring-LWE, 10^4 elements).
+- **Offline / online phases** (see Added) move the randomness and label
+  masks out of the round: online, 20 elements, MCFE-DDH / Damgård / Paillier
+  clients 212 / 212 / 717 -> 0.67 / 0.67 / 0.39 ms.
+- **Cheaper label hash** (SHAKE128 with rejection): MCFE Ring-LWE aggregator
+  7.40 -> 5.87 ms. With the opt-in RNS modulus of the MIFE / MCFE / dMCFE
+  Ring-LWE schemes the aggregator takes 5.69 ms and its online phase 2.65 ms
+  (3.16 ms with the prime).
+- **Costs of the security defaults.** FACCT is most of the MCFE client's 18
+  ms (the offline phase moves it out of the round); on the Python backend the
+  same client takes 360 ms. ABDP15 key generation under `standard` takes
+  about twice as long (`sife/lwe`, `eta = 10`, `X = Y = 50`: `lwe_n` 1280,
+  setup 8.3 s; `mife/lwe` with 100 slots: 47 s).
+- Python path: `NTT(a)`, `NTT(pk)` and `NTT(sk_y)` cached and decryption
+  products summed in the NTT domain (same outputs); dense-LWE MCFE keys
+  parsed once per object.
 
-- **Wide Gaussians in Rust**: `discrete_gaussian_bigint` (the noise of SIFE
-  FullySec Ring-LWE and ALS16, the flooding noise of tMIFE-LWE, tMCFE-LWE and
-  tMCFE-Ring-LWE) runs natively for widths below 2^448 when `rng` is an
-  `XofRandom` or `None`, with the integers of the MPFR reference for the same
-  bits: a fixed-point evaluation whose error is far below its rounding
-  margin, and the reference formula for the samples it cannot decide (at
-  most about 2^-45 of them, about 2^-62 at the FullySec widths). Per sample
-  8-12 -> 0.55 us at 2^49, about 10 -> 2.0 us at 2^200; SIFE FullySec
-  Ring-LWE encryption 964 -> 120 ms, ALS16 483 -> 189 ms per element,
-  tMCFE-Ring-LWE partial decryption 225 -> 107 ms per server. With
-  `rng=None` the bytes come from the per-call DRBG instead of `os.urandom`
-  per call (same distribution). `XofRandom` claims its counters atomically
-  (the native call claims all of its calls before it runs), so threads
-  sharing one never draw the same SHAKE block; single-threaded draws are
-  unchanged.
+### Added
+
+- **Native backend** in Rust and PyO3 (`pyfe4ai._rust_native`, sources in
+  `rust/`; `rust/core` has no dependencies). `pip install` builds it when
+  `cargo` is on the `PATH` (in a source checkout also `python
+  tools/build_rust.py`; `PYFE4AI_NO_NATIVE=1` skips it); without it the
+  package runs its Python implementation. `pyfe4ai.utils.native_backend`
+  selects `"auto"` (default), `"python"` or `"native"` per process
+  (`set_backend`), per block (`with backend(...)`) or with
+  `PYFE4AI_BACKEND`, and the threads of one call (`set_threads`,
+  `PYFE4AI_THREADS`, default 1); `describe()` reports the build for
+  benchmark records. Native sampling reads one 32-byte seed from the
+  operating system per call and expands it with ChaCha20 (a standard stream
+  cipher, not an SP 800-90A DRBG, which matters only for FIPS validation);
+  no generator state outlives a call.
+- **BLS12-381** (`pyfe4ai.utils.bls12_381`, behind charm's `PairingGroup`
+  interface; `group.hash` is RFC 9380 hash_to_curve),
+  `pairing_backend.multiexp`, `pow_many` and `deserialize_many`;
+  `gt_dlog(..., cache=False)`. charm-crypto is needed only for other curves.
+- **DDH schemes over ristretto255** (`sife/`, `mife/`,
+  `mcfe/ddh_ristretto255`, or `group="ristretto255"` with the `ddh` variants
+  in `FESchemeWrapper`; status *unreviewed*): RFC 9496, labels hashed with
+  RFC 9380 `hash_to_ristretto255`, about 126-bit security; curve25519-dalek in
+  the extension, a pure-Python fallback (not constant-time) without it.
+- **ML adapter for the threshold MCFE** (`mcfe/ring_lwe_threshold`):
+  `FESchemeWrapper` runs the decryption servers in-process;
+  `prepare_aggregation` and `aggregate_gradients` take `servers=` (default
+  the first `t` of `lst_sid`) and hand each server its label key share per
+  round and its weight key share once per weights. The steps are also
+  separate functions, `partial_decrypt_gradients` (one server) and
+  `combine_partial_decryptions`, whose `ThresholdPartial` has `to_dict` /
+  `from_dict` (binary values as base64, layout checked).
+  `EncryptedGradient.to_dict` writes chunk fields holding bytes as base64
+  strings named in the layer's `base64` list. A `PreparedAggregation` holds
+  key material (the servers' label key shares). The adapter refuses
+  `flooding_accounting="kl"` and the other threshold variants.
+- **Offline / online encryption and key preparation**:
+  `MCFERingLWE.precompute(label, shapes)` and `encrypt_lst_ndarray(...,
+  precomputed=...)`; `precompute(label, shapes)` and `prepare_key(dk, label,
+  shapes)` for MCFE-DDH, -Damgård and -Paillier and their decentralized
+  variants; `precompute(shapes)` for SIFE- / MIFE-Paillier and MIFE-DDH; ML
+  adapter `precompute_gradient`, `encrypt_gradient(precomputed=...)`,
+  `prepare_aggregation` and `aggregate_gradients(prepared=...)`. The same
+  ciphertexts as the one-shot calls. A precomputation can be used once
+  (`pyfe4ai.schemes.one_time`).
+- `ct_format="binary"` for the Ring-LWE MIFE / MCFE ciphertexts (crypto
+  config; `FESchemeWrapper(crypto_options=...)`): a versioned compact
+  encoding, 37 % of the JSON size; JSON stays their default, and decryption
+  reads both.
+- Opt-in **RNS modulus** for the Ring-LWE MIFE, MCFE and decentralized MCFE
+  (`ring_modulus="rns"`: `q` a product of two NTT primes of the prime's bit
+  length; same ciphertext formats, `q_factors` in the public parameters).
+  Security review in `docs/rns_modulus_review.md`.
+- Opt-in **seed-expanded replicated sharing** for the threshold LWE layers
+  (`sharing="replicated-seeded"`): every key piece but one is expanded from
+  a secret 32-byte seed with SHAKE-256, so a server stores at most one full
+  piece -- the largest tMCFE-Ring-LWE key share under `standard` (3 clients,
+  `ring_n` 8192) at `(10, 5)` is 3.4 MB instead of 428 MB, dealt in 2.0
+  instead of 30 s. Its
+  key shares hide the key computationally (SHAKE-256 keyed by the seeds as a
+  PRF) instead of perfectly; full replicated sharing stays the default.
+- Opt-in **KL accounting of the threshold flooding** for `mife/lwe_threshold`
+  and `mcfe/ring_lwe_threshold` with `t = s`
+  (`flooding_accounting="kl"`, a mandatory `max_partial_decryptions` budget
+  `Q`, and a `PartialDecryptionBudget` per server that the deployment keeps
+  across restarts; `pyfe4ai.schemes.flooding_accounting`). It gives a weaker
+  guarantee -- about `stat_param - 6.85` bits, for the first `Q` partial
+  decryptions of every server -- for a smaller `q`: 178 bits for
+  `mcfe/ring_lwe_threshold` under `standard` with `N = s Q k = 2^53`
+  flooded coefficients (Gaussian flooding, which `"kl"` uses), against 212
+  bits with the default uniform flooding. `t < s` and `mcfe/lwe_threshold` refuse
+  it.
+- Opt-in **packed layout for `sife/fullysec_ring_lwe`**
+  (`ndarray_layout="packed"`, experimental: the leveraging argument is the
+  project's own, independently checked, not externally reviewed): one
+  ciphertext carries up to `ring_n` inner products, e.g. 4096 elements at 182
+  bytes each for `eta = 1`, `X = 100`.
+- **Exact sampler API**: `sampling_utils.discrete_gaussian_facct`,
+  `sampler="facct"` on `discrete_gaussian_matrix` / `discrete_gaussian_bigint`,
+  the `gaussian_sampler()` context manager, `set_gaussian_sampler()` and
+  `PYFE4AI_GAUSSIAN_SAMPLER=facct` for the schemes that follow the
+  library-wide choice; output platform-independent for a given bit source
+  (known-answer tests); not constant-time. `discrete_gaussian_bigint` takes
+  an optional higher `precision`.
+- `examples/mcfe_ring_lwe_threshold_demo.py`; benchmark scripts
+  `bench_fl_compare.py`, `bench_offline_potential.py`,
+  `bench_replicated_sharing.py`, `bench_fullysec_packing.py` and
+  `benchmark_sampling.py`, with `benchmarks/PERFORMANCE.md`;
+  `tools/estimate_rns_modulus.py`.
+- Notes of the October 2026 review in `docs/review/`, with regression tests
+  in `tests/review/`.
+- CI: a `rust-native` job builds the extension and runs `cargo test` and the
+  full suite on the native backend (Python 3.10 and 3.13) and on the Python
+  backend (Python 3.10).
 
 ### Changed
 
-- **`mcfe/ring_lwe_threshold` defaults: binary ciphertexts, an RNS modulus
-  and split key shares**, under both profiles. A key generator without these
-  options publishes `ct_format = "binary"` and an RNS `q` with at least three
-  factors (`MIN_RNS_FACTORS`: the `toy` profile's flooded `q` below `2^124`
-  had two, the MIFE / MCFE prototype's context, and ran on the Python path),
-  and issues split key shares (new config `key_shares`, `"split"` by default,
-  `"full"` for the replicated-seeded sharing): `get_decryption_keys` returns
-  the label part unless `key_part="full"`, and servers need the weight part
-  (`get_weight_key_share`, `add_weight_key_share`; new
-  `has_weight_key_share`) first. `ct_format="json"`, `ring_modulus="prime"`
-  and `key_shares="full"` select the formats of earlier versions; their
-  public parameters, records (`param.json`; the defaults' are
-  `param-rns.json`), ciphertexts and key shares keep working, and the
-  construction ids are unchanged. Mixes fail closed with messages that name
-  the fix (a label part without its weight part; JSON ciphertexts under
-  binary public parameters, and the other way round). The RNS modulus of the
-  MIFE / MCFE / dMCFE Ring-LWE schemes stays opt-in. Label parts are kept
-  with the weight sharing they complete (dropped with it, without scanning
-  the other keys) and are made again when another thread evicted that
-  sharing meanwhile -- also a cached one --, and kept for the last
-  `LABEL_PARTS_KEPT` (16) labels per weights (a label asked for again later
-  gets a new sharing of its terms, with the same share set and noise key).
-  Every sharing the key generator issues (whole key shares, or the label
-  parts of one label) has a random `sharing_id`, which the partial
-  decryptions carry; combiners refuse partials of different sharings
-  (`MixedSharingsError`: fetch the label parts again for all servers), which
-  would otherwise decode to a wrong value inside the decoding bound (a round
-  whose servers fetch their label parts before and after its eviction); the
-  two sharings' answers reveal nothing beyond one of them. The native Shamir
-  dealing reports exhausted test bytes as such rather than as malformed key
-  material. RNS parameter records of 120 bits or less (two factors before)
-  are regenerated with three factors (a new `q`); public parameters with two
-  factors are still served, on the Python path. The threshold objects'
-  state version changed: pickles of earlier ones are refused.
-  `bench_fl_compare.py` runs the threshold family with the scheme's defaults
-  (`--ct-format`, `--ring-modulus`, `--key-shares` override them).
-- **`sife/fullysec_ring_lwe` samples exact Gaussians by default**
-  (`gaussian_sampler = "facct"` for the keys and the encryption noise of
-  both layouts, whatever the library-wide sampler; `pp` carries the key
-  generator's choice as the encryptors' default). With the rounded sampler
-  the keys are about 2^-47 (elementwise `eta = 1`, `X = 100`), 2^-44.5
-  (packed `eta = 1`) and 2^-40.5 (`eta = 4`, `X = Y = 4`) from
-  `D_{Z,sigma1}` for an ideal rounded Gaussian (`0.02 / sigma1^2` per sample
-  over `m n eta` samples), and about 2^-12 at `eta = 1` with the
-  double-precision path's artifacts, terms the adaptive proof does not
-  budget. `gaussian_sampler = "rounded"` in the key
-  generator or crypto config restores the previous draws (the same keys and
-  ciphertexts for the same random source). Measured (standard profile,
-  medians of 3, load 6-17): setup 0.17 -> 0.65 s at `eta = 1` and 0.55 ->
-  2.2 s at `eta = 4` (Python FACCT is slower at the key width `sigma1`),
-  6.8 -> 6.0 s at `eta = 10`; one encryption 0.87 -> 0.74 s, 0.95 -> 0.83 s
-  and 1.80 -> 1.56 s (above 2^40 FACCT is faster than the rounded MPFR
-  Box-Muller). Other schemes keep the rounded default.
-- **MCFE label hash (breaking for ciphertext values):** the MCFE schemes that
-  hash labels to `Z_q` (`mcfe/ring_lwe` with its threshold and decentralized
-  variants -- label pads and GDSum masks -- and the dense-LWE MCFE family
-  `mcfe/lwe`, `fullysec_lwe`, `lwe_threshold`, `lwe_decentralized`) now
-  sample by rejection mod `q` from SHAKE128 (`label_hash="shake128-rejection"`,
-  the key generators' new default): candidates of `ceil(bits(q) / 8) + 1`
-  bytes, accepted below the largest multiple of `q`, so `H(u'_i, l)` and
-  `H(l)` are exactly uniform (v0.3.0 reduced `bits(q) + 128`-bit SHAKE-256
-  blocks: statistical distance below `2^-128` per value) and read fewer XOF
-  bytes (26 -> 11 per coefficient at an 80-bit `q`). **MCFE ciphertexts and
-  functional key terms differ from v0.3.0.** Parameters, formats and the
-  cached parameter records do not change. The mode is bound to everything
-  that depends on it: the public parameters (`pp["label_hash"]`), the
-  clients' encryption keys, every functional key and threshold key share,
-  every single-vector ciphertext and every ndarray layer, once per layer
-  (`label_hash`: the code of `crypto_utils.LABEL_HASH_CODES`; on a Ring-LWE
-  layer dict, on the first element of a dense-LWE layer; also under the
-  threshold variant's HMAC tags of every chunk). A client whose key and public parameters disagree refuses to
-  encrypt, and ciphertexts or keys of another mode are refused at
-  decryption, instead of decrypting to wrong sums (crypto review M5).
-  Anything without the field -- the data of v0.3.0 -- is read as
-  `"shake256-wide"`, so v0.3.0 public parameters, keys and ciphertexts stay
-  usable together; new setups get the v0.3.0 hash with
-  `label_hash="shake256-wide"` in the key generator config
-  (`"shake256-rejection"` keeps SHAKE-256 with rejection sampling). Size:
-  one small field per layer, so ciphertexts stay at 24.6 / 68.4 B per
-  element (Ring-LWE binary / JSON) and 13.3 B (dense LWE, JSON); the
-  ML adapter's `EncryptedGradient.to_dict` / `from_dict` keep it. Python
-  (`hashlib`) and the native kernels give the same values (known-answer
-  tests). Host, native, one thread, `standard`: MCFE Ring-LWE 10^4
-  elements, binary, aggregator 7.40 -> 5.87 ms (key derivation 4.17 -> 2.65
-  ms), client 2.77 -> 2.38 ms; dense-LWE MCFE 200 elements 153 / 160 -> 94 /
-  102 ms (client / aggregator).
-- **Threshold Ring-LWE MCFE flooding (breaking for partial decryptions and
-  `q`):** `mcfe/ring_lwe_threshold` now floods partial decryptions with noise
-  uniform on `[-2^tau, 2^tau)`, `tau = bits(B) + stat_param`
-  (`flooding="uniform"`, the new default), read from the request's seeded
-  SHAKE-256 stream: statistical distance below `2^-(stat_param + 1)` per
-  coefficient by the smudging lemma, the per-sample bound of the Gaussian;
-  no `mpfr` Box-Muller sampler (1.3 instead of 79 ms per 8192
-  coefficients), and `q` holds `s 2^tau` instead of `s 12 sigma_f` (215 ->
-  212 bits under `standard`). What it gives up against the Gaussian (the
-  margin beyond the per-sample bound) is in the module docstring. Its
-  parameter records are `bmms21-ibmcfe-shamir-smudging-uniform/v1`, so
-  cached v0.3.0 (Gaussian) records are re-derived; public parameters carry
-  `flooding` and `flood_bits`. **Partial decryptions and `q` differ from
-  v0.3.0**; `flooding="gaussian"` restores the Gaussian flooding of v0.3.0
-  (drawn at `bits(sigma_f) + 320` bits by the pinned flooding sampler since
-  this release, records `bmms21-ibmcfe-shamir-smudging/v2`, see the entry on
-  the MPFR precision of the threshold flooding), and
-  public parameters without `flooding` are read as Gaussian. Decryption key
-  shares record the flooding they were issued for (`flooding`) and a server
-  refuses a share of another flooding than its public parameters'. 10^4 elements, `s = 3`, `t = 2`: partial decryption 222 -> 58 ms
-  per server, aggregator total 492 -> 162 ms.
-- **Pairing groups (breaking for pairing keys and ciphertexts):** every
-  pairing-based scheme (SIFE FH-IPE and partial FH-IPE, MIFE FH-IPE and
-  FH-Multi-IPE, MCFE / dMCFE / tMCFE FH-Multi-IPE, Quad, SGP, MIQFE) now
-  defaults to **BLS12-381** from the Rust extension, under both profiles.
-  The `toy` default was MNT224 (charm): toy pairing keys, public parameters
-  and ciphertexts of earlier versions are not readable any more (pass
-  `pairing_group_param="MNT224"` to keep using them with charm installed).
-  The `standard` profile uses BLS12-381 instead of BN254 (about 100-bit) and
-  still warns, since BLS12-381 gives about 120-126 bits after the exTNFS
-  attacks on its 381-bit field (Barbulescu and Duquesne, J. Cryptol. 2019):
-  `FESecurityWarning: <family>/<variant>: BLS12-381 gives about 120 to
-  126-bit security after the exTNFS attacks, below the 128-bit target of the
-  'standard' profile`. charm-crypto stays the backend of every other curve
-  (MNT224, BN254, ...) and is no longer needed for the defaults.
-- `group.hash(msg, G1 | G2)` on BLS12-381 is the RFC 9380 hash_to_curve
-  (BLS12381G1/G2_XMD:SHA-256_SSWU_RO_, domain tag
-  `PYFE4AI-V01-CS01-with-...`), used by the FH-MCFE label hashes.
+- **`sife/fullysec_ring_lwe` samples exact Gaussians** for its keys and
+  encryption noise in both layouts (`gaussian_sampler = "rounded"` restores
+  the previous draws). With the rounded sampler its keys were about `2^-47`
+  to `2^-40.5` from `D_{Z,sigma1}` for an ideal rounded Gaussian, and about
+  `2^-12` with the double-precision path, terms its adaptive proof does not
+  budget.
 - The pairing-scheme tests run on `PYFE4AI_TEST_PAIRING_GROUP` (default
   BLS12-381) and skip when no backend implements it.
-- The `ddh` key generators refuse a `group` other than `"modp"` instead of
-  ignoring it.
+- The NTT root search requires `root^n = -1 (mod q)`, which selects the same
+  roots for every prime.
+- Discrete-log tables are keyed by value (the old string keys are still
+  read).
+- The tMCFE (Ring-LWE) and tMIFE (LWE) docstrings now say that the flooding
+  argument is statistical per answer and gives no bound for many answers to
+  varied ciphertexts of a corrupted client, and that the per-sample
+  `0.02 / sigma^2` figure of the rounded sampler holds for the ideal rounded
+  Gaussian only, not for its double-precision implementation.
 
 ### Fixed
 
-- `hash_to_zq_vector(..., length=0)` in a rejection mode returned no value
-  (it looped); it returns `[]`, as the `"shake256-wide"` mode and the
-  native kernels.
-- `mife/lwe_threshold` refuses `flooding_accounting="kl"` with a replicated
-  sharing (it issued a Shamir KL construction id); malformed `"kl"` public
-  parameters raise `FEValidationError` instead of `KeyError`; a
-  `PartialDecryptionBudget` cannot be copied or pickled.
-- The native code wipes its copies of secret rows (pads, `x + u`, key
-  pieces, label materials holding `u'`, rows parsed before a malformed one,
-  the partial shares of a failed Shamir dealing, caller-supplied random
-  bytes of the FACCT encryption) on every path, errors included, and
-  the encryption keys wipe their pads on drop; the native encryption key
-  cached in a client key follows the label-hash mode.
 - `EncryptedGradient.to_dict()` failed with `KeyError: ()` on the packed
   ciphertext layers of the Ring-LWE MCFE schemes (`mcfe/ring_lwe` and its
   threshold and decentralized variants), and `from_dict()` could not rebuild
-  them. Packed layers are now written as
-  `{"packed": {"shape", "first_chunk", "chunks"}}`; the per-element format
-  is unchanged. `from_dict()` checks the packed layout: shapes as for
-  per-element layers, chunks numbered consecutively across layers, each chunk
-  with a batch length `k >= 1`, the `k` of a layer adding up to its number of
-  elements, and only a layer's last chunk shorter than the others.
-  `to_dict()` raises `TypeError` for chunks holding `bytes` (a binary
-  ciphertext format has no JSON form).
-- Low-severity findings of the October 2026 crypto review
-  (`docs/review/crypto_review_2026-10.md`):
-  - BLS12-381 deserialisation accepts only canonical strings: a type tag `0`
-    to `3` (`"01"`, `" 1"`, `"+1"` were accepted, `"256"` raised
-    `OverflowError`), canonical base64, and exactly the element's encoding
-    length (trailing bytes were ignored).
-  - Bounded discrete logarithms in GT and ristretto255 refuse bounds above
-    `2^48` with `ValueError` (`2 bound + 1` wrapped at `2^63`); a native
-    table holds at most 1,835,008 baby steps (see above), a table of the
-    pure-Python ristretto255 fallback at most `2^16`.
-  - Native size arithmetic is checked: `dense_dots` with sizes that overflow,
-    `encrypt_precomputed` with a chunk index past the end and a `Delta` of 0
-    raise `ValueError` instead of `PanicException` (a `BaseException` the
-    fallbacks did not catch, and a panic poisoned the precomputation).
-  - ristretto255 ciphertext elements must be exactly 64 hex digits on both
-    backends (the extension accepted `"+f"`, Python spaces).
-  - `PYFE4AI_THREADS` must be an integer (`ValueError` at import otherwise)
-    and is clamped to `native_backend.MAX_THREADS`; `set_threads` refuses
-    more (a huge value made every native call raise `OverflowError`).
-  - The rounded Python sampler no longer uses `SystemRandom.gauss`, which
-    cached the second Box-Muller value in a global (`gauss_next`): a future
-    secret coefficient stayed in memory between calls, and parent and child
-    drew the same sample after `fork()`. Same arithmetic, the unused value
-    of the last pair is dropped.
-  - The Rust core overwrites `r`, `NTT(r)`, the products with it, the pads
-    `x + u + H` and the per-chunk buffers of a precomputation after use.
-  - `ZR ** k` on BLS12-381 reduces an integer `k` mod `r - 1` (it reduced
-    mod `r`: wrong for `|k| >= r`).
-  - `tests/mcfe/test_ddh_threshold.py` compared the decryption of quantised
-    inputs with the unquantised product at a tolerance below the
-    quantisation error (failed in about 0.35 % of runs).
-- Documentation claimed more than the code: the FACCT `2^-110` error holds
-  only for a constant passed to 128 bits (now the case and checked); the
-  Ring-LWE MCFE precomputation is overwritten when used natively, while the
-  Python path only drops its references; the tMCFE (Ring-LWE) and tMIFE
-  (LWE) docstrings now say that the flooding argument is statistical per
-  answer and gives no bound for many answers to varied ciphertexts of a
-  corrupted client (averaging is one way to combine them, not the only one).
+  them. Packed layers are written as `{"packed": {"shape", "first_chunk",
+  "chunks"}}` (the per-element format is unchanged), and `from_dict()` checks
+  the packed layout.
 
 
 ## [0.3.0] — 2026-10-13
