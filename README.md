@@ -379,6 +379,7 @@ Minimal runnable examples are grouped as follows:
   - `examples/mcfe_lwe_minimal.py`
   - `examples/mcfe_lwe_decentralized_demo.py`
   - `examples/mcfe_lwe_threshold_demo.py`
+  - `examples/mcfe_ring_lwe_threshold_demo.py` (threshold MCFE over Ring-LWE, scheme classes and ML adapter)
   - `examples/mife_lwe_threshold_demo.py`
 - ML / privacy-preserving AI
   - `examples/ml_encrypted_inference.py`
