@@ -2,6 +2,8 @@ include README.md
 include LICENSE
 include CITATION.cff
 include pyfe4ai/py.typed
+# the whole test suite (setuptools alone picks only tests/test*.py)
+graft tests
 recursive-exclude * __pycache__
 recursive-exclude * *.pyc
 include CHANGELOG.md
