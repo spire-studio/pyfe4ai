@@ -25,6 +25,7 @@ from pyfe4ai.schemes.threshold.sharing import share_for_enrolled
 from pyfe4ai.schemes.threshold.sharing import share_replicated_seeded
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError
 from pyfe4ai import backend as native_backend
+from pyfe4ai.backend import native_impl
 
 Q = gp.next_prime(gp.mpz(2) ** 61)
 ST = [(1, 1), (2, 1), (2, 2), (3, 2), (3, 3), (4, 2), (4, 3), (5, 3), (5, 4)]
@@ -134,7 +135,7 @@ def test_native_expansion_gives_the_python_values():
 
     q = next_ntt_prime(gp.mpz(2) ** 200, 16)
     with native_backend.backend("native"):
-        ctx = native_backend.ring_context(q, 16)
+        ctx = native_impl.ring_context(q, 16)
     assert ctx is not None
     layout = {"sk_y": {"a": 16, "b": 16}, "z": 16, "z_chunks": [16, 16], "s": None, "e": 0}
     seed = "5c" * SEED_BYTES
@@ -369,7 +370,7 @@ def test_tmcfe_ring_lwe_seeded_partials_agree_across_backends():
             pp = kg.get_public_parameters()
             dks = {sid: kg.get_decryption_keys(sid, credentials=cred) for sid in sids}
         with native_backend.backend("native"):
-            assert native_backend.ring_context(gp.mpz(pp["q"]), pp["ring_n"]) is not None
+            assert native_impl.ring_context(gp.mpz(pp["q"]), pp["ring_n"]) is not None
         cts = {nid: ThresholdMCFERingLWE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(
             [[1, -2, 3]], "x") for nid in cfg["lst_nid"]}
         for enrolled in _enrolled_sets(sids, 2):
@@ -502,7 +503,7 @@ def test_a_native_context_of_another_modulus_is_refused():
 
     q = next_ntt_prime(gp.mpz(2) ** 200, 16)
     with native_backend.backend("native"):
-        ctx = native_backend.ring_context(q, 16)
+        ctx = native_impl.ring_context(q, 16)
     other = next_ntt_prime(q + 1, 16)
     with pytest.raises(FESchemeError, match="another modulus"):
         expand_seeded_piece("ab" * SEED_BYTES, (1,), {"z": 16}, other, ctx=ctx)
@@ -539,7 +540,7 @@ def test_seeded_expansion_known_answer(backend):
         if not native_backend.available():
             pytest.skip("native extension not built")
         with native_backend.backend("native"):
-            ctx = native_backend.ring_context(_KAT_Q, 16)
+            ctx = native_impl.ring_context(_KAT_Q, 16)
         assert ctx is not None
     piece = expand_seeded_piece(_KAT_SEED, (1, 3), _KAT_LAYOUT, _KAT_Q, ctx=ctx)
     leaf = [int(v) for v in piece["sk_y"][0]]

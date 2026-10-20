@@ -24,6 +24,7 @@ from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tmcfe_rlwe
 from pyfe4ai.schemes.threshold import codec as threshold_codec
 from pyfe4ai.schemes.mife import ring_lwe as mife_rlwe
 from pyfe4ai import backend as native_backend
+from pyfe4ai.backend import native_impl
 from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
 from pyfe4ai.primitives import sampling as sampling_utils
 from pyfe4ai.primitives.hashing import hash_to_zq_material, hash_to_zq_vector
@@ -111,7 +112,7 @@ def same_bytes(monkeypatch):
 
 def _ctx(bits: int, n: int):
     q = rlu.next_ntt_prime(gp.mpz(2) ** (bits - 1), n)
-    return q, native_backend.RingContext(q, n, rlu._get_ntt_root(q, n))
+    return q, native_impl.RingContext(q, n, rlu._get_ntt_root(q, n))
 
 
 def _word_bits(q) -> int:
@@ -171,7 +172,7 @@ def test_hash_to_zq_identical(bits):
 @pytest.mark.parametrize("sigma", [0.5, 3.2, 17.25, 4.97e9, 2.0 ** 40])
 @pytest.mark.parametrize("count", [1, 2, 7, 1024])
 def test_gaussian_identical_to_random_gauss(sigma, count):
-    data = random.Random(count).randbytes(native_backend.gauss_bytes(count))
+    data = random.Random(count).randbytes(native_impl.gauss_bytes(count))
     ref = StreamRandom(FixedBytes(data))
     expected = [int(round(ref.gauss(0.0, sigma))) for _ in range(count)]
     assert N.gauss(data, count, sigma) == expected
@@ -181,10 +182,10 @@ def test_gaussian_identical_to_random_gauss(sigma, count):
 def test_rejects_unsupported_moduli():
     q = rlu.next_ntt_prime(gp.mpz(2) ** 253, 16)  # 254 bits
     with pytest.raises(ValueError):
-        native_backend.RingContext(q, 16, rlu._get_ntt_root(q, 16))
-    assert native_backend.ring_context(q, 16) is None
+        native_impl.RingContext(q, 16, rlu._get_ntt_root(q, 16))
+    assert native_impl.ring_context(q, 16) is None
     with pytest.raises(ValueError):  # 3 is not a primitive 2n-th root of unity
-        native_backend.RingContext(rlu.next_ntt_prime(gp.mpz(2) ** 40, 16), 16, 3)
+        native_impl.RingContext(rlu.next_ntt_prime(gp.mpz(2) ** 40, 16), 16, 3)
 
 
 # ------------------------------------------------------------ scheme paths
@@ -233,7 +234,7 @@ def _mcfe_keys(kg, sid, credentials):
 def test_encrypt_identical(cfg, same_bytes):
     eta, ring_n, _, bound_x, _ = cfg[:5]
     kg, pp, clients, _ = _setup(*cfg)
-    assert native_backend.ring_context(pp["q"], ring_n).word_bits == _word_bits(int(pp["q"]))
+    assert native_impl.ring_context(pp["q"], ring_n).word_bits == _word_bits(int(pp["q"]))
     rng = random.Random(5)
     for i, cl in enumerate(clients.values()):
         k = [1, ring_n // 2, ring_n][i]
@@ -415,19 +416,19 @@ def test_backend_selection(monkeypatch):
         native_backend.set_backend("fast")
     with native_backend.backend("python"):
         assert native_backend.active_backend() == "python"
-        assert native_backend.ring_context(rlu.next_ntt_prime(gp.mpz(2) ** 40, 16), 16) is None
+        assert native_impl.ring_context(rlu.next_ntt_prime(gp.mpz(2) ** 40, 16), 16) is None
     assert native_backend.describe()["available"]
     # the exact sampler is native too (tests/test_native_facct.py); another one stays in Python
-    assert native_backend.sampling_ok(3.2, sampler="facct")
-    assert native_backend.noise_kwargs(3.2, 4.0, sampler="facct")["facct"]
-    assert not native_backend.sampling_ok(3.2, sampler="other")
-    assert native_backend.noise_kwargs(3.2, 4.0, sampler="rounded") == {}
-    assert native_backend.sampling_ok(3.2, 2.0 ** 40, sampler="rounded")
-    assert not native_backend.sampling_ok(2.0 ** 41, sampler="rounded")
+    assert native_impl.sampling_ok(3.2, sampler="facct")
+    assert native_impl.noise_kwargs(3.2, 4.0, sampler="facct")["facct"]
+    assert not native_impl.sampling_ok(3.2, sampler="other")
+    assert native_impl.noise_kwargs(3.2, 4.0, sampler="rounded") == {}
+    assert native_impl.sampling_ok(3.2, 2.0 ** 40, sampler="rounded")
+    assert not native_impl.sampling_ok(2.0 ** 41, sampler="rounded")
     with pytest.raises(TypeError):  # the scheme's sampler is required, not the process default
-        native_backend.noise_kwargs(3.2, 4.0)
+        native_impl.noise_kwargs(3.2, 4.0)
     with pytest.raises(TypeError):
-        native_backend.sampling_ok(3.2)
+        native_impl.sampling_ok(3.2)
     with pytest.raises(ValueError):
         native_backend.set_threads(0)
 
@@ -655,7 +656,7 @@ def test_threshold_standard_profile_native(native_calls, legacy):
         "security_profile": "standard"}, **options))
     kg.setup()
     pp = kg.get_public_parameters()
-    assert int(pp["q"]).bit_length() > 200 and native_backend.ring_context(pp["q"], pp["ring_n"]).word_bits == 256
+    assert int(pp["q"]).bit_length() > 200 and native_impl.ring_context(pp["q"], pp["ring_n"]).word_bits == 256
     assert (pp.get("ct_format"), len(pp.get("q_factors") or [])) == ((None, 0) if legacy else ("binary", 4))
     rng = np.random.default_rng(2)
     grads = {nid: rng.uniform(-1, 1, 9000).round(2) for nid in nids}

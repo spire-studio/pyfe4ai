@@ -9,6 +9,7 @@ import gmpy2 as gp
 sys.argv = [sys.argv[0], os.path.join(os.environ["PYTHONPATH"], "rust/core/src/facct.rs")]
 exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "facct_port.py")).read())
 from pyfe4ai import backend as native_backend
+from pyfe4ai.backend import native_impl
 from pyfe4ai.primitives import sampling as su
 from pyfe4ai.schemes.mife import ring_lwe as mife_rlwe
 
@@ -30,7 +31,7 @@ cl = mife_rlwe.MIFERingLWE({"id": "c0", "precision": 0, "keys": {"pp": pp, "sk":
 sigma2 = pp["sigma2"]
 params = su._facct_params(su._exact(sigma2))
 k, cdt, neg_c = params.k, params.cdt, params.neg_c
-cm, ce = table_c(neg_c)                       # what native_backend._facct_table passes
+cm, ce = table_c(neg_c)                       # what native_impl._facct_table passes (native_backend's then)
 print("sigma2 =", sigma2, " k =", k, " y_bits =", params.y_bits, " c mantissa significant bits:",
       cm.bit_length() - (cm & -cm).bit_length() + 1)
 
@@ -83,10 +84,10 @@ print("crafted first trial:     python == native:", py == nat)
 print("first sample, python reference:", int(su.discrete_gaussian_facct(sigma2, 1, rng=StreamBits(prefix + rest))[0]))
 
 # Same crafted bytes with the table's c computed at full precision (the fix): agreement.
-orig = native_backend._facct_table.__wrapped__
+orig = native_impl._facct_table.__wrapped__
 def precise(sigma_q):
     with gp.context(precision=1000):
         return orig(sigma_q)
-native_backend._facct_table = precise
+native_impl._facct_table = precise
 py, nat = run(prefix + rest)
 print("crafted, c at full precision (fix): python == native:", py == nat)

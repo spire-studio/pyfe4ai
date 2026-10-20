@@ -28,6 +28,7 @@ from pyfe4ai.schemes.mcfe import ring_lwe_decentralized as dmcfe_rlwe
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tmcfe_rlwe
 from pyfe4ai.primitives import hashing as cu
 from pyfe4ai import backend as native_backend
+from pyfe4ai.backend import native_impl
 from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 
@@ -159,7 +160,7 @@ def test_uniform_mod_q(mode):
 
 def _ctx(bits: int, n: int):
     q = rlu.next_ntt_prime(gp.mpz(2) ** (bits - 1), n)
-    return int(q), native_backend.RingContext(q, n, rlu._get_ntt_root(q, n))
+    return int(q), native_impl.RingContext(q, n, rlu._get_ntt_root(q, n))
 
 
 @needs_native
@@ -183,7 +184,7 @@ def test_native_rejects_like_python():
     q = int(rlu.next_ntt_prime(gp.mpz(Q_REJECT), 64))
     nb, limit = cu.zq_rejection_parameters(q)
     assert 1 - limit / 256 ** nb > 5e-4  # about 18 rejections in 20000 candidates
-    ctx = native_backend.RingContext(q, 64, rlu._get_ntt_root(q, 64))
+    ctx = native_impl.RingContext(q, 64, rlu._get_ntt_root(q, 64))
     for mode in REJECTION:
         mat = cu.hash_to_zq_material("many", "d", mode)
         got = ctx.unpack(native_backend.ext().hash_to_zq(ctx.cap, mat, 20000, hash_mode=cu.LABEL_HASH_CODES[mode]))

@@ -19,6 +19,7 @@ from pyfe4ai.schemes.threshold.sharing import share_for_enrolled
 from pyfe4ai.schemes.threshold.sharing import share_replicated
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai import backend as native_backend
+from pyfe4ai.backend import native_impl
 
 Q = gp.next_prime(gp.mpz(2) ** 61)
 ST = [(1, 1), (2, 1), (2, 2), (3, 2), (3, 3), (4, 2), (4, 3), (5, 3), (5, 4)]
@@ -290,7 +291,7 @@ def test_tmcfe_ring_lwe_replicated_partials_agree_across_backends():
     kg.setup()
     pp = kg.get_public_parameters()
     with native_backend.backend("native"):
-        assert native_backend.ring_context(gp.mpz(pp["q"]), pp["ring_n"]) is not None
+        assert native_impl.ring_context(gp.mpz(pp["q"]), pp["ring_n"]) is not None
     y = {nid: [3] for nid in cfg["lst_nid"]}
     cts = {nid: ThresholdMCFERingLWE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(
         [[1, -2, 3]], "x") for nid in cfg["lst_nid"]}

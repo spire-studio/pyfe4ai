@@ -16,6 +16,8 @@ import gmpy2 as gp
 import pytest
 
 from pyfe4ai import backend as native_backend
+from pyfe4ai.backend import native_impl
+
 from pyfe4ai.primitives import sampling as su
 
 pytestmark = pytest.mark.skipif(
@@ -83,7 +85,7 @@ def _k(sigma):
 
 
 def _native_widths():
-    max_k = getattr(native_backend, "MAX_NATIVE_FACCT_WIDE_K", native_backend.MAX_NATIVE_FACCT_K)
+    max_k = getattr(native_impl, "MAX_NATIVE_FACCT_WIDE_K", native_impl.MAX_NATIVE_FACCT_K)
     return [name for name, s in WIDTHS.items() if _k(s) <= max_k]
 
 
@@ -149,7 +151,7 @@ def test_known_answers(name, spy):
             got = su.discrete_gaussian_facct(WIDTHS[name], 6, rng=su.XofRandom(KAT_SEED))
         assert [int(v) for v in got] == KAT[name] and all(type(v) is type(gp.mpz(0)) for v in got)
     assert spy.calls == (name in _native_widths())
-    assert spy.wide == (_k(WIDTHS[name]) > native_backend.MAX_NATIVE_FACCT_K and name in _native_widths())
+    assert spy.wide == (_k(WIDTHS[name]) > native_impl.MAX_NATIVE_FACCT_K and name in _native_widths())
 
 
 @pytest.mark.parametrize("name", list(WIDTHS))
@@ -259,7 +261,7 @@ def test_python_path_where_the_native_one_does_not_apply(spy, monkeypatch):
 # -- the wide kernel (k > 2^50): exact fallback, fixed-point decisions, table checks ---------
 
 
-WIDE = [name for name, s in WIDTHS.items() if _k(s) > native_backend.MAX_NATIVE_FACCT_K]
+WIDE = [name for name, s in WIDTHS.items() if _k(s) > native_impl.MAX_NATIVE_FACCT_K]
 
 
 def _wide_table(sigma, counter, c_exp_shift=0, mantissa_bits=128):

@@ -274,30 +274,3 @@ from pyfe4ai.backend import native_impl  # noqa: E402
 
 _PYTHON = python_impl.PythonBackend()
 _NATIVE = native_impl.NativeBackend()
-
-# Transitional, until every scheme module calls the interface: the native
-# helpers under the names the scheme modules read here.
-from pyfe4ai.backend.native_impl import MAX_NATIVE_BIGINT_BITS  # noqa: E402,F401
-from pyfe4ai.backend.native_impl import MAX_NATIVE_BIGINT_COUNT  # noqa: E402,F401
-from pyfe4ai.backend.native_impl import MAX_NATIVE_BIGINT_EXP  # noqa: E402,F401
-from pyfe4ai.backend.native_impl import MAX_NATIVE_BIGINT_PREC  # noqa: E402,F401
-from pyfe4ai.backend.native_impl import MAX_NATIVE_FACCT_K  # noqa: E402,F401
-from pyfe4ai.backend.native_impl import MAX_NATIVE_FACCT_WIDE_K  # noqa: E402,F401
-from pyfe4ai.backend.native_impl import MAX_NATIVE_Q  # noqa: E402,F401
-from pyfe4ai.backend.native_impl import MAX_NATIVE_SIGMA  # noqa: E402,F401
-from pyfe4ai.backend.native_impl import RingContext  # noqa: E402,F401
-from pyfe4ai.backend.native_impl import _facct_table  # noqa: E402,F401
-from pyfe4ai.backend.native_impl import facct_table  # noqa: E402,F401
-from pyfe4ai.backend.native_impl import gauss_bytes  # noqa: E402,F401
-from pyfe4ai.backend.native_impl import noise_kwargs  # noqa: E402,F401
-from pyfe4ai.backend.native_impl import random_input  # noqa: E402,F401
-from pyfe4ai.backend.native_impl import ring_context  # noqa: E402,F401
-from pyfe4ai.backend.native_impl import sampling_ok  # noqa: E402,F401
-from pyfe4ai.backend.native_impl import seed_kwargs  # noqa: E402,F401
-
-
-def ec_ext():  # transitional
-    """The extension's ristretto255 functions, or ``None`` on the Python backend."""
-    if _ext is None or get_backend() == "python":
-        return None
-    return _ext

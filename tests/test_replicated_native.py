@@ -13,6 +13,7 @@ from pyfe4ai.schemes.mcfe.lwe_threshold import ThresholdMCFELWE, ThresholdMCFELW
 from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWE, ThresholdMCFERingLWEKeyGenerator
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE, ThresholdMIFELWEKeyGenerator
 from pyfe4ai import backend as native_backend
+from pyfe4ai.backend import native_impl
 from tests.test_native_backend import ByteStream, _BytesSystemRandom, native_calls  # noqa: F401  (fixture)
 
 pytestmark = pytest.mark.skipif(not native_backend.available(), reason="native extension not built")
@@ -122,7 +123,7 @@ def test_the_test_hooks_are_unset_in_use():
     """A DRBG seed or random bytes injected by a test make every
     call draw the same randomness; they are unset unless a test sets them."""
     assert native_backend._seed_override is None and native_backend._random_override is None
-    assert native_backend.seed_kwargs() == {} and native_backend.random_input(32) is None
+    assert native_impl.seed_kwargs() == {} and native_impl.random_input(32) is None
 
 
 @pytest.mark.parametrize("value", [1.5, " 12 ", "+5", "1_0", "-4", "", None])

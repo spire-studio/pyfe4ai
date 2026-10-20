@@ -21,6 +21,7 @@ import numpy as np
 import pytest
 
 from pyfe4ai import backend as native_backend
+from pyfe4ai.backend import native_impl
 
 ext = native_backend.ext()
 pytestmark = pytest.mark.skipif(ext is None, reason="native extension not built")
@@ -50,7 +51,7 @@ def test_share_combine_with_delta_zero_is_a_value_error():
     import gmpy2 as gp
 
     q = next_ntt_prime(gp.mpz(2) ** 40, 16)
-    ctx = native_backend.ring_context(q, 16)
+    ctx = native_impl.ring_context(q, 16)
     try:
         ext.share_combine(ctx.cap, ["1"] * 16, [["0"] * 16], 0, 10, 16)
     except BaseException as exc:  # noqa: BLE001

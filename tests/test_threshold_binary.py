@@ -25,6 +25,7 @@ from pyfe4ai.schemes.threshold import roles as threshold_roles
 from pyfe4ai.schemes.mcfe.labels import chunk_label, encode_label
 from pyfe4ai.schemes.threshold.binding import pp_binding, tag_ciphertext, tag_ciphertext_message
 from pyfe4ai import backend as native_backend
+from pyfe4ai.backend import native_impl
 from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
 from pyfe4ai.core.formats import binary as fmt_binary
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
@@ -114,7 +115,7 @@ def test_format_2_refuses_non_canonical_and_malformed_bytes():
 def test_native_uniform_flooding_is_the_python_noise(bits_q):
     q = rlu.next_ntt_prime(gp.mpz(1) << (bits_q - 1), 16)
     with native_backend.backend("native"):  # also when the suite runs on the Python backend
-        ctx = native_backend.ring_context(q, 16)
+        ctx = native_impl.ring_context(q, 16)
     for bits in [b for b in (1, 7, 8, 63, 64, bits_q - 2, bits_q - 1) if b < bits_q]:
         for seed in (b"", b"k" * 40, bytes(range(200))):
             material = threshold_roles.uniform_flooding_material(seed)

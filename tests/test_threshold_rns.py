@@ -25,6 +25,7 @@ from pyfe4ai.schemes.threshold import binding as threshold_binding
 from pyfe4ai.schemes.threshold import sharing as threshold_sharing
 from pyfe4ai.schemes.threshold.binding import pp_binding
 from pyfe4ai import backend as native_backend
+from pyfe4ai.backend import native_impl
 from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
 from pyfe4ai.primitives import sampling as sampling_utils
 from pyfe4ai.core.exceptions import FEValidationError
@@ -97,7 +98,7 @@ def test_ntt_and_products_identical(bits, k, n):
     q, fs = rlu.rns_ntt_modulus((gp.mpz(1) << (bits - 1)) + 7, n, 602, k)
     rlu.register_rns_modulus(q, fs)
     with native_backend.backend("native"):
-        ctx = native_backend.ring_context(q, n)
+        ctx = native_impl.ring_context(q, n)
     assert ctx is not None and not ctx.legacy_rns and ctx.word_bits == 256
     assert native_backend.ext().ctx_info(ctx.cap)["rns"] == [int(f) for f in fs]
     root = rlu._get_ntt_root(q, n)

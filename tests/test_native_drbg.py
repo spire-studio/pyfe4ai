@@ -14,6 +14,7 @@ import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe as mcfe_rlwe
 from pyfe4ai import backend as native_backend
+from pyfe4ai.backend import native_impl
 from pyfe4ai.primitives import sampling as sampling_utils
 from tests.test_native_backend import FixedBytes, StreamRandom, _rounded_sampler  # noqa: F401  (autouse)
 
@@ -58,7 +59,7 @@ def _client(ring_n=32):
 def test_seeded_encryption_reads_one_stream_per_chunk(threads, monkeypatch):
     pp, cl = _client()
     layers = [np.linspace(-1, 1, 70).round(2), np.array([0.5, -0.25])]
-    per = 3 * native_backend.gauss_bytes(32)
+    per = 3 * native_impl.gauss_bytes(32)
     # one call per layer: the 70 values use streams 0-2, the second layer stream 0 of its own call
     expected_bytes = b"".join(_stream(SEED, c, per) for c in (0, 1, 2)) + _stream(SEED, 0, per)
     with native_backend.backend("python"):
@@ -89,7 +90,7 @@ def test_single_matrix_encryption_reads_stream_zero(monkeypatch):
     pp, cl = _client()
     x = [[1, -2, 3]]
     rows = cl._padded_rows(x, extra_pad=cl._pad("L"))
-    need = 3 * native_backend.gauss_bytes(32)
+    need = 3 * native_impl.gauss_bytes(32)
     with native_backend.backend("python"):
         monkeypatch.setattr(sampling_utils, "_CSPRNG", StreamRandom(FixedBytes(_stream(SEED, 0, need))))
         py = cl._encrypt_rows(rows, 3)

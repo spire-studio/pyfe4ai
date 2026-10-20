@@ -20,6 +20,7 @@ from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWEKeyGener
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWEKeyGenerator
 from pyfe4ai import backend as native_backend
+from pyfe4ai.backend import native_impl
 from pyfe4ai.primitives import sampling as sampling_utils
 from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
 from pyfe4ai.primitives.lattice.lwe_utils import GAUSSIAN_TAIL_CUT
@@ -549,7 +550,7 @@ def test_tmcfe_kl_partials_identical_on_both_backends():
         srv, dk = _tmcfe_server(kg, pp, "sid_0", cred, _budgets(pp))
         python = srv.share_decrypt(cts, cred, dk, SIDS)
     with native_backend.backend("native"):
-        assert native_backend.ring_context(pp["q"], pp["ring_n"]) is not None
+        assert native_impl.ring_context(pp["q"], pp["ring_n"]) is not None
         srv, _ = _tmcfe_server(kg, pp, "sid_0", cred, _budgets(pp))
         native = srv.share_decrypt(cts, cred, dk, SIDS)
     assert native["w"] == python["w"] and native["c_y"] == python["c_y"]

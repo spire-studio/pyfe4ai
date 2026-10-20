@@ -1,6 +1,6 @@
 """Precision of the native FACCT tables (October 2026 code review).
 
-``native_backend._facct_table`` computed ``(-params.neg_c).as_mantissa_exp()``
+``native_backend._facct_table`` (now ``native_impl._facct_table``) computed ``(-params.neg_c).as_mantissa_exp()``
 in gmpy2's default 53-bit context, so ``c = 1 / (2 sigma^2)`` reached the Rust
 acceptance test with 53 significant bits. The fixed-point threshold was then
 off by up to about 2^-55, far outside the 2^-100 band that is handed to the
@@ -19,6 +19,7 @@ import gmpy2 as gp
 import pytest
 
 from pyfe4ai import backend as native_backend
+from pyfe4ai.backend import native_impl
 from pyfe4ai.primitives import sampling as su
 
 pytestmark = pytest.mark.skipif(native_backend.ext() is None or not hasattr(native_backend.ext(), "FacctTable"),
@@ -36,11 +37,11 @@ def test_acceptance_constant_has_128_correct_bits(monkeypatch, sigma):
         return object()
 
     monkeypatch.setattr(native_backend._ext, "FacctTable", table, raising=False)
-    native_backend._facct_table.cache_clear()
+    native_impl._facct_table.cache_clear()
     try:
-        native_backend._facct_table(su._exact(sigma))
+        native_impl._facct_table(su._exact(sigma))
     finally:
-        native_backend._facct_table.cache_clear()
+        native_impl._facct_table.cache_clear()
     params = su._facct_params(su._exact(sigma))
     with gp.context(precision=1000):
         exact = -params.neg_c

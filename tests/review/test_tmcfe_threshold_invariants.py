@@ -34,6 +34,7 @@ from pyfe4ai.schemes.threshold import codec as threshold_codec
 from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.schemes.threshold.binding import pp_binding, tag_ciphertext, tag_ciphertext_message
 from pyfe4ai import backend as native_backend
+from pyfe4ai.backend import native_impl
 from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
 from pyfe4ai.core.exceptions import FESchemeError
 
@@ -176,7 +177,7 @@ def test_rns_ring_on_edge_values_against_python(bits, k, n):
     q, fs = rlu.rns_ntt_modulus((gp.mpz(1) << (bits - 1)) + 7, n, 602, k)
     rlu.register_rns_modulus(q, fs)
     with native_backend.backend("native"):
-        ctx = native_backend.ring_context(q, n)
+        ctx = native_impl.ring_context(q, n)
     assert ctx is not None and not ctx.legacy_rns
     root = rlu._get_ntt_root(q, n)
     edges = _edges(q, fs)
