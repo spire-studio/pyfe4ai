@@ -12,11 +12,11 @@ import pytest
 from pyfe4ai.schemes.mcfe.lwe_threshold import ThresholdMCFELWE, ThresholdMCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWE, ThresholdMCFERingLWEKeyGenerator
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE, ThresholdMIFELWEKeyGenerator
-from pyfe4ai.schemes.threshold.threshold_utils import pieces_held
-from pyfe4ai.schemes.threshold.threshold_utils import replicated_assignment
-from pyfe4ai.schemes.threshold.threshold_utils import replicated_sets
-from pyfe4ai.schemes.threshold.threshold_utils import share_for_enrolled
-from pyfe4ai.schemes.threshold.threshold_utils import share_replicated
+from pyfe4ai.schemes.threshold.sharing import pieces_held
+from pyfe4ai.schemes.threshold.sharing import replicated_assignment
+from pyfe4ai.schemes.threshold.sharing import replicated_sets
+from pyfe4ai.schemes.threshold.sharing import share_for_enrolled
+from pyfe4ai.schemes.threshold.sharing import share_replicated
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai import backend as native_backend
 
@@ -398,7 +398,7 @@ def test_a_threshold_must_be_an_integer(kind, t):
 
 
 def test_validate_threshold_refuses_bool():
-    from pyfe4ai.schemes.threshold.threshold_utils import validate_threshold
+    from pyfe4ai.schemes.threshold.sharing import validate_threshold
 
     with pytest.raises(FEValidationError):
         validate_threshold(True, ["a", "b"])
@@ -505,7 +505,7 @@ def test_public_parameters_record_the_construction_and_profile(kind):
 def test_summed_shares_are_cached_per_key_share_and_assignment():
     from collections import OrderedDict
 
-    from pyfe4ai.schemes.threshold import threshold_utils
+    from pyfe4ai.schemes.threshold import store as threshold_store
 
     points, t = [1, 2, 3], 2
     pieces = share_replicated({"sk_y": [11, 12], "z": 13, "z_chunks": [[1, 2], [3, 4]]}, t, points, Q)
@@ -521,7 +521,7 @@ def test_summed_shares_are_cached_per_key_share_and_assignment():
     # only the requested fields
     part = share_for_enrolled(dk, "a", ["a", "b"], t, Q, fields=("sk_y", "z"), cache=cache)
     assert "z_chunks" not in part[0] and part[0]["z"] == first[0]["z"] and part[0]["sk_y"] == first[0]["sk_y"]
-    for i in range(threshold_utils.SHARE_CACHE_SIZE + 5):
+    for i in range(threshold_store.SHARE_CACHE_SIZE + 5):
         share_for_enrolled(dict(dk), "a", ["a", "b"], t, Q, cache=cache)
-    assert len(cache) == threshold_utils.SHARE_CACHE_SIZE
+    assert len(cache) == threshold_store.SHARE_CACHE_SIZE
     assert share_for_enrolled(dk, "a", ["a", "b"], t, Q) == first  # no cache: same values

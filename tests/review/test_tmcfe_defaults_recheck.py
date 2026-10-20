@@ -23,6 +23,7 @@ import os
 import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
+from pyfe4ai.schemes.threshold import store as threshold_store
 from pyfe4ai.core.exceptions import FEError
 
 NIDS, SIDS = ["c0", "c1", "c2"], ["s0", "s1", "s2"]
@@ -51,7 +52,7 @@ def test_r5c_label_parts_of_one_round_fetched_across_its_eviction(t, sharing):
     creds = {"fusion_weight": WEIGHTS, "label": "r0"}
     enrolled = SIDS[:t]
     keys = {enrolled[0]: kg.get_decryption_keys(enrolled[0], credentials=creds)}  # the first server fetches round r0
-    for r in range(1, tm.LABEL_PARTS_KEPT + 1):  # keys of later rounds of the same weights are issued
+    for r in range(1, threshold_store.LABEL_PARTS_KEPT + 1):  # keys of later rounds of the same weights are issued
         kg.get_decryption_keys(enrolled[0], credentials={"fusion_weight": WEIGHTS, "label": "r%d" % r})
     for sid in enrolled[1:]:  # the other servers fetch round r0 now
         keys[sid] = kg.get_decryption_keys(sid, credentials=creds)

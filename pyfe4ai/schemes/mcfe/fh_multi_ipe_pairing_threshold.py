@@ -39,20 +39,20 @@ from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPE
 from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEKeyGenerator
 from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
 from pyfe4ai.schemes.mcfe.labels import encode_label
-from pyfe4ai.schemes.threshold.threshold_utils import check_ciphertext_tags
-from pyfe4ai.schemes.threshold.threshold_utils import ciphertexts_digest
-from pyfe4ai.schemes.threshold.threshold_utils import client_server_mac_keys
-from pyfe4ai.schemes.threshold.threshold_utils import combine_elementwise
-from pyfe4ai.schemes.threshold.threshold_utils import fusion_weight_id
-from pyfe4ai.schemes.threshold.threshold_utils import tag_ciphertext
-from pyfe4ai.schemes.threshold.threshold_utils import lagrange_coefficient_at_zero
-from pyfe4ai.schemes.threshold.threshold_utils import share_points
-from pyfe4ai.schemes.threshold.threshold_utils import share_secret
-from pyfe4ai.schemes.threshold.threshold_utils import validate_enrolled
-from pyfe4ai.schemes.threshold.threshold_utils import combine_consistently
-from pyfe4ai.schemes.threshold.threshold_utils import partial_groups
-from pyfe4ai.schemes.threshold.threshold_utils import validate_partial_decryptions
-from pyfe4ai.schemes.threshold.threshold_utils import validate_threshold
+from pyfe4ai.schemes.threshold.binding import check_ciphertext_tags
+from pyfe4ai.schemes.threshold.binding import client_server_mac_keys
+from pyfe4ai.schemes.threshold.binding import fusion_weight_id
+from pyfe4ai.schemes.threshold.binding import tag_ciphertext
+from pyfe4ai.schemes.threshold.codec import ciphertexts_digest
+from pyfe4ai.schemes.threshold.roles import combine_elementwise
+from pyfe4ai.schemes.threshold.roles import validate_enrolled
+from pyfe4ai.schemes.threshold.roles import combine_consistently
+from pyfe4ai.schemes.threshold.roles import partial_groups
+from pyfe4ai.schemes.threshold.roles import validate_partial_decryptions
+from pyfe4ai.schemes.threshold.sharing import lagrange_coefficient_at_zero
+from pyfe4ai.schemes.threshold.sharing import share_points
+from pyfe4ai.schemes.threshold.sharing import share_secret
+from pyfe4ai.schemes.threshold.sharing import validate_threshold
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.primitives.pairing.pairing_backend import GT, ZR, multi_pair, pow_many
@@ -260,7 +260,7 @@ class ThresholdMCFEFHMultiIPE(MCFEFHMultiIPE):
             partials: ``{sid: share_decrypt(...)}`` for one enrolled set, or a
                 list of such mappings for several enrolled sets, whose results
                 must then agree (see
-                :func:`~pyfe4ai.schemes.threshold.threshold_utils.combine_consistently`:
+                :func:`~pyfe4ai.schemes.threshold.roles.combine_consistently`:
                 servers are assumed honest-but-curious, and only this
                 redundancy detects one that returns a wrong partial).
             label: Optional label the partials must be for.

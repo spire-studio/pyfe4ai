@@ -201,7 +201,7 @@ def test_any_enrolled_set_decrypts_extreme_values(kg_config, s, t, enrolled):
 def test_partials_are_flooded_and_derandomised(kg_config):
     import gmpy2 as gp
 
-    from pyfe4ai.schemes.threshold.threshold_utils import share_for_enrolled
+    from pyfe4ai.schemes.threshold.sharing import share_for_enrolled
     from pyfe4ai.primitives.lattice.matrix_utils import digits_to_vector, vecdot_mod
 
     dct_x = {nid: [1] for nid in kg_config["lst_nid"]}
@@ -311,7 +311,7 @@ def test_a_client_cannot_redraw_the_noise_by_changing_ct1(kg_config):
     """The key part depends on ct0 only; a corrupted client re-tagging its own
     ciphertext with another ct1 used to get fresh noise on the same key part."""
     from pyfe4ai.schemes.mife.lwe_threshold import _TAG_DOMAIN, _tag_payload
-    from pyfe4ai.schemes.threshold.threshold_utils import tag_ciphertext
+    from pyfe4ai.schemes.threshold.binding import tag_ciphertext
 
     dct_x = {nid: [1] for nid in kg_config["lst_nid"]}
     dct_y = {nid: [1] for nid in kg_config["lst_nid"]}

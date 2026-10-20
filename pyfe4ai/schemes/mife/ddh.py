@@ -42,8 +42,8 @@ from pyfe4ai.schemes.common.ddh_base import DDHKeyGeneratorBase
 from pyfe4ai.core.base import IPFEAbsCrypto
 from pyfe4ai.core.base import decoded_layer
 from pyfe4ai.core.one_time import OfflineRandomMixin
-from pyfe4ai.schemes.threshold.threshold_utils import check_fusion_weight
-from pyfe4ai.schemes.threshold.threshold_utils import fusion_weight_id
+from pyfe4ai.schemes.threshold.binding import check_fusion_weight
+from pyfe4ai.schemes.threshold.binding import fusion_weight_id
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.primitives.groups.dlog_solver import load_or_build_dlog_table, dlog_table_solve
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError

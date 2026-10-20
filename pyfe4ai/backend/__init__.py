@@ -11,8 +11,8 @@ parsing, digests and NTT-domain products of a partial decryption and the
 combination. The replicated key sharings of the three LWE threshold layers
 (``"replicated"``, the default for ``t < s``, and ``"replicated-seeded"``) are
 dealt and added up natively for any odd ``q`` below ``2^253``, with no NTT
-ring (:func:`~pyfe4ai.schemes.threshold.threshold_utils.share_replicated`,
-:func:`~pyfe4ai.schemes.threshold.threshold_utils.share_for_enrolled`). It also samples the wide rounded Gaussians of
+ring (:func:`~pyfe4ai.schemes.threshold.sharing.share_replicated`,
+:func:`~pyfe4ai.schemes.threshold.sharing.share_for_enrolled`). It also samples the wide rounded Gaussians of
 :func:`~pyfe4ai.primitives.sampling.discrete_gaussian_bigint` (SIFE FullySec,
 ALS16 and the flooding noise of the threshold schemes; :func:`gaussian_bigint`)
 with the reference's integers, and has the dense-LWE label

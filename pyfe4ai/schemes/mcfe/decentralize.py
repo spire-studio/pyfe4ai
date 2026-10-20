@@ -37,7 +37,7 @@ import gmpy2 as gp
 
 from pyfe4ai.schemes.mcfe.paillier import _hash_label as _dcr_hash_label
 from pyfe4ai.schemes.mcfe.paillier import dcr_sigma
-from pyfe4ai.schemes.threshold.threshold_utils import fusion_weight_id
+from pyfe4ai.schemes.threshold.binding import fusion_weight_id
 from pyfe4ai.primitives.groups.integer_groups import generate_group_primes
 from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
 from pyfe4ai.primitives.groups.modular_utils import pow_signed_many

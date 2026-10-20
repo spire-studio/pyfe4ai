@@ -53,17 +53,17 @@ from pyfe4ai.schemes.common.ddh_base import DDHKeyGeneratorBase
 from pyfe4ai.core.base import IPFEAbsCrypto
 from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
 from pyfe4ai.schemes.mcfe.labels import encode_label
-from pyfe4ai.schemes.threshold.threshold_utils import check_fusion_weight
-from pyfe4ai.schemes.threshold.threshold_utils import fusion_weight_id
-from pyfe4ai.schemes.threshold.threshold_utils import lagrange_coefficient_at_zero
-from pyfe4ai.schemes.threshold.threshold_utils import share_points
-from pyfe4ai.schemes.threshold.threshold_utils import share_secret
-from pyfe4ai.schemes.threshold.threshold_utils import validate_enrolled
-from pyfe4ai.schemes.threshold.threshold_utils import combine_consistently
-from pyfe4ai.schemes.threshold.threshold_utils import partial_groups
-from pyfe4ai.schemes.threshold.threshold_utils import combine_elementwise
-from pyfe4ai.schemes.threshold.threshold_utils import validate_partial_decryptions
-from pyfe4ai.schemes.threshold.threshold_utils import validate_threshold
+from pyfe4ai.schemes.threshold.binding import check_fusion_weight
+from pyfe4ai.schemes.threshold.binding import fusion_weight_id
+from pyfe4ai.schemes.threshold.roles import validate_enrolled
+from pyfe4ai.schemes.threshold.roles import combine_consistently
+from pyfe4ai.schemes.threshold.roles import partial_groups
+from pyfe4ai.schemes.threshold.roles import combine_elementwise
+from pyfe4ai.schemes.threshold.roles import validate_partial_decryptions
+from pyfe4ai.schemes.threshold.sharing import lagrange_coefficient_at_zero
+from pyfe4ai.schemes.threshold.sharing import share_points
+from pyfe4ai.schemes.threshold.sharing import share_secret
+from pyfe4ai.schemes.threshold.sharing import validate_threshold
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.primitives.groups.integer_groups import _random
 from pyfe4ai.primitives.hashing import hash_to_qr_group
@@ -375,7 +375,7 @@ class ThresholdMCFE(IPFEAbsCrypto):
             partials: ``{sid: share_decrypt(...)}`` for one enrolled set, or a
                 list of such mappings for several enrolled sets, whose results
                 must then agree (see
-                :func:`~pyfe4ai.schemes.threshold.threshold_utils.combine_consistently`:
+                :func:`~pyfe4ai.schemes.threshold.roles.combine_consistently`:
                 servers are assumed honest-but-curious, and only this
                 redundancy detects one that returns a wrong partial).
 

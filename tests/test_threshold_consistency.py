@@ -3,7 +3,7 @@
 import os
 import pytest
 
-from pyfe4ai.schemes.threshold.threshold_utils import combine_consistently, partial_groups
+from pyfe4ai.schemes.threshold.roles import combine_consistently, partial_groups
 from pyfe4ai.core.exceptions import FESchemeError
 
 
@@ -184,7 +184,7 @@ def test_ring_noise_keys_do_not_change_with_a_resharing(tmp_path, monkeypatch):
     {},                                                   # an empty group
 ])
 def test_elementwise_combination_raises_scheme_errors_on_malformed_output(partials):
-    from pyfe4ai.schemes.threshold.threshold_utils import combine_elementwise
+    from pyfe4ai.schemes.threshold.roles import combine_elementwise
 
     with pytest.raises(FESchemeError):
         combine_elementwise(partials, lambda groups, l, i: 1)

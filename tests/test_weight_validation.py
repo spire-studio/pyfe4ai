@@ -11,7 +11,7 @@ from pyfe4ai.schemes.mcfe.ring_lwe_decentralized import (
     DecentralizedMCFERingLWEKeyGenerator,
 )
 from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWE, MIFERingLWEKeyGenerator
-from pyfe4ai.schemes.threshold.threshold_utils import fusion_weight_id
+from pyfe4ai.schemes.threshold.binding import fusion_weight_id
 from pyfe4ai.core.exceptions import FEValidationError
 
 NIDS = ["nid_0", "nid_1"]

@@ -43,7 +43,7 @@ from pyfe4ai.schemes.mcfe.labels import chunk_label, encode_label
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWE
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe import label_pad, label_pad_material, native_hash_kwargs
-from pyfe4ai.schemes.threshold.threshold_utils import fusion_weight_id
+from pyfe4ai.schemes.threshold.binding import fusion_weight_id
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai import backend as native_backend
 from pyfe4ai.primitives.hashing import LEGACY_LABEL_HASH

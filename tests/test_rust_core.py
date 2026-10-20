@@ -432,14 +432,14 @@ def test_share_partial_identical(bits, n, eta):
 
 @pytest.mark.parametrize("bits,t", [(61, 2), (116, 3), (212, 2), (253, 4)])
 def test_shamir_share_identical(bits, t, monkeypatch):
-    from pyfe4ai.schemes.threshold import threshold_utils
+    from pyfe4ai.schemes.threshold import sharing as threshold_sharing
 
     q = rlu.next_ntt_prime(gp.mpz(2) ** (bits - 1), 16)
     ring = Ring(q, 16)
     secrets = [gp.mpz(random.Random(bits).randrange(-int(q), 2 * int(q))) for _ in range(50)]
     points = [1, 2, 3, 5]
-    monkeypatch.setattr(threshold_utils, "_CSPRNG", _BytesSystemRandom(ByteStream(bits)))
-    expected = [threshold_utils.share_secret(v, t, points, q) for v in secrets]
+    monkeypatch.setattr(threshold_sharing, "_CSPRNG", _BytesSystemRandom(ByteStream(bits)))
+    expected = [threshold_sharing.share_secret(v, t, points, q) for v in secrets]
     data = ByteStream(bits).take(4 * 50 * (t - 1) * ((bits + 7) // 8))
     out = ctypes.create_string_buffer(VB * 50 * len(points))
     pts = (ctypes.c_uint64 * len(points))(*points)

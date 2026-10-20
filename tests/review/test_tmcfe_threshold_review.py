@@ -28,10 +28,12 @@ import gmpy2 as gp
 import os
 import pytest
 
-from pyfe4ai.schemes.threshold import threshold_utils as tu
+from pyfe4ai.schemes.threshold import sharing as threshold_sharing
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
+from pyfe4ai.schemes.threshold import binding as threshold_binding
+from pyfe4ai.schemes.threshold import codec as threshold_codec
 from pyfe4ai.schemes.mcfe.labels import encode_label
-from pyfe4ai.schemes.threshold.threshold_utils import pp_binding, tag_ciphertext_message
+from pyfe4ai.schemes.threshold.binding import pp_binding, tag_ciphertext_message
 from pyfe4ai import backend as native_backend
 from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError
@@ -78,14 +80,14 @@ def test_l2_native_shamir_dealing_of_mixed_material():
     z = [3 * i + 1 for i in range(n)]
     material = {"sk_y": {nid: [str(i + 7 * j) for i in range(n)] for j, nid in enumerate(NIDS)},
                 "z": rlu.encode_values(z, q), "z_chunks": []}
-    points = tu.share_points(SIDS)
+    points = threshold_sharing.share_points(SIDS)
     xs = list(points.values())
     for name in BACKENDS:
         with native_backend.backend(name):
             shares = kg._share_material(material)
         got = [0] * n
         for sid in SIDS:
-            lam = tu.lagrange_coefficient_at_zero(points[sid], xs, q)
+            lam = threshold_sharing.lagrange_coefficient_at_zero(points[sid], xs, q)
             vals = _values(shares[sid]["z"], q)
             assert len(vals) == n, "{}: z shared as {} values, not {}".format(name, len(vals), n)
             got = [(a + lam * v) % q for a, v in zip(got, vals)]
@@ -154,14 +156,14 @@ def test_i3_server_format_follows_the_parameters_it_binds():
         return  # refused: one derivation per binding
     # served: then format 2 of the same values must get the same noise (it does not)
     q, eta, n = int(pp_bin["q"]), pp_bin["eta"], pp_bin["ring_n"]
-    digest = bytes.fromhex(pp_binding(pp_bin, tm.binding_fields(pp_bin), tm._BINDING_DEFAULTS))
+    digest = bytes.fromhex(pp_binding(pp_bin, threshold_binding.tmcfe_ring_lwe_binding_fields(pp_bin), threshold_binding.TMCFE_RING_LWE_BINDING_DEFAULTS))
     bin_cts = {}
     for nid, ct in json_cts.items():
         k = ct["k"]
         data = rlu.encode_threshold_ciphertext([[int(v) for v in row] for row in ct["ct0"]],
                                                [int(v) for v in ct["ct1"]], k, q, n)
         b = {"ct": data, "k": k, "label_hash": ct["label_hash"]}
-        msg = tm.binary_tag_message(digest, encode_label("L"), b, tm.binary_ciphertext_digests(b, q, eta, n))
+        msg = threshold_codec.binary_tag_message(digest, encode_label("L"), b, threshold_codec.binary_ciphertext_digests(b, q, eta, n))
         bin_cts[nid] = tag_ciphertext_message(b, sks[nid]["mac_keys"], msg)
     good = _obj(pp_bin, "s0").share_decrypt(bin_cts, CREDS, dk, SIDS)
     k = good["k"]

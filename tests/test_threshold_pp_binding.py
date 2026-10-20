@@ -12,8 +12,10 @@ import pytest
 from pyfe4ai.schemes.threshold import kl as fa
 from pyfe4ai.schemes.mcfe import lwe_threshold as dense
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as ring
+from pyfe4ai.schemes.threshold import binding as threshold_binding
 from pyfe4ai.schemes.mife import lwe_threshold as tmife
-from pyfe4ai.schemes.threshold.threshold_utils import pp_binding
+from pyfe4ai.schemes.threshold import binding as threshold_binding
+from pyfe4ai.schemes.threshold.binding import pp_binding
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 
 NIDS, SIDS = ["a", "b"], ["s0", "s1", "s2"]
@@ -77,10 +79,10 @@ def test_missing_fields_bind_as_their_defaults():
     mean Gaussian flooding and ``"shake256-wide"``: the same binding."""
     pp = {"q": "7", "flooding": "gaussian", "label_hash": "shake256-wide", "flooding_accounting": "per-sample"}
     old = {"q": "7"}
-    assert pp_binding(pp, tuple(ring._BINDING_FIELDS), ring._BINDING_DEFAULTS) == pp_binding(
-        old, tuple(ring._BINDING_FIELDS), ring._BINDING_DEFAULTS)
-    assert pp_binding(dict(pp, flooding="uniform"), ring._BINDING_FIELDS, ring._BINDING_DEFAULTS) != pp_binding(
-        old, ring._BINDING_FIELDS, ring._BINDING_DEFAULTS)
+    assert pp_binding(pp, tuple(threshold_binding.TMCFE_RING_LWE_BINDING_FIELDS), threshold_binding.TMCFE_RING_LWE_BINDING_DEFAULTS) == pp_binding(
+        old, tuple(threshold_binding.TMCFE_RING_LWE_BINDING_FIELDS), threshold_binding.TMCFE_RING_LWE_BINDING_DEFAULTS)
+    assert pp_binding(dict(pp, flooding="uniform"), threshold_binding.TMCFE_RING_LWE_BINDING_FIELDS, threshold_binding.TMCFE_RING_LWE_BINDING_DEFAULTS) != pp_binding(
+        old, threshold_binding.TMCFE_RING_LWE_BINDING_FIELDS, threshold_binding.TMCFE_RING_LWE_BINDING_DEFAULTS)
 
 
 def test_tmife_key_share_refused_under_other_parameters():
@@ -100,7 +102,7 @@ def test_tmife_key_share_refused_under_other_parameters():
 
     serve(pp)
     for bad in (dict(pp, sigma_f=str(int(pp["sigma_f"]) + 2)), dict(pp, q=str(int(pp["q"]) + 2)),
-                dict(pp, threshold_construction=tmife._CONSTRUCTION_KL)):
+                dict(pp, threshold_construction=threshold_binding.TMIFE_LWE_CONSTRUCTION_KL)):
         with pytest.raises(REFUSED):
             serve(bad)
 
@@ -138,7 +140,7 @@ def test_the_flooding_noise_follows_the_public_parameters(monkeypatch, bypass, l
     import gmpy2 as gp
 
     from pyfe4ai.schemes.mcfe.lwe import dot_mod
-    from pyfe4ai.schemes.threshold.threshold_utils import lagrange_coefficient_at_zero
+    from pyfe4ai.schemes.threshold.sharing import lagrange_coefficient_at_zero
 
     monkeypatch.setattr(dense, "check_pp_binding", bypass)
     kg = dense.ThresholdMCFELWEKeyGenerator({"sec_param": 64, "n": 2, "lst_nid": NIDS, "eta": 1, "bound_x": 4,

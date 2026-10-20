@@ -10,18 +10,19 @@ import numpy as np
 import pytest
 
 from pyfe4ai.schemes.mcfe import lwe_threshold as tmcfe_lwe
+from pyfe4ai.schemes.threshold import binding as threshold_binding
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tmcfe_ring
 from pyfe4ai.schemes.mcfe.lwe_threshold import ThresholdMCFELWE, ThresholdMCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWE, ThresholdMCFERingLWEKeyGenerator
 from pyfe4ai.schemes.mife import lwe_threshold as tmife_lwe
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE, ThresholdMIFELWEKeyGenerator
-from pyfe4ai.schemes.threshold.threshold_utils import SEED_BYTES
-from pyfe4ai.schemes.threshold.threshold_utils import expand_seeded_piece
-from pyfe4ai.schemes.threshold.threshold_utils import piece_layout
-from pyfe4ai.schemes.threshold.threshold_utils import replicated_sets
-from pyfe4ai.schemes.threshold.threshold_utils import seeded_pieces_held
-from pyfe4ai.schemes.threshold.threshold_utils import share_for_enrolled
-from pyfe4ai.schemes.threshold.threshold_utils import share_replicated_seeded
+from pyfe4ai.schemes.threshold.sharing import SEED_BYTES
+from pyfe4ai.schemes.threshold.sharing import expand_seeded_piece
+from pyfe4ai.schemes.threshold.sharing import piece_layout
+from pyfe4ai.schemes.threshold.sharing import replicated_sets
+from pyfe4ai.schemes.threshold.sharing import seeded_pieces_held
+from pyfe4ai.schemes.threshold.sharing import share_for_enrolled
+from pyfe4ai.schemes.threshold.sharing import share_replicated_seeded
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError
 from pyfe4ai import backend as native_backend
 
@@ -47,12 +48,22 @@ def _pieces(sharing, q):
     return out
 
 
+#: The construction ids of the replicated and the seeded sharing of the LWE threshold schemes.
+_REPLICATED_RECORDS = {
+    "pyfe4ai.schemes.mife.lwe_threshold": (threshold_binding.TMIFE_LWE_CONSTRUCTION_REPLICATED,
+                                           threshold_binding.TMIFE_LWE_CONSTRUCTION_REPLICATED_SEEDED),
+    "pyfe4ai.schemes.mcfe.lwe_threshold": (threshold_binding.TMCFE_LWE_CONSTRUCTION_REPLICATED,
+                                           threshold_binding.TMCFE_LWE_CONSTRUCTION_REPLICATED_SEEDED),
+}
+
+
 def _full_pp(pp, module):
     """*pp* as the replicated sharing publishes it (same parameters)."""
-    ids = getattr(module, "_CONSTRUCTION_IDS", None)
-    if ids is None:
-        assert pp["threshold_construction"] == module._CONSTRUCTION_REPLICATED_SEEDED
-        return dict(pp, sharing="replicated", threshold_construction=module._CONSTRUCTION_REPLICATED)
+    if module.__name__ in _REPLICATED_RECORDS:
+        replicated, seeded = _REPLICATED_RECORDS[module.__name__]
+        assert pp["threshold_construction"] == seeded
+        return dict(pp, sharing="replicated", threshold_construction=replicated)
+    ids = threshold_binding.TMCFE_RING_LWE_CONSTRUCTION_IDS
     flooding = pp.get("flooding", "gaussian")  # tMCFE-Ring-LWE: one record per sharing and flooding
     assert pp["threshold_construction"] == ids[("replicated-seeded", flooding)]
     return dict(pp, sharing="replicated", threshold_construction=ids[("replicated", flooding)])
@@ -129,7 +140,7 @@ def test_native_expansion_gives_the_python_values():
     seed = "5c" * SEED_BYTES
     assert expand_seeded_piece(seed, (1, 3), layout, q, ctx=ctx) == expand_seeded_piece(seed, (1, 3), layout, q)
     # sums (and the dealer's differences) of explicit and seeded pieces, natively or in Python
-    from pyfe4ai.schemes.threshold.threshold_utils import _combine_pieces
+    from pyfe4ai.schemes.threshold.sharing import _combine_pieces
 
     material = {"sk_y": {"a": list(range(-8, 8)), "b": [str(q - 1)] * 16}, "z": [q + 5] * 16,
                 "z_chunks": [[1] * 16, [0] * 16], "s": -3, "e": []}
@@ -325,7 +336,7 @@ def test_tmcfe_lwe_seeded_decrypts_and_matches_the_replicated_partials(s, t):
     # each sharing serves its own key shares only, and the construction must name the sharing
     full = _expanded(dks[sids[0]], kg.q)
     for bad_pp, bad_dk in [(full_pp, dks[sids[0]]), (pp, full),
-                           (dict(pp, threshold_construction=tmcfe_lwe._CONSTRUCTION_REPLICATED), dks[sids[0]])]:
+                           (dict(pp, threshold_construction=threshold_binding.TMCFE_LWE_CONSTRUCTION_REPLICATED), dks[sids[0]])]:
         with pytest.raises(FESchemeError):
             ThresholdMCFELWE({"id": sids[0], "keys": {"pp": bad_pp, "dk": bad_dk}}).share_decrypt(
                 cts, cred, bad_dk, sids[:t])
@@ -486,7 +497,7 @@ def test_share_for_enrolled_dispatches_on_the_sharing_label():
 @pytest.mark.skipif(not native_backend.available(), reason="native extension not built")
 def test_a_native_context_of_another_modulus_is_refused():
     """The context's modulus must be the sharing's."""
-    from pyfe4ai.schemes.threshold.threshold_utils import _combine_pieces
+    from pyfe4ai.schemes.threshold.sharing import _combine_pieces
     from pyfe4ai.primitives.lattice.ring_lwe_utils import next_ntt_prime
 
     q = next_ntt_prime(gp.mpz(2) ** 200, 16)
@@ -521,7 +532,7 @@ def test_seeded_expansion_known_answer(backend):
     seeded key share; this test catches it on both backends."""
     import hashlib
 
-    from pyfe4ai.schemes.threshold.threshold_utils import _combine_pieces
+    from pyfe4ai.schemes.threshold.sharing import _combine_pieces
 
     ctx = None
     if backend == "native":

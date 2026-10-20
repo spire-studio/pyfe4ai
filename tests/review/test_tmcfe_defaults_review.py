@@ -31,6 +31,7 @@ import numpy as np
 import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
+from pyfe4ai.schemes.threshold import store as threshold_store
 from pyfe4ai.ml import FESchemeWrapper, aggregate_gradients, encrypt_gradient, prepare_aggregation
 
 NIDS, SIDS = ["nid_0", "nid_1", "nid_2"], ["sid_0", "sid_1", "sid_2"]
@@ -80,7 +81,7 @@ def test_r5_1_a_prepared_aggregation_survives_the_servers_weight_part_eviction()
 
 
 def test_r5_2_a_cached_label_part_is_of_the_current_share_set(monkeypatch):
-    monkeypatch.setattr(tm, "WEIGHT_SHARINGS_KEPT", 1)
+    monkeypatch.setattr(threshold_store, "WEIGHT_SHARINGS_KEPT", 1)
     nids, sids = ["c0", "c1", "c2"], ["s0", "s1", "s2"]
     kg = tm.ThresholdMCFERingLWEKeyGenerator(dict(n=3, lst_nid=nids, s=3, t=3, lst_sid=sids, eta=1, ring_n=32,
                                                   sec_param=64, bound_x=100, bound_y=3, stat_param=64))

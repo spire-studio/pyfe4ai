@@ -35,6 +35,7 @@ import gmpy2 as gp
 import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
+from pyfe4ai.schemes.threshold import store as threshold_store
 from pyfe4ai import backend as native_backend
 from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
 from pyfe4ai.core.exceptions import FEError, FEKeyError
@@ -173,7 +174,7 @@ def test_i2b_malformed_value_list_key_shares_are_refused(case):
 
 @pytest.mark.parametrize("sharing,t", [("shamir", 3), ("replicated", 2)])
 def test_i10_a_cached_label_part_is_served_after_its_sharing_was_evicted(monkeypatch, sharing, t):
-    monkeypatch.setattr(tm, "WEIGHT_SHARINGS_KEPT", 1)
+    monkeypatch.setattr(threshold_store, "WEIGHT_SHARINGS_KEPT", 1)
     kg, pp = _setup(t=t, sharing=sharing, ct_format="binary")
     wa, wb = {nid: [1] for nid in NIDS}, {nid: [2] for nid in NIDS}
     creds = {"fusion_weight": wa, "label": "L", "key_part": "label"}

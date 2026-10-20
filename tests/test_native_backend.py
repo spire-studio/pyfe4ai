@@ -21,6 +21,7 @@ import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe as mcfe_rlwe
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tmcfe_rlwe
+from pyfe4ai.schemes.threshold import codec as threshold_codec
 from pyfe4ai.schemes.mife import ring_lwe as mife_rlwe
 from pyfe4ai import backend as native_backend
 from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
@@ -536,10 +537,10 @@ def test_threshold_partials_and_combination_identical(cfg, flooding, native_call
 
 def _retag(kg, nid, label, ct):
     from pyfe4ai.schemes.mcfe.labels import encode_label
-    from pyfe4ai.schemes.threshold.threshold_utils import tag_ciphertext
+    from pyfe4ai.schemes.threshold.binding import tag_ciphertext
 
-    return tag_ciphertext(dict(ct), kg.get_private_keys(nid)["mac_keys"], tmcfe_rlwe._TAG_DOMAIN,
-                          tmcfe_rlwe._tag_payload(encode_label(label), ct))
+    return tag_ciphertext(dict(ct), kg.get_private_keys(nid)["mac_keys"], threshold_codec._TAG_DOMAIN,
+                          threshold_codec._tag_payload(encode_label(label), ct))
 
 
 @pytest.mark.parametrize("cfg", TCONFIGS[1:], ids=str)
@@ -611,14 +612,14 @@ class _BytesSystemRandom(random.Random):
 
 @pytest.mark.parametrize("cfg", TCONFIGS, ids=str)
 def test_threshold_key_shares_identical(cfg, monkeypatch):
-    from pyfe4ai.schemes.threshold import threshold_utils
+    from pyfe4ai.schemes.threshold import sharing as threshold_sharing
 
     # the native Shamir sharing (the default for t = s; explicit here, t < s)
     kg, pp, clients, sids = _threshold(*cfg, sharing="shamir")
     creds = {"fusion_weight": {nid: [1] for nid in clients}, "label": "L", "n_chunks": 2}
     key = _mcfe_keys(kg, "s0", creds)
     with native_backend.backend("python"):
-        monkeypatch.setattr(threshold_utils, "_CSPRNG", _BytesSystemRandom(ByteStream(6)))
+        monkeypatch.setattr(threshold_sharing, "_CSPRNG", _BytesSystemRandom(ByteStream(6)))
         py = kg._share_key(key, "w")
     with native_backend.backend("native"):
         monkeypatch.setattr(native_backend, "_random_override", ByteStream(6).take)
@@ -631,7 +632,7 @@ def test_threshold_key_shares_identical(cfg, monkeypatch):
     with native_backend.backend("native"):  # the DRBG: shares still reconstruct the key
         shares = kg._share_key(key, "w")
     q = int(pp["q"])
-    lam = {s: int(threshold_utils.lagrange_coefficient_at_zero(i + 1, [1, 3], q)) for i, s in enumerate(sids)}
+    lam = {s: int(threshold_sharing.lagrange_coefficient_at_zero(i + 1, [1, 3], q)) for i, s in enumerate(sids)}
     for poly, name in ((key["z"], "z"), (key["sk_y"]["c2"], None)):
         got = [(lam["s0"] * int(a) + lam["s2"] * int(b)) % q for a, b in zip(
             *[(shares[s][name] if name else shares[s]["sk_y"]["c2"]) for s in ("s0", "s2")])]

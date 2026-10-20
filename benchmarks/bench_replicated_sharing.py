@@ -17,7 +17,7 @@ import json, statistics, sys, time, warnings
 warnings.simplefilter("ignore")
 import numpy as np
 import gmpy2 as gp
-from pyfe4ai.schemes.threshold.threshold_utils import share_for_enrolled
+from pyfe4ai.schemes.threshold.sharing import share_for_enrolled
 
 kind, s, t, sharing = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), sys.argv[4]
 reps = int(sys.argv[5]) if len(sys.argv) > 5 else 5

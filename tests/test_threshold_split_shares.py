@@ -19,8 +19,11 @@ import gmpy2 as gp
 import numpy as np
 import pytest
 
-from pyfe4ai.schemes.threshold import threshold_utils
+from pyfe4ai.schemes.threshold import codec as threshold_codec
+from pyfe4ai.schemes.threshold import sharing as threshold_sharing
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
+from pyfe4ai.schemes.threshold import codec as threshold_codec
+from pyfe4ai.schemes.threshold import store as threshold_store
 from pyfe4ai import backend as native_backend
 from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
@@ -238,10 +241,10 @@ def test_binary_dealing_is_the_python_dealing(sharing, t, monkeypatch):
     material = {"sk_y": {nid: [int(v) for v in rng.integers(0, 2 ** 62, 32)] for nid in NIDS},
                 "z": [int(v) for v in rng.integers(0, 2 ** 62, 32)],
                 "z_chunks": [[int(v) for v in rng.integers(0, 2 ** 62, 32)] for _ in range(2)]}
-    binary_terms = threshold_utils.binary_material({"z": material["z"], "z_chunks": material["z_chunks"]}, q)
+    binary_terms = threshold_codec.binary_material({"z": material["z"], "z_chunks": material["z_chunks"]}, q)
     for mat in (material, binary_terms):
         with native_backend.backend("python"):
-            monkeypatch.setattr(threshold_utils, "_CSPRNG", _BytesSystemRandom(ByteStream(8)))
+            monkeypatch.setattr(threshold_sharing, "_CSPRNG", _BytesSystemRandom(ByteStream(8)))
             py = kg._share_material(mat)
         with native_backend.backend("native"):
             monkeypatch.setattr(native_backend, "_random_override", ByteStream(8).take)
@@ -251,7 +254,7 @@ def test_binary_dealing_is_the_python_dealing(sharing, t, monkeypatch):
         # binary shares are the binary form of the decimal ones
         kgj, _ = _setup(t=t, sharing=sharing, ct_format="json")
         with native_backend.backend("python"):
-            monkeypatch.setattr(threshold_utils, "_CSPRNG", _BytesSystemRandom(ByteStream(8)))
+            monkeypatch.setattr(threshold_sharing, "_CSPRNG", _BytesSystemRandom(ByteStream(8)))
             dec = kgj._share_material({k: (v if mat is material else material[k]) for k, v in mat.items()})
         assert _binary_form(dec, q) == py
 
@@ -272,8 +275,8 @@ def test_binary_partial_digests_known_answer():
     q = (1 << 70) + 0x2_0001
     data = rlu.encode_threshold_ciphertext([[1, 2, 3, 4]], [5, 6, 7, 8], 2, q, 4)
     ct = {"ct": data, "k": 2, "label_hash": 2}
-    digests = tm.binary_ciphertext_digests(ct, q, 1, 4)
-    message = tm.binary_tag_message(b"\x11" * 32, "lab", ct, digests)
+    digests = threshold_codec.binary_ciphertext_digests(ct, q, 1, 4)
+    message = threshold_codec.binary_tag_message(b"\x11" * 32, "lab", ct, digests)
     import hashlib
 
     assert hashlib.sha256(message).hexdigest() == hashlib.sha256(
@@ -281,7 +284,7 @@ def test_binary_partial_digests_known_answer():
         + b"\x00\x00\x00\x02" + digests[1] + digests[2]).hexdigest()
     assert digests[1] == hashlib.sha256(b"pyfe4ai/tmcfe-ring-lwe/ct0/v2|" + data[:14 + 2 * 9]).digest()
     assert digests[2] == hashlib.sha256(b"pyfe4ai/tmcfe-ring-lwe/ct1/v2|" + data[14 + 2 * 9:]).digest()
-    ct_digest, key_inputs = tm.binary_request_digests({"b": digests, "a": digests})
+    ct_digest, key_inputs = threshold_codec.binary_request_digests({"b": digests, "a": digests})
     name = lambda s: len(s).to_bytes(4, "big") + s
     assert key_inputs == hashlib.sha256(b"pyfe4ai/tmcfe-ring-lwe/key-inputs/v2|" + name(b'"a"') + digests[2]
                                         + name(b'"b"') + digests[2]).hexdigest()
@@ -315,7 +318,7 @@ def test_the_generators_weight_store_is_bounded(monkeypatch):
     """The key generator keeps the sharings of sk_y for the last
     WEIGHT_SHARINGS_KEPT weights; weights issued again after that get a new
     share set, which servers holding the old weight part refuse."""
-    monkeypatch.setattr(tm, "WEIGHT_SHARINGS_KEPT", 1)
+    monkeypatch.setattr(threshold_store, "WEIGHT_SHARINGS_KEPT", 1)
     kg, pp = _setup(t=3)
     other = {nid: [2] for nid in NIDS}
     first = kg.get_weight_key_share("s0", credentials={"fusion_weight": WEIGHTS})

@@ -219,7 +219,7 @@ def test_servers_hold_the_key_only_in_the_exponent(kg_config):
     ``e_i`` and solved for ``y``; the FH-MCFE key hides ``y`` only as
     ``[e_i]_2``. Shares are now group elements: ``t`` servers interpolate
     ``[e_i]_2`` and ``[z]_T``, i.e. the FH-MCFE functional key itself."""
-    from pyfe4ai.schemes.threshold.threshold_utils import lagrange_coefficient_at_zero, share_points
+    from pyfe4ai.schemes.threshold.sharing import lagrange_coefficient_at_zero, share_points
     from pyfe4ai.primitives.pairing.pairing_backend import GT, pair
 
     kg, pp, y, dct_ct = _setup(kg_config)

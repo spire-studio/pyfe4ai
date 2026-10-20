@@ -29,8 +29,10 @@ import pytest
 
 from pyfe4ai.schemes.threshold.kl import PartialDecryptionBudget
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
+from pyfe4ai.schemes.threshold import binding as threshold_binding
+from pyfe4ai.schemes.threshold import codec as threshold_codec
 from pyfe4ai.schemes.mcfe.labels import encode_label
-from pyfe4ai.schemes.threshold.threshold_utils import pp_binding, tag_ciphertext, tag_ciphertext_message
+from pyfe4ai.schemes.threshold.binding import pp_binding, tag_ciphertext, tag_ciphertext_message
 from pyfe4ai import backend as native_backend
 from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
 from pyfe4ai.core.exceptions import FESchemeError
@@ -69,10 +71,10 @@ def _tag_raw(kg, pp, nid, ct, k):
     wb = (int(pp["q"]).bit_length() + 7) // 8
     data = bytes(ct["ct"])
     split = 14 + pp["eta"] * k * wb
-    d0 = hashlib.sha256(tm._CT0_DOMAIN + data[:split]).digest()
-    d1 = hashlib.sha256(tm._CT1_DOMAIN + data[split:]).digest()
-    digest = bytes.fromhex(pp_binding(pp, tm.binding_fields(pp), tm._BINDING_DEFAULTS))
-    msg = tm.binary_tag_message(digest, encode_label("L"), ct, (k, d0, d1))
+    d0 = hashlib.sha256(threshold_codec._CT0_DOMAIN + data[:split]).digest()
+    d1 = hashlib.sha256(threshold_codec._CT1_DOMAIN + data[split:]).digest()
+    digest = bytes.fromhex(pp_binding(pp, threshold_binding.tmcfe_ring_lwe_binding_fields(pp), threshold_binding.TMCFE_RING_LWE_BINDING_DEFAULTS))
+    msg = threshold_codec.binary_tag_message(digest, encode_label("L"), ct, (k, d0, d1))
     return tag_ciphertext_message(dict(ct), kg.get_private_keys(nid)["mac_keys"], msg)
 
 
@@ -149,8 +151,8 @@ def test_one_key_part_one_noise(modulus, flooding, t):
                 _srv(pp, "s1").share_decrypt(swapped, creds, dk1, SIDS[:t])
             with pytest.raises(FESchemeError):
                 _srv(pp, "s0").share_decrypt(dict(cts, c0=cts["c1"], c1=cts["c0"]), creds, dk, SIDS[:t])
-            v1 = tag_ciphertext(dict(cts["c1"]), kg.get_private_keys("c1")["mac_keys"], tm._TAG_DOMAIN,
-                                tm._tag_payload(encode_label("L"), cts["c1"]))
+            v1 = tag_ciphertext(dict(cts["c1"]), kg.get_private_keys("c1")["mac_keys"], threshold_codec._TAG_DOMAIN,
+                                threshold_codec._tag_payload(encode_label("L"), cts["c1"]))
             with pytest.raises(FESchemeError):
                 _srv(pp, "s0").share_decrypt(dict(cts, c1=v1), creds, dk, SIDS[:t])
     assert all(a == answers[0] for a in answers)

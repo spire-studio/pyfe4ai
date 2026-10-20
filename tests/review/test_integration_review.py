@@ -40,7 +40,7 @@ def _cwd(tmp_path, monkeypatch):
 def test_dense_threshold_key_share_binds_the_label_hash():
     from pyfe4ai.schemes.mcfe import lwe_threshold as dense
     from pyfe4ai.schemes.mcfe.lwe import dot_mod
-    from pyfe4ai.schemes.threshold.threshold_utils import lagrange_coefficient_at_zero
+    from pyfe4ai.schemes.threshold.sharing import lagrange_coefficient_at_zero
 
     kg = dense.ThresholdMCFELWEKeyGenerator({"sec_param": 64, "n": 2, "lst_nid": NIDS, "eta": 1, "bound_x": 4,
                                              "bound_y": 4, "s": 3, "t": 3, "lst_sid": SIDS})

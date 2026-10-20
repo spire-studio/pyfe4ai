@@ -52,7 +52,7 @@ from pyfe4ai.schemes.mcfe.decentralize import key_label
 from pyfe4ai.schemes.mcfe.decentralize import mcfe2_key_sigma
 from pyfe4ai.schemes.mcfe.decentralize import mcfe2_prime_bits
 from pyfe4ai.schemes.mcfe.decentralize import zero_sum_keys
-from pyfe4ai.schemes.threshold.threshold_utils import fusion_weight_id
+from pyfe4ai.schemes.threshold.binding import fusion_weight_id
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.primitives.groups.integer_groups import is_dcr_modulus

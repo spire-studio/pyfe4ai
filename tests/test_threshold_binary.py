@@ -19,8 +19,11 @@ import os
 import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
+from pyfe4ai.schemes.threshold import binding as threshold_binding
+from pyfe4ai.schemes.threshold import codec as threshold_codec
+from pyfe4ai.schemes.threshold import roles as threshold_roles
 from pyfe4ai.schemes.mcfe.labels import chunk_label, encode_label
-from pyfe4ai.schemes.threshold.threshold_utils import pp_binding, tag_ciphertext, tag_ciphertext_message
+from pyfe4ai.schemes.threshold.binding import pp_binding, tag_ciphertext, tag_ciphertext_message
 from pyfe4ai import backend as native_backend
 from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
@@ -113,13 +116,13 @@ def test_native_uniform_flooding_is_the_python_noise(bits_q):
         ctx = native_backend.ring_context(q, 16)
     for bits in [b for b in (1, 7, 8, 63, 64, bits_q - 2, bits_q - 1) if b < bits_q]:
         for seed in (b"", b"k" * 40, bytes(range(200))):
-            material = tm.uniform_flooding_material(seed)
-            want = [v % int(q) for v in tm.uniform_flooding_poly(bits, 37, seed)]
+            material = threshold_roles.uniform_flooding_material(seed)
+            want = [v % int(q) for v in threshold_roles.uniform_flooding_poly(bits, 37, seed)]
             assert native_backend.ext().uniform_flooding(ctx.cap, bits, material, 37) == want
             # a prefix of the stream: k values are the first k of n
-            assert tm.uniform_flooding_poly(bits, 5, seed) == tm.uniform_flooding_poly(bits, 37, seed)[:5]
+            assert threshold_roles.uniform_flooding_poly(bits, 5, seed) == threshold_roles.uniform_flooding_poly(bits, 37, seed)[:5]
     with pytest.raises(ValueError):
-        native_backend.ext().uniform_flooding(ctx.cap, q.bit_length(), tm.uniform_flooding_material(b""), 3)
+        native_backend.ext().uniform_flooding(ctx.cap, q.bit_length(), threshold_roles.uniform_flooding_material(b""), 3)
 
 
 # ----------------------------------------------------------- whole rounds
@@ -181,8 +184,8 @@ def test_json_public_parameters_are_unchanged():
     parameters and their binding are those of these versions."""
     kg, pp, clients = _setup(ct_format="json", ring_modulus="prime")
     assert "ct_format" not in pp
-    assert tm.binding_fields(pp) == tm._BINDING_FIELDS
-    assert kg._binding == pp_binding(pp, tm._BINDING_FIELDS, tm._BINDING_DEFAULTS)
+    assert threshold_binding.tmcfe_ring_lwe_binding_fields(pp) == threshold_binding.TMCFE_RING_LWE_BINDING_FIELDS
+    assert kg._binding == pp_binding(pp, threshold_binding.TMCFE_RING_LWE_BINDING_FIELDS, threshold_binding.TMCFE_RING_LWE_BINDING_DEFAULTS)
     enc, creds, dks, expected = _round(kg, pp, clients, np.random.default_rng(2))
     assert "ct0" in enc["c0"][0]["chunks"][0]
     outs = []
@@ -200,11 +203,11 @@ def test_json_public_parameters_are_unchanged():
 
 
 def _retag_binary(kg, pp, nid, label, ct, layer=None, pp_digest=None):
-    coded = tm._chunk_with_code(ct, layer) if layer is not None else ct
-    digests = tm.binary_ciphertext_digests(coded, pp["q"], pp["eta"], pp["ring_n"])
-    digest = bytes.fromhex(pp_digest or pp_binding(pp, tm.binding_fields(pp), tm._BINDING_DEFAULTS))
+    coded = threshold_codec._chunk_with_code(ct, layer) if layer is not None else ct
+    digests = threshold_codec.binary_ciphertext_digests(coded, pp["q"], pp["eta"], pp["ring_n"])
+    digest = bytes.fromhex(pp_digest or pp_binding(pp, threshold_binding.tmcfe_ring_lwe_binding_fields(pp), threshold_binding.TMCFE_RING_LWE_BINDING_DEFAULTS))
     return tag_ciphertext_message(dict(ct), kg.get_private_keys(nid)["mac_keys"],
-                                  tm.binary_tag_message(digest, encode_label(label), coded, digests))
+                                  threshold_codec.binary_tag_message(digest, encode_label(label), coded, digests))
 
 
 @pytest.mark.parametrize("name", BACKENDS)
@@ -241,8 +244,8 @@ def test_mixed_formats_are_refused():
     k, ct0, ct1 = rlu.decode_threshold_ciphertext(cts["c1"]["ct"], q, eta, ring_n)
     as_json = {"ct0": [[str(v) for v in row] + ["0"] * (ring_n - k) for row in ct0], "ct1": [str(v) for v in ct1],
                "k": k, "label_hash": cts["c1"]["label_hash"]}
-    as_json = tag_ciphertext(as_json, kg.get_private_keys("c1")["mac_keys"], tm._TAG_DOMAIN,
-                             tm._tag_payload(encode_label("L"), as_json))
+    as_json = tag_ciphertext(as_json, kg.get_private_keys("c1")["mac_keys"], threshold_codec._TAG_DOMAIN,
+                             threshold_codec._tag_payload(encode_label("L"), as_json))
     with pytest.raises(FESchemeError, match="is JSON; the public parameters' format is binary"):
         srv.share_decrypt(dict(cts, c1=as_json), creds, dk, SIDS)
     # format 1 under binary public parameters, tagged with a v2 message: refused
@@ -250,15 +253,15 @@ def test_mixed_formats_are_refused():
     with pytest.raises(FESchemeError, match="not authenticated"):
         srv.share_decrypt(dict(cts, c1=dict(cts["c1"], ct=f1)), creds, dk, SIDS)
     # a JSON (v1) tag on a format-2 ciphertext
-    v1 = tag_ciphertext(dict(cts["c1"]), kg.get_private_keys("c1")["mac_keys"], tm._TAG_DOMAIN,
-                        tm._tag_payload(encode_label("L"), cts["c1"]))
+    v1 = tag_ciphertext(dict(cts["c1"]), kg.get_private_keys("c1")["mac_keys"], threshold_codec._TAG_DOMAIN,
+                        threshold_codec._tag_payload(encode_label("L"), cts["c1"]))
     with pytest.raises(FESchemeError, match="not authenticated"):
         srv.share_decrypt(dict(cts, c1=v1), creds, dk, SIDS)
     # binary ciphertexts (format 1 or 2) under JSON public parameters
     for data in (cts["c1"]["ct"], f1):
         bad = tag_ciphertext({"ct": data, "k": k, "label_hash": ctsj["c1"]["label_hash"]},
-                             kgj.get_private_keys("c1")["mac_keys"], tm._TAG_DOMAIN,
-                             tm._tag_payload(encode_label("L"), {"ct": data, "k": k}))
+                             kgj.get_private_keys("c1")["mac_keys"], threshold_codec._TAG_DOMAIN,
+                             threshold_codec._tag_payload(encode_label("L"), {"ct": data, "k": k}))
         with pytest.raises(FESchemeError, match="binary"):
             srvj.share_decrypt(dict(ctsj, c1=bad), creds, dkj, SIDS)
     # a client object asking for the other format
@@ -279,7 +282,7 @@ def test_tags_bind_the_parameters_label_code_and_k():
     dk = kg.get_decryption_keys("s0", credentials=creds)
     srv = _obj(pp, "s0")
     assert srv.share_decrypt(cts, creds, dk, SIDS)["k"] == 3
-    other = pp_binding(dict(pp, stat_param=65), tm.binding_fields(pp), tm._BINDING_DEFAULTS)
+    other = pp_binding(dict(pp, stat_param=65), threshold_binding.tmcfe_ring_lwe_binding_fields(pp), threshold_binding.TMCFE_RING_LWE_BINDING_DEFAULTS)
     cases = [
         _retag_binary(kg, pp, "c1", "L", cts["c1"], pp_digest=other),     # other parameters' digest
         _retag_binary(kg, pp, "c1", "M", cts["c1"]),                      # another label
@@ -306,10 +309,10 @@ def test_key_shares_are_bound_to_one_format():
     creds = {"fusion_weight": {nid: [1] for nid in NIDS}, "label": "L"}
     cts = {nid: cl.encrypt([[1, 2, 3]], "L") for nid, cl in clients.items()}
     dk, dkj = kg.get_decryption_keys("s0", credentials=creds), kgj.get_decryption_keys("s0", credentials=creds)
-    assert dk["pp_binding"] != pp_binding(pp, tm._BINDING_FIELDS, tm._BINDING_DEFAULTS)
+    assert dk["pp_binding"] != pp_binding(pp, threshold_binding.TMCFE_RING_LWE_BINDING_FIELDS, threshold_binding.TMCFE_RING_LWE_BINDING_DEFAULTS)
     with pytest.raises(FEKeyError, match="other public parameters"):
         _obj(pp, "s0").share_decrypt(cts, creds, dict(dk, pp_binding=pp_binding(
-            pp, tm._BINDING_FIELDS, tm._BINDING_DEFAULTS)), SIDS)
+            pp, threshold_binding.TMCFE_RING_LWE_BINDING_FIELDS, threshold_binding.TMCFE_RING_LWE_BINDING_DEFAULTS)), SIDS)
     stripped = {k: v for k, v in pp.items() if k != "ct_format"}
     retagged = {nid: _retag_binary(kg, stripped, nid, "L", ct) for nid, ct in cts.items()}
     with pytest.raises(FESchemeError):  # JSON parameters: binary ciphertexts refused before the key share

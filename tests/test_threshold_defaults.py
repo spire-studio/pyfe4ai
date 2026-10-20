@@ -25,6 +25,9 @@ import pytest
 
 from pyfe4ai.schemes.threshold.kl import PartialDecryptionBudget
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
+from pyfe4ai.schemes.threshold import binding as threshold_binding
+from pyfe4ai.schemes.threshold import sharing as threshold_sharing
+from pyfe4ai.schemes.threshold import store as threshold_store
 from pyfe4ai import backend as native_backend
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 
@@ -95,7 +98,7 @@ def test_defaults_are_binary_rns_and_split(name, t, sharing):
     kg, pp = _setup(t=t)
     assert (tm.DEFAULT_CT_FORMAT, tm.DEFAULT_RING_MODULUS) == ("binary", "rns")
     assert pp["ct_format"] == "binary" and pp["sharing"] == sharing and kg.key_shares == "split"
-    assert len(pp["q_factors"]) >= tm.MIN_RNS_FACTORS and tm.binding_fields(pp)[-2:] == ("ct_format", "q_factors")
+    assert len(pp["q_factors"]) >= tm.MIN_RNS_FACTORS and threshold_binding.tmcfe_ring_lwe_binding_fields(pp)[-2:] == ("ct_format", "q_factors")
     creds = {"fusion_weight": WEIGHTS, "label": "r", "n_chunks": 2}
     dk = kg.get_decryption_keys("s0", credentials=creds)
     assert dk["part"] == "label" and "sk_y" not in dk
@@ -164,7 +167,7 @@ def test_parameter_records_of_both_moduli_coexist():
 def test_the_options_of_earlier_versions_keep_working():
     kg, pp = _setup(**LEGACY)
     assert "ct_format" not in pp and "q_factors" not in pp
-    assert tm.binding_fields(pp) == tm._BINDING_FIELDS
+    assert threshold_binding.tmcfe_ring_lwe_binding_fields(pp) == threshold_binding.TMCFE_RING_LWE_BINDING_FIELDS
     enc, _, parts = _round(kg, pp)
     assert "ct0" in enc["c0"][0]["chunks"][0] and isinstance(parts["s0"][0]["parts"][0]["w"], list)
     # their public parameters, ciphertexts and key shares sent as JSON (as stored by earlier versions)
@@ -182,7 +185,7 @@ def test_state_version_of_the_defaults():
     kg, pp = _setup()
     creds = {"fusion_weight": WEIGHTS, "label": "r"}
     issued = kg.get_decryption_keys("s0", credentials=creds)
-    assert tm._STATE_VERSION.endswith("2026-10-3")
+    assert threshold_binding.TMCFE_RING_LWE_STATE_VERSION.endswith("2026-10-3")
     state = dict(kg.__getstate__(), _state_version="pyfe4ai/tmcfe-ring-lwe/state/2026-10-2")
     state.pop("key_shares")
     with pytest.MonkeyPatch.context() as m:
@@ -272,7 +275,7 @@ def test_parts_of_other_generators_and_share_sets_are_refused():
 def test_i_b_a_label_part_is_never_issued_for_an_evicted_share_set(monkeypatch):
     """Another thread evicts the weights' sharing while their label part is
     made: the label part is made again for the new share set."""
-    monkeypatch.setattr(tm, "WEIGHT_SHARINGS_KEPT", 1)
+    monkeypatch.setattr(threshold_store, "WEIGHT_SHARINGS_KEPT", 1)
     kg, pp = _setup()
     other = {nid: [2] for nid in NIDS}
     real, calls = kg._label_part, []
@@ -302,7 +305,7 @@ def test_i_b_a_label_part_is_never_issued_for_an_evicted_share_set(monkeypatch):
 
 
 def test_i_b_an_eviction_during_every_attempt_is_an_error(monkeypatch):
-    monkeypatch.setattr(tm, "WEIGHT_SHARINGS_KEPT", 1)
+    monkeypatch.setattr(threshold_store, "WEIGHT_SHARINGS_KEPT", 1)
     kg, _ = _setup()
     real = kg._label_part
 
@@ -323,7 +326,7 @@ def test_i_b_concurrent_issuing_with_evictions(monkeypatch):
     sharing are of that sharing."""
     import concurrent.futures
 
-    monkeypatch.setattr(tm, "WEIGHT_SHARINGS_KEPT", 2)
+    monkeypatch.setattr(threshold_store, "WEIGHT_SHARINGS_KEPT", 2)
     kg, _ = _setup()
     weight_sets = [{nid: [k] for nid in NIDS} for k in range(1, 4)]
     made_sets = set()
@@ -355,7 +358,7 @@ def test_i_b_concurrent_issuing_with_evictions(monkeypatch):
 
 
 def test_i_c_label_parts_go_with_their_sharing(monkeypatch):
-    monkeypatch.setattr(tm, "WEIGHT_SHARINGS_KEPT", 1)
+    monkeypatch.setattr(threshold_store, "WEIGHT_SHARINGS_KEPT", 1)
     kg, _ = _setup()
     creds = {"fusion_weight": WEIGHTS, "label": "L", "n_chunks": 1}
     first = kg.get_decryption_keys("s0", credentials=creds)
@@ -375,7 +378,7 @@ def test_label_parts_of_the_last_labels_are_kept(monkeypatch):
     LABEL_PARTS_KEPT labels are kept (least recently used out); a label asked
     for again later gets a new sharing of its terms, with the same share set
     and noise key."""
-    monkeypatch.setattr(tm, "LABEL_PARTS_KEPT", 2)
+    monkeypatch.setattr(threshold_store, "LABEL_PARTS_KEPT", 2)
     kg, _ = _setup()
     creds = {lab: {"fusion_weight": WEIGHTS, "label": lab} for lab in ("L0", "L1", "L2", "L3")}
     first = kg.get_decryption_keys("s0", credentials=creds["L0"])
@@ -399,7 +402,7 @@ def test_sharing_ids_keep_two_sharings_of_a_label_apart(monkeypatch, name, ct_fo
     label's terms would decode to a wrong value inside the bound; every
     sharing has a sharing_id, which the partials carry, and combiners refuse
     a mix (MixedSharingsError) instead."""
-    monkeypatch.setattr(tm, "LABEL_PARTS_KEPT", 1)
+    monkeypatch.setattr(threshold_store, "LABEL_PARTS_KEPT", 1)
     kg, pp = _setup(t=t, ct_format=ct_format)
     creds = {"fusion_weight": WEIGHTS, "label": "L"}
     enrolled = SIDS[:t]
@@ -422,14 +425,14 @@ def test_sharing_ids_keep_two_sharings_of_a_label_apart(monkeypatch, name, ct_fo
         assert {p["sharing_id"] for p in parts1.values()} == {first[enrolled[0]]["sharing_id"]}
         assert comb.combine_decrypt(parts1) == right == comb.combine_decrypt(parts2)
         mixed = dict(parts1, **{enrolled[-1]: parts2[enrolled[-1]]})
-        with pytest.raises(tm.MixedSharingsError, match="fetch the label parts again from the key generator"):
+        with pytest.raises(threshold_binding.MixedSharingsError, match="fetch the label parts again from the key generator"):
             comb.combine_decrypt(mixed)
-        with pytest.raises(tm.MixedSharingsError):  # also among several enrolled sets
+        with pytest.raises(threshold_binding.MixedSharingsError):  # also among several enrolled sets
             comb.combine_decrypt([parts1, mixed])
         # partials without an id (of key shares of earlier versions) combine only among themselves
         bare = {sid: {k: v for k, v in p.items() if k != "sharing_id"} for sid, p in parts1.items()}
         assert comb.combine_decrypt(bare) == right
-        with pytest.raises(tm.MixedSharingsError):
+        with pytest.raises(threshold_binding.MixedSharingsError):
             comb.combine_decrypt(dict(bare, **{enrolled[-1]: parts1[enrolled[-1]]}))
         with pytest.raises(FESchemeError, match="sharing_id"):
             comb.combine_decrypt(dict(parts1, **{enrolled[-1]: dict(parts1[enrolled[-1]], sharing_id=5)}))
@@ -452,18 +455,23 @@ def test_whole_key_shares_carry_a_sharing_id_too():
 def test_i_d_exhausted_test_bytes_are_not_malformed_key_material(monkeypatch):
     kg, _ = _setup(t=3)  # Shamir: the native dealing
     polys = [[1] * 16, [2] * 16]
-    points = list(tm.share_points(SIDS).values())
+    points = list(threshold_sharing.share_points(SIDS).values())
+    ctx = tm._native_ring(kg.q, kg.ring_n)
+
+    def deal(polys, binary=False):
+        return threshold_sharing._share_polys_native(ctx, polys, kg.t, points, kg.lst_sid, kg.q, binary)
+
     monkeypatch.setattr(native_backend, "_random_override", lambda n: b"\x01" * 8)
     with pytest.raises(RuntimeError, match="test bytes ran out"):
-        kg._share_polys_native(polys, points)
+        deal(polys)
     monkeypatch.setattr(native_backend, "_random_override", None)
     width = (int(kg.q).bit_length() + 7) // 8
     with pytest.raises(FEKeyError, match="malformed key material"):  # binary words not below q
-        kg._share_polys_native([int(kg.q).to_bytes(width, "little") * 16], points, binary=True)
+        deal([int(kg.q).to_bytes(width, "little") * 16], binary=True)
     for bad in ([1.5] * 16, ["x"] * 16):
         with pytest.raises(FEKeyError, match="malformed key material"):
-            kg._share_polys_native([bad], points)
-    assert len(kg._share_polys_native(polys, points)) == 2
+            deal([bad])
+    assert len(deal(polys)) == 2
 
 
 def test_kl_accounting_with_split_key_shares():

@@ -66,7 +66,7 @@ than the ``sigma_f`` of one answer of multiplier 1: ``sqrt(10)`` for
 for ``s = 3, t = 2`` and 79 for ``s = 5, t = 3`` per enrolled set, and 9.1 and
 869 over all enrolled sets of one label. This is not a break, but the argument
 does not cover it. ``"replicated"`` (see
-:func:`~pyfe4ai.schemes.threshold.threshold_utils.share_replicated`) makes every ``M_k``
+:func:`~pyfe4ai.schemes.threshold.sharing.share_replicated`) makes every ``M_k``
 0 or 1, with one honest answer of multiplier 1 per enrolled set; the other
 answers are computable up to their own noise. ``sigma_f`` and ``q`` are
 unchanged. With ``t = s`` both are as described. An explicit ``"shamir"`` with
@@ -80,7 +80,7 @@ case (another flooding derivation, see
 parameters record ``threshold_construction`` and ``security_profile``, and
 servers refuse constructions they do not know.
 The opt-in ``"replicated-seeded"`` (see
-:func:`~pyfe4ai.schemes.threshold.threshold_utils.share_replicated_seeded`) deals the
+:func:`~pyfe4ai.schemes.threshold.sharing.share_replicated_seeded`) deals the
 same kind of pieces, all but one expanded from 32-byte seeds, with the
 partial decryptions of the replicated key share of the expanded pieces; the
 key shares hide ``sk_y`` computationally (SHAKE-256 keyed by the seeds as a
@@ -97,66 +97,52 @@ for threshold decryption, which gives a noise-to-modulus ratio of roughly
 
 from __future__ import annotations
 
-import json
 import logging
 import secrets
 
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.schemes.threshold.kl import PER_SAMPLE
-from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
-from pyfe4ai.schemes.mcfe.labels import encode_label
-from pyfe4ai.schemes.mcfe.lwe import MCFELWE
-from pyfe4ai.schemes.mcfe.lwe import MCFELWEKeyGenerator
-from pyfe4ai.schemes.mcfe.lwe import dot_mod
-from pyfe4ai.schemes.threshold.threshold_utils import check_fusion_weight
-from pyfe4ai.schemes.threshold.threshold_utils import check_pp_binding
-from pyfe4ai.schemes.threshold.threshold_utils import check_served_sharing
-from pyfe4ai.schemes.threshold.threshold_utils import pp_binding
-from pyfe4ai.schemes.threshold.threshold_utils import legacy_shamir_policy
-from pyfe4ai.schemes.threshold.threshold_utils import fusion_weight_id
-from pyfe4ai.schemes.threshold.threshold_utils import pieces_held
-from pyfe4ai.schemes.threshold.threshold_utils import seeded_pieces_held
-from pyfe4ai.schemes.threshold.threshold_utils import share_cache
-from pyfe4ai.schemes.threshold.threshold_utils import share_for_enrolled
-from pyfe4ai.schemes.threshold.threshold_utils import share_points
-from pyfe4ai.schemes.threshold.threshold_utils import share_replicated
-from pyfe4ai.schemes.threshold.threshold_utils import share_replicated_seeded
-from pyfe4ai.schemes.threshold.threshold_utils import share_secret
-from pyfe4ai.schemes.threshold.threshold_utils import validate_enrolled
-from pyfe4ai.schemes.threshold.threshold_utils import combine_consistently
-from pyfe4ai.schemes.threshold.threshold_utils import combine_elementwise
-from pyfe4ai.schemes.threshold.threshold_utils import validate_partial_decryptions
-from pyfe4ai.schemes.threshold.threshold_utils import resolve_sharing
-from pyfe4ai.schemes.threshold.threshold_utils import validate_threshold
 from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.primitives.hashing import LEGACY_LABEL_HASH
 from pyfe4ai.primitives.lattice.lwe_utils import GAUSSIAN_TAIL_CUT
-from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.primitives.sampling import XofRandom
 from pyfe4ai.primitives.sampling import (
     FLOODING_NOISE_VERSION,
     FLOODING_SAMPLER,
     check_flooding_version,
-    discrete_gaussian_bigint,
 )
+from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
+from pyfe4ai.schemes.mcfe.labels import encode_label
+from pyfe4ai.schemes.mcfe.lwe import MCFELWE
+from pyfe4ai.schemes.mcfe.lwe import MCFELWEKeyGenerator
+from pyfe4ai.schemes.mcfe.lwe import dot_mod
+from pyfe4ai.schemes.threshold.binding import TMCFE_LWE_BINDING_DEFAULTS
+from pyfe4ai.schemes.threshold.binding import TMCFE_LWE_BINDING_FIELDS
+from pyfe4ai.schemes.threshold.binding import TMCFE_LWE_CONSTRUCTIONS
+from pyfe4ai.schemes.threshold.binding import check_pp_binding
+from pyfe4ai.schemes.threshold.binding import fusion_weight_id
+from pyfe4ai.schemes.threshold.binding import pp_binding
+from pyfe4ai.schemes.threshold.kl import PER_SAMPLE
+from pyfe4ai.schemes.threshold.roles import check_key_share_server
+from pyfe4ai.schemes.threshold.roles import check_request
+from pyfe4ai.schemes.threshold.roles import combine_consistently
+from pyfe4ai.schemes.threshold.roles import combine_elementwise
+from pyfe4ai.schemes.threshold.roles import enrolled_share_options
+from pyfe4ai.schemes.threshold.roles import flooding_noise
+from pyfe4ai.schemes.threshold.roles import legacy_shamir_policy
+from pyfe4ai.schemes.threshold.roles import noise_seed
+from pyfe4ai.schemes.threshold.roles import validate_enrolled
+from pyfe4ai.schemes.threshold.roles import validate_partial_decryptions
+from pyfe4ai.schemes.threshold.sharing import deal_replicated
+from pyfe4ai.schemes.threshold.sharing import resolve_sharing
+from pyfe4ai.schemes.threshold.sharing import share_for_enrolled
+from pyfe4ai.schemes.threshold.sharing import share_points
+from pyfe4ai.schemes.threshold.sharing import share_secret
+from pyfe4ai.schemes.threshold.sharing import validate_threshold
 
 logger = logging.getLogger(__name__)
-
-# recorded in the public parameters (those of versions <= 0.3.0 have none)
-_CONSTRUCTION = "abmpsw20-shamir-flooding/v1"
-_CONSTRUCTION_REPLICATED = "abmpsw20-replicated-flooding/v1"
-_CONSTRUCTION_REPLICATED_SEEDED = "abmpsw20-replicated-seeded-flooding/v1"
-_CONSTRUCTIONS = {_CONSTRUCTION: "shamir", _CONSTRUCTION_REPLICATED: "replicated",
-                  _CONSTRUCTION_REPLICATED_SEEDED: "replicated-seeded"}
-#: Public-parameter fields a key share is bound to (see
-#: :func:`~pyfe4ai.schemes.threshold.threshold_utils.pp_binding`), the label hash among
-#: them: one key share answering a label under two label hashes with the same
-#: noise would give ``w_A - w_B = lambda <share, H_A(l) - H_B(l)>`` exactly.
-_BINDING_FIELDS = ("q", "q0", "K", "delta", "n0", "m0", "s", "t", "lst_sid", "sigma_f", "label_hash")
-_BINDING_DEFAULTS = {"label_hash": LEGACY_LABEL_HASH}
-
 
 def _with_code(ct, code: int):
     """An ndarray element as a single ciphertext: with its layer's label-hash code."""
@@ -178,26 +164,6 @@ def flooding_sigma(params: dict, n_slots: int, bound_y: int, s: int) -> int:
     return int(budget // (s * GAUSSIAN_TAIL_CUT))
 
 
-def flooding_noise(sigma: int, rng=None) -> int:
-    """Sample ``e <- D_{Z, sigma}`` truncated to ``|e| <= 12 sigma``.
-
-    Uses the arbitrary-precision sampler: ``sigma`` is far wider than a
-    double's mantissa, and scaling a 53-bit normal by it would leave the low
-    bits of ``e`` deterministic.
-
-    Args:
-        sigma: Width.
-        rng: Bit source (default: OS CSPRNG). An
-            :class:`~pyfe4ai.primitives.sampling.XofRandom` makes the
-            sample a function of its seed.
-    """
-    bound = GAUSSIAN_TAIL_CUT * sigma
-    while True:
-        e = discrete_gaussian_bigint(sigma, 1, rng=rng, sampler=FLOODING_SAMPLER)[0]
-        if abs(e) <= bound:
-            return int(e)
-
-
 class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
     """Key generator for threshold ABMPSW20 LWE MCFE."""
 
@@ -212,7 +178,7 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
                 ``lst_sid`` and ``sharing`` (``"replicated"``, the default
                 for ``t < s``, ``"shamir"``, the default for ``t = s``, or
                 the opt-in ``"replicated-seeded"``; see
-                :func:`~pyfe4ai.schemes.threshold.threshold_utils.resolve_sharing`).
+                :func:`~pyfe4ai.schemes.threshold.sharing.resolve_sharing`).
                 ``flooding_accounting`` must be the default: the flooding
                 here is part of an LWE argument, not a statistical step that
                 a KL bound could account for.
@@ -245,7 +211,7 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
         """Sample the client keys and forget any previously shared keys."""
         super().setup()
         self.dict_dk = {}
-        self._binding = pp_binding(self.get_public_parameters(), _BINDING_FIELDS, _BINDING_DEFAULTS)
+        self._binding = pp_binding(self.get_public_parameters(), TMCFE_LWE_BINDING_FIELDS, TMCFE_LWE_BINDING_DEFAULTS)
 
     def get_public_parameters(self) -> dict:
         """Return the MCFE public parameters plus ``s``, ``t``, ``lst_sid``,
@@ -258,7 +224,7 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
                 "lst_sid": list(self.lst_sid),
                 "sigma_f": gp.digits(gp.mpz(self.sigma_f)),
                 "sharing": self.sharing,
-                "threshold_construction": {v: k for k, v in _CONSTRUCTIONS.items()}[self.sharing],
+                "threshold_construction": {v: k for k, v in TMCFE_LWE_CONSTRUCTIONS.items()}[self.sharing],
                 "security_profile": self.security_profile,
             }
         )
@@ -314,14 +280,14 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
         }
 
     def _share_key(self, sk_y: list) -> dict:
+        if self.sharing == "replicated":
+            held = deal_replicated({"sk_y": list(sk_y)}, self.sharing, self.t, self.lst_sid, self.q)
+            return {sid: (held[sid]["pieces"], secrets.token_hex(32)) for sid in self.lst_sid}
+        if self.sharing == "replicated-seeded":
+            held = deal_replicated({"sk_y": list(sk_y)}, self.sharing, self.t, self.lst_sid, self.q)
+            return {sid: (held[sid], secrets.token_hex(32)) for sid in self.lst_sid}
         sid_v = share_points(self.lst_sid)
         points = list(sid_v.values())
-        if self.sharing == "replicated":
-            pieces = share_replicated({"sk_y": list(sk_y)}, self.t, points, self.q)
-            return {sid: (pieces_held(pieces, sid_v[sid]), secrets.token_hex(32)) for sid in self.lst_sid}
-        if self.sharing == "replicated-seeded":
-            sharing = share_replicated_seeded({"sk_y": list(sk_y)}, self.t, points, self.q)
-            return {sid: (seeded_pieces_held(sharing, sid_v[sid]), secrets.token_hex(32)) for sid in self.lst_sid}
         shares = [share_secret(v, self.t, points, self.q) for v in sk_y]
         return {
             sid: ([sh[sid_v[sid]] for sh in shares], secrets.token_hex(32))
@@ -334,7 +300,7 @@ class ThresholdMCFELWE(MCFELWE):
 
     A server refuses Shamir key shares with ``t < s`` (versions <= 0.3.0)
     unless its config has ``legacy_shamir = "warn"`` (see
-    :data:`~pyfe4ai.schemes.threshold.threshold_utils.LEGACY_SHAMIR_POLICIES`).
+    :data:`~pyfe4ai.schemes.threshold.roles.LEGACY_SHAMIR_POLICIES`).
     """
 
     def __init__(self, config: dict, **kwargs) -> None:
@@ -364,37 +330,31 @@ class ThresholdMCFELWE(MCFELWE):
         if not dk or not ("sk_y" in dk or "pieces" in dk):
             raise FEKeyError("no decryption keys provided")
         check_flooding_version(dk)
-        if self.id not in dk["lst_sid"] or dk.get("sid") != self.id:
-            raise FESchemeError("the key share does not belong to server {}".format(self.id))
-        check_served_sharing(self.pp, dk, _CONSTRUCTIONS)
+        check_key_share_server(self.id, dk, self.pp, TMCFE_LWE_CONSTRUCTIONS)
         # the key share of the public parameters' label hash (shares without the
         # field: "shake256-wide", the hash of versions <= 0.3.0)
         if dk.get("label_hash", LEGACY_LABEL_HASH) != self.label_hash:
             raise FESchemeError("the key share was derived with another label hash than the public parameters")
-        binding = check_pp_binding(self.pp, dk, _BINDING_FIELDS, _BINDING_DEFAULTS)
+        binding = check_pp_binding(self.pp, dk, TMCFE_LWE_BINDING_FIELDS, TMCFE_LWE_BINDING_DEFAULTS)
         fusion_weight = credentials.get("fusion_weight")
         label = credentials.get("label")
         if fusion_weight is None or label is None:
             raise FEKeyError("need fusion_weight and label for threshold share decryption")
         encoded = encode_label(label)
-        validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
-        check_fusion_weight(dk, fusion_weight)
+        check_request(self.id, dk, lst_sid_enrolled, self.pp["t"], fusion_weight)
 
         # Shamir: (dk, lambda_k); replicated: the sum of the assigned pieces, 1
         share, multiplier, tag = _share or share_for_enrolled(
-            dk, self.id, lst_sid_enrolled, self.pp["t"], self.q, cache=share_cache(self),
-            legacy_shamir=self.legacy_shamir, profile=self.pp.get("security_profile"),
-        )
+            dk, self.id, lst_sid_enrolled, self.pp["t"], self.q, **enrolled_share_options(self))
         share_term = dot_mod([gp.mpz(v) for v in share["sk_y"]], self._hash_label(label), self.q)
         # the partial depends on the enrolled set only through the tag (lambda,
         # or the assigned pieces)
         # and with the digest of this server's public parameters (the key share's
         # pp_binding, checked above): under other parameters a request gets
         # another noise, never the same noise with another key term
-        context = json.dumps([encoded, tag, binding]).encode("utf-8")
         e_k = flooding_noise(
             int(self.pp["sigma_f"]),
-            rng=XofRandom(bytes.fromhex(dk["noise_key"]) + context),
+            rng=XofRandom(noise_seed(dk, encoded, tag, binding)),
         )
         w = (multiplier * share_term + e_k) % self.q
         return {
@@ -412,7 +372,7 @@ class ThresholdMCFELWE(MCFELWE):
             partials: ``{sid: share_decrypt(...)}`` for one enrolled set, or a
                 list of such mappings for several enrolled sets, whose results
                 must then agree (see
-                :func:`~pyfe4ai.schemes.threshold.threshold_utils.combine_consistently`:
+                :func:`~pyfe4ai.schemes.threshold.roles.combine_consistently`:
                 servers are assumed honest-but-curious, and only this
                 redundancy detects one that returns a wrong partial).
 
@@ -468,7 +428,8 @@ class ThresholdMCFELWE(MCFELWE):
         if dk and "pieces" in dk and self.id in dk.get("lst_sid", []):
             # the assigned pieces, added up once for all elements
             validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
-            share = share_for_enrolled(dk, self.id, lst_sid_enrolled, self.pp["t"], self.q, cache=share_cache(self))
+            share = share_for_enrolled(dk, self.id, lst_sid_enrolled, self.pp["t"], self.q,
+                                       **enrolled_share_options(self))
         lst_partial = []
         for l in range(len(sample)):
             ary_partial = np.empty(sample[l].shape, dtype=object)

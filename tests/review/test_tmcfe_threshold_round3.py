@@ -26,8 +26,8 @@ import threading
 
 import pytest
 
-from pyfe4ai.schemes.threshold import threshold_utils as tu
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
+from pyfe4ai.schemes.threshold import store as threshold_store
 from pyfe4ai import backend as native_backend
 
 NIDS, SIDS = ["c0", "c1", "c2"], ["s0", "s1", "s2"]
@@ -66,7 +66,7 @@ def test_i8_rns_moduli_up_to_248_bits_run_natively():
 
 @pytest.mark.skipif(not hasattr(os, "fork") or sys.platform == "win32", reason="needs fork")
 @pytest.mark.filterwarnings("ignore::DeprecationWarning")  # fork() of a process with threads: the point here
-@pytest.mark.parametrize("where,name", [(tm, "_STORE_LOCK"), (tu, "_SHARE_CACHE_LOCK"),
+@pytest.mark.parametrize("where,name", [(threshold_store, "_STORE_LOCK"), (threshold_store, "_SHARE_CACHE_LOCK"),
                                         (native_backend, "_contexts_lock")])
 def test_n1_module_locks_are_new_in_a_forked_child(where, name):
     held, release = threading.Event(), threading.Event()

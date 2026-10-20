@@ -18,10 +18,12 @@ import gmpy2 as gp
 import numpy as np
 import pytest
 
-from pyfe4ai.schemes.threshold import threshold_utils
+from pyfe4ai.schemes.threshold import sharing as threshold_sharing
 from pyfe4ai.schemes.mcfe import ring_lwe as mcfe_rlwe
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
-from pyfe4ai.schemes.threshold.threshold_utils import pp_binding
+from pyfe4ai.schemes.threshold import binding as threshold_binding
+from pyfe4ai.schemes.threshold import sharing as threshold_sharing
+from pyfe4ai.schemes.threshold.binding import pp_binding
 from pyfe4ai import backend as native_backend
 from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
 from pyfe4ai.primitives import sampling as sampling_utils
@@ -151,12 +153,12 @@ def test_parameters_records_and_binding():
     third, pp3 = _setup()  # nor the RNS configuration the prime record
     assert pp3["q"] == pp["q"] and pp3["q_factors"] == pp["q_factors"]
     # q_factors is bound to the key shares; the digests of prime parameters are unchanged
-    assert tm.binding_fields(pp) == tm._BINDING_FIELDS + ("q_factors",) and tm.binding_fields(ppp) == tm._BINDING_FIELDS
-    assert kg._binding == pp_binding(pp, tm._BINDING_FIELDS + ("q_factors",), tm._BINDING_DEFAULTS)
+    assert threshold_binding.tmcfe_ring_lwe_binding_fields(pp) == threshold_binding.TMCFE_RING_LWE_BINDING_FIELDS + ("q_factors",) and threshold_binding.tmcfe_ring_lwe_binding_fields(ppp) == threshold_binding.TMCFE_RING_LWE_BINDING_FIELDS
+    assert kg._binding == pp_binding(pp, threshold_binding.TMCFE_RING_LWE_BINDING_FIELDS + ("q_factors",), threshold_binding.TMCFE_RING_LWE_BINDING_DEFAULTS)
     # s < min q_i is checked by key generators and servers
-    tm.check_rns_servers(3, factors)
+    threshold_sharing.check_rns_servers(3, factors)
     with pytest.raises(FEValidationError, match="factor"):
-        tm.check_rns_servers(5, [5, 7])
+        threshold_sharing.check_rns_servers(5, [5, 7])
     with pytest.raises(FEValidationError, match="factor"):
         _obj(dict(pp, s=min(factors)), "s0")
 
@@ -219,7 +221,7 @@ def test_encryption_and_key_shares_identical(stat_param, monkeypatch):
         key_py = mcfe_rlwe.MCFERingLWEKeyGenerator.get_decryption_keys(kg, "s0", credentials=creds)
     assert key == key_py
     py, nat = both(lambda: kg._share_key(key, "w"),
-                   lambda: monkeypatch.setattr(threshold_utils, "_CSPRNG", _BytesSystemRandom(ByteStream(6))),
+                   lambda: monkeypatch.setattr(threshold_sharing, "_CSPRNG", _BytesSystemRandom(ByteStream(6))),
                    lambda: monkeypatch.setattr(native_backend, "_random_override", ByteStream(6).take))
     for shares in (py, nat):  # each sharing has its own random sharing_id (not drawn from the dealing's bytes)
         assert len({part.pop("sharing_id") for part in shares.values()}) == 1

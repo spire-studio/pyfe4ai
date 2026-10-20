@@ -8,7 +8,7 @@ from itertools import combinations
 import gmpy2 as gp
 import pytest
 
-from pyfe4ai.schemes.threshold import threshold_utils as tu
+from pyfe4ai.schemes.threshold import sharing as threshold_sharing
 from pyfe4ai.schemes.mcfe.lwe_threshold import ThresholdMCFELWE, ThresholdMCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWE, ThresholdMCFERingLWEKeyGenerator
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE, ThresholdMIFELWEKeyGenerator
@@ -42,10 +42,10 @@ def _deal(backend, material, t, points, q, seed=6):
     (by the extension, or by the Python code where the native backend leaves
     the values to it)."""
     with native_backend.backend(backend), pytest.MonkeyPatch.context() as mp:
-        mp.setattr(tu, "_CSPRNG", _BytesSystemRandom(ByteStream(seed)))
+        mp.setattr(threshold_sharing, "_CSPRNG", _BytesSystemRandom(ByteStream(seed)))
         if backend == "native":
             mp.setattr(native_backend, "_random_override", ByteStream(seed).take)
-        return tu.share_replicated(material, t, points, q)
+        return threshold_sharing.share_replicated(material, t, points, q)
 
 
 @pytest.mark.parametrize("q", MODULI, ids=lambda q: "%d-bit" % int(q).bit_length())
@@ -66,8 +66,8 @@ def test_dealing_with_the_drbg_reconstructs_and_differs():
     q = MODULI[2]
     material = _material(q)
     with native_backend.backend("native"):
-        a = tu.share_replicated(material, 2, [1, 2, 3], q)
-        b = tu.share_replicated(material, 2, [1, 2, 3], q)
+        a = threshold_sharing.share_replicated(material, 2, [1, 2, 3], q)
+        b = threshold_sharing.share_replicated(material, 2, [1, 2, 3], q)
     assert a[(1,)]["sk_y"]["c0"] != b[(1,)]["sk_y"]["c0"]
     for pieces in (a, b):
         got = [sum(gp.mpz(p["sk_y"]["c0"][i]) for p in pieces.values()) % q for i in range(4)]
@@ -84,11 +84,11 @@ def test_seeded_drbg_dealing_reads_stream_zero_in_order(monkeypatch):
     seed = bytes(range(32))
     stream = native_backend.ext().drbg_bytes(seed, 0, 1 << 16)
     with native_backend.backend("python"), pytest.MonkeyPatch.context() as mp:
-        mp.setattr(tu, "_CSPRNG", _BytesSystemRandom(FixedBytes(stream)))
-        py = tu.share_replicated(material, 3, [1, 2, 3, 4], q)
+        mp.setattr(threshold_sharing, "_CSPRNG", _BytesSystemRandom(FixedBytes(stream)))
+        py = threshold_sharing.share_replicated(material, 3, [1, 2, 3, 4], q)
     monkeypatch.setattr(native_backend, "_seed_override", seed)
     with native_backend.backend("native"):
-        assert _items(tu.share_replicated(material, 3, [1, 2, 3, 4], q)) == _items(py)
+        assert _items(threshold_sharing.share_replicated(material, 3, [1, 2, 3, 4], q)) == _items(py)
 
 
 def test_dealing_refuses_short_test_bytes(monkeypatch):
@@ -96,7 +96,7 @@ def test_dealing_refuses_short_test_bytes(monkeypatch):
     with native_backend.backend("native"):
         monkeypatch.setattr(native_backend, "_random_override", lambda n: b"\x00" * 7)
         with pytest.raises(RuntimeError, match="the 7 test bytes ran out"):
-            tu.share_replicated({"z": [1, 2, 3]}, 2, [1, 2, 3], q)
+            threshold_sharing.share_replicated({"z": [1, 2, 3]}, 2, [1, 2, 3], q)
 
 
 @pytest.mark.parametrize("bits", [61, 100, 252])
@@ -111,11 +111,11 @@ def test_moduli_just_above_a_power_of_two_deal_from_the_same_bytes(bits):
     for seed in range(400):
         data = random.Random(seed).randbytes(1 << 14)
         with native_backend.backend("python"), pytest.MonkeyPatch.context() as mp:
-            mp.setattr(tu, "_CSPRNG", _BytesSystemRandom(FixedBytes(data)))
-            py = tu.share_replicated({"z": 5}, 2, [1, 2], q)
+            mp.setattr(threshold_sharing, "_CSPRNG", _BytesSystemRandom(FixedBytes(data)))
+            py = threshold_sharing.share_replicated({"z": 5}, 2, [1, 2], q)
         with native_backend.backend("native"), pytest.MonkeyPatch.context() as mp:
             mp.setattr(native_backend, "_random_override", FixedBytes(data).take)
-            assert _items(tu.share_replicated({"z": 5}, 2, [1, 2], q)) == _items(py)
+            assert _items(threshold_sharing.share_replicated({"z": 5}, 2, [1, 2], q)) == _items(py)
 
 
 def test_the_test_hooks_are_unset_in_use():
@@ -133,7 +133,7 @@ def test_other_values_are_left_to_the_python_code(value):
     q = MODULI[1]
     material = {"z": [1, value]}
     with native_backend.backend("native"):
-        declined = tu._share_replicated_native(material, tu.replicated_sets([1, 2, 3], 2), q) is None
+        declined = threshold_sharing._share_replicated_native(material, threshold_sharing.replicated_sets([1, 2, 3], 2), q) is None
     assert declined == (value != "-4")
     try:
         py = _deal("python", material, 2, [1, 2, 3], q)
@@ -153,12 +153,12 @@ def test_share_for_enrolled_sums_as_the_python_code(native_calls, q, s, t, seede
     material = {"sk_y": {"a": [1, 2, 3], 7: ["4", 5, 6]}, "z": 8, "z_chunks": [[9, 10], [11, 12]]}
     with native_backend.backend("python"):
         if seeded:
-            sharing = tu.share_replicated_seeded(material, t, points, q)
+            sharing = threshold_sharing.share_replicated_seeded(material, t, points, q)
         else:
-            pieces = tu.share_replicated(material, t, points, q)
+            pieces = threshold_sharing.share_replicated(material, t, points, q)
     dks = {}
     for k, sid in enumerate(sids, 1):
-        held = tu.seeded_pieces_held(sharing, k) if seeded else {"pieces": tu.pieces_held(pieces, k)}
+        held = threshold_sharing.seeded_pieces_held(sharing, k) if seeded else {"pieces": threshold_sharing.pieces_held(pieces, k)}
         dks[sid] = {"sharing": "replicated-seeded" if seeded else "replicated", "lst_sid": sids, **held}
     for transport in (lambda o: o, lambda o: json.loads(json.dumps(o))):
         for size in range(t, s + 1):
@@ -168,9 +168,9 @@ def test_share_for_enrolled_sums_as_the_python_code(native_calls, q, s, t, seede
                     dk = transport(dks[sid])
                     for fields in (None, ("sk_y", "z")):
                         with native_backend.backend("python"):
-                            py = tu.share_for_enrolled(dk, sid, list(enrolled), t, q, fields=fields)
+                            py = threshold_sharing.share_for_enrolled(dk, sid, list(enrolled), t, q, fields=fields)
                         with native_backend.backend("native"):
-                            nat = tu.share_for_enrolled(dk, sid, list(enrolled), t, q, fields=fields)
+                            nat = threshold_sharing.share_for_enrolled(dk, sid, list(enrolled), t, q, fields=fields)
                         assert json.dumps(nat, default=str) == json.dumps(py, default=str)
                     total += gp.mpz(nat[0]["z"])
                 assert total % q == 8
@@ -180,12 +180,12 @@ def test_share_for_enrolled_sums_as_the_python_code(native_calls, q, s, t, seede
 def test_sums_of_other_layouts_or_values_are_the_python_codes():
     q = MODULI[0]
     template = {"z": [1, 2], "y": 3}
-    assert tu._sum_pieces_native(template, [{"z": [1, 2], "y": 3}, {"z": [1], "y": 3}], q) is None
-    assert tu._sum_pieces_native(template, [{"z": [1, 2], "x": 3}], q) is None
-    assert tu._sum_pieces_native(template, [{"z": [1, 2.5], "y": 3}], q) is None
+    assert threshold_sharing._sum_pieces_native(template, [{"z": [1, 2], "y": 3}, {"z": [1], "y": 3}], q) is None
+    assert threshold_sharing._sum_pieces_native(template, [{"z": [1, 2], "x": 3}], q) is None
+    assert threshold_sharing._sum_pieces_native(template, [{"z": [1, 2.5], "y": 3}], q) is None
     with native_backend.backend("native"):
-        assert tu._sum_pieces_native(template, [{"y": 4, "z": ["1", 2]}, template], q) == {"z": ["2", "4"], "y": "7"}
-        assert tu._sum_pieces_native(template, [], q) is None
+        assert threshold_sharing._sum_pieces_native(template, [{"y": 4, "z": ["1", 2]}, template], q) == {"z": ["2", "4"], "y": "7"}
+        assert threshold_sharing._sum_pieces_native(template, [], q) is None
 
 
 # ------------------------------------------------------------------ layers
@@ -256,7 +256,7 @@ def test_layer_key_shares_dealt_from_the_same_bytes_are_the_python_ones(kind):
         kg.dict_dk = {}
         with native_backend.backend(backend), pytest.MonkeyPatch.context() as mp:
             if backend == "python":
-                mp.setattr(tu, "_CSPRNG", _BytesSystemRandom(ByteStream(9)))
+                mp.setattr(threshold_sharing, "_CSPRNG", _BytesSystemRandom(ByteStream(9)))
             else:
                 mp.setattr(native_backend, "_random_override", ByteStream(9).take)
             out[backend] = {sid: kg.get_decryption_keys(sid, credentials=cred)["pieces"] for sid in sids}

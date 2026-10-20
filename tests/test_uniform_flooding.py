@@ -19,6 +19,7 @@ import os
 import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
+from pyfe4ai.schemes.threshold import roles as threshold_roles
 from pyfe4ai import backend as native_backend
 from pyfe4ai.core.exceptions import FEValidationError
 
@@ -45,26 +46,26 @@ def _spec(bits: int, n: int, seed: bytes) -> list:
 @pytest.mark.parametrize("bits", [1, 7, 8, 63, 64, 200, 201])
 def test_uniform_poly_follows_specification(bits):
     seed = bytes(range(40))
-    got = tm.uniform_flooding_poly(bits, 300, seed)
+    got = threshold_roles.uniform_flooding_poly(bits, 300, seed)
     assert got == _spec(bits, 300, seed)
     assert all(-2 ** bits <= e < 2 ** bits for e in got)
-    assert got != tm.uniform_flooding_poly(bits, 300, seed[:-1] + b"\xff")
-    assert tm.uniform_flooding_poly(bits, 50, seed) == got[:50]
+    assert got != threshold_roles.uniform_flooding_poly(bits, 300, seed[:-1] + b"\xff")
+    assert threshold_roles.uniform_flooding_poly(bits, 50, seed) == got[:50]
 
 
 def test_uniform_poly_known_answer():
-    vals = tm.uniform_flooding_poly(201, 64, b"kat-seed")
+    vals = threshold_roles.uniform_flooding_poly(201, 64, b"kat-seed")
     assert hashlib.sha256(",".join(map(str, vals)).encode()).hexdigest() == "4852f436f1e11bb3145a6efed71a633b7c264e15cc57a1b44003083ba116a647"
 
 
 def test_uniform_poly_is_uniform():
     """Chi-square over the 2^5 values of bits = 4 (p about 1e-6), and the
     mean and variance of a wide one."""
-    vals = np.array(tm.uniform_flooding_poly(4, 32 * 2000, b"chi"))
+    vals = np.array(threshold_roles.uniform_flooding_poly(4, 32 * 2000, b"chi"))
     counts = np.bincount(vals + 16, minlength=32)
     chi2 = float(((counts - 2000) ** 2 / 2000).sum())
     assert counts.size == 32 and chi2 < 31 + 5 * (2 * 31) ** 0.5 + 20
-    wide = np.array(tm.uniform_flooding_poly(60, 20000, b"wide"), dtype=float) / 2.0 ** 60
+    wide = np.array(threshold_roles.uniform_flooding_poly(60, 20000, b"wide"), dtype=float) / 2.0 ** 60
     assert abs(wide.mean()) < 0.02 and abs(wide.var() - 1 / 3) < 0.02
 
 
@@ -154,7 +155,7 @@ def test_noise_is_the_seeded_uniform_polynomial():
     default) draw the first k values of each chunk (16 and 4 of 20)."""
     kg, pp = _kg("uniform", ring_n=16, stat_param=40)
     calls = []
-    real = tm.uniform_flooding_poly
+    real = threshold_roles.uniform_flooding_poly
 
     def spy(bits, n, seed):
         calls.append((bits, n))
@@ -163,7 +164,7 @@ def test_noise_is_the_seeded_uniform_polynomial():
     import unittest.mock as mock
 
     with mock.patch.object(tm, "uniform_flooding_poly", spy), \
-            mock.patch.object(tm, "_flooding_poly", side_effect=AssertionError("Gaussian flooding used")):
+            mock.patch.object(tm, "flooding_poly", side_effect=AssertionError("Gaussian flooding used")):
         _round(pp, kg, "python", ring_n=16, size=20)
     assert calls and set(calls) == {(pp["flood_bits"], 16), (pp["flood_bits"], 4)}
 

@@ -32,7 +32,7 @@ import numpy as np
 
 from pyfe4ai.schemes.common.ec_ddh_base import ECDDHCryptoBase, ECDDHKeyGeneratorBase
 from pyfe4ai.core.base import decoded_layer
-from pyfe4ai.schemes.threshold.threshold_utils import check_fusion_weight, fusion_weight_id
+from pyfe4ai.schemes.threshold.binding import check_fusion_weight, fusion_weight_id
 from pyfe4ai.primitives.groups import ec_group as eg
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError

@@ -207,7 +207,7 @@ def test_a_client_cannot_redraw_the_noise_by_changing_ct0(json_config):
     """The key part depends on ct1 and the key term only."""
     from pyfe4ai.schemes.mcfe.labels import encode_label
     from pyfe4ai.schemes.mcfe.ring_lwe_threshold import _TAG_DOMAIN, _tag_payload
-    from pyfe4ai.schemes.threshold.threshold_utils import tag_ciphertext
+    from pyfe4ai.schemes.threshold.binding import tag_ciphertext
 
     dct_x = {nid: [[1, 2]] for nid in json_config["lst_nid"]}
     dct_y = {nid: [1] for nid in json_config["lst_nid"]}
@@ -263,7 +263,7 @@ def test_malformed_ciphertexts_are_refused(json_config):
     server, dk = _server(kg, pp, "sid_0", credentials)
     from pyfe4ai.schemes.mcfe.labels import encode_label
     from pyfe4ai.schemes.mcfe.ring_lwe_threshold import _TAG_DOMAIN, _tag_payload
-    from pyfe4ai.schemes.threshold.threshold_utils import tag_ciphertext
+    from pyfe4ai.schemes.threshold.binding import tag_ciphertext
 
     mac_keys = kg.get_private_keys("nid_0")["mac_keys"]
     first = dct_ct["nid_0"]

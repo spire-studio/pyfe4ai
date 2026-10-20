@@ -15,7 +15,9 @@ import gmpy2 as gp
 import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tmcfe
+from pyfe4ai.schemes.threshold import roles as threshold_roles
 from pyfe4ai.schemes.mife import lwe_threshold as tmife
+from pyfe4ai.schemes.threshold import roles as threshold_roles
 from pyfe4ai import backend as native_backend
 from pyfe4ai.primitives import sampling as su
 from tests.test_native_backend import ByteStream
@@ -270,9 +272,9 @@ def test_undecided_samples_take_the_reference_formula(name, spy, monkeypatch):
 
 def test_scheme_flooding_noise_identical():
     sigma_m, sigma_c = WIDTHS["tmife_std"], WIDTHS["tmcfe_std"]
-    py, nat = _both(lambda: [tmife._flooding_noise(sigma_m, su.XofRandom(b"k" * 32 + bytes([i]))) for i in range(40)])
+    py, nat = _both(lambda: [threshold_roles.flooding_noise(sigma_m, su.XofRandom(b"k" * 32 + bytes([i]))) for i in range(40)])
     assert py == nat
-    py, nat = _both(lambda: tmcfe._flooding_poly(sigma_c, 256, su.XofRandom(b"c" * 32)))
+    py, nat = _both(lambda: threshold_roles.flooding_poly(sigma_c, 256, su.XofRandom(b"c" * 32)))
     assert py == nat
 
 

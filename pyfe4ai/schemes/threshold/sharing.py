@@ -1,5 +1,7 @@
 """
-Shared threshold secret-sharing utilities for threshold FE schemes.
+Key sharing of the threshold schemes: Shamir, replicated and seed-expanded
+replicated sharings, their dealing and the sums a server adds up for an
+enrolled set.
 
 Provides polynomial evaluation, Shamir secret sharing, Lagrange
 interpolation and modular centering used identically by both the
@@ -31,32 +33,34 @@ and at most one full piece; the pieces, and the partial decryptions, are
 those of a replicated sharing, but the key shares hide the key only
 computationally (SHAKE-256 keyed by the seeds as a pseudo-random function).
 
-Trust model of every threshold scheme: decryption servers are
-honest-but-curious. Fewer than ``t`` of them learn nothing beyond the result,
-but nothing proves a partial decryption correct, so a server that deviates
-can change the result undetected -- unless the combiner asks for partial
-decryptions for several enrolled sets and :func:`combine_consistently`
-compares them.
+The encodings of the key material (value lists or binary words) are in
+:mod:`pyfe4ai.schemes.threshold.codec`, the caches of the sums for an
+enrolled set in :mod:`pyfe4ai.schemes.threshold.store`.
 """
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import itertools
 import json
-import os
 import random
 import secrets
-import threading
 import warnings
-from collections import OrderedDict
 
 import gmpy2 as gp
-import numpy as np
 
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FESecurityWarning, FEValidationError
-from pyfe4ai._validation import int_vector
+from pyfe4ai.schemes.threshold import store
+from pyfe4ai.schemes.threshold.codec import _bytes_layout
+from pyfe4ai.schemes.threshold.codec import _bytes_leaves
+from pyfe4ai.schemes.threshold.codec import _has_bytes
+from pyfe4ai.schemes.threshold.codec import _map_bytes
+from pyfe4ai.schemes.threshold.codec import _poly_values
+from pyfe4ai.schemes.threshold.codec import _unflatten_bytes
+from pyfe4ai.schemes.threshold.codec import _value_bytes
+from pyfe4ai.schemes.threshold.codec import binary_material
+from pyfe4ai.schemes.threshold.codec import poly_kinds
+from pyfe4ai.schemes.threshold.codec import strict_mpz
+from pyfe4ai.schemes.threshold.codec import uniform_material
 
 _CSPRNG = random.SystemRandom()
 
@@ -133,6 +137,61 @@ def lagrange_at_zero(shares: dict[int, gp.mpz], modulus: gp.mpz) -> gp.mpz:
         lagrange = lagrange_coefficient_at_zero(x_j, xs, modulus)
         result = (result + gp.mpz(shares[x_j]) * lagrange) % modulus
     return result
+
+
+def center_mod(value: gp.mpz, modulus: gp.mpz) -> gp.mpz:
+    """Center *value* into the range ``(-modulus/2, modulus/2]``.
+
+    Args:
+        value: Input value.
+        modulus: Modulus for the arithmetic operation.
+    """
+    value %= modulus
+    half = modulus // 2
+    if value > half:
+        value -= modulus
+    return value
+
+
+def share_points(lst_sid: list[str]) -> dict[str, int]:
+    """Map each decryption server to its Shamir evaluation point.
+
+    Points start at 1: the polynomial value at 0 is the shared secret itself,
+    so no server may ever hold the share at x = 0.
+
+    Args:
+        lst_sid: Ordered list of all decryption-server identifiers.
+    """
+    return {sid: idx + 1 for idx, sid in enumerate(lst_sid)}
+
+
+def validate_threshold(threshold: int, lst_sid: list[str]) -> None:
+    """Reject repeated server ids and thresholds outside ``1 <= t <= s`` (or ``bool``).
+
+    Args:
+        threshold: Minimum number of shares needed for reconstruction.
+        lst_sid: Ordered list of all decryption-server identifiers.
+    """
+    if len(set(lst_sid)) != len(lst_sid):
+        raise FEValidationError("lst_sid contains duplicate server ids")
+    if isinstance(threshold, bool) or not isinstance(threshold, int) or not 1 <= threshold <= len(lst_sid):
+        raise FEValidationError(
+            "invalid threshold t={} for s={} decryption servers".format(
+                threshold, len(lst_sid)
+            )
+        )
+
+
+def check_rns_servers(s, factors) -> None:
+    """Raise unless every factor of an RNS modulus exceeds the number of servers
+    *s*: Shamir sharing over ``Z_q = prod F_{q_i}`` (CRT) needs the points
+    ``1..s`` and their differences to be units mod every factor.
+
+    Raises:
+        FEValidationError: If ``s >= min q_i``.
+    """
+    if factors and int(s) >= min(int(f) for f in factors):
+        raise FEValidationError("an RNS modulus needs every factor above the number of servers s = {}".format(s))
 
 
 #: Ways the LWE / Ring-LWE threshold layers share a functional key (config
@@ -276,53 +335,6 @@ def _unflatten(layout, flat: list):
     return out
 
 
-def _value_bytes(modulus) -> int:
-    return (int(modulus).bit_length() + 7) // 8
-
-
-def _unflatten_bytes(layout, blob: bytes, wb: int):
-    """*blob* (the values of :func:`_flatten_like` as ``wb``-byte words) in the
-    structure of *layout*, every list of values (or single value) one bytes
-    object."""
-    pos = 0
-
-    def build(node):
-        nonlocal pos
-        if isinstance(node, dict):
-            return {key: build(value) for key, value in node.items()}
-        if isinstance(node, list):
-            return [build(value) for value in node]
-        if node == 0:  # an empty list (no chunk keys) stays a list
-            return []
-        count = 1 if node is None else node
-        pos += count * wb
-        return blob[pos - count * wb:pos]
-
-    out = build(layout)
-    if pos != len(blob):
-        raise FESchemeError("key pieces of different layouts")
-    return out
-
-
-def _map_polys(material, f):
-    """*material* with every list of values (a polynomial) or bytes leaf replaced by ``f(leaf)``."""
-    if isinstance(material, dict):
-        return {key: _map_polys(value, f) for key, value in material.items()}
-    if isinstance(material, (list, tuple)) and (not material or any(isinstance(v, (dict, list, tuple)) for v in material)):
-        return [_map_polys(value, f) for value in material]
-    return f(material)
-
-
-def binary_material(material, modulus):
-    """*material* (nested dicts and lists of values) with every polynomial as
-    ``ceil(bits(q) / 8)``-byte little-endian words (values reduced mod q):
-    the binary key shares of the threshold Ring-LWE MCFE."""
-    from pyfe4ai.primitives.lattice.ring_lwe_utils import encode_values
-
-    q = int(modulus)
-    return _map_polys(material, lambda leaf: encode_values(leaf if isinstance(leaf, (list, tuple)) else [leaf], q))
-
-
 def _share_replicated_native(material, sets: list, modulus: gp.mpz, binary: bool = False):
     """:func:`share_replicated` by the extension -- the same pieces for the
     same random bytes: each random value drawn as
@@ -402,121 +414,8 @@ def _sum_pieces_native(template, pieces: list, modulus: gp.mpz):
         return None
 
 
-def _bytes_layout(material, width: int):
-    """The :func:`piece_layout` of binary key material (a bytes leaf: its
-    number of values), or ``None`` for leaves that are not whole words."""
-    if isinstance(material, (bytes, bytearray)):
-        return len(material) // width if len(material) % width == 0 else None
-    if isinstance(material, dict):
-        out = {key: _bytes_layout(value, width) for key, value in material.items()}
-        return None if any(v is None for v in out.values()) else out
-    if isinstance(material, (list, tuple)):
-        out = [_bytes_layout(value, width) for value in material]
-        return None if any(v is None for v in out) else out
-    return None
-
-
-def _map_bytes(material, f):
-    """*material* with every bytes leaf replaced by ``f(leaf)``."""
-    if isinstance(material, (bytes, bytearray)):
-        return f(material)
-    if isinstance(material, dict):
-        return {key: _map_bytes(value, f) for key, value in material.items()}
-    if isinstance(material, (list, tuple)):
-        return [_map_bytes(value, f) for value in material]
-    return material
-
-
-def _bytes_leaves(material):
-    """The bytes leaves of *material* in the order of :func:`_flatten_like`."""
-    if isinstance(material, (bytes, bytearray)):
-        yield bytes(material)
-    elif isinstance(material, dict):
-        for value in material.values():
-            yield from _bytes_leaves(value)
-    elif isinstance(material, (list, tuple)):
-        for value in material:
-            yield from _bytes_leaves(value)
-
-
-def strict_mpz(value):
-    """A key-share value as ``mpz``: an int, an ``mpz`` or a decimal string
-    (floats and other types are refused rather than truncated).
-
-    Raises:
-        FEKeyError: For any other value.
-    """
-    if isinstance(value, float) or not (isinstance(value, (int, str)) or type(value).__name__ == "mpz"):
-        raise FEKeyError("malformed key share: values are ints or decimal strings, not {}".format(type(value).__name__))
-    try:
-        return gp.mpz(value)
-    except (ValueError, TypeError) as exc:
-        raise FEKeyError("malformed key share value") from exc
-
-
-def poly_kinds(material) -> set:
-    """The kinds of the polynomials of key material: ``"bytes"`` (bytes or
-    bytearray), ``"values"`` (a list or tuple of values; only its first
-    element is looked at) and ``"other"`` (anything else, e.g. a
-    ``memoryview``). The walk is over polynomials, not values."""
-    if isinstance(material, (bytes, bytearray)):
-        return {"bytes"}
-    if isinstance(material, dict):
-        return set().union(*(poly_kinds(v) for v in material.values()))
-    if isinstance(material, (list, tuple)):
-        if not material:
-            return set()
-        if isinstance(material[0], (dict, list, tuple, bytes, bytearray, memoryview)):
-            return set().union(*(poly_kinds(v) for v in material))
-        return {"values"}
-    if isinstance(material, (int, str)) or type(material).__name__ == "mpz":
-        return {"values"}  # a single value
-    return {"other"}
-
-
-def uniform_material(material, modulus):
-    """*material* with polynomials of one kind: bytes polynomials decoded to
-    values when it mixes them with value lists (what the Python dealing reads
-    them as), else unchanged.
-
-    Raises:
-        FEKeyError: For polynomials that are neither (``"other"``) or malformed bytes.
-    """
-    kinds = poly_kinds(material)
-    if "other" in kinds:
-        raise FEKeyError("malformed key material: polynomials must be value lists or bytes")
-    if kinds != {"bytes", "values"}:
-        return material
-    from pyfe4ai.primitives.lattice.ring_lwe_utils import decode_values
-
-    width = _value_bytes(modulus)
-
-    def decode(leaf):
-        try:
-            return decode_values(leaf, modulus, len(leaf) // width)
-        except ValueError as exc:
-            raise FEKeyError("malformed binary key material") from exc
-
-    return _map_bytes(material, decode)
-
-
-def _has_bytes(material) -> bool:
-    """Whether *material* holds binary polynomials (its first leaf is bytes;
-    key material is of one kind throughout, and only the first path is
-    walked, not every value)."""
-    while True:
-        if isinstance(material, (bytes, bytearray)):
-            return True
-        if isinstance(material, dict) and material:
-            material = next(iter(material.values()))
-        elif isinstance(material, (list, tuple)) and material:
-            material = material[0]
-        else:
-            return False
-
-
 def _sum_binary_pieces(pieces: list, modulus: gp.mpz, skip_first: bool = False):
-    """The sum mod q of binary pieces (:func:`binary_material`), leaf by leaf,
+    """The sum mod q of binary pieces (:func:`~pyfe4ai.schemes.threshold.codec.binary_material`), leaf by leaf,
     as bytes: natively (``zq_sum``) where the extension is built, else in
     Python with the same values. With *skip_first* the first piece only gives
     the layout (the sum of the others; zeros if there are none).
@@ -577,7 +476,7 @@ def share_replicated(
     With the native backend the pieces are drawn and the correction computed
     by the extension, with the values of the Python code for the same random
     bytes (``_share_replicated_native``). With *binary* every
-    polynomial of a piece is bytes (:func:`binary_material`; the same values).
+    polynomial of a piece is bytes (:func:`~pyfe4ai.schemes.threshold.codec.binary_material`; the same values).
 
     Returns:
         ``{T: piece}`` for every index set ``T``.
@@ -625,6 +524,8 @@ def pieces_held(pieces: dict, point: int) -> list[dict]:
 #: Bytes of a seed of :func:`share_replicated_seeded` (256 bits: many seeds
 #: are dealt, and the LWE layers aim at post-quantum security).
 SEED_BYTES = 32
+
+
 _SEED_DOMAIN = "pyfe4ai/threshold/replicated-seeded/piece/v1"
 
 
@@ -846,6 +747,94 @@ def seeded_pieces_held(sharing: dict, point: int) -> dict:
     }
 
 
+def deal_replicated(material, sharing: str, threshold: int, lst_sid: list, modulus, binary: bool = False,
+                    ctx=None) -> dict:
+    """What each server stores of a replicated sharing of *material* among
+    *lst_sid* (points of :func:`share_points`): ``{sid: {"pieces": ...}}``
+    (:func:`share_replicated`, :func:`pieces_held`) for ``"replicated"``, or
+    ``{sid: {"pieces", "seeds", "layout"}}`` (:func:`share_replicated_seeded`,
+    :func:`seeded_pieces_held`) for ``"replicated-seeded"``. *binary* deals
+    binary pieces (``"replicated"``), *ctx* expands the seeded pieces natively
+    (``"replicated-seeded"``).
+
+    Raises:
+        FEValidationError: For another sharing.
+    """
+    sid_v = share_points(lst_sid)
+    points = list(sid_v.values())
+    if sharing == "replicated":
+        pieces = share_replicated(material, threshold, points, modulus, binary=binary)
+        return {sid: {"pieces": pieces_held(pieces, sid_v[sid])} for sid in lst_sid}
+    if sharing == "replicated-seeded":
+        dealt = share_replicated_seeded(material, threshold, points, modulus, ctx=ctx)
+        return {sid: seeded_pieces_held(dealt, sid_v[sid]) for sid in lst_sid}
+    raise FEValidationError("not a replicated sharing: {!r}".format(sharing))
+
+
+def share_polys(polys: list, threshold: int, lst_sid: list, modulus, ring_n: int, binary: bool = False,
+                ctx=None) -> list:
+    """Shamir shares of every coefficient of *polys* (``ring_n`` values or
+    ``ring_n`` binary words each) among *lst_sid* (points of
+    :func:`share_points`): ``[{sid: share polynomial}]``, as decimal strings,
+    or bytes with *binary*. With *ctx*, a native ring context of *modulus*,
+    in one native call (coefficients drawn as :func:`share_secret` draws
+    them, in the same order); else :func:`share_secret` per coefficient.
+
+    Raises:
+        FEKeyError: For malformed key material.
+    """
+    from pyfe4ai.primitives.lattice.ring_lwe_utils import encode_values
+
+    sid_v = share_points(lst_sid)
+    points = list(sid_v.values())
+    shared = None if ctx is None else _share_polys_native(ctx, polys, threshold, points, lst_sid, modulus, binary)
+    if shared is not None:
+        return shared
+
+    def share_poly(coeffs) -> dict:
+        shares = [share_secret(v, threshold, points, modulus) for v in _poly_values(coeffs, modulus, ring_n)]
+        if binary:
+            return {sid: encode_values([sh[sid_v[sid]] for sh in shares], modulus) for sid in lst_sid}
+        return {sid: [gp.digits(sh[sid_v[sid]]) for sh in shares] for sid in lst_sid}
+
+    return [share_poly(poly) for poly in polys]
+
+
+def _share_polys_native(ctx, polys: list, threshold: int, points: list, lst_sid: list, modulus,
+                        binary: bool = False) -> list:
+    """:func:`share_polys` in one native call of the extension's ``shamir_share``."""
+    from pyfe4ai import backend as native_backend
+
+    width = (int(modulus).bit_length() + 7) // 8
+    if all(isinstance(poly, (bytes, bytearray)) for poly in polys):  # binary key terms
+        flat = b"".join(polys)
+        polys = [range(len(poly) // width) for poly in polys]  # their lengths in values
+    elif any(isinstance(poly, (bytes, bytearray)) for poly in polys):
+        # bytes iterated as values would be other coefficients: the callers make the material uniform
+        raise FEKeyError("key material mixing binary and value polynomials")
+    else:
+        flat = [v for poly in polys for v in poly]
+    rnd = native_backend.random_input(4 * width * len(flat) * (threshold - 1) + 64)
+    try:
+        out = native_backend.ext().shamir_share(
+            ctx.cap, flat, threshold, points, rnd,
+            **native_backend.seed_kwargs(), **({"binary": True} if binary else {}),
+        )
+    except TypeError as exc:  # values that are not ints / decimal strings
+        raise FEKeyError("malformed key material") from exc
+    except ValueError as exc:
+        if rnd is not None and "not enough random bytes" in str(exc):  # a test's random bytes, not the key's
+            raise RuntimeError(
+                "native_backend.random_input: the {} test bytes ran out".format(len(rnd))) from exc
+        raise FEKeyError("malformed key material") from exc  # values not below q, misaligned words
+    unit = width if binary else 1
+    shared, start = [], 0
+    for poly in polys:
+        shared.append({sid: out[i][start * unit:(start + len(poly)) * unit] for i, sid in enumerate(lst_sid)})
+        start += len(poly)
+    return shared
+
+
 def replicated_assignment(
     x_k: int, xs: list[int], points: list[int], threshold: int
 ) -> list[tuple[int, ...]]:
@@ -856,121 +845,6 @@ def replicated_assignment(
     enrolled servers' sums add up to the secret, each piece counted once.
     """
     return [T for T in replicated_sets(points, threshold) if min(x for x in xs if x not in T) == x_k]
-
-
-#: Entries kept by a cache of :func:`share_for_enrolled` (per scheme object).
-SHARE_CACHE_SIZE = 16
-
-#: Guards the caches of :func:`share_for_enrolled` (lookups and evictions are
-#: several steps of an OrderedDict; the sums themselves run outside it).
-_SHARE_CACHE_LOCK = threading.Lock()
-
-
-def _reset_share_cache_lock() -> None:
-    global _SHARE_CACHE_LOCK
-    _SHARE_CACHE_LOCK = threading.Lock()  # a forked child: the parent's may be held by another thread
-
-
-if hasattr(os, "register_at_fork"):
-    os.register_at_fork(after_in_child=_reset_share_cache_lock)
-
-#: What a server does with a Shamir key share whose ``t < s`` (crypto config
-#: entry ``legacy_shamir``): ``"refuse"`` (default) or ``"warn"`` (serve it
-#: with an :class:`~pyfe4ai.core.exceptions.FESecurityWarning`). Key shares
-#: of versions <= 0.3.0 are refused before this applies (their flooding
-#: derivation, see :func:`~pyfe4ai.primitives.sampling.check_flooding_version`),
-#: so ``"warn"`` serves the explicit Shamir ``t < s`` shares of this version
-#: under ``toy``. There is deliberately no environment variable: the opt-out
-#: is per server object.
-LEGACY_SHAMIR_POLICIES = ("refuse", "warn")
-
-
-def legacy_shamir_policy(config: dict) -> str:
-    """The ``legacy_shamir`` entry of a server's crypto *config* (default ``"refuse"``)."""
-    policy = config.get("legacy_shamir")
-    if policy is None:
-        return "refuse"
-    if policy not in LEGACY_SHAMIR_POLICIES:
-        raise FEValidationError(
-            "legacy_shamir must be one of {}, not {!r}".format(LEGACY_SHAMIR_POLICIES, policy)
-        )
-    return policy
-
-
-#: Domain of :func:`pp_binding`.
-_PP_BINDING_DOMAIN = b"pyfe4ai/threshold/key-share-pp-binding/v1|"
-
-
-def pp_binding(pp: dict, fields: tuple, defaults: dict | None = None) -> str:
-    """Hex SHA-256 of the public-parameter *fields* a threshold key share is
-    bound to (canonical JSON of ``[[field, value], ...]``; a missing field takes
-    its value in *defaults* -- what its absence means, e.g. the label hash of
-    versions <= 0.3.0 -- else ``null``).
-
-    The key generator writes it into every key share (``pp_binding``) and a
-    server compares it with that of its own public parameters
-    (:func:`check_pp_binding`) before computing a partial decryption: one key
-    share answering a request under public parameters that differ in the
-    modulus, the flooding (distribution, width, tail cut, accounting and its
-    limit) or the label hash would give a second, differently derived answer
-    to the same request, and the difference of the two reveals key material
-    (with the label hash: ``lambda <share, H_A(l) - H_B(l)>`` exactly). The
-    sharing and the threshold construction are checked on their own
-    (:func:`check_served_sharing`).
-    """
-    defaults = defaults or {}
-    payload = json.dumps([[f, pp.get(f, defaults.get(f))] for f in fields], separators=(",", ":"), default=str)
-    return hashlib.sha256(_PP_BINDING_DOMAIN + payload.encode("utf-8")).hexdigest()
-
-
-def check_pp_binding(pp: dict, dk: dict, fields: tuple, defaults: dict | None = None) -> str:
-    """Raise unless key share *dk* was issued for public parameters with *pp*'s
-    values of *fields* (see :func:`pp_binding`); return *pp*'s digest.
-
-    The servers also seed their flooding noise with the returned digest -- that
-    of their own public parameters, equal to the key share's once checked -- so
-    that even if this check were bypassed, a request answered under other
-    public parameters would get another noise, not an exact difference.
-
-    Raises:
-        FEKeyError: For a key share of other public parameters, or one without
-            ``pp_binding`` (issue new key shares).
-    """
-    digest = pp_binding(pp, fields, defaults)
-    if not hmac.compare_digest(str(dk.get("pp_binding", "")), digest):
-        raise FEKeyError(
-            "the key share was issued for other public parameters (modulus, flooding or label hash): "
-            "issue new key shares"
-        )
-    return digest
-
-
-def check_served_sharing(pp: dict, dk: dict, constructions: dict) -> None:
-    """Raise unless key share *dk* is of the sharing that *pp* describes.
-
-    ``pp["sharing"]`` must match the key share (both default to
-    ``"shamir"``, the only sharing of versions <= 0.3.0). Public parameters
-    of this version record ``threshold_construction``; it must be one of
-    *constructions* (``{construction id: sharing}``) and name that sharing,
-    so that artifacts of another construction (a later version, say) are
-    refused rather than misread. Only Shamir public parameters may lack it
-    (those of versions <= 0.3.0); every version with the replicated sharing
-    records it, so replicated public parameters without it are refused.
-    """
-    sharing = dk.get("sharing", "shamir")
-    if pp.get("sharing", "shamir") != sharing:
-        raise FESchemeError("the key share is not of the sharing of the public parameters")
-    construction = pp.get("threshold_construction")
-    if construction is None and sharing != "shamir":
-        raise FESchemeError(
-            "public parameters of the {} sharing must record threshold_construction".format(sharing)
-        )
-    if construction is not None and constructions.get(construction) != sharing:
-        raise FESchemeError(
-            "unknown threshold construction {!r} for a {} key share; known: {}".format(
-                construction, sharing, sorted(constructions)
-            )
-        )
 
 
 def share_for_enrolled(
@@ -996,7 +870,7 @@ def share_for_enrolled(
 
     Args:
         cache: An :class:`~collections.OrderedDict` that keeps the sums of
-            the last :data:`SHARE_CACHE_SIZE` key shares and assignments,
+            the last :data:`~pyfe4ai.schemes.threshold.store.SHARE_CACHE_SIZE` key shares and assignments,
             for key shares that are not modified once handed in (they are
             told apart by identity). The returned share must not be modified.
         ring_n: The ring dimension of a Ring-LWE layer; the native sums
@@ -1004,7 +878,7 @@ def share_for_enrolled(
             a native ring context of the modulus where there is one.
 
         legacy_shamir: ``"refuse"`` or ``"warn"`` (see
-            :data:`LEGACY_SHAMIR_POLICIES`).
+            :data:`~pyfe4ai.schemes.threshold.roles.LEGACY_SHAMIR_POLICIES`).
         profile: ``security_profile`` recorded in the public parameters
             (``None`` for those of versions <= 0.3.0).
 
@@ -1037,11 +911,9 @@ def share_for_enrolled(
     fields = None if fields is None else tuple(fields)
     key = (id(dk), id(dk["pieces"]), tuple(assigned), fields)
     if cache is not None:
-        with _SHARE_CACHE_LOCK:  # get and move_to_end at once (threads share a server object)
-            hit = cache.get(key)
-            if hit is not None and hit[0] is dk:
-                cache.move_to_end(key)
-                return hit[1]
+        hit = store.cached_share(cache, key, dk)
+        if hit is not None:
+            return hit
     held = {tuple(piece["set"]): piece["share"] for piece in dk["pieces"]}
     seeded = dk.get("sharing") == "replicated-seeded"
     if not seeded and "seeds" in dk:
@@ -1092,344 +964,5 @@ def share_for_enrolled(
     share.update(summed)
     out = share, gp.mpz(1), json.dumps(["replicated", [list(T) for T in assigned]])
     if cache is not None:
-        with _SHARE_CACHE_LOCK:
-            cache[key] = (dk, out)  # dk kept alive: its id is not reused while cached
-            while len(cache) > SHARE_CACHE_SIZE:
-                cache.popitem(last=False)
+        store.keep_share(cache, key, dk, out)
     return out
-
-
-def share_cache(obj) -> OrderedDict:
-    """The :func:`share_for_enrolled` cache of scheme object *obj* (created on first use)."""
-    cache = getattr(obj, "_enrolled_share_cache", None)
-    if cache is None:
-        cache = obj._enrolled_share_cache = OrderedDict()
-    return cache
-
-
-def share_points(lst_sid: list[str]) -> dict[str, int]:
-    """Map each decryption server to its Shamir evaluation point.
-
-    Points start at 1: the polynomial value at 0 is the shared secret itself,
-    so no server may ever hold the share at x = 0.
-
-    Args:
-        lst_sid: Ordered list of all decryption-server identifiers.
-    """
-    return {sid: idx + 1 for idx, sid in enumerate(lst_sid)}
-
-
-def validate_threshold(threshold: int, lst_sid: list[str]) -> None:
-    """Reject repeated server ids and thresholds outside ``1 <= t <= s`` (or ``bool``).
-
-    Args:
-        threshold: Minimum number of shares needed for reconstruction.
-        lst_sid: Ordered list of all decryption-server identifiers.
-    """
-    if len(set(lst_sid)) != len(lst_sid):
-        raise FEValidationError("lst_sid contains duplicate server ids")
-    if isinstance(threshold, bool) or not isinstance(threshold, int) or not 1 <= threshold <= len(lst_sid):
-        raise FEValidationError(
-            "invalid threshold t={} for s={} decryption servers".format(
-                threshold, len(lst_sid)
-            )
-        )
-
-
-def validate_enrolled(
-    sid: str, lst_sid: list[str], lst_sid_enrolled: list[str], threshold: int
-) -> None:
-    """Check that *sid* may produce a partial decryption for *lst_sid_enrolled*.
-
-    Args:
-        sid: Identifier of the server producing the partial decryption.
-        lst_sid: Ordered list of all decryption-server identifiers.
-        lst_sid_enrolled: Servers whose shares will be combined.
-        threshold: Minimum number of shares needed for reconstruction.
-    """
-    if len(set(lst_sid_enrolled)) != len(lst_sid_enrolled):
-        raise FESchemeError(
-            "duplicate server ids in enrolled set: {}".format(lst_sid_enrolled)
-        )
-    unknown = [s for s in lst_sid_enrolled if s not in lst_sid]
-    if unknown:
-        raise FESchemeError("unknown server ids in enrolled set: {}".format(unknown))
-    if sid not in lst_sid_enrolled:
-        raise FESchemeError(
-            "server {} is not part of the enrolled set {}".format(
-                sid, lst_sid_enrolled
-            )
-        )
-    if len(lst_sid_enrolled) < threshold:
-        raise FESchemeError(
-            "insufficient threshold shares: {} enrolled, need at least t={}".format(
-                len(lst_sid_enrolled), threshold
-            )
-        )
-
-
-def validate_partial_decryptions(dict_ct_prime: dict, threshold: int) -> None:
-    """Check a set of partial decryptions before combining them.
-
-    Each partial decryption carries the server id that produced it and the
-    enrolled set its Lagrange coefficient was computed for; the contributors
-    must be exactly that enrolled set, each appearing once, and number at
-    least *threshold*.
-
-    Args:
-        dict_ct_prime: Mapping of server ids to partial decryptions.
-        threshold: Minimum number of shares needed for reconstruction.
-    """
-    if len(dict_ct_prime) < threshold:
-        raise FESchemeError(
-            "insufficient threshold shares for decryption: got {}, need at "
-            "least t={}".format(len(dict_ct_prime), threshold)
-        )
-    contributors = set()
-    enrolled = None
-    for ct_prime in dict_ct_prime.values():
-        if "sid" not in ct_prime or "lst_sid_enrolled" not in ct_prime:
-            raise FESchemeError(
-                "partial decryption is missing its server id / enrolled set"
-            )
-        if ct_prime["sid"] in contributors:
-            raise FESchemeError(
-                "duplicate partial decryption from {}".format(ct_prime["sid"])
-            )
-        contributors.add(ct_prime["sid"])
-        _enrolled = set(ct_prime["lst_sid_enrolled"])
-        if enrolled is None:
-            enrolled = _enrolled
-        elif enrolled != _enrolled:
-            raise FESchemeError(
-                "partial decryptions were computed for different enrolled sets"
-            )
-    if contributors != enrolled:
-        raise FESchemeError(
-            "partial decryptions from {} do not match the enrolled set {}".format(
-                sorted(contributors), sorted(enrolled)
-            )
-        )
-
-
-def partial_groups(partials) -> list:
-    """Partial decryptions as a list of groups ``{sid: partial}``, one per enrolled set.
-
-    Accepts one group (a mapping) or several (a list or tuple of mappings).
-    """
-    if isinstance(partials, dict):
-        return [partials]
-    if isinstance(partials, (list, tuple)) and partials and all(isinstance(g, dict) for g in partials):
-        return list(partials)
-    raise FESchemeError("expected a mapping of partial decryptions or a list of such mappings")
-
-
-def combine_consistently(partials, combine_group):
-    """Combine every group of partial decryptions and require a single result.
-
-    Servers are assumed honest-but-curious: nothing proves a partial
-    decryption correct, and one server can shift the result of every group it
-    belongs to. With more than ``t`` servers, partial decryptions for several
-    enrolled sets (a server answers once per set) detect such a server --
-    though not which one -- unless it is in every group: to detect any one
-    faulty server, leave every server out of some group, e.g. use the
-    ``t + 1`` subsets of size ``t`` of ``t + 1`` servers.
-
-    Args:
-        partials: ``{sid: partial}`` for one enrolled set, or a list of them.
-        combine_group: Function combining one group into a result.
-
-    Raises:
-        FESchemeError: If the groups give different results.
-    """
-    results = [combine_group(group) for group in partial_groups(partials)]
-    if any(result != results[0] for result in results[1:]):
-        raise FESchemeError(
-            "partial decryptions for different enrolled sets disagree: "
-            "a server is faulty or malicious"
-        )
-    return results[0]
-
-
-def combine_elementwise(dict_ndarray_ct, combine) -> list:
-    """Combine element-wise ndarray partial decryptions into object arrays.
-
-    Args:
-        dict_ndarray_ct: ``{sid: [array per layer]}`` for one enrolled set, or
-            a list of them (see :func:`partial_groups`).
-        combine: ``combine(groups, layer, index)``, combining the partials of
-            one element (a list of ``{sid: partial}``).
-
-    Raises:
-        FESchemeError: If the servers' outputs differ in structure or an
-            element does not decrypt (servers disagree, or out of range).
-    """
-    groups = partial_groups(dict_ndarray_ct)
-    if not groups[0]:
-        raise FESchemeError("no partial decryptions given")
-    sample = next(iter(groups[0].values()))
-    outputs = [out for group in groups for out in group.values()]
-    if not all(isinstance(out, (list, tuple)) and all(isinstance(a, np.ndarray) for a in out) for out in outputs):
-        raise FESchemeError("malformed partial decryptions: expected lists of object arrays")
-    shapes = [np.shape(ary) for ary in sample]
-    for out in outputs:
-        if len(out) != len(shapes) or [np.shape(ary) for ary in out] != shapes:
-            raise FESchemeError("partial decryptions differ in shape")
-    result = []
-    for l, shape in enumerate(shapes):
-        ary = np.empty(shape, dtype=object)
-        for i in np.ndindex(*shape):
-            value = combine([{sid: g[sid][l][i] for sid in g} for g in groups], l, i)
-            if value is None or (isinstance(value, float) and value != value):
-                raise FESchemeError("element {} of layer {} does not decrypt".format(i, l))
-            ary[i] = value
-        result.append(ary)
-    return result
-
-
-def center_mod(value: gp.mpz, modulus: gp.mpz) -> gp.mpz:
-    """Center *value* into the range ``(-modulus/2, modulus/2]``.
-
-    Args:
-        value: Input value.
-        modulus: Modulus for the arithmetic operation.
-    """
-    value %= modulus
-    half = modulus // 2
-    if value > half:
-        value -= modulus
-    return value
-
-
-def fusion_weight_id(fusion_weight: dict) -> str:
-    """Return a canonical digest of a fusion-weight dict.
-
-    Key shares record the digest of the weights they were derived for, so a
-    server can refuse to combine ciphertexts under different weights.
-
-    Args:
-        fusion_weight: Mapping of client IDs to integer weight lists.
-    """
-    if not isinstance(fusion_weight, dict) or not fusion_weight:
-        raise FEValidationError("invalid fusion weights provided, need a dict")
-    canonical = json.dumps(
-        {nid: int_vector(lst, "fusion weight of {}".format(nid)) for nid, lst in fusion_weight.items()},
-        sort_keys=True,
-    )
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-
-def ciphertexts_digest(canonical: dict) -> str:
-    """Return the digest of ciphertexts given in canonical form (``{nid: values}``).
-
-    Partial decryptions seed their flooding noise with it, so it must depend
-    only on the values a server computes with, never on how a request encodes
-    them: otherwise re-encoding one request draws fresh noise, and averaging
-    the partials removes it.
-    """
-    return hashlib.sha256(json.dumps(canonical, sort_keys=True).encode("utf-8")).hexdigest()
-
-
-def client_server_mac_keys(lst_nid: list, lst_sid: list) -> dict:
-    """Fresh 32-byte MAC keys (hex), ``{nid: {sid: key}}``, for ciphertext tags.
-
-    Client ``nid`` holds ``{sid: key}`` and tags each ciphertext for every
-    server; server ``sid`` holds ``{nid: key}`` and checks the tags meant for
-    it (see :func:`check_ciphertext_tags`).
-    """
-    return {nid: {sid: secrets.token_hex(32) for sid in lst_sid} for nid in lst_nid}
-
-
-def _tag_message(domain: str, payload) -> bytes:
-    return json.dumps([domain, payload], sort_keys=True).encode("utf-8")
-
-
-def ciphertext_tag(mac_key: str, domain: str, payload) -> str:
-    """HMAC-SHA256 (hex) of ``(domain, payload)`` under *mac_key* (hex)."""
-    return hmac.new(bytes.fromhex(mac_key), _tag_message(domain, payload), hashlib.sha256).hexdigest()
-
-
-def tag_ciphertext(ct: dict, mac_keys: dict, domain: str, payload) -> dict:
-    """Add ``tags`` (one per server of *mac_keys*) to *ct* and return it."""
-    message = _tag_message(domain, payload) if mac_keys else None  # serialised once for all servers
-    ct["tags"] = {
-        sid: hmac.new(bytes.fromhex(key), message, hashlib.sha256).hexdigest() for sid, key in mac_keys.items()
-    }
-    return ct
-
-
-def check_ciphertext_tags(dict_ct: dict, mac_keys: dict, sid: str, domain: str, payload_of) -> None:
-    """Raise unless every ciphertext's tag for server *sid* verifies.
-
-    Threshold servers compute partial decryptions that are linear in parts of
-    the ciphertexts they are handed; were these chosen freely, the partials
-    would reveal the shared functional key. Servers therefore only decrypt
-    ciphertexts tagged by their clients.
-
-    Args:
-        dict_ct: ``{nid: ciphertext}``.
-        mac_keys: The server's ``{nid: key}``.
-        sid: The server's id.
-        domain: Domain-separation string of the scheme.
-        payload_of: ``payload_of(nid, ct)``, the tagged content of a ciphertext.
-
-    Raises:
-        FESchemeError: For a missing, malformed or wrong tag.
-    """
-    for nid, ct in dict_ct.items():
-        ok = False
-        tags = ct.get("tags") if isinstance(ct, dict) else None
-        tag = tags.get(sid) if isinstance(tags, dict) else None
-        key = (mac_keys or {}).get(nid)
-        if isinstance(tag, str) and isinstance(key, str):
-            try:
-                expected = ciphertext_tag(key, domain, payload_of(nid, ct))
-                ok = hmac.compare_digest(tag.encode("utf-8"), expected.encode("utf-8"))
-            except (KeyError, TypeError, ValueError):
-                ok = False
-        if not ok:
-            raise FESchemeError(
-                "the ciphertext of {} is not authenticated for server {}".format(nid, sid)
-            )
-
-
-def tag_ciphertext_message(ct: dict, mac_keys: dict, message: bytes) -> dict:
-    """Add ``tags`` to *ct*: HMAC-SHA256 (hex) of the raw *message* under each
-    server's key of *mac_keys*, and return it (binary ciphertexts, whose tag
-    messages are bytes rather than JSON)."""
-    ct["tags"] = {sid: hmac.new(bytes.fromhex(key), message, hashlib.sha256).hexdigest() for sid, key in mac_keys.items()}
-    return ct
-
-
-def check_ciphertext_tag_messages(dict_ct: dict, mac_keys: dict, sid: str, message_of) -> None:
-    """:func:`check_ciphertext_tags` for tags over raw messages
-    (:func:`tag_ciphertext_message`): ``message_of(nid, ct)`` returns the
-    bytes a ciphertext's tag covers, or raises ``ValueError`` (``KeyError``,
-    ``TypeError``) for a malformed one.
-
-    Raises:
-        FESchemeError: For a missing, malformed or wrong tag.
-    """
-    for nid, ct in dict_ct.items():
-        ok = False
-        tags = ct.get("tags") if isinstance(ct, dict) else None
-        tag = tags.get(sid) if isinstance(tags, dict) else None
-        key = (mac_keys or {}).get(nid)
-        if isinstance(tag, str) and isinstance(key, str):
-            try:
-                expected = hmac.new(bytes.fromhex(key), message_of(nid, ct), hashlib.sha256).hexdigest()
-                ok = hmac.compare_digest(tag.encode("utf-8"), expected.encode("utf-8"))
-            except (KeyError, TypeError, ValueError):
-                ok = False
-        if not ok:
-            raise FESchemeError(
-                "the ciphertext of {} is not authenticated for server {}".format(nid, sid)
-            )
-
-
-def check_fusion_weight(dk: dict, fusion_weight: dict) -> None:
-    """Raise unless *fusion_weight* are the weights the key share *dk* is for."""
-    if dk.get("weights_id") != fusion_weight_id(fusion_weight):
-        raise FESchemeError(
-            "fusion weights differ from those the key share was derived for"
-        )
