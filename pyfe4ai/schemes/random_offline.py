@@ -16,7 +16,7 @@ pickling and use in another process are refused.
 
 A scheme provides ``_random_part()`` (draws ``r``; returns what the
 ciphertext needs of it) and ``_encrypt_with(lst_pt, part)`` (the ciphertext
-of :meth:`encrypt` for that part, with its checks), and names in
+of ``encrypt`` for that part, with its checks), and names in
 ``_online_bound`` the public parameter that bounds the plaintexts, if
 ``_encrypt_with`` checks one (checked before the precomputation is used).
 """
@@ -61,7 +61,7 @@ class OfflineRandomMixin:
     """precompute / precomputed= for the element-wise ndarray helpers."""
 
     def precompute(self, shapes) -> RandomPrecomputation:
-        """Offline phase of :meth:`encrypt_lst_ndarray` for layers of *shapes*."""
+        """Offline phase of ``encrypt_lst_ndarray`` for layers of *shapes*."""
         if not self._has_public_parameters():
             raise FEKeyError("no public parameters provided for encryption")
         if not self._has_private_keys():

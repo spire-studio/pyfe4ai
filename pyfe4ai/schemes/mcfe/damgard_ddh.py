@@ -283,7 +283,7 @@ class MCFEDamgard(OfflineMCFEMixin, IPFEAbsCrypto):
             fusion_weight: Mapping of client IDs to weight lists.
             label: The encryption label.
             term: ``prod_m H_m(l)^{d_m} mod p`` if already computed
-                (:meth:`prepare_key`).
+                (:meth:`~pyfe4ai.schemes.mcfe.offline.OfflineMCFEMixin.prepare_key`).
 
         Returns:
             The inner product, or ``None`` if it is out of the dlog bound

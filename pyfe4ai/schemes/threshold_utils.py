@@ -576,7 +576,7 @@ def share_replicated(
     the others. With ``t = s`` this is additive sharing (one piece each).
     With the native backend the pieces are drawn and the correction computed
     by the extension, with the values of the Python code for the same random
-    bytes (:func:`_share_replicated_native`). With *binary* every
+    bytes (``_share_replicated_native``). With *binary* every
     polynomial of a piece is bytes (:func:`binary_material`; the same values).
 
     Returns:
@@ -1000,7 +1000,7 @@ def share_for_enrolled(
             for key shares that are not modified once handed in (they are
             told apart by identity). The returned share must not be modified.
         ring_n: The ring dimension of a Ring-LWE layer; the native sums
-            (:func:`_zq_native`) need no ring, so it is only checked against
+            (``_zq_native``) need no ring, so it is only checked against
             a native ring context of the modulus where there is one.
 
         legacy_shamir: ``"refuse"`` or ``"warn"`` (see

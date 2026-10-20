@@ -75,7 +75,7 @@ class OfflineMCFEMixin:
     """precompute / precomputed= / prepare_key for the element-wise MCFE schemes."""
 
     def precompute(self, label: str, shapes) -> LabelPrecomputation:
-        """Offline phase of :meth:`encrypt_lst_ndarray` for *label* and layers of *shapes*."""
+        """Offline phase of ``encrypt_lst_ndarray`` for *label* and layers of *shapes*."""
         if self.pp["eta"] != 1:
             raise NotImplementedError("ndarray helper currently expects eta=1")
         if not isinstance(label, str):

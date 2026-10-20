@@ -26,7 +26,11 @@ Installation
    conda activate pyfe4ai
    pip install -e ".[test]"
 
-For pairing-based FE families, additionally install
+With a Rust toolchain (``cargo``) on the ``PATH``, ``pip install`` also
+builds the optional native extension (:mod:`pyfe4ai.utils.native_backend`):
+the Ring-LWE, dense-LWE and threshold hot paths, ristretto255, and the
+BLS12-381 pairing group that the pairing-based FE families use by default.
+Other pairing curves (MNT224, BN254, ...) need charm-crypto,
 ``pip install -e ".[test,pairing]"`` (requires the PBC library; see the
 repository README for platform notes).
 

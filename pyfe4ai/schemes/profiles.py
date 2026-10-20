@@ -155,8 +155,8 @@ STANDARD_DCR_PRIME_BITS = 1536
 
 #: Statistical parameter under ``standard`` (minimum and default).
 STANDARD_STAT_PARAM = 128
-#: Largest statistical parameter a key generator accepts (both profiles): the
-#: MPFR Gaussians' guard bits (:data:`~pyfe4ai.utils.sampling_utils.BIGINT_GUARD_BITS`)
+#: Largest statistical parameter a key generator accepts, in both profiles;
+#: the MPFR Gaussians' guard bits (:data:`~pyfe4ai.utils.sampling_utils.BIGINT_GUARD_BITS`)
 #: cover ``stat_param + ceil(log2 N) + 8`` up to this value.
 MAX_STAT_PARAM = 256
 

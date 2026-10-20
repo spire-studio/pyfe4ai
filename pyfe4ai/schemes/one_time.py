@@ -6,7 +6,7 @@ ciphertexts; using it twice encrypts two plaintexts with the same randomness
 :class:`OneTimePrecomputation` makes the use atomic and keeps it in one
 process:
 
-* :meth:`~OneTimePrecomputation._claim` checks and sets ``used`` under a
+* ``_claim`` checks and sets ``used`` under a
   per-object lock and moves the secret parts out of the object, so of two
   threads exactly one gets them;
 * a precomputation records the process that made it and refuses to be used
@@ -44,8 +44,8 @@ if hasattr(os, "register_at_fork"):
 class OneTimePrecomputation:
     """Base of the offline phases' results: secret, one-time, one process.
 
-    Subclasses list in :attr:`_secret` the attributes that hold the secret
-    parts (dropped by :meth:`_claim` and in a forked child).
+    Subclasses list in ``_secret`` the attributes that hold the secret
+    parts (dropped by ``_claim`` and in a forked child).
     """
 
     _secret: tuple = ()
@@ -58,7 +58,7 @@ class OneTimePrecomputation:
 
     def _claim(self, *names: str) -> tuple:
         """Mark the precomputation used and return the attributes *names*,
-        which are set to ``None`` (all of :attr:`_secret` if none are given).
+        which are set to ``None`` (all of ``_secret`` if none are given).
 
         Raises:
             FEValidationError: If it was used already or made in another process.

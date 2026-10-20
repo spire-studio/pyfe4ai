@@ -16,6 +16,13 @@ DDH
    :members:
    :undoc-members:
 
+DDH over ristretto255
+---------------------
+
+.. automodule:: pyfe4ai.schemes.mife.ddh_ristretto255
+   :members:
+   :undoc-members:
+
 DDH Threshold
 -------------
 

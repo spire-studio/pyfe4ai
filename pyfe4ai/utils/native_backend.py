@@ -188,6 +188,7 @@ def active_backend() -> str:
 
 
 def get_threads() -> int:
+    """Threads one native call may use (see :func:`set_threads`)."""
     return _threads
 
 
@@ -252,7 +253,7 @@ def _facct_table(sigma_q):
 
 @functools.lru_cache(maxsize=64)
 def _facct_wide_table(sigma_q):
-    """:func:`_facct_table` for a wide width (``2^50 < k < 2^448``): the
+    """``_facct_table`` for a wide width (``2^50 < k < 2^448``): the
     extension's ``FacctWideTable`` (multi-word k, y and samples)."""
     from pyfe4ai.utils import sampling_utils as su
 
@@ -272,7 +273,7 @@ def _facct_wide_table(sigma_q):
 
 
 def facct_table(sigma):
-    """Native tables of the exact sampler for *sigma* (see :func:`_facct_table`)."""
+    """Native tables of the exact sampler for *sigma* (see ``_facct_table``)."""
     from pyfe4ai.utils import sampling_utils as su
 
     return _facct_table(su._exact(sigma))
@@ -290,14 +291,14 @@ def gaussian_facct(sigma, count: int, rng):
 
     The extension draws ``getrandbits`` in the reference's order and makes its
     decisions (fixed-point acceptance tests with the Python threshold for the
-    undecided ones; see :func:`_facct_table`), so for a given bit source the
+    undecided ones; see ``_facct_table``), so for a given bit source the
     samples are the reference's. Bits: from *rng* if it is an
     :class:`~pyfe4ai.utils.sampling_utils.XofRandom` -- sampled with the GIL
     and the XofRandom claim lock held, since the number of calls depends on
     the samples, and its counter then advanced by the calls used -- else, for
     ``rng=None`` with the module's OS source, from the per-call DRBG (stream
     ``c`` for samples ``256 c`` to ``256 c + 255``, on :func:`get_threads`
-    threads; or :data:`_random_override` in the tests). Widths with ``k <=
+    threads; or ``_random_override`` in the tests). Widths with ``k <=
     2^50`` (``sigma`` below about ``2^49.8``) use the kernel of
     ``rust/core/src/facct.rs``, wider ones up to ``k < 2^448`` (``sigma``
     below about ``2^447.7``) that of ``facct_wide.rs`` (the same decisions,
@@ -375,7 +376,7 @@ def seed_kwargs() -> dict:
 
 def random_input(nbytes: int):
     """Random bytes for a native call: ``None`` (the extension reads the OS
-    source itself) unless a test installed :data:`_random_override`."""
+    source itself) unless a test installed ``_random_override``."""
     return None if _random_override is None else _random_override(nbytes)
 
 
@@ -429,7 +430,7 @@ def gaussian_bigint(sigma, count: int, rng, prec: int):
     :class:`~pyfe4ai.utils.sampling_utils.XofRandom` (whose counter advances
     as in Python), else, for ``rng=None``, from its per-call DRBG (stream
     ``c`` for samples ``256 c`` to ``256 c + 255``; or from
-    :data:`_random_override` in the tests) -- and computes
+    ``_random_override`` in the tests) -- and computes
     ``X = sig sqrt(-2 ln u1) cos(2 pi u2)`` in fixed point with an error
     below ``2^(s + 10 - 64 n)`` (``sig < 2^s``, ``n = ceil((s + 64) / 64)``
     fraction words). The reference's MPFR value is within ``2^-118`` of

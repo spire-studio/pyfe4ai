@@ -56,7 +56,9 @@ class MCFERistretto255KeyGenerator(ECDDHKeyGeneratorBase):
     """Key generator for DDH-based multi-client inner-product FE over ristretto255."""
 
     def __init__(self, config: dict, **kwargs) -> None:
-        """Args:
+        """Check the configuration.
+
+        Args:
             config: ``n`` (number of clients), ``lst_nid``, ``eta`` (int or
                 per-client dict), ``group`` (optional, ``"ristretto255"``).
         """

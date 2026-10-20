@@ -118,6 +118,11 @@ left the key generator's cache, ``LABEL_PARTS_KEPT``) would decode to a wrong
 value inside the decoding bound rather than fail. A second sharing reveals
 nothing: one server's answers under the two sharings differ by its share of
 a sharing of zero, which ``t - 1`` servers compute from their own parts.
+**Store and transmit the** ``sharing_id`` **with every key share and partial
+decryption**: partials without one (as from key shares of earlier versions)
+combine only with each other, so a storage or transport layer that drops the
+id on every side would let partials of two sharings combine to a wrong value
+unnoticed.
 Partial decryptions carry no digest of the public parameters, so a
 combiner given those of another deployment of the same format is not warned
 (it holds no secret; under the honest-but-curious model above the servers

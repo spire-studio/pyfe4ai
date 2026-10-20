@@ -262,7 +262,7 @@ class MCFE(OfflineMCFEMixin, IPFEAbsCrypto):
                 weights the key was derived for.
             label: The encryption label used during :meth:`encrypt`.
             term: ``prod_k H_k(l)^{d_k} mod p`` if already computed
-                (:meth:`prepare_key`).
+                (:meth:`~pyfe4ai.schemes.mcfe.offline.OfflineMCFEMixin.prepare_key`).
 
         Returns:
             The inner product as an integer, or ``None`` if out of bound.

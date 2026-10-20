@@ -24,7 +24,7 @@ _CSPRNG = random.SystemRandom()
 # The OS source of the module; a replaced _CSPRNG (tests) keeps the Python sampler.
 _SYSTEM_RANDOM = _CSPRNG
 
-#: Gaussian samplers: ``"rounded"`` (the library-wide default; a rounded
+#: The Gaussian samplers, ``"rounded"`` (the library-wide default; a rounded
 #: continuous Gaussian) and ``"facct"`` (exact ``D_{Z,sigma}``, see
 #: :func:`discrete_gaussian_facct`). Select one per call (``sampler=``), per
 #: context (:func:`gaussian_sampler`), per process (:func:`set_gaussian_sampler`)

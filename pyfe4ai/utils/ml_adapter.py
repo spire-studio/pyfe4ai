@@ -582,7 +582,7 @@ class EncryptedGradient:
     Produced by :func:`encrypt_gradient`.
     """
 
-    #: One entry per layer: an object array of per-element ciphertexts, or,
+    #: One entry per layer, an object array of per-element ciphertexts or,
     #: for the packed Ring-LWE MCFE schemes, a dict
     #: ``{"shape", "first_chunk", "chunks"}`` (see
     #: :meth:`pyfe4ai.schemes.mcfe.ring_lwe.MCFERingLWE.encrypt_lst_ndarray`).
@@ -652,8 +652,8 @@ class EncryptedGradient:
         Raises:
             ValueError: If an array's shape is invalid or has more than
                 :attr:`MAX_ELEMENTS` elements, or its entries do not cover
-                exactly the positions of that shape; if a packed layer does
-                not have the layout of :meth:`_packed_layers`; or if packed
+                exactly the positions of that shape; if a packed layer is not a
+                valid ``{"shape", "first_chunk", "chunks"}`` layout; or if packed
                 and per-element layers are mixed.
         """
         layers = d["ciphertexts"]
@@ -1245,7 +1245,9 @@ class ThresholdPartial:
     #: of the clients' gradients: per layer ``{"shape", "parts"}``, one partial
     #: decryption per chunk (``w`` and ``c_y`` bytes for binary public
     #: parameters, lists of decimal strings for JSON ones; ``sharing_id``
-    #: that of the server's key share, or ``None``).
+    #: that of the server's key share, or ``None``). :meth:`to_dict` keeps the
+    #: ``sharing_id``; a transport of its own must keep it as well, or the
+    #: combiner can no longer tell partials of two sharings apart.
     layers: list
 
     def to_dict(self) -> dict:

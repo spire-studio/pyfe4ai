@@ -33,7 +33,9 @@ class SIFERistretto255KeyGenerator(ECDDHKeyGeneratorBase):
     """Key generator for DDH-based single-input inner-product FE over ristretto255."""
 
     def __init__(self, config: dict, **kwargs) -> None:
-        """Args:
+        """Check the configuration.
+
+        Args:
             config: ``eta`` (plaintext vector length); ``group`` (optional,
                 ``"ristretto255"``).
         """

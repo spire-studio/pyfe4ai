@@ -2,14 +2,15 @@
 
 :class:`PairingGroup` and :func:`pair` behave as charm-crypto's for the
 operations the pairing-based schemes use, so the schemes run unchanged on
-BLS12-381 (arkworks, in :mod:`pyfe4ai._rust_native`): ``random(ZR | G1 | G2 |
+BLS12-381 (arkworks, in ``pyfe4ai._rust_native``): ``random(ZR | G1 | G2 |
 GT)``, ``init(type, value)``, ``order()``, ``serialize`` / ``deserialize``
 (``b"<type>:<base64 of the compressed encoding>"``; deserialisation accepts
 only the canonical string -- a type tag ``0`` to ``3``, canonical base64 of
 exactly the element's encoding -- and checks the encoding and subgroup
-membership), ``hash(msg, G1 | G2)`` (RFC 9380
-hash_to_curve, suites BLS12381G1/G2_XMD:SHA-256_SSWU_RO_, with the domain
-separation tags of :data:`HASH_DST`), ``ismember``, ``groupType``; elements
+membership), ``hash(msg, G1 | G2)`` (RFC 9380 hash_to_curve, suites
+``BLS12381G1_XMD:SHA-256_SSWU_RO_`` and ``BLS12381G2_XMD:SHA-256_SSWU_RO_``,
+with the domain separation tags of :data:`HASH_DST`), ``ismember``,
+``groupType``; elements
 written multiplicatively (``*``, ``/``, ``**``), ZR elements with ``+ - * /
 **`` and ``int()``. Products of pairings (:func:`multi_pair`) take one final
 exponentiation; :func:`gt_dlog` is a bounded discrete logarithm in GT
@@ -161,7 +162,7 @@ def pow_many(base, scalars: list) -> list:
 
 
 def gt_dlog(base, target, bound: int, cache: bool = True):
-    """The x with base^x = target and |x| <= bound, or None.
+    """The ``x`` with ``base^x = target`` and ``|x| <= bound``, or None.
 
     With *cache* the baby-step table (about ``16 sqrt(2 bound + 1)`` steps) is
     kept for later calls with this base and bound; pass ``cache=False`` for a

@@ -310,7 +310,7 @@ class IPFEAbsCrypto(ABC):
 
         Raises:
             FESchemeError: If an element does not decrypt (see
-                :func:`decoded_layer`).
+                :func:`~pyfe4ai.schemes.ipfe.decoded_layer`).
         """
         raise NotImplementedError()
 

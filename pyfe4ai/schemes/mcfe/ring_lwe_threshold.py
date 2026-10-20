@@ -222,7 +222,11 @@ decoding bound rather than fail, so combiners refuse a mix
 (:class:`MixedSharingsError`; fetch the label parts again for all servers).
 The two sharings' answers of one server differ by its share of a sharing of
 zero, which ``t - 1`` servers compute from their own parts: a second sharing
-reveals nothing.
+reveals nothing. Store and transmit the ``sharing_id`` with every key share
+and partial decryption: partials without one (as from key shares of earlier
+versions) combine only with each other, so a storage or transport layer that
+drops the id on every side would let partials of two sharings combine to a
+wrong value unnoticed.
 
 The threshold objects (key generator, clients, servers) are not portable across
 versions of pyfe4ai: a state pickled by another version is refused when loaded
@@ -385,7 +389,7 @@ _OPTIONAL_BINDING_FIELDS = ("ct_format", "q_factors")
 
 def binding_fields(pp: dict) -> tuple:
     """The public-parameter fields a key share of *pp* is bound to:
-    :data:`_BINDING_FIELDS` and those of :data:`_OPTIONAL_BINDING_FIELDS` that
+    ``_BINDING_FIELDS`` and those of ``_OPTIONAL_BINDING_FIELDS`` that
     *pp* has (``ct_format`` of binary public parameters, ``q_factors`` of an
     RNS modulus)."""
     return _BINDING_FIELDS + tuple(f for f in _OPTIONAL_BINDING_FIELDS if f in pp)
@@ -403,7 +407,7 @@ DEFAULT_CT_FORMAT = "binary"
 #: ``ring_modulus`` of a key generator whose config has none (``"prime"``
 #: selectable; see the module docstring).
 DEFAULT_RING_MODULUS = "rns"
-#: Fewest factors of an RNS modulus of the threshold scheme: its native
+#: Fewest factors of an RNS modulus of the threshold scheme. Its native
 #: kernels run on the 256-bit ring (two factors below ``2^124`` would get the
 #: two-prime context of the MIFE / MCFE prototype, which has none of them).
 MIN_RNS_FACTORS = 3
@@ -497,7 +501,7 @@ def binary_tag_message(pp_digest: bytes, encoded_label: str, ct: dict, digests: 
     client-server key): a domain, the digest of the public parameters
     (:func:`~pyfe4ai.schemes.threshold_utils.pp_binding` over
     :func:`binding_fields`), the (chunk) label, the ciphertext's ``label_hash``
-    code (for an ndarray chunk its layer's; see :func:`_chunk_with_code`), the
+    code (for an ndarray chunk its layer's; see ``_chunk_with_code``), the
     batch length and the digests of :func:`binary_ciphertext_digests`.
 
     Raises:
@@ -635,7 +639,10 @@ class MixedSharingsError(FESchemeError):
     reconstruct it: combined, their partials would decode to a wrong value
     inside the decoding bound rather than fail. This happens when the label
     parts of one round are fetched on both sides of their eviction
-    (:data:`LABEL_PARTS_KEPT`); fetch them again for all servers.
+    (:data:`LABEL_PARTS_KEPT`); fetch them again for all servers. The check
+    needs the ids: keep the ``sharing_id`` with every stored or transmitted
+    key share and partial decryption (partials without one combine only with
+    each other).
     """
 
 
@@ -663,7 +670,7 @@ def check_rns_servers(s, factors) -> None:
 def _tag_payload(encoded_label: str, ct: dict) -> list:
     """What a tMCFE-Ring-LWE ciphertext tag covers: the (chunk) label, the
     ciphertext as serialised and its ``label_hash`` code when it has one --
-    for an ndarray chunk its layer's code, see :func:`_chunk_with_code`
+    for an ndarray chunk its layer's code, see ``_chunk_with_code``
     (ciphertexts of versions <= 0.3.0 have none: their tags stay valid)."""
     payload = [encoded_label, ct.get("k"), ct.get("ct0"), ct.get("ct1")]
     if "label_hash" in ct:

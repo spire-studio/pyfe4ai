@@ -325,7 +325,7 @@ def check_ring_modulus(value) -> str:
 def register_rns_modulus(q, factors) -> tuple:
     """Record that *q* is the product of the distinct primes *factors*.
 
-    The NTT root (:func:`_get_ntt_root`) and the native context of an RNS
+    The NTT root (``_get_ntt_root``) and the native context of an RNS
     modulus come from its factors, which the public parameters carry
     (``q_factors``); without them a composite ``q`` has no NTT here.
 
@@ -671,7 +671,7 @@ def seeded_polynomial(seed: str, q, ring_n: int, index: int = 0) -> list[gp.mpz]
     return hash_to_zq_vector(seed, q, ring_n, domain="pyfe4ai/ring-lwe/a|{}".format(int(index)))
 
 
-#: Ciphertext formats of the Ring-LWE MIFE / MCFE: ``"json"`` (default; ``ct0``
+#: Ciphertext formats of the Ring-LWE MIFE / MCFE, ``"json"`` (default; ``ct0``
 #: and ``ct1`` as lists of decimal strings) and ``"binary"`` (``ct``: bytes in
 #: format 1 of :func:`encode_binary_ciphertext`).
 CT_FORMATS = ("json", "binary")

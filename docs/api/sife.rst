@@ -18,6 +18,13 @@ DDH
    :members:
    :undoc-members:
 
+DDH over ristretto255
+---------------------
+
+.. automodule:: pyfe4ai.schemes.sife.ddh_ristretto255
+   :members:
+   :undoc-members:
+
 DDH Dynamic
 -----------
 

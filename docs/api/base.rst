@@ -17,6 +17,25 @@ DDH Base Classes
    :members:
    :undoc-members:
 
+Elliptic-Curve DDH Base Classes
+-------------------------------
+
+.. automodule:: pyfe4ai.schemes.ec_ddh_base
+   :members:
+   :undoc-members:
+
+Offline Phases and One-Time Precomputations
+-------------------------------------------
+
+.. automodule:: pyfe4ai.schemes.one_time
+   :members:
+
+.. automodule:: pyfe4ai.schemes.random_offline
+   :members:
+
+.. automodule:: pyfe4ai.schemes.mcfe.offline
+   :members:
+
 ABDP15 LWE Base
 ---------------
 
