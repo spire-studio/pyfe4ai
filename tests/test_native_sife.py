@@ -1,5 +1,6 @@
 """Native NTTs of ring_lwe_utils and the SIFE Ring-LWE schemes against the Python code."""
 
+import os
 import random
 
 import gmpy2 as gp
@@ -18,6 +19,7 @@ pytestmark = pytest.mark.skipif(not native_backend.available(), reason="Rust ext
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
     with native_backend.backend("auto"):
         yield
 

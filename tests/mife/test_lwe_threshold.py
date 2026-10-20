@@ -10,6 +10,7 @@ from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWEKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.exceptions import FESchemeError
+from pyfe4ai.core.base import cache_dir
 
 init_logging_config()
 logger = logging.getLogger(__name__)
@@ -39,7 +40,7 @@ def test_key_generator(kg_config):
     assert kg.t == kg_config["t"]
     assert kg.eta == kg_config["eta"]
 
-    config_folder = os.path.join("config", "authority", CryptoCONST.TYPE_TMIFE_LWE)
+    config_folder = os.path.join(cache_dir(), "authority", CryptoCONST.TYPE_TMIFE_LWE)
     assert os.path.exists(config_folder)
     assert os.path.exists(os.path.join(config_folder, "param.json"))
 
@@ -243,6 +244,7 @@ def test_m_leaves_room_for_the_leftover_hash_lemma_at_the_enlarged_q(kg_config, 
     # m >= (lwe_n + eta + 1) log2 q + 2 lwe_n + 1 (the recipe of derive_lwe_parameters),
     # for the q that is actually used, not the one before the flooding enlarged it
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
     kg = ThresholdMIFELWEKeyGenerator(kg_config)
     need = (kg.lwe_n + kg.eta + 1) * int(kg.q).bit_length() + 2 * kg.lwe_n + 1
     assert kg.m >= need

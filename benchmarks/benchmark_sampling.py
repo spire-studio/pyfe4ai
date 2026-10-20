@@ -11,6 +11,7 @@ import argparse
 import os
 import tempfile
 import time
+from unittest import mock
 
 from _common import emit_results, prepare_benchmark, stats
 from pyfe4ai.primitives.sampling import (
@@ -66,7 +67,9 @@ def bench_e2e(rounds: int) -> list[dict]:
     results, base = [], None
     cwd = os.getcwd()
     with tempfile.TemporaryDirectory() as tmp:
-        os.chdir(tmp)  # parameter caches go to ./config
+        os.chdir(tmp)
+        cache = mock.patch.dict(os.environ, {"PYFE4AI_CACHE_DIR": os.path.join(tmp, "config")})
+        cache.start()  # parameter caches go to tmp/config
         try:
             for sampler in SAMPLERS:
                 with gaussian_sampler(sampler):
@@ -92,6 +95,7 @@ def bench_e2e(rounds: int) -> list[dict]:
                     "us_per_sample": "", "slowdown": median / base,
                 })
         finally:
+            cache.stop()
             os.chdir(cwd)
     return results
 

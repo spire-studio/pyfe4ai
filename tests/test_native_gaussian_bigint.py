@@ -8,6 +8,7 @@ the samples the fixed point leaves undecided, and the error bound of the fixed
 point evaluation against MPFR.
 """
 
+import os
 import random
 
 import gmpy2 as gp
@@ -150,6 +151,7 @@ KAT = {  # discrete_gaussian_bigint(sigma, 8, rng=XofRandom(KAT_SEED)) of the Py
 @pytest.fixture(autouse=True)
 def _setup(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
     with native_backend.backend("auto"), su.gaussian_sampler("rounded"):
         yield
 

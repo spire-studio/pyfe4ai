@@ -10,6 +10,7 @@ from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWE
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.base import cache_dir
 
 
 @pytest.fixture
@@ -47,7 +48,7 @@ def _random_round(cfg, cols=4):
 
 def test_key_generator(kg_config):
     kg = MCFERingLWEKeyGenerator(kg_config)
-    assert os.path.exists(os.path.join("config", "authority", CryptoCONST.TYPE_MCFE_RING_LWE, "param.json"))
+    assert os.path.exists(os.path.join(cache_dir(), "authority", CryptoCONST.TYPE_MCFE_RING_LWE, "param.json"))
     kg.setup()
     pp = kg.get_public_parameters()
     assert pp["eta"] == kg_config["eta"] and pp["ring_n"] == kg_config["ring_n"]

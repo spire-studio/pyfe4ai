@@ -13,8 +13,8 @@ Status per entry:
 * ``unusable``   -- an exception or a wrong result (the reason is printed);
 * ``unverified`` -- pairing-based entry and ``charm-crypto`` is not installed.
 
-The run happens in a temporary directory because key generators write
-``./config/``. Usage::
+The run happens in a temporary directory, which holds the parameter cache
+(``PYFE4AI_CACHE_DIR``). Usage::
 
     python benchmarks/fl_path_coverage.py            # Markdown table
     python benchmarks/fl_path_coverage.py --output json
@@ -28,6 +28,7 @@ import logging
 import os
 import tempfile
 import traceback
+from unittest import mock
 
 import numpy as np
 
@@ -213,6 +214,8 @@ def main() -> None:
     cwd = os.getcwd()
     with tempfile.TemporaryDirectory() as tmp:
         os.chdir(tmp)
+        cache = mock.patch.dict(os.environ, {"PYFE4AI_CACHE_DIR": os.path.join(tmp, "config")})
+        cache.start()
         try:
             for scheme_type, variant in _SCHEME_REGISTRY:
                 status, reason = check_entry(scheme_type, variant)
@@ -220,6 +223,7 @@ def main() -> None:
                     {"scheme": "{}/{}".format(scheme_type, variant), "status": status, "reason": reason}
                 )
         finally:
+            cache.stop()
             os.chdir(cwd)
 
     counts = {s: sum(r["status"] == s for r in rows) for s in ("usable", "unusable", "unverified")}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import os
 import pytest
 
 from pyfe4ai.ml import (
@@ -426,7 +427,8 @@ def test_packed_ring_lwe_gradients_round_trip_through_json(tmp_path, monkeypatch
     """MCFE-Ring-LWE packs a layer into ring_n-coefficient chunks; to_dict used to raise KeyError."""
     import json
 
-    monkeypatch.chdir(tmp_path)  # key generation writes config/ to the working directory
+    monkeypatch.chdir(tmp_path)  # key generation writes its parameter cache below
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
     wrapper = FESchemeWrapper(
         "mcfe", "ring_lwe",
         {"eta": 1, "n": 2, "lst_nid": ["nid_0", "nid_1"], "ring_n": 16, "sec_param": 64,
@@ -456,6 +458,7 @@ def test_packed_gradients_of_ring_lwe_variants_round_trip(variant, extra, tmp_pa
     import json
 
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
     wrapper = FESchemeWrapper(
         "mcfe", variant,
         dict({"eta": 1, "n": 2, "lst_nid": ["nid_0", "nid_1"], "ring_n": 16, "sec_param": 64,

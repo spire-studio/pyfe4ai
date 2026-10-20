@@ -4,6 +4,7 @@ parameters that differ in the modulus, the flooding (distribution, width, tail
 cut, accounting and its limit) or the label hash, since a second, differently
 derived answer to one request reveals key material."""
 
+import os
 import warnings
 
 import pytest
@@ -22,6 +23,7 @@ REFUSED = (FEKeyError, FESchemeError, FEValidationError)
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 def _ring(**extra):

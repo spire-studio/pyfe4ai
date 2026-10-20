@@ -8,6 +8,7 @@ import pytest
 from pyfe4ai.schemes.sife.fullysec_lwe import SIFEFullySecLWE, SIFEFullySecLWEKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.core.base import cache_dir
 
 CFG = {"sec_param": 64, "eta": 2, "lwe_n": 8, "bound_x": 10, "bound_y": 10}
 
@@ -46,6 +47,6 @@ def test_key_binding_and_validation(scheme):
 
 def test_stale_cache_is_regenerated(scheme):
     kg, _ = scheme
-    path = os.path.join("config", "authority", CryptoCONST.TYPE_SIFE_FULLYSEC_LWE, "param.json")
+    path = os.path.join(cache_dir(), "authority", CryptoCONST.TYPE_SIFE_FULLYSEC_LWE, "param.json")
     with open(path, encoding="utf-8") as f:
         assert json.load(f)["construction"] == "als16-lwe/v5"

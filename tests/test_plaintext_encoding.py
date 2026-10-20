@@ -5,6 +5,7 @@ game needs floor(q/K) (x0 + u alpha); trunc(x q / p) differs from
 floor(q/p) x by a small, non-linear term."""
 
 import gmpy2 as gp
+import os
 import pytest
 
 from pyfe4ai.primitives.lattice.lwe_utils import center_lwe_vector
@@ -61,6 +62,7 @@ def test_ndarray_helpers_round_and_refuse_nan(tmp_path, monkeypatch):
     from pyfe4ai.schemes.mcfe.ddh import MCFE, MCFEKeyGenerator
 
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
     nids = ["nid_0", "nid_1"]
     kg = MCFEKeyGenerator({"sec_param": 128, "eta": 1, "n": 2, "lst_nid": nids})
     kg.setup()

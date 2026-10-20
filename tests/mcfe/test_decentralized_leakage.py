@@ -5,6 +5,7 @@ CDGPP18 contributions reduced mod q would expose the carry of that sum (a
 comparison oracle on the clients' secrets); LWE contributions reduced mod q
 would expose, per coordinate, how many y_i t_i are negative."""
 
+import os
 import random
 
 import gmpy2 as gp
@@ -20,6 +21,7 @@ NIDS = ["nid_0", "nid_1", "nid_2"]
 @pytest.fixture(autouse=True)
 def _cache_in_tmp(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 def _shares(kg, crypto_cls, weights):

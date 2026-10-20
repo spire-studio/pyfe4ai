@@ -11,6 +11,7 @@ q of ``mcfe/ring_lwe_threshold``), which the native backend handles in
 
 from __future__ import annotations
 
+import os
 import random
 
 import gmpy2 as gp
@@ -42,6 +43,7 @@ pytestmark = pytest.mark.core
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 @pytest.fixture(autouse=True)

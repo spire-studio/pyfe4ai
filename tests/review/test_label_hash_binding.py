@@ -11,6 +11,7 @@ bound). Ciphertext layers now carry the mode, and a mismatch is refused.
 """
 
 import numpy as np
+import os
 import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe as m
@@ -22,6 +23,7 @@ NIDS = ["c0", "c1", "c2"]
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 def test_a_client_with_another_label_hash_is_detected():

@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import random
 
 import gmpy2 as gp
@@ -39,6 +40,7 @@ needs_native = pytest.mark.skipif(not native_backend.available(), reason="native
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 @pytest.fixture

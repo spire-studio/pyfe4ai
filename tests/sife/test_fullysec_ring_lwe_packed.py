@@ -24,6 +24,7 @@ RECORD = os.path.join("config", "authority", "SIFE_FULLYSEC_RING_LWE", "param.js
 @pytest.fixture(autouse=True)
 def _param_cache_in_tmp(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 def _keys(cfg):
@@ -35,12 +36,10 @@ def _keys(cfg):
 
 @pytest.fixture(scope="module")
 def scheme(tmp_path_factory):
-    cwd = os.getcwd()
-    os.chdir(tmp_path_factory.mktemp("cache"))
-    try:
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp_path_factory.mktemp("cache"))
+        mp.setenv("PYFE4AI_CACHE_DIR", os.path.join(os.getcwd(), "config"))
         return _keys(CFG)
-    finally:
-        os.chdir(cwd)
 
 
 def _products(matrix, y):
@@ -278,17 +277,15 @@ def test_packed_decryption_equals_per_element_decryption(eta, X, Y, profile, k):
 
 @pytest.fixture(scope="module")
 def gradient_scheme(tmp_path_factory):
-    cwd = os.getcwd()
-    os.chdir(tmp_path_factory.mktemp("grad"))
-    try:
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp_path_factory.mktemp("grad"))
+        mp.setenv("PYFE4AI_CACHE_DIR", os.path.join(os.getcwd(), "config"))
         kg = SIFEFullySecRingLWEKeyGenerator({"eta": 1, "bound_x": 100, "bound_y": 1, "ndarray_layout": "packed"})
         kg.setup()
         pp = kg.get_public_parameters()
         enc = SIFEFullySecRingLWE({"keys": {"pp": pp, "sk": kg.get_private_keys()}, "precision": 2})
         dec = SIFEFullySecRingLWE({"keys": {"pp": pp}, "precision": 2})
         return kg, enc, dec, pp
-    finally:
-        os.chdir(cwd)
 
 
 def test_ndarray_layers_are_packed_in_chunks_of_ring_n(gradient_scheme):

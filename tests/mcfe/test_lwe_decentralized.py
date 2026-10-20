@@ -9,6 +9,7 @@ from tests.log_config import init_logging_config
 from pyfe4ai.schemes.mcfe.lwe_decentralized import DecentralizedMCFELWE
 from pyfe4ai.schemes.mcfe.lwe_decentralized import DecentralizedMCFELWEKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.base import cache_dir
 
 init_logging_config()
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ def test_key_generator(kg_config):
     assert kg.eta == kg_config["eta"]
     assert kg.lwe_n == kg_config["lwe_n"]
 
-    config_folder = os.path.join("config", "authority", CryptoCONST.TYPE_DMCFE_LWE)
+    config_folder = os.path.join(cache_dir(), "authority", CryptoCONST.TYPE_DMCFE_LWE)
     assert os.path.exists(config_folder)
     assert os.path.exists(os.path.join(config_folder, "param.json"))
 

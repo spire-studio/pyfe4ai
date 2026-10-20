@@ -32,15 +32,13 @@ CONFIG = {
 )
 def test_paillier_cache_holds_no_factorization(tmp_path, kg_cls):
     stale = dict(CONFIG, p="11", q="13")  # a v0.2.0-style cache entry
-    old_cwd = os.getcwd()
-    os.chdir(tmp_path)
-    try:
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp_path)
+        mp.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
         folder = tmp_path / "config" / "authority" / kg_cls._scheme_type
         folder.mkdir(parents=True)
         (folder / "param.json").write_text(json.dumps(stale))
         kg = kg_cls(dict(CONFIG))
         param = json.loads((folder / "param.json").read_text())
-    finally:
-        os.chdir(old_cwd)
     assert "p" not in param and "q" not in param
     assert not hasattr(kg, "p") and not hasattr(kg, "q")

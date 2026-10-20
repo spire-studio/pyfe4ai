@@ -7,6 +7,7 @@ raise :class:`FESchemeError` naming the element.
 """
 
 import numpy as np
+import os
 import pytest
 
 from pyfe4ai.core.exceptions import FESchemeError
@@ -45,6 +46,7 @@ MIFE = {
 @pytest.fixture(autouse=True)
 def _param_cache_in_tmp(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 def _fail_second_element(monkeypatch, cls):

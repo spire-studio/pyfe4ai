@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 
 import numpy as np
+import os
 import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
@@ -30,6 +31,7 @@ NIDS, SIDS = ["c0", "c1", "c2"], ["s0", "s1", "s2"]
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 def _spec(bits: int, n: int, seed: bytes) -> list:

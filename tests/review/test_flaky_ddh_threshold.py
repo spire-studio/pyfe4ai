@@ -10,6 +10,7 @@ and the three floats of check point ``[0][(0, 1)]`` (error 0.0112). Not a
 cryptographic defect: the decryption is exact for the quantised inputs.
 """
 
+import os
 import random
 
 import numpy as np
@@ -21,6 +22,7 @@ X01 = [0.06850995970323248, 0.17850367864086247, 0.13452971734277064]
 
 def test_original_test_fails_on_the_recorded_draws(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
     calls = {"x": 0, "y": iter([5, 10, 8])}
 
     def random_sample(shape):

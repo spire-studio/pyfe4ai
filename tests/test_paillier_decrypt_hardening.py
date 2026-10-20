@@ -5,6 +5,7 @@ With ``ct0 = 1 + N`` and ``ct1 = (1, ..., 1)`` the decryption equation gives
 is checked against the inner-product bound."""
 
 import gmpy2 as gp
+import os
 import pytest
 
 from pyfe4ai.schemes.mife.paillier import MIFEPaillier, MIFEPaillierKeyGenerator
@@ -15,6 +16,7 @@ from pyfe4ai.core.exceptions import FEValidationError
 @pytest.fixture(autouse=True)
 def _cache_in_tmp(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 def _sife():

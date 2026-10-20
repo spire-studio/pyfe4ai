@@ -224,7 +224,8 @@ def test_forked_child_does_not_reuse_the_parent_buffer():
     (("mcfe", "paillier"), {"n": 3, "eta": 1, "bound_x": 100, "bound_y": 1}),  # discrete_gaussian_bigint
 ])
 def test_schemes_decrypt_with_facct(tmp_path, monkeypatch, scheme, config):
-    monkeypatch.chdir(tmp_path)  # parameter caches go to ./config
+    monkeypatch.chdir(tmp_path)  # parameter caches go to tmp_path/config
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
     used = []
     original = su.discrete_gaussian_facct
     monkeypatch.setattr(su, "discrete_gaussian_facct", lambda *a, **k: used.append(a) or original(*a, **k))

@@ -4,6 +4,7 @@ and that the default is untouched."""
 
 import json
 import math
+import os
 import random
 import threading
 import time
@@ -41,6 +42,7 @@ KL_FIELDS = {"flooding_accounting", "max_partial_decryptions", "stat_param", "fl
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 def _tmcfe_noise_bound(kg) -> int:

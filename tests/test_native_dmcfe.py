@@ -1,6 +1,7 @@
 """Native key shares of the decentralized Ring-LWE MCFE against the Python code."""
 
 import numpy as np
+import os
 import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe_decentralized as dm
@@ -12,6 +13,7 @@ pytestmark = pytest.mark.skipif(not native_backend.available(), reason="Rust ext
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
     with native_backend.backend("auto"):
         yield
 

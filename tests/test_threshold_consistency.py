@@ -1,5 +1,6 @@
 """Partial decryptions for several enrolled sets must agree."""
 
+import os
 import pytest
 
 from pyfe4ai.schemes.threshold.threshold_utils import combine_consistently, partial_groups
@@ -104,6 +105,7 @@ def _mcfe_ring():
 @pytest.mark.parametrize("build", [_mife_ddh, _mife_lwe, _mcfe_ddh, _mcfe_lwe, _mcfe_ring])
 def test_partial_decryptions_for_several_enrolled_sets_must_agree(build, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
     combiner, share, tamper = build()
     groups = [{s: share(s, pair) for s in pair} for pair in PAIRS]
     honest = combiner.combine_decrypt(groups)
@@ -122,6 +124,7 @@ def test_ndarray_combiners_refuse_bad_partials(tmp_path, monkeypatch):
     from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE, ThresholdMIFELWEKeyGenerator
 
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
     kg = ThresholdMIFELWEKeyGenerator({"sec_param": 64, "n": 2, "lst_nid": NIDS, "s": 3, "lst_sid": SIDS, "t": 2,
                                        "eta": 1, "lwe_n": 16, "bound_x": 50, "bound_y": 5})
     kg.setup()
@@ -148,6 +151,7 @@ def test_noise_depends_on_the_lagrange_coefficient_not_the_enrolled_set(tmp_path
     from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE, ThresholdMIFELWEKeyGenerator
 
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
     sids = ["sid_0", "sid_1", "sid_2", "sid_3"]
     kg = ThresholdMIFELWEKeyGenerator({"sec_param": 64, "n": 2, "lst_nid": NIDS, "s": 4, "lst_sid": sids, "t": 2,
                                        "eta": 1, "lwe_n": 16, "bound_x": 4, "bound_y": 5})
@@ -165,6 +169,7 @@ def test_ring_noise_keys_do_not_change_with_a_resharing(tmp_path, monkeypatch):
     """A key requested with another n_chunks was re-shared under a fresh noise
     key, so the same key part came with fresh noise."""
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
     kg = ThresholdMCFERingLWEKeyGenerator({"sec_param": 64, "n": 2, "lst_nid": NIDS, "s": 3, "lst_sid": SIDS, "t": 2,
                                            "eta": 1, "ring_n": 16, "bound_x": 4, "bound_y": 5})
     kg.setup()

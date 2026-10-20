@@ -18,6 +18,7 @@ FACCT and label hashes) behaved as specified. Before the fixes:
   ``shake256-wide`` mode return ``[]``.
 """
 
+import os
 import signal
 import warnings
 
@@ -33,6 +34,7 @@ NIDS, SIDS = ["a", "b"], ["s0", "s1", "s2"]
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 def test_dense_threshold_key_share_binds_the_label_hash():

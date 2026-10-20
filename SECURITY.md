@@ -47,9 +47,10 @@ Responsible reporting of security issues is appreciated, especially for:
   the pairing-based schemes (BLS12-381, see below) and refuses the ALS16
   schemes (`sife/fullysec_lwe`, `mife/fullysec_lwe`), `mife/lwe_threshold`
   and `mcfe/paillier_decentralized`, which have no parameter set that is both
-  secure and usable. Parameter records cached in the working directory are
+  secure and usable. Parameter records cached in the parameter cache
+  directory (the per-user cache directory, or `PYFE4AI_CACHE_DIR`) are
   checked or re-derived on load, but a DCR modulus with known factors cannot
-  be detected under `toy`: run only in a directory nobody else can write to.
+  be detected under `toy`: use a cache directory nobody else can write to.
 - **Sampling and randomness.** The lattice MIFE / MCFE schemes sample exact
   discrete Gaussians (FACCT) by default; ALS16, the DCR schemes and ABDP15
   under `toy` follow the library-wide sampler, which rounds a continuous

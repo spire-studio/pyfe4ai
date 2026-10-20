@@ -1,5 +1,6 @@
 """The native exact sampler (FACCT) against the Python reference of sampling_utils."""
 
+import os
 import random
 
 import gmpy2 as gp
@@ -31,6 +32,7 @@ WIDTHS = [0.3, 1.0, 3.2, 17.25, 4030.5, 4.97e9, 2.0 ** 40]
 @pytest.fixture(autouse=True)
 def _cwd_auto(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
     with native_backend.backend("auto"):
         yield
 

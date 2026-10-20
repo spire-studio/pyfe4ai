@@ -1,6 +1,7 @@
 """Adaptively secure Ring-LWE IPFE (BMMS21 Sec. 5) with re-derived parameters."""
 
 import math
+import os
 import random
 
 import gmpy2 as gp
@@ -21,6 +22,7 @@ from pyfe4ai.primitives.lattice.ring_lwe_utils import (
     check_ring_lwe,
     ring_lwe_bound,
 )
+from pyfe4ai.core.base import cache_dir
 
 CFG = {"eta": 3, "bound_x": 4, "bound_y": 4}
 
@@ -28,19 +30,16 @@ CFG = {"eta": 3, "bound_x": 4, "bound_y": 4}
 @pytest.fixture(autouse=True)
 def _param_cache_in_tmp(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 @pytest.fixture(scope="module")
 def scheme(tmp_path_factory):
-    import os
-
-    cwd = os.getcwd()
-    os.chdir(tmp_path_factory.mktemp("cache"))
-    try:
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp_path_factory.mktemp("cache"))
+        mp.setenv("PYFE4AI_CACHE_DIR", os.path.join(os.getcwd(), "config"))
         kg = SIFEFullySecRingLWEKeyGenerator(dict(CFG))
         kg.setup()
-    finally:
-        os.chdir(cwd)
     pp = kg.get_public_parameters()
     return kg, SIFEFullySecRingLWE({"keys": {"pp": pp, "sk": kg.get_private_keys()}}), pp
 
@@ -192,7 +191,7 @@ def test_cached_parameters_are_reloaded_and_checked():
     again = SIFEFullySecRingLWEKeyGenerator(dict(CFG))
     assert (again.q, again.m, again.a) == (kg.q, kg.m, kg.a)
     import json, os
-    path = os.path.join("config", "authority", "SIFE_FULLYSEC_RING_LWE", "param.json")
+    path = os.path.join(cache_dir(), "authority", "SIFE_FULLYSEC_RING_LWE", "param.json")
     record = json.load(open(path))
     record["q"] = str(int(record["q"]) + 2 * kg.ring_n)  # a planted modulus
     json.dump(record, open(path, "w"))

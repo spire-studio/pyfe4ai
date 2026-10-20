@@ -15,6 +15,7 @@ Before the fixes:
 * refused (invalid) requests consumed budget.
 """
 
+import os
 import random
 
 import gmpy2 as gp
@@ -36,6 +37,7 @@ TMIFE = {"sec_param": 64, "eta": 1, "n": 3, "s": 3, "t": 2, "lst_nid": NIDS, "ls
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 def _tmife(q_max, **extra):

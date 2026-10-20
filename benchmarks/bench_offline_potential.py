@@ -26,6 +26,7 @@ import statistics
 import tempfile
 import time
 import warnings
+from unittest import mock
 
 import gmpy2 as gp
 
@@ -132,7 +133,8 @@ def main() -> None:
         os.chdir(tmp)
         try:
             for fam in args.families:
-                row = {"ddh": ddh, "paillier": paillier}[fam](args.reps)
+                with mock.patch.dict(os.environ, {"PYFE4AI_CACHE_DIR": os.path.join(tmp, "config")}):
+                    row = {"ddh": ddh, "paillier": paillier}[fam](args.reps)
                 rows.append(row)
                 print(json.dumps({k: round(v, 4) if isinstance(v, float) else v for k, v in row.items()}))
         finally:

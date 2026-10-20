@@ -4,6 +4,7 @@ import random
 import pytest
 
 from tests.pairing_group import GROUP, skip_unless_available  # noqa: E402
+from pyfe4ai.core.base import cache_dir
 
 skip_unless_available()
 
@@ -27,7 +28,7 @@ def kg_config():
 def test_key_generator(kg_config):
     kg = SIFEPartFHIPEKeyGenerator(kg_config)
 
-    config_folder = os.path.join("config", "authority", CryptoCONST.TYPE_SIFE_PART_FH_IPE)
+    config_folder = os.path.join(cache_dir(), "authority", CryptoCONST.TYPE_SIFE_PART_FH_IPE)
     assert os.path.exists(config_folder)
     assert os.path.exists(os.path.join(config_folder, "param.json"))
 

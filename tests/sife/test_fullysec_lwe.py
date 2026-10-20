@@ -8,6 +8,7 @@ import pytest
 from pyfe4ai.schemes.sife.fullysec_lwe import SIFEFullySecLWE
 from pyfe4ai.schemes.sife.fullysec_lwe import SIFEFullySecLWEKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.base import cache_dir
 
 
 @pytest.fixture
@@ -29,7 +30,7 @@ def test_key_generator(kg_config):
     assert kg.lwe_n == kg_config["lwe_n"]
 
     config_folder = os.path.join(
-        "config", "authority", CryptoCONST.TYPE_SIFE_FULLYSEC_LWE
+        cache_dir(), "authority", CryptoCONST.TYPE_SIFE_FULLYSEC_LWE
     )
     assert os.path.exists(config_folder)
     param_file = os.path.join(config_folder, "param.json")

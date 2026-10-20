@@ -26,6 +26,7 @@ from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
 from pyfe4ai.primitives import hashing as cu
 from pyfe4ai.primitives import sampling as sampling_utils
 from pyfe4ai.core.exceptions import FEValidationError
+from pyfe4ai.core.base import cache_dir
 
 pytestmark = pytest.mark.core
 native_only = pytest.mark.skipif(not native_backend.available(), reason="native extension not built")
@@ -34,6 +35,7 @@ native_only = pytest.mark.skipif(not native_backend.available(), reason="native 
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 @pytest.fixture(autouse=True)
@@ -225,7 +227,7 @@ def test_unknown_values_refused():
 
 def test_parameter_cache():
     base = {"n": 3, "eta": 1, "ring_n": 16, "sec_param": 128, "bound_x": 100, "bound_y": 1}
-    folder = os.path.join("config", "authority", mcfe_rlwe.MCFERingLWEKeyGenerator._scheme_type, "param.json")
+    folder = os.path.join(cache_dir(), "authority", mcfe_rlwe.MCFERingLWEKeyGenerator._scheme_type, "param.json")
     rns_file = os.path.join(os.path.dirname(folder), "param-rns.json")
     prime = mcfe_rlwe.MCFERingLWEKeyGenerator(dict(base))
     rec_prime = json.load(open(folder))

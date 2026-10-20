@@ -9,6 +9,7 @@ and an aggregator that aggregates the label twice with the same weights learns
 ``gA - gB``. The pair is now reserved before encrypting.
 """
 
+import os
 import threading
 
 import numpy as np
@@ -22,6 +23,7 @@ NIDS = ["c0", "c1", "c2"]
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 def test_one_ciphertext_per_client_and_label_under_threads():

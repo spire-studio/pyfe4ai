@@ -1,4 +1,5 @@
-"""The parameter cache in ./config/authority: a corrupted file is regenerated,
+"""Where the parameter cache is (``<cache_dir>/authority``) and what it
+accepts: a corrupted file is regenerated,
 and cached discrete-log and DCR parameters are checked structurally before
 they are used (a planted 5-bit group or a prime "RSA modulus" used to be
 accepted)."""
@@ -15,15 +16,18 @@ from pyfe4ai.schemes.sife.damgard_ddh import SIFEDamgardKeyGenerator
 from pyfe4ai.schemes.sife.ddh import SIFEKeyGenerator
 from pyfe4ai.schemes.sife.paillier import SIFEPaillierKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.base import cache_dir
+from pyfe4ai.core.exceptions import FEValidationError
 
 
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 def _param_file(scheme_type):
-    return os.path.join("config", "authority", scheme_type, "param.json")
+    return os.path.join(cache_dir(), "authority", scheme_type, "param.json")
 
 
 def _rewrite(scheme_type, change):
@@ -269,3 +273,68 @@ def test_standard_never_loads_or_stores_dcr_moduli(monkeypatch):
     assert SIFEPaillierKeyGenerator(dict(std)).n != first.n
     toy = {"sec_param": 64, "eta": 2, "bit_length": 64, "bound_x": 10, "bound_y": 10}
     assert SIFEPaillierKeyGenerator(dict(toy)).n == SIFEPaillierKeyGenerator(dict(toy)).n
+
+
+# -- location of the cache --------------------------------------------------------
+
+
+def test_cache_directory_precedence(tmp_path, monkeypatch):
+    from pyfe4ai.core import base
+
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", str(tmp_path / "env"))
+    assert base.cache_dir() == str(tmp_path / "env")
+    assert base.cache_dir(tmp_path / "explicit") == str(tmp_path / "explicit")  # the config entry wins
+    assert base.cache_dir("relative") == "relative"
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", "")
+    assert base.cache_dir() == base.default_cache_dir()
+    monkeypatch.delenv("PYFE4AI_CACHE_DIR")
+    assert base.cache_dir() == base.default_cache_dir()
+    for bad in ("", 5, b"bytes", ["dir"]):
+        with pytest.raises(FEValidationError, match="cache_dir"):
+            base.cache_dir(bad)
+
+
+def test_default_cache_directory_per_platform(tmp_path, monkeypatch):
+    from pyfe4ai.core import base
+
+    home = str(tmp_path / "home")
+    monkeypatch.setenv("HOME", home)
+    with monkeypatch.context() as mp:
+        mp.setattr(base.sys, "platform", "darwin")
+        assert base.default_cache_dir() == os.path.join(home, "Library", "Caches", "pyfe4ai")
+    with monkeypatch.context() as mp:
+        mp.setattr(base.sys, "platform", "linux")
+        mp.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
+        assert base.default_cache_dir() == os.path.join(str(tmp_path / "xdg"), "pyfe4ai")
+        mp.setenv("XDG_CACHE_HOME", "relative/xdg")  # not absolute: ignored, as the XDG spec says
+        assert base.default_cache_dir() == os.path.join(home, ".cache", "pyfe4ai")
+        mp.delenv("XDG_CACHE_HOME")
+        assert base.default_cache_dir() == os.path.join(home, ".cache", "pyfe4ai")
+    with monkeypatch.context() as mp:
+        mp.setattr(base.sys, "platform", "win32")
+        mp.setattr(base.os, "name", "nt")
+        mp.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+        assert base.default_cache_dir() == os.path.join(str(tmp_path / "local"), "pyfe4ai", "Cache")
+
+
+def test_records_go_to_the_cache_directory_not_the_working_directory(tmp_path, monkeypatch):
+    from pyfe4ai.ml import FESchemeWrapper
+
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", str(tmp_path / "env"))
+    SIFEKeyGenerator(dict(DDH))
+    record = tmp_path / "env" / "authority" / CryptoCONST.TYPE_SIFE / "param.json"
+    assert record.exists()
+    SIFEKeyGenerator(dict(DDH, cache_dir=str(tmp_path / "explicit")))
+    assert (tmp_path / "explicit" / "authority" / CryptoCONST.TYPE_SIFE / "param.json").exists()
+    FESchemeWrapper("mcfe", "ddh", dict(DDH, n=2, cache_dir=str(tmp_path / "wrapper")))
+    assert (tmp_path / "wrapper" / "authority" / CryptoCONST.TYPE_MCFE / "param.json").exists()
+    assert not (tmp_path / "config").exists()  # the working directory
+    # a record moved to another cache directory is loaded from there as it is
+    moved = tmp_path / "moved" / "authority" / CryptoCONST.TYPE_SIFE
+    moved.mkdir(parents=True)
+    (moved / "param.json").write_bytes(record.read_bytes())
+    kg = SIFEKeyGenerator(dict(DDH, cache_dir=str(tmp_path / "moved")))
+    assert str(kg.p) == json.loads(record.read_text())["group"]["p"]
+    assert (moved / "param.json").read_bytes() == record.read_bytes()
+    with pytest.raises(FEValidationError, match="cache_dir"):
+        SIFEKeyGenerator(dict(DDH, cache_dir=5))

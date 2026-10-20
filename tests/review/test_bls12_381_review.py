@@ -38,6 +38,7 @@ _LEAK = textwrap.dedent(
     """
     import os, random, resource, sys
     os.chdir(sys.argv[1])
+    os.environ["PYFE4AI_CACHE_DIR"] = os.path.join(sys.argv[1], "config")
     from pyfe4ai.schemes.sife.fh_ipe_pairing import SIFEFHIPE, SIFEFHIPEKeyGenerator
     kg = SIFEFHIPEKeyGenerator({"sec_param": 64, "eta": 10, "bound_x": 100, "bound_y": 100,
                                 "pairing_group_param": "BLS12-381"})

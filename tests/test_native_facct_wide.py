@@ -8,6 +8,7 @@ XofRandom counter after a native draw, and a thread sharing it.
 """
 
 import hashlib
+import os
 import random
 import threading
 
@@ -89,6 +90,7 @@ def _native_widths():
 @pytest.fixture(autouse=True)
 def _setup(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
     with native_backend.backend("auto"):
         yield
 

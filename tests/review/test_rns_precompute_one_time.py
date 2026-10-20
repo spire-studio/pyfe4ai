@@ -25,6 +25,7 @@ pytestmark = pytest.mark.skipif(not native_backend.available(), reason="native e
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
     with native_backend.backend("native"):
         yield
 

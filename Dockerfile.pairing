@@ -36,7 +36,7 @@ COPY tests ./tests
 RUN conda env create -f environment.yml && conda clean -afy
 RUN conda run -n pyfe4ai python -m pip install -e ".[test,pairing]"
 
-# run as an unprivileged user (tests write their parameter cache under /workspace)
+# run as an unprivileged user (the tests keep their parameter cache in a temporary directory)
 RUN useradd --create-home --uid 10001 fe && chown -R fe /workspace
 USER fe
 

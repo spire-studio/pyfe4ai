@@ -7,6 +7,7 @@ worked before. A copy now carries the pairs used so far and refuses them.
 """
 
 import copy
+import os
 import pickle
 
 import pytest
@@ -17,6 +18,7 @@ from pyfe4ai.ml import FESchemeWrapper
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 @pytest.mark.parametrize("clone", [lambda w: pickle.loads(pickle.dumps(w)), copy.deepcopy], ids=["pickle", "deepcopy"])

@@ -7,6 +7,7 @@ sampler in the public parameters; "rounded" stays selectable.
 """
 
 import numpy as np
+import os
 import pytest
 
 from pyfe4ai.schemes.mcfe import lwe as mcfe_lwe
@@ -43,6 +44,7 @@ KEYGENS = {
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 class _Draws:

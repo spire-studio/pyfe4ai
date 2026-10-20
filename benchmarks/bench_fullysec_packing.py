@@ -20,6 +20,7 @@ import random
 import statistics
 import tempfile
 import time
+from unittest import mock
 
 from pyfe4ai.schemes.sife.fullysec_ring_lwe import SIFEFullySecRingLWE, SIFEFullySecRingLWEKeyGenerator
 from pyfe4ai import backend as native_backend
@@ -50,7 +51,8 @@ def main() -> None:
             cwd = os.getcwd()
             os.chdir(tmp)
             try:
-                schemes = {layout: _scheme(eta, bx, by, layout) for layout in ("elementwise", "packed")}
+                with mock.patch.dict(os.environ, {"PYFE4AI_CACHE_DIR": os.path.join(tmp, "config")}):
+                    schemes = {layout: _scheme(eta, bx, by, layout) for layout in ("elementwise", "packed")}
             finally:
                 os.chdir(cwd)
         y = [rng.randint(-by, by) for _ in range(eta)]

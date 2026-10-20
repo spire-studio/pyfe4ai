@@ -10,6 +10,7 @@ import gmpy2 as gp
 from pyfe4ai.schemes.sife.ddh_dynamic import SIFEDynamic
 from pyfe4ai.schemes.sife.ddh_dynamic import SIFEDynamicKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.base import cache_dir
 
 from tests.log_config import init_logging_config
 
@@ -41,7 +42,7 @@ def test_key_generator(kg_config):
     assert kg.sec_param == kg_config["sec_param"]
     assert kg.eta == kg_config["eta"]
 
-    config_folder = os.path.join("config", "authority", CryptoCONST.TYPE_SIFE)
+    config_folder = os.path.join(cache_dir(), "authority", CryptoCONST.TYPE_SIFE)
     assert os.path.exists(config_folder)
     param_file = os.path.join(config_folder, "param.json")
     assert os.path.exists(param_file)

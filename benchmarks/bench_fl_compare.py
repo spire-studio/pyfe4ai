@@ -34,9 +34,9 @@ opt-in KL accounting of its flooding noise (see
 :mod:`pyfe4ai.schemes.threshold.flooding_accounting`; it needs ``--threshold`` equal
 to ``--servers``), one budget per server.
 
-The schemes write their parameter cache to ``./config``; the run happens in
-``--workdir`` (default: a temporary directory) so a cache can be reused across
-runs. Usage::
+The schemes write their parameter cache to ``<workdir>/config`` (as
+``PYFE4AI_CACHE_DIR``); the run happens in ``--workdir`` (default: a
+temporary directory) so a cache can be reused across runs. Usage::
 
     python benchmarks/bench_fl_compare.py --families ring_lwe --elements 10000 --json out.json
     python benchmarks/bench_fl_compare.py --families ring_lwe --backend native --threads 4
@@ -60,6 +60,7 @@ import sys
 import tempfile
 import time
 import warnings
+from unittest import mock
 
 import numpy as np
 
@@ -462,7 +463,7 @@ def main() -> None:
                              "scheme's default for the Shamir and replicated sharings) or whole key shares")
     parser.add_argument("--split-key-shares", action="store_const", const="split", dest="key_shares",
                         help="the same as --key-shares split")
-    parser.add_argument("--workdir", default=None, help="directory holding ./config (default: temporary)")
+    parser.add_argument("--workdir", default=None, help="directory holding the parameter cache config/ (default: temporary)")
     parser.add_argument("--json", default=None, help="append the results to this JSON file")
     parser.add_argument("--tag", default="", help="free-form label stored with every row")
     args = parser.parse_args()
@@ -482,6 +483,8 @@ def main() -> None:
         workdir = args.workdir
         os.makedirs(workdir, exist_ok=True)
     os.chdir(workdir)
+    cache = mock.patch.dict(os.environ, {"PYFE4AI_CACHE_DIR": os.path.join(os.getcwd(), "config")})
+    cache.start()
     try:
         for family in args.families:
             elements = args.elements or FAMILIES[family][2]
@@ -524,6 +527,7 @@ def main() -> None:
                   + ("  [key share {key_share_ms:.2f} ms per client, combine {combine_ms:.2f} ms]".format(**row)
                      if "key_share_ms" in row else ""), flush=True)
     finally:
+        cache.stop()
         os.chdir(cwd)
         if tmp is not None:
             tmp.cleanup()

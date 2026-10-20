@@ -33,6 +33,9 @@ class FEBaseConfig(TypedDict, total=False):
     ``stat_param`` is the statistical parameter of the schemes that use one
     (ABMPSW20 rounding, flooding, masks, Paillier key widths): 64 by default,
     at least 128 under ``standard``.
+    ``cache_dir`` is the parameter cache directory of the key generator
+    (default: ``PYFE4AI_CACHE_DIR`` or the per-user cache directory, see
+    :func:`~pyfe4ai.core.base.cache_dir`).
     """
 
     security_profile: str
@@ -41,6 +44,7 @@ class FEBaseConfig(TypedDict, total=False):
     n: int
     s: int
     lst_nid: list[str]
+    cache_dir: str
 
 
 # ── DDH family ──────────────────────────────────────────────────────

@@ -11,6 +11,7 @@ from pyfe4ai.schemes.sife.lwe import SIFELWE
 from pyfe4ai.schemes.sife.lwe import SIFELWEKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.exceptions import FEValidationError
+from pyfe4ai.core.base import cache_dir
 
 init_logging_config()
 logger = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ def test_key_generator(kg_config):
     assert kg.eta == kg_config["eta"]
     assert kg.lwe_n == kg_config["lwe_n"]
 
-    config_folder = os.path.join("config", "authority", CryptoCONST.TYPE_SIFE_LWE)
+    config_folder = os.path.join(cache_dir(), "authority", CryptoCONST.TYPE_SIFE_LWE)
     assert os.path.exists(config_folder)
     param_file = os.path.join(config_folder, "param.json")
     assert os.path.exists(param_file)

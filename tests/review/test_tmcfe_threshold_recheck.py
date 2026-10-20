@@ -28,6 +28,7 @@ Before the fixes:
 
 from __future__ import annotations
 
+import os
 import pickle
 
 import gmpy2 as gp
@@ -47,6 +48,7 @@ N = 32
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 def _setup(t=3, sharing="shamir", ct_format="json", **extra):

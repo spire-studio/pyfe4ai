@@ -6,6 +6,7 @@ import pytest
 from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWE
 from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWEKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.base import cache_dir
 
 
 @pytest.fixture
@@ -25,7 +26,7 @@ def kg_config():
 def test_key_generator(kg_config):
     kg = MIFERingLWEKeyGenerator(kg_config)
 
-    config_folder = os.path.join("config", "authority", CryptoCONST.TYPE_MIFE_RING_LWE)
+    config_folder = os.path.join(cache_dir(), "authority", CryptoCONST.TYPE_MIFE_RING_LWE)
     assert os.path.exists(config_folder)
     assert os.path.exists(os.path.join(config_folder, "param.json"))
 

@@ -7,6 +7,7 @@ ones.
 
 from __future__ import annotations
 
+import os
 import random
 
 import numpy as np
@@ -27,6 +28,7 @@ BACKENDS = ["python"] + (["native"] if native_backend.available() else [])
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 def _setup(ct_format="binary", eta=1, ring_n=16, bound_x=100, bound_y=1, precision=2):

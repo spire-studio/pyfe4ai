@@ -2,6 +2,7 @@
 truncated silently (0.5 -> 0), and ragged Ring-LWE plaintext rows were cut
 to the ring dimension."""
 
+import os
 import pytest
 
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWE, MCFERingLWEKeyGenerator
@@ -20,6 +21,7 @@ CFG = {"sec_param": 64, "eta": 2, "n": 2, "lst_nid": NIDS, "ring_n": 16, "bound_
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 def test_weight_digest_refuses_fractional_weights():
@@ -124,6 +126,7 @@ def test_fractional_inputs_are_refused_everywhere(tmp_path, monkeypatch):
     from pyfe4ai.schemes.sife.paillier import SIFEPaillier, SIFEPaillierKeyGenerator
 
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
     kg = SIFEPaillierKeyGenerator({"sec_param": 64, "eta": 2, "bit_length": 64, "bound_x": 10, "bound_y": 10})
     kg.setup()
     enc = SIFEPaillier({"keys": {"pp": kg.get_public_parameters(), "sk": kg.get_private_keys()}})
@@ -160,6 +163,7 @@ def test_mcfe_ddh_refuses_fractional_inputs(tmp_path, monkeypatch):
     from pyfe4ai.schemes.mcfe.ddh import MCFE, MCFEKeyGenerator
 
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
     kg = MCFEKeyGenerator({"sec_param": 128, "eta": 1, "n": 2, "lst_nid": NIDS})
     kg.setup()
     with pytest.raises(FEValidationError):

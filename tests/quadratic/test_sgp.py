@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from tests.pairing_group import GROUP, skip_unless_available  # noqa: E402
+from pyfe4ai.core.base import cache_dir
 
 skip_unless_available()
 
@@ -26,7 +27,7 @@ def kg_config():
 def test_key_generator(kg_config):
     kg = QuadraticSGPKeyGenerator(kg_config)
     param_path = os.path.join(
-        "config", "authority", CryptoCONST.TYPE_QUADRATIC_SGP, "param.json"
+        cache_dir(), "authority", CryptoCONST.TYPE_QUADRATIC_SGP, "param.json"
     )
     assert os.path.exists(param_path)
 

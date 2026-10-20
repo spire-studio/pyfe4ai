@@ -1,6 +1,7 @@
 """Security profiles: ``toy`` leaves configs alone, ``standard`` raises them."""
 
 import json
+import os
 import warnings
 
 import gmpy2 as gp
@@ -46,6 +47,7 @@ STANDARD = {"security_profile": "standard"}
 @pytest.fixture(autouse=True)
 def _param_cache_in_tmp(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 # -- resolution --------------------------------------------------------------
@@ -348,6 +350,7 @@ def test_standard_rejects_an_insecure_explicit_abdp15_dimension():
 
 def test_standard_rederives_a_record_cached_under_the_old_rule(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
     config = {"eta": 2, "bound_x": 50, "bound_y": 50, **STANDARD}
     kg = SIFELWEKeyGenerator(config)
     path = tmp_path / "config" / "authority" / kg._scheme_type / "param.json"

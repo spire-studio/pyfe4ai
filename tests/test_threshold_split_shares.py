@@ -12,6 +12,7 @@ refused, and binary dealing equals the Python code on the same random bytes.
 
 from __future__ import annotations
 
+import os
 import pickle
 
 import gmpy2 as gp
@@ -33,6 +34,7 @@ WEIGHTS = {nid: [y] for nid, y in zip(NIDS, (1, -2, 3))}
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 def _setup(t=3, ct_format="binary", **extra):

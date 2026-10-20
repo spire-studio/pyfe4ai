@@ -1,4 +1,5 @@
 import logging
+import os
 import random
 
 import numpy as np
@@ -132,6 +133,7 @@ def _noise_margin(n_slots, tmp_path, monkeypatch):
     import math
 
     monkeypatch.chdir(tmp_path / str(n_slots))
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path / str(n_slots), "config"))
     nids = ["nid_{}".format(i) for i in range(n_slots)]
     kg = MIFELWEKeyGenerator({"n": n_slots, "lst_nid": nids, "eta": 1, "lwe_n": 64,
                               "bound_x": 20, "bound_y": 20})

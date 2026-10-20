@@ -11,7 +11,7 @@ FL round with a new key), server 1 of E = {1..t} (it adds C(s-1, t-1) pieces).
   lwe:  tMCFE-LWE, standard, 3 clients, X = 100, Y = 1
 
 Usage: python benchmarks/bench_replicated_sharing.py KIND S T SHARING [REPS]   (one JSON line;
-       run from a directory where ./config may be written)
+       the parameter cache goes to PYFE4AI_CACHE_DIR or the user's cache directory)
 """
 import json, statistics, sys, time, warnings
 warnings.simplefilter("ignore")

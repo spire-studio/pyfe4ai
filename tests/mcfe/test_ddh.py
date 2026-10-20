@@ -8,6 +8,7 @@ import gmpy2 as gp
 from pyfe4ai.schemes.mcfe.ddh import MCFE
 from pyfe4ai.schemes.mcfe.ddh import MCFEKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.base import cache_dir
 from tests.log_config import init_logging_config
 
 init_logging_config()
@@ -35,7 +36,7 @@ def test_key_generator(kg_config):
     assert kg.eta == kg_config["eta"]
     assert kg.lst_nid == kg_config["lst_nid"]
 
-    config_folder = os.path.join("config", "authority", CryptoCONST.TYPE_MCFE)
+    config_folder = os.path.join(cache_dir(), "authority", CryptoCONST.TYPE_MCFE)
     assert os.path.exists(config_folder)
     param_file = os.path.join(config_folder, "param.json")
     assert os.path.exists(param_file)

@@ -2,6 +2,7 @@
 
 import math
 
+import os
 import pytest
 
 from pyfe4ai.core.exceptions import FEValidationError
@@ -99,6 +100,7 @@ def test_multi_input_widths_cover_3x(tmp_path, monkeypatch, module, kg_name, ext
     import importlib
 
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
     X, Y, eta = 4, 3, 2
     nids = ["nid_{}".format(i) for i in range(clients)]
     kg = getattr(importlib.import_module(module), kg_name)(dict(

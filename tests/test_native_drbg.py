@@ -9,6 +9,7 @@ and without one every call draws fresh randomness.
 from __future__ import annotations
 
 import numpy as np
+import os
 import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe as mcfe_rlwe
@@ -26,6 +27,7 @@ SEED = bytes(range(32))
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 def _stream(seed: bytes, stream: int, n: int) -> bytes:

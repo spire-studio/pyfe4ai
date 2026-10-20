@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import json
+import os
 import pickle
 
 import numpy as np
@@ -40,6 +41,7 @@ LEGACY = {"ct_format": "json", "ring_modulus": "prime", "key_shares": "full"}
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 def _wrapper(**extra):

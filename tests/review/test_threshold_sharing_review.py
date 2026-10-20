@@ -13,6 +13,7 @@ attacks against replicated shares are at chance). Before the follow-up fixes:
   per-server opt-out ``legacy_shamir="warn"``.
 """
 
+import os
 import warnings
 
 import pytest
@@ -29,6 +30,7 @@ CFG = {"sec_param": 64, "n": 2, "lst_nid": NIDS, "s": 3, "lst_sid": SIDS, "eta":
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 def test_boolean_threshold_is_refused():

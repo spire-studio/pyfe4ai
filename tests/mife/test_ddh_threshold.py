@@ -10,6 +10,7 @@ from pyfe4ai.schemes.mife.ddh_threshold import ThresholdMIFE
 from pyfe4ai.schemes.mife.ddh_threshold import ThresholdMIFEKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.core.base import cache_dir
 from tests.log_config import init_logging_config
 
 init_logging_config()
@@ -42,7 +43,7 @@ def test_key_generator(kg_config):
     assert kg.t == kg_config["t"]
     assert kg.s == kg_config["s"]
 
-    config_folder = os.path.join("config", "authority", CryptoCONST.TYPE_TMIFE)
+    config_folder = os.path.join(cache_dir(), "authority", CryptoCONST.TYPE_TMIFE)
     assert os.path.exists(config_folder)
     param_file = os.path.join(config_folder, "param.json")
     assert os.path.exists(param_file)

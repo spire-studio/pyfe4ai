@@ -21,6 +21,7 @@ _SCRIPT = textwrap.dedent(
     import os, sys, threading
     import numpy as np
     os.chdir(sys.argv[1])
+    os.environ["PYFE4AI_CACHE_DIR"] = os.path.join(sys.argv[1], "config")
     from pyfe4ai.schemes.mcfe import ring_lwe as mcfe_rlwe
     nids = ["c0", "c1", "c2"]
     kg = mcfe_rlwe.MCFERingLWEKeyGenerator({"n": 3, "lst_nid": nids, "eta": 1, "ring_n": 1024, "sec_param": 128,

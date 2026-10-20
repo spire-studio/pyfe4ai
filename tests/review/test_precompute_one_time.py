@@ -31,6 +31,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 def _client(ring_n=64):
@@ -77,6 +78,7 @@ _THREADS = textwrap.dedent(
     import os, sys, threading
     import numpy as np
     os.chdir(sys.argv[1])
+    os.environ["PYFE4AI_CACHE_DIR"] = os.path.join(sys.argv[1], "config")
     from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWE, MCFERingLWEKeyGenerator
     from pyfe4ai import backend as native_backend
     nids = ["a", "b", "c"]

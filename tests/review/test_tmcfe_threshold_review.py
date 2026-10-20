@@ -25,6 +25,7 @@ pass). Before the fixes:
 from __future__ import annotations
 
 import gmpy2 as gp
+import os
 import pytest
 
 from pyfe4ai.schemes.threshold import threshold_utils as tu
@@ -44,6 +45,7 @@ CREDS = {"fusion_weight": {nid: [1] for nid in NIDS}, "label": "L"}
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 def _setup(t, sharing, ct_format="binary", **extra):

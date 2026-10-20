@@ -1,5 +1,6 @@
 """Offline / online encryption of SIFE-/MIFE-Paillier and MIFE-DDH (output-identical)."""
 
+import os
 import random
 
 import numpy as np
@@ -15,6 +16,7 @@ from pyfe4ai.core.exceptions import FEValidationError
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 def _seed(monkeypatch, seed):

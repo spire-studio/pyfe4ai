@@ -15,6 +15,7 @@ adapter). Before the fixes:
   standard profile accepted a larger stat_param for the flooding.
 """
 
+import os
 import warnings
 
 import pytest
@@ -28,6 +29,7 @@ N, S = ["a", "b"], ["s0", "s1", "s2"]
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
     yield
     su.set_gaussian_sampler("rounded")
 

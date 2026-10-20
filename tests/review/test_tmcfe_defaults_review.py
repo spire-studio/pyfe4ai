@@ -24,6 +24,7 @@ Before the fixes:
 from __future__ import annotations
 
 import copy
+import os
 import pickle
 
 import numpy as np
@@ -39,6 +40,7 @@ WEIGHTS = {"nid_0": 1, "nid_1": 2, "nid_2": 1}
 @pytest.fixture(autouse=True)
 def _cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 def _wrapper():
