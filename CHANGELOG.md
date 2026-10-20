@@ -369,9 +369,9 @@ Mac) against BLS12-381.
   a secret 32-byte seed with SHAKE-256, so a server stores at most one full
   piece -- the largest tMCFE-Ring-LWE key share under `standard` (3 clients,
   `ring_n` 8192) at `(10, 5)` is 3.4 MB instead of 428 MB, dealt in 2.0
-  instead of 30 s. Its
-  key shares hide the key computationally (SHAKE-256 keyed by the seeds as a
-  PRF) instead of perfectly; full replicated sharing stays the default.
+  instead of 30 s. Its key shares hide the key computationally (SHAKE-256
+  keyed by the seeds as a PRF) instead of perfectly; full replicated sharing
+  stays the default.
 - Opt-in **KL accounting of the threshold flooding** for `mife/lwe_threshold`
   and `mcfe/ring_lwe_threshold` with `t = s`
   (`flooding_accounting="kl"`, a mandatory `max_partial_decryptions` budget
@@ -381,8 +381,8 @@ Mac) against BLS12-381.
   decryptions of every server -- for a smaller `q`: 178 bits for
   `mcfe/ring_lwe_threshold` under `standard` with `N = s Q k = 2^53`
   flooded coefficients (Gaussian flooding, which `"kl"` uses), against 212
-  bits with the default uniform flooding. `t < s` and `mcfe/lwe_threshold` refuse
-  it.
+  bits with the default uniform flooding. `t < s` and `mcfe/lwe_threshold`
+  refuse it.
 - Opt-in **packed layout for `sife/fullysec_ring_lwe`**
   (`ndarray_layout="packed"`, experimental: the leveraging argument is the
   project's own, independently checked, not externally reviewed): one
@@ -420,11 +420,11 @@ Mac) against BLS12-381.
   roots for every prime.
 - Discrete-log tables are keyed by value (the old string keys are still
   read).
-- The tMCFE (Ring-LWE) and tMIFE (LWE) docstrings now say that the flooding
-  argument is statistical per answer and gives no bound for many answers to
-  varied ciphertexts of a corrupted client, and that the per-sample
-  `0.02 / sigma^2` figure of the rounded sampler holds for the ideal rounded
-  Gaussian only, not for its double-precision implementation.
+- Documentation claimed more than the code: the flooding argument of tMCFE
+  (Ring-LWE) and tMIFE (LWE) is statistical per answer and gives no bound
+  for many answers to varied ciphertexts of a corrupted client, and the
+  per-sample `0.02 / sigma^2` figure of the rounded sampler holds for the
+  ideal rounded Gaussian only, not for its double-precision implementation.
 
 ### Fixed
 
