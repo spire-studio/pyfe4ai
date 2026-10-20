@@ -34,6 +34,10 @@ from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.primitives.groups import ec_group as eg
 from pyfe4ai import backend as native_backend
 from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.formats.dl import MCFEDDHCiphertext
+from pyfe4ai.core.formats.dl import MCFEDDHEncryptionKey
+from pyfe4ai.core.formats.dl import MCFEDDHFunctionalKey
+from pyfe4ai.core.formats.dl import RistrettoParameters
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai._validation import int_vector, scale_to_int
 
@@ -84,7 +88,7 @@ class MCFERistretto255KeyGenerator(ECDDHKeyGeneratorBase):
         logger.info("MCFE (ristretto255) setup - DONE.")
 
     def get_public_parameters(self) -> dict:
-        return {"group": eg.GROUP, "n": self.n, "eta": self.eta}
+        return RistrettoParameters.new(group=eg.GROUP, n=self.n, eta=self.eta).to_dict()
 
     def get_private_keys(self, nid: str) -> dict | None:
         """Client *nid*'s key ``{s}`` (one ``Z_L^2`` pair per slot), ``None`` if unknown."""
@@ -92,7 +96,7 @@ class MCFERistretto255KeyGenerator(ECDDHKeyGeneratorBase):
             logger.error("no id or invalid id  provided.")
             warn_at_caller("no id or invalid id  provided.")
             return None
-        return {"s": [[eg.scalar_str(e) for e in s_j] for s_j in self.msk["s"][nid]]}
+        return MCFEDDHEncryptionKey.new(s=[[eg.scalar_str(e) for e in s_j] for s_j in self.msk["s"][nid]]).to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """``{d: sum y_{i,j} s_{i,j}}`` (a pair of scalars), aggregated over all clients."""
@@ -112,7 +116,7 @@ class MCFERistretto255KeyGenerator(ECDDHKeyGeneratorBase):
             for y_j, s_j in zip(int_vector(weights, "fusion weight of {}".format(nid)), s_nid):
                 d[0] += y_j * s_j[0]
                 d[1] += y_j * s_j[1]
-        return {"d": [eg.scalar_str(d_k) for d_k in d]}
+        return MCFEDDHFunctionalKey.new(d=[eg.scalar_str(d_k) for d_k in d]).to_dict()
 
 
 class MCFERistretto255(ECDDHCryptoBase):
@@ -120,8 +124,9 @@ class MCFERistretto255(ECDDHCryptoBase):
 
     def _key(self) -> list:
         cache = self.__dict__.get("_s_cache")
-        if cache is None or cache[0] is not self.sk["s"]:
-            cache = (self.sk["s"], [[eg.scalar_from(v, "encryption key") for v in s_j] for s_j in self.sk["s"]])
+        s = MCFEDDHEncryptionKey(self.sk).s
+        if cache is None or cache[0] is not s:
+            cache = (s, [[eg.scalar_from(v, "encryption key") for v in s_j] for s_j in s])
             self._s_cache = cache
         return cache[1]
 
@@ -133,14 +138,14 @@ class MCFERistretto255(ECDDHCryptoBase):
             raise FEKeyError("no private keys provided for encryption")
         if not isinstance(lst_pt, list):
             raise FEValidationError("input plaintext must be a list")
-        if len(lst_pt) > len(self.sk["s"]):
+        if len(lst_pt) > len(MCFEDDHEncryptionKey(self.sk).s):
             raise FEValidationError("input plaintext has {} values, more than eta".format(len(lst_pt)))
         u = hash_label(label)
         c = []
         for x_j, s_j in zip(int_vector(lst_pt, "plaintext"), self._key()):
             point = eg.add(eg.mul_base(x_j), eg.add(eg.mul(u[0], s_j[0]), eg.mul(u[1], s_j[1])))
             c.append(eg.to_hex(point))
-        return {"c": c}
+        return MCFEDDHCiphertext.new(c=c).to_dict()
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict, label: str):
         """``sum_i <x_i, y_i>`` under *label*, or ``None`` if beyond ``dlog_bound``.
@@ -152,20 +157,20 @@ class MCFERistretto255(ECDDHCryptoBase):
         """
         if not dk:
             raise FEKeyError("no decryption key provided.")
-        if not isinstance(dk.get("d"), (list, tuple)) or len(dk["d"]) != 2:
+        if not isinstance(MCFEDDHFunctionalKey(dk).get("d"), (list, tuple)) or len(MCFEDDHFunctionalKey(dk).d) != 2:
             raise FEKeyError("malformed MCFE decryption key: expected d = [d0, d1]")
         if dct_ct.keys() != fusion_weight.keys():
             raise FESchemeError("inconsistent input among ct and fusion weight")
         acc = eg.IDENTITY
         for nid, ct in dct_ct.items():
             weights = fusion_weight[nid]
-            c = ct["c"]
+            c = MCFEDDHCiphertext(ct).c
             if len(c) != len(weights):
                 raise FESchemeError("ciphertext and fusion weight of {} differ in length".format(nid))
             for c_j, y_j in zip(c, int_vector(weights, "fusion weight of {}".format(nid))):
                 acc = eg.add(acc, eg.mul(eg.from_hex(c_j, "ciphertext element of {}".format(nid)), y_j))
         u = hash_label(label)
-        d = [eg.scalar_from(v, "decryption key") for v in dk["d"]]
+        d = [eg.scalar_from(v, "decryption key") for v in MCFEDDHFunctionalKey(dk).d]
         acc = eg.sub(acc, eg.add(eg.mul(u[0], d[0]), eg.mul(u[1], d[1])))
         return self._solve_dlog(acc)
 
@@ -180,7 +185,7 @@ class MCFERistretto255(ECDDHCryptoBase):
             ary_ct = np.empty(ary.shape, dtype=object)
             ext = native_backend.ec_ext()
             if (ext is not None and ary.size and self._has_public_parameters() and self._has_private_keys()
-                    and len(self.sk["s"]) >= 1):
+                    and len(MCFEDDHEncryptionKey(self.sk).s) >= 1):
                 # encrypt() of every element in one native call
                 s0, s1 = self._key()[0]
                 cts = ext.r255_mcfe_encrypt(
@@ -188,7 +193,7 @@ class MCFERistretto255(ECDDHCryptoBase):
                     _LABEL_DST, [int(w) for w in ary.ravel()], _k(s0), _k(s1), native_backend.get_threads(),
                 )
                 for i, c in zip(np.ndindex(ary.shape), cts):
-                    ary_ct[i] = {"c": [c]}
+                    ary_ct[i] = MCFEDDHCiphertext.new(c=[c]).to_dict()
             else:
                 for i, w in np.ndenumerate(ary):
                     ary_ct[i] = self.encrypt([int(w)], _element_label(label, l, i))
@@ -219,7 +224,7 @@ class MCFERistretto255(ECDDHCryptoBase):
             return None
         if not dk:
             raise FEKeyError("no decryption key provided.")
-        if not isinstance(dk.get("d"), (list, tuple)) or len(dk["d"]) != 2:
+        if not isinstance(MCFEDDHFunctionalKey(dk).get("d"), (list, tuple)) or len(MCFEDDHFunctionalKey(dk).d) != 2:
             raise FEKeyError("malformed MCFE decryption key: expected d = [d0, d1]")
         if dict_ndarray_ct.keys() != fusion_weight.keys():
             raise FESchemeError("inconsistent input among ct and fusion weight")
@@ -232,12 +237,12 @@ class MCFERistretto255(ECDDHCryptoBase):
             ys.append(int_vector(weights, "fusion weight of {}".format(nid))[0])
         index = list(np.ndindex(np.shape(layer)))
         try:
-            cts = [[dict_ndarray_ct[nid][l][i]["c"] for i in index] for nid in nids]
+            cts = [[MCFEDDHCiphertext(dict_ndarray_ct[nid][l][i]).c for i in index] for nid in nids]
         except (KeyError, TypeError, IndexError):
             return None
         if any(not isinstance(c, list) or len(c) != 1 or not isinstance(c[0], str) for col in cts for c in col):
             return None
-        d = [eg.scalar_from(v, "decryption key") for v in dk["d"]]
+        d = [eg.scalar_from(v, "decryption key") for v in MCFEDDHFunctionalKey(dk).d]
         try:
             data, mask = ext.r255_mcfe_decrypt(
                 [[c[0] for c in col] for col in cts], ys, _k(d[0]), _k(d[1]),

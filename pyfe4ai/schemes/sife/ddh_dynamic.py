@@ -22,6 +22,8 @@ import logging
 
 from pyfe4ai.schemes.sife.ddh import SIFE
 from pyfe4ai.schemes.sife.ddh import SIFEKeyGenerator
+from pyfe4ai.core.formats.dl import SIFEDDHEncryptionKey
+from pyfe4ai.core.formats.dl import SIFEDDHFunctionalKey
 from pyfe4ai.core.exceptions import FEKeyError, FEValidationError
 from pyfe4ai._validation import int_vector
 
@@ -43,7 +45,7 @@ class SIFEDynamicKeyGenerator(SIFEKeyGenerator):
         y = int_vector(credentials.get("fusion_weight"), "fusion weight")
         if not 0 < len(y) <= self.eta:
             raise FEValidationError("fusion weight must have 1..{} entries".format(self.eta))
-        return {"z": str(int(self._key(y))), "y": y, "size": len(y)}
+        return SIFEDDHFunctionalKey.new(z=str(int(self._key(y))), y=y, size=len(y)).to_dict()
 
 
 class SIFEDynamic(SIFE):
@@ -51,6 +53,7 @@ class SIFEDynamic(SIFE):
 
     def _plaintext(self, lst_pt: list) -> list:
         x = int_vector(lst_pt, "plaintext")
-        if not 0 < len(x) <= len(self.sk["gs"]):
-            raise FEValidationError("plaintext must have 1..{} entries".format(len(self.sk["gs"])))
+        gs = SIFEDDHEncryptionKey(self.sk).gs
+        if not 0 < len(x) <= len(gs):
+            raise FEValidationError("plaintext must have 1..{} entries".format(len(gs)))
         return x

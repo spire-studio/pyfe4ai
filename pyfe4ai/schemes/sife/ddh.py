@@ -29,6 +29,10 @@ from pyfe4ai.core.base import IPFEAbsCrypto
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.primitives.groups.integer_groups import _random
 from pyfe4ai.primitives.groups.dlog_solver import load_or_build_dlog_table, dlog_table_solve
+from pyfe4ai.core.formats.dl import SIFEDDHCiphertext
+from pyfe4ai.core.formats.dl import SIFEDDHEncryptionKey
+from pyfe4ai.core.formats.dl import SIFEDDHFunctionalKey
+from pyfe4ai.core.formats.dl import SIFEDDHParameters
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai._validation import int_vector
 
@@ -68,12 +72,12 @@ class SIFEKeyGenerator(DDHKeyGeneratorBase):
             Dict of public parameters.
         """
         logger.debug("generating public parameters ...")
-        return {
-            "g": gp.digits(self.mpk["g"]),
-            "p": gp.digits(self.mpk["p"]),
-            "eta": self.eta,
-            "sec_param": self.sec_param,
-        }
+        return SIFEDDHParameters.new(
+            g=gp.digits(self.mpk["g"]),
+            p=gp.digits(self.mpk["p"]),
+            eta=self.eta,
+            sec_param=self.sec_param,
+        ).to_dict()
 
     def get_private_keys(self, nid: str = "nid_default") -> dict | None:
         """Return encryption keys (group element list ``gs``).
@@ -85,10 +89,10 @@ class SIFEKeyGenerator(DDHKeyGeneratorBase):
             Dict with ``gs`` list.
         """
         logger.debug("generating private key(s)...")
-        _keys = {
-            "gs": [gp.digits(i) for i in self.mpk["gs"]],
-        }
-        return _keys
+        _keys = SIFEDDHEncryptionKey.new(
+            gs=[gp.digits(i) for i in self.mpk["gs"]],
+        )
+        return _keys.to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Derive a functional decryption key for the given fusion weights.
@@ -108,7 +112,7 @@ class SIFEKeyGenerator(DDHKeyGeneratorBase):
         if not credentials:
             raise FEKeyError("need credentials for SIFE decryption key generation")
         y = int_vector(credentials.get("fusion_weight"), "fusion weight", length=self.eta)
-        return {"z": gp.digits(self._key(y)), "y": y}
+        return SIFEDDHFunctionalKey.new(z=gp.digits(self._key(y)), y=y).to_dict()
 
     def _key(self, y: list) -> gp.mpz:
         """``<s, y> mod q`` for a weight prefix ``y`` (``len(y) <= eta``)."""
@@ -144,7 +148,7 @@ class SIFE(IPFEAbsCrypto):
         )
 
     def _plaintext(self, lst_pt: list) -> list:
-        return int_vector(lst_pt, "plaintext", length=len(self.sk["gs"]))
+        return int_vector(lst_pt, "plaintext", length=len(SIFEDDHEncryptionKey(self.sk).gs))
 
     def encrypt(self, lst_pt: list) -> dict:
         """Encrypt a plaintext vector under the DDH-based scheme.
@@ -168,7 +172,7 @@ class SIFE(IPFEAbsCrypto):
         sec_param = self.pp["sec_param"]
         p = gp.mpz(self.pp["p"])
         g = gp.mpz(self.pp["g"])
-        gs = [gp.mpz(i) for i in self.sk["gs"]]
+        gs = [gp.mpz(i) for i in SIFEDDHEncryptionKey(self.sk).gs]
 
         r = _random(p, sec_param)
         ct0 = gp.digits(gp.powmod(g, r, p))
@@ -176,11 +180,11 @@ class SIFE(IPFEAbsCrypto):
             gp.digits(gp.mul(gp.powmod(gs[i], r, p), gp.powmod(g, x_i, p)) % p)
             for i, x_i in enumerate(x)
         ]
-        return {"ct0": ct0, "ct1": ct1}
+        return SIFEDDHCiphertext.new(ct0=ct0, ct1=ct1).to_dict()
 
     def _check_weights(self, dk: dict, fusion_weight: list) -> list:
         y = int_vector(fusion_weight, "fusion weight")
-        if y != dk.get("y"):
+        if y != SIFEDDHFunctionalKey(dk).get("y"):
             raise FESchemeError("fusion weights differ from those of the decryption key")
         return y
 
@@ -207,8 +211,8 @@ class SIFE(IPFEAbsCrypto):
             raise FEKeyError("no decryption key provided.")
         y = self._check_weights(dk, fusion_weight)
         p = gp.mpz(self.pp["p"])
-        ct1 = [gp.mpz(c) for c in dct_ct["ct1"]]
-        ct0 = gp.mpz(dct_ct["ct0"])
+        ct1 = [gp.mpz(c) for c in SIFEDDHCiphertext(dct_ct).ct1]
+        ct0 = gp.mpz(SIFEDDHCiphertext(dct_ct).ct0)
         if len(ct1) < len(y):
             raise FEValidationError("ciphertext is shorter than the decryption key")
         if not all(0 < c < p for c in ct1 + [ct0]):
@@ -217,7 +221,7 @@ class SIFE(IPFEAbsCrypto):
         _prod = gp.mpz(1)
         for c_i, y_i in zip(ct1, y):
             _prod = gp.mul(_prod, gp.powmod(c_i, y_i, p)) % p
-        gf = gp.divm(_prod, gp.powmod(ct0, gp.mpz(dk["z"]), p), p)
+        gf = gp.divm(_prod, gp.powmod(ct0, gp.mpz(SIFEDDHFunctionalKey(dk).z), p), p)
         return self._solve_dlog(gf)
 
     def _solve_dlog(self, g_inner_prod) -> int | None:

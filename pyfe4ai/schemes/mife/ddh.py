@@ -46,6 +46,10 @@ from pyfe4ai.schemes.threshold.binding import check_fusion_weight
 from pyfe4ai.schemes.threshold.binding import fusion_weight_id
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.primitives.groups.dlog_solver import load_or_build_dlog_table, dlog_table_solve
+from pyfe4ai.core.formats.dl import MIFEDDHCiphertext
+from pyfe4ai.core.formats.dl import MIFEDDHEncryptionKey
+from pyfe4ai.core.formats.dl import MIFEDDHFunctionalKey
+from pyfe4ai.core.formats.dl import MIFEDDHParameters
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai.core.versions import MIFE_DDH_CONSTRUCTION
 from pyfe4ai._validation import int_vector
@@ -97,16 +101,16 @@ class MIFEKeyGenerator(DDHKeyGeneratorBase):
 
     def get_public_parameters(self) -> dict:
         """Return serialisable public parameters (g, p, q, n, eta, sec_param)."""
-        return {
-            "construction": MIFE_DDH_CONSTRUCTION,
-            "g": gp.digits(self.g),
-            "p": gp.digits(self.p),
-            "q": gp.digits(self.q),
-            "n": self.n,
-            "eta": self.eta,
-            "lst_nid": list(self.lst_nid),
-            "sec_param": self.sec_param,
-        }
+        return MIFEDDHParameters.new(
+            construction=MIFE_DDH_CONSTRUCTION,
+            g=gp.digits(self.g),
+            p=gp.digits(self.p),
+            q=gp.digits(self.q),
+            n=self.n,
+            eta=self.eta,
+            lst_nid=list(self.lst_nid),
+            sec_param=self.sec_param,
+        ).to_dict()
 
     def get_private_keys(self, nid: str) -> dict | None:
         """Return client *nid*'s encryption key ``{h, u}`` (``None`` if unknown)."""
@@ -114,10 +118,10 @@ class MIFEKeyGenerator(DDHKeyGeneratorBase):
             logger.error("no id or invalid id provided.")
             warn_at_caller("no id or invalid id provided.")
             return None
-        return {
-            "h": [gp.digits(gp.powmod(self.g, s, self.p)) for s in self.msk["s"][nid]],
-            "u": [gp.digits(u) for u in self.msk["u"][nid]],
-        }
+        return MIFEDDHEncryptionKey.new(
+            h=[gp.digits(gp.powmod(self.g, s, self.p)) for s in self.msk["s"][nid]],
+            u=[gp.digits(u) for u in self.msk["u"][nid]],
+        ).to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Derive the functional key for weights ``y`` covering every slot.
@@ -142,7 +146,9 @@ class MIFEKeyGenerator(DDHKeyGeneratorBase):
             y = int_vector(fusion_weight[nid], "fusion weight of " + nid, length=self.dict_eta[nid])
             d[nid] = gp.digits(sum(s * y_j for s, y_j in zip(self.msk["s"][nid], y)) % self.q)
             z += sum(u * y_j for u, y_j in zip(self.msk["u"][nid], y))
-        return {"d": d, "z": gp.digits(z % self.q), "weights_id": fusion_weight_id(fusion_weight)}
+        return MIFEDDHFunctionalKey.new(
+            d=d, z=gp.digits(z % self.q), weights_id=fusion_weight_id(fusion_weight)
+        ).to_dict()
 
 
 class MIFE(OfflineRandomMixin, IPFEAbsCrypto):
@@ -182,7 +188,7 @@ class MIFE(OfflineRandomMixin, IPFEAbsCrypto):
             raise FEKeyError("no public parameters provided for encryption")
         if not self._has_private_keys():
             raise FEKeyError("no private keys provided for encryption")
-        x = int_vector(lst_pt, "plaintext", length=len(self.sk["u"]))
+        x = int_vector(lst_pt, "plaintext", length=len(MIFEDDHEncryptionKey(self.sk).u))
         return self._encrypt_with(x, self._random_part())
 
     def _random_part(self) -> tuple:
@@ -190,20 +196,21 @@ class MIFE(OfflineRandomMixin, IPFEAbsCrypto):
         :mod:`pyfe4ai.core.one_time`)."""
         p = gp.mpz(self.pp["p"])
         r = gp.mpz(_CSPRNG.randrange(int(gp.mpz(self.pp["q"]))))
-        return gp.powmod(gp.mpz(self.pp["g"]), r, p), [gp.powmod(gp.mpz(h_j), r, p) for h_j in self.sk["h"]]
+        h = MIFEDDHEncryptionKey(self.sk).h
+        return gp.powmod(gp.mpz(self.pp["g"]), r, p), [gp.powmod(gp.mpz(h_j), r, p) for h_j in h]
 
     def _encrypt_with(self, lst_pt: list, part: tuple) -> dict:
         """``(g^r, g^{x_j + u_j} h_j^r)`` for the randomness part *part*;
         ``g^{x_j + u_j} = g^{x_j} g^{u_j}`` with ``g^{u_j}`` cached per key."""
-        x = int_vector(lst_pt, "plaintext", length=len(self.sk["u"]))
+        x = int_vector(lst_pt, "plaintext", length=len(MIFEDDHEncryptionKey(self.sk).u))
         p = gp.mpz(self.pp["p"])
         g = gp.mpz(self.pp["g"])
         cached = self.__dict__.get("_g_u")
         if cached is None or cached[0] is not self.sk:
-            cached = self._g_u = (self.sk, [gp.powmod(g, gp.mpz(u_j), p) for u_j in self.sk["u"]])
+            cached = self._g_u = (self.sk, [gp.powmod(g, gp.mpz(u_j), p) for u_j in MIFEDDHEncryptionKey(self.sk).u])
         t, masks = part
         c = [gp.digits(gp.powmod(g, x_j, p) * g_u % p * m % p) for x_j, g_u, m in zip(x, cached[1], masks)]
-        return {"t": gp.digits(t), "c": c}
+        return MIFEDDHCiphertext.new(t=gp.digits(t), c=c).to_dict()
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict):
         """Recover ``sum_i <x_i, y_i>`` from one ciphertext per slot.
@@ -221,19 +228,20 @@ class MIFE(OfflineRandomMixin, IPFEAbsCrypto):
         if not dk:
             raise FEKeyError("no decryption key provided.")
         check_fusion_weight(dk, fusion_weight)
-        if not set(dct_ct) == set(dk["d"]) == set(fusion_weight):
+        key = MIFEDDHFunctionalKey.from_dict(dk)
+        if not set(dct_ct) == set(key.d) == set(fusion_weight):
             raise FESchemeError("need one ciphertext for every slot of the key")
         p = gp.mpz(self.pp["p"])
-        acc = gp.powmod(gp.mpz(self.pp["g"]), -gp.mpz(dk["z"]), p)
+        acc = gp.powmod(gp.mpz(self.pp["g"]), -gp.mpz(key.z), p)
         for nid, ct in dct_ct.items():
             y = int_vector(fusion_weight[nid], "fusion weight of " + nid)
-            c = [gp.mpz(v) for v in ct["c"]]
-            t = gp.mpz(ct["t"])
+            c = [gp.mpz(v) for v in MIFEDDHCiphertext(ct).c]
+            t = gp.mpz(MIFEDDHCiphertext(ct).t)
             if len(c) != len(y) or not all(0 < v < p and gp.legendre(v, p) == 1 for v in c + [t]):
                 raise FEValidationError("malformed ciphertext of {}".format(nid))
             for c_j, y_j in zip(c, y):
                 acc = acc * gp.powmod(c_j, y_j, p) % p
-            acc = acc * gp.powmod(t, -gp.mpz(dk["d"][nid]), p) % p
+            acc = acc * gp.powmod(t, -gp.mpz(key.d[nid]), p) % p
         return self._solve_dlog(acc)
 
     def _solve_dlog(self, g_inner_prod) -> int | None:
@@ -258,7 +266,7 @@ class MIFE(OfflineRandomMixin, IPFEAbsCrypto):
         positions (MIFE has no labels): use these helpers for one input per
         key epoch, and MCFE for federated aggregation.
         """
-        if len(self.sk["u"]) != 1:
+        if len(MIFEDDHEncryptionKey(self.sk).u) != 1:
             raise NotImplementedError("ndarray helper currently expects eta=1")
         if kwargs.get("precomputed") is not None:
             return self._encrypt_precomputed(lst_ndarray, kwargs["precomputed"])

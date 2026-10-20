@@ -34,6 +34,7 @@ import numpy as np
 from pyfe4ai.schemes.mcfe.labels import element_label
 from pyfe4ai.core.one_time import OneTimePrecomputation
 from pyfe4ai.core.one_time import check_online_bound
+from pyfe4ai.core.formats.dl import PreparedKey
 from pyfe4ai.core.exceptions import FEKeyError, FEValidationError
 from pyfe4ai._validation import scale_to_int
 
@@ -125,12 +126,12 @@ class OfflineMCFEMixin:
             for i in np.ndindex(*shape):
                 layer[i] = self._key_term(dk, element_label(label, l, i))
             terms.append(layer)
-        return dict(dk, key_terms=PreparedKeyTerms(label, shapes, terms))
+        return PreparedKey.extend(dk, key_terms=PreparedKeyTerms(label, shapes, terms)).to_dict()
 
     @staticmethod
     def _prepared_terms(dk: dict, label, sample: list):
         """The prepared terms of *dk* if they are for *label* and these layers."""
-        terms = dk.get("key_terms") if isinstance(dk, dict) else None
+        terms = PreparedKey(dk).get("key_terms") if isinstance(dk, dict) else None
         if not isinstance(terms, PreparedKeyTerms) or terms.label != label:
             return None
         if [tuple(np.shape(a)) for a in sample] != terms.shapes:

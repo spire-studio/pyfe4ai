@@ -35,6 +35,10 @@ from pyfe4ai.core.base import decoded_layer
 from pyfe4ai.schemes.threshold.binding import check_fusion_weight, fusion_weight_id
 from pyfe4ai.primitives.groups import ec_group as eg
 from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.formats.dl import MIFEDDHCiphertext
+from pyfe4ai.core.formats.dl import MIFEDDHEncryptionKey
+from pyfe4ai.core.formats.dl import MIFEDDHFunctionalKey
+from pyfe4ai.core.formats.dl import RistrettoParameters
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai.core.versions import MIFE_DDH_RISTRETTO255_CONSTRUCTION
 from pyfe4ai._validation import int_vector, scale_to_int
@@ -72,13 +76,13 @@ class MIFERistretto255KeyGenerator(ECDDHKeyGeneratorBase):
         logger.info("MIFE (ristretto255) setup - DONE.")
 
     def get_public_parameters(self) -> dict:
-        return {
-            "construction": MIFE_DDH_RISTRETTO255_CONSTRUCTION,
-            "group": eg.GROUP,
-            "n": self.n,
-            "eta": self.eta,
-            "lst_nid": list(self.lst_nid),
-        }
+        return RistrettoParameters.new(
+            construction=MIFE_DDH_RISTRETTO255_CONSTRUCTION,
+            group=eg.GROUP,
+            n=self.n,
+            eta=self.eta,
+            lst_nid=list(self.lst_nid),
+        ).to_dict()
 
     def get_private_keys(self, nid: str) -> dict | None:
         """Client *nid*'s encryption key ``{h, u}`` (``None`` if unknown)."""
@@ -86,10 +90,10 @@ class MIFERistretto255KeyGenerator(ECDDHKeyGeneratorBase):
             logger.error("no id or invalid id provided.")
             warn_at_caller("no id or invalid id provided.")
             return None
-        return {
-            "h": [eg.to_hex(eg.mul_base(s)) for s in self.msk["s"][nid]],
-            "u": [eg.scalar_str(u) for u in self.msk["u"][nid]],
-        }
+        return MIFEDDHEncryptionKey.new(
+            h=[eg.to_hex(eg.mul_base(s)) for s in self.msk["s"][nid]],
+            u=[eg.scalar_str(u) for u in self.msk["u"][nid]],
+        ).to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """``{d, z, weights_id}`` for weights covering every slot."""
@@ -104,7 +108,7 @@ class MIFERistretto255KeyGenerator(ECDDHKeyGeneratorBase):
             y = int_vector(fusion_weight[nid], "fusion weight of " + nid, length=self.dict_eta[nid])
             d[nid] = eg.scalar_str(sum(s * y_j for s, y_j in zip(self.msk["s"][nid], y)))
             z += sum(u * y_j for u, y_j in zip(self.msk["u"][nid], y))
-        return {"d": d, "z": eg.scalar_str(z), "weights_id": fusion_weight_id(fusion_weight)}
+        return MIFEDDHFunctionalKey.new(d=d, z=eg.scalar_str(z), weights_id=fusion_weight_id(fusion_weight)).to_dict()
 
 
 class MIFERistretto255(ECDDHCryptoBase):
@@ -116,14 +120,15 @@ class MIFERistretto255(ECDDHCryptoBase):
             raise FEKeyError("no public parameters provided for encryption")
         if not self._has_private_keys():
             raise FEKeyError("no private keys provided for encryption")
-        x = int_vector(lst_pt, "plaintext", length=len(self.sk["u"]))
+        x = int_vector(lst_pt, "plaintext", length=len(MIFEDDHEncryptionKey(self.sk).u))
         r = eg.random_scalar()
         c = []
-        for x_j, u_j, h_j in zip(x, self.sk["u"], self.sk["h"]):
+        sk = MIFEDDHEncryptionKey.from_dict(self.sk)
+        for x_j, u_j, h_j in zip(x, sk.u, sk.h):
             point = eg.add(eg.mul_base(x_j + eg.scalar_from(u_j, "encryption key")),
                            eg.mul(eg.from_hex(h_j, "encryption key"), r))
             c.append(eg.to_hex(point))
-        return {"t": eg.to_hex(eg.mul_base(r)), "c": c}
+        return MIFEDDHCiphertext.new(t=eg.to_hex(eg.mul_base(r)), c=c).to_dict()
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict):
         """``sum_i <x_i, y_i>``, or ``None`` if beyond ``dlog_bound``.
@@ -137,26 +142,27 @@ class MIFERistretto255(ECDDHCryptoBase):
         if not dk:
             raise FEKeyError("no decryption key provided.")
         check_fusion_weight(dk, fusion_weight)
-        if not set(dct_ct) == set(dk["d"]) == set(fusion_weight):
+        key = MIFEDDHFunctionalKey.from_dict(dk)
+        if not set(dct_ct) == set(key.d) == set(fusion_weight):
             raise FESchemeError("need one ciphertext for every slot of the key")
-        acc = eg.neg(eg.mul_base(eg.scalar_from(dk["z"], "decryption key")))
+        acc = eg.neg(eg.mul_base(eg.scalar_from(key.z, "decryption key")))
         for nid, ct in dct_ct.items():
             y = int_vector(fusion_weight[nid], "fusion weight of " + nid)
             try:
-                c = [eg.from_hex(v) for v in ct["c"]]
-                t = eg.from_hex(ct["t"])
+                c = [eg.from_hex(v) for v in MIFEDDHCiphertext(ct).c]
+                t = eg.from_hex(MIFEDDHCiphertext(ct).t)
             except (FEValidationError, KeyError, TypeError) as exc:
                 raise FEValidationError("malformed ciphertext of {}".format(nid)) from exc
             if len(c) != len(y):
                 raise FEValidationError("malformed ciphertext of {}".format(nid))
             for c_j, y_j in zip(c, y):
                 acc = eg.add(acc, eg.mul(c_j, y_j))
-            acc = eg.sub(acc, eg.mul(t, eg.scalar_from(dk["d"][nid], "decryption key")))
+            acc = eg.sub(acc, eg.mul(t, eg.scalar_from(key.d[nid], "decryption key")))
         return self._solve_dlog(acc)
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
         """Encrypt ndarrays element-wise (``eta = 1``); one input per key epoch."""
-        if len(self.sk["u"]) != 1:
+        if len(MIFEDDHEncryptionKey(self.sk).u) != 1:
             raise NotImplementedError("ndarray helper currently expects eta=1")
         out = []
         for ary_src in lst_ndarray:

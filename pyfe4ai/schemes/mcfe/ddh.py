@@ -38,6 +38,10 @@ from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.primitives.groups.integer_groups import _random
 from pyfe4ai.primitives.hashing import hash_to_qr_group
 from pyfe4ai.primitives.groups.dlog_solver import load_or_build_dlog_table, dlog_table_solve
+from pyfe4ai.core.formats.dl import MCFEDDHCiphertext
+from pyfe4ai.core.formats.dl import MCFEDDHEncryptionKey
+from pyfe4ai.core.formats.dl import MCFEDDHFunctionalKey
+from pyfe4ai.core.formats.dl import MCFEDDHParameters
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai._validation import scale_to_int
 from pyfe4ai._validation import int_vector
@@ -103,13 +107,13 @@ class MCFEKeyGenerator(DDHKeyGeneratorBase):
             Dict of public parameters.
         """
         logger.debug("generating public parameters ...")
-        return {
-            "g": gp.digits(self.mpk["g"]),
-            "p": gp.digits(self.mpk["p"]),
-            "n": self.n,
-            "eta": self.eta,
-            "sec_param": self.sec_param,
-        }
+        return MCFEDDHParameters.new(
+            g=gp.digits(self.mpk["g"]),
+            p=gp.digits(self.mpk["p"]),
+            n=self.n,
+            eta=self.eta,
+            sec_param=self.sec_param,
+        ).to_dict()
 
     def get_private_keys(self, nid: str) -> dict | None:
         """Return the encryption key of client *nid*.
@@ -127,9 +131,9 @@ class MCFEKeyGenerator(DDHKeyGeneratorBase):
             warn_at_caller("no id or invalid id  provided.")
             return None
 
-        return {
-            "s": [[gp.digits(e) for e in s_j] for s_j in self.msk["s"][nid]],
-        }
+        return MCFEDDHEncryptionKey.new(
+            s=[[gp.digits(e) for e in s_j] for s_j in self.msk["s"][nid]],
+        ).to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Derive the functional decryption key ``d = sum y_{i,j} s_{i,j}``.
@@ -170,7 +174,7 @@ class MCFEKeyGenerator(DDHKeyGeneratorBase):
                 d[0] += gp.mul(gp.mpz(y_j), s_j[0])
                 d[1] += gp.mul(gp.mpz(y_j), s_j[1])
 
-        return {"d": [gp.digits(d_k % self.q) for d_k in d]}
+        return MCFEDDHFunctionalKey.new(d=[gp.digits(d_k % self.q) for d_k in d]).to_dict()
 
 
 class MCFE(OfflineMCFEMixin, IPFEAbsCrypto):
@@ -225,7 +229,7 @@ class MCFE(OfflineMCFEMixin, IPFEAbsCrypto):
             raise FEKeyError("no private keys provided for encryption")
         if not isinstance(lst_pt, list):
             raise FEValidationError("input plaintext must be a list")
-        if len(lst_pt) > len(self.sk["s"]):
+        if len(lst_pt) > len(MCFEDDHEncryptionKey(self.sk).s):
             raise FEValidationError("input plaintext has {} values, more than eta".format(len(lst_pt)))
         return self._encrypt_masked(lst_pt, self._label_mask(label))
 
@@ -235,7 +239,7 @@ class MCFE(OfflineMCFEMixin, IPFEAbsCrypto):
         p = gp.mpz(self.pp["p"])
         u_l = _hash_label(label, p)
         masks = []
-        for s_j in self.sk["s"]:
+        for s_j in MCFEDDHEncryptionKey(self.sk).s:
             m = gp.mpz(1)
             for u_k, s_jk in zip(u_l, s_j):
                 m = gp.mul(m, gp.powmod(u_k, gp.mpz(s_jk), p)) % p
@@ -250,8 +254,8 @@ class MCFE(OfflineMCFEMixin, IPFEAbsCrypto):
             raise FEValidationError("input plaintext has {} values, more than eta".format(len(lst_pt)))
         p = gp.mpz(self.pp["p"])
         g = gp.mpz(self.pp["g"])
-        return {"c": [gp.digits(gp.mul(gp.powmod(g, gp.mpz(x_j), p), m) % p)
-                      for x_j, m in zip(int_vector(lst_pt, "plaintext"), masks)]}
+        return MCFEDDHCiphertext.new(c=[gp.digits(gp.mul(gp.powmod(g, gp.mpz(x_j), p), m) % p)
+                                        for x_j, m in zip(int_vector(lst_pt, "plaintext"), masks)]).to_dict()
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict, label: str, term=None):
         """Decrypt aggregated ciphertexts to recover the multi-client inner product.
@@ -274,7 +278,7 @@ class MCFE(OfflineMCFEMixin, IPFEAbsCrypto):
         """
         if not dk:
             raise FEKeyError("no decryption key provided.")
-        if not isinstance(dk.get("d"), (list, tuple)) or len(dk["d"]) != 2:
+        if not isinstance(MCFEDDHFunctionalKey(dk).get("d"), (list, tuple)) or len(MCFEDDHFunctionalKey(dk).d) != 2:
             raise FEKeyError("malformed MCFE decryption key: expected d = [d0, d1]")
         if dct_ct.keys() != fusion_weight.keys():
             raise FESchemeError("inconsistent input among ct and fusion weight")
@@ -284,7 +288,7 @@ class MCFE(OfflineMCFEMixin, IPFEAbsCrypto):
         _cf_prod = gp.mpz(1)
         for nid, ct_nid in dct_ct.items():
             f_nid = fusion_weight[nid]
-            c_nid = ct_nid["c"]
+            c_nid = MCFEDDHCiphertext(ct_nid).c
             if len(c_nid) != len(f_nid):
                 raise FESchemeError(
                     "ciphertext and fusion weight of {} differ in length".format(nid)
@@ -302,7 +306,7 @@ class MCFE(OfflineMCFEMixin, IPFEAbsCrypto):
         """``prod_k H_k(l)^{d_k} mod p``, the label part of :meth:`decrypt`."""
         p = gp.mpz(self.pp["p"])
         _ud_prod = gp.mpz(1)
-        for u_k, d_k in zip(_hash_label(label, p), dk["d"]):
+        for u_k, d_k in zip(_hash_label(label, p), MCFEDDHFunctionalKey(dk).d):
             _ud_prod = gp.mul(_ud_prod, gp.powmod(u_k, gp.mpz(d_k), p)) % p
         return _ud_prod
 

@@ -68,6 +68,11 @@ from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.primitives.groups.integer_groups import _random
 from pyfe4ai.primitives.hashing import hash_to_qr_group
 from pyfe4ai.primitives.groups.dlog_solver import load_or_build_dlog_table, dlog_table_solve
+from pyfe4ai.core.formats.dl import MCFEDDHCiphertext
+from pyfe4ai.core.formats.dl import MCFEDDHEncryptionKey
+from pyfe4ai.core.formats.dl import TMCFEDDHParameters
+from pyfe4ai.core.formats.threshold import TMCFEDDHKeyShare
+from pyfe4ai.core.formats.threshold import TMCFEDDHPartial
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai.core.versions import TMCFE_DDH_RECORD
 from pyfe4ai._validation import scale_to_int
@@ -139,15 +144,15 @@ class ThresholdMCFEKeyGenerator(DDHKeyGeneratorBase):
             }
         }
         self.dict_dk = {}
-        self.pp = {
-            "p": gp.digits(self.p),
-            "g": gp.digits(self.g),
-            "eta": self.eta,
-            "s": self.s,
-            "t": self.t,
-            "n": self.n,
-            "sec_param": self.sec_param,
-        }
+        self.pp = TMCFEDDHParameters.new(
+            p=gp.digits(self.p),
+            g=gp.digits(self.g),
+            eta=self.eta,
+            s=self.s,
+            t=self.t,
+            n=self.n,
+            sec_param=self.sec_param,
+        ).to_dict()
         logger.info("Threshold MCFE setup - DONE.")
 
     def get_public_parameters(self) -> dict:
@@ -168,7 +173,7 @@ class ThresholdMCFEKeyGenerator(DDHKeyGeneratorBase):
             logger.error("no id or invalid id provided.")
             warn_at_caller("no id or invalid id provided.")
             return None
-        return {"s": [[gp.digits(e) for e in s_j] for s_j in self.msk["s"][nid]]}
+        return MCFEDDHEncryptionKey.new(s=[[gp.digits(e) for e in s_j] for s_j in self.msk["s"][nid]]).to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Return server *sid*'s Shamir share of the functional key for ``y``.
@@ -206,12 +211,12 @@ class ThresholdMCFEKeyGenerator(DDHKeyGeneratorBase):
         if identifier not in self.dict_dk:
             self.dict_dk[identifier] = self._share_functional_key(fusion_weight)
         d_sid = self.dict_dk[identifier][sid]
-        return {
-            "d": [gp.digits(e) for e in d_sid],
-            "sid": sid,
-            "lst_sid": list(self.lst_sid),
-            "weights_id": fusion_weight_id(fusion_weight),
-        }
+        return TMCFEDDHKeyShare.new(
+            d=[gp.digits(e) for e in d_sid],
+            sid=sid,
+            lst_sid=list(self.lst_sid),
+            weights_id=fusion_weight_id(fusion_weight),
+        ).to_dict()
 
     def _share_functional_key(self, fusion_weight: dict) -> dict:
         """Compute ``d = sum y_{i,j} s_{i,j}`` and Shamir-share it among servers."""
@@ -295,7 +300,7 @@ class ThresholdMCFE(IPFEAbsCrypto):
             raise FEKeyError("no private keys provided for encryption")
         if not isinstance(pt, list):
             raise FEValidationError("input plaintext must be a list")
-        if len(pt) > len(self.sk["s"]):
+        if len(pt) > len(MCFEDDHEncryptionKey(self.sk).s):
             raise FEValidationError("input plaintext has {} values, more than eta".format(len(pt)))
 
         p = gp.mpz(self.pp["p"])
@@ -304,13 +309,13 @@ class ThresholdMCFE(IPFEAbsCrypto):
         u_l = _hash_encoded(encoded, p)
 
         c = []
-        for v, s_j in zip(scale_to_int(pt, self.precision), self.sk["s"]):
+        for v, s_j in zip(scale_to_int(pt, self.precision), MCFEDDHEncryptionKey(self.sk).s):
             x_j = gp.mpz(int(v))
             c_j = gp.powmod(g, x_j, p)
             for u_k, s_jk in zip(u_l, s_j):
                 c_j = gp.mul(c_j, gp.powmod(u_k, gp.mpz(s_jk), p)) % p
             c.append(gp.digits(c_j))
-        return {"c": c, "label": encoded}
+        return MCFEDDHCiphertext.new(c=c, label=encoded).to_dict()
 
     def share_decrypt(
         self, dict_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list, label
@@ -338,12 +343,13 @@ class ThresholdMCFE(IPFEAbsCrypto):
         """
         if not dk:
             raise FEKeyError("no decryption keys provided.")
-        if not isinstance(dk.get("d"), (list, tuple)) or len(dk["d"]) != 2:
+        share = TMCFEDDHKeyShare.from_dict(dk)
+        if not isinstance(share.get("d"), (list, tuple)) or len(share.d) != 2:
             raise FEKeyError("malformed tMCFE key share: expected d = [d0, d1]")
         p = gp.mpz(self.pp["p"])
         q = (p - 1) // 2
-        lst_sid = dk["lst_sid"]
-        if self.id not in lst_sid or dk.get("sid") != self.id:
+        lst_sid = share.lst_sid
+        if self.id not in lst_sid or share.get("sid") != self.id:
             raise FESchemeError("the key share does not belong to server {}".format(self.id))
         validate_enrolled(self.id, lst_sid, lst_sid_enrolled, self.pp["t"])
         check_fusion_weight(dk, credentials)
@@ -359,16 +365,16 @@ class ThresholdMCFE(IPFEAbsCrypto):
             sid_v[self.id], [sid_v[s] for s in lst_sid_enrolled], q
         )
         u_d = gp.mpz(1)
-        for u_k, d_k in zip(_hash_encoded(label, p), dk["d"]):
+        for u_k, d_k in zip(_hash_encoded(label, p), share.d):
             u_d = gp.mul(u_d, gp.powmod(u_k, gp.mul(gp.mpz(d_k), lagrange) % q, p)) % p
 
-        return {
-            "c_y": gp.digits(c_y),
-            "u_d": gp.digits(u_d),
-            "label": label,
-            "sid": self.id,
-            "lst_sid_enrolled": list(lst_sid_enrolled),
-        }
+        return TMCFEDDHPartial.new(
+            c_y=gp.digits(c_y),
+            u_d=gp.digits(u_d),
+            label=label,
+            sid=self.id,
+            lst_sid_enrolled=list(lst_sid_enrolled),
+        ).to_dict()
 
     def combine_decrypt(self, partials, label=None) -> float | None:
         """Combine partial decryptions from at least ``t`` servers.
@@ -390,7 +396,7 @@ class ThresholdMCFE(IPFEAbsCrypto):
         if label is not None:
             expected = encode_label(label)
             for group in partial_groups(partials):
-                if any(part.get("label") != expected for part in group.values()):
+                if any(TMCFEDDHPartial(part).get("label") != expected for part in group.values()):
                     raise FESchemeError("partial decryptions are for another label than the requested one")
         return combine_consistently(partials, self._combine_group)
 
@@ -411,11 +417,11 @@ class ThresholdMCFE(IPFEAbsCrypto):
         validate_partial_decryptions(dict_ct_prime, self.pp["t"])
         p = gp.mpz(self.pp["p"])
 
-        partials = list(dict_ct_prime.values())
-        c_y = gp.mpz(partials[0]["c_y"])
+        partials = [TMCFEDDHPartial(part) for part in dict_ct_prime.values()]
+        c_y = gp.mpz(partials[0].c_y)
         label = partials[0].get("label")
         if any(
-            gp.mpz(part["c_y"]) != c_y or part.get("label") != label
+            gp.mpz(part.c_y) != c_y or part.get("label") != label
             for part in partials
         ):
             logger.warning("partial decryptions disagree on the ciphertexts they decrypted")
@@ -424,7 +430,7 @@ class ThresholdMCFE(IPFEAbsCrypto):
 
         u_d = gp.mpz(1)
         for part in partials:
-            u_d = gp.mul(u_d, gp.mpz(part["u_d"])) % p
+            u_d = gp.mul(u_d, gp.mpz(part.u_d)) % p
 
         f = self._solve_dlog(gp.divm(c_y, u_d, p))
         if f is None:
@@ -433,7 +439,7 @@ class ThresholdMCFE(IPFEAbsCrypto):
 
     @staticmethod
     def _common_label(dict_ct: dict) -> str:
-        labels = {ct.get("label") for ct in dict_ct.values()}
+        labels = {MCFEDDHCiphertext(ct).get("label") for ct in dict_ct.values()}
         if len(labels) != 1:
             raise FESchemeError(
                 "ciphertexts must all carry the same label, got {}".format(labels)
@@ -450,7 +456,7 @@ class ThresholdMCFE(IPFEAbsCrypto):
             raise FESchemeError("inconsistent input among ct and fusion weight")
         c_y = gp.mpz(1)
         for nid, ct_nid in dict_ct.items():
-            c_nid = ct_nid["c"]
+            c_nid = MCFEDDHCiphertext(ct_nid).c
             y_nid = fusion_weight[nid]
             if len(c_nid) != len(y_nid):
                 raise FESchemeError(

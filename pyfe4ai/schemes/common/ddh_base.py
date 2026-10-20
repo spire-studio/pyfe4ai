@@ -18,6 +18,9 @@ from pyfe4ai.core.base import IPFEAbsKeyGenerator, ParameterCacheMixin
 from pyfe4ai.primitives.groups.integer_groups import group_generator_fe, is_dl_group
 from pyfe4ai.primitives.hashing import hash_to_qr_group
 from pyfe4ai.core.exceptions import FEValidationError
+from pyfe4ai.core.formats.dl import DamgardRecord
+from pyfe4ai.core.formats.dl import DDHRecord
+from pyfe4ai.core.formats.dl import DLGroupRecord
 from pyfe4ai.core.versions import record_matches
 
 logger = logging.getLogger(__name__)
@@ -49,10 +52,11 @@ class DDHKeyGeneratorBase(IPFEAbsKeyGenerator, ParameterCacheMixin):
             )
 
     def _apply_parameters(self, param: dict) -> None:
-        self.p = gp.mpz(param["group"]["p"])
-        self.q = gp.mpz(param["group"]["q"])
-        self.r = gp.mpz(param["group"]["r"])
-        self.g = gp.mpz(param["g"])
+        record = DDHRecord.from_dict(param)
+        self.p = gp.mpz(DLGroupRecord(record.group).p)
+        self.q = gp.mpz(DLGroupRecord(record.group).q)
+        self.r = gp.mpz(DLGroupRecord(record.group).r)
+        self.g = gp.mpz(record.g)
 
     def _param_verification(self, param: dict) -> bool:
         """Return ``True`` if *param* matches the current configuration keys."""
@@ -70,19 +74,15 @@ class DDHKeyGeneratorBase(IPFEAbsKeyGenerator, ParameterCacheMixin):
     def _generate_and_save(self, param_file: str) -> None:
         """Generate a fresh DDH group (p, q, r, g) and persist to *param_file*."""
         self.p, self.q, self.r, self.g = group_generator_fe(self.sec_param)
-        _param = {
-            "sec_param": self.sec_param,
-            "g": gp.digits(self.g),
-            "eta": self.eta,
-            "group": {
-                "p": gp.digits(self.p),
-                "q": gp.digits(self.q),
-                "r": gp.digits(self.r),
-            },
+        _param = DDHRecord.new(
+            sec_param=self.sec_param,
+            g=gp.digits(self.g),
+            eta=self.eta,
+            group=DLGroupRecord.new(p=gp.digits(self.p), q=gp.digits(self.q), r=gp.digits(self.r)).to_dict(),
             **self._extra_param_fields(),
-        }
+        )
         with open(param_file, "w") as f:
-            json.dump(_param, f)
+            json.dump(_param.to_dict(), f)
 
 
 class DamgardDDHKeyGeneratorBase(IPFEAbsKeyGenerator, ParameterCacheMixin):
@@ -96,10 +96,11 @@ class DamgardDDHKeyGeneratorBase(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
     def _apply_parameters(self, param: dict) -> None:
         """Assign group elements (p, q, g, h) from the loaded parameter dict."""
-        self.p = gp.mpz(param["group"]["p"])
-        self.q = gp.mpz(param["group"]["q"])
-        self.g = gp.mpz(param["g"])
-        self.h_seed = param["h_seed"]
+        record = DamgardRecord.from_dict(param)
+        self.p = gp.mpz(DLGroupRecord(record.group).p)
+        self.q = gp.mpz(DLGroupRecord(record.group).q)
+        self.g = gp.mpz(record.g)
+        self.h_seed = record.h_seed
         self.h = _damgard_h(self.h_seed, self.p)
 
     def _param_verification(self, param: dict) -> bool:
@@ -133,15 +134,15 @@ class DamgardDDHKeyGeneratorBase(IPFEAbsKeyGenerator, ParameterCacheMixin):
             self.h = _damgard_h(self.h_seed, self.p)
             if self.h != 1:
                 break
-        _param = {
-            "sec_param": self.sec_param,
-            "eta": self.eta,
-            "modulus_length": self.modulus_length,
-            "bound": self.bound,
-            "group": {"p": gp.digits(self.p), "q": gp.digits(self.q)},
-            "g": gp.digits(self.g),
-            "h_seed": self.h_seed,
+        _param = DamgardRecord.new(
+            sec_param=self.sec_param,
+            eta=self.eta,
+            modulus_length=self.modulus_length,
+            bound=self.bound,
+            group=DLGroupRecord.new(p=gp.digits(self.p), q=gp.digits(self.q)).to_dict(),
+            g=gp.digits(self.g),
+            h_seed=self.h_seed,
             **self._extra_param_fields(),
-        }
+        )
         with open(param_file, "w", encoding="utf-8") as f:
-            json.dump(_param, f)
+            json.dump(_param.to_dict(), f)

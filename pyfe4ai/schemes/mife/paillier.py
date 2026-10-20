@@ -53,6 +53,11 @@ from pyfe4ai.primitives.groups.modular_utils import pow_signed
 from pyfe4ai.primitives.sampling import discrete_gaussian_bigint
 from pyfe4ai.primitives.sampling import rand_uniform_vector
 from pyfe4ai.primitives.sampling import random_below
+from pyfe4ai.core.formats.dl import MIFEPaillierFunctionalKey
+from pyfe4ai.core.formats.dl import MIFEPaillierParameters
+from pyfe4ai.core.formats.dl import MIFEPaillierRecord
+from pyfe4ai.core.formats.dl import PaillierCiphertext
+from pyfe4ai.core.formats.dl import PaillierEncryptionKey
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai.core.versions import record_matches
 from pyfe4ai.core.versions import PAILLIER_RECORD
@@ -91,9 +96,10 @@ class MIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self._validate_bounds()
 
     def _apply_parameters(self, param: dict) -> None:
-        self.n_mod = gp.mpz(param["n_mod"])
-        self.n_square = gp.mpz(param["n_square"])
-        self.g_seed = param["g_seed"]
+        record = MIFEPaillierRecord.from_dict(param)
+        self.n_mod = gp.mpz(record.n_mod)
+        self.n_square = gp.mpz(record.n_square)
+        self.g_seed = record.g_seed
         self.g = paillier_base(self.g_seed, self.n_mod)
 
     def _loaded_parameters_valid(self) -> bool:
@@ -129,18 +135,18 @@ class MIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(
-                {
-                    "sec_param": self.sec_param,
-                    "eta": self.eta,
-                    "n": self.n,
-                    "bit_length": self.bit_length,
-                    "bound_x": self.bound_x,
-                    "bound_y": self.bound_y,
-                    "param_format": PAILLIER_RECORD,
-                    "n_mod": gp.digits(self.n_mod),
-                    "n_square": gp.digits(self.n_square),
-                    "g_seed": self.g_seed,
-                },
+                MIFEPaillierRecord.new(
+                    sec_param=self.sec_param,
+                    eta=self.eta,
+                    n=self.n,
+                    bit_length=self.bit_length,
+                    bound_x=self.bound_x,
+                    bound_y=self.bound_y,
+                    param_format=PAILLIER_RECORD,
+                    n_mod=gp.digits(self.n_mod),
+                    n_square=gp.digits(self.n_square),
+                    g_seed=self.g_seed,
+                ).to_dict(),
                 f,
             )
 
@@ -172,17 +178,17 @@ class MIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         logger.info("MIFE Paillier setup successfully")
 
     def get_public_parameters(self) -> dict:
-        return {
-            "n_mod": gp.digits(self.mpk["n_mod"]),
-            "n_square": gp.digits(self.mpk["n_square"]),
-            "g": gp.digits(self.mpk["g"]),
-            "eta": self.eta,
-            "n": self.n,
-            "sec_param": self.sec_param,
-            "bit_length": self.bit_length,
-            "bound_x": self.bound_x,
-            "bound_y": self.bound_y,
-        }
+        return MIFEPaillierParameters.new(
+            n_mod=gp.digits(self.mpk["n_mod"]),
+            n_square=gp.digits(self.mpk["n_square"]),
+            g=gp.digits(self.mpk["g"]),
+            eta=self.eta,
+            n=self.n,
+            sec_param=self.sec_param,
+            bit_length=self.bit_length,
+            bound_x=self.bound_x,
+            bound_y=self.bound_y,
+        ).to_dict()
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
         """Return client *nid*'s encryption key (``pk`` and its pad ``u``).
@@ -195,10 +201,10 @@ class MIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         """
         if nid not in self.mpk["pk"]:
             return None
-        return {
-            "pk": [gp.digits(v) for v in self.mpk["pk"][nid]],
-            "u": [gp.digits(v) for v in self.msk["u"][nid]],
-        }
+        return PaillierEncryptionKey.new(
+            pk=[gp.digits(v) for v in self.mpk["pk"][nid]],
+            u=[gp.digits(v) for v in self.msk["u"][nid]],
+        ).to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Derive a functional decryption key for the given fusion weights.
@@ -230,7 +236,7 @@ class MIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                 k += s_i * gp.mpz(int(y_i))
                 z += u_i * gp.mpz(int(y_i))
             dct_k[nid] = gp.digits(k)
-        return {"k": dct_k, "z": gp.digits(z % self.n_mod)}
+        return MIFEPaillierFunctionalKey.new(k=dct_k, z=gp.digits(z % self.n_mod)).to_dict()
 
 
 class MIFEPaillier(OfflineRandomMixin, IPFEAbsCrypto):
@@ -259,7 +265,7 @@ class MIFEPaillier(OfflineRandomMixin, IPFEAbsCrypto):
             raise FEValidationError("invalid size of input plaintext")
         if any(abs(strict_int(v, "plaintext")) > self.pp["bound_x"] for v in lst_pt):
             raise FEValidationError("plaintext exceeds configured bound_x")
-        if "u" not in self.sk:
+        if "u" not in PaillierEncryptionKey(self.sk):
             raise FEKeyError("encryption key lacks the one-time pad u")
         return self._encrypt_with(lst_pt, self._random_part())
 
@@ -270,7 +276,7 @@ class MIFEPaillier(OfflineRandomMixin, IPFEAbsCrypto):
         n_square = gp.mpz(self.pp["n_square"])
         r = random_below(n_mod // 4)
         return gp.powmod(gp.mpz(self.pp["g"]), r, n_square), [
-            gp.powmod(gp.mpz(pk_i), r, n_square) for pk_i in self.sk["pk"]]
+            gp.powmod(gp.mpz(pk_i), r, n_square) for pk_i in PaillierEncryptionKey(self.sk).pk]
 
     def _encrypt_with(self, lst_pt: list, part: tuple) -> dict:
         """The ciphertext of :meth:`encrypt` (with its checks) for the randomness part *part*."""
@@ -278,17 +284,17 @@ class MIFEPaillier(OfflineRandomMixin, IPFEAbsCrypto):
             raise FEValidationError("invalid size of input plaintext")
         if any(abs(strict_int(v, "plaintext")) > self.pp["bound_x"] for v in lst_pt):
             raise FEValidationError("plaintext exceeds configured bound_x")
-        if "u" not in self.sk:
+        if "u" not in PaillierEncryptionKey(self.sk):
             raise FEKeyError("encryption key lacks the one-time pad u")
         n_mod = gp.mpz(self.pp["n_mod"])
         n_square = gp.mpz(self.pp["n_square"])
         c0, masks = part
         c1 = []
-        for x_i, u_i, m in zip(lst_pt, self.sk["u"], masks):
+        for x_i, u_i, m in zip(lst_pt, PaillierEncryptionKey(self.sk).u, masks):
             w_i = (gp.mpz(int(x_i)) + gp.mpz(u_i)) % n_mod
             x_term = (1 + w_i * n_mod) % n_square
             c1.append(gp.digits((x_term * m) % n_square))
-        return {"ct0": gp.digits(c0), "ct1": c1}
+        return PaillierCiphertext.new(ct0=gp.digits(c0), ct1=c1).to_dict()
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict):
         """Decrypt ciphertexts and recover the inner product.
@@ -303,22 +309,24 @@ class MIFEPaillier(OfflineRandomMixin, IPFEAbsCrypto):
         if not dk:
             raise FEKeyError("no decryption key provided")
 
-        if "z" not in dk:
+        if "z" not in MIFEPaillierFunctionalKey(dk):
             raise FEKeyError("decryption key lacks z")
-        if set(dct_ct) != set(dk["k"]) or set(dct_ct) != set(fusion_weight):
+        key = MIFEPaillierFunctionalKey.from_dict(dk)
+        if set(dct_ct) != set(key.k) or set(dct_ct) != set(fusion_weight):
             raise FESchemeError("need one ciphertext for every slot of the key")
         n_mod = gp.mpz(self.pp["n_mod"])
         n_square = gp.mpz(self.pp["n_square"])
         eta = self.pp["eta"]
         # E(-z) = (1 + N)^{-z} = 1 - z N mod N^2
-        acc = (1 - gp.mpz(dk["z"]) * n_mod) % n_square
+        acc = (1 - gp.mpz(key.z) * n_mod) % n_square
         for nid, ct in dct_ct.items():
             weights = fusion_weight[nid]
+            ct = PaillierCiphertext.from_dict(ct)
             ct1 = ct.get("ct1")
             if not isinstance(ct1, list) or len(ct1) != eta or len(weights) != eta:
                 raise FEValidationError("ciphertext or weights of {} do not match eta".format(nid))
-            c0, *c1 = check_zn2_elements([ct["ct0"], *ct1], n_square)
-            acc *= pow_signed(c0, -gp.mpz(dk["k"][nid]), n_square)
+            c0, *c1 = check_zn2_elements([ct.ct0, *ct1], n_square)
+            acc *= pow_signed(c0, -gp.mpz(key.k[nid]), n_square)
             acc %= n_square
             for ct_i, y_i in zip(c1, weights):
                 acc *= pow_signed(ct_i, gp.mpz(y_i), n_square)

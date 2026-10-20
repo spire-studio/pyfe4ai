@@ -23,6 +23,10 @@ import logging
 from pyfe4ai.schemes.common.ec_ddh_base import ECDDHCryptoBase, ECDDHKeyGeneratorBase
 from pyfe4ai.primitives.groups import ec_group as eg
 from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.formats.dl import RistrettoParameters
+from pyfe4ai.core.formats.dl import SIFEDDHCiphertext
+from pyfe4ai.core.formats.dl import SIFEDDHFunctionalKey
+from pyfe4ai.core.formats.dl import SIFERistrettoEncryptionKey
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai._validation import int_vector
 
@@ -51,11 +55,11 @@ class SIFERistretto255KeyGenerator(ECDDHKeyGeneratorBase):
         logger.info("SIFE (ristretto255) setup successfully")
 
     def get_public_parameters(self) -> dict:
-        return {"group": eg.GROUP, "eta": self.eta}
+        return RistrettoParameters.new(group=eg.GROUP, eta=self.eta).to_dict()
 
     def get_private_keys(self, nid: str = "nid_default") -> dict | None:
         """Encryption key ``{h}``: the elements ``H_i`` as hex encodings."""
-        return {"h": [eg.to_hex(h) for h in self.mpk["h"]]}
+        return SIFERistrettoEncryptionKey.new(h=[eg.to_hex(h) for h in self.mpk["h"]]).to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """``{z: <s, y> mod L, y}`` for ``credentials["fusion_weight"]``."""
@@ -63,7 +67,8 @@ class SIFERistretto255KeyGenerator(ECDDHKeyGeneratorBase):
         if not credentials:
             raise FEKeyError("need credentials for SIFE decryption key generation")
         y = int_vector(credentials.get("fusion_weight"), "fusion weight", length=self.eta)
-        return {"z": eg.scalar_str(sum(s_i * y_i for s_i, y_i in zip(self.msk["s"], y))), "y": y}
+        z = eg.scalar_str(sum(s_i * y_i for s_i, y_i in zip(self.msk["s"], y)))
+        return SIFEDDHFunctionalKey.new(z=z, y=y).to_dict()
 
 
 class SIFERistretto255(ECDDHCryptoBase):
@@ -75,13 +80,13 @@ class SIFERistretto255(ECDDHCryptoBase):
             raise FEKeyError("no public parameters provided for encryption")
         if not self._has_private_keys():
             raise FEKeyError("no private keys provided for encryption")
-        x = int_vector(lst_pt, "plaintext", length=len(self.sk["h"]))
-        h = [eg.from_hex(v, "encryption key") for v in self.sk["h"]]
+        x = int_vector(lst_pt, "plaintext", length=len(SIFERistrettoEncryptionKey(self.sk).h))
+        h = [eg.from_hex(v, "encryption key") for v in SIFERistrettoEncryptionKey(self.sk).h]
         r = eg.random_scalar()
-        return {
-            "ct0": eg.to_hex(eg.mul_base(r)),
-            "ct1": [eg.to_hex(eg.add(eg.mul(h_i, r), eg.mul_base(x_i))) for h_i, x_i in zip(h, x)],
-        }
+        return SIFEDDHCiphertext.new(
+            ct0=eg.to_hex(eg.mul_base(r)),
+            ct1=[eg.to_hex(eg.add(eg.mul(h_i, r), eg.mul_base(x_i))) for h_i, x_i in zip(h, x)],
+        ).to_dict()
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: list):
         """``<x, y>``, or ``None`` if ``|<x, y>|`` exceeds ``dlog_bound``.
@@ -94,16 +99,16 @@ class SIFERistretto255(ECDDHCryptoBase):
         if not dk:
             raise FEKeyError("no decryption key provided.")
         y = int_vector(fusion_weight, "fusion weight")
-        if y != dk.get("y"):
+        if y != SIFEDDHFunctionalKey(dk).get("y"):
             raise FESchemeError("fusion weights differ from those of the decryption key")
         try:
-            ct1 = [eg.from_hex(c, "ciphertext") for c in dct_ct["ct1"]]
-            ct0 = eg.from_hex(dct_ct["ct0"], "ciphertext")
+            ct1 = [eg.from_hex(c, "ciphertext") for c in SIFEDDHCiphertext(dct_ct).ct1]
+            ct0 = eg.from_hex(SIFEDDHCiphertext(dct_ct).ct0, "ciphertext")
         except (KeyError, TypeError) as exc:
             raise FEValidationError("malformed ciphertext") from exc
         if len(ct1) < len(y):
             raise FEValidationError("ciphertext is shorter than the decryption key")
-        acc = eg.neg(eg.mul(ct0, eg.scalar_from(dk["z"], "decryption key")))
+        acc = eg.neg(eg.mul(ct0, eg.scalar_from(SIFEDDHFunctionalKey(dk).z, "decryption key")))
         for c_i, y_i in zip(ct1, y):
             acc = eg.add(acc, eg.mul(c_i, y_i))
         return self._solve_dlog(acc)

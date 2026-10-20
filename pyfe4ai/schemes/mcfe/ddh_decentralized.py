@@ -54,6 +54,11 @@ from pyfe4ai.schemes.mcfe.decentralize import mcfe2_prime_bits
 from pyfe4ai.schemes.mcfe.decentralize import zero_sum_keys
 from pyfe4ai.schemes.threshold.binding import fusion_weight_id
 from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.formats.dl import DDHRecord
+from pyfe4ai.core.formats.dl import MCFE2KeyShare
+from pyfe4ai.core.formats.dl import MCFEDDHEncryptionKey
+from pyfe4ai.core.formats.dl import MCFEDDHFunctionalKey
+from pyfe4ai.core.formats.dl import MCFEDDHParameters
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.core.versions import DMCFE_DDH_RECORD
 from pyfe4ai.primitives.groups.integer_groups import is_dcr_modulus
@@ -109,7 +114,7 @@ class DecentralizedMCFEKeyGenerator(MCFEKeyGenerator):
 
     def _apply_parameters(self, param: dict) -> None:
         super()._apply_parameters(param)
-        self.n2_mod = gp.mpz(param["n2_mod"])
+        self.n2_mod = gp.mpz(DDHRecord(param).n2_mod)
 
     def _loaded_parameters_valid(self) -> bool:
         return super()._loaded_parameters_valid() and is_dcr_modulus(self.n2_mod, self.n2_prime_bits)
@@ -129,24 +134,23 @@ class DecentralizedMCFEKeyGenerator(MCFEKeyGenerator):
 
     def get_public_parameters(self) -> dict:
         """CDGPP18 public parameters plus ``n2_mod``, ``lst_nid`` and the contribution bound."""
-        pp = super().get_public_parameters()
+        pp = MCFEDDHParameters(super().get_public_parameters())
         pp.update(
-            {
-                "n2_mod": gp.digits(self.n2_mod),
-                "lst_nid": list(self.lst_nid),
-                "contribution_bound": gp.digits(self.contribution_bound),
-                "mask_bits": self.mask_bits,
-            }
+            n2_mod=gp.digits(self.n2_mod),
+            lst_nid=list(self.lst_nid),
+            contribution_bound=gp.digits(self.contribution_bound),
+            mask_bits=self.mask_bits,
         )
-        return pp
+        return pp.to_dict()
 
     def get_private_keys(self, nid: str) -> dict | None:
         """Return client *nid*'s keys: CDGPP18 ``s``, MCFE2 ``s2`` and the carry-mask key."""
         sk = super().get_private_keys(nid)
         if sk is None:
             return None
-        sk["s2"] = [gp.digits(v) for v in self.msk["s2"][nid]]
-        sk["mask_key"] = self.msk["mask_key"][nid]
+        MCFEDDHEncryptionKey(sk).update(
+            s2=[gp.digits(v) for v in self.msk["s2"][nid]], mask_key=self.msk["mask_key"][nid]
+        )
         return sk
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
@@ -170,30 +174,31 @@ class DecentralizedMCFE(MCFE):
         Returns:
             Dict with ``c`` (MCFE2 ciphertexts), ``nid`` and ``weights_id``.
         """
-        if not self._has_private_keys() or "s2" not in self.sk:
+        if not self._has_private_keys() or "s2" not in MCFEDDHEncryptionKey(self.sk):
             raise FEKeyError("need the client's keys to derive a key share")
         if self.id not in self.pp["lst_nid"]:
             raise FESchemeError("unknown client id {}".format(self.id))
         weights = fusion_weight.get(self.id, [])
-        if len(weights) > len(self.sk["s"]):
+        sk = MCFEDDHEncryptionKey(self.sk)
+        if len(weights) > len(sk.s):
             raise FEValidationError("fusion weight of {} is longer than eta".format(self.id))
         q = (gp.mpz(self.pp["p"]) - 1) // 2
         contribution = [gp.mpz(0)] * _KEY_DIM
-        for y_j, s_j in zip(weights, self.sk["s"]):
+        for y_j, s_j in zip(weights, sk.s):
             contribution = [acc + gp.mpz(int(y_j)) * gp.mpz(s) for acc, s in zip(contribution, s_j)]
         label = key_label(fusion_weight)
         contribution = [
-            v % q + q * _carry_mask(self.sk["mask_key"], label, j, int(self.pp["mask_bits"]))
+            v % q + q * _carry_mask(sk.mask_key, label, j, int(self.pp["mask_bits"]))
             for j, v in enumerate(contribution)
         ]
-        return {
-            "c": encrypt_contribution(
-                self.pp["n2_mod"], self.sk["s2"], contribution,
+        return MCFE2KeyShare.new(
+            c=encrypt_contribution(
+                self.pp["n2_mod"], sk.s2, contribution,
                 label, gp.mpz(self.pp["contribution_bound"]),
             ),
-            "nid": self.id,
-            "weights_id": fusion_weight_id(fusion_weight),
-        }
+            nid=self.id,
+            weights_id=fusion_weight_id(fusion_weight),
+        ).to_dict()
 
     def combine_function_decryption_key_share(self, dct_dk_shares: dict) -> dict:
         """Combine every client's share into the CDGPP18 key ``{d}``.
@@ -202,12 +207,12 @@ class DecentralizedMCFE(MCFE):
             FESchemeError: If a client's share is missing or the shares were
                 derived for different weights.
         """
-        if len({share["weights_id"] for share in dct_dk_shares.values()}) != 1:
+        if len({MCFE2KeyShare(share).weights_id for share in dct_dk_shares.values()}) != 1:
             raise FESchemeError("key shares were derived for different weights")
         sums = combine_contributions(
             self.pp["n2_mod"],
-            {nid: share["c"] for nid, share in dct_dk_shares.items()},
+            {nid: MCFE2KeyShare(share).c for nid, share in dct_dk_shares.items()},
             self.pp["lst_nid"],
         )
         q = (gp.mpz(self.pp["p"]) - 1) // 2
-        return {"d": [gp.digits(v % q) for v in sums]}
+        return MCFEDDHFunctionalKey.new(d=[gp.digits(v % q) for v in sums]).to_dict()

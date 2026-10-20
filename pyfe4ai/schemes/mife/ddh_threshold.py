@@ -44,6 +44,12 @@ from pyfe4ai.schemes.threshold.sharing import share_points
 from pyfe4ai.schemes.threshold.sharing import share_secret
 from pyfe4ai.schemes.threshold.sharing import validate_threshold
 from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.formats.dl import MIFEDDHCiphertext
+from pyfe4ai.core.formats.dl import MIFEDDHEncryptionKey
+from pyfe4ai.core.formats.dl import MIFEDDHFunctionalKey
+from pyfe4ai.core.formats.dl import MIFEDDHParameters
+from pyfe4ai.core.formats.threshold import TMIFEDDHKeyShare
+from pyfe4ai.core.formats.threshold import TMIFEDDHPartial
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai._validation import int_vector
 from pyfe4ai._validation import scale_to_int
@@ -87,7 +93,7 @@ class ThresholdMIFEKeyGenerator(MIFEKeyGenerator):
     def get_public_parameters(self) -> dict:
         """MIFE public parameters plus ``t`` and ``lst_sid``."""
         pp = super().get_public_parameters()
-        pp.update({"t": self.t, "s": self.s, "lst_sid": list(self.lst_sid)})
+        MIFEDDHParameters(pp).update(t=self.t, s=self.s, lst_sid=list(self.lst_sid))
         return pp
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
@@ -107,12 +113,13 @@ class ThresholdMIFEKeyGenerator(MIFEKeyGenerator):
         if not credentials:
             raise FEKeyError("need to provided credentials for tMIFE")
         key = super().get_decryption_keys(sid, credentials=credentials)
-        weights_id = key["weights_id"]
+        weights_id = MIFEDDHFunctionalKey(key).weights_id
         if weights_id not in self.dict_dk:
             self.dict_dk[weights_id] = self._share_key(key)
-        dk = dict(self.dict_dk[weights_id][sid])
-        dk.update({"sid": sid, "lst_sid": list(self.lst_sid), "weights_id": weights_id})
-        return dk
+        dk = TMIFEDDHKeyShare.extend(
+            self.dict_dk[weights_id][sid], sid=sid, lst_sid=list(self.lst_sid), weights_id=weights_id
+        )
+        return dk.to_dict()
 
     def _share_key(self, key: dict) -> dict:
         sid_v = share_points(self.lst_sid)
@@ -122,10 +129,11 @@ class ThresholdMIFEKeyGenerator(MIFEKeyGenerator):
             sh = share_secret(gp.mpz(value), self.t, points, self.q)
             return {sid: gp.digits(sh[sid_v[sid]]) for sid in self.lst_sid}
 
-        d_shares = {nid: share(v) for nid, v in key["d"].items()}
-        z_shares = share(key["z"])
+        key = MIFEDDHFunctionalKey.from_dict(key)
+        d_shares = {nid: share(v) for nid, v in key.d.items()}
+        z_shares = share(key.z)
         return {
-            sid: {"d": {nid: d_shares[nid][sid] for nid in d_shares}, "z": z_shares[sid]}
+            sid: TMIFEDDHKeyShare.new(d={nid: d_shares[nid][sid] for nid in d_shares}, z=z_shares[sid]).to_dict()
             for sid in self.lst_sid
         }
 
@@ -155,42 +163,43 @@ class ThresholdMIFE(MIFE):
             Dict with ``c_y``, ``w``, ``ct_digest``, ``sid`` and
             ``lst_sid_enrolled``.
         """
-        if not dk or "d" not in dk:
+        if not dk or "d" not in TMIFEDDHKeyShare(dk):
             raise FEKeyError("no decryption keys provided.")
-        if self.id not in dk["lst_sid"] or dk.get("sid") != self.id:
+        share = TMIFEDDHKeyShare.from_dict(dk)
+        if self.id not in share.lst_sid or share.get("sid") != self.id:
             raise FESchemeError("the key share does not belong to server {}".format(self.id))
-        validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
+        validate_enrolled(self.id, share.lst_sid, lst_sid_enrolled, self.pp["t"])
         check_fusion_weight(dk, credentials)
-        if not set(dict_ct) == set(credentials) == set(dk["d"]):
+        if not set(dict_ct) == set(credentials) == set(share.d):
             raise FESchemeError("need one ciphertext for every slot of the key")
 
         p = gp.mpz(self.pp["p"])
         q = gp.mpz(self.pp["q"])
         g = gp.mpz(self.pp["g"])
-        sid_v = share_points(dk["lst_sid"])
+        sid_v = share_points(share.lst_sid)
         lam = lagrange_coefficient_at_zero(
             sid_v[self.id], [sid_v[s] for s in lst_sid_enrolled], q
         )
         c_y = gp.mpz(1)
-        w = gp.powmod(g, lam * gp.mpz(dk["z"]) % q, p)
+        w = gp.powmod(g, lam * gp.mpz(share.z) % q, p)
         for nid, ct in dict_ct.items():
             y = int_vector(credentials[nid], "fusion weight of " + nid)
-            c = [gp.mpz(v) for v in ct["c"]]
-            t = gp.mpz(ct["t"])
+            c = [gp.mpz(v) for v in MIFEDDHCiphertext(ct).c]
+            t = gp.mpz(MIFEDDHCiphertext(ct).t)
             if len(c) != len(y) or not all(0 < v < p and gp.legendre(v, p) == 1 for v in c + [t]):
                 # outside the order-q subgroup, t^(lambda d) would leak share bits
                 raise FEValidationError("malformed ciphertext of {}".format(nid))
             for c_j, y_j in zip(c, y):
                 c_y = c_y * gp.powmod(c_j, y_j, p) % p
-            w = w * gp.powmod(t, lam * gp.mpz(dk["d"][nid]) % q, p) % p
+            w = w * gp.powmod(t, lam * gp.mpz(share.d[nid]) % q, p) % p
         ct_digest = hashlib.sha256(json.dumps(dict_ct, sort_keys=True).encode("utf-8")).hexdigest()
-        return {
-            "c_y": gp.digits(c_y),
-            "w": gp.digits(w),
-            "ct_digest": ct_digest,
-            "sid": self.id,
-            "lst_sid_enrolled": list(lst_sid_enrolled),
-        }
+        return TMIFEDDHPartial.new(
+            c_y=gp.digits(c_y),
+            w=gp.digits(w),
+            ct_digest=ct_digest,
+            sid=self.id,
+            lst_sid_enrolled=list(lst_sid_enrolled),
+        ).to_dict()
 
     def combine_decrypt(self, partials) -> float | None:
         """Combine partial decryptions from at least ``t`` servers.
@@ -221,17 +230,17 @@ class ThresholdMIFE(MIFE):
                 do not match the enrolled set they were computed for.
         """
         validate_partial_decryptions(dict_ct_prime, self.pp["t"])
-        partials = list(dict_ct_prime.values())
+        partials = [TMIFEDDHPartial(part) for part in dict_ct_prime.values()]
         first = partials[0]
-        if any((p["c_y"], p["ct_digest"]) != (first["c_y"], first["ct_digest"]) for p in partials):
+        if any((p.c_y, p.ct_digest) != (first.c_y, first.ct_digest) for p in partials):
             logger.warning("partial decryptions disagree on the ciphertexts they decrypted")
             warn_at_caller("partial decryptions disagree on the ciphertexts they decrypted")
             return None
         p = gp.mpz(self.pp["p"])
         w = gp.mpz(1)
         for part in partials:
-            w = w * gp.mpz(part["w"]) % p
-        f = self._solve_dlog(gp.divm(gp.mpz(first["c_y"]), w, p))
+            w = w * gp.mpz(part.w) % p
+        f = self._solve_dlog(gp.divm(gp.mpz(first.c_y), w, p))
         if f is None:
             return None
         return float(f / pow(10, self.precision))
@@ -239,7 +248,7 @@ class ThresholdMIFE(MIFE):
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list:
         """Encrypt ndarrays element-wise (``eta = 1``); see
         :meth:`MIFE.encrypt_lst_ndarray <pyfe4ai.schemes.mife.ddh.MIFE.encrypt_lst_ndarray>`."""
-        if len(self.sk["u"]) != 1:
+        if len(MIFEDDHEncryptionKey(self.sk).u) != 1:
             raise NotImplementedError("ndarray helper currently expects eta=1")
         out = []
         for ary in lst_ndarray:

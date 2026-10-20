@@ -43,6 +43,11 @@ from pyfe4ai.schemes.mcfe.paillier import MCFEPaillierKeyGenerator
 from pyfe4ai.schemes.mcfe.paillier import dcr_sigma
 from pyfe4ai.schemes.threshold.binding import fusion_weight_id
 from pyfe4ai.primitives.groups.integer_groups import generate_group_primes
+from pyfe4ai.core.formats.dl import MCFE2KeyShare
+from pyfe4ai.core.formats.dl import MCFEDDHEncryptionKey
+from pyfe4ai.core.formats.dl import MCFEPaillierFunctionalKey
+from pyfe4ai.core.formats.dl import MCFEPaillierParameters
+from pyfe4ai.core.formats.dl import MCFEPaillierRecord
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.core.versions import record_matches
 from pyfe4ai.core.versions import DMCFE_PAILLIER_RECORD
@@ -88,7 +93,7 @@ class DecentralizedMCFEPaillierKeyGenerator(MCFEPaillierKeyGenerator):
 
     def _apply_parameters(self, param: dict) -> None:
         super()._apply_parameters(param)
-        self.n2_mod = gp.mpz(param["n2_mod"])
+        self.n2_mod = gp.mpz(MCFEPaillierRecord(param).n2_mod)
 
     def _loaded_parameters_valid(self) -> bool:
         return super()._loaded_parameters_valid() and is_dcr_modulus(self.n2_mod, self.n2_prime_bits)
@@ -106,13 +111,13 @@ class DecentralizedMCFEPaillierKeyGenerator(MCFEPaillierKeyGenerator):
         self.n2_mod = generate_mcfe2_modulus(self.n2_prime_bits)
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(
-                {
-                    "construction": DMCFE_PAILLIER_RECORD,
-                    "bit_length": self.bit_length,
-                    "n2_prime_bits": self.n2_prime_bits,
-                    "n_mod": gp.digits(self.n_mod),
-                    "n2_mod": gp.digits(self.n2_mod),
-                },
+                MCFEPaillierRecord.new(
+                    construction=DMCFE_PAILLIER_RECORD,
+                    bit_length=self.bit_length,
+                    n2_prime_bits=self.n2_prime_bits,
+                    n_mod=gp.digits(self.n_mod),
+                    n2_mod=gp.digits(self.n2_mod),
+                ).to_dict(),
                 f,
             )
 
@@ -126,22 +131,20 @@ class DecentralizedMCFEPaillierKeyGenerator(MCFEPaillierKeyGenerator):
 
     def get_public_parameters(self) -> dict:
         """DCR MCFE public parameters plus ``n2_mod``, ``lst_nid`` and the bound."""
-        pp = super().get_public_parameters()
+        pp = MCFEPaillierParameters(super().get_public_parameters())
         pp.update(
-            {
-                "n2_mod": gp.digits(self.n2_mod),
-                "lst_nid": list(self.lst_nid),
-                "contribution_bound": gp.digits(self.contribution_bound),
-            }
+            n2_mod=gp.digits(self.n2_mod),
+            lst_nid=list(self.lst_nid),
+            contribution_bound=gp.digits(self.contribution_bound),
         )
-        return pp
+        return pp.to_dict()
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
         """Return client *nid*'s keys: DCR MCFE ``s`` and MCFE2 ``s2``."""
         sk = super().get_private_keys(nid)
         if sk is None:
             return None
-        sk["s2"] = [gp.digits(v) for v in self.msk["s2"][nid]]
+        MCFEDDHEncryptionKey(sk).s2 = [gp.digits(v) for v in self.msk["s2"][nid]]
         return sk
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
@@ -165,24 +168,25 @@ class DecentralizedMCFEPaillier(MCFEPaillier):
         Returns:
             Dict with ``c`` (MCFE2 ciphertext), ``nid`` and ``weights_id``.
         """
-        if not self._has_private_keys() or "s2" not in self.sk:
+        if not self._has_private_keys() or "s2" not in MCFEDDHEncryptionKey(self.sk):
             raise FEKeyError("need the client's keys to derive a key share")
         if self.id not in self.pp["lst_nid"]:
             raise FESchemeError("unknown client id {}".format(self.id))
         weights = fusion_weight.get(self.id, [])
-        if len(weights) > len(self.sk["s"]):
+        sk = MCFEDDHEncryptionKey(self.sk)
+        if len(weights) > len(sk.s):
             raise FEValidationError("fusion weight of {} is longer than eta".format(self.id))
         if any(abs(strict_int(v, "fusion weight")) > self.pp["bound_y"] for v in weights):
             raise FEValidationError("fusion weight exceeds configured bound_y")
-        k_i = sum(gp.mpz(int(y)) * gp.mpz(s) for y, s in zip(weights, self.sk["s"]))
-        return {
-            "c": encrypt_contribution(
-                self.pp["n2_mod"], self.sk["s2"], [gp.mpz(k_i)], key_label(fusion_weight),
+        k_i = sum(gp.mpz(int(y)) * gp.mpz(s) for y, s in zip(weights, sk.s))
+        return MCFE2KeyShare.new(
+            c=encrypt_contribution(
+                self.pp["n2_mod"], sk.s2, [gp.mpz(k_i)], key_label(fusion_weight),
                 gp.mpz(self.pp["contribution_bound"]),
             ),
-            "nid": self.id,
-            "weights_id": fusion_weight_id(fusion_weight),
-        }
+            nid=self.id,
+            weights_id=fusion_weight_id(fusion_weight),
+        ).to_dict()
 
     def combine_function_decryption_key_share(self, dct_dk_shares: dict) -> dict:
         """Combine every client's share into the DCR MCFE key ``{k}``.
@@ -191,11 +195,11 @@ class DecentralizedMCFEPaillier(MCFEPaillier):
             FESchemeError: If a client's share is missing or the shares were
                 derived for different weights.
         """
-        if len({share["weights_id"] for share in dct_dk_shares.values()}) != 1:
+        if len({MCFE2KeyShare(share).weights_id for share in dct_dk_shares.values()}) != 1:
             raise FESchemeError("key shares were derived for different weights")
         (k,) = combine_contributions(
             self.pp["n2_mod"],
-            {nid: share["c"] for nid, share in dct_dk_shares.items()},
+            {nid: MCFE2KeyShare(share).c for nid, share in dct_dk_shares.items()},
             self.pp["lst_nid"],
         )
-        return {"k": gp.digits(k)}
+        return MCFEPaillierFunctionalKey.new(k=gp.digits(k)).to_dict()

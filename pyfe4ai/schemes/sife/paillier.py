@@ -40,6 +40,11 @@ from pyfe4ai.primitives.groups.modular_utils import pow_signed
 from pyfe4ai.primitives.sampling import discrete_gaussian_bigint
 from pyfe4ai.primitives.sampling import random_below
 from pyfe4ai.core.exceptions import FEKeyError, FEValidationError, warn_at_caller
+from pyfe4ai.core.formats.dl import PaillierCiphertext
+from pyfe4ai.core.formats.dl import PaillierEncryptionKey
+from pyfe4ai.core.formats.dl import SIFEPaillierFunctionalKey
+from pyfe4ai.core.formats.dl import SIFEPaillierParameters
+from pyfe4ai.core.formats.dl import SIFEPaillierRecord
 from pyfe4ai.core.versions import record_matches
 from pyfe4ai.core.versions import PAILLIER_RECORD
 from pyfe4ai._validation import scale_to_int
@@ -74,9 +79,10 @@ class SIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self._validate_bounds()
 
     def _apply_parameters(self, param: dict) -> None:
-        self.n = gp.mpz(param["n"])
-        self.n_square = gp.mpz(param["n_square"])
-        self.g_seed = param["g_seed"]
+        record = SIFEPaillierRecord.from_dict(param)
+        self.n = gp.mpz(record.n)
+        self.n_square = gp.mpz(record.n_square)
+        self.g_seed = record.g_seed
         self.g = paillier_base(self.g_seed, self.n)
 
     def _loaded_parameters_valid(self) -> bool:
@@ -112,17 +118,17 @@ class SIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(
-                {
-                    "sec_param": self.sec_param,
-                    "eta": self.eta,
-                    "bit_length": self.bit_length,
-                    "bound_x": self.bound_x,
-                    "bound_y": self.bound_y,
-                    "param_format": PAILLIER_RECORD,
-                    "n": gp.digits(self.n),
-                    "n_square": gp.digits(self.n_square),
-                    "g_seed": self.g_seed,
-                },
+                SIFEPaillierRecord.new(
+                    sec_param=self.sec_param,
+                    eta=self.eta,
+                    bit_length=self.bit_length,
+                    bound_x=self.bound_x,
+                    bound_y=self.bound_y,
+                    param_format=PAILLIER_RECORD,
+                    n=gp.digits(self.n),
+                    n_square=gp.digits(self.n_square),
+                    g_seed=self.g_seed,
+                ).to_dict(),
                 f,
             )
 
@@ -155,16 +161,16 @@ class SIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         logger.info("SIFE Paillier setup successfully")
 
     def get_public_parameters(self) -> dict:
-        return {
-            "n": gp.digits(self.mpk["n"]),
-            "n_square": gp.digits(self.mpk["n_square"]),
-            "g": gp.digits(self.mpk["g"]),
-            "eta": self.eta,
-            "sec_param": self.sec_param,
-            "bit_length": self.bit_length,
-            "bound_x": self.bound_x,
-            "bound_y": self.bound_y,
-        }
+        return SIFEPaillierParameters.new(
+            n=gp.digits(self.mpk["n"]),
+            n_square=gp.digits(self.mpk["n_square"]),
+            g=gp.digits(self.mpk["g"]),
+            eta=self.eta,
+            sec_param=self.sec_param,
+            bit_length=self.bit_length,
+            bound_x=self.bound_x,
+            bound_y=self.bound_y,
+        ).to_dict()
 
     def get_private_keys(self, nid: str = "nid_default", **kwargs) -> dict | None:
         """Return the encryption key (public key vector ``pk``).
@@ -172,7 +178,7 @@ class SIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         Args:
             nid: Client identifier (unused for single-input schemes).
         """
-        return {"pk": [gp.digits(v) for v in self.mpk["pk"]]}
+        return PaillierEncryptionKey.new(pk=[gp.digits(v) for v in self.mpk["pk"]]).to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Derive a functional decryption key for the given fusion weights.
@@ -196,7 +202,7 @@ class SIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         k = gp.mpz(0)
         for s_i, y_i in zip(self.msk["s"], fusion_weights):
             k += s_i * gp.mpz(y_i)
-        return {"k": gp.digits(k)}
+        return SIFEPaillierFunctionalKey.new(k=gp.digits(k)).to_dict()
 
 
 class SIFEPaillier(OfflineRandomMixin, IPFEAbsCrypto):
@@ -233,7 +239,7 @@ class SIFEPaillier(OfflineRandomMixin, IPFEAbsCrypto):
         n_square = gp.mpz(self.pp["n_square"])
         r = random_below(n // 4)
         return gp.powmod(gp.mpz(self.pp["g"]), r, n_square), [
-            gp.powmod(gp.mpz(pk_i), r, n_square) for pk_i in self.sk["pk"]]
+            gp.powmod(gp.mpz(pk_i), r, n_square) for pk_i in PaillierEncryptionKey(self.sk).pk]
 
     def _encrypt_with(self, lst_pt: list, part: tuple) -> dict:
         """The ciphertext of *lst_pt* for the randomness part *part*."""
@@ -245,7 +251,7 @@ class SIFEPaillier(OfflineRandomMixin, IPFEAbsCrypto):
             x_term = gp.mpz(1) + gp.mpz(x_i) * n
             x_term %= n_square
             c1.append(gp.digits((x_term * m) % n_square))
-        return {"ct0": gp.digits(c0), "ct1": c1}
+        return PaillierCiphertext.new(ct0=gp.digits(c0), ct1=c1).to_dict()
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: list):
         """Decrypt ciphertexts and recover the inner product.
@@ -266,11 +272,11 @@ class SIFEPaillier(OfflineRandomMixin, IPFEAbsCrypto):
 
         n = gp.mpz(self.pp["n"])
         n_square = gp.mpz(self.pp["n_square"])
-        ct1 = dct_ct.get("ct1")
+        ct1 = PaillierCiphertext(dct_ct).get("ct1")
         if not isinstance(ct1, list) or len(ct1) != self.pp["eta"]:
             raise FEValidationError("ciphertext does not match eta")
-        c0, *c1 = check_zn2_elements([dct_ct["ct0"], *ct1], n_square)
-        k = gp.mpz(dk["k"])
+        c0, *c1 = check_zn2_elements([PaillierCiphertext(dct_ct).ct0, *ct1], n_square)
+        k = gp.mpz(SIFEPaillierFunctionalKey(dk).k)
 
         acc = pow_signed(c0, -k, n_square)
         for ct_i, y_i in zip(c1, fusion_weight):
