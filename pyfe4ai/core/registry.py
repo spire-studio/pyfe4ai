@@ -224,9 +224,11 @@ class Scheme:
     #: Why the ``standard`` profile refuses the scheme; empty if it does not.
     refused: str = ""
     #: The group of a scheme that instantiates another variant of its family
-    #: in a group of its own (the ML adapter's ``group`` option)...
+    #: in a group of its own (the ML adapter's ``group`` option), such as
+    #: ``ristretto255`` for ``ddh_ristretto255``.
     group: str | None = None
-    #: ... and that variant: ``ddh`` for ``ddh_ristretto255`` (``group`` ``ristretto255``).
+    #: The variant that such a scheme instantiates (``ddh`` for
+    #: ``ddh_ristretto255``).
     instance_of: str | None = None
 
     @property
@@ -258,7 +260,7 @@ class Scheme:
 
     @property
     def crypto(self) -> type:
-        """The crypto class: encryptors, decryptors, servers (imports the module)."""
+        """The crypto class, whose objects encrypt, decrypt or serve (imports the module)."""
         return getattr(importlib.import_module(self.module), self.crypto_name)
 
     @property
@@ -650,7 +652,7 @@ class CreatedScheme(NamedTuple):
 
     #: The scheme's key generator, built from the config; not set up yet.
     key_generator: Any
-    #: The scheme's crypto class: its objects encrypt (clients, with ``pp``
+    #: The scheme's crypto class, whose objects encrypt (clients, with ``pp``
     #: and ``sk``), decrypt (with ``pp`` and a functional key) or, for the
     #: threshold schemes, decrypt partially and combine.
     crypto: type

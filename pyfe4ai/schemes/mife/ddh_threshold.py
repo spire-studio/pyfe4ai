@@ -247,7 +247,7 @@ class ThresholdMIFEDDH(MIFEDDH):
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list:
         """Encrypt ndarrays element-wise (``eta = 1``); see
-        :meth:`MIFE.encrypt_lst_ndarray <pyfe4ai.schemes.mife.ddh.MIFE.encrypt_lst_ndarray>`."""
+        :meth:`MIFEDDH.encrypt_lst_ndarray <pyfe4ai.schemes.mife.ddh.MIFEDDH.encrypt_lst_ndarray>`."""
         if len(MIFEDDHEncryptionKey(self.sk).u) != 1:
             raise NotImplementedError("ndarray helper currently expects eta=1")
         out = []

@@ -191,7 +191,7 @@ class FESchemeWrapper:
         scheme_type: ``"sife"``, ``"mife"``, ``"mcfe"`` or ``"quadratic"``.
         variant: Variant name within the family, e.g. ``"ddh"``, ``"lwe"``,
             ``"damgard"``, ``"paillier"``, ``"ring_lwe"`` or
-            ``"lwe_threshold"`` (see :func:`pyfe4ai.list_schemes`).
+            ``"lwe_threshold"`` (see :func:`pyfe4ai.list_schemes <pyfe4ai.core.registry.list_schemes>`).
         keygen_config: Configuration dict for the KeyGenerator (``sec_param``,
             ``eta``, ``n``, ``bound_x``, ``security_profile``, etc.).
             ``group="ristretto255"`` selects the elliptic-curve instantiation

@@ -101,7 +101,7 @@ class TestValidationErrors:
             kg.get_decryption_keys("sid_1", credentials={"fusion_weight": [1, 2]})
 
     def test_sife_encrypt_plaintext_length(self):
-        """SIFE.encrypt rejects plaintext with wrong length."""
+        """SIFEDDH.encrypt rejects plaintext with wrong length."""
         from pyfe4ai.schemes.sife.ddh import SIFEDDH, SIFEDDHKeyGenerator
 
         kg = SIFEDDHKeyGenerator({"sec_param": 128, "eta": 3})

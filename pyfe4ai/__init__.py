@@ -2,11 +2,14 @@
 
 The package exports its entry points:
 
-* :func:`create` builds the key generator of a scheme given by its id
-  ``"family/variant"`` and returns it with the scheme's crypto class;
-* :func:`list_schemes`, :func:`get_scheme` (a :class:`Scheme`: classes,
-  kind, capabilities, review status), :data:`CAPABILITIES` and
-  :func:`get_scheme_status` query the scheme registry
+* :func:`~pyfe4ai.core.registry.create` builds the key generator of a
+  scheme given by its id ``"family/variant"`` and returns it with the
+  scheme's crypto class;
+* :func:`~pyfe4ai.core.registry.list_schemes`,
+  :func:`~pyfe4ai.core.registry.get_scheme` (a
+  :class:`~pyfe4ai.core.registry.Scheme`: classes, kind, capabilities,
+  review status), :data:`~pyfe4ai.core.registry.CAPABILITIES` and
+  :func:`~pyfe4ai.core.status.get_scheme_status` query the scheme registry
   (:mod:`pyfe4ai.core.registry`);
 * the exceptions and warnings of the library.
 
