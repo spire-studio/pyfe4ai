@@ -302,6 +302,25 @@ not compatible with v0.3.0, and modules moved and classes were renamed
   of `pyfe4ai.primitives.sampling`, the same source): code that replaced a
   scheme module's `discrete_gaussian_matrix` to fix the encryption noise
   replaces it there.
+- **Global state and fork safety**: the library has one fork handler,
+  `pyfe4ai.core.forksafe`, the only `os.register_at_fork` registration;
+  in a forked child it renews the process-wide locks, drops the buffered OS
+  random bytes and marks the one-time precomputations used, as the four
+  modules' own handlers did. Caches stay in the objects that own them; the
+  remaining process-wide state (backend and sampler selection, public
+  tables derived from parameters, the threshold store locks, the OS random
+  buffer, registries) is listed on the new documentation page "Threads,
+  processes and copies" (`docs/threading.rst`), together with the objects
+  several threads may share and what copies, pickles and `fork()` do to
+  caches and locks; `tests/test_global_state.py` refuses new module-level
+  caches or locks. No output, pickled state, error or warning changes. The
+  internal names moved:
+
+  | Old | New |
+  |---|---|
+  | `pyfe4ai.primitives.sampling._reset_xof_lock`, `pyfe4ai.backend.native_impl._reset_contexts_lock`, `pyfe4ai.schemes.threshold.store._reset_share_cache_lock` and `_reset_store_lock` (the child-side handlers) | `pyfe4ai.core.forksafe.renew_lock(module, name)` registrations (the locks keep their names: `_XOF_LOCK`, `_contexts_lock`, `_SHARE_CACHE_LOCK`, `_STORE_LOCK`) |
+  | the `os.register_at_fork` call of `pyfe4ai.primitives.sampling` for `_OS_RANDOM._reset` | `pyfe4ai.core.forksafe.call_in_child(_OS_RANDOM._reset)` |
+  | `pyfe4ai.core.one_time._LIVE`, `_invalidate_after_fork` | `pyfe4ai.core.forksafe.track(obj)` (`OneTimePrecomputation._after_fork_in_child()`) |
 - **Repository layout**: `Dockerfile.pairing` moved to
   `docker/Dockerfile.pairing` (`docker build -f docker/Dockerfile.pairing
   -t pyfe4ai-pairing .`); the parameter estimators moved to

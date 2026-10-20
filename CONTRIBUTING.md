@@ -114,6 +114,21 @@ backend interface (`pyfe4ai/backend/interface.py`): they call
   random bytes) through both implementations, the same outputs, and a spy
   that the native kernel ran.
 
+### Caches, locks and other state
+
+Keep a cache on the object that owns it (a key generator, a crypto object, a
+server), created on first use. If it may hold native objects, leave it out
+of the object's `__getstate__` (pickles and copies then rebuild it); never
+change what an existing class pickles without a reason in the CHANGELOG
+(other versions load those pickles). Module-level state is reserved for what
+every object shares (selections, public tables, the threshold store locks):
+`tests/test_global_state.py` refuses a new module-level cache, lock,
+registry or lazily set global unless it is allow-listed there with its
+reason and listed on `docs/threading.rst`. A process-wide lock is renewed in
+a forked child with `pyfe4ai.core.forksafe.renew_lock`, other per-process
+state is reset with `call_in_child` or `track`; nothing else calls
+`os.register_at_fork`.
+
 ## Reporting Bugs
 
 When filing a bug report, please include:

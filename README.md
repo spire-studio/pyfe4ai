@@ -308,6 +308,7 @@ side-channel hardening, trusted parameter cache) still apply.
     - `status.py`: review status of every registered scheme (the table above)
     - `profiles.py`: `security_profile` (`"toy"` / `"standard"`)
     - `one_time.py`: one-time precomputations of the offline / online encryption
+    - `forksafe.py`: the library's one fork handler (what a forked child renews; threads, copies and the process-wide state: `docs/threading.rst`)
     - `exceptions.py`: `FEError` exception hierarchy; `constants.py`: scheme types and defaults
   - `schemes/`: the schemes
     - `sife/`: single-input families

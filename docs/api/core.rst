@@ -76,6 +76,15 @@ Offline Phases and One-Time Precomputations
 .. automodule:: pyfe4ai.schemes.mcfe.offline
    :members:
 
+Fork Safety
+-----------
+
+What a forked child renews; the process-wide state and what threads,
+copies, pickles and ``fork`` do to it are on :doc:`../threading`.
+
+.. automodule:: pyfe4ai.core.forksafe
+   :members:
+
 Exceptions
 ----------
 
