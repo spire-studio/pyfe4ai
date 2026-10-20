@@ -53,9 +53,10 @@ fn build_info(py: Python<'_>) -> PyResult<Py<PyAny>> {
     Ok(d.into_any().unbind())
 }
 
-/// The classes and functions of the domain modules in one list (this order is
-/// the order of the module's namespace), then the ones `ec`, `pairing`, `rns`,
-/// `replicated` and `threshold` add with their register functions.
+// The classes and functions of the domain modules in one list (this order is
+// the order of the module's namespace), then the ones `ec`, `pairing`, `rns`,
+// `replicated` and `threshold` add with their register functions. (Not a doc
+// comment: #[pymodule] would make it the module's __doc__.)
 #[pymodule]
 fn _rust_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ring::RingCtx>()?;

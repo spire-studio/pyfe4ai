@@ -1,6 +1,7 @@
-//! Randomness of the native calls: the per-call ChaCha20 DRBG (CallDrbg), the
-//! OS bytes it is seeded from, and the choice between given bytes (tests) and
-//! the DRBG streams for the tensor kernels.
+//! Randomness of the native calls: the per-call ChaCha20 DRBG (CallDrbg, seeded
+//! from the OS unless a test gives the seed), OS bytes for the callers that use
+//! them directly (os_random, random_bytes), and the choice between given bytes
+//! (tests) and the DRBG streams for the tensor kernels.
 
 use pyfe4ai_core::osrand;
 use pyfe4ai_core::rlwe::Randomness;
