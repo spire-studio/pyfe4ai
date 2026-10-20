@@ -25,7 +25,7 @@ from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
 from pyfe4ai.schemes.threshold import codec as threshold_codec
 from pyfe4ai.schemes.threshold import store as threshold_store
 from pyfe4ai import backend as native_backend
-from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
+from pyfe4ai.core.formats import binary as fmt_binary
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 
 NATIVE = native_backend.available()
@@ -264,7 +264,7 @@ def _binary_form(obj, q):
     if isinstance(obj, dict):
         return {k: _binary_form(v, q) for k, v in obj.items()}
     if isinstance(obj, list) and obj and all(isinstance(v, str) for v in obj):
-        return rlu.encode_values([int(v) for v in obj], q)
+        return fmt_binary.encode_values([int(v) for v in obj], q)
     if isinstance(obj, list):
         return [_binary_form(v, q) for v in obj]
     return obj
@@ -273,7 +273,7 @@ def _binary_form(obj, q):
 def test_binary_partial_digests_known_answer():
     """Pins the v2 tag message and the request digests (format-2 derivations)."""
     q = (1 << 70) + 0x2_0001
-    data = rlu.encode_threshold_ciphertext([[1, 2, 3, 4]], [5, 6, 7, 8], 2, q, 4)
+    data = fmt_binary.encode_threshold_ciphertext([[1, 2, 3, 4]], [5, 6, 7, 8], 2, q, 4)
     ct = {"ct": data, "k": 2, "label_hash": 2}
     digests = threshold_codec.binary_ciphertext_digests(ct, q, 1, 4)
     message = threshold_codec.binary_tag_message(b"\x11" * 32, "lab", ct, digests)

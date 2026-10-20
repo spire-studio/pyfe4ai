@@ -53,9 +53,9 @@ from pyfe4ai.core.base import ParameterCacheMixin
 from pyfe4ai.primitives.lattice.lwe_utils import decode_scaled
 from pyfe4ai.core.profiles import STANDARD
 from pyfe4ai.primitives.lattice.ring_lwe_utils import bmms21_selective_parameters
-from pyfe4ai.primitives.lattice.ring_lwe_utils import CT_FORMATS
-from pyfe4ai.primitives.lattice.ring_lwe_utils import canonical_ring_ciphertext
-from pyfe4ai.primitives.lattice.ring_lwe_utils import encode_binary_ciphertext
+from pyfe4ai.core.versions import CT_FORMATS
+from pyfe4ai.core.formats.binary import canonical_ring_ciphertext
+from pyfe4ai.core.formats.binary import encode_binary_ciphertext
 from pyfe4ai.primitives.lattice.ring_lwe_utils import check_ring_lwe
 from pyfe4ai.primitives.lattice.ring_lwe_utils import check_ring_modulus
 from pyfe4ai.primitives.lattice.ring_lwe_utils import register_rns_modulus
@@ -373,7 +373,7 @@ class MIFERingLWE(IPFEAbsCrypto):
                 optionally ``sk`` (encryption keys). ``ct_format``: ``"json"``
                 (default: ``ct0`` and ``ct1`` as decimal strings) or
                 ``"binary"`` (``ct``: bytes, see
-                :func:`~pyfe4ai.primitives.lattice.ring_lwe_utils.encode_binary_ciphertext`;
+                :func:`~pyfe4ai.core.formats.binary.encode_binary_ciphertext`;
                 about a third of the size, and faster to produce and read).
                 Decryption reads both formats. ``gaussian_sampler``: that of
                 the encryption noise (default: that of ``pp``, else

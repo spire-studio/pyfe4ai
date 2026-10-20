@@ -9,7 +9,7 @@ Encodings of the threshold artifacts and their strict parsing.
 * The ciphertexts of the threshold MCFE over Ring-LWE
   (:mod:`pyfe4ai.schemes.mcfe.ring_lwe_threshold`): JSON, tagged over their
   JSON form, or format 2 of
-  :func:`~pyfe4ai.primitives.lattice.ring_lwe_utils.encode_threshold_ciphertext`
+  :func:`~pyfe4ai.core.formats.binary.encode_threshold_ciphertext`
   with what their tags (:func:`binary_tag_message`) and the noise seeds
   (:func:`binary_request_digests`) hash; strict reading of both, and the
   digests of canonical ciphertexts (:func:`ciphertexts_digest`).
@@ -27,11 +27,11 @@ import json
 import gmpy2 as gp
 
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError
-from pyfe4ai.primitives.lattice.ring_lwe_utils import canonical_ring_ciphertext
-from pyfe4ai.primitives.lattice.ring_lwe_utils import decode_threshold_ciphertext
-from pyfe4ai.primitives.lattice.ring_lwe_utils import decode_values
-from pyfe4ai.primitives.lattice.ring_lwe_utils import encode_values
-from pyfe4ai.primitives.lattice.ring_lwe_utils import threshold_ciphertext_header
+from pyfe4ai.core.formats.binary import canonical_ring_ciphertext
+from pyfe4ai.core.formats.binary import decode_threshold_ciphertext
+from pyfe4ai.core.formats.binary import decode_values
+from pyfe4ai.core.formats.binary import encode_values
+from pyfe4ai.core.formats.binary import threshold_ciphertext_header
 
 # key material
 
@@ -53,7 +53,7 @@ def binary_material(material, modulus):
     """*material* (nested dicts and lists of values) with every polynomial as
     ``ceil(bits(q) / 8)``-byte little-endian words (values reduced mod q):
     the binary key shares of the threshold Ring-LWE MCFE."""
-    from pyfe4ai.primitives.lattice.ring_lwe_utils import encode_values
+    from pyfe4ai.core.formats.binary import encode_values
 
     q = int(modulus)
     return _map_polys(material, lambda leaf: encode_values(leaf if isinstance(leaf, (list, tuple)) else [leaf], q))
@@ -145,7 +145,7 @@ def uniform_material(material, modulus):
         raise FEKeyError("malformed key material: polynomials must be value lists or bytes")
     if kinds != {"bytes", "values"}:
         return material
-    from pyfe4ai.primitives.lattice.ring_lwe_utils import decode_values
+    from pyfe4ai.core.formats.binary import decode_values
 
     width = _value_bytes(modulus)
 
@@ -270,7 +270,7 @@ _CT_DIGEST_DOMAIN = b"pyfe4ai/tmcfe-ring-lwe/ct-digest/v2|"
 def binary_ciphertext_digests(ct: dict, q, eta: int, ring_n: int) -> tuple:
     """``(k, d0, d1)`` of a format-2 ciphertext dict: its batch length and
     ``d0 = SHA-256(domain || header || ct0 rows)``, ``d1 = SHA-256(domain ||
-    ct1)`` (the values are checked when read: :func:`~pyfe4ai.primitives.lattice.ring_lwe_utils.decode_threshold_ciphertext`).
+    ct1)`` (the values are checked when read: :func:`~pyfe4ai.core.formats.binary.decode_threshold_ciphertext`).
 
     Raises:
         ValueError: Unless ``ct["ct"]`` is a format-2 ciphertext of these
@@ -371,7 +371,7 @@ def check_ciphertext_format(dict_ct: dict, binary: bool) -> None:
 
 def read_json_ciphertexts(dict_ct: dict, q: int, eta: int, ring_n: int) -> dict:
     """``{nid: (k, ct0, ct1)}`` of JSON ciphertexts, read strictly
-    (:func:`~pyfe4ai.primitives.lattice.ring_lwe_utils.canonical_ring_ciphertext`).
+    (:func:`~pyfe4ai.core.formats.binary.canonical_ring_ciphertext`).
 
     Raises:
         FESchemeError: For a malformed ciphertext.
@@ -388,7 +388,7 @@ def read_json_ciphertexts(dict_ct: dict, q: int, eta: int, ring_n: int) -> dict:
 def read_binary_ciphertexts(dict_ct: dict, k: int, q: int, eta: int, ring_n: int) -> dict:
     """``{nid: (k, ct0, ct1)}`` of format-2 ciphertexts of batch length *k*
     (the Python reading of format 2, strict:
-    :func:`~pyfe4ai.primitives.lattice.ring_lwe_utils.decode_threshold_ciphertext`).
+    :func:`~pyfe4ai.core.formats.binary.decode_threshold_ciphertext`).
 
     Raises:
         FESchemeError: For a malformed ciphertext.

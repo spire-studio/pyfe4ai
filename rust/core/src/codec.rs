@@ -1,5 +1,5 @@
 //! Decimal strings (the JSON ciphertext format: gmpy2.digits out, int(s) % q in)
-//! and the binary ciphertext format 1 of ring_lwe_utils.encode_binary_ciphertext.
+//! and the binary ciphertext format 1 of pyfe4ai.core.formats.binary.encode_binary_ciphertext.
 //! The u128 functions are the u64 / u128 words' `Word::parse_dec` / `format_dec`.
 
 use crate::arith::Word;

@@ -156,7 +156,7 @@ Ciphertext format (key generator config ``ct_format``, a public parameter;
 :data:`~pyfe4ai.core.versions.CT_FORMATS`): ``"json"`` (decimal strings, tags over the JSON form,
 as in versions <= 0.3.0; public parameters without ``ct_format``) or
 ``"binary"`` (the default): format 2 of
-:func:`~pyfe4ai.primitives.lattice.ring_lwe_utils.encode_threshold_ciphertext` -- the
+:func:`~pyfe4ai.core.formats.binary.encode_threshold_ciphertext` -- the
 ``ct0`` rows truncated to the batch length ``k`` (decryption reads them
 coefficient-wise), ``ct1`` whole, every value a ``ceil(bits(q)/8)``-byte
 word strictly below ``q`` -- and binary partial decryptions of the first
@@ -294,7 +294,7 @@ from pyfe4ai.primitives.lattice.ring_lwe_utils import poly_mul
 from pyfe4ai.primitives.lattice.ring_lwe_utils import register_rns_modulus
 from pyfe4ai.primitives.lattice.ring_lwe_utils import rns_ntt_modulus_for
 from pyfe4ai.primitives.lattice.ring_lwe_utils import seeded_polynomial
-from pyfe4ai.primitives.lattice.ring_lwe_utils import threshold_ciphertext_from_format1
+from pyfe4ai.core.formats.binary import threshold_ciphertext_from_format1
 from pyfe4ai.primitives.lattice.ring_lwe_utils import transpose
 from pyfe4ai.primitives.sampling import XofRandom
 from pyfe4ai.primitives.sampling import FLOODING_SAMPLER

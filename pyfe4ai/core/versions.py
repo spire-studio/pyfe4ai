@@ -43,7 +43,7 @@ served only under the ``legacy_shamir`` policy of :func:`check_legacy_shamir`.
 
 The identifiers are those of earlier versions; nothing here changes a digest
 or a record. The byte formats' own version bytes (format 1 and 2 of the
-Ring-LWE ciphertexts) are in :mod:`pyfe4ai.primitives.lattice.ring_lwe_utils`.
+Ring-LWE ciphertexts) are in :mod:`pyfe4ai.core.formats.binary`.
 """
 
 from __future__ import annotations
@@ -539,10 +539,10 @@ def check_lwe_layer_label_hash(first, nid, mode: str) -> None:
 #: Ciphertext formats of the Ring-LWE schemes: ``"json"`` (decimal strings)
 #: and ``"binary"``. For the MIFE / MCFE crypto objects (config
 #: ``ct_format``, default ``"json"``) ``"binary"`` is format 1
-#: (:func:`~pyfe4ai.primitives.lattice.ring_lwe_utils.encode_binary_ciphertext`); for the
+#: (:func:`~pyfe4ai.core.formats.binary.encode_binary_ciphertext`); for the
 #: threshold MCFE over Ring-LWE it is a public parameter (key generator config
 #: ``ct_format``, default ``"binary"``; :func:`pp_ct_format`): format 2
-#: (:func:`~pyfe4ai.primitives.lattice.ring_lwe_utils.encode_threshold_ciphertext`), tags
+#: (:func:`~pyfe4ai.core.formats.binary.encode_threshold_ciphertext`), tags
 #: over its digests, binary partial decryptions. ``"json"`` is the only format
 #: of versions <= 0.3.0 and that of threshold public parameters without
 #: ``ct_format``.

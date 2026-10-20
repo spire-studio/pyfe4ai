@@ -72,7 +72,7 @@ from pyfe4ai.core.versions import check_key_label_hash
 from pyfe4ai.core.versions import label_hash_code
 from pyfe4ai.core.versions import label_hash_mode
 from pyfe4ai.core.versions import pp_label_hash
-from pyfe4ai.primitives.lattice.ring_lwe_utils import encode_values
+from pyfe4ai.core.formats.binary import encode_values
 from pyfe4ai._validation import scale_to_int
 
 logger = logging.getLogger(__name__)

@@ -97,7 +97,7 @@ def test_i2b_native_a_value_list_holding_bytes_is_a_key_error(backend, ct_format
     """Native readings: a polynomial that is a list of values with a
     bytes element passes poly_kinds (it looks at the first element) and the
     native NTT / partial reading raises TypeError instead of FEKeyError."""
-    from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
+    from pyfe4ai.core.formats import binary as fmt_binary
     from pyfe4ai.core.exceptions import FEKeyError, FESchemeError
 
     kg = _kg(t=3, ct_format=ct_format)
@@ -110,7 +110,7 @@ def test_i2b_native_a_value_list_holding_bytes_is_a_key_error(backend, ct_format
     dk = kg.get_decryption_keys("s0", credentials=creds)
 
     def as_list(poly):
-        vals = rlu.decode_values(poly, pp["q"], pp["ring_n"]) if isinstance(poly, bytes) else poly
+        vals = fmt_binary.decode_values(poly, pp["q"], pp["ring_n"]) if isinstance(poly, bytes) else poly
         return [str(int(v)) for v in vals][:-1] + [b"\x01\x02"]
 
     bad = dict(dk, z=as_list(dk["z"])) if field == "z" else dict(dk, sk_y=dict(dk["sk_y"], c1=as_list(dk["sk_y"]["c1"])))

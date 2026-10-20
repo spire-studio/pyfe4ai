@@ -26,6 +26,7 @@ from pyfe4ai.schemes.mcfe.labels import chunk_label, encode_label
 from pyfe4ai.schemes.threshold.binding import pp_binding, tag_ciphertext, tag_ciphertext_message
 from pyfe4ai import backend as native_backend
 from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
+from pyfe4ai.core.formats import binary as fmt_binary
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 
 BACKENDS = ["python"] + (["native"] if native_backend.available() else [])
@@ -75,37 +76,37 @@ def test_format_2_known_answer():
     q = (1 << 70) + 0x2_0001  # 9-byte values
     ct0 = [[1, 2, 3, 4], [q - 1, 0, 7, 8]]
     ct1 = [5, 6, 7, q - 2]
-    data = rlu.encode_threshold_ciphertext(ct0, ct1, 2, q, 4)
+    data = fmt_binary.encode_threshold_ciphertext(ct0, ct1, 2, q, 4)
     assert data[:14] == b"PFRL" + bytes([2, 9, 2, 0, 2, 0]) + (2).to_bytes(4, "little")
     assert len(data) == 14 + (2 * 2 + 4) * 9
     assert hashlib.sha256(data).hexdigest() == hashlib.sha256(
         data[:14] + b"".join(v.to_bytes(9, "little") for v in [1, 2, q - 1, 0, 5, 6, 7, q - 2])).hexdigest()
-    assert rlu.decode_threshold_ciphertext(data, q, 2, 4) == (2, [[1, 2], [q - 1, 0]], ct1)
+    assert fmt_binary.decode_threshold_ciphertext(data, q, 2, 4) == (2, [[1, 2], [q - 1, 0]], ct1)
     # format 1 -> format 2 is the same bytes
-    f1 = rlu.encode_binary_ciphertext(ct0, ct1, q, 4)
-    assert rlu.threshold_ciphertext_from_format1(f1, 2, q, 2, 4) == data
+    f1 = fmt_binary.encode_binary_ciphertext(ct0, ct1, q, 4)
+    assert fmt_binary.threshold_ciphertext_from_format1(f1, 2, q, 2, 4) == data
 
 
 def test_format_2_refuses_non_canonical_and_malformed_bytes():
     q = (1 << 70) + 0x2_0001
-    data = bytearray(rlu.encode_threshold_ciphertext([[1, 2, 3, 4]], [5, 6, 7, 8], 3, q, 4))
+    data = bytearray(fmt_binary.encode_threshold_ciphertext([[1, 2, 3, 4]], [5, 6, 7, 8], 3, q, 4))
     for pos in range(14, len(data), 9):  # any value replaced by q (a second encoding of 0)
         bad = bytes(data[:pos]) + q.to_bytes(9, "little") + bytes(data[pos + 9:])
         with pytest.raises(ValueError):
-            rlu.decode_threshold_ciphertext(bad, q, 1, 4)
+            fmt_binary.decode_threshold_ciphertext(bad, q, 1, 4)
     for pos, value in [(4, 1), (5, 10), (6, 2), (8, 3), (9, 1), (10, 0), (10, 5)]:
         bad = bytearray(data)
         bad[pos] = value
         with pytest.raises(ValueError):
-            rlu.decode_threshold_ciphertext(bytes(bad), q, 1, 4)
+            fmt_binary.decode_threshold_ciphertext(bytes(bad), q, 1, 4)
     for bad in (bytes(data[:-1]), bytes(data) + b"\0", b"", "text"):
         with pytest.raises(ValueError):
-            rlu.decode_threshold_ciphertext(bad, q, 1, 4)
-    f1 = rlu.encode_binary_ciphertext([[1, 2, 3, 4]], [5, 6, 7, 8], q, 4)
+            fmt_binary.decode_threshold_ciphertext(bad, q, 1, 4)
+    f1 = fmt_binary.encode_binary_ciphertext([[1, 2, 3, 4]], [5, 6, 7, 8], q, 4)
     with pytest.raises(ValueError):  # format 1 is not format 2
-        rlu.decode_threshold_ciphertext(f1, q, 1, 4)
+        fmt_binary.decode_threshold_ciphertext(f1, q, 1, 4)
     with pytest.raises(ValueError):
-        rlu.decode_values(q.to_bytes(9, "little"), q, 1)
+        fmt_binary.decode_values(q.to_bytes(9, "little"), q, 1)
 
 
 @pytest.mark.skipif(not native_backend.available(), reason="native extension not built")
@@ -241,7 +242,7 @@ def test_mixed_formats_are_refused():
     srv, srvj = _obj(pp, "s0"), _obj(ppj, "s0")
     q, eta, ring_n = int(pp["q"]), pp["eta"], pp["ring_n"]
     # a JSON ciphertext under binary public parameters, tagged with the JSON payload
-    k, ct0, ct1 = rlu.decode_threshold_ciphertext(cts["c1"]["ct"], q, eta, ring_n)
+    k, ct0, ct1 = fmt_binary.decode_threshold_ciphertext(cts["c1"]["ct"], q, eta, ring_n)
     as_json = {"ct0": [[str(v) for v in row] + ["0"] * (ring_n - k) for row in ct0], "ct1": [str(v) for v in ct1],
                "k": k, "label_hash": cts["c1"]["label_hash"]}
     as_json = tag_ciphertext(as_json, kg.get_private_keys("c1")["mac_keys"], threshold_codec._TAG_DOMAIN,
@@ -249,7 +250,7 @@ def test_mixed_formats_are_refused():
     with pytest.raises(FESchemeError, match="is JSON; the public parameters' format is binary"):
         srv.share_decrypt(dict(cts, c1=as_json), creds, dk, SIDS)
     # format 1 under binary public parameters, tagged with a v2 message: refused
-    f1 = rlu.encode_binary_ciphertext([row + [0] * (ring_n - k) for row in ct0], ct1, q, ring_n)
+    f1 = fmt_binary.encode_binary_ciphertext([row + [0] * (ring_n - k) for row in ct0], ct1, q, ring_n)
     with pytest.raises(FESchemeError, match="not authenticated"):
         srv.share_decrypt(dict(cts, c1=dict(cts["c1"], ct=f1)), creds, dk, SIDS)
     # a JSON (v1) tag on a format-2 ciphertext

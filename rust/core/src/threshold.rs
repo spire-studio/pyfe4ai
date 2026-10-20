@@ -1,6 +1,6 @@
 //! Threshold Ring-LWE MCFE (pyfe4ai.schemes.mcfe.ring_lwe_threshold): the
 //! uniform flooding noise, binary format 2 of its ciphertexts and partial
-//! decryptions (ring_lwe_utils.encode_threshold_ciphertext), and a partial
+//! decryptions (pyfe4ai.core.formats.binary.encode_threshold_ciphertext), and a partial
 //! decryption whose ct0 rows, outputs and noise cover the first k
 //! coefficients only. Every function computes the values of the Python code.
 

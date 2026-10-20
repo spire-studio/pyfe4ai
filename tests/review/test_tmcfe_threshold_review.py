@@ -35,7 +35,7 @@ from pyfe4ai.schemes.threshold import codec as threshold_codec
 from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.schemes.threshold.binding import pp_binding, tag_ciphertext_message
 from pyfe4ai import backend as native_backend
-from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
+from pyfe4ai.core.formats import binary as fmt_binary
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError
 
 NATIVE = native_backend.available()
@@ -68,7 +68,7 @@ def _obj(pp, nid, sk=None):
 
 def _values(poly, q):
     if isinstance(poly, bytes):
-        return rlu.decode_values(poly, q, len(poly) // ((int(q).bit_length() + 7) // 8))
+        return fmt_binary.decode_values(poly, q, len(poly) // ((int(q).bit_length() + 7) // 8))
     return [int(v) for v in poly]
 
 
@@ -79,7 +79,7 @@ def test_l2_native_shamir_dealing_of_mixed_material():
     n = pp["ring_n"]
     z = [3 * i + 1 for i in range(n)]
     material = {"sk_y": {nid: [str(i + 7 * j) for i in range(n)] for j, nid in enumerate(NIDS)},
-                "z": rlu.encode_values(z, q), "z_chunks": []}
+                "z": fmt_binary.encode_values(z, q), "z_chunks": []}
     points = threshold_sharing.share_points(SIDS)
     xs = list(points.values())
     for name in BACKENDS:
@@ -160,12 +160,12 @@ def test_i3_server_format_follows_the_parameters_it_binds():
     bin_cts = {}
     for nid, ct in json_cts.items():
         k = ct["k"]
-        data = rlu.encode_threshold_ciphertext([[int(v) for v in row] for row in ct["ct0"]],
+        data = fmt_binary.encode_threshold_ciphertext([[int(v) for v in row] for row in ct["ct0"]],
                                                [int(v) for v in ct["ct1"]], k, q, n)
         b = {"ct": data, "k": k, "label_hash": ct["label_hash"]}
         msg = threshold_codec.binary_tag_message(digest, encode_label("L"), b, threshold_codec.binary_ciphertext_digests(b, q, eta, n))
         bin_cts[nid] = tag_ciphertext_message(b, sks[nid]["mac_keys"], msg)
     good = _obj(pp_bin, "s0").share_decrypt(bin_cts, CREDS, dk, SIDS)
     k = good["k"]
-    assert [int(v) for v in part["w"][:k]] == rlu.decode_values(good["w"], q, k), (
+    assert [int(v) for v in part["w"][:k]] == fmt_binary.decode_values(good["w"], q, k), (
         "one key part (same ct1 values, same key share, same pp_binding) answered with two noises")

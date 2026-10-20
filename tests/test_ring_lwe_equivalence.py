@@ -27,8 +27,8 @@ from pyfe4ai import backend as native_backend
 from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
 from pyfe4ai.core.exceptions import FESchemeError
 from pyfe4ai.primitives.lattice.lwe_utils import decode_scaled
+from pyfe4ai.core.formats.binary import canonical_ring_ciphertext
 from pyfe4ai.primitives.lattice.ring_lwe_utils import (
-    canonical_ring_ciphertext,
     mat_vec_mul,
     poly_add,
     poly_mul,

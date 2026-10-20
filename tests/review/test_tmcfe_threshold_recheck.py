@@ -37,7 +37,7 @@ import pytest
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
 from pyfe4ai.schemes.threshold import store as threshold_store
 from pyfe4ai import backend as native_backend
-from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
+from pyfe4ai.core.formats import binary as fmt_binary
 from pyfe4ai.core.exceptions import FEError, FEKeyError
 
 NATIVE = native_backend.available()
@@ -69,7 +69,7 @@ def _obj(pp, nid, sk=None):
 
 def _bytes_material(q, case):
     vals = {nid: [17 * i + 3 + 100 * k for i in range(N)] for k, nid in enumerate(NIDS)}
-    blobs = {nid: rlu.encode_values(v, q) for nid, v in vals.items()}
+    blobs = {nid: fmt_binary.encode_values(v, q) for nid, v in vals.items()}
     wb = (int(q).bit_length() + 7) // 8
     if case == "misaligned":  # c0 a byte longer, c1 a byte shorter: whole words in total
         sk_y = {"c0": blobs["c0"] + b"\x00", "c1": blobs["c1"][:-1], "c2": blobs["c2"]}
@@ -127,12 +127,12 @@ def _float_piece(dk, q):
 
 def _long_values_z(dk, q):  # binary public parameters: a value list one longer than ring_n
     wb = (int(q).bit_length() + 7) // 8
-    return dict(dk, z=[gp.digits(v) for v in rlu.decode_values(dk["z"], q, len(dk["z"]) // wb)] + ["0"])
+    return dict(dk, z=[gp.digits(v) for v in fmt_binary.decode_values(dk["z"], q, len(dk["z"]) // wb)] + ["0"])
 
 
 def _nested_sk(dk, q):
     wb = (int(q).bit_length() + 7) // 8
-    return dict(dk, sk_y=dict(dk["sk_y"], c0=[rlu.decode_values(dk["sk_y"]["c0"], q, len(dk["sk_y"]["c0"]) // wb)]))
+    return dict(dk, sk_y=dict(dk["sk_y"], c0=[fmt_binary.decode_values(dk["sk_y"]["c0"], q, len(dk["sk_y"]["c0"]) // wb)]))
 
 
 I2B_CASES = [

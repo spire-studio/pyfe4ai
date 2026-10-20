@@ -426,7 +426,7 @@ def _sum_binary_pieces(pieces: list, modulus: gp.mpz, skip_first: bool = False):
         FESchemeError: For pieces of different layouts, or values that are not
             whole words below q.
     """
-    from pyfe4ai.primitives.lattice.ring_lwe_utils import decode_values, encode_values
+    from pyfe4ai.core.formats.binary import decode_values, encode_values
 
     q, wb = int(modulus), _value_bytes(modulus)
     ext = _zq_native(modulus)
@@ -492,7 +492,7 @@ def share_replicated(
     if pieces is not None:
         return pieces
     if _has_bytes(material):  # the Python code on their values
-        from pyfe4ai.primitives.lattice.ring_lwe_utils import decode_values
+        from pyfe4ai.core.formats.binary import decode_values
 
         width = _value_bytes(modulus)
 
@@ -788,7 +788,7 @@ def share_polys(polys: list, threshold: int, lst_sid: list, modulus, ring_n: int
     Raises:
         FEKeyError: For malformed key material.
     """
-    from pyfe4ai.primitives.lattice.ring_lwe_utils import encode_values
+    from pyfe4ai.core.formats.binary import encode_values
 
     _check_key_polys(polys, modulus, ring_n)
     sid_v = share_points(lst_sid)
