@@ -32,7 +32,7 @@ from pyfe4ai.core.base import decoded_layer
 from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
 from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.primitives.groups import ec_group as eg
-from pyfe4ai import backend as native_backend
+from pyfe4ai import backend
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.formats.dl import MCFEDDHCiphertext
 from pyfe4ai.core.formats.dl import MCFEDDHEncryptionKey
@@ -183,14 +183,14 @@ class MCFEDDHRistretto255(ECDDHCryptoBase):
         for l, ary_src in enumerate(lst_ndarray):
             ary = scale_to_int(ary_src, self.precision)
             ary_ct = np.empty(ary.shape, dtype=object)
-            ext = native_backend.ec_ext()
-            if (ext is not None and ary.size and self._has_public_parameters() and self._has_private_keys()
+            ops = backend.ops()
+            if (ops.batched_layers and ary.size and self._has_public_parameters() and self._has_private_keys()
                     and len(MCFEDDHEncryptionKey(self.sk).s) >= 1):
-                # encrypt() of every element in one native call
+                # encrypt() of every element in one call (natively)
                 s0, s1 = self._key()[0]
-                cts = ext.r255_mcfe_encrypt(
+                cts = ops.r255_mcfe_encrypt(
                     [encode_label(_element_label(label, l, i)).encode("utf-8") for i in np.ndindex(ary.shape)],
-                    _LABEL_DST, [int(w) for w in ary.ravel()], _k(s0), _k(s1), native_backend.get_threads(),
+                    _LABEL_DST, [int(w) for w in ary.ravel()], s0, s1,
                 )
                 for i, c in zip(np.ndindex(ary.shape), cts):
                     ary_ct[i] = MCFEDDHCiphertext.new(c=[c]).to_dict()
@@ -216,11 +216,13 @@ class MCFEDDHRistretto255(ECDDHCryptoBase):
         return out
 
     def _decrypt_layer_native(self, dict_ndarray_ct, dk, fusion_weight, label, l, layer):
-        """decrypt() of every element of layer *l* in one native call, with its
-        checks; ``None`` when the Python path applies (no Rust group, or
-        layouts other than one value per client and element)."""
-        ext = native_backend.ec_ext()
-        if ext is None or not np.size(layer):
+        """decrypt() of every element of layer *l* in one call of the batching
+        backend (:attr:`~pyfe4ai.backend.interface.Backend.batched_layers`,
+        natively), with its checks; ``None`` when the element-by-element path
+        applies (no Rust group, or layouts other than one value per client and
+        element)."""
+        ops = backend.ops()
+        if not ops.batched_layers or not np.size(layer):
             return None
         if not dk:
             raise FEKeyError("no decryption key provided.")
@@ -244,10 +246,10 @@ class MCFEDDHRistretto255(ECDDHCryptoBase):
             return None
         d = [eg.scalar_from(v, "decryption key") for v in MCFEDDHFunctionalKey(dk).d]
         try:
-            data, mask = ext.r255_mcfe_decrypt(
-                [[c[0] for c in col] for col in cts], ys, _k(d[0]), _k(d[1]),
+            data, mask = ops.r255_mcfe_decrypt(
+                [[c[0] for c in col] for col in cts], ys, d[0], d[1],
                 [encode_label(_element_label(label, l, i)).encode("utf-8") for i in index], _LABEL_DST,
-                self.dlog_bound, native_backend.get_threads(),
+                self.dlog_bound,
             )
         except ValueError as exc:
             if exc.args[:1] == ("malformed ciphertext",):

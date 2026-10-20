@@ -73,11 +73,10 @@ from pyfe4ai.core.base import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
 from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.core.profiles import STANDARD
-from pyfe4ai import backend as native_backend
+from pyfe4ai import backend
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.primitives.hashing import DEFAULT_LABEL_HASH
 from pyfe4ai.primitives.hashing import LABEL_HASH_CODES
-from pyfe4ai.primitives.hashing import LEGACY_LABEL_HASH
 from pyfe4ai.core.formats.lwe import MCFELWECiphertext
 from pyfe4ai.core.formats.lwe import MCFELWEEncryptionKey
 from pyfe4ai.core.formats.lwe import MCFELWEFunctionalKey
@@ -90,7 +89,6 @@ from pyfe4ai.core.versions import label_hash_mode
 from pyfe4ai.core.versions import pp_label_hash
 from pyfe4ai.primitives.hashing import hash_to_zq_material
 from pyfe4ai.primitives.hashing import hash_to_zq_vector
-from pyfe4ai.primitives.hashing import zq_rejection_parameters
 from pyfe4ai.primitives.lattice.lwe_utils import abmpsw20_lwe_parameters
 from pyfe4ai.primitives.lattice.lwe_utils import check_dense_lwe
 from pyfe4ai.primitives.lattice.lwe_utils import decode_rounded_inner_product
@@ -458,35 +456,25 @@ class MCFELWE(IPFEAbsCrypto):
         return lst_ndarray_ct
 
     def _native_dots(self) -> bool:
-        return native_backend.active_backend() == "native"
+        """Whether the backend batches the label terms of a layer
+        (:attr:`~pyfe4ai.backend.interface.Backend.batched_layers`): the
+        batched steps, with the checks of a whole layer, else element by element."""
+        return backend.ops().batched_layers
 
     def _label_dots(self, labels: list, key_row: list) -> list:
         """``dot_mod(key_row, H(l), q)`` for every label *l*.
 
-        With the native backend, one call hashes every label and sums the
-        products of *key_row* (reduced mod q) with the hash blocks before
-        their reduction mod q -- congruent mod q, so the same values.
+        The backend's :meth:`~pyfe4ai.backend.interface.Backend.label_dots`:
+        natively one call hashes every label and sums the products of
+        *key_row* (reduced mod q) with the hash blocks before their reduction
+        mod q -- congruent mod q, so the same values.
         """
         q = self.q
-        if not self._native_dots() or len(key_row) != self.dim:
-            return [dot_mod(key_row, self._hash_label(lab), q) for lab in labels]
-        kl = (int(q).bit_length() + 63) // 64
-        key = _mpz_cached(self, "_dense_key", key_row,
-                          lambda row: b"".join((int(v) % int(q)).to_bytes(8 * kl, "little") for v in row))
+        ops = backend.ops()
+        key = _mpz_cached(self, "_dense_key_" + ops.name, key_row, lambda row: ops.dense_key(row, q))
         materials = [hash_to_zq_material(encode_label(lab), domain=_LABEL_HASH_DOMAIN, mode=self.label_hash)
                      for lab in labels]
-        if self.label_hash == LEGACY_LABEL_HASH:
-            raw = native_backend.ext().dense_dots(
-                materials, (int(q).bit_length() + 128 + 7) // 8, self.dim, key, kl, native_backend.get_threads(),
-            )
-        else:  # the accepted candidates instead of the wide blocks, also unreduced
-            nb, limit = zq_rejection_parameters(q)
-            raw = native_backend.ext().dense_dots(
-                materials, nb, self.dim, key, kl, native_backend.get_threads(),
-                limit=limit.to_bytes(nb, "big"), rate=168 if self.label_hash == "shake128-rejection" else 136,
-            )
-        step = len(raw) // len(labels)
-        return [gp.mpz(int.from_bytes(raw[i:i + step], "little")) % q for i in range(0, len(raw), step)]
+        return ops.label_dots(materials, key, q, self.dim, self.label_hash)
 
     def compute_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:
         """Aggregate-decrypt ndarray ciphertexts (delegates to :meth:`decrypt_lst_ndarray_ct`).
