@@ -3,8 +3,8 @@ Versions and compatibility: what every version marker means, what a missing
 marker means, and the checks that accept, refuse or regenerate an artifact.
 
 The serialized objects of a scheme (public parameters, parameter records,
-keys, key shares, ciphertexts, partial decryptions) carry markers of the
-derivation that made them.
+keys, key shares, ciphertexts, partial decryptions; their layouts are in
+:mod:`pyfe4ai.core.formats`) carry markers of the derivation that made them.
 Versions <= 0.3.0 wrote fewer markers, so for most of them an absent field has
 a meaning -- the derivation of those versions:
 

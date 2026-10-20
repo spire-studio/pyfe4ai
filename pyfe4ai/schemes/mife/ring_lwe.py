@@ -53,6 +53,11 @@ from pyfe4ai.core.base import ParameterCacheMixin
 from pyfe4ai.primitives.lattice.lwe_utils import decode_scaled
 from pyfe4ai.core.profiles import STANDARD
 from pyfe4ai.primitives.lattice.ring_lwe_utils import bmms21_selective_parameters
+from pyfe4ai.core.formats.ring_lwe import MIFERingLWEEncryptionKey
+from pyfe4ai.core.formats.ring_lwe import MIFERingLWEFunctionalKey
+from pyfe4ai.core.formats.ring_lwe import MIFERingLWEParameters
+from pyfe4ai.core.formats.ring_lwe import RingLWECiphertext
+from pyfe4ai.core.formats.ring_lwe import RingLWERecord
 from pyfe4ai.core.versions import CT_FORMATS
 from pyfe4ai.core.formats.binary import canonical_ring_ciphertext
 from pyfe4ai.core.formats.binary import encode_binary_ciphertext
@@ -147,15 +152,16 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         return "param.json" if self.ring_modulus == "prime" else "param-{}.json".format(self.ring_modulus)
 
     def _apply_parameters(self, param: dict) -> None:
-        self.p = gp.mpz(param["p"])
-        self.q = gp.mpz(param["q"])
-        if param.get("q_factors") is not None:
-            self.q_factors = register_rns_modulus(self.q, param["q_factors"])
-        self.ring_n = int(param["ring_n"])
-        self.sigma1 = float(param["sigma1"])
-        self.sigma2 = float(param["sigma2"])
-        self.sigma3 = float(param["sigma3"])
-        self.a_seed = param["A_seed"]
+        record = RingLWERecord.from_dict(param)
+        self.p = gp.mpz(record.p)
+        self.q = gp.mpz(record.q)
+        if record.get("q_factors") is not None:
+            self.q_factors = register_rns_modulus(self.q, record.q_factors)
+        self.ring_n = int(record.ring_n)
+        self.sigma1 = float(record.sigma1)
+        self.sigma2 = float(record.sigma2)
+        self.sigma3 = float(record.sigma3)
+        self.a_seed = record.A_seed
         self.A = seeded_polynomial(self.a_seed, self.q, self.ring_n)
 
     def _param_verification(self, param: dict) -> bool:
@@ -188,25 +194,25 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             self.q_factors = register_rns_modulus(self.q, factors)
         self.a_seed = secrets.token_hex(32)
         self.A = seeded_polynomial(self.a_seed, self.q, self.ring_n)
-        record = {
-            "construction": RING_LWE_RECORD,
-            "sec_param": self.sec_param,
-            "eta": self.eta,
-            "n": self.n,
-            "ring_n": self.ring_n,
-            "bound_x": gp.digits(self.bound_x),
-            "bound_y": gp.digits(self.bound_y),
-            "p": gp.digits(self.p),
-            "q": gp.digits(self.q),
-            "sigma1": self.sigma1,
-            "sigma2": self.sigma2,
-            "sigma3": self.sigma3,
-            "A_seed": self.a_seed,
-        }
+        record = RingLWERecord.new(
+            construction=RING_LWE_RECORD,
+            sec_param=self.sec_param,
+            eta=self.eta,
+            n=self.n,
+            ring_n=self.ring_n,
+            bound_x=gp.digits(self.bound_x),
+            bound_y=gp.digits(self.bound_y),
+            p=gp.digits(self.p),
+            q=gp.digits(self.q),
+            sigma1=self.sigma1,
+            sigma2=self.sigma2,
+            sigma3=self.sigma3,
+            A_seed=self.a_seed,
+        )
         if factors is not None:  # the default's records stay as they were
-            record.update({"ring_modulus": self.ring_modulus, "q_factors": factors})
+            record.update(ring_modulus=self.ring_modulus, q_factors=factors)
         with open(param_file, "w", encoding="utf-8") as f:
-            json.dump(record, f)
+            json.dump(record.to_dict(), f)
 
     def setup(self) -> None:
         sampler = self.gaussian_sampler
@@ -231,25 +237,25 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         logger.info("MIFE Ring-LWE (ACFGU18 / BMMS21) setup successfully")
 
     def get_public_parameters(self) -> dict:
-        pp = {
-            "A": [gp.digits(v) for v in self.A],
-            "p": gp.digits(self.p),
-            "q": gp.digits(self.q),
-            "eta": self.eta,
-            "n": self.n,
-            "ring_n": self.ring_n,
-            "bound_x": gp.digits(self.bound_x),
-            "bound_y": gp.digits(self.bound_y),
-            "sigma1": self.sigma1,
-            "sigma2": self.sigma2,
-            "sigma3": self.sigma3,
-            "sec_param": self.sec_param,
-            "gaussian_sampler": self.gaussian_sampler,
-            "security_profile": self.security_profile,
-        }
+        pp = MIFERingLWEParameters.new(
+            A=[gp.digits(v) for v in self.A],
+            p=gp.digits(self.p),
+            q=gp.digits(self.q),
+            eta=self.eta,
+            n=self.n,
+            ring_n=self.ring_n,
+            bound_x=gp.digits(self.bound_x),
+            bound_y=gp.digits(self.bound_y),
+            sigma1=self.sigma1,
+            sigma2=self.sigma2,
+            sigma3=self.sigma3,
+            sec_param=self.sec_param,
+            gaussian_sampler=self.gaussian_sampler,
+            security_profile=self.security_profile,
+        )
         if self.q_factors is not None:  # RNS: the NTT and the native code need them
-            pp["q_factors"] = [gp.digits(f) for f in self.q_factors]
-        return pp
+            pp.q_factors = [gp.digits(f) for f in self.q_factors]
+        return pp.to_dict()
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
         """Return client *nid*'s encryption key (``pk`` and its pad ``u``).
@@ -262,10 +268,10 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         """
         if nid not in self.mpk["pk"]:
             return None
-        return {
-            "pk": [[gp.digits(v) for v in row] for row in self.mpk["pk"][nid]],
-            "u": [[gp.digits(v) for v in row] for row in self.msk["u"][nid]],
-        }
+        return MIFERingLWEEncryptionKey.new(
+            pk=[[gp.digits(v) for v in row] for row in self.mpk["pk"][nid]],
+            u=[[gp.digits(v) for v in row] for row in self.msk["u"][nid]],
+        ).to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Derive a functional decryption key for the given fusion weights.
@@ -287,7 +293,7 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                 ctx.cap, [row for nid in self.lst_nid for row in u_rows[nid]],
                 [v for nid in self.lst_nid for v in ys[nid]],
             )
-            return {"sk_y": sk_y, "z": z}
+            return MIFERingLWEFunctionalKey.new(sk_y=sk_y, z=z).to_dict()
         sk_y = {}
         z = [gp.mpz(0)] * self.ring_n
         for nid in self.lst_nid:
@@ -296,7 +302,7 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             sk_y[nid] = [gp.digits(v) for v in mat_vec_mul(sk_t, y_vec, self.q)]
             for y_row, u_row in zip(y_vec, self.msk["u"][nid]):
                 z = [acc + y_row * u for acc, u in zip(z, u_row)]
-        return {"sk_y": sk_y, "z": [gp.digits(v % self.q) for v in z]}
+        return MIFERingLWEFunctionalKey.new(sk_y=sk_y, z=[gp.digits(v % self.q) for v in z]).to_dict()
 
     def _key_weights(self, fusion_weight) -> dict:
         """The validated weights ``{nid: y_i}`` of a functional key."""
@@ -423,7 +429,7 @@ class MIFERingLWE(IPFEAbsCrypto):
             raise FEValidationError(
                 "plaintext rows must all have the same length, between 1 and ring_n"
             )
-        if "u" not in self.sk:
+        if "u" not in MIFERingLWEEncryptionKey(self.sk):
             raise FEKeyError("encryption key lacks the one-time pad u")
         return rows
 
@@ -438,7 +444,8 @@ class MIFERingLWE(IPFEAbsCrypto):
         """This slot's key in the form encryption uses, computed once per key:
         ``pk`` and the pad ``u`` as integers, and with an NTT-friendly ``q``
         (``ring`` not ``None``) the transforms ``NTT(a)`` and ``NTT(pk_row)``."""
-        pk, u = self.sk["pk"], self.sk.get("u")
+        sk = MIFERingLWEEncryptionKey(self.sk)
+        pk, u = sk.pk, sk.get("u")
         cache = self.__dict__.get("_enc_key")
         if cache is None or cache["src"] != (id(pk), id(u), id(self.A)):
             q = gp.mpz(self.pp["q"])
@@ -477,9 +484,10 @@ class MIFERingLWE(IPFEAbsCrypto):
         options = self._native_key_kwargs()  # the label-hash mode of the pads (MCFE)
         if cached is None or cached[0] is not ctx or cached[2] != options:
             q = gp.mpz(self.pp["q"])
+            sk = MIFERingLWEEncryptionKey(self.sk)
             try:
                 nkey = native_backend.ext().enc_key(
-                    ctx.cap, self.A, self.sk["pk"], self.sk.get("u"), q // gp.mpz(self.pp["p"]), **options,
+                    ctx.cap, self.A, sk.pk, sk.get("u"), q // gp.mpz(self.pp["p"]), **options,
                 )
             except (TypeError, ValueError, OverflowError):
                 nkey = None  # malformed key: the Python path reports it
@@ -518,19 +526,21 @@ class MIFERingLWE(IPFEAbsCrypto):
                 **native_backend.seed_kwargs(),
                 **native_backend.noise_kwargs(self.pp["sigma2"], self.pp["sigma3"], sampler=self.gaussian_sampler),
             )
-            return {"ct": out, "k": k} if binary else {"ct0": out[0], "ct1": out[1], "k": k}
+            if binary:
+                return RingLWECiphertext.new(ct=out, k=k).to_dict()
+            return RingLWECiphertext.new(ct0=out[0], ct1=out[1], k=k).to_dict()
         ct0, ct1 = self._encrypt_rows_python(w_rows)
         return self._format_ciphertext(ct0, ct1, k)
 
     def _format_ciphertext(self, ct0: list, ct1: list, k: int) -> dict:
         """The ciphertext dict of rows ``ct0`` and ``ct1`` (integers in ``[0, q)``)."""
         if self.ct_format == "binary":
-            return {"ct": encode_binary_ciphertext(ct0, ct1, self.pp["q"], self.pp["ring_n"]), "k": k}
-        return {
-            "ct0": [[gp.digits(v) for v in row] for row in ct0],
-            "ct1": [gp.digits(v) for v in ct1],
-            "k": k,
-        }
+            return RingLWECiphertext.new(ct=encode_binary_ciphertext(ct0, ct1, self.pp["q"], self.pp["ring_n"]), k=k).to_dict()
+        return RingLWECiphertext.new(
+            ct0=[[gp.digits(v) for v in row] for row in ct0],
+            ct1=[gp.digits(v) for v in ct1],
+            k=k,
+        ).to_dict()
 
     def _encrypt_rows_python(self, w_rows: list) -> tuple:
         """``(ct0, ct1)`` of :meth:`_encrypt_rows` as integers, in Python."""
@@ -579,15 +589,16 @@ class MIFERingLWE(IPFEAbsCrypto):
             FESchemeError: If ciphertexts do not cover exactly the key's slots
                 or have different batch lengths.
         """
-        if not dk or "z" not in dk:
+        if not dk or "z" not in MIFERingLWEFunctionalKey(dk):
             raise FEKeyError("no decryption key provided")
-        if set(dct_ct) != set(dk["sk_y"]) or set(dct_ct) != set(fusion_weight):
+        key = MIFERingLWEFunctionalKey(dk)
+        if set(dct_ct) != set(key.sk_y) or set(dct_ct) != set(fusion_weight):
             raise FESchemeError("need one ciphertext for every slot of the key")
-        batch = {int(ct["k"]) for ct in dct_ct.values()}
+        batch = {int(RingLWECiphertext(ct).k) for ct in dct_ct.values()}
         if len(batch) != 1:
             raise FESchemeError("ciphertexts of different batch lengths")
 
-        return self._decrypt_with_pad_term(dct_ct, dk["sk_y"], dk["z"], fusion_weight, batch.pop())
+        return self._decrypt_with_pad_term(dct_ct, key.sk_y, key.z, fusion_weight, batch.pop())
 
     def _decrypt_with_pad_term(self, dct_ct, sk_y_map, z, fusion_weight, k, sk_hats=None) -> list:
         """Dec2(sum_i Dec1_i - Delta z) for the first *k* coefficients.
@@ -666,13 +677,14 @@ class MIFERingLWE(IPFEAbsCrypto):
                         length=eta, bound=int(self.pp["bound_y"]),
                     )
                 try:  # the shape checks of canonical_ring_ciphertext; values are parsed natively
-                    k = ct["k"]
-                    if "ct" in ct and "ct0" not in ct:  # binary format
-                        if not isinstance(ct["ct"], (bytes, bytearray, memoryview)):
+                    c = RingLWECiphertext(ct)
+                    k = c.k
+                    if "ct" in c and "ct0" not in c:  # binary format
+                        if not isinstance(c.ct, (bytes, bytearray, memoryview)):
                             raise TypeError("binary ciphertext must be bytes")
-                        entry = bytes(ct["ct"])
+                        entry = bytes(c.ct)
                     else:
-                        entry = (ct["ct0"], ct["ct1"])
+                        entry = (c.ct0, c.ct1)
                 except (KeyError, TypeError) as exc:
                     raise FESchemeError("malformed ciphertext of {}".format(nid)) from exc
                 if not isinstance(k, int) or isinstance(k, bool) or not 1 <= k <= ring_n:

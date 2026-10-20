@@ -298,6 +298,21 @@ from pyfe4ai.core.formats.binary import threshold_ciphertext_from_format1
 from pyfe4ai.primitives.lattice.ring_lwe_utils import transpose
 from pyfe4ai.primitives.sampling import XofRandom
 from pyfe4ai.primitives.sampling import FLOODING_SAMPLER
+from pyfe4ai.core.formats.ring_lwe import ThresholdRingLWEEncryptionKey
+from pyfe4ai.core.formats.ring_lwe import ThresholdRingLWEParameters
+from pyfe4ai.core.formats.ring_lwe import ThresholdRingLWERecord
+from pyfe4ai.core.formats.ring_lwe import MCFERingLWEFunctionalKey
+from pyfe4ai.core.formats.ring_lwe import MIFERingLWEFunctionalKey
+from pyfe4ai.core.formats.threshold import TMCFERingLWEKeyShare
+from pyfe4ai.core.formats.threshold import TMCFERingLWELabelShare
+from pyfe4ai.core.formats.threshold import TMCFERingLWEWeightShare
+from pyfe4ai.core.formats.ring_lwe import RingLWECiphertext
+from pyfe4ai.core.formats.ring_lwe import RingLWELayer
+from pyfe4ai.core.formats.threshold import KeyPiece
+from pyfe4ai.core.formats.threshold import ThresholdKeyShare
+from pyfe4ai.core.formats.threshold import TMCFERingLWEPartial
+from pyfe4ai.core.formats.threshold import TMCFERingLWELayerPartials
+from pyfe4ai.core.versions import key_share_part
 from pyfe4ai.core.versions import record_matches
 from pyfe4ai.core.versions import FLOODING_NOISE_VERSION
 from pyfe4ai.core.versions import check_flooding_version
@@ -537,10 +552,11 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
 
     def _apply_parameters(self, param: dict) -> None:
         super()._apply_parameters(param)
+        record = ThresholdRingLWERecord.from_dict(param)
         if self.flooding == "uniform":
-            self.sigma_f, self.flood_bits = None, int(param["flood_bits"])
+            self.sigma_f, self.flood_bits = None, int(record.flood_bits)
         else:
-            self.sigma_f = int(param["sigma_f"])
+            self.sigma_f = int(record.sigma_f)
 
     def _flooding_fields(self) -> dict:
         """Record fields of the flooding accounting (none for the default)."""
@@ -583,27 +599,25 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         )
         self.A = seeded_polynomial(self.a_seed, self.q, self.ring_n)
         with open(param_file, "r", encoding="utf-8") as f:
-            param = json.load(f)
+            record = ThresholdRingLWERecord.from_dict(json.load(f))
         if factors is not None:  # the default's records stay as they were
             self.q_factors = register_rns_modulus(self.q, factors)
-            param.update({"ring_modulus": "rns", "q_factors": [gp.digits(f) for f in factors]})
-        param.update(
-            {
-                "threshold_construction": self._threshold_construction,
-                "s": self.s,
-                "stat_param": self.stat_param,
-                "q": gp.digits(self.q),
-                **self._flooding_fields(),
-            }
+            record.update(ring_modulus="rns", q_factors=[gp.digits(f) for f in factors])
+        record.update(
+            threshold_construction=self._threshold_construction,
+            s=self.s,
+            stat_param=self.stat_param,
+            q=gp.digits(self.q),
+            **self._flooding_fields(),
         )
         if self.flooding == "uniform":
             self.sigma_f, self.flood_bits = None, flood
-            param.update({"flooding": "uniform", "flood_bits": flood})
+            record.update(flooding="uniform", flood_bits=flood)
         else:
             self.sigma_f = flood
-            param["sigma_f"] = str(flood)
+            record.sigma_f = str(flood)
         with open(param_file, "w", encoding="utf-8") as f:
-            json.dump(param, f)
+            json.dump(record.to_dict(), f)
 
     def __getstate__(self) -> dict:
         return versioned_state(super().__getstate__(), TMCFE_RING_LWE_STATE_VERSION)
@@ -626,7 +640,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         ciphertext tags."""
         sk = super().get_private_keys(nid, **kwargs)
         if sk is not None:
-            sk["mac_keys"] = dict(self.mac_keys[nid])
+            ThresholdRingLWEEncryptionKey(sk).mac_keys = dict(self.mac_keys[nid])
         return sk
 
     def get_public_parameters(self) -> dict:
@@ -636,26 +650,26 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         ``"binary"``; absent means ``"json"``) and, under ``"kl"``,
         ``flooding_accounting``, ``max_partial_decryptions``, ``stat_param`` and
         ``flood_tail_cut``."""
-        pp = super().get_public_parameters()
+        pp = ThresholdRingLWEParameters(super().get_public_parameters())
         pp.update(
-            {"s": self.s, "t": self.t, "lst_sid": list(self.lst_sid), "flooding": self.flooding,
-             "sharing": self.sharing, "threshold_construction": self._threshold_construction,
-             "security_profile": self.security_profile}
+            s=self.s, t=self.t, lst_sid=list(self.lst_sid), flooding=self.flooding,
+            sharing=self.sharing, threshold_construction=self._threshold_construction,
+            security_profile=self.security_profile,
         )
         if self.flooding == "uniform":
-            pp["flood_bits"] = self.flood_bits
+            pp.flood_bits = self.flood_bits
         else:
-            pp["sigma_f"] = str(self.sigma_f)
+            pp.sigma_f = str(self.sigma_f)
         if self.ct_format != "json":  # the public parameters of JSON stay as they were
-            pp["ct_format"] = self.ct_format
+            pp.ct_format = self.ct_format
         if self.flooding_accounting == KL:
             samples = kl_flooded_samples(self.s, self.max_partial_decryptions, self.ring_n)
-            pp.update({
+            pp.update(
                 **self._flooding_fields(),
-                "stat_param": self.stat_param,
-                "flood_tail_cut": kl_tail_cut(samples, self.stat_param, self.sigma_f),
-            })
-        return pp
+                stat_param=self.stat_param,
+                flood_tail_cut=kl_tail_cut(samples, self.stat_param, self.sigma_f),
+            )
+        return pp.to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Return server *sid*'s share of the key for ``(y, label, n_chunks)``.
@@ -726,9 +740,8 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
                 key = super().get_decryption_keys(sid, credentials=credentials)
                 self.dict_dk[ident] = self._share_key(key, weights_id)
             parts = self.dict_dk[ident]
-        dk = dict(parts[sid])
-        dk.update(self._share_fields(sid, weights_id))
-        return dk
+        layout = TMCFERingLWELabelShare if part == "label" else TMCFERingLWEKeyShare
+        return layout.extend(parts[sid], **self._share_fields(sid, weights_id)).to_dict()
 
     #: Attempts of :meth:`_label_parts` to issue a label part for a share set
     #: that is not evicted while the label part is made.
@@ -774,8 +787,10 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         material["z_chunks"] = list(terms[1:] if label_term else terms)
         sharing_id = secrets.token_hex(16)  # this sharing of the terms (another one if they are shared again)
         return {
-            sid: dict(shares, label=label, noise_key=self._noise_key(sid, weights_id, label), part="label",
-                      share_set_id=entry["share_set_id"], label_hash=self.label_hash, sharing_id=sharing_id)
+            sid: TMCFERingLWELabelShare.extend(
+                shares, label=label, noise_key=self._noise_key(sid, weights_id, label), part="label",
+                share_set_id=entry["share_set_id"], label_hash=self.label_hash, sharing_id=sharing_id,
+            ).to_dict()
             for sid, shares in self._share_material(material).items()
         }
 
@@ -808,9 +823,9 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             warn_at_caller("invalid sid (not one of the key generator's lst_sid)")
             return None
         entry = self._weight_entry(credentials.get("fusion_weight"))
-        share = dict(entry["shares"][sid], part="weights", share_set_id=entry["share_set_id"])
-        share.update(self._share_fields(sid, entry["weights_id"]))
-        return share
+        share = TMCFERingLWEWeightShare.extend(entry["shares"][sid], part="weights", share_set_id=entry["share_set_id"])
+        share.update(**self._share_fields(sid, entry["weights_id"]))
+        return share.to_dict()
 
     def _weight_entry(self, fusion_weight) -> dict:
         """The sharing of ``sk_y`` for the weights, made on first use
@@ -827,14 +842,16 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             return {
                 "weights_id": weights_id,
                 "share_set_id": secrets.token_hex(16),
-                "shares": self._share_material({"sk_y": dict(key["sk_y"])}),
+                "shares": self._share_material({"sk_y": dict(MIFERingLWEFunctionalKey(key).sk_y)}),
                 "label_parts": {},
             }
 
         return store.weight_entry(self, weights_id, make)
 
     def _share_fields(self, sid: str, weights_id: str) -> dict:
-        """The fields of every key share part of server *sid*."""
+        """The fields of every key share part of server *sid* (the last fields
+        of :class:`~pyfe4ai.core.formats.threshold.TMCFERingLWEKeyShare`, of
+        the weight and of the label part)."""
         return {
             "sid": sid,
             "lst_sid": list(self.lst_sid),
@@ -849,11 +866,13 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         }
 
     def _share_key(self, key: dict, weights_id: str) -> dict:
-        material = {"sk_y": dict(key["sk_y"]), "z": key["z"], "z_chunks": list(key["z_chunks"])}
+        key = MCFERingLWEFunctionalKey(key)
+        material = {"sk_y": dict(key.sk_y), "z": key.z, "z_chunks": list(key.z_chunks)}
         sharing_id = secrets.token_hex(16)
         return {
-            sid: dict(shares, label=key["label"], noise_key=self._noise_key(sid, weights_id, key["label"]),
-                      sharing_id=sharing_id)
+            sid: TMCFERingLWEKeyShare.extend(
+                shares, label=key.label, noise_key=self._noise_key(sid, weights_id, key.label), sharing_id=sharing_id,
+            ).to_dict()
             for sid, shares in self._share_material(material).items()
         }
 
@@ -990,8 +1009,9 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         if self.threshold_format != "binary":
             return tag_ciphertext(ct, mac_keys, _TAG_DOMAIN, _tag_payload(encoded_label, coded))
         q, eta, ring_n = self.pp["q"], self.pp["eta"], self.pp["ring_n"]
-        ct["ct"] = threshold_ciphertext_from_format1(ct["ct"], ct["k"], q, eta, ring_n)
-        coded = dict(coded, ct=ct["ct"])
+        c = RingLWECiphertext(ct)
+        c.ct = threshold_ciphertext_from_format1(c.ct, c.k, q, eta, ring_n)
+        coded = RingLWECiphertext.extend(coded, ct=c.ct).to_dict()
         digests = binary_ciphertext_digests(coded, q, eta, ring_n)
         digest = bytes.fromhex(pp_digest or self._pp_digest())
         return tag_ciphertext_message(ct, mac_keys, binary_tag_message(digest, encoded_label, coded, digests))
@@ -1011,8 +1031,8 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         out = super().encrypt_lst_ndarray(lst_ndarray, **kwargs)
         pp_digest = self._pp_digest() if self.threshold_format == "binary" else None
         for layer in out:
-            for j, ct in enumerate(layer["chunks"]):
-                encoded = encode_label(chunk_label(kwargs["label"], layer["first_chunk"] + j))
+            for j, ct in enumerate(RingLWELayer(layer).chunks):
+                encoded = encode_label(chunk_label(kwargs["label"], RingLWELayer(layer).first_chunk + j))
                 self._tag(ct, mac_keys, encoded, _chunk_with_code(ct, layer), pp_digest)
         return out
 
@@ -1037,18 +1057,20 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         Raises:
             FEKeyError: Unless *share* is a weight key share of this server.
         """
-        if not isinstance(share, dict) or share.get("part") != "weights" or share.get("sid") != self.id:
+        view = ThresholdKeyShare(share)
+        if not isinstance(share, dict) or view.get("part") != "weights" or view.get("sid") != self.id:
             raise FEKeyError("not a weight key share of server {}".format(self.id))
-        store.keep_weight_share(self, (share.get("weights_id"), share.get("share_set_id")), share,
+        store.keep_weight_share(self, (view.get("weights_id"), view.get("share_set_id")), share,
                                 self.WEIGHT_SHARES_KEPT)
 
     def has_weight_key_share(self, dk: dict) -> bool:
         """Whether this server keeps the weight key share that the label key
         share *dk* completes (same weights and share set): ``False`` means
         :meth:`add_weight_key_share` first. A full key share needs none."""
-        if not isinstance(dk, dict) or dk.get("part") != "label":
+        view = ThresholdKeyShare(dk)
+        if not isinstance(dk, dict) or view.get("part") != "label":
             return True
-        return store.has_weight_share(self, (dk.get("weights_id"), dk.get("share_set_id")))
+        return store.has_weight_share(self, (view.get("weights_id"), view.get("share_set_id")))
 
     def _key_parts(self, dk):
         """``(dk, weight)``: a full key share and ``None``, or a label part and
@@ -1058,11 +1080,12 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             FEKeyError: For a weight part alone, a label part without its
                 weight part, or parts that do not belong together.
         """
-        if not isinstance(dk, dict) or dk.get("part") is None:
+        view = ThresholdKeyShare(dk)
+        if not isinstance(dk, dict) or key_share_part(dk) is None:
             return dk, None
-        if dk.get("part") != "label":
+        if key_share_part(dk) != "label":
             raise FEKeyError("a weight key share decrypts together with a label key share (key_part='label')")
-        weight = store.weight_share(self, (dk.get("weights_id"), dk.get("share_set_id")))
+        weight = store.weight_share(self, (view.get("weights_id"), view.get("share_set_id")))
         if weight is None:
             raise FEKeyError(
                 "a label key share needs this server's weight key share of the same weights and share set: "
@@ -1078,7 +1101,8 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         kwargs = dict(enrolled_share_options(self), ring_n=self.pp["ring_n"])
         if weight is None:
             return share_for_enrolled(dk, self.id, lst_sid_enrolled, self.pp["t"], q, fields=fields, **kwargs)
-        held = dk["pieces"][0]["share"] if dk.get("pieces") else dk  # a label part may lack z (label_term=False)
+        view = ThresholdKeyShare(dk)
+        held = KeyPiece(view.pieces[0]).share if view.get("pieces") else dk  # a label part may lack z (label_term=False)
         label_fields = tuple(f for f in fields if f != "sk_y" and f in held)
         share, multiplier, tag = share_for_enrolled(dk, self.id, lst_sid_enrolled, self.pp["t"], q,
                                                     fields=label_fields, **kwargs)
@@ -1086,7 +1110,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
                                                  fields=("sk_y",), **kwargs)
         if (wmult, wtag) != (multiplier, tag):
             raise FEKeyError("the weight and the label key share are of different sharings")
-        share = dict(share, sk_y=wshare["sk_y"])
+        share = ThresholdKeyShare.extend(share, sk_y=ThresholdKeyShare(wshare).sk_y).to_dict()
         return share, multiplier, tag
 
     def _sk_hat(self, ctx, poly, persistent: bool) -> bytes:
@@ -1132,25 +1156,27 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         """
         self._check_parameters_unchanged()
         dk, weight = self._key_parts(dk)
-        if not dk or not ("sk_y" in dk or "pieces" in dk or weight is not None):
+        key = ThresholdKeyShare(dk)
+        if not dk or not ("sk_y" in key or "pieces" in key or weight is not None):
             raise FEKeyError("no decryption keys provided")
         check_flooding_version(dk)
         sharing_id = key_share_sharing_id(dk)  # of the shares' sharing (key shares of earlier versions: none)
         flooding = pp_flooding(self.pp)
         check_key_flooding(flooding, dk, FLOODINGS)
         check_key_share_server(self.id, dk, self.pp, TMCFE_RING_LWE_CONSTRUCTIONS)
-        check_tmcfe_ring_lwe_construction(self.pp, dk.get("sharing", LEGACY_SHARING), flooding,
+        check_tmcfe_ring_lwe_construction(self.pp, key.get("sharing", LEGACY_SHARING), flooding,
                                           self.pp.get("flooding_accounting", PER_SAMPLE))
         self._flooding_width()  # malformed flooding parameters: a validation error first
         fusion_weight = credentials.get("fusion_weight")
-        if dk.get("label") != credentials.get("label"):
+        if key.get("label") != credentials.get("label"):
             raise FESchemeError("the key share was derived for another label")
         check_request(self.id, dk, lst_sid_enrolled, self.pp["t"], fusion_weight)
         q = gp.mpz(self.pp["q"])
         # Shamir: (dk, lambda_k); replicated: the sum of the assigned pieces
         # (sk_y and z; the chunk keys come with _share), 1
         share, multiplier, tag = _share or self._enrolled_share(dk, weight, lst_sid_enrolled, q, ("sk_y", "z"))
-        if set(dict_ct) != set(share["sk_y"]):
+        share = ThresholdKeyShare(share)
+        if set(dict_ct) != set(share.sk_y):
             raise FESchemeError("need one ciphertext for every client of the key")
         # only ciphertexts the clients tagged for this server under the label
         # (or chunk label) it serves: w is linear in ct1
@@ -1163,17 +1189,17 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             pp_digest = bytes.fromhex(self._pp_digest())
 
             def message_of(nid, ct):
-                if not isinstance(ct, dict) or "ct0" in ct or "ct1" in ct:
+                if not isinstance(ct, dict) or "ct0" in RingLWECiphertext(ct) or "ct1" in RingLWECiphertext(ct):
                     raise ValueError("not a format-2 ciphertext")
                 digests[nid] = binary_ciphertext_digests(ct, q_int, eta, ring_n)
                 return binary_tag_message(pp_digest, encoded, ct, digests[nid])
 
             check_ciphertext_format(dict_ct, binary)  # no JSON ciphertexts under binary public parameters
-            check_ciphertext_tag_messages(dict_ct, dk.get("mac_keys"), self.id, message_of)
+            check_ciphertext_tag_messages(dict_ct, key.get("mac_keys"), self.id, message_of)
         else:
             check_ciphertext_format(dict_ct, binary)  # no binary ciphertexts under JSON public parameters
             check_ciphertext_tags(
-                dict_ct, dk.get("mac_keys"), self.id, _TAG_DOMAIN,
+                dict_ct, key.get("mac_keys"), self.id, _TAG_DOMAIN,
                 lambda nid, ct: _tag_payload(encoded, ct),
             )
         # the key share of the public parameters' label hash
@@ -1184,9 +1210,9 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         z_share = share.get("z") if _z_share is None else _z_share
         if z_share is None:
             raise FEKeyError("the key share has no term of the label itself (label_term=False): chunks only")
-        if not isinstance(share.get("sk_y"), dict) or "other" in poly_kinds([z_share, share["sk_y"]]):
+        if not isinstance(share.get("sk_y"), dict) or "other" in poly_kinds([z_share, share.sk_y]):
             raise FEKeyError("malformed key share: polynomials must be value lists or bytes")  # e.g. memoryview
-        _check_key_polys([z_share, *share["sk_y"].values()], q, ring_n)
+        _check_key_polys([z_share, *share.sk_y.values()], q, ring_n)
         hats = {} if _sk_hats is None else _sk_hats
         ctx = _native_ring(q, ring_n)
         native = cts = None
@@ -1195,7 +1221,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             ct_digest, key_inputs = binary_request_digests(digests)
         else:
             native = None if ctx is None else native_json_inputs(
-                ctx, dict_ct, share["sk_y"], fusion_weight, z_share, eta, ring_n)
+                ctx, dict_ct, share.sk_y, fusion_weight, z_share, eta, ring_n)
             if native is None:
                 cts = read_json_ciphertexts(dict_ct, q_int, eta, ring_n)
                 batch = {k for k, _, _ in cts.values()}
@@ -1224,10 +1250,10 @@ class ThresholdMCFERingLWE(MCFERingLWE):
                 y_vec = [gp.mpz(int(v)) for v in fusion_weight[nid]]
                 c_y = poly_add(c_y, mat_vec_mul(transpose(ct0), y_vec, q), q)
                 if ring is None:
-                    key_part = poly_add(key_part, poly_mul(ct1, _poly_values(share["sk_y"][nid], q, ring_n), q), q)
+                    key_part = poly_add(key_part, poly_mul(ct1, _poly_values(share.sk_y[nid], q, ring_n), q), q)
                     continue
                 if nid not in hats:
-                    hats[nid] = ring.forward(_poly_values(share["sk_y"][nid], q, ring_n))
+                    hats[nid] = ring.forward(_poly_values(share.sk_y[nid], q, ring_n))
                 acc = ring.mul_add(acc, ring.forward(ct1), hats[nid])
             if acc is not None:
                 key_part = poly_add(key_part, ring.inverse(acc), q)
@@ -1272,7 +1298,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             ids = nids if native is not None else [nid for _, nid in _client_ids(dict_ct)]
             for nid in ids:  # NTT(sk_i share), cached across chunks (and labels, for a kept weight part)
                 if ("native", nid) not in hats:
-                    hats[("native", nid)] = self._sk_hat(ctx, share["sk_y"][nid], weight is not None)
+                    hats[("native", nid)] = self._sk_hat(ctx, share.sk_y[nid], weight is not None)
             ys = [[int(v) for v in fusion_weight[nid]] for nid in ids]
             sk_hats = [hats[("native", nid)] for nid in ids]
             if native is not None:
@@ -1285,7 +1311,8 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             else:
                 try:
                     w, c_y, _ = native_backend.ext().share_partial_bin(
-                        ctx.cap, [dict_ct[nid]["ct"] for nid in ids], eta, ys, sk_hats, z_share, delta, multiplier,
+                        ctx.cap, [RingLWECiphertext(dict_ct[nid]).ct for nid in ids], eta, ys, sk_hats, z_share, delta,
+                        multiplier,
                         **noise_args,
                     )
                 except (TypeError, ValueError) as exc:
@@ -1294,15 +1321,15 @@ class ThresholdMCFERingLWE(MCFERingLWE):
                     if isinstance(z_share, (bytes, bytearray)):
                         raise FEKeyError("malformed binary key share") from exc
                     raise FEKeyError("malformed key share") from exc
-        return {
-            "w": w,
-            "c_y": c_y,
-            "k": k,
-            "ct_digest": ct_digest,
-            "sid": self.id,
-            "lst_sid_enrolled": list(lst_sid_enrolled),
-            "sharing_id": sharing_id,
-        }
+        return TMCFERingLWEPartial.new(
+            w=w,
+            c_y=c_y,
+            k=k,
+            ct_digest=ct_digest,
+            sid=self.id,
+            lst_sid_enrolled=list(lst_sid_enrolled),
+            sharing_id=sharing_id,
+        ).to_dict()
 
     def _flooding_width(self) -> int:
         """``flood_bits`` (uniform) or ``sigma_f`` (Gaussian) of the public parameters.
@@ -1368,9 +1395,10 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         check_partial_format(partials, self.threshold_format)
         # shares of two sharings of one key do not reconstruct it (their partials would decode to a wrong value)
         check_partials_sharing(partials)
+        head = TMCFERingLWEPartial(first)
         if any(
-            (p["c_y"], p["ct_digest"], p["k"]) != (first["c_y"], first["ct_digest"], first["k"])
-            for p in partials
+            (part.c_y, part.ct_digest, part.k) != (head.c_y, head.ct_digest, head.k)
+            for part in map(TMCFERingLWEPartial, partials)
         ):
             logger.warning("partial decryptions disagree on the ciphertexts they decrypted")
             warn_at_caller("partial decryptions disagree on the ciphertexts they decrypted")
@@ -1386,14 +1414,14 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             return self._combine_binary(ctx, first, partials, q, delta, bound)
         # JSON: every partial holds at least k values (a shorter one would give a shorter result)
         partial_batch_length(first, partials, self.pp["ring_n"], binary)
-        if ctx is not None and type(first["k"]) is int:
+        if ctx is not None and type(head.k) is int:
             out = native_backend.ext().share_combine(
-                ctx.cap, first["c_y"], [p["w"] for p in partials], delta, bound, first["k"]
+                ctx.cap, head.c_y, [TMCFERingLWEPartial(p).w for p in partials], delta, bound, head.k
             )
             if out is not None:  # else values or layouts the Python code reads
                 return out
         total = json_partial_difference(first, partials, q)
-        return [decode_scaled(v, delta, q, bound) for v in total[: int(first["k"])]]
+        return [decode_scaled(v, delta, q, bound) for v in total[: int(head.k)]]
 
     def _combine_binary(self, ctx, first: dict, partials: list, q, delta, bound) -> list | None:
         """:meth:`_combine_group` of binary partial decryptions (``k`` values of
@@ -1406,7 +1434,8 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         if ctx is not None:
             try:
                 out = native_backend.ext().share_combine_bin(
-                    ctx.cap, bytes(first["c_y"]), [bytes(p["w"]) for p in partials], delta, bound, k)
+                    ctx.cap, bytes(TMCFERingLWEPartial(first).c_y), [bytes(TMCFERingLWEPartial(p).w) for p in partials],
+                    delta, bound, k)
             except ValueError as exc:
                 raise FESchemeError("malformed partial decryption") from exc
             if out is not None:  # else a value beyond an int64: decoded below
@@ -1423,32 +1452,33 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         sample = next(iter(dict_ndarray_ct.values()))
         packed_share = None
         label_dk, weight = self._key_parts(dk) if dk else (dk, None)
-        z_chunks = (label_dk or {}).get("z_chunks", [])
-        if label_dk and "pieces" in label_dk and self.id in label_dk.get("lst_sid", []):
+        key = ThresholdKeyShare(label_dk or {})
+        z_chunks = key.get("z_chunks", [])
+        if label_dk and "pieces" in key and self.id in key.get("lst_sid", []):
             # the assigned pieces (sk_y and the chunk keys), added up once for all chunks
-            validate_enrolled(self.id, label_dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
+            validate_enrolled(self.id, key.lst_sid, lst_sid_enrolled, self.pp["t"])
             packed_share = self._enrolled_share(label_dk, weight, lst_sid_enrolled, gp.mpz(self.pp["q"]),
                                                 ("sk_y", "z_chunks"))
-            z_chunks = packed_share[0]["z_chunks"]
+            z_chunks = ThresholdKeyShare(packed_share[0]).z_chunks
         if self.key_chunks(sample) > len(z_chunks):
             raise FEKeyError("the key share covers fewer chunks than the ciphertexts")
         flood, budget = self._kl_flooding()
         if flood is not None:
             flood.check_sampler()
-            budget.check(sum(len(layer["chunks"]) for layer in sample))
+            budget.check(sum(len(RingLWELayer(layer).chunks) for layer in sample))
         out = []
         sk_hats = {}  # NTT(sk_i), transformed once for all chunks
         for l, layer in enumerate(sample):
             parts = []
-            for j in range(len(layer["chunks"])):
-                dct_ct = {nid: _chunk_with_code(dict_ndarray_ct[nid][l]["chunks"][j], dict_ndarray_ct[nid][l])
+            for j in range(len(RingLWELayer(layer).chunks)):
+                dct_ct = {nid: _chunk_with_code(RingLWELayer(dict_ndarray_ct[nid][l]).chunks[j], dict_ndarray_ct[nid][l])
                           for nid in dict_ndarray_ct}
                 index = chunk_key_index(layer, j, len(z_chunks))
                 parts.append(self.share_decrypt(
                     dct_ct, credentials, dk, lst_sid_enrolled,
                     _z_share=z_chunks[index], _chunk=index, _sk_hats=sk_hats, _share=packed_share,
                 ))
-            out.append({"shape": layer["shape"], "parts": parts})
+            out.append(TMCFERingLWELayerPartials.new(shape=RingLWELayer(layer).shape, parts=parts).to_dict())
         return out
 
     def decrypt_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list:
@@ -1460,24 +1490,24 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         """
         groups = partial_groups(dict_ndarray_ct)
         sample = next(iter(groups[0].values()))
-        layout = [(list(layer["shape"]), len(layer["parts"])) for layer in sample]
+        layout = [(list(layer.shape), len(layer.parts)) for layer in map(TMCFERingLWELayerPartials, sample)]
         for g in groups:
             for out in g.values():
-                if [(list(layer["shape"]), len(layer["parts"])) for layer in out] != layout:
+                if [(list(layer.shape), len(layer.parts)) for layer in map(TMCFERingLWELayerPartials, out)] != layout:
                     raise FESchemeError("partial decryptions differ in shape")
         result = []
-        for l, layer in enumerate(sample):
+        for l, layer in enumerate(map(TMCFERingLWELayerPartials, sample)):
             values = []
-            for j in range(len(layer["parts"])):
+            for j in range(len(layer.parts)):
                 decoded = self.combine_decrypt(
-                    [{sid: g[sid][l]["parts"][j] for sid in g} for g in groups]
+                    [{sid: TMCFERingLWELayerPartials(g[sid][l]).parts[j] for sid in g} for g in groups]
                 )
                 if decoded is None or None in decoded:
                     raise FESchemeError("element ({}, chunk {}) does not decrypt".format(l, j))
                 values.extend(decoded)
-            if len(values) != int(np.prod(layer["shape"])):
-                raise FESchemeError("partial decryptions do not match the shape {}".format(layer["shape"]))
-            ary = np.array(values, dtype=float).reshape(layer["shape"])
+            if len(values) != int(np.prod(layer.shape)):
+                raise FESchemeError("partial decryptions do not match the shape {}".format(layer.shape))
+            ary = np.array(values, dtype=float).reshape(layer.shape)
             result.append(ary / pow(10, self.precision))
         return result
 

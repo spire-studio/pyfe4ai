@@ -30,6 +30,8 @@ import json
 import numpy as np
 
 from pyfe4ai.core.exceptions import FESchemeError
+from pyfe4ai.core.formats.threshold import PartialDecryption
+from pyfe4ai.core.formats.threshold import ThresholdKeyShare
 from pyfe4ai.core.versions import check_served_sharing
 from pyfe4ai.primitives.lattice.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.primitives.sampling import FLOODING_SAMPLER
@@ -46,7 +48,8 @@ def check_key_share_server(server_id: str, dk: dict, pp: dict, constructions: di
         FESchemeError: For another server's key share, another sharing or an
             unknown construction.
     """
-    if server_id not in dk["lst_sid"] or dk.get("sid") != server_id:
+    key = ThresholdKeyShare(dk)
+    if server_id not in key.lst_sid or key.get("sid") != server_id:
         raise FESchemeError("the key share does not belong to server {}".format(server_id))
     check_served_sharing(pp, dk, constructions)
 
@@ -59,7 +62,7 @@ def check_request(server_id: str, dk: dict, lst_sid_enrolled: list, threshold: i
     Raises:
         FESchemeError: Otherwise.
     """
-    validate_enrolled(server_id, dk["lst_sid"], lst_sid_enrolled, threshold)
+    validate_enrolled(server_id, ThresholdKeyShare(dk).lst_sid, lst_sid_enrolled, threshold)
     check_fusion_weight(dk, fusion_weight)
 
 
@@ -80,7 +83,7 @@ def noise_seed(dk: dict, *context) -> bytes:
     server's own public parameters (the key share's ``pp_binding``, checked) --
     so that a request for the same key part always draws the same noise, and
     under other public parameters another noise."""
-    return bytes.fromhex(dk["noise_key"]) + json.dumps(list(context)).encode("utf-8")
+    return bytes.fromhex(ThresholdKeyShare(dk).noise_key) + json.dumps(list(context)).encode("utf-8")
 
 
 # flooding noise of the partial decryptions
@@ -194,17 +197,17 @@ def validate_partial_decryptions(dict_ct_prime: dict, threshold: int) -> None:
         )
     contributors = set()
     enrolled = None
-    for ct_prime in dict_ct_prime.values():
+    for ct_prime in map(PartialDecryption, dict_ct_prime.values()):
         if "sid" not in ct_prime or "lst_sid_enrolled" not in ct_prime:
             raise FESchemeError(
                 "partial decryption is missing its server id / enrolled set"
             )
-        if ct_prime["sid"] in contributors:
+        if ct_prime.sid in contributors:
             raise FESchemeError(
-                "duplicate partial decryption from {}".format(ct_prime["sid"])
+                "duplicate partial decryption from {}".format(ct_prime.sid)
             )
-        contributors.add(ct_prime["sid"])
-        _enrolled = set(ct_prime["lst_sid_enrolled"])
+        contributors.add(ct_prime.sid)
+        _enrolled = set(ct_prime.lst_sid_enrolled)
         if enrolled is None:
             enrolled = _enrolled
         elif enrolled != _enrolled:

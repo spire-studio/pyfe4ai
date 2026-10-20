@@ -53,6 +53,11 @@ from pyfe4ai.primitives.lattice.ring_lwe_utils import (
 from pyfe4ai import backend as native_backend
 from pyfe4ai.primitives.sampling import discrete_gaussian_matrix, scheme_sampler
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.formats.ring_lwe import SIFERingLWECiphertext
+from pyfe4ai.core.formats.ring_lwe import SIFERingLWEEncryptionKey
+from pyfe4ai.core.formats.ring_lwe import SIFERingLWEFunctionalKey
+from pyfe4ai.core.formats.ring_lwe import SIFERingLWEParameters
+from pyfe4ai.core.formats.ring_lwe import SIFERingLWERecord
 from pyfe4ai.core.versions import record_matches
 from pyfe4ai.core.versions import SIFE_RING_LWE_RECORD
 from pyfe4ai._validation import int_vector
@@ -111,13 +116,14 @@ class SIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         return P["q"], P["rlwe_width"]
 
     def _apply_parameters(self, param: dict) -> None:
-        self.p = gp.mpz(param["p"])
-        self.q = gp.mpz(param["q"])
-        self.ring_n = int(param["ring_n"])
-        self.sigma1 = float(param["sigma1"])
-        self.sigma2 = float(param["sigma2"])
-        self.sigma3 = float(param["sigma3"])
-        self.a_seed = param["A_seed"]
+        record = SIFERingLWERecord.from_dict(param)
+        self.p = gp.mpz(record.p)
+        self.q = gp.mpz(record.q)
+        self.ring_n = int(record.ring_n)
+        self.sigma1 = float(record.sigma1)
+        self.sigma2 = float(record.sigma2)
+        self.sigma3 = float(record.sigma3)
+        self.a_seed = record.A_seed
         self.A = seeded_polynomial(self.a_seed, self.q, self.ring_n)
 
     def _param_verification(self, param: dict) -> bool:
@@ -144,20 +150,20 @@ class SIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(
-                {
-                    "param_version": SIFE_RING_LWE_RECORD,
-                    "sec_param": self.sec_param,
-                    "eta": self.eta,
-                    "ring_n": self.ring_n,
-                    "bound_x": gp.digits(self.bound_x),
-                    "bound_y": gp.digits(self.bound_y),
-                    "p": gp.digits(self.p),
-                    "q": gp.digits(self.q),
-                    "sigma1": self.sigma1,
-                    "sigma2": self.sigma2,
-                    "sigma3": self.sigma3,
-                    "A_seed": self.a_seed,
-                },
+                SIFERingLWERecord.new(
+                    param_version=SIFE_RING_LWE_RECORD,
+                    sec_param=self.sec_param,
+                    eta=self.eta,
+                    ring_n=self.ring_n,
+                    bound_x=gp.digits(self.bound_x),
+                    bound_y=gp.digits(self.bound_y),
+                    p=gp.digits(self.p),
+                    q=gp.digits(self.q),
+                    sigma1=self.sigma1,
+                    sigma2=self.sigma2,
+                    sigma3=self.sigma3,
+                    A_seed=self.a_seed,
+                ).to_dict(),
                 f,
             )
 
@@ -173,21 +179,21 @@ class SIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         logger.info("SIFE Ring-LWE setup successfully")
 
     def get_public_parameters(self) -> dict:
-        return {
-            "A": [gp.digits(v) for v in self.A],
-            "p": gp.digits(self.p),
-            "q": gp.digits(self.q),
-            "eta": self.eta,
-            "ring_n": self.ring_n,
-            "bound_x": gp.digits(self.bound_x),
-            "bound_y": gp.digits(self.bound_y),
-            "sigma1": self.sigma1,
-            "sigma2": self.sigma2,
-            "sigma3": self.sigma3,
-            "sec_param": self.sec_param,
-            "gaussian_sampler": self.gaussian_sampler,
-            "security_profile": self.security_profile,
-        }
+        return SIFERingLWEParameters.new(
+            A=[gp.digits(v) for v in self.A],
+            p=gp.digits(self.p),
+            q=gp.digits(self.q),
+            eta=self.eta,
+            ring_n=self.ring_n,
+            bound_x=gp.digits(self.bound_x),
+            bound_y=gp.digits(self.bound_y),
+            sigma1=self.sigma1,
+            sigma2=self.sigma2,
+            sigma3=self.sigma3,
+            sec_param=self.sec_param,
+            gaussian_sampler=self.gaussian_sampler,
+            security_profile=self.security_profile,
+        ).to_dict()
 
     def get_private_keys(self, nid: str = "nid_default", **kwargs) -> dict | None:
         """Return the encryption key (public key polynomials ``pk``).
@@ -195,7 +201,7 @@ class SIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         Args:
             nid: Client identifier (unused for single-input schemes).
         """
-        return {"pk": [[gp.digits(v) for v in row] for row in self.mpk["pk"]]}
+        return SIFERingLWEEncryptionKey.new(pk=[[gp.digits(v) for v in row] for row in self.mpk["pk"]]).to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Derive a functional decryption key for the given fusion weights.
@@ -212,7 +218,7 @@ class SIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             credentials.get("fusion_weight"), "fusion weight", length=self.eta, bound=self.bound_y
         )
         sk_y = _mat_vec_mul(_transpose(self.msk["sk"]), [gp.mpz(v) for v in y], self.q)
-        return {"sk_y": [gp.digits(v) for v in sk_y], "y": y}
+        return SIFERingLWEFunctionalKey.new(sk_y=[gp.digits(v) for v in sk_y], y=y).to_dict()
 
 
 class SIFERingLWE(IPFEAbsCrypto):
@@ -245,13 +251,14 @@ class SIFERingLWE(IPFEAbsCrypto):
     def _encryption_key(self) -> tuple:
         """``(pk, NTT(a), [NTT(pk_i)])`` of this key, computed once (the
         transforms are ``None`` without an NTT-friendly ``q``)."""
-        src = (id(self.sk["pk"]), id(self.A))
+        sk = SIFERingLWEEncryptionKey(self.sk)
+        src = (id(sk.pk), id(self.A))
         cache = self.__dict__.get("_enc_key")
         if cache is None or cache[0] != src:
-            pk = [[gp.mpz(v) for v in row] for row in self.sk["pk"]]
+            pk = [[gp.mpz(v) for v in row] for row in sk.pk]
             ring = RingNTT.get(self.pp["q"], self.pp["ring_n"])
             hats = (None, None) if ring is None else (ring.forward(self.A), [ring.forward(row) for row in pk])
-            cache = self._enc_key = (src, (self.sk["pk"], self.A), pk) + hats
+            cache = self._enc_key = (src, (sk.pk, self.A), pk) + hats
         return cache[2:]
 
     def _native_key(self):
@@ -262,12 +269,13 @@ class SIFERingLWE(IPFEAbsCrypto):
         if ctx is None or not native_backend.sampling_ok(self.pp["sigma2"], self.pp["sigma3"],
                                                          sampler=self.gaussian_sampler):
             return None
-        src = (id(self.sk["pk"]), id(self.A))
+        sk = SIFERingLWEEncryptionKey(self.sk)
+        src = (id(sk.pk), id(self.A))
         cached = self.__dict__.get("_nkey")
         if cached is None or cached[0] is not ctx or cached[1] != src:
             try:
                 nkey = native_backend.ext().enc_key(
-                    ctx.cap, self.A, self.sk["pk"], None, gp.mpz(self.pp["q"]) // gp.mpz(self.pp["p"]))
+                    ctx.cap, self.A, sk.pk, None, gp.mpz(self.pp["q"]) // gp.mpz(self.pp["p"]))
             except (TypeError, ValueError, OverflowError):
                 nkey = None  # malformed key: the Python path reports it
             cached = self._nkey = (ctx, src, nkey)
@@ -301,7 +309,7 @@ class SIFERingLWE(IPFEAbsCrypto):
                 **native_backend.seed_kwargs(),
                 **native_backend.noise_kwargs(self.pp["sigma2"], self.pp["sigma3"], sampler=self.gaussian_sampler),
             )
-            return {"ct0": ct0, "ct1": ct1, "k": k}
+            return SIFERingLWECiphertext.new(ct0=ct0, ct1=ct1, k=k).to_dict()
         pk, a_hat, pk_hat = self._encryption_key()
         ring = RingNTT.get(q, ring_n) if a_hat is not None else None
 
@@ -321,11 +329,11 @@ class SIFERingLWE(IPFEAbsCrypto):
         e = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"], sampler=self.gaussian_sampler)[0]
         ct1 = _poly_add(ct1, e, q)
 
-        return {
-            "ct0": [[gp.digits(v) for v in row] for row in ct0],
-            "ct1": [gp.digits(v) for v in ct1],
-            "k": len(matrix_pt[0]),
-        }
+        return SIFERingLWECiphertext.new(
+            ct0=[[gp.digits(v) for v in row] for row in ct0],
+            ct1=[gp.digits(v) for v in ct1],
+            k=len(matrix_pt[0]),
+        ).to_dict()
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: list):
         """Decrypt ciphertexts and recover the inner product.
@@ -340,16 +348,17 @@ class SIFERingLWE(IPFEAbsCrypto):
         y = int_vector(
             fusion_weight, "fusion weight", length=self.pp["eta"], bound=int(self.pp["bound_y"])
         )
-        if y != dk.get("y"):
+        if y != SIFERingLWEFunctionalKey(dk).get("y"):
             raise FESchemeError("fusion weights differ from those of the decryption key")
 
         q = gp.mpz(self.pp["q"])
         p = gp.mpz(self.pp["p"])
         ring_n = self.pp["ring_n"]
-        ct0 = [[gp.mpz(v) for v in row] for row in dct_ct["ct0"]]
-        ct1 = [gp.mpz(v) for v in dct_ct["ct1"]]
-        sk_y = [gp.mpz(v) for v in dk["sk_y"]]
-        k = int(dct_ct["k"])
+        ct = SIFERingLWECiphertext(dct_ct)
+        ct0 = [[gp.mpz(v) for v in row] for row in ct.ct0]
+        ct1 = [gp.mpz(v) for v in ct.ct1]
+        sk_y = [gp.mpz(v) for v in SIFERingLWEFunctionalKey(dk).sk_y]
+        k = int(ct.k)
         if (
             len(ct0) != len(y) or any(len(row) != ring_n for row in ct0)
             or len(ct1) != ring_n or len(sk_y) != ring_n or not 0 < k <= ring_n

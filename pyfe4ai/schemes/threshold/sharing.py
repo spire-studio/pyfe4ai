@@ -49,6 +49,9 @@ import warnings
 import gmpy2 as gp
 
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FESecurityWarning, FEValidationError
+from pyfe4ai.core.formats.threshold import KeyPiece
+from pyfe4ai.core.formats.threshold import KeySeed
+from pyfe4ai.core.formats.threshold import ThresholdKeyShare
 from pyfe4ai.core.versions import check_legacy_shamir
 from pyfe4ai.schemes.threshold import store
 from pyfe4ai.schemes.threshold.codec import _bytes_layout
@@ -520,7 +523,7 @@ def share_replicated(
 def pieces_held(pieces: dict, point: int) -> list[dict]:
     """The pieces of :func:`share_replicated` held by the server at *point*,
     as ``[{"set": [...], "share": piece}]`` (JSON-friendly)."""
-    return [{"set": list(T), "share": piece} for T, piece in pieces.items() if point not in T]
+    return [KeyPiece.new(set=list(T), share=piece).to_dict() for T, piece in pieces.items() if point not in T]
 
 
 #: Bytes of a seed of :func:`share_replicated_seeded` (256 bits: many seeds
@@ -743,8 +746,8 @@ def seeded_pieces_held(sharing: dict, point: int) -> dict:
     [{"set", "seed"}], "layout"}`` (JSON-friendly)."""
     T0, correction = sharing["correction"]
     return {
-        "pieces": [] if point in T0 else [{"set": list(T0), "share": correction}],
-        "seeds": [{"set": list(T), "seed": seed} for T, seed in sharing["seeds"].items() if point not in T],
+        "pieces": [] if point in T0 else [KeyPiece.new(set=list(T0), share=correction).to_dict()],
+        "seeds": [KeySeed.new(set=list(T), seed=seed).to_dict() for T, seed in sharing["seeds"].items() if point not in T],
         "layout": sharing["layout"],
     }
 
@@ -896,24 +899,25 @@ def share_for_enrolled(
         FESchemeError: For a Shamir key share with ``t < s`` that is not
             to be served.
     """
-    sid_v = share_points(dk["lst_sid"])
+    view = ThresholdKeyShare(dk)
+    sid_v = share_points(view.lst_sid)
     xs = [sid_v[s] for s in lst_sid_enrolled]
-    if "pieces" not in dk:
-        check_legacy_shamir(sid, threshold, len(dk["lst_sid"]), legacy_shamir, profile)
+    if "pieces" not in view:
+        check_legacy_shamir(sid, threshold, len(view.lst_sid), legacy_shamir, profile)
         lagrange = lagrange_coefficient_at_zero(sid_v[sid], xs, modulus)
         return dk, lagrange, gp.digits(lagrange)
     assigned = replicated_assignment(sid_v[sid], xs, list(sid_v.values()), threshold)
     fields = None if fields is None else tuple(fields)
-    key = (id(dk), id(dk["pieces"]), tuple(assigned), fields)
+    key = (id(dk), id(view.pieces), tuple(assigned), fields)
     if cache is not None:
         hit = store.cached_share(cache, key, dk)
         if hit is not None:
             return hit
-    held = {tuple(piece["set"]): piece["share"] for piece in dk["pieces"]}
-    seeded = dk.get("sharing") == "replicated-seeded"
-    if not seeded and "seeds" in dk:
+    held = {tuple(KeyPiece(piece).set): KeyPiece(piece).share for piece in view.pieces}
+    seeded = view.get("sharing") == "replicated-seeded"
+    if not seeded and "seeds" in view:
         raise FEKeyError("seeds in a key share whose sharing is not replicated-seeded")
-    seeds = {tuple(entry["set"]): entry["seed"] for entry in dk.get("seeds", [])}
+    seeds = {tuple(KeySeed(entry).set): KeySeed(entry).seed for entry in view.get("seeds", [])}
     if not held and not seeds:
         raise FEKeyError("the key share holds no pieces")
     missing = [T for T in assigned if T not in held and T not in seeds]
@@ -931,7 +935,7 @@ def share_for_enrolled(
 
             ctx = native_backend.ring_context(modulus, ring_n)
         summed = _combine_pieces(
-            _select(dk.get("layout"), fields), [pick(held[T]) for T in assigned if T in held],
+            _select(view.get("layout"), fields), [pick(held[T]) for T in assigned if T in held],
             [(seeds[T], T) for T in assigned if T not in held], modulus, ctx,
         )
     else:
@@ -955,7 +959,7 @@ def share_for_enrolled(
                 except (ValueError, TypeError) as exc:
                     raise FEKeyError("malformed key pieces") from exc
                 summed = _map_values(total, gp.digits)
-    share = {key: value for key, value in dk.items() if key not in ("pieces", "seeds", "layout")}
+    share = view.without_pieces()
     share.update(summed)
     out = share, gp.mpz(1), json.dumps(["replicated", [list(T) for T in assigned]])
     if cache is not None:

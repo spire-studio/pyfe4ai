@@ -46,6 +46,10 @@ from pyfe4ai.schemes.mcfe.ring_lwe import label_pad, label_pad_material, native_
 from pyfe4ai.schemes.threshold.binding import fusion_weight_id
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai import backend as native_backend
+from pyfe4ai.core.formats.ring_lwe import DecentralizedRingLWEEncryptionKey
+from pyfe4ai.core.formats.ring_lwe import DecentralizedRingLWEKeyShare
+from pyfe4ai.core.formats.ring_lwe import DecentralizedRingLWEParameters
+from pyfe4ai.core.formats.ring_lwe import MCFERingLWEFunctionalKey
 from pyfe4ai.core.versions import check_key_label_hash
 from pyfe4ai.primitives.hashing import hash_to_zq_material, hash_to_zq_vector
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
@@ -102,18 +106,19 @@ class DecentralizedMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
 
     def get_public_parameters(self) -> dict:
         """MCFE public parameters plus ``lst_nid``."""
-        pp = super().get_public_parameters()
-        pp["lst_nid"] = list(self.lst_nid)
-        return pp
+        pp = DecentralizedRingLWEParameters(super().get_public_parameters())
+        pp.lst_nid = list(self.lst_nid)
+        return pp.to_dict()
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
         """Client *nid*'s MCFE keys, its IPFE secret ``s`` and pairwise ``pair_keys``."""
         sk = super().get_private_keys(nid)
         if sk is None:
             return None
-        sk["s"] = [[gp.digits(v) for v in row] for row in self.msk["sk"][nid]]
-        sk["pair_keys"] = dict(self.msk["pair_keys"][nid])
-        return sk
+        key = DecentralizedRingLWEEncryptionKey(sk)
+        key.s = [[gp.digits(v) for v in row] for row in self.msk["sk"][nid]]
+        key.pair_keys = dict(self.msk["pair_keys"][nid])
+        return key.to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Not available: functional keys are derived by the clients."""
@@ -140,7 +145,7 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
             Dict with ``sk_y`` (this slot's IPFE key), ``z`` and ``z_chunks``
             (masked pad terms), ``label``, ``nid`` and ``weights_id``.
         """
-        if not self._has_private_keys() or "pair_keys" not in self.sk:
+        if not self._has_private_keys() or "pair_keys" not in DecentralizedRingLWEEncryptionKey(self.sk):
             raise FEKeyError("need the client's keys to derive a key share")
         lst_nid = self.pp["lst_nid"]
         if set(fusion_weight) != set(lst_nid):
@@ -155,37 +160,38 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
         ring_n = self.pp["ring_n"]
         y = [gp.mpz(v) for v in weights]
         weights_id = fusion_weight_id(fusion_weight)
-        s = [[gp.mpz(v) for v in row] for row in self.sk["s"]]
+        sk = DecentralizedRingLWEEncryptionKey(self.sk)
+        s = [[gp.mpz(v) for v in row] for row in sk.s]
 
         labels = [label] + [chunk_label(label, c) for c in range(n_chunks)]
         ctx = native_backend.ring_context(q, ring_n)
         if ctx is not None:
             terms, sk_y = self._native_key_share(ctx, y, s, labels, weights_id)
-            return {
-                "sk_y": sk_y, "z": terms[0], "z_chunks": terms[1:],
-                "label": label, "nid": self.id, "weights_id": weights_id,
-                "label_hash": self.label_hash,
-            }
+            return DecentralizedRingLWEKeyShare.new(
+                sk_y=sk_y, z=terms[0], z_chunks=terms[1:],
+                label=label, nid=self.id, weights_id=weights_id,
+                label_hash=self.label_hash,
+            ).to_dict()
 
         def masked_pad_term(lab) -> list:
             z = [gp.mpz(0)] * ring_n
             pad = self._pad(lab)
-            for y_row, u_row, h_row in zip(y, self.sk["u"], pad):
+            for y_row, u_row, h_row in zip(y, sk.u, pad):
                 z = [acc + y_row * (gp.mpz(u) + h) for acc, u, h in zip(z, u_row, h_row)]
             context = "{}|{}".format(encode_label(lab), weights_id)
-            mask = gdsum_mask(self.id, self.sk["pair_keys"], lst_nid, context, q, ring_n, self.label_hash)
+            mask = gdsum_mask(self.id, sk.pair_keys, lst_nid, context, q, ring_n, self.label_hash)
             return [gp.digits((v + m) % q) for v, m in zip(z, mask)]
 
-        share = {
-            "sk_y": [gp.digits(v) for v in mat_vec_mul(transpose(s), y, q)],
-            "z": masked_pad_term(label),
-            "z_chunks": [masked_pad_term(chunk_label(label, c)) for c in range(n_chunks)],
-            "label": label,
-            "nid": self.id,
-            "weights_id": weights_id,
-        }
-        share["label_hash"] = self.label_hash
-        return share
+        share = DecentralizedRingLWEKeyShare.new(
+            sk_y=[gp.digits(v) for v in mat_vec_mul(transpose(s), y, q)],
+            z=masked_pad_term(label),
+            z_chunks=[masked_pad_term(chunk_label(label, c)) for c in range(n_chunks)],
+            label=label,
+            nid=self.id,
+            weights_id=weights_id,
+        )
+        share.label_hash = self.label_hash
+        return share.to_dict()
 
     def _native_key_share(self, ctx, y: list, s: list, labels: list, weights_id: str) -> tuple:
         """The masked pad terms of *labels* and ``sk_y`` of
@@ -202,10 +208,11 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
         pos = lst_nid.index(self.id)
         others = [o for o in lst_nid if o != self.id]
         signs = [1 if lst_nid.index(o) > pos else -1 for o in others]
-        base = ext.lincomb(ctx.cap, [ctx.pack(row) for row in self.sk["u"]], y)  # sum_r y_r u_r
-        pad_mats = [label_pad_material(self.sk["u_prime"], lab, mode) for lab in labels]
+        sk = DecentralizedRingLWEEncryptionKey(self.sk)
+        base = ext.lincomb(ctx.cap, [ctx.pack(row) for row in sk.u], y)  # sum_r y_r u_r
+        pad_mats = [label_pad_material(sk.u_prime, lab, mode) for lab in labels]
         mask_mats = [
-            [gdsum_material(self.sk["pair_keys"][o], "{}|{}".format(encode_label(lab), weights_id), mode)
+            [gdsum_material(sk.pair_keys[o], "{}|{}".format(encode_label(lab), weights_id), mode)
              for o in others]
             for lab in labels
         ]
@@ -230,16 +237,16 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
         lst_nid = self.pp["lst_nid"]
         if set(dct_dk_shares) != set(lst_nid):
             raise FESchemeError("key shares of all clients are required")
-        shares = list(dct_dk_shares.values())
+        shares = [DecentralizedRingLWEKeyShare(sh) for sh in dct_dk_shares.values()]
         first = shares[0]
         if any(
-            (sh["weights_id"], sh["label"], len(sh["z_chunks"]))
-            != (first["weights_id"], first["label"], len(first["z_chunks"]))
+            (sh.weights_id, sh.label, len(sh.z_chunks))
+            != (first.weights_id, first.label, len(first.z_chunks))
             for sh in shares
         ):
             raise FESchemeError("key shares were derived for different weights or labels")
         for sh in shares:
-            check_key_label_hash(sh, self.label_hash, "key shares were")
+            check_key_label_hash(sh.to_dict(), self.label_hash, "key shares were")
         q = gp.mpz(self.pp["q"])
         ctx = native_backend.ring_context(q, self.pp["ring_n"])
 
@@ -251,11 +258,11 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
                 acc = [(a + gp.mpz(v)) % q for a, v in zip(acc, get(sh))]
             return [gp.digits(v) for v in acc]
 
-        key = {
-            "sk_y": {nid: sh["sk_y"] for nid, sh in dct_dk_shares.items()},
-            "z": total(lambda sh: sh["z"]),
-            "z_chunks": [total(lambda sh, c=c: sh["z_chunks"][c]) for c in range(len(first["z_chunks"]))],
-            "label": first["label"],
-        }
-        key["label_hash"] = self.label_hash
-        return key
+        key = MCFERingLWEFunctionalKey.new(
+            sk_y={nid: DecentralizedRingLWEKeyShare(sh).sk_y for nid, sh in dct_dk_shares.items()},
+            z=total(lambda sh: sh.z),
+            z_chunks=[total(lambda sh, c=c: sh.z_chunks[c]) for c in range(len(first.z_chunks))],
+            label=first.label,
+        )
+        key.label_hash = self.label_hash
+        return key.to_dict()

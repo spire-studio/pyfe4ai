@@ -10,6 +10,10 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from pyfe4ai.core.formats.record import Field
+from pyfe4ai.core.formats.record import Record
+from pyfe4ai.core.formats.threshold import TMCFERingLWELayerPartials
+from pyfe4ai.core.formats.threshold import TMCFERingLWEPartial
 from pyfe4ai.ml.serialization import _BYTES, EncryptedGradient, _from_base64
 from pyfe4ai.ml.wrapper import FESchemeWrapper, PreparedAggregation, _aggregated, _require_served_threshold
 
@@ -60,7 +64,16 @@ def _serving(wrapper, sid: str, dk: dict, fusion_weight: dict):
 
 
 #: Fields of one partial decryption (one chunk) of a :class:`ThresholdPartial`.
-_PARTIAL_FIELDS = frozenset({"w", "c_y", "k", "ct_digest", "sid", "lst_sid_enrolled", "sharing_id"})
+_PARTIAL_FIELDS = frozenset(TMCFERingLWEPartial.FIELDS)
+
+
+class ThresholdPartialWire(Record):
+    """The wire form of a :class:`ThresholdPartial` (:meth:`ThresholdPartial.to_dict`)."""
+
+    sid = Field("str, the server")
+    label = Field("str, the round's label")
+    format = Field("``binary`` (``w`` and ``c_y`` as base64) or ``json``")
+    layers = Field(":class:`~pyfe4ai.core.formats.threshold.TMCFERingLWELayerPartials`")
 
 
 @dataclass
@@ -87,26 +100,28 @@ class ThresholdPartial:
         Raises:
             TypeError: If the partial decryptions mix binary and JSON values.
         """
-        parts = [part for layer in self.layers for part in layer["parts"]]
-        binary = [isinstance(part["w"], _BYTES) and isinstance(part["c_y"], _BYTES) for part in parts]
+        parts = [TMCFERingLWEPartial(part) for layer in self.layers for part in TMCFERingLWELayerPartials(layer).parts]
+        binary = [isinstance(part.w, _BYTES) and isinstance(part.c_y, _BYTES) for part in parts]
         if any(binary) and not all(binary):
             raise TypeError("partial decryptions mixing binary and JSON values")
         fmt = "binary" if binary and all(binary) else "json"
 
         def written(part):
+            view = TMCFERingLWEPartial(part)
             if fmt == "json":
-                return dict(part, w=list(part["w"]), c_y=list(part["c_y"]), lst_sid_enrolled=list(part["lst_sid_enrolled"]))
-            return dict(part, w=base64.b64encode(bytes(part["w"])).decode("ascii"),
-                        c_y=base64.b64encode(bytes(part["c_y"])).decode("ascii"),
-                        lst_sid_enrolled=list(part["lst_sid_enrolled"]))
+                return TMCFERingLWEPartial.extend(part, w=list(view.w), c_y=list(view.c_y),
+                                                  lst_sid_enrolled=list(view.lst_sid_enrolled)).to_dict()
+            return TMCFERingLWEPartial.extend(part, w=base64.b64encode(bytes(view.w)).decode("ascii"),
+                                              c_y=base64.b64encode(bytes(view.c_y)).decode("ascii"),
+                                              lst_sid_enrolled=list(view.lst_sid_enrolled)).to_dict()
 
-        return {
-            "sid": self.sid,
-            "label": self.label,
-            "format": fmt,
-            "layers": [{"shape": list(layer["shape"]), "parts": [written(p) for p in layer["parts"]]}
-                       for layer in self.layers],
-        }
+        return ThresholdPartialWire.new(
+            sid=self.sid,
+            label=self.label,
+            format=fmt,
+            layers=[TMCFERingLWELayerPartials.new(shape=list(layer.shape), parts=[written(p) for p in layer.parts]).to_dict()
+                    for layer in map(TMCFERingLWELayerPartials, self.layers)],
+        ).to_dict()
 
     @classmethod
     def from_dict(cls, d: dict) -> ThresholdPartial:
@@ -118,42 +133,46 @@ class ThresholdPartial:
                 server, or ``w`` / ``c_y`` not of the format (strict base64
                 for ``"binary"``, lists of strings for ``"json"``).
         """
-        if not isinstance(d, dict) or set(d) != {"sid", "label", "format", "layers"}:
+        if not isinstance(d, dict) or set(d) != set(ThresholdPartialWire.FIELDS):
             raise ValueError("invalid partial decryption: keys sid, label, format and layers")
-        sid, label, fmt, layers = d["sid"], d["label"], d["format"], d["layers"]
+        wire = ThresholdPartialWire(d)
+        sid, label, fmt, layers = wire.sid, wire.label, wire.format, wire.layers
         if not isinstance(sid, str) or not isinstance(label, str) or fmt not in ("binary", "json"):
             raise ValueError("invalid partial decryption: sid and label are strings, format binary or json")
         if not isinstance(layers, list) or not layers:
             raise ValueError("invalid partial decryption: layers must be a non-empty list")
         out = []
         for l, layer in enumerate(layers):
-            if not isinstance(layer, dict) or set(layer) != {"shape", "parts"}:
+            if not isinstance(layer, dict) or set(layer) != set(TMCFERingLWELayerPartials.FIELDS):
                 raise ValueError("invalid partial decryption: layer {} has keys shape and parts".format(l))
-            shape, _ = EncryptedGradient._checked_shape(layer["shape"])
-            if not isinstance(layer["parts"], list) or not layer["parts"]:
+            layer = TMCFERingLWELayerPartials(layer)
+            shape, _ = EncryptedGradient._checked_shape(layer.shape)
+            if not isinstance(layer.parts, list) or not layer.parts:
                 raise ValueError("invalid partial decryption: layer {} has no parts".format(l))
             parts = []
-            for j, part in enumerate(layer["parts"]):
+            for j, part in enumerate(layer.parts):
                 where = "partial decryption ({}, chunk {})".format(l, j)
                 if not isinstance(part, dict) or set(part) != _PARTIAL_FIELDS:
                     raise ValueError("invalid {}: keys {}".format(where, sorted(_PARTIAL_FIELDS)))
-                k, enrolled = part["k"], part["lst_sid_enrolled"]
-                if type(k) is not int or k < 1 or not isinstance(part["ct_digest"], str) or part["sid"] != sid:
+                view = TMCFERingLWEPartial(part)
+                k, enrolled = view.k, view.lst_sid_enrolled
+                if type(k) is not int or k < 1 or not isinstance(view.ct_digest, str) or view.sid != sid:
                     raise ValueError("invalid {}: k >= 1, a ct_digest and this server's sid".format(where))
                 if not isinstance(enrolled, list) or not all(isinstance(v, str) for v in enrolled):
                     raise ValueError("invalid {}: lst_sid_enrolled is a list of server ids".format(where))
-                sharing_id = part["sharing_id"]
+                sharing_id = view.sharing_id
                 if sharing_id is not None and not (isinstance(sharing_id, str) and 0 < len(sharing_id) <= 128):
                     raise ValueError("invalid {}: sharing_id is a string (or null)".format(where))
                 if fmt == "binary":
-                    values = {key: _from_base64(part[key], "{} {}".format(where, key)) for key in ("w", "c_y")}
+                    values = {"w": _from_base64(view.w, "{} w".format(where)),
+                              "c_y": _from_base64(view.c_y, "{} c_y".format(where))}
                 else:
-                    if any(not isinstance(part[key], list) or not all(isinstance(v, str) for v in part[key])
-                           for key in ("w", "c_y")):
+                    if any(not isinstance(value, list) or not all(isinstance(v, str) for v in value)
+                           for value in (view.w, view.c_y)):
                         raise ValueError("invalid {}: w and c_y are lists of decimal strings".format(where))
-                    values = {"w": list(part["w"]), "c_y": list(part["c_y"])}
-                parts.append(dict(part, lst_sid_enrolled=list(enrolled), **values))
-            out.append({"shape": list(shape), "parts": parts})
+                    values = {"w": list(view.w), "c_y": list(view.c_y)}
+                parts.append(TMCFERingLWEPartial.extend(part, lst_sid_enrolled=list(enrolled), **values).to_dict())
+            out.append(TMCFERingLWELayerPartials.new(shape=list(shape), parts=parts).to_dict())
         return cls(sid=sid, label=label, layers=out)
 
 

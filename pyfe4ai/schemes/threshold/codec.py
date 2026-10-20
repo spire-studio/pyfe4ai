@@ -27,6 +27,9 @@ import json
 import gmpy2 as gp
 
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError
+from pyfe4ai.core.formats.ring_lwe import RingLWECiphertext
+from pyfe4ai.core.formats.ring_lwe import RingLWELayer
+from pyfe4ai.core.formats.threshold import TMCFERingLWEPartial
 from pyfe4ai.core.formats.binary import canonical_ring_ciphertext
 from pyfe4ai.core.formats.binary import decode_threshold_ciphertext
 from pyfe4ai.core.formats.binary import decode_values
@@ -276,9 +279,10 @@ def binary_ciphertext_digests(ct: dict, q, eta: int, ring_n: int) -> tuple:
         ValueError: Unless ``ct["ct"]`` is a format-2 ciphertext of these
             parameters whose batch length is ``ct["k"]``.
     """
-    data = ct["ct"]
+    ct = RingLWECiphertext(ct)
+    data = ct.ct
     k = threshold_ciphertext_header(data, q, eta, ring_n)
-    if type(ct.get("k")) is not int or ct["k"] != k:
+    if type(ct.get("k")) is not int or ct.k != k:
         raise ValueError("the ciphertext's k is not its header's")
     split = 14 + eta * k * ((int(q).bit_length() + 7) // 8)
     view = memoryview(data)
@@ -301,7 +305,7 @@ def binary_tag_message(pp_digest: bytes, encoded_label: str, ct: dict, digests: 
         ValueError: For a label hash code that is not a byte.
     """
     k, d0, d1 = digests
-    code = ct.get("label_hash", 0)
+    code = RingLWECiphertext(ct).get("label_hash", 0)
     if type(code) is not int or not 0 <= code < 256:
         raise ValueError("malformed label hash code")
     label = encoded_label.encode("utf-8")
@@ -335,17 +339,19 @@ def _tag_payload(encoded_label: str, ct: dict) -> list:
     ciphertext as serialised and its ``label_hash`` code when it has one --
     for an ndarray chunk its layer's code, see ``_chunk_with_code``
     (ciphertexts of versions <= 0.3.0 have none: their tags stay valid)."""
+    ct = RingLWECiphertext(ct)
     payload = [encoded_label, ct.get("k"), ct.get("ct0"), ct.get("ct1")]
     if "label_hash" in ct:
-        payload.append(ct["label_hash"])
+        payload.append(ct.label_hash)
     return payload
 
 
 def _chunk_with_code(ct, layer) -> dict:
     """An ndarray chunk as tagged and decrypted: with its layer's
     ``label_hash`` code (layers, not chunks, carry it)."""
-    if isinstance(ct, dict) and isinstance(layer, dict) and "label_hash" in layer and "label_hash" not in ct:
-        return dict(ct, label_hash=layer["label_hash"])
+    if (isinstance(ct, dict) and isinstance(layer, dict) and "label_hash" in RingLWELayer(layer)
+            and "label_hash" not in RingLWECiphertext(ct)):
+        return RingLWECiphertext.extend(ct, label_hash=RingLWELayer(layer).label_hash).to_dict()
     return ct
 
 
@@ -359,13 +365,13 @@ def check_ciphertext_format(dict_ct: dict, binary: bool) -> None:
     """
     if binary:
         for nid, ct in dict_ct.items():  # no JSON ciphertexts under binary public parameters
-            if isinstance(ct, dict) and ("ct0" in ct or "ct1" in ct):
+            if isinstance(ct, dict) and ("ct0" in RingLWECiphertext(ct) or "ct1" in RingLWECiphertext(ct)):
                 raise FESchemeError(
                     "the ciphertext of {} is JSON; the public parameters' format is binary (ct_format, the "
                     "default): encrypt with these public parameters".format(nid))
         return
     for nid, ct in dict_ct.items():  # no binary ciphertexts under JSON public parameters
-        if isinstance(ct, dict) and "ct" in ct:
+        if isinstance(ct, dict) and "ct" in RingLWECiphertext(ct):
             raise FESchemeError("the ciphertext of {} is binary; the public parameters' format is JSON".format(nid))
 
 
@@ -396,7 +402,7 @@ def read_binary_ciphertexts(dict_ct: dict, k: int, q: int, eta: int, ring_n: int
     cts = {}
     for nid, ct in dict_ct.items():
         try:
-            _, ct0, ct1 = decode_threshold_ciphertext(ct["ct"], q, eta, ring_n)
+            _, ct0, ct1 = decode_threshold_ciphertext(RingLWECiphertext(ct).ct, q, eta, ring_n)
         except ValueError as exc:
             raise FESchemeError("malformed ciphertext of {}".format(nid)) from exc
         cts[nid] = (k, ct0, ct1)
@@ -419,15 +425,16 @@ def native_json_inputs(ctx, dict_ct: dict, sk_y: dict, fusion_weight: dict, z_sh
     ks, rows = [], []
     for nid in nids:
         ct = dict_ct[nid]
-        if not isinstance(ct, dict) or "ct0" not in ct or "ct1" not in ct:
+        if not isinstance(ct, dict) or "ct0" not in RingLWECiphertext(ct) or "ct1" not in RingLWECiphertext(ct):
             return None
-        k, ct0 = ct.get("k"), ct["ct0"]
+        ct = RingLWECiphertext(ct)
+        k, ct0 = ct.get("k"), ct.ct0
         if type(k) is not int or not 1 <= k <= ring_n or type(ct0) not in (list, tuple) or len(ct0) != eta:
             return None
         if len(sk_y[nid]) != ring_n or len(fusion_weight[nid]) != eta:
             return None
         ks.append(k)
-        rows.append((ct0, ct["ct1"]))
+        rows.append((ct0, ct.ct1))
     out = native_backend.ext().share_inputs(ctx.cap, [json.dumps(nid) for nid in nids], ks, rows, eta)
     if out is None:
         return None
@@ -452,7 +459,8 @@ def check_partial_format(partials: list, ct_format: str) -> None:
         FESchemeError: Otherwise.
     """
     values_type = (bytes, bytearray) if ct_format == "binary" else (list, tuple)
-    if any(not isinstance(p.get("w"), values_type) or not isinstance(p.get("c_y"), values_type) for p in partials):
+    if any(not isinstance(p.get("w"), values_type) or not isinstance(p.get("c_y"), values_type)
+           for p in map(TMCFERingLWEPartial, partials)):
         raise FESchemeError("partial decryptions not in the public parameters' format ({})".format(ct_format))
 
 
@@ -464,18 +472,18 @@ def partial_batch_length(first: dict, partials: list, ring_n: int, binary: bool)
     Raises:
         FESchemeError: Otherwise.
     """
-    k = first["k"]
+    k = TMCFERingLWEPartial(first).k
     if type(k) is not int or not 1 <= k <= ring_n or not binary and any(
-            len(p["w"]) < k or len(p["c_y"]) < k for p in partials):
+            len(p.w) < k or len(p.c_y) < k for p in map(TMCFERingLWEPartial, partials)):
         raise FESchemeError("malformed partial decryption")
     return k
 
 
 def json_partial_difference(first: dict, partials: list, q) -> list:
     """``c_y - sum w`` mod q of JSON partial decryptions, value by value."""
-    total = [gp.mpz(v) for v in first["c_y"]]
+    total = [gp.mpz(v) for v in TMCFERingLWEPartial(first).c_y]
     for part in partials:
-        total = [(a - gp.mpz(v)) % q for a, v in zip(total, part["w"])]
+        total = [(a - gp.mpz(v)) % q for a, v in zip(total, TMCFERingLWEPartial(part).w)]
     return total
 
 
@@ -487,9 +495,9 @@ def binary_partial_difference(first: dict, partials: list, q, k: int) -> list:
         FESchemeError: For a malformed partial decryption.
     """
     try:
-        total = decode_values(first["c_y"], q, k)
+        total = decode_values(TMCFERingLWEPartial(first).c_y, q, k)
         for part in partials:
-            total = [(a - v) % q for a, v in zip(total, decode_values(part["w"], q, k))]
+            total = [(a - v) % q for a, v in zip(total, decode_values(TMCFERingLWEPartial(part).w, q, k))]
     except ValueError as exc:
         raise FESchemeError("malformed partial decryption") from exc
     return total

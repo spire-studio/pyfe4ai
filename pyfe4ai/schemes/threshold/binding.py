@@ -25,6 +25,8 @@ import secrets
 
 from pyfe4ai._validation import int_vector
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.formats.threshold import TaggedCiphertext
+from pyfe4ai.core.formats.threshold import ThresholdKeyShare
 from pyfe4ai.core.versions import LEGACY_FLOODING
 from pyfe4ai.core.versions import LEGACY_SHARING
 from pyfe4ai.primitives.hashing import LEGACY_LABEL_HASH
@@ -69,7 +71,7 @@ def check_pp_binding(pp: dict, dk: dict, fields: tuple, defaults: dict | None = 
             ``pp_binding`` (issue new key shares).
     """
     digest = pp_binding(pp, fields, defaults)
-    if not hmac.compare_digest(str(dk.get("pp_binding", "")), digest):
+    if not hmac.compare_digest(str(ThresholdKeyShare(dk).get("pp_binding", "")), digest):
         raise FEKeyError(
             "the key share was issued for other public parameters (modulus, flooding or label hash): "
             "issue new key shares"
@@ -140,7 +142,7 @@ def fusion_weight_id(fusion_weight: dict) -> str:
 
 def check_fusion_weight(dk: dict, fusion_weight: dict) -> None:
     """Raise unless *fusion_weight* are the weights the key share *dk* is for."""
-    if dk.get("weights_id") != fusion_weight_id(fusion_weight):
+    if ThresholdKeyShare(dk).get("weights_id") != fusion_weight_id(fusion_weight):
         raise FESchemeError(
             "fusion weights differ from those the key share was derived for"
         )
@@ -168,7 +170,7 @@ def ciphertext_tag(mac_key: str, domain: str, payload) -> str:
 def tag_ciphertext(ct: dict, mac_keys: dict, domain: str, payload) -> dict:
     """Add ``tags`` (one per server of *mac_keys*) to *ct* and return it."""
     message = _tag_message(domain, payload) if mac_keys else None  # serialised once for all servers
-    ct["tags"] = {
+    TaggedCiphertext(ct).tags = {
         sid: hmac.new(bytes.fromhex(key), message, hashlib.sha256).hexdigest() for sid, key in mac_keys.items()
     }
     return ct
@@ -194,7 +196,7 @@ def check_ciphertext_tags(dict_ct: dict, mac_keys: dict, sid: str, domain: str, 
     """
     for nid, ct in dict_ct.items():
         ok = False
-        tags = ct.get("tags") if isinstance(ct, dict) else None
+        tags = TaggedCiphertext(ct).get("tags") if isinstance(ct, dict) else None
         tag = tags.get(sid) if isinstance(tags, dict) else None
         key = (mac_keys or {}).get(nid)
         if isinstance(tag, str) and isinstance(key, str):
@@ -213,7 +215,9 @@ def tag_ciphertext_message(ct: dict, mac_keys: dict, message: bytes) -> dict:
     """Add ``tags`` to *ct*: HMAC-SHA256 (hex) of the raw *message* under each
     server's key of *mac_keys*, and return it (binary ciphertexts, whose tag
     messages are bytes rather than JSON)."""
-    ct["tags"] = {sid: hmac.new(bytes.fromhex(key), message, hashlib.sha256).hexdigest() for sid, key in mac_keys.items()}
+    TaggedCiphertext(ct).tags = {
+        sid: hmac.new(bytes.fromhex(key), message, hashlib.sha256).hexdigest() for sid, key in mac_keys.items()
+    }
     return ct
 
 
@@ -228,7 +232,7 @@ def check_ciphertext_tag_messages(dict_ct: dict, mac_keys: dict, sid: str, messa
     """
     for nid, ct in dict_ct.items():
         ok = False
-        tags = ct.get("tags") if isinstance(ct, dict) else None
+        tags = TaggedCiphertext(ct).get("tags") if isinstance(ct, dict) else None
         tag = tags.get(sid) if isinstance(tags, dict) else None
         key = (mac_keys or {}).get(nid)
         if isinstance(tag, str) and isinstance(key, str):
@@ -256,6 +260,7 @@ def check_split_parts(weight: dict, dk: dict) -> None:
     Raises:
         FEKeyError: For parts that do not belong together.
     """
+    weight, dk = ThresholdKeyShare(weight), ThresholdKeyShare(dk)
     for field in SPLIT_SHARE_FIELDS:
         if weight.get(field, LEGACY_SHARING if field == "sharing" else None) != dk.get(
                 field, LEGACY_SHARING if field == "sharing" else None):

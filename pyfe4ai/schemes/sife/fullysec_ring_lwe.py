@@ -114,6 +114,12 @@ from pyfe4ai.primitives.lattice.ring_lwe_utils import ntt_inverse
 from pyfe4ai.primitives.sampling import scheme_sampler
 from pyfe4ai.primitives.sampling import discrete_gaussian_matrix
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.formats.ring_lwe import FullySecRingLWECiphertext
+from pyfe4ai.core.formats.ring_lwe import FullySecRingLWEEncryptionKey
+from pyfe4ai.core.formats.ring_lwe import FullySecRingLWEFunctionalKey
+from pyfe4ai.core.formats.ring_lwe import FullySecRingLWELayer
+from pyfe4ai.core.formats.ring_lwe import FullySecRingLWEParameters
+from pyfe4ai.core.formats.ring_lwe import FullySecRingLWERecord
 from pyfe4ai.core.versions import record_matches
 from pyfe4ai.core.versions import SIFE_FULLYSEC_RING_LWE_PACKED_RECORD
 from pyfe4ai.core.versions import SIFE_FULLYSEC_RING_LWE_RECORD
@@ -248,17 +254,18 @@ class SIFEFullySecRingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         }):
             return False
         q, n = expected["q"], expected["ring_n"]
-        a = _seeded_a(param["a_seed"], q, n, expected["m"])
+        a = _seeded_a(FullySecRingLWERecord(param).a_seed, q, n, expected["m"])
         return any(_invertible(poly, q) for poly in _ntt_all(a, q, _get_ntt_root(q, n)))
 
     def _apply_parameters(self, param: dict) -> None:
-        self.ring_n = int(param["ring_n"])
-        self.m = int(param["m"])
-        self.p = gp.mpz(param["p"])
-        self.q = gp.mpz(param["q"])
+        record = FullySecRingLWERecord.from_dict(param)
+        self.ring_n = int(record.ring_n)
+        self.m = int(record.m)
+        self.p = gp.mpz(record.p)
+        self.q = gp.mpz(record.q)
         for key in ("sigma", "sigma_lhl", "sigma1", "sigma2", "sigma3"):
-            setattr(self, key, float(param[key]))
-        self.a_seed = param["a_seed"]
+            setattr(self, key, float(getattr(record, key)))
+        self.a_seed = record.a_seed
         self.a = _seeded_a(self.a_seed, self.q, self.ring_n, self.m)
 
     def _generate_and_save(self, param_file: str) -> None:
@@ -272,27 +279,27 @@ class SIFEFullySecRingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                 break
         else:
             raise FESchemeError("no invertible element in a; is q an NTT prime?")
-        record = {
-            "param_version": self._param_version(),
-            "sec_param": self.sec_param,
-            "eta": self.eta,
-            "bound_x": gp.digits(self.bound_x),
-            "bound_y": gp.digits(self.bound_y),
-            "ring_n_config": self.ring_n_config,
-            "m_config": self.m_config,
-            "profile": self.security_profile,
-            "ring_n": n,
-            "m": params["m"],
-            "p": gp.digits(params["p"]),
-            "q": gp.digits(q),
-            "a_seed": seed,
-        }
-        record.update({k: params[k] for k in ("sigma", "sigma_lhl", "sigma1", "sigma2", "sigma3")})
+        record = FullySecRingLWERecord.new(
+            param_version=self._param_version(),
+            sec_param=self.sec_param,
+            eta=self.eta,
+            bound_x=gp.digits(self.bound_x),
+            bound_y=gp.digits(self.bound_y),
+            ring_n_config=self.ring_n_config,
+            m_config=self.m_config,
+            profile=self.security_profile,
+            ring_n=n,
+            m=params["m"],
+            p=gp.digits(params["p"]),
+            q=gp.digits(q),
+            a_seed=seed,
+        )
+        record.update(**{k: params[k] for k in ("sigma", "sigma_lhl", "sigma1", "sigma2", "sigma3")})
         if self._packed():  # elementwise records keep their v2 form
-            record["ndarray_layout"] = self.ndarray_layout
-        self._apply_parameters(record)
+            record.ndarray_layout = self.ndarray_layout
+        self._apply_parameters(record.to_dict())
         with open(param_file, "w", encoding="utf-8") as f:
-            json.dump(record, f)
+            json.dump(record.to_dict(), f)
 
     def setup(self) -> None:
         """Sample ``s_i`` (``m`` polynomials per slot) and ``pk_i = <a, s_i>``."""
@@ -315,28 +322,28 @@ class SIFEFullySecRingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         """Return ``a``, ``p``, ``q``, ``ring_n``, ``m``, ``eta``, the bounds and the
         encryption widths ``sigma2``, ``sigma3``, the ``gaussian_sampler`` (and
         ``ndarray_layout`` when packed)."""
-        pp = {
-            "a": [[gp.digits(v) for v in poly] for poly in self.a],
-            "p": gp.digits(self.p),
-            "q": gp.digits(self.q),
-            "ring_n": self.ring_n,
-            "m": self.m,
-            "eta": self.eta,
-            "bound_x": gp.digits(self.bound_x),
-            "bound_y": gp.digits(self.bound_y),
-            "sigma2": self.sigma2,
-            "sigma3": self.sigma3,
-            "sec_param": self.sec_param,
-            "gaussian_sampler": self.gaussian_sampler,
-            "security_profile": self.security_profile,
-        }
+        pp = FullySecRingLWEParameters.new(
+            a=[[gp.digits(v) for v in poly] for poly in self.a],
+            p=gp.digits(self.p),
+            q=gp.digits(self.q),
+            ring_n=self.ring_n,
+            m=self.m,
+            eta=self.eta,
+            bound_x=gp.digits(self.bound_x),
+            bound_y=gp.digits(self.bound_y),
+            sigma2=self.sigma2,
+            sigma3=self.sigma3,
+            sec_param=self.sec_param,
+            gaussian_sampler=self.gaussian_sampler,
+            security_profile=self.security_profile,
+        )
         if self._packed():
-            pp["ndarray_layout"] = self.ndarray_layout
-        return pp
+            pp.ndarray_layout = self.ndarray_layout
+        return pp.to_dict()
 
     def get_private_keys(self, nid: str = "nid_default", **kwargs) -> dict | None:
         """Return the encryption key: the public keys ``pk_i`` (``eta`` polynomials)."""
-        return {"pk": [[gp.digits(v) for v in poly] for poly in self.mpk["pk"]]}
+        return FullySecRingLWEEncryptionKey.new(pk=[[gp.digits(v) for v in poly] for poly in self.mpk["pk"]]).to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Derive ``sk_y = sum_i y_i s_i`` (``m`` polynomials mod ``q``).
@@ -357,7 +364,7 @@ class SIFEFullySecRingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             for y_i, s_i in zip(y, self.msk["sk"]):
                 acc = [u + y_i * v for u, v in zip(acc, s_i[j])]
             sk_y.append([gp.digits(v % self.q) for v in acc])
-        return {"sk_y": sk_y, "y": y}
+        return FullySecRingLWEFunctionalKey.new(sk_y=sk_y, y=y).to_dict()
 
 
 class SIFEFullySecRingLWE(IPFEAbsCrypto):
@@ -459,7 +466,7 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
             if not 0 < k <= int(self.pp["ring_n"]):
                 raise FEValidationError("plaintext column count must be 1..ring_n")
             ct = self._encrypt_rows([int_vector(row, "plaintext row", length=k, bound=bound) for row in lst_pt])
-            ct["k"] = k
+            FullySecRingLWECiphertext(ct).k = k
             return ct
         x = int_vector(lst_pt, "plaintext", length=eta, bound=bound)
         return self._encrypt_rows([[x_i] for x_i in x])
@@ -471,7 +478,7 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
         m = int(self.pp["m"])
         a_ntt = self._a_ntt()
         if "pk" not in self._cache:
-            self._cache["pk"] = _ntt_all(self.sk["pk"], q, root)
+            self._cache["pk"] = _ntt_all(FullySecRingLWEEncryptionKey(self.sk).pk, q, root)
         pk_ntt = self._cache["pk"]
         for _ in range(_MAX_TRIES):
             r_ntt = ntt_forward(discrete_gaussian_matrix(1, n, self.pp["sigma2"], sampler=sampler)[0], q, root)
@@ -494,10 +501,10 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
             for j, x_ij in enumerate(row):
                 poly[j] = (poly[j] + encode_message(x_ij, q, self.pp["p"])) % q
             ct.append(poly)
-        return {
-            "ct0": [[gp.digits(v) for v in ntt_inverse(c, q, root)] for c in ct0_ntt],
-            "ct": [[gp.digits(v) for v in poly] for poly in ct],
-        }
+        return FullySecRingLWECiphertext.new(
+            ct0=[[gp.digits(v) for v in ntt_inverse(c, q, root)] for c in ct0_ntt],
+            ct=[[gp.digits(v) for v in poly] for poly in ct],
+        ).to_dict()
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: list):
         """Return ``<x, y>``, or ``None`` if the decoded value exceeds ``eta X Y``;
@@ -511,21 +518,21 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
         """
         y = self._checked_key(dk, fusion_weight)
         q, _, root = self._ring()
-        values = self._decrypt_values(dct_ct, _ntt_all(dk["sk_y"], q, root), y)
-        if values is None or "k" in dct_ct:
+        values = self._decrypt_values(dct_ct, _ntt_all(FullySecRingLWEFunctionalKey(dk).sk_y, q, root), y)
+        if values is None or "k" in FullySecRingLWECiphertext(dct_ct):
             return values
         return values[0]
 
     def _checked_key(self, dk: dict, fusion_weight: list) -> list:
         """The weights *fusion_weight*, checked against *dk* and the parameters."""
-        if not dk or "sk_y" not in dk:
+        if not dk or "sk_y" not in FullySecRingLWEFunctionalKey(dk):
             raise FEKeyError("no decryption key provided")
         y = int_vector(
             fusion_weight, "fusion weight", length=self.pp["eta"], bound=int(self.pp["bound_y"])
         )
-        if y != dk.get("y"):
+        if y != FullySecRingLWEFunctionalKey(dk).get("y"):
             raise FESchemeError("fusion weights differ from those of the decryption key")
-        sk_y = dk["sk_y"]
+        sk_y = FullySecRingLWEFunctionalKey(dk).sk_y
         if len(sk_y) != int(self.pp["m"]) or any(len(poly) != int(self.pp["ring_n"]) for poly in sk_y):
             raise FEValidationError("ciphertext or key does not match the parameters")
         return y
@@ -535,6 +542,7 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
         length), or ``None`` if one exceeds ``eta X Y``; *sk_ntt* is ``NTT(sk_y)``."""
         q, n, root = self._ring()
         m = int(self.pp["m"])
+        dct_ct = FullySecRingLWECiphertext(dct_ct)
         ct0, ct = dct_ct.get("ct0", []), dct_ct.get("ct", [])
         k = dct_ct.get("k", 1)
         if "k" in dct_ct and (
@@ -590,7 +598,7 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
             if not flat:
                 raise FEValidationError("cannot pack an empty array")
             chunks = [self.encrypt([flat[j:j + n]]) for j in range(0, len(flat), n)]
-            out.append({"shape": list(ary.shape), "first_chunk": first, "chunks": chunks})
+            out.append(FullySecRingLWELayer.new(shape=list(ary.shape), first_chunk=first, chunks=chunks).to_dict())
             first += len(chunks)
         return out
 
@@ -610,7 +618,7 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
                 if key is None:
                     y = self._checked_key(dk, fusion_weight)
                     q, _, root = self._ring()
-                    key = (y, _ntt_all(dk["sk_y"], q, root))
+                    key = (y, _ntt_all(FullySecRingLWEFunctionalKey(dk).sk_y, q, root))
                 shape, chunks = self._checked_packed_layer(ary, l, first)
                 out.append(self._decrypt_packed_layer(shape, chunks, l, *key))
                 first += len(chunks)
@@ -637,21 +645,22 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
             return isinstance(v, (int, np.integer)) and not isinstance(v, bool)
 
         n = int(self.pp["ring_n"])
-        if not isinstance(layer, dict) or set(layer) != {"shape", "first_chunk", "chunks"}:
+        if not isinstance(layer, dict) or set(layer) != set(FullySecRingLWELayer.FIELDS):
             raise FEValidationError("packed layer {} must be a dict of shape, first_chunk and chunks".format(l))
-        shape, chunks = layer["shape"], layer["chunks"]
+        layer = FullySecRingLWELayer(layer)
+        shape, chunks = layer.shape, layer.chunks
         if not isinstance(shape, (list, tuple)) or len(shape) > 32 or not all(whole(v) and v >= 0 for v in shape):
             raise FEValidationError("packed layer {} has an invalid shape {!r}".format(l, shape))
         shape = tuple(int(v) for v in shape)
-        if not whole(layer["first_chunk"]) or layer["first_chunk"] != first:
+        if not whole(layer.first_chunk) or layer.first_chunk != first:
             raise FEValidationError(
-                "packed layer {} starts at chunk {!r}, expected {}".format(l, layer["first_chunk"], first)
+                "packed layer {} starts at chunk {!r}, expected {}".format(l, layer.first_chunk, first)
             )
         if not isinstance(chunks, list) or not chunks or not all(
-            isinstance(chunk, dict) and whole(chunk.get("k")) for chunk in chunks
+            isinstance(chunk, dict) and whole(FullySecRingLWECiphertext(chunk).get("k")) for chunk in chunks
         ):
             raise FEValidationError("packed layer {} needs a non-empty list of packed ciphertexts".format(l))
-        ks = [int(chunk["k"]) for chunk in chunks]
+        ks = [int(FullySecRingLWECiphertext(chunk).k) for chunk in chunks]
         if any(k != n for k in ks[:-1]) or not 0 < ks[-1] <= n or sum(ks) != math.prod(shape):
             raise FEValidationError(
                 "packed layer {} has chunks of {} elements; its shape {} needs {} in chunks of "
@@ -663,7 +672,7 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
         values = []
         for chunk in chunks:
             vals = self._decrypt_values(chunk, sk_ntt, y)
-            values.extend([None] * chunk["k"] if vals is None else vals)
+            values.extend([None] * FullySecRingLWECiphertext(chunk).k if vals is None else vals)
         ary = np.empty(len(values), dtype=object)
         ary[:] = values
         return decoded_layer(ary.reshape(shape), l, 10 ** self.precision)

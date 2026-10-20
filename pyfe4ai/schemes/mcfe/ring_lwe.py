@@ -66,6 +66,12 @@ from pyfe4ai.primitives.hashing import LEGACY_LABEL_HASH
 from pyfe4ai.primitives.hashing import hash_to_zq_material
 from pyfe4ai.primitives.hashing import hash_to_zq_vector
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.formats.ring_lwe import MCFERingLWEEncryptionKey
+from pyfe4ai.core.formats.ring_lwe import MCFERingLWEFunctionalKey
+from pyfe4ai.core.formats.ring_lwe import MCFERingLWEParameters
+from pyfe4ai.core.formats.ring_lwe import MIFERingLWEFunctionalKey
+from pyfe4ai.core.formats.ring_lwe import RingLWECiphertext
+from pyfe4ai.core.formats.ring_lwe import RingLWELayer
 from pyfe4ai.core.versions import check_ciphertext_label_hashes
 from pyfe4ai.core.versions import check_encryption_key_label_hash
 from pyfe4ai.core.versions import check_key_label_hash
@@ -114,6 +120,7 @@ def chunk_key_index(layer: dict, j: int, n_keys: int) -> int:
         FESchemeError: Unless the layer's ``first_chunk`` is a non-negative
             integer and all its chunks have a key among the *n_keys*.
     """
+    layer = RingLWELayer(layer)
     first = layer.get("first_chunk")
     n_chunks = len(layer.get("chunks", []))
     if (
@@ -141,9 +148,9 @@ class MCFERingLWEKeyGenerator(MIFERingLWEKeyGenerator):
 
     def get_public_parameters(self) -> dict:
         """MIFE public parameters plus ``label_hash``."""
-        pp = super().get_public_parameters()
-        pp["label_hash"] = self.label_hash
-        return pp
+        pp = MCFERingLWEParameters(super().get_public_parameters())
+        pp.label_hash = self.label_hash
+        return pp.to_dict()
 
     def setup(self) -> None:
         """MIFE setup plus a secret ``u'_i`` for every client."""
@@ -155,9 +162,10 @@ class MCFERingLWEKeyGenerator(MIFERingLWEKeyGenerator):
         sk = super().get_private_keys(nid)
         if sk is None:
             return None
-        sk["u_prime"] = self.msk["u_prime"][nid]
-        sk["label_hash"] = self.label_hash
-        return sk
+        key = MCFERingLWEEncryptionKey(sk)
+        key.u_prime = self.msk["u_prime"][nid]
+        key.label_hash = self.label_hash
+        return key.to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Derive the key for weights ``y`` and label ``l`` (identity-based).
@@ -182,8 +190,10 @@ class MCFERingLWEKeyGenerator(MIFERingLWEKeyGenerator):
         fusion_weight = credentials.get("fusion_weight")
         key = super().get_decryption_keys(sid, credentials={"fusion_weight": fusion_weight})
         labels = [label] + [chunk_label(label, c) for c in range(n_chunks)]
-        terms = self._label_terms(key["z"], fusion_weight, labels)
-        return self._with_label_hash({"sk_y": key["sk_y"], "z": terms[0], "z_chunks": terms[1:], "label": label})
+        key = MIFERingLWEFunctionalKey(key)
+        terms = self._label_terms(key.z, fusion_weight, labels)
+        return self._with_label_hash(
+            MCFERingLWEFunctionalKey.new(sk_y=key.sk_y, z=terms[0], z_chunks=terms[1:], label=label).to_dict())
 
     def _label_terms(self, base, fusion_weight: dict, labels: list, binary: bool = False) -> list:
         """``z'' = base + sum_i y_i H(u'_i, l)`` of every label of *labels* as
@@ -216,7 +226,7 @@ class MCFERingLWEKeyGenerator(MIFERingLWEKeyGenerator):
 
     def _with_label_hash(self, key: dict) -> dict:
         """The key, marked with its ``label_hash``."""
-        key["label_hash"] = self.label_hash
+        MCFERingLWEFunctionalKey(key).label_hash = self.label_hash
         return key
 
 
@@ -273,7 +283,7 @@ class MCFERingLWE(MIFERingLWE):
         as in versions <= 0.3.0)."""
         code = label_hash_code(self.label_hash)
         if code is not None:
-            ct["label_hash"] = code
+            RingLWECiphertext(ct).label_hash = code
         return ct
 
     def _mark_layers(self, layers: list) -> list:
@@ -292,9 +302,9 @@ class MCFERingLWE(MIFERingLWE):
                 if not isinstance(layer, dict):
                     continue  # malformed: the decryption reports it
                 check_ciphertext_label_hashes((layer,), mode, nid)
-                chunks = layer.get("chunks")
+                chunks = RingLWELayer(layer).get("chunks")
                 check_ciphertext_label_hashes(
-                    [ct for ct in chunks if isinstance(ct, dict) and "label_hash" in ct]
+                    [ct for ct in chunks if isinstance(ct, dict) and "label_hash" in RingLWECiphertext(ct)]
                     if isinstance(chunks, (list, tuple)) else (), mode, nid)
 
     def _decrypt_layer_native(self, ctx, dict_ndarray_ct, l, layer, dk, fusion_weight, sk_hats):
@@ -302,19 +312,20 @@ class MCFERingLWE(MIFERingLWE):
         the checks of :meth:`_decrypt_with_key_term` per chunk; ``None`` if the
         native code does not handle the input (then the Python loop runs)."""
         chunk_cts, zs, ks = [], [], []
-        for j in range(len(layer["chunks"])):
-            dct_ct = {nid: dict_ndarray_ct[nid][l]["chunks"][j] for nid in dict_ndarray_ct}
-            zs.append(dk["z_chunks"][chunk_key_index(layer, j, len(dk["z_chunks"]))])
-            if set(dct_ct) != set(dk["sk_y"]) or set(dct_ct) != set(fusion_weight):
+        key = MCFERingLWEFunctionalKey(dk)
+        for j in range(len(RingLWELayer(layer).chunks)):
+            dct_ct = {nid: RingLWELayer(dict_ndarray_ct[nid][l]).chunks[j] for nid in dict_ndarray_ct}
+            zs.append(key.z_chunks[chunk_key_index(layer, j, len(key.z_chunks))])
+            if set(dct_ct) != set(key.sk_y) or set(dct_ct) != set(fusion_weight):
                 raise FESchemeError("need one ciphertext for every client of the key")
-            batch = {int(ct["k"]) for ct in dct_ct.values()}
+            batch = {int(RingLWECiphertext(ct).k) for ct in dct_ct.values()}
             if len(batch) != 1:
                 raise FESchemeError("ciphertexts of different batch lengths")
             chunk_cts.append(dct_ct)
             ks.append(batch.pop())
         if not chunk_cts:
             return None
-        out = self._decrypt_native(ctx, chunk_cts, zs, ks, dk["sk_y"], fusion_weight, sk_hats)
+        out = self._decrypt_native(ctx, chunk_cts, zs, ks, key.sk_y, fusion_weight, sk_hats)
         if out is None:
             return None
         values, none = out
@@ -326,20 +337,20 @@ class MCFERingLWE(MIFERingLWE):
             ary[:] = values.tolist()
             if none is not None:
                 ary[none] = None
-            return decoded_layer(ary.reshape(layer["shape"]), l, scale)
+            return decoded_layer(ary.reshape(RingLWELayer(layer).shape), l, scale)
         # int64 / int as float64: exact here, the same floats as decoded_layer's int / int
-        return (values.reshape(layer["shape"]) / scale).astype(float)
+        return (values.reshape(RingLWELayer(layer).shape) / scale).astype(float)
 
     def _pad(self, label) -> list:
         return label_pad(
-            self.sk["u_prime"], label, gp.mpz(self.pp["q"]), self.pp["eta"], self.pp["ring_n"],
+            MCFERingLWEEncryptionKey(self.sk).u_prime, label, gp.mpz(self.pp["q"]), self.pp["eta"], self.pp["ring_n"],
             self._encryption_label_hash(),
         )
 
     def encrypt(self, matrix_pt: list[list[int]], label: str) -> dict:
         """Encrypt this client's matrix under *label* (once per client and label)."""
         rows = self._check_plaintext(matrix_pt)
-        if "u_prime" not in self.sk:
+        if "u_prime" not in MCFERingLWEEncryptionKey(self.sk):
             raise FEKeyError("encryption key lacks u_prime")
         if not isinstance(label, str):
             raise FEValidationError("label must be a string")
@@ -352,34 +363,35 @@ class MCFERingLWE(MIFERingLWE):
             FESchemeError: If the key was derived for another label or the
                 ciphertexts do not cover exactly the key's clients.
         """
-        if not dk or "z" not in dk:
+        if not dk or "z" not in MCFERingLWEFunctionalKey(dk):
             raise FEKeyError("no decryption key provided")
-        if dk.get("label") != label:
+        if MCFERingLWEFunctionalKey(dk).get("label") != label:
             raise FESchemeError("the key was derived for another label")
         self._check_key_label_hash(dk)
         for nid, ct in dct_ct.items():
             check_ciphertext_label_hashes((ct,), self.label_hash, nid)
-        return self._decrypt_with_key_term(dct_ct, dk, dk["z"], fusion_weight)
+        return self._decrypt_with_key_term(dct_ct, dk, MCFERingLWEFunctionalKey(dk).z, fusion_weight)
 
     def _decrypt_with_key_term(self, dct_ct, dk, z, fusion_weight, sk_hats=None) -> list:
-        if set(dct_ct) != set(dk["sk_y"]) or set(dct_ct) != set(fusion_weight):
+        sk_y = MCFERingLWEFunctionalKey(dk).sk_y
+        if set(dct_ct) != set(sk_y) or set(dct_ct) != set(fusion_weight):
             raise FESchemeError("need one ciphertext for every client of the key")
-        batch = {int(ct["k"]) for ct in dct_ct.values()}
+        batch = {int(RingLWECiphertext(ct).k) for ct in dct_ct.values()}
         if len(batch) != 1:
             raise FESchemeError("ciphertexts of different batch lengths")
-        return self._decrypt_with_pad_term(dct_ct, dk["sk_y"], z, fusion_weight, batch.pop(), sk_hats)
+        return self._decrypt_with_pad_term(dct_ct, sk_y, z, fusion_weight, batch.pop(), sk_hats)
 
     @staticmethod
     def key_chunks(lst_ndarray_ct: list) -> int:
         """Number of chunk keys needed for the output of :meth:`encrypt_lst_ndarray`."""
-        return sum(len(layer["chunks"]) for layer in lst_ndarray_ct)
+        return sum(len(RingLWELayer(layer).chunks) for layer in lst_ndarray_ct)
 
     def _check_layer(self, ary_src) -> np.ndarray:
         """The checks of :meth:`_check_plaintext` for a whole ndarray layer
         (``scale_to_int`` already returns integers); its values as ``int64``."""
         ints = scale_to_int(ary_src, self.precision).ravel()
         self._check_encryption_keys()
-        if "u" not in self.sk:
+        if "u" not in MCFERingLWEEncryptionKey(self.sk):
             raise FEKeyError("encryption key lacks the one-time pad u")
         if ints.size and int(np.max(np.abs(ints))) > int(self.pp["bound_x"]):
             raise FEValidationError("plaintext row exceeds the bound {}".format(int(self.pp["bound_x"])))
@@ -415,7 +427,7 @@ class MCFERingLWE(MIFERingLWE):
             n_layer = max(1, math.ceil(ints.size / ring_n))
             nkey = self._native_encryption_key() if ints.size else None
             if nkey is not None:  # one native call for the whole layer, same ciphertexts
-                u_prime = self.sk["u_prime"]
+                u_prime = MCFERingLWEEncryptionKey(self.sk).u_prime
                 res = native_backend.ext().encrypt_tensor(
                     nkey, np.ascontiguousarray(ints, dtype=np.int64),
                     [label_pad_material(u_prime, chunk_label(label, chunk + j), mode) for j in range(n_layer)],
@@ -424,7 +436,8 @@ class MCFERingLWE(MIFERingLWE):
                     native_backend.get_threads(), self.ct_format == "binary", **native_backend.seed_kwargs(),
                     **native_backend.noise_kwargs(self.pp["sigma2"], self.pp["sigma3"], sampler=self.gaussian_sampler),
                 )
-                out.append({"shape": list(np.shape(ary_src)), "first_chunk": chunk, "chunks": self._native_cts(res)})
+                out.append(RingLWELayer.new(shape=list(np.shape(ary_src)), first_chunk=chunk,
+                                            chunks=self._native_cts(res)).to_dict())
                 chunk += n_layer
                 continue
             flat = ints.tolist()
@@ -435,14 +448,14 @@ class MCFERingLWE(MIFERingLWE):
                     self._check_plaintext([part])  # an empty layer: refused as before
                 rows = self._padded_rows([part], extra_pad=self._pad(chunk_label(label, chunk + j)))
                 cts.append(self._encrypt_rows(rows, len(part)))
-            out.append({"shape": list(np.shape(ary_src)), "first_chunk": chunk, "chunks": cts})
+            out.append(RingLWELayer.new(shape=list(np.shape(ary_src)), first_chunk=chunk, chunks=cts).to_dict())
             chunk += n_layer
         return self._mark_layers(out)
 
     def _native_cts(self, res: list) -> list:
         if self.ct_format == "binary":
-            return [{"ct": data, "k": k} for data, k in res]
-        return [{"ct0": ct0, "ct1": ct1, "k": k} for ct0, ct1, k in res]
+            return [RingLWECiphertext.new(ct=data, k=k).to_dict() for data, k in res]
+        return [RingLWECiphertext.new(ct0=ct0, ct1=ct1, k=k).to_dict() for ct0, ct1, k in res]
 
     def precompute(self, label: str, shapes) -> "RingLWEPrecomputation":
         """Offline phase of :meth:`encrypt_lst_ndarray` for layers of these shapes.
@@ -471,9 +484,10 @@ class MCFERingLWE(MIFERingLWE):
         if not isinstance(label, str):
             raise FEValidationError("label must be a string")
         self._check_encryption_keys()
-        if "u" not in self.sk:
+        sk = MCFERingLWEEncryptionKey(self.sk)
+        if "u" not in sk:
             raise FEKeyError("encryption key lacks the one-time pad u")
-        u_prime = self.sk["u_prime"]
+        u_prime = sk.u_prime
         ring_n = self.pp["ring_n"]
         shapes = [tuple(int(d) for d in shape) if isinstance(shape, (tuple, list)) else (int(shape),)
                   for shape in shapes]
@@ -537,7 +551,7 @@ class MCFERingLWE(MIFERingLWE):
                     rows[first + j] = None
                     ct0 = [(p + delta * x) % q for p, x in zip(p_row, part)] + p_row[len(part):]
                     cts.append(self._format_ciphertext([ct0], ct1, len(part)))
-            out.append({"shape": list(shape), "first_chunk": first, "chunks": cts})
+            out.append(RingLWELayer.new(shape=list(shape), first_chunk=first, chunks=cts).to_dict())
         return out
 
     def _key_src(self) -> tuple:
@@ -563,12 +577,13 @@ class MCFERingLWE(MIFERingLWE):
         label = kwargs.get("label", None)
         if dk is None or fusion_weight is None or label is None:
             raise FEKeyError("need to provide decryption key, fusion weight and label")
-        if dk.get("label") != label:
+        key = MCFERingLWEFunctionalKey(dk)
+        if key.get("label") != label:
             raise FESchemeError("the key was derived for another label")
         self._check_key_label_hash(dk)
         self._check_layers_label_hash(dict_ndarray_ct)
         sample = next(iter(dict_ndarray_ct.values()))
-        if self.key_chunks(sample) > len(dk.get("z_chunks", [])):
+        if self.key_chunks(sample) > len(key.get("z_chunks", [])):
             raise FEKeyError("the key covers fewer chunks than the ciphertexts")
         sk_hats = {}  # NTT(sk_i), transformed once for all chunks
         ctx = self._native()
@@ -580,11 +595,11 @@ class MCFERingLWE(MIFERingLWE):
                     result.append(ary)
                     continue
             values = []
-            for j in range(len(layer["chunks"])):
-                dct_ct = {nid: dict_ndarray_ct[nid][l]["chunks"][j] for nid in dict_ndarray_ct}
-                z = dk["z_chunks"][chunk_key_index(layer, j, len(dk["z_chunks"]))]
+            for j in range(len(RingLWELayer(layer).chunks)):
+                dct_ct = {nid: RingLWELayer(dict_ndarray_ct[nid][l]).chunks[j] for nid in dict_ndarray_ct}
+                z = key.z_chunks[chunk_key_index(layer, j, len(key.z_chunks))]
                 values.extend(self._decrypt_with_key_term(dct_ct, dk, z, fusion_weight, sk_hats))
             ary = np.empty(len(values), dtype=object)
             ary[:] = values
-            result.append(decoded_layer(ary.reshape(layer["shape"]), l, 10 ** self.precision))
+            result.append(decoded_layer(ary.reshape(RingLWELayer(layer).shape), l, 10 ** self.precision))
         return result
