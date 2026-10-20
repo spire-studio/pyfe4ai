@@ -25,13 +25,44 @@ ABDP15 LWE Base
    :members:
    :undoc-members:
 
-Threshold Utilities
--------------------
+Threshold Schemes
+-----------------
 
 .. automodule:: pyfe4ai.schemes.threshold
    :no-members:
 
-.. automodule:: pyfe4ai.schemes.threshold.threshold_utils
+Key Sharing
+-----------
+
+.. automodule:: pyfe4ai.schemes.threshold.sharing
+   :members:
+   :undoc-members:
+
+Binding and Versions
+--------------------
+
+.. automodule:: pyfe4ai.schemes.threshold.binding
+   :members:
+   :undoc-members:
+
+Encodings
+---------
+
+.. automodule:: pyfe4ai.schemes.threshold.codec
+   :members:
+   :undoc-members:
+
+Stores and Caches
+-----------------
+
+.. automodule:: pyfe4ai.schemes.threshold.store
+   :members:
+   :undoc-members:
+
+Servers and Combiners
+---------------------
+
+.. automodule:: pyfe4ai.schemes.threshold.roles
    :members:
    :undoc-members:
 

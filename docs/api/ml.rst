@@ -41,7 +41,7 @@ objects:
 Every partial decryption carries the ``sharing_id`` of the server's key
 share. Keep it when partials (or key shares) are stored or transmitted by
 other means: the combiner refuses partials of two sharings of one key
-(:class:`~pyfe4ai.schemes.mcfe.ring_lwe_threshold.MixedSharingsError`; prepare
+(:class:`~pyfe4ai.schemes.threshold.binding.MixedSharingsError`; prepare
 the round again), but partials without an id combine only with each other,
 so dropping it on every side would let two sharings be mixed unnoticed.
 ``examples/mcfe_ring_lwe_threshold_demo.py`` runs both the scheme classes and

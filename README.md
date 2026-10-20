@@ -297,7 +297,7 @@ side-channel hardening, trusted parameter cache) still apply.
     - `mcfe/`: multi-client families
     - `quadratic/`: quadratic functional encryption families
     - `common/`: DDH and EC-DDH base classes, `abdp15_lwe.py` (shared ABDP15 parameters and seeded public matrix of SIFE- and MIFE-LWE), configuration types
-    - `threshold/`: `threshold_utils.py` (Shamir and replicated sharing, client MAC tags and partial-decryption checks of the threshold schemes), `flooding_accounting.py`
+    - `threshold/`: shared modules of the threshold schemes: `sharing.py` (Shamir, replicated and seeded replicated sharing), `binding.py` (`pp_binding`, construction ids, client MAC tags, sharing ids, state versions), `codec.py` (JSON and binary encodings, strict parsing), `store.py` (key-share stores and caches), `roles.py` (server checks, flooding noise, combination), `kl.py` (KL accounting of the flooding)
   - `primitives/`: cryptographic building blocks
     - `lattice/`: LWE / Ring-LWE parameters and NTT (`lwe_utils.py`, `ring_lwe_utils.py`), seeded public LWE matrices (`lwe_matrix.py`), arithmetic mod q (`matrix_utils.py`)
     - `sampling.py`: discrete Gaussian samplers; `hashing.py`: hashing to groups and to `Z_q` (label hashes)

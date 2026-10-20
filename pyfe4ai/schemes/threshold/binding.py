@@ -117,50 +117,49 @@ def check_served_sharing(pp: dict, dk: dict, constructions: dict) -> None:
 # public-parameter fields (:func:`pp_binding`; a missing field takes its
 # default)
 
-#: tMIFE-LWE (:mod:`pyfe4ai.schemes.mife.lwe_threshold`): Shamir sharing.
+#: The construction id of tMIFE-LWE (:mod:`pyfe4ai.schemes.mife.lwe_threshold`) with the Shamir sharing.
 TMIFE_LWE_CONSTRUCTION = "acfgu18-abdp15-shamir-smudging-seeded-a/v4"  # v4: flooding at bits + 320, sampler pinned
-#: tMIFE-LWE: Shamir sharing, KL accounting of the flooding.
+#: The construction id of tMIFE-LWE with the Shamir sharing and the KL accounting of the flooding.
 TMIFE_LWE_CONSTRUCTION_KL = "acfgu18-abdp15-shamir-smudging-kl/v2"
 # the parameters are those of the Shamir record; its own record keeps cached
 # Shamir records (t < s) of versions <= 0.3.0 from being taken for it
-#: tMIFE-LWE: replicated sharing.
+#: The construction id of tMIFE-LWE with the replicated sharing.
 TMIFE_LWE_CONSTRUCTION_REPLICATED = "acfgu18-abdp15-replicated-smudging-seeded-a/v1"
-#: tMIFE-LWE: seed-expanded replicated sharing.
+#: The construction id of tMIFE-LWE with the seed-expanded replicated sharing.
 TMIFE_LWE_CONSTRUCTION_REPLICATED_SEEDED = "acfgu18-abdp15-replicated-seeded-smudging-seeded-a/v1"
-#: tMIFE-LWE: ``{construction id: sharing}``.
+#: The sharing of each tMIFE-LWE construction id.
 TMIFE_LWE_CONSTRUCTIONS = {
     TMIFE_LWE_CONSTRUCTION: "shamir", TMIFE_LWE_CONSTRUCTION_KL: "shamir",
     TMIFE_LWE_CONSTRUCTION_REPLICATED: "replicated", TMIFE_LWE_CONSTRUCTION_REPLICATED_SEEDED: "replicated-seeded",
 }
-#: tMIFE-LWE: public-parameter fields a key share is bound to.
+#: The public-parameter fields a tMIFE-LWE key share is bound to.
 TMIFE_LWE_BINDING_FIELDS = (
     "q", "p", "lwe_n", "m", "eta", "n", "A_seed", "s", "t", "lst_sid", "sigma_f", "flood_tail_cut",
     "flooding_accounting", "max_partial_decryptions", "stat_param",
 )
-#: tMIFE-LWE: values of absent binding fields.
+#: The values of absent tMIFE-LWE binding fields.
 TMIFE_LWE_BINDING_DEFAULTS = {"flooding_accounting": "per-sample"}
 
 # recorded in the public parameters (those of versions <= 0.3.0 have none)
-#: tMCFE-LWE (:mod:`pyfe4ai.schemes.mcfe.lwe_threshold`): Shamir sharing.
+#: The construction id of tMCFE-LWE (:mod:`pyfe4ai.schemes.mcfe.lwe_threshold`) with the Shamir sharing.
 TMCFE_LWE_CONSTRUCTION = "abmpsw20-shamir-flooding/v1"
-#: tMCFE-LWE: replicated sharing.
+#: The construction id of tMCFE-LWE with the replicated sharing.
 TMCFE_LWE_CONSTRUCTION_REPLICATED = "abmpsw20-replicated-flooding/v1"
-#: tMCFE-LWE: seed-expanded replicated sharing.
+#: The construction id of tMCFE-LWE with the seed-expanded replicated sharing.
 TMCFE_LWE_CONSTRUCTION_REPLICATED_SEEDED = "abmpsw20-replicated-seeded-flooding/v1"
-#: tMCFE-LWE: ``{construction id: sharing}``.
+#: The sharing of each tMCFE-LWE construction id.
 TMCFE_LWE_CONSTRUCTIONS = {TMCFE_LWE_CONSTRUCTION: "shamir", TMCFE_LWE_CONSTRUCTION_REPLICATED: "replicated",
                            TMCFE_LWE_CONSTRUCTION_REPLICATED_SEEDED: "replicated-seeded"}
-#: tMCFE-LWE: public-parameter fields a key share is bound to, the label hash
-#: among them: one key share answering a label under two label hashes with the
-#: same noise would give ``w_A - w_B = lambda <share, H_A(l) - H_B(l)>`` exactly.
+#: The public-parameter fields a tMCFE-LWE key share is bound to, the label
+#: hash among them (one key share answering a label under two label hashes with
+#: the same noise would give ``w_A - w_B = lambda <share, H_A(l) - H_B(l)>`` exactly).
 TMCFE_LWE_BINDING_FIELDS = ("q", "q0", "K", "delta", "n0", "m0", "s", "t", "lst_sid", "sigma_f", "label_hash")
-#: tMCFE-LWE: values of absent binding fields.
+#: The values of absent tMCFE-LWE binding fields.
 TMCFE_LWE_BINDING_DEFAULTS = {"label_hash": LEGACY_LABEL_HASH}
 
-#: tMCFE-Ring-LWE (:mod:`pyfe4ai.schemes.mcfe.ring_lwe_threshold`): the
-#: parameter record (and public ``threshold_construction``) of a sharing and a
-#: flooding under the per-sample accounting (``"kl"``:
-#: :data:`TMCFE_RING_LWE_CONSTRUCTION_KL`).
+#: The parameter record (and public ``threshold_construction``) of a sharing
+#: and a flooding of tMCFE-Ring-LWE (:mod:`pyfe4ai.schemes.mcfe.ring_lwe_threshold`)
+#: under the per-sample accounting (``"kl"``: :data:`TMCFE_RING_LWE_CONSTRUCTION_KL`).
 TMCFE_RING_LWE_CONSTRUCTION_IDS = {
     ("shamir", "gaussian"): "bmms21-ibmcfe-shamir-smudging/v2",  # v2: flooding at bits + 320, sampler pinned
     ("shamir", "uniform"): "bmms21-ibmcfe-shamir-smudging-uniform/v1",
@@ -171,25 +170,25 @@ TMCFE_RING_LWE_CONSTRUCTION_IDS = {
     ("replicated-seeded", "gaussian"): "bmms21-ibmcfe-replicated-seeded-smudging/v1",
     ("replicated-seeded", "uniform"): "bmms21-ibmcfe-replicated-seeded-smudging-uniform/v1",
 }
-#: tMCFE-Ring-LWE: Shamir sharing, Gaussian flooding, KL accounting.
+#: The construction id of tMCFE-Ring-LWE with the Shamir sharing, Gaussian flooding and KL accounting.
 TMCFE_RING_LWE_CONSTRUCTION_KL = "bmms21-ibmcfe-shamir-smudging-kl/v2"
-#: tMCFE-Ring-LWE: ``{construction id: sharing}``.
+#: The sharing of each tMCFE-Ring-LWE construction id.
 TMCFE_RING_LWE_CONSTRUCTIONS = {
     construction: sharing for (sharing, _), construction in TMCFE_RING_LWE_CONSTRUCTION_IDS.items()
 }
 TMCFE_RING_LWE_CONSTRUCTIONS[TMCFE_RING_LWE_CONSTRUCTION_KL] = "shamir"
-#: tMCFE-Ring-LWE: public-parameter fields a key share is bound to: what its
-#: partial decryptions depend on beyond the sharing and the construction.
+#: The public-parameter fields a tMCFE-Ring-LWE key share is bound to (what
+#: its partial decryptions depend on beyond the sharing and the construction).
 TMCFE_RING_LWE_BINDING_FIELDS = (
     "q", "p", "ring_n", "eta", "s", "t", "lst_sid", "flooding", "flood_bits", "sigma_f", "flood_tail_cut",
     "flooding_accounting", "max_partial_decryptions", "stat_param", "label_hash",
 )
-#: tMCFE-Ring-LWE: values of absent binding fields.
+#: The values of absent tMCFE-Ring-LWE binding fields.
 TMCFE_RING_LWE_BINDING_DEFAULTS = {"flooding": "gaussian", "flooding_accounting": "per-sample",
                                    "label_hash": "shake256-wide"}
-#: tMCFE-Ring-LWE: fields bound only where the public parameters have them (the
-#: digests of public parameters without them, of earlier versions too, stay as
-#: they were).
+#: The tMCFE-Ring-LWE fields bound only where the public parameters have them
+#: (the digests of public parameters without them, of earlier versions too, stay
+#: as they were).
 TMCFE_RING_LWE_OPTIONAL_BINDING_FIELDS = ("ct_format", "q_factors")
 
 
@@ -425,9 +424,9 @@ def check_partials_sharing(partials: list) -> None:
         raise MixedSharingsError(MIXED_SHARINGS)
 
 
-#: The version of the pickled state of the tMCFE-Ring-LWE objects: a state
-#: pickled by another version of pyfe4ai (other attributes, other derivations)
-#: is refused when loaded.
+#: The version of the pickled state of the tMCFE-Ring-LWE objects (a state
+#: pickled by another version of pyfe4ai, with other attributes or other
+#: derivations, is refused when loaded).
 TMCFE_RING_LWE_STATE_VERSION = "pyfe4ai/tmcfe-ring-lwe/state/2026-10-3"
 
 

@@ -47,8 +47,40 @@ upgrade notes first.**
   | `pyfe4ai.schemes.status`, `pyfe4ai.schemes.profiles` | `pyfe4ai.core.status`, `pyfe4ai.core.profiles` |
   | `pyfe4ai.schemes.one_time`, `pyfe4ai.schemes.random_offline` | `pyfe4ai.core.one_time` |
   | `pyfe4ai.schemes.abdp15_lwe`, `.ddh_base`, `.ec_ddh_base`, `.config_types` | `pyfe4ai.schemes.common.abdp15_lwe`, `.ddh_base`, `.ec_ddh_base`, `.config_types` |
-  | `pyfe4ai.schemes.threshold_utils`, `pyfe4ai.schemes.flooding_accounting` | `pyfe4ai.schemes.threshold.threshold_utils`, `pyfe4ai.schemes.threshold.kl` |
+  | `pyfe4ai.schemes.threshold_utils` | split into `pyfe4ai.schemes.threshold.sharing`, `.binding`, `.codec`, `.store` and `.roles` (names unchanged; see the next table) |
+  | `pyfe4ai.schemes.flooding_accounting` | `pyfe4ai.schemes.threshold.kl` |
   | `pyfe4ai.logger` (`init_logging_config`), `pyfe4ai/config.yaml` | removed (see Logging) |
+
+  The threshold schemes share these modules (`schemes.threshold`):
+  `sharing` (Shamir, replicated and seed-expanded replicated sharing, dealt
+  and added up for an enrolled set), `binding` (what key shares,
+  ciphertexts and partial decryptions are bound to: `pp_binding`, the
+  construction ids and binding fields of each threshold LWE scheme, weights,
+  client MAC tags, sharing ids, formats, state versions), `codec` (encodings
+  of key material, threshold ciphertexts and partial decryptions, strict
+  parsing), `store` (stores and caches of key-share parts and sums, their
+  locks), `roles` (server and combiner logic: checks, the flooding noise,
+  combination) and `kl`. `mcfe/ring_lwe_threshold` keeps the scheme's key
+  generation and encryption and decryption flow; `mife/lwe_threshold` and
+  `mcfe/lwe_threshold` use the same modules where they duplicated code (the
+  replicated dealing, the server checks, the noise seed, the Gaussian
+  flooding sample). Names moved (those of `mcfe.ring_lwe_threshold` other
+  than the private constants were added after v0.3.0 and are listed for code
+  written against the development branch):
+
+  | Old | New |
+  |---|---|
+  | `threshold_utils`: `eval_poly`, `share_secret`, `lagrange_coefficient_at_zero`, `lagrange_at_zero`, `center_mod`, `share_points`, `validate_threshold`, `SHARING_SCHEMES`, `validate_sharing`, `resolve_sharing`, `replicated_sets`, `replicated_assignment`, `share_replicated`, `pieces_held`, `SEED_BYTES`, `piece_layout`, `expand_seeded_piece`, `share_replicated_seeded`, `seeded_pieces_held`, `share_for_enrolled` | `pyfe4ai.schemes.threshold.sharing` |
+  | `threshold_utils`: `pp_binding`, `check_pp_binding`, `check_served_sharing`, `fusion_weight_id`, `check_fusion_weight`, `client_server_mac_keys`, `ciphertext_tag`, `tag_ciphertext`, `check_ciphertext_tags`, `tag_ciphertext_message`, `check_ciphertext_tag_messages` | `pyfe4ai.schemes.threshold.binding` |
+  | `threshold_utils`: `strict_mpz`, `poly_kinds`, `uniform_material`, `binary_material`, `ciphertexts_digest` | `pyfe4ai.schemes.threshold.codec` |
+  | `threshold_utils`: `SHARE_CACHE_SIZE`, `share_cache` | `pyfe4ai.schemes.threshold.store` |
+  | `threshold_utils`: `LEGACY_SHAMIR_POLICIES`, `legacy_shamir_policy`, `validate_enrolled`, `validate_partial_decryptions`, `partial_groups`, `combine_consistently`, `combine_elementwise` | `pyfe4ai.schemes.threshold.roles` |
+  | `mcfe.ring_lwe_threshold`: `MixedSharingsError`, `MIXED_SHARINGS`, `CT_FORMATS`, `pp_ct_format`, `binding_fields` | `pyfe4ai.schemes.threshold.binding`: the same names, `binding_fields` as `tmcfe_ring_lwe_binding_fields` |
+  | `mcfe.ring_lwe_threshold`: `WEIGHT_SHARINGS_KEPT`, `LABEL_PARTS_KEPT` | `pyfe4ai.schemes.threshold.store` (set them there) |
+  | `mcfe.ring_lwe_threshold`: `binary_ciphertext_digests`, `binary_tag_message`, `binary_request_digests` | `pyfe4ai.schemes.threshold.codec` |
+  | `mcfe.ring_lwe_threshold`: `uniform_flooding_poly`, `uniform_flooding_material`; `mcfe.lwe_threshold.flooding_noise` | `pyfe4ai.schemes.threshold.roles` |
+  | `mcfe.ring_lwe_threshold`: `check_rns_servers` | `pyfe4ai.schemes.threshold.sharing` |
+  | the construction ids, binding fields and defaults of `mife/lwe_threshold`, `mcfe/lwe_threshold` and `mcfe/ring_lwe_threshold`, and the latter's state version (private constants) | `pyfe4ai.schemes.threshold.binding`: `TMIFE_LWE_*`, `TMCFE_LWE_*`, `TMCFE_RING_LWE_*` (the same values) |
 
   Objects pickled by an earlier version that refer to a moved module (for
   example a pickled `FESchemeWrapper`, which holds a `QuantizationConfig`)
@@ -115,7 +147,7 @@ upgrade notes first.**
     the server; `has_weight_key_share`), then per round only the shares of
     the label terms, which `get_decryption_keys` returns unless
     `key_part="full"`. The key generator keeps the sharings of the last 64
-    weight vectors (`WEIGHT_SHARINGS_KEPT`); weights issued again after that
+    weight vectors (`threshold.store.WEIGHT_SHARINGS_KEPT`); weights issued again after that
     get a new share set, and their servers need the new weight part;
   * uniform flooding of the partial decryptions (`flooding="uniform"`, noise
     on `[-2^tau, 2^tau)` with `tau = bits(B) + stat_param`, read from the
@@ -137,11 +169,12 @@ upgrade notes first.**
   generator issues -- whole key shares, or the label parts of one label --
   has a random `sharing_id`, which the partial decryptions carry. Partials of
   two sharings of one key would decode to a wrong value inside the decoding
-  bound rather than fail, so combiners refuse them (`MixedSharingsError`:
+  bound rather than fail, so combiners refuse them
+  (`pyfe4ai.schemes.threshold.binding.MixedSharingsError`:
   fetch the label parts again for all servers; the ML adapter's
   `aggregate_gradients` does this once by itself). A label part asked for
   again after it left the key generator's cache (the last 16 labels per
-  weight vector, `LABEL_PARTS_KEPT`) is a new sharing. **Store and transmit
+  weight vector, `threshold.store.LABEL_PARTS_KEPT`) is a new sharing. **Store and transmit
   the `sharing_id` with every key share and partial decryption**: partials
   without one combine only with each other, so a layer that drops it on all
   sides would let two sharings be mixed unnoticed.

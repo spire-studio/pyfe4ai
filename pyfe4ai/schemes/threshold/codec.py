@@ -7,8 +7,8 @@ Encodings of the threshold artifacts and their strict parsing.
   little-endian, strictly below ``q``), and the kinds of its polynomials
   (:func:`poly_kinds`, :func:`uniform_material`).
 * The ciphertexts of the threshold MCFE over Ring-LWE
-  (:mod:`pyfe4ai.schemes.mcfe.ring_lwe_threshold`): JSON, tagged over
-  :func:`_tag_payload`, or format 2 of
+  (:mod:`pyfe4ai.schemes.mcfe.ring_lwe_threshold`): JSON, tagged over their
+  JSON form, or format 2 of
   :func:`~pyfe4ai.primitives.lattice.ring_lwe_utils.encode_threshold_ciphertext`
   with what their tags (:func:`binary_tag_message`) and the noise seeds
   (:func:`binary_request_digests`) hash; strict reading of both, and the
@@ -60,7 +60,7 @@ def binary_material(material, modulus):
 
 
 def _bytes_layout(material, width: int):
-    """The :func:`piece_layout` of binary key material (a bytes leaf: its
+    """The :func:`~pyfe4ai.schemes.threshold.sharing.piece_layout` of binary key material (a bytes leaf: its
     number of values), or ``None`` for leaves that are not whole words."""
     if isinstance(material, (bytes, bytearray)):
         return len(material) // width if len(material) % width == 0 else None
@@ -85,7 +85,8 @@ def _map_bytes(material, f):
 
 
 def _bytes_leaves(material):
-    """The bytes leaves of *material* in the order of :func:`_flatten_like`."""
+    """The bytes leaves of *material* in the order of
+    :func:`~pyfe4ai.schemes.threshold.sharing._flatten_like`."""
     if isinstance(material, (bytes, bytearray)):
         yield bytes(material)
     elif isinstance(material, dict):
@@ -173,7 +174,8 @@ def _has_bytes(material) -> bool:
 
 
 def _unflatten_bytes(layout, blob: bytes, wb: int):
-    """*blob* (the values of :func:`_flatten_like` as ``wb``-byte words) in the
+    """*blob* (the values of :func:`~pyfe4ai.schemes.threshold.sharing._flatten_like`
+    as ``wb``-byte words) in the
     structure of *layout*, every list of values (or single value) one bytes
     object."""
     pos = 0
@@ -198,7 +200,7 @@ def _unflatten_bytes(layout, blob: bytes, wb: int):
 
 def _poly_values(poly, q, ring_n: int) -> list:
     """A key-share polynomial as ``mpz``: a list or tuple of ``ring_n`` ints,
-    ``mpz`` or decimal strings (:func:`~pyfe4ai.schemes.threshold.threshold_utils.strict_mpz`),
+    ``mpz`` or decimal strings (:func:`strict_mpz`),
     or binary (``ceil(bits(q)/8)``-byte words, strictly below q).
 
     Raises:
@@ -290,8 +292,8 @@ def binary_ciphertext_digests(ct: dict, q, eta: int, ring_n: int) -> tuple:
 def binary_tag_message(pp_digest: bytes, encoded_label: str, ct: dict, digests: tuple) -> bytes:
     """What the tag of a format-2 ciphertext covers (HMAC-SHA256 under the
     client-server key): a domain, the digest of the public parameters
-    (:func:`~pyfe4ai.schemes.threshold.threshold_utils.pp_binding` over
-    :func:`binding_fields`), the (chunk) label, the ciphertext's ``label_hash``
+    (:func:`~pyfe4ai.schemes.threshold.binding.pp_binding` over
+    :func:`~pyfe4ai.schemes.threshold.binding.tmcfe_ring_lwe_binding_fields`), the (chunk) label, the ciphertext's ``label_hash``
     code (for an ndarray chunk its layer's; see ``_chunk_with_code``), the
     batch length and the digests of :func:`binary_ciphertext_digests`.
 
