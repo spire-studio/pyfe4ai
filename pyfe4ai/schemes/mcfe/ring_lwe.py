@@ -58,13 +58,10 @@ from pyfe4ai.core.base import decoded_layer
 from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWE
 from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWEKeyGenerator
 from pyfe4ai.core.one_time import OneTimePrecomputation
-from pyfe4ai import backend as native_backend
+from pyfe4ai import backend
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.primitives.hashing import DEFAULT_LABEL_HASH
-from pyfe4ai.primitives.hashing import LABEL_HASH_CODES
-from pyfe4ai.primitives.hashing import LEGACY_LABEL_HASH
 from pyfe4ai.primitives.hashing import hash_to_zq_material
-from pyfe4ai.primitives.hashing import hash_to_zq_vector
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.core.formats.ring_lwe import MCFERingLWEEncryptionKey
 from pyfe4ai.core.formats.ring_lwe import MCFERingLWEFunctionalKey
@@ -78,7 +75,6 @@ from pyfe4ai.core.versions import check_key_label_hash
 from pyfe4ai.core.versions import label_hash_code
 from pyfe4ai.core.versions import label_hash_mode
 from pyfe4ai.core.versions import pp_label_hash
-from pyfe4ai.core.formats.binary import encode_values
 from pyfe4ai._validation import scale_to_int
 
 logger = logging.getLogger(__name__)
@@ -88,29 +84,16 @@ _PAD_DOMAIN = "pyfe4ai/mcfe/ring_lwe/H(u',label)"
 
 def label_pad(u_prime: str, label, q, eta: int, ring_n: int, mode: str) -> list:
     """Return ``H(u'_i, label)`` as ``eta`` rows of ``ring_n`` coefficients mod q
-    (*mode*: the ``label_hash`` public parameter; expanded natively when the
+    (*mode*: the ``label_hash`` public parameter; expanded by the backend's
+    :meth:`~pyfe4ai.backend.interface.Ring.hash_to_zq`, natively when the
     extension has a context for ``(q, ring_n)``)."""
-    ctx = native_backend.ring_context(q, ring_n)
-    if ctx is not None:
-        words = native_backend.ext().hash_to_zq(
-            ctx.cap, label_pad_material(u_prime, label, mode), eta * ring_n, **native_hash_kwargs(mode)
-        )
-        flat = [gp.mpz(v) for v in ctx.unpack(words)]
-    else:
-        flat = hash_to_zq_vector(
-            "{}|{}".format(u_prime, encode_label(label)), q, eta * ring_n, domain=_PAD_DOMAIN, mode=mode
-        )
+    flat = backend.ring(q, ring_n).hash_to_zq(label_pad_material(u_prime, label, mode), eta * ring_n, mode)
     return [flat[r * ring_n:(r + 1) * ring_n] for r in range(eta)]
 
 
 def label_pad_material(u_prime: str, label, mode: str) -> bytes:
-    """The hash input of :func:`label_pad` (the native backend expands it itself)."""
+    """The hash input of :func:`label_pad` (the native kernels expand it themselves)."""
     return hash_to_zq_material("{}|{}".format(u_prime, encode_label(label)), domain=_PAD_DOMAIN, mode=mode)
-
-
-def native_hash_kwargs(mode: str) -> dict:
-    """The ``hash_mode`` keyword of the native pad kernels (none for the kernels' own ``"shake256-wide"``)."""
-    return {"hash_mode": LABEL_HASH_CODES[mode]} if mode != LEGACY_LABEL_HASH else {}
 
 
 def chunk_key_index(layer: dict, j: int, n_keys: int) -> int:
@@ -198,31 +181,17 @@ class MCFERingLWEKeyGenerator(MIFERingLWEKeyGenerator):
     def _label_terms(self, base, fusion_weight: dict, labels: list, binary: bool = False) -> list:
         """``z'' = base + sum_i y_i H(u'_i, l)`` of every label of *labels* as
         decimal strings (*base*: the MIFE key's ``z``; weights already
-        validated), natively in one call where possible (same values); with
-        *binary* as bytes of ``ceil(bits(q) / 8)``-byte words."""
-        ctx = native_backend.ring_context(self.q, self.ring_n)
-        if ctx is not None and not (binary and ctx.legacy_rns):
-            return native_backend.ext().pad_terms(
-                ctx.cap, base,
-                [[label_pad_material(self.msk["u_prime"][nid], lab, self.label_hash) for nid in self.lst_nid]
-                 for lab in labels],
-                [[int(v) for v in fusion_weight[nid]] for nid in self.lst_nid],
-                self.eta, native_backend.get_threads(), **native_hash_kwargs(self.label_hash),
-                **({"binary": True} if binary else {}),
-            )
-        base = [gp.mpz(v) for v in base]
-
-        def pad_term(lab) -> list:
-            z = list(base)
-            for nid in self.lst_nid:
-                pad = label_pad(self.msk["u_prime"][nid], lab, self.q, self.eta, self.ring_n, self.label_hash)
-                for y_row, pad_row in zip(fusion_weight[nid], pad):
-                    z = [acc + int(y_row) * h for acc, h in zip(z, pad_row)]
-            if binary:
-                return encode_values(z, self.q)
-            return [gp.digits(v % self.q) for v in z]
-
-        return [pad_term(lab) for lab in labels]
+        validated), by the backend's
+        :meth:`~pyfe4ai.backend.interface.Ring.label_terms` (natively in one
+        call where possible, the same values); with *binary* as bytes of
+        ``ceil(bits(q) / 8)``-byte words."""
+        return backend.ring(self.q, self.ring_n).label_terms(
+            base,
+            [[label_pad_material(self.msk["u_prime"][nid], lab, self.label_hash) for nid in self.lst_nid]
+             for lab in labels],
+            [[int(v) for v in fusion_weight[nid]] for nid in self.lst_nid],
+            self.eta, self.label_hash, binary,
+        )
 
     def _with_label_hash(self, key: dict) -> dict:
         """The key, marked with its ``label_hash``."""
@@ -259,8 +228,8 @@ class MCFERingLWE(MIFERingLWE):
         """The ``label_hash`` public parameter (see :func:`~pyfe4ai.core.versions.pp_label_hash`)."""
         return pp_label_hash(self.pp)
 
-    def _native_key_kwargs(self) -> dict:
-        return native_hash_kwargs(self.label_hash)
+    def _pad_hash_mode(self) -> str:
+        return self.label_hash
 
     def _check_key_label_hash(self, dk: dict) -> None:
         check_key_label_hash(dk, self.label_hash)
@@ -307,7 +276,7 @@ class MCFERingLWE(MIFERingLWE):
                     [ct for ct in chunks if isinstance(ct, dict) and "label_hash" in RingLWECiphertext(ct)]
                     if isinstance(chunks, (list, tuple)) else (), mode, nid)
 
-    def _decrypt_layer_native(self, ctx, dict_ndarray_ct, l, layer, dk, fusion_weight, sk_hats):
+    def _decrypt_layer_native(self, ring, dict_ndarray_ct, l, layer, dk, fusion_weight, sk_hats):
         """Layer *l* of :meth:`decrypt_lst_ndarray_ct` in one native call, with
         the checks of :meth:`_decrypt_with_key_term` per chunk; ``None`` if the
         native code does not handle the input (then the Python loop runs)."""
@@ -325,7 +294,7 @@ class MCFERingLWE(MIFERingLWE):
             ks.append(batch.pop())
         if not chunk_cts:
             return None
-        out = self._decrypt_native(ctx, chunk_cts, zs, ks, key.sk_y, fusion_weight, sk_hats)
+        out = self._decrypt_native(ring, chunk_cts, zs, ks, key.sk_y, fusion_weight, sk_hats)
         if out is None:
             return None
         values, none = out
@@ -425,34 +394,24 @@ class MCFERingLWE(MIFERingLWE):
         for ary_src in lst_ndarray:
             ints = self._check_layer(ary_src)
             n_layer = max(1, math.ceil(ints.size / ring_n))
-            nkey = self._native_encryption_key() if ints.size else None
-            if nkey is not None:  # one native call for the whole layer, same ciphertexts
-                u_prime = MCFERingLWEEncryptionKey(self.sk).u_prime
-                res = native_backend.ext().encrypt_tensor(
-                    nkey, np.ascontiguousarray(ints, dtype=np.int64),
-                    [label_pad_material(u_prime, chunk_label(label, chunk + j), mode) for j in range(n_layer)],
-                    float(self.pp["sigma2"]), float(self.pp["sigma3"]),
-                    native_backend.random_input(3 * native_backend.gauss_bytes(ring_n) * n_layer),
-                    native_backend.get_threads(), self.ct_format == "binary", **native_backend.seed_kwargs(),
-                    **native_backend.noise_kwargs(self.pp["sigma2"], self.pp["sigma3"], sampler=self.gaussian_sampler),
-                )
-                out.append(RingLWELayer.new(shape=list(np.shape(ary_src)), first_chunk=chunk,
-                                            chunks=self._native_cts(res)).to_dict())
-                chunk += n_layer
-                continue
-            flat = ints.tolist()
-            cts = []
-            for j in range(n_layer):
-                part = flat[j * ring_n:(j + 1) * ring_n]
-                if not part:
-                    self._check_plaintext([part])  # an empty layer: refused as before
-                rows = self._padded_rows([part], extra_pad=self._pad(chunk_label(label, chunk + j)))
-                cts.append(self._encrypt_rows(rows, len(part)))
-            out.append(RingLWELayer.new(shape=list(np.shape(ary_src)), first_chunk=chunk, chunks=cts).to_dict())
+            if not ints.size:
+                self._check_plaintext([[]])  # an empty layer: refused as before
+            # the whole layer in one call (natively; the reference chunk by chunk), the same ciphertexts
+            ring = self._ring()
+            nkey = self._native_encryption_key()
+            u_prime = MCFERingLWEEncryptionKey(self.sk).u_prime
+            res = ring.encrypt_tensor(
+                nkey, self._reference_key, ints,
+                [label_pad_material(u_prime, chunk_label(label, chunk + j), mode) for j in range(n_layer)],
+                mode, self._sigmas(), self.gaussian_sampler, self.ct_format == "binary",
+            )
+            out.append(RingLWELayer.new(shape=list(np.shape(ary_src)), first_chunk=chunk,
+                                        chunks=self._native_cts(res)).to_dict())
             chunk += n_layer
         return self._mark_layers(out)
 
     def _native_cts(self, res: list) -> list:
+        """The ciphertext records of a tensor operation's ``(ct0, ct1, k)`` or ``(bytes, k)``."""
         if self.ct_format == "binary":
             return [RingLWECiphertext.new(ct=data, k=k).to_dict() for data, k in res]
         return [RingLWECiphertext.new(ct0=ct0, ct1=ct1, k=k).to_dict() for ct0, ct1, k in res]
@@ -498,22 +457,14 @@ class MCFERingLWE(MIFERingLWE):
                 raise FEValidationError("plaintext rows must all have the same length, between 1 and ring_n")
             firsts.append(total)
             total += math.ceil(size / ring_n)
+        ring = self._ring()
         nkey = self._native_encryption_key()
-        if nkey is not None:
-            cap = native_backend.ext().precompute_tensor(
-                nkey, [label_pad_material(u_prime, chunk_label(label, c), self._encryption_label_hash())
-                       for c in range(total)],
-                float(self.pp["sigma2"]), float(self.pp["sigma3"]),
-                native_backend.random_input(3 * native_backend.gauss_bytes(ring_n) * total),
-                native_backend.get_threads(), **native_backend.seed_kwargs(),
-                **native_backend.noise_kwargs(self.pp["sigma2"], self.pp["sigma3"], sampler=self.gaussian_sampler),
-            )
-            return RingLWEPrecomputation(self, label, shapes, firsts, native=(nkey, cap))
-        rows = []
-        for c in range(total):  # x = 0: the stored ct0 is pk r + e_0 + Delta (u + H)
-            ct0, ct1 = self._encrypt_rows_python(self._padded_rows([[]], extra_pad=self._pad(chunk_label(label, c))))
-            rows.append((ct0[0], ct1))
-        return RingLWEPrecomputation(self, label, shapes, firsts, rows=rows)
+        mode = self._encryption_label_hash()
+        native, rows = ring.precompute_tensor(
+            nkey, self._reference_key, [label_pad_material(u_prime, chunk_label(label, c), mode) for c in range(total)],
+            mode, self._sigmas(), self.gaussian_sampler,
+        )
+        return RingLWEPrecomputation(self, label, shapes, firsts, native=native, rows=rows)
 
     def _encrypt_precomputed(self, lst_ndarray: list, label: str, pre) -> list:
         """Online phase: the precomputed chunks plus ``Delta x``."""
@@ -531,27 +482,12 @@ class MCFERingLWE(MIFERingLWE):
         # chunks itself, see precomputed_info).
         (rows,) = pre._claim("rows")
         native = pre.native
-        ring_n = self.pp["ring_n"]
         q = gp.mpz(self.pp["q"])
         delta = q // gp.mpz(self.pp["p"])
         out = []
         for ints, first, shape in zip(layers, pre.first_chunks, pre.shapes):
-            if native is not None:
-                nkey, cap = native
-                res = native_backend.ext().encrypt_precomputed(
-                    nkey, cap, first, np.ascontiguousarray(ints, dtype=np.int64),
-                    native_backend.get_threads(), self.ct_format == "binary",
-                )
-                cts = self._native_cts(res)
-            else:
-                flat, cts = ints.tolist(), []
-                for j in range(math.ceil(len(flat) / ring_n)):
-                    part = flat[j * ring_n:(j + 1) * ring_n]
-                    p_row, ct1 = rows[first + j]
-                    rows[first + j] = None
-                    ct0 = [(p + delta * x) % q for p, x in zip(p_row, part)] + p_row[len(part):]
-                    cts.append(self._format_ciphertext([ct0], ct1, len(part)))
-            out.append(RingLWELayer.new(shape=list(shape), first_chunk=first, chunks=cts).to_dict())
+            res = self._ring().encrypt_precomputed(native, rows, first, ints, delta, self.ct_format == "binary")
+            out.append(RingLWELayer.new(shape=list(shape), first_chunk=first, chunks=self._native_cts(res)).to_dict())
         return out
 
     def _key_src(self) -> tuple:
@@ -586,11 +522,11 @@ class MCFERingLWE(MIFERingLWE):
         if self.key_chunks(sample) > len(key.get("z_chunks", [])):
             raise FEKeyError("the key covers fewer chunks than the ciphertexts")
         sk_hats = {}  # NTT(sk_i), transformed once for all chunks
-        ctx = self._native()
+        ring = self._ring()
         result = []
         for l, layer in enumerate(sample):
-            if ctx is not None:
-                ary = self._decrypt_layer_native(ctx, dict_ndarray_ct, l, layer, dk, fusion_weight, sk_hats)
+            if ring.native:  # one native call per layer, with the checks of _decrypt_layer_native
+                ary = self._decrypt_layer_native(ring, dict_ndarray_ct, l, layer, dk, fusion_weight, sk_hats)
                 if ary is not None:
                     result.append(ary)
                     continue

@@ -10,6 +10,7 @@ import pytest
 from pyfe4ai.schemes.mcfe import ring_lwe as mcfe_rlwe
 from pyfe4ai.schemes.mife import ring_lwe as mife_rlwe
 from pyfe4ai import backend as native_backend
+from pyfe4ai.backend import native_impl
 from pyfe4ai.primitives import sampling as su
 
 pytestmark = pytest.mark.skipif(
@@ -39,14 +40,14 @@ def _cwd_auto(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("sigma", list(KAT))
 def test_known_answers(sigma):
-    assert native_backend.ext().facct_sample(native_backend.facct_table(sigma), 12, xof_seed=KAT_SEED) == KAT[sigma]
+    assert native_backend.ext().facct_sample(native_impl.facct_table(sigma), 12, xof_seed=KAT_SEED) == KAT[sigma]
 
 
 @pytest.mark.parametrize("sigma", WIDTHS)
 def test_same_samples_as_python(sigma):
     seed = b"native-facct/" + str(sigma).encode()
     py = [int(v) for v in su.discrete_gaussian_facct(sigma, 4000, rng=su.XofRandom(seed))]
-    assert native_backend.ext().facct_sample(native_backend.facct_table(sigma), 4000, xof_seed=seed) == py
+    assert native_backend.ext().facct_sample(native_impl.facct_table(sigma), 4000, xof_seed=seed) == py
 
 
 def _table(sigma, counter, c_exp_shift=0):
@@ -127,13 +128,13 @@ def same_bytes_facct(monkeypatch):
                 monkeypatch.setattr(su, "_OS_RANDOM", _StreamBits(data))
                 py = fn()
             used = []
-            original = native_backend.noise_kwargs
-            monkeypatch.setattr(native_backend, "noise_kwargs", lambda *s, **kw: used.append(original(*s, **kw)) or used[-1])
+            original = native_impl.noise_kwargs
+            monkeypatch.setattr(native_impl, "noise_kwargs", lambda *s, **kw: used.append(original(*s, **kw)) or used[-1])
             with native_backend.backend("native"):
                 monkeypatch.setattr(native_backend, "_random_override", lambda n: data)
                 nat = fn()
                 monkeypatch.setattr(native_backend, "_random_override", None)
-            monkeypatch.setattr(native_backend, "noise_kwargs", original)
+            monkeypatch.setattr(native_impl, "noise_kwargs", original)
             assert used and all("facct" in kw for kw in used)  # the native calls drew FACCT noise
         return py, nat
 

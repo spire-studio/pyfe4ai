@@ -24,6 +24,7 @@ from pyfe4ai.schemes.mcfe.labels import chunk_label
 from pyfe4ai.schemes.mife import ring_lwe as mife_rlwe
 from pyfe4ai.schemes.sife import ring_lwe as sife_rlwe
 from pyfe4ai import backend as native_backend
+from pyfe4ai.backend import python_impl
 from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
 from pyfe4ai.core.exceptions import FESchemeError
 from pyfe4ai.primitives.lattice.lwe_utils import decode_scaled
@@ -70,7 +71,7 @@ class SeededGaussian:
 @pytest.fixture
 def sampler(monkeypatch):
     s = SeededGaussian(2026)
-    for mod in (mife_rlwe, sife_rlwe):
+    for mod in (mife_rlwe, sife_rlwe, python_impl):  # key generation, and the backend's reference encryption
         monkeypatch.setattr(mod, "discrete_gaussian_matrix", s)
     return s
 

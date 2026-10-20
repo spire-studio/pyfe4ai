@@ -18,6 +18,8 @@ from pyfe4ai.schemes.mcfe.fullysec_lwe import MCFEFullySecLWEKeyGenerator
 from pyfe4ai.schemes.mife import ring_lwe as mife_rlwe
 from pyfe4ai.schemes.sife import ring_lwe as sife_rlwe
 from pyfe4ai import backend as native_backend
+from pyfe4ai.backend import native_impl
+from pyfe4ai.backend import python_impl
 from pyfe4ai.primitives import sampling as su
 from pyfe4ai.core.exceptions import FEValidationError
 
@@ -62,7 +64,7 @@ class _Draws:
 @pytest.fixture
 def draws(monkeypatch):
     d = _Draws()
-    for mod in (sife_rlwe, mife_rlwe, mcfe_lwe):
+    for mod in (sife_rlwe, mife_rlwe, mcfe_lwe, python_impl):  # python_impl: the backend's reference encryption
         monkeypatch.setattr(mod, "discrete_gaussian_matrix", d)
     return d
 
@@ -101,8 +103,8 @@ def test_encryption_noise_follows_the_public_parameters(backend, draws, monkeypa
     if backend == "native" and not native_backend.available():
         pytest.skip("native extension not built")
     tables = []
-    original = native_backend.noise_kwargs
-    monkeypatch.setattr(native_backend, "noise_kwargs",
+    original = native_impl.noise_kwargs
+    monkeypatch.setattr(native_impl, "noise_kwargs",
                         lambda *s, **kw: tables.append(original(*s, **kw)) or tables[-1])
     kg, pp = _mcfe()
     x = np.arange(-20, 20) % 9 - 4

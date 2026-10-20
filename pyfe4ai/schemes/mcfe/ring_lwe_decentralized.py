@@ -42,10 +42,10 @@ import gmpy2 as gp
 from pyfe4ai.schemes.mcfe.labels import chunk_label, encode_label
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWE
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
-from pyfe4ai.schemes.mcfe.ring_lwe import label_pad, label_pad_material, native_hash_kwargs
+from pyfe4ai.schemes.mcfe.ring_lwe import label_pad, label_pad_material
 from pyfe4ai.schemes.threshold.binding import fusion_weight_id
 from pyfe4ai.core.constants import CryptoCONST
-from pyfe4ai import backend as native_backend
+from pyfe4ai import backend
 from pyfe4ai.core.formats.ring_lwe import DecentralizedRingLWEEncryptionKey
 from pyfe4ai.core.formats.ring_lwe import DecentralizedRingLWEKeyShare
 from pyfe4ai.core.formats.ring_lwe import DecentralizedRingLWEParameters
@@ -164,9 +164,9 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
         s = [[gp.mpz(v) for v in row] for row in sk.s]
 
         labels = [label] + [chunk_label(label, c) for c in range(n_chunks)]
-        ctx = native_backend.ring_context(q, ring_n)
-        if ctx is not None:
-            terms, sk_y = self._native_key_share(ctx, y, s, labels, weights_id)
+        ring = backend.ring(q, ring_n)
+        if ring.native:  # the native step sequence (its checks come in another order)
+            terms, sk_y = self._native_key_share(ring, y, s, labels, weights_id)
             return DecentralizedRingLWEKeyShare.new(
                 sk_y=sk_y, z=terms[0], z_chunks=terms[1:],
                 label=label, nid=self.id, weights_id=weights_id,
@@ -193,38 +193,36 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
         share.label_hash = self.label_hash
         return share.to_dict()
 
-    def _native_key_share(self, ctx, y: list, s: list, labels: list, weights_id: str) -> tuple:
+    def _native_key_share(self, ring, y: list, s: list, labels: list, weights_id: str) -> tuple:
         """The masked pad terms of *labels* and ``sk_y`` of
-        :meth:`derive_function_decryption_key_share`, natively (the same values
-        and strings): ``sum_r y_r (u_r + H_r(l)) + M_i(l)`` with the label pad
-        and the GDSum PRF terms expanded by the extension's ``pad_terms`` with
-        the ``label_hash`` of the public parameters (which the encryption key
-        must have been issued for, as in :meth:`_pad`)."""
-        ext = native_backend.ext()
+        :meth:`derive_function_decryption_key_share` on the native *ring* (the
+        same values and strings): ``sum_r y_r (u_r + H_r(l)) + M_i(l)`` with the
+        label pad and the GDSum PRF terms expanded by its
+        :meth:`~pyfe4ai.backend.interface.Ring.label_terms` with the
+        ``label_hash`` of the public parameters (which the encryption key must
+        have been issued for, as in :meth:`_pad`)."""
         mode = self._encryption_label_hash()
-        hash_kw = native_hash_kwargs(mode)
         lst_nid = self.pp["lst_nid"]
         eta, ring_n = self.pp["eta"], self.pp["ring_n"]
         pos = lst_nid.index(self.id)
         others = [o for o in lst_nid if o != self.id]
         signs = [1 if lst_nid.index(o) > pos else -1 for o in others]
         sk = DecentralizedRingLWEEncryptionKey(self.sk)
-        base = ext.lincomb(ctx.cap, [ctx.pack(row) for row in sk.u], y)  # sum_r y_r u_r
+        base = ring.lincomb(sk.u, y)  # sum_r y_r u_r
         pad_mats = [label_pad_material(sk.u_prime, lab, mode) for lab in labels]
         mask_mats = [
             [gdsum_material(sk.pair_keys[o], "{}|{}".format(encode_label(lab), weights_id), mode)
              for o in others]
             for lab in labels
         ]
-        threads = native_backend.get_threads()
         if eta == 1:  # one call: the pad (weight y) and the masks (weights +-1) as slots
-            terms = ext.pad_terms(ctx.cap, base, [[p] + m for p, m in zip(pad_mats, mask_mats)],
-                                  [y] + [[sg] for sg in signs], 1, threads, **hash_kw)
+            terms = ring.label_terms(base, [[p] + m for p, m in zip(pad_mats, mask_mats)],
+                                     [y] + [[sg] for sg in signs], 1, mode)
         else:
-            pads = ext.pad_terms(ctx.cap, base, [[p] for p in pad_mats], [y], eta, threads, **hash_kw)
-            masks = ext.pad_terms(ctx.cap, [0] * ring_n, mask_mats, [[sg] for sg in signs], 1, threads, **hash_kw)
-            terms = [ext.lincomb(ctx.cap, [ctx.pack(a), ctx.pack(b)], [1, 1]) for a, b in zip(pads, masks)]
-        sk_y = ext.lincomb(ctx.cap, [ctx.pack(row) for row in s], y)
+            pads = ring.label_terms(base, [[p] for p in pad_mats], [y], eta, mode)
+            masks = ring.label_terms([0] * ring_n, mask_mats, [[sg] for sg in signs], 1, mode)
+            terms = [ring.lincomb([a, b], [1, 1]) for a, b in zip(pads, masks)]
+        sk_y = ring.lincomb(s, y)
         return terms, sk_y
 
     def combine_function_decryption_key_share(self, dct_dk_shares: dict) -> dict:
@@ -248,15 +246,12 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
         for sh in shares:
             check_key_label_hash(sh.to_dict(), self.label_hash, "key shares were")
         q = gp.mpz(self.pp["q"])
-        ctx = native_backend.ring_context(q, self.pp["ring_n"])
+        ring = backend.ring(q, self.pp["ring_n"])
 
         def total(get) -> list:
-            if ctx is not None:  # sum mod q natively, the same strings
-                return native_backend.ext().lincomb(ctx.cap, [ctx.pack(get(sh)) for sh in shares], [1] * len(shares))
-            acc = [gp.mpz(0)] * self.pp["ring_n"]
-            for sh in shares:
-                acc = [(a + gp.mpz(v)) % q for a, v in zip(acc, get(sh))]
-            return [gp.digits(v) for v in acc]
+            # sum mod q, natively where the extension applies, the same strings (the
+            # shares read one after the other, as the values are summed)
+            return ring.lincomb((get(sh) for sh in shares), [1] * len(shares))
 
         key = MCFERingLWEFunctionalKey.new(
             sk_y={nid: DecentralizedRingLWEKeyShare(sh).sk_y for nid, sh in dct_dk_shares.items()},

@@ -22,6 +22,7 @@ from pyfe4ai.schemes.mcfe import ring_lwe_decentralized as dmcfe_rlwe
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tmcfe_rlwe
 from pyfe4ai.schemes.mife import ring_lwe as mife_rlwe
 from pyfe4ai import backend as native_backend
+from pyfe4ai.backend import native_impl
 from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
 from pyfe4ai.primitives import hashing as cu
 from pyfe4ai.primitives import sampling as sampling_utils
@@ -274,7 +275,7 @@ def test_standard_profile_auto():
 def test_native_context():
     kg, pp, _, _ = _setup()
     q = int(pp["q"])
-    ctx = native_backend.ring_context(q, 16)
+    ctx = native_impl.ring_context(q, 16)
     info = native_backend.ext().ctx_info(ctx.cap)
     assert info["rns"] == [int(f) for f in pp["q_factors"]] and ctx.word_bytes == 16
     vals = [0, 1, q - 1, q, -1, 2 ** 100, "17", gp.mpz(q + 5)]
@@ -298,7 +299,7 @@ def test_native_context():
         want = [int(v) for v in cu.hash_to_zq_vector("v", gp.mpz(q), 40, domain="d", mode=mode)]
         assert ctx.unpack(ext.hash_to_zq(ctx.cap, material, 40, hash_mode=code)) == want
     with native_backend.backend("python"):
-        assert native_backend.ring_context(q, 16) is None
+        assert native_impl.ring_context(q, 16) is None
 
 
 CONFIGS = [  # (ring_n, bound_x, bound_y, eta)
@@ -314,7 +315,7 @@ CONFIGS = [  # (ring_n, bound_x, bound_y, eta)
 def test_encrypt_identical(cfg, same_bytes):
     ring_n, bound_x, bound_y, eta = cfg
     kg, pp, clients, _ = _setup(ring_n, bound_x, bound_y, eta)
-    assert native_backend.ring_context(pp["q"], ring_n) is not None
+    assert native_impl.ring_context(pp["q"], ring_n) is not None
     rng = random.Random(5)
     for i, cl in enumerate(clients.values()):
         k = [1, ring_n // 2, ring_n][i]
@@ -456,14 +457,14 @@ def same_bytes_facct(monkeypatch):
             monkeypatch.setattr(sampling_utils, "_OS_RANDOM", _StreamBits(data))
             py = fn()
         used = []
-        original = native_backend.noise_kwargs
-        monkeypatch.setattr(native_backend, "noise_kwargs",
+        original = native_impl.noise_kwargs
+        monkeypatch.setattr(native_impl, "noise_kwargs",
                             lambda *s, **kw: used.append(original(*s, **kw)) or used[-1])
         with native_backend.backend("native"):
             monkeypatch.setattr(native_backend, "_random_override", lambda n: data)
             nat = fn()
             monkeypatch.setattr(native_backend, "_random_override", None)
-        monkeypatch.setattr(native_backend, "noise_kwargs", original)
+        monkeypatch.setattr(native_impl, "noise_kwargs", original)
         assert used and all("facct" in kw for kw in used)
         return py, nat
 
@@ -479,7 +480,7 @@ def test_rns_mcfe_facct_and_label_hash_identical(mode, same_bytes_facct):
     aggregate decrypts."""
     kg, pp, clients, agg = _setup(16, precision=0, gaussian_sampler="facct", label_hash=mode)
     assert pp["gaussian_sampler"] == "facct" and pp["label_hash"] == mode
-    assert native_backend.ring_context(pp["q"], 16) is not None
+    assert native_impl.ring_context(pp["q"], 16) is not None
     cl = clients["c0"]
     x = [[3, -1, 0, 7]]
     py, nat = same_bytes_facct(lambda: cl.encrypt(x, "lab"), seed=2)
@@ -538,11 +539,11 @@ def test_rns_drbg_path_facct_tensor_is_the_reference(mode):
     q, fs = rlu.rns_ntt_modulus(gp.mpz(1) << 100, n, 7)
     q, fs = int(q), tuple(int(f) for f in fs)
     rlu.register_rns_modulus(q, fs)
-    ctx = native_backend.ring_context(q, n)
+    ctx = native_impl.ring_context(q, n)
     ext = native_backend.ext()
     sig2 = 3.0e6
     sig3 = 2 ** 0.5 * sig2
-    tables = native_backend.noise_kwargs(sig2, sig3, sampler="facct")["facct"]
+    tables = native_impl.noise_kwargs(sig2, sig3, sampler="facct")["facct"]
     delta = q // 7
     a, pk, u = ([rng.randrange(q) for _ in range(n)] for _ in range(3))
     key = ext.enc_key(ctx.cap, a, [pk], [u], delta, hash_mode=cu.LABEL_HASH_CODES[mode])
@@ -585,7 +586,7 @@ def test_native_error_paths_of_the_wiping_functions(modulus):
     else:
         q = rlu.next_ntt_prime(gp.mpz(1) << 60, n)
     q = int(q)
-    ctx = native_backend.ring_context(q, n)
+    ctx = native_impl.ring_context(q, n)
     ext, cap = native_backend.ext(), ctx.cap
     row = ctx.pack(list(range(n)))
     assert ext.lincomb(cap, [row, row], [1, 2]) == [str(3 * i % q) for i in range(n)]
@@ -608,7 +609,7 @@ def test_native_error_paths_of_the_wiping_functions(modulus):
     key = ext.enc_key(cap, a, [a, a], [a, a], q // 7)
     with pytest.raises(TypeError):
         ext.encrypt(key, [a, [object()] * n], 3.0, 4.0, None)
-    tables = native_backend.noise_kwargs(3.0, 4.0, sampler="facct")["facct"]
+    tables = native_impl.noise_kwargs(3.0, 4.0, sampler="facct")["facct"]
     with pytest.raises(ValueError, match="not enough random bytes"):
         ext.encrypt(key, [a, a], 3.0, 4.0, b"\0" * 16, facct=tables)
     with pytest.raises(ValueError, match="not enough random bytes"):

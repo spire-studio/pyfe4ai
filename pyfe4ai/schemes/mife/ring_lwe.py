@@ -60,18 +60,16 @@ from pyfe4ai.core.formats.ring_lwe import RingLWECiphertext
 from pyfe4ai.core.formats.ring_lwe import RingLWERecord
 from pyfe4ai.core.versions import CT_FORMATS
 from pyfe4ai.core.formats.binary import canonical_ring_ciphertext
-from pyfe4ai.core.formats.binary import encode_binary_ciphertext
 from pyfe4ai.primitives.lattice.ring_lwe_utils import check_ring_lwe
 from pyfe4ai.primitives.lattice.ring_lwe_utils import check_ring_modulus
 from pyfe4ai.primitives.lattice.ring_lwe_utils import register_rns_modulus
-from pyfe4ai.primitives.lattice.ring_lwe_utils import mat_vec_mul
 from pyfe4ai.primitives.lattice.ring_lwe_utils import poly_add
 from pyfe4ai.primitives.lattice.ring_lwe_utils import poly_mul
 from pyfe4ai.primitives.lattice.ring_lwe_utils import poly_neg
 from pyfe4ai.primitives.lattice.ring_lwe_utils import resolve_ring_n
 from pyfe4ai.primitives.lattice.ring_lwe_utils import RingNTT
-from pyfe4ai.primitives.lattice.ring_lwe_utils import transpose
-from pyfe4ai import backend as native_backend
+from pyfe4ai import backend
+from pyfe4ai.backend.interface import ReferenceKey
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.primitives.sampling import discrete_gaussian_matrix, scheme_sampler
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
@@ -285,24 +283,10 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         if not credentials:
             raise FEKeyError("need credentials for MIFE Ring-LWE decryption key generation")
         ys = self._key_weights(credentials.get("fusion_weight"))
-        native = self._native_master_key()
-        if native is not None:  # the same sums mod q, as decimal strings
-            ctx, sk_rows, u_rows = native
-            sk_y = {nid: native_backend.ext().lincomb(ctx.cap, sk_rows[nid], ys[nid]) for nid in self.lst_nid}
-            z = native_backend.ext().lincomb(
-                ctx.cap, [row for nid in self.lst_nid for row in u_rows[nid]],
-                [v for nid in self.lst_nid for v in ys[nid]],
-            )
-            return MIFERingLWEFunctionalKey.new(sk_y=sk_y, z=z).to_dict()
-        sk_y = {}
-        z = [gp.mpz(0)] * self.ring_n
-        for nid in self.lst_nid:
-            sk_t = transpose(self.msk["sk"][nid])
-            y_vec = [gp.mpz(v) for v in ys[nid]]
-            sk_y[nid] = [gp.digits(v) for v in mat_vec_mul(sk_t, y_vec, self.q)]
-            for y_row, u_row in zip(y_vec, self.msk["u"][nid]):
-                z = [acc + y_row * u for acc, u in zip(z, u_row)]
-        return MIFERingLWEFunctionalKey.new(sk_y=sk_y, z=[gp.digits(v % self.q) for v in z]).to_dict()
+        ring, sk_rows, u_rows = self._prepared_master_key()  # sum_r y_r sk_r and z mod q, as decimal strings
+        sk_y = {nid: ring.lincomb(sk_rows[nid], ys[nid]) for nid in self.lst_nid}
+        z = ring.lincomb([row for nid in self.lst_nid for row in u_rows[nid]], [v for nid in self.lst_nid for v in ys[nid]])
+        return MIFERingLWEFunctionalKey.new(sk_y=sk_y, z=z).to_dict()
 
     def _key_weights(self, fusion_weight) -> dict:
         """The validated weights ``{nid: y_i}`` of a functional key."""
@@ -322,46 +306,37 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         """The ``z = sum_i sum_row y_{i,row} u_{i,row}`` of :meth:`get_decryption_keys`
         alone, as decimal strings (the same values)."""
         ys = self._key_weights(fusion_weight)
-        native = self._native_master_key()
-        if native is not None:
-            ctx, _, u_rows = native
-            return native_backend.ext().lincomb(
-                ctx.cap, [row for nid in self.lst_nid for row in u_rows[nid]],
-                [v for nid in self.lst_nid for v in ys[nid]],
-            )
-        z = [gp.mpz(0)] * self.ring_n
-        for nid in self.lst_nid:
-            for y_row, u_row in zip(ys[nid], self.msk["u"][nid]):
-                z = [acc + gp.mpz(y_row) * u for acc, u in zip(z, u_row)]
-        return [gp.digits(v % self.q) for v in z]
+        ring, _, u_rows = self._prepared_master_key()
+        return ring.lincomb([row for nid in self.lst_nid for row in u_rows[nid]], [v for nid in self.lst_nid for v in ys[nid]])
 
     def __getstate__(self) -> dict:
-        """Pickling and copying without the native key cache (rebuilt on use)."""
+        """Pickling and copying without the prepared key cache (rebuilt on use)."""
         state = self.__dict__.copy()
         state.pop("_native_msk", None)
         return state
 
-    def _native_master_key(self):
-        """``(context, sk rows, u rows)`` packed for the native backend, per
-        client, computed once per master key; ``None`` for the Python path."""
-        ctx = native_backend.ring_context(self.q, self.ring_n)
-        if ctx is None:
-            return None
+    def _prepared_master_key(self):
+        """``(ring, sk rows, u rows)``: the backend's ring of ``(q, ring_n)`` and
+        the master key's rows per client in the form its
+        :meth:`~pyfe4ai.backend.interface.Ring.lincomb` reads fastest
+        (:meth:`~pyfe4ai.backend.interface.Ring.prepare_rows`; natively packed),
+        prepared once per master key and ring. Rows the extension does not read
+        are combined by the ring's reference
+        (:meth:`~pyfe4ai.backend.interface.Ring.reference`)."""
+        ring = backend.ring(self.q, self.ring_n)
         cache = self.__dict__.get("_native_msk")
-        if cache is None or cache[0] is not self.msk or cache[1] is not ctx:
+        if cache is None or cache[0] is not self.msk or cache[1] is not ring:
             try:
-                packed = (
-                    {nid: [ctx.pack(row) for row in self.msk["sk"][nid]] for nid in self.lst_nid},
-                    {nid: [ctx.pack(row) for row in self.msk["u"][nid]] for nid in self.lst_nid},
+                prepared = (
+                    {nid: ring.prepare_rows(self.msk["sk"][nid]) for nid in self.lst_nid},
+                    {nid: ring.prepare_rows(self.msk["u"][nid]) for nid in self.lst_nid},
                 )
             except (KeyError, TypeError, ValueError):
-                packed = None
-            if packed is not None and any(
-                len(b) != ctx.word_bytes * self.ring_n for rows in packed for nid in rows for b in rows[nid]
-            ):
-                packed = None
-            cache = self._native_msk = (self.msk, ctx, packed)
-        return None if cache[2] is None else (ctx,) + cache[2]
+                prepared = None
+            cache = self._native_msk = (self.msk, ring, prepared)
+        if cache[2] is None:
+            return ring.reference(), self.msk["sk"], self.msk["u"]
+        return (ring,) + cache[2]
 
 
 class MIFERingLWE(IPFEAbsCrypto):
@@ -443,7 +418,9 @@ class MIFERingLWE(IPFEAbsCrypto):
     def _encryption_key(self) -> dict:
         """This slot's key in the form encryption uses, computed once per key:
         ``pk`` and the pad ``u`` as integers, and with an NTT-friendly ``q``
-        (``ring`` not ``None``) the transforms ``NTT(a)`` and ``NTT(pk_row)``."""
+        (``ring`` not ``None``) the transforms ``NTT(a)`` and ``NTT(pk_row)``;
+        ``"reference"``: all of it as the backend reference's key
+        (:class:`~pyfe4ai.backend.interface.ReferenceKey`)."""
         sk = MIFERingLWEEncryptionKey(self.sk)
         pk, u = sk.pk, sk.get("u")
         cache = self.__dict__.get("_enc_key")
@@ -460,38 +437,45 @@ class MIFERingLWE(IPFEAbsCrypto):
                 "a_hat": None if ring is None else ring.forward(self.A),
                 "pk_hat": None if ring is None else [ring.forward(row) for row in pk_m],
             }
+            cache["reference"] = ReferenceKey(self.A, pk_m, cache["u"], q // gp.mpz(self.pp["p"]), ring,
+                                              cache["a_hat"], cache["pk_hat"])
             self._enc_key = cache
         return cache
 
-    def _native(self):
-        """The native ring context (see :mod:`pyfe4ai.backend`), or ``None``."""
-        return native_backend.ring_context(self.pp["q"], self.pp["ring_n"])
+    def _reference_key(self) -> ReferenceKey:
+        """The key of the backend's reference encryption (:meth:`_encryption_key`)."""
+        return self._encryption_key()["reference"]
 
-    def _native_key_kwargs(self) -> dict:
-        """Extra keywords of the native ``enc_key`` (the MCFE's label hash)."""
-        return {}
+    def _ring(self):
+        """The backend's ring of the public parameters (see :mod:`pyfe4ai.backend`)."""
+        return backend.ring(self.pp["q"], self.pp["ring_n"])
+
+    def _pad_hash_mode(self):
+        """The label-hash mode of the pads the native encryption key hashes
+        (MCFE; ``None``: no pads)."""
+        return None
 
     def _native_encryption_key(self):
-        """This slot's native encryption key (``NTT(a)``, ``NTT(pk)``, ``u``), or
-        ``None`` when encryption runs in Python (see :meth:`_native`; also for
-        widths or a Gaussian sampler the native code does not reproduce)."""
-        ctx = self._native()
-        if ctx is None or not native_backend.sampling_ok(self.pp["sigma2"], self.pp["sigma3"],
-                                                         sampler=self.gaussian_sampler):
+        """This slot's native encryption key (``NTT(a)``, ``NTT(pk)``, ``u``;
+        :meth:`~pyfe4ai.backend.interface.Ring.encryption_key`), or ``None``
+        when the backend's reference encrypts (a Python ring, widths or a
+        Gaussian sampler the native code does not reproduce, a malformed key)."""
+        ring = self._ring()
+        if not ring.samples_natively(self.pp["sigma2"], self.pp["sigma3"], sampler=self.gaussian_sampler):
             return None
         key = self._encryption_key()
         cached = key.get("native")
-        options = self._native_key_kwargs()  # the label-hash mode of the pads (MCFE)
-        if cached is None or cached[0] is not ctx or cached[2] != options:
+        mode = self._pad_hash_mode()  # the label-hash mode of the pads (MCFE)
+        if cached is None or cached[0] is not ring or cached[2] != mode:
             q = gp.mpz(self.pp["q"])
             sk = MIFERingLWEEncryptionKey(self.sk)
             try:
-                nkey = native_backend.ext().enc_key(
-                    ctx.cap, self.A, sk.pk, sk.get("u"), q // gp.mpz(self.pp["p"]), **options,
-                )
+                a, pk, u, delta = self.A, sk.pk, sk.get("u"), q // gp.mpz(self.pp["p"])
             except (TypeError, ValueError, OverflowError):
-                nkey = None  # malformed key: the Python path reports it
-            cached = key["native"] = (ctx, nkey, options)
+                nkey = None  # malformed: the reference reports it
+            else:
+                nkey = ring.encryption_key(a, pk, u, delta, hash_mode=mode)
+            cached = key["native"] = (ring, nkey, mode)
         return cached[1]
 
     def _padded_rows(self, matrix_pt, extra_pad=None) -> list:
@@ -507,65 +491,20 @@ class MIFERingLWE(IPFEAbsCrypto):
                 rows.append([(x + u + e) % q for x, u, e in zip(padded, u_row, extra_pad[i])])
         return rows
 
-    def _encrypt_rows(self, w_rows: list, k: int) -> dict:
-        """BMMS21 Ring-LWE encryption of rows already reduced mod q.
+    def _sigmas(self) -> tuple:
+        return self.pp["sigma2"], self.pp["sigma3"]
 
-        ``r`` is transformed once and multiplied with the cached ``NTT(pk_row)``
-        and ``NTT(a)``: the same ciphertext as ``poly_mul(pk_row, r)`` and
-        ``poly_mul(a, r)`` with the same samples, from 1 + eta + 1 NTTs instead
-        of 3 (eta + 1).
-        """
-        q = gp.mpz(self.pp["q"])
-        ring_n = self.pp["ring_n"]
+    def _encrypt_rows(self, w_rows: list, k: int) -> dict:
+        """BMMS21 Ring-LWE encryption of rows already reduced mod q
+        (:meth:`~pyfe4ai.backend.interface.Ring.encrypt_rows`)."""
+        ring = self._ring()
         nkey = self._native_encryption_key()
         binary = self.ct_format == "binary"
-        if nkey is not None and len(w_rows) == self.pp["eta"] and all(len(row) == ring_n for row in w_rows):
-            out = native_backend.ext().encrypt(
-                nkey, w_rows, float(self.pp["sigma2"]), float(self.pp["sigma3"]),
-                native_backend.random_input(native_backend.gauss_bytes(ring_n) * (2 + len(w_rows))), binary,
-                **native_backend.seed_kwargs(),
-                **native_backend.noise_kwargs(self.pp["sigma2"], self.pp["sigma3"], sampler=self.gaussian_sampler),
-            )
-            if binary:
-                return RingLWECiphertext.new(ct=out, k=k).to_dict()
-            return RingLWECiphertext.new(ct0=out[0], ct1=out[1], k=k).to_dict()
-        ct0, ct1 = self._encrypt_rows_python(w_rows)
-        return self._format_ciphertext(ct0, ct1, k)
-
-    def _format_ciphertext(self, ct0: list, ct1: list, k: int) -> dict:
-        """The ciphertext dict of rows ``ct0`` and ``ct1`` (integers in ``[0, q)``)."""
-        if self.ct_format == "binary":
-            return RingLWECiphertext.new(ct=encode_binary_ciphertext(ct0, ct1, self.pp["q"], self.pp["ring_n"]), k=k).to_dict()
-        return RingLWECiphertext.new(
-            ct0=[[gp.digits(v) for v in row] for row in ct0],
-            ct1=[gp.digits(v) for v in ct1],
-            k=k,
-        ).to_dict()
-
-    def _encrypt_rows_python(self, w_rows: list) -> tuple:
-        """``(ct0, ct1)`` of :meth:`_encrypt_rows` as integers, in Python."""
-        q = gp.mpz(self.pp["q"])
-        ring_n = self.pp["ring_n"]
-        delta = q // gp.mpz(self.pp["p"])
-        key = self._encryption_key()
-        ring = key["ring"]
-        sampler = self.gaussian_sampler
-        r = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"], sampler=sampler)[0]
-        noise = discrete_gaussian_matrix(self.pp["eta"], ring_n, self.pp["sigma3"], sampler=sampler)
-        r_hat = None if ring is None else ring.forward(r)
-
-        def times_r(poly, poly_hat):
-            if ring is None:
-                return poly_mul(poly, r, q)
-            return ring.inverse(ring.mul(poly_hat, r_hat))
-
-        pk_hat = key["pk_hat"] or [None] * len(key["pk"])
-        ct0 = []
-        for i, w_row in enumerate(w_rows):
-            prod = times_r(key["pk"][i], pk_hat[i])
-            ct0.append([(c + e + delta * w) % q for c, e, w in zip(prod, noise[i], w_row)])
-        e = discrete_gaussian_matrix(1, ring_n, self.pp["sigma2"], sampler=sampler)[0]
-        return ct0, poly_add(times_r(self.A, key["a_hat"]), e, q)
+        out = ring.encrypt_rows(nkey, self._reference_key, w_rows, self.pp["eta"], self._sigmas(),
+                                self.gaussian_sampler, binary)
+        if binary:
+            return RingLWECiphertext.new(ct=out, k=k).to_dict()
+        return RingLWECiphertext.new(ct0=out[0], ct1=out[1], k=k).to_dict()
 
     def encrypt(self, matrix_pt: list[list[int]]) -> dict:
         """Encrypt this slot's matrix: Ring-LWE encryption of ``x + u mod q``.
@@ -609,9 +548,9 @@ class MIFERingLWE(IPFEAbsCrypto):
         ``3 slots``. *sk_hats*, a dict the caller keeps for all chunks
         decrypted with one key, caches ``NTT(sk_i)`` per slot.
         """
-        ctx = self._native()
-        if ctx is not None:
-            out = self._decrypt_native(ctx, [dct_ct], [z], [k], sk_y_map, fusion_weight, sk_hats)
+        ring = self._ring()
+        if ring.native:  # one native call, with the checks of _decrypt_native
+            out = self._decrypt_native(ring, [dct_ct], [z], [k], sk_y_map, fusion_weight, sk_hats)
             if out is not None:
                 values, none = out
                 values = values.tolist()
@@ -654,8 +593,9 @@ class MIFERingLWE(IPFEAbsCrypto):
         )
         return [decode_scaled(v, delta, q, bound) for v in total[:k]]
 
-    def _decrypt_native(self, ctx, chunk_cts, zs, ks, sk_y_map, fusion_weight, sk_hats=None):
-        """:meth:`_decrypt_with_pad_term` of several chunks in one native call.
+    def _decrypt_native(self, ring, chunk_cts, zs, ks, sk_y_map, fusion_weight, sk_hats=None):
+        """:meth:`_decrypt_with_pad_term` of several chunks in one native call
+        (:meth:`~pyfe4ai.backend.interface.Ring.decrypt_tensor` of the native *ring*).
 
         ``chunk_cts[j]`` maps every slot to its ciphertext of chunk ``j``,
         ``zs[j]`` and ``ks[j]`` are that chunk's key term and batch length.
@@ -693,14 +633,12 @@ class MIFERingLWE(IPFEAbsCrypto):
             if list(dct_ct) != nids:
                 return None
             chunks.append(slots)
-        ext = native_backend.ext()
         hats = []
         for nid in nids:
             hat = None if sk_hats is None else sk_hats.get(("native", nid))
             if hat is None:
-                try:
-                    hat = ext.ntt_mont(ctx.cap, ctx.pack(sk_y_map[nid]))
-                except (TypeError, ValueError, OverflowError):
+                hat = ring.decryption_key_hat(sk_y_map[nid])
+                if hat is None:  # a key the extension does not read: the Python path
                     return None
                 if sk_hats is not None:
                     sk_hats[("native", nid)] = hat
@@ -708,16 +646,15 @@ class MIFERingLWE(IPFEAbsCrypto):
         q = gp.mpz(self.pp["q"])
         bound = self.pp["n"] * self.pp["eta"] * gp.mpz(self.pp["bound_x"]) * gp.mpz(self.pp["bound_y"])
         try:
-            data, mask = ext.decrypt_tensor(
-                ctx.cap, chunks, zs, ks, hats, [ys[nid] for nid in nids],
-                int(q // gp.mpz(self.pp["p"])), int(bound), native_backend.get_threads(),
-            )
-        except NotImplementedError:
-            return None
+            out = ring.decrypt_tensor(chunks, zs, ks, hats, [ys[nid] for nid in nids],
+                                      int(q // gp.mpz(self.pp["p"])), int(bound))
         except ValueError as exc:
             if exc.args[:1] == ("malformed ciphertext",):
                 raise FESchemeError("malformed ciphertext of {}".format(nids[exc.args[1]])) from exc
             raise
+        if out is None:  # values beyond an int64: the Python path
+            return None
+        data, mask = out
         values = np.frombuffer(data, dtype=np.int64)
         return values, (None if mask is None else np.frombuffer(mask, dtype=np.uint8).astype(bool))
 

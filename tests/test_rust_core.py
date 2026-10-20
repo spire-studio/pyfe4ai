@@ -26,6 +26,7 @@ from pyfe4ai.schemes.mcfe import ring_lwe as mcfe_rlwe
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tmcfe_rlwe
 from pyfe4ai.schemes.mife import ring_lwe as mife_rlwe
 from pyfe4ai import backend as native_backend
+from pyfe4ai.backend import native_impl
 from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
 from pyfe4ai.primitives import sampling as sampling_utils
 from pyfe4ai.primitives.hashing import hash_to_zq_material, hash_to_zq_vector
@@ -161,7 +162,7 @@ def test_ring_rejects_unsupported_moduli():
 @pytest.mark.parametrize("sigma", [0.5, 3.2, 17.25, 4.97e9, 2.0 ** 40])
 @pytest.mark.parametrize("count", [1, 2, 7, 1024])
 def test_gaussian_identical(sigma, count):
-    data = random.Random(count).randbytes(native_backend.gauss_bytes(count))
+    data = random.Random(count).randbytes(native_impl.gauss_bytes(count))
     ref = StreamRandom(FixedBytes(data))
     expected = [int(round(ref.gauss(0.0, sigma))) for _ in range(count)]
     out = (ctypes.c_int64 * count)()
@@ -304,11 +305,12 @@ def test_encrypt_rows_identical(cfg, monkeypatch):
     q, n = int(pp["q"]), ring_n
     x = [[random.Random(r).randint(-bx, bx) for _ in range(n)] for r in range(eta)]
     w_rows = cl._padded_rows(x, extra_pad=cl._pad("L"))
-    nbytes = native_backend.gauss_bytes(n) * (2 + eta)
+    nbytes = native_impl.gauss_bytes(n) * (2 + eta)
     data = random.Random(1).randbytes(nbytes)
     with native_backend.backend("python"):
         monkeypatch.setattr(sampling_utils, "_CSPRNG", StreamRandom(FixedBytes(data)))
-        py0, py1 = cl._encrypt_rows_python(w_rows)
+        py0, py1 = native_backend.ring(q, n)._encrypt_reference(
+            cl._reference_key(), w_rows, eta, (pp["sigma2"], pp["sigma3"]), cl.gaussian_sampler)
     ring = Ring(q, n)
     assert LIB.pf4_word_bits(ring.ptr) == word_bits(q)
     ct0, ct1 = ctypes.create_string_buffer(VB * eta * n), ctypes.create_string_buffer(VB * n)
@@ -338,7 +340,7 @@ def test_encrypt_tensor_identical(size, threads, stat_param, monkeypatch):
     mats = [mcfe_rlwe.label_pad_material(cl.sk["u_prime"], mcfe_rlwe.chunk_label("r", c), pp["label_hash"])
             for c in range(chunks)]
     arr, lens = _materials(mats)
-    data = ByteStream(4).take(3 * native_backend.gauss_bytes(n) * chunks)
+    data = ByteStream(4).take(3 * native_impl.gauss_bytes(n) * chunks)
     out = ctypes.create_string_buffer(2 * VB * n * chunks)
     got = LIB.pf4_encrypt_tensor(
         ring.ptr, pack(pp["A"], q), pack(cl.sk["pk"][0], q), pack(cl.sk["u"][0], q), pack([q // int(pp["p"])]),
