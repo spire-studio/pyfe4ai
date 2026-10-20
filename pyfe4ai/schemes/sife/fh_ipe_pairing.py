@@ -38,6 +38,11 @@ from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, ZR, PairingGroup,
 from pyfe4ai.primitives.pairing.pairing_backend import deserialize_many, pow_many
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.primitives.pairing.pairing_backend import require_pairing_backend
+from pyfe4ai.core.formats.pairing import SIFEFHIPECiphertext
+from pyfe4ai.core.formats.pairing import SIFEFHIPEEncryptionKey
+from pyfe4ai.core.formats.pairing import SIFEFHIPEFunctionalKey
+from pyfe4ai.core.formats.pairing import SIFEFHIPEParameters
+from pyfe4ai.core.formats.pairing import SIFEFHIPERecord
 from pyfe4ai.core.exceptions import FEKeyError, FEValidationError
 from pyfe4ai.core.versions import record_matches
 from pyfe4ai._validation import int_vector
@@ -95,13 +100,13 @@ class SIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
     def _generate_and_save(self, param_file: str) -> None:
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(
-                {
-                    "sec_param": self.sec_param,
-                    "eta": self.eta,
-                    "bound_x": gp.digits(self.bound_x),
-                    "bound_y": gp.digits(self.bound_y),
-                    "pairing_group_param": self.pairing_group_param,
-                },
+                SIFEFHIPERecord.new(
+                    sec_param=self.sec_param,
+                    eta=self.eta,
+                    bound_x=gp.digits(self.bound_x),
+                    bound_y=gp.digits(self.bound_y),
+                    pairing_group_param=self.pairing_group_param,
+                ).to_dict(),
                 f,
             )
         self.group = PairingGroup(self.pairing_group_param)
@@ -140,12 +145,12 @@ class SIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         logger.info("SIFE FH-IPE setup successfully")
 
     def get_public_parameters(self) -> dict:
-        return {
-            "eta": self.eta,
-            "bound_x": gp.digits(self.bound_x),
-            "bound_y": gp.digits(self.bound_y),
-            "pairing_group_param": self.pairing_group_param,
-        }
+        return SIFEFHIPEParameters.new(
+            eta=self.eta,
+            bound_x=gp.digits(self.bound_x),
+            bound_y=gp.digits(self.bound_y),
+            pairing_group_param=self.pairing_group_param,
+        ).to_dict()
 
     def get_private_keys(self, nid: str = "nid_default", **kwargs) -> dict | None:
         """Return the encryption key (``g2``, ``b_star``); it is equivalent to
@@ -154,10 +159,10 @@ class SIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         Args:
             nid: Client identifier (unused for single-input schemes).
         """
-        return {
-            "g2": self.msk["g2"],
-            "b_star": self.msk["b_star"],
-        }
+        return SIFEFHIPEEncryptionKey.new(
+            g2=self.msk["g2"],
+            b_star=self.msk["b_star"],
+        ).to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Derive a functional decryption key for the given fusion weights.
@@ -184,10 +189,10 @@ class SIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
         g1 = self.group.deserialize(self.msk["g1"].encode("utf-8"))
         k1, *k2 = pow_many(g1, [(alpha_int * det) % self.order] + by, self.group)
-        return {
-            "k1": self.group.serialize(k1).decode("utf-8"),
-            "k2": [self.group.serialize(v).decode("utf-8") for v in k2],
-        }
+        return SIFEFHIPEFunctionalKey.new(
+            k1=self.group.serialize(k1).decode("utf-8"),
+            k2=[self.group.serialize(v).decode("utf-8") for v in k2],
+        ).to_dict()
 
 
 class SIFEFHIPE(IPFEAbsCrypto):
@@ -214,18 +219,19 @@ class SIFEFHIPE(IPFEAbsCrypto):
             raise FEKeyError("no encryption key provided")
         x = int_vector(lst_pt, "plaintext", length=self.pp["eta"], bound=int(self.pp["bound_x"]))
         x = [gp.mpz(v) for v in x] + [gp.mpz(1), gp.mpz(0)]
-        b_star = [[gp.mpz(v) for v in row] for row in self.sk["b_star"]]
-        g2 = self.group.deserialize(self.sk["g2"].encode("utf-8"))
+        sk = SIFEFHIPEEncryptionKey.from_dict(self.sk)
+        b_star = [[gp.mpz(v) for v in row] for row in sk.b_star]
+        g2 = self.group.deserialize(sk.g2.encode("utf-8"))
         beta = _random_nonzero_zr(self.group)
         beta_int = gp.mpz(int(beta))
 
         bstar_x = _mat_vec_mod(b_star, x, self.order)
         bstar_x = [(beta_int * entry) % self.order for entry in bstar_x]
         c1, *c2 = pow_many(g2, [beta_int] + bstar_x, self.group)
-        return {
-            "c1": self.group.serialize(c1).decode("utf-8"),
-            "c2": [self.group.serialize(v).decode("utf-8") for v in c2],
-        }
+        return SIFEFHIPECiphertext.new(
+            c1=self.group.serialize(c1).decode("utf-8"),
+            c2=[self.group.serialize(v).decode("utf-8") for v in c2],
+        ).to_dict()
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: list | None = None):
         """Decrypt ciphertexts and recover the inner product.
@@ -239,8 +245,9 @@ class SIFEFHIPE(IPFEAbsCrypto):
         if fusion_weight is not None:
             int_vector(fusion_weight, "fusion weight", length=self.pp["eta"], bound=int(self.pp["bound_y"]))
 
-        c1, *c2 = deserialize_many(self.group, [dct_ct["c1"]] + list(dct_ct["c2"]))
-        k1, *k2 = deserialize_many(self.group, [dk["k1"]] + list(dk["k2"]))
+        ct, key = SIFEFHIPECiphertext.from_dict(dct_ct), SIFEFHIPEFunctionalKey.from_dict(dk)
+        c1, *c2 = deserialize_many(self.group, [ct.c1] + list(ct.c2))
+        k1, *k2 = deserialize_many(self.group, [key.k1] + list(key.k2))
 
         if len(c2) != self.pp["eta"] + 2 or len(k2) != self.pp["eta"] + 2:
             raise FEValidationError("key or ciphertext length mismatch")

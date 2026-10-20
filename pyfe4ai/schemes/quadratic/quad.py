@@ -55,6 +55,10 @@ from pyfe4ai.primitives.pairing.pairing_backend import deserialize_many, multiex
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.primitives.pairing.pairing_backend import require_pairing_backend
 from pyfe4ai.primitives.pairing.pairing_utils import bounded_discrete_log_gt
+from pyfe4ai.core.formats.pairing import QuadCiphertext
+from pyfe4ai.core.formats.pairing import QuadFunctionalKey
+from pyfe4ai.core.formats.pairing import QuadIPFEPublicKey
+from pyfe4ai.core.formats.pairing import QuadParameters
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai._validation import int_vector
 from pyfe4ai._validation import scale_to_int
@@ -176,23 +180,23 @@ class QuadraticQuadKeyGenerator(IPFEAbsKeyGenerator):
         ua_g, a2_g, u2a2_g, *rest = [[next(flat) for _ in row] for row in g1_rows]
         flat = iter(ctx.g2v([x for row in vb for x in row]))
         self.ctx = ctx
-        self.pp = {
-            "pairing_group_param": self.pairing_group_param,
-            "n": n,
-            "m": m,
-            "bound": self.bound,
-            "sec_param": self.sec_param,
-            "g1": ctx.ser(ctx.g1),
-            "g2": ctx.ser(ctx.g2),
-            "ua": ua_g,
-            "vb": [[next(flat) for _ in row] for row in vb],
-            "ipfe": {
-                "a": a2_g,
-                "ua": u2a2_g,
-                "vt_m": rest[: len(v2t_m)],
-                "m": rest[len(v2t_m):],
-            },
-        }
+        self.pp = QuadParameters.new(
+            pairing_group_param=self.pairing_group_param,
+            n=n,
+            m=m,
+            bound=self.bound,
+            sec_param=self.sec_param,
+            g1=ctx.ser(ctx.g1),
+            g2=ctx.ser(ctx.g2),
+            ua=ua_g,
+            vb=[[next(flat) for _ in row] for row in vb],
+            ipfe=QuadIPFEPublicKey.new(
+                a=a2_g,
+                ua=u2a2_g,
+                vt_m=rest[: len(v2t_m)],
+                m=rest[len(v2t_m):],
+            ).to_dict(),
+        ).to_dict()
         self.msk = {"u": u, "v": v, "ipfe": {"b": b2, "u": u2, "v": v2}}
         logger.info("Quadratic Quad (Gay20 Fig. 4) setup successfully")
 
@@ -228,10 +232,10 @@ class QuadraticQuadKeyGenerator(IPFEAbsKeyGenerator):
         bs = [b * s2 % p for b in ipfe["b"]]
         w = bs + [(z_i + row[0] * bs[0] + row[1] * bs[1]) % p for z_i, row in zip(z, ipfe["v"])]
         head = [(-sum(row[c] * w_j for row, w_j in zip(ipfe["u"], w))) % p for c in (0, 1)]
-        return {
-            "f": [[str(x) for x in row] for row in f_mat],
-            "k": ctx.g2v(head + w),
-        }
+        return QuadFunctionalKey.new(
+            f=[[str(x) for x in row] for row in f_mat],
+            k=ctx.g2v(head + w),
+        ).to_dict()
 
 
 class QuadraticQuad(IPFEAbsCrypto):
@@ -293,25 +297,26 @@ class QuadraticQuad(IPFEAbsCrypto):
                 [(row, neg_t) for row in ipfe["vt_m"]] + [(row, t) for row in ipfe["m"]], ipfe["ua"]
             )
         ]
-        return {
-            "ct_x": [ctx.ser(v) for v in ct_x],
-            "ct_y": [ctx.ser(v) for v in ct_y],
-            "ct": [ctx.ser(v) for v in c + body],
-        }
+        return QuadCiphertext.new(
+            ct_x=[ctx.ser(v) for v in ct_x],
+            ct_y=[ctx.ser(v) for v in ct_y],
+            ct=[ctx.ser(v) for v in c + body],
+        ).to_dict()
 
     def decrypt(self, ct: dict, dk: dict) -> int | None:
         """``log(e(ct_x, F ct_y) / Dec_IPFE)``; ``None`` beyond ``n m B^3``."""
-        if not dk or "k" not in dk:
+        if not dk or "k" not in QuadFunctionalKey(dk):
             raise FEKeyError("no decryption key provided")
+        key_rec, ct = QuadFunctionalKey.from_dict(dk), QuadCiphertext.from_dict(ct)
         pp, ctx = self.pp, self.ctx
         n, m = pp["n"], pp["m"]
-        if len(dk["f"]) != n or any(len(row) != m for row in dk["f"]):
+        if len(key_rec.f) != n or any(len(row) != m for row in key_rec.f):
             raise FESchemeError("the key's function matrix does not match the parameters")
-        f_mat = [[int(v) for v in row] for row in dk["f"]]
-        key = ctx.de_many(dk["k"])
-        ct_ipfe = ctx.de_many(ct["ct"])
-        ct_x = ctx.de_many(ct["ct_x"])
-        ct_y = ctx.de_many(ct["ct_y"])
+        f_mat = [[int(v) for v in row] for row in key_rec.f]
+        key = ctx.de_many(key_rec.k)
+        ct_ipfe = ctx.de_many(ct.ct)
+        ct_x = ctx.de_many(ct.ct_x)
+        ct_y = ctx.de_many(ct.ct_y)
         n_ipfe = 2 * m + 3 * n + 4
         if len(ct_x) != n or len(ct_y) != m or len(ct_ipfe) != n_ipfe or len(key) != n_ipfe:
             raise FESchemeError("ciphertext and key do not match the parameters")

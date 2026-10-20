@@ -54,6 +54,11 @@ from pyfe4ai.schemes.threshold.sharing import share_points
 from pyfe4ai.schemes.threshold.sharing import share_secret
 from pyfe4ai.schemes.threshold.sharing import validate_threshold
 from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.formats.pairing import FHCiphertext
+from pyfe4ai.core.formats.pairing import FHClientKey
+from pyfe4ai.core.formats.pairing import TMCFEFHParameters
+from pyfe4ai.core.formats.threshold import TMCFEFHKeyShare
+from pyfe4ai.core.formats.threshold import TMCFEFHPartial
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai.primitives.pairing.pairing_backend import GT, ZR, multi_pair, pow_many
 
@@ -64,6 +69,7 @@ _TAG_DOMAIN = "pyfe4ai/tmcfe-fh-multi-ipe/ciphertext-tag/v1"
 
 def _tag_payload(nid, ct: dict) -> list:
     """What a tMCFE-FH ciphertext tag covers: the encoded label and the ciphertext."""
+    ct = FHCiphertext(ct)
     return [ct.get("label"), ct.get("ct")]
 
 
@@ -102,14 +108,14 @@ class ThresholdMCFEFHMultiIPEKeyGenerator(MCFEFHMultiIPEKeyGenerator):
         ciphertext tags."""
         sk = super().get_private_keys(nid, **kwargs)
         if sk is not None:
-            sk["mac_keys"] = dict(self.mac_keys[nid])
+            FHClientKey(sk).mac_keys = dict(self.mac_keys[nid])
         return sk
 
     def get_public_parameters(self) -> dict:
         """FH-MCFE public parameters plus ``s``, ``t`` and ``lst_sid``."""
-        pp = super().get_public_parameters()
-        pp.update({"s": self.s, "t": self.t, "lst_sid": list(self.lst_sid)})
-        return pp
+        pp = TMCFEFHParameters(super().get_public_parameters())
+        pp.update(s=self.s, t=self.t, lst_sid=list(self.lst_sid))
+        return pp.to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Return server *sid*'s share of the FH-MCFE key for ``y``.
@@ -140,9 +146,10 @@ class ThresholdMCFEFHMultiIPEKeyGenerator(MCFEFHMultiIPEKeyGenerator):
         weights_id = fusion_weight_id(fusion_weight)
         if weights_id not in self.dict_dk:
             self.dict_dk[weights_id] = self._share_key(fusion_weight)
-        dk = dict(self.dict_dk[weights_id][sid])
-        dk["mac_keys"] = {nid: self.mac_keys[nid][sid] for nid in self.lst_nid}
-        return dk
+        dk = TMCFEFHKeyShare.extend(
+            self.dict_dk[weights_id][sid], mac_keys={nid: self.mac_keys[nid][sid] for nid in self.lst_nid}
+        )
+        return dk.to_dict()
 
     def _share_key(self, fusion_weight: dict) -> dict:
         ctx = self.ctx
@@ -172,13 +179,13 @@ class ThresholdMCFEFHMultiIPEKeyGenerator(MCFEFHMultiIPEKeyGenerator):
         z_shares = share([z_total], ctx.fhipe.gt)[0]
         key_id = secrets.token_hex(16)
         return {
-            sid: {
-                "k": {nid: [sh[sid] for sh in k_shares[nid]] for nid in self.lst_nid},
-                "z": z_shares[sid],
-                "sid": sid,
-                "lst_sid": list(self.lst_sid),
-                "key_id": key_id,
-            }
+            sid: TMCFEFHKeyShare.new(
+                k={nid: [sh[sid] for sh in k_shares[nid]] for nid in self.lst_nid},
+                z=z_shares[sid],
+                sid=sid,
+                lst_sid=list(self.lst_sid),
+                key_id=key_id,
+            ).to_dict()
             for sid in self.lst_sid
         }
 
@@ -189,11 +196,11 @@ class ThresholdMCFEFHMultiIPE(MCFEFHMultiIPE):
     def encrypt(self, lst_pt: list, label: str) -> dict:
         """FH-MCFE encryption under *label*; the ciphertext carries the encoded
         label and a tag for every server over both."""
-        mac_keys = (self.sk or {}).get("mac_keys") if self._has_private_keys() else None
+        mac_keys = FHClientKey(self.sk or {}).get("mac_keys") if self._has_private_keys() else None
         if not mac_keys:
             raise FEKeyError("encryption key lacks the ciphertext MAC keys")
         ct = super().encrypt(lst_pt, label)
-        ct["label"] = encode_label(label)
+        FHCiphertext(ct).label = encode_label(label)
         return tag_ciphertext(ct, mac_keys, _TAG_DOMAIN, _tag_payload(None, ct))
 
     def share_decrypt(
@@ -219,40 +226,41 @@ class ThresholdMCFEFHMultiIPE(MCFEFHMultiIPE):
             FESchemeError: If a ciphertext is not under *label* or not tagged
                 for this server by its client.
         """
-        if not dk or "k" not in dk:
+        if not dk or "k" not in TMCFEFHKeyShare(dk):
             raise FEKeyError("no decryption keys provided")
-        if self.id not in dk["lst_sid"] or dk.get("sid") != self.id:
+        share = TMCFEFHKeyShare.from_dict(dk)
+        if self.id not in share.lst_sid or share.get("sid") != self.id:
             raise FESchemeError("the key share does not belong to server {}".format(self.id))
-        validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
-        if set(dict_ct) != set(dk["k"]):
+        validate_enrolled(self.id, share.lst_sid, lst_sid_enrolled, self.pp["t"])
+        if set(dict_ct) != set(share.k):
             raise FESchemeError("need one ciphertext for every client of the key")
         expected = encode_label(label)
-        if any(not isinstance(ct, dict) or ct.get("label") != expected for ct in dict_ct.values()):
+        if any(not isinstance(ct, dict) or FHCiphertext(ct).get("label") != expected for ct in dict_ct.values()):
             raise FESchemeError("the ciphertexts were not encrypted under the requested label")
-        check_ciphertext_tags(dict_ct, dk.get("mac_keys"), self.id, _TAG_DOMAIN, _tag_payload)
+        check_ciphertext_tags(dict_ct, share.get("mac_keys"), self.id, _TAG_DOMAIN, _tag_payload)
 
         ctx = self.ctx
-        sid_v = share_points(dk["lst_sid"])
+        sid_v = share_points(share.lst_sid)
         lam = int(lagrange_coefficient_at_zero(
             sid_v[self.id], [sid_v[s] for s in lst_sid_enrolled], ctx.order
         ))
         lhs, rhs = [], []
         for nid, ct in dict_ct.items():
-            shares = dk["k"][nid]
-            if len(ct["ct"]) != len(shares):
+            shares = share.k[nid]
+            if len(FHCiphertext(ct).ct) != len(shares):
                 raise FESchemeError("ciphertext of {} has the wrong length".format(nid))
-            lhs.extend(ctx.de_many(ct["ct"]))
+            lhs.extend(ctx.de_many(FHCiphertext(ct).ct))
             rhs.extend(ctx.de_many(shares))
-        acc = (multi_pair(lhs, rhs) / ctx.de(dk["z"])) ** ctx.zr(lam)
+        acc = (multi_pair(lhs, rhs) / ctx.de(share.z)) ** ctx.zr(lam)
         ct_digest = ciphertexts_digest({nid: _tag_payload(nid, ct) for nid, ct in dict_ct.items()})
-        return {
-            "w": ctx.ser(acc),
-            "ct_digest": ct_digest,
-            "key_id": dk["key_id"],
-            "label": expected,
-            "sid": self.id,
-            "lst_sid_enrolled": list(lst_sid_enrolled),
-        }
+        return TMCFEFHPartial.new(
+            w=ctx.ser(acc),
+            ct_digest=ct_digest,
+            key_id=share.key_id,
+            label=expected,
+            sid=self.id,
+            lst_sid_enrolled=list(lst_sid_enrolled),
+        ).to_dict()
 
     def combine_decrypt(self, partials, label=None) -> int | None:
         """Combine partial decryptions from at least ``t`` servers.
@@ -273,7 +281,7 @@ class ThresholdMCFEFHMultiIPE(MCFEFHMultiIPE):
         if label is not None:
             expected = encode_label(label)
             for group in partial_groups(partials):
-                if any(part.get("label") != expected for part in group.values()):
+                if any(TMCFEFHPartial(part).get("label") != expected for part in group.values()):
                     raise FESchemeError("partial decryptions are for another label than the requested one")
         return combine_consistently(partials, self._combine_group)
 
@@ -289,14 +297,14 @@ class ThresholdMCFEFHMultiIPE(MCFEFHMultiIPE):
                 do not match the enrolled set they were computed for.
         """
         validate_partial_decryptions(dict_ct_prime, self.pp["t"])
-        partials = list(dict_ct_prime.values())
-        if len({(p["ct_digest"], p["key_id"], p.get("label")) for p in partials}) != 1:
+        partials = [TMCFEFHPartial(part) for part in dict_ct_prime.values()]
+        if len({(p.ct_digest, p.key_id, p.get("label")) for p in partials}) != 1:
             logger.warning("partial decryptions disagree on the ciphertexts they decrypted")
             warn_at_caller("partial decryptions disagree on the ciphertexts they decrypted")
             return None
         acc = self.ctx.group.init(GT, 1)
         for part in partials:
-            acc *= self.ctx.de(part["w"])
+            acc *= self.ctx.de(part.w)
         return self.ctx.solve(acc)
 
     def compute_lst_ndarray_ct(

@@ -65,6 +65,10 @@ import secrets
 from pyfe4ai.core.base import IPFEAbsCrypto
 from pyfe4ai.core.base import IPFEAbsKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.formats.pairing import MIQFECiphertext
+from pyfe4ai.core.formats.pairing import MIQFEEncryptionKey
+from pyfe4ai.core.formats.pairing import MIQFEFunctionalKey
+from pyfe4ai.core.formats.pairing import MIQFEParameters
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, GT, ZR, PairingGroup, multi_pair, pair
 from pyfe4ai.primitives.pairing.pairing_backend import deserialize_many, multiexp, pow_many
@@ -279,25 +283,25 @@ class MultiInputQuadraticKeyGenerator(IPFEAbsKeyGenerator):
             "v": [[rnd() for _ in range(m)] for _ in range(n)],
             "vt": [[rnd() for _ in range(m)] for _ in range(n)],
         }
-        self.pp = {
-            "pairing_group_param": self.pairing_group_param,
-            "g1": ctx.ser(ctx.g1),
-            "g2": ctx.ser(ctx.g2),
-            "n": n,
-            "m": m,
-            "mddh_k": k,
-            "lst_nid": list(self.lst_nid),
-            "bound_x": self.bound_x,
-            "bound_c": self.bound_c,
-            "sec_param": self.sec_param,
-        }
+        self.pp = MIQFEParameters.new(
+            pairing_group_param=self.pairing_group_param,
+            g1=ctx.ser(ctx.g1),
+            g2=ctx.ser(ctx.g2),
+            n=n,
+            m=m,
+            mddh_k=k,
+            lst_nid=list(self.lst_nid),
+            bound_x=self.bound_x,
+            bound_c=self.bound_c,
+            sec_param=self.sec_param,
+        ).to_dict()
         self.ek = {}
         for i, nid in enumerate(self.lst_nid):
             unit = [[1 if a == j else 0 for a in range(m)] for j in range(m)]
-            self.ek[nid] = {
-                "mct1": [self._mst_enc(i, e_j) for e_j in unit],
-                "mct0": [self._mst_enc(i, [0] * m) for _ in range(dims["D"])],
-            }
+            self.ek[nid] = MIQFEEncryptionKey.new(
+                mct1=[self._mst_enc(i, e_j) for e_j in unit],
+                mct0=[self._mst_enc(i, [0] * m) for _ in range(dims["D"])],
+            ).to_dict()
         logger.info("AGT22 multi-input quadratic FE setup successfully")
 
     def _mst_enc(self, i: int, x: list) -> dict:
@@ -315,14 +319,14 @@ class MultiInputQuadraticKeyGenerator(IPFEAbsKeyGenerator):
             cts.append(ctx.g1v(self.ipfe1.enc(msk["ipfe1"], b_j, rnd())))
             sks.append(ctx.g2v(self.ipfe1.key(msk["ipfe1"], bt_j, rnd())))
         mg_ct, mg_sk = self.mg.enc(msk["mg"], i, _LAB0, [r, t] + [0] * (m * m * n), [0])
-        return {
-            "ct": cts,
-            "sk": sks,
-            "ct2": ctx.g1v(self.ipfe2.enc(msk["ipfe2"], [s, 0], rnd())),
-            "sk2": ctx.g2v(self.ipfe2.key(msk["ipfe2"], [st, 0], rnd())),
-            "mg_ct": ctx.g1v(mg_ct),
-            "mg_sk": ctx.g2v(mg_sk),
-        }
+        return MIQFECiphertext.new(
+            ct=cts,
+            sk=sks,
+            ct2=ctx.g1v(self.ipfe2.enc(msk["ipfe2"], [s, 0], rnd())),
+            sk2=ctx.g2v(self.ipfe2.key(msk["ipfe2"], [st, 0], rnd())),
+            mg_ct=ctx.g1v(mg_ct),
+            mg_sk=ctx.g2v(mg_sk),
+        ).to_dict()
 
     def get_public_parameters(self) -> dict:
         """Group description, generators and dimensions."""
@@ -377,12 +381,12 @@ class MultiInputQuadraticKeyGenerator(IPFEAbsKeyGenerator):
              for a in range(n)]
             for i in range(n)
         ]
-        return {
-            "c": [[str(v) for v in row] for row in c],
-            "mg_sk": [ctx.g2v(v) for v in ic_sk],
-            "mg_ct": [ctx.g1v(v) for v in i_ct],
-            "sigma": [[str(v) for v in row] for row in sigma],
-        }
+        return MIQFEFunctionalKey.new(
+            c=[[str(v) for v in row] for row in c],
+            mg_sk=[ctx.g2v(v) for v in ic_sk],
+            mg_ct=[ctx.g1v(v) for v in i_ct],
+            sigma=[[str(v) for v in row] for row in sigma],
+        ).to_dict()
 
 
 class MultiInputQuadratic(IPFEAbsCrypto):
@@ -407,7 +411,8 @@ class MultiInputQuadratic(IPFEAbsCrypto):
             raise FEKeyError("no encryption key provided")
         ctx, m = self.ctx, self.pp["m"]
         x = int_vector(lst_pt, "plaintext", length=m, bound=int(self.pp["bound_x"]))
-        mct1, mct0 = self.sk["mct1"], self.sk["mct0"]
+        sk = MIQFEEncryptionKey.from_dict(self.sk)
+        mct1, mct0 = sk.mct1, sk.mct0
         weights = list(zip(mct1, x))
         weights.append((mct0[0], 1 - sum(x)))
         for g in range((len(mct0) - 1) // 2):
@@ -425,14 +430,14 @@ class MultiInputQuadratic(IPFEAbsCrypto):
             exps = [a for _, a in weights]
             return [ctx.ser(ctx.multiexp([row[j] for row in rows], exps)) for j in range(width)]
 
-        return {
-            "ct": [combine(lambda mct, j=j: mct["ct"][j]) for j in range(m)],
-            "sk": [combine(lambda mct, j=j: mct["sk"][j]) for j in range(m)],
-            "ct2": combine(lambda mct: mct["ct2"]),
-            "sk2": combine(lambda mct: mct["sk2"]),
-            "mg_ct": combine(lambda mct: mct["mg_ct"]),
-            "mg_sk": combine(lambda mct: mct["mg_sk"]),
-        }
+        return MIQFECiphertext.new(
+            ct=[combine(lambda mct, j=j: MIQFECiphertext(mct).ct[j]) for j in range(m)],
+            sk=[combine(lambda mct, j=j: MIQFECiphertext(mct).sk[j]) for j in range(m)],
+            ct2=combine(lambda mct: MIQFECiphertext(mct).ct2),
+            sk2=combine(lambda mct: MIQFECiphertext(mct).sk2),
+            mg_ct=combine(lambda mct: MIQFECiphertext(mct).mg_ct),
+            mg_sk=combine(lambda mct: MIQFECiphertext(mct).mg_sk),
+        ).to_dict()
 
     def decrypt(self, dct_ct: dict, dk: dict) -> int | None:
         """``z = z1 - z2 - z3`` (Sec. 5.2 Dec) and a bounded discrete log.
@@ -440,29 +445,30 @@ class MultiInputQuadratic(IPFEAbsCrypto):
         Raises:
             FESchemeError: Unless every user contributes a ciphertext.
         """
-        if not dk or "c" not in dk:
+        if not dk or "c" not in MIQFEFunctionalKey(dk):
             raise FEKeyError("no decryption key provided")
         lst_nid, n, m = self.pp["lst_nid"], self.pp["n"], self.pp["m"]
         if set(dct_ct) != set(lst_nid):
             raise FESchemeError("need one ciphertext of every user")
         ctx = self.ctx
-        cts = [dct_ct[nid] for nid in lst_nid]
-        c = [[int(v) for v in row] for row in dk["c"]]
-        sigma = [[int(v) for v in row] for row in dk["sigma"]]
+        cts = [MIQFECiphertext(dct_ct[nid]) for nid in lst_nid]
+        key = MIQFEFunctionalKey.from_dict(dk)
+        c = [[int(v) for v in row] for row in key.c]
+        sigma = [[int(v) for v in row] for row in key.sigma]
         # z1, z2: products of powers in GT, one multi-exponentiation each
         terms = [
-            (ctx.ip(cts[mu // m]["ct"][mu % m], cts[nu // m]["sk"][nu % m]), c[mu][nu])
+            (ctx.ip(cts[mu // m].ct[mu % m], cts[nu // m].sk[nu % m]), c[mu][nu])
             for mu in range(n * m) for nu in range(n * m) if c[mu][nu]
         ]
         z1 = ctx.multiexp(*zip(*terms)) if terms else ctx.group.init(GT, 1)
         terms = [
-            (ctx.ip(cts[i]["ct2"], cts[a]["sk2"]), sigma[i][a]) for i in range(n) for a in range(n) if sigma[i][a]
+            (ctx.ip(cts[i].ct2, cts[a].sk2), sigma[i][a]) for i in range(n) for a in range(n) if sigma[i][a]
         ]
         z2 = ctx.multiexp(*zip(*terms)) if terms else ctx.group.init(GT, 1)
         z3 = ctx.group.init(GT, 1)
         for i in range(n):
-            z3 *= ctx.ip(cts[i]["mg_ct"], dk["mg_sk"][i])
-            z3 *= ctx.ip(dk["mg_ct"][i], cts[i]["mg_sk"])
+            z3 *= ctx.ip(cts[i].mg_ct, key.mg_sk[i])
+            z3 *= ctx.ip(key.mg_ct[i], cts[i].mg_sk)
         bound = m * m * n * n * int(self.pp["bound_c"]) * int(self.pp["bound_x"]) ** 2
         try:
             return bounded_discrete_log_gt(ctx.group, ctx.gt, z1 / (z2 * z3), bound)

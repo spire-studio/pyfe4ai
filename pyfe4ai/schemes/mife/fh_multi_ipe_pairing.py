@@ -52,6 +52,11 @@ from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, ZR, PairingGroup,
 from pyfe4ai.primitives.pairing.pairing_backend import deserialize_many, pow_many
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.primitives.pairing.pairing_backend import require_pairing_backend
+from pyfe4ai.core.formats.pairing import FHCiphertext
+from pyfe4ai.core.formats.pairing import MIFEFHMultiIPEEncryptionKey
+from pyfe4ai.core.formats.pairing import MIFEFHMultiIPEFunctionalKey
+from pyfe4ai.core.formats.pairing import MIFEFHMultiIPEParameters
+from pyfe4ai.core.formats.pairing import MIFEFHMultiIPERecord
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai.core.versions import record_matches
 from pyfe4ai._validation import int_vector
@@ -135,15 +140,15 @@ class MIFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
     def _generate_and_save(self, param_file: str) -> None:
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(
-                {
-                    "sec_param": self.sec_param,
-                    "sec_level": self.sec_level,
-                    "eta": self.eta,
-                    "n": self.n,
-                    "bound_x": gp.digits(self.bound_x),
-                    "bound_y": gp.digits(self.bound_y),
-                    "pairing_group_param": self.pairing_group_param,
-                },
+                MIFEFHMultiIPERecord.new(
+                    sec_param=self.sec_param,
+                    sec_level=self.sec_level,
+                    eta=self.eta,
+                    n=self.n,
+                    bound_x=gp.digits(self.bound_x),
+                    bound_y=gp.digits(self.bound_y),
+                    pairing_group_param=self.pairing_group_param,
+                ).to_dict(),
                 f,
             )
         self.group = PairingGroup(self.pairing_group_param)
@@ -182,18 +187,18 @@ class MIFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             "bhat": bhat,
             "bstar_hat": bstar_hat,
         }
-        self.pp = {
-            "sec_level": self.sec_level,
-            "eta": self.eta,
-            "n": self.n,
-            "lst_nid": list(self.lst_nid),
-            "bound_x": gp.digits(self.bound_x),
-            "bound_y": gp.digits(self.bound_y),
-            "pairing_group_param": self.pairing_group_param,
-            "g1": self.group.serialize(g1).decode("utf-8"),
-            "g2": self.group.serialize(g2).decode("utf-8"),
-            "pub": self.group.serialize(pub).decode("utf-8"),
-        }
+        self.pp = MIFEFHMultiIPEParameters.new(
+            sec_level=self.sec_level,
+            eta=self.eta,
+            n=self.n,
+            lst_nid=list(self.lst_nid),
+            bound_x=gp.digits(self.bound_x),
+            bound_y=gp.digits(self.bound_y),
+            pairing_group_param=self.pairing_group_param,
+            g1=self.group.serialize(g1).decode("utf-8"),
+            g2=self.group.serialize(g2).decode("utf-8"),
+            pub=self.group.serialize(pub).decode("utf-8"),
+        ).to_dict()
         logger.info("MIFE FHMultiIPE setup successfully")
 
     def get_public_parameters(self) -> dict:
@@ -210,9 +215,9 @@ class MIFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         """
         if nid not in self.msk["bhat"]:
             return None
-        return {
-            "bhat": self.msk["bhat"][nid],
-        }
+        return MIFEFHMultiIPEEncryptionKey.new(
+            bhat=self.msk["bhat"][nid],
+        ).to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Derive a functional decryption key for the given fusion weights.
@@ -260,7 +265,7 @@ class MIFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             g2_row = pow_many(g2, key_vec, self.group)
             dk[nid] = serialize_matrix_g(self.group, [g2_row])[0]
 
-        return {"dk": dk}
+        return MIFEFHMultiIPEFunctionalKey.new(dk=dk).to_dict()
 
 
 class MIFEFHMultiIPE(IPFEAbsCrypto):
@@ -289,7 +294,7 @@ class MIFEFHMultiIPE(IPFEAbsCrypto):
             gp.mpz(v)
             for v in int_vector(lst_pt, "plaintext", length=self.pp["eta"], bound=int(self.pp["bound_x"]))
         ]
-        bhat = [[gp.mpz(v) for v in row] for row in self.sk["bhat"]]
+        bhat = [[gp.mpz(v) for v in row] for row in MIFEFHMultiIPEEncryptionKey(self.sk).bhat]
         phi = [gp.mpz(int(self.group.random(ZR))) for _ in range(self.pp["sec_level"])]
 
         order = gp.mpz(int(self.group.order()))
@@ -306,7 +311,7 @@ class MIFEFHMultiIPE(IPFEAbsCrypto):
 
         g1 = self.group.deserialize(self.pp["g1"].encode("utf-8"))
         ct = pow_many(g1, key_vec, self.group)
-        return {"ct": [self.group.serialize(value).decode("utf-8") for value in ct]}
+        return FHCiphertext.new(ct=[self.group.serialize(value).decode("utf-8") for value in ct]).to_dict()
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict | None = None):
         """``log_{g_T} prod_i e(c_i, k_i)``; ``None`` if out of bound.
@@ -317,16 +322,17 @@ class MIFEFHMultiIPE(IPFEAbsCrypto):
         Raises:
             FESchemeError: Unless there is one ciphertext and one key part per slot.
         """
-        if not dk or "dk" not in dk:
+        if not dk or "dk" not in MIFEFHMultiIPEFunctionalKey(dk):
             raise FEKeyError("no decryption key provided")
         lst_nid = self.pp["lst_nid"]
-        if not set(dct_ct) == set(dk["dk"]) == set(lst_nid):
+        key_parts = MIFEFHMultiIPEFunctionalKey(dk).dk
+        if not set(dct_ct) == set(key_parts) == set(lst_nid):
             raise FESchemeError("need one ciphertext and one key part for every slot")
         pub = self.group.deserialize(self.pp["pub"].encode("utf-8"))
         lhs, rhs = [], []
         for nid in lst_nid:
-            ct = deserialize_many(self.group, dct_ct[nid]["ct"])
-            key = deserialize_many(self.group, dk["dk"][nid])
+            ct = deserialize_many(self.group, FHCiphertext(dct_ct[nid]).ct)
+            key = deserialize_many(self.group, key_parts[nid])
             if len(ct) != self.dim or len(key) != self.dim:
                 raise FESchemeError("ciphertext or key of {} has the wrong length".format(nid))
             lhs.extend(ct)
