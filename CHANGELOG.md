@@ -13,7 +13,75 @@ exact Gaussian sampling by default, and faster defaults for the threshold MCFE
 over Ring-LWE. PyFE4AI remains an experimental research prototype under
 active development: interfaces, defaults and serialized formats change between
 versions, and it is not recommended for production use. **Several formats are
-not compatible with v0.3.0; read the upgrade notes first.**
+not compatible with v0.3.0, and modules moved (Code organization); read the
+upgrade notes first.**
+
+### Code organization (breaking)
+
+- **Modules moved** (no aliases remain at the old paths; algorithms,
+  parameters and serialized formats are unchanged). The package is now in
+  layers: `pyfe4ai.core` (base classes and the parameter cache, security
+  profiles, review status, one-time precomputations, exceptions),
+  `pyfe4ai.schemes` (the families, plus `schemes.common` and
+  `schemes.threshold`), `pyfe4ai.primitives` (lattices, sampling, hashing,
+  groups, pairings), `pyfe4ai.backend` (native or Python implementation)
+  and `pyfe4ai.ml` (the ML adapter). `pyfe4ai` exports what it exported
+  before, and `pyfe4ai.schemes` still re-exports the configuration types.
+  Update imports as follows:
+
+  | Old | New |
+  |---|---|
+  | `pyfe4ai.utils.native_backend` | `pyfe4ai.backend` |
+  | `pyfe4ai.utils.ml_adapter` | `pyfe4ai.ml` (defined in `ml.wrapper`, `ml.serialization`, `ml.gradients`, `ml.threshold` and `ml.inference`; private names such as `_SCHEME_REGISTRY` from their module, here `pyfe4ai.ml.wrapper`) |
+  | `pyfe4ai.utils.quantization` | `pyfe4ai.ml.quantization` |
+  | `pyfe4ai.utils.exceptions`, the exceptions re-exported by `pyfe4ai.utils` | `pyfe4ai.core.exceptions` |
+  | `pyfe4ai.utils.crypto_constants` | `pyfe4ai.core.constants` |
+  | `pyfe4ai.utils.crypto_utils`, its hashes (`hash_to_qr_group`, `hash_to_zn2_star`, `paillier_base`, `hash_to_zq_vector`, `hash_to_zq_material`, `zq_rejection_parameters`, `LABEL_HASHES`, `check_label_hash`, ...) | `pyfe4ai.primitives.hashing` |
+  | `pyfe4ai.utils.crypto_utils`, its groups (`generate_group_primes`, `group_generator_fe`, `group_generator_threshold_fe`, `is_dl_group`, `is_dcr_modulus`, `RFC3526_PRIMES`, ...) | `pyfe4ai.primitives.groups.integer_groups` |
+  | `pyfe4ai.utils.sampling_utils` | `pyfe4ai.primitives.sampling` |
+  | `pyfe4ai.utils.ring_lwe_utils`, `.lwe_utils`, `.lwe_matrix`, `.matrix_utils` | `pyfe4ai.primitives.lattice.ring_lwe_utils`, `.lwe_utils`, `.lwe_matrix`, `.matrix_utils` |
+  | `pyfe4ai.utils.ec_group`, `.ristretto255`, `.modular_utils`, `.dlog_solver` | `pyfe4ai.primitives.groups.ec_group`, `.ristretto255`, `.modular_utils`, `.dlog_solver` |
+  | `pyfe4ai.utils.pairing_backend`, `.pairing_utils`, `.bls12_381` | `pyfe4ai.primitives.pairing.pairing_backend`, `.pairing_utils`, `.bls12_381` |
+  | `pyfe4ai.utils.validation` | `pyfe4ai._validation` (internal) |
+  | `pyfe4ai.schemes.ipfe` | `pyfe4ai.core.base` |
+  | `pyfe4ai.schemes.status`, `pyfe4ai.schemes.profiles` | `pyfe4ai.core.status`, `pyfe4ai.core.profiles` |
+  | `pyfe4ai.schemes.one_time`, `pyfe4ai.schemes.random_offline` | `pyfe4ai.core.one_time` |
+  | `pyfe4ai.schemes.abdp15_lwe`, `.ddh_base`, `.ec_ddh_base`, `.config_types` | `pyfe4ai.schemes.common.abdp15_lwe`, `.ddh_base`, `.ec_ddh_base`, `.config_types` |
+  | `pyfe4ai.schemes.threshold_utils`, `pyfe4ai.schemes.flooding_accounting` | `pyfe4ai.schemes.threshold.threshold_utils`, `pyfe4ai.schemes.threshold.flooding_accounting` |
+  | `pyfe4ai.logger` (`init_logging_config`), `pyfe4ai/config.yaml` | removed (see Logging) |
+
+  Objects pickled by an earlier version that refer to a moved module (for
+  example a pickled `FESchemeWrapper`, which holds a `QuantizationConfig`)
+  do not load. The serialized keys, shares, ciphertexts and partial
+  decryptions (JSON and binary) are unchanged.
+- **Logging**: the library no longer configures logging or writes log
+  files. `pyfe4ai.logger.init_logging_config()` and the packaged
+  `config.yaml` (console and rotating files under `./logs/`) are removed;
+  the `pyfe4ai` logger has a `NullHandler`, and the modules log to
+  `logging.getLogger(__name__)` as before. Configure logging in the
+  application (e.g. `logging.basicConfig(level=logging.DEBUG)`); without
+  it, the library's warnings and errors are no longer printed by Python's
+  last-resort handler. PyYAML is no longer a dependency.
+- **Parameter cache location**: key generators keep their parameter
+  records in a per-user cache directory instead of `./config/` of the
+  working directory: `~/Library/Caches/pyfe4ai` on macOS,
+  `$XDG_CACHE_HOME/pyfe4ai` (`~/.cache/pyfe4ai`) on Linux and other POSIX
+  systems, `%LOCALAPPDATA%\pyfe4ai\Cache` on Windows
+  (`pyfe4ai.core.base.default_cache_dir()`). The `PYFE4AI_CACHE_DIR`
+  environment variable overrides it, and a `cache_dir` entry in a key
+  generator's config (also through the ML wrapper's key-generator config)
+  overrides both. Below that directory the layout and the records are
+  unchanged (`authority/<scheme type>/param.json`, `param-rns.json`, ...):
+  to keep an existing cache, move `./config/authority` there or set
+  `PYFE4AI_CACHE_DIR=./config`. The cache is trusted (see the README's
+  known issues): it must not be writable by others.
+- **Repository layout**: `Dockerfile.pairing` moved to
+  `docker/Dockerfile.pairing` (`docker build -f docker/Dockerfile.pairing
+  -t pyfe4ai-pairing .`); the parameter estimators moved to
+  `tools/params/` (`tools/params/estimate_ring_lwe.py`, ...);
+  `requirements.txt` is removed: `pyproject.toml` is the only list of
+  dependencies (`pip install -e ".[test]"`), and `environment.yml` keeps
+  the conda-specific parts (Python, pip, gmpy2 from conda-forge).
 
 ### Breaking changes and upgrade notes
 
