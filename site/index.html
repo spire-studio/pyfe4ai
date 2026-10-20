@@ -8,7 +8,7 @@
 <link rel="canonical" href="https://spire-studio.github.io/pyfe4ai/">
 <meta property="og:type" content="website">
 <meta property="og:title" content="PyFE4AI — Functional Encryption for Trustworthy AI">
-<meta property="og:description" content="A research-oriented Python library of functional encryption for AI security and privacy: 39 SIFE, MIFE, MCFE, threshold, decentralized and quadratic FE schemes over DDH, Paillier, LWE, Ring-LWE and pairings.">
+<meta property="og:description" content="A research-oriented Python library of functional encryption for AI security and privacy: 42 SIFE, MIFE, MCFE, threshold, decentralized and quadratic FE schemes over DDH, Paillier, LWE, Ring-LWE and pairings, with an optional Rust backend.">
 <meta property="og:url" content="https://spire-studio.github.io/pyfe4ai/">
 <meta property="og:image" content="https://spire-studio.github.io/pyfe4ai/assets/branding/logo-simple.png">
 <meta property="og:image:alt" content="PyFE4AI logo">
@@ -247,14 +247,15 @@
     </div>
 
     <p class="notice"><span aria-hidden="true">⚠️</span> <strong>Research prototype.</strong>
-      Every scheme has been checked against its paper, but four threshold layers and
-      the dMCFE-DDH carry mask are our own (experimental) and default parameters are toy-sized.
+      Every scheme except three new ristretto255 variants (not yet reviewed) has been checked
+      against its paper, but four threshold layers and the dMCFE-DDH carry mask are our own
+      (experimental) and default parameters are toy-sized.
       <a href="https://github.com/spire-studio/pyfe4ai#known-issues--security-notice">Read the Known Issues</a>
       before using any scheme beyond experiments.</p>
 
     <div class="statbar">
-      <div class="stat"><b>39</b><span>scheme variants</span></div>
-      <div class="stat"><b>34 / 39</b><span>reviewed · 5 experimental</span></div>
+      <div class="stat"><b>42</b><span>scheme variants</span></div>
+      <div class="stat"><b>34 / 42</b><span>reviewed · 5 experimental · 3 unreviewed</span></div>
       <div class="stat"><b>6</b><span>crypto backends</span></div>
       <div class="stat"><b>Apache-2.0</b><span>license</span></div>
     </div>
@@ -272,38 +273,43 @@
         <div class="ico b" aria-hidden="true">🧩</div>
         <h3>Complete FE family coverage</h3>
         <p>SIFE, MIFE, MCFE, decentralized MCFE, threshold MIFE/MCFE, function-hiding
-           IPE / Multi-IPE, and quadratic FE (SGP, Quad, multi-input MIQFE) — 39
+           IPE / Multi-IPE, and quadratic FE (SGP, Quad, multi-input MIQFE) — 42
            (family, variant) combinations under one roof.</p>
       </div>
       <div class="card">
         <div class="ico a" aria-hidden="true">🔐</div>
         <h3>Six cryptographic backends</h3>
-        <p>DDH, Damgård-DDH (MDDH), Paillier/DCR, LWE, Ring-LWE (lattice lines) and
-           pairings — pick the assumption that fits your deployment.</p>
+        <p>DDH (3072-bit groups or the ristretto255 curve), Damgård-DDH (MDDH),
+           Paillier/DCR, LWE, Ring-LWE (lattice lines) and pairings (BLS12-381) — pick
+           the assumption that fits your deployment.</p>
       </div>
       <div class="card">
         <div class="ico t" aria-hidden="true">🤖</div>
         <h3>ML-native adapter</h3>
         <p><code>ml_adapter</code> runs SIFE and MCFE schemes for encrypted linear
-           inference and gradient aggregation. Its wrapper holds the master key and
+           inference and gradient aggregation, including threshold MCFE over Ring-LWE
+           with its decryption servers in-process. Its wrapper holds the master key and
            plays every party (one trust domain, for experiments) and by default
-           refuses MIFE aggregation, partial aggregates and label reuse; threshold and
-           decentralized variants go through the scheme classes. A quantization
-           toolkit handles float ↔ integer precision.</p>
+           refuses MIFE aggregation, partial aggregates and label reuse; the other
+           threshold and decentralized variants go through the scheme classes. A
+           quantization toolkit handles float ↔ integer precision.</p>
       </div>
       <div class="card">
         <div class="ico t" aria-hidden="true">⚡</div>
         <h3>Engineered for speed</h3>
-        <p>NTT polynomial multiplication for Ring-LWE, O(√n) baby-step giant-step
-           discrete log with caching, CSPRNG batch sampling, and ndarray batch
-           helpers throughout.</p>
+        <p>An optional Rust extension, built by <code>pip install</code> when
+           <code>cargo</code> is available, runs the lattice hot paths, ristretto255 and
+           BLS12-381 pairings with the outputs of the Python reference: an MCFE
+           Ring-LWE round of 10 000 gradient elements under <code>standard</code> takes
+           about 18 ms per client and 6 ms to aggregate (v0.3.0: 198 / 280 ms).</p>
       </div>
       <div class="card">
         <div class="ico b" aria-hidden="true">🧪</div>
         <h3>Tested</h3>
-        <p>500+ tests in the core CI lane, including status-table sync and
-           security-profile tests, plus TypedDict config schemas and a
-           structured <code>FEError</code> exception hierarchy.</p>
+        <p>About 2,100 tests, run in CI with and without the Rust extension (the
+           native code is checked bit for bit against the Python reference), including
+           status-table sync, security-profile and crypto-review regression tests, plus
+           a structured <code>FEError</code> exception hierarchy.</p>
       </div>
       <div class="card">
         <div class="ico a" aria-hidden="true">📚</div>
@@ -319,12 +325,13 @@
         <p>Default parameters are <strong>toy</strong>: fast and not secure.
            <code>"security_profile": "standard"</code> selects 3072-bit discrete-log groups
            (RFC 3526) and DCR moduli, lattice-estimator-sized LWE and Ring-LWE dimensions
-           and <code>stat_param</code> 128, except for pairings, which stay on BN254
-           (about 100-bit, the strongest curve charm-crypto offers; a
-           <code>FESecurityWarning</code> says so), and for ALS16 FullySec-LWE (SIFE, MIFE)
-           and dMCFE-Paillier, which it refuses. Of the 39 registered schemes, 34 are
+           and <code>stat_param</code> 128, except for pairings, which run on BLS12-381
+           (about 120–126-bit after the exTNFS attacks; a <code>FESecurityWarning</code>
+           says so), and for ALS16 FullySec-LWE (SIFE, MIFE), threshold MIFE-LWE and
+           dMCFE-Paillier, which it refuses. Of the 42 registered schemes, 34 are
            reviewed against their papers, 5 are experimental (our own threshold layers
-           and the dMCFE-DDH carry mask) and none is known to be insecure;
+           and the dMCFE-DDH carry mask), 3 (DDH over ristretto255) are not yet reviewed
+           and none is known to be insecure;
            <code>get_scheme_status(family, variant)</code> reports each at runtime.
            <a href="https://github.com/spire-studio/pyfe4ai#security-profiles">Security Profiles →</a></p>
       </div>
@@ -339,7 +346,7 @@
     <p class="sec-sub">Encrypt a vector, hand out a functional key, learn only the inner product.
        Demo parameters are toy-sized: <code>sec_param</code> is a modulus bit length,
        not a security level; <code>"security_profile": "standard"</code> selects
-       128-bit-oriented parameters, except for pairings (BN254, about 100-bit) and the
+       128-bit-oriented parameters, except for pairings (BLS12-381, about 120–126-bit) and the
        schemes it refuses (<a href="https://github.com/spire-studio/pyfe4ai#security-profiles">Security Profiles</a>).</p>
     <div class="qs-cols">
       <div class="codebox"><pre><span class="cm"># install</span>
@@ -347,9 +354,11 @@ git clone https://github.com/spire-studio/pyfe4ai.git
 cd pyfe4ai
 conda env create -f environment.yml
 conda activate pyfe4ai
+<span class="cm"># with cargo on the PATH this also builds the optional Rust</span>
+<span class="cm"># extension (BLS12-381 for the pairing &amp; quadratic FE)</span>
 pip install -e ".[test]"
 
-<span class="cm"># pairing &amp; quadratic FE: GMP, OpenSSL, PBC 1.0.0 first</span>
+<span class="cm"># other pairing curves (charm-crypto): GMP, OpenSSL, PBC first</span>
 pip install -e ".[test,pairing]"
 
 <span class="cm"># run the core test suite</span>
@@ -411,10 +420,10 @@ result = SIFE({<span class="st">"precision"</span>: <span class="st">3</span>, <
        <b class="w">✓*</b> experimental (our own layer) ·
        <span class="n">—</span> not implemented; per-scheme state in the
        <a href="https://github.com/spire-studio/pyfe4ai#scheme-status">Scheme Status</a> table.
-       Pairing-based and quadratic schemes need <code>charm-crypto</code>
-       (<code>pip install -e ".[test,pairing]"</code> after GMP, OpenSSL and PBC 1.0.0, or the
-       Docker image; see <a href="https://github.com/spire-studio/pyfe4ai#pairing-based-schemes">Pairing-Based Schemes</a>)
-       and are not exercised in the default CI lane.</p>
+       SIFE, MIFE and MCFE DDH also come over ristretto255 (<code>ddh_ristretto255</code>,
+       not yet reviewed). Pairing-based and quadratic schemes run on BLS12-381 from the
+       Rust extension; other curves need <code>charm-crypto</code>
+       (see <a href="https://github.com/spire-studio/pyfe4ai#pairing-based-schemes">Pairing-Based Schemes</a>).</p>
   </div>
 </section>
 
@@ -428,10 +437,11 @@ result = SIFE({<span class="st">"precision"</span>: <span class="st">3</span>, <
         <h3><span aria-hidden="true">🌐</span> Federated-learning secure aggregation</h3>
         <p>Clients encrypt local gradients with MCFE-DDH (CDGPP18), the DCR, LWE and
            MDDH constructions of ABMPSW20, or MCFE-Ring-LWE (BMMS21), which under
-           <code>standard</code> encrypts 10 000 gradient elements in about 0.3 s per
-           client; the aggregator's functional key decrypts only the weighted sum.
-           dMCFE variants remove the key authority, and tMCFE variants (TAPFed-style)
-           split decryption across t-of-s servers that are assumed honest-but-curious;
+           <code>standard</code> encrypts 10 000 gradient elements in about 18 ms per
+           client with the Rust extension (0.36 s in pure Python); the aggregator's
+           functional key decrypts only the weighted sum. dMCFE variants remove the key
+           authority, and tMCFE variants (TAPFed-style) split decryption across t-of-s
+           servers that are assumed honest-but-curious;
            their LWE, Ring-LWE and pairing threshold layers are experimental. Check the
            <a href="https://github.com/spire-studio/pyfe4ai#scheme-status">Scheme Status</a>
            before choosing one.</p>
@@ -440,7 +450,7 @@ result = SIFE({<span class="st">"precision"</span>: <span class="st">3</span>, <
       <div class="card">
         <h3><span aria-hidden="true">🔎</span> Encrypted inference</h3>
         <p>Score features with a linear model (SIFE), or evaluate a bilinear form
-           x<sup>T</sup>Fy with quadratic FE (needs <code>charm-crypto</code>), directly over
+           x<sup>T</sup>Fy with quadratic FE (BLS12-381 from the Rust extension), directly over
            ciphertexts — the model owner learns the result, never the raw features.</p>
         <p><a href="https://github.com/spire-studio/pyfe4ai/blob/main/examples/ml_encrypted_inference.py">examples/ml_encrypted_inference.py →</a><br>
            <a href="https://github.com/spire-studio/pyfe4ai/blob/main/examples/quadratic_quad_minimal.py">examples/quadratic_quad_minimal.py →</a></p>
