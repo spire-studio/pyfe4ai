@@ -1,4 +1,4 @@
-"""Regenerate ``WIDE_LWE_128_LOG_RATIO`` of :mod:`pyfe4ai.utils.lwe_utils`.
+"""Regenerate ``WIDE_LWE_128_LOG_RATIO`` of :mod:`pyfe4ai.primitives.lattice.lwe_utils`.
 
 The ABDP15 LWE IPFE (``sife/lwe``, ``mife/lwe``) publishes ``pk = A S + E``:
 LWE in dimension ``n`` with a uniform secret and very wide errors (the

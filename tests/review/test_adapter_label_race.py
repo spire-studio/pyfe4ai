@@ -14,7 +14,7 @@ import threading
 import numpy as np
 import pytest
 
-from pyfe4ai.utils.ml_adapter import FESchemeWrapper, aggregate_gradients, encrypt_gradient
+from pyfe4ai.ml import FESchemeWrapper, aggregate_gradients, encrypt_gradient
 
 NIDS = ["c0", "c1", "c2"]
 

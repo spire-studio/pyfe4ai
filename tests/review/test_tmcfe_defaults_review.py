@@ -30,7 +30,7 @@ import numpy as np
 import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
-from pyfe4ai.utils.ml_adapter import FESchemeWrapper, aggregate_gradients, encrypt_gradient, prepare_aggregation
+from pyfe4ai.ml import FESchemeWrapper, aggregate_gradients, encrypt_gradient, prepare_aggregation
 
 NIDS, SIDS = ["nid_0", "nid_1", "nid_2"], ["sid_0", "sid_1", "sid_2"]
 WEIGHTS = {"nid_0": 1, "nid_1": 2, "nid_2": 1}

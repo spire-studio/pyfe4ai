@@ -23,10 +23,10 @@ import pickle
 import numpy as np
 import pytest
 
-from pyfe4ai.schemes.flooding_accounting import PartialDecryptionBudget
+from pyfe4ai.schemes.threshold.flooding_accounting import PartialDecryptionBudget
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai import backend as native_backend
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 
 NATIVE = native_backend.available()
 needs_native = pytest.mark.skipif(not NATIVE, reason="native extension not built")
@@ -139,7 +139,7 @@ def test_toy_moduli_get_three_factors_and_run_natively():
         assert tm._native_ring(pp["q"], pp["ring_n"]) is not None
     kg2, pp2 = _setup(t=2, bound_x=4, bound_y=3, ring_modulus="rns", stat_param=40)
     assert len(pp2["q_factors"]) == 3
-    from pyfe4ai.utils import ring_lwe_utils as rlu
+    from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
 
     assert rlu.rns_factor_count(1 << 100) == 2 and rlu.rns_factor_count(1 << 100, 3) == 3
     assert rlu.rns_factor_count(1 << 230, 3) == 4  # more where the bits need them

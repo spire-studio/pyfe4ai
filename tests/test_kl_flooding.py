@@ -11,19 +11,19 @@ import time
 import numpy as np
 import pytest
 
-from pyfe4ai.schemes import flooding_accounting as fa
+from pyfe4ai.schemes.threshold import flooding_accounting as fa
 from pyfe4ai.schemes.mcfe.lwe_threshold import ThresholdMCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWE
 from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWEKeyGenerator
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWEKeyGenerator
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils import sampling_utils
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
-from pyfe4ai.utils.lwe_utils import GAUSSIAN_TAIL_CUT
-from pyfe4ai.utils.lwe_utils import check_wide_lwe
-from pyfe4ai.utils.ring_lwe_utils import ring_lwe_bound
-from pyfe4ai.utils.sampling_utils import XofRandom
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives import sampling as sampling_utils
+from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.primitives.lattice.lwe_utils import GAUSSIAN_TAIL_CUT
+from pyfe4ai.primitives.lattice.lwe_utils import check_wide_lwe
+from pyfe4ai.primitives.lattice.ring_lwe_utils import ring_lwe_bound
+from pyfe4ai.primitives.sampling import XofRandom
 
 NIDS = ["nid_0", "nid_1", "nid_2"]
 SIDS = ["sid_0", "sid_1", "sid_2"]

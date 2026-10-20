@@ -15,7 +15,7 @@ from pyfe4ai.schemes.quadratic.quad import QuadraticQuad
 from pyfe4ai.schemes.quadratic.quad import QuadraticQuadKeyGenerator
 from pyfe4ai.schemes.quadratic.sgp import QuadraticSGP
 from pyfe4ai.schemes.quadratic.sgp import QuadraticSGPKeyGenerator
-from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP
+from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP
 
 ROUNDS = 3
 

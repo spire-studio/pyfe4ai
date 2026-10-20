@@ -22,7 +22,7 @@ from __future__ import annotations
 import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
-from pyfe4ai.utils.exceptions import FEError
+from pyfe4ai.core.exceptions import FEError
 
 NIDS, SIDS = ["c0", "c1", "c2"], ["s0", "s1", "s2"]
 WEIGHTS = {nid: [y] for nid, y in zip(NIDS, (1, -2, 3))}

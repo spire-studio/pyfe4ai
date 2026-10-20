@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 
 from pyfe4ai.schemes.sife import paillier as sife_paillier
-from pyfe4ai.utils.exceptions import FEValidationError
+from pyfe4ai.core.exceptions import FEValidationError
 
 
 @pytest.fixture(autouse=True)

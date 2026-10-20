@@ -4,10 +4,10 @@ import importlib
 
 import pytest
 
-from pyfe4ai.utils.exceptions import FEValidationError
-from pyfe4ai.utils.ml_adapter import _SCHEME_REGISTRY
-from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP
-from pyfe4ai.utils.pairing_backend import PairingGroup, check_asymmetric, pairing_available
+from pyfe4ai.core.exceptions import FEValidationError
+from pyfe4ai.ml import _SCHEME_REGISTRY
+from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP
+from pyfe4ai.primitives.pairing.pairing_backend import PairingGroup, check_asymmetric, pairing_available
 
 PAIRING_SCHEMES = sorted(
     key for key in _SCHEME_REGISTRY if "pairing" in key[1] or key[0] == "quadratic"
@@ -67,7 +67,7 @@ def test_key_generator_defaults_to_asymmetric_group(key):
 @pytest.mark.parametrize("name", ASYMMETRIC_GROUPS)
 def test_identity_elements_round_trip(name):
     """charm's compressed G1 identity used to deserialise to a non-member point."""
-    from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR
+    from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, GT, ZR
 
     _need(name)
     group = PairingGroup(name)

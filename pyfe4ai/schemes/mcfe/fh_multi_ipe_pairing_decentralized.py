@@ -41,11 +41,11 @@ import secrets
 
 from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPE
 from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.pairing_backend import ZR
-from pyfe4ai.utils.sampling_utils import XofRandom
-from pyfe4ai.utils.validation import int_vector
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.primitives.pairing.pairing_backend import ZR
+from pyfe4ai.primitives.sampling import XofRandom
+from pyfe4ai._validation import int_vector
 
 logger = logging.getLogger(__name__)
 

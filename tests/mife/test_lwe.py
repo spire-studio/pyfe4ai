@@ -149,7 +149,7 @@ def test_noise_is_sized_for_all_slots(tmp_path, monkeypatch):
 
 
 def test_parameters_are_deterministic():
-    from pyfe4ai.utils.lwe_utils import abdp15_parameters
+    from pyfe4ai.primitives.lattice.lwe_utils import abdp15_parameters
 
     first = abdp15_parameters(20, 20, 3, 64)
     assert abdp15_parameters(20, 20, 3, 64) == first

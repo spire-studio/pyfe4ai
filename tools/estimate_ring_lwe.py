@@ -1,4 +1,4 @@
-"""Regenerate ``RING_LWE_128_LOG_Q`` of :mod:`pyfe4ai.utils.ring_lwe_utils`.
+"""Regenerate ``RING_LWE_128_LOG_Q`` of :mod:`pyfe4ai.primitives.lattice.ring_lwe_utils`.
 
 For every error width ``sigma`` of ``SIGMAS`` and every ring dimension ``n``
 of ``DIMS`` this finds the largest ``k`` such that LWE in dimension ``n`` with

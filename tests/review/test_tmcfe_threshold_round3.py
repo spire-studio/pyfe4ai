@@ -12,7 +12,7 @@ Before the fixes:
   ``native_backend._contexts_lock`` -- were not replaced in a forked child: a
   fork while another thread held one left the child's copy locked for ever,
   and its next split-share or replicated partial decryption hung
-  (``sampling_utils._XOF_LOCK`` is reset after a fork for this reason);
+  (``sampling._XOF_LOCK`` is reset after a fork for this reason);
 * a polynomial given as a list of values holding a bytes element passed
   ``poly_kinds`` (it looks at the first element); the native NTT and partial
   readings raised ``TypeError`` instead of ``FEKeyError``.
@@ -26,9 +26,9 @@ import threading
 
 import pytest
 
-from pyfe4ai.schemes import threshold_utils as tu
+from pyfe4ai.schemes.threshold import threshold_utils as tu
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
-from pyfe4ai.utils import native_backend
+from pyfe4ai import backend as native_backend
 
 NIDS, SIDS = ["c0", "c1", "c2"], ["s0", "s1", "s2"]
 
@@ -96,8 +96,8 @@ def test_i2b_native_a_value_list_holding_bytes_is_a_key_error(backend, ct_format
     """Native readings: a polynomial that is a list of values with a
     bytes element passes poly_kinds (it looks at the first element) and the
     native NTT / partial reading raises TypeError instead of FEKeyError."""
-    from pyfe4ai.utils import ring_lwe_utils as rlu
-    from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError
+    from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
+    from pyfe4ai.core.exceptions import FEKeyError, FESchemeError
 
     kg = _kg(t=3, ct_format=ct_format)
     kg.setup()

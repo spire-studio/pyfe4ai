@@ -42,7 +42,7 @@ def _t(fn, reps):
 
 def ddh(reps: int) -> dict:
     from pyfe4ai.schemes.mcfe import ddh as mod
-    from pyfe4ai.utils.ml_adapter import FESchemeWrapper
+    from pyfe4ai.ml import FESchemeWrapper
 
     nids = ["c0", "c1", "c2"]
     w = FESchemeWrapper("mcfe", "ddh", {"eta": 1, "n": 3, "lst_nid": nids, "security_profile": "standard"},
@@ -81,7 +81,7 @@ def ddh(reps: int) -> dict:
 
 def paillier(reps: int) -> dict:
     from pyfe4ai.schemes.mcfe import paillier as mod
-    from pyfe4ai.utils.ml_adapter import FESchemeWrapper
+    from pyfe4ai.ml import FESchemeWrapper
 
     nids = ["c0", "c1", "c2"]
     w = FESchemeWrapper("mcfe", "paillier", {"eta": 1, "n": 3, "lst_nid": nids, "security_profile": "standard",

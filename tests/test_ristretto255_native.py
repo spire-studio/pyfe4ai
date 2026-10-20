@@ -14,9 +14,10 @@ import numpy as np
 import pytest
 
 from pyfe4ai.schemes.mcfe import ddh_ristretto255 as mcfe_ec
-from pyfe4ai.utils import ec_group, native_backend
-from pyfe4ai.utils import ristretto255 as R
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.primitives.groups import ec_group
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives.groups import ristretto255 as R
+from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
 
 pytestmark = [
     pytest.mark.core,

@@ -1,7 +1,7 @@
 """The rounded Python sampler and ``gauss_next`` (October 2026 code review; the
 code dated from v0.3.0).
 
-The rounded Python sampler (``sampling_utils.discrete_gaussian_matrix``, used
+The rounded Python sampler (``sampling.discrete_gaussian_matrix``, used
 for Python-path key generation and noise) drew ``SystemRandom().gauss``,
 which caches the second Box-Muller value in the module-global
 ``_CSPRNG.gauss_next``: a future secret or noise coefficient stayed in memory
@@ -13,7 +13,7 @@ import os
 
 import pytest
 
-from pyfe4ai.utils import sampling_utils as su
+from pyfe4ai.primitives import sampling as su
 
 
 @pytest.mark.skipif(not hasattr(os, "fork"), reason="needs fork")

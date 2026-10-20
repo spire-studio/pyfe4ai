@@ -7,8 +7,8 @@ import gmpy2 as gp
 
 from pyfe4ai.schemes.mcfe.ddh_decentralized import DecentralizedMCFE
 from pyfe4ai.schemes.mcfe.ddh_decentralized import DecentralizedMCFEKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.exceptions import FESchemeError
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.exceptions import FESchemeError
 from pyfe4ai.logger import init_logging_config
 
 init_logging_config()

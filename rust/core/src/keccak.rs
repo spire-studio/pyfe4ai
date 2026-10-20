@@ -1,4 +1,4 @@
-//! SHAKE-256 / SHAKE128 (FIPS 202) and the reductions of crypto_utils.hash_to_zq_vector.
+//! SHAKE-256 / SHAKE128 (FIPS 202) and the reductions of pyfe4ai.primitives.hashing.hash_to_zq_vector.
 
 use crate::arith::{Modulus, Word};
 
@@ -161,9 +161,9 @@ pub fn hash_to_zq<W: Word>(m: &Modulus<W>, material: &[u8], out: &mut [W]) {
     wipe_long(&mut stream);
 }
 
-/// How a label is hashed to Z_q (crypto_utils.LABEL_HASHES): the SHAKE-256
+/// How a label is hashed to Z_q (pyfe4ai.primitives.hashing.LABEL_HASHES): the SHAKE-256
 /// blocks of bits(q) + 128 bits reduced mod q, or rejection sampling mod q from
-/// SHAKE-256 / SHAKE128 (crypto_utils.hash_to_zq_vector with that mode).
+/// SHAKE-256 / SHAKE128 (hashing.hash_to_zq_vector with that mode).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HashMode {
     Wide256,

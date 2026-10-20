@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe_decentralized as dm
-from pyfe4ai.utils import native_backend
+from pyfe4ai import backend as native_backend
 
 pytestmark = pytest.mark.skipif(not native_backend.available(), reason="Rust extension not built")
 

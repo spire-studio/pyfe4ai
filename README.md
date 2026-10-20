@@ -75,8 +75,8 @@ and 6 ms for the aggregator, against 198 ms and 280 ms with v0.3.0 (0.25 ms
 per client online after an offline phase). It also provides ristretto255 for
 the `ddh_ristretto255` schemes and the BLS12-381 pairing group, the default
 of the pairing-based schemes. `PYFE4AI_BACKEND=python` (or
-`native_backend.set_backend("python")`) forces the Python implementation. See
-`pyfe4ai.utils.native_backend` and
+`pyfe4ai.backend.set_backend("python")`) forces the Python implementation. See
+`pyfe4ai.backend` and
 [`benchmarks/PERFORMANCE.md`](benchmarks/PERFORMANCE.md).
 
 ## Usage
@@ -116,12 +116,12 @@ See `examples/sife_minimal.py` for the full runnable version.
 - **Function-hiding** — pairing-based FH-IPE and FH-Multi-IPE with full inner-product privacy
 - **Quadratic FE** — SGP and Quad (single-input, public-key) and multi-input quadratic FE with per-user keys (AGT22)
 - **Security profiles** — `security_profile="standard"` selects 3072-bit DL / DCR groups, lattice-estimator-sized LWE and Ring-LWE dimensions and BLS12-381 pairings; the default `"toy"` keeps the fast demo parameters
-- **ML adapter** — `utils/ml_adapter.py` for encrypted linear inference and federated gradient aggregation, including threshold MCFE (Ring-LWE) with its decryption servers run in-process
-- **Native backend** — optional Rust extension (`pyfe4ai._rust_native`) for the Ring-LWE, dense-LWE and threshold hot paths, ristretto255 and the BLS12-381 pairing group, with the Python code as reference and fallback (`pyfe4ai.utils.native_backend`)
-- **Precision toolkit** — `utils/quantization.py` for float ↔ integer quantization with configurable bit-width
-- **Discrete-log solvers** — in-memory dlog table (default) with on-the-fly BSGS as optional backup in `utils/dlog_solver.py`
-- **NTT acceleration** — number-theoretic transform for Ring-LWE polynomial multiplication in `utils/ring_lwe_utils.py`
-- **Structured exceptions** — `FEError` hierarchy in `utils/exceptions.py`
+- **ML adapter** — `pyfe4ai.ml` for encrypted linear inference and federated gradient aggregation, including threshold MCFE (Ring-LWE) with its decryption servers run in-process
+- **Native backend** — optional Rust extension (`pyfe4ai._rust_native`) for the Ring-LWE, dense-LWE and threshold hot paths, ristretto255 and the BLS12-381 pairing group, with the Python code as reference and fallback (`pyfe4ai.backend`)
+- **Precision toolkit** — `pyfe4ai.ml.quantization` for float ↔ integer quantization with configurable bit-width
+- **Discrete-log solvers** — in-memory dlog table (default) with on-the-fly BSGS as optional backup in `primitives/groups/dlog_solver.py`
+- **NTT acceleration** — number-theoretic transform for Ring-LWE polynomial multiplication in `primitives/lattice/ring_lwe_utils.py`
+- **Structured exceptions** — `FEError` hierarchy in `core/exceptions.py`
 
 ## Implemented Schemes
 
@@ -181,11 +181,11 @@ See `examples/sife_minimal.py` for the full runnable version.
 ## Scheme Status
 
 Every registered scheme carries a review status, kept in
-[`pyfe4ai/schemes/status.py`](pyfe4ai/schemes/status.py) and available at
+[`pyfe4ai/core/status.py`](pyfe4ai/core/status.py) and available at
 runtime as `pyfe4ai.get_scheme_status(family, variant)` (and
 `FESchemeWrapper(...).status`). Instantiating a key generator or crypto
 object of a known-insecure scheme emits a `pyfe4ai.FESecurityWarning`. The
-table below is rendered by `pyfe4ai.schemes.status.markdown_table()` and a
+table below is rendered by `pyfe4ai.core.status.markdown_table()` and a
 test keeps it in sync.
 
 - **reviewed**: checked against the cited construction; no defect known.
@@ -253,7 +253,7 @@ schemes over ristretto255 (`*/ddh_ristretto255`, selected with
 ## Security Profiles
 
 Every key generator accepts a `security_profile` entry in its config
-([`pyfe4ai/schemes/profiles.py`](pyfe4ai/schemes/profiles.py)). The default,
+([`pyfe4ai/core/profiles.py`](pyfe4ai/core/profiles.py)). The default,
 `"toy"`, keeps the small default parameters -- fast, and **not secure**; a
 config without the entry behaves exactly as before. `"standard"` fills in
 parameters aiming at 128-bit classical security and rejects explicit values
@@ -285,27 +285,28 @@ side-channel hardening, trusted parameter cache) still apply.
 ## Repository Layout
 
 - `pyfe4ai/`: installable Python package
-  - `schemes/`: core cryptographic scheme implementations
+  - `core/`: what every scheme shares
+    - `base.py`: key-generator and crypto base classes, the parameter cache
+    - `status.py`: review status of every registered scheme (the table above)
+    - `profiles.py`: `security_profile` (`"toy"` / `"standard"`)
+    - `one_time.py`: one-time precomputations of the offline / online encryption
+    - `exceptions.py`: `FEError` exception hierarchy; `constants.py`: scheme types and defaults
+  - `schemes/`: the schemes
     - `sife/`: single-input families
     - `mife/`: multi-input families
     - `mcfe/`: multi-client families
     - `quadratic/`: quadratic functional encryption families
-    - `status.py`: review status of every registered scheme (the table above)
-    - `profiles.py`: `security_profile` (`"toy"` / `"standard"`)
-    - `threshold_utils.py`: Shamir and replicated sharing, client MAC tags and partial-decryption checks of the threshold schemes
-    - `abdp15_lwe.py`: shared ABDP15 parameters and seeded public matrix of SIFE- and MIFE-LWE
-  - `utils/`: utility modules
-    - `crypto_constants.py`, `crypto_utils.py`: group generation and constants
-    - `lwe_utils.py`, `ring_lwe_utils.py`: LWE / Ring-LWE helpers with NTT
-    - `lwe_matrix.py`: seeded public LWE matrices and exact numpy products with them
-    - `dlog_solver.py`: in-memory dlog table + BSGS discrete-log recovery
-    - `ml_adapter.py`: ML integration (encrypted inference, FL aggregation)
-    - `quantization.py`: float ↔ integer quantization toolkit
-    - `exceptions.py`: `FEError` exception hierarchy
-    - `validation.py`: strict integer checks and rounding of scheme inputs
-    - `sampling_utils.py`, `matrix_utils.py`, `modular_utils.py`: math helpers
-    - `pairing_backend.py`, `pairing_utils.py`, `bls12_381.py`: pairing layer (BLS12-381 from the Rust extension, other curves from charm-crypto)
-  - `logger.py`, `config.yaml`: logging configuration
+    - `common/`: DDH and EC-DDH base classes, `abdp15_lwe.py` (shared ABDP15 parameters and seeded public matrix of SIFE- and MIFE-LWE), configuration types
+    - `threshold/`: `threshold_utils.py` (Shamir and replicated sharing, client MAC tags and partial-decryption checks of the threshold schemes), `flooding_accounting.py`
+  - `primitives/`: cryptographic building blocks
+    - `lattice/`: LWE / Ring-LWE parameters and NTT (`lwe_utils.py`, `ring_lwe_utils.py`), seeded public LWE matrices (`lwe_matrix.py`), arithmetic mod q (`matrix_utils.py`)
+    - `sampling.py`: discrete Gaussian samplers; `hashing.py`: hashing to groups and to `Z_q` (label hashes)
+    - `groups/`: safe-prime and DCR groups (`integer_groups.py`), ristretto255, modular arithmetic, in-memory dlog table + BSGS (`dlog_solver.py`)
+    - `pairing/`: pairing layer (BLS12-381 from the Rust extension, other curves from charm-crypto)
+  - `backend/`: native (Rust) or Python implementation, threads
+  - `ml/`: ML integration (encrypted inference, FL aggregation, threshold servers) and `quantization.py` (float ↔ integer)
+  - `_validation.py`: strict integer checks and rounding of scheme inputs
+- `rust/`: sources of the native extension (`rust/native`, PyO3) and of its computation core (`rust/core`)
 - `docs/`: Sphinx API documentation (see [API Documentation](#api-documentation))
 - `tests/`: end-to-end and regression tests (`sife/`, `mife/`, `mcfe/`, `quadratic/`)
 - `examples/`: minimal runnable usage examples
@@ -465,7 +466,7 @@ limitations remain:
 | Rounded Gaussian by default outside the exact-default schemes | ALS16 (`fullysec_lwe`), the DCR schemes, and under `toy` ABDP15 SIFE / MIFE LWE (and the keys of tMIFE-LWE) | The proofs sample `D_{Z,sigma}`; these schemes follow the library-wide sampler, which by default rounds a continuous Gaussian: in double precision up to `2^40` (shared Box-Muller radii, ties to even, nothing beyond 8.57 sigma: 2^-25..2^-4 from i.i.d. `D_{Z,sigma}` per key or ciphertext per the October 2026 crypto review) and with MPFR at `bits(sigma) + 320` bits beyond. `sampler="facct"`, `gaussian_sampler("facct")`, `set_gaussian_sampler("facct")` or `PYFE4AI_GAUSSIAN_SAMPLER=facct` select the exact sampler for them (about 2^-185 per sample). The Ring-LWE MIFE / MCFE family, the dense-LWE MCFE keys `t` and SIFE FullySec Ring-LWE sample exactly by default and record it in their public parameters; for them the process-wide choice and the environment variable do not apply, and `standard` refuses `"rounded"`. ABDP15 (`sife/lwe`, `mife/lwe`; `mife/lwe_threshold` is refused under `standard`) does the same for its public keys' noise under `standard`, and under `toy` (also the keys of `mife/lwe_threshold`) follows its config's `gaussian_sampler`, else the library-wide choice; its public parameters record the sampler either way. The threshold flooding always uses the MPFR rounded sampler. Neither sampler is constant-time. |
 | Toy default parameters | all | `sec_param` is a modulus bit length (default 128), not a security level; LWE dimensions default to 32–64 and the Ring-LWE dimension to 32; the statistical parameter `stat_param` defaults to 64. All far below any real security level (a key column of SIFE-LWE at its defaults falls to plain LLL in minutes). Pass `security_profile="standard"` for 128-bit-oriented parameters -- except for pairings (BLS12-381, about 120–126-bit) and the refused ALS16, tMIFE-LWE and dMCFE-Paillier schemes; see [Security Profiles](#security-profiles). |
 | Parameter cache in the working directory | key generators that cache parameters (most; not MCFE `lwe`, `fullysec_lwe`, `lwe_threshold`, the FH-MCFE family, MIFE `fh_ipe_pairing` and quadratic `quad` and `miqfe`) | Public parameters are written to and re-loaded from `./config/authority/...`. A cached file is used only if it matches the configuration; discrete-log groups are checked for primality, size, safe-prime structure, generator order and (at RFC 3526 sizes) for being the RFC prime; DCR moduli for size, compositeness and small factors (their factors are never stored); all other cached values are re-derived on load or expanded from a stored seed (LWE and Ring-LWE parameters and public matrices, the Paillier base, the Damgard `h`); under `standard` the lattice schemes re-check their moduli against the 128-bit tables. An unreadable file is regenerated, and files are written atomically. No check can tell whether someone knows the factors of a DCR modulus, so under `standard` the Paillier moduli and the dMCFE `N2` are generated for every key generator, never loaded or stored; under `toy` a planted modulus with known factors is still used: run only in a directory that nobody else can write to. |
-| The ML adapter plays every party | `utils/ml_adapter.py` | `FESchemeWrapper` runs the key generator, so it holds the master key and acts as clients, authority and decryptor in one trust domain; use it for experiments, not as a deployment. For `mcfe/ring_lwe_threshold` it also runs the decryption servers (`partial_decrypt_gradients`, `combine_partial_decryptions` show a deployment's messages, and a `PreparedAggregation` holds the servers' label key shares), so there the threshold protects nothing. By default `aggregate_gradients` needs a ciphertext and a non-zero weight for every enrolled client (`allow_partial=True` relaxes this), a client encrypts at most once per label and a label is aggregated with one weight vector; these checks are per wrapper object, and they do not stop very unequal weights (e.g. `(W, 1)` with `W` above twice the largest gradient entry), which separate two clients' gradients in one aggregate -- as with any inner-product FE, the weights are the key holder's choice. A pickled or copied wrapper (`multiprocessing`, Ray) carries the master key and every client's key: ship a worker its client's own crypto object (the scheme class built from `wrapper.pp` and `wrapper.kg.get_private_keys(nid)`), not the wrapper. |
+| The ML adapter plays every party | `pyfe4ai.ml` | `FESchemeWrapper` runs the key generator, so it holds the master key and acts as clients, authority and decryptor in one trust domain; use it for experiments, not as a deployment. For `mcfe/ring_lwe_threshold` it also runs the decryption servers (`partial_decrypt_gradients`, `combine_partial_decryptions` show a deployment's messages, and a `PreparedAggregation` holds the servers' label key shares), so there the threshold protects nothing. By default `aggregate_gradients` needs a ciphertext and a non-zero weight for every enrolled client (`allow_partial=True` relaxes this), a client encrypts at most once per label and a label is aggregated with one weight vector; these checks are per wrapper object, and they do not stop very unequal weights (e.g. `(W, 1)` with `W` above twice the largest gradient entry), which separate two clients' gradients in one aggregate -- as with any inner-product FE, the weights are the key holder's choice. A pickled or copied wrapper (`multiprocessing`, Ray) carries the master key and every client's key: ship a worker its client's own crypto object (the scheme class built from `wrapper.pp` and `wrapper.kg.get_private_keys(nid)`), not the wrapper. |
 
 **v0.3.0 and earlier are affected: Lagrange-multiplier leak in the threshold
 LWE layers** -- severity High, practical impact Medium; fixed after v0.3.0,

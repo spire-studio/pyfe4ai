@@ -12,9 +12,9 @@ import gmpy2 as gp
 import numpy as np
 import pytest
 
-from pyfe4ai.utils import sampling_utils as su
-from pyfe4ai.utils.exceptions import FEValidationError
-from pyfe4ai.utils.ml_adapter import FESchemeWrapper, aggregate_gradients, encrypt_gradient
+from pyfe4ai.primitives import sampling as su
+from pyfe4ai.core.exceptions import FEValidationError
+from pyfe4ai.ml import FESchemeWrapper, aggregate_gradients, encrypt_gradient
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -61,7 +61,7 @@ def test_set_default_and_reject_unknown_names():
 
 
 def test_environment_variable_sets_the_default():
-    code = "from pyfe4ai.utils.sampling_utils import get_gaussian_sampler as g; print(g())"
+    code = "from pyfe4ai.primitives.sampling import get_gaussian_sampler as g; print(g())"
     env = dict(os.environ, PYFE4AI_GAUSSIAN_SAMPLER="facct", PYTHONPATH=str(ROOT))
     out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, check=True)
     assert out.stdout.strip() == "facct"

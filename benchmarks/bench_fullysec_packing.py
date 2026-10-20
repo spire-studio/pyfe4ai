@@ -22,7 +22,7 @@ import tempfile
 import time
 
 from pyfe4ai.schemes.sife.fullysec_ring_lwe import SIFEFullySecRingLWE, SIFEFullySecRingLWEKeyGenerator
-from pyfe4ai.utils import native_backend
+from pyfe4ai import backend as native_backend
 
 CONFIGS = {1: (1, 100, 1), 4: (4, 4, 4), 10: (10, 50, 50)}
 

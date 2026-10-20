@@ -19,7 +19,7 @@ from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold import ThresholdMCFEFHM
 from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold import ThresholdMCFEFHMultiIPEKeyGenerator
 from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPE
 from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPEKeyGenerator
-from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP
+from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP
 
 ROUNDS = 3
 

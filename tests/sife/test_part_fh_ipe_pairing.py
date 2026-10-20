@@ -9,7 +9,7 @@ skip_unless_available()
 
 from pyfe4ai.schemes.sife.part_fh_ipe_pairing import SIFEPartFHIPE
 from pyfe4ai.schemes.sife.part_fh_ipe_pairing import SIFEPartFHIPEKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
+from pyfe4ai.core.constants import CryptoCONST
 
 
 @pytest.fixture
@@ -72,7 +72,7 @@ def test_public_and_secret_encryption(kg_config):
 
 def test_subspace_dimension_must_be_proper(kg_config):
     """A square M (subspace_dim = eta) published V = (V^T M) M^-1 and with it y."""
-    from pyfe4ai.utils.exceptions import FEValidationError
+    from pyfe4ai.core.exceptions import FEValidationError
 
     with pytest.raises(FEValidationError):
         SIFEPartFHIPEKeyGenerator(dict(kg_config, subspace_dim=kg_config["eta"]))
@@ -82,7 +82,7 @@ def test_subspace_dimension_must_be_proper(kg_config):
 
 
 def test_adapter_encryptor_gets_no_master_key():
-    from pyfe4ai.utils.ml_adapter import FESchemeWrapper
+    from pyfe4ai.ml import FESchemeWrapper
 
     wrapper = FESchemeWrapper("sife", "part_fh_ipe_pairing",
                               {"sec_param": 64, "eta": 4, "bound": 4, "pairing_group_param": GROUP})

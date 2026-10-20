@@ -14,7 +14,7 @@ from pyfe4ai.schemes.mcfe.paillier import MCFEPaillierKeyGenerator
 from pyfe4ai.schemes.sife.damgard_ddh import SIFEDamgardKeyGenerator
 from pyfe4ai.schemes.sife.ddh import SIFEKeyGenerator
 from pyfe4ai.schemes.sife.paillier import SIFEPaillierKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
+from pyfe4ai.core.constants import CryptoCONST
 
 
 @pytest.fixture(autouse=True)
@@ -132,21 +132,21 @@ def test_planted_group_with_a_small_subgroup_is_replaced():
 def test_rfc_sizes_must_use_the_rfc_prime(monkeypatch):
     """At a size with an RFC 3526 prime, another safe prime (which could carry
     a trapdoor) is refused; checked at a small size registered for the test."""
-    from pyfe4ai.utils import crypto_utils
-    from pyfe4ai.utils.crypto_utils import _safe_prime, is_dl_group
+    from pyfe4ai.primitives.groups import integer_groups
+    from pyfe4ai.primitives.groups.integer_groups import _safe_prime, is_dl_group
 
     p1, q1 = _safe_prime(96)
     while True:
         p2, q2 = _safe_prime(96)
         if p2 != p1:
             break
-    monkeypatch.setitem(crypto_utils.RFC3526_PRIMES, 96, p1)
+    monkeypatch.setitem(integer_groups.RFC3526_PRIMES, 96, p1)
     assert is_dl_group(p1, q1, 4, 96)
     assert not is_dl_group(p2, q2, 4, 96)
 
 
 def test_dcr_moduli_with_small_factors_and_paillier_bases_of_order_n_are_refused():
-    from pyfe4ai.utils.crypto_utils import is_dcr_modulus
+    from pyfe4ai.primitives.groups.integer_groups import is_dcr_modulus
 
     big = gp.next_prime(gp.mpz(1) << 126)
     assert not is_dcr_modulus(3 * big, 64)
@@ -257,9 +257,9 @@ def test_damgard_h_is_derived_from_a_seed():
 def test_standard_never_loads_or_stores_dcr_moduli(monkeypatch):
     """A cached DCR modulus cannot be checked for an unknown factorisation, so
     under standard it is generated afresh (toy keeps the cache)."""
-    from pyfe4ai.schemes import profiles
+    from pyfe4ai.core import profiles
     from pyfe4ai.schemes.sife import paillier
-    from pyfe4ai.utils.crypto_utils import _safe_prime
+    from pyfe4ai.primitives.groups.integer_groups import _safe_prime
 
     monkeypatch.setattr(paillier, "generate_group_primes", lambda bits: _safe_prime(64))
     monkeypatch.setitem(profiles._STANDARD_MINIMA, "dcr", {"bit_length": 64, "stat_param": 128})

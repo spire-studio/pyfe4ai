@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 from pyfe4ai.schemes.mcfe.labels import ElementLabel, element_label, encode_label
-from pyfe4ai.utils.exceptions import FEValidationError
+from pyfe4ai.core.exceptions import FEValidationError
 
 
 def test_encodings_are_disjoint():

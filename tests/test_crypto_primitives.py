@@ -6,8 +6,8 @@ import random
 import gmpy2 as gp
 import pytest
 
-from pyfe4ai.utils.crypto_utils import hash_to_zq_vector
-from pyfe4ai.utils.modular_utils import pow_signed, pow_signed_many
+from pyfe4ai.primitives.hashing import hash_to_zq_vector
+from pyfe4ai.primitives.groups.modular_utils import pow_signed, pow_signed_many
 
 
 def test_hash_to_zq_vector_reduces_one_shake256_stream():

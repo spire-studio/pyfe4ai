@@ -70,9 +70,9 @@ def _round(kg_config, dct_x, dct_y):
 def test_slot_results_are_masked_and_keys_do_not_mix(kg_config):
     """v0.2.0 decoded every slot separately (per-slot <x_i, y_i>) and slot keys
     of different functional keys could be recombined."""
-    from pyfe4ai.utils.exceptions import FESchemeError
-    from pyfe4ai.utils.pairing_backend import GT
-    from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
+    from pyfe4ai.core.exceptions import FESchemeError
+    from pyfe4ai.primitives.pairing.pairing_backend import GT
+    from pyfe4ai.primitives.pairing.pairing_utils import bounded_discrete_log_gt
 
     nids = kg_config["lst_nid"]
     x = {"nid_0": [5, 0, 0, 0], "nid_1": [-5, 0, 0, 0], "nid_2": [0, 0, 0, 0]}

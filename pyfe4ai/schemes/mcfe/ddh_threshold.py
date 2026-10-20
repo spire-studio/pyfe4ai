@@ -49,27 +49,27 @@ import logging
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.schemes.ddh_base import DDHKeyGeneratorBase
-from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
+from pyfe4ai.schemes.common.ddh_base import DDHKeyGeneratorBase
+from pyfe4ai.core.base import IPFEAbsCrypto
 from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
 from pyfe4ai.schemes.mcfe.labels import encode_label
-from pyfe4ai.schemes.threshold_utils import check_fusion_weight
-from pyfe4ai.schemes.threshold_utils import fusion_weight_id
-from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
-from pyfe4ai.schemes.threshold_utils import share_points
-from pyfe4ai.schemes.threshold_utils import share_secret
-from pyfe4ai.schemes.threshold_utils import validate_enrolled
-from pyfe4ai.schemes.threshold_utils import combine_consistently
-from pyfe4ai.schemes.threshold_utils import partial_groups
-from pyfe4ai.schemes.threshold_utils import combine_elementwise
-from pyfe4ai.schemes.threshold_utils import validate_partial_decryptions
-from pyfe4ai.schemes.threshold_utils import validate_threshold
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.crypto_utils import _random
-from pyfe4ai.utils.crypto_utils import hash_to_qr_group
-from pyfe4ai.utils.dlog_solver import load_or_build_dlog_table, dlog_table_solve
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.validation import scale_to_int
+from pyfe4ai.schemes.threshold.threshold_utils import check_fusion_weight
+from pyfe4ai.schemes.threshold.threshold_utils import fusion_weight_id
+from pyfe4ai.schemes.threshold.threshold_utils import lagrange_coefficient_at_zero
+from pyfe4ai.schemes.threshold.threshold_utils import share_points
+from pyfe4ai.schemes.threshold.threshold_utils import share_secret
+from pyfe4ai.schemes.threshold.threshold_utils import validate_enrolled
+from pyfe4ai.schemes.threshold.threshold_utils import combine_consistently
+from pyfe4ai.schemes.threshold.threshold_utils import partial_groups
+from pyfe4ai.schemes.threshold.threshold_utils import combine_elementwise
+from pyfe4ai.schemes.threshold.threshold_utils import validate_partial_decryptions
+from pyfe4ai.schemes.threshold.threshold_utils import validate_threshold
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.primitives.groups.integer_groups import _random
+from pyfe4ai.primitives.hashing import hash_to_qr_group
+from pyfe4ai.primitives.groups.dlog_solver import load_or_build_dlog_table, dlog_table_solve
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai._validation import scale_to_int
 
 logger = logging.getLogger(__name__)
 
@@ -375,7 +375,7 @@ class ThresholdMCFE(IPFEAbsCrypto):
             partials: ``{sid: share_decrypt(...)}`` for one enrolled set, or a
                 list of such mappings for several enrolled sets, whose results
                 must then agree (see
-                :func:`~pyfe4ai.schemes.threshold_utils.combine_consistently`:
+                :func:`~pyfe4ai.schemes.threshold.threshold_utils.combine_consistently`:
                 servers are assumed honest-but-curious, and only this
                 redundancy detects one that returns a wrong partial).
 

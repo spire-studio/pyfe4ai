@@ -12,13 +12,13 @@ import pytest
 from pyfe4ai.schemes.mcfe.lwe_threshold import ThresholdMCFELWE, ThresholdMCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWE, ThresholdMCFERingLWEKeyGenerator
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE, ThresholdMIFELWEKeyGenerator
-from pyfe4ai.schemes.threshold_utils import pieces_held
-from pyfe4ai.schemes.threshold_utils import replicated_assignment
-from pyfe4ai.schemes.threshold_utils import replicated_sets
-from pyfe4ai.schemes.threshold_utils import share_for_enrolled
-from pyfe4ai.schemes.threshold_utils import share_replicated
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils import native_backend
+from pyfe4ai.schemes.threshold.threshold_utils import pieces_held
+from pyfe4ai.schemes.threshold.threshold_utils import replicated_assignment
+from pyfe4ai.schemes.threshold.threshold_utils import replicated_sets
+from pyfe4ai.schemes.threshold.threshold_utils import share_for_enrolled
+from pyfe4ai.schemes.threshold.threshold_utils import share_replicated
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai import backend as native_backend
 
 Q = gp.next_prime(gp.mpz(2) ** 61)
 ST = [(1, 1), (2, 1), (2, 2), (3, 2), (3, 3), (4, 2), (4, 3), (5, 3), (5, 4)]
@@ -328,7 +328,7 @@ def _make(kind, s, t, **extra):
 def test_default_sharing_is_replicated_below_s_and_shamir_at_s(kind):
     import warnings
 
-    from pyfe4ai.utils.exceptions import FESecurityWarning
+    from pyfe4ai.core.exceptions import FESecurityWarning
 
     with warnings.catch_warnings():
         warnings.simplefilter("error", FESecurityWarning)
@@ -343,7 +343,7 @@ def test_default_sharing_is_replicated_below_s_and_shamir_at_s(kind):
 
 @pytest.mark.parametrize("kind", sorted(_CONFIGS))
 def test_explicit_shamir_below_s_warns_under_toy_and_is_refused_under_standard(kind):
-    from pyfe4ai.utils.exceptions import FESecurityWarning
+    from pyfe4ai.core.exceptions import FESecurityWarning
 
     with pytest.warns(FESecurityWarning, match="t = 2 < s = 3"):
         kg = _make(kind, 3, 2, sharing="shamir")
@@ -361,7 +361,7 @@ def test_the_sharings_have_their_own_parameter_records():
     import json
     import os
 
-    from pyfe4ai.utils.exceptions import FESecurityWarning
+    from pyfe4ai.core.exceptions import FESecurityWarning
 
     def record(kg):
         with open(os.path.join(kg.config_folder, kg._scheme_type, kg._param_file_name()), encoding="utf-8") as f:
@@ -398,7 +398,7 @@ def test_a_threshold_must_be_an_integer(kind, t):
 
 
 def test_validate_threshold_refuses_bool():
-    from pyfe4ai.schemes.threshold_utils import validate_threshold
+    from pyfe4ai.schemes.threshold.threshold_utils import validate_threshold
 
     with pytest.raises(FEValidationError):
         validate_threshold(True, ["a", "b"])
@@ -440,7 +440,7 @@ def _served(kind, s, t, sharing=None, v030=False):
 @pytest.mark.parametrize("kind", sorted(_CONFIGS))
 @pytest.mark.parametrize("v030", [True, False], ids=["v030-pp", "pp"])
 def test_shamir_key_shares_with_t_below_s_are_refused_unless_legacy_warn(kind, v030):
-    from pyfe4ai.utils.exceptions import FESecurityWarning
+    from pyfe4ai.core.exceptions import FESecurityWarning
 
     cls, pp, dk, cts, cred = _served(kind, 3, 2, sharing="shamir", v030=v030)
     with pytest.raises(FESchemeError, match="re-share the threshold keys"):
@@ -465,7 +465,7 @@ def test_shamir_key_shares_with_t_below_s_are_refused_unless_legacy_warn(kind, v
 def test_shamir_key_shares_at_t_equal_s_are_served_silently(kind, v030):
     import warnings
 
-    from pyfe4ai.utils.exceptions import FESecurityWarning
+    from pyfe4ai.core.exceptions import FESecurityWarning
 
     cls, pp, dk, cts, cred = _served(kind, 3, 3, v030=v030)
     with warnings.catch_warnings():
@@ -505,7 +505,7 @@ def test_public_parameters_record_the_construction_and_profile(kind):
 def test_summed_shares_are_cached_per_key_share_and_assignment():
     from collections import OrderedDict
 
-    from pyfe4ai.schemes import threshold_utils
+    from pyfe4ai.schemes.threshold import threshold_utils
 
     points, t = [1, 2, 3], 2
     pieces = share_replicated({"sk_y": [11, 12], "z": 13, "z_chunks": [[1, 2], [3, 4]]}, t, points, Q)

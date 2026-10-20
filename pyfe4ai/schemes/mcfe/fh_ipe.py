@@ -31,9 +31,9 @@ With ``x' = (x, 0^m)``, ``y' = (y, 0^m)`` (``m2 = 2m``) and ``l = m2 + 3``:
 
 from __future__ import annotations
 
-from pyfe4ai.utils.pairing_backend import ZR, PairingGroup, multi_pair, multiexp, pair, pow_many
-from pyfe4ai.utils.pairing_backend import check_asymmetric  # noqa: F401  (re-export)
-from pyfe4ai.utils.exceptions import FEValidationError
+from pyfe4ai.primitives.pairing.pairing_backend import ZR, PairingGroup, multi_pair, multiexp, pair, pow_many
+from pyfe4ai.primitives.pairing.pairing_backend import check_asymmetric  # noqa: F401  (re-export)
+from pyfe4ai.core.exceptions import FEValidationError
 
 class FHIPE:
     """ACFGU18 Fig. 12 (n = 1, k = 1) with LV16 padding, for vectors of length *m*."""

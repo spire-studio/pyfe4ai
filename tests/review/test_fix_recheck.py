@@ -11,7 +11,7 @@ import pickle
 
 import pytest
 
-from pyfe4ai.utils.ml_adapter import FESchemeWrapper
+from pyfe4ai.ml import FESchemeWrapper
 
 
 @pytest.fixture(autouse=True)

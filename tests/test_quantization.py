@@ -1,4 +1,4 @@
-"""Tests for utils.quantization — precision management toolkit."""
+"""Tests for pyfe4ai.ml.quantization — precision management toolkit."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import math
 import numpy as np
 import pytest
 
-from pyfe4ai.utils.quantization import (
+from pyfe4ai.ml.quantization import (
     QuantizationConfig,
     analyze_precision_loss,
     estimate_bounds,

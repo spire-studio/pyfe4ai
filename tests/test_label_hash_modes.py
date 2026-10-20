@@ -1,4 +1,4 @@
-"""The ``label_hash`` modes of the MCFE label hashes (``crypto_utils.LABEL_HASHES``).
+"""The ``label_hash`` modes of the MCFE label hashes (``hashing.LABEL_HASHES``).
 
 * The rejection modes follow their specification (re-implemented here from
   ``hashlib``), are exactly uniform mod q, are separated from each other and
@@ -25,10 +25,10 @@ from pyfe4ai.schemes.mcfe import lwe as mcfe_lwe
 from pyfe4ai.schemes.mcfe import ring_lwe as mcfe_rlwe
 from pyfe4ai.schemes.mcfe import ring_lwe_decentralized as dmcfe_rlwe
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tmcfe_rlwe
-from pyfe4ai.utils import crypto_utils as cu
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils import ring_lwe_utils as rlu
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.primitives import hashing as cu
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 
 pytestmark = pytest.mark.core
 
@@ -288,7 +288,7 @@ def test_native_pads_and_keys_identical(mode, ring_n, stat_param, monkeypatch, n
                 def random(self):
                     return (int.from_bytes(take(7), "big") >> 3) * 2 ** -53
 
-            from pyfe4ai.utils import sampling_utils
+            from pyfe4ai.primitives import sampling as sampling_utils
             if name == "python":
                 monkeypatch.setattr(sampling_utils, "_CSPRNG", Src(0))
             else:
@@ -462,7 +462,7 @@ def test_ring_mode_bound_to_keys_and_ciphertexts():
 
 
 def test_ml_adapter_keeps_the_layer_marker():
-    from pyfe4ai.utils.ml_adapter import EncryptedGradient, FESchemeWrapper, aggregate_gradients, encrypt_gradient
+    from pyfe4ai.ml import EncryptedGradient, FESchemeWrapper, aggregate_gradients, encrypt_gradient
 
     nids = ["c0", "c1"]
     for key, size in ((("mcfe", "ring_lwe"), 70), (("mcfe", "lwe"), 5)):

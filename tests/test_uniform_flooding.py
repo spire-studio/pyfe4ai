@@ -18,8 +18,8 @@ import numpy as np
 import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils.exceptions import FEValidationError
+from pyfe4ai import backend as native_backend
+from pyfe4ai.core.exceptions import FEValidationError
 
 pytestmark = pytest.mark.core
 needs_native = pytest.mark.skipif(not native_backend.available(), reason="native extension not built")

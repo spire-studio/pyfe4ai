@@ -12,7 +12,7 @@ is revealed — individual gradients stay private.
 
 import numpy as np
 
-from pyfe4ai.utils.ml_adapter import (
+from pyfe4ai.ml import (
     FESchemeWrapper,
     encrypt_gradient,
     aggregate_gradients,

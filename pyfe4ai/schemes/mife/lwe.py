@@ -43,7 +43,7 @@ difference to be short. ``standard`` reads the 128-bit table at that width.
 
 ``A`` is published as a seed and expanded with SHAKE-128; encryption runs
 in numpy over an ``A`` kept in memory or expanded per batch
-(``matrix_mode``), see :mod:`pyfe4ai.schemes.abdp15_lwe`. Versions <= 0.2.0
+(``matrix_mode``), see :mod:`pyfe4ai.schemes.common.abdp15_lwe`. Versions <= 0.2.0
 published ``A`` entry by entry.
 """
 
@@ -56,25 +56,25 @@ import os
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.schemes.abdp15_lwe import ENCRYPT_BATCH
-from pyfe4ai.schemes.abdp15_lwe import ABDP15CryptoMixin
-from pyfe4ai.schemes.abdp15_lwe import ABDP15KeyGeneratorMixin
-from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
-from pyfe4ai.schemes.ipfe import decoded_layer
-from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.lwe_utils import abdp15_parameters
-from pyfe4ai.utils.lwe_utils import decode_scaled
-from pyfe4ai.utils.matrix_utils import digits_to_vector
-from pyfe4ai.utils.matrix_utils import matrix_to_digits
-from pyfe4ai.utils.matrix_utils import matvec_mod
-from pyfe4ai.utils.matrix_utils import vecdot_mod
-from pyfe4ai.utils.matrix_utils import vector_to_digits
-from pyfe4ai.utils.sampling_utils import rand_uniform_matrix
-from pyfe4ai.utils.sampling_utils import rand_uniform_vector
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.validation import scale_to_int
-from pyfe4ai.utils.validation import strict_int
+from pyfe4ai.schemes.common.abdp15_lwe import ENCRYPT_BATCH
+from pyfe4ai.schemes.common.abdp15_lwe import ABDP15CryptoMixin
+from pyfe4ai.schemes.common.abdp15_lwe import ABDP15KeyGeneratorMixin
+from pyfe4ai.core.base import IPFEAbsCrypto
+from pyfe4ai.core.base import decoded_layer
+from pyfe4ai.core.base import IPFEAbsKeyGenerator
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.primitives.lattice.lwe_utils import abdp15_parameters
+from pyfe4ai.primitives.lattice.lwe_utils import decode_scaled
+from pyfe4ai.primitives.lattice.matrix_utils import digits_to_vector
+from pyfe4ai.primitives.lattice.matrix_utils import matrix_to_digits
+from pyfe4ai.primitives.lattice.matrix_utils import matvec_mod
+from pyfe4ai.primitives.lattice.matrix_utils import vecdot_mod
+from pyfe4ai.primitives.lattice.matrix_utils import vector_to_digits
+from pyfe4ai.primitives.sampling import rand_uniform_matrix
+from pyfe4ai.primitives.sampling import rand_uniform_vector
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai._validation import scale_to_int
+from pyfe4ai._validation import strict_int
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +97,7 @@ class MIFELWEKeyGenerator(IPFEAbsKeyGenerator, ABDP15KeyGeneratorMixin):
                 ``"auto"`` for the smallest dimension meeting the 128-bit
                 table, the ``standard`` profile's choice), ``bound_x``,
                 ``bound_y`` and ``matrix_mode`` (``"memory"`` or
-                ``"stream"``, see :mod:`pyfe4ai.schemes.abdp15_lwe`).
+                ``"stream"``, see :mod:`pyfe4ai.schemes.common.abdp15_lwe`).
         """
         super().__init__(config, **kwargs)
         self.eta = config.get("eta", CryptoCONST.MIFE_ETA)

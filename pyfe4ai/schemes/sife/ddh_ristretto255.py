@@ -13,18 +13,18 @@ ristretto255: ``mpk = (G, H_i = s_i G)``; the key for ``y`` is
 ``sk_y = <s, y> mod L``; ``ct = (r G, r H_i + x_i G)``; decryption computes
 ``sum_i y_i ct_i - sk_y ct_0 = <x, y> G`` and a bounded discrete log
 (``dlog_bound``, default ``10^(precision + 2)``). See
-:mod:`pyfe4ai.schemes.ec_ddh_base`.
+:mod:`pyfe4ai.schemes.common.ec_ddh_base`.
 """
 
 from __future__ import annotations
 
 import logging
 
-from pyfe4ai.schemes.ec_ddh_base import ECDDHCryptoBase, ECDDHKeyGeneratorBase
-from pyfe4ai.utils import ec_group as eg
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.validation import int_vector
+from pyfe4ai.schemes.common.ec_ddh_base import ECDDHCryptoBase, ECDDHKeyGeneratorBase
+from pyfe4ai.primitives.groups import ec_group as eg
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai._validation import int_vector
 
 logger = logging.getLogger(__name__)
 

@@ -33,7 +33,7 @@ from pyfe4ai.schemes.sife.fullysec_lwe import SIFEFullySecLWEKeyGenerator
 from pyfe4ai.schemes.sife.lwe import SIFELWE
 from pyfe4ai.schemes.sife.lwe import SIFELWEKeyGenerator
 from pyfe4ai.schemes.sife.paillier import SIFEPaillier
-from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP
+from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP
 from pyfe4ai.schemes.sife.paillier import SIFEPaillierKeyGenerator
 
 ROUNDS = 2

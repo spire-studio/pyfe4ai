@@ -38,17 +38,17 @@ import random
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.schemes.ddh_base import DDHKeyGeneratorBase
-from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
-from pyfe4ai.schemes.ipfe import decoded_layer
-from pyfe4ai.schemes.random_offline import OfflineRandomMixin
-from pyfe4ai.schemes.threshold_utils import check_fusion_weight
-from pyfe4ai.schemes.threshold_utils import fusion_weight_id
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.dlog_solver import load_or_build_dlog_table, dlog_table_solve
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.validation import int_vector
-from pyfe4ai.utils.validation import scale_to_int
+from pyfe4ai.schemes.common.ddh_base import DDHKeyGeneratorBase
+from pyfe4ai.core.base import IPFEAbsCrypto
+from pyfe4ai.core.base import decoded_layer
+from pyfe4ai.core.one_time import OfflineRandomMixin
+from pyfe4ai.schemes.threshold.threshold_utils import check_fusion_weight
+from pyfe4ai.schemes.threshold.threshold_utils import fusion_weight_id
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.primitives.groups.dlog_solver import load_or_build_dlog_table, dlog_table_solve
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai._validation import int_vector
+from pyfe4ai._validation import scale_to_int
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +186,7 @@ class MIFE(OfflineRandomMixin, IPFEAbsCrypto):
 
     def _random_part(self) -> tuple:
         """``(g^r, [h_j^r])`` mod p for a fresh r (see
-        :mod:`pyfe4ai.schemes.random_offline`)."""
+        :mod:`pyfe4ai.core.one_time`)."""
         p = gp.mpz(self.pp["p"])
         r = gp.mpz(_CSPRNG.randrange(int(gp.mpz(self.pp["q"]))))
         return gp.powmod(gp.mpz(self.pp["g"]), r, p), [gp.powmod(gp.mpz(h_j), r, p) for h_j in self.sk["h"]]

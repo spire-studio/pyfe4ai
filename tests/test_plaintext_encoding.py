@@ -7,8 +7,8 @@ floor(q/p) x by a small, non-linear term."""
 import gmpy2 as gp
 import pytest
 
-from pyfe4ai.utils.lwe_utils import center_lwe_vector
-from pyfe4ai.utils.ring_lwe_utils import center_matrix
+from pyfe4ai.primitives.lattice.lwe_utils import center_lwe_vector
+from pyfe4ai.primitives.lattice.ring_lwe_utils import center_matrix
 
 Q = gp.next_prime(gp.mpz(2) ** 70)
 P = gp.mpz(98)  # q mod p != 0, so the two encodings differ
@@ -33,8 +33,8 @@ def test_ring_matrix_encoding_is_floor_q_over_p_times_x():
 
 import numpy as np
 
-from pyfe4ai.utils.exceptions import FEValidationError
-from pyfe4ai.utils.validation import scale_to_int
+from pyfe4ai.core.exceptions import FEValidationError
+from pyfe4ai._validation import scale_to_int
 
 
 def test_scaling_rounds_instead_of_truncating():

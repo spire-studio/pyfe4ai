@@ -1,4 +1,4 @@
-//! The rounded Gaussian of sampling_utils.discrete_gaussian_matrix: Box-Muller as
+//! The rounded Gaussian of sampling.discrete_gaussian_matrix: Box-Muller as
 //! random.Random.gauss on SystemRandom uniforms (7 bytes each), rounded half to
 //! even. cos, sin and log are the C library's, called through pointers the
 //! optimiser cannot see through (no sincos fusion, no substitutes), so that the

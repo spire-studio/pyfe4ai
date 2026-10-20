@@ -5,8 +5,8 @@ import math
 import gmpy2 as gp
 import pytest
 
-from pyfe4ai.utils.exceptions import FEValidationError
-from pyfe4ai.utils.lwe_utils import (
+from pyfe4ai.core.exceptions import FEValidationError
+from pyfe4ai.primitives.lattice.lwe_utils import (
     WIDE_LWE_128_LOG_RATIO,
     abdp15_parameters,
     abdp15_reduction_sigma,

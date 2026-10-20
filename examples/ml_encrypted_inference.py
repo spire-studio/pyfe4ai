@@ -16,7 +16,7 @@ revealing the raw features to the model server.
 
 import numpy as np
 
-from pyfe4ai.utils.ml_adapter import FESchemeWrapper, encrypt_features, compute_linear
+from pyfe4ai.ml import FESchemeWrapper, encrypt_features, compute_linear
 
 
 def main() -> None:

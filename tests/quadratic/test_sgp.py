@@ -10,7 +10,7 @@ skip_unless_available()
 
 from pyfe4ai.schemes.quadratic.sgp import QuadraticSGP
 from pyfe4ai.schemes.quadratic.sgp import QuadraticSGPKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
+from pyfe4ai.core.constants import CryptoCONST
 
 
 @pytest.fixture
@@ -108,7 +108,7 @@ def test_entire_process_lst_ndarray():
 
 def test_inputs_validated_and_extremes():
     """Floats used to be truncated silently (2.7 -> 2)."""
-    from pyfe4ai.utils.exceptions import FEValidationError
+    from pyfe4ai.core.exceptions import FEValidationError
 
     kg = QuadraticSGPKeyGenerator({"sec_param": 64, "n": 2, "bound": 3, "pairing_group_param": GROUP})
     kg.setup()

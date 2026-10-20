@@ -4,8 +4,8 @@ import statistics
 
 import pytest
 
-from pyfe4ai.utils.sampling_utils import discrete_gaussian_bigint
-from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
+from pyfe4ai.primitives.sampling import discrete_gaussian_bigint
+from pyfe4ai.primitives.sampling import discrete_gaussian_matrix
 
 
 @pytest.mark.parametrize("sigma", [2.0 ** 52, 2.0 ** 71.7])

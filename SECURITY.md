@@ -139,7 +139,7 @@ When reporting, please include:
 - affected files and scheme(s) (`family/variant`, e.g. `mcfe/ring_lwe`) and
   the `security_profile` used
 - the pyfe4ai version or commit, and whether the Rust extension was used
-  (`pyfe4ai.utils.native_backend.describe()`)
+  (`pyfe4ai.backend.describe()`)
 - steps to reproduce
 - impact assessment
 - any proof-of-concept or patch suggestion, if available

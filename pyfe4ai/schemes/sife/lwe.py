@@ -26,13 +26,13 @@ Thms. 8.2.2, 8.2.3, 8.3.2). The proof assumes LWE with errors of width
 ``sigma' = sigma / (1 + 2 X sqrt(eta))``, the condition derived in the proof of
 Thm. 6.6; Sec. 6.2 lists the stronger ``(l B + 1) sigma'``. It also needs
 ``m >= (n + eta + 1) log2 q + 2 log2(1 / eps)`` (proof of Thm. 6.7). See
-:mod:`pyfe4ai.schemes.abdp15_lwe` for the hypotheses that the library meets
+:mod:`pyfe4ai.schemes.common.abdp15_lwe` for the hypotheses that the library meets
 differently.
 
 The public matrix ``A`` is published as a seed and expanded with SHAKE-128;
 encryption computes ``A^T r`` and ``pk^T r`` exactly with numpy, either over
 an ``A`` kept in memory or expanded for every batch (``matrix_mode``). See
-:mod:`pyfe4ai.schemes.abdp15_lwe`, which also covers the ``standard``
+:mod:`pyfe4ai.schemes.common.abdp15_lwe`, which also covers the ``standard``
 parameters. Versions <= 0.2.0 published ``A`` entry by entry.
 """
 
@@ -42,24 +42,24 @@ import logging
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.schemes.abdp15_lwe import ENCRYPT_BATCH
-from pyfe4ai.schemes.abdp15_lwe import ABDP15CryptoMixin
-from pyfe4ai.schemes.abdp15_lwe import ABDP15KeyGeneratorMixin
-from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
-from pyfe4ai.schemes.ipfe import decoded_layer
-from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.lwe_utils import center_lwe_vector
-from pyfe4ai.utils.lwe_utils import decode_lwe_inner_product
-from pyfe4ai.utils.matrix_utils import digits_to_vector
-from pyfe4ai.utils.matrix_utils import matrix_to_digits
-from pyfe4ai.utils.matrix_utils import matvec_mod
-from pyfe4ai.utils.matrix_utils import vecdot_mod
-from pyfe4ai.utils.matrix_utils import vector_to_digits
-from pyfe4ai.utils.sampling_utils import rand_uniform_matrix
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.validation import int_vector
-from pyfe4ai.utils.validation import scale_to_int
+from pyfe4ai.schemes.common.abdp15_lwe import ENCRYPT_BATCH
+from pyfe4ai.schemes.common.abdp15_lwe import ABDP15CryptoMixin
+from pyfe4ai.schemes.common.abdp15_lwe import ABDP15KeyGeneratorMixin
+from pyfe4ai.core.base import IPFEAbsCrypto
+from pyfe4ai.core.base import decoded_layer
+from pyfe4ai.core.base import IPFEAbsKeyGenerator
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.primitives.lattice.lwe_utils import center_lwe_vector
+from pyfe4ai.primitives.lattice.lwe_utils import decode_lwe_inner_product
+from pyfe4ai.primitives.lattice.matrix_utils import digits_to_vector
+from pyfe4ai.primitives.lattice.matrix_utils import matrix_to_digits
+from pyfe4ai.primitives.lattice.matrix_utils import matvec_mod
+from pyfe4ai.primitives.lattice.matrix_utils import vecdot_mod
+from pyfe4ai.primitives.lattice.matrix_utils import vector_to_digits
+from pyfe4ai.primitives.sampling import rand_uniform_matrix
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai._validation import int_vector
+from pyfe4ai._validation import scale_to_int
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ class SIFELWEKeyGenerator(IPFEAbsKeyGenerator, ABDP15KeyGeneratorMixin):
                 dimension meeting the 128-bit table, the ``standard``
                 profile's choice), ``bound_x``, ``bound_y`` and
                 ``matrix_mode`` (``"memory"`` or ``"stream"``, see
-                :mod:`pyfe4ai.schemes.abdp15_lwe`).
+                :mod:`pyfe4ai.schemes.common.abdp15_lwe`).
         """
         super().__init__(config, **kwargs)
         self.eta = config.get("eta", CryptoCONST.SIFE_DEFAULT_ETA)

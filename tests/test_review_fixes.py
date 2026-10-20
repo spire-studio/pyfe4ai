@@ -12,10 +12,11 @@ import sys
 import numpy as np
 import pytest
 
-from pyfe4ai.utils import bls12_381 as B
-from pyfe4ai.utils import ec_group, native_backend
-from pyfe4ai.utils import sampling_utils as su
-from pyfe4ai.utils.exceptions import FEValidationError
+from pyfe4ai.primitives.pairing import bls12_381 as B
+from pyfe4ai.primitives.groups import ec_group
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives import sampling as su
+from pyfe4ai.core.exceptions import FEValidationError
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 R = 0x73EDA753299D7D483339D80809A1D80553BDA402FFFE5BFEFFFFFFFF00000001
@@ -73,7 +74,7 @@ def test_only_canonical_strings_deserialise(group):
 
 @needs_bls
 def test_gt_dlog_bounds_and_one_shot_tables(group):
-    from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
+    from pyfe4ai.primitives.pairing.pairing_utils import bounded_discrete_log_gt
 
     base = B.pair(group.random(B.G1), group.random(B.G2))
     for x in (0, 1, -1, 4321, -50000, 50000):
@@ -146,7 +147,7 @@ def test_set_threads_is_capped():
 @pytest.mark.parametrize("value,expect", [("abc", "ValueError"), ("0", "1"), ("10000000", "MAX"), (" 3 ", "3")])
 def test_thread_environment_variable(value, expect):
     env = dict(os.environ, PYFE4AI_THREADS=value, PYTHONPATH=ROOT + os.pathsep + os.environ.get("PYTHONPATH", ""))
-    code = "from pyfe4ai.utils import native_backend as nb; print(nb.get_threads(), nb.MAX_THREADS)"
+    code = "from pyfe4ai import backend as nb; print(nb.get_threads(), nb.MAX_THREADS)"
     res = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, timeout=120)
     if expect == "ValueError":
         assert res.returncode != 0 and "PYFE4AI_THREADS must be an integer" in res.stderr
@@ -182,7 +183,7 @@ def test_facct_table_refuses_an_imprecise_constant(sigma):
 # -------------------------------------------------------------- ML adapter
 
 def test_failed_encryption_releases_the_label():
-    from pyfe4ai.utils.ml_adapter import FESchemeWrapper, encrypt_gradient
+    from pyfe4ai.ml import FESchemeWrapper, encrypt_gradient
 
     w = FESchemeWrapper("mcfe", "ring_lwe", {"eta": 1, "n": 3, "lst_nid": ["c0", "c1", "c2"], "ring_n": 64,
                                              "sec_param": 64, "bound_x": 100, "bound_y": 2}, precision=2)
@@ -198,7 +199,7 @@ def test_a_copied_wrapper_keeps_the_used_labels(clone):
     import copy
     import pickle
 
-    from pyfe4ai.utils.ml_adapter import FESchemeWrapper, aggregate_gradients, encrypt_gradient
+    from pyfe4ai.ml import FESchemeWrapper, aggregate_gradients, encrypt_gradient
 
     nids = ["c0", "c1", "c2"]
     w = FESchemeWrapper("mcfe", "ring_lwe", {"eta": 1, "n": 3, "lst_nid": nids, "ring_n": 64,

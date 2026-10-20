@@ -34,14 +34,14 @@ Deviations from the paper:
   sigma1 sigma2)`` then grows like ``q^(4/m)`` while it must stay below
   ``q / 2p``. Theorem 2 holds for every ``m >= 3``, so the proof is
   unchanged. ``m = "auto"`` (default) takes the smallest ``m`` that admits a
-  modulus; :func:`pyfe4ai.utils.ring_lwe_utils.bmms21_adaptive_parameters`
+  modulus; :func:`pyfe4ai.primitives.lattice.ring_lwe_utils.bmms21_adaptive_parameters`
   derives the widths and ``q``.
 * Signed inputs ``|x| <= X``, ``|y| <= Y``: ``p = 2 l X Y + 2`` with centred
   decoding, ``||x1 - x0||_inf <= 2X``, and complexity leveraging over
   ``(2X + 1)^(2l)`` challenge pairs.
 * Gaussian samples (keys and encryption noise) are exact ``D_{Z,sigma}``
   by default (``gaussian_sampler = "facct"``,
-  :func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_facct`), whatever the
+  :func:`~pyfe4ai.primitives.sampling.discrete_gaussian_facct`), whatever the
   library-wide default; ``"rounded"`` (a rounded continuous Gaussian, the
   library default) stays selectable. Rounded keys are ``0.02 / sigma1^2``
   per sample, over ``m n eta`` samples, from ``D_{Z,sigma1}`` in statistical
@@ -71,7 +71,7 @@ Ciphertext layouts (``ndarray_layout``):
   (guessing both challenge matrices would give ``(2X + 1)^(2lk)``); G3 -> G4
   decomposes along a basis ``B`` of ``V``, ``||B|| <= 2X sqrt(l D)``, which
   ``sigma1`` absorbs, and G4 -> G5 applies Theorem 2 once per basis vector
-  (:func:`pyfe4ai.utils.ring_lwe_utils.bmms21_adaptive_leveraging`). G5*
+  (:func:`pyfe4ai.primitives.lattice.ring_lwe_utils.bmms21_adaptive_leveraging`). G5*
   writes the differences in that basis mod ``q``, so ``q`` must exceed the
   minors of the basis, ``(2X sqrt(D))^D``; the parameters enforce it (it
   moves e.g. ``eta = 24``, ``X = 4`` to a larger ring). For ``eta = 1``,
@@ -84,7 +84,7 @@ Ciphertext layouts (``ndarray_layout``):
 
 Under the ``standard`` profile ``ring_n = "auto"`` takes the smallest ring
 dimension (with the smallest ``m``) whose ``q`` meets
-:data:`~pyfe4ai.utils.ring_lwe_utils.RING_LWE_128_LOG_Q` at the width
+:data:`~pyfe4ai.primitives.lattice.ring_lwe_utils.RING_LWE_128_LOG_Q` at the width
 ``sigma`` (about 8) of the RLWE problem of Theorem 1.
 """
 
@@ -98,25 +98,25 @@ import secrets
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
-from pyfe4ai.schemes.ipfe import decoded_layer
-from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
-from pyfe4ai.schemes.ipfe import ParameterCacheMixin
-from pyfe4ai.schemes.profiles import STANDARD
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.ring_lwe_utils import _get_ntt_root
-from pyfe4ai.utils.ring_lwe_utils import bmms21_adaptive_choice
-from pyfe4ai.utils.ring_lwe_utils import bmms21_adaptive_parameters
-from pyfe4ai.utils.ring_lwe_utils import check_ring_lwe
-from pyfe4ai.utils.ring_lwe_utils import decode_vector
-from pyfe4ai.utils.ring_lwe_utils import ntt_forward
-from pyfe4ai.utils.ring_lwe_utils import ntt_inverse
-from pyfe4ai.utils.sampling_utils import scheme_sampler
-from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.validation import int_vector
-from pyfe4ai.utils.validation import scale_to_int
-from pyfe4ai.utils.ring_lwe_utils import seeded_polynomial
+from pyfe4ai.core.base import IPFEAbsCrypto
+from pyfe4ai.core.base import decoded_layer
+from pyfe4ai.core.base import IPFEAbsKeyGenerator
+from pyfe4ai.core.base import ParameterCacheMixin
+from pyfe4ai.core.profiles import STANDARD
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.primitives.lattice.ring_lwe_utils import _get_ntt_root
+from pyfe4ai.primitives.lattice.ring_lwe_utils import bmms21_adaptive_choice
+from pyfe4ai.primitives.lattice.ring_lwe_utils import bmms21_adaptive_parameters
+from pyfe4ai.primitives.lattice.ring_lwe_utils import check_ring_lwe
+from pyfe4ai.primitives.lattice.ring_lwe_utils import decode_vector
+from pyfe4ai.primitives.lattice.ring_lwe_utils import ntt_forward
+from pyfe4ai.primitives.lattice.ring_lwe_utils import ntt_inverse
+from pyfe4ai.primitives.sampling import scheme_sampler
+from pyfe4ai.primitives.sampling import discrete_gaussian_matrix
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai._validation import int_vector
+from pyfe4ai._validation import scale_to_int
+from pyfe4ai.primitives.lattice.ring_lwe_utils import seeded_polynomial
 
 logger = logging.getLogger(__name__)
 
@@ -572,7 +572,7 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
         A packed layer is ``{"shape", "first_chunk", "chunks"}``, its chunks
         packed ciphertexts numbered consecutively across the layers (the
         layout of the MCFE Ring-LWE schemes, which
-        :class:`~pyfe4ai.utils.ml_adapter.EncryptedGradient` serialises).
+        :class:`~pyfe4ai.ml.EncryptedGradient` serialises).
         """
         if self.pp["eta"] != 1:
             raise NotImplementedError("ndarray helper currently expects eta=1")

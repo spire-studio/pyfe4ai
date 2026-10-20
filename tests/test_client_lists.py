@@ -4,8 +4,8 @@ import pytest
 
 from pyfe4ai.schemes.mcfe.lwe import MCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFEKeyGenerator
-from pyfe4ai.schemes.threshold_utils import validate_threshold
-from pyfe4ai.utils.exceptions import FEValidationError
+from pyfe4ai.schemes.threshold.threshold_utils import validate_threshold
+from pyfe4ai.core.exceptions import FEValidationError
 
 
 def test_n_must_match_the_client_list(tmp_path, monkeypatch):

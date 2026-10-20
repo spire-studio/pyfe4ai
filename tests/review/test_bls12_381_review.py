@@ -1,4 +1,4 @@
-"""BLS12-381 backend (pyfe4ai.utils.bls12_381, rust/native/src/pairing.rs):
+"""BLS12-381 backend (pyfe4ai.primitives.pairing.bls12_381, rust/native/src/pairing.rs):
 regression tests of the October 2026 code review.
 
 Before the fixes:
@@ -20,7 +20,7 @@ import textwrap
 
 import pytest
 
-from pyfe4ai.utils import bls12_381 as bls
+from pyfe4ai.primitives.pairing import bls12_381 as bls
 
 pytestmark = pytest.mark.skipif(not bls.available(), reason="BLS12-381 backend not built") \
     if hasattr(bls, "available") else []
@@ -29,7 +29,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 
 
 def _group():
-    from pyfe4ai.utils.pairing_backend import PairingGroup
+    from pyfe4ai.primitives.pairing.pairing_backend import PairingGroup
 
     return PairingGroup("BLS12-381")
 
@@ -71,7 +71,7 @@ def test_fh_ipe_decryptions_do_not_grow_memory(tmp_path):
 
 @pytest.mark.parametrize("kind", ["ZR", "G1", "G2", "GT"])
 def test_trailing_bytes_are_rejected(kind):
-    from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, pair
+    from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, GT, ZR, pair
 
     g = _group()
     elem = {"ZR": lambda: g.random(ZR), "G1": lambda: g.random(G1), "G2": lambda: g.random(G2),
@@ -84,7 +84,7 @@ def test_trailing_bytes_are_rejected(kind):
 
 @pytest.mark.parametrize("tag", [b"01", b" 1", b"+1"])
 def test_type_tag_is_canonical(tag):
-    from pyfe4ai.utils.pairing_backend import G1
+    from pyfe4ai.primitives.pairing.pairing_backend import G1
 
     g = _group()
     _, body = g.serialize(g.random(G1)).split(b":", 1)
@@ -94,7 +94,7 @@ def test_type_tag_is_canonical(tag):
 
 @pytest.mark.parametrize("tag", [b"256", b"-1"])
 def test_out_of_range_tag_raises_value_error(tag):
-    from pyfe4ai.utils.pairing_backend import G1
+    from pyfe4ai.primitives.pairing.pairing_backend import G1
 
     g = _group()
     _, body = g.serialize(g.random(G1)).split(b":", 1)
@@ -103,7 +103,7 @@ def test_out_of_range_tag_raises_value_error(tag):
 
 
 def test_gt_dlog_with_a_bound_of_2_63():
-    from pyfe4ai.utils.pairing_backend import G1, G2, pair
+    from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, pair
 
     g = _group()
     gt = pair(g.random(G1), g.random(G2))

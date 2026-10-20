@@ -20,12 +20,12 @@ tMCFE-LWE, tMCFE-Ring-LWE and tMCFE-FH-Multi-IPE and the carry mask of
 dMCFE-DDH: our own constructions on top of published schemes, with no
 published security proof. Query a scheme at runtime with
 :func:`pyfe4ai.get_scheme_status(family, variant)
-<pyfe4ai.schemes.status.get_scheme_status>` or
-:attr:`FESchemeWrapper(...).status <pyfe4ai.utils.ml_adapter.FESchemeWrapper.status>`;
+<pyfe4ai.core.status.get_scheme_status>` or
+:attr:`FESchemeWrapper(...).status <pyfe4ai.ml.FESchemeWrapper.status>`;
 the key generator and crypto objects of a known-insecure scheme emit
-:class:`~pyfe4ai.utils.exceptions.FESecurityWarning`. The table is rendered
-from :data:`~pyfe4ai.schemes.status.SCHEME_STATUS`; the status and fidelity
-values are defined in :mod:`pyfe4ai.schemes.status`.
+:class:`~pyfe4ai.core.exceptions.FESecurityWarning`. The table is rendered
+from :data:`~pyfe4ai.core.status.SCHEME_STATUS`; the status and fidelity
+values are defined in :mod:`pyfe4ai.core.status`.
 
 .. scheme-status-table::
 
@@ -37,10 +37,10 @@ parameters: ``"toy"`` (the default) is fast and **not secure**;
 ``"standard"`` aims at 128-bit classical security and refuses explicit
 values below it. Its exceptions: the pairing-based schemes run on
 BLS12-381, about 120-126-bit after the exTNFS attacks (with a
-:class:`~pyfe4ai.utils.exceptions.FESecurityWarning`),
+:class:`~pyfe4ai.core.exceptions.FESecurityWarning`),
 and ``sife/fullysec_lwe``, ``mife/fullysec_lwe`` (ALS16),
 ``mife/lwe_threshold`` and ``mcfe/paillier_decentralized`` are refused.
-:mod:`pyfe4ai.schemes.profiles` below gives the parameters per family,
+:mod:`pyfe4ai.core.profiles` below gives the parameters per family,
 including ``matrix_mode`` for the ABDP15 LWE schemes.
 
 For the ABDP15 LWE schemes (``sife/lwe``, ``mife/lwe``) the 128 bits are
@@ -79,7 +79,7 @@ very end of the table at that width (5888 to 6144, with a public matrix of
 4 to 6, ``X = Y >= 12``, most ``eta >= 2``).
 
 The opt-in KL-divergence accounting of the flooding noise
-(:mod:`pyfe4ai.schemes.flooding_accounting`) would bring it to about 4864 for
+(:mod:`pyfe4ai.schemes.threshold.flooding_accounting`) would bring it to about 4864 for
 two clients, ``s = t = 3`` and ``2^40`` flooded values. It applies only with
 ``flooding_accounting = "kl"``, ``t = s`` and an explicit
 ``max_partial_decryptions`` budget; the public matrix would still have
@@ -95,7 +95,7 @@ honest-but-curious: fewer than ``t`` of them learn nothing beyond the result,
 but a partial decryption carries no proof of correctness, so one deviating
 server changes the result unnoticed. ``combine_decrypt`` accepts partial
 decryptions for several enrolled sets and raises if they disagree (see
-:func:`~pyfe4ai.schemes.threshold_utils.combine_consistently`). In
+:func:`~pyfe4ai.schemes.threshold.threshold_utils.combine_consistently`). In
 tMIFE-LWE, tMCFE-Ring-LWE and tMCFE-FH-Multi-IPE, servers only decrypt
 ciphertexts carrying their clients' MAC tags. With the binary ciphertexts of
 tMCFE-Ring-LWE (``ct_format="binary"``, its default; ``"json"`` selects the
@@ -131,14 +131,14 @@ send the partials of its deployment).
 ML adapter
 ----------
 
-:class:`~pyfe4ai.utils.ml_adapter.FESchemeWrapper` runs the key generator
+:class:`~pyfe4ai.ml.FESchemeWrapper` runs the key generator
 itself, so it holds the master secret key and plays clients, key authority
 and decryptor in one trust domain: use it for experiments, not as a
-deployment (see :mod:`pyfe4ai.utils.ml_adapter`). For
+deployment (see :mod:`pyfe4ai.ml`). For
 ``mcfe/ring_lwe_threshold`` it also runs the decryption servers, so the
 threshold adds no protection there; the separate steps
-(:func:`~pyfe4ai.utils.ml_adapter.partial_decrypt_gradients`,
-:func:`~pyfe4ai.utils.ml_adapter.combine_partial_decryptions`) show the
+(:func:`~pyfe4ai.ml.partial_decrypt_gradients`,
+:func:`~pyfe4ai.ml.combine_partial_decryptions`) show the
 messages of a deployment, whose servers run in their own trust domains.
 
 Gaussian sampling
@@ -147,7 +147,7 @@ Gaussian sampling
 The lattice and DCR proofs sample secrets and noise from the discrete
 Gaussian ``D_{Z,sigma}``. There are two samplers.
 
-``"facct"`` (:func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_facct`)
+``"facct"`` (:func:`~pyfe4ai.primitives.sampling.discrete_gaussian_facct`)
 samples ``D_{Z,sigma}`` exactly, to about 2^-185 per sample, for every width
 (natively below ``2^448``). It is the default of these schemes, which record
 their sampler as ``gaussian_sampler`` in their public parameters: the
@@ -183,7 +183,7 @@ samples. Its implementations add their own terms (crypto review, October
 2026):
 
 * the double-precision path
-  (:func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_matrix` and the
+  (:func:`~pyfe4ai.primitives.sampling.discrete_gaussian_matrix` and the
   native kernels, widths up to ``2^40``): the two outputs of a Box-Muller pair
   share one radius (rings that show in the tail), exact half-integer ties
   round to even (about ``2^-53.8 sigma`` per sample), and no value exceeds
@@ -191,7 +191,7 @@ samples. Its implementations add their own terms (crypto review, October
   ciphertext's noise is about 2^-12..2^-4 and one key about 2^-25..2^-15 from
   i.i.d. ``D_{Z,sigma}``, against budgets of 2^-128: use it for toy parameters
   and benchmarks, not where a proof needs ``D_{Z,sigma}``;
-* the MPFR path (:func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint`,
+* the MPFR path (:func:`~pyfe4ai.primitives.sampling.discrete_gaussian_bigint`,
   wider widths: the DCR keys and masks, all threshold flooding) differs from
   the ideal rounded Gaussian only by its arithmetic, at ``bits(sigma) + 320``
   bits (``BIGINT_GUARD_BITS``: ``bits(sigma) + stat_param + ceil(log2 N) +
@@ -208,7 +208,7 @@ made per call (``sampler=``), per context or per process:
 
 .. code-block:: python
 
-   from pyfe4ai.utils.sampling_utils import gaussian_sampler, set_gaussian_sampler
+   from pyfe4ai.primitives.sampling import gaussian_sampler, set_gaussian_sampler
 
    with gaussian_sampler("facct"):     # this context
        ...
@@ -241,13 +241,13 @@ double-precision path's artifacts, terms its adaptive proof does not budget.
 Status API
 ----------
 
-.. automodule:: pyfe4ai.schemes.status
+.. automodule:: pyfe4ai.core.status
    :members:
    :undoc-members:
 
 Profiles API
 ------------
 
-.. automodule:: pyfe4ai.schemes.profiles
+.. automodule:: pyfe4ai.core.profiles
    :members:
    :undoc-members:

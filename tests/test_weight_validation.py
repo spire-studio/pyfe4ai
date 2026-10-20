@@ -10,8 +10,8 @@ from pyfe4ai.schemes.mcfe.ring_lwe_decentralized import (
     DecentralizedMCFERingLWEKeyGenerator,
 )
 from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWE, MIFERingLWEKeyGenerator
-from pyfe4ai.schemes.threshold_utils import fusion_weight_id
-from pyfe4ai.utils.exceptions import FEValidationError
+from pyfe4ai.schemes.threshold.threshold_utils import fusion_weight_id
+from pyfe4ai.core.exceptions import FEValidationError
 
 NIDS = ["nid_0", "nid_1"]
 CFG = {"sec_param": 64, "eta": 2, "n": 2, "lst_nid": NIDS, "ring_n": 16, "bound_x": 4, "bound_y": 4}
@@ -85,7 +85,7 @@ def test_ring_decryption_refuses_malformed_ciphertexts():
            for nid in NIDS}
     dec = MIFERingLWE({"id": "sid", "keys": {"pp": pp}})
     first = cts["nid_0"]
-    from pyfe4ai.utils.exceptions import FESchemeError
+    from pyfe4ai.core.exceptions import FESchemeError
 
     for bad in (dict(first, ct1=first["ct1"][:-1]), dict(first, ct0=first["ct0"][:1])):
         with pytest.raises(FESchemeError, match="malformed"):
@@ -98,7 +98,7 @@ def test_ndarray_chunks_must_index_the_key():
     """A negative first_chunk picked chunk keys from the end of the list."""
     import numpy as np
 
-    from pyfe4ai.utils.exceptions import FESchemeError
+    from pyfe4ai.core.exceptions import FESchemeError
 
     kg = MCFERingLWEKeyGenerator({**CFG, "eta": 1})
     kg.setup()
@@ -145,7 +145,7 @@ def test_fractional_inputs_are_refused_everywhere(tmp_path, monkeypatch):
 def test_rationals_are_checked_exactly():
     from fractions import Fraction
 
-    from pyfe4ai.utils.validation import int_vector, strict_int
+    from pyfe4ai._validation import int_vector, strict_int
 
     assert strict_int(Fraction(6, 2)) == 3
     for bad in (Fraction(2 ** 60 + 1, 2), 1 + Fraction(1, 10 ** 20)):

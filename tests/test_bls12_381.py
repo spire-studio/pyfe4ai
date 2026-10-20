@@ -1,10 +1,10 @@
-"""BLS12-381 from the Rust extension (pyfe4ai.utils.bls12_381) behind charm's interface."""
+"""BLS12-381 from the Rust extension (pyfe4ai.primitives.pairing.bls12_381) behind charm's interface."""
 
 import base64
 
 import pytest
 
-from pyfe4ai.utils import bls12_381 as B
+from pyfe4ai.primitives.pairing import bls12_381 as B
 
 pytestmark = pytest.mark.skipif(not B.available(), reason="Rust extension not built")
 
@@ -139,7 +139,7 @@ def test_deserialisation_rejects_bad_encodings(group):
 
 
 def test_gt_dlog_matches_python_solver(group):
-    from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
+    from pyfe4ai.primitives.pairing.pairing_utils import bounded_discrete_log_gt
 
     base = B.pair(group.random(B.G1), group.random(B.G2))
     for x in (0, 1, -1, 999, -1000, 1000):
@@ -152,7 +152,7 @@ def test_gt_dlog_matches_python_solver(group):
 
 
 def test_backend_dispatch():
-    from pyfe4ai.utils import pairing_backend as pb
+    from pyfe4ai.primitives.pairing import pairing_backend as pb
 
     g = pb.PairingGroup()
     assert isinstance(g, pb.PairingGroup) and g.groupType() == "BLS12-381"

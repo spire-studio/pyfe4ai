@@ -8,8 +8,8 @@ import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe as mcfe_rlwe
 from pyfe4ai.schemes.mife import ring_lwe as mife_rlwe
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils import sampling_utils as su
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives import sampling as su
 
 pytestmark = pytest.mark.skipif(
     native_backend.ext() is None or not hasattr(native_backend.ext(), "FacctTable"),

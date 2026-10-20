@@ -1,4 +1,4 @@
-//! The exact discrete Gaussian of pyfe4ai.utils.sampling_utils.discrete_gaussian_facct
+//! The exact discrete Gaussian of pyfe4ai.primitives.sampling.discrete_gaussian_facct
 //! (FACCT-style double sampling) for widths whose samples fit an i64.
 //!
 //! For a given bit source the samples are those of the Python reference: the
@@ -136,7 +136,7 @@ impl<F: FnMut(&mut [u8]) -> usize> RandBits for ByteBits<F> {
     }
 }
 
-/// sampling_utils.XofRandom: getrandbits(k) = the top k bits of
+/// sampling.XofRandom: getrandbits(k) = the top k bits of
 /// SHAKE-256(len(seed) (8 bytes, big-endian) || seed || counter (8 bytes,
 /// big-endian)), ceil(k / 8) bytes, one hash per call.
 pub struct XofBits {
@@ -219,7 +219,7 @@ impl RandBits for XofBits {
     }
 }
 
-/// The tables of one width (sampling_utils._facct_params): k, the base CDT, and
+/// The tables of one width (sampling._facct_params): k, the base CDT, and
 /// c = -neg_c = 1 / (2 sigma^2) rounded down to c_mant 2^c_exp (c_mant < 2^128).
 #[derive(Clone, Debug)]
 pub struct Table {

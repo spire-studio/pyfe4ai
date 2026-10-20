@@ -13,7 +13,7 @@ import tempfile
 import time
 
 from _common import emit_results, prepare_benchmark, stats
-from pyfe4ai.utils.sampling_utils import (
+from pyfe4ai.primitives.sampling import (
     discrete_gaussian_bigint,
     discrete_gaussian_matrix,
     gaussian_sampler,
@@ -60,7 +60,7 @@ def bench_widths(count: int, rounds: int) -> list[dict]:
 def bench_e2e(rounds: int) -> list[dict]:
     import numpy as np
 
-    from pyfe4ai.utils.ml_adapter import FESchemeWrapper, aggregate_gradients, encrypt_gradient
+    from pyfe4ai.ml import FESchemeWrapper, aggregate_gradients, encrypt_gradient
 
     clients = ["c0", "c1", "c2"]
     results, base = [], None

@@ -26,16 +26,16 @@ encrypt at most once per label. The ndarray helpers pack values into the
 ``ring_n`` coefficients of one ciphertext per chunk; chunk ``c`` of label
 ``l`` uses ``H(u'_i, (l, c))``, and a key for ``n_chunks`` chunks carries one
 ``z''`` per chunk. ``H`` is SHAKE-256 over the client secret and the encoded
-label (:func:`~pyfe4ai.utils.crypto_utils.hash_to_zq_vector`), mapped to
+label (:func:`~pyfe4ai.primitives.hashing.hash_to_zq_vector`), mapped to
 ``Z_q`` as the key generator's ``label_hash`` says (a public parameter;
-:data:`~pyfe4ai.utils.crypto_utils.LABEL_HASHES`): by default rejection
+:data:`~pyfe4ai.primitives.hashing.LABEL_HASHES`): by default rejection
 sampling mod q from SHAKE128 (``"shake128-rejection"``: exactly uniform,
 fewer XOF bytes). Versions <= 0.3.0 reduced ``bits(q) + 128``-bit SHAKE-256
 blocks (``"shake256-wide"``, still selectable), so their ciphertexts and
 key terms differ. The mode is bound to everything that depends on it: the
 public parameters, the clients' encryption keys, every functional key (and
 threshold key share), every single ciphertext and every ndarray layer
-(``label_hash``: the code of :data:`~pyfe4ai.utils.crypto_utils.LABEL_HASH_CODES`,
+(``label_hash``: the code of :data:`~pyfe4ai.primitives.hashing.LABEL_HASH_CODES`,
 once per layer dict, not per chunk; covered by the threshold variant's
 tags); a missing field means ``"shake256-wide"`` (the
 data of versions <= 0.3.0, which stay readable), and encryption with a key
@@ -54,21 +54,21 @@ import gmpy2 as gp
 import numpy as np
 
 from pyfe4ai.schemes.mcfe.labels import chunk_label, encode_label
-from pyfe4ai.schemes.ipfe import decoded_layer
+from pyfe4ai.core.base import decoded_layer
 from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWE
 from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWEKeyGenerator
-from pyfe4ai.schemes.one_time import OneTimePrecomputation
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.crypto_utils import DEFAULT_LABEL_HASH
-from pyfe4ai.utils.crypto_utils import LABEL_HASH_CODES
-from pyfe4ai.utils.crypto_utils import LEGACY_LABEL_HASH
-from pyfe4ai.utils.crypto_utils import check_label_hash
-from pyfe4ai.utils.crypto_utils import hash_to_zq_material
-from pyfe4ai.utils.crypto_utils import hash_to_zq_vector
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.ring_lwe_utils import encode_values
-from pyfe4ai.utils.validation import scale_to_int
+from pyfe4ai.core.one_time import OneTimePrecomputation
+from pyfe4ai import backend as native_backend
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.primitives.hashing import DEFAULT_LABEL_HASH
+from pyfe4ai.primitives.hashing import LABEL_HASH_CODES
+from pyfe4ai.primitives.hashing import LEGACY_LABEL_HASH
+from pyfe4ai.primitives.hashing import check_label_hash
+from pyfe4ai.primitives.hashing import hash_to_zq_material
+from pyfe4ai.primitives.hashing import hash_to_zq_vector
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.primitives.lattice.ring_lwe_utils import encode_values
+from pyfe4ai._validation import scale_to_int
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +103,7 @@ def pp_label_hash(pp: dict) -> str:
 
     Raises:
         FEValidationError: If it is not one of
-            :data:`~pyfe4ai.utils.crypto_utils.LABEL_HASHES`.
+            :data:`~pyfe4ai.primitives.hashing.LABEL_HASHES`.
     """
     try:
         return check_label_hash(pp.get("label_hash", LEGACY_LABEL_HASH))
@@ -165,7 +165,7 @@ class MCFERingLWEKeyGenerator(MIFERingLWEKeyGenerator):
     def __init__(self, config: dict, **kwargs) -> None:
         """As :class:`~pyfe4ai.schemes.mife.ring_lwe.MIFERingLWEKeyGenerator`,
         plus ``label_hash`` (one of
-        :data:`~pyfe4ai.utils.crypto_utils.LABEL_HASHES`, default
+        :data:`~pyfe4ai.primitives.hashing.LABEL_HASHES`, default
         ``"shake128-rejection"``; ``"shake256-wide"`` for the ciphertexts of
         versions <= 0.3.0), published in the public parameters."""
         self.label_hash = pp_label_hash({"label_hash": config.get("label_hash", DEFAULT_LABEL_HASH)})
@@ -255,7 +255,7 @@ class MCFERingLWEKeyGenerator(MIFERingLWEKeyGenerator):
 class RingLWEPrecomputation(OneTimePrecomputation):
     """Offline phase of :meth:`MCFERingLWE.encrypt_lst_ndarray` for one label
     and fixed layer shapes (see :meth:`MCFERingLWE.precompute`). Secret and
-    one-time (:mod:`pyfe4ai.schemes.one_time`)."""
+    one-time (:mod:`pyfe4ai.core.one_time`)."""
 
     _secret = ("native", "rows")
 
@@ -496,7 +496,7 @@ class MCFERingLWE(MIFERingLWE):
         the key, and use it once (an MCFE client encrypts at most once per
         label). The use is atomic, and ``copy.copy``, ``copy.deepcopy``,
         pickling and use in another process (after ``os.fork()``) are refused
-        (:mod:`pyfe4ai.schemes.one_time`). Natively each chunk is overwritten
+        (:mod:`pyfe4ai.core.one_time`). Natively each chunk is overwritten
         in memory when used; on the Python path the references to the chunks
         are dropped (Python integers cannot be wiped).
 

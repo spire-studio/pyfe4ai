@@ -8,8 +8,8 @@ import os, random, sys
 import gmpy2 as gp
 sys.argv = [sys.argv[0], os.path.join(os.environ["PYTHONPATH"], "rust/core/src/facct.rs")]
 exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "facct_port.py")).read())
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils import sampling_utils as su
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives import sampling as su
 from pyfe4ai.schemes.mife import ring_lwe as mife_rlwe
 
 class StreamBits:

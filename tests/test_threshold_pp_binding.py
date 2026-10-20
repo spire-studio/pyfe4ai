@@ -8,12 +8,12 @@ import warnings
 
 import pytest
 
-from pyfe4ai.schemes import flooding_accounting as fa
+from pyfe4ai.schemes.threshold import flooding_accounting as fa
 from pyfe4ai.schemes.mcfe import lwe_threshold as dense
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as ring
 from pyfe4ai.schemes.mife import lwe_threshold as tmife
-from pyfe4ai.schemes.threshold_utils import pp_binding
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.schemes.threshold.threshold_utils import pp_binding
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 
 NIDS, SIDS = ["a", "b"], ["s0", "s1", "s2"]
 REFUSED = (FEKeyError, FESchemeError, FEValidationError)
@@ -136,7 +136,7 @@ def test_the_flooding_noise_follows_the_public_parameters(monkeypatch, bypass, l
     import gmpy2 as gp
 
     from pyfe4ai.schemes.mcfe.lwe import dot_mod
-    from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
+    from pyfe4ai.schemes.threshold.threshold_utils import lagrange_coefficient_at_zero
 
     monkeypatch.setattr(dense, "check_pp_binding", bypass)
     kg = dense.ThresholdMCFELWEKeyGenerator({"sec_param": 64, "n": 2, "lst_nid": NIDS, "eta": 1, "bound_x": 4,

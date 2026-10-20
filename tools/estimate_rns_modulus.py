@@ -26,7 +26,7 @@ SKIPPED = ("arora-gb", "bkw", "bdd_mitm_hybrid")
 
 
 def derive(path: str) -> None:
-    from pyfe4ai.utils import ring_lwe_utils as rlu
+    from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
 
     out = []
     for clients, bound_x, ring_n in CONFIGS:

@@ -22,14 +22,19 @@ from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tmcfe_rlwe
 from pyfe4ai.schemes.mcfe.labels import chunk_label
 from pyfe4ai.schemes.mife import ring_lwe as mife_rlwe
 from pyfe4ai.schemes.sife import ring_lwe as sife_rlwe
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils import ring_lwe_utils as rlu
-from pyfe4ai.utils.exceptions import FESchemeError
-from pyfe4ai.utils.lwe_utils import decode_scaled
-from pyfe4ai.utils.ring_lwe_utils import (
-    canonical_ring_ciphertext, mat_vec_mul, poly_add, poly_mul, poly_neg, transpose,
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
+from pyfe4ai.core.exceptions import FESchemeError
+from pyfe4ai.primitives.lattice.lwe_utils import decode_scaled
+from pyfe4ai.primitives.lattice.ring_lwe_utils import (
+    canonical_ring_ciphertext,
+    mat_vec_mul,
+    poly_add,
+    poly_mul,
+    poly_neg,
+    transpose,
 )
-from pyfe4ai.utils.validation import int_vector
+from pyfe4ai._validation import int_vector
 
 pytestmark = pytest.mark.core
 
@@ -129,7 +134,7 @@ def ref_decrypt_with_pad_term(self, dct_ct, sk_y_map, z, fusion_weight, k) -> li
 
 
 def ref_mcfe_encrypt_lst_ndarray(self, lst_ndarray, label, dgm) -> list:
-    from pyfe4ai.utils.validation import scale_to_int
+    from pyfe4ai._validation import scale_to_int
     import math
 
     ring_n = self.pp["ring_n"]
@@ -248,7 +253,7 @@ def test_mcfe_ndarray_identical(sampler, stat_param):
 
 
 def test_mcfe_ndarray_bound_and_empty_errors(sampler):
-    from pyfe4ai.utils.exceptions import FEValidationError
+    from pyfe4ai.core.exceptions import FEValidationError
 
     _, _, clients, _ = _mife(1, 16, bound_x=3, bound_y=1, mcfe=True)
     cl = next(iter(clients.values()))

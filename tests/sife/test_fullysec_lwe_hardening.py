@@ -6,8 +6,8 @@ import os
 import pytest
 
 from pyfe4ai.schemes.sife.fullysec_lwe import SIFEFullySecLWE, SIFEFullySecLWEKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
 
 CFG = {"sec_param": 64, "eta": 2, "lwe_n": 8, "bound_x": 10, "bound_y": 10}
 

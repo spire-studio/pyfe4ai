@@ -9,8 +9,8 @@ from tests.pairing_group import GROUP, skip_unless_available  # noqa: E402
 skip_unless_available()
 
 from pyfe4ai.schemes.mcfe.fh_ipe import FHIPE, check_asymmetric  # noqa: E402
-from pyfe4ai.utils.exceptions import FEValidationError  # noqa: E402
-from pyfe4ai.utils.pairing_backend import G1, G2, ZR, PairingGroup  # noqa: E402
+from pyfe4ai.core.exceptions import FEValidationError  # noqa: E402
+from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, ZR, PairingGroup  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -61,7 +61,7 @@ def test_keygen_exponents_match_group_keygen(fhipe):
 
 
 def test_deterministic_rng(fhipe):
-    from pyfe4ai.utils.sampling_utils import XofRandom
+    from pyfe4ai.primitives.sampling import XofRandom
 
     msk = fhipe.setup()
     y = _enc(fhipe, [1, 2, 3], fhipe.g2)

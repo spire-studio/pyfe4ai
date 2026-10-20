@@ -12,8 +12,9 @@ import pytest
 
 from pyfe4ai.schemes.mcfe import lwe as mcfe_lwe
 from pyfe4ai.schemes.mcfe import fullysec_lwe as mcfe_fslwe
-from pyfe4ai.utils import crypto_utils, native_backend
-from pyfe4ai.utils.exceptions import FESchemeError
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives import hashing
+from pyfe4ai.core.exceptions import FESchemeError
 
 pytestmark = pytest.mark.core
 
@@ -26,11 +27,11 @@ def _cwd(tmp_path, monkeypatch):
 @pytest.mark.parametrize("bits", [40, 64, 77, 128, 187, 300])
 def test_hash_to_zq_vector_unchanged(bits, monkeypatch):
     q = gp.next_prime(gp.mpz(2) ** (bits - 1))
-    got = crypto_utils.hash_to_zq_vector("lab", q, 57, domain="d")
-    monkeypatch.setattr(crypto_utils, "_MPZ_FROM_BYTES", None)  # the v0.3.0 reduction
-    assert got == crypto_utils.hash_to_zq_vector("lab", q, 57, domain="d")
+    got = hashing.hash_to_zq_vector("lab", q, 57, domain="d")
+    monkeypatch.setattr(hashing, "_MPZ_FROM_BYTES", None)  # the v0.3.0 reduction
+    assert got == hashing.hash_to_zq_vector("lab", q, 57, domain="d")
     nb = (bits + 135) // 8
-    stream = hashlib.shake_256(crypto_utils.hash_to_zq_material("lab", "d")).digest(57 * nb)
+    stream = hashlib.shake_256(hashing.hash_to_zq_material("lab", "d")).digest(57 * nb)
     assert got == [gp.mpz(int.from_bytes(stream[k * nb:(k + 1) * nb], "big")) % q for k in range(57)]
 
 

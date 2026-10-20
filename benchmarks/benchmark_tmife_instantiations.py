@@ -5,7 +5,7 @@
 ``--clients 2 --bound 50`` the documented configuration: key generation
 takes tens of minutes and every encryption a pass over ``A``);
 ``--flooding-accounting kl --max-partial-decryptions Q`` selects the opt-in
-KL accounting of its flooding (:mod:`pyfe4ai.schemes.flooding_accounting`;
+KL accounting of its flooding (:mod:`pyfe4ai.schemes.threshold.flooding_accounting`;
 ``--threshold 3``, i.e. ``t = s``), with one budget per server.
 """
 
@@ -22,7 +22,7 @@ from _common import prepare_benchmark
 from _common import profile_value
 from _common import size_bytes
 from _common import stats
-from pyfe4ai.schemes.flooding_accounting import PartialDecryptionBudget
+from pyfe4ai.schemes.threshold.flooding_accounting import PartialDecryptionBudget
 from pyfe4ai.schemes.mife.ddh_threshold import ThresholdMIFE
 from pyfe4ai.schemes.mife.ddh_threshold import ThresholdMIFEKeyGenerator
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE

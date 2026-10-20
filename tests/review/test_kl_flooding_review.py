@@ -21,11 +21,11 @@ import gmpy2 as gp
 import numpy as np
 import pytest
 
-from pyfe4ai.schemes import flooding_accounting as fa
+from pyfe4ai.schemes.threshold import flooding_accounting as fa
 from pyfe4ai.schemes.mife.lwe import MIFELWEKeyGenerator
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE, ThresholdMIFELWEKeyGenerator
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
-from pyfe4ai.utils.matrix_utils import digits_to_vector
+from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.primitives.lattice.matrix_utils import digits_to_vector
 
 NIDS = ["nid_0", "nid_1", "nid_2"]
 SIDS = ["sid_0", "sid_1", "sid_2"]

@@ -9,7 +9,7 @@ import gmpy2 as gp
 
 from pyfe4ai.schemes.sife.ddh_dynamic import SIFEDynamic
 from pyfe4ai.schemes.sife.ddh_dynamic import SIFEDynamicKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
+from pyfe4ai.core.constants import CryptoCONST
 
 from pyfe4ai.logger import init_logging_config
 

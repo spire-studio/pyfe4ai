@@ -12,7 +12,7 @@ import time
 import gmpy2 as gp
 
 from _common import emit_results, prepare_benchmark, stats
-from pyfe4ai.utils.ring_lwe_utils import (
+from pyfe4ai.primitives.lattice.ring_lwe_utils import (
     _find_primitive_root,
     poly_mul_negacyclic,
     poly_mul_ntt,

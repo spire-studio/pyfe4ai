@@ -5,7 +5,7 @@ import pytest
 
 from pyfe4ai.schemes.sife.ddh import SIFE, SIFEKeyGenerator
 from pyfe4ai.schemes.sife.ddh_dynamic import SIFEDynamic, SIFEDynamicKeyGenerator
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
 
 ETA = 4
 

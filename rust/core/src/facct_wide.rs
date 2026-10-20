@@ -1,4 +1,4 @@
-//! The exact discrete Gaussian of pyfe4ai.utils.sampling_utils.discrete_gaussian_facct
+//! The exact discrete Gaussian of pyfe4ai.primitives.sampling.discrete_gaussian_facct
 //! for wide widths: double-sampling factors k above the 2^50 of `facct` (whose
 //! samples fit an i64), up to k < 2^448. The getrandbits calls are those of the
 //! Python reference, in its order -- u (192 bits), then y (bits(k - 1) bits)
@@ -38,7 +38,7 @@ pub const MAX_K_BITS: u32 = 448;
 /// Words of t = y (y + 2 k x) < 29 k^2 (and room for the carries).
 const TW: usize = 2 * W + 1;
 
-/// The tables of one width (sampling_utils._facct_params) with a wide k.
+/// The tables of one width (sampling._facct_params) with a wide k.
 #[derive(Clone, Debug)]
 pub struct WideTable {
     pub k: [u64; W],

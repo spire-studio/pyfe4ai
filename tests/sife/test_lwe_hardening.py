@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from pyfe4ai.schemes.sife.lwe import SIFELWE, SIFELWEKeyGenerator
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
 
 CFG = {"sec_param": 64, "eta": 4, "lwe_n": 16, "bound_x": 8, "bound_y": 8}
 

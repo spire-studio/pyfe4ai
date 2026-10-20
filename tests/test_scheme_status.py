@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from pyfe4ai import FESecurityWarning, get_scheme_status
-from pyfe4ai.schemes import status as st
-from pyfe4ai.utils.ml_adapter import _SCHEME_REGISTRY
+from pyfe4ai.core import status as st
+from pyfe4ai.ml import _SCHEME_REGISTRY
 
 README = Path(__file__).resolve().parents[1] / "README.md"
 
@@ -64,7 +64,7 @@ def test_reviewed_key_generator_does_not_warn():
 
 
 def test_wrapper_exposes_status():
-    from pyfe4ai.utils.ml_adapter import FESchemeWrapper
+    from pyfe4ai.ml import FESchemeWrapper
 
     wrapper = FESchemeWrapper(
         "mcfe", "paillier", {"n": 2, "bit_length": 64, "bound_x": 10, "bound_y": 10}

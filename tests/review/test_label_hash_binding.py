@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe as m
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 
 NIDS = ["c0", "c1", "c2"]
 

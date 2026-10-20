@@ -1,4 +1,4 @@
-"""The per-call DRBG of the Rust backend (see pyfe4ai.utils.native_backend).
+"""The per-call DRBG of the Rust backend (see pyfe4ai.backend).
 
 ChaCha20 streams are checked against an independent implementation (the
 ``cryptography`` package, if installed); with an injected seed, the native
@@ -12,7 +12,8 @@ import numpy as np
 import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe as mcfe_rlwe
-from pyfe4ai.utils import native_backend, sampling_utils
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives import sampling as sampling_utils
 from tests.test_native_backend import FixedBytes, StreamRandom, _rounded_sampler  # noqa: F401  (autouse)
 
 pytestmark = [

@@ -47,32 +47,32 @@ import logging
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
-from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
-from pyfe4ai.schemes.ipfe import ParameterCacheMixin
-from pyfe4ai.utils.lwe_utils import decode_scaled
-from pyfe4ai.schemes.profiles import STANDARD
-from pyfe4ai.utils.ring_lwe_utils import bmms21_selective_parameters
-from pyfe4ai.utils.ring_lwe_utils import CT_FORMATS
-from pyfe4ai.utils.ring_lwe_utils import canonical_ring_ciphertext
-from pyfe4ai.utils.ring_lwe_utils import encode_binary_ciphertext
-from pyfe4ai.utils.ring_lwe_utils import check_ring_lwe
-from pyfe4ai.utils.ring_lwe_utils import check_ring_modulus
-from pyfe4ai.utils.ring_lwe_utils import register_rns_modulus
-from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul
-from pyfe4ai.utils.ring_lwe_utils import poly_add
-from pyfe4ai.utils.ring_lwe_utils import poly_mul
-from pyfe4ai.utils.ring_lwe_utils import poly_neg
-from pyfe4ai.utils.ring_lwe_utils import resolve_ring_n
-from pyfe4ai.utils.ring_lwe_utils import RingNTT
-from pyfe4ai.utils.ring_lwe_utils import transpose
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix, scheme_sampler
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.sampling_utils import rand_uniform_vector
-from pyfe4ai.utils.validation import int_vector
-from pyfe4ai.utils.ring_lwe_utils import seeded_polynomial
+from pyfe4ai.core.base import IPFEAbsCrypto
+from pyfe4ai.core.base import IPFEAbsKeyGenerator
+from pyfe4ai.core.base import ParameterCacheMixin
+from pyfe4ai.primitives.lattice.lwe_utils import decode_scaled
+from pyfe4ai.core.profiles import STANDARD
+from pyfe4ai.primitives.lattice.ring_lwe_utils import bmms21_selective_parameters
+from pyfe4ai.primitives.lattice.ring_lwe_utils import CT_FORMATS
+from pyfe4ai.primitives.lattice.ring_lwe_utils import canonical_ring_ciphertext
+from pyfe4ai.primitives.lattice.ring_lwe_utils import encode_binary_ciphertext
+from pyfe4ai.primitives.lattice.ring_lwe_utils import check_ring_lwe
+from pyfe4ai.primitives.lattice.ring_lwe_utils import check_ring_modulus
+from pyfe4ai.primitives.lattice.ring_lwe_utils import register_rns_modulus
+from pyfe4ai.primitives.lattice.ring_lwe_utils import mat_vec_mul
+from pyfe4ai.primitives.lattice.ring_lwe_utils import poly_add
+from pyfe4ai.primitives.lattice.ring_lwe_utils import poly_mul
+from pyfe4ai.primitives.lattice.ring_lwe_utils import poly_neg
+from pyfe4ai.primitives.lattice.ring_lwe_utils import resolve_ring_n
+from pyfe4ai.primitives.lattice.ring_lwe_utils import RingNTT
+from pyfe4ai.primitives.lattice.ring_lwe_utils import transpose
+from pyfe4ai import backend as native_backend
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.primitives.sampling import discrete_gaussian_matrix, scheme_sampler
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.primitives.sampling import rand_uniform_vector
+from pyfe4ai._validation import int_vector
+from pyfe4ai.primitives.lattice.ring_lwe_utils import seeded_polynomial
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +91,7 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                 clients, required), ``lst_nid``, ``sec_param`` (``kappa`` of
                 the noise bounds), ``eta``, ``bound_x``, ``bound_y`` and
                 ``ring_n`` (default
-                :data:`~pyfe4ai.utils.ring_lwe_utils.DEFAULT_RING_N`;
+                :data:`~pyfe4ai.primitives.lattice.ring_lwe_utils.DEFAULT_RING_N`;
                 ``"auto"`` for the smallest dimension meeting the 128-bit
                 table, the ``standard`` profile's choice); ``ring_modulus``:
                 ``"prime"`` (default) or ``"rns"``, ``q`` the product of two
@@ -377,11 +377,11 @@ class MIFERingLWE(IPFEAbsCrypto):
                 optionally ``sk`` (encryption keys). ``ct_format``: ``"json"``
                 (default: ``ct0`` and ``ct1`` as decimal strings) or
                 ``"binary"`` (``ct``: bytes, see
-                :func:`~pyfe4ai.utils.ring_lwe_utils.encode_binary_ciphertext`;
+                :func:`~pyfe4ai.primitives.lattice.ring_lwe_utils.encode_binary_ciphertext`;
                 about a third of the size, and faster to produce and read).
                 Decryption reads both formats. ``gaussian_sampler``: that of
                 the encryption noise (default: that of ``pp``, else
-                ``"facct"``; see :func:`~pyfe4ai.utils.sampling_utils.scheme_sampler`).
+                ``"facct"``; see :func:`~pyfe4ai.primitives.sampling.scheme_sampler`).
         """
         super().__init__(config, **kwargs)
         self.pp = self.keys["pp"]
@@ -461,7 +461,7 @@ class MIFERingLWE(IPFEAbsCrypto):
         return cache
 
     def _native(self):
-        """The native ring context (see :mod:`pyfe4ai.utils.native_backend`), or ``None``."""
+        """The native ring context (see :mod:`pyfe4ai.backend`), or ``None``."""
         return native_backend.ring_context(self.pp["q"], self.pp["ring_n"])
 
     def _native_key_kwargs(self) -> dict:

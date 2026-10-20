@@ -1,11 +1,11 @@
-"""Tests for utils.ml_adapter — ML framework adapter layer."""
+"""Tests for pyfe4ai.ml — ML framework adapter layer."""
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
 
-from pyfe4ai.utils.ml_adapter import (
+from pyfe4ai.ml import (
     EncryptedFeatures,
     EncryptedGradient,
     FESchemeWrapper,
@@ -312,7 +312,7 @@ def test_mife_refused_for_gradient_aggregation(variant):
     of different elements of a client and learn the differences of its update."""
     import numpy as _np
 
-    from pyfe4ai.utils.ml_adapter import FESchemeWrapper, aggregate_gradients, encrypt_gradient
+    from pyfe4ai.ml import FESchemeWrapper, aggregate_gradients, encrypt_gradient
 
     cfg = {"n": 2, "lst_nid": ["nid_0", "nid_1"], "eta": 1, "sec_param": 128, "lwe_n": 8,
            "bound_x": 4, "bound_y": 4, "bound": 4}

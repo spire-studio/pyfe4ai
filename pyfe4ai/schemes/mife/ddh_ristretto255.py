@@ -30,13 +30,13 @@ import logging
 
 import numpy as np
 
-from pyfe4ai.schemes.ec_ddh_base import ECDDHCryptoBase, ECDDHKeyGeneratorBase
-from pyfe4ai.schemes.ipfe import decoded_layer
-from pyfe4ai.schemes.threshold_utils import check_fusion_weight, fusion_weight_id
-from pyfe4ai.utils import ec_group as eg
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.validation import int_vector, scale_to_int
+from pyfe4ai.schemes.common.ec_ddh_base import ECDDHCryptoBase, ECDDHKeyGeneratorBase
+from pyfe4ai.core.base import decoded_layer
+from pyfe4ai.schemes.threshold.threshold_utils import check_fusion_weight, fusion_weight_id
+from pyfe4ai.primitives.groups import ec_group as eg
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai._validation import int_vector, scale_to_int
 
 logger = logging.getLogger(__name__)
 

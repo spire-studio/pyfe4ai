@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from pyfe4ai.utils.exceptions import (
+from pyfe4ai.core.exceptions import (
     FEConfigError,
     FEError,
     FEKeyError,

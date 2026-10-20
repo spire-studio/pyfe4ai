@@ -6,15 +6,15 @@ import random
 import gmpy2 as gp
 import pytest
 
-from pyfe4ai.schemes import profiles
+from pyfe4ai.core import profiles
 from pyfe4ai.schemes.sife.fullysec_ring_lwe import (
     SIFEFullySecRingLWE,
     SIFEFullySecRingLWEKeyGenerator,
     encode_message,
     independent_at_every_slot,
 )
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
-from pyfe4ai.utils.ring_lwe_utils import (
+from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.primitives.lattice.ring_lwe_utils import (
     _bmms21_adaptive_slack,
     bmms21_adaptive_log2_q,
     bmms21_adaptive_parameters,

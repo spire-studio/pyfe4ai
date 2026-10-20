@@ -1,9 +1,9 @@
 """Federated gradient aggregation per scheme family, for before/after comparisons.
 
 Every client encrypts a gradient of ``--elements`` values in ``[-1, 1]`` with
-``--precision`` decimal digits through :func:`~pyfe4ai.utils.ml_adapter.encrypt_gradient`;
+``--precision`` decimal digits through :func:`~pyfe4ai.ml.encrypt_gradient`;
 the aggregator derives the functional key for the round label and decrypts the
-sum (weight 1) with :func:`~pyfe4ai.utils.ml_adapter.aggregate_gradients`. Each
+sum (weight 1) with :func:`~pyfe4ai.ml.aggregate_gradients`. Each
 round uses a fresh label; round 0 warms the caches and is not counted. The
 result is checked against the plaintext sum.
 
@@ -18,7 +18,7 @@ Reported per family (medians over the counted rounds):
 
 The threshold family ``ring_lwe_threshold`` (``mcfe/ring_lwe_threshold``,
 ``--servers`` servers, threshold ``--threshold``) runs on the scheme classes,
-for the time of each party (:func:`~pyfe4ai.utils.ml_adapter.aggregate_gradients`
+for the time of each party (:func:`~pyfe4ai.ml.aggregate_gradients`
 runs the same steps in one process): ``client_ms`` is one client's
 ``encrypt_lst_ndarray``; ``dkgen_ms`` the key shares of the ``t`` enrolled
 servers; ``partial_ms`` one server's ``compute_lst_ndarray_ct``;
@@ -31,7 +31,7 @@ only the label part (``label_term=False``) -- unless ``--ct-format json``,
 earlier versions.
 ``--flooding-accounting kl --max-partial-decryptions Q`` runs it with the
 opt-in KL accounting of its flooding noise (see
-:mod:`pyfe4ai.schemes.flooding_accounting`; it needs ``--threshold`` equal
+:mod:`pyfe4ai.schemes.threshold.flooding_accounting`; it needs ``--threshold`` equal
 to ``--servers``), one budget per server.
 
 The schemes write their parameter cache to ``./config``; the run happens in
@@ -106,7 +106,7 @@ def _env() -> dict:
     except OSError:
         pass
     try:
-        from pyfe4ai.utils import native_backend
+        from pyfe4ai import backend as native_backend
 
         info["native"] = native_backend.describe()
     except ImportError:
@@ -138,7 +138,7 @@ def _campaign_running() -> bool:
 
 def _set_backend(name: str, threads: int) -> str:
     try:
-        from pyfe4ai.utils import native_backend
+        from pyfe4ai import backend as native_backend
     except ImportError:
         if name not in ("python", "auto"):
             raise SystemExit("this version has no native backend")
@@ -183,10 +183,10 @@ def _scheme_params(pp: dict) -> dict:
 
 def measure(family: str, elements: int, clients: int, rounds: int, precision: int, bound_x: int,
             profile: str, ct_format: str = "json", offline: bool = False, extra: dict | None = None) -> dict:
-    from pyfe4ai.utils.ml_adapter import FESchemeWrapper, aggregate_gradients, encrypt_gradient
+    from pyfe4ai.ml import FESchemeWrapper, aggregate_gradients, encrypt_gradient
 
     if offline:  # not in versions before the native backend
-        from pyfe4ai.utils.ml_adapter import precompute_gradient, prepare_aggregation
+        from pyfe4ai.ml import precompute_gradient, prepare_aggregation
 
     key, base_cfg, _ = FAMILIES[family]
     nids = ["c{}".format(i) for i in range(clients)]
@@ -269,7 +269,7 @@ def measure_threshold(family: str, elements: int, clients: int, rounds: int, pre
     """:func:`measure` for a threshold scheme, on its classes (see the module docstring)."""
     import importlib
 
-    from pyfe4ai.utils.ml_adapter import _SCHEME_REGISTRY
+    from pyfe4ai.ml import _SCHEME_REGISTRY
 
     key, base_cfg, _ = FAMILIES[family]
     mod_path, kg_name, crypto_name = _SCHEME_REGISTRY[key]
@@ -296,7 +296,7 @@ def measure_threshold(family: str, elements: int, clients: int, rounds: int, pre
     enrolled = sids[:threshold]
     budget = {}
     if pp.get("flooding_accounting") == "kl":  # one budget per server, kept by the deployment
-        from pyfe4ai.schemes.flooding_accounting import PartialDecryptionBudget
+        from pyfe4ai.schemes.threshold.flooding_accounting import PartialDecryptionBudget
 
         budget = {sid: {"partial_budget": PartialDecryptionBudget(pp["max_partial_decryptions"])} for sid in enrolled}
     srv = {sid: crypto_cls({"id": sid, "precision": precision, "keys": {"pp": pp}, **budget.get(sid, {})})
@@ -365,7 +365,7 @@ def measure_decentralized(family: str, elements: int, clients: int, rounds: int,
     share for the round, the aggregator combines them and decrypts the sum."""
     import importlib
 
-    from pyfe4ai.utils.ml_adapter import _SCHEME_REGISTRY
+    from pyfe4ai.ml import _SCHEME_REGISTRY
 
     key, base_cfg, _ = FAMILIES[family]
     mod_path, kg_name, crypto_name = _SCHEME_REGISTRY[key]

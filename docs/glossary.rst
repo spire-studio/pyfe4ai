@@ -3,7 +3,7 @@ Glossary
 
 Parameter names and conventions used across the PyFE4AI schemes. Key
 generators take a configuration dict (``SIFEKeyGenerator(config)``); the
-accepted keys per family are listed in :mod:`pyfe4ai.schemes.config_types`
+accepted keys per family are listed in :mod:`pyfe4ai.schemes.common.config_types`
 and in each key generator's ``__init__``.
 
 Scheme taxonomy
@@ -58,10 +58,10 @@ Configuration keys
       **not secure**. ``"standard"`` fills in parameters aiming at 128-bit
       classical security and refuses explicit values below them. Its
       exceptions: pairing-based schemes get BLS12-381 (about 120-126-bit, with a
-      :class:`~pyfe4ai.utils.exceptions.FESecurityWarning`), and
+      :class:`~pyfe4ai.core.exceptions.FESecurityWarning`), and
       ``sife/fullysec_lwe``, ``mife/fullysec_lwe`` and
       ``mcfe/paillier_decentralized`` are refused. See
-      :mod:`pyfe4ai.schemes.profiles` and :doc:`security`.
+      :mod:`pyfe4ai.core.profiles` and :doc:`security`.
 
    ``sec_param``
       **Not a security level.** The bit length of the safe prime ``p`` in
@@ -95,7 +95,7 @@ Configuration keys
       bit-security sense of Micciancio and Walter; each server counts in
       the ``partial_budget`` its deployment provides; much smaller ``q``
       and, for ``mife/lwe_threshold``, ``lwe_n``). See
-      :mod:`pyfe4ai.schemes.flooding_accounting`.
+      :mod:`pyfe4ai.schemes.threshold.flooding_accounting`.
 
    ``eta``
       Length of each client's input vector (an ``int``; MIFE-DDH also
@@ -151,31 +151,31 @@ Configuration keys
       ``standard`` choice: the smallest dimension whose derived modulus
       meets the 128-bit lattice-estimator table (for ABDP15 read at the
       error width of its security reduction, see
-      :func:`~pyfe4ai.utils.lwe_utils.abdp15_reduction_sigma`).
+      :func:`~pyfe4ai.primitives.lattice.lwe_utils.abdp15_reduction_sigma`).
 
    ``ring_n``
       Ring-LWE ring dimension, a power of two; default
-      :data:`~pyfe4ai.utils.ring_lwe_utils.DEFAULT_RING_N` (32, a toy
+      :data:`~pyfe4ai.primitives.lattice.ring_lwe_utils.DEFAULT_RING_N` (32, a toy
       value). ``"auto"``, the ``standard`` choice, selects the smallest
       dimension (1024 to 32768) whose derived modulus meets
-      :data:`~pyfe4ai.utils.ring_lwe_utils.RING_LWE_128_LOG_Q` (see
-      :func:`~pyfe4ai.utils.ring_lwe_utils.resolve_ring_n`).
+      :data:`~pyfe4ai.primitives.lattice.ring_lwe_utils.RING_LWE_128_LOG_Q` (see
+      :func:`~pyfe4ai.primitives.lattice.ring_lwe_utils.resolve_ring_n`).
 
    ``matrix_mode``
       How the ABDP15 LWE schemes (``sife/lwe``, ``mife/lwe``,
       ``mife/lwe_threshold``) hold their seeded public matrix ``A``:
       ``"memory"`` (default) keeps it expanded, ``"stream"`` expands it again
       for every batch (little memory, slower). Accepted by key generator and
-      crypto configs. See :mod:`pyfe4ai.schemes.abdp15_lwe`.
+      crypto configs. See :mod:`pyfe4ai.schemes.common.abdp15_lwe`.
 
    ``pairing_group_param``
       Pairing group of the pairing-based schemes; default ``"BLS12-381"``
       (the Rust extension; other names are charm-crypto groups). Only
       asymmetric (type-3) groups are accepted: symmetric ones such as
       ``"SS512"`` are rejected. ``standard`` requires ``"BLS12-381"``, about
-      120-126-bit, with a :class:`~pyfe4ai.utils.exceptions.FESecurityWarning`.
+      120-126-bit, with a :class:`~pyfe4ai.core.exceptions.FESecurityWarning`.
       The ``group`` attribute of a scheme object is the ``PairingGroup``
-      built from it (:mod:`pyfe4ai.utils.pairing_backend`).
+      built from it (:mod:`pyfe4ai.primitives.pairing.pairing_backend`).
 
    ``sec_level``
       ``k`` of k-LIN in ``mife/fh_multi_ipe_pairing`` (default 2).
@@ -257,7 +257,7 @@ Review status and trust
 
    known-insecure
       A concrete privacy defect is known; the key generator and crypto
-      objects emit :class:`~pyfe4ai.utils.exceptions.FESecurityWarning`.
+      objects emit :class:`~pyfe4ai.core.exceptions.FESecurityWarning`.
 
    honest-but-curious
       The trust model of the threshold decryption servers: fewer than ``t``

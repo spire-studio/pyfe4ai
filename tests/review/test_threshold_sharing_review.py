@@ -18,7 +18,7 @@ import warnings
 import pytest
 
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE, ThresholdMIFELWEKeyGenerator
-from pyfe4ai.utils.exceptions import FESchemeError, FESecurityWarning, FEValidationError
+from pyfe4ai.core.exceptions import FESchemeError, FESecurityWarning, FEValidationError
 
 NIDS = ["nid_0", "nid_1"]
 SIDS = ["sid_0", "sid_1", "sid_2"]

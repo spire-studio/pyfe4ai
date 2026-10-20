@@ -11,11 +11,11 @@ import pytest
 
 from pyfe4ai.schemes.sife import fullysec_ring_lwe as fs
 from pyfe4ai.schemes.sife.fullysec_ring_lwe import SIFEFullySecRingLWE, SIFEFullySecRingLWEKeyGenerator
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils import ring_lwe_utils as rlu
-from pyfe4ai.utils import sampling_utils
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
-from pyfe4ai.utils.ml_adapter import EncryptedGradient, FESchemeWrapper, aggregate_gradients, encrypt_gradient
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
+from pyfe4ai.primitives import sampling as sampling_utils
+from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.ml import EncryptedGradient, FESchemeWrapper, aggregate_gradients, encrypt_gradient
 
 CFG = {"eta": 3, "bound_x": 4, "bound_y": 4, "ndarray_layout": "packed"}
 RECORD = os.path.join("config", "authority", "SIFE_FULLYSEC_RING_LWE", "param.json")
@@ -448,7 +448,7 @@ def test_first_chunk_counts_the_chunks_of_earlier_layers(gradient_scheme):
 
 
 def test_status_marks_the_packed_layout_experimental():
-    from pyfe4ai.schemes.status import REVIEWED, SCHEME_STATUS
+    from pyfe4ai.core.status import REVIEWED, SCHEME_STATUS
 
     status = SCHEME_STATUS[("sife", "fullysec_ring_lwe")]
     assert status.status == REVIEWED  # the elementwise layout keeps its status

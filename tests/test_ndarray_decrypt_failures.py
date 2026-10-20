@@ -9,9 +9,9 @@ raise :class:`FESchemeError` naming the element.
 import numpy as np
 import pytest
 
-from pyfe4ai.utils.exceptions import FESchemeError
-from pyfe4ai.utils.ml_adapter import FESchemeWrapper, aggregate_gradients, compute_linear, encrypt_features
-from pyfe4ai.utils.ml_adapter import encrypt_gradient
+from pyfe4ai.core.exceptions import FESchemeError
+from pyfe4ai.ml import FESchemeWrapper, aggregate_gradients, compute_linear, encrypt_features
+from pyfe4ai.ml import encrypt_gradient
 
 NIDS = ["nid_0", "nid_1"]
 _MULTI = {"n": 2, "s": 1, "lst_nid": NIDS, "eta": 1}

@@ -3,7 +3,7 @@
 import pytest
 
 from pyfe4ai.schemes.sife.damgard_ddh import SIFEDamgard, SIFEDamgardKeyGenerator
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
 
 CFG = {"sec_param": 128, "eta": 3, "bound": 20}
 

@@ -81,7 +81,7 @@ parameter):
 * ``"gaussian"``: ``e_k <- D_{Z, 2^kappa B}`` as described above, the only
   flooding of versions <= 0.3.0 (public parameter ``sigma_f``; public
   parameters without ``flooding`` are read as this), drawn by the pinned
-  :data:`~pyfe4ai.utils.sampling_utils.FLOODING_SAMPLER` at ``bits(sigma_f)
+  :data:`~pyfe4ai.primitives.sampling.FLOODING_SAMPLER` at ``bits(sigma_f)
   + 320`` bits (records ``bmms21-ibmcfe-shamir-smudging/v2``; the ``v1``
   records of earlier versions are regenerated).
 
@@ -102,7 +102,7 @@ servers, or none, can suffice (the aggregator alone reads ``nu`` modulo
 ``(s - 1)!`` for ``t = 1``), and combining several enrolled sets raises ``d``
 (144 for ``s = 5, t = 3``); integer ``M`` reach 4 for ``s = 3, t = 2``, which
 multiplies the statistical distance of the flooding by 4. ``"replicated"``
-(see :func:`~pyfe4ai.schemes.threshold_utils.share_replicated`) makes ``M`` 0
+(see :func:`~pyfe4ai.schemes.threshold.threshold_utils.share_replicated`) makes ``M`` 0
 or 1, so the argument holds as stated with ``q`` and ``ring_n`` unchanged; a
 server holds ``C(s - 1, t - 1)`` key pieces instead of one share (dealt and
 added up natively where the extension is built, with the values of the
@@ -117,11 +117,11 @@ default. Servers refuse Shamir key shares with ``t < s`` unless created with
 ``legacy_shamir = "warn"`` (never with public parameters that record the
 ``standard`` profile); key shares of versions <= 0.3.0 are refused in any
 case (another flooding derivation, see
-:func:`~pyfe4ai.utils.sampling_utils.check_flooding_version`);
+:func:`~pyfe4ai.primitives.sampling.check_flooding_version`);
 public parameters record ``threshold_construction`` and ``security_profile``,
 and servers refuse constructions they do not know. The opt-in
 ``"replicated-seeded"`` (see
-:func:`~pyfe4ai.schemes.threshold_utils.share_replicated_seeded`) deals the
+:func:`~pyfe4ai.schemes.threshold.threshold_utils.share_replicated_seeded`) deals the
 same kind of pieces, all but one expanded from 32-byte seeds: a server stores
 seeds and at most one full piece (the size of a Shamir key share), and its
 partial decryptions are those of the replicated key share of the expanded
@@ -133,7 +133,7 @@ seeds as a PRF) rather than perfectly. It has its own records
 ``flooding_accounting = "kl"`` with ``max_partial_decryptions = Q`` (opt-in,
 ``t = s`` with the Shamir sharing and the Gaussian flooding only -- the
 flooding defaults to ``"gaussian"`` under ``"kl"`` and ``"uniform"`` is
-refused there --, see :mod:`pyfe4ai.schemes.flooding_accounting`) sizes the
+refused there --, see :mod:`pyfe4ai.schemes.threshold.flooding_accounting`) sizes the
 Gaussian noise for a run in which every server produces at most ``Q`` partial
 decryptions (one per ciphertext or chunk): ``KL <= 2^-(stat_param + 1)``
 for the ``N = s Q ring_n`` flooded coefficients, i.e.
@@ -156,14 +156,14 @@ Ciphertext format (key generator config ``ct_format``, a public parameter;
 :data:`CT_FORMATS`): ``"json"`` (decimal strings, tags over the JSON form,
 as in versions <= 0.3.0; public parameters without ``ct_format``) or
 ``"binary"`` (the default): format 2 of
-:func:`~pyfe4ai.utils.ring_lwe_utils.encode_threshold_ciphertext` -- the
+:func:`~pyfe4ai.primitives.lattice.ring_lwe_utils.encode_threshold_ciphertext` -- the
 ``ct0`` rows truncated to the batch length ``k`` (decryption reads them
 coefficient-wise), ``ct1`` whole, every value a ``ceil(bits(q)/8)``-byte
 word strictly below ``q`` -- and binary partial decryptions of the first
 ``k`` coefficients (about 71 and 54 bytes per element at 215 bits instead
 of 225 and 222). Tags (v2) are HMAC-SHA256 under the client-server key of
 :func:`binary_tag_message`: the public parameters' digest
-(:func:`~pyfe4ai.schemes.threshold_utils.pp_binding` over
+(:func:`~pyfe4ai.schemes.threshold.threshold_utils.pp_binding` over
 :func:`binding_fields`), the (chunk) label, the ciphertext's label hash
 code, ``k`` and SHA-256 digests of the ``ct0`` and ``ct1`` bytes; the noise
 is seeded with digests of the ``ct1`` bytes (:func:`binary_request_digests`).
@@ -240,7 +240,7 @@ as make each at most 60 bits (four for the 212 to 218 bits of the
 ``standard`` profile, about 54 bits each), but four up to 248 bits, the most
 the native ring holds (above, five or more on the Python path, with a
 warning -- ``"prime"`` stays native below ``2^253``;
-:func:`~pyfe4ai.utils.ring_lwe_utils.rns_ntt_modulus_for`), of the bit length
+:func:`~pyfe4ai.primitives.lattice.ring_lwe_utils.rns_ntt_modulus_for`), of the bit length
 of the prime and above the same bound, published as ``q_factors`` (bound to
 the key shares); or ``"prime"``, an NTT prime (the modulus of earlier
 versions). Every factor must exceed ``s`` (:func:`check_rns_servers`):
@@ -255,13 +255,13 @@ native backend runs the 256-bit kernels with one 64-bit NTT per factor
 (NTT-domain values are residue tuples), with the values of the Python code
 on the composite ``q``.
 
-With the native backend (:mod:`pyfe4ai.utils.native_backend`; moduli below
+With the native backend (:mod:`pyfe4ai.backend`; moduli below
 ``2^253``, which includes the flooded ``q`` of the standard profile) the MCFE
 layer, the Shamir sharing of the key, the parsing, digests and NTT-domain
 products of a partial decryption and the combination run natively, with
 the values of the Python code; the uniform flooding noise is drawn natively
 too (:func:`uniform_flooding_poly`'s values), the Gaussian by
-:func:`~pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint` (natively too,
+:func:`~pyfe4ai.primitives.sampling.discrete_gaussian_bigint` (natively too,
 with the same samples).
 """
 
@@ -279,15 +279,15 @@ from collections import OrderedDict
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.schemes.flooding_accounting import KL
-from pyfe4ai.schemes.flooding_accounting import PER_SAMPLE
-from pyfe4ai.schemes.flooding_accounting import check_kl_threshold
-from pyfe4ai.schemes.flooding_accounting import flooding_config
-from pyfe4ai.schemes.flooding_accounting import kl_flooded_samples
-from pyfe4ai.schemes.flooding_accounting import kl_flooding
-from pyfe4ai.schemes.flooding_accounting import kl_flooding_width
-from pyfe4ai.schemes.flooding_accounting import kl_tail_cut
-from pyfe4ai.schemes.flooding_accounting import server_budget
+from pyfe4ai.schemes.threshold.flooding_accounting import KL
+from pyfe4ai.schemes.threshold.flooding_accounting import PER_SAMPLE
+from pyfe4ai.schemes.threshold.flooding_accounting import check_kl_threshold
+from pyfe4ai.schemes.threshold.flooding_accounting import flooding_config
+from pyfe4ai.schemes.threshold.flooding_accounting import kl_flooded_samples
+from pyfe4ai.schemes.threshold.flooding_accounting import kl_flooding
+from pyfe4ai.schemes.threshold.flooding_accounting import kl_flooding_width
+from pyfe4ai.schemes.threshold.flooding_accounting import kl_tail_cut
+from pyfe4ai.schemes.threshold.flooding_accounting import server_budget
 from pyfe4ai.schemes.mcfe.labels import chunk_label
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWE
 from pyfe4ai.schemes.mcfe.ring_lwe import check_ciphertext_label_hashes
@@ -295,61 +295,64 @@ from pyfe4ai.schemes.mcfe.ring_lwe import chunk_key_index
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
 from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWEKeyGenerator
 from pyfe4ai.schemes.mcfe.labels import encode_label
-from pyfe4ai.schemes.threshold_utils import check_ciphertext_tag_messages
-from pyfe4ai.schemes.threshold_utils import check_ciphertext_tags
-from pyfe4ai.schemes.threshold_utils import check_pp_binding
-from pyfe4ai.schemes.threshold_utils import check_served_sharing
-from pyfe4ai.schemes.threshold_utils import pp_binding
-from pyfe4ai.schemes.threshold_utils import legacy_shamir_policy
-from pyfe4ai.schemes.threshold_utils import check_fusion_weight
-from pyfe4ai.schemes.threshold_utils import client_server_mac_keys
-from pyfe4ai.schemes.threshold_utils import tag_ciphertext
-from pyfe4ai.schemes.threshold_utils import tag_ciphertext_message
-from pyfe4ai.schemes.threshold_utils import ciphertexts_digest
-from pyfe4ai.schemes.threshold_utils import fusion_weight_id
-from pyfe4ai.schemes.threshold_utils import pieces_held
-from pyfe4ai.schemes.threshold_utils import poly_kinds
-from pyfe4ai.schemes.threshold_utils import strict_mpz
-from pyfe4ai.schemes.threshold_utils import uniform_material
-from pyfe4ai.schemes.threshold_utils import seeded_pieces_held
-from pyfe4ai.schemes.threshold_utils import share_cache
-from pyfe4ai.schemes.threshold_utils import share_for_enrolled
-from pyfe4ai.schemes.threshold_utils import share_points
-from pyfe4ai.schemes.threshold_utils import share_replicated
-from pyfe4ai.schemes.threshold_utils import share_replicated_seeded
-from pyfe4ai.schemes.threshold_utils import share_secret
-from pyfe4ai.schemes.threshold_utils import validate_enrolled
-from pyfe4ai.schemes.threshold_utils import combine_consistently
-from pyfe4ai.schemes.threshold_utils import partial_groups
-from pyfe4ai.schemes.threshold_utils import validate_partial_decryptions
-from pyfe4ai.schemes.threshold_utils import resolve_sharing
-from pyfe4ai.schemes.threshold_utils import validate_threshold
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.lwe_utils import GAUSSIAN_TAIL_CUT
-from pyfe4ai.utils.lwe_utils import decode_scaled
-from pyfe4ai.utils.ring_lwe_utils import canonical_ring_ciphertext
-from pyfe4ai.utils.ring_lwe_utils import decode_threshold_ciphertext
-from pyfe4ai.utils.ring_lwe_utils import decode_values
-from pyfe4ai.utils.ring_lwe_utils import encode_values
-from pyfe4ai.utils.ring_lwe_utils import threshold_ciphertext_from_format1
-from pyfe4ai.utils.ring_lwe_utils import threshold_ciphertext_header
-from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul
-from pyfe4ai.utils.ring_lwe_utils import bmms21_selective_parameters
-from pyfe4ai.utils.ring_lwe_utils import next_ntt_prime
-from pyfe4ai.utils.ring_lwe_utils import register_rns_modulus
-from pyfe4ai.utils.ring_lwe_utils import RNS_NATIVE_FACTORS
-from pyfe4ai.utils.ring_lwe_utils import rns_ntt_modulus_for
-from pyfe4ai.utils.ring_lwe_utils import poly_add
-from pyfe4ai.utils.ring_lwe_utils import poly_mul
-from pyfe4ai.utils.ring_lwe_utils import RingNTT
-from pyfe4ai.utils.ring_lwe_utils import transpose
-from pyfe4ai.utils.sampling_utils import XofRandom
-from pyfe4ai.utils.sampling_utils import (
-    FLOODING_NOISE_VERSION, FLOODING_SAMPLER, check_flooding_version, discrete_gaussian_bigint,
+from pyfe4ai.schemes.threshold.threshold_utils import check_ciphertext_tag_messages
+from pyfe4ai.schemes.threshold.threshold_utils import check_ciphertext_tags
+from pyfe4ai.schemes.threshold.threshold_utils import check_pp_binding
+from pyfe4ai.schemes.threshold.threshold_utils import check_served_sharing
+from pyfe4ai.schemes.threshold.threshold_utils import pp_binding
+from pyfe4ai.schemes.threshold.threshold_utils import legacy_shamir_policy
+from pyfe4ai.schemes.threshold.threshold_utils import check_fusion_weight
+from pyfe4ai.schemes.threshold.threshold_utils import client_server_mac_keys
+from pyfe4ai.schemes.threshold.threshold_utils import tag_ciphertext
+from pyfe4ai.schemes.threshold.threshold_utils import tag_ciphertext_message
+from pyfe4ai.schemes.threshold.threshold_utils import ciphertexts_digest
+from pyfe4ai.schemes.threshold.threshold_utils import fusion_weight_id
+from pyfe4ai.schemes.threshold.threshold_utils import pieces_held
+from pyfe4ai.schemes.threshold.threshold_utils import poly_kinds
+from pyfe4ai.schemes.threshold.threshold_utils import strict_mpz
+from pyfe4ai.schemes.threshold.threshold_utils import uniform_material
+from pyfe4ai.schemes.threshold.threshold_utils import seeded_pieces_held
+from pyfe4ai.schemes.threshold.threshold_utils import share_cache
+from pyfe4ai.schemes.threshold.threshold_utils import share_for_enrolled
+from pyfe4ai.schemes.threshold.threshold_utils import share_points
+from pyfe4ai.schemes.threshold.threshold_utils import share_replicated
+from pyfe4ai.schemes.threshold.threshold_utils import share_replicated_seeded
+from pyfe4ai.schemes.threshold.threshold_utils import share_secret
+from pyfe4ai.schemes.threshold.threshold_utils import validate_enrolled
+from pyfe4ai.schemes.threshold.threshold_utils import combine_consistently
+from pyfe4ai.schemes.threshold.threshold_utils import partial_groups
+from pyfe4ai.schemes.threshold.threshold_utils import validate_partial_decryptions
+from pyfe4ai.schemes.threshold.threshold_utils import resolve_sharing
+from pyfe4ai.schemes.threshold.threshold_utils import validate_threshold
+from pyfe4ai import backend as native_backend
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.primitives.lattice.lwe_utils import GAUSSIAN_TAIL_CUT
+from pyfe4ai.primitives.lattice.lwe_utils import decode_scaled
+from pyfe4ai.primitives.lattice.ring_lwe_utils import canonical_ring_ciphertext
+from pyfe4ai.primitives.lattice.ring_lwe_utils import decode_threshold_ciphertext
+from pyfe4ai.primitives.lattice.ring_lwe_utils import decode_values
+from pyfe4ai.primitives.lattice.ring_lwe_utils import encode_values
+from pyfe4ai.primitives.lattice.ring_lwe_utils import threshold_ciphertext_from_format1
+from pyfe4ai.primitives.lattice.ring_lwe_utils import threshold_ciphertext_header
+from pyfe4ai.primitives.lattice.ring_lwe_utils import mat_vec_mul
+from pyfe4ai.primitives.lattice.ring_lwe_utils import bmms21_selective_parameters
+from pyfe4ai.primitives.lattice.ring_lwe_utils import next_ntt_prime
+from pyfe4ai.primitives.lattice.ring_lwe_utils import register_rns_modulus
+from pyfe4ai.primitives.lattice.ring_lwe_utils import RNS_NATIVE_FACTORS
+from pyfe4ai.primitives.lattice.ring_lwe_utils import rns_ntt_modulus_for
+from pyfe4ai.primitives.lattice.ring_lwe_utils import poly_add
+from pyfe4ai.primitives.lattice.ring_lwe_utils import poly_mul
+from pyfe4ai.primitives.lattice.ring_lwe_utils import RingNTT
+from pyfe4ai.primitives.lattice.ring_lwe_utils import transpose
+from pyfe4ai.primitives.sampling import XofRandom
+from pyfe4ai.primitives.sampling import (
+    FLOODING_NOISE_VERSION,
+    FLOODING_SAMPLER,
+    check_flooding_version,
+    discrete_gaussian_bigint,
 )
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.ring_lwe_utils import seeded_polynomial
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.primitives.lattice.ring_lwe_utils import seeded_polynomial
 
 logger = logging.getLogger(__name__)
 
@@ -375,7 +378,7 @@ _CONSTRUCTION_IDS = {
 _CONSTRUCTIONS = {construction: sharing for (sharing, _), construction in _CONSTRUCTION_IDS.items()}
 _CONSTRUCTIONS[_CONSTRUCTION_KL] = "shamir"
 #: Public-parameter fields a key share is bound to (see
-#: :func:`~pyfe4ai.schemes.threshold_utils.pp_binding`): what its partial
+#: :func:`~pyfe4ai.schemes.threshold.threshold_utils.pp_binding`): what its partial
 #: decryptions depend on beyond the sharing and the construction.
 _BINDING_FIELDS = (
     "q", "p", "ring_n", "eta", "s", "t", "lst_sid", "flooding", "flood_bits", "sigma_f", "flood_tail_cut",
@@ -399,7 +402,7 @@ def binding_fields(pp: dict) -> tuple:
 #: ``ct_format``, a public parameter): ``"json"`` (decimal strings, tags over
 #: the JSON form; the only format of versions <= 0.3.0, and that of public
 #: parameters without ``ct_format``) and ``"binary"`` (the default: format 2
-#: of :func:`~pyfe4ai.utils.ring_lwe_utils.encode_threshold_ciphertext`, tags
+#: of :func:`~pyfe4ai.primitives.lattice.ring_lwe_utils.encode_threshold_ciphertext`, tags
 #: over its digests, binary partial decryptions).
 CT_FORMATS = ("json", "binary")
 #: ``ct_format`` of a key generator whose config has none.
@@ -477,7 +480,7 @@ def uniform_flooding_material(seed: bytes) -> bytes:
 def binary_ciphertext_digests(ct: dict, q, eta: int, ring_n: int) -> tuple:
     """``(k, d0, d1)`` of a format-2 ciphertext dict: its batch length and
     ``d0 = SHA-256(domain || header || ct0 rows)``, ``d1 = SHA-256(domain ||
-    ct1)`` (the values are checked when read: :func:`~pyfe4ai.utils.ring_lwe_utils.decode_threshold_ciphertext`).
+    ct1)`` (the values are checked when read: :func:`~pyfe4ai.primitives.lattice.ring_lwe_utils.decode_threshold_ciphertext`).
 
     Raises:
         ValueError: Unless ``ct["ct"]`` is a format-2 ciphertext of these
@@ -499,7 +502,7 @@ def binary_ciphertext_digests(ct: dict, q, eta: int, ring_n: int) -> tuple:
 def binary_tag_message(pp_digest: bytes, encoded_label: str, ct: dict, digests: tuple) -> bytes:
     """What the tag of a format-2 ciphertext covers (HMAC-SHA256 under the
     client-server key): a domain, the digest of the public parameters
-    (:func:`~pyfe4ai.schemes.threshold_utils.pp_binding` over
+    (:func:`~pyfe4ai.schemes.threshold.threshold_utils.pp_binding` over
     :func:`binding_fields`), the (chunk) label, the ciphertext's ``label_hash``
     code (for an ndarray chunk its layer's; see ``_chunk_with_code``), the
     batch length and the digests of :func:`binary_ciphertext_digests`.
@@ -539,7 +542,7 @@ def binary_request_digests(digests: dict) -> tuple:
 
 def _poly_values(poly, q, ring_n: int) -> list:
     """A key-share polynomial as ``mpz``: a list or tuple of ``ring_n`` ints,
-    ``mpz`` or decimal strings (:func:`~pyfe4ai.schemes.threshold_utils.strict_mpz`),
+    ``mpz`` or decimal strings (:func:`~pyfe4ai.schemes.threshold.threshold_utils.strict_mpz`),
     or binary (``ceil(bits(q)/8)``-byte words, strictly below q).
 
     Raises:
@@ -648,7 +651,7 @@ class MixedSharingsError(FESchemeError):
 
 def _native_ring(q, ring_n: int):
     """The native ring context the threshold kernels take for ``(q, ring_n)``
-    (prime, or an RNS modulus of :func:`~pyfe4ai.utils.native_backend.ring_context`
+    (prime, or an RNS modulus of :func:`~pyfe4ai.backend.ring_context`
     other than the two-prime context of the MIFE / MCFE prototype, which has
     kernels of its own), or ``None`` for the Python path."""
     ctx = native_backend.ring_context(q, ring_n)
@@ -716,7 +719,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
                 module docstring), ``sharing`` (``"replicated"``, the default
                 for ``t < s``, ``"shamir"``, the default for ``t = s``, or the
                 opt-in ``"replicated-seeded"``; see
-                :func:`~pyfe4ai.schemes.threshold_utils.resolve_sharing`)
+                :func:`~pyfe4ai.schemes.threshold.threshold_utils.resolve_sharing`)
                 and, opt-in, ``flooding_accounting = "kl"`` with
                 ``max_partial_decryptions`` (``t = s``, Shamir sharing,
                 Gaussian flooding; see the module docstring);
@@ -728,7 +731,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
                 a product of at least :data:`MIN_RNS_FACTORS` NTT primes
                 below 2^62 (four for the 212 to 218 bits of the
                 ``standard`` profile, four up to 248 bits;
-                :func:`~pyfe4ai.utils.ring_lwe_utils.rns_ntt_modulus_for`),
+                :func:`~pyfe4ai.primitives.lattice.ring_lwe_utils.rns_ntt_modulus_for`),
                 each above ``s``, published as ``q_factors``, with the
                 parameter record ``param-rns.json``; or ``"prime"``, an NTT
                 prime (record ``param.json``, as in earlier versions);
@@ -1258,7 +1261,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
 
     A server refuses Shamir key shares with ``t < s`` (versions <= 0.3.0)
     unless its config has ``legacy_shamir = "warn"`` (see
-    :data:`~pyfe4ai.schemes.threshold_utils.LEGACY_SHAMIR_POLICIES`).
+    :data:`~pyfe4ai.schemes.threshold.threshold_utils.LEGACY_SHAMIR_POLICIES`).
     """
 
     _binary_ciphertexts = False  # format 1 only as the step before format 2 (binary public parameters)
@@ -1266,7 +1269,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
     def __init__(self, config: dict, **kwargs) -> None:
         """As :class:`~pyfe4ai.schemes.mcfe.ring_lwe.MCFERingLWE`; under
         ``flooding_accounting = "kl"`` a server needs ``partial_budget``, the
-        :class:`~pyfe4ai.schemes.flooding_accounting.PartialDecryptionBudget`
+        :class:`~pyfe4ai.schemes.threshold.flooding_accounting.PartialDecryptionBudget`
         that its deployment keeps for it; ``legacy_shamir`` as in the class
         docstring. The ciphertext format is that of the public parameters
         (``ct_format``, :func:`pp_ct_format`); a ``ct_format`` in *config*
@@ -1315,7 +1318,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         return mac_keys
 
     def _pp_digest(self) -> str:
-        """:func:`~pyfe4ai.schemes.threshold_utils.pp_binding` of the public parameters (hex)."""
+        """:func:`~pyfe4ai.schemes.threshold.threshold_utils.pp_binding` of the public parameters (hex)."""
         return pp_binding(self.pp, binding_fields(self.pp), _BINDING_DEFAULTS)
 
     def _check_parameters_unchanged(self) -> None:
@@ -1432,7 +1435,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         return dk, weight
 
     def _enrolled_share(self, dk, weight, lst_sid_enrolled, q, fields):
-        """:func:`~pyfe4ai.schemes.threshold_utils.share_for_enrolled` of a key
+        """:func:`~pyfe4ai.schemes.threshold.threshold_utils.share_for_enrolled` of a key
         share, or of the label part and its weight part (``sk_y``; summed once
         per weight part and enrolled set)."""
         kwargs = dict(cache=share_cache(self), legacy_shamir=self.legacy_shamir,
@@ -1773,7 +1776,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             partials: ``{sid: share_decrypt(...)}`` for one enrolled set, or a
                 list of such mappings for several enrolled sets, whose results
                 must then agree (see
-                :func:`~pyfe4ai.schemes.threshold_utils.combine_consistently`:
+                :func:`~pyfe4ai.schemes.threshold.threshold_utils.combine_consistently`:
                 servers are assumed honest-but-curious, and only this
                 redundancy detects one that returns a wrong partial).
 

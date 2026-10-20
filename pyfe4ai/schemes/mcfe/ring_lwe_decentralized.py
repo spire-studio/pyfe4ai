@@ -43,14 +43,14 @@ from pyfe4ai.schemes.mcfe.labels import chunk_label, encode_label
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWE
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe import label_pad, label_pad_material, native_hash_kwargs
-from pyfe4ai.schemes.threshold_utils import fusion_weight_id
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils.crypto_utils import LEGACY_LABEL_HASH
-from pyfe4ai.utils.crypto_utils import hash_to_zq_material, hash_to_zq_vector
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul, transpose
-from pyfe4ai.utils.validation import int_vector
+from pyfe4ai.schemes.threshold.threshold_utils import fusion_weight_id
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives.hashing import LEGACY_LABEL_HASH
+from pyfe4ai.primitives.hashing import hash_to_zq_material, hash_to_zq_vector
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.primitives.lattice.ring_lwe_utils import mat_vec_mul, transpose
+from pyfe4ai._validation import int_vector
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ def gdsum_mask(
     nid: str, pair_keys: dict, lst_nid: list, context: str, q, ring_n: int, mode: str
 ) -> list:
     """Return ``M_i(context) = sum_{j>i} PRF(K_ij) - sum_{j<i} PRF(K_ji)`` in Z_q^ring_n
-    (the PRF: :func:`~pyfe4ai.utils.crypto_utils.hash_to_zq_vector` with the
+    (the PRF: :func:`~pyfe4ai.primitives.hashing.hash_to_zq_vector` with the
     ``label_hash`` *mode*)."""
     mask = [gp.mpz(0)] * ring_n
     pos = lst_nid.index(nid)

@@ -27,13 +27,13 @@ from __future__ import annotations
 import gmpy2 as gp
 import pytest
 
-from pyfe4ai.schemes import threshold_utils as tu
+from pyfe4ai.schemes.threshold import threshold_utils as tu
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
 from pyfe4ai.schemes.mcfe.labels import encode_label
-from pyfe4ai.schemes.threshold_utils import pp_binding, tag_ciphertext_message
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils import ring_lwe_utils as rlu
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError
+from pyfe4ai.schemes.threshold.threshold_utils import pp_binding, tag_ciphertext_message
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError
 
 NATIVE = native_backend.available()
 BACKENDS = ["python"] + (["native"] if NATIVE else [])

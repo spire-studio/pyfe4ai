@@ -29,12 +29,12 @@ total number of slots, ``Delta = floor(q / K)``):
 Deviation from the paper: messages and weights are signed (``|x| <= X``,
 ``|y| <= Y``) instead of ``{0..P-1}`` / ``{0..V-1}``; the inner product is
 encoded with ``K = 2 n X Y + 1`` and decoded centred. Parameters are derived
-by :func:`pyfe4ai.utils.lwe_utils.abmpsw20_lwe_parameters` from the
+by :func:`pyfe4ai.primitives.lattice.lwe_utils.abmpsw20_lwe_parameters` from the
 constraints of Appendix C.3; this module uses the selective-security choice
 of ``m0`` and :mod:`pyfe4ai.schemes.mcfe.fullysec_lwe` the adaptive one.
 The LWE dimension ``lwe_n`` defaults to a toy value; ``lwe_n = "auto"``
 (the ``standard`` security profile) selects the smallest dimension whose
-``q`` meets :data:`pyfe4ai.utils.lwe_utils.DENSE_LWE_128_LOG_Q`, a lattice
+``q`` meets :data:`pyfe4ai.primitives.lattice.lwe_utils.DENSE_LWE_128_LOG_Q`, a lattice
 estimator bound for LWE(n0, q, ceil(2 sqrt(n0))) -- the assumption of the
 proof (Appendix C.2, game G2: LWE in dimension ``n0`` modulo the scheme's
 ``q``) -- with a uniform secret.
@@ -45,13 +45,13 @@ two ciphertexts of one slot under one label differ by about
 label per element. ``H`` is SHAKE-256 (the paper's implementation uses
 counter-mode SHA-256), mapped to ``Z_q`` as the key generator's
 ``label_hash`` says (a public parameter;
-:data:`~pyfe4ai.utils.crypto_utils.LABEL_HASHES`): by default rejection
+:data:`~pyfe4ai.primitives.hashing.LABEL_HASHES`): by default rejection
 sampling mod q from SHAKE128 (exactly uniform, fewer XOF bytes). Versions
 <= 0.3.0 reduced ``bits(q) + 128``-bit SHAKE-256 blocks (``"shake256-wide"``,
 still selectable), so their ciphertexts differ. The mode is bound to the
 public parameters, the clients' encryption keys, every single ciphertext and
 every ndarray layer (``label_hash``: the code of
-:data:`~pyfe4ai.utils.crypto_utils.LABEL_HASH_CODES`, absent for
+:data:`~pyfe4ai.primitives.hashing.LABEL_HASH_CODES`, absent for
 ``"shake256-wide"``; in an ndarray layer only its first element carries it,
 for the whole layer); a missing field means ``"shake256-wide"``
 (the data of versions <= 0.3.0 stay readable), and encryption with a key of
@@ -67,31 +67,31 @@ import operator
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
-from pyfe4ai.schemes.ipfe import decoded_layer
-from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
+from pyfe4ai.core.base import IPFEAbsCrypto
+from pyfe4ai.core.base import decoded_layer
+from pyfe4ai.core.base import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
 from pyfe4ai.schemes.mcfe.labels import encode_label
-from pyfe4ai.schemes.profiles import STANDARD
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.crypto_utils import DEFAULT_LABEL_HASH
-from pyfe4ai.utils.crypto_utils import LABEL_HASH_CODES
-from pyfe4ai.utils.crypto_utils import LEGACY_LABEL_HASH
-from pyfe4ai.utils.crypto_utils import check_label_hash
-from pyfe4ai.utils.crypto_utils import hash_to_zq_material
-from pyfe4ai.utils.crypto_utils import hash_to_zq_vector
-from pyfe4ai.utils.crypto_utils import zq_rejection_parameters
-from pyfe4ai.utils.lwe_utils import abmpsw20_lwe_parameters
-from pyfe4ai.utils.lwe_utils import check_dense_lwe
-from pyfe4ai.utils.lwe_utils import decode_rounded_inner_product
-from pyfe4ai.utils.lwe_utils import resolve_lwe_n
-from pyfe4ai.utils.lwe_utils import round_to_q0
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix, scheme_sampler
-from pyfe4ai.utils.sampling_utils import rand_uniform_vector
-from pyfe4ai.utils.validation import scale_to_int
-from pyfe4ai.utils.validation import strict_int
+from pyfe4ai.core.profiles import STANDARD
+from pyfe4ai import backend as native_backend
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.primitives.hashing import DEFAULT_LABEL_HASH
+from pyfe4ai.primitives.hashing import LABEL_HASH_CODES
+from pyfe4ai.primitives.hashing import LEGACY_LABEL_HASH
+from pyfe4ai.primitives.hashing import check_label_hash
+from pyfe4ai.primitives.hashing import hash_to_zq_material
+from pyfe4ai.primitives.hashing import hash_to_zq_vector
+from pyfe4ai.primitives.hashing import zq_rejection_parameters
+from pyfe4ai.primitives.lattice.lwe_utils import abmpsw20_lwe_parameters
+from pyfe4ai.primitives.lattice.lwe_utils import check_dense_lwe
+from pyfe4ai.primitives.lattice.lwe_utils import decode_rounded_inner_product
+from pyfe4ai.primitives.lattice.lwe_utils import resolve_lwe_n
+from pyfe4ai.primitives.lattice.lwe_utils import round_to_q0
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.primitives.sampling import discrete_gaussian_matrix, scheme_sampler
+from pyfe4ai.primitives.sampling import rand_uniform_vector
+from pyfe4ai._validation import scale_to_int
+from pyfe4ai._validation import strict_int
 
 logger = logging.getLogger(__name__)
 
@@ -141,14 +141,14 @@ class MCFELWEKeyGenerator(IPFEAbsKeyGenerator):
                 clients), ``lst_nid``, ``eta`` (slots per client), ``lwe_n``
                 (LWE dimension ``n0``; default 32, ``"auto"`` for the
                 smallest one meeting
-                :data:`~pyfe4ai.utils.lwe_utils.DENSE_LWE_128_LOG_Q`, the
+                :data:`~pyfe4ai.primitives.lattice.lwe_utils.DENSE_LWE_128_LOG_Q`, the
                 ``standard`` profile's choice), ``bound_x``, ``bound_y``,
                 ``stat_param`` (statistical parameter ``kappa``),
                 ``sec_param`` (recorded only), ``gaussian_sampler`` (that of
                 the keys ``t``: ``"facct"``, the default, or ``"rounded"``;
-                see :func:`~pyfe4ai.utils.sampling_utils.scheme_sampler`) and
+                see :func:`~pyfe4ai.primitives.sampling.scheme_sampler`) and
                 ``label_hash`` (one of
-                :data:`~pyfe4ai.utils.crypto_utils.LABEL_HASHES`, default
+                :data:`~pyfe4ai.primitives.hashing.LABEL_HASHES`, default
                 ``"shake128-rejection"``, ``"shake256-wide"`` for the
                 ciphertexts of versions <= 0.3.0; a public parameter).
                 The keys ``bound_u`` and ``label_modulus`` of versions <= 0.2.0

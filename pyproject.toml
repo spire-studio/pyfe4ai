@@ -71,7 +71,7 @@ pythonpath = ["."]
 # FESecurityWarning marks known-insecure schemes (none at present) and BLS12-381
 # under security_profile="standard"; tests/test_scheme_status.py and
 # tests/test_security_profiles.py check the warnings themselves
-filterwarnings = ["ignore::pyfe4ai.utils.exceptions.FESecurityWarning"]
+filterwarnings = ["ignore::pyfe4ai.core.exceptions.FESecurityWarning"]
 markers = [
   "core: core FE/IPFE coverage intended for the staged core-only release lane",
   "extended: non-core pairing-heavy or quadratic FE coverage kept outside the core-only release lane",

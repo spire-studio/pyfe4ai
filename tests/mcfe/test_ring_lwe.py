@@ -8,8 +8,8 @@ import pytest
 
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWE
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 
 
 @pytest.fixture
@@ -89,8 +89,8 @@ def test_key_only_decrypts_its_label(kg_config):
 
 def test_slot_partial_is_padded(kg_config):
     """A slot's Dec1 output encodes x_i + u_i + H(u'_i, l), not x_i."""
-    from pyfe4ai.utils.lwe_utils import decode_scaled
-    from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul, poly_add, poly_mul, poly_neg, transpose
+    from pyfe4ai.primitives.lattice.lwe_utils import decode_scaled
+    from pyfe4ai.primitives.lattice.ring_lwe_utils import mat_vec_mul, poly_add, poly_mul, poly_neg, transpose
     import gmpy2 as gp
 
     kg = MCFERingLWEKeyGenerator(kg_config)

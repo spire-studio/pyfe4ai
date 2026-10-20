@@ -1,5 +1,5 @@
 //! The rounded Gaussian of wide widths:
-//! pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint.
+//! pyfe4ai.primitives.sampling.discrete_gaussian_bigint.
 //!
 //! The reference draws b1 = getrandbits(p), then b2 = getrandbits(p), with
 //! p = bits(ceil(sigma)) + 320 (BIGINT_GUARD_BITS; the argument below needs
@@ -788,7 +788,7 @@ pub fn approx(p: &Params, b1: &[u8], b2: &[u8]) -> Option<(Vec<u64>, i64, bool)>
     })
 }
 
-/// getrandbits of sampling_utils.XofRandom: call `counter` of the seed's
+/// getrandbits of sampling.XofRandom: call `counter` of the seed's
 /// SHAKE-256 stream, `out.len()` bytes.
 pub fn xof_call(head: &[u8], counter: u64, out: &mut [u8]) {
     let mut msg = Vec::with_capacity(head.len() + 8);

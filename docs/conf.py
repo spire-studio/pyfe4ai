@@ -78,13 +78,13 @@ html_theme_options = {
 
 # -- Scheme status ------------------------------------------------------------
 # The status counts (|n_schemes| etc.) and the ``scheme-status-table``
-# directive are rendered from pyfe4ai.schemes.status at build time, so the
+# directive are rendered from pyfe4ai.core.status at build time, so the
 # docs cannot drift from the code.
 from docutils import nodes  # noqa: E402
 from docutils.statemachine import StringList  # noqa: E402
 from sphinx.util.docutils import SphinxDirective  # noqa: E402
 
-from pyfe4ai.schemes import status as _status  # noqa: E402
+from pyfe4ai.core import status as _status  # noqa: E402
 
 _status_counts = Counter(entry.status for entry in _status.SCHEME_STATUS.values())
 rst_prolog = f"""
@@ -102,7 +102,7 @@ def _rst_text(text: str) -> str:
 
 
 class SchemeStatusTable(SphinxDirective):
-    """Render ``pyfe4ai.schemes.status.SCHEME_STATUS`` as a table."""
+    """Render ``pyfe4ai.core.status.SCHEME_STATUS`` as a table."""
 
     def run(self):
         lines = [
@@ -127,7 +127,7 @@ class SchemeStatusTable(SphinxDirective):
             ]
         container = nodes.container()
         self.state.nested_parse(
-            StringList(lines, source="pyfe4ai.schemes.status.SCHEME_STATUS"),
+            StringList(lines, source="pyfe4ai.core.status.SCHEME_STATUS"),
             self.content_offset,
             container,
         )

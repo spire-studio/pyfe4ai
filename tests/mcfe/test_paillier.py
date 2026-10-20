@@ -177,7 +177,7 @@ def test_ciphertexts_of_different_labels_do_not_mix(kg_config):
 
 
 def test_bounds_are_checked_against_the_modulus(kg_config):
-    from pyfe4ai.utils.exceptions import FEValidationError
+    from pyfe4ai.core.exceptions import FEValidationError
 
     cfg = dict(kg_config, bound_x=2 ** 70)
     with pytest.raises(FEValidationError):

@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from typing import NamedTuple
 
-from pyfe4ai.utils.exceptions import FEValidationError
+from pyfe4ai.core.exceptions import FEValidationError
 
 
 class ElementLabel(NamedTuple):

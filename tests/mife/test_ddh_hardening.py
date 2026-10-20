@@ -4,7 +4,7 @@ import gmpy2 as gp
 import pytest
 
 from pyfe4ai.schemes.mife.ddh import MIFE, MIFEKeyGenerator
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
 
 NIDS = ["nid_0", "nid_1"]
 

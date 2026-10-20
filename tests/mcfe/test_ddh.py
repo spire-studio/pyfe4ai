@@ -7,7 +7,7 @@ import gmpy2 as gp
 
 from pyfe4ai.schemes.mcfe.ddh import MCFE
 from pyfe4ai.schemes.mcfe.ddh import MCFEKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
+from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.logger import init_logging_config
 
 init_logging_config()
@@ -214,7 +214,7 @@ def test_label_binding():
 
 
 def test_malformed_inputs_rejected():
-    from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
+    from pyfe4ai.core.exceptions import FEKeyError, FEValidationError
 
     lst_nid = ["nid_0", "nid_1"]
     kg = MCFEKeyGenerator(
@@ -233,7 +233,7 @@ def test_malformed_inputs_rejected():
 
 
 def test_unknown_client_in_fusion_weight_rejected():
-    from pyfe4ai.utils.exceptions import FEValidationError
+    from pyfe4ai.core.exceptions import FEValidationError
 
     kg = MCFEKeyGenerator(
         {"sec_param": 256, "lst_nid": ["nid_0", "nid_1"], "eta": 1, "n": 2, "s": 1}
@@ -252,7 +252,7 @@ def test_ndarray_helpers_round_trip_and_do_not_reuse_labels():
     leaked all element differences without any key."""
     import numpy as np
 
-    from pyfe4ai.utils.dlog_solver import dlog_table_solve, load_or_build_dlog_table
+    from pyfe4ai.primitives.groups.dlog_solver import dlog_table_solve, load_or_build_dlog_table
 
     lst_nid = ["nid_0", "nid_1"]
     precision = 2

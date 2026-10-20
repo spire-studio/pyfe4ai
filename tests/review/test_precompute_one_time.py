@@ -78,7 +78,7 @@ _THREADS = textwrap.dedent(
     import numpy as np
     os.chdir(sys.argv[1])
     from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWE, MCFERingLWEKeyGenerator
-    from pyfe4ai.utils import native_backend
+    from pyfe4ai import backend as native_backend
     nids = ["a", "b", "c"]
     kg = MCFERingLWEKeyGenerator({"sec_param": 64, "eta": 1, "n": 3, "lst_nid": nids, "ring_n": 1024,
                                   "bound_x": 100, "bound_y": 2})
@@ -109,7 +109,7 @@ _THREADS = textwrap.dedent(
 
 
 def test_concurrent_use_of_a_native_precomputation_does_not_deadlock(tmp_path):
-    from pyfe4ai.utils import native_backend
+    from pyfe4ai import backend as native_backend
 
     if native_backend.ext() is None:
         pytest.skip("native extension not built")

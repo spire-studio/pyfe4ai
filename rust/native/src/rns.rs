@@ -98,7 +98,7 @@ pub fn poly_mul(py: Python<'_>, ctx: &Bound<'_, RnsCtx>, a: &[u8], b: &[u8]) -> 
     Ok(words_to_bytes(py, &r.poly_mul(&x, &y)))
 }
 
-/// crypto_utils.hash_to_zq_vector of the material mod q in `mode`, packed
+/// pyfe4ai.primitives.hashing.hash_to_zq_vector of the material mod q in `mode`, packed
 /// 128-bit words (the native label pad), wiped after packing.
 pub fn hash_to_zq(py: Python<'_>, ctx: &Bound<'_, RnsCtx>, material: &[u8], count: usize, mode: HashMode) -> Py<PyBytes> {
     let r = &ctx.get().ring;

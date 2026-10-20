@@ -18,9 +18,9 @@ import pytest
 from pyfe4ai.schemes.mcfe import ddh_ristretto255 as mcfe_ec
 from pyfe4ai.schemes.mife import ddh_ristretto255 as mife_ec
 from pyfe4ai.schemes.sife import ddh_ristretto255 as sife_ec
-from pyfe4ai.utils import ec_group
-from pyfe4ai.utils import ristretto255 as R
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.primitives.groups import ec_group
+from pyfe4ai.primitives.groups import ristretto255 as R
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 
 pytestmark = pytest.mark.core
 
@@ -205,7 +205,7 @@ def test_mcfe_round_trip_labels_and_errors():
 
 
 def test_wrapper_selects_the_group_and_aggregates():
-    from pyfe4ai.utils.ml_adapter import FESchemeWrapper, aggregate_gradients, encrypt_gradient
+    from pyfe4ai.ml import FESchemeWrapper, aggregate_gradients, encrypt_gradient
 
     nids = ["a", "b", "c"]
     w = FESchemeWrapper("mcfe", "ddh", {"group": "ristretto255", "n": 3, "lst_nid": nids,

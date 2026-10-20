@@ -14,10 +14,10 @@ import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe as mcfe_rlwe
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tmcfe_rlwe
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils import sampling_utils
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
-from pyfe4ai.utils.ring_lwe_utils import decode_binary_ciphertext, encode_binary_ciphertext
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives import sampling as sampling_utils
+from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.primitives.lattice.ring_lwe_utils import decode_binary_ciphertext, encode_binary_ciphertext
 from tests.test_native_backend import _rounded_sampler  # noqa: F401  (autouse)
 
 pytestmark = pytest.mark.core
@@ -115,7 +115,7 @@ def test_formats_are_validated():
 
 @pytest.mark.parametrize("name", BACKENDS)
 def test_ml_adapter_binary_round(name):
-    from pyfe4ai.utils.ml_adapter import FESchemeWrapper, aggregate_gradients, encrypt_gradient
+    from pyfe4ai.ml import FESchemeWrapper, aggregate_gradients, encrypt_gradient
 
     nids = ["c0", "c1", "c2"]
     with native_backend.backend(name):

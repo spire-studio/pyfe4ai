@@ -18,8 +18,8 @@ import sys
 import gmpy2 as gp
 import pytest
 
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils import sampling_utils as su
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives import sampling as su
 
 pytestmark = pytest.mark.skipif(native_backend.ext() is None or not hasattr(native_backend.ext(), "FacctTable"),
                                 reason="native FACCT not built")

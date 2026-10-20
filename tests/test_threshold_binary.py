@@ -19,10 +19,10 @@ import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
 from pyfe4ai.schemes.mcfe.labels import chunk_label, encode_label
-from pyfe4ai.schemes.threshold_utils import pp_binding, tag_ciphertext, tag_ciphertext_message
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils import ring_lwe_utils as rlu
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.schemes.threshold.threshold_utils import pp_binding, tag_ciphertext, tag_ciphertext_message
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 
 BACKENDS = ["python"] + (["native"] if native_backend.available() else [])
 NIDS, SIDS = ["c0", "c1", "c2"], ["s0", "s1", "s2"]

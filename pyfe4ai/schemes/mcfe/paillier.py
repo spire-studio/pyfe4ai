@@ -29,7 +29,7 @@ therefore derive a distinct label per element.
 Implementation notes: ``H`` is SHAKE-256 expanded to ``bits(N^2) + 128`` bits
 (the paper's implementation uses counter-mode SHA-256); ``D_{Z, sigma}`` is
 a rounded continuous Gaussian computed at ``bits(sigma) + 320`` bits of
-precision (:func:`pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint`).
+precision (:func:`pyfe4ai.primitives.sampling.discrete_gaussian_bigint`).
 ``bit_length`` is the size of each prime and is far below any real security
 level by default.
 """
@@ -42,22 +42,22 @@ import logging
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
-from pyfe4ai.schemes.ipfe import decoded_layer
-from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
-from pyfe4ai.schemes.ipfe import ParameterCacheMixin
+from pyfe4ai.core.base import IPFEAbsCrypto
+from pyfe4ai.core.base import decoded_layer
+from pyfe4ai.core.base import IPFEAbsKeyGenerator
+from pyfe4ai.core.base import ParameterCacheMixin
 from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
 from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.schemes.mcfe.offline import OfflineMCFEMixin
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.crypto_utils import generate_group_primes
-from pyfe4ai.utils.crypto_utils import hash_to_zn2_star
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.modular_utils import pow_signed
-from pyfe4ai.utils.sampling_utils import discrete_gaussian_bigint
-from pyfe4ai.utils.validation import scale_to_int
-from pyfe4ai.utils.crypto_utils import is_dcr_modulus
-from pyfe4ai.utils.validation import strict_int
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.primitives.groups.integer_groups import generate_group_primes
+from pyfe4ai.primitives.hashing import hash_to_zn2_star
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.primitives.groups.modular_utils import pow_signed
+from pyfe4ai.primitives.sampling import discrete_gaussian_bigint
+from pyfe4ai._validation import scale_to_int
+from pyfe4ai.primitives.groups.integer_groups import is_dcr_modulus
+from pyfe4ai._validation import strict_int
 
 logger = logging.getLogger(__name__)
 

@@ -13,7 +13,7 @@ and are known before the round, so:
   precomputed=...)`` then only computes ``X(x)`` and one product per
   element. The ciphertexts are those of the plain call (the encryption is
   deterministic). Secret and one-time, as the masks of the Ring-LWE MCFE
-  (see :mod:`pyfe4ai.schemes.one_time`: claimed atomically after the input
+  (see :mod:`pyfe4ai.core.one_time`: claimed atomically after the input
   is validated; ``copy.copy``, ``copy.deepcopy``, pickling and use in
   another process are refused).
 * :meth:`OfflineMCFEMixin.prepare_key` computes the key terms of every
@@ -32,10 +32,10 @@ from __future__ import annotations
 import numpy as np
 
 from pyfe4ai.schemes.mcfe.labels import element_label
-from pyfe4ai.schemes.one_time import OneTimePrecomputation
-from pyfe4ai.schemes.random_offline import check_online_bound
-from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
-from pyfe4ai.utils.validation import scale_to_int
+from pyfe4ai.core.one_time import OneTimePrecomputation
+from pyfe4ai.core.one_time import check_online_bound
+from pyfe4ai.core.exceptions import FEKeyError, FEValidationError
+from pyfe4ai._validation import scale_to_int
 
 
 def _shapes(shapes) -> list:

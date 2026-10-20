@@ -16,9 +16,9 @@ from pyfe4ai.schemes.mcfe import ring_lwe_decentralized, ring_lwe_threshold
 from pyfe4ai.schemes.mcfe.fullysec_lwe import MCFEFullySecLWEKeyGenerator
 from pyfe4ai.schemes.mife import ring_lwe as mife_rlwe
 from pyfe4ai.schemes.sife import ring_lwe as sife_rlwe
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils import sampling_utils as su
-from pyfe4ai.utils.exceptions import FEValidationError
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives import sampling as su
+from pyfe4ai.core.exceptions import FEValidationError
 
 NIDS = ["a", "b"]
 SIDS = ["s0", "s1", "s2"]
@@ -165,7 +165,7 @@ def test_standard_refuses_the_rounded_sampler(name):
 def test_a_client_override_of_the_recorded_sampler():
     import warnings
 
-    from pyfe4ai.utils.exceptions import FESecurityWarning
+    from pyfe4ai.core.exceptions import FESecurityWarning
 
     kg, pp = _mcfe()  # toy
     assert pp["gaussian_sampler"] == "facct" and pp["security_profile"] == "toy"
@@ -202,7 +202,7 @@ def _abdp15_keygens(profile):
 
 @pytest.fixture
 def abdp15_draws(monkeypatch):
-    from pyfe4ai.schemes import abdp15_lwe
+    from pyfe4ai.schemes.common import abdp15_lwe
 
     d = _Draws()
     monkeypatch.setattr(abdp15_lwe, "discrete_gaussian_matrix", d)

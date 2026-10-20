@@ -1,4 +1,4 @@
-"""Regenerate ``DENSE_LWE_128_LOG_Q`` of :mod:`pyfe4ai.utils.lwe_utils`.
+"""Regenerate ``DENSE_LWE_128_LOG_Q`` of :mod:`pyfe4ai.primitives.lattice.lwe_utils`.
 
 For every LWE dimension ``n`` of the grid, finds the largest ``k`` such that
 LWE with ``n``, ``q = 2^k``, a uniform secret modulo ``q``, errors
@@ -16,7 +16,7 @@ https://github.com/malb/lattice-estimator) with its default cost model
   every bound found.
 
 The error width is the one of the ABMPSW20 LWE MCFE (``sigma_e`` in
-:func:`pyfe4ai.utils.lwe_utils.abmpsw20_lwe_parameters`), so the table
+:func:`pyfe4ai.primitives.lattice.lwe_utils.abmpsw20_lwe_parameters`), so the table
 bounds the LWE problem its security proof reduces to (SCN 2020, Appendix C.2,
 game G2: LWE in dimension ``n0`` modulo the scheme's ``q``).
 

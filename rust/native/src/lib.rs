@@ -1,4 +1,4 @@
-//! pyfe4ai._rust_native: the Rust backend of pyfe4ai.utils.native_backend.
+//! pyfe4ai._rust_native: the Rust backend of pyfe4ai.backend.
 //!
 //! The lattice functions back the Ring-LWE and dense-LWE schemes (checked bit
 //! for bit against their Python code by the tests); `ec` adds ristretto255 and
@@ -605,7 +605,7 @@ fn hash_mode(code: u8) -> PyResult<HashMode> {
     HashMode::from_code(code).ok_or_else(|| PyValueError::new_err("unknown label-hash mode"))
 }
 
-/// crypto_utils.hash_to_zq_vector of the material (mode: 0 shake256-wide,
+/// pyfe4ai.primitives.hashing.hash_to_zq_vector of the material (mode: 0 shake256-wide,
 /// 1 shake256-rejection, 2 shake128-rejection), packed words.
 #[pyfunction(name = "hash_to_zq")]
 #[pyo3(signature = (ctx, material, count, hash_mode=0))]
@@ -831,7 +831,7 @@ fn mag_pyint<'py>(py: Python<'py>, mag: &[u64], neg: bool) -> PyResult<Bound<'py
     if neg { v.neg() } else { Ok(v) }
 }
 
-/// Most samples one gauss_bigint call takes (native_backend.MAX_NATIVE_BIGINT_COUNT).
+/// Most samples one gauss_bigint call takes (pyfe4ai.backend.MAX_NATIVE_BIGINT_COUNT).
 const MAX_BIGINT_COUNT: usize = 1 << 24;
 
 /// One chunk of gauss_bigint: its magnitudes, flags and the bytes of its undecided samples.
@@ -955,7 +955,7 @@ fn gauss_bigint_approx(py: Python<'_>, prec: u32, sig_mant: &[u8], sig_exp: i64,
     }
 }
 
-/// sampling_utils.discrete_gaussian_facct(sigma, count, rng) for the width of
+/// sampling.discrete_gaussian_facct(sigma, count, rng) for the width of
 /// `table`, returning (samples, used):
 /// * rng an XofRandom (`xof_head` = its `_seed`, from call `xof_counter`): run
 ///   with the GIL held -- the number of calls depends on the samples, so the

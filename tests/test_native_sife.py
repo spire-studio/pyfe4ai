@@ -7,9 +7,9 @@ import pytest
 
 from pyfe4ai.schemes.sife import fullysec_ring_lwe as fs_rlwe
 from pyfe4ai.schemes.sife import ring_lwe as sife_rlwe
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils import ring_lwe_utils as rlu
-from pyfe4ai.utils import sampling_utils
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
+from pyfe4ai.primitives import sampling as sampling_utils
 from tests.test_native_backend import ByteStream, StreamRandom, _rounded_sampler  # noqa: F401 (autouse fixture)
 
 pytestmark = pytest.mark.skipif(not native_backend.available(), reason="Rust extension not built")

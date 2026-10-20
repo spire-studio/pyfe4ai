@@ -62,4 +62,4 @@ in this directory reproduce them (see `README.md`), for example
   - `mife/lwe` with 100 slots: `lwe_n` 1408, setup 47 s.
 
 What runs natively, and what still runs in Python, is listed in the
-docstring of `pyfe4ai.utils.native_backend`.
+docstring of `pyfe4ai.backend`.

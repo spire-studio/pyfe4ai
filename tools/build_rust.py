@@ -3,7 +3,7 @@
 Runs ``cargo build --release`` in ``rust/native`` for this interpreter
 (``PYO3_PYTHON``) and copies the library to
 ``pyfe4ai/_rust_native<EXT_SUFFIX>``, where
-:mod:`pyfe4ai.utils.native_backend` finds it, or to ``--dest`` (what
+:mod:`pyfe4ai.backend` finds it, or to ``--dest`` (what
 ``setup.py`` does for ``pip install``). Needs a Rust toolchain and, the first
 time, the crates of ``rust/native/Cargo.toml`` from crates.io (``--offline``
 uses only cached ones). ``rust/core`` alone needs no crates: ``cargo test``

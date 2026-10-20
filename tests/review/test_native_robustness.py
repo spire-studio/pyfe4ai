@@ -20,7 +20,7 @@ import sys
 import numpy as np
 import pytest
 
-from pyfe4ai.utils import native_backend
+from pyfe4ai import backend as native_backend
 
 ext = native_backend.ext()
 pytestmark = pytest.mark.skipif(ext is None, reason="native extension not built")
@@ -45,7 +45,7 @@ def test_dense_dots_size_overflow_is_a_value_error():
 
 
 def test_share_combine_with_delta_zero_is_a_value_error():
-    from pyfe4ai.utils.ring_lwe_utils import next_ntt_prime
+    from pyfe4ai.primitives.lattice.ring_lwe_utils import next_ntt_prime
     import gmpy2 as gp
 
     q = next_ntt_prime(gp.mpz(2) ** 40, 16)
@@ -108,7 +108,7 @@ def test_ristretto255_hex_parsing_is_the_same_on_both_backends():
 def test_huge_thread_count_is_refused():
     env = dict(os.environ, PYFE4AI_THREADS=str(10 ** 22),
                PYTHONPATH=ROOT + os.pathsep + os.environ.get("PYTHONPATH", ""))
-    code = "from pyfe4ai.utils import native_backend as nb; print(nb.get_threads())"
+    code = "from pyfe4ai import backend as nb; print(nb.get_threads())"
     res = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, timeout=120)
     if res.returncode != 0:
         assert "ValueError" in res.stderr

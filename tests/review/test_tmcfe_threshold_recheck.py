@@ -34,9 +34,9 @@ import gmpy2 as gp
 import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils import ring_lwe_utils as rlu
-from pyfe4ai.utils.exceptions import FEError, FEKeyError
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
+from pyfe4ai.core.exceptions import FEError, FEKeyError
 
 NATIVE = native_backend.available()
 BACKENDS = ["python"] + (["native"] if NATIVE else [])
@@ -203,7 +203,7 @@ def test_i11_objects_pickled_by_b51989f_are_refused_clearly(monkeypatch):
     refused anyway), so there is no compatibility layer, but a clear error when
     such a pickle is loaded instead of an AttributeError or a misleading
     "public parameters changed"."""
-    from pyfe4ai.utils.exceptions import FESchemeError
+    from pyfe4ai.core.exceptions import FESchemeError
 
     kg, pp = _setup(t=2, sharing="replicated")
     client = _obj(pp, "c0", kg.get_private_keys("c0"))

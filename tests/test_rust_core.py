@@ -25,10 +25,10 @@ from pyfe4ai.schemes.mcfe import lwe as mcfe_lwe
 from pyfe4ai.schemes.mcfe import ring_lwe as mcfe_rlwe
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tmcfe_rlwe
 from pyfe4ai.schemes.mife import ring_lwe as mife_rlwe
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils import ring_lwe_utils as rlu
-from pyfe4ai.utils import sampling_utils
-from pyfe4ai.utils.crypto_utils import hash_to_zq_material, hash_to_zq_vector
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
+from pyfe4ai.primitives import sampling as sampling_utils
+from pyfe4ai.primitives.hashing import hash_to_zq_material, hash_to_zq_vector
 from tests.test_native_backend import ByteStream, FixedBytes, StreamRandom, _rounded_sampler  # noqa: F401
 from tests.test_native_backend import _BytesSystemRandom
 
@@ -196,7 +196,7 @@ needs_modes = pytest.mark.skipif(LIB is None or not hasattr(LIB, "pf4_hash_to_zq
 @pytest.mark.parametrize("mode", ["shake256-rejection", "shake128-rejection"])
 @pytest.mark.parametrize("bits", [17, 40, 62, 64, 80, 126, 187, 215, 253])
 def test_hash_to_zq_rejection_modes_identical(mode, bits):
-    from pyfe4ai.utils.crypto_utils import LABEL_HASH_CODES
+    from pyfe4ai.primitives.hashing import LABEL_HASH_CODES
 
     q = rlu.next_ntt_prime(gp.mpz(2) ** (bits - 1), 64)
     ring = Ring(q, 64)
@@ -210,7 +210,7 @@ def test_hash_to_zq_rejection_modes_identical(mode, bits):
 @needs_modes
 @pytest.mark.parametrize("mode", ["shake256-rejection", "shake128-rejection"])
 def test_dense_dots_rejection_identical(mode):
-    from pyfe4ai.utils.crypto_utils import zq_rejection_parameters
+    from pyfe4ai.primitives.hashing import zq_rejection_parameters
 
     q = gp.next_prime(gp.mpz(2) ** 186)
     count, kl = 300, 3
@@ -231,7 +231,7 @@ def test_dense_dots_rejection_identical(mode):
 
 
 def test_expand_message_xmd_identical():
-    from pyfe4ai.utils.ristretto255 import expand_message_xmd
+    from pyfe4ai.primitives.groups.ristretto255 import expand_message_xmd
 
     rng = random.Random(8)
     for length in (0, 1, 111, 112, 127, 128, 129, 300):
@@ -431,7 +431,7 @@ def test_share_partial_identical(bits, n, eta):
 
 @pytest.mark.parametrize("bits,t", [(61, 2), (116, 3), (212, 2), (253, 4)])
 def test_shamir_share_identical(bits, t, monkeypatch):
-    from pyfe4ai.schemes import threshold_utils
+    from pyfe4ai.schemes.threshold import threshold_utils
 
     q = rlu.next_ntt_prime(gp.mpz(2) ** (bits - 1), 16)
     ring = Ring(q, 16)

@@ -24,13 +24,13 @@ import logging
 
 import gmpy2 as gp
 
-from pyfe4ai.schemes.ddh_base import DDHKeyGeneratorBase
-from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.crypto_utils import _random
-from pyfe4ai.utils.dlog_solver import load_or_build_dlog_table, dlog_table_solve
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.validation import int_vector
+from pyfe4ai.schemes.common.ddh_base import DDHKeyGeneratorBase
+from pyfe4ai.core.base import IPFEAbsCrypto
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.primitives.groups.integer_groups import _random
+from pyfe4ai.primitives.groups.dlog_solver import load_or_build_dlog_table, dlog_table_solve
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai._validation import int_vector
 
 logger = logging.getLogger(__name__)
 

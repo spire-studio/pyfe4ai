@@ -8,7 +8,7 @@ import pytest
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe_decentralized import DecentralizedMCFERingLWE
 from pyfe4ai.schemes.mcfe.ring_lwe_decentralized import DecentralizedMCFERingLWEKeyGenerator
-from pyfe4ai.utils.exceptions import FESchemeError
+from pyfe4ai.core.exceptions import FESchemeError
 
 
 @pytest.fixture

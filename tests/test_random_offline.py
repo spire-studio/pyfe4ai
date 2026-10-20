@@ -8,8 +8,8 @@ import pytest
 from pyfe4ai.schemes.mife import ddh as mife_ddh
 from pyfe4ai.schemes.mife import paillier as mife_paillier
 from pyfe4ai.schemes.sife import paillier as sife_paillier
-from pyfe4ai.utils import sampling_utils
-from pyfe4ai.utils.exceptions import FEValidationError
+from pyfe4ai.primitives import sampling as sampling_utils
+from pyfe4ai.core.exceptions import FEValidationError
 
 
 @pytest.fixture(autouse=True)

@@ -41,12 +41,12 @@ from pyfe4ai.schemes.mcfe.decentralize import zero_sum_keys
 from pyfe4ai.schemes.mcfe.paillier import MCFEPaillier
 from pyfe4ai.schemes.mcfe.paillier import MCFEPaillierKeyGenerator
 from pyfe4ai.schemes.mcfe.paillier import dcr_sigma
-from pyfe4ai.schemes.threshold_utils import fusion_weight_id
-from pyfe4ai.utils.crypto_utils import generate_group_primes
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.lwe_utils import GAUSSIAN_TAIL_CUT
-from pyfe4ai.utils.crypto_utils import is_dcr_modulus
-from pyfe4ai.utils.validation import strict_int
+from pyfe4ai.schemes.threshold.threshold_utils import fusion_weight_id
+from pyfe4ai.primitives.groups.integer_groups import generate_group_primes
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.primitives.lattice.lwe_utils import GAUSSIAN_TAIL_CUT
+from pyfe4ai.primitives.groups.integer_groups import is_dcr_modulus
+from pyfe4ai._validation import strict_int
 
 logger = logging.getLogger(__name__)
 

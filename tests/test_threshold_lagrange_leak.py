@@ -32,8 +32,8 @@ from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWE, ThresholdMCFERingLWEKeyGenerator
 from pyfe4ai.schemes.mife.lwe import MIFELWEKeyGenerator
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE, ThresholdMIFELWEKeyGenerator
-from pyfe4ai.utils.matrix_utils import digits_to_vector
-from pyfe4ai.utils.ring_lwe_utils import poly_add, poly_mul
+from pyfe4ai.primitives.lattice.matrix_utils import digits_to_vector
+from pyfe4ai.primitives.lattice.ring_lwe_utils import poly_add, poly_mul
 
 SIDS = ["s1", "s2", "s3"]  # points 1, 2, 3
 SHARINGS = [

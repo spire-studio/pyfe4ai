@@ -14,8 +14,8 @@ import threading
 import gmpy2 as gp
 import pytest
 
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils import sampling_utils as su
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives import sampling as su
 
 pytestmark = pytest.mark.skipif(
     native_backend.ext() is None or not hasattr(native_backend.ext(), "facct_draw"),
@@ -361,7 +361,8 @@ def test_a_busy_xof_random_refuses_other_draws():
 
 _SIGNAL = """
 import signal, sys, time
-from pyfe4ai.utils import native_backend as nb, sampling_utils as su
+from pyfe4ai import backend as nb
+from pyfe4ai.primitives import sampling as su
 other, rng = su.XofRandom(b"o" * 32), su.XofRandom(b"r" * 32)
 signal.signal(signal.SIGALRM, lambda *args: other.getrandbits(8))
 signal.setitimer(signal.ITIMER_REAL, 0.0005, 0.0005)

@@ -2,7 +2,7 @@
 
 ``pyfe4ai._rust_native`` (Rust and PyO3, sources in ``rust/``) runs the
 Ring-LWE, dense-LWE and ristretto255 hot paths and provides the BLS12-381
-pairing group; see :mod:`pyfe4ai.utils.native_backend`. It is built with
+pairing group; see :mod:`pyfe4ai.backend`. It is built with
 cargo (``tools/build_rust.py``) when a Rust toolchain is on the ``PATH``. The
 extension is optional: if it does not build, the package installs without it,
 the schemes run their Python implementation, and pairing-based schemes need

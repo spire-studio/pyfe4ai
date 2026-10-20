@@ -9,7 +9,7 @@ skip_unless_available()
 
 from pyfe4ai.schemes.sife.fh_ipe_pairing import SIFEFHIPE
 from pyfe4ai.schemes.sife.fh_ipe_pairing import SIFEFHIPEKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
+from pyfe4ai.core.constants import CryptoCONST
 
 
 @pytest.fixture
@@ -70,7 +70,7 @@ def test_padding_hides_x_and_zero_vectors(eta):
     """With eta = 1 (B* = 1) ciphertexts revealed x; all-zero vectors were
     recognisable. Vectors are now padded to (x, 1, 0) / (y, 0, 1)."""
     from pyfe4ai.schemes.sife.fh_ipe_pairing import SIFEFHIPE, SIFEFHIPEKeyGenerator
-    from pyfe4ai.utils.pairing_backend import ZR
+    from pyfe4ai.primitives.pairing.pairing_backend import ZR
 
     kg = SIFEFHIPEKeyGenerator({"sec_param": 64, "eta": eta, "bound_x": 50, "bound_y": 50,
                                 "pairing_group_param": GROUP})

@@ -22,8 +22,8 @@ import logging
 
 from pyfe4ai.schemes.sife.ddh import SIFE
 from pyfe4ai.schemes.sife.ddh import SIFEKeyGenerator
-from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
-from pyfe4ai.utils.validation import int_vector
+from pyfe4ai.core.exceptions import FEKeyError, FEValidationError
+from pyfe4ai._validation import int_vector
 
 logger = logging.getLogger(__name__)
 

@@ -8,9 +8,9 @@ import numpy as np
 import pytest
 
 from pyfe4ai import FESecurityWarning
-from pyfe4ai.schemes import profiles
-from pyfe4ai.schemes import status as st
-from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
+from pyfe4ai.core import profiles
+from pyfe4ai.core import status as st
+from pyfe4ai.core.base import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.mife.lwe import MIFELWE, MIFELWEKeyGenerator
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWEKeyGenerator
 from pyfe4ai.schemes.sife.lwe import SIFELWE, SIFELWEKeyGenerator
@@ -20,9 +20,9 @@ from pyfe4ai.schemes.mcfe.lwe_threshold import ThresholdMCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWEKeyGenerator
 from pyfe4ai.schemes.sife.ddh import SIFE, SIFEKeyGenerator
 from pyfe4ai.schemes.sife.ring_lwe import SIFERingLWE, SIFERingLWEKeyGenerator
-from pyfe4ai.utils.crypto_utils import RFC3526_PRIMES, generate_group_primes
-from pyfe4ai.utils.exceptions import FEValidationError
-from pyfe4ai.utils.lwe_utils import (
+from pyfe4ai.primitives.groups.integer_groups import RFC3526_PRIMES, generate_group_primes
+from pyfe4ai.core.exceptions import FEValidationError
+from pyfe4ai.primitives.lattice.lwe_utils import (
     DENSE_LWE_128_LOG_Q,
     WIDE_LWE_128_LOG_RATIO,
     abdp15_parameters,
@@ -31,8 +31,8 @@ from pyfe4ai.utils.lwe_utils import (
     check_wide_lwe,
     wide_lwe_n,
 )
-from pyfe4ai.utils.ml_adapter import FESchemeWrapper, aggregate_gradients, encrypt_gradient
-from pyfe4ai.utils.ring_lwe_utils import (
+from pyfe4ai.ml import FESchemeWrapper, aggregate_gradients, encrypt_gradient
+from pyfe4ai.primitives.lattice.ring_lwe_utils import (
     RING_LWE_128_LOG_Q,
     bmms21_selective_parameters,
     check_ring_lwe,

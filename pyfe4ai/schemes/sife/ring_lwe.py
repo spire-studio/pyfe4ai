@@ -16,7 +16,7 @@ is ``sk_y = sum y_i s_i``. A plaintext is an ``eta x k`` matrix (``k <= ring_n``
 column ``j`` in coefficient ``j``): ``ct0 = a r + f0``,
 ``ct_i = pk_i r + f_i + Delta x_i`` with ``r, f0 <- D_sigma2``,
 ``f_i <- D_sigma3``; decryption rounds ``sum y_i ct_i - ct0 sk_y``. Parameters
-come from :func:`pyfe4ai.utils.ring_lwe_utils.bmms21_parameters`; ``ring_n``
+come from :func:`pyfe4ai.primitives.lattice.ring_lwe_utils.bmms21_parameters`; ``ring_n``
 defaults to the toy value ``DEFAULT_RING_N`` (versions <= 0.2.0 claimed to
 derive it but always chose 32).
 """
@@ -29,12 +29,12 @@ import logging
 
 import gmpy2 as gp
 
-from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
-from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
-from pyfe4ai.schemes.ipfe import ParameterCacheMixin
-from pyfe4ai.schemes.profiles import STANDARD
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.ring_lwe_utils import (
+from pyfe4ai.core.base import IPFEAbsCrypto
+from pyfe4ai.core.base import IPFEAbsKeyGenerator
+from pyfe4ai.core.base import ParameterCacheMixin
+from pyfe4ai.core.profiles import STANDARD
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.primitives.lattice.ring_lwe_utils import (
     bmms21_parameters,
     bmms21_selective_parameters,
     center_matrix,
@@ -50,11 +50,11 @@ from pyfe4ai.utils.ring_lwe_utils import (
     RingNTT,
     transpose,
 )
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix, scheme_sampler
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.validation import int_vector
-from pyfe4ai.utils.ring_lwe_utils import seeded_polynomial
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives.sampling import discrete_gaussian_matrix, scheme_sampler
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai._validation import int_vector
+from pyfe4ai.primitives.lattice.ring_lwe_utils import seeded_polynomial
 
 logger = logging.getLogger(__name__)
 
@@ -83,12 +83,12 @@ class SIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             config: Scheme configuration. Recognised keys: ``sec_param``
                 (``kappa`` of the noise bounds), ``eta``, ``bound_x``,
                 ``bound_y`` and ``ring_n`` (default
-                :data:`~pyfe4ai.utils.ring_lwe_utils.DEFAULT_RING_N`;
+                :data:`~pyfe4ai.primitives.lattice.ring_lwe_utils.DEFAULT_RING_N`;
                 ``"auto"`` for the smallest dimension meeting the 128-bit
                 table, the ``standard`` profile's choice) and
                 ``gaussian_sampler`` (``"facct"``, the default, or
                 ``"rounded"``; see
-                :func:`~pyfe4ai.utils.sampling_utils.scheme_sampler`).
+                :func:`~pyfe4ai.primitives.sampling.scheme_sampler`).
                 ``ring_modulus`` must stay ``"prime"``: the opt-in RNS modulus
                 is implemented for the MIFE / MCFE family only.
         """

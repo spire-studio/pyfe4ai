@@ -21,8 +21,8 @@ import numpy as np
 import pytest
 
 from pyfe4ai.schemes.sife import fullysec_ring_lwe as fs
-from pyfe4ai.utils import ring_lwe_utils as rlu
-from pyfe4ai.utils.exceptions import FEValidationError
+from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
+from pyfe4ai.core.exceptions import FEValidationError
 
 
 @pytest.fixture(autouse=True)
@@ -85,7 +85,7 @@ def test_malformed_packed_layers_are_refused(packed_round, mutate):
 
 
 def test_status_marks_the_packed_layout_as_unreviewed():
-    from pyfe4ai.schemes.status import SCHEME_STATUS
+    from pyfe4ai.core.status import SCHEME_STATUS
 
     status = SCHEME_STATUS[("sife", "fullysec_ring_lwe")]
     text = " ".join(str(v) for v in vars(status).values()) if hasattr(status, "__dict__") else str(status)

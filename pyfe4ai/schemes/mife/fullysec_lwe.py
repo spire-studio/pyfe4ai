@@ -43,28 +43,28 @@ import tempfile
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
-from pyfe4ai.schemes.ipfe import decoded_layer
-from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
-from pyfe4ai.schemes.ipfe import ParameterCacheMixin
-from pyfe4ai.utils.lwe_utils import decode_scaled
-from pyfe4ai.utils.crypto_constants import CryptoCONST
+from pyfe4ai.core.base import IPFEAbsCrypto
+from pyfe4ai.core.base import decoded_layer
+from pyfe4ai.core.base import IPFEAbsKeyGenerator
+from pyfe4ai.core.base import ParameterCacheMixin
+from pyfe4ai.primitives.lattice.lwe_utils import decode_scaled
+from pyfe4ai.core.constants import CryptoCONST
 
-from pyfe4ai.utils.lwe_utils import derive_fullysec_lwe_parameters
-from pyfe4ai.utils.matrix_utils import digits_to_matrix
-from pyfe4ai.utils.matrix_utils import digits_to_vector
-from pyfe4ai.utils.matrix_utils import matrix_to_digits
-from pyfe4ai.utils.matrix_utils import matmul_mod
-from pyfe4ai.utils.matrix_utils import matvec_mod
-from pyfe4ai.utils.matrix_utils import transpose
-from pyfe4ai.utils.matrix_utils import vecdot_mod
-from pyfe4ai.utils.matrix_utils import vector_to_digits
-from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
-from pyfe4ai.utils.sampling_utils import rand_uniform_vector
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.validation import scale_to_int
-from pyfe4ai.utils.validation import strict_int
-from pyfe4ai.utils.lwe_matrix import SeededMatrix
+from pyfe4ai.primitives.lattice.lwe_utils import derive_fullysec_lwe_parameters
+from pyfe4ai.primitives.lattice.matrix_utils import digits_to_matrix
+from pyfe4ai.primitives.lattice.matrix_utils import digits_to_vector
+from pyfe4ai.primitives.lattice.matrix_utils import matrix_to_digits
+from pyfe4ai.primitives.lattice.matrix_utils import matmul_mod
+from pyfe4ai.primitives.lattice.matrix_utils import matvec_mod
+from pyfe4ai.primitives.lattice.matrix_utils import transpose
+from pyfe4ai.primitives.lattice.matrix_utils import vecdot_mod
+from pyfe4ai.primitives.lattice.matrix_utils import vector_to_digits
+from pyfe4ai.primitives.sampling import discrete_gaussian_matrix
+from pyfe4ai.primitives.sampling import rand_uniform_vector
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai._validation import scale_to_int
+from pyfe4ai._validation import strict_int
+from pyfe4ai.primitives.lattice.lwe_matrix import SeededMatrix
 
 logger = logging.getLogger(__name__)
 

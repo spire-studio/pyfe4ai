@@ -5,7 +5,7 @@ import pytest
 
 from pyfe4ai.schemes.sife.ring_lwe import SIFERingLWE
 from pyfe4ai.schemes.sife.ring_lwe import SIFERingLWEKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
+from pyfe4ai.core.constants import CryptoCONST
 
 
 @pytest.fixture

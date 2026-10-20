@@ -7,9 +7,9 @@ import pytest
 
 from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWEKeyGenerator
 from pyfe4ai.schemes.sife.ring_lwe import SIFERingLWE, SIFERingLWEKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
-from pyfe4ai.utils.ring_lwe_utils import DEFAULT_RING_N
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.primitives.lattice.ring_lwe_utils import DEFAULT_RING_N
 
 CFG = {"sec_param": 64, "eta": 3, "bound_x": 4, "bound_y": 4}
 

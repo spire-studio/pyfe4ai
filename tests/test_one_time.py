@@ -1,4 +1,4 @@
-"""One-time use of the offline phases (pyfe4ai.schemes.one_time).
+"""One-time use of the offline phases (pyfe4ai.core.one_time).
 
 Every precomputation -- the randomness of SIFE/MIFE-Paillier and MIFE-DDH,
 the label masks of MCFE-DDH/Damgard/Paillier, the Ring-LWE MCFE chunks on
@@ -21,8 +21,8 @@ from pyfe4ai.schemes.mcfe.damgard_ddh import MCFEDamgard, MCFEDamgardKeyGenerato
 from pyfe4ai.schemes.mcfe.ddh import MCFE, MCFEKeyGenerator
 from pyfe4ai.schemes.mife import paillier as mife_paillier
 from pyfe4ai.schemes.sife import paillier as sife_paillier
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils.exceptions import FEValidationError
+from pyfe4ai import backend as native_backend
+from pyfe4ai.core.exceptions import FEValidationError
 
 NIDS = ["c0", "c1", "c2"]
 BACKENDS = ["python"] + (["native"] if native_backend.available() else [])

@@ -10,8 +10,8 @@ import gmpy2 as gp
 from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFE
 from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFEKeyGenerator
 from pyfe4ai.schemes.mcfe.labels import encode_label
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
 from pyfe4ai.logger import init_logging_config
 
 init_logging_config()

@@ -83,7 +83,7 @@ jobs:
         # setup.py treats the extension as optional and only warns when the
         # build fails; this lane must not fall back to Python silently
         run: |
-          python -c "from pyfe4ai.utils import native_backend as nb; assert nb.available(), 'pyfe4ai._rust_native was not built'; print(nb.describe())"
+          python -c "from pyfe4ai import backend as nb; assert nb.available(), 'pyfe4ai._rust_native was not built'; print(nb.describe())"
 
       - name: cargo test (rust/core)
         working-directory: rust/core

@@ -3,7 +3,7 @@
 import gmpy2 as gp
 import pytest
 
-from pyfe4ai.utils.ring_lwe_utils import (
+from pyfe4ai.primitives.lattice.ring_lwe_utils import (
     _find_primitive_root,
     ntt_forward,
     ntt_inverse,

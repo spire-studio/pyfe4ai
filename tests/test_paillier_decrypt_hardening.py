@@ -9,7 +9,7 @@ import pytest
 
 from pyfe4ai.schemes.mife.paillier import MIFEPaillier, MIFEPaillierKeyGenerator
 from pyfe4ai.schemes.sife.paillier import SIFEPaillier, SIFEPaillierKeyGenerator
-from pyfe4ai.utils.exceptions import FEValidationError
+from pyfe4ai.core.exceptions import FEValidationError
 
 
 @pytest.fixture(autouse=True)

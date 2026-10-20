@@ -27,7 +27,7 @@ Installation
    pip install -e ".[test]"
 
 With a Rust toolchain (``cargo``) on the ``PATH``, ``pip install`` also
-builds the optional native extension (:mod:`pyfe4ai.utils.native_backend`):
+builds the optional native extension (:mod:`pyfe4ai.backend`):
 the Ring-LWE, dense-LWE and threshold hot paths, ristretto255, and the
 BLS12-381 pairing group that the pairing-based FE families use by default.
 Other pairing curves (MNT224, BN254, ...) need charm-crypto,

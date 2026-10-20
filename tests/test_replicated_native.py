@@ -8,11 +8,11 @@ from itertools import combinations
 import gmpy2 as gp
 import pytest
 
-from pyfe4ai.schemes import threshold_utils as tu
+from pyfe4ai.schemes.threshold import threshold_utils as tu
 from pyfe4ai.schemes.mcfe.lwe_threshold import ThresholdMCFELWE, ThresholdMCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWE, ThresholdMCFERingLWEKeyGenerator
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE, ThresholdMIFELWEKeyGenerator
-from pyfe4ai.utils import native_backend
+from pyfe4ai import backend as native_backend
 from tests.test_native_backend import ByteStream, _BytesSystemRandom, native_calls  # noqa: F401  (fixture)
 
 pytestmark = pytest.mark.skipif(not native_backend.available(), reason="native extension not built")

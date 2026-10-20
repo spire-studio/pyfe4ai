@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWE, MCFERingLWEKeyGenerator
-from pyfe4ai.utils import native_backend
+from pyfe4ai import backend as native_backend
 
 NIDS = ["a", "b", "c"]
 pytestmark = pytest.mark.skipif(not native_backend.available(), reason="native extension not built")

@@ -2,7 +2,7 @@
 //! interface the schemes use from charm-crypto: G1, G2 and GT written
 //! multiplicatively (`*` the group operation, `**` exponentiation, `/`), ZR the
 //! scalar field (`+ - * / **`, `int()`), `==` and `hash()` on all of them.
-//! pyfe4ai.utils.bls12_381 wraps this into a PairingGroup.
+//! pyfe4ai.primitives.pairing.bls12_381 wraps this into a PairingGroup.
 //!
 //! Elements are kept in memory as curve points (projective) / field elements;
 //! serialization is the arkworks compressed form, deserialization checks

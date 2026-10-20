@@ -317,7 +317,7 @@ Mac) against BLS12-381.
   `rust/`; `rust/core` has no dependencies). `pip install` builds it when
   `cargo` is on the `PATH` (in a source checkout also `python
   tools/build_rust.py`; `PYFE4AI_NO_NATIVE=1` skips it); without it the
-  package runs its Python implementation. `pyfe4ai.utils.native_backend`
+  package runs its Python implementation. `pyfe4ai.backend`
   selects `"auto"` (default), `"python"` or `"native"` per process
   (`set_backend`), per block (`with backend(...)`) or with
   `PYFE4AI_BACKEND`, and the threads of one call (`set_threads`,
@@ -326,7 +326,7 @@ Mac) against BLS12-381.
   operating system per call and expands it with ChaCha20 (a standard stream
   cipher, not an SP 800-90A DRBG, which matters only for FIPS validation);
   no generator state outlives a call.
-- **BLS12-381** (`pyfe4ai.utils.bls12_381`, behind charm's `PairingGroup`
+- **BLS12-381** (`pyfe4ai.primitives.pairing.bls12_381`, behind charm's `PairingGroup`
   interface; `group.hash` is RFC 9380 hash_to_curve),
   `pairing_backend.multiexp`, `pow_many` and `deserialize_many`;
   `gt_dlog(..., cache=False)`. charm-crypto is needed only for other curves.
@@ -355,7 +355,7 @@ Mac) against BLS12-381.
   adapter `precompute_gradient`, `encrypt_gradient(precomputed=...)`,
   `prepare_aggregation` and `aggregate_gradients(prepared=...)`. The same
   ciphertexts as the one-shot calls. A precomputation can be used once
-  (`pyfe4ai.schemes.one_time`).
+  (`pyfe4ai.core.one_time`).
 - `ct_format="binary"` for the Ring-LWE MIFE / MCFE ciphertexts (crypto
   config; `FESchemeWrapper(crypto_options=...)`): a versioned compact
   encoding, 37 % of the JSON size; JSON stays their default, and decryption
@@ -376,7 +376,7 @@ Mac) against BLS12-381.
   and `mcfe/ring_lwe_threshold` with `t = s`
   (`flooding_accounting="kl"`, a mandatory `max_partial_decryptions` budget
   `Q`, and a `PartialDecryptionBudget` per server that the deployment keeps
-  across restarts; `pyfe4ai.schemes.flooding_accounting`). It gives a weaker
+  across restarts; `pyfe4ai.schemes.threshold.flooding_accounting`). It gives a weaker
   guarantee -- about `stat_param - 6.85` bits, for the first `Q` partial
   decryptions of every server -- for a smaller `q`: 178 bits for
   `mcfe/ring_lwe_threshold` under `standard` with `N = s Q k = 2^53`
@@ -388,7 +388,7 @@ Mac) against BLS12-381.
   project's own, independently checked, not externally reviewed): one
   ciphertext carries up to `ring_n` inner products, e.g. 4096 elements at 182
   bytes each for `eta = 1`, `X = 100`.
-- **Exact sampler API**: `sampling_utils.discrete_gaussian_facct`,
+- **Exact sampler API**: `pyfe4ai.primitives.sampling.discrete_gaussian_facct`,
   `sampler="facct"` on `discrete_gaussian_matrix` / `discrete_gaussian_bigint`,
   the `gaussian_sampler()` context manager, `set_gaussian_sampler()` and
   `PYFE4AI_GAUSSIAN_SAMPLER=facct` for the schemes that follow the

@@ -12,7 +12,7 @@ from tests.pairing_group import GROUP, skip_unless_available
 
 skip_unless_available()
 
-from pyfe4ai.utils import pairing_backend as pb  # noqa: E402
+from pyfe4ai.primitives.pairing import pairing_backend as pb  # noqa: E402
 
 
 @pytest.fixture(scope="module")

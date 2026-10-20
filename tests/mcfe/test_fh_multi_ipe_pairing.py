@@ -122,7 +122,7 @@ def test_entire_process_lst_ndarray(kg_config):
 
 def test_symmetric_group_rejected(kg_config):
     pytest.importorskip("charm", reason="SS512 is a charm-crypto group")
-    from pyfe4ai.utils.exceptions import FEValidationError
+    from pyfe4ai.core.exceptions import FEValidationError
 
     with pytest.raises(FEValidationError):
         MCFEFHMultiIPEKeyGenerator(dict(kg_config, pairing_group_param="SS512"))

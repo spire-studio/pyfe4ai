@@ -4,8 +4,8 @@ import math
 
 import pytest
 
-from pyfe4ai.utils.exceptions import FEValidationError
-from pyfe4ai.utils.ring_lwe_utils import (
+from pyfe4ai.core.exceptions import FEValidationError
+from pyfe4ai.primitives.lattice.ring_lwe_utils import (
     RING_LWE_128_LOG_Q,
     bmms21_selective_parameters,
     check_ring_lwe,

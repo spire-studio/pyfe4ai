@@ -165,7 +165,7 @@ def test_every_enrolled_set_decrypts(kg_config):
 
 
 def test_threshold_and_consistency_checks(kg_config):
-    from pyfe4ai.utils.exceptions import FESchemeError
+    from pyfe4ai.core.exceptions import FESchemeError
 
     kg, pp, y, dct_ct = _setup(kg_config)
     combiner = ThresholdMCFEFHMultiIPE({"id": "c", "keys": {"pp": pp}})
@@ -197,7 +197,7 @@ def test_single_share_reveals_nothing_on_its_own(kg_config):
 
 
 def test_partial_decryptions_for_several_enrolled_sets_must_agree(kg_config):
-    from pyfe4ai.utils.exceptions import FESchemeError
+    from pyfe4ai.core.exceptions import FESchemeError
 
     kg, pp, y, dct_ct = _setup(kg_config)
     combiner = ThresholdMCFEFHMultiIPE({"id": "c", "keys": {"pp": pp}})
@@ -219,8 +219,8 @@ def test_servers_hold_the_key_only_in_the_exponent(kg_config):
     ``e_i`` and solved for ``y``; the FH-MCFE key hides ``y`` only as
     ``[e_i]_2``. Shares are now group elements: ``t`` servers interpolate
     ``[e_i]_2`` and ``[z]_T``, i.e. the FH-MCFE functional key itself."""
-    from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero, share_points
-    from pyfe4ai.utils.pairing_backend import GT, pair
+    from pyfe4ai.schemes.threshold.threshold_utils import lagrange_coefficient_at_zero, share_points
+    from pyfe4ai.primitives.pairing.pairing_backend import GT, pair
 
     kg, pp, y, dct_ct = _setup(kg_config)
     ctx = ThresholdMCFEFHMultiIPE({"id": "c", "keys": {"pp": pp}}).ctx
@@ -253,7 +253,7 @@ def test_servers_decrypt_only_the_requested_round(kg_config):
     """Regression: FH ciphertexts carry no label in the clear, so servers
     decrypted whatever round the combiner submitted. Ciphertexts now carry
     the label, tagged with the ciphertext for every server."""
-    from pyfe4ai.utils.exceptions import FESchemeError
+    from pyfe4ai.core.exceptions import FESchemeError
 
     kg, pp, y, dct_ct = _setup(kg_config)
     assert _partials(kg, pp, y, dct_ct, ["sid_0", "sid_1"], "round-1")

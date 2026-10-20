@@ -12,9 +12,9 @@ import numpy as np
 import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe as mcfe_rlwe
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils import sampling_utils
-from pyfe4ai.utils.exceptions import FEValidationError
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives import sampling as sampling_utils
+from pyfe4ai.core.exceptions import FEValidationError
 from tests.test_native_backend import ByteStream, StreamRandom, _rounded_sampler  # noqa: F401  (autouse)
 
 pytestmark = pytest.mark.core
@@ -86,8 +86,12 @@ def test_one_time_and_mismatches(name):
 
 @pytest.mark.parametrize("name", BACKENDS)
 def test_ml_adapter_offline_online_round(name):
-    from pyfe4ai.utils.ml_adapter import (
-        FESchemeWrapper, aggregate_gradients, encrypt_gradient, precompute_gradient, prepare_aggregation,
+    from pyfe4ai.ml import (
+        FESchemeWrapper,
+        aggregate_gradients,
+        encrypt_gradient,
+        precompute_gradient,
+        prepare_aggregation,
     )
 
     nids = ["c0", "c1", "c2"]

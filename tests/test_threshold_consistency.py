@@ -2,8 +2,8 @@
 
 import pytest
 
-from pyfe4ai.schemes.threshold_utils import combine_consistently, partial_groups
-from pyfe4ai.utils.exceptions import FESchemeError
+from pyfe4ai.schemes.threshold.threshold_utils import combine_consistently, partial_groups
+from pyfe4ai.core.exceptions import FESchemeError
 
 
 def test_groups_are_normalised():
@@ -179,7 +179,7 @@ def test_ring_noise_keys_do_not_change_with_a_resharing(tmp_path, monkeypatch):
     {},                                                   # an empty group
 ])
 def test_elementwise_combination_raises_scheme_errors_on_malformed_output(partials):
-    from pyfe4ai.schemes.threshold_utils import combine_elementwise
+    from pyfe4ai.schemes.threshold.threshold_utils import combine_elementwise
 
     with pytest.raises(FESchemeError):
         combine_elementwise(partials, lambda groups, l, i: 1)
@@ -190,8 +190,8 @@ def test_keys_of_the_earlier_flooding_derivation_are_refused():
     """A key share issued before the flooding precision changed (no noise_version)
     may have answered requests with the earlier noise: every threshold LWE server
     refuses it, and new key shares carry the current version."""
-    from pyfe4ai.utils.exceptions import FEKeyError
-    from pyfe4ai.utils.sampling_utils import FLOODING_NOISE_VERSION, check_flooding_version
+    from pyfe4ai.core.exceptions import FEKeyError
+    from pyfe4ai.primitives.sampling import FLOODING_NOISE_VERSION, check_flooding_version
 
     base = {"sec_param": 64, "n": 2, "lst_nid": NIDS, "s": 3, "lst_sid": SIDS, "t": 2, "eta": 1}
     cases = [
@@ -228,7 +228,7 @@ def test_keys_of_the_earlier_flooding_derivation_are_refused():
 def test_flooding_noise_ignores_the_selected_sampler():
     """The flooding sampler is pinned: one request gets the same noise whatever
     sampler a gaussian_sampler() block or the process selects."""
-    from pyfe4ai.utils import sampling_utils as su
+    from pyfe4ai.primitives import sampling as su
 
     kg = ThresholdMCFERingLWEKeyGenerator({"sec_param": 64, "n": 2, "lst_nid": NIDS, "s": 3, "lst_sid": SIDS, "t": 2,
                                            "eta": 1, "ring_n": 16, "bound_x": 4, "bound_y": 5,
@@ -254,9 +254,9 @@ def test_flooding_noise_ignores_the_selected_sampler():
 
 
 def test_stat_param_is_capped_by_the_mpfr_guard():
-    from pyfe4ai.schemes import profiles
-    from pyfe4ai.utils import sampling_utils as su
-    from pyfe4ai.utils.exceptions import FEValidationError
+    from pyfe4ai.core import profiles
+    from pyfe4ai.primitives import sampling as su
+    from pyfe4ai.core.exceptions import FEValidationError
 
     base = {"sec_param": 64, "n": 2, "lst_nid": NIDS, "s": 3, "lst_sid": SIDS, "t": 2, "eta": 1, "ring_n": 16,
             "bound_x": 4, "bound_y": 5, "flooding": "gaussian"}  # the MPFR guard: the Gaussian flooding

@@ -12,13 +12,13 @@ import numpy as np
 
 from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWE
 from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWEKeyGenerator
-from pyfe4ai.utils.ml_adapter import EncryptedGradient
-from pyfe4ai.utils.ml_adapter import FESchemeWrapper
-from pyfe4ai.utils.ml_adapter import ThresholdPartial
-from pyfe4ai.utils.ml_adapter import combine_partial_decryptions
-from pyfe4ai.utils.ml_adapter import encrypt_gradient
-from pyfe4ai.utils.ml_adapter import partial_decrypt_gradients
-from pyfe4ai.utils.ml_adapter import prepare_aggregation
+from pyfe4ai.ml import EncryptedGradient
+from pyfe4ai.ml import FESchemeWrapper
+from pyfe4ai.ml import ThresholdPartial
+from pyfe4ai.ml import combine_partial_decryptions
+from pyfe4ai.ml import encrypt_gradient
+from pyfe4ai.ml import partial_decrypt_gradients
+from pyfe4ai.ml import prepare_aggregation
 
 NIDS = ["nid_0", "nid_1", "nid_2"]
 SIDS = ["sid_0", "sid_1", "sid_2"]

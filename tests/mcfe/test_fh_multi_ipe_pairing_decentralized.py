@@ -132,7 +132,7 @@ def _clients(kg, cfg):
 
 
 def test_key_share_is_deterministic_and_bound(kg_config):
-    from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
+    from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
 
     kg = DecentralizedMCFEFHMultiIPEKeyGenerator(kg_config)
     kg.setup()
@@ -220,7 +220,7 @@ def test_wrong_tag_does_not_decrypt(kg_config):
 
 def test_symmetric_group_rejected(kg_config):
     pytest.importorskip("charm", reason="SS512 is a charm-crypto group")
-    from pyfe4ai.utils.exceptions import FEValidationError
+    from pyfe4ai.core.exceptions import FEValidationError
 
     with pytest.raises(FEValidationError, match="symmetric"):
         DecentralizedMCFEFHMultiIPEKeyGenerator(dict(kg_config, pairing_group_param="SS512"))

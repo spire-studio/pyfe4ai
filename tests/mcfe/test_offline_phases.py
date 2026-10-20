@@ -6,9 +6,13 @@ import pytest
 from pyfe4ai.schemes.mcfe.damgard_ddh import MCFEDamgard, MCFEDamgardKeyGenerator
 from pyfe4ai.schemes.mcfe.ddh import MCFE, MCFEKeyGenerator
 from pyfe4ai.schemes.mcfe.paillier import MCFEPaillier, MCFEPaillierKeyGenerator
-from pyfe4ai.utils.exceptions import FEValidationError
-from pyfe4ai.utils.ml_adapter import (
-    FESchemeWrapper, aggregate_gradients, encrypt_gradient, precompute_gradient, prepare_aggregation,
+from pyfe4ai.core.exceptions import FEValidationError
+from pyfe4ai.ml import (
+    FESchemeWrapper,
+    aggregate_gradients,
+    encrypt_gradient,
+    precompute_gradient,
+    prepare_aggregation,
 )
 
 NIDS = ["c0", "c1", "c2"]

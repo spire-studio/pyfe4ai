@@ -66,7 +66,7 @@ than the ``sigma_f`` of one answer of multiplier 1: ``sqrt(10)`` for
 for ``s = 3, t = 2`` and 79 for ``s = 5, t = 3`` per enrolled set, and 9.1 and
 869 over all enrolled sets of one label. This is not a break, but the argument
 does not cover it. ``"replicated"`` (see
-:func:`~pyfe4ai.schemes.threshold_utils.share_replicated`) makes every ``M_k``
+:func:`~pyfe4ai.schemes.threshold.threshold_utils.share_replicated`) makes every ``M_k``
 0 or 1, with one honest answer of multiplier 1 per enrolled set; the other
 answers are computable up to their own noise. ``sigma_f`` and ``q`` are
 unchanged. With ``t = s`` both are as described. An explicit ``"shamir"`` with
@@ -76,11 +76,11 @@ Servers refuse Shamir key shares with ``t < s`` unless created with
 ``legacy_shamir = "warn"`` (never with public parameters that record the
 ``standard`` profile); key shares of versions <= 0.3.0 are refused in any
 case (another flooding derivation, see
-:func:`~pyfe4ai.utils.sampling_utils.check_flooding_version`); public
+:func:`~pyfe4ai.primitives.sampling.check_flooding_version`); public
 parameters record ``threshold_construction`` and ``security_profile``, and
 servers refuse constructions they do not know.
 The opt-in ``"replicated-seeded"`` (see
-:func:`~pyfe4ai.schemes.threshold_utils.share_replicated_seeded`) deals the
+:func:`~pyfe4ai.schemes.threshold.threshold_utils.share_replicated_seeded`) deals the
 same kind of pieces, all but one expanded from 32-byte seeds, with the
 partial decryptions of the replicated key share of the expanded pieces; the
 key shares hide ``sk_y`` computationally (SHAKE-256 keyed by the seeds as a
@@ -90,7 +90,7 @@ Statistical smudging in the usual sense (noise hiding a small ciphertext
 error) does not apply, because these ciphertexts carry no LWE error, only
 rounding. ``sigma_f`` is the largest width that keeps decryption correct:
 ``(q0 / q) * s * 12 sigma_f <= (n Y + 1) / 2`` uses the half of the error
-budget that :func:`pyfe4ai.utils.lwe_utils.abmpsw20_lwe_parameters` reserves
+budget that :func:`pyfe4ai.primitives.lattice.lwe_utils.abmpsw20_lwe_parameters` reserves
 for threshold decryption, which gives a noise-to-modulus ratio of roughly
 ``1 / (q0 s)``.
 """
@@ -104,39 +104,42 @@ import secrets
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.schemes.flooding_accounting import PER_SAMPLE
+from pyfe4ai.schemes.threshold.flooding_accounting import PER_SAMPLE
 from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
 from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.schemes.mcfe.lwe import MCFELWE
 from pyfe4ai.schemes.mcfe.lwe import MCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.lwe import dot_mod
-from pyfe4ai.schemes.threshold_utils import check_fusion_weight
-from pyfe4ai.schemes.threshold_utils import check_pp_binding
-from pyfe4ai.schemes.threshold_utils import check_served_sharing
-from pyfe4ai.schemes.threshold_utils import pp_binding
-from pyfe4ai.schemes.threshold_utils import legacy_shamir_policy
-from pyfe4ai.schemes.threshold_utils import fusion_weight_id
-from pyfe4ai.schemes.threshold_utils import pieces_held
-from pyfe4ai.schemes.threshold_utils import seeded_pieces_held
-from pyfe4ai.schemes.threshold_utils import share_cache
-from pyfe4ai.schemes.threshold_utils import share_for_enrolled
-from pyfe4ai.schemes.threshold_utils import share_points
-from pyfe4ai.schemes.threshold_utils import share_replicated
-from pyfe4ai.schemes.threshold_utils import share_replicated_seeded
-from pyfe4ai.schemes.threshold_utils import share_secret
-from pyfe4ai.schemes.threshold_utils import validate_enrolled
-from pyfe4ai.schemes.threshold_utils import combine_consistently
-from pyfe4ai.schemes.threshold_utils import combine_elementwise
-from pyfe4ai.schemes.threshold_utils import validate_partial_decryptions
-from pyfe4ai.schemes.threshold_utils import resolve_sharing
-from pyfe4ai.schemes.threshold_utils import validate_threshold
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.crypto_utils import LEGACY_LABEL_HASH
-from pyfe4ai.utils.lwe_utils import GAUSSIAN_TAIL_CUT
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.sampling_utils import XofRandom
-from pyfe4ai.utils.sampling_utils import (
-    FLOODING_NOISE_VERSION, FLOODING_SAMPLER, check_flooding_version, discrete_gaussian_bigint,
+from pyfe4ai.schemes.threshold.threshold_utils import check_fusion_weight
+from pyfe4ai.schemes.threshold.threshold_utils import check_pp_binding
+from pyfe4ai.schemes.threshold.threshold_utils import check_served_sharing
+from pyfe4ai.schemes.threshold.threshold_utils import pp_binding
+from pyfe4ai.schemes.threshold.threshold_utils import legacy_shamir_policy
+from pyfe4ai.schemes.threshold.threshold_utils import fusion_weight_id
+from pyfe4ai.schemes.threshold.threshold_utils import pieces_held
+from pyfe4ai.schemes.threshold.threshold_utils import seeded_pieces_held
+from pyfe4ai.schemes.threshold.threshold_utils import share_cache
+from pyfe4ai.schemes.threshold.threshold_utils import share_for_enrolled
+from pyfe4ai.schemes.threshold.threshold_utils import share_points
+from pyfe4ai.schemes.threshold.threshold_utils import share_replicated
+from pyfe4ai.schemes.threshold.threshold_utils import share_replicated_seeded
+from pyfe4ai.schemes.threshold.threshold_utils import share_secret
+from pyfe4ai.schemes.threshold.threshold_utils import validate_enrolled
+from pyfe4ai.schemes.threshold.threshold_utils import combine_consistently
+from pyfe4ai.schemes.threshold.threshold_utils import combine_elementwise
+from pyfe4ai.schemes.threshold.threshold_utils import validate_partial_decryptions
+from pyfe4ai.schemes.threshold.threshold_utils import resolve_sharing
+from pyfe4ai.schemes.threshold.threshold_utils import validate_threshold
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.primitives.hashing import LEGACY_LABEL_HASH
+from pyfe4ai.primitives.lattice.lwe_utils import GAUSSIAN_TAIL_CUT
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.primitives.sampling import XofRandom
+from pyfe4ai.primitives.sampling import (
+    FLOODING_NOISE_VERSION,
+    FLOODING_SAMPLER,
+    check_flooding_version,
+    discrete_gaussian_bigint,
 )
 
 logger = logging.getLogger(__name__)
@@ -148,7 +151,7 @@ _CONSTRUCTION_REPLICATED_SEEDED = "abmpsw20-replicated-seeded-flooding/v1"
 _CONSTRUCTIONS = {_CONSTRUCTION: "shamir", _CONSTRUCTION_REPLICATED: "replicated",
                   _CONSTRUCTION_REPLICATED_SEEDED: "replicated-seeded"}
 #: Public-parameter fields a key share is bound to (see
-#: :func:`~pyfe4ai.schemes.threshold_utils.pp_binding`), the label hash among
+#: :func:`~pyfe4ai.schemes.threshold.threshold_utils.pp_binding`), the label hash among
 #: them: one key share answering a label under two label hashes with the same
 #: noise would give ``w_A - w_B = lambda <share, H_A(l) - H_B(l)>`` exactly.
 _BINDING_FIELDS = ("q", "q0", "K", "delta", "n0", "m0", "s", "t", "lst_sid", "sigma_f", "label_hash")
@@ -166,7 +169,7 @@ def flooding_sigma(params: dict, n_slots: int, bound_y: int, s: int) -> int:
     """Largest ``sigma_f`` with ``(q0 / q) * s * c * sigma_f <= (n Y + 1) / 2``.
 
         Args:
-            params: Output of :func:`~pyfe4ai.utils.lwe_utils.abmpsw20_lwe_parameters`.
+            params: Output of :func:`~pyfe4ai.primitives.lattice.lwe_utils.abmpsw20_lwe_parameters`.
             n_slots: Total number of slots ``n``.
             bound_y: Weight bound ``Y``.
             s: Number of decryption servers (upper bound on ``|E|``).
@@ -185,7 +188,7 @@ def flooding_noise(sigma: int, rng=None) -> int:
     Args:
         sigma: Width.
         rng: Bit source (default: OS CSPRNG). An
-            :class:`~pyfe4ai.utils.sampling_utils.XofRandom` makes the
+            :class:`~pyfe4ai.primitives.sampling.XofRandom` makes the
             sample a function of its seed.
     """
     bound = GAUSSIAN_TAIL_CUT * sigma
@@ -209,7 +212,7 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
                 ``lst_sid`` and ``sharing`` (``"replicated"``, the default
                 for ``t < s``, ``"shamir"``, the default for ``t = s``, or
                 the opt-in ``"replicated-seeded"``; see
-                :func:`~pyfe4ai.schemes.threshold_utils.resolve_sharing`).
+                :func:`~pyfe4ai.schemes.threshold.threshold_utils.resolve_sharing`).
                 ``flooding_accounting`` must be the default: the flooding
                 here is part of an LWE argument, not a statistical step that
                 a KL bound could account for.
@@ -331,7 +334,7 @@ class ThresholdMCFELWE(MCFELWE):
 
     A server refuses Shamir key shares with ``t < s`` (versions <= 0.3.0)
     unless its config has ``legacy_shamir = "warn"`` (see
-    :data:`~pyfe4ai.schemes.threshold_utils.LEGACY_SHAMIR_POLICIES`).
+    :data:`~pyfe4ai.schemes.threshold.threshold_utils.LEGACY_SHAMIR_POLICIES`).
     """
 
     def __init__(self, config: dict, **kwargs) -> None:
@@ -409,7 +412,7 @@ class ThresholdMCFELWE(MCFELWE):
             partials: ``{sid: share_decrypt(...)}`` for one enrolled set, or a
                 list of such mappings for several enrolled sets, whose results
                 must then agree (see
-                :func:`~pyfe4ai.schemes.threshold_utils.combine_consistently`:
+                :func:`~pyfe4ai.schemes.threshold.threshold_utils.combine_consistently`:
                 servers are assumed honest-but-curious, and only this
                 redundancy detects one that returns a wrong partial).
 

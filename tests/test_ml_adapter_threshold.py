@@ -16,8 +16,8 @@ import pickle
 import numpy as np
 import pytest
 
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils.ml_adapter import (
+from pyfe4ai import backend as native_backend
+from pyfe4ai.ml import (
     EncryptedGradient,
     FESchemeWrapper,
     ThresholdPartial,
@@ -206,7 +206,7 @@ def test_label_parts_of_mixed_sharings_are_fetched_again_once(monkeypatch):
     from dataclasses import replace
 
     from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
-    from pyfe4ai.utils import ml_adapter
+    from pyfe4ai import ml as ml_adapter
 
     monkeypatch.setattr(tm, "LABEL_PARTS_KEPT", 1)
     w = _wrapper()

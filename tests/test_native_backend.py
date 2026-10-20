@@ -22,11 +22,11 @@ import pytest
 from pyfe4ai.schemes.mcfe import ring_lwe as mcfe_rlwe
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tmcfe_rlwe
 from pyfe4ai.schemes.mife import ring_lwe as mife_rlwe
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils import ring_lwe_utils as rlu
-from pyfe4ai.utils import sampling_utils
-from pyfe4ai.utils.crypto_utils import hash_to_zq_material, hash_to_zq_vector
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
+from pyfe4ai.primitives import sampling as sampling_utils
+from pyfe4ai.primitives.hashing import hash_to_zq_material, hash_to_zq_vector
+from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
 
 pytestmark = [
     pytest.mark.core,
@@ -390,7 +390,7 @@ def test_mcfe_ndarray_aggregation_and_failures():
 
 
 def test_e2e_standard_profile_native_and_threads():
-    from pyfe4ai.utils.ml_adapter import FESchemeWrapper, aggregate_gradients, encrypt_gradient
+    from pyfe4ai.ml import FESchemeWrapper, aggregate_gradients, encrypt_gradient
 
     nids = ["c0", "c1", "c2"]
     with native_backend.backend("native"):
@@ -535,7 +535,7 @@ def test_threshold_partials_and_combination_identical(cfg, flooding, native_call
 
 def _retag(kg, nid, label, ct):
     from pyfe4ai.schemes.mcfe.labels import encode_label
-    from pyfe4ai.schemes.threshold_utils import tag_ciphertext
+    from pyfe4ai.schemes.threshold.threshold_utils import tag_ciphertext
 
     return tag_ciphertext(dict(ct), kg.get_private_keys(nid)["mac_keys"], tmcfe_rlwe._TAG_DOMAIN,
                           tmcfe_rlwe._tag_payload(encode_label(label), ct))
@@ -610,7 +610,7 @@ class _BytesSystemRandom(random.Random):
 
 @pytest.mark.parametrize("cfg", TCONFIGS, ids=str)
 def test_threshold_key_shares_identical(cfg, monkeypatch):
-    from pyfe4ai.schemes import threshold_utils
+    from pyfe4ai.schemes.threshold import threshold_utils
 
     # the native Shamir sharing (the default for t = s; explicit here, t < s)
     kg, pp, clients, sids = _threshold(*cfg, sharing="shamir")

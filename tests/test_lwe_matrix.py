@@ -7,8 +7,8 @@ import gmpy2 as gp
 import numpy as np
 import pytest
 
-from pyfe4ai.utils import lwe_matrix as lm
-from pyfe4ai.utils.exceptions import FEValidationError
+from pyfe4ai.primitives.lattice import lwe_matrix as lm
+from pyfe4ai.core.exceptions import FEValidationError
 
 SEED = "00" * 31 + "2a"
 

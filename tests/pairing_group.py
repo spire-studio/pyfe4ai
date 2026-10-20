@@ -10,7 +10,7 @@ import os
 
 import pytest
 
-from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, pairing_available
+from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, pairing_available
 
 GROUP = os.environ.get("PYFE4AI_TEST_PAIRING_GROUP", DEFAULT_PAIRING_GROUP)
 

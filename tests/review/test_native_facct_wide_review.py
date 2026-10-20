@@ -21,8 +21,8 @@ import textwrap
 import gmpy2 as gp
 import pytest
 
-from pyfe4ai.utils import native_backend as nb
-from pyfe4ai.utils import sampling_utils as su
+from pyfe4ai import backend as nb
+from pyfe4ai.primitives import sampling as su
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 pytestmark = pytest.mark.skipif(nb.ext() is None, reason="native extension not built")
@@ -56,7 +56,8 @@ def test_xof_counter_near_2_64_is_not_wrapped():
 _SIGNAL = textwrap.dedent(
     """
     import signal, sys, time
-    from pyfe4ai.utils import native_backend as nb, sampling_utils as su
+    from pyfe4ai import backend as nb
+    from pyfe4ai.primitives import sampling as su
     other, rng = su.XofRandom(b"o" * 32), su.XofRandom(b"r" * 32)
     def handler(*args):
         other.getrandbits(8)

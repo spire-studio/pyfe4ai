@@ -24,8 +24,8 @@ import warnings
 import gmpy2 as gp
 import pytest
 
-from pyfe4ai.utils import crypto_utils
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.primitives import hashing
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 
 NIDS, SIDS = ["a", "b"], ["s0", "s1", "s2"]
 
@@ -38,7 +38,7 @@ def _cwd(tmp_path, monkeypatch):
 def test_dense_threshold_key_share_binds_the_label_hash():
     from pyfe4ai.schemes.mcfe import lwe_threshold as dense
     from pyfe4ai.schemes.mcfe.lwe import dot_mod
-    from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
+    from pyfe4ai.schemes.threshold.threshold_utils import lagrange_coefficient_at_zero
 
     kg = dense.ThresholdMCFELWEKeyGenerator({"sec_param": 64, "n": 2, "lst_nid": NIDS, "eta": 1, "bound_x": 4,
                                              "bound_y": 4, "s": 3, "t": 3, "lst_sid": SIDS})
@@ -91,7 +91,7 @@ def test_hash_to_zq_vector_of_length_zero_returns(mode):
     previous = signal.signal(signal.SIGALRM, stop)
     signal.alarm(3)
     try:
-        assert crypto_utils.hash_to_zq_vector("label", gp.next_prime(gp.mpz(2) ** 80), 0, mode=mode) == []
+        assert hashing.hash_to_zq_vector("label", gp.next_prime(gp.mpz(2) ** 80), 0, mode=mode) == []
     finally:
         signal.alarm(0)
         signal.signal(signal.SIGALRM, previous)

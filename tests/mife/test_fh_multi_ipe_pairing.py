@@ -120,9 +120,9 @@ def _setup(cfg):
 
 @pytest.mark.parametrize("k", [1, 2])
 def test_slots_masked_keys_unlinkable_and_no_y_needed(kg_config, k):
-    from pyfe4ai.utils.exceptions import FESchemeError
-    from pyfe4ai.utils.pairing_backend import GT, pair
-    from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
+    from pyfe4ai.core.exceptions import FESchemeError
+    from pyfe4ai.primitives.pairing.pairing_backend import GT, pair
+    from pyfe4ai.primitives.pairing.pairing_utils import bounded_discrete_log_gt
 
     cfg = dict(kg_config, sec_level=k, eta=2)
     kg, pp, clients = _setup(cfg)
@@ -152,7 +152,7 @@ def test_slots_masked_keys_unlinkable_and_no_y_needed(kg_config, k):
 
 
 def test_parameter_guards(kg_config):
-    from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
+    from pyfe4ai.core.exceptions import FEKeyError, FEValidationError
 
     with pytest.raises(FEKeyError):
         MIFEFHMultiIPEKeyGenerator(dict(kg_config, n=1, lst_nid=["nid_0"], sec_level=1))

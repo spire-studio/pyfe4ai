@@ -18,11 +18,11 @@ import gmpy2 as gp
 import numpy as np
 import pytest
 
-from pyfe4ai.schemes import threshold_utils
+from pyfe4ai.schemes.threshold import threshold_utils
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils import ring_lwe_utils as rlu
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives.lattice import ring_lwe_utils as rlu
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 
 NATIVE = native_backend.available()
 BACKENDS = ["python"] + (["native"] if NATIVE else [])

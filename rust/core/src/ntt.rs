@@ -1,5 +1,5 @@
 //! Negacyclic NTT of Z_q[x] / (x^n + 1) with the root, tables and butterfly
-//! order of pyfe4ai.utils.ring_lwe_utils.ntt_forward / ntt_inverse: the values
+//! order of pyfe4ai.primitives.lattice.ring_lwe_utils.ntt_forward / ntt_inverse: the values
 //! are the Python ones in both domains. Shoup twiddles, Harvey's lazy
 //! butterflies (values in [0, 4q)) when 4q < 2^BITS, else butterflies that keep
 //! the values in [0, q) (u64 words for 2^62 <= q < 2^63).

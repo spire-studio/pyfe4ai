@@ -15,8 +15,8 @@ import pytest
 
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tmcfe
 from pyfe4ai.schemes.mife import lwe_threshold as tmife
-from pyfe4ai.utils import native_backend
-from pyfe4ai.utils import sampling_utils as su
+from pyfe4ai import backend as native_backend
+from pyfe4ai.primitives import sampling as su
 from tests.test_native_backend import ByteStream
 
 pytestmark = pytest.mark.skipif(

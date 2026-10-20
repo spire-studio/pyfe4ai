@@ -7,7 +7,7 @@ import pytest
 from pyfe4ai.logger import init_logging_config
 from pyfe4ai.schemes.mcfe.lwe_threshold import ThresholdMCFELWE
 from pyfe4ai.schemes.mcfe.lwe_threshold import ThresholdMCFELWEKeyGenerator
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
 
 init_logging_config()
 logger = logging.getLogger(__name__)
@@ -216,7 +216,7 @@ def test_partial_decryptions_are_noise_flooded(kg_config):
     import gmpy2 as gp
 
     from pyfe4ai.schemes.mcfe.lwe import dot_mod
-    from pyfe4ai.schemes.threshold_utils import share_for_enrolled
+    from pyfe4ai.schemes.threshold.threshold_utils import share_for_enrolled
 
     dct_x = {nid: [1] for nid in kg_config["lst_nid"]}
     dct_y = {nid: [1] for nid in kg_config["lst_nid"]}

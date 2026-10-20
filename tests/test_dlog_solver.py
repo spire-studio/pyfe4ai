@@ -8,8 +8,8 @@ import pickle
 
 import gmpy2 as gp
 
-from pyfe4ai.utils.crypto_utils import group_generator_fe
-from pyfe4ai.utils.dlog_solver import dlog_table_solve, load_or_build_dlog_table
+from pyfe4ai.primitives.groups.integer_groups import group_generator_fe
+from pyfe4ai.primitives.groups.dlog_solver import dlog_table_solve, load_or_build_dlog_table
 
 
 class _Payload:
@@ -67,7 +67,7 @@ def test_planted_json_cache_is_ignored(tmp_path):
 
 
 def test_tables_keyed_by_value_or_digits_solve_alike():
-    from pyfe4ai.utils.dlog_solver import dlog_build_table
+    from pyfe4ai.primitives.groups.dlog_solver import dlog_build_table
 
     g, p = _group()
     table, m, giant = dlog_build_table(g, p, 300)

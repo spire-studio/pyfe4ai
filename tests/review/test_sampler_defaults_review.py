@@ -19,8 +19,8 @@ import warnings
 
 import pytest
 
-from pyfe4ai.utils import sampling_utils as su
-from pyfe4ai.utils.exceptions import FESecurityWarning, FEValidationError
+from pyfe4ai.primitives import sampling as su
+from pyfe4ai.core.exceptions import FESecurityWarning, FEValidationError
 
 N, S = ["a", "b"], ["s0", "s1", "s2"]
 

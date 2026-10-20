@@ -8,7 +8,7 @@ import numpy as np
 
 from pyfe4ai.schemes.mife.paillier import MIFEPaillier
 from pyfe4ai.schemes.mife.paillier import MIFEPaillierKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
+from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.logger import init_logging_config
 
 init_logging_config()

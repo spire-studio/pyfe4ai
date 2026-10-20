@@ -10,7 +10,7 @@ skip_unless_available()
 
 from pyfe4ai.schemes.quadratic.miqfe import MultiInputQuadratic  # noqa: E402
 from pyfe4ai.schemes.quadratic.miqfe import MultiInputQuadraticKeyGenerator  # noqa: E402
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError  # noqa: E402
+from pyfe4ai.core.exceptions import FESchemeError, FEValidationError  # noqa: E402
 
 NIDS = ["nid_0", "nid_1"]
 
