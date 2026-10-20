@@ -48,6 +48,10 @@ pip install -e ".[test]"        # editable with test extras
 python -m pytest -m core -q     # run the core test suite
 ```
 
+Every scheme is built from its id with `pyfe4ai.create()`, e.g.
+`kg, SIFEDDH = pyfe4ai.create("sife/ddh", eta=3)` (see [Usage](#usage));
+`pyfe4ai.list_schemes()` lists the ids.
+
 The pairing-based FE families run on BLS12-381 from the Rust extension
 (`python tools/build_rust.py`, needs a Rust toolchain). Other pairing curves
 (MNT224, BN254, ...) and the full test suite under them
@@ -82,7 +86,7 @@ of the pairing-based schemes. `PYFE4AI_BACKEND=python` (or
 ## Usage
 
 ```python
-from pyfe4ai import SIFEDDH, SIFEDDHKeyGenerator
+import pyfe4ai
 
 x = [2, 1, 3]
 y = [4, 5, 6]
@@ -91,7 +95,7 @@ y = [4, 5, 6]
 # security level: 128 keeps the demo fast but is NOT secure. For a 3072-bit
 # group, replace "sec_param": 128 with "security_profile": "standard" (see
 # Security Profiles; an explicit sec_param below 3072 is then refused).
-kg = SIFEDDHKeyGenerator({"sec_param": 128, "eta": len(x)})
+kg, SIFEDDH = pyfe4ai.create("sife/ddh", {"sec_param": 128, "eta": len(x)})
 kg.setup()
 pp = kg.get_public_parameters()
 sk = kg.get_private_keys()
@@ -108,6 +112,17 @@ print("<x, y> =", result)   # → 31
 ```
 
 See `examples/sife_minimal.py` for the full runnable version.
+
+`pyfe4ai.create(scheme, config)` takes a scheme id `"family/variant"` and
+returns the scheme's key generator, built from the config but not yet set
+up, and its crypto class, whose objects encrypt (with `pp` and `sk`) and
+decrypt (with `pp` and a functional key). The classes are also importable
+by name (`from pyfe4ai.schemes.sife import SIFEDDH, SIFEDDHKeyGenerator`;
+see [Naming Convention](#naming-convention)). The scheme registry answers
+what is available: `pyfe4ai.list_schemes()` lists the ids
+(`pyfe4ai.list_schemes("mcfe", capabilities="threshold")` the threshold
+MCFEs), `pyfe4ai.get_scheme("mcfe/ring_lwe")` gives a scheme's classes,
+kind, capabilities and review status.
 
 ## Key Features
 
@@ -260,7 +275,7 @@ parameters aiming at 128-bit classical security and rejects explicit values
 below them with `FEValidationError`:
 
 ```python
-kg = SIFEDDHKeyGenerator({"eta": 3, "security_profile": "standard"})  # 3072-bit group
+kg, SIFEDDH = pyfe4ai.create("sife/ddh", {"eta": 3, "security_profile": "standard"})  # 3072-bit group
 ```
 
 | Family | `standard` parameters | Measured cost (one core, 2 clients) |

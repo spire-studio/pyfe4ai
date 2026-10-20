@@ -26,8 +26,8 @@ upgrade notes first.**
   `pyfe4ai.schemes` (the families, plus `schemes.common` and
   `schemes.threshold`), `pyfe4ai.primitives` (lattices, sampling, hashing,
   groups, pairings), `pyfe4ai.backend` (native or Python implementation)
-  and `pyfe4ai.ml` (the ML adapter). `pyfe4ai` exports what it exported
-  before; the configuration types are the config classes of
+  and `pyfe4ai.ml` (the ML adapter). `pyfe4ai` exports its entry points
+  (see `pyfe4ai.create()` below); the configuration types are the config classes of
   `pyfe4ai.core.config` (see Formats, versions and configurations), no
   longer re-exported by `pyfe4ai.schemes`. Update imports as follows:
 
@@ -136,6 +136,31 @@ upgrade notes first.**
   | added after v0.3.0 (development builds): `threshold.kl`: `PER_SAMPLE`, `KL`, `FLOODING_ACCOUNTINGS`, `flooding_config`, `check_kl_threshold` | `pyfe4ai.core.config` |
   | added after v0.3.0: `primitives.lattice.ring_lwe_utils`: `encode_binary_ciphertext`, `decode_binary_ciphertext`, `encode_threshold_ciphertext`, `decode_threshold_ciphertext`, `threshold_ciphertext_from_format1`, `threshold_ciphertext_header`, `encode_values`, `decode_values` | `pyfe4ai.core.formats.binary` |
   | added after v0.3.0: `primitives.lattice.ring_lwe_utils.CT_FORMATS`; `primitives.sampling`: `FLOODING_NOISE_VERSION`, `check_flooding_version`; `mcfe.ring_lwe`: `pp_label_hash`, `ciphertext_label_hash`, `check_ciphertext_label_hashes`; `mcfe.ring_lwe_threshold.LEGACY_FLOODING` | `pyfe4ai.core.versions` |
+- **`pyfe4ai.create()` and the top-level package**:
+  `pyfe4ai.create("family/variant", config=None, **options)` builds the
+  key generator of a scheme exactly as its class does (config class and
+  security profile; not set up -- call `setup()`) and returns it with the
+  scheme's crypto class as `CreatedScheme(key_generator, crypto)`:
+  `kg, MCFE = pyfe4ai.create("mcfe/ring_lwe", n=3)`; `options` are added to
+  a copy of `config`. `pyfe4ai` now exports `create`, `CreatedScheme`, the
+  registry queries `list_schemes(family, capabilities=..., status=...,
+  kind=...)`, `get_scheme` (a `Scheme`: classes, kind, capabilities, review
+  status), `CAPABILITIES`, `get_scheme_status` and `SchemeStatus`, and every
+  exception and warning of the library: `FEError`, `FEConfigError`,
+  `FEKeyError`, `FEValidationError`, `FESchemeError`, `MixedSharingsError`,
+  `FESecurityWarning` and `FEWarning`. It no longer re-exports `SIFE`,
+  `SIFEKeyGenerator`, `MIFE`, `MIFEKeyGenerator`, `MCFE` and
+  `MCFEKeyGenerator`: use `create()`, or import the classes under their new
+  names from the family packages (`from pyfe4ai.schemes.sife import
+  SIFEDDH`). `import pyfe4ai` no longer imports the scheme modules (and with
+  them the native extension); they are imported when first used. The API
+  page of the documentation lists the public modules (`pyfe4ai`, the family
+  packages, `core.registry`, `core.config`, `core.status`, `core.profiles`,
+  `core.exceptions`, `pyfe4ai.ml`, the backend selection of
+  `pyfe4ai.backend` and a few named entry points) and the internal ones
+  (`core.base`, `core.formats`, `core.versions`, `core.one_time`,
+  `schemes.common`, `schemes.threshold`, `primitives`, ...), which may change
+  without notice.
 - **Scheme registry** (`pyfe4ai.core.registry`): one entry per scheme,
   `SCHEMES`, the single source of what the library records about it -- its
   id `family/variant`, module and classes (key generator, crypto class,

@@ -15,6 +15,11 @@ author = "Spire Studio"
 
 from pyfe4ai import __version__  # noqa: E402
 
+# The pairing layer checks charm's group type codes when it is imported; import
+# it before autodoc mocks charm (autodoc_mock_imports below), so that it sees
+# the real environment (charm absent: BLS12-381 from the Rust extension only).
+import pyfe4ai.primitives.pairing.pairing_backend  # noqa: E402,F401
+
 version = __version__
 release = __version__
 

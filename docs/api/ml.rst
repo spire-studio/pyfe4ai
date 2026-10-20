@@ -9,8 +9,8 @@ and federated gradient aggregation behind one wrapper:
    from pyfe4ai.ml import FESchemeWrapper, aggregate_gradients, encrypt_gradient
 
 The functions and classes below are importable from :mod:`pyfe4ai.ml`; they
-are defined in its submodules ``wrapper`` (the wrapper and its scheme
-registry), ``serialization`` (the encrypted containers), ``gradients``
+are defined in its submodules ``wrapper`` (the wrapper; its schemes are
+those of :mod:`pyfe4ai.core.registry`), ``serialization`` (the encrypted containers), ``gradients``
 (federated aggregation), ``threshold`` (the decryption servers of the
 threshold MCFE) and ``inference`` (encrypted linear inference).
 
