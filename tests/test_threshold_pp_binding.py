@@ -12,6 +12,7 @@ import pytest
 from pyfe4ai.schemes.threshold import kl as fa
 from pyfe4ai.schemes.mcfe import lwe_threshold as dense
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as ring
+from pyfe4ai.core import versions
 from pyfe4ai.schemes.threshold import binding as threshold_binding
 from pyfe4ai.schemes.mife import lwe_threshold as tmife
 from pyfe4ai.schemes.threshold import binding as threshold_binding
@@ -102,7 +103,7 @@ def test_tmife_key_share_refused_under_other_parameters():
 
     serve(pp)
     for bad in (dict(pp, sigma_f=str(int(pp["sigma_f"]) + 2)), dict(pp, q=str(int(pp["q"]) + 2)),
-                dict(pp, threshold_construction=threshold_binding.TMIFE_LWE_CONSTRUCTION_KL)):
+                dict(pp, threshold_construction=versions.TMIFE_LWE_CONSTRUCTION_KL)):
         with pytest.raises(REFUSED):
             serve(bad)
 

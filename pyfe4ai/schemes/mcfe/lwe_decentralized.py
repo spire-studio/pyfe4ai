@@ -53,12 +53,12 @@ from pyfe4ai.core.profiles import STANDARD_DCR_PRIME_BITS
 from pyfe4ai.schemes.threshold.binding import fusion_weight_id
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.versions import record_matches
+from pyfe4ai.core.versions import DMCFE_LWE_RECORD
 from pyfe4ai.primitives.groups.integer_groups import is_dcr_modulus
 from pyfe4ai._validation import strict_int
 
 logger = logging.getLogger(__name__)
-
-_CONSTRUCTION = "abmpsw20-fig14-lwe-dcr/v2"
 
 
 class DecentralizedMCFELWEKeyGenerator(MCFELWEKeyGenerator, ParameterCacheMixin):
@@ -88,10 +88,7 @@ class DecentralizedMCFELWEKeyGenerator(MCFELWEKeyGenerator, ParameterCacheMixin)
         self._load_parameters()  # caches only N2; the LWE parameters are derived
 
     def _param_verification(self, param: dict) -> bool:
-        return (
-            param.get("construction") == _CONSTRUCTION
-            and param.get("n2_prime_bits") == self.n2_prime_bits
-        )
+        return record_matches(param, {"construction": DMCFE_LWE_RECORD, "n2_prime_bits": self.n2_prime_bits})
 
     def _apply_parameters(self, param: dict) -> None:
         self.n2_mod = gp.mpz(param["n2_mod"])
@@ -104,7 +101,7 @@ class DecentralizedMCFELWEKeyGenerator(MCFELWEKeyGenerator, ParameterCacheMixin)
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(
                 {
-                    "construction": _CONSTRUCTION,
+                    "construction": DMCFE_LWE_RECORD,
                     "n2_prime_bits": self.n2_prime_bits,
                     "n2_mod": gp.digits(self.n2_mod),
                 },

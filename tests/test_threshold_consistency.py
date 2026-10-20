@@ -196,7 +196,7 @@ def test_keys_of_the_earlier_flooding_derivation_are_refused():
     may have answered requests with the earlier noise: every threshold LWE server
     refuses it, and new key shares carry the current version."""
     from pyfe4ai.core.exceptions import FEKeyError
-    from pyfe4ai.primitives.sampling import FLOODING_NOISE_VERSION, check_flooding_version
+    from pyfe4ai.core.versions import FLOODING_NOISE_VERSION, check_flooding_version
 
     base = {"sec_param": 64, "n": 2, "lst_nid": NIDS, "s": 3, "lst_sid": SIDS, "t": 2, "eta": 1}
     cases = [

@@ -46,7 +46,7 @@ from pyfe4ai.schemes.mcfe.ring_lwe import label_pad, label_pad_material, native_
 from pyfe4ai.schemes.threshold.binding import fusion_weight_id
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai import backend as native_backend
-from pyfe4ai.primitives.hashing import LEGACY_LABEL_HASH
+from pyfe4ai.core.versions import check_key_label_hash
 from pyfe4ai.primitives.hashing import hash_to_zq_material, hash_to_zq_vector
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.primitives.lattice.ring_lwe_utils import mat_vec_mul, transpose
@@ -238,8 +238,8 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
             for sh in shares
         ):
             raise FESchemeError("key shares were derived for different weights or labels")
-        if any(sh.get("label_hash", LEGACY_LABEL_HASH) != self.label_hash for sh in shares):
-            raise FESchemeError("key shares were derived with another label hash than the public parameters")
+        for sh in shares:
+            check_key_label_hash(sh, self.label_hash, "key shares were")
         q = gp.mpz(self.pp["q"])
         ctx = native_backend.ring_context(q, self.pp["ring_n"])
 

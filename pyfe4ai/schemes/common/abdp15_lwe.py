@@ -66,6 +66,8 @@ import secrets
 import gmpy2 as gp
 
 from pyfe4ai.core.base import ParameterCacheMixin
+from pyfe4ai.core.versions import record_matches
+from pyfe4ai.core.versions import SIFE_LWE_RECORD
 from pyfe4ai.core.profiles import STANDARD
 from pyfe4ai.primitives.lattice.lwe_matrix import LimbMatrix
 from pyfe4ai.primitives.lattice.lwe_matrix import SeededMatrix
@@ -83,7 +85,6 @@ from pyfe4ai.primitives.sampling import scheme_sampler
 DEFAULT_MATRIX_MODE = "memory"
 #: Plaintexts encrypted per pass over ``A`` by the ndarray helpers.
 ENCRYPT_BATCH = 64
-CONSTRUCTION = "abdp15-lwe-seeded-a/v1"
 
 
 class ABDP15KeyGeneratorMixin(ParameterCacheMixin):
@@ -93,7 +94,7 @@ class ABDP15KeyGeneratorMixin(ParameterCacheMixin):
     ``_init_abdp15``.
     """
 
-    _construction = CONSTRUCTION
+    _construction = SIFE_LWE_RECORD
     #: ``B / X``, where ``B`` bounds ``|x1_i - x0_i|`` for the challenge
     #: vectors ``x0, x1`` of the IPFE security game (signed ``|x_i| <= X``).
     _challenge_spread = 2
@@ -132,16 +133,12 @@ class ABDP15KeyGeneratorMixin(ParameterCacheMixin):
     def _param_verification(self, param: dict) -> bool:
         """The cached record must match the config and the parameters derived
         from it (the derivation is deterministic); only the seed of ``A`` is random."""
-        if not (
-            param.get("construction") == self._construction
-            and all(param.get(key) == value for key, value in self._record_fields().items())
-        ):
+        if not record_matches(param, {"construction": self._construction, **self._record_fields()}):
             return False
         seed = param.get("A_seed")
         if not isinstance(seed, str) or len(bytes.fromhex(seed)) != 32:
             return False
-        expected = self._serialised(self._derive())
-        return all(param.get(key) == value for key, value in expected.items())
+        return record_matches(param, self._serialised(self._derive()))
 
     @staticmethod
     def _serialised(derived: dict) -> dict:

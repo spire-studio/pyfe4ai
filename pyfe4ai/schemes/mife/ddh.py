@@ -47,13 +47,13 @@ from pyfe4ai.schemes.threshold.binding import fusion_weight_id
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.primitives.groups.dlog_solver import load_or_build_dlog_table, dlog_table_solve
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.versions import MIFE_DDH_CONSTRUCTION
 from pyfe4ai._validation import int_vector
 from pyfe4ai._validation import scale_to_int
 
 logger = logging.getLogger(__name__)
 
 _CSPRNG = random.SystemRandom()
-_CONSTRUCTION = "acfgu18-abdp15/v2"
 
 
 class MIFEKeyGenerator(DDHKeyGeneratorBase):
@@ -98,7 +98,7 @@ class MIFEKeyGenerator(DDHKeyGeneratorBase):
     def get_public_parameters(self) -> dict:
         """Return serialisable public parameters (g, p, q, n, eta, sec_param)."""
         return {
-            "construction": _CONSTRUCTION,
+            "construction": MIFE_DDH_CONSTRUCTION,
             "g": gp.digits(self.g),
             "p": gp.digits(self.p),
             "q": gp.digits(self.q),

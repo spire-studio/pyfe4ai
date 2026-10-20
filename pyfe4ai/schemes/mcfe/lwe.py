@@ -78,7 +78,12 @@ from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.primitives.hashing import DEFAULT_LABEL_HASH
 from pyfe4ai.primitives.hashing import LABEL_HASH_CODES
 from pyfe4ai.primitives.hashing import LEGACY_LABEL_HASH
-from pyfe4ai.primitives.hashing import check_label_hash
+from pyfe4ai.core.versions import check_encryption_key_label_hash
+from pyfe4ai.core.versions import check_lwe_ciphertext_label_hash
+from pyfe4ai.core.versions import check_lwe_layer_label_hash
+from pyfe4ai.core.versions import label_hash_code
+from pyfe4ai.core.versions import label_hash_mode
+from pyfe4ai.core.versions import pp_label_hash
 from pyfe4ai.primitives.hashing import hash_to_zq_material
 from pyfe4ai.primitives.hashing import hash_to_zq_vector
 from pyfe4ai.primitives.hashing import zq_rejection_parameters
@@ -103,13 +108,6 @@ def hash_label(label, q, length: int, mode: str) -> list:
     """Return ``H(label) in Z_q^length`` (random oracle; *mode*: the
     ``label_hash`` public parameter)."""
     return hash_to_zq_vector(encode_label(label), q, length, domain=_LABEL_HASH_DOMAIN, mode=mode)
-
-
-def _label_hash(value) -> str:
-    try:
-        return check_label_hash(value)
-    except ValueError as exc:
-        raise FEValidationError(str(exc)) from exc
 
 
 def dot_mod(left: list, right: list, q) -> gp.mpz:
@@ -154,7 +152,7 @@ class MCFELWEKeyGenerator(IPFEAbsKeyGenerator):
                 The keys ``bound_u`` and ``label_modulus`` of versions <= 0.2.0
                 are ignored.
         """
-        self.label_hash = _label_hash(config.get("label_hash", DEFAULT_LABEL_HASH))
+        self.label_hash = label_hash_mode(config.get("label_hash", DEFAULT_LABEL_HASH))
         super().__init__(config, **kwargs)
         self.gaussian_sampler = scheme_sampler(config, profile=self.security_profile)
         self.eta = config.get("eta", CryptoCONST.MCFE_ETA)
@@ -276,34 +274,34 @@ class MCFELWE(IPFEAbsCrypto):
         self.q0 = gp.mpz(self.pp["q0"])
         self.delta = gp.mpz(self.pp["delta"])
         self.dim = self.pp["n0"] + self.pp["m0"]
-        self.label_hash = _label_hash(self.pp.get("label_hash", LEGACY_LABEL_HASH))
+        self.label_hash = pp_label_hash(self.pp)
 
     def _check_encryption_label_hash(self) -> None:
         """Raise unless the encryption key was issued for the public parameters'
-        label hash (keys without ``label_hash``: ``"shake256-wide"``).
+        label hash (keys without ``label_hash``: ``"shake256-wide"``;
+        :func:`~pyfe4ai.core.versions.check_encryption_key_label_hash`).
 
         Raises:
             FEKeyError: If they differ: the ciphertexts would decrypt to wrong
                 values.
         """
-        key_mode = self.sk.get("label_hash", LEGACY_LABEL_HASH)
-        if key_mode != self.label_hash:
-            raise FEKeyError("the encryption key was issued for label hash {!r}, the public parameters say {!r}"
-                             .format(key_mode, self.label_hash))
+        check_encryption_key_label_hash(self.sk, self.label_hash)
 
     def _ciphertext(self, c: list) -> dict:
         """A ciphertext dict, bound to the label hash (no field for ``"shake256-wide"``,
         as in versions <= 0.3.0)."""
-        if self.label_hash == LEGACY_LABEL_HASH:
+        code = label_hash_code(self.label_hash)
+        if code is None:
             return {"c": c}
-        return {"c": c, "label_hash": LABEL_HASH_CODES[self.label_hash]}
+        return {"c": c, "label_hash": code}
 
     def _mark_layer(self, ary_ct: np.ndarray) -> np.ndarray:
         """Bind the label hash to an ndarray layer: its first element carries
         the code for the whole layer (none for ``"shake256-wide"``)."""
-        if ary_ct.size and self.label_hash != LEGACY_LABEL_HASH:
+        code = label_hash_code(self.label_hash)
+        if ary_ct.size and code is not None:
             first = ary_ct.flat[0]
-            ary_ct.flat[0] = dict(first, label_hash=LABEL_HASH_CODES[self.label_hash])
+            ary_ct.flat[0] = dict(first, label_hash=code)
         return ary_ct
 
     def _layer_codes(self, dict_ndarray_ct: dict) -> dict:
@@ -320,10 +318,7 @@ class MCFELWE(IPFEAbsCrypto):
             codes = []
             for ary in layers if isinstance(layers, (list, tuple)) else ():
                 first = ary.flat[0] if isinstance(ary, np.ndarray) and ary.size else None
-                got = first.get("label_hash", 0) if isinstance(first, dict) else 0
-                if got != code:
-                    raise FESchemeError("a ciphertext layer of {} was produced with another label hash than the "
-                                        "public parameters' {!r}".format(nid, self.label_hash))
+                check_lwe_layer_label_hash(first, nid, self.label_hash)
                 codes.append(code)
             out[nid] = codes
         return out
@@ -374,9 +369,7 @@ class MCFELWE(IPFEAbsCrypto):
         absent = code if in_layer else 0  # an element without a code: its layer's; a single ciphertext: v0.3.0's
         acc = gp.mpz(0)
         for nid, ct in dct_ct.items():
-            if ct.get("label_hash", absent) != code:  # the hash this ciphertext was made with
-                raise FESchemeError("the ciphertext of {} was produced with another label hash than the public "
-                                    "parameters' {!r}".format(nid, self.label_hash))
+            check_lwe_ciphertext_label_hash(ct, nid, self.label_hash, absent)
             if len(ct["c"]) != len(fusion_weight[nid]):
                 raise FESchemeError(
                     "ciphertext and fusion weight of {} differ in length".format(nid)

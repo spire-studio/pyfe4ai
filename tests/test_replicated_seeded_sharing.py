@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 from pyfe4ai.schemes.mcfe import lwe_threshold as tmcfe_lwe
-from pyfe4ai.schemes.threshold import binding as threshold_binding
+from pyfe4ai.core import versions
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tmcfe_ring
 from pyfe4ai.schemes.mcfe.lwe_threshold import ThresholdMCFELWE, ThresholdMCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWE, ThresholdMCFERingLWEKeyGenerator
@@ -50,10 +50,10 @@ def _pieces(sharing, q):
 
 #: The construction ids of the replicated and the seeded sharing of the LWE threshold schemes.
 _REPLICATED_RECORDS = {
-    "pyfe4ai.schemes.mife.lwe_threshold": (threshold_binding.TMIFE_LWE_CONSTRUCTION_REPLICATED,
-                                           threshold_binding.TMIFE_LWE_CONSTRUCTION_REPLICATED_SEEDED),
-    "pyfe4ai.schemes.mcfe.lwe_threshold": (threshold_binding.TMCFE_LWE_CONSTRUCTION_REPLICATED,
-                                           threshold_binding.TMCFE_LWE_CONSTRUCTION_REPLICATED_SEEDED),
+    "pyfe4ai.schemes.mife.lwe_threshold": (versions.TMIFE_LWE_CONSTRUCTION_REPLICATED,
+                                           versions.TMIFE_LWE_CONSTRUCTION_REPLICATED_SEEDED),
+    "pyfe4ai.schemes.mcfe.lwe_threshold": (versions.TMCFE_LWE_CONSTRUCTION_REPLICATED,
+                                           versions.TMCFE_LWE_CONSTRUCTION_REPLICATED_SEEDED),
 }
 
 
@@ -63,7 +63,7 @@ def _full_pp(pp, module):
         replicated, seeded = _REPLICATED_RECORDS[module.__name__]
         assert pp["threshold_construction"] == seeded
         return dict(pp, sharing="replicated", threshold_construction=replicated)
-    ids = threshold_binding.TMCFE_RING_LWE_CONSTRUCTION_IDS
+    ids = versions.TMCFE_RING_LWE_CONSTRUCTION_IDS
     flooding = pp.get("flooding", "gaussian")  # tMCFE-Ring-LWE: one record per sharing and flooding
     assert pp["threshold_construction"] == ids[("replicated-seeded", flooding)]
     return dict(pp, sharing="replicated", threshold_construction=ids[("replicated", flooding)])
@@ -336,7 +336,7 @@ def test_tmcfe_lwe_seeded_decrypts_and_matches_the_replicated_partials(s, t):
     # each sharing serves its own key shares only, and the construction must name the sharing
     full = _expanded(dks[sids[0]], kg.q)
     for bad_pp, bad_dk in [(full_pp, dks[sids[0]]), (pp, full),
-                           (dict(pp, threshold_construction=threshold_binding.TMCFE_LWE_CONSTRUCTION_REPLICATED), dks[sids[0]])]:
+                           (dict(pp, threshold_construction=versions.TMCFE_LWE_CONSTRUCTION_REPLICATED), dks[sids[0]])]:
         with pytest.raises(FESchemeError):
             ThresholdMCFELWE({"id": sids[0], "keys": {"pp": bad_pp, "dk": bad_dk}}).share_decrypt(
                 cts, cred, bad_dk, sids[:t])

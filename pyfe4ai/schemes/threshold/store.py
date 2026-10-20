@@ -101,7 +101,7 @@ WEIGHT_SHARINGS_KEPT = 64
 #: it is kept). A label part asked for again after that is a new sharing of the
 #: same terms (same share set and noise key) with another ``sharing_id``:
 #: combiners refuse partial decryptions of the two sharings
-#: (:class:`~pyfe4ai.schemes.threshold.binding.MixedSharingsError`), and the servers then fetch the label's parts
+#: (:class:`~pyfe4ai.core.versions.MixedSharingsError`), and the servers then fetch the label's parts
 #: again, all from the new sharing.
 LABEL_PARTS_KEPT = 16
 

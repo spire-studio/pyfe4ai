@@ -201,7 +201,7 @@ def combine_partial_decryptions(
             its label.
         FESchemeError: If they do not combine (see
             :meth:`~pyfe4ai.schemes.mcfe.ring_lwe_threshold.ThresholdMCFERingLWE.decrypt_lst_ndarray_ct`);
-            :class:`~pyfe4ai.schemes.threshold.binding.MixedSharingsError`
+            :class:`~pyfe4ai.core.versions.MixedSharingsError`
             if their label parts are of different sharings (the key generator
             shared the label again between the servers' fetches): prepare the
             round again and have all servers decrypt with the new key shares

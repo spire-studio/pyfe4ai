@@ -73,6 +73,7 @@ from pyfe4ai.primitives.lattice.matrix_utils import vector_to_digits
 from pyfe4ai.primitives.sampling import rand_uniform_matrix
 from pyfe4ai.primitives.sampling import rand_uniform_vector
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.versions import MIFE_LWE_RECORD
 from pyfe4ai._validation import scale_to_int
 from pyfe4ai._validation import strict_int
 
@@ -83,7 +84,7 @@ class MIFELWEKeyGenerator(IPFEAbsKeyGenerator, ABDP15KeyGeneratorMixin):
     """Key generator for LWE-based multi-input inner-product FE."""
 
     _scheme_type = CryptoCONST.TYPE_MIFE_LWE
-    _construction = "acfgu18-abdp15-lwe-seeded-a/v2"
+    _construction = MIFE_LWE_RECORD
     # ACFGU18, proof of Thm. 3: a slot's IPFE is challenged with
     # x^(j,0) - x^(1,0) + x^(1,1) against x^(j,1), which differ by up to 4X
     _challenge_spread = 4

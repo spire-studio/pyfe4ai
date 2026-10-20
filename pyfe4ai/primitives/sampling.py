@@ -18,7 +18,7 @@ import numpy as np
 
 import warnings
 
-from pyfe4ai.core.exceptions import FEKeyError, FESecurityWarning, FEValidationError
+from pyfe4ai.core.exceptions import FESecurityWarning, FEValidationError
 
 _CSPRNG = random.SystemRandom()
 # The OS source of the module; a replaced _CSPRNG (tests) keeps the Python sampler.
@@ -359,37 +359,13 @@ class XofRandom:
 BIGINT_GUARD_BITS = 320
 
 
-#: Version of the flooding-noise derivation in the decryption keys of the
-#: threshold schemes (tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE): 2 since
-#: :data:`BIGINT_GUARD_BITS` grew (keys without the field are version 1).
-FLOODING_NOISE_VERSION = 2
 #: The sampler of the threshold flooding noise, whatever the process-wide or
 #: context choice: the MPFR rounded Gaussian (an ideal rounded Gaussian is a
 #: mixture of centred discrete Gaussians, which the flooding argument accepts).
-#: Recorded in the decryption keys as ``noise_sampler``, so that a server never
-#: answers one request with noises of two samplers.
+#: Recorded in the decryption keys as ``noise_sampler`` (checked by
+#: :func:`~pyfe4ai.core.versions.check_flooding_version`), so that a server
+#: never answers one request with noises of two samplers.
 FLOODING_SAMPLER = "rounded"
-
-
-def check_flooding_version(dk) -> None:
-    """Refuse a threshold decryption key of another flooding derivation: it may
-    have answered a request with the noise of the earlier derivation, and a
-    second noise for the same request would let the answers be averaged.
-
-    Raises:
-        FEKeyError: For a key of another version (issue new keys).
-    """
-    version = dk.get("noise_version", 1) if isinstance(dk, dict) else None
-    if version != FLOODING_NOISE_VERSION:
-        raise FEKeyError(
-            "decryption key of flooding derivation {} (this version derives noise version {}): "
-            "issue new decryption keys".format(version, FLOODING_NOISE_VERSION)
-        )
-    if dk.get("noise_sampler") != FLOODING_SAMPLER:
-        raise FEKeyError(
-            "decryption key for the flooding sampler {!r} (this version floods with {!r}): "
-            "issue new decryption keys".format(dk.get("noise_sampler"), FLOODING_SAMPLER)
-        )
 
 
 def bigint_precision(sigma) -> int:

@@ -36,11 +36,10 @@ from pyfe4ai.schemes.threshold.binding import check_fusion_weight, fusion_weight
 from pyfe4ai.primitives.groups import ec_group as eg
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.versions import MIFE_DDH_RISTRETTO255_CONSTRUCTION
 from pyfe4ai._validation import int_vector, scale_to_int
 
 logger = logging.getLogger(__name__)
-
-_CONSTRUCTION = "acfgu18-abdp15-ristretto255/v1"
 
 
 class MIFERistretto255KeyGenerator(ECDDHKeyGeneratorBase):
@@ -74,7 +73,7 @@ class MIFERistretto255KeyGenerator(ECDDHKeyGeneratorBase):
 
     def get_public_parameters(self) -> dict:
         return {
-            "construction": _CONSTRUCTION,
+            "construction": MIFE_DDH_RISTRETTO255_CONSTRUCTION,
             "group": eg.GROUP,
             "n": self.n,
             "eta": self.eta,

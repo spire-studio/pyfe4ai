@@ -76,7 +76,7 @@ Servers refuse Shamir key shares with ``t < s`` unless created with
 ``legacy_shamir = "warn"`` (never with public parameters that record the
 ``standard`` profile); key shares of versions <= 0.3.0 are refused in any
 case (another flooding derivation, see
-:func:`~pyfe4ai.primitives.sampling.check_flooding_version`); public
+:func:`~pyfe4ai.core.versions.check_flooding_version`); public
 parameters record ``threshold_construction`` and ``security_profile``, and
 servers refuse constructions they do not know.
 The opt-in ``"replicated-seeded"`` (see
@@ -104,15 +104,13 @@ import gmpy2 as gp
 import numpy as np
 
 from pyfe4ai.core.constants import CryptoCONST
-from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
-from pyfe4ai.primitives.hashing import LEGACY_LABEL_HASH
+from pyfe4ai.core.exceptions import FEKeyError, FEValidationError, warn_at_caller
 from pyfe4ai.primitives.lattice.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.primitives.sampling import XofRandom
-from pyfe4ai.primitives.sampling import (
-    FLOODING_NOISE_VERSION,
-    FLOODING_SAMPLER,
-    check_flooding_version,
-)
+from pyfe4ai.primitives.sampling import FLOODING_SAMPLER
+from pyfe4ai.core.versions import check_key_label_hash
+from pyfe4ai.core.versions import FLOODING_NOISE_VERSION
+from pyfe4ai.core.versions import check_flooding_version
 from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
 from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.schemes.mcfe.lwe import MCFELWE
@@ -120,7 +118,7 @@ from pyfe4ai.schemes.mcfe.lwe import MCFELWEKeyGenerator
 from pyfe4ai.schemes.mcfe.lwe import dot_mod
 from pyfe4ai.schemes.threshold.binding import TMCFE_LWE_BINDING_DEFAULTS
 from pyfe4ai.schemes.threshold.binding import TMCFE_LWE_BINDING_FIELDS
-from pyfe4ai.schemes.threshold.binding import TMCFE_LWE_CONSTRUCTIONS
+from pyfe4ai.core.versions import TMCFE_LWE_CONSTRUCTIONS
 from pyfe4ai.schemes.threshold.binding import check_pp_binding
 from pyfe4ai.schemes.threshold.binding import fusion_weight_id
 from pyfe4ai.schemes.threshold.binding import pp_binding
@@ -131,7 +129,7 @@ from pyfe4ai.schemes.threshold.roles import combine_consistently
 from pyfe4ai.schemes.threshold.roles import combine_elementwise
 from pyfe4ai.schemes.threshold.roles import enrolled_share_options
 from pyfe4ai.schemes.threshold.roles import flooding_noise
-from pyfe4ai.schemes.threshold.roles import legacy_shamir_policy
+from pyfe4ai.core.versions import legacy_shamir_policy
 from pyfe4ai.schemes.threshold.roles import noise_seed
 from pyfe4ai.schemes.threshold.roles import validate_enrolled
 from pyfe4ai.schemes.threshold.roles import validate_partial_decryptions
@@ -301,7 +299,7 @@ class ThresholdMCFELWE(MCFELWE):
 
     A server refuses Shamir key shares with ``t < s`` (versions <= 0.3.0)
     unless its config has ``legacy_shamir = "warn"`` (see
-    :data:`~pyfe4ai.schemes.threshold.roles.LEGACY_SHAMIR_POLICIES`).
+    :data:`~pyfe4ai.core.versions.LEGACY_SHAMIR_POLICIES`).
     """
 
     def __init__(self, config: dict, **kwargs) -> None:
@@ -334,8 +332,7 @@ class ThresholdMCFELWE(MCFELWE):
         check_key_share_server(self.id, dk, self.pp, TMCFE_LWE_CONSTRUCTIONS)
         # the key share of the public parameters' label hash (shares without the
         # field: "shake256-wide", the hash of versions <= 0.3.0)
-        if dk.get("label_hash", LEGACY_LABEL_HASH) != self.label_hash:
-            raise FESchemeError("the key share was derived with another label hash than the public parameters")
+        check_key_label_hash(dk, self.label_hash, "the key share was")
         binding = check_pp_binding(self.pp, dk, TMCFE_LWE_BINDING_FIELDS, TMCFE_LWE_BINDING_DEFAULTS)
         fusion_weight = credentials.get("fusion_weight")
         label = credentials.get("label")

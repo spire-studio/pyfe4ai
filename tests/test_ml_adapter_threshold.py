@@ -208,7 +208,7 @@ def test_label_parts_of_mixed_sharings_are_fetched_again_once(monkeypatch):
     from dataclasses import replace
 
     from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
-    from pyfe4ai.schemes.threshold import binding as threshold_binding
+    from pyfe4ai.core import versions
     from pyfe4ai.schemes.threshold import store as threshold_store
     from pyfe4ai.ml import gradients as ml_gradients
 
@@ -223,7 +223,7 @@ def test_label_parts_of_mixed_sharings_are_fetched_again_once(monkeypatch):
     mixed = replace(prepared, dk=dict(prepared.dk, sid_1=again))
     enc = {nid: encrypt_gradient(grads[nid], w, nid=nid, label="a") for nid in NIDS}
     parts = {sid: partial_decrypt_gradients(enc, w, mixed, server=sid) for sid in mixed.servers}
-    with pytest.raises(threshold_binding.MixedSharingsError, match="fetch the label parts again"):
+    with pytest.raises(versions.MixedSharingsError, match="fetch the label parts again"):
         combine_partial_decryptions(parts, w, mixed)
     fetched = []
     real = w.kg.get_decryption_keys
@@ -237,7 +237,7 @@ def test_label_parts_of_mixed_sharings_are_fetched_again_once(monkeypatch):
     assert fetched == ["sid_0", "sid_1"]
     # mixed again after the second fetch: refused, not retried
     monkeypatch.setattr(ml_gradients, "_server_key_shares", lambda *args: mixed.dk)
-    with pytest.raises(threshold_binding.MixedSharingsError):
+    with pytest.raises(versions.MixedSharingsError):
         aggregate_gradients(enc, w, label="a", prepared=mixed)
 
 

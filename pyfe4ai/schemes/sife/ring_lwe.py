@@ -53,12 +53,13 @@ from pyfe4ai.primitives.lattice.ring_lwe_utils import (
 from pyfe4ai import backend as native_backend
 from pyfe4ai.primitives.sampling import discrete_gaussian_matrix, scheme_sampler
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.versions import record_matches
+from pyfe4ai.core.versions import SIFE_RING_LWE_RECORD
 from pyfe4ai._validation import int_vector
 from pyfe4ai.primitives.lattice.ring_lwe_utils import seeded_polynomial
 
 logger = logging.getLogger(__name__)
 
-_PARAM_VERSION = "bmms21-sec4.2/v3"  # p = 2 l X Y + 2, Sec. 4.2 widths, seeded a
 
 # Backward-compatible aliases (private names used by internal callers)
 _poly_add = poly_add
@@ -122,21 +123,17 @@ class SIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
     def _param_verification(self, param: dict) -> bool:
         """The cached record must match the config and the parameters derived
         from it; only the seed of ``a`` is random."""
-        if not (
-            param.get("param_version") == _PARAM_VERSION
-            and param.get("sec_param") == self.sec_param
-            and param.get("eta") == self.eta
-            and param.get("bound_x") == gp.digits(self.bound_x)
-            and param.get("bound_y") == gp.digits(self.bound_y)
-            and param.get("ring_n") == self.ring_n
-        ):
+        if not record_matches(param, {
+            "param_version": SIFE_RING_LWE_RECORD, "sec_param": self.sec_param, "eta": self.eta,
+            "bound_x": gp.digits(self.bound_x), "bound_y": gp.digits(self.bound_y), "ring_n": self.ring_n,
+        }):
             return False
         p, q, sigma1, sigma2, sigma3 = bmms21_parameters(
             self.sec_param, self.eta, self.bound_x, self.bound_y, self.ring_n
         )
-        return (param.get("p"), param.get("q")) == (gp.digits(p), gp.digits(q)) and (
-            param.get("sigma1"), param.get("sigma2"), param.get("sigma3")
-        ) == (sigma1, sigma2, sigma3)
+        return record_matches(param, {
+            "p": gp.digits(p), "q": gp.digits(q), "sigma1": sigma1, "sigma2": sigma2, "sigma3": sigma3,
+        })
 
     def _generate_and_save(self, param_file: str) -> None:
         self.p, self.q, self.sigma1, self.sigma2, self.sigma3 = bmms21_parameters(
@@ -148,7 +145,7 @@ class SIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(
                 {
-                    "param_version": _PARAM_VERSION,
+                    "param_version": SIFE_RING_LWE_RECORD,
                     "sec_param": self.sec_param,
                     "eta": self.eta,
                     "ring_n": self.ring_n,

@@ -53,6 +53,8 @@ from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.primitives.groups.integer_groups import generate_group_primes
 from pyfe4ai.primitives.hashing import hash_to_zn2_star
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.versions import record_matches
+from pyfe4ai.core.versions import MCFE_PAILLIER_RECORD
 from pyfe4ai.primitives.groups.modular_utils import pow_signed
 from pyfe4ai.primitives.sampling import discrete_gaussian_bigint
 from pyfe4ai._validation import scale_to_int
@@ -62,7 +64,6 @@ from pyfe4ai._validation import strict_int
 logger = logging.getLogger(__name__)
 
 _LABEL_HASH_DOMAIN = "pyfe4ai/mcfe/paillier/H(label)"
-_CONSTRUCTION = "abmpsw20-dcr/v2"  # v1 caches stored p and q
 _DEFAULT_STAT_PARAM = 64
 
 
@@ -124,10 +125,7 @@ class MCFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.n_square = self.n_mod * self.n_mod
 
     def _param_verification(self, param: dict) -> bool:
-        return (
-            param.get("construction") == _CONSTRUCTION
-            and param.get("bit_length") == self.bit_length
-        )
+        return record_matches(param, {"construction": MCFE_PAILLIER_RECORD, "bit_length": self.bit_length})
 
     def _loaded_parameters_valid(self) -> bool:
         return is_dcr_modulus(self.n_mod, self.bit_length)
@@ -146,7 +144,7 @@ class MCFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(
                 {
-                    "construction": _CONSTRUCTION,
+                    "construction": MCFE_PAILLIER_RECORD,
                     "bit_length": self.bit_length,
                     "n_mod": gp.digits(self.n_mod),
                 },

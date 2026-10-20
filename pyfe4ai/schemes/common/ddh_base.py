@@ -18,6 +18,7 @@ from pyfe4ai.core.base import IPFEAbsKeyGenerator, ParameterCacheMixin
 from pyfe4ai.primitives.groups.integer_groups import group_generator_fe, is_dl_group
 from pyfe4ai.primitives.hashing import hash_to_qr_group
 from pyfe4ai.core.exceptions import FEValidationError
+from pyfe4ai.core.versions import record_matches
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ class DDHKeyGeneratorBase(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
     def _param_verification(self, param: dict) -> bool:
         """Return ``True`` if *param* matches the current configuration keys."""
-        return all(param.get(k) == getattr(self, k) for k in self._verify_keys)
+        return record_matches(param, {k: getattr(self, k) for k in self._verify_keys})
 
     def _loaded_parameters_valid(self) -> bool:
         # every DDH group here is a safe-prime group (r = 2); a cached r would
@@ -103,7 +104,7 @@ class DamgardDDHKeyGeneratorBase(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
     def _param_verification(self, param: dict) -> bool:
         """Return ``True`` if *param* matches the current configuration keys."""
-        return all(param.get(k) == getattr(self, k) for k in self._verify_keys)
+        return record_matches(param, {k: getattr(self, k) for k in self._verify_keys})
 
     def _loaded_parameters_valid(self) -> bool:
         return (

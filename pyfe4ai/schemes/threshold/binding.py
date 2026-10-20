@@ -3,23 +3,17 @@ What the threshold artifacts are bound to, and the checks.
 
 * Key shares to public parameters: :func:`pp_binding` over a scheme's
   binding fields, checked by :func:`check_pp_binding` before every partial
-  decryption; the sharing and the threshold construction
-  (:func:`check_served_sharing`) against the construction ids each scheme
-  records; key shares to the weights they were derived for
-  (:func:`fusion_weight_id`).
+  decryption; key shares to the weights they were derived for
+  (:func:`fusion_weight_id`). The sharing, the threshold construction and the
+  other version markers are checked by :mod:`pyfe4ai.core.versions`.
 * Ciphertexts to the servers that decrypt them: HMAC-SHA256 tags under
   client-server keys (:func:`client_server_mac_keys`,
   :func:`tag_ciphertext`, :func:`check_ciphertext_tags`; the tag messages
   are in :mod:`pyfe4ai.schemes.threshold.codec`).
-* The threshold MCFE over Ring-LWE: the ciphertext format of its public
-  parameters (:func:`pp_ct_format`), the fields its weight and label key
-  share parts share (:func:`check_split_parts`), the ``sharing_id`` of every
-  sharing it issues (combiners refuse partial decryptions of different
-  sharings: :class:`MixedSharingsError`) and the version of the pickled state
-  of its objects (:func:`check_state`).
+* The threshold MCFE over Ring-LWE: the fields its weight and label key
+  share parts share (:func:`check_split_parts`).
 
-Construction ids, binding fields and state versions are those of earlier
-versions; nothing here changes a digest.
+Binding fields are those of earlier versions; nothing here changes a digest.
 """
 
 from __future__ import annotations
@@ -31,8 +25,9 @@ import secrets
 
 from pyfe4ai._validation import int_vector
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.versions import LEGACY_FLOODING
+from pyfe4ai.core.versions import LEGACY_SHARING
 from pyfe4ai.primitives.hashing import LEGACY_LABEL_HASH
-from pyfe4ai.schemes.threshold.kl import KL
 
 #: Domain of :func:`pp_binding`.
 _PP_BINDING_DOMAIN = b"pyfe4ai/threshold/key-share-pp-binding/v1|"
@@ -53,7 +48,7 @@ def pp_binding(pp: dict, fields: tuple, defaults: dict | None = None) -> str:
     to the same request, and the difference of the two reveals key material
     (with the label hash: ``lambda <share, H_A(l) - H_B(l)>`` exactly). The
     sharing and the threshold construction are checked on their own
-    (:func:`check_served_sharing`).
+    (:func:`~pyfe4ai.core.versions.check_served_sharing`).
     """
     defaults = defaults or {}
     payload = json.dumps([[f, pp.get(f, defaults.get(f))] for f in fields], separators=(",", ":"), default=str)
@@ -82,56 +77,10 @@ def check_pp_binding(pp: dict, dk: dict, fields: tuple, defaults: dict | None = 
     return digest
 
 
-def check_served_sharing(pp: dict, dk: dict, constructions: dict) -> None:
-    """Raise unless key share *dk* is of the sharing that *pp* describes.
+# the public-parameter fields each threshold LWE scheme binds a key share to
+# (:func:`pp_binding`; a missing field takes its default -- what its absence
+# means, see :mod:`pyfe4ai.core.versions`)
 
-    ``pp["sharing"]`` must match the key share (both default to
-    ``"shamir"``, the only sharing of versions <= 0.3.0). Public parameters
-    of this version record ``threshold_construction``; it must be one of
-    *constructions* (``{construction id: sharing}``) and name that sharing,
-    so that artifacts of another construction (a later version, say) are
-    refused rather than misread. Only Shamir public parameters may lack it
-    (those of versions <= 0.3.0); every version with the replicated sharing
-    records it, so replicated public parameters without it are refused.
-    """
-    sharing = dk.get("sharing", "shamir")
-    if pp.get("sharing", "shamir") != sharing:
-        raise FESchemeError("the key share is not of the sharing of the public parameters")
-    construction = pp.get("threshold_construction")
-    if construction is None and sharing != "shamir":
-        raise FESchemeError(
-            "public parameters of the {} sharing must record threshold_construction".format(sharing)
-        )
-    if construction is not None and constructions.get(construction) != sharing:
-        raise FESchemeError(
-            "unknown threshold construction {!r} for a {} key share; known: {}".format(
-                construction, sharing, sorted(constructions)
-            )
-        )
-
-
-# construction ids and binding fields of the threshold LWE schemes: the
-# construction ids are recorded in public parameters (and parameter records) as
-# ``threshold_construction``, ``{construction id: sharing}`` is what servers
-# serve (:func:`check_served_sharing`), and a key share is bound to the
-# public-parameter fields (:func:`pp_binding`; a missing field takes its
-# default)
-
-#: The construction id of tMIFE-LWE (:mod:`pyfe4ai.schemes.mife.lwe_threshold`) with the Shamir sharing.
-TMIFE_LWE_CONSTRUCTION = "acfgu18-abdp15-shamir-smudging-seeded-a/v4"  # v4: flooding at bits + 320, sampler pinned
-#: The construction id of tMIFE-LWE with the Shamir sharing and the KL accounting of the flooding.
-TMIFE_LWE_CONSTRUCTION_KL = "acfgu18-abdp15-shamir-smudging-kl/v2"
-# the parameters are those of the Shamir record; its own record keeps cached
-# Shamir records (t < s) of versions <= 0.3.0 from being taken for it
-#: The construction id of tMIFE-LWE with the replicated sharing.
-TMIFE_LWE_CONSTRUCTION_REPLICATED = "acfgu18-abdp15-replicated-smudging-seeded-a/v1"
-#: The construction id of tMIFE-LWE with the seed-expanded replicated sharing.
-TMIFE_LWE_CONSTRUCTION_REPLICATED_SEEDED = "acfgu18-abdp15-replicated-seeded-smudging-seeded-a/v1"
-#: The sharing of each tMIFE-LWE construction id.
-TMIFE_LWE_CONSTRUCTIONS = {
-    TMIFE_LWE_CONSTRUCTION: "shamir", TMIFE_LWE_CONSTRUCTION_KL: "shamir",
-    TMIFE_LWE_CONSTRUCTION_REPLICATED: "replicated", TMIFE_LWE_CONSTRUCTION_REPLICATED_SEEDED: "replicated-seeded",
-}
 #: The public-parameter fields a tMIFE-LWE key share is bound to.
 TMIFE_LWE_BINDING_FIELDS = (
     "q", "p", "lwe_n", "m", "eta", "n", "A_seed", "s", "t", "lst_sid", "sigma_f", "flood_tail_cut",
@@ -140,16 +89,6 @@ TMIFE_LWE_BINDING_FIELDS = (
 #: The values of absent tMIFE-LWE binding fields.
 TMIFE_LWE_BINDING_DEFAULTS = {"flooding_accounting": "per-sample"}
 
-# recorded in the public parameters (those of versions <= 0.3.0 have none)
-#: The construction id of tMCFE-LWE (:mod:`pyfe4ai.schemes.mcfe.lwe_threshold`) with the Shamir sharing.
-TMCFE_LWE_CONSTRUCTION = "abmpsw20-shamir-flooding/v1"
-#: The construction id of tMCFE-LWE with the replicated sharing.
-TMCFE_LWE_CONSTRUCTION_REPLICATED = "abmpsw20-replicated-flooding/v1"
-#: The construction id of tMCFE-LWE with the seed-expanded replicated sharing.
-TMCFE_LWE_CONSTRUCTION_REPLICATED_SEEDED = "abmpsw20-replicated-seeded-flooding/v1"
-#: The sharing of each tMCFE-LWE construction id.
-TMCFE_LWE_CONSTRUCTIONS = {TMCFE_LWE_CONSTRUCTION: "shamir", TMCFE_LWE_CONSTRUCTION_REPLICATED: "replicated",
-                           TMCFE_LWE_CONSTRUCTION_REPLICATED_SEEDED: "replicated-seeded"}
 #: The public-parameter fields a tMCFE-LWE key share is bound to, the label
 #: hash among them (one key share answering a label under two label hashes with
 #: the same noise would give ``w_A - w_B = lambda <share, H_A(l) - H_B(l)>`` exactly).
@@ -157,26 +96,6 @@ TMCFE_LWE_BINDING_FIELDS = ("q", "q0", "K", "delta", "n0", "m0", "s", "t", "lst_
 #: The values of absent tMCFE-LWE binding fields.
 TMCFE_LWE_BINDING_DEFAULTS = {"label_hash": LEGACY_LABEL_HASH}
 
-#: The parameter record (and public ``threshold_construction``) of a sharing
-#: and a flooding of tMCFE-Ring-LWE (:mod:`pyfe4ai.schemes.mcfe.ring_lwe_threshold`)
-#: under the per-sample accounting (``"kl"``: :data:`TMCFE_RING_LWE_CONSTRUCTION_KL`).
-TMCFE_RING_LWE_CONSTRUCTION_IDS = {
-    ("shamir", "gaussian"): "bmms21-ibmcfe-shamir-smudging/v2",  # v2: flooding at bits + 320, sampler pinned
-    ("shamir", "uniform"): "bmms21-ibmcfe-shamir-smudging-uniform/v1",
-    # the parameters are those of the Shamir records; their own records keep cached
-    # Shamir records (t < s) of versions <= 0.3.0 from being taken for them
-    ("replicated", "gaussian"): "bmms21-ibmcfe-replicated-smudging/v1",
-    ("replicated", "uniform"): "bmms21-ibmcfe-replicated-smudging-uniform/v1",
-    ("replicated-seeded", "gaussian"): "bmms21-ibmcfe-replicated-seeded-smudging/v1",
-    ("replicated-seeded", "uniform"): "bmms21-ibmcfe-replicated-seeded-smudging-uniform/v1",
-}
-#: The construction id of tMCFE-Ring-LWE with the Shamir sharing, Gaussian flooding and KL accounting.
-TMCFE_RING_LWE_CONSTRUCTION_KL = "bmms21-ibmcfe-shamir-smudging-kl/v2"
-#: The sharing of each tMCFE-Ring-LWE construction id.
-TMCFE_RING_LWE_CONSTRUCTIONS = {
-    construction: sharing for (sharing, _), construction in TMCFE_RING_LWE_CONSTRUCTION_IDS.items()
-}
-TMCFE_RING_LWE_CONSTRUCTIONS[TMCFE_RING_LWE_CONSTRUCTION_KL] = "shamir"
 #: The public-parameter fields a tMCFE-Ring-LWE key share is bound to (what
 #: its partial decryptions depend on beyond the sharing and the construction).
 TMCFE_RING_LWE_BINDING_FIELDS = (
@@ -184,21 +103,12 @@ TMCFE_RING_LWE_BINDING_FIELDS = (
     "flooding_accounting", "max_partial_decryptions", "stat_param", "label_hash",
 )
 #: The values of absent tMCFE-Ring-LWE binding fields.
-TMCFE_RING_LWE_BINDING_DEFAULTS = {"flooding": "gaussian", "flooding_accounting": "per-sample",
-                                   "label_hash": "shake256-wide"}
+TMCFE_RING_LWE_BINDING_DEFAULTS = {"flooding": LEGACY_FLOODING, "flooding_accounting": "per-sample",
+                                   "label_hash": LEGACY_LABEL_HASH}
 #: The tMCFE-Ring-LWE fields bound only where the public parameters have them
 #: (the digests of public parameters without them, of earlier versions too, stay
 #: as they were).
 TMCFE_RING_LWE_OPTIONAL_BINDING_FIELDS = ("ct_format", "q_factors")
-
-
-def tmcfe_ring_lwe_construction_id(sharing: str, flooding: str, accounting: str) -> str | None:
-    """The tMCFE-Ring-LWE construction id of a sharing, a flooding and a
-    flooding accounting (``None`` for a combination the key generator does
-    not make)."""
-    if accounting == KL:
-        return TMCFE_RING_LWE_CONSTRUCTION_KL if (sharing, flooding) == ("shamir", "gaussian") else None
-    return TMCFE_RING_LWE_CONSTRUCTION_IDS.get((sharing, flooding))
 
 
 def tmcfe_ring_lwe_binding_fields(pp: dict) -> tuple:
@@ -208,27 +118,6 @@ def tmcfe_ring_lwe_binding_fields(pp: dict) -> tuple:
     (``ct_format`` of binary public parameters, ``q_factors`` of an RNS
     modulus)."""
     return TMCFE_RING_LWE_BINDING_FIELDS + tuple(f for f in TMCFE_RING_LWE_OPTIONAL_BINDING_FIELDS if f in pp)
-
-
-#: Ciphertext formats of the threshold MCFE over Ring-LWE (key generator config
-#: ``ct_format``, a public parameter): ``"json"`` (decimal strings, tags over
-#: the JSON form; the only format of versions <= 0.3.0, and that of public
-#: parameters without ``ct_format``) and ``"binary"`` (the default: format 2
-#: of :func:`~pyfe4ai.primitives.lattice.ring_lwe_utils.encode_threshold_ciphertext`, tags
-#: over its digests, binary partial decryptions).
-CT_FORMATS = ("json", "binary")
-
-
-def pp_ct_format(pp: dict) -> str:
-    """The ciphertext format of threshold public parameters (absent: ``"json"``).
-
-    Raises:
-        FEValidationError: For another value.
-    """
-    fmt = pp.get("ct_format", "json")
-    if fmt not in CT_FORMATS:
-        raise FEValidationError("unknown ciphertext format {!r}; one of {}".format(fmt, ", ".join(CT_FORMATS)))
-    return fmt
 
 
 def fusion_weight_id(fusion_weight: dict) -> str:
@@ -368,82 +257,6 @@ def check_split_parts(weight: dict, dk: dict) -> None:
         FEKeyError: For parts that do not belong together.
     """
     for field in SPLIT_SHARE_FIELDS:
-        if weight.get(field, "shamir" if field == "sharing" else None) != dk.get(
-                field, "shamir" if field == "sharing" else None):
+        if weight.get(field, LEGACY_SHARING if field == "sharing" else None) != dk.get(
+                field, LEGACY_SHARING if field == "sharing" else None):
             raise FEKeyError("the weight and the label key share do not belong together ({})".format(field))
-
-
-#: The message of :class:`MixedSharingsError`.
-MIXED_SHARINGS = ("partials come from different sharings of the label's key; fetch the label parts again from "
-                  "the key generator for all servers")
-
-
-class MixedSharingsError(FESchemeError):
-    """Partial decryptions of different sharings of one key were combined.
-
-    Every sharing a key generator issues (whole key shares, or the label parts
-    of one label) has a random ``sharing_id``, which the servers' partial
-    decryptions carry. Shares of two sharings of the same key do not
-    reconstruct it: combined, their partials would decode to a wrong value
-    inside the decoding bound rather than fail. This happens when the label
-    parts of one round are fetched on both sides of their eviction
-    (:data:`~pyfe4ai.schemes.threshold.store.LABEL_PARTS_KEPT`); fetch them again for all servers. The check
-    needs the ids: keep the ``sharing_id`` with every stored or transmitted
-    key share and partial decryption (partials without one combine only with
-    each other).
-    """
-
-
-def key_share_sharing_id(dk: dict) -> str | None:
-    """The ``sharing_id`` of a key share (``None`` for key shares of earlier
-    versions, which have none), which its partial decryptions carry.
-
-    Raises:
-        FEKeyError: For a ``sharing_id`` that is not a string.
-    """
-    sharing_id = dk.get("sharing_id")  # of the shares' sharing (key shares of earlier versions: none)
-    if sharing_id is not None and not isinstance(sharing_id, str):
-        raise FEKeyError("malformed key share: sharing_id is a string")
-    return sharing_id
-
-
-def check_partials_sharing(partials: list) -> None:
-    """Raise unless the partial decryptions are of one sharing: shares of two
-    sharings of one key do not reconstruct it (their partials would decode to
-    a wrong value). Partials without a ``sharing_id`` combine only with each
-    other.
-
-    Raises:
-        FESchemeError: For a ``sharing_id`` that is not a string.
-        MixedSharingsError: For partials of different sharings.
-    """
-    sharing_ids = [p.get("sharing_id") for p in partials]
-    if any(i is not None and not isinstance(i, str) for i in sharing_ids):
-        raise FESchemeError("malformed partial decryption: sharing_id is a string")
-    if len(set(sharing_ids)) > 1:
-        raise MixedSharingsError(MIXED_SHARINGS)
-
-
-#: The version of the pickled state of the tMCFE-Ring-LWE objects (a state
-#: pickled by another version of pyfe4ai, with other attributes or other
-#: derivations, is refused when loaded).
-TMCFE_RING_LWE_STATE_VERSION = "pyfe4ai/tmcfe-ring-lwe/state/2026-10-3"
-
-
-def versioned_state(state: dict, version: str) -> dict:
-    """*state* with its ``_state_version``."""
-    return dict(state, _state_version=version)
-
-
-def check_state(obj, state: dict, version: str) -> None:
-    """Load *state* into *obj*, refusing one pickled by another version.
-
-    Raises:
-        FESchemeError: For a state of another version (or of none).
-    """
-    if not isinstance(state, dict) or state.get("_state_version") != version:
-        raise FESchemeError(
-            "this {} was pickled by an incompatible version of pyfe4ai; create the object again".format(
-                type(obj).__name__)
-        )
-    obj.__dict__.update(state)

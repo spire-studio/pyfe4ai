@@ -40,6 +40,8 @@ from pyfe4ai.primitives.groups.modular_utils import pow_signed
 from pyfe4ai.primitives.sampling import discrete_gaussian_bigint
 from pyfe4ai.primitives.sampling import random_below
 from pyfe4ai.core.exceptions import FEKeyError, FEValidationError, warn_at_caller
+from pyfe4ai.core.versions import record_matches
+from pyfe4ai.core.versions import PAILLIER_RECORD
 from pyfe4ai._validation import scale_to_int
 from pyfe4ai.primitives.groups.integer_groups import is_dcr_modulus
 from pyfe4ai._validation import strict_int
@@ -47,8 +49,6 @@ from pyfe4ai.primitives.hashing import paillier_base
 
 logger = logging.getLogger(__name__)
 
-# version <= 0.2.0 caches also stored p and q; they are regenerated
-_PARAM_FORMAT = "modulus-only/v1+g-seed"
 
 class SIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
     """Key generator for Paillier-based single-input inner-product FE."""
@@ -90,14 +90,10 @@ class SIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         )
 
     def _param_verification(self, param: dict) -> bool:
-        return (
-            param.get("param_format") == _PARAM_FORMAT
-            and param.get("sec_param") == self.sec_param
-            and param.get("eta") == self.eta
-            and param.get("bit_length") == self.bit_length
-            and param.get("bound_x") == self.bound_x
-            and param.get("bound_y") == self.bound_y
-        )
+        return record_matches(param, {
+            "param_format": PAILLIER_RECORD, "sec_param": self.sec_param, "eta": self.eta,
+            "bit_length": self.bit_length, "bound_x": self.bound_x, "bound_y": self.bound_y,
+        })
 
     def _generate_and_save(self, param_file: str) -> None:
         # the factorization is a decryption trapdoor: keep it local, never persist it
@@ -122,7 +118,7 @@ class SIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                     "bit_length": self.bit_length,
                     "bound_x": self.bound_x,
                     "bound_y": self.bound_y,
-                    "param_format": _PARAM_FORMAT,
+                    "param_format": PAILLIER_RECORD,
                     "n": gp.digits(self.n),
                     "n_square": gp.digits(self.n_square),
                     "g_seed": self.g_seed,

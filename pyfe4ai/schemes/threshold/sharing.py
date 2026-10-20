@@ -49,6 +49,7 @@ import warnings
 import gmpy2 as gp
 
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FESecurityWarning, FEValidationError
+from pyfe4ai.core.versions import check_legacy_shamir
 from pyfe4ai.schemes.threshold import store
 from pyfe4ai.schemes.threshold.codec import _bytes_layout
 from pyfe4ai.schemes.threshold.codec import _bytes_leaves
@@ -886,7 +887,7 @@ def share_for_enrolled(
             a native ring context of the modulus where there is one.
 
         legacy_shamir: ``"refuse"`` or ``"warn"`` (see
-            :data:`~pyfe4ai.schemes.threshold.roles.LEGACY_SHAMIR_POLICIES`).
+            :data:`~pyfe4ai.core.versions.LEGACY_SHAMIR_POLICIES`).
         profile: ``security_profile`` recorded in the public parameters
             (``None`` for those of versions <= 0.3.0).
 
@@ -898,21 +899,7 @@ def share_for_enrolled(
     sid_v = share_points(dk["lst_sid"])
     xs = [sid_v[s] for s in lst_sid_enrolled]
     if "pieces" not in dk:
-        if threshold < len(dk["lst_sid"]):
-            from pyfe4ai.core.profiles import STANDARD
-
-            message = (
-                "server {}: a Shamir key share with t = {} < s = {} (the sharing of versions "
-                "<= 0.3.0) lets partial decryptions reveal the decryption noise modulo small "
-                "integers; re-share the threshold keys with this version (sharing="
-                "'replicated')".format(sid, threshold, len(dk["lst_sid"]))
-            )
-            if legacy_shamir != "warn" or profile == STANDARD:
-                raise FESchemeError(
-                    message + "; during a migration only, a server created with "
-                    "legacy_shamir='warn' serves it (not under the standard profile)"
-                )
-            warnings.warn(message, FESecurityWarning, stacklevel=3)
+        check_legacy_shamir(sid, threshold, len(dk["lst_sid"]), legacy_shamir, profile)
         lagrange = lagrange_coefficient_at_zero(sid_v[sid], xs, modulus)
         return dk, lagrange, gp.digits(lagrange)
     assigned = replicated_assignment(sid_v[sid], xs, list(sid_v.values()), threshold)

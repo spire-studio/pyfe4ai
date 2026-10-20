@@ -54,6 +54,8 @@ from pyfe4ai.primitives.hashing import hash_to_qr_group
 from pyfe4ai.primitives.groups.dlog_solver import dlog_table_solve
 from pyfe4ai.primitives.groups.dlog_solver import load_or_build_dlog_table
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.versions import record_matches
+from pyfe4ai.core.versions import MCFE_DAMGARD_RECORD
 from pyfe4ai.primitives.groups.modular_utils import pow_signed
 from pyfe4ai.primitives.sampling import rand_uniform_vector
 from pyfe4ai._validation import scale_to_int
@@ -63,7 +65,6 @@ from pyfe4ai._validation import strict_int
 logger = logging.getLogger(__name__)
 
 _LABEL_HASH_DOMAIN = "pyfe4ai/mcfe/mddh/H(label)"
-_CONSTRUCTION = "abmpsw20-mddh/v1"
 
 
 def _hash_label(label, p: gp.mpz, k: int) -> list:
@@ -108,10 +109,7 @@ class MCFEDamgardKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.g = gp.mpz(param["g"])
 
     def _param_verification(self, param: dict) -> bool:
-        return (
-            param.get("construction") == _CONSTRUCTION
-            and param.get("modulus_length") == self.modulus_length
-        )
+        return record_matches(param, {"construction": MCFE_DAMGARD_RECORD, "modulus_length": self.modulus_length})
 
     def _loaded_parameters_valid(self) -> bool:
         return is_dl_group(self.p, self.q, self.g, self.modulus_length)
@@ -121,7 +119,7 @@ class MCFEDamgardKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(
                 {
-                    "construction": _CONSTRUCTION,
+                    "construction": MCFE_DAMGARD_RECORD,
                     "modulus_length": self.modulus_length,
                     "p": gp.digits(self.p),
                     "q": gp.digits(self.q),

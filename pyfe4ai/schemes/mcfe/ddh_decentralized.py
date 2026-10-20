@@ -55,11 +55,11 @@ from pyfe4ai.schemes.mcfe.decentralize import zero_sum_keys
 from pyfe4ai.schemes.threshold.binding import fusion_weight_id
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.versions import DMCFE_DDH_RECORD
 from pyfe4ai.primitives.groups.integer_groups import is_dcr_modulus
 
 logger = logging.getLogger(__name__)
 
-_CONSTRUCTION = "abmpsw20-fig14-cdgpp18-dcr-carry-mask/v2"
 _KEY_DIM = 2  # a CDGPP18 functional key is a pair in Z_q^2
 
 
@@ -87,7 +87,7 @@ class DecentralizedMCFEKeyGenerator(MCFEKeyGenerator):
                 (``sec_param``, ``eta``, ``n``, ``lst_nid``), plus ``stat_param``
                 for MCFE2.
         """
-        self.construction = _CONSTRUCTION
+        self.construction = DMCFE_DDH_RECORD
         self.stat_param = int(config.get("stat_param", 64))
         sec_param = config.get("sec_param", CryptoCONST.SEC_PARAM)
         n = config.get("n") or len(config.get("lst_nid", []))

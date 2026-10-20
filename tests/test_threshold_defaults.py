@@ -25,6 +25,7 @@ import pytest
 
 from pyfe4ai.schemes.threshold.kl import PartialDecryptionBudget
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
+from pyfe4ai.core import versions
 from pyfe4ai.schemes.threshold import binding as threshold_binding
 from pyfe4ai.schemes.threshold import sharing as threshold_sharing
 from pyfe4ai.schemes.threshold import store as threshold_store
@@ -185,7 +186,7 @@ def test_state_version_of_the_defaults():
     kg, pp = _setup()
     creds = {"fusion_weight": WEIGHTS, "label": "r"}
     issued = kg.get_decryption_keys("s0", credentials=creds)
-    assert threshold_binding.TMCFE_RING_LWE_STATE_VERSION.endswith("2026-10-3")
+    assert versions.TMCFE_RING_LWE_STATE_VERSION.endswith("2026-10-3")
     state = dict(kg.__getstate__(), _state_version="pyfe4ai/tmcfe-ring-lwe/state/2026-10-2")
     state.pop("key_shares")
     with pytest.MonkeyPatch.context() as m:
@@ -425,14 +426,14 @@ def test_sharing_ids_keep_two_sharings_of_a_label_apart(monkeypatch, name, ct_fo
         assert {p["sharing_id"] for p in parts1.values()} == {first[enrolled[0]]["sharing_id"]}
         assert comb.combine_decrypt(parts1) == right == comb.combine_decrypt(parts2)
         mixed = dict(parts1, **{enrolled[-1]: parts2[enrolled[-1]]})
-        with pytest.raises(threshold_binding.MixedSharingsError, match="fetch the label parts again from the key generator"):
+        with pytest.raises(versions.MixedSharingsError, match="fetch the label parts again from the key generator"):
             comb.combine_decrypt(mixed)
-        with pytest.raises(threshold_binding.MixedSharingsError):  # also among several enrolled sets
+        with pytest.raises(versions.MixedSharingsError):  # also among several enrolled sets
             comb.combine_decrypt([parts1, mixed])
         # partials without an id (of key shares of earlier versions) combine only among themselves
         bare = {sid: {k: v for k, v in p.items() if k != "sharing_id"} for sid, p in parts1.items()}
         assert comb.combine_decrypt(bare) == right
-        with pytest.raises(threshold_binding.MixedSharingsError):
+        with pytest.raises(versions.MixedSharingsError):
             comb.combine_decrypt(dict(bare, **{enrolled[-1]: parts1[enrolled[-1]]}))
         with pytest.raises(FESchemeError, match="sharing_id"):
             comb.combine_decrypt(dict(parts1, **{enrolled[-1]: dict(parts1[enrolled[-1]], sharing_id=5)}))

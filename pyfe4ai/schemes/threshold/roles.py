@@ -9,7 +9,7 @@ decryptions for several enrolled sets and :func:`combine_consistently`
 compares them.
 
 * A server: its policy for Shamir key shares with ``t < s``
-  (:func:`legacy_shamir_policy`), the checks before a partial decryption
+  (:func:`~pyfe4ai.core.versions.legacy_shamir_policy`), the checks before a partial decryption
   (:func:`check_key_share_server`, :func:`check_request`), how it sums its
   share for an enrolled set (:func:`enrolled_share_options` for
   :func:`~pyfe4ai.schemes.threshold.sharing.share_for_enrolled`) and the
@@ -29,41 +29,18 @@ import json
 
 import numpy as np
 
-from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.core.exceptions import FESchemeError
+from pyfe4ai.core.versions import check_served_sharing
 from pyfe4ai.primitives.lattice.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.primitives.sampling import FLOODING_SAMPLER
 from pyfe4ai.primitives.sampling import discrete_gaussian_bigint
 from pyfe4ai.schemes.threshold.binding import check_fusion_weight
-from pyfe4ai.schemes.threshold.binding import check_served_sharing
 from pyfe4ai.schemes.threshold.store import share_cache
-
-#: What a server does with a Shamir key share whose ``t < s`` (crypto config
-#: entry ``legacy_shamir``): ``"refuse"`` (default) or ``"warn"`` (serve it
-#: with an :class:`~pyfe4ai.core.exceptions.FESecurityWarning`). Key shares
-#: of versions <= 0.3.0 are refused before this applies (their flooding
-#: derivation, see :func:`~pyfe4ai.primitives.sampling.check_flooding_version`),
-#: so ``"warn"`` serves the explicit Shamir ``t < s`` shares of this version
-#: under ``toy``. There is deliberately no environment variable: the opt-out
-#: is per server object.
-LEGACY_SHAMIR_POLICIES = ("refuse", "warn")
-
-
-def legacy_shamir_policy(config: dict) -> str:
-    """The ``legacy_shamir`` entry of a server's crypto *config* (default ``"refuse"``)."""
-    policy = config.get("legacy_shamir")
-    if policy is None:
-        return "refuse"
-    if policy not in LEGACY_SHAMIR_POLICIES:
-        raise FEValidationError(
-            "legacy_shamir must be one of {}, not {!r}".format(LEGACY_SHAMIR_POLICIES, policy)
-        )
-    return policy
-
 
 def check_key_share_server(server_id: str, dk: dict, pp: dict, constructions: dict) -> None:
     """Raise unless key share *dk* is server *server_id*'s and of the sharing
     and a threshold construction of *pp* among *constructions*
-    (:func:`~pyfe4ai.schemes.threshold.binding.check_served_sharing`).
+    (:func:`~pyfe4ai.core.versions.check_served_sharing`).
 
     Raises:
         FESchemeError: For another server's key share, another sharing or an

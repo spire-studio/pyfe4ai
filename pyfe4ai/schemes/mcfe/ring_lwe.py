@@ -63,10 +63,15 @@ from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.primitives.hashing import DEFAULT_LABEL_HASH
 from pyfe4ai.primitives.hashing import LABEL_HASH_CODES
 from pyfe4ai.primitives.hashing import LEGACY_LABEL_HASH
-from pyfe4ai.primitives.hashing import check_label_hash
 from pyfe4ai.primitives.hashing import hash_to_zq_material
 from pyfe4ai.primitives.hashing import hash_to_zq_vector
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.versions import check_ciphertext_label_hashes
+from pyfe4ai.core.versions import check_encryption_key_label_hash
+from pyfe4ai.core.versions import check_key_label_hash
+from pyfe4ai.core.versions import label_hash_code
+from pyfe4ai.core.versions import label_hash_mode
+from pyfe4ai.core.versions import pp_label_hash
 from pyfe4ai.primitives.lattice.ring_lwe_utils import encode_values
 from pyfe4ai._validation import scale_to_int
 
@@ -95,43 +100,6 @@ def label_pad(u_prime: str, label, q, eta: int, ring_n: int, mode: str) -> list:
 def label_pad_material(u_prime: str, label, mode: str) -> bytes:
     """The hash input of :func:`label_pad` (the native backend expands it itself)."""
     return hash_to_zq_material("{}|{}".format(u_prime, encode_label(label)), domain=_PAD_DOMAIN, mode=mode)
-
-
-def pp_label_hash(pp: dict) -> str:
-    """The ``label_hash`` of public parameters (absent: ``"shake256-wide"``,
-    the hash of versions <= 0.3.0).
-
-    Raises:
-        FEValidationError: If it is not one of
-            :data:`~pyfe4ai.primitives.hashing.LABEL_HASHES`.
-    """
-    try:
-        return check_label_hash(pp.get("label_hash", LEGACY_LABEL_HASH))
-    except ValueError as exc:
-        raise FEValidationError(str(exc)) from exc
-
-
-def ciphertext_label_hash(ct) -> str | None:
-    """The label hash a ciphertext or ndarray layer dict was produced with (no
-    ``label_hash`` field: ``"shake256-wide"``), or ``None`` for an unknown code."""
-    code = ct.get("label_hash", 0) if isinstance(ct, dict) else 0
-    if type(code) is not int or not 0 <= code < len(LABEL_HASH_CODES):
-        return None
-    return next(mode for mode, c in LABEL_HASH_CODES.items() if c == code)
-
-
-def check_ciphertext_label_hashes(cts, mode: str, who: str = "a client") -> None:
-    """Raise unless every ciphertext dict of *cts* was produced with *mode*.
-
-    Raises:
-        FESchemeError: For a ciphertext of another (or an unknown) label hash.
-    """
-    for ct in cts:
-        if ciphertext_label_hash(ct) != mode:
-            raise FESchemeError(
-                "a ciphertext of {} was produced with another label hash than the public parameters' {!r}".format(
-                    who, mode)
-            )
 
 
 def native_hash_kwargs(mode: str) -> dict:
@@ -168,7 +136,7 @@ class MCFERingLWEKeyGenerator(MIFERingLWEKeyGenerator):
         :data:`~pyfe4ai.primitives.hashing.LABEL_HASHES`, default
         ``"shake128-rejection"``; ``"shake256-wide"`` for the ciphertexts of
         versions <= 0.3.0), published in the public parameters."""
-        self.label_hash = pp_label_hash({"label_hash": config.get("label_hash", DEFAULT_LABEL_HASH)})
+        self.label_hash = label_hash_mode(config.get("label_hash", DEFAULT_LABEL_HASH))
         super().__init__(config, **kwargs)
 
     def get_public_parameters(self) -> dict:
@@ -278,15 +246,14 @@ class MCFERingLWE(MIFERingLWE):
 
     @property
     def label_hash(self) -> str:
-        """The ``label_hash`` public parameter (see :func:`pp_label_hash`)."""
+        """The ``label_hash`` public parameter (see :func:`~pyfe4ai.core.versions.pp_label_hash`)."""
         return pp_label_hash(self.pp)
 
     def _native_key_kwargs(self) -> dict:
         return native_hash_kwargs(self.label_hash)
 
     def _check_key_label_hash(self, dk: dict) -> None:
-        if dk.get("label_hash", LEGACY_LABEL_HASH) != self.label_hash:
-            raise FESchemeError("the key was derived with another label hash than the public parameters")
+        check_key_label_hash(dk, self.label_hash)
 
     def _encryption_label_hash(self) -> str:
         """The label hash to encrypt with: the public parameters', which must
@@ -299,19 +266,14 @@ class MCFERingLWE(MIFERingLWE):
                 values.
         """
         mode = self.label_hash
-        key_mode = (self.sk or {}).get("label_hash", LEGACY_LABEL_HASH) if self._has_private_keys() else mode
-        if key_mode != mode:
-            raise FEKeyError(
-                "the encryption key was issued for label hash {!r}, the public parameters say {!r}".format(
-                    key_mode, mode)
-            )
-        return mode
+        return check_encryption_key_label_hash(self.sk or {}, mode) if self._has_private_keys() else mode
 
     def _mark(self, ct: dict) -> dict:
         """Bind the label hash to a ciphertext (no field for ``"shake256-wide"``,
         as in versions <= 0.3.0)."""
-        if self.label_hash != LEGACY_LABEL_HASH:
-            ct["label_hash"] = LABEL_HASH_CODES[self.label_hash]
+        code = label_hash_code(self.label_hash)
+        if code is not None:
+            ct["label_hash"] = code
         return ct
 
     def _mark_layers(self, layers: list) -> list:

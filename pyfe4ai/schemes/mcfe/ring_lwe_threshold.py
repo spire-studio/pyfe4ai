@@ -27,7 +27,7 @@ parameters (``pp_binding``), and a label part without its weight part
 (:meth:`ThresholdMCFERingLWE.add_weight_key_share`); a combiner refuses partial
 decryptions of the other format (partial decryptions carry no digest of the
 public parameters; servers are honest-but-curious, see below) and partial
-decryptions of different sharings of one key (:class:`~pyfe4ai.schemes.threshold.binding.MixedSharingsError`).
+decryptions of different sharings of one key (:class:`~pyfe4ai.core.versions.MixedSharingsError`).
 
 Construction (notation of :mod:`pyfe4ai.schemes.mife.ring_lwe`):
 
@@ -117,7 +117,7 @@ default. Servers refuse Shamir key shares with ``t < s`` unless created with
 ``legacy_shamir = "warn"`` (never with public parameters that record the
 ``standard`` profile); key shares of versions <= 0.3.0 are refused in any
 case (another flooding derivation, see
-:func:`~pyfe4ai.primitives.sampling.check_flooding_version`);
+:func:`~pyfe4ai.core.versions.check_flooding_version`);
 public parameters record ``threshold_construction`` and ``security_profile``,
 and servers refuse constructions they do not know. The opt-in
 ``"replicated-seeded"`` (see
@@ -153,7 +153,7 @@ have their own record (``threshold_construction``
 ``bmms21-ibmcfe-shamir-smudging-kl/v2``).
 
 Ciphertext format (key generator config ``ct_format``, a public parameter;
-:data:`~pyfe4ai.schemes.threshold.binding.CT_FORMATS`): ``"json"`` (decimal strings, tags over the JSON form,
+:data:`~pyfe4ai.core.versions.CT_FORMATS`): ``"json"`` (decimal strings, tags over the JSON form,
 as in versions <= 0.3.0; public parameters without ``ct_format``) or
 ``"binary"`` (the default): format 2 of
 :func:`~pyfe4ai.primitives.lattice.ring_lwe_utils.encode_threshold_ciphertext` -- the
@@ -219,7 +219,7 @@ the key generator issues -- whole key shares, or the label parts of one label
 -- has a random ``sharing_id``, which the servers' partial decryptions carry:
 partials of two sharings of one key would decode to a wrong value inside the
 decoding bound rather than fail, so combiners refuse a mix
-(:class:`~pyfe4ai.schemes.threshold.binding.MixedSharingsError`; fetch the label parts again for all servers).
+(:class:`~pyfe4ai.core.versions.MixedSharingsError`; fetch the label parts again for all servers).
 The two sharings' answers of one server differ by its share of a sharing of
 zero, which ``t - 1`` servers compute from their own parts: a second sharing
 reveals nothing. Store and transmit the ``sharing_id`` with every key share
@@ -297,38 +297,41 @@ from pyfe4ai.primitives.lattice.ring_lwe_utils import seeded_polynomial
 from pyfe4ai.primitives.lattice.ring_lwe_utils import threshold_ciphertext_from_format1
 from pyfe4ai.primitives.lattice.ring_lwe_utils import transpose
 from pyfe4ai.primitives.sampling import XofRandom
-from pyfe4ai.primitives.sampling import (
-    FLOODING_NOISE_VERSION,
-    FLOODING_SAMPLER,
-    check_flooding_version,
-)
+from pyfe4ai.primitives.sampling import FLOODING_SAMPLER
+from pyfe4ai.core.versions import record_matches
+from pyfe4ai.core.versions import FLOODING_NOISE_VERSION
+from pyfe4ai.core.versions import check_flooding_version
 from pyfe4ai.schemes.mcfe.labels import chunk_label
 from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWE
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
-from pyfe4ai.schemes.mcfe.ring_lwe import check_ciphertext_label_hashes
+from pyfe4ai.core.versions import check_ciphertext_label_hashes
 from pyfe4ai.schemes.mcfe.ring_lwe import chunk_key_index
 from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWEKeyGenerator
 from pyfe4ai.schemes.threshold import store
 from pyfe4ai.schemes.threshold.binding import TMCFE_RING_LWE_BINDING_DEFAULTS
-from pyfe4ai.schemes.threshold.binding import TMCFE_RING_LWE_CONSTRUCTIONS
-from pyfe4ai.schemes.threshold.binding import TMCFE_RING_LWE_STATE_VERSION
+from pyfe4ai.core.versions import TMCFE_RING_LWE_CONSTRUCTIONS
+from pyfe4ai.core.versions import TMCFE_RING_LWE_STATE_VERSION
 from pyfe4ai.schemes.threshold.binding import check_ciphertext_tag_messages
 from pyfe4ai.schemes.threshold.binding import check_ciphertext_tags
-from pyfe4ai.schemes.threshold.binding import check_partials_sharing
+from pyfe4ai.core.versions import check_partials_sharing
 from pyfe4ai.schemes.threshold.binding import check_pp_binding
 from pyfe4ai.schemes.threshold.binding import check_split_parts
-from pyfe4ai.schemes.threshold.binding import check_state
+from pyfe4ai.core.versions import check_state
 from pyfe4ai.schemes.threshold.binding import client_server_mac_keys
 from pyfe4ai.schemes.threshold.binding import fusion_weight_id
-from pyfe4ai.schemes.threshold.binding import key_share_sharing_id
+from pyfe4ai.core.versions import key_share_sharing_id
 from pyfe4ai.schemes.threshold.binding import pp_binding
-from pyfe4ai.schemes.threshold.binding import pp_ct_format
+from pyfe4ai.core.versions import pp_ct_format
 from pyfe4ai.schemes.threshold.binding import tag_ciphertext
 from pyfe4ai.schemes.threshold.binding import tag_ciphertext_message
 from pyfe4ai.schemes.threshold.binding import tmcfe_ring_lwe_binding_fields
-from pyfe4ai.schemes.threshold.binding import tmcfe_ring_lwe_construction_id
-from pyfe4ai.schemes.threshold.binding import versioned_state
+from pyfe4ai.core.versions import tmcfe_ring_lwe_construction_id
+from pyfe4ai.core.versions import LEGACY_SHARING
+from pyfe4ai.core.versions import check_key_flooding
+from pyfe4ai.core.versions import check_tmcfe_ring_lwe_construction
+from pyfe4ai.core.versions import pp_flooding
+from pyfe4ai.core.versions import versioned_state
 from pyfe4ai.schemes.threshold.codec import _TAG_DOMAIN
 from pyfe4ai.schemes.threshold.codec import _check_key_polys
 from pyfe4ai.schemes.threshold.codec import _chunk_with_code
@@ -364,7 +367,7 @@ from pyfe4ai.schemes.threshold.roles import check_request
 from pyfe4ai.schemes.threshold.roles import combine_consistently
 from pyfe4ai.schemes.threshold.roles import enrolled_share_options
 from pyfe4ai.schemes.threshold.roles import flooding_poly
-from pyfe4ai.schemes.threshold.roles import legacy_shamir_policy
+from pyfe4ai.core.versions import legacy_shamir_policy
 from pyfe4ai.schemes.threshold.roles import noise_seed
 from pyfe4ai.schemes.threshold.roles import partial_groups
 from pyfe4ai.schemes.threshold.roles import uniform_flooding_material
@@ -403,9 +406,6 @@ FLOODINGS = ("uniform", "gaussian")
 #: The key generator's default flooding.
 DEFAULT_FLOODING = "uniform"
 
-#: The flooding of versions <= 0.3.0 and of public parameters without ``flooding``.
-LEGACY_FLOODING = "gaussian"
-
 
 def _native_ring(q, ring_n: int):
     """The native ring context the threshold kernels take for ``(q, ring_n)``
@@ -438,7 +438,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
                 and, opt-in, ``flooding_accounting = "kl"`` with
                 ``max_partial_decryptions`` (``t = s``, Shamir sharing,
                 Gaussian flooding; see the module docstring);
-                ``ct_format`` (one of :data:`~pyfe4ai.schemes.threshold.binding.CT_FORMATS`, default
+                ``ct_format`` (one of :data:`~pyfe4ai.core.versions.CT_FORMATS`, default
                 ``"binary"``, published in the public parameters, whose
                 clients and servers then use format 2; ``"json"`` for the
                 format of versions <= 0.3.0);
@@ -524,16 +524,16 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
     def _param_verification(self, param: dict) -> bool:
         if not (
             super()._param_verification(param)
-            and param.get("threshold_construction") == self._threshold_construction
-            and param.get("s") == self.s
-            and param.get("stat_param") == self.stat_param
-            and all(param.get(key) == value for key, value in self._flooding_fields().items())
+            and record_matches(param, {
+                "threshold_construction": self._threshold_construction, "s": self.s, "stat_param": self.stat_param,
+                **self._flooding_fields(),
+            })
         ):
             return False
         flood = self._flooded_modulus(self.ring_n, *self._bmms21_tuple(self.ring_n))[1]
         if self.flooding == "uniform":
-            return param.get("flooding") == "uniform" and param.get("flood_bits") == flood
-        return param.get("sigma_f") == str(flood)
+            return record_matches(param, {"flooding": "uniform", "flood_bits": flood})
+        return record_matches(param, {"sigma_f": str(flood)})
 
     def _apply_parameters(self, param: dict) -> None:
         super()._apply_parameters(param)
@@ -911,7 +911,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
 
     A server refuses Shamir key shares with ``t < s`` (versions <= 0.3.0)
     unless its config has ``legacy_shamir = "warn"`` (see
-    :data:`~pyfe4ai.schemes.threshold.roles.LEGACY_SHAMIR_POLICIES`).
+    :data:`~pyfe4ai.core.versions.LEGACY_SHAMIR_POLICIES`).
     """
 
     _binary_ciphertexts = False  # format 1 only as the step before format 2 (binary public parameters)
@@ -922,7 +922,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         :class:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget`
         that its deployment keeps for it; ``legacy_shamir`` as in the class
         docstring. The ciphertext format is that of the public parameters
-        (``ct_format``, :func:`~pyfe4ai.schemes.threshold.binding.pp_ct_format`); a ``ct_format`` in *config*
+        (``ct_format``, :func:`~pyfe4ai.core.versions.pp_ct_format`); a ``ct_format`` in *config*
         must name the same.
 
         Raises:
@@ -957,7 +957,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         flood = kl_flooding(self.pp, self.pp["ring_n"])
         if flood is None:
             return None, None
-        if self.pp.get("flooding", LEGACY_FLOODING) != "gaussian":
+        if pp_flooding(self.pp) != "gaussian":
             raise FESchemeError("flooding_accounting='kl' public parameters with a flooding other than Gaussian")
         return flood, server_budget(self.pp, self._partial_budget, flood)
 
@@ -1136,17 +1136,11 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             raise FEKeyError("no decryption keys provided")
         check_flooding_version(dk)
         sharing_id = key_share_sharing_id(dk)  # of the shares' sharing (key shares of earlier versions: none)
-        flooding = self.pp.get("flooding", LEGACY_FLOODING)
-        if flooding not in FLOODINGS:
-            raise FEValidationError("unknown flooding {!r}".format(flooding))
-        if dk.get("flooding", LEGACY_FLOODING) != flooding:
-            raise FEKeyError("the key share was issued for another flooding than the public parameters'")
+        flooding = pp_flooding(self.pp)
+        check_key_flooding(flooding, dk, FLOODINGS)
         check_key_share_server(self.id, dk, self.pp, TMCFE_RING_LWE_CONSTRUCTIONS)
-        construction = self.pp.get("threshold_construction")
-        accounting = self.pp.get("flooding_accounting", PER_SAMPLE)
-        if construction is not None and construction != tmcfe_ring_lwe_construction_id(
-                dk.get("sharing", "shamir"), flooding, accounting):
-            raise FESchemeError("the public parameters' threshold_construction is not that of their flooding")
+        check_tmcfe_ring_lwe_construction(self.pp, dk.get("sharing", LEGACY_SHARING), flooding,
+                                          self.pp.get("flooding_accounting", PER_SAMPLE))
         self._flooding_width()  # malformed flooding parameters: a validation error first
         fusion_weight = credentials.get("fusion_weight")
         if dk.get("label") != credentials.get("label"):
@@ -1260,7 +1254,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             flood.check_sampler()
             budget.consume(1)
             noise_args = {"noise": flood.sample(ring_n, XofRandom(seed))[:count]}
-        elif self.pp.get("flooding", LEGACY_FLOODING) == "uniform":
+        elif pp_flooding(self.pp) == "uniform":
             width = self._flooding_width()
             if ctx is not None and width < q.bit_length():  # drawn natively, the same values
                 noise_args = {"flood": (width, uniform_flooding_material(seed))}
@@ -1316,7 +1310,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         Raises:
             FEValidationError: For an unknown flooding or a malformed width.
         """
-        flooding = self.pp.get("flooding", LEGACY_FLOODING)
+        flooding = pp_flooding(self.pp)
         if flooding == "uniform":
             bits = self.pp.get("flood_bits")
             if type(bits) is not int or bits < 1:
@@ -1335,7 +1329,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
     def _flooding_noise(self, ring_n: int, seed: bytes) -> list:
         """The flooding polynomial of the public parameters' distribution, a function of *seed*."""
         width = self._flooding_width()
-        if self.pp.get("flooding", LEGACY_FLOODING) == "uniform":
+        if pp_flooding(self.pp) == "uniform":
             return uniform_flooding_poly(width, ring_n, seed)
         return flooding_poly(width, ring_n, XofRandom(seed))
 
@@ -1362,7 +1356,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         Raises:
             FESchemeError: If fewer than ``t`` shares are given or the shares
                 do not match the enrolled set they were computed for;
-                :class:`~pyfe4ai.schemes.threshold.binding.MixedSharingsError` if they are of different sharings
+                :class:`~pyfe4ai.core.versions.MixedSharingsError` if they are of different sharings
                 (``sharing_id``).
         """
         self._check_parameters_unchanged()

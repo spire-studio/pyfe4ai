@@ -42,6 +42,7 @@ from pyfe4ai.primitives.pairing.pairing_backend import deserialize_many, multiex
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.primitives.pairing.pairing_backend import require_pairing_backend
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.versions import record_matches
 from pyfe4ai._validation import int_vector
 from pyfe4ai._validation import scale_to_int
 
@@ -165,12 +166,10 @@ class QuadraticSGPKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.order = gp.mpz(int(self.group.order()))
 
     def _param_verification(self, param: dict) -> bool:
-        return (
-            param.get("sec_param") == self.sec_param
-            and param.get("n") == self.n
-            and param.get("bound") == gp.digits(self.bound)
-            and param.get("pairing_group_param") == self.pairing_group_param
-        )
+        return record_matches(param, {
+            "sec_param": self.sec_param, "n": self.n, "bound": gp.digits(self.bound),
+            "pairing_group_param": self.pairing_group_param,
+        })
 
     def _generate_and_save(self, param_file: str) -> None:
         with open(param_file, "w", encoding="utf-8") as f:

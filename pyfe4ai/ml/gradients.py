@@ -335,7 +335,7 @@ def aggregate_gradients(
         fusion_weight, weight_scale, dk = prepared.fusion_weight, prepared.weight_scale, prepared.dk
 
     if threshold:  # the servers the wrapper runs, then the combiner
-        from pyfe4ai.schemes.threshold.binding import MixedSharingsError
+        from pyfe4ai.core.versions import MixedSharingsError
 
         for attempt in (0, 1):
             partials = {

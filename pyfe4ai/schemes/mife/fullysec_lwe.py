@@ -62,13 +62,13 @@ from pyfe4ai.primitives.lattice.matrix_utils import vector_to_digits
 from pyfe4ai.primitives.sampling import discrete_gaussian_matrix
 from pyfe4ai.primitives.sampling import rand_uniform_vector
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.versions import record_matches
+from pyfe4ai.core.versions import MIFE_FULLYSEC_LWE_RECORD
 from pyfe4ai._validation import scale_to_int
 from pyfe4ai._validation import strict_int
 from pyfe4ai.primitives.lattice.lwe_matrix import SeededMatrix
 
 logger = logging.getLogger(__name__)
-
-_CONSTRUCTION = "acfgu18-als16-lwe/v4"  # m = 4 n log2 q, B_tau ~ sqrt(m)
 
 
 def _seeded_matrix(seed: str, rows: int, cols: int, q) -> list:
@@ -112,21 +112,17 @@ class MIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.A = _seeded_matrix(self.a_seed, self.m, self.lwe_n, self.q)
 
     def _param_verification(self, param: dict) -> bool:
-        if not (
-            param.get("construction") == _CONSTRUCTION
-            and param.get("sec_param") == self.sec_param
-            and param.get("eta") == self.eta
-            and param.get("n") == self.n
-            and param.get("lwe_n") == self.lwe_n
-            and param.get("bound_x") == gp.digits(self.bound_x)
-            and param.get("bound_y") == gp.digits(self.bound_y)
-        ):
+        if not record_matches(param, {
+            "construction": MIFE_FULLYSEC_LWE_RECORD, "sec_param": self.sec_param, "eta": self.eta, "n": self.n,
+            "lwe_n": self.lwe_n, "bound_x": gp.digits(self.bound_x), "bound_y": gp.digits(self.bound_y),
+        }):
             return False
         expected = derive_fullysec_lwe_parameters(3 * self.bound_x, self.bound_y, self.n * self.eta, self.lwe_n)
         names = ("k", "q", "m", "sigma_q", "l_sigma_q", "sigma1", "l_sigma1", "sigma2", "l_sigma2")
-        for name, value in zip(names, expected):
-            if param.get(name) != (value if isinstance(value, (int, float)) else gp.digits(value)):
-                return False
+        if not record_matches(param, {
+            name: value if isinstance(value, (int, float)) else gp.digits(value) for name, value in zip(names, expected)
+        }):
+            return False
         seed = param.get("A_seed")
         return isinstance(seed, str) and len(bytes.fromhex(seed)) == 32
 
@@ -152,7 +148,7 @@ class MIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         ) as f:
             json.dump(
                 {
-                    "construction": _CONSTRUCTION,
+                    "construction": MIFE_FULLYSEC_LWE_RECORD,
                     "sec_param": self.sec_param,
                     "eta": self.eta,
                     "n": self.n,

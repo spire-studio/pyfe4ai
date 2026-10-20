@@ -44,6 +44,8 @@ from pyfe4ai.schemes.mcfe.paillier import dcr_sigma
 from pyfe4ai.schemes.threshold.binding import fusion_weight_id
 from pyfe4ai.primitives.groups.integer_groups import generate_group_primes
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.versions import record_matches
+from pyfe4ai.core.versions import DMCFE_PAILLIER_RECORD
 from pyfe4ai.primitives.lattice.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.primitives.groups.integer_groups import is_dcr_modulus
 from pyfe4ai._validation import strict_int
@@ -51,7 +53,6 @@ from pyfe4ai._validation import strict_int
 logger = logging.getLogger(__name__)
 
 TYPE_DMCFE_PAILLIER = "dMCFE_PAILLIER"
-_CONSTRUCTION = "abmpsw20-fig14-dcr-dcr/v1"
 
 
 class DecentralizedMCFEPaillierKeyGenerator(MCFEPaillierKeyGenerator):
@@ -81,11 +82,9 @@ class DecentralizedMCFEPaillierKeyGenerator(MCFEPaillierKeyGenerator):
         super().__init__(config, **kwargs)
 
     def _param_verification(self, param: dict) -> bool:
-        return (
-            param.get("construction") == _CONSTRUCTION
-            and param.get("bit_length") == self.bit_length
-            and param.get("n2_prime_bits") == self.n2_prime_bits
-        )
+        return record_matches(param, {
+            "construction": DMCFE_PAILLIER_RECORD, "bit_length": self.bit_length, "n2_prime_bits": self.n2_prime_bits,
+        })
 
     def _apply_parameters(self, param: dict) -> None:
         super()._apply_parameters(param)
@@ -108,7 +107,7 @@ class DecentralizedMCFEPaillierKeyGenerator(MCFEPaillierKeyGenerator):
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(
                 {
-                    "construction": _CONSTRUCTION,
+                    "construction": DMCFE_PAILLIER_RECORD,
                     "bit_length": self.bit_length,
                     "n2_prime_bits": self.n2_prime_bits,
                     "n_mod": gp.digits(self.n_mod),

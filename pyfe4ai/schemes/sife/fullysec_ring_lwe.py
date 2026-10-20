@@ -114,15 +114,15 @@ from pyfe4ai.primitives.lattice.ring_lwe_utils import ntt_inverse
 from pyfe4ai.primitives.sampling import scheme_sampler
 from pyfe4ai.primitives.sampling import discrete_gaussian_matrix
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.versions import record_matches
+from pyfe4ai.core.versions import SIFE_FULLYSEC_RING_LWE_PACKED_RECORD
+from pyfe4ai.core.versions import SIFE_FULLYSEC_RING_LWE_RECORD
 from pyfe4ai._validation import int_vector
 from pyfe4ai._validation import scale_to_int
 from pyfe4ai.primitives.lattice.ring_lwe_utils import seeded_polynomial
 
 logger = logging.getLogger(__name__)
 
-_PARAM_VERSION = "bmms21-sec5/v2"  # a expanded from a stored seed
-#: Record version of the packed layout (leveraging over the span of the differences).
-_PACKED_PARAM_VERSION = "bmms21-sec5-packed/v2"  # v2: eta = 1 with the basis [1]
 #: Values of the ``ndarray_layout`` option; the first is the default.
 LAYOUTS = ("elementwise", "packed")
 #: Default Gaussian sampler of this scheme (``gaussian_sampler`` option): the
@@ -229,30 +229,23 @@ class SIFEFullySecRingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         return self.ndarray_layout == "packed"
 
     def _param_version(self) -> str:
-        return _PACKED_PARAM_VERSION if self._packed() else _PARAM_VERSION
+        return SIFE_FULLYSEC_RING_LWE_PACKED_RECORD if self._packed() else SIFE_FULLYSEC_RING_LWE_RECORD
 
     def _param_verification(self, param: dict) -> bool:
         """The cached record must match the config and the parameters derived from
         it (only the seed of ``a`` is random; ``a`` must contain a unit)."""
-        if not (
-            param.get("param_version") == self._param_version()
-            and param.get("ndarray_layout", LAYOUTS[0]) == self.ndarray_layout
-            and param.get("sec_param") == self.sec_param
-            and param.get("eta") == self.eta
-            and param.get("bound_x") == gp.digits(self.bound_x)
-            and param.get("bound_y") == gp.digits(self.bound_y)
-            and param.get("ring_n_config") == self.ring_n_config
-            and param.get("m_config") == self.m_config
-            and param.get("profile") == self.security_profile
-        ):
+        if not record_matches(param, {
+            "param_version": self._param_version(), "ndarray_layout": self.ndarray_layout,
+            "sec_param": self.sec_param, "eta": self.eta, "bound_x": gp.digits(self.bound_x),
+            "bound_y": gp.digits(self.bound_y), "ring_n_config": self.ring_n_config, "m_config": self.m_config,
+            "profile": self.security_profile,
+        }):
             return False
         expected = self._derive()
-        if (
-            param.get("q") != gp.digits(expected["q"])
-            or param.get("p") != gp.digits(expected["p"])
-            or (param.get("ring_n"), param.get("m")) != (expected["ring_n"], expected["m"])
-            or any(param.get(k) != expected[k] for k in ("sigma", "sigma_lhl", "sigma1", "sigma2", "sigma3"))
-        ):
+        if not record_matches(param, {
+            "q": gp.digits(expected["q"]), "p": gp.digits(expected["p"]), "ring_n": expected["ring_n"],
+            "m": expected["m"], **{k: expected[k] for k in ("sigma", "sigma_lhl", "sigma1", "sigma2", "sigma3")},
+        }):
             return False
         q, n = expected["q"], expected["ring_n"]
         a = _seeded_a(param["a_seed"], q, n, expected["m"])

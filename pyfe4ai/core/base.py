@@ -12,6 +12,7 @@ from os import path
 import numpy as np
 
 from pyfe4ai.core import profiles
+from pyfe4ai.core import versions
 from pyfe4ai.core.status import warn_if_known_insecure
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
@@ -95,7 +96,7 @@ class ParameterCacheMixin:
         folder = os.path.join(self.config_folder, self._scheme_type)
         os.makedirs(folder, exist_ok=True)
         param_file = os.path.join(folder, self._param_file_name())
-        if self._holds_dcr_modulus and getattr(self, "security_profile", None) == profiles.STANDARD:
+        if not versions.caches_record(self):
             fd, tmp_file = tempfile.mkstemp(dir=folder, prefix=".param-", suffix=".json")
             os.close(fd)
             try:

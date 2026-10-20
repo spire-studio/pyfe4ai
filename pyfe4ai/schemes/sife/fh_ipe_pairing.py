@@ -39,6 +39,7 @@ from pyfe4ai.primitives.pairing.pairing_backend import deserialize_many, pow_man
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.primitives.pairing.pairing_backend import require_pairing_backend
 from pyfe4ai.core.exceptions import FEKeyError, FEValidationError
+from pyfe4ai.core.versions import record_matches
 from pyfe4ai._validation import int_vector
 from pyfe4ai.primitives.pairing.pairing_utils import (
     bounded_discrete_log_gt,
@@ -86,13 +87,10 @@ class SIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.order = gp.mpz(int(self.group.order()))
 
     def _param_verification(self, param: dict) -> bool:
-        return (
-            param.get("sec_param") == self.sec_param
-            and param.get("eta") == self.eta
-            and param.get("bound_x") == gp.digits(self.bound_x)
-            and param.get("bound_y") == gp.digits(self.bound_y)
-            and param.get("pairing_group_param") == self.pairing_group_param
-        )
+        return record_matches(param, {
+            "sec_param": self.sec_param, "eta": self.eta, "bound_x": gp.digits(self.bound_x),
+            "bound_y": gp.digits(self.bound_y), "pairing_group_param": self.pairing_group_param,
+        })
 
     def _generate_and_save(self, param_file: str) -> None:
         with open(param_file, "w", encoding="utf-8") as f:

@@ -69,12 +69,12 @@ from pyfe4ai.primitives.groups.integer_groups import _random
 from pyfe4ai.primitives.hashing import hash_to_qr_group
 from pyfe4ai.primitives.groups.dlog_solver import load_or_build_dlog_table, dlog_table_solve
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.versions import TMCFE_DDH_RECORD
 from pyfe4ai._validation import scale_to_int
 
 logger = logging.getLogger(__name__)
 
 _LABEL_HASH_DOMAIN = "pyfe4ai/mcfe/ddh_threshold/H(label)"
-_CONSTRUCTION = "cdgpp18-shamir/v1"
 
 
 def _hash_encoded(encoded: str, p: gp.mpz) -> list:
@@ -120,7 +120,7 @@ class ThresholdMCFEKeyGenerator(DDHKeyGeneratorBase):
                 "lst_sid has {} servers but s={}".format(len(self.lst_sid), self.s)
             )
         validate_threshold(self.t, self.lst_sid)
-        self.construction = _CONSTRUCTION
+        self.construction = TMCFE_DDH_RECORD
         self._load_parameters()
         self.dict_dk = {}
 

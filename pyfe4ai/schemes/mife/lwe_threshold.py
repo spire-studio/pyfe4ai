@@ -87,7 +87,7 @@ default. Servers refuse Shamir key shares with ``t < s`` unless created with
 ``legacy_shamir = "warn"`` (never with public parameters that record the
 ``standard`` profile); key shares of versions <= 0.3.0 are refused in any
 case (another flooding derivation, see
-:func:`~pyfe4ai.primitives.sampling.check_flooding_version`);
+:func:`~pyfe4ai.core.versions.check_flooding_version`);
 public parameters record ``threshold_construction`` and
 ``security_profile``, and servers refuse constructions they do not know.
 The opt-in ``"replicated-seeded"`` (see
@@ -150,20 +150,19 @@ from pyfe4ai.primitives.lattice.lwe_utils import wide_lwe_n
 from pyfe4ai.primitives.lattice.matrix_utils import digits_to_vector
 from pyfe4ai.primitives.lattice.matrix_utils import vecdot_mod
 from pyfe4ai.primitives.sampling import XofRandom
-from pyfe4ai.primitives.sampling import (
-    FLOODING_NOISE_VERSION,
-    FLOODING_SAMPLER,
-    check_flooding_version,
-)
+from pyfe4ai.primitives.sampling import FLOODING_SAMPLER
+from pyfe4ai.core.versions import check_tmife_lwe_construction
+from pyfe4ai.core.versions import FLOODING_NOISE_VERSION
+from pyfe4ai.core.versions import check_flooding_version
 from pyfe4ai.schemes.mife.lwe import MIFELWE
 from pyfe4ai.schemes.mife.lwe import MIFELWEKeyGenerator
 from pyfe4ai.schemes.threshold.binding import TMIFE_LWE_BINDING_DEFAULTS
 from pyfe4ai.schemes.threshold.binding import TMIFE_LWE_BINDING_FIELDS
-from pyfe4ai.schemes.threshold.binding import TMIFE_LWE_CONSTRUCTION
-from pyfe4ai.schemes.threshold.binding import TMIFE_LWE_CONSTRUCTION_KL
-from pyfe4ai.schemes.threshold.binding import TMIFE_LWE_CONSTRUCTION_REPLICATED
-from pyfe4ai.schemes.threshold.binding import TMIFE_LWE_CONSTRUCTION_REPLICATED_SEEDED
-from pyfe4ai.schemes.threshold.binding import TMIFE_LWE_CONSTRUCTIONS
+from pyfe4ai.core.versions import TMIFE_LWE_CONSTRUCTION
+from pyfe4ai.core.versions import TMIFE_LWE_CONSTRUCTION_KL
+from pyfe4ai.core.versions import TMIFE_LWE_CONSTRUCTION_REPLICATED
+from pyfe4ai.core.versions import TMIFE_LWE_CONSTRUCTION_REPLICATED_SEEDED
+from pyfe4ai.core.versions import TMIFE_LWE_CONSTRUCTIONS
 from pyfe4ai.schemes.threshold.binding import check_ciphertext_tags
 from pyfe4ai.schemes.threshold.binding import check_pp_binding
 from pyfe4ai.schemes.threshold.binding import client_server_mac_keys
@@ -186,7 +185,7 @@ from pyfe4ai.schemes.threshold.roles import combine_consistently
 from pyfe4ai.schemes.threshold.roles import combine_elementwise
 from pyfe4ai.schemes.threshold.roles import enrolled_share_options
 from pyfe4ai.schemes.threshold.roles import flooding_noise
-from pyfe4ai.schemes.threshold.roles import legacy_shamir_policy
+from pyfe4ai.core.versions import legacy_shamir_policy
 from pyfe4ai.schemes.threshold.roles import noise_seed
 from pyfe4ai.schemes.threshold.roles import validate_enrolled
 from pyfe4ai.schemes.threshold.roles import validate_partial_decryptions
@@ -408,7 +407,7 @@ class ThresholdMIFELWE(MIFELWE):
 
     A server refuses Shamir key shares with ``t < s`` (versions <= 0.3.0)
     unless its config has ``legacy_shamir = "warn"`` (see
-    :data:`~pyfe4ai.schemes.threshold.roles.LEGACY_SHAMIR_POLICIES`).
+    :data:`~pyfe4ai.core.versions.LEGACY_SHAMIR_POLICIES`).
     """
 
     def __init__(self, config: dict, **kwargs) -> None:
@@ -473,10 +472,7 @@ class ThresholdMIFELWE(MIFELWE):
             raise FEKeyError("no decryption keys provided")
         check_flooding_version(dk)
         check_key_share_server(self.id, dk, self.pp, TMIFE_LWE_CONSTRUCTIONS)
-        construction = self.pp.get("threshold_construction")
-        kl = self.pp.get("flooding_accounting", PER_SAMPLE) == KL
-        if construction is not None and (construction == TMIFE_LWE_CONSTRUCTION_KL) != kl:
-            raise FESchemeError("the public parameters' threshold_construction is not that of their accounting")
+        check_tmife_lwe_construction(self.pp, self.pp.get("flooding_accounting", PER_SAMPLE) == KL)
         binding = check_pp_binding(self.pp, dk, TMIFE_LWE_BINDING_FIELDS, TMIFE_LWE_BINDING_DEFAULTS)
         check_request(self.id, dk, lst_sid_enrolled, self.pp["t"], credentials)
         q = gp.mpz(self.pp["q"])

@@ -70,13 +70,13 @@ from pyfe4ai import backend as native_backend
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.primitives.sampling import discrete_gaussian_matrix, scheme_sampler
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.versions import record_matches
+from pyfe4ai.core.versions import RING_LWE_RECORD
 from pyfe4ai.primitives.sampling import rand_uniform_vector
 from pyfe4ai._validation import int_vector
 from pyfe4ai.primitives.lattice.ring_lwe_utils import seeded_polynomial
 
 logger = logging.getLogger(__name__)
-
-_CONSTRUCTION = "acfgu18-bmms21/v5"  # sized for n * eta, p = 2T + 2, Sec. 4.2 widths for 3X, seeded a
 
 
 class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
@@ -162,22 +162,18 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         """The cached record must match the config and the parameters derived
         from it (``q`` as :meth:`_modulus_for` gives it); only the seed of ``a``
         is random."""
-        if not (
-            param.get("construction") == _CONSTRUCTION
-            and param.get("sec_param") == self.sec_param
-            and param.get("eta") == self.eta
-            and param.get("n") == self.n
-            and param.get("bound_x") == gp.digits(self.bound_x)
-            and param.get("bound_y") == gp.digits(self.bound_y)
-            and param.get("ring_n") == self.ring_n
-            and param.get("ring_modulus", "prime") == self.ring_modulus
-        ):
+        if not record_matches(param, {
+            "construction": RING_LWE_RECORD, "sec_param": self.sec_param, "eta": self.eta, "n": self.n,
+            "bound_x": gp.digits(self.bound_x), "bound_y": gp.digits(self.bound_y), "ring_n": self.ring_n,
+            "ring_modulus": self.ring_modulus,
+        }):
             return False
         p, _, sigma1, sigma2, sigma3 = self._bmms21_tuple(self.ring_n)
         q = self._modulus_for(self.ring_n)
-        return (param.get("p"), param.get("q")) == (gp.digits(p), gp.digits(q)) and (
-            param.get("sigma1"), param.get("sigma2"), param.get("sigma3")
-        ) == (sigma1, sigma2, sigma3) and param.get("q_factors") == self._factors_for(self.ring_n)
+        return record_matches(param, {
+            "p": gp.digits(p), "q": gp.digits(q), "sigma1": sigma1, "sigma2": sigma2, "sigma3": sigma3,
+            "q_factors": self._factors_for(self.ring_n),
+        })
 
     def _generate_and_save(self, param_file: str) -> None:
         # only the sum over all slots is decoded: size p (and the noise) as
@@ -193,7 +189,7 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.a_seed = secrets.token_hex(32)
         self.A = seeded_polynomial(self.a_seed, self.q, self.ring_n)
         record = {
-            "construction": _CONSTRUCTION,
+            "construction": RING_LWE_RECORD,
             "sec_param": self.sec_param,
             "eta": self.eta,
             "n": self.n,
