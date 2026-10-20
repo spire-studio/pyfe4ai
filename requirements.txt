@@ -1,7 +1,6 @@
 # Core dependencies (must match pyproject.toml [project.dependencies])
 gmpy2>=2.2
 numpy>=1.22
-PyYAML>=5.4
 
 # Optional: pairing-based schemes
 # charm-crypto-framework

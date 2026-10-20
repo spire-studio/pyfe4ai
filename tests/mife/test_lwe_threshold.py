@@ -5,7 +5,7 @@ import logging
 import numpy as np
 import pytest
 
-from pyfe4ai.logger import init_logging_config
+from tests.log_config import init_logging_config
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWEKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST

@@ -9,7 +9,7 @@ import numpy as np
 from pyfe4ai.schemes.sife.damgard_ddh import SIFEDamgard
 from pyfe4ai.schemes.sife.damgard_ddh import SIFEDamgardKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST
-from pyfe4ai.logger import init_logging_config
+from tests.log_config import init_logging_config
 
 init_logging_config()
 logger = logging.getLogger(__name__)

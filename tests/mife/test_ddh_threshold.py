@@ -10,7 +10,7 @@ from pyfe4ai.schemes.mife.ddh_threshold import ThresholdMIFE
 from pyfe4ai.schemes.mife.ddh_threshold import ThresholdMIFEKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
-from pyfe4ai.logger import init_logging_config
+from tests.log_config import init_logging_config
 
 init_logging_config()
 logger = logging.getLogger(__name__)

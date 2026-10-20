@@ -4,7 +4,7 @@ import logging
 import numpy as np
 import pytest
 
-from pyfe4ai.logger import init_logging_config
+from tests.log_config import init_logging_config
 from pyfe4ai.schemes.mcfe.lwe_threshold import ThresholdMCFELWE
 from pyfe4ai.schemes.mcfe.lwe_threshold import ThresholdMCFELWEKeyGenerator
 from pyfe4ai.core.exceptions import FESchemeError, FEValidationError

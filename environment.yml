@@ -7,7 +7,6 @@ dependencies:
   - pytest
   - numpy
   - gmpy2
-  - pyyaml
 #
 # Notes:
 # - This environment covers the core integer-group schemes and tests verified locally.

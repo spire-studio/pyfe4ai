@@ -8,7 +8,7 @@ import gmpy2 as gp
 from pyfe4ai.schemes.mcfe.ddh import MCFE
 from pyfe4ai.schemes.mcfe.ddh import MCFEKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST
-from pyfe4ai.logger import init_logging_config
+from tests.log_config import init_logging_config
 
 init_logging_config()
 logger = logging.getLogger(__name__)

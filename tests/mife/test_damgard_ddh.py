@@ -7,7 +7,7 @@ import numpy as np
 
 from pyfe4ai.schemes.mife.damgard_ddh import MIFEDamgard
 from pyfe4ai.schemes.mife.damgard_ddh import MIFEDamgardKeyGenerator
-from pyfe4ai.logger import init_logging_config
+from tests.log_config import init_logging_config
 
 init_logging_config()
 logger = logging.getLogger(__name__)

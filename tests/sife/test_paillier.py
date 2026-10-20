@@ -9,7 +9,7 @@ import numpy as np
 from pyfe4ai.schemes.sife.paillier import SIFEPaillier
 from pyfe4ai.schemes.sife.paillier import SIFEPaillierKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST
-from pyfe4ai.logger import init_logging_config
+from tests.log_config import init_logging_config
 
 init_logging_config()
 logger = logging.getLogger(__name__)

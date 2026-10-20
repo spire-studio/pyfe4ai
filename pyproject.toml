@@ -31,7 +31,6 @@ classifiers = [
 dependencies = [
   "gmpy2>=2.2",  # prev_prime
   "numpy>=1.22",
-  "PyYAML>=5.4",
 ]
 
 [project.optional-dependencies]
@@ -61,7 +60,7 @@ Changelog = "https://github.com/spire-studio/pyfe4ai/blob/main/CHANGELOG.md"
 include = ["pyfe4ai*"]
 
 [tool.setuptools.package-data]
-pyfe4ai = ["config.yaml", "py.typed"]
+pyfe4ai = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

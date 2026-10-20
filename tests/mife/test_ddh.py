@@ -7,7 +7,7 @@ import gmpy2 as gp
 
 from pyfe4ai.schemes.mife.ddh import MIFE
 from pyfe4ai.schemes.mife.ddh import MIFEKeyGenerator
-from pyfe4ai.logger import init_logging_config
+from tests.log_config import init_logging_config
 
 init_logging_config()
 logger = logging.getLogger(__name__)

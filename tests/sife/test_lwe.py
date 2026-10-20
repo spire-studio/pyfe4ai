@@ -6,7 +6,7 @@ import gmpy2 as gp
 import numpy as np
 import pytest
 
-from pyfe4ai.logger import init_logging_config
+from tests.log_config import init_logging_config
 from pyfe4ai.schemes.sife.lwe import SIFELWE
 from pyfe4ai.schemes.sife.lwe import SIFELWEKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST

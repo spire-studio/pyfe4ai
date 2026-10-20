@@ -4,7 +4,7 @@ import random
 import pytest
 import numpy as np
 
-from pyfe4ai.logger import init_logging_config
+from tests.log_config import init_logging_config
 from pyfe4ai.schemes.mcfe.damgard_ddh import MCFEDamgard
 from pyfe4ai.schemes.mcfe.damgard_ddh import MCFEDamgardKeyGenerator
 
