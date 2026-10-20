@@ -65,9 +65,13 @@ the Docker image above before changing pairing-based or quadratic schemes.
 
 - Cite the paper with the figure or section you implement, in the module
   docstring and in the PR, and list every deviation from it.
-- Register the scheme in `_SCHEME_REGISTRY` (`pyfe4ai/ml/wrapper.py`),
-  `SCHEME_STATUS` (`pyfe4ai/core/status.py`) and `SCHEME_KIND`
-  (`pyfe4ai/core/profiles.py`); tests check that the three agree.
+- Register the scheme in `SCHEMES` (`pyfe4ai/core/registry.py`): its id
+  `family/variant`, kind, review status, capabilities and, if the
+  `standard` profile refuses it, the reason; name its classes after the id
+  (see the registry's docstring) and add its config class to
+  `pyfe4ai/core/config.py`. The status table, the profiles' kinds, the ML
+  adapter and the benchmark scripts read the registry, and
+  `tests/test_registry.py` checks it against the code.
 - A construction of our own, with no published scheme to check it against,
   gets the status *experimental*; one checked against its paper is
   *reviewed*, with fidelity *faithful* or *adapted* (list the adaptations).

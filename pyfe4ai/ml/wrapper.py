@@ -1,5 +1,6 @@
-"""The scheme wrapper of the ML adapter: :class:`FESchemeWrapper`, its scheme
-registry and the policies of the FL helpers, and :class:`PreparedAggregation`.
+"""The scheme wrapper of the ML adapter: :class:`FESchemeWrapper` (its schemes:
+:mod:`pyfe4ai.core.registry`) and the policies of the FL helpers, and
+:class:`PreparedAggregation`.
 
 **Single trust domain.** A :class:`FESchemeWrapper` runs the key generator
 itself, so it holds the master secret key and plays every party (clients,
@@ -8,13 +9,13 @@ key authority, decryptor); see :mod:`pyfe4ai.ml`.
 
 from __future__ import annotations
 
-import importlib
 import threading
 from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 
+from pyfe4ai.core import registry
 from pyfe4ai.core.status import get_scheme_status
 from pyfe4ai.ml.quantization import QuantizationConfig
 
@@ -28,214 +29,28 @@ except ImportError:  # pragma: no cover
 
 
 # ---------------------------------------------------------------------------
-# Registry: (scheme_type, variant) → (module_path, keygen_class, crypto_class)
+# The schemes: those of the registry (pyfe4ai.core.registry), with their
+# capabilities ``labels`` (the FL helpers' labels), ``ml_servers`` (the
+# threshold schemes whose servers the wrapper runs) and their group variants
+# (the ``group`` entry of a key-generator config).
 # ---------------------------------------------------------------------------
 
-_SCHEME_REGISTRY: dict[tuple[str, str], tuple[str, str, str]] = {
-    # ---- SIFE ----------------------------------------------------------
-    ("sife", "ddh"): ("pyfe4ai.schemes.sife.ddh", "SIFEDDHKeyGenerator", "SIFEDDH"),
-    ("sife", "ddh_ristretto255"): (
-        "pyfe4ai.schemes.sife.ddh_ristretto255",
-        "SIFEDDHRistretto255KeyGenerator",
-        "SIFEDDHRistretto255",
-    ),
-    ("sife", "lwe"): ("pyfe4ai.schemes.sife.lwe", "SIFELWEKeyGenerator", "SIFELWE"),
-    ("sife", "paillier"): (
-        "pyfe4ai.schemes.sife.paillier",
-        "SIFEPaillierKeyGenerator",
-        "SIFEPaillier",
-    ),
-    ("sife", "damgard"): (
-        "pyfe4ai.schemes.sife.damgard_ddh",
-        "SIFEDamgardKeyGenerator",
-        "SIFEDamgard",
-    ),
-    ("sife", "ring_lwe"): (
-        "pyfe4ai.schemes.sife.ring_lwe",
-        "SIFERingLWEKeyGenerator",
-        "SIFERingLWE",
-    ),
-    ("sife", "fullysec_ring_lwe"): (
-        "pyfe4ai.schemes.sife.fullysec_ring_lwe",
-        "SIFEFullySecRingLWEKeyGenerator",
-        "SIFEFullySecRingLWE",
-    ),
-    ("sife", "fullysec_lwe"): (
-        "pyfe4ai.schemes.sife.fullysec_lwe",
-        "SIFEFullySecLWEKeyGenerator",
-        "SIFEFullySecLWE",
-    ),
-    ("sife", "ddh_dynamic"): (
-        "pyfe4ai.schemes.sife.ddh_dynamic",
-        "SIFEDDHDynamicKeyGenerator",
-        "SIFEDDHDynamic",
-    ),
-    ("sife", "fh_ipe_pairing"): (
-        "pyfe4ai.schemes.sife.fh_ipe_pairing",
-        "SIFEFHIPEPairingKeyGenerator",
-        "SIFEFHIPEPairing",
-    ),
-    ("sife", "part_fh_ipe_pairing"): (
-        "pyfe4ai.schemes.sife.part_fh_ipe_pairing",
-        "SIFEPartFHIPEPairingKeyGenerator",
-        "SIFEPartFHIPEPairing",
-    ),
-    # ---- MIFE ----------------------------------------------------------
-    ("mife", "ddh"): ("pyfe4ai.schemes.mife.ddh", "MIFEDDHKeyGenerator", "MIFEDDH"),
-    ("mife", "ddh_ristretto255"): (
-        "pyfe4ai.schemes.mife.ddh_ristretto255",
-        "MIFEDDHRistretto255KeyGenerator",
-        "MIFEDDHRistretto255",
-    ),
-    ("mife", "lwe"): ("pyfe4ai.schemes.mife.lwe", "MIFELWEKeyGenerator", "MIFELWE"),
-    ("mife", "paillier"): (
-        "pyfe4ai.schemes.mife.paillier",
-        "MIFEPaillierKeyGenerator",
-        "MIFEPaillier",
-    ),
-    ("mife", "damgard"): (
-        "pyfe4ai.schemes.mife.damgard_ddh",
-        "MIFEDamgardKeyGenerator",
-        "MIFEDamgard",
-    ),
-    ("mife", "ring_lwe"): (
-        "pyfe4ai.schemes.mife.ring_lwe",
-        "MIFERingLWEKeyGenerator",
-        "MIFERingLWE",
-    ),
-    ("mife", "fullysec_lwe"): (
-        "pyfe4ai.schemes.mife.fullysec_lwe",
-        "MIFEFullySecLWEKeyGenerator",
-        "MIFEFullySecLWE",
-    ),
-    ("mife", "fh_ipe_pairing"): (
-        "pyfe4ai.schemes.mife.fh_ipe_pairing",
-        "MIFEFHIPEPairingKeyGenerator",
-        "MIFEFHIPEPairing",
-    ),
-    ("mife", "fh_multi_ipe_pairing"): (
-        "pyfe4ai.schemes.mife.fh_multi_ipe_pairing",
-        "MIFEFHMultiIPEPairingKeyGenerator",
-        "MIFEFHMultiIPEPairing",
-    ),
-    ("mife", "ddh_threshold"): (
-        "pyfe4ai.schemes.mife.ddh_threshold",
-        "ThresholdMIFEDDHKeyGenerator",
-        "ThresholdMIFEDDH",
-    ),
-    ("mife", "lwe_threshold"): (
-        "pyfe4ai.schemes.mife.lwe_threshold",
-        "ThresholdMIFELWEKeyGenerator",
-        "ThresholdMIFELWE",
-    ),
-    # ---- MCFE ----------------------------------------------------------
-    ("mcfe", "ddh"): ("pyfe4ai.schemes.mcfe.ddh", "MCFEDDHKeyGenerator", "MCFEDDH"),
-    ("mcfe", "ddh_ristretto255"): (
-        "pyfe4ai.schemes.mcfe.ddh_ristretto255",
-        "MCFEDDHRistretto255KeyGenerator",
-        "MCFEDDHRistretto255",
-    ),
-    ("mcfe", "lwe"): ("pyfe4ai.schemes.mcfe.lwe", "MCFELWEKeyGenerator", "MCFELWE"),
-    ("mcfe", "paillier"): (
-        "pyfe4ai.schemes.mcfe.paillier",
-        "MCFEPaillierKeyGenerator",
-        "MCFEPaillier",
-    ),
-    ("mcfe", "damgard"): (
-        "pyfe4ai.schemes.mcfe.damgard_ddh",
-        "MCFEDamgardKeyGenerator",
-        "MCFEDamgard",
-    ),
-    ("mcfe", "ring_lwe"): (
-        "pyfe4ai.schemes.mcfe.ring_lwe",
-        "MCFERingLWEKeyGenerator",
-        "MCFERingLWE",
-    ),
-    ("mcfe", "fullysec_lwe"): (
-        "pyfe4ai.schemes.mcfe.fullysec_lwe",
-        "MCFEFullySecLWEKeyGenerator",
-        "MCFEFullySecLWE",
-    ),
-    ("mcfe", "fh_multi_ipe_pairing"): (
-        "pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing",
-        "MCFEFHMultiIPEPairingKeyGenerator",
-        "MCFEFHMultiIPEPairing",
-    ),
-    ("mcfe", "fh_multi_ipe_pairing_threshold"): (
-        "pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold",
-        "ThresholdMCFEFHMultiIPEPairingKeyGenerator",
-        "ThresholdMCFEFHMultiIPEPairing",
-    ),
-    ("mcfe", "fh_multi_ipe_pairing_decentralized"): (
-        "pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized",
-        "DecentralizedMCFEFHMultiIPEPairingKeyGenerator",
-        "DecentralizedMCFEFHMultiIPEPairing",
-    ),
-    ("mcfe", "ddh_threshold"): (
-        "pyfe4ai.schemes.mcfe.ddh_threshold",
-        "ThresholdMCFEDDHKeyGenerator",
-        "ThresholdMCFEDDH",
-    ),
-    ("mcfe", "ddh_decentralized"): (
-        "pyfe4ai.schemes.mcfe.ddh_decentralized",
-        "DecentralizedMCFEDDHKeyGenerator",
-        "DecentralizedMCFEDDH",
-    ),
-    ("mcfe", "lwe_threshold"): (
-        "pyfe4ai.schemes.mcfe.lwe_threshold",
-        "ThresholdMCFELWEKeyGenerator",
-        "ThresholdMCFELWE",
-    ),
-    ("mcfe", "lwe_decentralized"): (
-        "pyfe4ai.schemes.mcfe.lwe_decentralized",
-        "DecentralizedMCFELWEKeyGenerator",
-        "DecentralizedMCFELWE",
-    ),
-    ("mcfe", "ring_lwe_threshold"): (
-        "pyfe4ai.schemes.mcfe.ring_lwe_threshold",
-        "ThresholdMCFERingLWEKeyGenerator",
-        "ThresholdMCFERingLWE",
-    ),
-    ("mcfe", "ring_lwe_decentralized"): (
-        "pyfe4ai.schemes.mcfe.ring_lwe_decentralized",
-        "DecentralizedMCFERingLWEKeyGenerator",
-        "DecentralizedMCFERingLWE",
-    ),
-    ("mcfe", "paillier_decentralized"): (
-        "pyfe4ai.schemes.mcfe.paillier_decentralized",
-        "DecentralizedMCFEPaillierKeyGenerator",
-        "DecentralizedMCFEPaillier",
-    ),
-    # ---- Quadratic -----------------------------------------------------
-    ("quadratic", "quad"): (
-        "pyfe4ai.schemes.quadratic.quad",
-        "QuadraticQuadKeyGenerator",
-        "QuadraticQuad",
-    ),
-    ("quadratic", "sgp"): (
-        "pyfe4ai.schemes.quadratic.sgp",
-        "QuadraticSGPKeyGenerator",
-        "QuadraticSGP",
-    ),
-    ("quadratic", "miqfe"): (
-        "pyfe4ai.schemes.quadratic.miqfe",
-        "QuadraticMIQFEKeyGenerator",
-        "QuadraticMIQFE",
-    ),
-}
 
-# Schemes whose encrypt/decrypt require a label argument.
-_LABEL_SCHEMES = frozenset({"mcfe"})
+def _group_variant(key: tuple[str, str], group: str) -> tuple[str, str]:
+    """The registered scheme that instantiates *key* in *group*: for
+    ``group="ristretto255"`` the ``ddh_ristretto255`` variant of a ``ddh``
+    scheme (a variant of that group itself is kept); ``"modp"`` (or no
+    entry) keeps the 3072-bit ``Z_p^*`` subgroup of the ``ddh`` variants.
 
-#: Threshold variants whose decryption servers the wrapper runs (FL helpers).
-_SERVED_THRESHOLD = frozenset({("mcfe", "ring_lwe_threshold")})
-
-#: Instantiations selected with the ``group`` entry of a key-generator config:
-#: ``{group: {(family, variant): variant in that group}}``. ``"modp"`` (or no
-#: entry) keeps the 3072-bit ``Z_p^*`` subgroup of the ``ddh`` variants.
-_GROUP_VARIANTS = {
-    "ristretto255": {(f, "ddh"): "ddh_ristretto255" for f in ("sife", "mife", "mcfe")},
-}
+    Raises:
+        ValueError: If *key* has no variant in *group*.
+    """
+    by_group = {(s.family, s.instance_of): s.variant for s in registry.SCHEMES if s.group == group}
+    if key in by_group:
+        return key[0], by_group[key]
+    if key[1] not in by_group.values():
+        raise ValueError("{}/{} has no instantiation in group {!r}".format(*key, group))
+    return key
 
 
 def _require_single_decryptor(wrapper: "FESchemeWrapper", api: str, served_threshold: bool = False) -> None:
@@ -245,12 +60,13 @@ def _require_single_decryptor(wrapper: "FESchemeWrapper", api: str, served_thres
     and decrypt in one shot. Decentralized variants have no central key
     derivation (each client contributes a key share) and threshold variants
     need partial decryptions from at least ``t`` servers, so neither fits --
-    but for the helpers that run the servers of :data:`_SERVED_THRESHOLD`
-    (*served_threshold*).
+    but for the helpers that run the servers of the schemes with the
+    capability ``ml_servers`` (*served_threshold*).
     """
     if served_threshold and _serves_threshold(wrapper):
         return
-    if wrapper.variant.endswith("_decentralized"):
+    scheme = registry.get_scheme((wrapper.scheme_type, wrapper.variant))
+    if scheme.has(registry.DECENTRALIZED):
         raise NotImplementedError(
             "{}() does not support '{}/{}': decentralized schemes have no "
             "central decryption key. Derive the key with "
@@ -260,7 +76,7 @@ def _require_single_decryptor(wrapper: "FESchemeWrapper", api: str, served_thres
                 api, wrapper.scheme_type, wrapper.variant
             )
         )
-    if wrapper.variant.endswith("_threshold"):
+    if scheme.has(registry.THRESHOLD):
         raise NotImplementedError(
             "{}() does not support '{}/{}': threshold schemes need partial "
             "decryptions from at least t servers (compute_lst_ndarray_ct() "
@@ -272,16 +88,18 @@ def _require_single_decryptor(wrapper: "FESchemeWrapper", api: str, served_thres
 
 
 def _serves_threshold(wrapper: "FESchemeWrapper") -> bool:
-    """Whether the wrapper runs the decryption servers of its scheme."""
-    return (wrapper.scheme_type, wrapper.variant) in _SERVED_THRESHOLD
+    """Whether the wrapper runs the decryption servers of its scheme
+    (capability ``ml_servers``)."""
+    return "{}/{}".format(wrapper.scheme_type, wrapper.variant) in registry.list_schemes(
+        capabilities=registry.ML_SERVERS)
 
 
 def _require_served_threshold(wrapper: "FESchemeWrapper", api: str) -> None:
     if not _serves_threshold(wrapper):
         raise NotImplementedError(
             "{}() is for the threshold MCFE whose servers the wrapper runs ({}), not '{}/{}'".format(
-                api, ", ".join(sorted("/".join(key) for key in _SERVED_THRESHOLD)), wrapper.scheme_type,
-                wrapper.variant))
+                api, ", ".join(sorted(registry.list_schemes(capabilities=registry.ML_SERVERS))),
+                wrapper.scheme_type, wrapper.variant))
 
 
 def _require_labelled_aggregation(wrapper: "FESchemeWrapper", api: str) -> None:
@@ -343,17 +161,17 @@ class FESchemeWrapper:
     underlying scheme family. The wrapper runs the key generator itself and
     so forms a single trust domain (see :mod:`pyfe4ai.ml`).
 
-    Every registered ``(scheme_type, variant)`` pair is accepted: the keys of
-    :data:`~pyfe4ai.core.status.SCHEME_STATUS` (for example
-    ``("sife", "ddh")``, ``("mcfe", "lwe_threshold")``), with their review
-    status in :attr:`status`. The FL helpers are narrower:
+    Every registered ``(scheme_type, variant)`` pair is accepted: the
+    schemes of :mod:`pyfe4ai.core.registry` (for example ``("sife", "ddh")``,
+    ``("mcfe", "lwe_threshold")``), with their review status in
+    :attr:`status`. The FL helpers are narrower:
     :func:`encrypt_gradient` and :func:`aggregate_gradients` refuse MIFE (no
     labels, so a key holder could combine a client's ciphertexts across
     elements or rounds), and :func:`aggregate_gradients` and
     :func:`compute_linear` refuse the ``*_decentralized`` and ``*_threshold``
     variants, whose decryption is a multi-party protocol; use the scheme
-    classes directly for those. The exception is ``mcfe/ring_lwe_threshold``,
-    whose ``s`` decryption servers the wrapper runs (see the module
+    classes directly for those. The exception is ``mcfe/ring_lwe_threshold``
+    (capability ``ml_servers``), whose ``s`` decryption servers the wrapper runs (see the module
     docstring): :func:`aggregate_gradients` and :func:`prepare_aggregation`
     take it, with the enrolled ``servers``.
 
@@ -373,7 +191,7 @@ class FESchemeWrapper:
         scheme_type: ``"sife"``, ``"mife"``, ``"mcfe"`` or ``"quadratic"``.
         variant: Variant name within the family, e.g. ``"ddh"``, ``"lwe"``,
             ``"damgard"``, ``"paillier"``, ``"ring_lwe"`` or
-            ``"lwe_threshold"`` (see :data:`~pyfe4ai.core.status.SCHEME_STATUS`).
+            ``"lwe_threshold"`` (see :func:`pyfe4ai.list_schemes`).
         keygen_config: Configuration dict for the KeyGenerator (``sec_param``,
             ``eta``, ``n``, ``bound_x``, ``security_profile``, etc.).
             ``group="ristretto255"`` selects the elliptic-curve instantiation
@@ -398,32 +216,28 @@ class FESchemeWrapper:
         crypto_options: dict | None = None,
     ) -> None:
         key = (scheme_type.lower(), variant.lower())
+        registered = {s.key for s in registry.SCHEMES}
         group = keygen_config.get("group")
-        if group not in (None, "modp") and key in _SCHEME_REGISTRY:
-            by_group = _GROUP_VARIANTS.get(group, {})
-            if key in by_group:
-                key = (key[0], by_group[key])
-            elif key[1] not in by_group.values():
-                raise ValueError("{}/{} has no instantiation in group {!r}".format(*key, group))
-        if key not in _SCHEME_REGISTRY:
-            supported = sorted(f"{s}/{v}" for s, v in _SCHEME_REGISTRY)
+        if group not in (None, "modp") and key in registered:
+            key = _group_variant(key, group)
+        if key not in registered:
+            supported = sorted(registry.list_schemes())
             raise ValueError(
                 f"Unknown scheme '{scheme_type}/{variant}'. "
                 f"Supported: {supported}"
             )
+        scheme = registry.get_scheme(key)
 
         self.scheme_type, self.variant = key
         self.keygen_config = dict(keygen_config)
         self.crypto_options = dict(crypto_options or {})
         self.qconfig = QuantizationConfig(precision=precision, mode=qmode)
-        self.has_label = self.scheme_type in _LABEL_SCHEMES
+        self.has_label = scheme.has(registry.LABELS)
         #: Review status of the scheme (see :mod:`pyfe4ai.core.status`).
         self.status = get_scheme_status(*key)
 
-        mod_path, kg_cls_name, crypto_cls_name = _SCHEME_REGISTRY[key]
-        mod = importlib.import_module(mod_path)
-        self._kg_cls = getattr(mod, kg_cls_name)
-        self._crypto_cls = getattr(mod, crypto_cls_name)
+        self._kg_cls = scheme.key_generator
+        self._crypto_cls = scheme.crypto
 
         # KeyGenerator lifecycle
         self.kg = self._kg_cls(self.keygen_config)

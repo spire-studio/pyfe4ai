@@ -134,5 +134,43 @@ class SchemeStatusTable(SphinxDirective):
         return container.children
 
 
+class SchemeRegistryTable(SphinxDirective):
+    """Render ``pyfe4ai.core.registry.SCHEMES`` (ids, classes, kinds,
+    capabilities, refusals) as a table."""
+
+    def run(self):
+        from pyfe4ai.core import registry
+
+        lines = [
+            ".. list-table::",
+            "   :header-rows: 1",
+            "   :widths: 18 30 8 24 8",
+            "",
+            "   * - Scheme",
+            "     - Classes (crypto, key generator, config)",
+            "     - Kind",
+            "     - Capabilities",
+            "     - ``standard``",
+        ]
+        for scheme in registry.SCHEMES:
+            lines += [
+                f"   * - ``{scheme.id}``",
+                f"     - :class:`~{scheme.module}.{scheme.crypto_name}`, "
+                f":class:`~{scheme.module}.{scheme.key_generator_name}`, "
+                f":class:`~pyfe4ai.core.config.{scheme.config_name}`",
+                f"     - ``{scheme.kind}``",
+                "     - " + (", ".join(f"``{c}``" for c in sorted(scheme.capabilities)) or "--"),
+                "     - " + ("refused" if scheme.refused else "yes"),
+            ]
+        container = nodes.container()
+        self.state.nested_parse(
+            StringList(lines, source="pyfe4ai.core.registry.SCHEMES"),
+            self.content_offset,
+            container,
+        )
+        return container.children
+
+
 def setup(app):
     app.add_directive("scheme-status-table", SchemeStatusTable)
+    app.add_directive("scheme-registry-table", SchemeRegistryTable)

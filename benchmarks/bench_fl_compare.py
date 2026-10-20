@@ -64,7 +64,7 @@ from unittest import mock
 
 import numpy as np
 
-#: family -> (registry key, keygen config without bounds, default element count)
+#: family -> (scheme, keygen config without bounds, default element count); the schemes of pyfe4ai.core.registry
 FAMILIES = {
     "ring_lwe": (("mcfe", "ring_lwe"), {"eta": 1}, 10_000),
     "ring_lwe_threshold": (("mcfe", "ring_lwe_threshold"), {"eta": 1}, 10_000),
@@ -268,14 +268,11 @@ def measure(family: str, elements: int, clients: int, rounds: int, precision: in
 def measure_threshold(family: str, elements: int, clients: int, rounds: int, precision: int, bound_x: int,
                       profile: str, servers: int, threshold: int, extra: dict | None = None) -> dict:
     """:func:`measure` for a threshold scheme, on its classes (see the module docstring)."""
-    import importlib
-
-    from pyfe4ai.ml.wrapper import _SCHEME_REGISTRY
+    from pyfe4ai.core.registry import get_scheme
 
     key, base_cfg, _ = FAMILIES[family]
-    mod_path, kg_name, crypto_name = _SCHEME_REGISTRY[key]
-    mod = importlib.import_module(mod_path)
-    crypto_cls = getattr(mod, crypto_name)
+    scheme = get_scheme(key)
+    crypto_cls = scheme.crypto
     nids = ["c{}".format(i) for i in range(clients)]
     sids = ["s{}".format(i) for i in range(servers)]
     cfg = dict(base_cfg, n=clients, lst_nid=nids, s=servers, t=threshold, lst_sid=sids,
@@ -284,7 +281,7 @@ def measure_threshold(family: str, elements: int, clients: int, rounds: int, pre
            "clients": clients, "servers": servers, "threshold": threshold, "rounds": rounds,
            "precision": precision, "bound_x": bound_x, **(extra or {})}
     t0 = time.perf_counter()
-    kg = getattr(mod, kg_name)(cfg)
+    kg = scheme.key_generator(cfg)
     kg.setup()
     row["setup_s"] = time.perf_counter() - t0
     pp = kg.get_public_parameters()
@@ -364,21 +361,18 @@ def measure_decentralized(family: str, elements: int, clients: int, rounds: int,
                           profile: str, ct_format: str = "json", extra: dict | None = None) -> dict:
     """:func:`measure` for a decentralized scheme: every client derives a key
     share for the round, the aggregator combines them and decrypts the sum."""
-    import importlib
-
-    from pyfe4ai.ml.wrapper import _SCHEME_REGISTRY
+    from pyfe4ai.core.registry import get_scheme
 
     key, base_cfg, _ = FAMILIES[family]
-    mod_path, kg_name, crypto_name = _SCHEME_REGISTRY[key]
-    mod = importlib.import_module(mod_path)
-    crypto_cls = getattr(mod, crypto_name)
+    scheme = get_scheme(key)
+    crypto_cls = scheme.crypto
     nids = ["c{}".format(i) for i in range(clients)]
     cfg = dict(base_cfg, n=clients, lst_nid=nids, security_profile=profile, **_bounds(family, bound_x), **(extra or {}))
     row = {"family": family, "scheme": "/".join(key), "profile": profile, "elements": elements,
            "clients": clients, "rounds": rounds, "precision": precision, "bound_x": bound_x, "ct_format": ct_format,
            **(extra or {})}
     t0 = time.perf_counter()
-    kg = getattr(mod, kg_name)(cfg)
+    kg = scheme.key_generator(cfg)
     kg.setup()
     row["setup_s"] = time.perf_counter() - t0
     pp = kg.get_public_parameters()

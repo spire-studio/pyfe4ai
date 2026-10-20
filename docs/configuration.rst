@@ -20,7 +20,7 @@ Security profiles
      - ``sife/paillier``, ``mife/paillier``, ``mcfe/paillier``, ``mcfe/paillier_decentralized``
      - ``bit_length`` >= ``1536``; ``stat_param`` >= ``128``
    * - dl
-     - ``sife/ddh``, ``sife/ddh_dynamic``, ``sife/damgard``, ``mife/ddh``, ``mife/damgard``, ``mife/ddh_threshold``, ``mcfe/ddh``, ``mcfe/damgard``, ``mcfe/ddh_threshold``, ``mcfe/ddh_decentralized``
+     - ``sife/ddh``, ``sife/damgard``, ``sife/ddh_dynamic``, ``mife/ddh``, ``mife/damgard``, ``mife/ddh_threshold``, ``mcfe/ddh``, ``mcfe/damgard``, ``mcfe/ddh_threshold``, ``mcfe/ddh_decentralized``
      - ``sec_param`` >= ``3072``; ``modulus_length`` >= ``3072``; ``stat_param`` >= ``128``
    * - ec
      - ``sife/ddh_ristretto255``, ``mife/ddh_ristretto255``, ``mcfe/ddh_ristretto255``
@@ -38,13 +38,13 @@ Security profiles
      - ``sife/fh_ipe_pairing``, ``sife/part_fh_ipe_pairing``, ``mife/fh_ipe_pairing``, ``mife/fh_multi_ipe_pairing``, ``mcfe/fh_multi_ipe_pairing``, ``mcfe/fh_multi_ipe_pairing_threshold``, ``mcfe/fh_multi_ipe_pairing_decentralized``, ``quadratic/quad``, ``quadratic/sgp``, ``quadratic/miqfe``
      - ``pairing_group_param = 'BLS12-381'`` only, with a ``FESecurityWarning``
    * - ring_lwe
-     - ``sife/ring_lwe``, ``mife/ring_lwe``, ``mcfe/ring_lwe``, ``sife/fullysec_ring_lwe``, ``mcfe/ring_lwe_threshold``, ``mcfe/ring_lwe_decentralized``
+     - ``sife/ring_lwe``, ``sife/fullysec_ring_lwe``, ``mife/ring_lwe``, ``mcfe/ring_lwe``, ``mcfe/ring_lwe_threshold``, ``mcfe/ring_lwe_decentralized``
      - ``sec_param`` >= ``128``; ``stat_param`` >= ``128``; ``ring_n = 'auto'``
 
 Refused under ``standard`` (``FEValidationError``):
 
-* ``mife/lwe_threshold``: read at the width sigma / (1 + 4 X sqrt(eta)) of its security reduction, the LWE of its flooding-enlarged q (stat_param 128) needs a dimension at the very end of the 128-bit table (5888 to 6144, a public matrix of 6.5 to 7.8*10^9 entries) for a few small bounds, e.g. X = Y in {1, 2, 3, 8, 10} at eta = 1, and beyond it for most others (X = Y = 4 to 6, X = Y >= 12, most eta >= 2; about 6500 for X = Y = 50); use mife/ddh_threshold, or mcfe/ring_lwe_threshold with labels.
 * ``sife/fullysec_lwe``, ``mife/fullysec_lwe``: at a 128-bit dimension (lwe_n = 3328 to 4352 for X = Y <= 50, eta <= 10) its public matrix has 1 to 2*10^10 entries and every ciphertext m = 4 n log2 q = 2.9 to 4.5*10^6 coordinates of 219 to 258 bits (80 to 145 MB); use sife/fullysec_ring_lwe for adaptive security, or the Ring-LWE scheme of the same family.
+* ``mife/lwe_threshold``: read at the width sigma / (1 + 4 X sqrt(eta)) of its security reduction, the LWE of its flooding-enlarged q (stat_param 128) needs a dimension at the very end of the 128-bit table (5888 to 6144, a public matrix of 6.5 to 7.8*10^9 entries) for a few small bounds, e.g. X = Y in {1, 2, 3, 8, 10} at eta = 1, and beyond it for most others (X = Y = 4 to 6, X = Y >= 12, most eta >= 2; about 6500 for X = Y = 50); use mife/ddh_threshold, or mcfe/ring_lwe_threshold with labels.
 * ``mcfe/paillier_decentralized``: its key shares would be combined under a DCR modulus of more than 15000 bits; use mcfe/ddh_decentralized.
 
 Refused and constrained combinations

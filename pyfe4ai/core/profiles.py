@@ -113,43 +113,27 @@ The ``security_profile`` entry of a key generator's config selects one:
     Values given explicitly in the config must not be weaker than the
     profile's.
 
-The profile's rules -- its minima, presets and refusals -- are applied by
+The profile's rules -- its minima and presets per kind
+(:mod:`pyfe4ai.core.config`) and the refusals (each scheme's ``refused``
+in :mod:`pyfe4ai.core.registry`) -- are applied by
 :func:`pyfe4ai.core.config.resolve` when a key generator is built; this
 module names the profiles and the kind of every scheme.
 """
 
 from __future__ import annotations
 
-from pyfe4ai.core.status import status_for_module
+from pyfe4ai.core.registry import SCHEMES, scheme_for_module
 
 TOY = "toy"
 STANDARD = "standard"
 PROFILES = (TOY, STANDARD)
 
-#: Scheme family of every registered ``(family, variant)``.
+#: Kind of every registered ``(family, variant)`` (the parameters the
+#: profiles size: :data:`pyfe4ai.core.registry.KINDS`), derived from the
+#: registry.
 #:
 #: :meta hide-value:
-SCHEME_KIND = {
-    **{("sife", v): "dl" for v in ("ddh", "ddh_dynamic", "damgard")},
-    **{("mife", v): "dl" for v in ("ddh", "damgard", "ddh_threshold")},
-    **{("mcfe", v): "dl" for v in ("ddh", "damgard", "ddh_threshold", "ddh_decentralized")},
-    **{(f, "ddh_ristretto255"): "ec" for f in ("sife", "mife", "mcfe")},
-    **{(f, "paillier"): "dcr" for f in ("sife", "mife", "mcfe")},
-    ("mcfe", "paillier_decentralized"): "dcr",
-    **{(f, "lwe"): "lwe_abdp15" for f in ("sife", "mife")},
-    **{(f, "fullysec_lwe"): "lwe_matrix" for f in ("sife", "mife")},
-    ("mife", "lwe_threshold"): "lwe_abdp15",
-    **{("mcfe", v): "lwe" for v in ("lwe", "fullysec_lwe", "lwe_threshold", "lwe_decentralized")},
-    **{(f, "ring_lwe"): "ring_lwe" for f in ("sife", "mife", "mcfe")},
-    ("sife", "fullysec_ring_lwe"): "ring_lwe",
-    **{("mcfe", v): "ring_lwe" for v in ("ring_lwe_threshold", "ring_lwe_decentralized")},
-    **{("sife", v): "pairing" for v in ("fh_ipe_pairing", "part_fh_ipe_pairing")},
-    **{("mife", v): "pairing" for v in ("fh_ipe_pairing", "fh_multi_ipe_pairing")},
-    **{("mcfe", v): "pairing" for v in (
-        "fh_multi_ipe_pairing", "fh_multi_ipe_pairing_threshold", "fh_multi_ipe_pairing_decentralized"
-    )},
-    **{("quadratic", v): "pairing" for v in ("quad", "sgp", "miqfe")},
-}
+SCHEME_KIND = {scheme.key: scheme.kind for scheme in SCHEMES}
 
 #: Bits of each prime of a DCR modulus under ``standard`` (``N`` of 3072 bits).
 STANDARD_DCR_PRIME_BITS = 1536
@@ -165,7 +149,7 @@ MAX_STAT_PARAM = 256
 def scheme_of(cls: type) -> tuple | None:
     """Return the registered ``(family, variant)`` that *cls* implements or extends."""
     for klass in cls.__mro__:
-        found = status_for_module(klass.__module__)
+        found = scheme_for_module(klass.__module__)
         if found is not None:
-            return found[0]
+            return found.key
     return None

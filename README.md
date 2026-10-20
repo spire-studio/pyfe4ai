@@ -180,10 +180,10 @@ See `examples/sife_minimal.py` for the full runnable version.
 
 ## Scheme Status
 
-Every registered scheme carries a review status, kept in
-[`pyfe4ai/core/status.py`](pyfe4ai/core/status.py) and available at
-runtime as `pyfe4ai.get_scheme_status(family, variant)` (and
-`FESchemeWrapper(...).status`). Instantiating a key generator or crypto
+Every registered scheme carries a review status, declared with the scheme
+in the registry [`pyfe4ai/core/registry.py`](pyfe4ai/core/registry.py) and
+available at runtime as `pyfe4ai.get_scheme_status("family/variant")` (and
+`pyfe4ai.get_scheme(...).status`, `FESchemeWrapper(...).status`). Instantiating a key generator or crypto
 object of a known-insecure scheme emits a `pyfe4ai.FESecurityWarning`. The
 table below is rendered by `pyfe4ai.core.status.markdown_table()` and a
 test keeps it in sync.
@@ -286,7 +286,10 @@ side-channel hardening, trusted parameter cache) still apply.
 
 - `pyfe4ai/`: installable Python package
   - `core/`: what every scheme shares
+    - `registry.py`: the registry of the schemes (classes, kind, review status, capabilities, refusals) and `create()`
     - `base.py`: key-generator and crypto base classes, the parameter cache
+    - `config.py`: the config class of every scheme and the rules that combine options
+    - `formats/`, `versions.py`: the serialized objects and their version markers
     - `status.py`: review status of every registered scheme (the table above)
     - `profiles.py`: `security_profile` (`"toy"` / `"standard"`)
     - `one_time.py`: one-time precomputations of the offline / online encryption
@@ -296,7 +299,7 @@ side-channel hardening, trusted parameter cache) still apply.
     - `mife/`: multi-input families
     - `mcfe/`: multi-client families
     - `quadratic/`: quadratic functional encryption families
-    - `common/`: DDH and EC-DDH base classes, `abdp15_lwe.py` (shared ABDP15 parameters and seeded public matrix of SIFE- and MIFE-LWE), configuration types
+    - `common/`: DDH and EC-DDH base classes, `abdp15_lwe.py` (shared ABDP15 parameters and seeded public matrix of SIFE- and MIFE-LWE)
     - `threshold/`: shared modules of the threshold schemes: `sharing.py` (Shamir, replicated and seeded replicated sharing), `binding.py` (`pp_binding`, construction ids, client MAC tags, sharing ids, state versions), `codec.py` (JSON and binary encodings, strict parsing), `store.py` (key-share stores and caches), `roles.py` (server checks, flooding noise, combination), `kl.py` (KL accounting of the flooding)
   - `primitives/`: cryptographic building blocks
     - `lattice/`: LWE / Ring-LWE parameters and NTT (`lwe_utils.py`, `ring_lwe_utils.py`), seeded public LWE matrices (`lwe_matrix.py`), arithmetic mod q (`matrix_utils.py`)

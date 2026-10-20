@@ -1,16 +1,14 @@
 """Every pairing-based scheme runs over an asymmetric group and rejects symmetric ones."""
 
-import importlib
-
 import pytest
 
+from pyfe4ai.core import registry
 from pyfe4ai.core.exceptions import FEValidationError
-from pyfe4ai.ml.wrapper import _SCHEME_REGISTRY
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP
 from pyfe4ai.primitives.pairing.pairing_backend import PairingGroup, check_asymmetric, pairing_available
 
 PAIRING_SCHEMES = sorted(
-    key for key in _SCHEME_REGISTRY if "pairing" in key[1] or key[0] == "quadratic"
+    registry.get_scheme(scheme).key for scheme in registry.list_schemes(capabilities=registry.PAIRING_GROUP)
 )
 _CONFIG = {
     "n": 2, "m": 2, "s": 2, "t": 2, "eta": 2,
@@ -27,8 +25,7 @@ def _need(name):
 
 
 def _key_generator(key):
-    module, kg_name, _ = _SCHEME_REGISTRY[key]
-    return getattr(importlib.import_module(module), kg_name)
+    return registry.get_scheme(key).key_generator
 
 
 def test_registry_has_ten_pairing_schemes():

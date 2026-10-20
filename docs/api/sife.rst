@@ -6,7 +6,7 @@ SIFE — Single-Input Functional Encryption
 
 The key generator and crypto class of every scheme below are importable
 from :mod:`pyfe4ai.schemes.sife` under their own names (one name per class,
-no aliases).
+no aliases; the naming rule is in :mod:`pyfe4ai.core.registry`).
 
 DDH
 ---

@@ -7,17 +7,17 @@ from pathlib import Path
 import pytest
 
 from pyfe4ai import FESecurityWarning, get_scheme_status
+from pyfe4ai.core import registry
 from pyfe4ai.core import status as st
-from pyfe4ai.ml.wrapper import _SCHEME_REGISTRY
 
 README = Path(__file__).resolve().parents[1] / "README.md"
 
 
 def test_every_registered_scheme_has_a_status():
-    assert set(st.SCHEME_STATUS) == set(_SCHEME_REGISTRY)
-    for key, (module, _, _) in _SCHEME_REGISTRY.items():
-        entry = st.SCHEME_STATUS[key]
-        assert entry.module == module
+    assert list(st.SCHEME_STATUS) == [scheme.key for scheme in registry.SCHEMES]
+    for scheme in registry.SCHEMES:
+        entry = st.SCHEME_STATUS[scheme.key]
+        assert entry.module == scheme.module
         assert entry.status in (st.REVIEWED, st.EXPERIMENTAL, st.UNREVIEWED, st.KNOWN_INSECURE)
         assert entry.fidelity in (st.FAITHFUL, st.ADAPTED, st.AD_HOC, st.UNKNOWN)
         assert bool(entry.issue) == (entry.status == st.KNOWN_INSECURE)

@@ -6,8 +6,9 @@ A key generator takes its configuration as a mapping of options. When it is
 built, the mapping is converted into the config class of its scheme (a
 :class:`dict` subclass, so a config is used as a dict everywhere) and the
 security profile is applied (:func:`resolve`): unknown profiles, schemes the
-``standard`` profile refuses (:data:`REFUSED`) and values weaker than its
-minima (:data:`STANDARD_MINIMA`) are refused there, before ``__init__`` runs.
+``standard`` profile refuses (the ``refused`` reason of their entry in
+:mod:`pyfe4ai.core.registry`) and values weaker than its minima
+(:data:`STANDARD_MINIMA`) are refused there, before ``__init__`` runs.
 Each config class declares the options of its scheme (:class:`Option`: what
 it holds, its default, the values it accepts), so ``config.ring_n`` reads an
 option with its default, and the page *Configuration options* of the
@@ -42,6 +43,7 @@ from pyfe4ai.core.profiles import STANDARD_DCR_PRIME_BITS
 from pyfe4ai.core.profiles import STANDARD_STAT_PARAM
 from pyfe4ai.core.profiles import TOY
 from pyfe4ai.core.exceptions import FESecurityWarning, FEValidationError
+from pyfe4ai.core.registry import SCHEMES, get_scheme
 
 # ---------------------------------------------------------------------------
 # option values shared by several schemes
@@ -232,24 +234,6 @@ STANDARD_PAIRING_GROUP = "BLS12-381"
 #: (``{scheme: ({key: value}, reason)}``).
 STANDARD_FIXED: dict = {}
 
-#: Schemes (``(family, variant)``) and scheme kinds the ``standard`` profile
-#: refuses, with the reason.
-REFUSED = {
-    ("mife", "lwe_threshold"): "read at the width sigma / (1 + 4 X sqrt(eta)) of its security "
-    "reduction, the LWE of its flooding-enlarged q (stat_param 128) needs a dimension at the very "
-    "end of the 128-bit table (5888 to 6144, a public matrix of 6.5 to 7.8*10^9 entries) for a few "
-    "small bounds, e.g. X = Y in {1, 2, 3, 8, 10} at eta = 1, and beyond it for most others "
-    "(X = Y = 4 to 6, X = Y >= 12, most eta >= 2; about 6500 for X = Y = 50); use "
-    "mife/ddh_threshold, or mcfe/ring_lwe_threshold with labels",
-    "lwe_matrix": "at a 128-bit dimension (lwe_n = 3328 to 4352 for X = Y <= 50, eta <= 10) its "
-    "public matrix has 1 to 2*10^10 entries and every ciphertext m = 4 n log2 q = 2.9 to 4.5*10^6 "
-    "coordinates of 219 to 258 bits (80 to 145 MB); use sife/fullysec_ring_lwe for adaptive "
-    "security, or the Ring-LWE scheme of the same family",
-    ("mcfe", "paillier_decentralized"): "its key shares would be combined under a DCR modulus "
-    "of more than 15000 bits; use mcfe/ddh_decentralized",
-}
-
-
 def _copy(config):
     return type(config)(config) if isinstance(config, SchemeConfig) else dict(config)
 
@@ -278,7 +262,7 @@ def resolve(config: dict, scheme: tuple | None) -> dict:
     kind = SCHEME_KIND.get(scheme)
     if kind is None:
         raise FEValidationError("no '{}' parameters for {}".format(profile, scheme))
-    reason = REFUSED.get(scheme) or REFUSED.get(kind)
+    reason = get_scheme(scheme).refused
     if reason:
         raise FEValidationError(
             "no '{}' parameter set for {}/{}: {}".format(profile, scheme[0], scheme[1], reason)
@@ -1063,7 +1047,8 @@ class Combination:
 
 
 #: The combinations of options that are refused or constrained, besides the
-#: profile's minima and refusals (:data:`STANDARD_MINIMA`, :data:`REFUSED`).
+#: profile's minima (:data:`STANDARD_MINIMA`) and refusals (the registry's
+#: ``refused``).
 COMBINATIONS = (
     Combination("pairing schemes", "``security_profile = 'standard'`` with ``pairing_group_param`` "
                 "other than ``BLS12-381``", "``FEValidationError``; with ``BLS12-381`` a "
@@ -1193,7 +1178,7 @@ def options_rst() -> str:
     rows = []
     for kind in sorted({k for k in SCHEME_KIND.values()}):
         schemes = ", ".join("``{}/{}``".format(*s) for s, k in SCHEME_KIND.items() if k == kind)
-        if REFUSED.get(kind) or (kind not in STANDARD_MINIMA and kind != "pairing"):
+        if all(s.refused for s in SCHEMES if s.kind == kind) or (kind not in STANDARD_MINIMA and kind != "pairing"):
             standard = "refused"
         elif kind == "pairing":
             standard = "``pairing_group_param = '{}'`` only, with a ``FESecurityWarning``".format(STANDARD_PAIRING_GROUP)
@@ -1210,10 +1195,12 @@ def options_rst() -> str:
     ]
     lines += _table(rows, ("kind", "schemes", "under ``standard``"))
     lines += ["Refused under ``standard`` (``FEValidationError``):", ""]
-    for key, reason in REFUSED.items():
-        name = "``{}/{}``".format(*key) if isinstance(key, tuple) else ", ".join(
-            "``{}/{}``".format(*s) for s, k in SCHEME_KIND.items() if k == key)
-        lines.append("* {}: {}.".format(name, reason))
+    refused: dict[str, list[str]] = {}
+    for scheme in SCHEMES:
+        if scheme.refused:
+            refused.setdefault(scheme.refused, []).append("``{}``".format(scheme.id))
+    for reason, names in refused.items():
+        lines.append("* {}: {}.".format(", ".join(names), reason))
     lines.append("")
     lines += _heading("Refused and constrained combinations", "-")
     lines += _table([(c.schemes, c.when, c.outcome) for c in COMBINATIONS], ("schemes", "options", "outcome"))

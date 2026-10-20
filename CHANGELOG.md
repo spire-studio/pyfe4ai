@@ -34,7 +34,7 @@ upgrade notes first.**
   | Old | New |
   |---|---|
   | `pyfe4ai.utils.native_backend` | `pyfe4ai.backend` |
-  | `pyfe4ai.utils.ml_adapter` | `pyfe4ai.ml` (defined in `ml.wrapper`, `ml.serialization`, `ml.gradients`, `ml.threshold` and `ml.inference`; private names such as `_SCHEME_REGISTRY` from their module, here `pyfe4ai.ml.wrapper`) |
+  | `pyfe4ai.utils.ml_adapter` | `pyfe4ai.ml` (defined in `ml.wrapper`, `ml.serialization`, `ml.gradients`, `ml.threshold` and `ml.inference`; its scheme table `_SCHEME_REGISTRY` and `_LABEL_SCHEMES`: the scheme registry `pyfe4ai.core.registry`, see Scheme registry) |
   | `pyfe4ai.utils.quantization` | `pyfe4ai.ml.quantization` |
   | `pyfe4ai.utils.exceptions`, the exceptions re-exported by `pyfe4ai.utils` | `pyfe4ai.core.exceptions` |
   | `pyfe4ai.utils.crypto_constants` | `pyfe4ai.core.constants` |
@@ -46,7 +46,7 @@ upgrade notes first.**
   | `pyfe4ai.utils.pairing_backend`, `.pairing_utils`, `.bls12_381` | `pyfe4ai.primitives.pairing.pairing_backend`, `.pairing_utils`, `.bls12_381` |
   | `pyfe4ai.utils.validation` | `pyfe4ai._validation` (internal) |
   | `pyfe4ai.schemes.ipfe` | `pyfe4ai.core.base` |
-  | `pyfe4ai.schemes.status`, `pyfe4ai.schemes.profiles` | `pyfe4ai.core.status`, `pyfe4ai.core.profiles` (the profile rules, `resolve` and its tables: `pyfe4ai.core.config`) |
+  | `pyfe4ai.schemes.status`, `pyfe4ai.schemes.profiles` | `pyfe4ai.core.status`, `pyfe4ai.core.profiles` (the profile rules, `resolve` and its tables: `pyfe4ai.core.config`; the status entries, `SchemeStatus` and the status values, and the scheme kinds: `pyfe4ai.core.registry`, see Scheme registry) |
   | `pyfe4ai.schemes.one_time`, `pyfe4ai.schemes.random_offline` | `pyfe4ai.core.one_time` |
   | `pyfe4ai.schemes.abdp15_lwe`, `.ddh_base`, `.ec_ddh_base` | `pyfe4ai.schemes.common.abdp15_lwe`, `.ddh_base`, `.ec_ddh_base` |
   | `pyfe4ai.schemes.config_types` (TypedDicts) | `pyfe4ai.core.config` (config classes; see Formats, versions and configurations) |
@@ -130,12 +130,31 @@ upgrade notes first.**
   |---|---|
   | `pyfe4ai.schemes.config_types` (v0.3.0; `schemes.common.config_types` in development builds): `FEBaseConfig`; `DDHConfig`, `DamgardDDHConfig`, `LWEConfig`, `RingLWEConfig`, `PaillierConfig`, `PairingIPEConfig`, `CryptoConfig`; `MCFELWEConfig`, `MCFERingLWEConfig`, `ThresholdMCFELWEConfig`, `ThresholdMCFERingLWEConfig`, `QuadraticQuadConfig`, `QuadraticSGPConfig`, `MultiInputQuadraticConfig` | `pyfe4ai.core.config`: `SchemeConfig`; the same names, but `QuadraticMIQFEConfig` (see Class names) |
   | the same module: `PairingMultiIPEConfig`, `PartFHIPEConfig`, `ThresholdDDHConfig`, `ThresholdLWEConfig`, `ThresholdPairingMultiIPEConfig` | `pyfe4ai.core.config`: `MIFEFHMultiIPEPairingConfig`, `SIFEPartFHIPEPairingConfig`, `ThresholdConfig` (and `ThresholdMIFEDDHConfig`, `ThresholdMCFEDDHConfig`), `ThresholdSharingConfig` (and `ThresholdMIFELWEConfig`), `ThresholdMCFEFHMultiIPEPairingConfig` |
-  | `pyfe4ai.schemes.profiles` (v0.3.0; `core.profiles` in development builds): `resolve`, `STANDARD_PAIRING_GROUP`, `_STANDARD_MINIMA`, `_STANDARD_FIXED`, `_REFUSED` | `pyfe4ai.core.config`: `resolve`, `STANDARD_PAIRING_GROUP`, `STANDARD_MINIMA`, `STANDARD_FIXED`, `REFUSED` (and `STANDARD_PRESETS`) |
+  | `pyfe4ai.schemes.profiles` (v0.3.0; `core.profiles` in development builds): `resolve`, `STANDARD_PAIRING_GROUP`, `_STANDARD_MINIMA`, `_STANDARD_FIXED`, `_REFUSED` | `pyfe4ai.core.config`: `resolve`, `STANDARD_PAIRING_GROUP`, `STANDARD_MINIMA`, `STANDARD_FIXED` (and `STANDARD_PRESETS`); `_REFUSED`: the `refused` reason of each scheme in `pyfe4ai.core.registry` |
   | `pyfe4ai.utils.ring_lwe_utils.canonical_ring_ciphertext` (v0.3.0) | `pyfe4ai.core.formats.binary.canonical_ring_ciphertext` |
   | `pyfe4ai.schemes.abdp15_lwe.CONSTRUCTION` (v0.3.0); the record ids of the other schemes (private constants) | `pyfe4ai.core.versions`: `SIFE_LWE_RECORD`, `MIFE_LWE_RECORD`, `SIFE_FULLYSEC_LWE_RECORD`, ..., `DMCFE_PAILLIER_RECORD` (the same values) |
   | added after v0.3.0 (development builds): `threshold.kl`: `PER_SAMPLE`, `KL`, `FLOODING_ACCOUNTINGS`, `flooding_config`, `check_kl_threshold` | `pyfe4ai.core.config` |
   | added after v0.3.0: `primitives.lattice.ring_lwe_utils`: `encode_binary_ciphertext`, `decode_binary_ciphertext`, `encode_threshold_ciphertext`, `decode_threshold_ciphertext`, `threshold_ciphertext_from_format1`, `threshold_ciphertext_header`, `encode_values`, `decode_values` | `pyfe4ai.core.formats.binary` |
   | added after v0.3.0: `primitives.lattice.ring_lwe_utils.CT_FORMATS`; `primitives.sampling`: `FLOODING_NOISE_VERSION`, `check_flooding_version`; `mcfe.ring_lwe`: `pp_label_hash`, `ciphertext_label_hash`, `check_ciphertext_label_hashes`; `mcfe.ring_lwe_threshold.LEGACY_FLOODING` | `pyfe4ai.core.versions` |
+- **Scheme registry** (`pyfe4ai.core.registry`): one entry per scheme,
+  `SCHEMES`, the single source of what the library records about it -- its
+  id `family/variant`, module and classes (key generator, crypto class,
+  config class; named after the id, see Class names), its kind, the reason
+  the `standard` profile refuses it (if it does), its review status and its
+  capabilities: `labels`, `threshold`, `decentralized`, `pairing`,
+  `ml_servers` (the ML adapter runs its decryption servers), `binary_ct`
+  and `rns`. The tables that were kept apart are derived from it:
+  `core.status.SCHEME_STATUS` (and the README and documentation tables),
+  `core.profiles.SCHEME_KIND`, the refusals of `core.config.resolve` (the
+  former `REFUSED`), the schemes, labels, served threshold schemes and group
+  variants of the ML adapter (the private `_SCHEME_REGISTRY`,
+  `_LABEL_SCHEMES`, `_SERVED_THRESHOLD` and `_GROUP_VARIANTS` of
+  `ml.wrapper` are removed) and the scheme lookups of the benchmark
+  scripts. `SchemeStatus` and the status values are defined in the registry
+  (still importable from `pyfe4ai.core.status`, which keeps the status
+  queries); `get_scheme_status` also takes `"family/variant"`. The
+  configuration page lists the schemes of each kind and the refusals in
+  registry order.
 - **Class names**: the classes of every scheme are named after its id
   `family/variant`, one name per class: `Threshold` or `Decentralized` for
   the variants with that suffix, then the family (`SIFE`, `MIFE`, `MCFE`,

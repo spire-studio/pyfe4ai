@@ -1,6 +1,6 @@
-"""Enumerate which ML-adapter registry entries support the FL aggregation path.
+"""Enumerate which registered schemes support the FL aggregation path of the ML adapter.
 
-For every ``(scheme_type, variant)`` in ``pyfe4ai.ml.wrapper._SCHEME_REGISTRY``
+For every scheme of the registry (``pyfe4ai.core.registry``, in its order)
 this script builds a :class:`FESchemeWrapper` with the variant's own test
 configuration (``eta`` forced to 1, because the FL helpers are defined for
 ``eta = 1``), encrypts one small integer gradient per client with
@@ -38,7 +38,7 @@ from pyfe4ai.ml import (
     aggregate_gradients,
     encrypt_gradient,
 )
-from pyfe4ai.ml.wrapper import _SCHEME_REGISTRY
+from pyfe4ai.core.registry import PAIRING_GROUP, SCHEMES, get_scheme
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, pairing_available
 
 NIDS = ["nid_0", "nid_1", "nid_2"]
@@ -139,7 +139,7 @@ CONFIGS: dict[tuple[str, str], dict] = {
 
 
 def _needs_pairing(scheme_type: str, variant: str) -> bool:
-    return scheme_type == "quadratic" or "pairing" in variant
+    return get_scheme((scheme_type, variant)).has(PAIRING_GROUP)
 
 
 def _gradients(scheme_type: str, config: dict) -> dict[str, np.ndarray]:
@@ -206,7 +206,7 @@ def main() -> None:
     args = parser.parse_args()
     logging.disable(logging.CRITICAL)
 
-    missing = sorted(set(_SCHEME_REGISTRY) - set(CONFIGS))
+    missing = sorted(set(scheme.key for scheme in SCHEMES) - set(CONFIGS))
     if missing:
         raise SystemExit("no configuration for registry entries: {}".format(missing))
 
@@ -217,7 +217,7 @@ def main() -> None:
         cache = mock.patch.dict(os.environ, {"PYFE4AI_CACHE_DIR": os.path.join(tmp, "config")})
         cache.start()
         try:
-            for scheme_type, variant in _SCHEME_REGISTRY:
+            for scheme_type, variant in (scheme.key for scheme in SCHEMES):
                 status, reason = check_entry(scheme_type, variant)
                 rows.append(
                     {"scheme": "{}/{}".format(scheme_type, variant), "status": status, "reason": reason}

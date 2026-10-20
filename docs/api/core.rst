@@ -7,6 +7,17 @@ Core
 The status and security-profile modules (:mod:`pyfe4ai.core.status`,
 :mod:`pyfe4ai.core.profiles`) are documented on :doc:`../security`.
 
+Scheme Registry
+---------------
+
+.. automodule:: pyfe4ai.core.registry
+   :members:
+
+The registered schemes (``standard``: whether the ``standard`` profile
+gives the scheme parameters; see :doc:`../security`):
+
+.. scheme-registry-table::
+
 Base Classes and the Parameter Cache
 ------------------------------------
 

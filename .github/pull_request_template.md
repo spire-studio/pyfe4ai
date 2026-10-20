@@ -13,7 +13,7 @@
 - [ ] Ran the core lane locally (`python -m pytest -m core -q`)
 - [ ] Ran the pairing tests (`python -m pytest -q` with `charm-crypto`, e.g. in the `docker/Dockerfile.pairing` image) if pairing-based or quadratic schemes changed
 - [ ] Added an entry to the *Unreleased* section of `CHANGELOG.md`
-- [ ] Updated docs/README if user-facing behavior changed (for scheme changes: `status.py`, the README *Scheme Status* table via `markdown_table()`, `profiles.py`)
+- [ ] Updated docs/README if user-facing behavior changed (for scheme changes: `core/registry.py`, the README *Scheme Status* table via `markdown_table()`, `core/config.py`)
 
 ## Notes
 

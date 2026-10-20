@@ -20,12 +20,13 @@ tMCFE-LWE, tMCFE-Ring-LWE and tMCFE-FH-Multi-IPE and the carry mask of
 dMCFE-DDH: our own constructions on top of published schemes, with no
 published security proof. Query a scheme at runtime with
 :func:`pyfe4ai.get_scheme_status(family, variant)
-<pyfe4ai.core.status.get_scheme_status>` or
+<pyfe4ai.core.status.get_scheme_status>` (or ``"family/variant"``) or
 :attr:`FESchemeWrapper(...).status <pyfe4ai.ml.FESchemeWrapper.status>`;
 the key generator and crypto objects of a known-insecure scheme emit
 :class:`~pyfe4ai.core.exceptions.FESecurityWarning`. The table is rendered
-from :data:`~pyfe4ai.core.status.SCHEME_STATUS`; the status and fidelity
-values are defined in :mod:`pyfe4ai.core.status`.
+from :data:`~pyfe4ai.core.status.SCHEME_STATUS`, which is derived from the
+scheme registry (:mod:`pyfe4ai.core.registry`); the status and fidelity
+values are defined with :class:`~pyfe4ai.core.registry.SchemeStatus`.
 
 .. scheme-status-table::
 
