@@ -129,9 +129,8 @@ class Record:
         Raises:
             TypeError: For a name that is not a field.
         """
-        unknown = [name for name in values if name not in cls._fields]
-        if unknown:
-            raise TypeError("{} has no fields {}".format(cls.__name__, unknown))
+        if not cls._fields.keys() >= values.keys():
+            raise cls._unknown(values)
         return cls({name: values[name] for name in cls.FIELDS if name in values and values[name] is not ABSENT})
 
     @classmethod
@@ -143,22 +142,30 @@ class Record:
         Raises:
             TypeError: For a name of *values* that is not a field.
         """
-        record = cls(dict(base))
-        record.update(**values)
-        return record
+        if not cls._fields.keys() >= values.keys():
+            raise cls._unknown(values)
+        raw = dict(base)
+        for name, value in values.items():
+            if value is not ABSENT:
+                raw[name] = value
+        return cls(raw)
 
     def to_dict(self):
         """The wire dict (the record's own, not a copy)."""
         return self._raw
 
-    def _field(self, name: str) -> str:
-        if name not in self._fields:
-            raise AttributeError("{} has no field {!r}".format(type(self).__name__, name))
-        return name
+    @classmethod
+    def _unknown(cls, values) -> TypeError:
+        return TypeError("{} has no fields {}".format(cls.__name__, [name for name in values if name not in cls._fields]))
+
+    def _no_field(self, name: str) -> AttributeError:
+        return AttributeError("{} has no field {!r}".format(type(self).__name__, name))
 
     def get(self, name: str, default=None):
         """``d.get(name, default)`` for the declared field *name*."""
-        return self._raw.get(self._field(name), default)
+        if name in self._fields:
+            return self._raw.get(name, default)
+        raise self._no_field(name)
 
     def update(self, **values) -> None:
         """``d.update(values)`` for declared fields (a field already present
@@ -167,17 +174,23 @@ class Record:
         Raises:
             TypeError: For a name that is not a field.
         """
-        unknown = [name for name in values if name not in self._fields]
-        if unknown:
-            raise TypeError("{} has no fields {}".format(type(self).__name__, unknown))
-        self._raw.update({name: value for name, value in values.items() if value is not ABSENT})
+        if not self._fields.keys() >= values.keys():
+            raise self._unknown(values)
+        raw = self._raw
+        for name, value in values.items():
+            if value is not ABSENT:
+                raw[name] = value
 
     def pop(self, name: str, default=None):
         """``d.pop(name, default)`` for the declared field *name*."""
-        return self._raw.pop(self._field(name), default)
+        if name in self._fields:
+            return self._raw.pop(name, default)
+        raise self._no_field(name)
 
     def __contains__(self, name: str) -> bool:
-        return self._field(name) in self._raw
+        if name in self._fields:
+            return name in self._raw
+        raise self._no_field(name)
 
     def __eq__(self, other) -> bool:
         if isinstance(other, Record):

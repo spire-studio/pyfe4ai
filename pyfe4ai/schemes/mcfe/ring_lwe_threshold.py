@@ -1167,7 +1167,8 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             pp_digest = bytes.fromhex(self._pp_digest())
 
             def message_of(nid, ct):
-                if not isinstance(ct, dict) or "ct0" in RingLWECiphertext(ct) or "ct1" in RingLWECiphertext(ct):
+                rec = RingLWECiphertext(ct)
+                if not isinstance(ct, dict) or "ct0" in rec or "ct1" in rec:
                     raise ValueError("not a format-2 ciphertext")
                 digests[nid] = binary_ciphertext_digests(ct, q_int, eta, ring_n)
                 return binary_tag_message(pp_digest, encoded, ct, digests[nid])

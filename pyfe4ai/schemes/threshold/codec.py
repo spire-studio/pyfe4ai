@@ -349,9 +349,10 @@ def _tag_payload(encoded_label: str, ct: dict) -> list:
 def _chunk_with_code(ct, layer) -> dict:
     """An ndarray chunk as tagged and decrypted: with its layer's
     ``label_hash`` code (layers, not chunks, carry it)."""
-    if (isinstance(ct, dict) and isinstance(layer, dict) and "label_hash" in RingLWELayer(layer)
-            and "label_hash" not in RingLWECiphertext(ct)):
-        return RingLWECiphertext.extend(ct, label_hash=RingLWELayer(layer).label_hash).to_dict()
+    if isinstance(ct, dict) and isinstance(layer, dict):
+        layer = RingLWELayer(layer)
+        if "label_hash" in layer and "label_hash" not in RingLWECiphertext(ct):
+            return RingLWECiphertext.extend(ct, label_hash=layer.label_hash).to_dict()
     return ct
 
 
@@ -365,7 +366,8 @@ def check_ciphertext_format(dict_ct: dict, binary: bool) -> None:
     """
     if binary:
         for nid, ct in dict_ct.items():  # no JSON ciphertexts under binary public parameters
-            if isinstance(ct, dict) and ("ct0" in RingLWECiphertext(ct) or "ct1" in RingLWECiphertext(ct)):
+            rec = RingLWECiphertext(ct)
+            if isinstance(ct, dict) and ("ct0" in rec or "ct1" in rec):
                 raise FESchemeError(
                     "the ciphertext of {} is JSON; the public parameters' format is binary (ct_format, the "
                     "default): encrypt with these public parameters".format(nid))
