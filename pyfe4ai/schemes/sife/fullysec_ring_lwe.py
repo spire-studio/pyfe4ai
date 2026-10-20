@@ -94,6 +94,7 @@ import json
 import logging
 import math
 import secrets
+import warnings
 
 import gmpy2 as gp
 import numpy as np
@@ -113,7 +114,7 @@ from pyfe4ai.primitives.lattice.ring_lwe_utils import ntt_forward
 from pyfe4ai.primitives.lattice.ring_lwe_utils import ntt_inverse
 from pyfe4ai.primitives.sampling import scheme_sampler
 from pyfe4ai.primitives.sampling import discrete_gaussian_matrix
-from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, FEWarning
 from pyfe4ai._validation import int_vector
 from pyfe4ai._validation import scale_to_int
 from pyfe4ai.primitives.lattice.ring_lwe_utils import seeded_polynomial
@@ -562,6 +563,7 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
         bound = len(y) * int(self.pp["bound_x"]) * int(self.pp["bound_y"])
         if any(abs(v) > bound for v in values):
             logger.error("inner product out of bound (wrong key or ciphertext?)")
+            warnings.warn("inner product out of bound (wrong key or ciphertext?)", FEWarning, stacklevel=2)
             return None
         return values
 

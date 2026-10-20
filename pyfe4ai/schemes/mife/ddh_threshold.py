@@ -29,6 +29,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import warnings
 
 import gmpy2 as gp
 import numpy as np
@@ -44,7 +45,7 @@ from pyfe4ai.schemes.threshold.sharing import share_points
 from pyfe4ai.schemes.threshold.sharing import share_secret
 from pyfe4ai.schemes.threshold.sharing import validate_threshold
 from pyfe4ai.core.constants import CryptoCONST
-from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, FEWarning
 from pyfe4ai._validation import int_vector
 from pyfe4ai._validation import scale_to_int
 
@@ -101,6 +102,7 @@ class ThresholdMIFEKeyGenerator(MIFEKeyGenerator):
         """
         if sid not in self.lst_sid:
             logger.error("invalid sid: {}".format(sid))
+            warnings.warn("invalid sid: {}".format(sid), FEWarning, stacklevel=2)
             return None
         credentials = kwargs.get("credentials", None)
         if not credentials:
@@ -224,6 +226,7 @@ class ThresholdMIFE(MIFE):
         first = partials[0]
         if any((p["c_y"], p["ct_digest"]) != (first["c_y"], first["ct_digest"]) for p in partials):
             logger.warning("partial decryptions disagree on the ciphertexts they decrypted")
+            warnings.warn("partial decryptions disagree on the ciphertexts they decrypted", FEWarning, stacklevel=2)
             return None
         p = gp.mpz(self.pp["p"])
         w = gp.mpz(1)

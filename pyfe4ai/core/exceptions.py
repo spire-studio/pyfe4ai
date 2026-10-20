@@ -30,3 +30,17 @@ class FESecurityWarning(UserWarning):
 
     See :mod:`pyfe4ai.core.status` and the README *Scheme Status* table.
     """
+
+
+class FEWarning(UserWarning):
+    """A condition an application should see that does not stop the call.
+
+    For example a cached parameter record that no longer matches its
+    configuration and is regenerated (new parameters and seeds), a request
+    answered with ``None`` (an unknown id, a decryption out of range, partial
+    decryptions that disagree) or a slower fallback. The library also logs
+    them (``logging.getLogger("pyfe4ai")`` has only a ``NullHandler``, so
+    without a logging configuration this warning is what an application
+    sees). Not a subclass of :class:`FESecurityWarning`: filtering one leaves
+    the other.
+    """

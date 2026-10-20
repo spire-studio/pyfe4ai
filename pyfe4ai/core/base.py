@@ -5,6 +5,7 @@ import logging
 import os
 import sys
 import tempfile
+import warnings
 from abc import ABC, ABCMeta, abstractmethod
 from collections.abc import Mapping
 from os import path
@@ -14,7 +15,7 @@ import numpy as np
 from pyfe4ai.core import profiles
 from pyfe4ai.core.status import warn_if_known_insecure
 from pyfe4ai.core.constants import CryptoCONST
-from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, FEWarning
 
 logger = logging.getLogger(__name__)
 
@@ -116,8 +117,19 @@ class ParameterCacheMixin:
                     logger.debug("load param file successfully")
                     return
                 logger.error("param file is invalid, regenerate...")
+                warnings.warn(
+                    "the parameter record {} does not match this configuration (for example a record of an "
+                    "earlier version): regenerated with new parameters and seeds; keys, public parameters and "
+                    "ciphertexts made with the old record no longer match".format(param_file),
+                    FEWarning, stacklevel=2,
+                )
             except (OSError, ValueError, KeyError, TypeError, IndexError) as exc:
                 logger.error("param file is unreadable (%s), regenerate...", exc)
+                warnings.warn(
+                    "the parameter record {} is unreadable ({}): regenerated with new parameters and seeds; keys, "
+                    "public parameters and ciphertexts made with the old record no longer match".format(param_file, exc),
+                    FEWarning, stacklevel=2,
+                )
         fd, tmp_file = tempfile.mkstemp(dir=folder, prefix=".param-", suffix=".json")
         os.close(fd)
         try:

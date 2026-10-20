@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+import warnings
 
 import numpy as np
 
@@ -54,7 +55,7 @@ from pyfe4ai.schemes.threshold.sharing import share_points
 from pyfe4ai.schemes.threshold.sharing import share_secret
 from pyfe4ai.schemes.threshold.sharing import validate_threshold
 from pyfe4ai.core.constants import CryptoCONST
-from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, FEWarning
 from pyfe4ai.primitives.pairing.pairing_backend import GT, ZR, multi_pair, pow_many
 
 logger = logging.getLogger(__name__)
@@ -135,6 +136,7 @@ class ThresholdMCFEFHMultiIPEKeyGenerator(MCFEFHMultiIPEKeyGenerator):
         self._validate_weights(fusion_weight)
         if sid not in self.lst_sid:
             logger.error("invalid sid: {}".format(sid))
+            warnings.warn("invalid sid: {}".format(sid), FEWarning, stacklevel=2)
             return None
         weights_id = fusion_weight_id(fusion_weight)
         if weights_id not in self.dict_dk:
@@ -291,6 +293,7 @@ class ThresholdMCFEFHMultiIPE(MCFEFHMultiIPE):
         partials = list(dict_ct_prime.values())
         if len({(p["ct_digest"], p["key_id"], p.get("label")) for p in partials}) != 1:
             logger.warning("partial decryptions disagree on the ciphertexts they decrypted")
+            warnings.warn("partial decryptions disagree on the ciphertexts they decrypted", FEWarning, stacklevel=2)
             return None
         acc = self.ctx.group.init(GT, 1)
         for part in partials:

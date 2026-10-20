@@ -24,6 +24,7 @@ one label per element.
 from __future__ import annotations
 
 import logging
+import warnings
 
 import numpy as np
 
@@ -34,7 +35,7 @@ from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.primitives.groups import ec_group as eg
 from pyfe4ai import backend as native_backend
 from pyfe4ai.core.constants import CryptoCONST
-from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, FEWarning
 from pyfe4ai._validation import int_vector, scale_to_int
 
 logger = logging.getLogger(__name__)
@@ -90,6 +91,7 @@ class MCFERistretto255KeyGenerator(ECDDHKeyGeneratorBase):
         """Client *nid*'s key ``{s}`` (one ``Z_L^2`` pair per slot), ``None`` if unknown."""
         if not isinstance(nid, str) or nid not in self.lst_nid:
             logger.error("no id or invalid id  provided.")
+            warnings.warn("no id or invalid id  provided.", FEWarning, stacklevel=2)
             return None
         return {"s": [[eg.scalar_str(e) for e in s_j] for s_j in self.msk["s"][nid]]}
 

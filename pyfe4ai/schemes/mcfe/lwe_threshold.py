@@ -99,12 +99,13 @@ from __future__ import annotations
 
 import logging
 import secrets
+import warnings
 
 import gmpy2 as gp
 import numpy as np
 
 from pyfe4ai.core.constants import CryptoCONST
-from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, FEWarning
 from pyfe4ai.primitives.hashing import LEGACY_LABEL_HASH
 from pyfe4ai.primitives.lattice.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.primitives.sampling import XofRandom
@@ -256,6 +257,7 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
         fusion_weight = credentials.get("fusion_weight")
         if sid not in self.lst_sid:
             logger.error("invalid sid: {}".format(sid))
+            warnings.warn("invalid sid: {}".format(sid), FEWarning, stacklevel=2)
             return None
         identifier = fusion_weight_id(fusion_weight)
         if identifier not in self.dict_dk:
@@ -398,6 +400,7 @@ class ThresholdMCFELWE(MCFELWE):
         c_y, label = partials[0]["c_y"], partials[0]["label"]
         if any(part["c_y"] != c_y or part["label"] != label for part in partials):
             logger.warning("partial decryptions disagree on the ciphertexts they decrypted")
+            warnings.warn("partial decryptions disagree on the ciphertexts they decrypted", FEWarning, stacklevel=2)
             return None
         v = sum(gp.mpz(part["w"]) for part in partials) % self.q
         mu = self._decode(gp.mpz(c_y), v)

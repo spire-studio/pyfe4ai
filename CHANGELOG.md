@@ -92,8 +92,17 @@ upgrade notes first.**
   the `pyfe4ai` logger has a `NullHandler`, and the modules log to
   `logging.getLogger(__name__)` as before. Configure logging in the
   application (e.g. `logging.basicConfig(level=logging.DEBUG)`); without
-  it, the library's warnings and errors are no longer printed by Python's
-  last-resort handler. PyYAML is no longer a dependency.
+  it, the library's log messages are no longer printed by Python's
+  last-resort handler. What an application should see is therefore also
+  issued as a warning, `pyfe4ai.core.exceptions.FEWarning` (a
+  `UserWarning`, not an `FESecurityWarning`): a cached parameter record that
+  no longer matches its configuration or is unreadable and is regenerated
+  (with new parameters and seeds), a request answered with `None` (an
+  unknown client or server id, a decryption out of range or with a wrong
+  key, partial decryptions that disagree on the ciphertexts), and a slower
+  fallback (an RNS modulus of the threshold Ring-LWE MCFE with more factors
+  than the native ring, a modulus without an NTT root). PyYAML is no longer
+  a dependency.
 - **Parameter cache location**: key generators keep their parameter
   records in a per-user cache directory instead of `./config/` of the
   working directory: `~/Library/Caches/pyfe4ai` on macOS,
@@ -194,8 +203,8 @@ upgrade notes first.**
   cached for `lwe_n = "auto"`, in any profile, no longer match their
   re-derivation and are regenerated on load with a new seed for `A`. Keys,
   public parameters and ciphertexts made under the old record stop matching
-  it, and the only sign is a logged error: **generate keys again after
-  upgrading.** Records for an explicit `lwe_n` (such as the `toy` default 32)
+  it, and the only signs are a logged error and an `FEWarning`: **generate
+  keys again after upgrading.** Records for an explicit `lwe_n` (such as the `toy` default 32)
   are kept; under `standard` an explicit `lwe_n` that meets only the old rule
   is refused. Under `toy`, `mife/lwe_threshold` with `lwe_n = "auto"` picks a
   larger dimension (3456 -> 3904 for `X = Y = 20`, `stat_param = 64`) and

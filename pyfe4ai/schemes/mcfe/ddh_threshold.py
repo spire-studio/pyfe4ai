@@ -45,6 +45,7 @@ from __future__ import annotations
 import os
 import json
 import logging
+import warnings
 
 import gmpy2 as gp
 import numpy as np
@@ -68,7 +69,7 @@ from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.primitives.groups.integer_groups import _random
 from pyfe4ai.primitives.hashing import hash_to_qr_group
 from pyfe4ai.primitives.groups.dlog_solver import load_or_build_dlog_table, dlog_table_solve
-from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, FEWarning
 from pyfe4ai._validation import scale_to_int
 
 logger = logging.getLogger(__name__)
@@ -166,6 +167,7 @@ class ThresholdMCFEKeyGenerator(DDHKeyGeneratorBase):
         """
         if nid is None or not isinstance(nid, str) or nid not in self.lst_nid:
             logger.error("no id or invalid id provided.")
+            warnings.warn("no id or invalid id provided.", FEWarning, stacklevel=2)
             return None
         return {"s": [[gp.digits(e) for e in s_j] for s_j in self.msk["s"][nid]]}
 
@@ -198,6 +200,7 @@ class ThresholdMCFEKeyGenerator(DDHKeyGeneratorBase):
             raise FEValidationError("invalid fusion weights provided, need a dict")
         if sid not in self.lst_sid:
             logger.error("invalid sid: {}".format(sid))
+            warnings.warn("invalid sid: {}".format(sid), FEWarning, stacklevel=2)
             return None
 
         identifier = _fusion_weight_id(fusion_weight)
@@ -417,6 +420,7 @@ class ThresholdMCFE(IPFEAbsCrypto):
             for part in partials
         ):
             logger.warning("partial decryptions disagree on the ciphertexts they decrypted")
+            warnings.warn("partial decryptions disagree on the ciphertexts they decrypted", FEWarning, stacklevel=2)
             return None
 
         u_d = gp.mpz(1)
@@ -472,6 +476,7 @@ class ThresholdMCFE(IPFEAbsCrypto):
             )
         except (ValueError, RuntimeError):
             logger.error("inner-product is out of bound supported by crypto system.")
+            warnings.warn("inner-product is out of bound supported by crypto system.", FEWarning, stacklevel=2)
             return None
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list:

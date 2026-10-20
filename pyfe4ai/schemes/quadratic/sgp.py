@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import logging
+import warnings
 
 import gmpy2 as gp
 import numpy as np
@@ -41,7 +42,7 @@ from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, ZR, PairingGroup,
 from pyfe4ai.primitives.pairing.pairing_backend import deserialize_many, multiexp, pow_many
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.primitives.pairing.pairing_backend import require_pairing_backend
-from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, FEWarning
 from pyfe4ai._validation import int_vector
 from pyfe4ai._validation import scale_to_int
 
@@ -340,6 +341,7 @@ class QuadraticSGP(IPFEAbsCrypto):
             return bounded_discrete_log_gt(self.group, base, prod, bound)
         except ValueError:
             logger.error("quadratic result out of bound (wrong key or ciphertext?)")
+            warnings.warn("quadratic result out of bound (wrong key or ciphertext?)", FEWarning, stacklevel=2)
             return None
 
     def _prepare_quadratic_ndarray_payload(

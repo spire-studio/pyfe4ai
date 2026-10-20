@@ -272,6 +272,7 @@ import hmac
 import json
 import logging
 import secrets
+import warnings
 from collections import OrderedDict
 
 import gmpy2 as gp
@@ -279,7 +280,7 @@ import numpy as np
 
 from pyfe4ai import backend as native_backend
 from pyfe4ai.core.constants import CryptoCONST
-from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, FEWarning
 from pyfe4ai.primitives.lattice.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.primitives.lattice.lwe_utils import decode_scaled
 from pyfe4ai.primitives.lattice.ring_lwe_utils import RNS_NATIVE_FACTORS
@@ -501,6 +502,12 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
                 "the kernels run on the Python path (the prime modulus is native below 2^253)",
                 int(self.q).bit_length(), len(self.q_factors), RNS_NATIVE_FACTORS,
             )
+            warnings.warn(
+                "ring_modulus='rns': q ({} bits) has {} factors, more than the native ring's {}; the kernels run "
+                "on the Python path (the prime modulus is native below 2^253)".format(
+                    int(self.q).bit_length(), len(self.q_factors), RNS_NATIVE_FACTORS),
+                FEWarning, stacklevel=2,
+            )
 
     def _bmms21(self, ring_n: int) -> dict:
         """The MCFE parameters; with a prime ``q`` also for ``ring_modulus="rns"``
@@ -698,6 +705,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             raise FEKeyError("need credentials for Threshold MCFE Ring-LWE")
         if sid not in self.lst_sid:
             logger.error("invalid sid: {}".format(sid))
+            warnings.warn("invalid sid: {}".format(sid), FEWarning, stacklevel=2)
             return None
         part = credentials.get("key_part", "label" if self.key_shares == "split" else "full")
         if part not in ("full", "label"):
@@ -797,6 +805,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             raise FEKeyError("need credentials for Threshold MCFE Ring-LWE")
         if sid not in self.lst_sid:
             logger.error("invalid sid: {}".format(sid))
+            warnings.warn("invalid sid: {}".format(sid), FEWarning, stacklevel=2)
             return None
         entry = self._weight_entry(credentials.get("fusion_weight"))
         share = dict(entry["shares"][sid], part="weights", share_set_id=entry["share_set_id"])
@@ -1370,6 +1379,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             for p in partials
         ):
             logger.warning("partial decryptions disagree on the ciphertexts they decrypted")
+            warnings.warn("partial decryptions disagree on the ciphertexts they decrypted", FEWarning, stacklevel=2)
             return None
         q = gp.mpz(self.pp["q"])
         delta = q // gp.mpz(self.pp["p"])

@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import json
 import logging
+import warnings
 
 import gmpy2 as gp
 import numpy as np
@@ -52,7 +53,7 @@ from pyfe4ai.schemes.mcfe.offline import OfflineMCFEMixin
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.primitives.groups.integer_groups import generate_group_primes
 from pyfe4ai.primitives.hashing import hash_to_zn2_star
-from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, FEWarning
 from pyfe4ai.primitives.groups.modular_utils import pow_signed
 from pyfe4ai.primitives.sampling import discrete_gaussian_bigint
 from pyfe4ai._validation import scale_to_int
@@ -326,6 +327,7 @@ class MCFEPaillier(OfflineMCFEMixin, IPFEAbsCrypto):
 
         if (acc - 1) % n_mod != 0:
             logger.error("invalid decryption: wrong label, key or ciphertexts")
+            warnings.warn("invalid decryption: wrong label, key or ciphertexts", FEWarning, stacklevel=2)
             return None
         ret = ((acc - 1) % n_square) // n_mod
         if ret > n_mod // 2:

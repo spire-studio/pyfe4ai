@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+import warnings
 
 import gmpy2 as gp
 import numpy as np
@@ -46,7 +47,7 @@ from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, GT, ZR, PairingGr
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.primitives.pairing.pairing_backend import require_pairing_backend
 from pyfe4ai.primitives.pairing.pairing_utils import bounded_discrete_log_gt
-from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, FEWarning
 from pyfe4ai._validation import int_vector
 from pyfe4ai._validation import scale_to_int
 
@@ -141,6 +142,7 @@ class FHContext:
             return bounded_discrete_log_gt(self.group, self.fhipe.gt, value, bound)
         except ValueError:
             logger.error("inner product out of bound (wrong tag or key?)")
+            warnings.warn("inner product out of bound (wrong tag or key?)", FEWarning, stacklevel=2)
             return None
 
 
