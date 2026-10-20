@@ -400,8 +400,7 @@ Mac) against BLS12-381.
   `bench_replicated_sharing.py`, `bench_fullysec_packing.py` and
   `benchmark_sampling.py`, with `benchmarks/PERFORMANCE.md`;
   `tools/estimate_rns_modulus.py`.
-- Notes of the October 2026 review in `docs/review/`, with regression tests
-  in `tests/review/`.
+- Regression tests of the October 2026 review in `tests/review/`.
 - CI: a `rust-native` job builds the extension and runs `cargo test` and the
   full suite on the native backend (Python 3.10 and 3.13) and on the Python
   backend (Python 3.10).
