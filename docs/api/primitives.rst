@@ -7,6 +7,9 @@ Primitives
 Lattices
 --------
 
+.. automodule:: pyfe4ai.primitives.lattice
+   :no-members:
+
 LWE Parameters
 ^^^^^^^^^^^^^^
 
@@ -52,6 +55,9 @@ Hashing
 Groups
 ------
 
+.. automodule:: pyfe4ai.primitives.groups
+   :no-members:
+
 Integer Groups
 ^^^^^^^^^^^^^^
 
@@ -84,6 +90,9 @@ Elliptic-Curve Group (ristretto255)
 
 Pairings
 --------
+
+.. automodule:: pyfe4ai.primitives.pairing
+   :no-members:
 
 Pairing Backend
 ^^^^^^^^^^^^^^^

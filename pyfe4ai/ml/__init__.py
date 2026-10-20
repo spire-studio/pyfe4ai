@@ -49,10 +49,10 @@ responsibility, and :meth:`FESchemeWrapper.get_decryption_keys` issues keys
 for any weights.
 
 
-The functions and classes are defined in the submodules :mod:`.wrapper`,
-:mod:`.serialization`, :mod:`.gradients`, :mod:`.threshold` and
-:mod:`.inference`, and imported from here; :mod:`.quantization` holds the
-float / integer conversion.
+The functions and classes are defined in the submodules ``wrapper``,
+``serialization``, ``gradients``, ``threshold`` and ``inference``, and
+imported from here; :mod:`pyfe4ai.ml.quantization` holds the float /
+integer conversion.
 """
 
 from pyfe4ai.ml.gradients import aggregate_gradients, encrypt_gradient, precompute_gradient, prepare_aggregation
