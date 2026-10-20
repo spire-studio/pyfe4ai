@@ -151,6 +151,14 @@ from pyfe4ai.primitives.lattice.matrix_utils import digits_to_vector
 from pyfe4ai.primitives.lattice.matrix_utils import vecdot_mod
 from pyfe4ai.primitives.sampling import XofRandom
 from pyfe4ai.primitives.sampling import FLOODING_SAMPLER
+from pyfe4ai.core.formats.lwe import ABDP15Record
+from pyfe4ai.core.formats.lwe import LWECiphertext
+from pyfe4ai.core.formats.lwe import MIFELWEEncryptionKey
+from pyfe4ai.core.formats.lwe import MIFELWEFunctionalKey
+from pyfe4ai.core.formats.lwe import TMIFELWEParameters
+from pyfe4ai.core.formats.threshold import ThresholdKeyShare
+from pyfe4ai.core.formats.threshold import TMIFELWEKeyShare
+from pyfe4ai.core.formats.threshold import TMIFELWEPartial
 from pyfe4ai.core.versions import check_tmife_lwe_construction
 from pyfe4ai.core.versions import FLOODING_NOISE_VERSION
 from pyfe4ai.core.versions import check_flooding_version
@@ -204,6 +212,7 @@ _TAG_DOMAIN = "pyfe4ai/tmife-lwe/ciphertext-tag/v1"
 
 def _tag_payload(nid, ct: dict) -> list:
     """What a tMIFE-LWE ciphertext tag covers: ``ct0`` and ``ct1`` as serialised."""
+    ct = LWECiphertext(ct)
     return [ct.get("ct0"), ct.get("ct1")]
 
 
@@ -298,7 +307,7 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
 
     def _apply_parameters(self, param: dict) -> None:
         super()._apply_parameters(param)
-        self.sigma_f = int(param["sigma_f"])
+        self.sigma_f = int(ABDP15Record(param).sigma_f)
 
     def setup(self) -> None:
         """Sample the MIFE keys and the client-server MAC keys; forget any
@@ -313,7 +322,7 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
         (``{sid: hex}``, one key per server for the ciphertext tags)."""
         sk = super().get_private_keys(nid, **kwargs)
         if sk is not None:
-            sk["mac_keys"] = dict(self.mac_keys[nid])
+            MIFELWEEncryptionKey(sk).mac_keys = dict(self.mac_keys[nid])
         return sk
 
     def get_public_parameters(self) -> dict:
@@ -321,22 +330,22 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
         ``sigma_f``, ``sharing``, ``threshold_construction``, ``security_profile``
         and, under ``"kl"``, ``flooding_accounting``, ``max_partial_decryptions``,
         ``stat_param`` and ``flood_tail_cut``."""
-        pp = super().get_public_parameters()
+        pp = TMIFELWEParameters(super().get_public_parameters())
         pp.update(
-            {"s": self.s, "t": self.t, "lst_sid": list(self.lst_sid), "sigma_f": str(self.sigma_f),
-             "sharing": self.sharing, "threshold_construction": self._construction,
-             "security_profile": self.security_profile}
+            s=self.s, t=self.t, lst_sid=list(self.lst_sid), sigma_f=str(self.sigma_f),
+            sharing=self.sharing, threshold_construction=self._construction,
+            security_profile=self.security_profile,
         )
         if self.flooding_accounting == KL:
-            pp.update({
-                "flooding_accounting": KL,
-                "max_partial_decryptions": self.max_partial_decryptions,
-                "stat_param": self.stat_param,
-                "flood_tail_cut": kl_tail_cut(
+            pp.update(
+                flooding_accounting=KL,
+                max_partial_decryptions=self.max_partial_decryptions,
+                stat_param=self.stat_param,
+                flood_tail_cut=kl_tail_cut(
                     kl_flooded_samples(self.s, self.max_partial_decryptions, 1), self.stat_param, self.sigma_f
                 ),
-            })
-        return pp
+            )
+        return pp.to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Return server *sid*'s share of the MIFE functional key.
@@ -367,39 +376,39 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
         if identifier not in self.dict_dk:
             key = super().get_decryption_keys(sid, credentials={"fusion_weight": fusion_weight})
             self.dict_dk[identifier] = self._share_key(key)
-        dk = dict(self.dict_dk[identifier][sid])
-        dk.update({
-            "noise_version": FLOODING_NOISE_VERSION,
-            "noise_sampler": FLOODING_SAMPLER,
-            "sid": sid,
-            "lst_sid": list(self.lst_sid),
-            "weights_id": identifier,
-            "mac_keys": {nid: self.mac_keys[nid][sid] for nid in self.lst_nid},
-            "pp_binding": self._binding,
-        })
-        return dk
+        return TMIFELWEKeyShare.extend(
+            self.dict_dk[identifier][sid],
+            noise_version=FLOODING_NOISE_VERSION,
+            noise_sampler=FLOODING_SAMPLER,
+            sid=sid,
+            lst_sid=list(self.lst_sid),
+            weights_id=identifier,
+            mac_keys={nid: self.mac_keys[nid][sid] for nid in self.lst_nid},
+            pp_binding=self._binding,
+        ).to_dict()
 
     def _share_key(self, key: dict) -> dict:
+        key = MIFELWEFunctionalKey(key)
         if self.sharing in ("replicated", "replicated-seeded"):
-            material = {"sk_y": {nid: list(vec) for nid, vec in key["sk_y"].items()}, "z": key["z"]}
+            material = {"sk_y": {nid: list(vec) for nid, vec in key.sk_y.items()}, "z": key.z}
             held = deal_replicated(material, self.sharing, self.t, self.lst_sid, self.q)
             return {
-                sid: {"sharing": self.sharing, **held[sid], "noise_key": secrets.token_hex(32)}
+                sid: TMIFELWEKeyShare.new(sharing=self.sharing, **held[sid], noise_key=secrets.token_hex(32)).to_dict()
                 for sid in self.lst_sid
             }
         sid_v = share_points(self.lst_sid)
         points = list(sid_v.values())
         per_sid = {
-            sid: {"sk_y": {}, "noise_key": secrets.token_hex(32)} for sid in self.lst_sid
+            sid: TMIFELWEKeyShare.new(sk_y={}, noise_key=secrets.token_hex(32)) for sid in self.lst_sid
         }
-        for nid, vec in key["sk_y"].items():
+        for nid, vec in key.sk_y.items():
             shares = [share_secret(gp.mpz(v), self.t, points, self.q) for v in vec]
             for sid in self.lst_sid:
-                per_sid[sid]["sk_y"][nid] = [gp.digits(sh[sid_v[sid]]) for sh in shares]
-        z_shares = share_secret(gp.mpz(key["z"]), self.t, points, self.q)
+                per_sid[sid].sk_y[nid] = [gp.digits(sh[sid_v[sid]]) for sh in shares]
+        z_shares = share_secret(gp.mpz(key.z), self.t, points, self.q)
         for sid in self.lst_sid:
-            per_sid[sid]["z"] = gp.digits(z_shares[sid_v[sid]])
-        return per_sid
+            per_sid[sid].z = gp.digits(z_shares[sid_v[sid]])
+        return {sid: share.to_dict() for sid, share in per_sid.items()}
 
 
 class ThresholdMIFELWE(MIFELWE):
@@ -436,7 +445,7 @@ class ThresholdMIFELWE(MIFELWE):
 
     def _encrypt_batch(self, plaintexts: list) -> list:
         """MIFE ciphertexts with ``tags``: one HMAC tag per server."""
-        mac_keys = self.sk.get("mac_keys")
+        mac_keys = MIFELWEEncryptionKey(self.sk).get("mac_keys")
         if not mac_keys:
             raise FEKeyError("encryption key lacks the ciphertext MAC keys")
         out = super()._encrypt_batch(plaintexts)
@@ -468,7 +477,8 @@ class ThresholdMIFELWE(MIFELWE):
                 ``partial_budget`` or its budget is spent (refused requests
                 consume nothing).
         """
-        if not dk or not ("pieces" in dk or ("sk_y" in dk and "z" in dk)):
+        key = ThresholdKeyShare(dk)
+        if not dk or not ("pieces" in key or ("sk_y" in key and "z" in key)):
             raise FEKeyError("no decryption keys provided")
         check_flooding_version(dk)
         check_key_share_server(self.id, dk, self.pp, TMIFE_LWE_CONSTRUCTIONS)
@@ -479,22 +489,23 @@ class ThresholdMIFELWE(MIFELWE):
         # Shamir: (dk, lambda_k); replicated: the sum of the assigned pieces, 1
         share, multiplier, tag = _share or share_for_enrolled(
             dk, self.id, lst_sid_enrolled, self.pp["t"], q, **enrolled_share_options(self))
-        if set(dict_ct) != set(share["sk_y"]):
+        share = ThresholdKeyShare(share)
+        if set(dict_ct) != set(share.sk_y):
             raise FESchemeError("need one ciphertext for every slot of the key")
-        check_ciphertext_tags(dict_ct, dk.get("mac_keys"), self.id, _TAG_DOMAIN, _tag_payload)
+        check_ciphertext_tags(dict_ct, key.get("mac_keys"), self.id, _TAG_DOMAIN, _tag_payload)
 
         delta = q // gp.mpz(self.pp["p"])
-        key_part = delta * gp.mpz(share["z"])
+        key_part = delta * gp.mpz(share.z)
         c_y = gp.mpz(0)
         canonical = {}
         for nid, ct in dict_ct.items():
-            ct0 = [v % q for v in digits_to_vector(ct["ct0"])]
-            ct1 = [v % q for v in digits_to_vector(ct["ct1"])]
-            if len(ct0) != len(share["sk_y"][nid]) or len(ct1) != self.pp["eta"]:
+            ct0 = [v % q for v in digits_to_vector(LWECiphertext(ct).ct0)]
+            ct1 = [v % q for v in digits_to_vector(LWECiphertext(ct).ct1)]
+            if len(ct0) != len(share.sk_y[nid]) or len(ct1) != self.pp["eta"]:
                 raise FESchemeError("malformed ciphertext of {}".format(nid))
             canonical[nid] = [[int(v) for v in ct0], [int(v) for v in ct1]]
             y_vec = [gp.mpz(int(v)) for v in credentials[nid]]
-            key_part += vecdot_mod(ct0, [gp.mpz(v) for v in share["sk_y"][nid]], q)
+            key_part += vecdot_mod(ct0, [gp.mpz(v) for v in share.sk_y[nid]], q)
             c_y += vecdot_mod(y_vec, ct1, q)
 
         # the noise is seeded with what the key part depends on -- the ct0 values,
@@ -515,13 +526,13 @@ class ThresholdMIFELWE(MIFELWE):
             flood.check_sampler()
             budget.consume(1)
             e_k = int(flood.sample(1, rng)[0])
-        return {
-            "w": gp.digits((multiplier * key_part + e_k) % q),
-            "c_y": gp.digits(c_y % q),
-            "ct_digest": ct_digest,
-            "sid": self.id,
-            "lst_sid_enrolled": list(lst_sid_enrolled),
-        }
+        return TMIFELWEPartial.new(
+            w=gp.digits((multiplier * key_part + e_k) % q),
+            c_y=gp.digits(c_y % q),
+            ct_digest=ct_digest,
+            sid=self.id,
+            lst_sid_enrolled=list(lst_sid_enrolled),
+        ).to_dict()
 
     def combine_decrypt(self, partials) -> float | None:
         """Combine partial decryptions from at least ``t`` servers.
@@ -552,9 +563,9 @@ class ThresholdMIFELWE(MIFELWE):
                 do not match the enrolled set they were computed for.
         """
         validate_partial_decryptions(dict_ct_prime, self.pp["t"])
-        partials = list(dict_ct_prime.values())
+        partials = [TMIFELWEPartial(part) for part in dict_ct_prime.values()]
         if any(
-            part["c_y"] != partials[0]["c_y"] or part["ct_digest"] != partials[0]["ct_digest"]
+            part.c_y != partials[0].c_y or part.ct_digest != partials[0].ct_digest
             for part in partials
         ):
             logger.warning("partial decryptions disagree on the ciphertexts they decrypted")
@@ -562,7 +573,7 @@ class ThresholdMIFELWE(MIFELWE):
             return None
         q = gp.mpz(self.pp["q"])
         delta = q // gp.mpz(self.pp["p"])
-        total = gp.mpz(partials[0]["c_y"]) - sum(gp.mpz(part["w"]) for part in partials)
+        total = gp.mpz(partials[0].c_y) - sum(gp.mpz(part.w) for part in partials)
         bound = (
             self.pp["n"] * self.pp["eta"]
             * gp.mpz(self.pp["bound_x"]) * gp.mpz(self.pp["bound_y"])
@@ -578,9 +589,10 @@ class ThresholdMIFELWE(MIFELWE):
         each partial produced then counts)."""
         sample = next(iter(dict_ndarray_ct.values()))
         share = None
-        if dk and "pieces" in dk and self.id in dk.get("lst_sid", []):
+        key = ThresholdKeyShare(dk)
+        if dk and "pieces" in key and self.id in key.get("lst_sid", []):
             # the assigned pieces, added up once for all elements
-            validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
+            validate_enrolled(self.id, key.lst_sid, lst_sid_enrolled, self.pp["t"])
             share = share_for_enrolled(
                 dk, self.id, lst_sid_enrolled, self.pp["t"], gp.mpz(self.pp["q"]), **enrolled_share_options(self)
             )

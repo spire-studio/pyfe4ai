@@ -57,6 +57,10 @@ from pyfe4ai.primitives.lattice.matrix_utils import matvec_mod
 from pyfe4ai.primitives.lattice.matrix_utils import vecdot_mod
 from pyfe4ai.primitives.lattice.matrix_utils import vector_to_digits
 from pyfe4ai.primitives.sampling import rand_uniform_matrix
+from pyfe4ai.core.formats.lwe import LWECiphertext
+from pyfe4ai.core.formats.lwe import LWEEncryptionKey
+from pyfe4ai.core.formats.lwe import SIFELWEFunctionalKey
+from pyfe4ai.core.formats.lwe import SIFELWEParameters
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai._validation import int_vector
 from pyfe4ai._validation import scale_to_int
@@ -98,15 +102,15 @@ class SIFELWEKeyGenerator(IPFEAbsKeyGenerator, ABDP15KeyGeneratorMixin):
             Dict containing ``A_seed``, ``m``, ``lwe_n``, ``p``, ``q``,
             ``eta``, ``bound_x``, ``bound_y``, ``sec_param``.
         """
-        return {
+        return SIFELWEParameters.new(
             **self._matrix_parameters(),
-            "p": gp.digits(self.p),
-            "q": gp.digits(self.q),
-            "eta": self.eta,
-            "bound_x": gp.digits(self.bound_x),
-            "bound_y": gp.digits(self.bound_y),
-            "sec_param": self.sec_param,
-        }
+            p=gp.digits(self.p),
+            q=gp.digits(self.q),
+            eta=self.eta,
+            bound_x=gp.digits(self.bound_x),
+            bound_y=gp.digits(self.bound_y),
+            sec_param=self.sec_param,
+        ).to_dict()
 
     def get_private_keys(self, nid: str = "nid_default", **kwargs) -> dict | None:
         """Return encryption keys (public-key matrix ``pk``).
@@ -117,7 +121,7 @@ class SIFELWEKeyGenerator(IPFEAbsKeyGenerator, ABDP15KeyGeneratorMixin):
         Returns:
             Dict with ``pk`` matrix.
         """
-        return {"pk": matrix_to_digits(self.mpk["pk"])}
+        return LWEEncryptionKey.new(pk=matrix_to_digits(self.mpk["pk"])).to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Derive a functional decryption key for the given fusion weights.
@@ -140,7 +144,7 @@ class SIFELWEKeyGenerator(IPFEAbsKeyGenerator, ABDP15KeyGeneratorMixin):
             credentials.get("fusion_weight"), "fusion weight", length=self.eta, bound=self.bound_y
         )
         sk_y = matvec_mod(self.msk["sk"], [gp.mpz(v) for v in y], self.q)
-        return {"sk_y": vector_to_digits(sk_y), "y": y}
+        return SIFELWEFunctionalKey.new(sk_y=vector_to_digits(sk_y), y=y).to_dict()
 
 
 class SIFELWE(IPFEAbsCrypto, ABDP15CryptoMixin):
@@ -190,10 +194,10 @@ class SIFELWE(IPFEAbsCrypto, ABDP15CryptoMixin):
         out = []
         for x, ct0, mask in zip(plaintexts, ct0s, masks):
             centered = center_lwe_vector(x, p, q)
-            out.append({
-                "ct0": vector_to_digits([gp.mpz(v) for v in ct0]),
-                "ct1": vector_to_digits([(gp.mpz(v) + c) % q for v, c in zip(mask, centered)]),
-            })
+            out.append(LWECiphertext.new(
+                ct0=vector_to_digits([gp.mpz(v) for v in ct0]),
+                ct1=vector_to_digits([(gp.mpz(v) + c) % q for v, c in zip(mask, centered)]),
+            ).to_dict())
         return out
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: list):
@@ -214,21 +218,21 @@ class SIFELWE(IPFEAbsCrypto, ABDP15CryptoMixin):
         if not dk:
             raise FEKeyError("no decryption key provided")
         y = self._key_weights(dk, fusion_weight)
-        return self._decode(dct_ct, y, digits_to_vector(dk["sk_y"]))
+        return self._decode(dct_ct, y, digits_to_vector(SIFELWEFunctionalKey(dk).sk_y))
 
     def _key_weights(self, dk: dict, fusion_weight: list) -> list:
         y = int_vector(
             fusion_weight, "fusion weight", length=self.pp["eta"], bound=int(self.pp["bound_y"])
         )
-        if y != dk.get("y"):
+        if y != SIFELWEFunctionalKey(dk).get("y"):
             raise FESchemeError("fusion weights differ from those of the decryption key")
         return y
 
     def _decode(self, ct: dict, y: list, sk_y: list) -> int | None:
         """``round(p (<y, ct1> - <ct0, sk_y>) / q)``; ``None`` beyond ``eta X Y``."""
         q = gp.mpz(self.pp["q"])
-        ct0 = digits_to_vector(ct["ct0"])
-        ct1 = digits_to_vector(ct["ct1"])
+        ct0 = digits_to_vector(LWECiphertext(ct).ct0)
+        ct1 = digits_to_vector(LWECiphertext(ct).ct1)
         if len(ct0) != len(sk_y) or len(ct1) != len(y):
             raise FEValidationError("ciphertext does not match the key dimensions")
         d = (vecdot_mod([gp.mpz(v) for v in y], ct1, q) - vecdot_mod(ct0, sk_y, q)) % q
@@ -301,7 +305,7 @@ class SIFELWE(IPFEAbsCrypto, ABDP15CryptoMixin):
             raise FEKeyError("need to provide decryption key and fusion weight")
 
         y = self._key_weights(dk, fusion_weight)
-        sk_y = digits_to_vector(dk["sk_y"])
+        sk_y = digits_to_vector(SIFELWEFunctionalKey(dk).sk_y)
         lst_ndarray = []
         for l, ary in enumerate(dict_ndarray_ct):
             ary_dec = np.empty(ary.shape, dtype=object)

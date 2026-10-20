@@ -108,6 +108,11 @@ from pyfe4ai.core.exceptions import FEKeyError, FEValidationError, warn_at_calle
 from pyfe4ai.primitives.lattice.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.primitives.sampling import XofRandom
 from pyfe4ai.primitives.sampling import FLOODING_SAMPLER
+from pyfe4ai.core.formats.lwe import MCFELWECiphertext
+from pyfe4ai.core.formats.lwe import TMCFELWEParameters
+from pyfe4ai.core.formats.threshold import ThresholdKeyShare
+from pyfe4ai.core.formats.threshold import TMCFELWEKeyShare
+from pyfe4ai.core.formats.threshold import TMCFELWEPartial
 from pyfe4ai.core.versions import check_key_label_hash
 from pyfe4ai.core.versions import FLOODING_NOISE_VERSION
 from pyfe4ai.core.versions import check_flooding_version
@@ -144,8 +149,8 @@ logger = logging.getLogger(__name__)
 
 def _with_code(ct, code: int):
     """An ndarray element as a single ciphertext: with its layer's label-hash code."""
-    if code and isinstance(ct, dict) and "label_hash" not in ct:
-        return dict(ct, label_hash=code)
+    if code and isinstance(ct, dict) and "label_hash" not in MCFELWECiphertext(ct):
+        return MCFELWECiphertext.extend(ct, label_hash=code).to_dict()
     return ct
 
 
@@ -214,19 +219,17 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
     def get_public_parameters(self) -> dict:
         """Return the MCFE public parameters plus ``s``, ``t``, ``lst_sid``,
         ``sigma_f``, ``sharing``, ``threshold_construction`` and ``security_profile``."""
-        pp = super().get_public_parameters()
+        pp = TMCFELWEParameters(super().get_public_parameters())
         pp.update(
-            {
-                "s": self.s,
-                "t": self.t,
-                "lst_sid": list(self.lst_sid),
-                "sigma_f": gp.digits(gp.mpz(self.sigma_f)),
-                "sharing": self.sharing,
-                "threshold_construction": {v: k for k, v in TMCFE_LWE_CONSTRUCTIONS.items()}[self.sharing],
-                "security_profile": self.security_profile,
-            }
+            s=self.s,
+            t=self.t,
+            lst_sid=list(self.lst_sid),
+            sigma_f=gp.digits(gp.mpz(self.sigma_f)),
+            sharing=self.sharing,
+            threshold_construction={v: k for k, v in TMCFE_LWE_CONSTRUCTIONS.items()}[self.sharing],
+            security_profile=self.security_profile,
         )
-        return pp
+        return pp.to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Return server *sid*'s share of ``sk_y`` for the given weights.
@@ -266,17 +269,17 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
             held = {"sharing": "replicated", "pieces": share}
         else:
             held = {"sharing": "replicated-seeded", **share}
-        return {
+        return TMCFELWEKeyShare.new(
             **held,
-            "sid": sid,
-            "lst_sid": list(self.lst_sid),
-            "weights_id": identifier,
-            "noise_key": noise_key,
-            "noise_version": FLOODING_NOISE_VERSION,
-            "noise_sampler": FLOODING_SAMPLER,
-            "label_hash": self.label_hash,
-            "pp_binding": self._binding,
-        }
+            sid=sid,
+            lst_sid=list(self.lst_sid),
+            weights_id=identifier,
+            noise_key=noise_key,
+            noise_version=FLOODING_NOISE_VERSION,
+            noise_sampler=FLOODING_SAMPLER,
+            label_hash=self.label_hash,
+            pp_binding=self._binding,
+        ).to_dict()
 
     def _share_key(self, sk_y: list) -> dict:
         if self.sharing == "replicated":
@@ -326,7 +329,7 @@ class ThresholdMCFELWE(MCFELWE):
             FESchemeError: If the enrolled set is invalid or the weights are
                 not those the key share was derived for.
         """
-        if not dk or not ("sk_y" in dk or "pieces" in dk):
+        if not dk or not ("sk_y" in ThresholdKeyShare(dk) or "pieces" in ThresholdKeyShare(dk)):
             raise FEKeyError("no decryption keys provided")
         check_flooding_version(dk)
         check_key_share_server(self.id, dk, self.pp, TMCFE_LWE_CONSTRUCTIONS)
@@ -344,7 +347,7 @@ class ThresholdMCFELWE(MCFELWE):
         # Shamir: (dk, lambda_k); replicated: the sum of the assigned pieces, 1
         share, multiplier, tag = _share or share_for_enrolled(
             dk, self.id, lst_sid_enrolled, self.pp["t"], self.q, **enrolled_share_options(self))
-        share_term = dot_mod([gp.mpz(v) for v in share["sk_y"]], self._hash_label(label), self.q)
+        share_term = dot_mod([gp.mpz(v) for v in ThresholdKeyShare(share).sk_y], self._hash_label(label), self.q)
         # the partial depends on the enrolled set only through the tag (lambda,
         # or the assigned pieces)
         # and with the digest of this server's public parameters (the key share's
@@ -355,13 +358,13 @@ class ThresholdMCFELWE(MCFELWE):
             rng=XofRandom(noise_seed(dk, encoded, tag, binding)),
         )
         w = (multiplier * share_term + e_k) % self.q
-        return {
-            "w": gp.digits(w),
-            "c_y": int(self._weighted_sum(dict_ct, fusion_weight)),
-            "label": encoded,
-            "sid": self.id,
-            "lst_sid_enrolled": list(lst_sid_enrolled),
-        }
+        return TMCFELWEPartial.new(
+            w=gp.digits(w),
+            c_y=int(self._weighted_sum(dict_ct, fusion_weight)),
+            label=encoded,
+            sid=self.id,
+            lst_sid_enrolled=list(lst_sid_enrolled),
+        ).to_dict()
 
     def combine_decrypt(self, partials) -> float | None:
         """Combine partial decryptions from at least ``t`` servers.
@@ -392,13 +395,13 @@ class ThresholdMCFELWE(MCFELWE):
                 do not match the enrolled set they were computed for.
         """
         validate_partial_decryptions(dict_ct_prime, self.pp["t"])
-        partials = list(dict_ct_prime.values())
-        c_y, label = partials[0]["c_y"], partials[0]["label"]
-        if any(part["c_y"] != c_y or part["label"] != label for part in partials):
+        partials = [TMCFELWEPartial(part) for part in dict_ct_prime.values()]
+        c_y, label = partials[0].c_y, partials[0].label
+        if any(part.c_y != c_y or part.label != label for part in partials):
             logger.warning("partial decryptions disagree on the ciphertexts they decrypted")
             warn_at_caller("partial decryptions disagree on the ciphertexts they decrypted")
             return None
-        v = sum(gp.mpz(part["w"]) for part in partials) % self.q
+        v = sum(gp.mpz(part.w) for part in partials) % self.q
         mu = self._decode(gp.mpz(c_y), v)
         if mu is None:
             return None
@@ -424,9 +427,10 @@ class ThresholdMCFELWE(MCFELWE):
         codes = self._layer_codes(dict_ndarray_ct)  # each layer of the public parameters' label hash
         sample = next(iter(dict_ndarray_ct.values()))
         share = None
-        if dk and "pieces" in dk and self.id in dk.get("lst_sid", []):
+        key = ThresholdKeyShare(dk)
+        if dk and "pieces" in key and self.id in key.get("lst_sid", []):
             # the assigned pieces, added up once for all elements
-            validate_enrolled(self.id, dk["lst_sid"], lst_sid_enrolled, self.pp["t"])
+            validate_enrolled(self.id, key.lst_sid, lst_sid_enrolled, self.pp["t"])
             share = share_for_enrolled(dk, self.id, lst_sid_enrolled, self.pp["t"], self.q,
                                        **enrolled_share_options(self))
         lst_partial = []

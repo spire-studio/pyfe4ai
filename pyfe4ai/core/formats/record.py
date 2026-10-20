@@ -170,6 +170,10 @@ class Record:
             raise TypeError("{} has no fields {}".format(type(self).__name__, unknown))
         self._raw.update({name: value for name, value in values.items() if value is not ABSENT})
 
+    def pop(self, name: str, default=None):
+        """``d.pop(name, default)`` for the declared field *name*."""
+        return self._raw.pop(self._field(name), default)
+
     def __contains__(self, name: str) -> bool:
         return self._field(name) in self._raw
 

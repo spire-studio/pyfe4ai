@@ -53,6 +53,11 @@ from pyfe4ai.core.profiles import STANDARD_DCR_PRIME_BITS
 from pyfe4ai.schemes.threshold.binding import fusion_weight_id
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.formats.dl import MCFE2KeyShare
+from pyfe4ai.core.formats.lwe import DecentralizedLWEParameters
+from pyfe4ai.core.formats.lwe import DecentralizedLWERecord
+from pyfe4ai.core.formats.lwe import MCFELWEEncryptionKey
+from pyfe4ai.core.formats.lwe import MCFELWEFunctionalKey
 from pyfe4ai.core.versions import record_matches
 from pyfe4ai.core.versions import DMCFE_LWE_RECORD
 from pyfe4ai.primitives.groups.integer_groups import is_dcr_modulus
@@ -91,7 +96,7 @@ class DecentralizedMCFELWEKeyGenerator(MCFELWEKeyGenerator, ParameterCacheMixin)
         return record_matches(param, {"construction": DMCFE_LWE_RECORD, "n2_prime_bits": self.n2_prime_bits})
 
     def _apply_parameters(self, param: dict) -> None:
-        self.n2_mod = gp.mpz(param["n2_mod"])
+        self.n2_mod = gp.mpz(DecentralizedLWERecord(param).n2_mod)
 
     def _loaded_parameters_valid(self) -> bool:
         return is_dcr_modulus(self.n2_mod, self.n2_prime_bits)
@@ -100,11 +105,11 @@ class DecentralizedMCFELWEKeyGenerator(MCFELWEKeyGenerator, ParameterCacheMixin)
         self.n2_mod = generate_mcfe2_modulus(self.n2_prime_bits)
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(
-                {
-                    "construction": DMCFE_LWE_RECORD,
-                    "n2_prime_bits": self.n2_prime_bits,
-                    "n2_mod": gp.digits(self.n2_mod),
-                },
+                DecentralizedLWERecord.new(
+                    construction=DMCFE_LWE_RECORD,
+                    n2_prime_bits=self.n2_prime_bits,
+                    n2_mod=gp.digits(self.n2_mod),
+                ).to_dict(),
                 f,
             )
 
@@ -118,20 +123,20 @@ class DecentralizedMCFELWEKeyGenerator(MCFELWEKeyGenerator, ParameterCacheMixin)
 
     def get_public_parameters(self) -> dict:
         """LWE MCFE public parameters plus ``n2_mod`` and ``lst_nid``."""
-        pp = super().get_public_parameters()
-        pp.update({
-            "n2_mod": gp.digits(self.n2_mod),
-            "lst_nid": list(self.lst_nid),
-            "contribution_bound": gp.digits(self.contribution_bound),
-        })
-        return pp
+        pp = DecentralizedLWEParameters(super().get_public_parameters())
+        pp.update(
+            n2_mod=gp.digits(self.n2_mod),
+            lst_nid=list(self.lst_nid),
+            contribution_bound=gp.digits(self.contribution_bound),
+        )
+        return pp.to_dict()
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
         """Return client *nid*'s keys: LWE MCFE ``z`` and MCFE2 ``s2``."""
         sk = super().get_private_keys(nid)
         if sk is None:
             return None
-        sk["s2"] = [gp.digits(v) for v in self.msk["s2"][nid]]
+        MCFELWEEncryptionKey(sk).s2 = [gp.digits(v) for v in self.msk["s2"][nid]]
         return sk
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
@@ -155,29 +160,30 @@ class DecentralizedMCFELWE(MCFELWE):
         Returns:
             Dict with ``c`` (MCFE2 ciphertexts), ``nid`` and ``weights_id``.
         """
-        if not self._has_private_keys() or "s2" not in self.sk:
+        if not self._has_private_keys() or "s2" not in MCFELWEEncryptionKey(self.sk):
             raise FEKeyError("need the client's keys to derive a key share")
         if self.id not in self.pp["lst_nid"]:
             raise FESchemeError("unknown client id {}".format(self.id))
         weights = fusion_weight.get(self.id, [])
-        if len(weights) > len(self.sk["z"]):
+        sk = MCFELWEEncryptionKey(self.sk)
+        if len(weights) > len(sk.z):
             raise FEValidationError("fusion weight of {} is longer than eta".format(self.id))
         if any(abs(strict_int(v, "fusion weight")) > self.pp["bound_y"] for v in weights):
             raise FEValidationError("fusion weight exceeds configured bound_y")
         contribution = [gp.mpz(0)] * self.dim
-        for y_j, z_j in zip(weights, self.sk["z"]):
+        for y_j, z_j in zip(weights, sk.z):
             y_j = gp.mpz(int(y_j))
             contribution = [acc + y_j * gp.mpz(z) for acc, z in zip(contribution, z_j)]
         # sent over Z as in Fig. 14 (sk_y = sum y_i Z_i in Z^(n0 + m0)); reducing it
         # mod q first would reveal, per coordinate, how many y_i t_i are negative
-        return {
-            "c": encrypt_contribution(
-                self.pp["n2_mod"], self.sk["s2"], contribution, key_label(fusion_weight),
+        return MCFE2KeyShare.new(
+            c=encrypt_contribution(
+                self.pp["n2_mod"], sk.s2, contribution, key_label(fusion_weight),
                 gp.mpz(self.pp["contribution_bound"]),
             ),
-            "nid": self.id,
-            "weights_id": fusion_weight_id(fusion_weight),
-        }
+            nid=self.id,
+            weights_id=fusion_weight_id(fusion_weight),
+        ).to_dict()
 
     def combine_function_decryption_key_share(self, dct_dk_shares: dict) -> dict:
         """Combine every client's share into the LWE MCFE key ``{sk_y}``.
@@ -186,11 +192,11 @@ class DecentralizedMCFELWE(MCFELWE):
             FESchemeError: If a client's share is missing or the shares were
                 derived for different weights.
         """
-        if len({share["weights_id"] for share in dct_dk_shares.values()}) != 1:
+        if len({MCFE2KeyShare(share).weights_id for share in dct_dk_shares.values()}) != 1:
             raise FESchemeError("key shares were derived for different weights")
         sums = combine_contributions(
             self.pp["n2_mod"],
-            {nid: share["c"] for nid, share in dct_dk_shares.items()},
+            {nid: MCFE2KeyShare(share).c for nid, share in dct_dk_shares.items()},
             self.pp["lst_nid"],
         )
-        return {"sk_y": [gp.digits(v % self.q) for v in sums]}
+        return MCFELWEFunctionalKey.new(sk_y=[gp.digits(v % self.q) for v in sums]).to_dict()

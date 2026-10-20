@@ -66,6 +66,8 @@ import secrets
 import gmpy2 as gp
 
 from pyfe4ai.core.base import ParameterCacheMixin
+from pyfe4ai.core.formats.lwe import ABDP15Record
+from pyfe4ai.core.formats.lwe import LWEEncryptionKey
 from pyfe4ai.core.versions import record_matches
 from pyfe4ai.core.versions import SIFE_LWE_RECORD
 from pyfe4ai.core.profiles import STANDARD
@@ -135,7 +137,7 @@ class ABDP15KeyGeneratorMixin(ParameterCacheMixin):
         from it (the derivation is deterministic); only the seed of ``A`` is random."""
         if not record_matches(param, {"construction": self._construction, **self._record_fields()}):
             return False
-        seed = param.get("A_seed")
+        seed = ABDP15Record(param).get("A_seed")
         if not isinstance(seed, str) or len(bytes.fromhex(seed)) != 32:
             return False
         return record_matches(param, self._serialised(self._derive()))
@@ -156,22 +158,23 @@ class ABDP15KeyGeneratorMixin(ParameterCacheMixin):
         )
 
     def _apply_parameters(self, param: dict) -> None:
-        self.lwe_n = int(param["lwe_n"])
-        self.p = gp.mpz(param["p"])
-        self.q = gp.mpz(param["q"])
-        self.m = int(param["m"])
-        self.sigma_q = float(param["sigma_q"])
-        self.l_sigma = gp.mpz(param["l_sigma"])
-        self.a_seed = param["A_seed"]
+        record = ABDP15Record.from_dict(param)
+        self.lwe_n = int(record.lwe_n)
+        self.p = gp.mpz(record.p)
+        self.q = gp.mpz(record.q)
+        self.m = int(record.m)
+        self.sigma_q = float(record.sigma_q)
+        self.l_sigma = gp.mpz(record.l_sigma)
+        self.a_seed = record.A_seed
         self.A = SeededMatrix.shared(self.a_seed, self.m, self.lwe_n, self.q, self.matrix_mode)
 
     def _generate_and_save(self, param_file: str) -> None:
-        record = {"construction": self._construction, **self._record_fields()}
-        record.update(self._serialised(self._derive()))
-        record["A_seed"] = secrets.token_hex(32)
-        self._apply_parameters(record)
+        record = ABDP15Record.new(construction=self._construction, **self._record_fields())
+        record.update(**self._serialised(self._derive()))
+        record.A_seed = secrets.token_hex(32)
+        self._apply_parameters(record.to_dict())
         with open(param_file, "w", encoding="utf-8") as f:
-            json.dump(record, f)
+            json.dump(record.to_dict(), f)
 
     def _public_keys(self, secret_keys: list) -> list:
         """``[A S_i + E_i mod q]_i`` for secret matrices ``S_i`` (``lwe_n x eta`` each),
@@ -217,6 +220,6 @@ class ABDP15CryptoMixin:
     def _masks(self, count: int) -> tuple:
         """``count`` fresh pairs ``(A^T r, pk^T r)`` (Python ints mod ``q``)."""
         if self._pk_matrix is None:
-            self._pk_matrix = LimbMatrix(digits_to_matrix(self.sk["pk"]), gp.mpz(self.pp["q"]))
+            self._pk_matrix = LimbMatrix(digits_to_matrix(LWEEncryptionKey(self.sk).pk), gp.mpz(self.pp["q"]))
         r = rand_bit_matrix(count, self.pp["m"])
         return self.A.binary_combinations(r), self._pk_matrix.binary_combinations(r)
