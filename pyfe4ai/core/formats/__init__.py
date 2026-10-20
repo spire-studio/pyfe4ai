@@ -14,5 +14,6 @@ dicts themselves are what they were: a record is the dict, not a copy.
 * :mod:`~pyfe4ai.core.formats.lwe` -- the LWE schemes (ABDP15, FullySec, the ABMPSW20 MCFE);
 * :mod:`~pyfe4ai.core.formats.ring_lwe` -- the Ring-LWE schemes;
 * :mod:`~pyfe4ai.core.formats.dl` -- the discrete-log and DCR schemes;
+* :mod:`~pyfe4ai.core.formats.pairing` -- the pairing schemes (function-hiding IPFE, MIFE and MCFE) and the quadratic schemes;
 * :mod:`~pyfe4ai.core.formats.threshold` -- key shares, replicated pieces and partial decryptions of the threshold schemes.
 """

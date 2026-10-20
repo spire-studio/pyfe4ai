@@ -8,35 +8,35 @@ keys, key shares, ciphertexts, partial decryptions; their layouts are in
 Versions <= 0.3.0 wrote fewer markers, so for most of them an absent field has
 a meaning -- the derivation of those versions:
 
-=========================  ==============================  ===========================================
-Marker                     Absent means                    Decided by
-=========================  ==============================  ===========================================
-``label_hash`` (pp, keys,  ``"shake256-wide"``             :func:`pp_label_hash`, :func:`key_label_hash`,
-key shares)                (:data:`LEGACY_LABEL_HASH`)     :func:`check_key_label_hash`,
-                                                           :func:`check_encryption_key_label_hash`
-``label_hash`` code        code 0 (``"shake256-wide"``)    :func:`ciphertext_label_hash`,
-(ciphertexts, layers)                                      :func:`check_ciphertext_label_hashes`,
-                                                           :func:`check_lwe_ciphertext_label_hash`,
-                                                           :func:`check_lwe_layer_label_hash`
-``ct_format`` (threshold   ``"json"``                      :func:`pp_ct_format`
+=============================  ============================  ===============================================
+Marker                         Absent means                  Decided by
+=============================  ============================  ===============================================
+``label_hash`` (pp, keys,      ``"shake256-wide"``           :func:`pp_label_hash`, :func:`key_label_hash`,
+key shares)                    (:data:`LEGACY_LABEL_HASH`)   :func:`check_key_label_hash`,
+                                                             :func:`check_encryption_key_label_hash`
+``label_hash`` code            code 0 (``"shake256-wide"``)  :func:`ciphertext_label_hash`,
+(ciphertexts, layers)                                        :func:`check_ciphertext_label_hashes`,
+                                                             :func:`check_lwe_ciphertext_label_hash`,
+                                                             :func:`check_lwe_layer_label_hash`
+``ct_format`` (threshold       ``"json"``                    :func:`pp_ct_format`
 pp)
-``sharing`` (pp, key       ``"shamir"``                    :func:`check_served_sharing`
-shares)                    (:data:`LEGACY_SHARING`)
-``threshold_construction`` none (Shamir only)              :func:`check_served_sharing`,
-                                                           :func:`check_tmife_lwe_construction`,
-                                                           :func:`check_tmcfe_ring_lwe_construction`
-``noise_version``          1 (refused)                     :func:`check_flooding_version`
-``flooding``               ``"gaussian"``                  :func:`pp_flooding`, :func:`check_key_flooding`
-                           (:data:`LEGACY_FLOODING`)
-``sharing_id``             none (combines only with        :func:`key_share_sharing_id`,
-                           partials without one)           :func:`check_partials_sharing`
-``part`` (tMCFE-Ring-LWE   a whole key share               :func:`key_share_part`
+``sharing`` (pp, key           ``"shamir"``                  :func:`check_served_sharing`
+shares)                        (:data:`LEGACY_SHARING`)
+``threshold_construction``     none (Shamir only)            :func:`check_served_sharing`,
+                                                             :func:`check_tmife_lwe_construction`,
+                                                             :func:`check_tmcfe_ring_lwe_construction`
+``noise_version``              1 (refused)                   :func:`check_flooding_version`
+``flooding``                   ``"gaussian"``                :func:`pp_flooding`, :func:`check_key_flooding`
+                               (:data:`LEGACY_FLOODING`)
+``sharing_id``                 none (combines only with      :func:`key_share_sharing_id`,
+                               partials without one)         :func:`check_partials_sharing`
+``part`` (tMCFE-Ring-LWE       a whole key share             :func:`key_share_part`
 key shares)
-``_state_version``         refused                         :func:`check_state`
+``_state_version``             refused                       :func:`check_state`
 (pickled state)
-record ids (``construction``,  regenerated                 :func:`record_matches`, :func:`caches_record`
+record ids (``construction``,  regenerated                   :func:`record_matches`, :func:`caches_record`
 ``param_version``, ...)
-=========================  ==============================  ===========================================
+=============================  ============================  ===============================================
 
 Shamir key shares with ``t < s`` (the sharing of versions <= 0.3.0) are
 served only under the ``legacy_shamir`` policy of :func:`check_legacy_shamir`.
