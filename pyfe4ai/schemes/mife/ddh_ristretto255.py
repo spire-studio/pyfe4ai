@@ -27,7 +27,6 @@ across independent inputs (use MCFE for repeated aggregation).
 from __future__ import annotations
 
 import logging
-import warnings
 
 import numpy as np
 
@@ -36,7 +35,7 @@ from pyfe4ai.core.base import decoded_layer
 from pyfe4ai.schemes.threshold.binding import check_fusion_weight, fusion_weight_id
 from pyfe4ai.primitives.groups import ec_group as eg
 from pyfe4ai.core.constants import CryptoCONST
-from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, FEWarning
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai._validation import int_vector, scale_to_int
 
 logger = logging.getLogger(__name__)
@@ -86,7 +85,7 @@ class MIFERistretto255KeyGenerator(ECDDHKeyGeneratorBase):
         """Client *nid*'s encryption key ``{h, u}`` (``None`` if unknown)."""
         if nid not in self.lst_nid:
             logger.error("no id or invalid id provided.")
-            warnings.warn("no id or invalid id provided.", FEWarning, stacklevel=2)
+            warn_at_caller("no id or invalid id provided.")
             return None
         return {
             "h": [eg.to_hex(eg.mul_base(s)) for s in self.msk["s"][nid]],

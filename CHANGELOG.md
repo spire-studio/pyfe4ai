@@ -76,7 +76,7 @@ upgrade notes first.**
   | `threshold_utils`: `SHARE_CACHE_SIZE`, `share_cache` | `pyfe4ai.schemes.threshold.store` |
   | `threshold_utils`: `LEGACY_SHAMIR_POLICIES`, `legacy_shamir_policy`, `validate_enrolled`, `validate_partial_decryptions`, `partial_groups`, `combine_consistently`, `combine_elementwise` | `pyfe4ai.schemes.threshold.roles` |
   | `mcfe.ring_lwe_threshold`: `MixedSharingsError`, `MIXED_SHARINGS`, `CT_FORMATS`, `pp_ct_format`, `binding_fields` | `pyfe4ai.schemes.threshold.binding`: the same names, `binding_fields` as `tmcfe_ring_lwe_binding_fields` |
-  | `mcfe.ring_lwe_threshold`: `WEIGHT_SHARINGS_KEPT`, `LABEL_PARTS_KEPT` | `pyfe4ai.schemes.threshold.store` (set them there) |
+  | `mcfe.ring_lwe_threshold`: `WEIGHT_SHARINGS_KEPT`, `LABEL_PARTS_KEPT` | `pyfe4ai.schemes.threshold.store` (set them there; reading or setting them on `mcfe.ring_lwe_threshold` raises `AttributeError` rather than being ignored) |
   | `mcfe.ring_lwe_threshold`: `binary_ciphertext_digests`, `binary_tag_message`, `binary_request_digests` | `pyfe4ai.schemes.threshold.codec` |
   | `mcfe.ring_lwe_threshold`: `uniform_flooding_poly`, `uniform_flooding_material`; `mcfe.lwe_threshold.flooding_noise` | `pyfe4ai.schemes.threshold.roles` |
   | `mcfe.ring_lwe_threshold`: `check_rns_servers` | `pyfe4ai.schemes.threshold.sharing` |
@@ -101,8 +101,11 @@ upgrade notes first.**
   unknown client or server id, a decryption out of range or with a wrong
   key, partial decryptions that disagree on the ciphertexts), and a slower
   fallback (an RNS modulus of the threshold Ring-LWE MCFE with more factors
-  than the native ring, a modulus without an NTT root). PyYAML is no longer
-  a dependency.
+  than the native ring, a modulus without an NTT root). Each warning is
+  attributed to the application's call (the first caller outside pyfe4ai),
+  so the default filter shows it once per call site, and its text holds no
+  caller-supplied value (an unknown id is in the log record only). PyYAML
+  is no longer a dependency.
 - **Parameter cache location**: key generators keep their parameter
   records in a per-user cache directory instead of `./config/` of the
   working directory: `~/Library/Caches/pyfe4ai` on macOS,

@@ -272,7 +272,8 @@ import hmac
 import json
 import logging
 import secrets
-import warnings
+import sys
+import types
 from collections import OrderedDict
 
 import gmpy2 as gp
@@ -280,7 +281,7 @@ import numpy as np
 
 from pyfe4ai import backend as native_backend
 from pyfe4ai.core.constants import CryptoCONST
-from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, FEWarning
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai.primitives.lattice.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.primitives.lattice.lwe_utils import decode_scaled
 from pyfe4ai.primitives.lattice.ring_lwe_utils import RNS_NATIVE_FACTORS
@@ -502,11 +503,10 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
                 "the kernels run on the Python path (the prime modulus is native below 2^253)",
                 int(self.q).bit_length(), len(self.q_factors), RNS_NATIVE_FACTORS,
             )
-            warnings.warn(
+            warn_at_caller(
                 "ring_modulus='rns': q ({} bits) has {} factors, more than the native ring's {}; the kernels run "
                 "on the Python path (the prime modulus is native below 2^253)".format(
                     int(self.q).bit_length(), len(self.q_factors), RNS_NATIVE_FACTORS),
-                FEWarning, stacklevel=2,
             )
 
     def _bmms21(self, ring_n: int) -> dict:
@@ -705,7 +705,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             raise FEKeyError("need credentials for Threshold MCFE Ring-LWE")
         if sid not in self.lst_sid:
             logger.error("invalid sid: {}".format(sid))
-            warnings.warn("invalid sid: {}".format(sid), FEWarning, stacklevel=2)
+            warn_at_caller("invalid sid (not one of the key generator's lst_sid)")
             return None
         part = credentials.get("key_part", "label" if self.key_shares == "split" else "full")
         if part not in ("full", "label"):
@@ -805,7 +805,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             raise FEKeyError("need credentials for Threshold MCFE Ring-LWE")
         if sid not in self.lst_sid:
             logger.error("invalid sid: {}".format(sid))
-            warnings.warn("invalid sid: {}".format(sid), FEWarning, stacklevel=2)
+            warn_at_caller("invalid sid (not one of the key generator's lst_sid)")
             return None
         entry = self._weight_entry(credentials.get("fusion_weight"))
         share = dict(entry["shares"][sid], part="weights", share_set_id=entry["share_set_id"])
@@ -1379,7 +1379,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             for p in partials
         ):
             logger.warning("partial decryptions disagree on the ciphertexts they decrypted")
-            warnings.warn("partial decryptions disagree on the ciphertexts they decrypted", FEWarning, stacklevel=2)
+            warn_at_caller("partial decryptions disagree on the ciphertexts they decrypted")
             return None
         q = gp.mpz(self.pp["q"])
         delta = q // gp.mpz(self.pp["p"])
@@ -1486,3 +1486,27 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             ary = np.array(values, dtype=float).reshape(layer["shape"])
             result.append(ary / pow(10, self.precision))
         return result
+
+
+#: Store limits that earlier development versions defined in this module; they are
+#: read from :mod:`pyfe4ai.schemes.threshold.store` (set them there).
+_STORE_LIMITS = ("WEIGHT_SHARINGS_KEPT", "LABEL_PARTS_KEPT")
+
+
+class _Module(types.ModuleType):
+    """This module, refusing to read or set the store limits here: the key
+    generator reads them from :mod:`pyfe4ai.schemes.threshold.store`, so a value
+    set on this module would be silently ignored."""
+
+    def __getattr__(self, name):
+        if name in _STORE_LIMITS:
+            raise AttributeError("{0} is pyfe4ai.schemes.threshold.store.{0}".format(name))
+        raise AttributeError("module {!r} has no attribute {!r}".format(self.__name__, name))
+
+    def __setattr__(self, name, value):
+        if name in _STORE_LIMITS:
+            raise AttributeError("{0} is pyfe4ai.schemes.threshold.store.{0}: set it there".format(name))
+        super().__setattr__(name, value)
+
+
+sys.modules[__name__].__class__ = _Module

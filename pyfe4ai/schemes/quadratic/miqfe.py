@@ -61,12 +61,11 @@ import hmac
 import logging
 import random
 import secrets
-import warnings
 
 from pyfe4ai.core.base import IPFEAbsCrypto
 from pyfe4ai.core.base import IPFEAbsKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST
-from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, FEWarning
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, GT, ZR, PairingGroup, multi_pair, pair
 from pyfe4ai.primitives.pairing.pairing_backend import deserialize_many, multiexp, pow_many
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
@@ -469,7 +468,7 @@ class MultiInputQuadratic(IPFEAbsCrypto):
             return bounded_discrete_log_gt(ctx.group, ctx.gt, z1 / (z2 * z3), bound)
         except ValueError:
             logger.error("result out of bound (wrong key or ciphertexts?)")
-            warnings.warn("result out of bound (wrong key or ciphertexts?)", FEWarning, stacklevel=2)
+            warn_at_caller("result out of bound (wrong key or ciphertexts?)")
             return None
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:

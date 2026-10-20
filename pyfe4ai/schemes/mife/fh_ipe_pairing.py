@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import logging
 import secrets
-import warnings
 
 import gmpy2 as gp
 
@@ -46,7 +45,7 @@ from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, GT, ZR, PairingGr
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.primitives.pairing.pairing_backend import require_pairing_backend
 from pyfe4ai.primitives.pairing.pairing_utils import bounded_discrete_log_gt
-from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, FEWarning
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai._validation import int_vector
 
 logger = logging.getLogger(__name__)
@@ -199,7 +198,7 @@ class MIFEFHIPE(IPFEAbsCrypto):
             return bounded_discrete_log_gt(ctx.group, ctx.fhipe.gt, acc, bound)
         except ValueError:
             logger.error("inner product out of bound (wrong key or ciphertexts?)")
-            warnings.warn("inner product out of bound (wrong key or ciphertexts?)", FEWarning, stacklevel=2)
+            warn_at_caller("inner product out of bound (wrong key or ciphertexts?)")
             return None
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:

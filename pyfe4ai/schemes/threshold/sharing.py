@@ -52,6 +52,7 @@ from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FESecurityWarning
 from pyfe4ai.schemes.threshold import store
 from pyfe4ai.schemes.threshold.codec import _bytes_layout
 from pyfe4ai.schemes.threshold.codec import _bytes_leaves
+from pyfe4ai.schemes.threshold.codec import _check_key_polys
 from pyfe4ai.schemes.threshold.codec import _has_bytes
 from pyfe4ai.schemes.threshold.codec import _map_bytes
 from pyfe4ai.schemes.threshold.codec import _poly_values
@@ -779,12 +780,16 @@ def share_polys(polys: list, threshold: int, lst_sid: list, modulus, ring_n: int
     or bytes with *binary*. With *ctx*, a native ring context of *modulus*,
     in one native call (coefficients drawn as :func:`share_secret` draws
     them, in the same order); else :func:`share_secret` per coefficient.
+    Every polynomial must be ``ring_n`` values or ``ring_n`` words on its own
+    (binary polynomials that are whole words only together would be dealt
+    misaligned).
 
     Raises:
         FEKeyError: For malformed key material.
     """
     from pyfe4ai.primitives.lattice.ring_lwe_utils import encode_values
 
+    _check_key_polys(polys, modulus, ring_n)
     sid_v = share_points(lst_sid)
     points = list(sid_v.values())
     shared = None if ctx is None else _share_polys_native(ctx, polys, threshold, points, lst_sid, modulus, binary)
@@ -802,9 +807,12 @@ def share_polys(polys: list, threshold: int, lst_sid: list, modulus, ring_n: int
 
 def _share_polys_native(ctx, polys: list, threshold: int, points: list, lst_sid: list, modulus,
                         binary: bool = False) -> list:
-    """:func:`share_polys` in one native call of the extension's ``shamir_share``."""
+    """:func:`share_polys` in one native call of the extension's ``shamir_share``
+    (every polynomial ``ring_n`` values or words of the ring of *ctx*: checked
+    here too, for callers other than :func:`share_polys`)."""
     from pyfe4ai import backend as native_backend
 
+    _check_key_polys(polys, modulus, ctx.ring_n)
     width = (int(modulus).bit_length() + 7) // 8
     if all(isinstance(poly, (bytes, bytearray)) for poly in polys):  # binary key terms
         flat = b"".join(polys)

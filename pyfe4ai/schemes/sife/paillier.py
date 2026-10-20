@@ -24,7 +24,6 @@ import json
 import secrets
 import logging
 import os
-import warnings
 import gmpy2 as gp
 import numpy as np
 
@@ -40,7 +39,7 @@ from pyfe4ai.primitives.groups.modular_utils import decode_paillier
 from pyfe4ai.primitives.groups.modular_utils import pow_signed
 from pyfe4ai.primitives.sampling import discrete_gaussian_bigint
 from pyfe4ai.primitives.sampling import random_below
-from pyfe4ai.core.exceptions import FEKeyError, FEValidationError, FEWarning
+from pyfe4ai.core.exceptions import FEKeyError, FEValidationError, warn_at_caller
 from pyfe4ai._validation import scale_to_int
 from pyfe4ai.primitives.groups.integer_groups import is_dcr_modulus
 from pyfe4ai._validation import strict_int
@@ -286,9 +285,8 @@ class SIFEPaillier(OfflineRandomMixin, IPFEAbsCrypto):
         mu = decode_paillier(acc, n, bound)
         if mu is None:
             logger.error("decryption is not an inner product in range (wrong key or ciphertext?)")
-            warnings.warn(
+            warn_at_caller(
                 "decryption is not an inner product in range (wrong key or ciphertext?)",
-                FEWarning, stacklevel=2,
             )
         return mu
 

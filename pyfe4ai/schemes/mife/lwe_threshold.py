@@ -137,13 +137,12 @@ from __future__ import annotations
 
 import logging
 import secrets
-import warnings
 
 import gmpy2 as gp
 import numpy as np
 
 from pyfe4ai.core.constants import CryptoCONST
-from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, FEWarning
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai.primitives.lattice.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.primitives.lattice.lwe_utils import abdp15_parameters
 from pyfe4ai.primitives.lattice.lwe_utils import decode_scaled
@@ -363,7 +362,7 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
         fusion_weight = credentials.get("fusion_weight")
         if sid not in self.lst_sid:
             logger.error("invalid sid: {}".format(sid))
-            warnings.warn("invalid sid: {}".format(sid), FEWarning, stacklevel=2)
+            warn_at_caller("invalid sid (not one of the key generator's lst_sid)")
             return None
         identifier = fusion_weight_id(fusion_weight)
         if identifier not in self.dict_dk:
@@ -563,7 +562,7 @@ class ThresholdMIFELWE(MIFELWE):
             for part in partials
         ):
             logger.warning("partial decryptions disagree on the ciphertexts they decrypted")
-            warnings.warn("partial decryptions disagree on the ciphertexts they decrypted", FEWarning, stacklevel=2)
+            warn_at_caller("partial decryptions disagree on the ciphertexts they decrypted")
             return None
         q = gp.mpz(self.pp["q"])
         delta = q // gp.mpz(self.pp["p"])

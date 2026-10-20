@@ -125,3 +125,29 @@ def test_a_modulus_without_an_ntt_root_warns():
 
     with pytest.warns(FEWarning, match="NTT root not found"):
         assert poly_mul([1, 0, 0, 0], [0, 1, 0, 0], 11) == [0, 1, 0, 0]  # 11 = 3 mod 8: no 8th root of unity
+
+
+def test_the_warnings_point_at_the_application_call():
+    """Each FEWarning is attributed to the first caller outside pyfe4ai (here this file), not to
+    a line inside the library: the default filter then shows it once per call site of the
+    application rather than once per process for every scheme together."""
+    tm, kg, pp = _ring_threshold(key_shares="full")
+    creds = {"fusion_weight": {n: [1] for n in NIDS}, "label": "L"}
+    cts = {n: tm.ThresholdMCFERingLWE({"id": n, "precision": 0, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}})
+           .encrypt([[1, 2, 3]], "L") for n in NIDS}
+    parts = {s: tm.ThresholdMCFERingLWE({"id": s, "precision": 0, "keys": {"pp": pp}}).share_decrypt(
+        cts, creds, kg.get_decryption_keys(s, credentials=creds), SIDS) for s in SIDS}
+    parts["s1"] = dict(parts["s1"], ct_digest="0" * 64)
+    combiner = tm.ThresholdMCFERingLWE({"id": "agg", "precision": 0, "keys": {"pp": pp}})
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("default")  # an application's filters
+        assert combiner.combine_decrypt(parts) is None
+        assert combiner.combine_decrypt([parts]) is None  # another call site: shown again
+        assert kg.get_decryption_keys("s9", credentials=creds) is None
+        SIFEKeyGenerator(dict(DDH))
+        with open(_param_file(CryptoCONST.TYPE_SIFE), "w") as f:
+            f.write("{")
+        SIFEKeyGenerator(dict(DDH))
+    fe = [w for w in caught if issubclass(w.category, FEWarning)]
+    assert [w.filename for w in fe] == [__file__] * 4, [(w.filename, str(w.message)[:40]) for w in fe]
+    assert len({w.lineno for w in fe if "disagree" in str(w.message)}) == 2

@@ -43,7 +43,6 @@ from __future__ import annotations
 
 import logging
 import random
-import warnings
 
 import numpy as np
 
@@ -56,7 +55,7 @@ from pyfe4ai.primitives.pairing.pairing_backend import deserialize_many, multiex
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.primitives.pairing.pairing_backend import require_pairing_backend
 from pyfe4ai.primitives.pairing.pairing_utils import bounded_discrete_log_gt
-from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, FEWarning
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai._validation import int_vector
 from pyfe4ai._validation import scale_to_int
 
@@ -323,7 +322,7 @@ class QuadraticQuad(IPFEAbsCrypto):
             return bounded_discrete_log_gt(ctx.group, ctx.gt, v / d, bound)
         except ValueError:
             logger.error("quadratic result out of bound (wrong key or ciphertext?)")
-            warnings.warn("quadratic result out of bound (wrong key or ciphertext?)", FEWarning, stacklevel=2)
+            warn_at_caller("quadratic result out of bound (wrong key or ciphertext?)")
             return None
 
     def _prepare_quadratic_ndarray_payload(self, lhs_lst_ndarray: list, rhs_lst_ndarray: list) -> tuple:

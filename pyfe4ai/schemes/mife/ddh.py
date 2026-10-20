@@ -34,7 +34,6 @@ from __future__ import annotations
 import logging
 import os
 import random
-import warnings
 
 import gmpy2 as gp
 import numpy as np
@@ -47,7 +46,7 @@ from pyfe4ai.schemes.threshold.binding import check_fusion_weight
 from pyfe4ai.schemes.threshold.binding import fusion_weight_id
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.primitives.groups.dlog_solver import load_or_build_dlog_table, dlog_table_solve
-from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, FEWarning
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai._validation import int_vector
 from pyfe4ai._validation import scale_to_int
 
@@ -113,7 +112,7 @@ class MIFEKeyGenerator(DDHKeyGeneratorBase):
         """Return client *nid*'s encryption key ``{h, u}`` (``None`` if unknown)."""
         if nid not in self.lst_nid:
             logger.error("no id or invalid id provided.")
-            warnings.warn("no id or invalid id provided.", FEWarning, stacklevel=2)
+            warn_at_caller("no id or invalid id provided.")
             return None
         return {
             "h": [gp.digits(gp.powmod(self.g, s, self.p)) for s in self.msk["s"][nid]],
@@ -248,7 +247,7 @@ class MIFE(OfflineRandomMixin, IPFEAbsCrypto):
             )
         except (ValueError, RuntimeError):
             logger.error("inner-product is out of bound supported by crypto system.")
-            warnings.warn("inner-product is out of bound supported by crypto system.", FEWarning, stacklevel=2)
+            warn_at_caller("inner-product is out of bound supported by crypto system.")
             return None
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:

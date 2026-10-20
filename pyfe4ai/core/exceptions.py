@@ -4,6 +4,10 @@ All scheme-level exceptions inherit from :class:`FEError`, allowing consumers
 to catch broad (``except FEError``) or narrow (``except FEValidationError``).
 """
 
+import os
+import sys
+import warnings
+
 
 class FEError(Exception):
     """Base exception for all PyFE4AI errors."""
@@ -43,4 +47,27 @@ class FEWarning(UserWarning):
     without a logging configuration this warning is what an application
     sees). Not a subclass of :class:`FESecurityWarning`: filtering one leaves
     the other.
+
+    It is attributed to the application's call (the first caller outside
+    pyfe4ai, see :func:`warn_at_caller`), so Python's default filter shows it
+    once per call site of the application, not once per library line. Its text
+    holds no caller-supplied values (an unknown id is in the log record only).
     """
+
+
+_PACKAGE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _in_package(filename: str) -> bool:
+    return os.path.abspath(filename).startswith(_PACKAGE_DIR + os.sep)
+
+
+def warn_at_caller(message: str, category: type = FEWarning) -> None:
+    """Issue *message* as a *category* warning attributed to the first frame
+    outside the pyfe4ai package -- the application's call, however deep the
+    library's own calls are -- or, if every frame is inside it, to the library
+    function that issues it. Used by the library for :class:`FEWarning`."""
+    frame, level = sys._getframe(1), 2
+    while frame is not None and _in_package(frame.f_code.co_filename):
+        frame, level = frame.f_back, level + 1
+    warnings.warn(message, category, stacklevel=level if frame is not None else 2)

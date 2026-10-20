@@ -15,11 +15,10 @@ reaching into another scheme family's private namespace.
 
 import logging
 import math
-import warnings
 
 import gmpy2 as gp
 
-from pyfe4ai.core.exceptions import FEWarning
+from pyfe4ai.core.exceptions import warn_at_caller
 
 logger = logging.getLogger(__name__)
 
@@ -475,10 +474,9 @@ def poly_mul(
         "to choose an NTT-friendly prime.",
         q, n,
     )
-    warnings.warn(
+    warn_at_caller(
         "NTT root not found for q={}, n={}; falling back to O(n²) negacyclic multiplication. Consider using "
         "next_ntt_prime() to choose an NTT-friendly prime.".format(q, n),
-        FEWarning, stacklevel=2,
     )
     return poly_mul_negacyclic(a, b, q)
 

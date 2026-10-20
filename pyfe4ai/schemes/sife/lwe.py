@@ -39,7 +39,6 @@ parameters. Versions <= 0.2.0 published ``A`` entry by entry.
 from __future__ import annotations
 
 import logging
-import warnings
 import gmpy2 as gp
 import numpy as np
 
@@ -58,7 +57,7 @@ from pyfe4ai.primitives.lattice.matrix_utils import matvec_mod
 from pyfe4ai.primitives.lattice.matrix_utils import vecdot_mod
 from pyfe4ai.primitives.lattice.matrix_utils import vector_to_digits
 from pyfe4ai.primitives.sampling import rand_uniform_matrix
-from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, FEWarning
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai._validation import int_vector
 from pyfe4ai._validation import scale_to_int
 
@@ -237,7 +236,7 @@ class SIFELWE(IPFEAbsCrypto, ABDP15CryptoMixin):
         bound = self.pp["eta"] * int(self.pp["bound_x"]) * int(self.pp["bound_y"])
         if abs(int(mu)) > bound:
             logger.error("inner product out of bound (wrong key or ciphertext?)")
-            warnings.warn("inner product out of bound (wrong key or ciphertext?)", FEWarning, stacklevel=2)
+            warn_at_caller("inner product out of bound (wrong key or ciphertext?)")
             return None
         return int(mu)
 

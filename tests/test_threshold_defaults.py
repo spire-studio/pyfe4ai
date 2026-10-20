@@ -474,6 +474,38 @@ def test_i_d_exhausted_test_bytes_are_not_malformed_key_material(monkeypatch):
     assert len(deal(polys)) == 2
 
 
+def test_share_polys_checks_the_polynomial_lengths_itself():
+    """B2-c (batch 2 review): share_polys is a module function now; binary polynomials that are not
+    ring_n words each but whole words together (the L2b shape) are refused on both paths, and by the
+    native dealing called directly, not only by its caller's check."""
+    kg, _ = _setup(t=3)
+    q, n = kg.q, kg.ring_n
+    width = (int(q).bit_length() + 7) // 8
+    flat = b"".join((i + 1).to_bytes(width, "little") for i in range(2 * n))
+    polys = [flat[: n * width + 1], flat[n * width + 1:]]  # n words + 1 byte, n words - 1 byte
+    ctx = tm._native_ring(q, n)
+    for c in (ctx, None):
+        with pytest.raises(FEKeyError, match="ring_n"):
+            threshold_sharing.share_polys(polys, 3, SIDS, q, n, binary=True, ctx=c)
+    if ctx is not None:
+        points = list(threshold_sharing.share_points(SIDS).values())
+        with pytest.raises(FEKeyError, match="ring_n"):
+            threshold_sharing._share_polys_native(ctx, polys, 3, points, SIDS, q, True)
+
+
+def test_the_store_limits_are_not_set_on_the_scheme_module():
+    """B2-d (batch 2 review): WEIGHT_SHARINGS_KEPT and LABEL_PARTS_KEPT are read from
+    threshold.store; reading or assigning them on ring_lwe_threshold is an error that says where
+    they are, not an attribute that nothing reads."""
+    for name in ("WEIGHT_SHARINGS_KEPT", "LABEL_PARTS_KEPT"):
+        with pytest.raises(AttributeError, match="threshold.store"):
+            setattr(tm, name, 1)
+        with pytest.raises(AttributeError, match="threshold.store"):
+            getattr(tm, name)
+        assert name not in vars(tm)
+    assert (threshold_store.WEIGHT_SHARINGS_KEPT, threshold_store.LABEL_PARTS_KEPT) == (64, 16)
+
+
 def test_kl_accounting_with_split_key_shares():
     kg, pp = _setup(t=3, flooding_accounting="kl", max_partial_decryptions=64)
     assert kg.key_shares == "split" and pp["sharing"] == "shamir"
