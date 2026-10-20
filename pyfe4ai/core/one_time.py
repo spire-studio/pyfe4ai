@@ -11,7 +11,7 @@ process:
   threads exactly one gets them;
 * a precomputation records the process that made it and refuses to be used
   in another one; after ``os.fork()`` the child's copies are also marked
-  used and dropped (``os.register_at_fork``);
+  used and dropped (:func:`pyfe4ai.core.forksafe.track`);
 * ``copy.copy``, ``copy.deepcopy`` and pickling raise ``TypeError``: a copy
   would be a second, unused handle on the same randomness. Code that clones
   the object deliberately (copying its attributes) is not prevented; the
@@ -47,23 +47,12 @@ from __future__ import annotations
 
 import os
 import threading
-import weakref
 
 import numpy as np
 
 from pyfe4ai._validation import scale_to_int
+from pyfe4ai.core import forksafe
 from pyfe4ai.core.exceptions import FEKeyError, FEValidationError
-
-_LIVE: "weakref.WeakSet[OneTimePrecomputation]" = weakref.WeakSet()
-
-
-def _invalidate_after_fork() -> None:
-    for pre in list(_LIVE):
-        pre._invalidate()
-
-
-if hasattr(os, "register_at_fork"):
-    os.register_at_fork(after_in_child=_invalidate_after_fork)
 
 
 class OneTimePrecomputation:
@@ -79,7 +68,7 @@ class OneTimePrecomputation:
         self.used = False
         self._lock = threading.Lock()
         self._pid = os.getpid()
-        _LIVE.add(self)
+        forksafe.track(self)  # a forked child: _after_fork_in_child()
 
     def _claim(self, *names: str) -> tuple:
         """Mark the precomputation used and return the attributes *names*,
@@ -105,6 +94,10 @@ class OneTimePrecomputation:
         self.used = True
         for name in self._secret:
             setattr(self, name, None)
+
+    def _after_fork_in_child(self) -> None:
+        """Called in a forked child by :mod:`pyfe4ai.core.forksafe`: :meth:`_invalidate`."""
+        self._invalidate()
 
     def __copy__(self):
         raise TypeError("a one-time precomputation cannot be copied")

@@ -14,16 +14,20 @@ Caches and stores of the threshold schemes, and their locks.
 
 The stores are attributes of the scheme objects (the pickled state of those
 objects is unchanged); the module locks guard the several steps of each
-lookup and eviction, never the sharing or the arithmetic. A forked child
-replaces each lock (the parent's may be held by another thread).
+lookup and eviction, never the sharing or the arithmetic. The locks are
+process-wide, not per object: a shallow copy (``copy.copy``) of a key
+generator or a server shares its stores with the original, and one lock per
+store container keeps the two consistent. A forked child replaces each lock
+(the parent's may be held by another thread; :func:`pyfe4ai.core.forksafe.renew_lock`).
 """
 
 from __future__ import annotations
 
-import os
+import sys
 import threading
 from collections import OrderedDict
 
+from pyfe4ai.core import forksafe
 from pyfe4ai.core.exceptions import FESchemeError
 
 #: Entries kept by a cache of
@@ -35,15 +39,7 @@ SHARE_CACHE_SIZE = 16
 #: (lookups and evictions are several steps of an OrderedDict; the sums themselves
 #: run outside it).
 _SHARE_CACHE_LOCK = threading.Lock()
-
-
-def _reset_share_cache_lock() -> None:
-    global _SHARE_CACHE_LOCK
-    _SHARE_CACHE_LOCK = threading.Lock()  # a forked child: the parent's may be held by another thread
-
-
-if hasattr(os, "register_at_fork"):
-    os.register_at_fork(after_in_child=_reset_share_cache_lock)
+forksafe.renew_lock(sys.modules[__name__], "_SHARE_CACHE_LOCK")  # a forked child: the parent's may be held
 
 
 def share_cache(obj) -> OrderedDict:
@@ -79,15 +75,7 @@ def keep_share(cache: OrderedDict, key: tuple, dk: dict, out) -> None:
 #: Guards the weight-share stores and the NTT(sk_y) cache (key generators and
 #: servers; several steps of a dict each). The sharing and the NTTs run outside it.
 _STORE_LOCK = threading.Lock()
-
-
-def _reset_store_lock() -> None:
-    global _STORE_LOCK
-    _STORE_LOCK = threading.Lock()  # a forked child: the parent's may be held by another thread
-
-
-if hasattr(os, "register_at_fork"):
-    os.register_at_fork(after_in_child=_reset_store_lock)
+forksafe.renew_lock(sys.modules[__name__], "_STORE_LOCK")  # a forked child: the parent's may be held
 
 
 #: Weights whose shares of ``sk_y`` a key generator keeps (least recently used

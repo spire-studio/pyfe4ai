@@ -6,6 +6,7 @@ import hashlib
 import math
 import os
 import random
+import sys
 import threading
 import time
 from contextlib import contextmanager
@@ -18,6 +19,7 @@ import numpy as np
 
 import warnings
 
+from pyfe4ai.core import forksafe
 from pyfe4ai.core.exceptions import FESecurityWarning, FEValidationError
 
 _CSPRNG = random.SystemRandom()
@@ -263,15 +265,7 @@ def discrete_gaussian_matrix(
 # never held while drawing. A forked child gets a new one, as the parent's may
 # be held at the fork.
 _XOF_LOCK = threading.Lock()
-
-
-def _reset_xof_lock() -> None:
-    global _XOF_LOCK
-    _XOF_LOCK = threading.Lock()
-
-
-if hasattr(os, "register_at_fork"):
-    os.register_at_fork(after_in_child=_reset_xof_lock)
+forksafe.renew_lock(sys.modules[__name__], "_XOF_LOCK")
 
 
 class XofRandom:
@@ -495,8 +489,7 @@ class _OSRandomBuffer:
 _OS_RANDOM = _OSRandomBuffer()
 # The module's OS source; a replaced _OS_RANDOM (tests) keeps the Python sampler.
 _OS_SOURCE = _OS_RANDOM
-if hasattr(os, "register_at_fork"):
-    os.register_at_fork(after_in_child=_OS_RANDOM._reset)
+forksafe.call_in_child(_OS_RANDOM._reset)  # the child neither reuses the parent's bytes nor its lock
 
 
 class _FacctParams(NamedTuple):

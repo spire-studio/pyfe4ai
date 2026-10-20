@@ -22,12 +22,13 @@ samples of :meth:`NativeBackend.gaussian_facct` within their bounds.
 from __future__ import annotations
 
 import functools
-import os
+import sys
 import threading
 
 import gmpy2 as gp
 
 from pyfe4ai import backend as _b
+from pyfe4ai.core import forksafe
 from pyfe4ai.backend.python_impl import PythonBackend
 from pyfe4ai.backend.python_impl import PythonRing
 
@@ -410,17 +411,11 @@ def hash_kwargs(mode: str) -> dict:
     return {"hash_mode": LABEL_HASH_CODES[mode]} if mode != LEGACY_LABEL_HASH else {}
 
 
+#: The native ring contexts, per ``(q, ring_n, RNS factors)`` (``None``: no
+#: native context); process-wide, shared by every object (public tables only).
 _contexts: dict = {}
 _contexts_lock = threading.Lock()
-
-
-def _reset_contexts_lock() -> None:
-    global _contexts_lock
-    _contexts_lock = threading.Lock()  # a forked child: the parent's may be held while a context is built
-
-
-if hasattr(os, "register_at_fork"):
-    os.register_at_fork(after_in_child=_reset_contexts_lock)
+forksafe.renew_lock(sys.modules[__name__], "_contexts_lock")  # a forked child: the parent's may be held
 
 
 def ring_context(q, ring_n: int) -> RingContext | None:
