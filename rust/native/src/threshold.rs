@@ -319,10 +319,11 @@ pub(crate) fn share_combine(py: Python<'_>, ctx: &Bound<'_, RingCtx>, c_y: &Boun
     })
 }
 
-/// threshold_utils.share_secret for many secrets: one list of shares (decimal
-/// strings) per point. The coefficients are drawn as SystemRandom.randrange(0, q)
-/// draws them, from the given bytes (tests; ValueError if they run out) or the
-/// call's DRBG (stream 0, read sequentially).
+/// pyfe4ai.schemes.threshold.sharing.share_secret for many secrets: one list of
+/// shares (decimal strings) per point. The coefficients are drawn as
+/// SystemRandom.randrange(0, q) draws them, from the given bytes (tests;
+/// ValueError if they run out) or the call's DRBG (stream 0, read
+/// sequentially).
 /// With `binary`, one bytes object per point instead: the shares as
 /// ceil(bits(q) / 8)-byte little-endian words.
 #[pyfunction]
@@ -395,8 +396,9 @@ pub(crate) fn shamir_share(py: Python<'_>, ctx: &Bound<'_, RingCtx>, values: &Bo
 
 // ------------------------------------------------------------ binary paths
 
-/// ring_lwe_threshold.uniform_flooding_poly(bits, count, seed) mod q, for the
-/// material domain || len(seed) || seed (tests compare it with the Python code).
+/// pyfe4ai.schemes.threshold.roles.uniform_flooding_poly(bits, count, seed) mod
+/// q, for the material domain || len(seed) || seed (tests compare it with the
+/// Python code).
 #[pyfunction]
 fn uniform_flooding(py: Python<'_>, ctx: &Bound<'_, RingCtx>, bits: u32, material: Vec<u8>, count: usize)
     -> PyResult<Py<PyList>> {

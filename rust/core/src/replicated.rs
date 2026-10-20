@@ -1,6 +1,6 @@
 //! The replicated key sharing of the LWE threshold layers as
-//! threshold_utils.share_replicated and share_for_enrolled compute it, over
-//! flat values mod q (no NTT ring): the random pieces drawn as
+//! pyfe4ai.schemes.threshold.sharing.share_replicated and share_for_enrolled
+//! compute it, over flat values mod q (no NTT ring): the random pieces drawn as
 //! random.SystemRandom.randrange(0, q) draws them (shamir::below), piece by
 //! piece and value by value, with the first piece the correction; and sums of
 //! pieces, explicit or expanded from seeds (keccak::hash_to_zq, the

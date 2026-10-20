@@ -19,10 +19,10 @@ pub fn value_bytes(qbits: u32) -> usize {
     ((qbits + 7) / 8) as usize
 }
 
-/// ring_lwe_threshold.uniform_flooding_poly mod q: value i is block i of
-/// ceil((bits + 1) / 8) big-endian bytes of SHAKE-256(material), its low
-/// bits + 1 bits, minus 2^bits. Needs 2^bits < q. The stream is wiped (the
-/// material holds the server's noise key).
+/// pyfe4ai.schemes.threshold.roles.uniform_flooding_poly mod q: value i is
+/// block i of ceil((bits + 1) / 8) big-endian bytes of SHAKE-256(material),
+/// its low bits + 1 bits, minus 2^bits. Needs 2^bits < q. The stream is wiped
+/// (the material holds the server's noise key).
 pub fn uniform_flooding<W: Word>(m: &Modulus<W>, bits: u32, material: &[u8], out: &mut [W]) -> Result<(), &'static str> {
     if bits == 0 || bits >= m.bits {
         return Err("the flooding width must satisfy 1 <= bits and 2^bits < q");

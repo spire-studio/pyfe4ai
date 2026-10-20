@@ -2,10 +2,10 @@
 //! `replicated`): dealing and the sums of pieces over Z_q for any odd q below
 //! 2^253, without an NTT ring (the moduli of tMIFE-LWE and tMCFE-LWE have
 //! none). Values cross as decimal strings or ints; anything else is a
-//! TypeError, for which threshold_utils falls back to its Python code (which
-//! then decides what such values mean). Secret words, digits and seed
-//! materials are wiped before they are freed; the Python strings returned
-//! cannot be.
+//! TypeError, for which pyfe4ai.schemes.threshold.sharing falls back to its
+//! Python code (which then decides what such values mean). Secret words,
+//! digits and seed materials are wiped before they are freed; the Python
+//! strings returned cannot be.
 
 use crate::drbg::{wipe_rng, CallDrbg};
 use crate::secret::{secret_byte_rows, wipe_byte_rows, wipe_word_rows};
@@ -114,12 +114,12 @@ fn secret_out<'py, W: Word>(py: Python<'py>, words: &mut [W], m: &Modulus<W>, bi
     Ok(secret_list(py, words)?.into_any())
 }
 
-/// threshold_utils.share_replicated over flat values: `[correction, r_1, ...,
-/// r_k]` as lists of decimal strings, the k = n_random random pieces drawn
-/// piece by piece, value by value, as SystemRandom.randrange(0, q) draws them,
-/// from the given bytes (tests; ValueError if they run out) or the call's
-/// DRBG (stream 0, read sequentially), and the correction the values minus
-/// their sum.
+/// pyfe4ai.schemes.threshold.sharing.share_replicated over flat values:
+/// `[correction, r_1, ..., r_k]` as lists of decimal strings, the k = n_random
+/// random pieces drawn piece by piece, value by value, as
+/// SystemRandom.randrange(0, q) draws them, from the given bytes (tests;
+/// ValueError if they run out) or the call's DRBG (stream 0, read
+/// sequentially), and the correction the values minus their sum.
 /// With `binary`, each piece is one bytes object of ceil(bits(q) / 8)-byte words.
 #[pyfunction]
 #[pyo3(signature = (q, values, n_random, rnd, seed=None, binary=false))]
@@ -180,8 +180,8 @@ fn zq_replicated_deal(py: Python<'_>, q: &Bound<'_, PyAny>, values: &Bound<'_, P
 /// The sum mod q of the rows (count values each: ints or plain decimal
 /// strings) plus -- with `subtract`, minus -- hash_to_zq_vector(material, q,
 /// count) (shake256-wide) of every material, as decimal strings: the sums of
-/// threshold_utils.share_for_enrolled and _combine_pieces. TypeError for other
-/// values, ValueError for rows of another length.
+/// pyfe4ai.schemes.threshold.sharing.share_for_enrolled and _combine_pieces.
+/// TypeError for other values, ValueError for rows of another length.
 /// Rows may also be bytes (binary key shares, see read_exact); with `binary`
 /// the sum is one bytes object of ceil(bits(q) / 8)-byte words.
 #[pyfunction]

@@ -1,7 +1,8 @@
-//! Shamir sharing as threshold_utils.share_secret computes it: the t - 1
-//! random coefficients of each secret drawn as random.SystemRandom.randrange(0, q)
-//! draws them -- getrandbits(bits(q)) from ceil(bits(q) / 8) big-endian bytes,
-//! drawn again while >= q -- and the polynomial evaluated at every point.
+//! Shamir sharing as pyfe4ai.schemes.threshold.sharing.share_secret computes
+//! it: the t - 1 random coefficients of each secret drawn as
+//! random.SystemRandom.randrange(0, q) draws them -- getrandbits(bits(q)) from
+//! ceil(bits(q) / 8) big-endian bytes, drawn again while >= q -- and the
+//! polynomial evaluated at every point.
 
 use crate::arith::{Modulus, Word};
 
