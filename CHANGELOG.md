@@ -13,8 +13,9 @@ exact Gaussian sampling by default, and faster defaults for the threshold MCFE
 over Ring-LWE. PyFE4AI remains an experimental research prototype under
 active development: interfaces, defaults and serialized formats change between
 versions, and it is not recommended for production use. **Several formats are
-not compatible with v0.3.0, and modules moved (Code organization); read the
-upgrade notes first.**
+not compatible with v0.3.0, and modules moved and classes were renamed
+(Code organization; schemes are now also built by id with
+`pyfe4ai.create("family/variant", config)`); read the upgrade notes first.**
 
 ### Code organization (breaking)
 
