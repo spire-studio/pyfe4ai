@@ -447,7 +447,8 @@ class Backend(abc.ABC):
     @abc.abstractmethod
     def dense_key(self, key_row: list, q):
         """A dense-LWE key row in the form :meth:`~pyfe4ai.backend.interface.Backend.label_dots` reads (natively
-        packed words; secret, cached by the caller per key)."""
+        packed words with the row; secret, cached by the caller per key and
+        pickled with it, so built of plain values only)."""
 
     @abc.abstractmethod
     def label_dots(self, materials: list, key, q, dim: int, mode: str) -> list:

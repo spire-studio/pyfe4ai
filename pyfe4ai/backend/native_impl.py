@@ -381,19 +381,6 @@ def _noise_args(noise, flood) -> dict:
     return out
 
 
-class DenseKey(bytes):
-    """A dense-LWE key row packed for :meth:`NativeBackend.label_dots`, with the
-    row itself (``row``); picklable, as the caller's cache of it."""
-
-    def __new__(cls, data: bytes, row):
-        obj = super().__new__(cls, data)
-        obj.row = row
-        return obj
-
-    def __reduce__(self):
-        return DenseKey, (bytes(self), self.row)
-
-
 class NativePrecomputation(tuple):
     """The native offline phase of :meth:`RingContext.precompute_tensor`:
     ``(key, capsule)``; the capsule marks every chunk used and wipes it when used
@@ -810,16 +797,18 @@ class NativeBackend(PythonBackend):
     # -- dense LWE and ristretto255 layers (the batched steps)
 
     def dense_key(self, key_row: list, q):
-        """The key row of :meth:`label_dots` (a :class:`DenseKey`): its values
-        mod q as little-endian words of ``ceil(bits(q) / 64)`` 64-bit limbs."""
+        """The key row of :meth:`label_dots`: ``(packed, key_row)``, its values
+        mod q as little-endian words of ``ceil(bits(q) / 64)`` 64-bit limbs and
+        the row itself (plain values: the caller caches and may pickle it)."""
         kl = (int(q).bit_length() + 63) // 64
-        return DenseKey(b"".join((int(v) % int(q)).to_bytes(8 * kl, "little") for v in key_row), key_row)
+        return b"".join((int(v) % int(q)).to_bytes(8 * kl, "little") for v in key_row), key_row
 
     def label_dots(self, materials: list, key, q, dim: int, mode: str) -> list:
         from pyfe4ai.primitives.hashing import LEGACY_LABEL_HASH, zq_rejection_parameters
 
-        if len(key.row) != dim:  # the kernel takes key rows of the dimension only: the reference
-            return super().label_dots(materials, key.row, q, dim, mode)
+        key, row = key
+        if len(row) != dim:  # the kernel takes key rows of the dimension only: the reference
+            return super().label_dots(materials, row, q, dim, mode)
         kl = (int(q).bit_length() + 63) // 64
         if mode == LEGACY_LABEL_HASH:
             raw = _b._ext.dense_dots(materials, (int(q).bit_length() + 128 + 7) // 8, dim, key, kl, _b._threads)

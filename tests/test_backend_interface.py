@@ -655,6 +655,28 @@ def test_label_dots(mode, bits, spy):
     assert py == nat and spy.calls["dense_dots"] == 1
 
 
+@native
+def test_cached_dense_keys_pickle_without_backend_classes():
+    """A client pickles its cached dense keys; the pickle names no backend
+    class, so versions without :mod:`pyfe4ai.backend.native_impl` load it."""
+    import pickle
+
+    from pyfe4ai.schemes.mcfe import lwe as dlwe
+
+    kg = dlwe.MCFELWEKeyGenerator({"n": 2, "lst_nid": ["c0", "c1"]})
+    kg.setup()
+    cl = dlwe.MCFELWE({"id": "c0", "precision": 0, "keys": {"pp": kg.get_public_parameters(),
+                                                            "sk": kg.get_private_keys("c0")}})
+    layer = [np.arange(6) % 3 - 1]
+    with native_backend.backend("native"):
+        before = cl.encrypt_lst_ndarray(layer, label="L")
+    data = pickle.dumps(cl)
+    assert "_dense_key_native" in cl.__dict__ and b"pyfe4ai.backend" not in data
+    with native_backend.backend("native"):
+        after = pickle.loads(data).encrypt_lst_ndarray(layer, label="L")
+    assert [a.tolist() for a in after] == [b.tolist() for b in before]
+
+
 # -- BLS12-381
 
 @native
