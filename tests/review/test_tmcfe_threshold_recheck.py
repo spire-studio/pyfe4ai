@@ -1,31 +1,29 @@
-"""Re-check 2026-10 of the tMCFE review fixes (perf/tmcfe-threshold 4de73ce..02ae981).
+"""Follow-up checks of the threshold MCFE fixes (October 2026 code review).
 
-L1, L2, I2 (as reported), I3 and the info items are fixed on 02ae981 (see
-docs/review/crypto_review_2026-10_tmcfe_recheck.md). Fail on 02ae981:
+Before the fixes:
 
-* L2b (low, latent): the native Shamir dealing (``_share_polys_native``) of
-  all-bytes key material does not check each polynomial's length: bytes
-  polynomials that are not whole words but add up to whole words are dealt
+* (low, latent) the native Shamir dealing (``_share_polys_native``) of
+  all-bytes key material did not check each polynomial's length: bytes
+  polynomials that are not whole words but add up to whole words were dealt
   shifted by a byte (shares of other values, no error); other malformed
-  bytes raise ``ValueError``. The Python dealing refuses all of them
-  (``FEKeyError``). No caller passes such material today;
-* I2b (info, mostly as on b51989f): malformed value-list key shares are
-  served or fail with other exceptions -- a Shamir ``z`` shorter than
-  ``ring_n`` gives a shorter partial (an empty ``z`` an empty result), float
-  values are truncated in the Python reads and sums (another result), wrong
-  lengths and bad values raise ``IndexError`` / ``ZeroDivisionError`` /
-  ``TypeError`` / ``ValueError``;
-* I10 (info): a label part cached by the key generator (``dict_dk``) keeps the
+  bytes raised ``ValueError``. The Python dealing refuses all of them
+  (``FEKeyError``). No caller passed such material;
+* (info) malformed value-list key shares were served or failed with other
+  exceptions -- a Shamir ``z`` shorter than ``ring_n`` gave a shorter partial
+  (an empty ``z`` an empty result), float values were truncated in the Python
+  reads and sums (another result), wrong lengths and bad values raised
+  ``IndexError`` / ``ZeroDivisionError`` / ``TypeError`` / ``ValueError``;
+* (info) a label part cached by the key generator (``dict_dk``) kept the
   share set of its first issuance after the weights' sharing was evicted
-  (``WEIGHT_SHARINGS_KEPT``): the generator then hands out weight parts of the
-  new share set only, so servers holding the current weight part can never
+  (``WEIGHT_SHARINGS_KEPT``): the generator then handed out weight parts of the
+  new share set only, so servers holding the current weight part could never
   serve that label part (fail closed; availability);
-* I11 (info): objects pickled by b51989f (no ``ct_format`` / ``threshold_format``
-  / ``_pp_snapshot``) do not work after loading: ``AttributeError`` since
-  5af955b, ``FESchemeError("the public parameters changed ...")`` since 02ae981
-  for clients and servers, although nothing changed. Coordinator's decision:
-  no compatibility layer, a clear error when such a pickle is loaded (the test
-  was changed accordingly with the fix).
+* (info) objects pickled by an earlier development version (no ``ct_format`` /
+  ``threshold_format`` / ``_pp_snapshot``) did not work after loading
+  (``AttributeError``, or ``FESchemeError("the public parameters changed
+  ...")`` for clients and servers, although nothing changed). There is no
+  compatibility layer: such a pickle now raises a clear error when it is
+  loaded (pickles are not portable across versions).
 """
 
 from __future__ import annotations
@@ -135,7 +133,7 @@ def _nested_sk(dk, q):
 
 
 I2B_CASES = [
-    # (id, sharing, t, ct_format, backends, mutation) -- served or a non-library exception on 02ae981
+    # (id, sharing, t, ct_format, backends, mutation) -- served, or a non-library exception, before the fix
     ("shamir z of n-1 values (served)", "shamir", 3, "json", BACKENDS, _short_z),
     ("shamir empty z (served, empty result)", "shamir", 3, "json", BACKENDS, _empty_z),
     ("shamir float sk_y (served truncated)", "shamir", 3, "json", ["python"], _float_sk),
@@ -190,9 +188,9 @@ def test_i10_a_cached_label_part_is_served_after_its_sharing_was_evicted(monkeyp
     assert _obj(pp, "agg").combine_decrypt(parts) == [3, 6, 9]
 
 
-def _b51989f_pickle(obj, missing, monkeypatch):
-    """A pickle of *obj* as b51989f wrote it: its state without the attributes
-    added since (and without a state version)."""
+def _earlier_version_pickle(obj, missing, monkeypatch):
+    """A pickle of *obj* as an earlier development version wrote it: its state
+    without the attributes added since (and without a state version)."""
     state = {k: v for k, v in obj.__getstate__().items() if k not in missing and k != "_state_version"}
     with monkeypatch.context() as m:
         m.setattr(type(obj), "__getstate__", lambda self: state)
@@ -200,11 +198,11 @@ def _b51989f_pickle(obj, missing, monkeypatch):
 
 
 def test_i11_objects_pickled_by_b51989f_are_refused_clearly(monkeypatch):
-    """Coordinator's decision (2026-10-19, the user can override): pickled scheme
-    objects are not portable across versions (b51989f is unreleased; v0.3.0
-    threshold key shares are refused anyway), so no compatibility layer, but a
-    clear error when such a pickle is loaded instead of an AttributeError or a
-    misleading "public parameters changed"."""
+    """Pickled scheme objects are not portable across versions (the earlier
+    development version was never released; v0.3.0 threshold key shares are
+    refused anyway), so there is no compatibility layer, but a clear error when
+    such a pickle is loaded instead of an AttributeError or a misleading
+    "public parameters changed"."""
     from pyfe4ai.utils.exceptions import FESchemeError
 
     kg, pp = _setup(t=2, sharing="replicated")
@@ -213,7 +211,7 @@ def test_i11_objects_pickled_by_b51989f_are_refused_clearly(monkeypatch):
     for obj, missing in ((kg, ("ct_format", "dict_weight_shares")),
                          (client, ("_binary_ciphertexts", "_pp_snapshot", "threshold_format")),
                          (server, ("_binary_ciphertexts", "_pp_snapshot", "threshold_format"))):
-        data = _b51989f_pickle(obj, missing, monkeypatch)
+        data = _earlier_version_pickle(obj, missing, monkeypatch)
         with pytest.raises(FESchemeError, match="incompatible version of pyfe4ai"):
             pickle.loads(data)
     # pickles of this version load and work

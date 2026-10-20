@@ -1,13 +1,13 @@
-"""Review 2026-10 (exp/hash-and-flooding 3a84434): the label-hash mode is not bound to ciphertexts.
+"""The label-hash mode is bound to ciphertexts (October 2026 code review).
 
 Public parameters without ``label_hash`` are read as ``"shake256-wide"`` (the
 v0.3.0 hash) while the key generators default to ``"shake128-rejection"``.
-Functional keys carry the mode and are checked against the decryptor's
-parameters, but ciphertexts carry nothing: a client still holding parameters
-of the old format (or a different mode) pads with another label hash, and the
-aggregate decrypts without any error to wrong values (``p = 2 n eta X Y + 2``,
-so almost every garbage value decodes inside the bound). Fails on the
-reviewed commit.
+Functional keys carried the mode and were checked against the decryptor's
+parameters, but ciphertexts carried nothing: a client still holding parameters
+of the old format (or a different mode) padded with another label hash, and
+the aggregate decrypted without any error to wrong values
+(``p = 2 n eta X Y + 2``, so almost every garbage value decodes inside the
+bound). Ciphertext layers now carry the mode, and a mismatch is refused.
 """
 
 import numpy as np

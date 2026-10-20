@@ -1,24 +1,25 @@
-"""Review 2026-10 (perf/tmcfe-threshold b51989f..0716163): binary, RNS and split tMCFE.
+"""Binary ciphertexts, the RNS modulus and split key shares of the threshold
+MCFE (October 2026 code review).
 
 Format 2, tags v2, pp_binding, the RNS ring, split and binary key shares hold
 as specified (see test_tmcfe_threshold_invariants.py for the checks that
-pass). Fail on 0716163:
+pass). Before the fixes:
 
-* L2 (latent): the native Shamir dealing of ``_share_material`` reads key
+* (latent) the native Shamir dealing of ``_share_material`` read key
   material that mixes bytes polynomials with value lists byte by byte (each
-  byte a coefficient): the shares are of other values, without an error. The
-  Python dealing reads the mix right. No caller passes such a mix today
-  (full keys are all values, label parts all bytes, weight parts all values);
-* I2: replicated pieces mixing bytes and decimal polynomials, and key-share
-  polynomials given as ``memoryview``, are refused with ``ValueError`` /
+  byte a coefficient): the shares were of other values, without an error. The
+  Python dealing reads the mix right. No caller passed such a mix (full keys
+  are all values, label parts all bytes, weight parts all values);
+* replicated pieces mixing bytes and decimal polynomials, and key-share
+  polynomials given as ``memoryview``, were refused with ``ValueError`` /
   ``TypeError`` / ``IndexError`` from the parsers instead of ``FEKeyError``
   ("malformed binary key share");
-* I3: a server fixes its ciphertext format when it is created, while it binds
-  key shares and seeds the noise with the digest of its public parameters as
-  they are at each call (``self.pp`` is the caller's dict): after an
-  in-place ``pp["ct_format"] = "binary"`` it serves JSON ciphertexts with a
+* a server fixed its ciphertext format when it was created, while it bound
+  key shares and seeded the noise with the digest of its public parameters as
+  they were at each call (``self.pp`` is the caller's dict): after an
+  in-place ``pp["ct_format"] = "binary"`` it served JSON ciphertexts with a
   binary key share, with the JSON derivation of the noise inputs, so one key
-  part gets two noises (format 2 of the same values gets the other).
+  part got two noises (format 2 of the same values got the other).
 """
 
 from __future__ import annotations

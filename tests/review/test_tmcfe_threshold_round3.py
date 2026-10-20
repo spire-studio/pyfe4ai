@@ -1,24 +1,21 @@
-"""Review 2026-10, round 3 (fix/tmcfe-threshold-review, from 5f502ab): the items
-left after 02ae981 and its re-check (docs/review/crypto_review_2026-10_tmcfe_recheck.md).
+"""Remaining items of the threshold MCFE review (October 2026 code review).
 
-Fail on 02ae981 / 5f502ab:
+Before the fixes:
 
-* I7 (review 0716163): one parameter record per scheme type: a prime and an
-  RNS configuration in one config folder overwrite each other's record, so
-  alternating them regenerates the parameters (and ``a``) every time;
-* I8 (review 0716163): an RNS modulus of 241 to 248 bits gets five factors of
-  at most 60 bits, one more than the native ring holds, so its kernels run on
-  the Python path, although four factors below 2^62 would fit;
-* N1 (new with the locks of 02ae981): ``_STORE_LOCK`` and
-  ``_SHARE_CACHE_LOCK`` -- like the older ``native_backend._contexts_lock`` --
-  are not replaced in a forked child: a fork while another thread holds one
-  leaves the child's copy locked for ever, and its next split-share or
-  replicated partial decryption hangs (``sampling_utils._XOF_LOCK`` is reset
-  after a fork for this reason);
-* I2b, native part (re-check I2b): a polynomial given as a list of values
-  holding a bytes element passes ``poly_kinds`` (it looks at the first
-  element); the native NTT and partial readings raise ``TypeError`` instead of
-  ``FEKeyError``.
+* one parameter record per scheme type: a prime and an RNS configuration in
+  one config folder overwrote each other's record, so alternating them
+  regenerated the parameters (and ``a``) every time;
+* an RNS modulus of 241 to 248 bits got five factors of at most 60 bits, one
+  more than the native ring holds, so its kernels ran on the Python path,
+  although four factors below 2^62 fit;
+* ``_STORE_LOCK`` and ``_SHARE_CACHE_LOCK`` -- like the older
+  ``native_backend._contexts_lock`` -- were not replaced in a forked child: a
+  fork while another thread held one left the child's copy locked for ever,
+  and its next split-share or replicated partial decryption hung
+  (``sampling_utils._XOF_LOCK`` is reset after a fork for this reason);
+* a polynomial given as a list of values holding a bytes element passed
+  ``poly_kinds`` (it looks at the first element); the native NTT and partial
+  readings raised ``TypeError`` instead of ``FEKeyError``.
 """
 
 from __future__ import annotations
@@ -96,7 +93,7 @@ def test_n1_module_locks_are_new_in_a_forked_child(where, name):
 @pytest.mark.parametrize("ct_format", ["json", "binary"])
 @pytest.mark.parametrize("field", ["sk_y", "z"])
 def test_i2b_native_a_value_list_holding_bytes_is_a_key_error(backend, ct_format, field):
-    """Re-check I2b, native part: a polynomial that is a list of values with a
+    """Native readings: a polynomial that is a list of values with a
     bytes element passes poly_kinds (it looks at the first element) and the
     native NTT / partial reading raises TypeError instead of FEKeyError."""
     from pyfe4ai.utils import ring_lwe_utils as rlu

@@ -1,17 +1,18 @@
-"""Review 2026-10 (perf/native-gaussian-bigint 91d0369): native discrete_gaussian_bigint.
+"""Native discrete_gaussian_bigint (October 2026 code review).
 
 No wrong sample was found (17.6M differential samples, crafted near-half and
-tie cases, no 53-bit constant as in finding M4); the first test keeps a
-spot check of the bit-identity. Fail on the reviewed commit:
+tie cases, no 53-bit constant as in the native FACCT tables of
+test_native_facct_precision.py); the first test keeps a spot check of the
+bit-identity. Before the fixes:
 
-* an unhashable sigma (``gmpy2.xmpz``) raises ``TypeError`` in the
+* an unhashable sigma (``gmpy2.xmpz``) raised ``TypeError`` in the
   ``lru_cache`` of ``_bigint_width``, where the reference samples;
-* a sigma with an exponent below ``-2^20`` passes the Python gate and the
-  extension raises ``ValueError``, where the reference returns zeros;
-* the ``XofRandom`` counter is read before and advanced after the call, which
+* a sigma with an exponent below ``-2^20`` passed the Python gate and the
+  extension raised ``ValueError``, where the reference returns zeros;
+* the ``XofRandom`` counter was read before and advanced after the call, which
   releases the GIL: another thread drawing from the same ``XofRandom`` during
-  the call gets the same SHAKE blocks as the native samples (located by value;
-  fixed on cc37d18, which claims the calls before the extension runs).
+  the call got the same SHAKE blocks as the native samples (located by value;
+  the calls are now claimed before the extension runs).
 """
 
 import os

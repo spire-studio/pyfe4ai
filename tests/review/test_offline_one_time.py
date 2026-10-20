@@ -1,12 +1,13 @@
-"""Review 2026-10 (perf/phase2 34d2063): one-time use of the offline randomness.
+"""One-time use of the offline randomness (October 2026 code review).
 
 ``OfflineRandomMixin`` (SIFE-/MIFE-Paillier, MIFE-DDH) stores ``r``-dependent
-parts per element; ``_encrypt_precomputed`` marks the object used and drops
+parts per element; ``_encrypt_precomputed`` marked the object used and dropped
 its reference to the parts. A shallow copy taken before the first use (or the
-copy a ``fork()`` makes) still has ``used = False`` and the same parts, so a
-second gradient is encrypted with the same ``r``: for SIFE-Paillier
+copy a ``fork()`` makes) still had ``used = False`` and the same parts, so a
+second gradient was encrypted with the same ``r``: for SIFE-Paillier
 ``ct1 / ct1' = (1 + N)^(x - x') mod N^2`` gives the difference without any key.
-Fails on the reviewed commit.
+Precomputations are now claimed atomically, refuse copies and pickles, and
+are invalidated in a forked child.
 """
 
 import copy
@@ -33,7 +34,7 @@ def test_a_copied_precomputation_cannot_encrypt_twice():
     try:
         twin = copy.copy(pre)
     except TypeError:
-        return  # the copy refused: the fix (fix/crypto-review-2026-10 refuses copies outright)
+        return  # the copy refused: the fix (copies are refused outright)
     first = enc.encrypt_lst_ndarray([np.array([7])], precomputed=pre)[0][0]
     try:
         second = enc.encrypt_lst_ndarray([np.array([-5])], precomputed=twin)[0][0]

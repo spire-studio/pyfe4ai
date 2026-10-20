@@ -236,7 +236,7 @@ def _facct_table(sigma_q):
 
     params = su._facct_params(sigma_q)
     # c = -neg_c exactly: negate the mantissa (negating the mpfr would round it
-    # to the context's 53 bits; crypto review 2026-10, finding M4)
+    # to the context's 53 bits)
     mant, exp = params.neg_c.as_mantissa_exp()
     mant, exp = -int(mant), int(exp)
     shift = mant.bit_length() - 128  # a 128-bit mantissa: truncated, or extended exactly
@@ -258,7 +258,7 @@ def _facct_wide_table(sigma_q):
     from pyfe4ai.utils import sampling_utils as su
 
     params = su._facct_params(sigma_q)
-    mant, exp = params.neg_c.as_mantissa_exp()  # c = -neg_c exactly (finding M4)
+    mant, exp = params.neg_c.as_mantissa_exp()  # c = -neg_c exactly, as above
     mant, exp = -int(mant), int(exp)
     shift = mant.bit_length() - 128
     mant = mant >> shift if shift > 0 else mant << -shift

@@ -1,20 +1,20 @@
-"""Review 2026-10 (integrate/perf-2026-10 7fc82d4): the integration.
+"""Integration of the October 2026 performance work (code review).
 
-No merge dropped or weakened a source branch's change, and the integrator's
-new code (flooding binding, construction ids, sponge wipes, KL pinning, RNS
-replay with FACCT and label hashes) behaved as specified. Fail on 7fc82d4:
+No merge dropped or weakened a change, and the new code of the integration
+(flooding binding, construction ids, sponge wipes, KL pinning, RNS replay with
+FACCT and label hashes) behaved as specified. Before the fixes:
 
-* dense tMCFE-LWE key shares do not record the label hash, and the flooding
-  noise does not depend on it: one key share served under public parameters
-  that differ only in ``label_hash`` answers a label with the same noise and
+* dense tMCFE-LWE key shares did not record the label hash, and the flooding
+  noise did not depend on it: one key share served under public parameters
+  that differ only in ``label_hash`` answered a label with the same noise and
   another ``H(l)``, so ``w_A - w_B = lambda <share, H_A(l) - H_B(l)>`` exactly
   (about ``n0 + m0`` labels give the share). tMCFE-Ring binds the mode in its
-  key shares (``_check_key_label_hash``); the dense layer does not;
-* the tMIFE-LWE key generator accepts ``flooding_accounting = "kl"`` with a
-  replicated sharing and issues public parameters whose construction names
-  Shamir (servers then refuse them; tMCFE-Ring refuses at key generation);
-* the Python rejection-sampling label hash never returns for ``length = 0``
-  (its digest doubles without bound), while the native kernel and the
+  key shares (``_check_key_label_hash``); the dense layer did not;
+* the tMIFE-LWE key generator accepted ``flooding_accounting = "kl"`` with a
+  replicated sharing and issued public parameters whose construction names
+  Shamir (servers then refused them; tMCFE-Ring refuses at key generation);
+* the Python rejection-sampling label hash never returned for ``length = 0``
+  (its digest doubled without bound), while the native kernel and the
   ``shake256-wide`` mode return ``[]``.
 """
 

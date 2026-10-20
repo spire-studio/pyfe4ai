@@ -1,11 +1,12 @@
-"""Review 2026-10 (main 810a4a5; the code is unchanged since v0.3.0).
+"""The rounded Python sampler and ``gauss_next`` (October 2026 code review; the
+code dated from v0.3.0).
 
 The rounded Python sampler (``sampling_utils.discrete_gaussian_matrix``, used
-for Python-path key generation and noise) draws ``SystemRandom().gauss``,
+for Python-path key generation and noise) drew ``SystemRandom().gauss``,
 which caches the second Box-Muller value in the module-global
-``_CSPRNG.gauss_next``: a future secret or noise coefficient stays in memory
-between calls, and after ``fork()`` parent and child draw the same first
-sample. Fails on the reviewed commit.
+``_CSPRNG.gauss_next``: a future secret or noise coefficient stayed in memory
+between calls, and after ``fork()`` parent and child drew the same first
+sample. The sampler now drops the unused value.
 """
 
 import os

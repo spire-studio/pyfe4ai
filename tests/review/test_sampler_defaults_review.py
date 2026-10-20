@@ -1,18 +1,18 @@
-"""Review 2026-10 (perf/sampler-defaults f8bc3a2): exact sampler by default.
+"""Exact sampler by default (October 2026 code review).
 
 No default draw from the double-precision rounded path was found in the nine
 schemes in scope (every key and noise site, backends, threads, profiles, ML
-adapter). Fail on the reviewed commit:
+adapter). Before the fixes:
 
-* the threshold flooding noise follows the process-wide sampler: one server
-  answers the same request with a different noise after
-  ``set_gaussian_sampler`` / ``gaussian_sampler()`` changes -- the "second
+* the threshold flooding noise followed the process-wide sampler: one server
+  answered the same request with a different noise after
+  ``set_gaussian_sampler`` / ``gaussian_sampler()`` changed -- the "second
   noise for the same request" the noise versioning is meant to prevent;
-* ``security_profile="standard"`` accepts ``gaussian_sampler="rounded"``
+* ``security_profile="standard"`` accepted ``gaussian_sampler="rounded"``
   without a refusal or a warning, although the profile documents that the
   double path does not meet its 2^-128 budget;
-* the MPFR guard is a fixed 192 bits (covering stat_param <= 128), while the
-  standard profile accepts a larger stat_param for the flooding.
+* the MPFR guard was a fixed 192 bits (covering stat_param <= 128), while the
+  standard profile accepted a larger stat_param for the flooding.
 """
 
 import warnings
@@ -32,8 +32,8 @@ def _cwd(tmp_path, monkeypatch):
     su.set_gaussian_sampler("rounded")
 
 
-# integrate/perf-2026-10: the default tMCFE flooding became "uniform" (exp/hash-and-flooding),
-# which draws no Gaussian, so the default config alone no longer exercises the sampler pin
+# the default tMCFE flooding is "uniform", which draws no Gaussian, so the default
+# config alone does not exercise the sampler pin
 @pytest.mark.parametrize("flooding", ["gaussian", "uniform"])
 def test_flooding_noise_does_not_follow_the_process_sampler(flooding):
     from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWE as T
@@ -76,7 +76,7 @@ def test_mpfr_guard_covers_the_accepted_stat_param():
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             # the MPFR guard concerns the Gaussian flooding (the default flooding is
-            # uniform since the merge with exp/hash-and-flooding)
+            # uniform)
             kg = TK({"n": 2, "lst_nid": N, "s": 2, "lst_sid": S[:2], "t": 2, "eta": 1, "bound_x": 4, "bound_y": 4,
                      "stat_param": 256, "security_profile": "standard", "flooding": "gaussian"})
     except FEValidationError:

@@ -1,12 +1,12 @@
-"""Review 2026-10 (exp/replicated-seeded 5396353 / 170feb5): seed-expanded replicated sharing.
+"""Seed-expanded replicated sharing (October 2026 code review).
 
 The construction checks out (exact reconstruction for all three layers and
 (s, t) up to (6, 3), multipliers 0/1, residue attacks at chance, domain
-separation, sharing confusion refused). Fails on the reviewed commit: the
-expansion hashes json([seed, T, path, q]) with the typed path, so a key share
-of integer client ids no longer expands to the same pieces after a JSON round
-trip (ids become strings): decryption then returns None or a wrong value,
-silently, while full replicated sharing still decrypts.
+separation, sharing confusion refused). Before the fix, the expansion hashed
+json([seed, T, path, q]) with the typed path, so a key share of integer client
+ids no longer expanded to the same pieces after a JSON round trip (ids become
+strings): decryption then returned None or a wrong value, silently, while full
+replicated sharing still decrypted.
 """
 
 import json

@@ -1,11 +1,12 @@
-"""Review 2026-10 (main 810a4a5; the rule itself is unchanged since v0.3.0).
+"""ML adapter: one ciphertext per client and label under threads (October 2026
+code review; the rule dates from v0.3.0).
 
 ``encrypt_gradient`` refuses a second ciphertext of a client under one label,
-but checks ``(nid, label)`` before encrypting and records it afterwards. Two
-threads encrypting for the same client and label both succeed (the native
-backend releases the GIL during encryption, which widens the window), and an
-aggregator that aggregates the label twice with the same weights learns
-``gA - gB``. Fails on the reviewed commit.
+but used to check ``(nid, label)`` before encrypting and record it afterwards.
+Two threads encrypting for the same client and label both succeeded (the
+native backend releases the GIL during encryption, which widens the window),
+and an aggregator that aggregates the label twice with the same weights learns
+``gA - gB``. The pair is now reserved before encrypting.
 """
 
 import threading

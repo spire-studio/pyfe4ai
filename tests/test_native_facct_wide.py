@@ -323,7 +323,7 @@ def test_wide_xof_agreement_at_scale(name):
     assert py == nat
 
 
-# -- review 2026-10 of the wide native FACCT: counters near 2^64, re-entrant draws ----------
+# -- October 2026 review of the wide native FACCT: counters near 2^64, re-entrant draws ---
 
 
 def test_counter_near_2_64_behaves_as_the_reference():

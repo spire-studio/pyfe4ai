@@ -1,15 +1,15 @@
-"""Review 2026-10 (main 810a4a5): robustness of the native extension's inputs.
+"""Robustness of the native extension's inputs (October 2026 code review).
 
-Fail on the reviewed commit:
+Before the fixes:
 
-* size arithmetic wraps and a Rust panic surfaces as ``PanicException``,
+* size arithmetic wrapped and a Rust panic surfaced as ``PanicException``,
   a ``BaseException`` that the library's ``except Exception`` fallbacks do not
   catch (``dense_dots`` with a huge count; ``decrypt_tensor`` with
-  ``Delta = 0``); a panic while the precomputation's mutex is held poisons it;
-* the ristretto255 MCFE decryption parses a ciphertext differently natively
+  ``Delta = 0``); a panic while the precomputation's mutex was held poisoned it;
+* the ristretto255 MCFE decryption parsed a ciphertext differently natively
   (``"+f"`` accepted as ``"0f"``) and in Python (spaces accepted);
-* ``PYFE4AI_THREADS`` accepts any huge integer, after which every native call
-  raises ``OverflowError`` instead of falling back.
+* ``PYFE4AI_THREADS`` accepted any huge integer, after which every native call
+  raised ``OverflowError`` instead of falling back.
 """
 
 import copy

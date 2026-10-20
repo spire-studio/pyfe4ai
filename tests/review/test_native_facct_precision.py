@@ -1,13 +1,14 @@
-"""Review 2026-10 (perf/phase2 34d2063): precision of the native FACCT tables.
+"""Precision of the native FACCT tables (October 2026 code review).
 
-``native_backend._facct_table`` computes ``(-params.neg_c).as_mantissa_exp()``
-in gmpy2's default 53-bit context, so ``c = 1 / (2 sigma^2)`` reaches the Rust
-acceptance test with 53 significant bits. The fixed-point threshold is then off
-by up to about 2^-55, far outside the 2^-100 band that is handed to the exact
-Python formula: the native samples are not the reference's for a given bit
-source (documented: "for a given bit source the samples are the reference's",
-"an error below 2^-110"), and the native output is about 2^-57 from D_{Z,sigma}
-per sample instead of about 2^-185. Fails on the reviewed commit.
+``native_backend._facct_table`` computed ``(-params.neg_c).as_mantissa_exp()``
+in gmpy2's default 53-bit context, so ``c = 1 / (2 sigma^2)`` reached the Rust
+acceptance test with 53 significant bits. The fixed-point threshold was then
+off by up to about 2^-55, far outside the 2^-100 band that is handed to the
+exact Python formula: the native samples were not the reference's for a given
+bit source (documented: "for a given bit source the samples are the
+reference's", "an error below 2^-110"), and the native output was about 2^-57
+from D_{Z,sigma} per sample instead of about 2^-185. The mantissa is now
+negated exactly, and tables are checked against the exact formula when built.
 """
 
 import os

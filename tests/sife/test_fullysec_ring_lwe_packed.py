@@ -370,7 +370,7 @@ def test_layouts_are_listed():
     assert fs.LAYOUTS == ("elementwise", "packed")
 
 
-# -- review 2026-10: binding of the layout flag, strict layers, status ----------
+# -- October 2026 review: binding of the layout flag, strict layers, status ------
 
 
 def test_a_packed_flag_on_elementwise_parameters_is_refused():

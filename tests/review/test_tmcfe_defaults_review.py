@@ -1,24 +1,24 @@
-"""Review 2026-10, round 5 (perf/tmcfe-defaults 1e3b1b8..5c07202): the threshold defaults
-(binary, RNS, split key shares) and the ML adapter's in-process servers.
+"""The threshold MCFE defaults (binary, RNS, split key shares) and the ML
+adapter's in-process servers (October 2026 code review).
 
 The defaults hold as specified under both profiles, the options of earlier
 versions and old data keep working byte-identically, every mix of formats,
 parameters and parts fails closed, and the adapter sends no key material.
-Fail on 5c07202:
+Before the fixes:
 
-* R5-1 (low, availability; fails closed): a threshold aggregation prepared
-  with :func:`prepare_aggregation` cannot be completed by a pickled or copied
+* (availability; fails closed) a threshold aggregation prepared with
+  :func:`prepare_aggregation` could not be completed by a pickled or copied
   wrapper -- the copy's servers are made afresh without their weight key
-  shares, and :func:`partial_decrypt_gradients` does not give them the weight
+  shares, and :func:`partial_decrypt_gradients` did not give them the weight
   part the prepared label part needs -- nor after the server's weight-part
   store (``WEIGHT_SHARES_KEPT``) dropped it: ``FEKeyError`` in both cases,
   although the wrapper holds the key generator. Copies "for multiprocessing,
   Ray" are a documented use of the wrapper;
-* R5-2 (info, availability; fails closed): I-b checks that a label part is of
-  the weights' current share set only when it makes one: a label part cached
-  with a sharing that another thread evicts right after ``_weight_entry``
-  returned it is still handed out (servers then hold the new weight part and
-  refuse it).
+* (availability; fails closed) the check that a label part is of the weights'
+  current share set ran only when the key generator made the part: a label
+  part cached with a sharing that another thread evicted right after
+  ``_weight_entry`` returned it was still handed out (servers then hold the new
+  weight part and refuse it).
 """
 
 from __future__ import annotations

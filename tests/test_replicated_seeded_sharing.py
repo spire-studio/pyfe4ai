@@ -407,7 +407,7 @@ def test_seeded_sharing_has_its_own_parameter_records_and_small_key_shares():
     assert max(sizes["replicated-seeded"][:2]) < 1500
 
 
-# --------------------------------------------- review 2026-10 (rseeded): F1, F2, F4
+# ------------------------------------------- October 2026 review of the seeded sharing
 
 def _as_json(obj):
     return json.loads(json.dumps(obj))
@@ -416,7 +416,7 @@ def _as_json(obj):
 @pytest.mark.parametrize("kind", ["mife", "ring", "lwe"])
 @pytest.mark.parametrize("sharing", ["replicated", "replicated-seeded"])
 def test_key_shares_of_integer_client_ids_survive_json_transport(kind, sharing):
-    """F1: the seeded expansion hashes the JSON names of dict keys, so a key share
+    """The seeded expansion hashes the JSON names of dict keys, so a key share
     expands to the same pieces before and after a JSON round trip."""
     sids = ["s1", "s2", "s3"]
     base = {"sec_param": 64, "eta": 1, "n": 2, "s": 3, "t": 2, "lst_nid": [0, 1], "lst_sid": sids,
@@ -449,7 +449,7 @@ def test_key_shares_of_integer_client_ids_survive_json_transport(kind, sharing):
 
 
 def test_seed_spelling_and_key_names_do_not_change_the_expansion():
-    """F1: a seed in upper case or with spaces, and an int client id or its JSON
+    """A seed in upper case or with spaces, and an int client id or its JSON
     string, name the same piece; ids that coincide in JSON are refused."""
     seed = "ab" * SEED_BYTES
     one = expand_seeded_piece(seed, (2,), {"sk_y": {0: 3, 1: 3}, "z": None}, Q)
@@ -465,7 +465,7 @@ def test_seed_spelling_and_key_names_do_not_change_the_expansion():
 
 
 def test_share_for_enrolled_dispatches_on_the_sharing_label():
-    """F2: a "replicated-seeded" key share goes through the seeded path even
+    """A "replicated-seeded" key share goes through the seeded path even
     without seeds (t = 1); another label with seeds is refused."""
     sids = ["a", "b"]
     sharing = share_replicated_seeded({"sk_y": [11, 12], "z": 13}, 1, [1, 2], Q)
@@ -485,7 +485,7 @@ def test_share_for_enrolled_dispatches_on_the_sharing_label():
 
 @pytest.mark.skipif(not native_backend.available(), reason="native extension not built")
 def test_a_native_context_of_another_modulus_is_refused():
-    """F4: the context's modulus must be the sharing's."""
+    """The context's modulus must be the sharing's."""
     from pyfe4ai.schemes.threshold_utils import _combine_pieces
     from pyfe4ai.utils.ring_lwe_utils import next_ntt_prime
 
@@ -499,7 +499,7 @@ def test_a_native_context_of_another_modulus_is_refused():
         _combine_pieces({"z": 16}, [], [("ab" * SEED_BYTES, (1,))], other, ctx)
 
 
-# ----------------------------------- known answers (review 2026-10, merge note)
+# -------------------------------------------------------------- known answers
 
 _KAT_Q = gp.mpz("1606938044258990275541962092341162602522202993782792835305409")  # NTT prime, ring_n 16
 _KAT_SEED = bytes(range(SEED_BYTES)).hex()
@@ -517,7 +517,7 @@ def test_seeded_expansion_known_answer(backend):
     """Pins one seeded piece: the expansion is hash_to_zq_vector in its
     "shake256-wide" mode (its default, not the label-hash default of the MCFE
     key generators). A change of mode, domain, input encoding or reduction --
-    e.g. when merging exp/hash-and-flooding -- would silently change every
+    e.g. when the label-hash modes change -- would silently change every
     seeded key share; this test catches it on both backends."""
     import hashlib
 

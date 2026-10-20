@@ -1,15 +1,15 @@
-"""Review 2026-10 (perf/native-facct-wide d898446): native FACCT for narrow and wide widths.
+"""Native FACCT for narrow and wide widths (October 2026 code review).
 
 No wrong sample was found (bit-identical to the Python reference on 349 widths
 with the same XofRandom stream, crafted near-threshold bits, special cases;
-the first test keeps a spot check). Fail on the reviewed commit:
+the first test keeps a spot check). Before the fixes:
 
-* the native XofRandom bit source counts calls in a u64 that wraps: from a
+* the native XofRandom bit source counted calls in a u64 that wrapped: from a
   counter near 2^64 the reference raises OverflowError, the native draw
-  re-reads the blocks of counters 0, 1, ... and rewinds the XofRandom;
-* XofRandom._claim_dynamic holds the global, non-reentrant _XOF_LOCK across
+  re-read the blocks of counters 0, 1, ... and rewound the XofRandom;
+* XofRandom._claim_dynamic held the global, non-reentrant _XOF_LOCK across
   the whole native draw and the Python code around it: a signal handler (or
-  finalizer) that draws from any XofRandom meanwhile waits for the lock
+  finalizer) that drew from any XofRandom meanwhile waited for the lock
   forever (here: unbounded re-entry, RecursionError).
 """
 

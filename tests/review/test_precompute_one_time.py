@@ -1,14 +1,15 @@
-"""Review 2026-10 (main 810a4a5): one-time use of the Ring-LWE MCFE precomputation.
+"""One-time use of the Ring-LWE MCFE precomputation (October 2026 code review).
 
 These tests state the property the offline / online API documents ("use it
-once") and fail on the reviewed commit:
+once"), which did not hold before the fixes:
 
-* a precomputation made before ``os.fork()`` is unused in both processes, so
-  parent and child encrypt different gradients with the same ``r`` and noise,
-  and ``ct0 - ct0' = Delta (x - x')`` gives the difference without any key;
-* two threads using one native precomputation deadlock (the second blocks on
-  the precomputation's mutex while holding the GIL, the first needs the GIL
-  after its kernel) instead of one of them being refused.
+* a precomputation made before ``os.fork()`` was unused in both processes, so
+  parent and child encrypted different gradients with the same ``r`` and
+  noise, and ``ct0 - ct0' = Delta (x - x')`` gives the difference without any
+  key;
+* two threads using one native precomputation deadlocked (the second blocked
+  on the precomputation's mutex while holding the GIL, the first needed the
+  GIL after its kernel) instead of one of them being refused.
 """
 
 import json

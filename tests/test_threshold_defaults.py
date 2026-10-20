@@ -7,11 +7,11 @@
 * The options of earlier versions stay selectable and their public
   parameters, records, ciphertexts and key shares keep working.
 * Whatever does not match fails closed with a message naming the fix.
-* Info items of review round 4: label parts are issued for the weights'
-  current share set only, even when another thread evicts it meanwhile
-  (I-b); they are kept with that sharing and dropped with it (I-c), for the
-  last ``LABEL_PARTS_KEPT`` labels (round 5, R5-c); the native Shamir dealing
-  tells a test's exhausted random bytes from malformed key material (I-d).
+* Label parts are issued for the weights' current share set only, even when
+  another thread evicts it meanwhile; they are kept with that sharing and
+  dropped with it, for the last ``LABEL_PARTS_KEPT`` labels; every sharing has
+  a ``sharing_id``; the native Shamir dealing tells a test's exhausted random
+  bytes from malformed key material.
 """
 
 from __future__ import annotations
@@ -265,7 +265,7 @@ def test_parts_of_other_generators_and_share_sets_are_refused():
         srv2.share_decrypt(cts2, creds, kg.get_decryption_keys("s0", credentials=creds), SIDS[:2])
 
 
-# ---------------------------------------------------------- review round 4
+# ------------------------------------------------- label parts and their sharings
 
 
 def test_i_b_a_label_part_is_never_issued_for_an_evicted_share_set(monkeypatch):
@@ -370,7 +370,7 @@ def test_i_c_label_parts_go_with_their_sharing(monkeypatch):
 
 
 def test_label_parts_of_the_last_labels_are_kept(monkeypatch):
-    """Review round 5 (R5-c): per sharing of sk_y the label parts of the last
+    """Per sharing of sk_y the label parts of the last
     LABEL_PARTS_KEPT labels are kept (least recently used out); a label asked
     for again later gets a new sharing of its terms, with the same share set
     and noise key."""
@@ -394,7 +394,7 @@ def test_label_parts_of_the_last_labels_are_kept(monkeypatch):
 @pytest.mark.parametrize("ct_format", ["binary", "json"])
 @pytest.mark.parametrize("t", [2, 3])
 def test_sharing_ids_keep_two_sharings_of_a_label_apart(monkeypatch, name, ct_format, t):
-    """Review round 5 re-check (R5-c'): partials of two sharings of one
+    """Partials of two sharings of one
     label's terms would decode to a wrong value inside the bound; every
     sharing has a sharing_id, which the partials carry, and combiners refuse
     a mix (MixedSharingsError) instead."""

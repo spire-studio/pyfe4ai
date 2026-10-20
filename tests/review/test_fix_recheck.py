@@ -1,9 +1,9 @@
-"""Re-check 2026-10 of fix/crypto-review-2026-10 (0ca10e8): regression of the M6 fix.
+"""ML adapter wrappers stay picklable and copyable (October 2026 code review).
 
-``FESchemeWrapper`` now holds a ``threading.Lock`` (``_label_lock``), so it
-can no longer be pickled or deep-copied (multiprocessing, Ray/cloudpickle);
-on 34d2063 both worked. Fails on the re-checked commit. A fix should also
-decide whether a copy shares the (nid, label) registry or refuses it.
+The fix of the ``(nid, label)`` race (test_adapter_label_race.py) gave
+``FESchemeWrapper`` a ``threading.Lock`` (``_label_lock``), so it could no
+longer be pickled or deep-copied (multiprocessing, Ray/cloudpickle), which
+worked before. A copy now carries the pairs used so far and refuses them.
 """
 
 import copy

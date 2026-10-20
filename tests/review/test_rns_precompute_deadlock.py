@@ -1,8 +1,10 @@
-"""Review 2026-10 (exp/rns-modulus 256b6a9): the RNS precomputation has the
-mutex-across-``py.detach`` pattern of main (rust/native/src/rns.rs
+"""The RNS precomputation and the GIL (October 2026 code review).
+
+The precomputation of the opt-in RNS modulus had the same
+mutex-across-``py.detach`` pattern as the prime one (rust/native/src/rns.rs
 encrypt_precomputed / precomputed_info): two threads encrypting with one
-precomputation through the public API deadlock the process instead of one of
-them being refused. Fails on the reviewed commit.
+precomputation through the public API deadlocked the process instead of one
+of them being refused.
 """
 
 import os

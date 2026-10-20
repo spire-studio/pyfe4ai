@@ -1,10 +1,11 @@
-"""Review 2026-10, M1 and L3 for the RNS precomputation (exp/rns-modulus).
+"""One-time use and chunk bounds of the RNS precomputation (October 2026 code
+review).
 
-As tests/review/test_precompute_one_time.py of the review for the shared
-precomputation: a native RNS precomputation made before ``os.fork()`` must
-not be usable in the child (parent and child would encrypt different inputs
-with the same ``r`` and noise, and ``ct0 - ct0' = Delta (x - x')``); and a
-chunk index near ``2^64`` must be refused, not wrap around.
+As tests/review/test_precompute_one_time.py for the prime precomputation: a
+native RNS precomputation made before ``os.fork()`` must not be usable in the
+child (parent and child would encrypt different inputs with the same ``r`` and
+noise, and ``ct0 - ct0' = Delta (x - x')``); and a chunk index near ``2^64``
+must be refused, not wrap around.
 """
 
 import json

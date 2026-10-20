@@ -1,4 +1,5 @@
-"""Review 2026-10 (perf/tmcfe-threshold 0716163): invariants that hold (these tests pass).
+"""Invariants of the threshold MCFE's binary format, RNS ring and split key
+shares (October 2026 code review; these tests pass).
 
 Kept with the review tests so that later changes keep them:
 

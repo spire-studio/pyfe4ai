@@ -1,7 +1,9 @@
-"""PoC: the native FACCT acceptance test disagrees with the Python reference on
-crafted bits, because native_backend._facct_table truncates c = 1/(2 sigma^2)
-to 53 bits (default gmpy2 context) while the 'undecided' band is 2^-100.
-Run with PYTHONPATH=<rev-phase2>, cwd = this directory."""
+"""PoC (October 2026 code review): the native FACCT acceptance test disagreed
+with the Python reference on crafted bits, because native_backend._facct_table
+truncated c = 1/(2 sigma^2) to 53 bits (default gmpy2 context) while the
+'undecided' band is 2^-100. Run from this directory with PYTHONPATH set to a
+checkout of the code to examine.
+"""
 import os, random, sys
 import gmpy2 as gp
 sys.argv = [sys.argv[0], os.path.join(os.environ["PYTHONPATH"], "rust/core/src/facct.rs")]

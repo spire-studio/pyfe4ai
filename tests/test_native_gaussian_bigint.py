@@ -357,7 +357,7 @@ def test_python_path_where_the_native_one_does_not_apply(spy, monkeypatch):
     assert spy.calls == 1
 
 
-# -- review 2026-10 (91d0369): inputs the reference accepts, shared XofRandom ------
+# -- October 2026 review: inputs the reference accepts, shared XofRandom ------------
 
 
 @pytest.mark.parametrize("sigma, native", [(gp.xmpz(1000), True), (gp.xmpz(2 ** 200 + 7), True),

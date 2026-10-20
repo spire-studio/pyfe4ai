@@ -1,20 +1,20 @@
-"""Review 2026-10, round 5 re-check (perf/tmcfe-defaults 136c989..b7944d4).
+"""Partials of two sharings of one label (threshold MCFE with split key
+shares; October 2026 code review).
 
-R5-1, R5-2 and the wording items are fixed (tests/review/test_tmcfe_defaults_review.py
-passes). R5-c's re-sharing leaks nothing: for one request an honest server's
-answers under the two sharings of a label's terms differ by a sharing of zero
-that ``t - 1`` servers compute from their own label parts (checked numerically
-in the review's probe s8). Fails on b7944d4:
-
-* R5-c' (medium, integrity): the partials of the two sharings of one label do
-  not fail closed when combined -- they decode, with high probability, to
-  another aggregate inside the decoding bound, without an error. It happens
-  when the servers of one round fetch their label parts on both sides of the
-  label's eviction (``LABEL_PARTS_KEPT`` = 16 later labels of the same
-  weights): e.g. one server fetches round r, the key generator then issues
-  16 more rounds for the weights (servers fetching ahead, or keys issued in
-  advance), and another server fetches round r. Partial decryptions carry
-  nothing that tells the sharings apart, so the combiner cannot refuse them.
+A label asked for again after it left the key generator's cache
+(``LABEL_PARTS_KEPT`` = 16 later labels of the same weights) gets a new
+sharing of its terms. The re-sharing leaks nothing: for one request an honest
+server's answers under the two sharings of a label's terms differ by a sharing
+of zero that ``t - 1`` servers compute from their own label parts (checked
+numerically). But the partials of the two sharings did not fail closed when
+combined -- they decoded, with high probability, to another aggregate inside
+the decoding bound, without an error. It happens when the servers of one
+round fetch their label parts on both sides of the label's eviction: e.g. one
+server fetches round r, the key generator then issues 16 more rounds for the
+weights (servers fetching ahead, or keys issued in advance), and another
+server fetches round r. Partial decryptions carried nothing that told the
+sharings apart; they now carry the sharing's ``sharing_id``, and combiners
+raise ``MixedSharingsError``.
 """
 
 from __future__ import annotations

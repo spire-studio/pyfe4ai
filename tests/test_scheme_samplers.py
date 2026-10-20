@@ -140,7 +140,7 @@ def test_decryption_does_not_depend_on_the_sampler(sampler):
         assert np.array_equal(np.asarray(out[0]), xs["a"] + xs["b"])
 
 
-# -- the standard profile and overrides (crypto review re-check, F2 / F3) ------------------
+# -- the standard profile and overrides (October 2026 crypto review) ----------------------
 
 
 STANDARD_KEYGENS = {

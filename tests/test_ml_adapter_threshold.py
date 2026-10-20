@@ -199,7 +199,7 @@ def test_threshold_policy_and_errors():
 
 
 def test_label_parts_of_mixed_sharings_are_fetched_again_once(monkeypatch):
-    """Review round 5 re-check (R5-c'): a prepared round whose label parts are
+    """Sharing ids: a prepared round whose label parts are
     of two sharings (the key generator shared the label again between the
     servers' fetches) is refused by the combiner; aggregate_gradients then has
     all servers fetch them again and decrypt once more."""

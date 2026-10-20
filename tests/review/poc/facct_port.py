@@ -1,5 +1,7 @@
-"""Exact Python port of rust/core/src/facct.rs exp_neg / accept (phase2 34d2063),
-constants parsed from the Rust source; checks the constants and the error bound."""
+"""Exact Python port of rust/core/src/facct.rs exp_neg / accept (as reviewed in
+October 2026), constants parsed from the Rust source; checks the constants and
+the error bound.
+"""
 import re, sys, random
 import gmpy2 as gp
 

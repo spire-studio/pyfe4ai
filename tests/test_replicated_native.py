@@ -101,7 +101,7 @@ def test_dealing_refuses_short_test_bytes(monkeypatch):
 
 @pytest.mark.parametrize("bits", [61, 100, 252])
 def test_moduli_just_above_a_power_of_two_deal_from_the_same_bytes(bits):
-    """Review I1: about half of the draws are rejected there; the test bytes
+    """About half of the draws are rejected there; the test bytes
     suffice for one value at (s, t) = (2, 2) whatever the seed."""
     import random
 
@@ -119,7 +119,7 @@ def test_moduli_just_above_a_power_of_two_deal_from_the_same_bytes(bits):
 
 
 def test_the_test_hooks_are_unset_in_use():
-    """Review I2: a DRBG seed or random bytes injected by a test make every
+    """A DRBG seed or random bytes injected by a test make every
     call draw the same randomness; they are unset unless a test sets them."""
     assert native_backend._seed_override is None and native_backend._random_override is None
     assert native_backend.seed_kwargs() == {} and native_backend.random_input(32) is None

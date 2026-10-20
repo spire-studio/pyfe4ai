@@ -15,7 +15,7 @@ warns under ``toy`` and refuses under ``standard``, servers refuse such key
 shares unless created with ``legacy_shamir = "warn"``, as here) are expected
 failures.
 
-Only names that exist in v0.3.0 / ``main`` 810a4a5 are imported, so that there
+Only names that exist in v0.3.0 are imported, so that there
 these tests fail on the leak itself (``sharing`` is then an ignored config
 entry).
 """
@@ -46,7 +46,7 @@ SHARINGS = [
 # servers serve Shamir key shares with t < s (refused by default since the
 # fix), so that the Shamir cases show the leak rather than the refusal;
 # tests/test_replicated_sharing.py checks the refusal. Ignored where the
-# entry does not exist (v0.3.0 / main 810a4a5).
+# entry does not exist (v0.3.0).
 SERVER = {"legacy_shamir": "warn"}
 
 
@@ -153,7 +153,7 @@ def _tmife_round(cfg, kg, pp, enrolled_sets):
 
 @pytest.mark.parametrize("sharing", SHARINGS)
 def test_tmife_lwe_residue_attack_reads_nothing(sharing):
-    """``scratchpad/scripts/lagrange_leak.py``: server at point 2 corrupted,
+    """The residue attack: server at point 2 corrupted,
     ``E = {1, 3}``, four times the honest partial of server 1 minus its
     simulation; on Shamir its residue mod 4 is ``nu mod 4`` in every trial."""
     cfg, kg, pp = _tmife(sharing)
@@ -246,7 +246,7 @@ def _tmcfe_ring_round(cfg, kg, pp, enrolled_sets, label):
 @pytest.mark.parametrize("flooding", ["gaussian", "uniform"])
 @pytest.mark.parametrize("sharing", SHARINGS)
 def test_tmcfe_ring_lwe_residue_attack_reads_nothing(sharing, flooding):
-    """``scratchpad/scripts/lagrange_leak_rlwe.py``: as the tMIFE test, per
+    """The residue attack as in the tMIFE test, per
     coefficient (on Shamir: ``nu mod 4`` for every coefficient)."""
     cfg, kg, pp = _tmcfe_ring(sharing, flooding)
     flood, slack = _flood_bounds(pp)

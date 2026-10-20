@@ -1,17 +1,18 @@
-"""Review 2026-10 (exp/fullysec-packing: 671d3ab, fix b40746a): packed layout of sife/fullysec_ring_lwe.
+"""Packed layout of sife/fullysec_ring_lwe (October 2026 code review).
 
 * The G5* step of the packing argument needs ``(2X sqrt(D))^D < q`` (the
   denominators of the differences in a basis of their span are invertible mod
-  ``q``). 671d3ab accepted standard packed parameters below it (e.g. eta 32,
-  X 1: 110-bit q against a 112-bit bound); b40746a enforces it, and the first
-  test checks that for every packed parameter set the generators accept.
-* Fail on b40746a: the ``ndarray_layout`` flag of the public parameters is
-  not bound to them (an elementwise record relabelled ``"packed"`` encrypts
-  matrices with widths 64x too small); the packed-layer parser accepts
-  shapes such as ``[True, 70]`` / ``["7", 10.9]``, ignores ``first_chunk``,
-  decrypts reordered chunks into a permuted array and lets raw ``ValueError``
-  escape; the status table labels the packed layout ``reviewed`` although
-  its leveraging argument is the project's own.
+  ``q``). The first version of the layout accepted standard packed parameters
+  below it (e.g. eta 32, X 1: 110-bit q against a 112-bit bound); the
+  parameters now enforce it, and the first test checks that for every packed
+  parameter set the generators accept.
+* Before the fixes, the ``ndarray_layout`` flag of the public parameters was
+  not bound to them (an elementwise record relabelled ``"packed"`` encrypted
+  matrices with widths 64x too small); the packed-layer parser accepted
+  shapes such as ``[True, 70]`` / ``["7", 10.9]``, ignored ``first_chunk``,
+  decrypted reordered chunks into a permuted array and let raw ``ValueError``
+  escape; and the status table labelled the packed layout ``reviewed``
+  although its leveraging argument is the project's own.
 """
 
 import copy

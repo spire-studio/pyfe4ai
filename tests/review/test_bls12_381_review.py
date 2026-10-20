@@ -1,14 +1,15 @@
-"""Review 2026-10 (main 810a4a5): BLS12-381 backend (pyfe4ai.utils.bls12_381, rust/native/src/pairing.rs).
+"""BLS12-381 backend (pyfe4ai.utils.bls12_381, rust/native/src/pairing.rs):
+regression tests of the October 2026 code review.
 
-Fail on the reviewed commit:
+Before the fixes:
 
-* every SIFE FH-IPE decryption builds a GT baby-step table for its own base
-  ``e(k1, c1)`` and the process-wide table cache never evicts it (memory
-  grows by megabytes per decryption);
-* encodings are not canonical: bytes after the compressed element and type
-  tags such as ``"01"`` or ``"+1"`` are accepted (same element, other string);
-* a type tag outside 0..255 raises ``OverflowError`` instead of ``ValueError``;
-* a bound of ``2^63`` or more wraps ``2 bound + 1`` and misses in-range logs.
+* every SIFE FH-IPE decryption built a GT baby-step table for its own base
+  ``e(k1, c1)`` and the process-wide table cache never evicted it (memory
+  grew by megabytes per decryption);
+* encodings were not canonical: bytes after the compressed element and type
+  tags such as ``"01"`` or ``"+1"`` were accepted (same element, other string);
+* a type tag outside 0..255 raised ``OverflowError`` instead of ``ValueError``;
+* a bound of ``2^63`` or more wrapped ``2 bound + 1`` and missed in-range logs.
 """
 
 import base64

@@ -1,10 +1,10 @@
-"""Review 2026-10: the intermittent failure of the full suite (perf/phase2 34d2063, also main).
+"""The intermittent failure of the full suite (October 2026 code review).
 
-``tests/mcfe/test_ddh_threshold.py::test_entire_process_lst_ndarray`` encrypts
-random floats at precision 3 and compares the decryption with the inner
+``tests/mcfe/test_ddh_threshold.py::test_entire_process_lst_ndarray`` encrypted
+random floats at precision 3 and compared the decryption with the inner
 product of the *unquantised* floats at tolerance 1e-2. The rounding error
 ``sum_i y_i delta_i`` (``|delta_i| <= 5e-4``, ``y_i`` in 1..10, three clients)
-reaches 0.015, so the test fails in about 0.35 % of runs (Monte Carlo). The
+reaches 0.015, so the test failed in about 0.35 % of runs (Monte Carlo). The
 draws below are those of a failing shuffled run (seed 111): ``y = [5, 10, 8]``
 and the three floats of check point ``[0][(0, 1)]`` (error 0.0112). Not a
 cryptographic defect: the decryption is exact for the quantised inputs.

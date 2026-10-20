@@ -407,7 +407,7 @@ def test_defaults_and_v030_compatibility():
     assert mcfe_lwe.MCFELWE({"id": "a", "keys": {"pp": lpp}}).label_hash == "shake256-wide"
 
 
-# ------------------------------------------- binding of the mode (review M5)
+# ------------------------------------------------------ binding of the mode
 
 def _copy_layers(cts: dict) -> dict:
     return {nid: [dict(layer, chunks=[dict(c) for c in layer["chunks"]]) for layer in v] for nid, v in cts.items()}

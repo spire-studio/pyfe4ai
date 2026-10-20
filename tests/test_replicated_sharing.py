@@ -60,7 +60,8 @@ def test_assignment_counts_every_piece_once_and_multipliers_are_0_or_1(s, t):
 
 
 def test_shamir_multipliers_are_not_integers_for_t_below_s():
-    """The gap the replicated sharing closes (``scratchpad/scripts/multipliers.py``)."""
+    """The gap the replicated sharing closes: Lagrange multipliers that are not
+    integers for some corrupted set, enrolled set and server when ``t < s``."""
     def lam(k, E):
         v = Fraction(1)
         for j in E:
@@ -387,7 +388,7 @@ def test_the_sharings_have_their_own_parameter_records():
     assert new["A_seed"] != old["A_seed"] and new_kg.q == old_kg.q
 
 
-# --------------------------------------- review 2026-10: F4, F5, F7
+# ---------------------------------------------------- October 2026 review
 
 @pytest.mark.parametrize("kind", sorted(_CONFIGS))
 @pytest.mark.parametrize("t", [True, False, 2.0, None])

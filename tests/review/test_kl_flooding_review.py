@@ -1,18 +1,18 @@
-"""Review 2026-10 (exp/kl-flooding 548ac56): opt-in KL accounting of the flooding noise.
+"""Opt-in KL accounting of the flooding noise (October 2026 code review).
 
-Fail on the reviewed commit:
+Before the fixes:
 
-* KL mode is accepted with t < s, where an honest partial decryption is the
-  simulation plus e - M nu with a rational Lagrange-derived M (see
-  fix/threshold-lagrange): with s = 3, t = 2, server 2 corrupted and the
-  enrolled set {1, 3} (M = 3/4), 4 w - 3 (c_y - Delta mu) - 3 F(2) = 4 e - 3 nu
-  gives nu mod 4 from every KL partial, whatever sigma_f; the KL bound
-  assumes M = 1;
-* the partial-decryption budget Q fails open: it lives in each server object
-  (a fresh object per request has a fresh budget), the public keyword
-  ``_budgeted=True`` skips it, and a shared budget with a larger limit than
-  the public parameters' Q is accepted;
-* refused (invalid) requests consume budget.
+* KL mode was accepted with t < s, where an honest partial decryption is the
+  simulation plus e - M nu with a rational Lagrange-derived M (the
+  Lagrange-multiplier leak, tests/test_threshold_lagrange_leak.py): with
+  s = 3, t = 2, server 2 corrupted and the enrolled set {1, 3} (M = 3/4),
+  4 w - 3 (c_y - Delta mu) - 3 F(2) = 4 e - 3 nu gives nu mod 4 from every KL
+  partial, whatever sigma_f; the KL bound assumes M = 1;
+* the partial-decryption budget Q failed open: it lived in each server object
+  (a fresh object per request had a fresh budget), the public keyword
+  ``_budgeted=True`` skipped it, and a shared budget with a larger limit than
+  the public parameters' Q was accepted;
+* refused (invalid) requests consumed budget.
 """
 
 import random
@@ -124,7 +124,7 @@ def test_refused_requests_do_not_consume_budget():
     kg, pp, encs = _tmife(100, t=3)
     y = {nid: [1] for nid in NIDS}
     dk0 = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y})
-    budget = fa.PartialDecryptionBudget(100)  # explicit (6e2cdc3 requires it; 548ac56 accepts it)
+    budget = fa.PartialDecryptionBudget(100)  # explicit (the fixed code requires it; the first version accepted it)
     srv = ThresholdMIFELWE({"id": "sid_0", "keys": {"pp": pp, "dk": dk0}, "partial_budget": budget})
     grads = {nid: [np.array([1, 2, 3])] for nid in NIDS}
     enc = {nid: encs[nid].encrypt_lst_ndarray(grads[nid]) for nid in NIDS}
