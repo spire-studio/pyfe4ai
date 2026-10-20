@@ -41,12 +41,12 @@ upgrade notes first.**
   | `pyfe4ai.utils.crypto_utils`, its hashes (`hash_to_qr_group`, `hash_to_zn2_star`, `paillier_base`, `hash_to_zq_vector`, `hash_to_zq_material`, `zq_rejection_parameters`, `LABEL_HASHES`, `check_label_hash`, ...) | `pyfe4ai.primitives.hashing` |
   | `pyfe4ai.utils.crypto_utils`, its groups (`generate_group_primes`, `group_generator_fe`, `group_generator_threshold_fe`, `is_dl_group`, `is_dcr_modulus`, `RFC3526_PRIMES`, ...) | `pyfe4ai.primitives.groups.integer_groups` |
   | `pyfe4ai.utils.sampling_utils` | `pyfe4ai.primitives.sampling` |
-  | `pyfe4ai.utils.ring_lwe_utils`, `.lwe_utils`, `.lwe_matrix`, `.matrix_utils` | `pyfe4ai.primitives.lattice.ring_lwe_utils`, `.lwe_utils`, `.lwe_matrix`, `.matrix_utils` |
+  | `pyfe4ai.utils.ring_lwe_utils`, `.lwe_utils`, `.lwe_matrix`, `.matrix_utils` | `pyfe4ai.primitives.lattice.ring_lwe_utils`, `.lwe_utils`, `.lwe_matrix`, `.matrix_utils` (the ciphertext byte codecs: `pyfe4ai.core.formats.binary`, see Formats, versions and configurations) |
   | `pyfe4ai.utils.ec_group`, `.ristretto255`, `.modular_utils`, `.dlog_solver` | `pyfe4ai.primitives.groups.ec_group`, `.ristretto255`, `.modular_utils`, `.dlog_solver` |
   | `pyfe4ai.utils.pairing_backend`, `.pairing_utils`, `.bls12_381` | `pyfe4ai.primitives.pairing.pairing_backend`, `.pairing_utils`, `.bls12_381` |
   | `pyfe4ai.utils.validation` | `pyfe4ai._validation` (internal) |
   | `pyfe4ai.schemes.ipfe` | `pyfe4ai.core.base` |
-  | `pyfe4ai.schemes.status`, `pyfe4ai.schemes.profiles` | `pyfe4ai.core.status`, `pyfe4ai.core.profiles` |
+  | `pyfe4ai.schemes.status`, `pyfe4ai.schemes.profiles` | `pyfe4ai.core.status`, `pyfe4ai.core.profiles` (the profile rules, `resolve` and its tables: `pyfe4ai.core.config`) |
   | `pyfe4ai.schemes.one_time`, `pyfe4ai.schemes.random_offline` | `pyfe4ai.core.one_time` |
   | `pyfe4ai.schemes.abdp15_lwe`, `.ddh_base`, `.ec_ddh_base` | `pyfe4ai.schemes.common.abdp15_lwe`, `.ddh_base`, `.ec_ddh_base` |
   | `pyfe4ai.schemes.config_types` (TypedDicts) | `pyfe4ai.core.config` (config classes; see Formats, versions and configurations) |
@@ -128,16 +128,14 @@ upgrade notes first.**
 
   | Old | New |
   |---|---|
-  | `schemes.common.config_types`: `FEBaseConfig`; `DDHConfig`, `DamgardDDHConfig`, `LWEConfig`, `RingLWEConfig`, `PaillierConfig`, `PairingIPEConfig`, `CryptoConfig`; `MCFELWEConfig`, `MCFERingLWEConfig`, `ThresholdMCFELWEConfig`, `ThresholdMCFERingLWEConfig`, `QuadraticQuadConfig`, `QuadraticSGPConfig`, `MultiInputQuadraticConfig` | `pyfe4ai.core.config`: `SchemeConfig`; the same names |
-  | `schemes.common.config_types`: `PairingMultiIPEConfig`, `PartFHIPEConfig`, `ThresholdDDHConfig`, `ThresholdLWEConfig`, `ThresholdPairingMultiIPEConfig` | `pyfe4ai.core.config`: `MIFEFHMultiIPEConfig`, `SIFEPartFHIPEConfig`, `ThresholdConfig` (and `ThresholdMIFEConfig`, `ThresholdMCFEConfig`), `ThresholdSharingConfig` (and `ThresholdMIFELWEConfig`), `ThresholdMCFEFHMultiIPEConfig` |
-  | `core.profiles`: `resolve`, `STANDARD_PAIRING_GROUP`, `_STANDARD_MINIMA`, `_STANDARD_FIXED`, `_REFUSED` | `pyfe4ai.core.config`: `resolve`, `STANDARD_PAIRING_GROUP`, `STANDARD_MINIMA`, `STANDARD_FIXED`, `REFUSED` (and `STANDARD_PRESETS`) |
-  | `threshold.kl` (`flooding_accounting`): `PER_SAMPLE`, `KL`, `FLOODING_ACCOUNTINGS`, `flooding_config`, `check_kl_threshold` | `pyfe4ai.core.config` |
-  | `primitives.lattice.ring_lwe_utils`: `encode_binary_ciphertext`, `decode_binary_ciphertext`, `encode_threshold_ciphertext`, `decode_threshold_ciphertext`, `threshold_ciphertext_from_format1`, `threshold_ciphertext_header`, `encode_values`, `decode_values`, `canonical_ring_ciphertext` | `pyfe4ai.core.formats.binary` |
-  | `primitives.lattice.ring_lwe_utils.CT_FORMATS` | `pyfe4ai.core.versions.CT_FORMATS` |
-  | `primitives.sampling`: `FLOODING_NOISE_VERSION`, `check_flooding_version` | `pyfe4ai.core.versions` |
-  | `mcfe.ring_lwe`: `pp_label_hash`, `ciphertext_label_hash`, `check_ciphertext_label_hashes` | `pyfe4ai.core.versions` |
-  | `schemes.common.abdp15_lwe.CONSTRUCTION`; the record ids of the other schemes (private constants) | `pyfe4ai.core.versions`: `SIFE_LWE_RECORD`, `MIFE_LWE_RECORD`, `SIFE_FULLYSEC_LWE_RECORD`, ..., `DMCFE_PAILLIER_RECORD` (the same values) |
-  | `mcfe.ring_lwe_threshold.LEGACY_FLOODING` | `pyfe4ai.core.versions.LEGACY_FLOODING` |
+  | `pyfe4ai.schemes.config_types` (v0.3.0; `schemes.common.config_types` in development builds): `FEBaseConfig`; `DDHConfig`, `DamgardDDHConfig`, `LWEConfig`, `RingLWEConfig`, `PaillierConfig`, `PairingIPEConfig`, `CryptoConfig`; `MCFELWEConfig`, `MCFERingLWEConfig`, `ThresholdMCFELWEConfig`, `ThresholdMCFERingLWEConfig`, `QuadraticQuadConfig`, `QuadraticSGPConfig`, `MultiInputQuadraticConfig` | `pyfe4ai.core.config`: `SchemeConfig`; the same names |
+  | the same module: `PairingMultiIPEConfig`, `PartFHIPEConfig`, `ThresholdDDHConfig`, `ThresholdLWEConfig`, `ThresholdPairingMultiIPEConfig` | `pyfe4ai.core.config`: `MIFEFHMultiIPEConfig`, `SIFEPartFHIPEConfig`, `ThresholdConfig` (and `ThresholdMIFEConfig`, `ThresholdMCFEConfig`), `ThresholdSharingConfig` (and `ThresholdMIFELWEConfig`), `ThresholdMCFEFHMultiIPEConfig` |
+  | `pyfe4ai.schemes.profiles` (v0.3.0; `core.profiles` in development builds): `resolve`, `STANDARD_PAIRING_GROUP`, `_STANDARD_MINIMA`, `_STANDARD_FIXED`, `_REFUSED` | `pyfe4ai.core.config`: `resolve`, `STANDARD_PAIRING_GROUP`, `STANDARD_MINIMA`, `STANDARD_FIXED`, `REFUSED` (and `STANDARD_PRESETS`) |
+  | `pyfe4ai.utils.ring_lwe_utils.canonical_ring_ciphertext` (v0.3.0) | `pyfe4ai.core.formats.binary.canonical_ring_ciphertext` |
+  | `pyfe4ai.schemes.abdp15_lwe.CONSTRUCTION` (v0.3.0); the record ids of the other schemes (private constants) | `pyfe4ai.core.versions`: `SIFE_LWE_RECORD`, `MIFE_LWE_RECORD`, `SIFE_FULLYSEC_LWE_RECORD`, ..., `DMCFE_PAILLIER_RECORD` (the same values) |
+  | added after v0.3.0 (development builds): `threshold.kl`: `PER_SAMPLE`, `KL`, `FLOODING_ACCOUNTINGS`, `flooding_config`, `check_kl_threshold` | `pyfe4ai.core.config` |
+  | added after v0.3.0: `primitives.lattice.ring_lwe_utils`: `encode_binary_ciphertext`, `decode_binary_ciphertext`, `encode_threshold_ciphertext`, `decode_threshold_ciphertext`, `threshold_ciphertext_from_format1`, `threshold_ciphertext_header`, `encode_values`, `decode_values` | `pyfe4ai.core.formats.binary` |
+  | added after v0.3.0: `primitives.lattice.ring_lwe_utils.CT_FORMATS`; `primitives.sampling`: `FLOODING_NOISE_VERSION`, `check_flooding_version`; `mcfe.ring_lwe`: `pp_label_hash`, `ciphertext_label_hash`, `check_ciphertext_label_hashes`; `mcfe.ring_lwe_threshold.LEGACY_FLOODING` | `pyfe4ai.core.versions` |
 - **Logging**: the library no longer configures logging or writes log
   files. `pyfe4ai.logger.init_logging_config()` and the packaged
   `config.yaml` (console and rotating files under `./logs/`) are removed;
