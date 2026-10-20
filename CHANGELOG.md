@@ -20,14 +20,16 @@ upgrade notes first.**
 
 - **Modules moved** (no aliases remain at the old paths; algorithms,
   parameters and serialized formats are unchanged). The package is now in
-  layers: `pyfe4ai.core` (base classes and the parameter cache, security
+  layers: `pyfe4ai.core` (base classes and the parameter cache, the
+  configurations, the serialized objects and their versions, security
   profiles, review status, one-time precomputations, exceptions),
   `pyfe4ai.schemes` (the families, plus `schemes.common` and
   `schemes.threshold`), `pyfe4ai.primitives` (lattices, sampling, hashing,
   groups, pairings), `pyfe4ai.backend` (native or Python implementation)
   and `pyfe4ai.ml` (the ML adapter). `pyfe4ai` exports what it exported
-  before, and `pyfe4ai.schemes` still re-exports the configuration types.
-  Update imports as follows:
+  before; the configuration types are the config classes of
+  `pyfe4ai.core.config` (see Formats, versions and configurations), no
+  longer re-exported by `pyfe4ai.schemes`. Update imports as follows:
 
   | Old | New |
   |---|---|
@@ -46,7 +48,8 @@ upgrade notes first.**
   | `pyfe4ai.schemes.ipfe` | `pyfe4ai.core.base` |
   | `pyfe4ai.schemes.status`, `pyfe4ai.schemes.profiles` | `pyfe4ai.core.status`, `pyfe4ai.core.profiles` |
   | `pyfe4ai.schemes.one_time`, `pyfe4ai.schemes.random_offline` | `pyfe4ai.core.one_time` |
-  | `pyfe4ai.schemes.abdp15_lwe`, `.ddh_base`, `.ec_ddh_base`, `.config_types` | `pyfe4ai.schemes.common.abdp15_lwe`, `.ddh_base`, `.ec_ddh_base`, `.config_types` |
+  | `pyfe4ai.schemes.abdp15_lwe`, `.ddh_base`, `.ec_ddh_base` | `pyfe4ai.schemes.common.abdp15_lwe`, `.ddh_base`, `.ec_ddh_base` |
+  | `pyfe4ai.schemes.config_types` (TypedDicts) | `pyfe4ai.core.config` (config classes; see Formats, versions and configurations) |
   | `pyfe4ai.schemes.threshold_utils` | split into `pyfe4ai.schemes.threshold.sharing`, `.binding`, `.codec`, `.store` and `.roles` (names unchanged; see the next table) |
   | `pyfe4ai.schemes.flooding_accounting` | `pyfe4ai.schemes.threshold.kl` |
   | `pyfe4ai.logger` (`init_logging_config`), `pyfe4ai/config.yaml` | removed (see Logging) |
@@ -55,8 +58,8 @@ upgrade notes first.**
   `sharing` (Shamir, replicated and seed-expanded replicated sharing, dealt
   and added up for an enrolled set), `binding` (what key shares,
   ciphertexts and partial decryptions are bound to: `pp_binding`, the
-  construction ids and binding fields of each threshold LWE scheme, weights,
-  client MAC tags, sharing ids, formats, state versions), `codec` (encodings
+  binding fields of each threshold LWE scheme, weights, client MAC tags),
+  `codec` (encodings
   of key material, threshold ciphertexts and partial decryptions, strict
   parsing), `store` (stores and caches of key-share parts and sums, their
   locks), `roles` (server and combiner logic: checks, the flooding noise,
@@ -70,22 +73,71 @@ upgrade notes first.**
 
   | Old | New |
   |---|---|
-  | `threshold_utils`: `eval_poly`, `share_secret`, `lagrange_coefficient_at_zero`, `lagrange_at_zero`, `center_mod`, `share_points`, `validate_threshold`, `SHARING_SCHEMES`, `validate_sharing`, `resolve_sharing`, `replicated_sets`, `replicated_assignment`, `share_replicated`, `pieces_held`, `SEED_BYTES`, `piece_layout`, `expand_seeded_piece`, `share_replicated_seeded`, `seeded_pieces_held`, `share_for_enrolled` | `pyfe4ai.schemes.threshold.sharing` |
-  | `threshold_utils`: `pp_binding`, `check_pp_binding`, `check_served_sharing`, `fusion_weight_id`, `check_fusion_weight`, `client_server_mac_keys`, `ciphertext_tag`, `tag_ciphertext`, `check_ciphertext_tags`, `tag_ciphertext_message`, `check_ciphertext_tag_messages` | `pyfe4ai.schemes.threshold.binding` |
+  | `threshold_utils`: `eval_poly`, `share_secret`, `lagrange_coefficient_at_zero`, `lagrange_at_zero`, `center_mod`, `share_points`, `validate_threshold`, `replicated_sets`, `replicated_assignment`, `share_replicated`, `pieces_held`, `SEED_BYTES`, `piece_layout`, `expand_seeded_piece`, `share_replicated_seeded`, `seeded_pieces_held`, `share_for_enrolled` | `pyfe4ai.schemes.threshold.sharing` |
+  | `threshold_utils`: `SHARING_SCHEMES`, `validate_sharing`, `resolve_sharing` | `pyfe4ai.core.config` |
+  | `threshold_utils`: `pp_binding`, `check_pp_binding`, `fusion_weight_id`, `check_fusion_weight`, `client_server_mac_keys`, `ciphertext_tag`, `tag_ciphertext`, `check_ciphertext_tags`, `tag_ciphertext_message`, `check_ciphertext_tag_messages` | `pyfe4ai.schemes.threshold.binding` |
+  | `threshold_utils`: `check_served_sharing` | `pyfe4ai.core.versions` |
   | `threshold_utils`: `strict_mpz`, `poly_kinds`, `uniform_material`, `binary_material`, `ciphertexts_digest` | `pyfe4ai.schemes.threshold.codec` |
   | `threshold_utils`: `SHARE_CACHE_SIZE`, `share_cache` | `pyfe4ai.schemes.threshold.store` |
-  | `threshold_utils`: `LEGACY_SHAMIR_POLICIES`, `legacy_shamir_policy`, `validate_enrolled`, `validate_partial_decryptions`, `partial_groups`, `combine_consistently`, `combine_elementwise` | `pyfe4ai.schemes.threshold.roles` |
-  | `mcfe.ring_lwe_threshold`: `MixedSharingsError`, `MIXED_SHARINGS`, `CT_FORMATS`, `pp_ct_format`, `binding_fields` | `pyfe4ai.schemes.threshold.binding`: the same names, `binding_fields` as `tmcfe_ring_lwe_binding_fields` |
+  | `threshold_utils`: `validate_enrolled`, `validate_partial_decryptions`, `partial_groups`, `combine_consistently`, `combine_elementwise` | `pyfe4ai.schemes.threshold.roles` |
+  | `threshold_utils`: `LEGACY_SHAMIR_POLICIES`, `legacy_shamir_policy` | `pyfe4ai.core.versions` |
+  | `mcfe.ring_lwe_threshold`: `MixedSharingsError`, `MIXED_SHARINGS`, `CT_FORMATS`, `pp_ct_format` | `pyfe4ai.core.versions` |
+  | `mcfe.ring_lwe_threshold`: `binding_fields` | `pyfe4ai.schemes.threshold.binding.tmcfe_ring_lwe_binding_fields` |
+  | `mcfe.ring_lwe_threshold`: `DEFAULT_CT_FORMAT`, `DEFAULT_RING_MODULUS`, `KEY_SHARES`, `FLOODINGS`, `DEFAULT_FLOODING` | `pyfe4ai.core.config` |
   | `mcfe.ring_lwe_threshold`: `WEIGHT_SHARINGS_KEPT`, `LABEL_PARTS_KEPT` | `pyfe4ai.schemes.threshold.store` (set them there; reading or setting them on `mcfe.ring_lwe_threshold` raises `AttributeError` rather than being ignored) |
   | `mcfe.ring_lwe_threshold`: `binary_ciphertext_digests`, `binary_tag_message`, `binary_request_digests` | `pyfe4ai.schemes.threshold.codec` |
   | `mcfe.ring_lwe_threshold`: `uniform_flooding_poly`, `uniform_flooding_material`; `mcfe.lwe_threshold.flooding_noise` | `pyfe4ai.schemes.threshold.roles` |
   | `mcfe.ring_lwe_threshold`: `check_rns_servers` | `pyfe4ai.schemes.threshold.sharing` |
-  | the construction ids, binding fields and defaults of `mife/lwe_threshold`, `mcfe/lwe_threshold` and `mcfe/ring_lwe_threshold`, and the latter's state version (private constants) | `pyfe4ai.schemes.threshold.binding`: `TMIFE_LWE_*`, `TMCFE_LWE_*`, `TMCFE_RING_LWE_*` (the same values) |
+  | the construction ids of `mife/lwe_threshold`, `mcfe/lwe_threshold` and `mcfe/ring_lwe_threshold`, and the latter's state version (private constants) | `pyfe4ai.core.versions`: `TMIFE_LWE_*`, `TMCFE_LWE_*`, `TMCFE_RING_LWE_*` (the same values) |
+  | the binding fields and their defaults of `mcfe/ring_lwe_threshold` (private constants) | `pyfe4ai.schemes.threshold.binding.TMCFE_RING_LWE_BINDING_DEFAULTS` |
 
   Objects pickled by an earlier version that refer to a moved module (for
   example a pickled `FESchemeWrapper`, which holds a `QuantizationConfig`)
   do not load. The serialized keys, shares, ciphertexts and partial
   decryptions (JSON and binary) are unchanged.
+- **Formats, versions and configurations** (no change to any serialized
+  byte, accepted or refused input, or exception):
+  - `pyfe4ai.core.formats` declares every serialized object -- parameter
+    records, public parameters, encryption keys, functional keys, key
+    shares (whole, weight and label parts, replicated pieces), ciphertexts,
+    partial decryptions, the ML wire objects -- as a `Record`: its fields in
+    wire order, what each holds and what an absent field means. A record is
+    a typed view of the object's dict itself (`Record.from_dict(d).to_dict()
+    is d`; reading a field is the dict read, with its exception), and the
+    schemes build and read their objects through them. The byte codecs of
+    the Ring-LWE ciphertexts are in `core.formats.binary`.
+  - `pyfe4ai.core.versions` holds every version marker and compatibility
+    decision in one place: parameter-record ids, the threshold construction
+    ids, the sharing, flooding, label-hash and ciphertext-format markers with
+    what their absence means, sharing ids, key-share parts, the flooding
+    noise version and the state versions, with the checks that accept,
+    refuse or regenerate (the schemes call them where they checked before).
+  - `pyfe4ai.core.config`: a key generator's config is converted at entry
+    into the config class of its scheme (`MCFERingLWEConfig`,
+    `ThresholdMCFERingLWEConfig`, ...; a `dict` subclass, so dict configs keep
+    working) and completed by its security profile there; each class
+    declares its options with their defaults and accepted values
+    (`config.ring_n` reads an option with its default). The page
+    *Configuration options* of the documentation lists every scheme's
+    options, their defaults under each profile and the refused combinations,
+    rendered from these declarations. The `TypedDict`s of
+    `schemes.common.config_types` are replaced by these classes, which keep
+    their names where a class remains (`DDHConfig(sec_param=128, eta=3)`
+    still builds a config); for static typing they are `dict` subclasses,
+    not `TypedDict`s.
+
+  | Old | New |
+  |---|---|
+  | `schemes.common.config_types`: `FEBaseConfig`; `DDHConfig`, `DamgardDDHConfig`, `LWEConfig`, `RingLWEConfig`, `PaillierConfig`, `PairingIPEConfig`, `CryptoConfig`; `MCFELWEConfig`, `MCFERingLWEConfig`, `ThresholdMCFELWEConfig`, `ThresholdMCFERingLWEConfig`, `QuadraticQuadConfig`, `QuadraticSGPConfig`, `MultiInputQuadraticConfig` | `pyfe4ai.core.config`: `SchemeConfig`; the same names |
+  | `schemes.common.config_types`: `PairingMultiIPEConfig`, `PartFHIPEConfig`, `ThresholdDDHConfig`, `ThresholdLWEConfig`, `ThresholdPairingMultiIPEConfig` | `pyfe4ai.core.config`: `MIFEFHMultiIPEConfig`, `SIFEPartFHIPEConfig`, `ThresholdConfig` (and `ThresholdMIFEConfig`, `ThresholdMCFEConfig`), `ThresholdSharingConfig` (and `ThresholdMIFELWEConfig`), `ThresholdMCFEFHMultiIPEConfig` |
+  | `core.profiles`: `resolve`, `STANDARD_PAIRING_GROUP`, `_STANDARD_MINIMA`, `_STANDARD_FIXED`, `_REFUSED` | `pyfe4ai.core.config`: `resolve`, `STANDARD_PAIRING_GROUP`, `STANDARD_MINIMA`, `STANDARD_FIXED`, `REFUSED` (and `STANDARD_PRESETS`) |
+  | `threshold.kl` (`flooding_accounting`): `PER_SAMPLE`, `KL`, `FLOODING_ACCOUNTINGS`, `flooding_config`, `check_kl_threshold` | `pyfe4ai.core.config` |
+  | `primitives.lattice.ring_lwe_utils`: `encode_binary_ciphertext`, `decode_binary_ciphertext`, `encode_threshold_ciphertext`, `decode_threshold_ciphertext`, `threshold_ciphertext_from_format1`, `threshold_ciphertext_header`, `encode_values`, `decode_values`, `canonical_ring_ciphertext` | `pyfe4ai.core.formats.binary` |
+  | `primitives.lattice.ring_lwe_utils.CT_FORMATS` | `pyfe4ai.core.versions.CT_FORMATS` |
+  | `primitives.sampling`: `FLOODING_NOISE_VERSION`, `check_flooding_version` | `pyfe4ai.core.versions` |
+  | `mcfe.ring_lwe`: `pp_label_hash`, `ciphertext_label_hash`, `check_ciphertext_label_hashes` | `pyfe4ai.core.versions` |
+  | `schemes.common.abdp15_lwe.CONSTRUCTION`; the record ids of the other schemes (private constants) | `pyfe4ai.core.versions`: `SIFE_LWE_RECORD`, `MIFE_LWE_RECORD`, `SIFE_FULLYSEC_LWE_RECORD`, ..., `DMCFE_PAILLIER_RECORD` (the same values) |
+  | `mcfe.ring_lwe_threshold.LEGACY_FLOODING` | `pyfe4ai.core.versions.LEGACY_FLOODING` |
 - **Logging**: the library no longer configures logging or writes log
   files. `pyfe4ai.logger.init_logging_config()` and the packaged
   `config.yaml` (console and rotating files under `./logs/`) are removed;
@@ -104,8 +156,13 @@ upgrade notes first.**
   than the native ring, a modulus without an NTT root). Each warning is
   attributed to the application's call (the first caller outside pyfe4ai),
   so the default filter shows it once per call site, and its text holds no
-  caller-supplied value (an unknown id is in the log record only). PyYAML
-  is no longer a dependency.
+  caller-supplied value (an unknown id is in the log record only). A
+  warnings filter by module therefore matches the application's module: a
+  filter such as `ignore::pyfe4ai.core.exceptions.FEWarning:pyfe4ai.*` no
+  longer matches the library's `FEWarning`s, while one on the
+  application's own module does; filters by category are unaffected, and
+  the attribution of `FESecurityWarning`s is unchanged. PyYAML is no longer
+  a dependency.
 - **Parameter cache location**: key generators keep their parameter
   records in a per-user cache directory instead of `./config/` of the
   working directory: `~/Library/Caches/pyfe4ai` on macOS,
@@ -182,7 +239,7 @@ upgrade notes first.**
   has a random `sharing_id`, which the partial decryptions carry. Partials of
   two sharings of one key would decode to a wrong value inside the decoding
   bound rather than fail, so combiners refuse them
-  (`pyfe4ai.schemes.threshold.binding.MixedSharingsError`:
+  (`pyfe4ai.core.versions.MixedSharingsError`:
   fetch the label parts again for all servers; the ML adapter's
   `aggregate_gradients` does this once by itself). A label part asked for
   again after it left the key generator's cache (the last 16 labels per
