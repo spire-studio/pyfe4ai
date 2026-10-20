@@ -22,7 +22,7 @@ import gmpy2 as gp
 import numpy as np
 import pytest
 
-from pyfe4ai.schemes.threshold import flooding_accounting as fa
+from pyfe4ai.schemes.threshold import kl as fa
 from pyfe4ai.schemes.mife.lwe import MIFELWEKeyGenerator
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE, ThresholdMIFELWEKeyGenerator
 from pyfe4ai.core.exceptions import FESchemeError, FEValidationError

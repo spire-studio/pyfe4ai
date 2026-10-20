@@ -133,7 +133,7 @@ seeds as a PRF) rather than perfectly. It has its own records
 ``flooding_accounting = "kl"`` with ``max_partial_decryptions = Q`` (opt-in,
 ``t = s`` with the Shamir sharing and the Gaussian flooding only -- the
 flooding defaults to ``"gaussian"`` under ``"kl"`` and ``"uniform"`` is
-refused there --, see :mod:`pyfe4ai.schemes.threshold.flooding_accounting`) sizes the
+refused there --, see :mod:`pyfe4ai.schemes.threshold.kl`) sizes the
 Gaussian noise for a run in which every server produces at most ``Q`` partial
 decryptions (one per ciphertext or chunk): ``KL <= 2^-(stat_param + 1)``
 for the ``N = s Q ring_n`` flooded coefficients, i.e.
@@ -279,15 +279,15 @@ from collections import OrderedDict
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.schemes.threshold.flooding_accounting import KL
-from pyfe4ai.schemes.threshold.flooding_accounting import PER_SAMPLE
-from pyfe4ai.schemes.threshold.flooding_accounting import check_kl_threshold
-from pyfe4ai.schemes.threshold.flooding_accounting import flooding_config
-from pyfe4ai.schemes.threshold.flooding_accounting import kl_flooded_samples
-from pyfe4ai.schemes.threshold.flooding_accounting import kl_flooding
-from pyfe4ai.schemes.threshold.flooding_accounting import kl_flooding_width
-from pyfe4ai.schemes.threshold.flooding_accounting import kl_tail_cut
-from pyfe4ai.schemes.threshold.flooding_accounting import server_budget
+from pyfe4ai.schemes.threshold.kl import KL
+from pyfe4ai.schemes.threshold.kl import PER_SAMPLE
+from pyfe4ai.schemes.threshold.kl import check_kl_threshold
+from pyfe4ai.schemes.threshold.kl import flooding_config
+from pyfe4ai.schemes.threshold.kl import kl_flooded_samples
+from pyfe4ai.schemes.threshold.kl import kl_flooding
+from pyfe4ai.schemes.threshold.kl import kl_flooding_width
+from pyfe4ai.schemes.threshold.kl import kl_tail_cut
+from pyfe4ai.schemes.threshold.kl import server_budget
 from pyfe4ai.schemes.mcfe.labels import chunk_label
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWE
 from pyfe4ai.schemes.mcfe.ring_lwe import check_ciphertext_label_hashes
@@ -1269,7 +1269,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
     def __init__(self, config: dict, **kwargs) -> None:
         """As :class:`~pyfe4ai.schemes.mcfe.ring_lwe.MCFERingLWE`; under
         ``flooding_accounting = "kl"`` a server needs ``partial_budget``, the
-        :class:`~pyfe4ai.schemes.threshold.flooding_accounting.PartialDecryptionBudget`
+        :class:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget`
         that its deployment keeps for it; ``legacy_shamir`` as in the class
         docstring. The ciphertext format is that of the public parameters
         (``ct_format``, :func:`pp_ct_format`); a ``ct_format`` in *config*

@@ -9,7 +9,7 @@ import warnings
 
 import pytest
 
-from pyfe4ai.schemes.threshold import flooding_accounting as fa
+from pyfe4ai.schemes.threshold import kl as fa
 from pyfe4ai.schemes.mcfe import lwe_threshold as dense
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as ring
 from pyfe4ai.schemes.mife import lwe_threshold as tmife

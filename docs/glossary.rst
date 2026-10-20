@@ -95,7 +95,7 @@ Configuration keys
       bit-security sense of Micciancio and Walter; each server counts in
       the ``partial_budget`` its deployment provides; much smaller ``q``
       and, for ``mife/lwe_threshold``, ``lwe_n``). See
-      :mod:`pyfe4ai.schemes.threshold.flooding_accounting`.
+      :mod:`pyfe4ai.schemes.threshold.kl`.
 
    ``eta``
       Length of each client's input vector (an ``int``; MIFE-DDH also

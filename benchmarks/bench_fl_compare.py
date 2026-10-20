@@ -31,7 +31,7 @@ only the label part (``label_term=False``) -- unless ``--ct-format json``,
 earlier versions.
 ``--flooding-accounting kl --max-partial-decryptions Q`` runs it with the
 opt-in KL accounting of its flooding noise (see
-:mod:`pyfe4ai.schemes.threshold.flooding_accounting`; it needs ``--threshold`` equal
+:mod:`pyfe4ai.schemes.threshold.kl`; it needs ``--threshold`` equal
 to ``--servers``), one budget per server.
 
 The schemes write their parameter cache to ``<workdir>/config`` (as
@@ -297,7 +297,7 @@ def measure_threshold(family: str, elements: int, clients: int, rounds: int, pre
     enrolled = sids[:threshold]
     budget = {}
     if pp.get("flooding_accounting") == "kl":  # one budget per server, kept by the deployment
-        from pyfe4ai.schemes.threshold.flooding_accounting import PartialDecryptionBudget
+        from pyfe4ai.schemes.threshold.kl import PartialDecryptionBudget
 
         budget = {sid: {"partial_budget": PartialDecryptionBudget(pp["max_partial_decryptions"])} for sid in enrolled}
     srv = {sid: crypto_cls({"id": sid, "precision": precision, "keys": {"pp": pp}, **budget.get(sid, {})})

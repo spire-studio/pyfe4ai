@@ -114,7 +114,7 @@ encryptions 679 s and a partial decryption 13 ms.
 
 ``flooding_accounting = "kl"`` with ``max_partial_decryptions = Q``
 (opt-in, ``t = s`` with the Shamir sharing only, see
-:mod:`pyfe4ai.schemes.threshold.flooding_accounting`) sizes the noise for a run in
+:mod:`pyfe4ai.schemes.threshold.kl`) sizes the noise for a run in
 which every server produces at most ``Q`` partial decryptions:
 ``KL <= 2^-(stat_param + 1)`` for the ``N = s Q`` flooded values, i.e.
 ``sigma_f = B sqrt(N 2^stat_param)``, with a tail cut derived from ``N`` (16
@@ -142,15 +142,15 @@ import secrets
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.schemes.threshold.flooding_accounting import KL
-from pyfe4ai.schemes.threshold.flooding_accounting import PER_SAMPLE
-from pyfe4ai.schemes.threshold.flooding_accounting import check_kl_threshold
-from pyfe4ai.schemes.threshold.flooding_accounting import flooding_config
-from pyfe4ai.schemes.threshold.flooding_accounting import kl_flooded_samples
-from pyfe4ai.schemes.threshold.flooding_accounting import kl_flooding
-from pyfe4ai.schemes.threshold.flooding_accounting import kl_flooding_width
-from pyfe4ai.schemes.threshold.flooding_accounting import kl_tail_cut
-from pyfe4ai.schemes.threshold.flooding_accounting import server_budget
+from pyfe4ai.schemes.threshold.kl import KL
+from pyfe4ai.schemes.threshold.kl import PER_SAMPLE
+from pyfe4ai.schemes.threshold.kl import check_kl_threshold
+from pyfe4ai.schemes.threshold.kl import flooding_config
+from pyfe4ai.schemes.threshold.kl import kl_flooded_samples
+from pyfe4ai.schemes.threshold.kl import kl_flooding
+from pyfe4ai.schemes.threshold.kl import kl_flooding_width
+from pyfe4ai.schemes.threshold.kl import kl_tail_cut
+from pyfe4ai.schemes.threshold.kl import server_budget
 from pyfe4ai.schemes.mife.lwe import MIFELWE
 from pyfe4ai.schemes.mife.lwe import MIFELWEKeyGenerator
 from pyfe4ai.schemes.threshold.threshold_utils import check_ciphertext_tags
@@ -447,7 +447,7 @@ class ThresholdMIFELWE(MIFELWE):
     def __init__(self, config: dict, **kwargs) -> None:
         """As :class:`~pyfe4ai.schemes.mife.lwe.MIFELWE`; under
         ``flooding_accounting = "kl"`` a server needs ``partial_budget``, the
-        :class:`~pyfe4ai.schemes.threshold.flooding_accounting.PartialDecryptionBudget`
+        :class:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget`
         that its deployment keeps for it; ``legacy_shamir`` as in the class
         docstring."""
         super().__init__(config, **kwargs)

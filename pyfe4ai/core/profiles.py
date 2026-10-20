@@ -108,7 +108,7 @@ The ``security_profile`` entry of a key generator's config selects one:
     count against the limit in a budget that the deployment gives them and
     must keep across processes and restarts. A different and weaker
     guarantee, with its own parameter records; see
-    :mod:`pyfe4ai.schemes.threshold.flooding_accounting`.
+    :mod:`pyfe4ai.schemes.threshold.kl`.
 
     Values given explicitly in the config must not be weaker than the
     profile's.

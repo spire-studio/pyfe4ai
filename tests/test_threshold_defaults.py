@@ -23,7 +23,7 @@ import pickle
 import numpy as np
 import pytest
 
-from pyfe4ai.schemes.threshold.flooding_accounting import PartialDecryptionBudget
+from pyfe4ai.schemes.threshold.kl import PartialDecryptionBudget
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
 from pyfe4ai import backend as native_backend
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError

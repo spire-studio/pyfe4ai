@@ -79,7 +79,7 @@ very end of the table at that width (5888 to 6144, with a public matrix of
 4 to 6, ``X = Y >= 12``, most ``eta >= 2``).
 
 The opt-in KL-divergence accounting of the flooding noise
-(:mod:`pyfe4ai.schemes.threshold.flooding_accounting`) would bring it to about 4864 for
+(:mod:`pyfe4ai.schemes.threshold.kl`) would bring it to about 4864 for
 two clients, ``s = t = 3`` and ``2^40`` flooded values. It applies only with
 ``flooding_accounting = "kl"``, ``t = s`` and an explicit
 ``max_partial_decryptions`` budget; the public matrix would still have

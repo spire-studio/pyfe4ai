@@ -104,7 +104,7 @@ import secrets
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.schemes.threshold.flooding_accounting import PER_SAMPLE
+from pyfe4ai.schemes.threshold.kl import PER_SAMPLE
 from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
 from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.schemes.mcfe.lwe import MCFELWE

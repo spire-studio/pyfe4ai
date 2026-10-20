@@ -38,6 +38,6 @@ Threshold Utilities
 Flooding Accounting
 -------------------
 
-.. automodule:: pyfe4ai.schemes.threshold.flooding_accounting
+.. automodule:: pyfe4ai.schemes.threshold.kl
    :members:
    :undoc-members:

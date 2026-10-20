@@ -47,7 +47,7 @@ upgrade notes first.**
   | `pyfe4ai.schemes.status`, `pyfe4ai.schemes.profiles` | `pyfe4ai.core.status`, `pyfe4ai.core.profiles` |
   | `pyfe4ai.schemes.one_time`, `pyfe4ai.schemes.random_offline` | `pyfe4ai.core.one_time` |
   | `pyfe4ai.schemes.abdp15_lwe`, `.ddh_base`, `.ec_ddh_base`, `.config_types` | `pyfe4ai.schemes.common.abdp15_lwe`, `.ddh_base`, `.ec_ddh_base`, `.config_types` |
-  | `pyfe4ai.schemes.threshold_utils`, `pyfe4ai.schemes.flooding_accounting` | `pyfe4ai.schemes.threshold.threshold_utils`, `pyfe4ai.schemes.threshold.flooding_accounting` |
+  | `pyfe4ai.schemes.threshold_utils`, `pyfe4ai.schemes.flooding_accounting` | `pyfe4ai.schemes.threshold.threshold_utils`, `pyfe4ai.schemes.threshold.kl` |
   | `pyfe4ai.logger` (`init_logging_config`), `pyfe4ai/config.yaml` | removed (see Logging) |
 
   Objects pickled by an earlier version that refer to a moved module (for
@@ -444,7 +444,7 @@ Mac) against BLS12-381.
   and `mcfe/ring_lwe_threshold` with `t = s`
   (`flooding_accounting="kl"`, a mandatory `max_partial_decryptions` budget
   `Q`, and a `PartialDecryptionBudget` per server that the deployment keeps
-  across restarts; `pyfe4ai.schemes.threshold.flooding_accounting`). It gives a weaker
+  across restarts; `pyfe4ai.schemes.threshold.kl`). It gives a weaker
   guarantee -- about `stat_param - 6.85` bits, for the first `Q` partial
   decryptions of every server -- for a smaller `q`: 178 bits for
   `mcfe/ring_lwe_threshold` under `standard` with `N = s Q k = 2^53`

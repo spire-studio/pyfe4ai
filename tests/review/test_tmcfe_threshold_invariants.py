@@ -27,7 +27,7 @@ import gmpy2 as gp
 import numpy as np
 import pytest
 
-from pyfe4ai.schemes.threshold.flooding_accounting import PartialDecryptionBudget
+from pyfe4ai.schemes.threshold.kl import PartialDecryptionBudget
 from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
 from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.schemes.threshold.threshold_utils import pp_binding, tag_ciphertext, tag_ciphertext_message
