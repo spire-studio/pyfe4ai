@@ -223,19 +223,6 @@ def _zip_values(a, b, f):
     return f(a, b)
 
 
-def _zq_native(modulus):
-    """The extension when it does the ``Z_q`` arithmetic of the replicated
-    sharings for *modulus* -- built with ``zq_sum``, backend not ``"python"``,
-    ``q`` odd in ``[3, 2^253)``, no NTT ring needed --, else ``None``."""
-    from pyfe4ai import backend as native_backend
-
-    ext = native_backend.ext()
-    if ext is None or native_backend.get_backend() == "python" or not hasattr(ext, "zq_sum"):
-        return None
-    q = int(modulus)
-    return ext if 3 <= q < native_backend.MAX_NATIVE_Q and q % 2 else None
-
-
 def _flatten_like(layout, material, out: list) -> bool:
     """Append the values of *material* to *out* in the order of *layout* (a
     :func:`piece_layout`); ``False`` if *material* has another layout (the
@@ -282,24 +269,23 @@ def _unflatten(layout, flat: list):
 
 
 def _share_replicated_native(material, sets: list, modulus: gp.mpz, binary: bool = False):
-    """:func:`share_replicated` by the extension -- the same pieces for the
-    same random bytes: each random value drawn as
-    ``random.SystemRandom.randrange(0, q)`` draws it, from the call's DRBG
-    (or the test bytes of :func:`~pyfe4ai.backend.random_input`;
-    a test-installed DRBG seed, ``native_backend._seed_override``, makes every
-    call read stream 0 of that seed, as for the other tensor calls: tests
-    only), in the order of the Python code -- or ``None`` when that code
-    applies.
+    """:func:`share_replicated` in one call of the backend's
+    :meth:`~pyfe4ai.backend.interface.Backend.replicated_deal` -- natively the
+    same pieces for the same random bytes, each random value drawn as
+    ``random.SystemRandom.randrange(0, q)`` draws it, in the order of the
+    Python code (see :meth:`~pyfe4ai.backend.native_impl.NativeBackend.replicated_deal`)
+    -- or ``None`` when the Python code applies.
 
     Raises:
+        FEKeyError: For binary values that are not whole words below q.
         RuntimeError: If the test bytes run out (they are bounded; the DRBG
             is not).
     """
-    ext = _zq_native(modulus)
-    if ext is None:
-        return None
-    from pyfe4ai import backend as native_backend
+    from pyfe4ai import backend
 
+    ops = backend.ops()
+    if not ops.zq_kernels(modulus):
+        return None
     width = (int(modulus).bit_length() + 7) // 8
     if _has_bytes(material):  # binary key terms: dealt as bytes, out as bytes
         layout = _bytes_layout(material, width)
@@ -311,25 +297,9 @@ def _share_replicated_native(material, sets: list, modulus: gp.mpz, binary: bool
         flat = []
         if not _flatten_like(layout, material, flat):
             return None
-    n_random = len(sets) - 1
-    # test bytes (None otherwise): a draw is rejected with probability below
-    # 1/2, so 4 draws per value and 256 more run out with probability below
-    # 2^-180 (Hoeffding), also for q just above a power of two
-    draws = (len(flat) // width if isinstance(flat, bytes) else len(flat)) * n_random
-    rnd = native_backend.random_input(width * (4 * draws + 256) if draws else 0)
-    try:
-        out = ext.zq_replicated_deal(
-            int(modulus), flat, n_random, rnd, **native_backend.seed_kwargs(), **({"binary": True} if binary else {}))
-    except TypeError:  # values other than ints and decimal strings: the Python code reads them
+    out = ops.replicated_deal(modulus, flat, len(sets) - 1, binary)
+    if out is None:  # values other than ints and decimal strings: the Python code reads them
         return None
-    except ValueError as exc:
-        if binary and "binary values" in str(exc):  # bytes that are not whole words below q
-            raise FEKeyError("malformed binary key material") from exc
-        if rnd is None:
-            raise
-        raise RuntimeError(
-            "native_backend.random_input: the {} test bytes ran out".format(len(rnd))
-        ) from exc
     if binary:
         wb = _value_bytes(modulus)
         pieces = {T: _unflatten_bytes(layout, out[i + 1], wb) for i, T in enumerate(sets[1:])}
@@ -342,10 +312,14 @@ def _share_replicated_native(material, sets: list, modulus: gp.mpz, binary: bool
 
 def _sum_pieces_native(template, pieces: list, modulus: gp.mpz):
     """The sum of *pieces* mod *modulus* as decimal strings in the layout of
-    *template*, by the extension (the values of the Python code), or ``None``
-    when that code applies (no pieces, other layouts or values)."""
-    ext = _zq_native(modulus) if pieces else None
-    if ext is None:
+    *template*, natively (the backend's
+    :meth:`~pyfe4ai.backend.interface.Backend.zq_sum`; the values of the
+    Python code), or ``None`` when that code applies (no pieces, the Python
+    backend, other layouts or values)."""
+    from pyfe4ai import backend
+
+    ops = backend.ops()
+    if not pieces or not ops.zq_kernels(modulus):
         return None
     layout = piece_layout(template)
     rows = []
@@ -354,26 +328,25 @@ def _sum_pieces_native(template, pieces: list, modulus: gp.mpz):
         if not _flatten_like(layout, piece, row):
             return None
         rows.append(row)
-    try:
-        return _unflatten(layout, ext.zq_sum(int(modulus), len(rows[0]), rows, []))
-    except TypeError:
-        return None
+    out = ops.zq_sum(modulus, len(rows[0]), rows, [], reference=False)
+    return None if out is None else _unflatten(layout, out)
 
 
 def _sum_binary_pieces(pieces: list, modulus: gp.mpz, skip_first: bool = False):
     """The sum mod q of binary pieces (:func:`~pyfe4ai.schemes.threshold.codec.binary_material`), leaf by leaf,
-    as bytes: natively (``zq_sum``) where the extension is built, else in
-    Python with the same values. With *skip_first* the first piece only gives
-    the layout (the sum of the others; zeros if there are none).
+    as bytes: the backend's :meth:`~pyfe4ai.backend.interface.Backend.zq_sum`
+    (natively where the extension is built, else in Python with the same
+    values). With *skip_first* the first piece only gives the layout (the sum
+    of the others; zeros if there are none).
 
     Raises:
         FESchemeError: For pieces of different layouts, or values that are not
             whole words below q.
     """
-    from pyfe4ai.core.formats.binary import decode_values, encode_values
+    from pyfe4ai import backend
 
     q, wb = int(modulus), _value_bytes(modulus)
-    ext = _zq_native(modulus)
+    ops = backend.ops()
 
     def add(*leaves):
         if not all(isinstance(leaf, (bytes, bytearray)) for leaf in leaves) or len({len(leaf) for leaf in leaves}) != 1:
@@ -384,12 +357,7 @@ def _sum_binary_pieces(pieces: list, modulus: gp.mpz, skip_first: bool = False):
             if not leaves:
                 return bytes(count * wb)  # no assigned piece: 0
         try:
-            if ext is not None:
-                return ext.zq_sum(q, count, [bytes(leaf) for leaf in leaves], [], False, True)
-            total = [0] * count
-            for leaf in leaves:
-                total = [a + b for a, b in zip(total, decode_values(leaf, q, count))]
-            return encode_values(total, q)
+            return ops.zq_sum(q, count, [bytes(leaf) for leaf in leaves], [], False, True)
         except ValueError as exc:
             raise FESchemeError("malformed binary key piece") from exc
 
@@ -570,8 +538,10 @@ def expand_seeded_piece(seed: str, index_set, layout, modulus, fields=None, ctx=
         layout: :func:`piece_layout` of the shared material.
         modulus: Modulus ``q``.
         fields: Top-level entries to expand (all if ``None``).
-        ctx: A native ring context of *modulus* (any dimension): expand with
-            the extension's ``hash_to_zq``, which gives the same values.
+        ctx: A ring of *modulus* (:func:`pyfe4ai.backend.ring`, any
+            dimension): expand with its
+            :meth:`~pyfe4ai.backend.interface.Ring.hash_to_zq` (natively for a
+            native ring: the same values).
 
     Raises:
         FEKeyError: For a malformed seed or layout.
@@ -587,9 +557,7 @@ def expand_seeded_piece(seed: str, index_set, layout, modulus, fields=None, ctx=
     def leaf(keys, path, length):
         v, count = _leaf_input(seed, index_set, path, q_text), 1 if length is None else length
         if ctx is not None and count:
-            from pyfe4ai import backend as native_backend
-
-            values = ctx.unpack(native_backend.ext().hash_to_zq(ctx.cap, hash_to_zq_material(v, _SEED_DOMAIN), count))
+            values = ctx.hash_to_zq(hash_to_zq_material(v, _SEED_DOMAIN), count)
         else:
             values = hash_to_zq_vector(v, modulus, count, domain=_SEED_DOMAIN)
         return values[0] if length is None else values
@@ -602,19 +570,21 @@ def _combine_pieces(layout, explicit: list, seeded: list, modulus, ctx=None, sub
     *modulus*, leaf by leaf, as decimal strings of *layout*.
 
     *explicit* are pieces of *layout* (ints, mpz or decimal strings),
-    *seeded* ``(seed, T)`` pairs of :func:`expand_seeded_piece`. With the
-    native backend every leaf is expanded and added up by the extension
-    (``zq_sum``: the "shake256-wide" ``hash_to_zq`` and the sums, any odd
-    ``q`` below ``2^253``), with the values of the Python code; *ctx*, a
-    native ring context of *modulus*, is only checked.
+    *seeded* ``(seed, T)`` pairs of :func:`expand_seeded_piece`. Every leaf
+    is expanded and added up by the backend's
+    :meth:`~pyfe4ai.backend.interface.Backend.zq_sum` (natively the
+    "shake256-wide" ``hash_to_zq`` and the sums, any odd ``q`` below
+    ``2^253``, with the values of the Python code); *ctx*, a ring of
+    *modulus*, is only checked.
     """
-    from pyfe4ai.primitives.hashing import hash_to_zq_material, hash_to_zq_vector
+    from pyfe4ai import backend
+    from pyfe4ai.primitives.hashing import hash_to_zq_material
 
     seeded = [(_check_seed(seed, T), T) for seed, T in seeded]
     modulus = gp.mpz(modulus)
     _check_context(ctx, modulus)
     q_text = gp.digits(modulus)
-    ext = _zq_native(modulus)
+    ops = backend.ops()
 
     def leaf(keys, path, length):
         count = 1 if length is None else length
@@ -624,22 +594,8 @@ def _combine_pieces(layout, explicit: list, seeded: list, modulus, ctx=None, sub
             for key in keys:
                 value = value[key]
             rows.append([value] if length is None else value)
-        if ext is not None and all(len(row) == count for row in rows):
-            materials = [hash_to_zq_material(_leaf_input(seed, T, path, q_text), _SEED_DOMAIN) for seed, T in seeded]
-            try:
-                out = ext.zq_sum(int(modulus), count, rows, materials, subtract)
-                return out[0] if length is None else out
-            except TypeError:  # values other than ints and decimal strings: read below
-                pass
-        acc = [gp.mpz(0)] * count
-        for row in rows:
-            if len(row) != count:
-                raise FESchemeError("key pieces of different layouts")
-            acc = [a + gp.mpz(b) for a, b in zip(acc, row)]
-        for seed, T in seeded:
-            values = hash_to_zq_vector(_leaf_input(seed, T, path, q_text), modulus, count, domain=_SEED_DOMAIN)
-            acc = [a - b for a, b in zip(acc, values)] if subtract else [a + b for a, b in zip(acc, values)]
-        out = [gp.digits(a % modulus) for a in acc]
+        materials = [hash_to_zq_material(_leaf_input(seed, T, path, q_text), _SEED_DOMAIN) for seed, T in seeded]
+        out = ops.zq_sum(modulus, count, rows, materials, subtract)
         return out[0] if length is None else out
 
     return _map_layout(layout, leaf)
@@ -668,8 +624,9 @@ def share_replicated_seeded(material, threshold: int, points: list[int], modulus
     only, which are independent of the key, as with :func:`share_replicated`.
 
     Args:
-        ctx: Native ring context of *modulus*: expand and add up its
-            dimension's leaves natively (same values).
+        ctx: A ring of *modulus* (:func:`pyfe4ai.backend.ring`): checked
+            (the leaves are expanded and added up by the backend's
+            :meth:`~pyfe4ai.backend.interface.Backend.zq_sum`).
 
     Returns:
         ``{"layout", "correction": (T0, r_T0 as decimal strings), "seeds": {T: hex}}``.
@@ -722,7 +679,8 @@ def share_polys(polys: list, threshold: int, lst_sid: list, modulus, ring_n: int
     """Shamir shares of every coefficient of *polys* (``ring_n`` values or
     ``ring_n`` binary words each) among *lst_sid* (points of
     :func:`share_points`): ``[{sid: share polynomial}]``, as decimal strings,
-    or bytes with *binary*. With *ctx*, a native ring context of *modulus*,
+    or bytes with *binary*. With *ctx*, a ring of *modulus* on which the
+    threshold kernels run natively (:attr:`~pyfe4ai.backend.interface.Ring.threshold_native`),
     in one native call (coefficients drawn as :func:`share_secret` draws
     them, in the same order); else :func:`share_secret` per coefficient.
     Every polynomial must be ``ring_n`` values or ``ring_n`` words on its own
@@ -752,11 +710,10 @@ def share_polys(polys: list, threshold: int, lst_sid: list, modulus, ring_n: int
 
 def _share_polys_native(ctx, polys: list, threshold: int, points: list, lst_sid: list, modulus,
                         binary: bool = False) -> list:
-    """:func:`share_polys` in one native call of the extension's ``shamir_share``
-    (every polynomial ``ring_n`` values or words of the ring of *ctx*: checked
-    here too, for callers other than :func:`share_polys`)."""
-    from pyfe4ai import backend as native_backend
-
+    """:func:`share_polys` in one call of the native ring *ctx*'s
+    :meth:`~pyfe4ai.backend.interface.Ring.shamir_share` (every polynomial
+    ``ring_n`` values or words of the ring: checked here too, for callers
+    other than :func:`share_polys`)."""
     _check_key_polys(polys, modulus, ctx.ring_n)
     width = (int(modulus).bit_length() + 7) // 8
     if all(isinstance(poly, (bytes, bytearray)) for poly in polys):  # binary key terms
@@ -767,19 +724,7 @@ def _share_polys_native(ctx, polys: list, threshold: int, points: list, lst_sid:
         raise FEKeyError("key material mixing binary and value polynomials")
     else:
         flat = [v for poly in polys for v in poly]
-    rnd = native_backend.random_input(4 * width * len(flat) * (threshold - 1) + 64)
-    try:
-        out = native_backend.ext().shamir_share(
-            ctx.cap, flat, threshold, points, rnd,
-            **native_backend.seed_kwargs(), **({"binary": True} if binary else {}),
-        )
-    except TypeError as exc:  # values that are not ints / decimal strings
-        raise FEKeyError("malformed key material") from exc
-    except ValueError as exc:
-        if rnd is not None and "not enough random bytes" in str(exc):  # a test's random bytes, not the key's
-            raise RuntimeError(
-                "native_backend.random_input: the {} test bytes ran out".format(len(rnd))) from exc
-        raise FEKeyError("malformed key material") from exc  # values not below q, misaligned words
+    out = ctx.shamir_share(flat, threshold, points, binary)
     unit = width if binary else 1
     shared, start = [], 0
     for poly in polys:
@@ -826,9 +771,10 @@ def share_for_enrolled(
             the last :data:`~pyfe4ai.schemes.threshold.store.SHARE_CACHE_SIZE` key shares and assignments,
             for key shares that are not modified once handed in (they are
             told apart by identity). The returned share must not be modified.
-        ring_n: The ring dimension of a Ring-LWE layer; the native sums
-            (``_zq_native``) need no ring, so it is only checked against
-            a native ring context of the modulus where there is one.
+        ring_n: The ring dimension of a Ring-LWE layer; the sums (the
+            backend's :meth:`~pyfe4ai.backend.interface.Backend.zq_sum`) need
+            no ring, so it is only checked against the backend's ring of the
+            modulus.
 
         legacy_shamir: ``"refuse"`` or ``"warn"`` (see
             :data:`~pyfe4ai.core.versions.LEGACY_SHAMIR_POLICIES`).
@@ -872,9 +818,9 @@ def share_for_enrolled(
     if seeded:  # expand the assigned seeds and add them up, natively if possible
         ctx = None
         if ring_n is not None:
-            from pyfe4ai import backend as native_backend
+            from pyfe4ai import backend
 
-            ctx = native_backend.ring_context(modulus, ring_n)
+            ctx = backend.ring(modulus, ring_n)
         summed = _combine_pieces(
             _select(view.get("layout"), fields), [pick(held[T]) for T in assigned if T in held],
             [(seeds[T], T) for T in assigned if T not in held], modulus, ctx,

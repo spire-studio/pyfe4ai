@@ -418,9 +418,9 @@ def native_json_inputs(ctx, dict_ct: dict, sk_y: dict, fusion_weight: dict, z_sh
     those of :func:`ciphertexts_digest`; ``None`` when the Python path must
     read them (values other than exact ints and plain decimal strings,
     other layouts -- also of the key share *sk_y*, *z_share* -- and
-    malformed ciphertexts, whose errors it raises)."""
-    from pyfe4ai import backend as native_backend
-
+    malformed ciphertexts, whose errors it raises). *ctx*: a ring of the
+    backend on which the threshold kernels run natively
+    (:attr:`~pyfe4ai.backend.interface.Ring.threshold_native`)."""
     if not all(isinstance(nid, str) for nid in dict_ct) or len(z_share) != ring_n:
         return None
     nids = sorted(dict_ct)  # the key order of json.dumps(..., sort_keys=True)
@@ -437,7 +437,7 @@ def native_json_inputs(ctx, dict_ct: dict, sk_y: dict, fusion_weight: dict, z_sh
             return None
         ks.append(k)
         rows.append((ct0, ct.ct1))
-    out = native_backend.ext().share_inputs(ctx.cap, [json.dumps(nid) for nid in nids], ks, rows, eta)
+    out = ctx.threshold_inputs([json.dumps(nid) for nid in nids], ks, rows, eta)
     if out is None:
         return None
     packed, ct_text, key_text = out

@@ -279,7 +279,7 @@ from collections import OrderedDict
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai import backend as native_backend
+from pyfe4ai import backend
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.config import DEFAULT_CT_FORMAT
 from pyfe4ai.core.config import DEFAULT_FLOODING
@@ -411,12 +411,13 @@ MIN_RNS_FACTORS = 3
 
 
 def _native_ring(q, ring_n: int):
-    """The native ring context the threshold kernels take for ``(q, ring_n)``
-    (prime, or an RNS modulus of :func:`~pyfe4ai.backend.ring_context`
-    other than the two-prime context of the MIFE / MCFE prototype, which has
-    kernels of its own), or ``None`` for the Python path."""
-    ctx = native_backend.ring_context(q, ring_n)
-    return None if ctx is None or ctx.legacy_rns else ctx
+    """The backend's ring of ``(q, ring_n)`` if the threshold kernels run
+    natively on it (:attr:`~pyfe4ai.backend.interface.Ring.threshold_native`:
+    a native ring, prime or an RNS modulus other than the two-prime context
+    of the MIFE / MCFE prototype, which has kernels of its own), or ``None``
+    for the Python path."""
+    ring = backend.ring(q, ring_n)
+    return ring if ring.threshold_native else None
 
 
 class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
@@ -868,8 +869,8 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
             raise FEKeyError("malformed key material") from exc
         _check_key_polys(polys, self.q, self.ring_n)
         if self.sharing in ("replicated", "replicated-seeded"):
-            # the seeded pieces are expanded natively in the ring context
-            ctx = native_backend.ring_context(self.q, self.ring_n) if self.sharing == "replicated-seeded" else None
+            # the seeded pieces are expanded and added up by the backend (natively where it applies)
+            ctx = backend.ring(self.q, self.ring_n) if self.sharing == "replicated-seeded" else None
             held = deal_replicated(material, self.sharing, self.t, self.lst_sid, self.q, binary=binary, ctx=ctx)
             return {sid: {"sharing": self.sharing, **held[sid]} for sid in self.lst_sid}
         # a mix of bytes and value lists is dealt as values (as the Python dealing reads it)
@@ -1100,13 +1101,14 @@ class ThresholdMCFERingLWE(MCFERingLWE):
 
     @staticmethod
     def _ntt_mont(ctx, poly) -> bytes:
+        """The native ring *ctx*'s :meth:`~pyfe4ai.backend.interface.Ring.ntt_hat` of a key-share polynomial."""
         if isinstance(poly, (bytes, bytearray)):
             try:
-                return ctx.ntt_mont(bytes(poly))
+                return ctx.ntt_hat(poly)
             except ValueError as exc:
                 raise FEKeyError("malformed binary key share") from exc
         try:
-            return ctx.ntt_mont(poly)
+            return ctx.ntt_hat(poly)
         except (TypeError, ValueError) as exc:  # e.g. a value list holding bytes
             raise FEKeyError("malformed key share") from exc
 
@@ -1261,7 +1263,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             noise_args = {"noise": flood.sample(ring_n, XofRandom(seed))[:count]}
         elif pp_flooding(self.pp) == "uniform":
             width = self._flooding_width()
-            if ctx is not None and width < q.bit_length():  # drawn natively, the same values
+            if ctx is not None and ctx.floods_natively(width):  # drawn natively, the same values
                 noise_args = {"flood": (width, uniform_flooding_material(seed))}
             else:
                 noise_args = {"noise": uniform_flooding_poly(width, count, seed)}
@@ -1282,17 +1284,14 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             sk_hats = [hats[("native", nid)] for nid in ids]
             if native is not None:
                 try:  # the ciphertexts are read already: what the call reads is the key share's
-                    w, c_y = native_backend.ext().share_partial(
-                        ctx.cap, packed, eta, ys, sk_hats, z_share, delta, multiplier, **noise_args,
-                    )
+                    w, c_y = ctx.threshold_partial(packed, eta, ys, sk_hats, z_share, delta, multiplier, **noise_args)
                 except (TypeError, ValueError) as exc:
                     raise FEKeyError("malformed key share") from exc
             else:
                 try:
-                    w, c_y, _ = native_backend.ext().share_partial_bin(
-                        ctx.cap, [RingLWECiphertext(dict_ct[nid]).ct for nid in ids], eta, ys, sk_hats, z_share, delta,
-                        multiplier,
-                        **noise_args,
+                    w, c_y, _ = ctx.threshold_partial_binary(
+                        [RingLWECiphertext(dict_ct[nid]).ct for nid in ids], eta, ys, sk_hats, z_share, delta,
+                        multiplier, **noise_args,
                     )
                 except (TypeError, ValueError) as exc:
                     if exc.args[:1] == ("malformed ciphertext",):
@@ -1394,9 +1393,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         # JSON: every partial holds at least k values (a shorter one would give a shorter result)
         partial_batch_length(first, partials, self.pp["ring_n"], binary)
         if ctx is not None and type(head.k) is int:
-            out = native_backend.ext().share_combine(
-                ctx.cap, head.c_y, [TMCFERingLWEPartial(p).w for p in partials], delta, bound, head.k
-            )
+            out = ctx.threshold_combine(head.c_y, [TMCFERingLWEPartial(p).w for p in partials], delta, bound, head.k)
             if out is not None:  # else values or layouts the Python code reads
                 return out
         total = json_partial_difference(first, partials, q)
@@ -1412,8 +1409,8 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         k = partial_batch_length(first, partials, self.pp["ring_n"], True)
         if ctx is not None:
             try:
-                out = native_backend.ext().share_combine_bin(
-                    ctx.cap, bytes(TMCFERingLWEPartial(first).c_y), [bytes(TMCFERingLWEPartial(p).w) for p in partials],
+                out = ctx.threshold_combine_binary(
+                    bytes(TMCFERingLWEPartial(first).c_y), [bytes(TMCFERingLWEPartial(p).w) for p in partials],
                     delta, bound, k)
             except ValueError as exc:
                 raise FESchemeError("malformed partial decryption") from exc
