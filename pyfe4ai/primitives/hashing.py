@@ -178,7 +178,22 @@ def hash_to_zq_vector(v: str, q: gp.mpz, length: int, domain: str = "", mode: st
         domain: Domain-separation tag.
         mode: Label-hash mode.
     """
-    material = hash_to_zq_material(v, domain, mode)
+    return _zq_values(hash_to_zq_material(v, domain, mode), q, length, mode)
+
+
+def hash_to_zq_values(material: bytes, q: gp.mpz, length: int, mode: str = LEGACY_LABEL_HASH) -> list:
+    """The *length* values of :func:`hash_to_zq_vector` for its XOF input
+    *material* (:func:`hash_to_zq_material` with the same *mode*); the
+    reference of the backend's
+    :meth:`~pyfe4ai.backend.interface.Ring.hash_to_zq`.
+
+    Raises:
+        ValueError: For an unknown *mode*.
+    """
+    return _zq_values(material, q, length, check_label_hash(mode))
+
+
+def _zq_values(material: bytes, q: gp.mpz, length: int, mode: str) -> list:
     if mode != "shake256-wide":
         return _rejection_sample(material, q, length, mode)
     q = gp.mpz(q)

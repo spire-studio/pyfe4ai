@@ -19,6 +19,7 @@ from pyfe4ai.schemes.threshold import roles as threshold_roles
 from pyfe4ai.schemes.mife import lwe_threshold as tmife
 from pyfe4ai.schemes.threshold import roles as threshold_roles
 from pyfe4ai import backend as native_backend
+from pyfe4ai.backend import native_impl
 from pyfe4ai.primitives import sampling as su
 from tests.test_native_backend import ByteStream
 
@@ -380,7 +381,7 @@ def test_context_and_count_gates(spy, monkeypatch):
             py, nat = _both(lambda: su.discrete_gaussian_bigint(sigma, 4, rng=su.XofRandom(b"ctx")))
         assert py == nat
     assert spy.calls == 0
-    monkeypatch.setattr(native_backend, "MAX_NATIVE_BIGINT_COUNT", 3)
+    monkeypatch.setattr(native_impl, "MAX_NATIVE_BIGINT_COUNT", 3)
     su.discrete_gaussian_bigint(sigma, 4)
     assert spy.calls == 0
     with pytest.raises(ValueError, match="too many"):

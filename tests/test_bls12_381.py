@@ -49,20 +49,20 @@ def group():
 
 @pytest.mark.parametrize("msg,x,y", G1_VECTORS)
 def test_hash_to_g1_rfc9380(msg, x, y):
-    assert B._ext.bls_hash(B.G1, msg, G1_DST).to_bytes() == _compressed([x], y > (P - 1) // 2)
+    assert B._kernels.hash(B.G1, msg, G1_DST).to_bytes() == _compressed([x], y > (P - 1) // 2)
 
 
 @pytest.mark.parametrize("msg,x,y", G2_VECTORS)
 def test_hash_to_g2_rfc9380(msg, x, y):
     largest = y[1] > (P - 1) // 2 or (y[1] == 0 and y[0] > (P - 1) // 2)
-    assert B._ext.bls_hash(B.G2, msg, G2_DST).to_bytes() == _compressed([x[1], x[0]], largest)
+    assert B._kernels.hash(B.G2, msg, G2_DST).to_bytes() == _compressed([x[1], x[0]], largest)
 
 
 def test_group_hash_is_deterministic_and_domain_separated(group):
     h = group.hash("pyfe4ai/fh-mcfe/H1(tag)|label", B.G1)
     assert h == B.PairingGroup().hash(b"pyfe4ai/fh-mcfe/H1(tag)|label", B.G1)
     assert h != group.hash("pyfe4ai/fh-mcfe/H1(tag)|label2", B.G1)
-    assert h.to_bytes() != B._ext.bls_hash(B.G1, b"pyfe4ai/fh-mcfe/H1(tag)|label", G1_DST).to_bytes()
+    assert h.to_bytes() != B._kernels.hash(B.G1, b"pyfe4ai/fh-mcfe/H1(tag)|label", G1_DST).to_bytes()
     assert group.hash("x", B.G2).type == B.G2
     with pytest.raises(ValueError):
         group.hash("x", B.ZR)
@@ -305,7 +305,7 @@ def test_gt_membership_check():
     assert _f12_to_bytes(_f12_mul(_f12_from_bytes(s.to_bytes()), _f12_from_bytes(t.to_bytes()))) == (s * t).to_bytes()
     one = _f12_pow(_f12_from_bytes(s.to_bytes()), 0)
     assert group.deserialize(group.serialize(s)) == s
-    assert B._ext.bls_deserialize(B.GT, _f12_to_bytes(one)) == group.init(B.GT, 1)
+    assert B._kernels.deserialize(B.GT, _f12_to_bytes(one)) == group.init(B.GT, 1)
     rnd = random.Random(5)
     f = (tuple((rnd.randrange(P), rnd.randrange(P)) for _ in range(3)),
          tuple((rnd.randrange(P), rnd.randrange(P)) for _ in range(3)))
@@ -314,6 +314,6 @@ def test_gt_membership_check():
     assert _f12_pow(h, R) != one
     for bad in (f, h, _f12_mul(h, _f12_from_bytes(s.to_bytes())), ((((0, 0),) * 3), (((0, 0),) * 3))):
         with pytest.raises(ValueError):
-            B._ext.bls_deserialize(B.GT, _f12_to_bytes(bad))
+            B._kernels.deserialize(B.GT, _f12_to_bytes(bad))
     with pytest.raises(ValueError):
-        B._ext.bls_deserialize(B.GT, P.to_bytes(48, "little") + s.to_bytes()[48:])  # non-canonical
+        B._kernels.deserialize(B.GT, P.to_bytes(48, "little") + s.to_bytes()[48:])  # non-canonical

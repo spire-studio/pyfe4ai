@@ -15,6 +15,7 @@ import pytest
 from pyfe4ai.primitives.pairing import bls12_381 as B
 from pyfe4ai.primitives.groups import ec_group
 from pyfe4ai import backend as native_backend
+from pyfe4ai.backend import native_impl
 from pyfe4ai.primitives import sampling as su
 from pyfe4ai.core.exceptions import FEValidationError
 
@@ -89,13 +90,13 @@ def test_gt_dlog_bounds_and_one_shot_tables(group):
     with pytest.raises(ValueError):
         bounded_discrete_log_gt(group, base, base, 2 ** 63)
     with pytest.raises(ValueError):
-        B._require().bls_gt_dlog(base, base, 2 ** 48 + 1)  # the extension's own cap
+        native_backend.ext().bls_gt_dlog(base, base, 2 ** 48 + 1)  # the extension's own cap
 
 
 @needs_bls
 def test_dlog_table_caches_are_bounded(group):
     """Many bases (GT) and bounds (ristretto255): at most 16 tables are kept."""
-    ext = B._require()
+    ext = native_backend.ext()
     bases = [B.pair(group.random(B.G1), group.random(B.G2)) for _ in range(20)]
     for b in bases:
         assert B.gt_dlog(b, b ** 7, 2000) == 7
@@ -177,8 +178,8 @@ def test_facct_table_refuses_an_imprecise_constant(sigma):
     shift = mant.bit_length() - 128
     with pytest.raises(ValueError, match="disagrees"):
         native_backend.ext().FacctTable(p.k, p.y_bits, list(p.cdt), mant << -shift, exp + shift, exact)
-    native_backend._facct_table.cache_clear()
-    native_backend.facct_table(sigma)  # the shipped constant passes the check
+    native_impl._facct_table.cache_clear()
+    native_impl.facct_table(sigma)  # the shipped constant passes the check
 
 
 # -------------------------------------------------------------- ML adapter

@@ -8,9 +8,9 @@ canonical encoding) and scalars (decimal strings mod ``L``), hashing labels
 into the group (RFC 9380 ``hash_to_ristretto255``), and the bounded discrete
 logarithm of decryption (baby-step giant-step over encodings).
 
-Arithmetic runs in the Rust extension (curve25519-dalek, constant-time scalar
-multiplication) when :func:`pyfe4ai.backend.ec_ext` provides it,
-with group elements held as their 32-byte encodings, and otherwise in
+Arithmetic is the backend's (:func:`pyfe4ai.backend.ops`): in the Rust
+extension (curve25519-dalek, constant-time scalar multiplication) with group
+elements held as their 32-byte encodings, or in
 :mod:`pyfe4ai.primitives.groups.ristretto255` (pure Python, not constant-time) on
 extended coordinates. Every function accepts both forms.
 """
@@ -38,10 +38,10 @@ MAX_DLOG_BOUND = 2 ** 48
 _HEX64 = re.compile(r"[0-9a-fA-F]{64}")
 
 
-def _ext():
-    from pyfe4ai import backend as native_backend
+def _ops():
+    from pyfe4ai import backend
 
-    return native_backend.ec_ext()
+    return backend.ops()
 
 
 def _b(point) -> bytes:
@@ -57,28 +57,23 @@ def _k(k) -> bytes:
 
 
 def add(a, b):
-    ext = _ext()
-    return ext.r255_add(_b(a), _b(b)) if ext else r255.add(_t(a), _t(b))
+    return _ops().r255_add(a, b)
 
 
 def sub(a, b):
-    ext = _ext()
-    return ext.r255_sub(_b(a), _b(b)) if ext else r255.sub(_t(a), _t(b))
+    return _ops().r255_sub(a, b)
 
 
 def neg(a):
-    ext = _ext()
-    return ext.r255_neg(_b(a)) if ext else r255.neg(_t(a))
+    return _ops().r255_neg(a)
 
 
 def mul(point, k):
-    ext = _ext()
-    return ext.r255_mul(_b(point), _k(k)) if ext else r255.mul(_t(point), k)
+    return _ops().r255_mul(point, k)
 
 
 def mul_base(k):
-    ext = _ext()
-    return ext.r255_mul_base(_k(k)) if ext else r255.mul_base(k)
+    return _ops().r255_mul_base(k)
 
 
 def random_scalar() -> int:
@@ -115,12 +110,7 @@ def from_hex(value, what: str = "group element"):
             data = bytes.fromhex(value)
         else:
             data = bytes(value)
-        ext = _ext()
-        if ext:
-            if not ext.r255_check(data):
-                raise ValueError("invalid encoding")
-            return data
-        return r255.decode(data)
+        return _ops().r255_decode(data)
     except (TypeError, ValueError) as exc:
         raise FEValidationError("malformed {}".format(what)) from exc
 
@@ -135,8 +125,7 @@ def hash_to_group(message: str, tag: bytes, index: int = 0):
     if not 0 <= index < 256:
         raise ValueError("index must fit one byte")
     msg = bytes([index]) + message.encode("utf-8")
-    ext = _ext()
-    return ext.r255_hash(msg, tag) if ext else r255.hash_to_group(msg, tag)
+    return _ops().r255_hash(msg, tag)
 
 
 # ------------------------------------------------------------- discrete log
@@ -170,9 +159,11 @@ def dlog(point, bound: int) -> int | None:
     bound = int(bound)
     if not 0 <= bound <= MAX_DLOG_BOUND:
         raise ValueError("dlog bound must be between 0 and 2^48, got {}".format(bound))
-    ext = _ext()
-    if ext:
-        return ext.r255_dlog(_b(point), bound)
+    return _ops().r255_dlog(point, bound)
+
+
+def _dlog_reference(point, bound: int) -> int | None:
+    """:func:`dlog` in Python (the reference): baby-step giant-step over encodings."""
     point = _t(point)
     table, m, giant = _dlog_table(bound)
     gamma = r255.add(point, r255.mul_base(bound))

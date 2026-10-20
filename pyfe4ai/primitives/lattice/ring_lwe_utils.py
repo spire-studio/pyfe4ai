@@ -136,43 +136,28 @@ def _get_twiddle_factors(q: gp.mpz, n: int, root: gp.mpz) -> dict:
     return factors
 
 
-def _native_ring(q, n: int, root):
-    """The native context computing this module's NTT of ``(q, n)`` with *root*
-    (the root :func:`_get_ntt_root` picks), or ``None`` (Python backend,
-    extension not built, unsupported modulus, another root)."""
-    from pyfe4ai import backend as native_backend
-
-    if n < 2 or root is None or native_backend.active_backend() != "native":
-        return None
-    ctx = native_backend.ring_context(q, n)
-    if ctx is None or gp.mpz(root) != _get_ntt_root(gp.mpz(q), n):
-        return None
-    return ctx
-
-
-def _native_ntt(ctx, a: list, inverse: bool) -> list[gp.mpz]:
-    from pyfe4ai import backend as native_backend
-
-    return [gp.mpz(v) for v in ctx.unpack(native_backend.ext().ntt(ctx.cap, ctx.pack(a), inverse))]
-
-
 def ntt_forward(
     a: list[gp.mpz], q: gp.mpz, root: gp.mpz
 ) -> list[gp.mpz]:
     """In-place iterative Cooley-Tukey NTT (decimation-in-time).
 
-    Runs in the native extension when it has a context for ``(q, len(a))``
-    with this root (the same values; see :mod:`pyfe4ai.backend`).
+    The backend's :meth:`~pyfe4ai.backend.interface.Backend.ntt`: natively
+    where the extension has a context for ``(q, len(a))`` with this root
+    (the same values), else ``_ntt_forward_reference``.
 
         Args:
             a: First polynomial (coefficient vector).
             q: Modulus (or second prime).
             root: Primitive root of unity for NTT.
     """
+    from pyfe4ai import backend
+
+    return backend.ops().ntt(a, q, root, False)
+
+
+def _ntt_forward_reference(a: list[gp.mpz], q: gp.mpz, root: gp.mpz) -> list[gp.mpz]:
+    """:func:`ntt_forward` in Python (the reference)."""
     n = len(a)
-    ctx = _native_ring(q, n, root)
-    if ctx is not None:
-        return _native_ntt(ctx, a, False)
     tf = _get_twiddle_factors(q, n, root)
     twist = tf["twist"]
     bit_rev = tf["bit_rev"]
@@ -203,15 +188,22 @@ def ntt_inverse(
 ) -> list[gp.mpz]:
     """Inverse NTT: transform back to coefficient domain.
 
+    The backend's :meth:`~pyfe4ai.backend.interface.Backend.ntt` (natively
+    as :func:`ntt_forward`), else ``_ntt_inverse_reference``.
+
         Args:
             a: First polynomial (coefficient vector).
             q: Modulus (or second prime).
             root: Primitive root of unity for NTT.
     """
+    from pyfe4ai import backend
+
+    return backend.ops().ntt(a, q, root, True)
+
+
+def _ntt_inverse_reference(a: list[gp.mpz], q: gp.mpz, root: gp.mpz) -> list[gp.mpz]:
+    """:func:`ntt_inverse` in Python (the reference)."""
     n = len(a)
-    ctx = _native_ring(q, n, root)
-    if ctx is not None:
-        return _native_ntt(ctx, a, True)
     tf = _get_twiddle_factors(q, n, root)
     bit_rev = tf["bit_rev"]
     inv_twiddles = tf["inv_twiddles"]
@@ -454,18 +446,24 @@ def poly_mul(
 ) -> list[gp.mpz]:
     """Polynomial multiplication with automatic NTT acceleration.
 
+    The backend's :meth:`~pyfe4ai.backend.interface.Backend.poly_mul`:
+    natively where the extension has a context for ``(q, len(a))`` (the
+    same values), else ``_poly_mul_reference``.
+
         Args:
             a: First polynomial (coefficient vector).
             b: Second polynomial (coefficient vector).
             q: Modulus (or second prime).
     """
-    n = len(a)
-    root = _get_ntt_root(q, n)
-    ctx = _native_ring(q, n, root) if len(b) == n else None
-    if ctx is not None:
-        from pyfe4ai import backend as native_backend
+    from pyfe4ai import backend
 
-        return [gp.mpz(v) for v in ctx.unpack(native_backend.ext().poly_mul(ctx.cap, ctx.pack(a), ctx.pack(b)))]
+    return backend.ops().poly_mul(a, b, q)
+
+
+def _poly_mul_reference(a: list[gp.mpz], b: list[gp.mpz], q: gp.mpz, root) -> list[gp.mpz]:
+    """:func:`poly_mul` in Python with the root :func:`_get_ntt_root` found
+    for ``(q, len(a))`` (the NTT, or the naive product with a warning)."""
+    n = len(a)
     if root is not None:
         return poly_mul_ntt(a, b, q, root)
     logger.warning(

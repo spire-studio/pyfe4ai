@@ -393,7 +393,7 @@ def discrete_gaussian_bigint(
     rounded samples of widths below ``2^448`` are computed by the extension
     when *rng* is an :class:`XofRandom` or ``None``: from the same
     ``getrandbits`` values, it returns the integers this function computes
-    (see :func:`~pyfe4ai.backend.gaussian_bigint`); with
+    (see :meth:`~pyfe4ai.backend.native_impl.NativeBackend.gaussian_bigint`); with
     ``rng=None`` its bits come from the extension's per-call DRBG.
 
     Args:
@@ -416,12 +416,15 @@ def discrete_gaussian_bigint(
         if int(precision) < prec:
             raise ValueError("precision must be at least bits(sigma) + {} = {}".format(BIGINT_GUARD_BITS, prec))
         prec = int(precision)
-    if count > 0:
-        from pyfe4ai import backend as native_backend
+    if count > 0:  # the backend's (natively where the extension applies, else _gaussian_bigint_reference)
+        from pyfe4ai import backend
 
-        native = native_backend.gaussian_bigint(sigma, count, rng, prec)
-        if native is not None:
-            return native
+        return backend.ops().gaussian_bigint(sigma, count, rng, prec)
+    return _gaussian_bigint_reference(sigma, count, rng, prec)
+
+
+def _gaussian_bigint_reference(sigma, count: int, rng, prec: int) -> list[gp.mpz]:
+    """The rounded samples of :func:`discrete_gaussian_bigint` in Python (the reference)."""
     rng = rng or _CSPRNG
     samples = []
     with gp.context(gp.get_context(), precision=prec):
@@ -578,7 +581,7 @@ def discrete_gaussian_facct(sigma, count: int, rng=None) -> list[gp.mpz]:
     With the native backend (:mod:`pyfe4ai.backend`) the
     extension draws the same ``getrandbits`` in the same order and makes the
     same decisions when *rng* is an :class:`XofRandom` or ``None``
-    (:func:`~pyfe4ai.backend.gaussian_facct`; with ``rng=None``
+    (:meth:`~pyfe4ai.backend.native_impl.NativeBackend.gaussian_facct`; with ``rng=None``
     its bits come from the per-call DRBG).
 
     Args:
@@ -591,12 +594,15 @@ def discrete_gaussian_facct(sigma, count: int, rng=None) -> list[gp.mpz]:
         raise ValueError("sigma must be positive")
     if count < 0:
         raise ValueError("count must be non-negative")
-    if count > 0:
-        from pyfe4ai import backend as native_backend
+    if count > 0:  # the backend's (natively where the extension applies, else _gaussian_facct_reference)
+        from pyfe4ai import backend
 
-        native = native_backend.gaussian_facct(sigma, count, rng)
-        if native is not None:
-            return native
+        return backend.ops().gaussian_facct(sigma, count, rng)
+    return _gaussian_facct_reference(sigma, count, rng)
+
+
+def _gaussian_facct_reference(sigma, count: int, rng) -> list[gp.mpz]:
+    """:func:`discrete_gaussian_facct` in Python (the reference)."""
     params = _facct_params(_exact(sigma))
     rng = rng or _OS_RANDOM
     k, cdt, y_bits, neg_c = params.k, params.cdt, params.y_bits, params.neg_c

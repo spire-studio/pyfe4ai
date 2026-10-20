@@ -343,7 +343,7 @@ def test_packed_identical_with_native_ntts(monkeypatch):
     kg, _, pp = _keys({"eta": 2, "ring_n": 64, "m": 7, "sec_param": 128, "bound_x": 1, "bound_y": 1,
                        "ndarray_layout": "packed"})
     with native_backend.backend("native"):
-        assert rlu._native_ring(gp.mpz(pp["q"]), pp["ring_n"], rlu._get_ntt_root(gp.mpz(pp["q"]), pp["ring_n"]))
+        assert native_backend.ops()._ntt_ring(gp.mpz(pp["q"]), pp["ring_n"], rlu._get_ntt_root(gp.mpz(pp["q"]), pp["ring_n"]))
     matrix = [[(-1) ** j for j in range(64)], [j % 3 - 1 for j in range(64)]]
 
     def run(backend):  # the same bits for the FACCT samples of both runs

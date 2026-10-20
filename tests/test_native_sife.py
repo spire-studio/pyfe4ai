@@ -44,10 +44,10 @@ def test_ntt_and_poly_mul_dispatch_identical(bits, n):
         py, nat = _both(fn)
         assert py == nat and all(type(v) is type(gp.mpz(0)) for v in nat)
     with native_backend.backend("native"):
-        assert rlu._native_ring(q, n, root) is not None
+        assert native_backend.ops()._ntt_ring(q, n, root) is not None
         # another primitive root: the native context does not compute that NTT
         other = gp.powmod(root, 3, q)
-        assert rlu._native_ring(q, n, other) is None
+        assert native_backend.ops()._ntt_ring(q, n, other) is None
     py, nat = _both(lambda: rlu.ntt_forward(a, q, other))  # Python both times, with that root
     assert py == nat
 
@@ -99,7 +99,7 @@ def test_fullysec_identical_with_native_ntts(monkeypatch):
     enc = fs_rlwe.SIFEFullySecRingLWE({"keys": {"pp": pp, "sk": kg.get_private_keys()}})
     dec = fs_rlwe.SIFEFullySecRingLWE({"keys": {"pp": pp}})
     with native_backend.backend("native"):
-        assert rlu._native_ring(gp.mpz(pp["q"]), pp["ring_n"], rlu._get_ntt_root(gp.mpz(pp["q"]), pp["ring_n"]))
+        assert native_backend.ops()._ntt_ring(gp.mpz(pp["q"]), pp["ring_n"], rlu._get_ntt_root(gp.mpz(pp["q"]), pp["ring_n"]))
 
     def run():  # the same bits for both runs (FACCT by default for this scheme)
         monkeypatch.setattr(sampling_utils, "_CSPRNG", random.Random(11))
