@@ -874,6 +874,15 @@ Mac) against BLS12-381.
   dropping what the other had cached (one more summation later, no wrong
   value). The cache is now made atomically (`__dict__.setdefault`): both
   threads use the one stored first.
+- **Ring-LWE encryption keys with fewer than `eta` rows** (`mcfe/ring_lwe`
+  and its threshold and decentralized variants, `mife/ring_lwe`; info). An
+  encryption key whose pad `u` had fewer rows than `eta` gave a single
+  ciphertext without the missing `ct0` rows (refused only by the decryption,
+  as a malformed ciphertext), and the packed ndarray encryption and its
+  precomputation failed with a bare `IndexError`, as did any path with fewer
+  rows of `pk`. All of them now refuse such a key at encryption with
+  `FEKeyError` ("the encryption key has fewer than eta rows of pk or u"), in
+  both backends. Well-formed keys encrypt as before.
 - `EncryptedGradient.to_dict()` failed with `KeyError: ()` on the packed
   ciphertext layers of the Ring-LWE MCFE schemes (`mcfe/ring_lwe` and its
   threshold and decentralized variants), and `from_dict()` could not rebuild

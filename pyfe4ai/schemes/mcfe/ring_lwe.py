@@ -362,6 +362,7 @@ class MCFERingLWE(MIFERingLWE):
         self._check_encryption_keys()
         if "u" not in MCFERingLWEEncryptionKey(self.sk):
             raise FEKeyError("encryption key lacks the one-time pad u")
+        self._check_key_rows()
         if ints.size and int(np.max(np.abs(ints))) > int(self.pp["bound_x"]):
             raise FEValidationError("plaintext row exceeds the bound {}".format(int(self.pp["bound_x"])))
         return ints
@@ -446,6 +447,7 @@ class MCFERingLWE(MIFERingLWE):
         sk = MCFERingLWEEncryptionKey(self.sk)
         if "u" not in sk:
             raise FEKeyError("encryption key lacks the one-time pad u")
+        self._check_key_rows()
         u_prime = sk.u_prime
         ring_n = self.pp["ring_n"]
         shapes = [tuple(int(d) for d in shape) if isinstance(shape, (tuple, list)) else (int(shape),)

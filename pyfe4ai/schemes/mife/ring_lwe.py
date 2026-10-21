@@ -406,7 +406,21 @@ class MIFERingLWE(IPFEAbsCrypto):
             )
         if "u" not in MIFERingLWEEncryptionKey(self.sk):
             raise FEKeyError("encryption key lacks the one-time pad u")
+        self._check_key_rows()
         return rows
+
+    def _check_key_rows(self) -> None:
+        """Raise unless the encryption key's ``pk`` and pad ``u`` have ``eta``
+        rows (at least): with fewer, the encryption silently made a ciphertext
+        without the missing rows, or failed deep inside the backend.
+
+        Raises:
+            FEKeyError: For fewer rows (the message holds no key data).
+        """
+        sk = MIFERingLWEEncryptionKey(self.sk)
+        eta = self.pp["eta"]
+        if any(isinstance(rows, (list, tuple)) and len(rows) < eta for rows in (sk.get("pk"), sk.get("u"))):
+            raise FEKeyError("the encryption key has fewer than eta rows of pk or u")
 
     def __getstate__(self) -> dict:
         """Pickling and copying without the key cache (it may hold native
