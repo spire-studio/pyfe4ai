@@ -71,23 +71,23 @@ the Docker image above before changing pairing-based or quadratic schemes.
   (see the registry's docstring) and add its config class to
   `pyfe4ai/core/config.py`. The status table, the profiles' kinds, the ML
   adapter and the benchmark scripts read the registry, and
-  `tests/test_registry.py` checks it against the code.
+  `tests/api/test_registry.py` checks it against the code.
 - A construction of our own, with no published scheme to check it against,
   gets the status *experimental*; one checked against its paper is
   *reviewed*, with fidelity *faithful* or *adapted* (list the adaptations).
 - Regenerate the README *Scheme Status* table from
   `pyfe4ai.core.status.markdown_table()` instead of editing it by hand
-  (`tests/test_scheme_status.py` compares them), and add the scheme to the
+  (`tests/api/test_scheme_status.py` compares them), and add the scheme to the
   *Implemented Schemes* table and to `docs/api/`.
 - Say how `security_profile="standard"` sizes its parameters (or why it is
-  refused) and add a test to `tests/test_security_profiles.py`.
+  refused) and add a test to `tests/params/test_security_profiles.py`.
 
 ### Adding or changing a backend operation
 
 The scheme and primitive layers reach the Rust extension only through the
 backend interface (`pyfe4ai/backend/interface.py`): they call
 `pyfe4ai.backend.ops()` and `pyfe4ai.backend.ring(q, ring_n)`, and
-`tests/test_backend_interface.py` fails on any other use (an import of
+`tests/backend/test_backend_interface.py` fails on any other use (an import of
 `pyfe4ai._rust_native` or of the implementation modules, `ext()`, `.cap`,
 ...). To accelerate a computation:
 
@@ -110,7 +110,7 @@ backend interface (`pyfe4ai/backend/interface.py`): they call
   the scheme ask the backend which applies (`Ring.native`,
   `Backend.batched_layers`, ...), as the decryption and threshold kernels
   do; document the scheme steps as the reference.
-- Add a case to `tests/test_backend_interface.py`: the same inputs (and
+- Add a case to `tests/backend/test_backend_interface.py`: the same inputs (and
   random bytes) through both implementations, the same outputs, and a spy
   that the native kernel ran.
 
@@ -122,7 +122,7 @@ of the object's `__getstate__` (pickles and copies then rebuild it); never
 change what an existing class pickles without a reason in the CHANGELOG
 (other versions load those pickles). Module-level state is reserved for what
 every object shares (selections, public tables, the threshold store locks):
-`tests/test_global_state.py` refuses a new module-level cache, lock,
+`tests/state/test_global_state.py` refuses a new module-level cache, lock,
 registry or lazily set global unless it is allow-listed there with its
 reason and listed on `docs/threading.rst`. A process-wide lock is renewed in
 a forked child with `pyfe4ai.core.forksafe.renew_lock`, other per-process

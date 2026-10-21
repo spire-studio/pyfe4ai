@@ -8,7 +8,7 @@ not take (``super()``): that is where "native or Python" is decided for the
 given parameters. :func:`pyfe4ai.backend.ops` returns the implementation
 selected for the calling thread, :func:`pyfe4ai.backend.ring` its
 :class:`~pyfe4ai.backend.interface.Ring` of ``(q, ring_n)``. The scheme and primitive layers call
-nothing else of the backend; ``tests/test_backend_interface.py`` checks that
+nothing else of the backend; ``tests/backend/test_backend_interface.py`` checks that
 no module outside :mod:`pyfe4ai.backend` reaches the extension, and runs
 every operation through both implementations.
 

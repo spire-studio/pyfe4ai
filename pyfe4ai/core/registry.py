@@ -20,7 +20,7 @@ The other tables of the library are derived from it: the status table
 documentation tables rendered from it, the kinds of the security profiles
 (:data:`pyfe4ai.core.profiles.SCHEME_KIND`), the schemes of the ML adapter
 (:class:`pyfe4ai.ml.FESchemeWrapper`: classes, labels, the servers it runs,
-the group variants) and the benchmark scripts. ``tests/test_registry.py``
+the group variants) and the benchmark scripts. ``tests/api/test_registry.py``
 checks the entries against the code.
 
 :func:`create` builds a scheme's key generator by id and returns it with the

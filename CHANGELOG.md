@@ -312,7 +312,7 @@ not compatible with v0.3.0, and modules moved and classes were renamed
   buffer, registries) is listed on the new documentation page "Threads,
   processes and copies" (`docs/threading.rst`), together with the objects
   several threads may share and what copies, pickles and `fork()` do to
-  caches and locks; `tests/test_global_state.py` refuses new module-level
+  caches and locks; `tests/state/test_global_state.py` refuses new module-level
   caches or locks. No output, pickled state, error or warning changes. The
   internal names moved:
 

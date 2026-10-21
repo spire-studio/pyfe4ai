@@ -41,7 +41,7 @@ class Field:
         absent: What a missing field means, for fields that versions or
             options leave out: documentation of the default that
             :mod:`pyfe4ai.core.versions` (or the scheme) applies, which
-            ``tests/test_versions.py`` checks against it; ``None`` where it
+            ``tests/config/test_versions.py`` checks against it; ``None`` where it
             depends on the context (the doc says how). Reading a missing
             field raises ``KeyError`` as ``d[name]`` does, whatever it means.
     """

@@ -98,7 +98,7 @@ jobs:
         working-directory: rust/core
         run: cargo test --release --locked
 
-      - name: Build the rust/core C ABI (loaded by tests/test_rust_core.py)
+      - name: Build the rust/core C ABI (loaded by tests/native/test_rust_core.py)
         working-directory: rust/core
         run: cargo build --release --locked
 

@@ -390,7 +390,7 @@ outside the minimal smoke path.
 
 With the Rust extension built, the tests compare the native code with the
 Python reference; run the suite on each backend, and the Rust core's own tests
-(`tests/test_rust_core.py` also loads the core's C ABI once it is built):
+(`tests/native/test_rust_core.py` also loads the core's C ABI once it is built):
 
 ```bash
 PYFE4AI_BACKEND=native python -m pytest -q   # error if the extension is not built

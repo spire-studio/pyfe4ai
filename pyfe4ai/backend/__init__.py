@@ -18,7 +18,7 @@ implementations stand behind the interface:
   does not handle -- moduli of ``2^253`` or more, rings without a ``2
   ring_n``-th root of unity, Gaussian widths above ``2^40`` inside the
   encryption calls, other value types or layouts -- to the reference.
-  ``tests/test_backend_interface.py`` runs every operation through both and
+  ``tests/backend/test_backend_interface.py`` runs every operation through both and
   requires the same outputs.
 
 The extension runs the Ring-LWE MIFE / MCFE hot paths -- NTTs, Gaussian
@@ -76,7 +76,7 @@ test is decided in fixed point with an error below ``2^-110`` (about
 ``2^-119`` measured), and the tests within ``2^-100`` of the threshold (about
 one in ``2^99``) are handed to the Python formula, so for a given bit source
 the samples are the reference's (the known-answer tests of
-``tests/test_sampling_facct.py`` hold natively). Building a table compares a
+``tests/sampling/test_sampling_facct.py`` hold natively). Building a table compares a
 few of its fixed-point thresholds with the Python formula and refuses a
 constant off by more than about ``2^-102`` there (a 53-bit one is off by
 about ``2^-55``).

@@ -12,7 +12,7 @@ precomputation its secret randomness. Process-wide state is limited to the
 selection of the backend and the sampler, tables derived from public
 parameters, the locks of the threshold stores, the OS random buffer and the
 registries filled at import (`Process-wide state`_).
-``tests/test_global_state.py`` keeps that list closed: a new module-level
+``tests/state/test_global_state.py`` keeps that list closed: a new module-level
 cache, lock or registry fails it unless it is added there and here.
 
 Selection: backend, threads, sampler
@@ -163,7 +163,7 @@ Process-wide state
 ------------------
 
 Every module- or class-level value that changes after import, or that the
-library fills on first use (``tests/test_global_state.py`` checks this
+library fills on first use (``tests/state/test_global_state.py`` checks this
 list). "Fork": what a forked child does with it. None of it holds secrets
 except the OS random buffer (random bytes not yet used).
 

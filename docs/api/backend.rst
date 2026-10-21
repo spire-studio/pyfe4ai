@@ -34,7 +34,7 @@ The scheme and primitive layers call the operations of
 operation in Python (the reference), and
 :class:`~pyfe4ai.backend.native_impl.NativeBackend` subclasses it with the
 extension's kernels, keeping the reference for every input they do not take.
-``tests/test_backend_interface.py`` checks both: that no module outside
+``tests/backend/test_backend_interface.py`` checks both: that no module outside
 :mod:`pyfe4ai.backend` reaches the extension, and that each operation gives
 the same outputs (for the same random bytes) in both implementations.
 
