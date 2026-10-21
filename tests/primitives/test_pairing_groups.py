@@ -15,8 +15,8 @@ _CONFIG = {
     "lst_nid": ["nid_0", "nid_1"], "lst_sid": ["sid_0", "sid_1"],
     "bound": 3, "bound_x": 3, "bound_y": 3,
 }
-#: BLS12-381 from the Rust extension; the others from charm-crypto
-ASYMMETRIC_GROUPS = ["BLS12-381", "MNT224", "BN254"]
+#: BLS12-381 from the Rust extension (native); the others from charm-crypto
+ASYMMETRIC_GROUPS = [pytest.param("BLS12-381", marks=pytest.mark.native), "MNT224", "BN254"]
 
 
 def _need(name):
@@ -54,6 +54,7 @@ def test_key_generator_rejects_symmetric_group(key):
         _key_generator(key)(dict(_CONFIG, pairing_group_param="SS512"))
 
 
+@pytest.mark.native  # the default group, BLS12-381
 @pytest.mark.parametrize("key", PAIRING_SCHEMES, ids="/".join)
 def test_key_generator_defaults_to_asymmetric_group(key):
     _need(DEFAULT_PAIRING_GROUP)
@@ -85,6 +86,7 @@ def test_unknown_group_without_charm_names_the_dependency():
         PairingGroup("MNT224")
 
 
+@pytest.mark.native
 @pytest.mark.parametrize("key", PAIRING_SCHEMES, ids="/".join)
 def test_standard_profile_uses_bls12_381(key):
     from pyfe4ai import FESecurityWarning
@@ -95,6 +97,7 @@ def test_standard_profile_uses_bls12_381(key):
     assert kg.pairing_group_param == "BLS12-381"
 
 
+@pytest.mark.native  # BLS12-381
 def test_standard_profile_fh_ipe_round_trip():
     from pyfe4ai.schemes.sife.fh_ipe_pairing import SIFEFHIPEPairing
 

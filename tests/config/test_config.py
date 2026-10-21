@@ -16,7 +16,7 @@ from pyfe4ai.core import profiles
 from pyfe4ai.core.exceptions import FEValidationError
 from pyfe4ai.core.status import SCHEME_STATUS
 from pyfe4ai.primitives.pairing.pairing_backend import pairing_available
-from tests.pairing_group import GROUP
+from tests.pairing_group import GROUP, GROUP_MARKS
 
 DOCS = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "docs", "configuration.rst")
 
@@ -50,6 +50,11 @@ def generator(scheme):
     path = re.search(r":class:`~([\w.]+)`", configs.config_class(scheme).__doc__).group(1)
     module, name = path.rsplit(".", 1)
     return getattr(importlib.import_module(module), name)
+
+
+#: The schemes as parameters, the pairing ones marked (native with BLS12-381: see tests/pairing_group.py).
+SCHEMES = [pytest.param(scheme, marks=GROUP_MARKS if profiles.SCHEME_KIND[scheme] == "pairing" else ())
+           for scheme in sorted(MINIMAL)]
 
 
 def _skip_without_pairing(scheme):
@@ -163,7 +168,7 @@ def _recording(cls, seen):
     return Recording
 
 
-@pytest.mark.parametrize("scheme", sorted(MINIMAL), ids="/".join)
+@pytest.mark.parametrize("scheme", SCHEMES, ids="/".join)
 def test_key_generators_read_declared_options_only(scheme, monkeypatch):
     """The options a key generator reads from its converted config (built from
     a minimal config, then set up) are declared. Reads of a copy (a base
@@ -185,7 +190,7 @@ _ATTRIBUTE_DEFAULTS = {"eta", "bound_x", "bound_y", "bound", "bit_length", "ring
                        "subspace_dim", "coeff_bound", "bound_c", "sec_param", "group", "stat_param"}
 
 
-@pytest.mark.parametrize("scheme", sorted(MINIMAL), ids="/".join)
+@pytest.mark.parametrize("scheme", SCHEMES, ids="/".join)
 def test_declared_defaults_are_the_key_generators(scheme):
     _skip_without_pairing(scheme)
     cls = configs.config_class(scheme)
@@ -271,7 +276,7 @@ def test_library_code_reads_no_option_as_an_attribute():
     assert not hits, hits
 
 
-@pytest.mark.parametrize("scheme", sorted(MINIMAL), ids="/".join)
+@pytest.mark.parametrize("scheme", SCHEMES, ids="/".join)
 def test_key_generators_read_no_option_as_an_attribute(scheme, monkeypatch):
     """At run time: building and setting up every key generator reads no
     option of its config object as an attribute."""

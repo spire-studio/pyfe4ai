@@ -182,7 +182,7 @@ def test_every_record_documents_its_fields(name):
 
 from pyfe4ai.core.formats import dl, lwe, pairing, ring_lwe, threshold  # noqa: E402
 from pyfe4ai.primitives.pairing.pairing_backend import pairing_available  # noqa: E402
-from tests.pairing_group import GROUP  # noqa: E402
+from tests.pairing_group import GROUP, GROUP_MARKS, needs_group  # noqa: E402
 
 
 def _sife_ddh():
@@ -415,7 +415,12 @@ FAMILIES = {
 }
 
 
-@pytest.mark.parametrize("family", sorted(FAMILIES))
+#: The families on the pairing group of the tests (native with BLS12-381: see tests/pairing_group.py).
+PAIRING_FAMILIES = {"tmcfe-fh", "dmcfe-fh", "quad"}
+
+
+@pytest.mark.parametrize("family", [pytest.param(f, marks=GROUP_MARKS if f in PAIRING_FAMILIES else ())
+                                    for f in sorted(FAMILIES)])
 def test_scheme_objects_are_their_records(family):
     random.seed(0)
     objects = FAMILIES[family]()
@@ -459,6 +464,7 @@ def test_threshold_binary_ciphertexts_round_trip():
 # malformed input: the exceptions of earlier versions, in the same order
 
 
+@needs_group
 def test_dmcfe_fh_combines_malformed_share_sets_as_before():
     if not pairing_available(GROUP):
         pytest.skip("no backend for pairing group {}".format(GROUP))

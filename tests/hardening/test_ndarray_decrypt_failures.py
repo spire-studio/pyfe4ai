@@ -13,6 +13,7 @@ import pytest
 from pyfe4ai.core.exceptions import FESchemeError
 from pyfe4ai.ml import FESchemeWrapper, aggregate_gradients, compute_linear, encrypt_features
 from pyfe4ai.ml import encrypt_gradient
+from tests.pairing_group import needs_group
 
 NIDS = ["nid_0", "nid_1"]
 _MULTI = {"n": 2, "s": 1, "lst_nid": NIDS, "eta": 1}
@@ -131,6 +132,7 @@ def test_compute_linear_reports_a_result_that_does_not_decrypt(monkeypatch):
 # -- pairing-based helpers (Docker image) -------------------------------------
 
 
+@needs_group
 def test_pairing_ndarray_helpers_raise_instead_of_nan(monkeypatch):
     from tests.pairing_group import GROUP, skip_unless_available
 

@@ -71,7 +71,30 @@ pythonpath = ["."]
 # under security_profile="standard"; tests/api/test_scheme_status.py and
 # tests/params/test_security_profiles.py check the warnings themselves
 filterwarnings = ["ignore::pyfe4ai.core.exceptions.FESecurityWarning"]
+# every mark a test carries must be registered here; tests/conftest.py adds
+# core / extended, native, slow and the group of each test (see CONTRIBUTING.md)
+addopts = "--strict-markers"
 markers = [
   "core: core FE/IPFE coverage intended for the staged core-only release lane",
   "extended: non-core pairing-heavy or quadratic FE coverage kept outside the core-only release lane",
+  "native: exercises the native code (the extension pyfe4ai._rust_native or the rust/core C ABI); skipped or not generated without it",
+  "slow: 2 s or more on an Apple M2 Max in one of the suite's configurations (tests/conftest.py SLOW)",
+  # the groups: one per directory of tests/ (tests/native has none: there "native" is the mark above)
+  "api: tests/api -- pyfe4ai.create, the registry, the scheme status, exceptions and warnings",
+  "config: tests/config -- typed configurations, the parameter cache, serialized records and versions",
+  "params: tests/params -- security profiles and parameter derivation",
+  "backend: tests/backend -- backend selection and interface, backend_info(), the missing-extension notice",
+  "sampling: tests/sampling -- Gaussian samplers and their native kernels",
+  "lattice: tests/lattice -- NTTs, LWE matrices, Ring-LWE paths, binary ciphertexts, the RNS modulus",
+  "primitives: tests/primitives -- hashing, discrete logs, ristretto255, BLS12-381 and pairing groups",
+  "threshold: tests/threshold -- threshold sharings, key shares, flooding",
+  "offline: tests/offline -- offline / online phases and their one-time use",
+  "state: tests/state -- process-wide state, fork safety, per-object caches",
+  "ml: tests/ml -- the ML adapter and quantization",
+  "hardening: tests/hardening -- input validation and hardening across schemes",
+  "sife: tests/sife -- the single-input schemes",
+  "mife: tests/mife -- the multi-input schemes",
+  "mcfe: tests/mcfe -- the multi-client schemes",
+  "quadratic: tests/quadratic -- quadratic FE",
+  "review: tests/review -- regression tests of the crypto reviews",
 ]

@@ -164,6 +164,7 @@ def test_a_forked_child_cannot_use_it(case, backend):
         encrypt(np.arange(3), pre)  # still the parent's, once
 
 
+@pytest.mark.native
 def test_native_precomputation_refuses_another_process():
     if not native_backend.available() or not hasattr(os, "fork"):
         pytest.skip("needs the native extension and fork")
