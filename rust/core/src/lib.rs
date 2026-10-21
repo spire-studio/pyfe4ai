@@ -1,6 +1,6 @@
 //! Kernels of PyFE4AI's lattice schemes, without dependencies, bound to Python
 //! by the `pyfe4ai-native` crate (rust/native). Every kernel computes the values of the Python
-//! reference implementation (see tests/ and pyfe4ai's tests/test_native_backend.py).
+//! reference implementation (see tests/ and pyfe4ai's tests/native/test_native_backend.py).
 
 pub mod arith;
 pub mod bigauss;

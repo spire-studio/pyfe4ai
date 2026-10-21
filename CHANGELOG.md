@@ -704,8 +704,10 @@ Mac) against BLS12-381.
   still runs Python), it issues one `FEWarning` per process, attributed to
   the application's call: the Python implementation is about 5 to 35 times
   slower on the lattice schemes (one thread, measured with
-  `benchmarks/run.py fl-compare`), and how to
-  build the extension (`python tools/build_rust.py`). Not given under an
+  `benchmarks/run.py fl-compare`), and the extension is built by installing
+  from source with a Rust toolchain on the `PATH` (the notice points to the
+  installation documentation and names no file of a source checkout, which a
+  wheel does not ship). Not given under an
   explicit `"python"` (`PYFE4AI_BACKEND=python`, `set_backend`, `backend()`),
   nor while the library's own modules are imported; a warnings filter
   silences it (`warnings.filterwarnings("ignore", "the native extension",

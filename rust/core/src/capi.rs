@@ -1,5 +1,5 @@
 //! A small C ABI over the kernels, for the bit-identity tests of the Python
-//! package (tests/test_rust_core.py loads it with ctypes) before the PyO3
+//! package (tests/native/test_rust_core.py loads it with ctypes) before the PyO3
 //! bindings exist. Values mod q cross it as 32-byte little-endian integers.
 //! Not a public interface: every pointer must be valid for the lengths given.
 

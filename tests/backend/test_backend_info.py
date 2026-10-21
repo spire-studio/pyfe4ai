@@ -211,8 +211,10 @@ def test_with_the_extension_no_notice(tmp_path):
 
 
 def test_the_notice_text():
+    """No paths or caller values; and no file a wheel does not ship (benchmarks/run.py, tools/build_rust.py):
+    it points to building from source and the installation documentation."""
     text = native_backend.MISSING_EXTENSION_NOTICE
-    for part in ("pyfe4ai._rust_native", "5 to 35 times slower", "tools/build_rust.py", "PYFE4AI_BACKEND=python",
-                 "warnings filter"):
+    for part in ("pyfe4ai._rust_native", "5 to 35 times slower", "from source with a Rust toolchain",
+                 "Installation in the documentation", "PYFE4AI_BACKEND=python", "warnings filter"):
         assert part in text, part
-    assert os.sep not in text.replace("tools/build_rust.py", "").replace("benchmarks/run.py", "")
+    assert os.sep not in text and "/" not in text and ".py" not in text

@@ -204,9 +204,9 @@ _bigint_widen = 0
 #: The text of the missing-extension notice (see the module docstring).
 MISSING_EXTENSION_NOTICE = (
     "the native extension pyfe4ai._rust_native is not built: pyfe4ai runs its Python implementation, about 5 to "
-    "35 times slower on the lattice schemes (benchmarks/run.py fl-compare), and has no BLS12-381 pairing group. "
-    "Build it with 'python tools/build_rust.py' in a source checkout (or pip install with a Rust toolchain on the "
-    "PATH); PYFE4AI_BACKEND=python or a warnings filter on this FEWarning silences this notice"
+    "35 times slower on the lattice schemes, and has no BLS12-381 pairing group. Install pyfe4ai from source with "
+    "a Rust toolchain (cargo) on the PATH to build it, as described under Installation in the documentation; "
+    "PYFE4AI_BACKEND=python or a warnings filter on this FEWarning silences this notice"
 )
 
 #: ``{"pending": True}`` until the missing-extension notice is given (popped
