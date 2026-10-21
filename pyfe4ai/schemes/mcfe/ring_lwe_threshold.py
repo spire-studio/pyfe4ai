@@ -387,6 +387,7 @@ from pyfe4ai.schemes.threshold.kl import server_budget
 from pyfe4ai.schemes.threshold.roles import check_key_share_server
 from pyfe4ai.schemes.threshold.roles import check_request
 from pyfe4ai.schemes.threshold.roles import combine_consistently
+from pyfe4ai.schemes.threshold.roles import DISAGREEING_PARTIALS
 from pyfe4ai.schemes.threshold.roles import enrolled_share_options
 from pyfe4ai.schemes.threshold.roles import flooding_poly
 from pyfe4ai.core.versions import legacy_shamir_policy
@@ -1356,8 +1357,9 @@ class ThresholdMCFERingLWE(MCFERingLWE):
                 redundancy detects one that returns a wrong partial).
 
         Raises:
-            FESchemeError: If a group is incomplete or invalid, or the groups
-                disagree.
+            FESchemeError: If a group is incomplete or invalid, its partial
+                decryptions disagree on the ciphertexts they decrypted, or the
+                groups disagree.
         """
         return combine_consistently(partials, self._combine_group)
 
@@ -1365,8 +1367,9 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         """Combine at least ``t`` partial decryptions into the batch of inner products.
 
         Raises:
-            FESchemeError: If fewer than ``t`` shares are given or the shares
-                do not match the enrolled set they were computed for;
+            FESchemeError: If fewer than ``t`` shares are given, the shares
+                do not match the enrolled set they were computed for, or the
+                servers disagree on the ciphertexts;
                 :class:`~pyfe4ai.core.versions.MixedSharingsError` if they are of different sharings
                 (``sharing_id``).
         """
@@ -1384,9 +1387,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
             (part.c_y, part.ct_digest, part.k) != (head.c_y, head.ct_digest, head.k)
             for part in map(TMCFERingLWEPartial, partials)
         ):
-            logger.warning("partial decryptions disagree on the ciphertexts they decrypted")
-            warn_at_caller("partial decryptions disagree on the ciphertexts they decrypted")
-            return None
+            raise FESchemeError(DISAGREEING_PARTIALS)
         q = gp.mpz(self.pp["q"])
         delta = q // gp.mpz(self.pp["p"])
         bound = (
@@ -1467,8 +1468,10 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         """Combine chunk-wise partial decryptions from at least ``t`` servers.
 
         Raises:
-            FESchemeError: If the servers' outputs differ in structure, or an
-                element does not decrypt (servers disagree, or out of range).
+            FESchemeError: If the servers' outputs differ in structure, an
+                element does not decrypt (out of range), or the partial
+                decryptions of an element disagree on the ciphertexts (the
+                error and message of ``combine_decrypt``).
         """
         groups = partial_groups(dict_ndarray_ct)
         sample = next(iter(groups[0].values()))

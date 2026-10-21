@@ -139,7 +139,7 @@ def test_ndarray_combiners_refuse_bad_partials(tmp_path, monkeypatch):
     assert np.allclose(combiner.decrypt_lst_ndarray_ct(parts)[0], 7)
     bad = parts["sid_1"][0].copy()
     bad[0, 0] = dict(bad[0, 0], c_y="1")
-    with pytest.raises(FESchemeError, match="does not decrypt"):
+    with pytest.raises(FESchemeError, match="disagree on the ciphertexts"):  # as combine_decrypt (was: element)
         combiner.decrypt_lst_ndarray_ct(dict(parts, sid_1=[bad]))
     with pytest.raises(FESchemeError, match="shape"):
         combiner.decrypt_lst_ndarray_ct(dict(parts, sid_1=[parts["sid_1"][0][:1]]))

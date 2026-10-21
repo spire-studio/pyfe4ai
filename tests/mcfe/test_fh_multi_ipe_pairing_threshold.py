@@ -181,11 +181,12 @@ def test_threshold_and_consistency_checks(kg_config):
     other = ThresholdMCFEFHMultiIPEPairing({"id": "sid_1", "keys": {"pp": pp, "dk": dk}})
     with pytest.raises(FESchemeError):
         other.share_decrypt(dct_ct, {}, dk, ["sid_0", "sid_1"], "round-1")
-    # servers that decrypted different (authentic) ciphertexts are not combined
+    # servers that decrypted different (authentic) ciphertexts are not combined: refused (it was None)
     client = ThresholdMCFEFHMultiIPEPairing({"id": "nid_0", "keys": {"pp": pp, "sk": kg.get_private_keys("nid_0")}})
     other = dict(dct_ct, nid_0=client.encrypt([0, 0], "round-1"))
     parts["sid_1"] = _partials(kg, pp, y, other, ["sid_0", "sid_1"])["sid_1"]
-    assert combiner.combine_decrypt(parts) is None
+    with pytest.raises(FESchemeError, match="disagree on the ciphertexts"):
+        combiner.combine_decrypt(parts)
 
 
 def test_single_share_reveals_nothing_on_its_own(kg_config):

@@ -98,7 +98,10 @@ honest-but-curious: fewer than ``t`` of them learn nothing beyond the result,
 but a partial decryption carries no proof of correctness, so one deviating
 server changes the result unnoticed. ``combine_decrypt`` accepts partial
 decryptions for several enrolled sets and raises if they disagree (see
-:func:`~pyfe4ai.schemes.threshold.roles.combine_consistently`). In
+:func:`~pyfe4ai.schemes.threshold.roles.combine_consistently`); it also
+raises (:class:`~pyfe4ai.core.exceptions.FESchemeError`, for one value and
+for an ndarray element alike) when the partial decryptions of one set were
+computed for different ciphertexts. In
 tMIFE-LWE, tMCFE-Ring-LWE and tMCFE-FH-Multi-IPE, servers only decrypt
 ciphertexts carrying their clients' MAC tags. With the binary ciphertexts of
 tMCFE-Ring-LWE (``ct_format="binary"``, its default; ``"json"`` selects the

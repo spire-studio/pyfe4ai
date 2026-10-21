@@ -219,7 +219,9 @@ def combine_partial_decryptions(
         ValueError: Unless *partials* are those of the prepared servers for
             its label.
         FESchemeError: If they do not combine (see
-            :meth:`~pyfe4ai.schemes.mcfe.ring_lwe_threshold.ThresholdMCFERingLWE.decrypt_lst_ndarray_ct`);
+            :meth:`~pyfe4ai.schemes.mcfe.ring_lwe_threshold.ThresholdMCFERingLWE.decrypt_lst_ndarray_ct`;
+            servers that decrypted different ciphertexts:
+            :data:`~pyfe4ai.schemes.threshold.roles.DISAGREEING_PARTIALS`);
             :class:`~pyfe4ai.core.versions.MixedSharingsError`
             if their label parts are of different sharings (the key generator
             shared the label again between the servers' fetches): prepare the

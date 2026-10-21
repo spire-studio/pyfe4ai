@@ -47,6 +47,7 @@ from pyfe4ai.schemes.threshold.codec import ciphertexts_digest
 from pyfe4ai.schemes.threshold.roles import combine_elementwise
 from pyfe4ai.schemes.threshold.roles import validate_enrolled
 from pyfe4ai.schemes.threshold.roles import combine_consistently
+from pyfe4ai.schemes.threshold.roles import DISAGREEING_PARTIALS
 from pyfe4ai.schemes.threshold.roles import partial_groups
 from pyfe4ai.schemes.threshold.roles import validate_partial_decryptions
 from pyfe4ai.schemes.threshold.sharing import lagrange_coefficient_at_zero
@@ -276,7 +277,8 @@ class ThresholdMCFEFHMultiIPEPairing(MCFEFHMultiIPEPairing):
 
         Raises:
             FESchemeError: If a group is incomplete or invalid, is for another
-                label, or the groups disagree.
+                label or its partial decryptions disagree on the ciphertexts
+                they decrypted, or the groups disagree.
         """
         if label is not None:
             expected = encode_label(label)
@@ -289,19 +291,18 @@ class ThresholdMCFEFHMultiIPEPairing(MCFEFHMultiIPEPairing):
         """Combine at least ``t`` partial decryptions into ``<x, y>``.
 
         Returns:
-            The inner product, or ``None`` if the servers decrypted different
-            ciphertexts or the result is out of bound.
+            The inner product, or ``None`` if the result is out of bound.
 
         Raises:
-            FESchemeError: If fewer than ``t`` shares are given or the shares
-                do not match the enrolled set they were computed for.
+            FESchemeError: If fewer than ``t`` shares are given, the shares
+                do not match the enrolled set they were computed for, or the
+                servers decrypted different ciphertexts (or with keys of
+                different sharings, ``key_id``).
         """
         validate_partial_decryptions(dict_ct_prime, self.pp["t"])
         partials = [TMCFEFHPartial(part) for part in dict_ct_prime.values()]
         if len({(p.ct_digest, p.key_id, p.get("label")) for p in partials}) != 1:
-            logger.warning("partial decryptions disagree on the ciphertexts they decrypted")
-            warn_at_caller("partial decryptions disagree on the ciphertexts they decrypted")
-            return None
+            raise FESchemeError(DISAGREEING_PARTIALS)
         acc = self.ctx.group.init(GT, 1)
         for part in partials:
             acc *= self.ctx.de(part.w)

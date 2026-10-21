@@ -58,6 +58,7 @@ from pyfe4ai.schemes.threshold.binding import fusion_weight_id
 from pyfe4ai.schemes.threshold.codec import is_decimal
 from pyfe4ai.schemes.threshold.roles import validate_enrolled
 from pyfe4ai.schemes.threshold.roles import combine_consistently
+from pyfe4ai.schemes.threshold.roles import DISAGREEING_PARTIALS
 from pyfe4ai.schemes.threshold.roles import partial_groups
 from pyfe4ai.schemes.threshold.roles import combine_elementwise
 from pyfe4ai.schemes.threshold.roles import validate_partial_decryptions
@@ -396,7 +397,8 @@ class ThresholdMCFEDDH(IPFEAbsCrypto):
 
         Raises:
             FESchemeError: If a group is incomplete or invalid, is for another
-                label, or the groups disagree.
+                label or its partial decryptions disagree on the ciphertexts
+                they decrypted, or the groups disagree.
         """
         if label is not None:
             expected = encode_label(label)
@@ -412,12 +414,13 @@ class ThresholdMCFEDDH(IPFEAbsCrypto):
             dict_ct_prime: Mapping of server ids to :meth:`share_decrypt` outputs.
 
         Returns:
-            ``<x, y>`` divided by ``10^precision``, or ``None`` if the servers
-            disagree on the ciphertexts or ``|<x, y>|`` exceeds ``dlog_bound``.
+            ``<x, y>`` divided by ``10^precision``, or ``None`` if
+            ``|<x, y>|`` exceeds ``dlog_bound``.
 
         Raises:
-            FESchemeError: If fewer than ``t`` shares are given or the shares
-                do not match the enrolled set they were computed for.
+            FESchemeError: If fewer than ``t`` shares are given, the shares
+                do not match the enrolled set they were computed for, or the
+                servers disagree on the ciphertexts.
         """
         validate_partial_decryptions(dict_ct_prime, self.pp["t"])
         p = gp.mpz(self.pp["p"])
@@ -429,9 +432,7 @@ class ThresholdMCFEDDH(IPFEAbsCrypto):
             gp.mpz(part.c_y) != c_y or part.get("label") != label
             for part in partials
         ):
-            logger.warning("partial decryptions disagree on the ciphertexts they decrypted")
-            warn_at_caller("partial decryptions disagree on the ciphertexts they decrypted")
-            return None
+            raise FESchemeError(DISAGREEING_PARTIALS)
 
         u_d = gp.mpz(1)
         for part in partials:
@@ -550,8 +551,10 @@ class ThresholdMCFEDDH(IPFEAbsCrypto):
                 element label of its position.
 
         Raises:
-            FESchemeError: If the servers' outputs differ in structure or an
-                element does not decrypt (servers disagree, or out of range).
+            FESchemeError: If the servers' outputs differ in structure, an
+                element does not decrypt (out of range), or the partial
+                decryptions of an element disagree on the ciphertexts (the
+                error and message of ``combine_decrypt``).
         """
         return combine_elementwise(
             dict_ndarray_ct,

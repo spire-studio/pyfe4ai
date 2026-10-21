@@ -839,6 +839,23 @@ Mac) against BLS12-381.
   (`"(0, 1)"`); extra keys, other types, other spellings of an index
   (`"(0,1)"`, `"( 0, 1)"`, `"(+0, 1)"`) and other entries now raise
   `ValueError`. Everything the library writes reads back as before.
+- **Partial decryptions of different ciphertexts raise instead of combining
+  to `None`** (`combine_decrypt` of every threshold scheme: tMIFE-DDH,
+  tMIFE-LWE, tMCFE-DDH, tMCFE-LWE, tMCFE-Ring-LWE, tMCFE-FH-Multi-IPE). A
+  group whose partial decryptions disagree on the ciphertexts they
+  decrypted (a server that decrypted another round, a faulty server; for
+  tMCFE-FH-Multi-IPE also key shares of two sharings, `key_id`) returned
+  `None` with an `FEWarning`, while the ndarray path
+  (`decrypt_lst_ndarray_ct`, and so `combine_partial_decryptions` of the ML
+  adapter) raised `FESchemeError` ("element ... does not decrypt"). Both
+  now raise `FESchemeError` with the one message "partial decryptions
+  disagree on the ciphertexts they decrypted"
+  (`pyfe4ai.schemes.threshold.roles.DISAGREEING_PARTIALS`), without a
+  warning; the ndarray path reports that message instead of "element ...
+  does not decrypt" for such elements. `None` (with its `FEWarning`) stays
+  the answer to a value out of range. Code that tested the result of
+  `combine_decrypt` for `None` to detect a faulty server catches
+  `FESchemeError` instead.
 - **`sife/fullysec_ring_lwe` samples exact Gaussians** for its keys and
   encryption noise in both layouts (`gaussian_sampler = "rounded"` restores
   the previous draws). With the rounded sampler its keys were about `2^-47`

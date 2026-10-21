@@ -248,6 +248,12 @@ def partial_groups(partials) -> list:
     raise FESchemeError("expected a mapping of partial decryptions or a list of such mappings")
 
 
+#: The error of a group of partial decryptions that disagree on the
+#: ciphertexts they decrypted (raised by every threshold combiner, for one
+#: value and for an element of an ndarray alike).
+DISAGREEING_PARTIALS = "partial decryptions disagree on the ciphertexts they decrypted"
+
+
 def combine_consistently(partials, combine_group):
     """Combine every group of partial decryptions and require a single result.
 
@@ -285,8 +291,10 @@ def combine_elementwise(dict_ndarray_ct, combine) -> list:
             one element (a list of ``{sid: partial}``).
 
     Raises:
-        FESchemeError: If the servers' outputs differ in structure or an
-            element does not decrypt (servers disagree, or out of range).
+        FESchemeError: If the servers' outputs differ in structure, an
+            element does not decrypt (out of range), or the partial
+            decryptions of an element disagree on the ciphertexts (the
+            error and message of ``combine_decrypt``).
     """
     groups = partial_groups(dict_ndarray_ct)
     if not groups[0]:

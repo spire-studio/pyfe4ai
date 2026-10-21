@@ -97,7 +97,11 @@ def test_an_unknown_server_id_warns():
         assert kg.get_weight_key_share("s9", credentials=creds) is None
 
 
-def test_partial_decryptions_that_disagree_warn():
+def test_partial_decryptions_that_disagree_raise():
+    """They were answered with ``None`` and an FEWarning; they now raise the
+    FESchemeError of the ndarray path, without a warning."""
+    from pyfe4ai.core.exceptions import FESchemeError
+
     tm, kg, pp = _ring_threshold(key_shares="full")
     weights = {n: [1] for n in NIDS}
     creds = {"fusion_weight": weights, "label": "L"}
@@ -108,8 +112,12 @@ def test_partial_decryptions_that_disagree_warn():
     combiner = tm.ThresholdMCFERingLWE({"id": "agg", "precision": 0, "keys": {"pp": pp}})
     assert _no_fe_warning(lambda: combiner.combine_decrypt(parts)) == [3, 6, 9]
     parts["s1"] = dict(parts["s1"], ct_digest="0" * 64)  # decrypted other ciphertexts
-    with pytest.warns(FEWarning, match="disagree on the ciphertexts"):
-        assert combiner.combine_decrypt(parts) is None
+
+    def disagreeing():
+        with pytest.raises(FESchemeError, match="^partial decryptions disagree on the ciphertexts they decrypted$"):
+            combiner.combine_decrypt(parts)
+
+    _no_fe_warning(disagreeing)
 
 
 def test_an_rns_modulus_beyond_the_native_ring_warns(monkeypatch):
@@ -131,14 +139,23 @@ def test_the_warnings_point_at_the_application_call():
     """Each FEWarning is attributed to the first caller outside pyfe4ai (here this file), not to
     a line inside the library: the default filter then shows it once per call site of the
     application rather than once per process for every scheme together."""
-    tm, kg, pp = _ring_threshold(key_shares="full")
+    from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFEDDH, ThresholdMCFEDDHKeyGenerator
+
+    _, kg, _ = _ring_threshold(key_shares="full")
     creds = {"fusion_weight": {n: [1] for n in NIDS}, "label": "L"}
-    cts = {n: tm.ThresholdMCFERingLWE({"id": n, "precision": 0, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}})
-           .encrypt([[1, 2, 3]], "L") for n in NIDS}
-    parts = {s: tm.ThresholdMCFERingLWE({"id": s, "precision": 0, "keys": {"pp": pp}}).share_decrypt(
-        cts, creds, kg.get_decryption_keys(s, credentials=creds), SIDS) for s in SIDS}
-    parts["s1"] = dict(parts["s1"], ct_digest="0" * 64)
-    combiner = tm.ThresholdMCFERingLWE({"id": "agg", "precision": 0, "keys": {"pp": pp}})
+    # a decryption out of bound, found deep in the combiner (combine_consistently, the group, the dlog)
+    dkg = ThresholdMCFEDDHKeyGenerator({"sec_param": 128, "lst_nid": NIDS, "lst_sid": SIDS, "eta": 1, "n": 3,
+                                        "s": 3, "t": 2})
+    dkg.setup()
+    dpp = dkg.get_public_parameters()
+    weights = {n: [1] for n in NIDS}
+    cts = {n: ThresholdMCFEDDH({"id": n, "keys": {"pp": dpp, "sk": dkg.get_private_keys(n)}}).encrypt([1], "L")
+           for n in NIDS}
+    parts = {s: ThresholdMCFEDDH({"id": s, "keys": {"pp": dpp}}).share_decrypt(
+        cts, weights, dkg.get_decryption_keys(s, credentials={"fusion_weight": weights}), SIDS[:2], "L")
+        for s in SIDS[:2]}
+    parts["s1"] = dict(parts["s1"], u_d="4")  # another key term: the result is out of the dlog bound
+    combiner = ThresholdMCFEDDH({"id": "agg", "keys": {"pp": dpp}})
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("default")  # an application's filters
         assert combiner.combine_decrypt(parts) is None
@@ -150,4 +167,4 @@ def test_the_warnings_point_at_the_application_call():
         SIFEDDHKeyGenerator(dict(DDH))
     fe = [w for w in caught if issubclass(w.category, FEWarning)]
     assert [w.filename for w in fe] == [__file__] * 4, [(w.filename, str(w.message)[:40]) for w in fe]
-    assert len({w.lineno for w in fe if "disagree" in str(w.message)}) == 2
+    assert len({w.lineno for w in fe if "out of bound" in str(w.message)}) == 2

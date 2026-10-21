@@ -106,7 +106,7 @@ import numpy as np
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.config import check_no_flooding_options
 from pyfe4ai.core.config import resolve_sharing
-from pyfe4ai.core.exceptions import FEKeyError, FEValidationError, warn_at_caller
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai.primitives.lattice.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.primitives.sampling import XofRandom
 from pyfe4ai.primitives.sampling import FLOODING_SAMPLER
@@ -132,6 +132,7 @@ from pyfe4ai.schemes.threshold.binding import pp_binding
 from pyfe4ai.schemes.threshold.roles import check_key_share_server
 from pyfe4ai.schemes.threshold.roles import check_request
 from pyfe4ai.schemes.threshold.roles import combine_consistently
+from pyfe4ai.schemes.threshold.roles import DISAGREEING_PARTIALS
 from pyfe4ai.schemes.threshold.roles import combine_elementwise
 from pyfe4ai.schemes.threshold.roles import enrolled_share_options
 from pyfe4ai.schemes.threshold.roles import flooding_noise
@@ -387,8 +388,9 @@ class ThresholdMCFELWE(MCFELWE):
                 redundancy detects one that returns a wrong partial).
 
         Raises:
-            FESchemeError: If a group is incomplete or invalid, or the groups
-                disagree.
+            FESchemeError: If a group is incomplete or invalid, its partial
+                decryptions disagree on the ciphertexts they decrypted, or the
+                groups disagree.
         """
         return combine_consistently(partials, self._combine_group)
 
@@ -396,20 +398,19 @@ class ThresholdMCFELWE(MCFELWE):
         """Combine at least ``t`` partial decryptions into the inner product.
 
         Returns:
-            ``<x, y>`` divided by ``10^precision``, or ``None`` if the servers
-            disagree on the ciphertexts or the value is out of range.
+            ``<x, y>`` divided by ``10^precision``, or ``None`` if the value is
+            out of range.
 
         Raises:
-            FESchemeError: If fewer than ``t`` shares are given or the shares
-                do not match the enrolled set they were computed for.
+            FESchemeError: If fewer than ``t`` shares are given, the shares
+                do not match the enrolled set they were computed for, or the
+                servers disagree on the ciphertexts.
         """
         validate_partial_decryptions(dict_ct_prime, self.pp["t"])
         partials = [TMCFELWEPartial(part) for part in dict_ct_prime.values()]
         c_y, label = partials[0].c_y, partials[0].label
         if any(part.c_y != c_y or part.label != label for part in partials):
-            logger.warning("partial decryptions disagree on the ciphertexts they decrypted")
-            warn_at_caller("partial decryptions disagree on the ciphertexts they decrypted")
-            return None
+            raise FESchemeError(DISAGREEING_PARTIALS)
         v = sum(gp.mpz(part.w) for part in partials) % self.q
         mu = self._decode(gp.mpz(c_y), v)
         if mu is None:
@@ -463,8 +464,10 @@ class ThresholdMCFELWE(MCFELWE):
                 :meth:`compute_lst_ndarray_ct`.
 
         Raises:
-            FESchemeError: If the servers' outputs differ in structure or an
-                element does not decrypt (servers disagree, or out of range).
+            FESchemeError: If the servers' outputs differ in structure, an
+                element does not decrypt (out of range), or the partial
+                decryptions of an element disagree on the ciphertexts (the
+                error and message of ``combine_decrypt``).
         """
         out = combine_elementwise(dict_ndarray_ct, lambda groups, l, i: self.combine_decrypt(groups))
         return [ary.astype(float) for ary in out]

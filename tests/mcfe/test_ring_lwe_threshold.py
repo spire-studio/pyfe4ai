@@ -247,7 +247,7 @@ def test_ndarray_combination_refuses_bad_partials(kg_config):
     assert np.allclose(combiner.decrypt_lst_ndarray_ct(partials)[0], 3)
     bad = dict(partials["sid_1"][0]["parts"][0], c_y=partials["sid_1"][0]["parts"][0]["w"])
     tampered = dict(partials, sid_1=[dict(partials["sid_1"][0], parts=[bad] + partials["sid_1"][0]["parts"][1:])])
-    with pytest.raises(FESchemeError, match="element"):
+    with pytest.raises(FESchemeError, match="disagree on the ciphertexts"):  # as combine_decrypt (was: element)
         combiner.decrypt_lst_ndarray_ct(tampered)
     reshaped = dict(partials, sid_1=[dict(partials["sid_1"][0], shape=[4, 5])])
     with pytest.raises(FESchemeError, match="shape"):
