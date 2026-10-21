@@ -234,7 +234,9 @@ except the OS random buffer (random bytes not yet used).
    * - ``_twiddle_cache``, ``_ntt_root_cache``, ``RingNTT._cache``,
        ``_rns_factors`` (:mod:`pyfe4ai.primitives.lattice.ring_lwe_utils`)
      - NTT tables, roots and rings per ``(q, ring_n)``, and the factors of
-       the registered RNS moduli (unbounded: one per parameter set)
+       the registered RNS moduli (unbounded: one per parameter set);
+       registering an RNS modulus drops its roots and rings computed without
+       the factors, also while other threads use the caches
      - kept
    * - ``SeededMatrix._shared`` (:mod:`pyfe4ai.primitives.lattice.lwe_matrix`)
      - the public matrices of the seeded dense-LWE schemes, per seed, held

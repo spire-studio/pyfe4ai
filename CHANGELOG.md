@@ -859,6 +859,16 @@ Mac) against BLS12-381.
   shares again. These key generators now also keep one sharing per weights
   (`dict_dk.setdefault`) and issue every key share from it; single-threaded
   issuance, the key shares and the pickled state are unchanged.
+- **NTT caches and RNS moduli under threads** (availability, info).
+  `register_rns_modulus`, which drops the cached NTT roots and rings of a
+  modulus computed before its factors were known, scanned the cache keys
+  while other threads could add entries (`RuntimeError: dictionary changed
+  size during iteration`), and `_get_ntt_root` / `RingNTT.get` stored their
+  result and read it back by key, which raised `KeyError` when a
+  registration in another thread dropped it in between. The scan now runs
+  over a snapshot of the keys, and the two functions return the value they
+  computed. Roots, rings and products are unchanged; a cached lookup is one
+  dictionary access instead of two.
 - `EncryptedGradient.to_dict()` failed with `KeyError: ()` on the packed
   ciphertext layers of the Ring-LWE MCFE schemes (`mcfe/ring_lwe` and its
   threshold and decentralized variants), and `from_dict()` could not rebuild

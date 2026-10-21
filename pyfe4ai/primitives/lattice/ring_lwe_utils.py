@@ -268,14 +268,20 @@ def _get_ntt_root(q: gp.mpz, ring_n: int) -> gp.mpz | None:
             ring_n: Polynomial ring dimension.
     """
     key = (int(q), ring_n)
-    if key not in _ntt_root_cache:
-        factors = _rns_factors.get(key[0])
-        if factors is None:
-            _ntt_root_cache[key] = _find_primitive_root(q, 2 * ring_n)
-        else:
-            roots = [_find_primitive_root(gp.mpz(f), 2 * ring_n) for f in factors]
-            _ntt_root_cache[key] = None if None in roots else _crt(roots, factors)
-    return _ntt_root_cache[key]
+    try:
+        return _ntt_root_cache[key]
+    except KeyError:
+        pass
+    factors = _rns_factors.get(key[0])
+    if factors is None:
+        root = _find_primitive_root(q, 2 * ring_n)
+    else:
+        roots = [_find_primitive_root(gp.mpz(f), 2 * ring_n) for f in factors]
+        root = None if None in roots else _crt(roots, factors)
+    # the value computed here, not the cache again: register_rns_modulus in
+    # another thread may have dropped the entry meanwhile
+    _ntt_root_cache[key] = root
+    return root
 
 
 def _crt(residues: list, moduli: tuple) -> gp.mpz:
@@ -346,8 +352,10 @@ def register_rns_modulus(q, factors) -> tuple:
     if _rns_factors.get(q) != fs:
         _rns_factors[q] = fs
         for cache in (_ntt_root_cache, RingNTT._cache):  # computed without the factors
-            for key in [k for k in cache if k[0] == q]:
-                del cache[key]
+            # a snapshot of the keys (other threads may add entries meanwhile);
+            # pop: another thread registering q may have dropped one already
+            for key in [k for k in list(cache) if k[0] == q]:
+                cache.pop(key, None)
     return fs
 
 
@@ -500,10 +508,14 @@ class RingNTT:
     @classmethod
     def get(cls, q, ring_n: int) -> "RingNTT | None":
         key = (int(q), ring_n)
-        if key not in cls._cache:
-            root = _get_ntt_root(gp.mpz(q), ring_n)
-            cls._cache[key] = None if root is None else cls(q, ring_n, root)
-        return cls._cache[key]
+        try:
+            return cls._cache[key]
+        except KeyError:
+            pass
+        root = _get_ntt_root(gp.mpz(q), ring_n)
+        ntt = None if root is None else cls(q, ring_n, root)
+        cls._cache[key] = ntt
+        return ntt  # not the cache again (see _get_ntt_root)
 
     def forward(self, a: list) -> list:
         """NTT of the coefficient vector *a* (integers, any sign)."""
