@@ -48,9 +48,8 @@ Ring-LWE ciphertexts) are in :mod:`pyfe4ai.core.formats.binary`.
 
 from __future__ import annotations
 
-import warnings
-
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FESecurityWarning, FEValidationError
+from pyfe4ai.core.exceptions import warn_at_caller
 from pyfe4ai.primitives.hashing import LABEL_HASH_CODES
 from pyfe4ai.primitives.hashing import LEGACY_LABEL_HASH
 from pyfe4ai.primitives.hashing import check_label_hash
@@ -276,10 +275,9 @@ def check_legacy_shamir(sid: str, threshold: int, s: int, legacy_shamir: str, pr
         FESchemeError: For such a key share that is not to be served.
 
     Warns:
-        FESecurityWarning: When it is served; attributed to the caller of
-            the function that calls
-            :func:`~pyfe4ai.schemes.threshold.sharing.share_for_enrolled` (as in
-            earlier versions).
+        FESecurityWarning: When it is served; attributed to the application's
+            call (the first frame outside pyfe4ai,
+            :func:`~pyfe4ai.core.exceptions.warn_at_caller`).
     """
     if threshold >= s:
         return
@@ -296,7 +294,7 @@ def check_legacy_shamir(sid: str, threshold: int, s: int, legacy_shamir: str, pr
             message + "; during a migration only, a server created with "
             "legacy_shamir='warn' serves it (not under the standard profile)"
         )
-    warnings.warn(message, FESecurityWarning, stacklevel=4)
+    warn_at_caller(message, FESecurityWarning)
 
 
 # ---------------------------------------------------------------------------

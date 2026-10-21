@@ -32,7 +32,9 @@ class FESchemeError(FEError, RuntimeError):
 class FESecurityWarning(UserWarning):
     """A scheme with a known security defect is being used.
 
-    See :mod:`pyfe4ai.core.status` and the README *Scheme Status* table.
+    See :mod:`pyfe4ai.core.status` and the README *Scheme Status* table. Like
+    :class:`FEWarning`, it is attributed to the application's call (the first
+    caller outside pyfe4ai, :func:`warn_at_caller`).
     """
 
 

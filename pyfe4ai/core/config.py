@@ -32,7 +32,6 @@ their options are documented with their scheme (``CRYPTO``).
 
 from __future__ import annotations
 
-import warnings
 from typing import Any, ClassVar
 
 from pyfe4ai.core.profiles import MAX_STAT_PARAM
@@ -360,7 +359,7 @@ def resolve_sharing(config: dict, s, t, scheme: str) -> str:
         )
         if config.get("security_profile") == STANDARD:
             raise FEValidationError(message)
-        warnings.warn(message, FESecurityWarning, stacklevel=4)
+        warn_at_caller(message, FESecurityWarning)  # at the application's call, however it got here
     return sharing
 
 

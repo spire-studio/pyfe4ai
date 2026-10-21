@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import warnings
 
+import numpy as np
 import pytest
 
 import pyfe4ai
@@ -72,3 +73,76 @@ def test_building_a_pairing_key_generator_warns_at_the_application_call(scheme, 
         warnings.filterwarnings("error", category=FESecurityWarning, module=__name__)
         with pytest.raises(FESecurityWarning):  # a filter on the application's module matches it
             pyfe4ai.create(scheme, dict(STANDARD, **options))
+
+
+# -- the other FESecurityWarnings: their fixed stack levels landed inside pyfe4ai on these paths
+
+NIDS, SIDS = ["c0", "c1", "c2"], ["s0", "s1", "s2"]
+RING = dict(n=3, lst_nid=NIDS, s=3, t=2, lst_sid=SIDS, eta=1, ring_n=16, sec_param=64, bound_x=10, bound_y=3)
+
+
+def _only_here(fn, text):
+    """The FESecurityWarnings of *fn*: at least one, every one with *text* and attributed to this file."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        fn()
+    found = _security_warnings(caught)
+    assert found and all(text in str(w.message) for w in found), [str(w.message) for w in found]
+    assert [w.filename for w in found] == [__file__] * len(found), [w.filename for w in found]
+
+
+def test_explicit_shamir_below_s_points_at_the_application_call():
+    """It pointed at registry.py (pyfe4ai.create) or ml/wrapper.py (the ML adapter)."""
+    from pyfe4ai.ml import FESchemeWrapper
+
+    _only_here(lambda: pyfe4ai.create("mcfe/ring_lwe_threshold", dict(RING, sharing="shamir")), "Shamir sharing")
+    _only_here(lambda: FESchemeWrapper("mcfe", "ring_lwe_threshold", dict(RING, sharing="shamir")), "Shamir sharing")
+
+
+def test_a_legacy_shamir_key_share_served_points_at_the_application_call():
+    """Through compute_lst_ndarray_ct it pointed at mife/lwe_threshold.py."""
+    from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE, ThresholdMIFELWEKeyGenerator
+
+    kg = ThresholdMIFELWEKeyGenerator({"sec_param": 64, "eta": 1, "n": 3, "s": 3, "t": 2, "lst_nid": NIDS,
+                                       "lst_sid": SIDS, "lwe_n": 16, "bound_x": 6, "bound_y": 6, "sharing": "shamir"})
+    kg.setup()
+    pp = kg.get_public_parameters()
+    weights = {n: [1] for n in NIDS}
+    cts = {n: ThresholdMIFELWE({"id": n, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}}).encrypt_lst_ndarray(
+        [np.ones(2)]) for n in NIDS}
+    dk = kg.get_decryption_keys("s0", credentials={"fusion_weight": weights})
+    server = ThresholdMIFELWE({"id": "s0", "legacy_shamir": "warn", "keys": {"pp": pp, "dk": dk}})
+    _only_here(lambda: server.compute_lst_ndarray_ct(cts, weights, dk, ["s0", "s1"]), "Shamir key share")
+
+
+def test_a_sampler_override_points_at_the_application_call():
+    """It pointed at ring_lwe_threshold.py (a tMCFE-Ring-LWE client) or ml/wrapper.py."""
+    from pyfe4ai.ml import FESchemeWrapper, encrypt_gradient
+    from pyfe4ai.schemes.mcfe import ring_lwe_threshold as tm
+
+    kg = tm.ThresholdMCFERingLWEKeyGenerator(dict(RING))
+    kg.setup()
+    pp = kg.get_public_parameters()
+    _only_here(lambda: tm.ThresholdMCFERingLWE({"id": "c0", "gaussian_sampler": "rounded",
+                                                "keys": {"pp": pp, "sk": kg.get_private_keys("c0")}}), "overrides")
+    wrapper = FESchemeWrapper("mcfe", "ring_lwe", dict(n=1, lst_nid=["c0"], eta=1, ring_n=16, sec_param=64,
+                                                       bound_x=10, bound_y=3), crypto_options={"gaussian_sampler": "rounded"})
+    _only_here(lambda: encrypt_gradient(np.ones(2), wrapper, nid="c0", label="L"), "overrides")
+
+
+def test_a_known_insecure_scheme_points_at_the_application_call(monkeypatch):
+    """It pointed at the scheme's own module (the constructor chain above IPFEAbsKeyGenerator / IPFEAbsCrypto)."""
+    import dataclasses
+
+    from pyfe4ai.core import status as st
+    from pyfe4ai.schemes.mife.lwe import MIFELWE, MIFELWEKeyGenerator
+
+    key = ("mife", "lwe")
+    monkeypatch.setitem(st.SCHEME_STATUS, key, dataclasses.replace(st.SCHEME_STATUS[key], status=st.KNOWN_INSECURE,
+                                                                     issue="test issue"))
+    config = {"n": 2, "lwe_n": 8, "bound_x": 2, "bound_y": 2}
+    _only_here(lambda: MIFELWEKeyGenerator(dict(config)), "known to be insecure")
+    _only_here(lambda: pyfe4ai.create("mife/lwe", dict(config)), "known to be insecure")
+    kg = MIFELWEKeyGenerator(dict(config))
+    kg.setup()
+    _only_here(lambda: MIFELWE({"id": "c0", "keys": {"pp": kg.get_public_parameters()}}), "known to be insecure")

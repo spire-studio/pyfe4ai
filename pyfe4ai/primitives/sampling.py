@@ -17,10 +17,8 @@ from typing import NamedTuple
 import gmpy2 as gp
 import numpy as np
 
-import warnings
-
 from pyfe4ai.core import forksafe
-from pyfe4ai.core.exceptions import FESecurityWarning, FEValidationError
+from pyfe4ai.core.exceptions import FESecurityWarning, FEValidationError, warn_at_caller
 
 _CSPRNG = random.SystemRandom()
 # The OS source of the module; a replaced _CSPRNG (tests) keeps the Python sampler.
@@ -111,7 +109,9 @@ def scheme_sampler(config: dict | None, pp: dict | None = None, default: str = P
 
     Warns:
         FESecurityWarning: When a crypto object's config selects ``"rounded"``
-            although its public parameters record ``"facct"`` (toy profile).
+            although its public parameters record ``"facct"`` (toy profile);
+            attributed to the application's call
+            (:func:`~pyfe4ai.core.exceptions.warn_at_caller`).
     """
     if profile is None and pp:
         profile = pp.get("security_profile")
@@ -134,10 +134,10 @@ def scheme_sampler(config: dict | None, pp: dict | None = None, default: str = P
                 "(use 'facct', the default, or the toy profile)".format(name)
             )
         if name != PROOF_SAMPLER and recorded == PROOF_SAMPLER:
-            warnings.warn(
+            warn_at_caller(
                 "gaussian_sampler = {!r} overrides the {!r} of the public parameters: these ciphertexts' "
                 "noise is not the D_{{Z,sigma}} the proof assumes".format(name, recorded),
-                FESecurityWarning, stacklevel=3,
+                FESecurityWarning,
             )
         return name
     if recorded is not None:

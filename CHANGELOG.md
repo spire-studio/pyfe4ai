@@ -825,7 +825,15 @@ Mac) against BLS12-381.
   Its category and text are unchanged; Python's default filter now shows
   it once per call site of the application (it was once per process for all
   pairing schemes and call sites together), and a warnings filter on the
-  application's module matches it.
+  application's module matches it. The other `FESecurityWarning`s are
+  attributed the same way: an explicit Shamir sharing with `t < s` (it
+  pointed at `core/registry.py` through `pyfe4ai.create()`, at
+  `ml/wrapper.py` through the ML adapter), a legacy Shamir key share served
+  (through `compute_lst_ndarray_ct` it pointed at the scheme module), a
+  Gaussian sampler overriding that of the public parameters (a
+  `mcfe/ring_lwe_threshold` client and the ML adapter pointed inside the
+  library) and a known-insecure scheme (it pointed at the scheme module;
+  `core.status.warn_if_known_insecure` takes `stacklevel=None` by default).
 - **Stricter parsing of threshold DDH key shares and serialised gradients.**
   A `mife/ddh_threshold` or `mcfe/ddh_threshold` server accepts the values
   of a key share (`d` and `z`; the two values of `d`) only as the decimal

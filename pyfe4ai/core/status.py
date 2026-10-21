@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import warnings
 
-from pyfe4ai.core.exceptions import FESecurityWarning
+from pyfe4ai.core.exceptions import FESecurityWarning, warn_at_caller
 from pyfe4ai.core.registry import (  # the status vocabulary is defined with the registry
     AD_HOC,
     ADAPTED,
@@ -63,20 +63,25 @@ def status_for_module(module: str) -> tuple[tuple[str, str], SchemeStatus] | Non
     return None if key is None else (key, SCHEME_STATUS[key])
 
 
-def warn_if_known_insecure(module: str, stacklevel: int = 3) -> None:
+def warn_if_known_insecure(module: str, stacklevel: int | None = None) -> None:
     """Emit :class:`~pyfe4ai.core.exceptions.FESecurityWarning` if *module*
-    implements a known-insecure scheme."""
+    implements a known-insecure scheme, attributed to the application's call
+    (the first frame outside pyfe4ai,
+    :func:`~pyfe4ai.core.exceptions.warn_at_caller`), or *stacklevel* frames
+    up if one is given."""
     found = status_for_module(module)
     if found is None:
         return
     (family, variant), entry = found
     if entry.status == KNOWN_INSECURE:
-        warnings.warn(
+        message = (
             "{}/{} is known to be insecure: {}. Use it only for functionality "
-            "or performance experiments.".format(family, variant, entry.issue),
-            FESecurityWarning,
-            stacklevel=stacklevel,
+            "or performance experiments.".format(family, variant, entry.issue)
         )
+        if stacklevel is None:
+            warn_at_caller(message, FESecurityWarning)
+        else:
+            warnings.warn(message, FESecurityWarning, stacklevel=stacklevel)
 
 
 def markdown_table() -> str:
