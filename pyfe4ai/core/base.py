@@ -313,7 +313,7 @@ def decoded_layer(values, layer: int, scale: int = 1) -> np.ndarray:
 
 
 #: The ``FEKeyError`` text for an encryption key (``keys["sk"]``) that is not
-#: a dict (:meth:`IPFEAbsCrypto._check_private_key`).
+#: a dict (raised by ``IPFEAbsCrypto._check_private_key``).
 PRIVATE_KEY_NOT_A_DICT = "the encryption key (keys['sk']) is not a dict of its fields"
 
 
