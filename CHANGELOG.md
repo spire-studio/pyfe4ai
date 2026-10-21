@@ -952,7 +952,9 @@ Mac) against BLS12-381.
   its packed and ndarray paths), and for rows of `pk` or `u` that are not
   `ring_n` values in all of these schemes (a ciphertext of another length, or
   an `IndexError`): `FEKeyError` ("the encryption key has a row of … that is
-  not ring_n values") before anything is drawn.
+  not ring_n values") before anything is drawn. A row is any 1-D sequence of
+  values -- a list, a tuple or a 1-D numpy array, in a list, a tuple or a
+  numpy array -- so keys converted to numpy arrays encrypt as before.
 - **Decentralized MCFE over Ring-LWE: key shares from malformed keys or
   shares** (`mcfe/ring_lwe_decentralized`; integrity on the Python backend).
   `derive_function_decryption_key_share` read the client's pad `u` and IPFE
@@ -964,7 +966,8 @@ Mac) against BLS12-381.
   shares whose `sk_y`, `z` or `z_chunks` entries were not `ring_n` values
   (natively a bare `ValueError`, in Python the shortest length: a wrong
   key). Both now refuse such keys and shares with `FEKeyError` (constant
-  messages) before any computation, in both backends.
+  messages) before any computation, in both backends. Rows and values held as
+  tuples or 1-D numpy arrays are accepted as before.
 - Threshold combiners (`combine_decrypt` of every threshold scheme): a
   partial decryption whose `sid` was not a server id (e.g. `bytes`), or whose
   `lst_sid_enrolled` was not a list of server ids, failed with a bare

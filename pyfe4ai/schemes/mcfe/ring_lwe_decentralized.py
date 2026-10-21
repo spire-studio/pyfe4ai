@@ -53,7 +53,7 @@ from pyfe4ai.core.formats.ring_lwe import MCFERingLWEFunctionalKey
 from pyfe4ai.core.versions import check_key_label_hash
 from pyfe4ai.primitives.hashing import hash_to_zq_material, hash_to_zq_vector
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.primitives.lattice.ring_lwe_utils import check_key_rows, mat_vec_mul, transpose
+from pyfe4ai.primitives.lattice.ring_lwe_utils import check_key_rows, is_values, mat_vec_mul, transpose
 from pyfe4ai._validation import int_vector
 
 logger = logging.getLogger(__name__)
@@ -255,7 +255,7 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
             check_key_label_hash(sh.to_dict(), self.label_hash, "key shares were")
         ring_n = self.pp["ring_n"]
         for sh in shares:  # ring_n values each (the Python sum would stop at the shortest)
-            if any(not isinstance(poly, (list, tuple)) or len(poly) != ring_n
+            if any(not is_values(poly) or len(poly) != ring_n
                    for poly in [sh.get("sk_y"), sh.get("z")] + list(sh.z_chunks)):
                 raise FEKeyError("malformed key share: sk_y, z and every z_chunks entry are ring_n values")
         q = gp.mpz(self.pp["q"])
