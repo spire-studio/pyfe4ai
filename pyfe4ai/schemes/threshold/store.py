@@ -49,10 +49,11 @@ SHARE_CACHE_ATTR = "_enrolled_share_cache"
 
 def share_cache(obj) -> OrderedDict:
     """The :func:`~pyfe4ai.schemes.threshold.sharing.share_for_enrolled` cache
-    of scheme object *obj* (created on first use)."""
-    cache = getattr(obj, SHARE_CACHE_ATTR, None)
+    of scheme object *obj* (created on first use; of two threads using it
+    first, both get the one stored first)."""
+    cache = obj.__dict__.get(SHARE_CACHE_ATTR)
     if cache is None:
-        cache = obj._enrolled_share_cache = OrderedDict()
+        cache = obj.__dict__.setdefault(SHARE_CACHE_ATTR, OrderedDict())
     return cache
 
 

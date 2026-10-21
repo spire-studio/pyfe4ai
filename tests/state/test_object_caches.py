@@ -243,3 +243,44 @@ def test_pickles_that_hold_the_cache_of_key_shares_load_without_it(kind, monkeyp
     loaded = pickle.loads(data)
     assert "_enrolled_share_cache" not in loaded.__dict__
     assert request(loaded) == first
+
+
+def test_threads_using_a_server_first_share_one_cache_of_key_shares():
+    """Two threads using a server for the first time at once each made the
+    cache and stored it, one replacing the other (``share_cache``: get, then
+    assign): the sums kept in the replaced cache were lost. The cache is now
+    made with ``__dict__.setdefault``: both threads get the one stored first.
+    Replayed with real threads: both have looked before either stores."""
+    import threading
+
+    from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE
+    from pyfe4ai.schemes.threshold import store
+
+    server, request, first = _replicated_server("mife/lwe_threshold")
+
+    class BothLookFirst(ThresholdMIFELWE):
+        """Assigning the cache waits until the other thread assigns it too."""
+
+        def __setattr__(self, name, value):
+            if name == "_enrolled_share_cache":
+                try:
+                    self.__dict__["_both"].wait()
+                except threading.BrokenBarrierError:
+                    pass
+            super().__setattr__(name, value)
+
+    fresh = BothLookFirst.__new__(BothLookFirst)
+    fresh.__dict__.update({k: v for k, v in server.__dict__.items() if k != "_enrolled_share_cache"})
+    fresh.__dict__["_both"] = threading.Barrier(2, timeout=2)
+    got = [None, None]
+
+    def use(i):
+        got[i] = store.share_cache(fresh)
+
+    threads = [threading.Thread(target=use, args=(i,)) for i in range(2)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join(10)
+    assert got[0] is not None and got[0] is got[1] is fresh.__dict__["_enrolled_share_cache"]
+    assert request(fresh) == first and len(got[0]) == 1

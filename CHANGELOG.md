@@ -869,6 +869,11 @@ Mac) against BLS12-381.
   over a snapshot of the keys, and the two functions return the value they
   computed. Roots, rings and products are unchanged; a cached lookup is one
   dictionary access instead of two.
+- Two threads using a threshold server for the first time at once could
+  each make its cache of the sums of replicated key pieces and keep one,
+  dropping what the other had cached (one more summation later, no wrong
+  value). The cache is now made atomically (`__dict__.setdefault`): both
+  threads use the one stored first.
 - `EncryptedGradient.to_dict()` failed with `KeyError: ()` on the packed
   ciphertext layers of the Ring-LWE MCFE schemes (`mcfe/ring_lwe` and its
   threshold and decentralized variants), and `from_dict()` could not rebuild
