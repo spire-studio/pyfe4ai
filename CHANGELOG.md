@@ -955,6 +955,19 @@ Mac) against BLS12-381.
   not ring_n values") before anything is drawn. A row is any 1-D sequence of
   values -- a list, a tuple or a 1-D numpy array, in a list, a tuple or a
   numpy array -- so keys converted to numpy arrays encrypt as before.
+- **An encryption key that is not a dict** (`keys["sk"]` given as `None`, a
+  list, a string, ...; info). The encryption paths that read the key's
+  fields through `.get` or `in` failed on it with a bare `AttributeError`
+  or `TypeError` (`mcfe/lwe`, `mcfe/fullysec_lwe` and their threshold and
+  decentralized variants, `mife/lwe_threshold`, `mcfe/ring_lwe_threshold`;
+  for `None` or an int also `mife/ring_lwe`, `mcfe/ring_lwe` and its
+  decentralized variant), and the row checks of `sife/ring_lwe` and
+  `sife/fullysec_ring_lwe` added in this release turned their `TypeError`
+  into an `AttributeError`. These schemes now refuse such a key with
+  `FEKeyError` ("the encryption key (keys['sk']) is not a dict of its
+  fields") in every encryption path (single values, ndarrays, the
+  precomputation, a decentralized key share), before anything is drawn. A
+  crypto object built without `sk` and keys that are dicts behave as before.
 - **Decentralized MCFE over Ring-LWE: key shares from malformed keys or
   shares** (`mcfe/ring_lwe_decentralized`; integrity on the Python backend).
   `derive_function_decryption_key_share` read the client's pad `u` and IPFE

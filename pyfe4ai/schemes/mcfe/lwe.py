@@ -288,6 +288,7 @@ class MCFELWE(IPFEAbsCrypto):
             FEKeyError: If they differ: the ciphertexts would decrypt to wrong
                 values.
         """
+        self._check_private_key()
         check_encryption_key_label_hash(self.sk, self.label_hash)
 
     def _ciphertext(self, c: list) -> dict:

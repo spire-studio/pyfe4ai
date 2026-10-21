@@ -391,6 +391,7 @@ class MIFERingLWE(IPFEAbsCrypto):
             raise FEKeyError("no public parameters provided for encryption")
         if not self._has_private_keys():
             raise FEKeyError("no encryption key provided")
+        self._check_private_key()
 
     def _check_plaintext(self, matrix_pt) -> list:
         """Return *matrix_pt* as ``eta`` integer rows of one length ``1..ring_n``."""

@@ -481,6 +481,7 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
                 anything is drawn.
         """
         q, n, root = self._ring()
+        self._check_private_key()
         check_key_rows({"pk": FullySecRingLWEEncryptionKey(self.sk).get("pk")}, int(self.pp["eta"]), n, "pk")
         sampler = self.gaussian_sampler
         m = int(self.pp["m"])

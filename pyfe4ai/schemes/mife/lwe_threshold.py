@@ -458,6 +458,7 @@ class ThresholdMIFELWE(MIFELWE):
 
     def _encrypt_batch(self, plaintexts: list) -> list:
         """MIFE ciphertexts with ``tags``: one HMAC tag per server."""
+        self._check_private_key()
         mac_keys = MIFELWEEncryptionKey(self.sk).get("mac_keys")
         if not mac_keys:
             raise FEKeyError("encryption key lacks the ciphertext MAC keys")

@@ -312,6 +312,11 @@ def decoded_layer(values, layer: int, scale: int = 1) -> np.ndarray:
     return (values / scale).astype(float)
 
 
+#: The ``FEKeyError`` text for an encryption key (``keys["sk"]``) that is not
+#: a dict (:meth:`IPFEAbsCrypto._check_private_key`).
+PRIVATE_KEY_NOT_A_DICT = "the encryption key (keys['sk']) is not a dict of its fields"
+
+
 class IPFEAbsCrypto(ABC):
     """Abstract base for all inner-product FE crypto operations.
 
@@ -382,6 +387,19 @@ class IPFEAbsCrypto(ABC):
     def _has_private_keys(self) -> bool:
         """Check whether private (encryption) keys are available."""
         return "sk" in self.keys
+
+    def _check_private_key(self) -> None:
+        """Raise unless the encryption key ``keys["sk"]``, where given, is a
+        dict (a mapping): the encryption paths that read its fields with
+        ``.get`` would fail on another value with a bare ``AttributeError`` or
+        ``TypeError``.
+
+        Raises:
+            FEKeyError: :data:`PRIVATE_KEY_NOT_A_DICT` (``None``, a list, a
+                string, ...).
+        """
+        if self._has_private_keys() and not isinstance(self.keys["sk"], Mapping):
+            raise FEKeyError(PRIVATE_KEY_NOT_A_DICT)
 
     def _has_decryption_keys(self) -> bool:
         """Check whether decryption keys are available."""

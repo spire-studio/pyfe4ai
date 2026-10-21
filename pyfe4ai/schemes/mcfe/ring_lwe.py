@@ -245,6 +245,7 @@ class MCFERingLWE(MIFERingLWE):
                 values.
         """
         mode = self.label_hash
+        self._check_private_key()
         return check_encryption_key_label_hash(self.sk or {}, mode) if self._has_private_keys() else mode
 
     def _mark(self, ct: dict) -> dict:

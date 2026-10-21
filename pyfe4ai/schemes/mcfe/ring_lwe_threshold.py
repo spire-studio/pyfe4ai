@@ -963,6 +963,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         return flood, server_budget(self.pp, self._partial_budget, flood)
 
     def _mac_keys(self) -> dict:
+        self._check_private_key()
         mac_keys = (self.sk or {}).get("mac_keys") if self._has_private_keys() else None
         if not mac_keys:
             raise FEKeyError("encryption key lacks the ciphertext MAC keys")

@@ -305,7 +305,8 @@ class SIFERingLWE(IPFEAbsCrypto):
         ]
 
         ring_n = self.pp["ring_n"]
-        # eta rows of ring_n values (else IndexError / ValueError deep in a backend)
+        # a dict, then eta rows of ring_n values (else IndexError / ValueError deep in a backend)
+        self._check_private_key()
         check_key_rows({"pk": SIFERingLWEEncryptionKey(self.sk).get("pk")}, self.pp["eta"], ring_n, "pk")
         # ct0_i = pk_i r + e_i + Delta x_i, ct1 = a r + e: the backend's encryption
         # (natively, or its reference: the draws r, the noise rows, e, in that order)

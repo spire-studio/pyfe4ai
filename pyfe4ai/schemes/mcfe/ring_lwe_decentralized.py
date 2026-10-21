@@ -149,6 +149,7 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
             FEKeyError: Without the client's keys, or if ``u`` or ``s`` has
                 fewer than ``eta`` rows of ``ring_n`` values.
         """
+        self._check_private_key()
         if not self._has_private_keys() or "pair_keys" not in DecentralizedRingLWEEncryptionKey(self.sk):
             raise FEKeyError("need the client's keys to derive a key share")
         lst_nid = self.pp["lst_nid"]
