@@ -186,6 +186,10 @@ except the OS random buffer (random bytes not yet used).
      - the two implementations; each keeps its Python rings per ``(q,
        ring_n)`` (unbounded: one per parameter set)
      - kept
+   * - ``_NATIVE_NOTICE`` (:mod:`pyfe4ai.backend`)
+     - whether the missing-extension notice is still due (one entry, popped
+       by the first fallback to Python without the extension)
+     - kept (a child whose parent gave the notice gives none)
    * - ``_contexts``, ``_contexts_lock`` (:mod:`pyfe4ai.backend.native_impl`)
      - native ring contexts per ``(q, ring_n, factors)`` (NTT tables;
        unbounded) and their lock

@@ -65,6 +65,7 @@ ALLOWED = {
     ("pyfe4ai/backend/__init__.py", "_seed_override"): "test hook: a fixed DRBG seed",
     ("pyfe4ai/backend/__init__.py", "_PYTHON"): "the Python implementation (its rings per (q, n))",
     ("pyfe4ai/backend/__init__.py", "_NATIVE"): "the native implementation (its rings per (q, n))",
+    ("pyfe4ai/backend/__init__.py", "_NATIVE_NOTICE"): "the missing-extension notice is still due (once per process)",
     ("pyfe4ai/backend/native_impl.py", "_contexts"): "native ring contexts per (q, n, factors): public tables",
     ("pyfe4ai/backend/native_impl.py", "_contexts_lock"): "guards _contexts; renewed in a forked child",
     ("pyfe4ai/backend/native_impl.py", "_facct_table"): "native FACCT tables per width: public",

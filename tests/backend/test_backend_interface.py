@@ -7,7 +7,8 @@
   :func:`~pyfe4ai.backend.ops` and :func:`~pyfe4ai.backend.ring` -- also by
   ``getattr`` and the like, by the full path ``pyfe4ai.backend.x`` or through
   ``sys.modules`` --, native internals such as ``.cap`` or ``ext()``, and
-  members outside the interface of what ``ops()`` and ``ring()`` return).
+  members outside the interface of what ``ops()`` and ``ring()`` return);
+  the top-level package may also read :func:`~pyfe4ai.backend.backend_info`.
   The scan reads the syntax only: a name computed at run time other than a
   ``getattr`` on the backend (an attribute name built from strings, a module
   object or a ring passed around through a call or an attribute) is not
@@ -53,8 +54,9 @@ pytestmark = pytest.mark.core
 LIB = os.path.dirname(os.path.abspath(pyfe4ai.__file__))
 #: What the scheme and primitive layers may read of pyfe4ai.backend.
 ALLOWED_BACKEND_ATTRS = {"ops", "ring"}
-#: More of pyfe4ai.backend that one module may read (path relative to the package).
-ALLOWED_BACKEND_ATTRS_IN = {}
+#: More of pyfe4ai.backend that one module may read (path relative to the package): the
+#: top-level package exports backend_info().
+ALLOWED_BACKEND_ATTRS_IN = {"__init__.py": {"backend_info"}}
 #: Attributes that only native internals have: never read outside pyfe4ai/backend.
 NATIVE_INTERNALS = {"cap", "ext", "_ext", "ec_ext", "ring_context", "RingContext", "noise_kwargs", "random_input",
                     "seed_kwargs", "sampling_ok", "gauss_bytes", "facct_table", "_facct_table", "pack", "unpack"}
@@ -314,6 +316,8 @@ def test_the_scan_accepts_the_interface():
     "from pyfe4ai import backend\nbackend.ring(7681, 256).cap\n",
     "from pyfe4ai import backend\nbackend.ops().ring(7681, 256).digits([1])\n",
     "from pyfe4ai import backend\nb = backend.ops()\nb.random_input(8)\n",
+    # backend_info is the top-level package's only
+    "from pyfe4ai import backend\nbackend.backend_info()\n",
 ])
 def test_the_scan_finds_dynamic_access(snippet):
     assert scan(snippet), snippet
@@ -339,6 +343,12 @@ def test_the_scan_finds_dynamic_access(snippet):
 ])
 def test_the_scan_ignores_other_dynamic_code(snippet):
     assert scan(snippet) == [], snippet
+
+
+def test_the_top_level_package_may_read_backend_info():
+    source = "def backend_info():\n    from pyfe4ai import backend\n    return backend.backend_info()\n"
+    assert scan(source) and scan(source, ALLOWED_BACKEND_ATTRS | ALLOWED_BACKEND_ATTRS_IN["__init__.py"]) == []
+    assert ALLOWED_BACKEND_ATTRS_IN == {"__init__.py": {"backend_info"}}
 
 
 # ------------------------------------------------------------------ conformance

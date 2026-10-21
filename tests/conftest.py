@@ -122,6 +122,7 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker("native")
         if name in SLOW:
             item.add_marker("slow")
+    _consume_the_missing_extension_notice()
 
 
 def _relative(item) -> str:
@@ -157,3 +158,14 @@ def _native_in_review(name: str) -> bool:
 
         return pairing_group.needs_extension()
     return need == "extension"
+
+
+def _consume_the_missing_extension_notice() -> None:
+    """Without the extension the library gives one FEWarning at its first
+    fallback to Python (:data:`pyfe4ai.backend.MISSING_EXTENSION_NOTICE`):
+    given now, silently, so that it does not land in whichever test runs first
+    (a test that records warnings, or a run with ``-W error``).
+    tests/backend/test_backend_info.py checks the notice in fresh interpreters."""
+    from pyfe4ai import backend
+
+    backend._NATIVE_NOTICE.clear()

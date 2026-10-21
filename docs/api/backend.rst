@@ -13,13 +13,31 @@ it bit for bit. The backend is chosen per process, per block or with the
 
 .. code-block:: python
 
+   import pyfe4ai
    from pyfe4ai import backend
 
+   pyfe4ai.backend_info()         # what runs in this thread, the build, threads, sampler, cache directory
    backend.describe()             # build and selection, for benchmark records
    backend.set_backend("python")  # the whole process: "auto" (default), "python", "native"
    with backend.backend("native"):
        ...                        # this thread, inside the block (ImportError if not built)
    backend.set_threads(4)         # threads per native call (default 1)
+
+Without the extension the schemes run their Python implementation, about 5
+to 35 times slower on the lattice schemes (one thread), and the first such fallback gives
+one :class:`~pyfe4ai.core.exceptions.FEWarning` per process saying so (not
+under an explicit ``"python"`` selection). ``PYFE4AI_BACKEND=native`` without
+the extension still runs Python, with the notice; only
+:func:`~pyfe4ai.backend.set_backend` and :func:`~pyfe4ai.backend.backend`
+refuse ``"native"`` with ``ImportError``. To silence the notice select
+``"python"`` or filter the warning:
+
+.. code-block:: python
+
+   import warnings
+   from pyfe4ai import FEWarning
+
+   warnings.filterwarnings("ignore", message="the native extension", category=FEWarning)
 
 .. automodule:: pyfe4ai.backend
    :members:

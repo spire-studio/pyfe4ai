@@ -20,6 +20,14 @@ Top-level package
   review status), :data:`~pyfe4ai.core.registry.CAPABILITIES`,
   :func:`~pyfe4ai.core.status.get_scheme_status` and
   :class:`~pyfe4ai.core.registry.SchemeStatus`;
+* ``backend_info()`` (:func:`~pyfe4ai.backend.backend_info`) -- the
+  backend the calling thread uses (the native extension or the Python
+  implementation) and how it was chosen, the extension's version and build,
+  the threads per native call, the Gaussian sampler and the parameter cache
+  directory; importing :mod:`pyfe4ai` does not load the extension, calling
+  it does. Without the extension the library also says so once, with an
+  :class:`~pyfe4ai.core.exceptions.FEWarning` at the first fallback to
+  Python (:doc:`backend`);
 * the exceptions: :class:`~pyfe4ai.core.exceptions.FEError` and its
   subclasses :class:`~pyfe4ai.core.exceptions.FEConfigError`,
   :class:`~pyfe4ai.core.exceptions.FEKeyError`,
@@ -54,7 +62,8 @@ Public and internal modules
 * :mod:`pyfe4ai.ml` and :mod:`pyfe4ai.ml.quantization`;
 * from :mod:`pyfe4ai.backend`: ``available``, ``get_backend``,
   ``set_backend``, ``backend``, ``active_backend``, ``get_threads``,
-  ``set_threads``, ``implementation`` and ``describe``;
+  ``set_threads``, ``implementation``, ``describe``, ``backend_info`` and
+  ``MISSING_EXTENSION_NOTICE``;
 * the few entry points in otherwise internal modules that the
   documentation names: ``get_gaussian_sampler``, ``set_gaussian_sampler``
   and ``gaussian_sampler`` (:mod:`pyfe4ai.primitives.sampling`),

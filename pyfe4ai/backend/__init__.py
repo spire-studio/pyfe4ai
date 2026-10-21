@@ -50,7 +50,29 @@ the ``PYFE4AI_BACKEND`` environment variable:
 ``"native"``
     like ``"auto"``, but :func:`set_backend` and :func:`backend` raise
     ``ImportError`` if the extension is not built (the environment variable
-    alone does not: without the extension the Python implementation runs).
+    alone does not: without the extension the Python implementation runs,
+    with the notice below).
+
+Without the extension. The first time :func:`ops` hands out the Python
+implementation because the extension is not built -- under ``"auto"`` or the
+environment variable ``PYFE4AI_BACKEND=native``, not under an explicit
+``"python"`` -- the library issues one
+:class:`~pyfe4ai.core.exceptions.FEWarning` per process
+(:data:`MISSING_EXTENSION_NOTICE`, attributed to the application's call): the
+Python implementation is about 5 to 35 times slower on the lattice schemes
+(one thread, ``security_profile="standard"``, ``benchmarks/run.py fl-compare``
+on an Apple M2 Max, October 2026: MCFE Ring-LWE with 10^4 elements 341 / 157
+ms per client / aggregator against 18 / 7.5 ms natively; dense-LWE MCFE with
+200 elements 541 / 548 ms against 92 / 100 ms; threshold MCFE with 10^4
+elements, ``s = 3``, ``t = 2``: 488 ms per client, 275 ms per partial
+decryption and 684 ms for the aggregator against 26, 8 and 28 ms; the gap
+grows with native threads), and the BLS12-381 pairing group has no Python
+implementation. Build the extension (``python tools/build_rust.py`` in a
+source checkout, or ``pip install`` with a Rust toolchain on the ``PATH``);
+or select ``"python"`` (``PYFE4AI_BACKEND=python``, :func:`set_backend`) or
+filter the warning to silence it, e.g.
+``warnings.filterwarnings("ignore", "the native extension", FEWarning)``.
+:func:`backend_info` reports what is in use.
 
 The native path applies to moduli below ``2^253`` with a ``2 ring_n``-th root
 of unity (all moduli the parameter generators derive, including the flooded
@@ -110,8 +132,14 @@ at import).
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
+import sys
 import threading
+
+from pyfe4ai.core.exceptions import FEWarning, _in_package, warn_at_caller
+
+logger = logging.getLogger(__name__)
 
 
 def _load():
@@ -172,6 +200,18 @@ _seed_override = None
 #: :meth:`~pyfe4ai.backend.native_impl.NativeBackend.gaussian_bigint` by
 #: ``2^k``, so that many samples take the exact Python formula.
 _bigint_widen = 0
+
+#: The text of the missing-extension notice (see the module docstring).
+MISSING_EXTENSION_NOTICE = (
+    "the native extension pyfe4ai._rust_native is not built: pyfe4ai runs its Python implementation, about 5 to "
+    "35 times slower on the lattice schemes (benchmarks/run.py fl-compare), and has no BLS12-381 pairing group. "
+    "Build it with 'python tools/build_rust.py' in a source checkout (or pip install with a Rust toolchain on the "
+    "PATH); PYFE4AI_BACKEND=python or a warnings filter on this FEWarning silences this notice"
+)
+
+#: ``{"pending": True}`` until the missing-extension notice is given (popped
+#: once, by the first thread that falls back; empty afterwards).
+_NATIVE_NOTICE = {"pending": True}
 
 
 def available() -> bool:
@@ -247,6 +287,76 @@ def describe() -> dict:
     return info
 
 
+def backend_info() -> dict:
+    """What runs the hot operations in the calling thread, and how it was chosen.
+
+    A dict of plain values (it can be written as JSON):
+
+    ``"backend"``
+        ``"native"`` or ``"python"``: the implementation :func:`ops` uses in
+        this thread (:func:`active_backend`; ``"native"`` means the
+        extension's kernels where they take the parameters, the Python
+        reference for the inputs they do not take, see above);
+    ``"selected"``
+        this thread's selection, ``"auto"``, ``"python"`` or ``"native"``
+        (:func:`get_backend`: a :func:`backend` block, else :func:`set_backend`
+        or ``PYFE4AI_BACKEND``);
+    ``"native_available"``
+        whether the extension ``pyfe4ai._rust_native`` is built and importable
+        (:func:`available`);
+    ``"native_version"``, ``"native_build"``, ``"native_path"``
+        the version of the extension's crate (``pyfe4ai-native``), its build
+        information (compiler, OS random source, randomness of the samplers,
+        hardware threads) and the file it was loaded from; ``None`` without
+        the extension;
+    ``"import_error"``
+        why the extension could not be imported, else ``None``;
+    ``"threads"``, ``"max_threads"``
+        the threads one native call may use (:func:`set_threads`,
+        ``PYFE4AI_THREADS``) and their maximum :data:`MAX_THREADS`;
+    ``"gaussian_sampler"``
+        the library-wide Gaussian sampler in this context
+        (:func:`~pyfe4ai.primitives.sampling.get_gaussian_sampler`,
+        ``PYFE4AI_GAUSSIAN_SAMPLER``);
+    ``"scheme_sampler"``
+        the default sampler of the schemes that record theirs in their public
+        parameters (:data:`~pyfe4ai.primitives.sampling.PROOF_SAMPLER`,
+        ``"facct"``), which the library-wide choice does not change;
+    ``"cache_dir"``
+        the parameter cache directory a key generator without a
+        ``cache_dir`` entry uses (:func:`~pyfe4ai.core.base.cache_dir`:
+        ``PYFE4AI_CACHE_DIR`` or the per-user cache directory);
+    ``"version"``
+        the version of pyfe4ai.
+
+    Also exported as ``pyfe4ai.backend_info()``. :func:`describe` keeps the
+    shorter record the benchmarks store.
+    """
+    import re
+
+    from pyfe4ai import __version__
+    from pyfe4ai.core.base import cache_dir
+    from pyfe4ai.primitives.sampling import PROOF_SAMPLER, get_gaussian_sampler
+
+    build = dict(_ext.build_info()) if _ext is not None else None
+    match = re.search(r"pyfe4ai-native ([^,\s)]+)", str(build.get("compiler", ""))) if build else None
+    return {
+        "backend": active_backend(),
+        "selected": get_backend(),
+        "native_available": _ext is not None,
+        "native_version": match.group(1) if match else None,
+        "native_build": build,
+        "native_path": getattr(_ext, "__file__", None) if _ext is not None else None,
+        "import_error": None if _ext is not None else str(_IMPORT_ERROR),
+        "threads": _threads,
+        "max_threads": MAX_THREADS,
+        "gaussian_sampler": get_gaussian_sampler(),
+        "scheme_sampler": PROOF_SAMPLER,
+        "cache_dir": cache_dir(),
+        "version": __version__,
+    }
+
+
 def ext():
     """The extension module (``None`` if not built); for the tests of its kernels."""
     return _ext
@@ -259,7 +369,25 @@ def ops() -> "interface.Backend":
     :class:`~pyfe4ai.backend.python_impl.PythonBackend`."""
     if _ext is not None and get_backend() != "python":
         return _NATIVE
+    if _ext is None and _NATIVE_NOTICE and get_backend() != "python":
+        _notice_missing_extension()
     return _PYTHON
+
+
+def _notice_missing_extension() -> None:
+    """The missing-extension notice, once per process (``dict.pop`` is atomic:
+    of several threads falling back at once, one issues it). Not while a
+    module of the library calls :func:`ops` as it is imported (the BLS12-381
+    group loads its kernels then): the first frame outside the package is the
+    import machinery; the next call from the application gives it."""
+    frame = sys._getframe(1)
+    while frame is not None and _in_package(frame.f_code.co_filename):
+        frame = frame.f_back
+    if frame is not None and frame.f_code.co_filename.startswith("<frozen importlib"):
+        return
+    if _NATIVE_NOTICE.pop("pending", False):
+        logger.warning("%s (%s)", MISSING_EXTENSION_NOTICE, _IMPORT_ERROR)
+        warn_at_caller(MISSING_EXTENSION_NOTICE, FEWarning)
 
 
 def ring(q, ring_n: int) -> "interface.Ring":
