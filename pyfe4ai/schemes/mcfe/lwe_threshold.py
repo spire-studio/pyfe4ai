@@ -256,9 +256,12 @@ class ThresholdMCFELWEKeyGenerator(MCFELWEKeyGenerator):
             warn_at_caller("invalid sid (not one of the key generator's lst_sid)")
             return None
         identifier = fusion_weight_id(fusion_weight)
-        if identifier not in self.dict_dk:
-            self.dict_dk[identifier] = self._share_key(self._aggregate_key(fusion_weight))
-        share, noise_key = self.dict_dk[identifier][sid]
+        entry = self.dict_dk.get(identifier)
+        if entry is None:
+            # one sharing per weights: of two threads dealing at once, both issue the one kept first
+            # (these key shares carry no sharing id, so shares of two sharings would combine to a wrong value)
+            entry = self.dict_dk.setdefault(identifier, self._share_key(self._aggregate_key(fusion_weight)))
+        share, noise_key = entry[sid]
         if self.sharing == "shamir":
             held = {"sk_y": [gp.digits(v) for v in share]}
         elif self.sharing == "replicated":

@@ -370,11 +370,14 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
             warn_at_caller("invalid sid (not one of the key generator's lst_sid)")
             return None
         identifier = fusion_weight_id(fusion_weight)
-        if identifier not in self.dict_dk:
+        entry = self.dict_dk.get(identifier)
+        if entry is None:
             key = super().get_decryption_keys(sid, credentials={"fusion_weight": fusion_weight})
-            self.dict_dk[identifier] = self._share_key(key)
+            # one sharing per weights: of two threads dealing at once, both issue the one kept first
+            # (these key shares carry no sharing id, so shares of two sharings would combine to a wrong value)
+            entry = self.dict_dk.setdefault(identifier, self._share_key(key))
         return TMIFELWEKeyShare.extend(
-            self.dict_dk[identifier][sid],
+            entry[sid],
             noise_version=FLOODING_NOISE_VERSION,
             noise_sampler=FLOODING_SAMPLER,
             sid=sid,

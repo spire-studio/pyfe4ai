@@ -64,11 +64,14 @@ threads:
   decryptions combiners refuse
   (:class:`~pyfe4ai.core.versions.MixedSharingsError`); issue them from one
   thread.
-* The servers of the threshold LWE layers (``mife/lwe_threshold``,
-  ``mcfe/lwe_threshold``): a partial decryption reads the key share, and the
-  cache of the sums of replicated pieces is guarded the same way. Their key
-  generators keep the key shares they issue without a lock, like the whole
-  key shares above: issue them from one thread.
+* The threshold LWE layers (``mife/lwe_threshold``,
+  ``mcfe/lwe_threshold``): a server's partial decryption reads the key
+  share, and the cache of the sums of replicated pieces is guarded the same
+  way. The key generators issue one sharing per weights: of several threads
+  asking for the key shares of the same weights for the first time, each may
+  deal, but all of them issue the sharing stored first. (These key shares
+  carry no sharing id: shares of two sharings of one key would combine to a
+  wrong value without an error, so the key generator never hands out two.)
 * :class:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget`: checking
   and counting a partial decryption is one step under its lock.
 * One-time precomputations (the offline phases): of several threads using
@@ -147,8 +150,12 @@ fork duplicates none. The locks of individual objects
 (:class:`~pyfe4ai.ml.FESchemeWrapper`,
 :class:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget`) are not
 renewed: fork while no other thread is inside them, or make the objects in
-the child. A budget copied into a child counts separately from the
-parent's. Python warns about ``fork()`` in a process with threads; the
+the child. A :class:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget`
+copied into a child counts separately from the parent's: after the fork the
+parent and the child each count from the copied ``used``, so together they
+can produce more partial decryptions than ``max_partial_decryptions`` and
+the KL flooding guarantee no longer holds. Keep a server's budget in the one
+process that answers for it (or share and persist its count). Python warns about ``fork()`` in a process with threads; the
 ``spawn`` and ``forkserver`` start methods of ``multiprocessing`` avoid
 all of the above, and their workers rebuild every cache.
 

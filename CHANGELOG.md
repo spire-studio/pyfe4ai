@@ -742,6 +742,19 @@ Mac) against BLS12-381.
 
 ### Fixed
 
+- **Threshold LWE layers: two threads could get key shares of two sharings
+  of one key** (`mife/lwe_threshold`, `mcfe/lwe_threshold`; integrity,
+  medium; in v0.3.0 too). The key generators kept the key shares they issue
+  in `dict_dk` with no synchronisation between the check, the dealing and
+  the store: two threads asking for the key shares of the same weights for
+  the first time both dealt, and servers got shares of two different
+  sharings. These key shares carry no sharing id, so the combiner could not
+  refuse the mix, and the partial decryptions combined to a wrong value
+  without an error (tMCFE-LWE almost always inside the decoding bound,
+  tMIFE-LWE about one time in five, otherwise `None`). The key generators
+  now keep one sharing per weights (`dict_dk.setdefault`) and every request
+  issues from the stored one. Single-threaded issuance, the key shares and
+  the pickled state of the key generators are unchanged.
 - `EncryptedGradient.to_dict()` failed with `KeyError: ()` on the packed
   ciphertext layers of the Ring-LWE MCFE schemes (`mcfe/ring_lwe` and its
   threshold and decentralized variants), and `from_dict()` could not rebuild
