@@ -2,9 +2,16 @@
 
 * Only :mod:`pyfe4ai.backend` reaches the native extension: a static scan of
   every other module of the library (imports of ``pyfe4ai._rust_native`` or
-  of the implementation modules, attributes of the backend other than
-  :func:`~pyfe4ai.backend.ops` and :func:`~pyfe4ai.backend.ring`, native
-  internals such as ``.cap`` or ``ext()``).
+  of the implementation modules -- also by ``import_module``, ``__import__``
+  or ``sys.modules`` --, attributes of the backend other than
+  :func:`~pyfe4ai.backend.ops` and :func:`~pyfe4ai.backend.ring` -- also by
+  ``getattr`` and the like, by the full path ``pyfe4ai.backend.x`` or through
+  ``sys.modules`` --, native internals such as ``.cap`` or ``ext()``, and
+  members outside the interface of what ``ops()`` and ``ring()`` return).
+  The scan reads the syntax only: a name computed at run time other than a
+  ``getattr`` on the backend (an attribute name built from strings, a module
+  object or a ring passed around through a call or an attribute) is not
+  followed.
 * Both implementations implement every operation.
 * Bit identity, per operation: the same inputs (and random bytes) through the
   Python implementation (under the ``"python"`` selection, so that what it
@@ -46,9 +53,22 @@ pytestmark = pytest.mark.core
 LIB = os.path.dirname(os.path.abspath(pyfe4ai.__file__))
 #: What the scheme and primitive layers may read of pyfe4ai.backend.
 ALLOWED_BACKEND_ATTRS = {"ops", "ring"}
+#: More of pyfe4ai.backend that one module may read (path relative to the package).
+ALLOWED_BACKEND_ATTRS_IN = {}
 #: Attributes that only native internals have: never read outside pyfe4ai/backend.
 NATIVE_INTERNALS = {"cap", "ext", "_ext", "ec_ext", "ring_context", "RingContext", "noise_kwargs", "random_input",
                     "seed_kwargs", "sampling_ok", "gauss_bytes", "facct_table", "_facct_table", "pack", "unpack"}
+#: Modules only pyfe4ai/backend may load, however (statement, import_module, __import__, sys.modules).
+BACKEND_ONLY = ("pyfe4ai._rust_native", "pyfe4ai.backend.native_impl", "pyfe4ai.backend.python_impl")
+#: Calls that load a module by name, and that read an attribute by name.
+IMPORT_CALLS = {"import_module", "__import__"}
+ATTRIBUTE_CALLS = {"getattr", "hasattr", "setattr", "delattr"}
+#: What the layers may use of what ops() and ring() return: the interface (with the attributes
+#: Ring.__init__ sets, q and ring_n).
+BACKEND_API = {name for name in dir(interface.Backend) if not name.startswith("_")}
+RING_API = {name for name in dir(interface.Ring) if not name.startswith("_")} | {
+    node.attr for node in ast.walk(ast.parse(inspect.getsource(interface.Ring.__init__).strip()))
+    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "self"}
 
 
 # ------------------------------------------------------------------ the static scan
@@ -63,35 +83,166 @@ def _library_modules():
                 yield os.path.join(root, name)
 
 
-def scan(source: str) -> list:
-    """The violations of the backend boundary in a module's *source*."""
+def _strings(node) -> list:
+    """The string constants of an expression (with those of f-strings and concatenations)."""
+    return [n.value for n in ast.walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+
+
+def _backend_only(node) -> bool:
+    """Whether an expression names one of :data:`BACKEND_ONLY` (or the extension, however spelled)."""
+    text = "".join(_strings(node))
+    return "_rust_native" in text or any(text.startswith(m) for m in BACKEND_ONLY)
+
+
+def _in_scope(scope):
+    """The nodes of *scope* (a module or function), without those of the functions and classes nested in it."""
+    stack = list(ast.iter_child_nodes(scope))
+    while stack:
+        node = stack.pop()
+        yield node
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            stack.extend(ast.iter_child_nodes(node))
+
+
+def _call_name(node):
+    func = node.func
+    return func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else None
+
+
+def scan(source: str, allowed=frozenset(ALLOWED_BACKEND_ATTRS)) -> list:
+    """The violations of the backend boundary in a module's *source*: imports of
+    the extension or of the implementation modules (statements,
+    ``import_module`` / ``__import__`` calls, ``sys.modules`` lookups), reads
+    of :mod:`pyfe4ai.backend` other than *allowed* (by an alias, the full path
+    ``pyfe4ai.backend.x``, ``getattr`` and the like with a string or a
+    computed name, ``sys.modules["pyfe4ai.backend"]``), native internals
+    (``.cap``, ``getattr(x, "cap")``, ...), and members outside the interface
+    of what ``ops()`` and ``ring()`` return (on the call itself, or on a name
+    the module binds to it; not followed through attributes or arguments)."""
     tree = ast.parse(source)
-    found, aliases = [], set()
+    found, aliases, packages, sys_names, modules_names = [], set(), set(), set(), set()
+
+    def is_sys_modules(node) -> bool:
+        if isinstance(node, ast.Name):
+            return node.id in modules_names
+        return (isinstance(node, ast.Attribute) and node.attr == "modules" and isinstance(node.value, ast.Name)
+                and node.value.id in sys_names)
+
+    def is_package(node) -> bool:
+        """``pyfe4ai`` itself (``import pyfe4ai``, ``__import__("pyfe4ai...")``)."""
+        if isinstance(node, ast.Name):
+            return node.id in packages
+        return (isinstance(node, ast.Call) and _call_name(node) == "__import__" and bool(node.args)
+                and "".join(_strings(node.args[0])).startswith("pyfe4ai"))
+
+    def is_backend(node) -> bool:
+        """The module ``pyfe4ai.backend``, however reached."""
+        if isinstance(node, ast.Name):
+            return node.id in aliases
+        if isinstance(node, ast.Attribute):
+            return node.attr == "backend" and is_package(node.value)
+        lookup = None
+        if isinstance(node, ast.Subscript) and is_sys_modules(node.value):
+            lookup = node.slice
+        elif isinstance(node, ast.Call) and node.args:
+            name = _call_name(node)
+            if name == "get" and isinstance(node.func, ast.Attribute) and is_sys_modules(node.func.value):
+                lookup = node.args[0]
+            elif name == "import_module":
+                lookup = node.args[0]
+            elif name == "getattr" and len(node.args) >= 2 and is_package(node.args[0]):
+                return _strings(node.args[1]) == ["backend"]
+        return lookup is not None and _strings(lookup) == ["pyfe4ai.backend"]
+
+    # the names bound to sys, sys.modules, the package and the backend module (until no new alias)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                if a.name == "sys":
+                    sys_names.add(a.asname or "sys")
+                elif a.name == "pyfe4ai.backend" and a.asname:
+                    aliases.add(a.asname)
+                elif a.name == "pyfe4ai" or (a.name.startswith("pyfe4ai.") and not a.asname):
+                    packages.add(a.asname or "pyfe4ai")
+        elif isinstance(node, ast.ImportFrom):
+            for a in node.names:
+                if node.module == "sys" and a.name == "modules":
+                    modules_names.add(a.asname or a.name)
+                elif node.module == "pyfe4ai" and a.name == "backend":
+                    aliases.add(a.asname or a.name)
+    while True:
+        new = {t.id for node in ast.walk(tree) if isinstance(node, ast.Assign) and is_backend(node.value)
+               for t in node.targets if isinstance(t, ast.Name)} - aliases
+        if not new:
+            break
+        aliases |= new
+
+    def returned_by(node, name) -> bool:
+        """A call of ``ops()`` / ``ring(...)`` (also ``ops().ring(...)``)."""
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == name):
+            return False
+        return is_backend(node.func.value) or (name == "ring" and returned_by(node.func.value, "ops"))
+
+    # the names a scope (module or function body, without the nested ones) binds only to ops() / ring(...)
+    interfaces = {"ops": BACKEND_API, "ring": RING_API}
+    bound = {}  # (scope node, name) -> "ops" | "ring"
+    for scope in [tree] + [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]:
+        made, other = {}, set()
+        for node in _in_scope(scope):
+            if isinstance(node, ast.Assign):
+                kind = next((k for k in interfaces if returned_by(node.value, k)), None)
+                for t in node.targets:
+                    if isinstance(t, ast.Name):
+                        (made.__setitem__(t.id, kind) if kind else other.add(t.id))
+        for name, kind in made.items():
+            if name not in other:
+                bound[(scope, name)] = kind
+    scope_of = {id(node): scope for scope in [tree] + [n for n in ast.walk(tree)
+                                                          if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+                for node in _in_scope(scope)}
+
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for a in node.names:
                 if "_rust_native" in a.name or a.name.startswith(("pyfe4ai.backend.native_impl",
                                                                   "pyfe4ai.backend.python_impl")):
                     found.append("line {}: import {}".format(node.lineno, a.name))
-                elif a.name == "pyfe4ai.backend" and a.asname:
-                    aliases.add(a.asname)
         elif isinstance(node, ast.ImportFrom):
             mod = node.module or ""
             for a in node.names:
                 full = mod + "." + a.name
                 if "_rust_native" in full or full.startswith(("pyfe4ai.backend.native_impl", "pyfe4ai.backend.python_impl")):
                     found.append("line {}: from {} import {}".format(node.lineno, mod, a.name))
-                elif mod == "pyfe4ai" and a.name == "backend":
-                    aliases.add(a.asname or a.name)
                 elif mod == "pyfe4ai.backend":
                     found.append("line {}: from pyfe4ai.backend import {}".format(node.lineno, a.name))
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "import_module":
-            if any(isinstance(arg, ast.Constant) and "_rust_native" in str(arg.value) for arg in node.args):
-                found.append("line {}: import_module of the extension".format(node.lineno))
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Attribute):
-            if isinstance(node.value, ast.Name) and node.value.id in aliases and node.attr not in ALLOWED_BACKEND_ATTRS:
-                found.append("line {}: {}.{}".format(node.lineno, node.value.id, node.attr))
+        elif isinstance(node, ast.Call):
+            name = _call_name(node)
+            if name in IMPORT_CALLS and node.args and _backend_only(node.args[0]):
+                found.append("line {}: {} of {}".format(node.lineno, name, "".join(_strings(node.args[0]))))
+            elif (name in ("get", "pop", "setdefault") and isinstance(node.func, ast.Attribute)
+                  and is_sys_modules(node.func.value) and node.args and _backend_only(node.args[0])):
+                found.append("line {}: sys.modules.{} of a backend module".format(node.lineno, name))
+            elif isinstance(node.func, ast.Name) and name in ATTRIBUTE_CALLS and len(node.args) >= 2:
+                target, attr = node.args[0], node.args[1]
+                const = attr.value if isinstance(attr, ast.Constant) and isinstance(attr.value, str) else None
+                if is_backend(target) and const not in allowed:
+                    found.append("line {}: {}(backend, {})".format(node.lineno, name, const or "<computed>"))
+                elif is_package(target) and "_rust_native" in "".join(_strings(attr)):
+                    found.append("line {}: {}(pyfe4ai, '_rust_native')".format(node.lineno, name))
+                elif const in NATIVE_INTERNALS:
+                    found.append("line {}: {}(..., {!r})".format(node.lineno, name, const))
+        elif isinstance(node, ast.Subscript) and is_sys_modules(node.value) and _backend_only(node.slice):
+            found.append("line {}: sys.modules[...] of a backend module".format(node.lineno))
+        elif isinstance(node, ast.Attribute):
+            made = next((k for k in interfaces if returned_by(node.value, k)), None)
+            if made is None and isinstance(node.value, ast.Name):
+                made = bound.get((scope_of.get(id(node)), node.value.id))
+            if made and node.attr not in interfaces[made]:
+                found.append("line {}: {}().{} (not in the interface)".format(node.lineno, made, node.attr))
+            elif is_backend(node.value) and node.attr not in allowed:
+                found.append("line {}: backend.{}".format(node.lineno, node.attr))
+            elif is_package(node.value) and node.attr == "_rust_native":
+                found.append("line {}: pyfe4ai._rust_native".format(node.lineno))
             elif node.attr in NATIVE_INTERNALS:
                 found.append("line {}: .{}".format(node.lineno, node.attr))
     return found
@@ -100,10 +251,11 @@ def scan(source: str) -> list:
 def test_only_the_backend_reaches_the_extension():
     bad = {}
     for path in _library_modules():
+        rel = os.path.relpath(path, LIB)
         with open(path, encoding="utf-8") as f:
-            found = scan(f.read())
+            found = scan(f.read(), ALLOWED_BACKEND_ATTRS | ALLOWED_BACKEND_ATTRS_IN.get(rel, set()))
         if found:
-            bad[os.path.relpath(path, LIB)] = found
+            bad[rel] = found
     assert bad == {}
 
 
@@ -125,6 +277,68 @@ def test_the_scan_finds_what_it_forbids(snippet):
 def test_the_scan_accepts_the_interface():
     assert scan("from pyfe4ai import backend\nfrom pyfe4ai.backend.interface import ReferenceKey\n"
                 "r = backend.ring(17, 4)\nbackend.ops().ntt([1], 17, 2)\n") == []
+
+
+@pytest.mark.parametrize("snippet", [
+    # attributes read by name
+    "from pyfe4ai import backend\ngetattr(backend, '_ext')\n",
+    "from pyfe4ai import backend as nb\nhasattr(nb, '_random_override')\n",
+    "from pyfe4ai import backend\nsetattr(backend, '_threads', 4)\n",
+    "from pyfe4ai import backend\ngetattr(backend, name)()\n",
+    "def f(ctx):\n    return getattr(ctx, 'cap')\n",
+    "import pyfe4ai\ngetattr(pyfe4ai, '_rust_native')\n",
+    "import pyfe4ai\ngetattr(pyfe4ai, 'backend')._ext\n",
+    "import pyfe4ai\nb = getattr(pyfe4ai, 'backend')\nb.set_backend('python')\n",
+    # the full path
+    "import pyfe4ai\npyfe4ai.backend._ext\n",
+    "import pyfe4ai.backend\npyfe4ai.backend._random_override = None\n",
+    "import pyfe4ai.ml\npyfe4ai.backend.native_impl.ring_context(1, 2)\n",
+    "import pyfe4ai\npyfe4ai._rust_native.ntt(1, 2)\n",
+    "import pyfe4ai as p\np.backend.ext()\n",
+    # sys.modules
+    "import sys\nsys.modules['pyfe4ai._rust_native']\n",
+    "import sys\nsys.modules.get('pyfe4ai.backend.native_impl')\n",
+    "import sys as s\ns.modules['pyfe4ai.backend']._ext\n",
+    "import sys\nb = sys.modules['pyfe4ai.backend']\nb._threads\n",
+    "import sys\nb = sys.modules.get('pyfe4ai.backend')\nc = b\nc.ext()\n",
+    "from sys import modules\nmodules['pyfe4ai._rust_native']\n",
+    # loading by name
+    "__import__('pyfe4ai._rust_native')\n",
+    "__import__('pyfe4ai.backend').backend._ext\n",
+    "from importlib import import_module\nimport_module('pyfe4ai.backend.native_impl')\n",
+    "import importlib\nimportlib.import_module('pyfe4ai.' + '_rust_native')\n",
+    "import importlib\nimportlib.import_module(f'pyfe4ai.{\"_rust_native\"}')\n",
+    "import importlib\nb = importlib.import_module('pyfe4ai.backend')\nb.ext()\n",
+    # the interface only, on what ops() and ring() return
+    "from pyfe4ai import backend\nr = backend.ring(7681, 256)\nw = r.word_bytes\nh = r.ntt_mont([1])\n",
+    "from pyfe4ai import backend\nbackend.ring(7681, 256).cap\n",
+    "from pyfe4ai import backend\nbackend.ops().ring(7681, 256).digits([1])\n",
+    "from pyfe4ai import backend\nb = backend.ops()\nb.random_input(8)\n",
+])
+def test_the_scan_finds_dynamic_access(snippet):
+    assert scan(snippet), snippet
+
+
+@pytest.mark.parametrize("snippet", [
+    "import sys\nlock_owner = sys.modules[__name__]\n",  # forksafe.renew_lock(sys.modules[__name__], ...)
+    "import importlib\nmodule = importlib.import_module(self_module)\n",  # the registry's lazy classes
+    "import importlib\nimportlib.import_module('pyfe4ai.schemes.mcfe.ring_lwe')\n",
+    "def f(record, key, self, name):\n    setattr(self, key, getattr(record, key))\n    setattr(self, name, None)\n",
+    "import pyfe4ai\npyfe4ai.backend.ops().ntt([1], 17, 2)\npyfe4ai.backend.ring(17, 4)\npyfe4ai.__version__\n",
+    "import pyfe4ai.backend\npyfe4ai.backend.ops()\n",
+    "from pyfe4ai import backend\ngetattr(backend, 'ops')()\n",
+    "import sys\nsys.modules.get('pyfe4ai.schemes.mcfe')\n",
+    "NAME = 'pyfe4ai._rust_native'\n",  # a name, not a lookup
+    "from pyfe4ai import backend\nr = backend.ring(17, 4)\nr.lincomb([[1]], [1]); r.native; r.threshold_native\n"
+    "backend.ops().ring(17, 4).hash_to_zq(b'', 4)\nb = backend.ops()\nb.batched_layers; b.zq_sum\n",
+    "from pyfe4ai import backend\ndef f(q, n):\n    ctx = backend.ring(q, n)\n    return ctx.q, ctx.ring_n\n",
+    # a name bound to a ring in another function, or to something else too, is not followed
+    "from pyfe4ai import backend\ndef f():\n    ring = backend.ring(17, 4)\n    return ring.native\n"
+    "def g(RingNTT):\n    ring = RingNTT.get(17, 4)\n    return ring.forward([1])\n",
+    "from pyfe4ai import backend\ndef f(cache):\n    ring = backend.ring(17, 4)\n    ring = cache\n    return ring.forward\n",
+])
+def test_the_scan_ignores_other_dynamic_code(snippet):
+    assert scan(snippet) == [], snippet
 
 
 # ------------------------------------------------------------------ conformance

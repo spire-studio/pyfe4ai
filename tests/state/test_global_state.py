@@ -11,7 +11,16 @@ OS random buffer and the registries filled at import. All of it is listed on
 This test scans ``pyfe4ai/`` (its syntax tree, nothing is imported) for
 module- and class-level state and fails on anything not in :data:`ALLOWED`:
 a new cache, lock, registry, lazily set global or ``os.register_at_fork``
-call. Put a new cache on the object that owns it; if it must be
+call -- also state made dynamically: through ``globals()`` or ``vars()``,
+``exec`` / ``eval``, ``setattr`` on ``sys.modules[...]`` (or an attribute
+assigned there, other than the module's own dunders such as ``__class__``),
+an attribute assigned on another module (``module.NAME = value``), on a
+function (``f.cache = ...``) or on a class through an instance
+(``type(self).x = ...``), a mutable default argument, a cache decorator
+imported under another name, ``getattr(os, "register_at_fork")``. The scan
+reads the syntax only: state in closures, a module object passed through a
+call (as :func:`pyfe4ai.core.forksafe.renew_lock` receives one) or a name
+computed at run time is not followed. Put a new cache on the object that owns it; if it must be
 process-wide, add it here with the reason and to the documentation page
 (and register its fork handling with :mod:`pyfe4ai.core.forksafe`). An
 allow-listed name that is gone fails too, so that the list stays current.
@@ -127,11 +136,78 @@ def _top(body):
                 yield from _top(handler.body)
 
 
-def scan(sources: dict, library_classes: set | None = None) -> tuple[dict, list]:
+def _is_sys_modules(node, sys_names) -> bool:
+    """``sys.modules[...]`` or ``sys.modules.get(...)``."""
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "get":
+        node = node.func.value
+    elif isinstance(node, ast.Subscript):
+        node = node.value
+    else:
+        return False
+    return (isinstance(node, ast.Attribute) and node.attr == "modules" and isinstance(node.value, ast.Name)
+            and node.value.id in sys_names)
+
+
+def _const(node):
+    return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+
+
+def _dynamic(tree, path, hit, library_modules) -> None:
+    """State made dynamically: ``globals()`` / ``vars()``, ``exec`` / ``eval``,
+    ``setattr`` on ``sys.modules[...]`` or an attribute assigned there (not a
+    dunder), an attribute assigned on another module (bound by ``import``, or
+    by ``from package import module`` for a module of *library_modules*)."""
+    sys_names, modules = set(), set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                if a.name == "sys":
+                    sys_names.add(a.asname or "sys")
+                else:
+                    modules.add(a.asname or a.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom) and not node.level:
+            for a in node.names:
+                if "{}.{}".format(node.module, a.name) in library_modules:
+                    modules.add(a.asname or a.name)
+    functions = {n.name for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            for default in node.args.defaults + [d for d in node.args.kw_defaults if d is not None]:
+                if isinstance(default, (ast.Dict, ast.List, ast.Set)) or _call_name(default) in CONTAINERS | STATEFUL:
+                    hit(path, getattr(node, "name", "<lambda>"), "mutable default argument")
+        if isinstance(node, ast.Call):
+            name = _call_name(node)
+            if isinstance(node.func, ast.Name) and name in ("globals", "vars") and not node.args:
+                hit(path, name + "()", "module namespace by " + name + "()")
+            elif isinstance(node.func, ast.Name) and name in ("exec", "eval"):
+                hit(path, name, "exec / eval")
+            elif (isinstance(node.func, ast.Name) and name in ("setattr", "delattr") and len(node.args) >= 2
+                  and _is_sys_modules(node.args[0], sys_names)):
+                hit(path, _const(node.args[1]) or "<computed>", "set through sys.modules")
+        elif isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign, ast.Delete)):
+            targets = node.targets if isinstance(node, (ast.Assign, ast.Delete)) else [node.target]
+            for t in targets:
+                if not isinstance(t, ast.Attribute):
+                    continue
+                if _is_sys_modules(t.value, sys_names):
+                    if not (t.attr.startswith("__") and t.attr.endswith("__")):
+                        hit(path, t.attr, "set through sys.modules")
+                elif isinstance(t.value, ast.Name) and t.value.id in modules:
+                    hit(path, t.value.id + "." + t.attr, "set on another module")
+                elif isinstance(t.value, ast.Name) and t.value.id in functions:
+                    hit(path, t.value.id + "." + t.attr, "function attribute")
+                elif _call_name(t.value) == "type" or (isinstance(t.value, ast.Attribute) and t.value.attr == "__class__"):
+                    hit(path, "<class>." + t.attr, "class attribute set through an instance")
+
+
+def scan(sources: dict, library_classes: set | None = None, library_modules: set | None = None) -> tuple[dict, list]:
     """``(found, fork_calls)`` for ``{path: source}``: *found* maps
     ``(path, name)`` to the rules that matched; *fork_calls* lists the
-    ``os.register_at_fork`` calls outside :data:`FORKSAFE`."""
+    ``os.register_at_fork`` calls outside :data:`FORKSAFE`. *library_modules*:
+    the dotted names of the modules (default: those of *sources*)."""
     trees = {path: ast.parse(src) for path, src in sources.items()}
+    if library_modules is None:
+        library_modules = {path[:-3].replace("/", ".").removesuffix(".__init__") for path in sources}
     if library_classes is None:
         library_classes = {n.name for t in trees.values() for n in ast.walk(t) if isinstance(n, ast.ClassDef)}
     found, fork_calls = {}, []
@@ -172,17 +248,23 @@ def scan(sources: dict, library_classes: set | None = None) -> tuple[dict, list]
                         hit(path, prefix + name, rule)
 
         bindings(tree.body, "")
+        _dynamic(tree, path, hit, library_modules)
+        caches = CACHE_DECORATORS | {a.asname for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)
+                                     and n.module == "functools" for a in n.names
+                                     if a.name in CACHE_DECORATORS and a.asname}
         for node in ast.walk(tree):
-            if isinstance(node, ast.Call):
+            if isinstance(node, ast.Call) and path != FORKSAFE:
                 func = node.func
-                if isinstance(func, ast.Attribute) and func.attr == "register_at_fork" and path != FORKSAFE:
+                if isinstance(func, ast.Attribute) and func.attr == "register_at_fork":
+                    fork_calls.append("{}:{}".format(path, node.lineno))
+                elif _call_name(node) == "getattr" and len(node.args) >= 2 and _const(node.args[1]) == "register_at_fork":
                     fork_calls.append("{}:{}".format(path, node.lineno))
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             for deco in node.decorator_list:
                 target = deco.func if isinstance(deco, ast.Call) else deco
                 name = target.attr if isinstance(target, ast.Attribute) else getattr(target, "id", None)
-                if name in CACHE_DECORATORS:
+                if name in caches:
                     hit(path, node.name, "cached function")
             for sub in ast.walk(node):
                 if isinstance(sub, ast.Global):
@@ -243,7 +325,7 @@ def test_the_documentation_lists_the_process_wide_state():
 
 
 def _scan_one(source: str, path: str = "pyfe4ai/x.py", classes=("Holder", "Option")):
-    return scan({path: textwrap.dedent(source)}, set(classes))
+    return scan({path: textwrap.dedent(source)}, set(classes), {"pyfe4ai.x", "pyfe4ai.primitives.sampling"})
 
 
 @pytest.mark.parametrize("source,name,rule", [
@@ -289,7 +371,53 @@ def test_the_scan_ignores_constants_and_object_state(source):
     assert not found and not fork_calls, found
 
 
+@pytest.mark.parametrize("source,name,rule", [
+    ("def f(k):\n    globals()[k] = {}\n", "globals()", "module namespace by globals()"),
+    ("globals().setdefault('_cache', {})\n", "globals()", "module namespace by globals()"),
+    ("def f():\n    vars()['x'] = 1\n", "vars()", "module namespace by vars()"),
+    ("exec('_cache = {}')\n", "exec", "exec / eval"),
+    ("import sys\nsetattr(sys.modules[__name__], '_cache', {})\n", "_cache", "set through sys.modules"),
+    ("import sys\nsetattr(sys.modules.get(__name__), name, {})\n", "<computed>", "set through sys.modules"),
+    ("import sys as s\ns.modules[__name__]._lock = None\n", "_lock", "set through sys.modules"),
+    ("import pyfe4ai.backend as b\ndef f():\n    b._threads = 4\n", "b._threads", "set on another module"),
+    ("import os\nos.environ = {}\n", "os.environ", "set on another module"),
+    ("from pyfe4ai.primitives import sampling\ndef f():\n    sampling._default_sampler = 'facct'\n",
+     "sampling._default_sampler", "set on another module"),
+    ("def f(x, _cache={}):\n    _cache[x] = 1\n", "f", "mutable default argument"),
+    ("def f(x, *, _seen=set()):\n    _seen.add(x)\n", "f", "mutable default argument"),
+    ("def f(x):\n    f.cache = getattr(f, 'cache', {})\n", "f.cache", "function attribute"),
+    ("class C:\n    def f(self):\n        type(self)._cache = {}\n", "<class>._cache",
+     "class attribute set through an instance"),
+    ("class C:\n    def f(self):\n        self.__class__._cache = {}\n", "<class>._cache",
+     "class attribute set through an instance"),
+    ("from functools import lru_cache as memo\n@memo(None)\ndef f(x):\n    return x\n", "f", "cached function"),
+])
+def test_the_scan_finds_dynamic_state(source, name, rule):
+    found, _ = _scan_one(source)
+    assert rule in found.get(("pyfe4ai/x.py", name), set()), found
+
+
+@pytest.mark.parametrize("source", [
+    "import sys\nimport types\nclass _M(types.ModuleType):\n    pass\nsys.modules[__name__].__class__ = _M\n",
+    "import sys\nfrom pyfe4ai.core import forksafe\nforksafe.renew_lock(sys.modules[__name__], '_LOCK')\n",
+    "def f(self, record, key):\n    setattr(self, key, getattr(record, key))\n",
+    "import os\nx = os.environ.get('X')\n",
+    "def f(obj):\n    obj.attr = 1\n",  # an object, not a module
+    "from pyfe4ai.primitives.sampling import XofRandom\nXofRandom.attr = 1\n",  # a class, not a module
+    "def f(x, limit=16, names=('a',), table=None):\n    return x\n",  # immutable defaults
+    "def f():\n    def g():\n        pass\n    g.attr = 1\n",  # a local function
+    "from functools import partial as p\n@p\ndef f(x):\n    return x\n",  # another decorator
+])
+def test_the_scan_ignores_other_dynamic_code(source):
+    found, fork_calls = _scan_one(source)
+    assert not found and not fork_calls, found
+
+
 def test_the_scan_finds_fork_handlers_outside_forksafe():
     source = "import os\nos.register_at_fork(after_in_child=print)\n"
     assert _scan_one(source)[1] == ["pyfe4ai/x.py:2"]
     assert _scan_one(source, path=FORKSAFE)[1] == []
+
+
+def test_the_scan_finds_fork_handlers_registered_through_getattr():
+    assert _scan_one("import os\ngetattr(os, 'register_at_fork')(after_in_child=print)\n")[1] == ["pyfe4ai/x.py:2"]
