@@ -180,3 +180,62 @@ def test_every_gradient_the_library_writes_round_trips(scheme):
         assert restored.to_dict() == sent and restored.shape == gradient.shape
         with pytest.raises(ValueError):  # and the strict checks hold for this scheme's gradients
             EncryptedGradient.from_dict(dict(sent, extra=1))
+
+
+# -- EncryptedFeatures.from_dict
+
+
+def _features():
+    from pyfe4ai.ml.inference import encrypt_features
+
+    wrapper = FESchemeWrapper("sife", "ddh", {"sec_param": 128, "eta": 3, "bound_x": 50, "bound_y": 50}, precision=1)
+    return encrypt_features(np.array([0.5, 1.0, -0.5]), wrapper).to_dict()
+
+
+FEATURES_MALFORMED = {
+    "not a dict": lambda f: list(f.items()),
+    "an extra key": lambda f: dict(f, extra=1),
+    "mode missing": lambda f: {k: v for k, v in f.items() if k != "mode"},
+    "ciphertext a list": lambda f: dict(f, ciphertext=list(f["ciphertext"].values())),
+    "ciphertext None": lambda f: dict(f, ciphertext=None),
+    "dim a bool": lambda f: dict(f, dim=True),
+    "dim a string": lambda f: dict(f, dim="3"),
+    "dim a float": lambda f: dict(f, dim=3.0),
+    "dim zero": lambda f: dict(f, dim=0),
+    "precision negative": lambda f: dict(f, precision=-1),
+    "precision a string": lambda f: dict(f, precision="1"),
+    "mode unknown": lambda f: dict(f, mode="hex"),
+}
+
+
+@pytest.mark.parametrize("case", sorted(FEATURES_MALFORMED))
+def test_encrypted_features_from_dict_is_strict(case):
+    """It took any keys and types (a missing key: KeyError; a list: TypeError)."""
+    from pyfe4ai.ml import EncryptedFeatures
+
+    f = _features()
+    assert EncryptedFeatures.from_dict(json.loads(json.dumps(f))).to_dict() == f
+    with pytest.raises(ValueError):
+        EncryptedFeatures.from_dict(FEATURES_MALFORMED[case](f))
+
+
+FEATURES_ROUND_TRIP = ["sife/ddh", "sife/ddh_ristretto255", "sife/lwe", "sife/paillier", "sife/damgard",
+                       "sife/ring_lwe", "sife/fullysec_ring_lwe", "sife/fullysec_lwe", "sife/ddh_dynamic",
+                       pytest.param("sife/fh_ipe_pairing", marks=needs_bls)]
+
+
+@pytest.mark.parametrize("scheme", FEATURES_ROUND_TRIP)
+def test_every_feature_vector_the_library_writes_round_trips(scheme):
+    from pyfe4ai.ml import EncryptedFeatures
+    from pyfe4ai.ml.inference import compute_linear, encrypt_features
+
+    family, variant = scheme.split("/")
+    group = any(token in variant for token in ("ddh", "damgard", "paillier"))
+    wrapper = FESchemeWrapper(family, variant, {"eta": 3, "ring_n": 16, "sec_param": 128 if group else 64,
+                                                "bound_x": 50, "bound_y": 50, "lwe_n": 8}, precision=1)
+    sent = json.loads(json.dumps(encrypt_features(np.array([0.5, 1.0, -0.5]), wrapper).to_dict()))
+    restored = EncryptedFeatures.from_dict(sent)
+    assert restored.to_dict() == sent
+    assert compute_linear(restored, wrapper, np.array([1.0, 2.0, 1.0])) == pytest.approx(2.0)
+    with pytest.raises(ValueError):  # and the strict checks hold for this scheme's ciphertexts
+        EncryptedFeatures.from_dict(dict(sent, extra=1))

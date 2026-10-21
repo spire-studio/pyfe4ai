@@ -848,7 +848,11 @@ Mac) against BLS12-381.
   (a dict) under each index key in the spelling `to_dict()` writes
   (`"(0, 1)"`); extra keys, other types, other spellings of an index
   (`"(0,1)"`, `"( 0, 1)"`, `"(+0, 1)"`) and other entries now raise
-  `ValueError`. Everything the library writes reads back as before.
+  `ValueError`. `EncryptedFeatures.from_dict()` likewise: exactly the keys
+  `ciphertext` (a dict), `dim` (a positive int), `precision` (a non-negative
+  int) and `mode` (`"decimal"` or `"binary"`); it took any keys and types (a
+  missing key: `KeyError`). Everything the library writes reads back as
+  before.
 - **Partial decryptions of different ciphertexts raise instead of combining
   to `None`** (`combine_decrypt` of every threshold scheme: tMIFE-DDH,
   tMIFE-LWE, tMCFE-DDH, tMCFE-LWE, tMCFE-Ring-LWE, tMCFE-FH-Multi-IPE). A

@@ -341,10 +341,26 @@ class EncryptedFeatures:
 
     @classmethod
     def from_dict(cls, d: dict) -> EncryptedFeatures:
+        """Deserialise from :meth:`to_dict`, checking the field types (the
+        scheme checks the ciphertext when decrypting).
+
+        Raises:
+            ValueError: Unless *d* has exactly the keys ``ciphertext`` (the
+                scheme's ciphertext, a dict), ``dim`` (a positive int),
+                ``precision`` (a non-negative int) and ``mode`` (``"decimal"``
+                or ``"binary"``).
+        """
+        if not isinstance(d, dict) or set(d) != set(FeaturesWire.FIELDS):
+            raise ValueError("invalid encrypted features: keys ciphertext, dim, precision and mode")
         d = FeaturesWire(d)
+        dim, precision = d.dim, d.precision
+        if (not isinstance(d.ciphertext, dict) or any(isinstance(v, bool) or not isinstance(v, int) for v in (dim, precision))
+                or dim < 1 or precision < 0 or d.mode not in EncryptedGradient.MODES):
+            raise ValueError("invalid encrypted features: the ciphertext is a dict, dim a positive int, precision a "
+                             "non-negative int, mode 'decimal' or 'binary'")
         return cls(
             ciphertext=d.ciphertext,
-            dim=d.dim,
-            precision=d.precision,
+            dim=dim,
+            precision=precision,
             mode=d.mode,
         )
