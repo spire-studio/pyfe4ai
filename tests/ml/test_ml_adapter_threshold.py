@@ -18,6 +18,7 @@ import numpy as np
 import pytest
 
 from pyfe4ai import backend as native_backend
+from pyfe4ai.core.exceptions import FESchemeError
 from pyfe4ai.ml import (
     EncryptedGradient,
     FESchemeWrapper,
@@ -129,6 +130,33 @@ def test_integer_server_ids(sids):
         partial_decrypt_gradients(enc, w, prepared, server=sid).to_dict()))) for sid in sids[1:]}
     assert [p.sid for p in partials.values()] == sids[1:]
     np.testing.assert_allclose(combine_partial_decryptions(partials, w, prepared), _expected(grads), atol=1e-9)
+
+
+def _swap_tags(obj, sid, other):
+    """*obj* (a gradient's JSON) with the tag of server *other* under the name of server *sid*, everywhere."""
+    if isinstance(obj, dict):
+        out = {k: _swap_tags(v, sid, other) for k, v in obj.items()}
+        if isinstance(out.get("tags"), dict):
+            out["tags"] = dict(out["tags"], **{str(sid): out["tags"][str(other)]})
+        return out
+    return [_swap_tags(v, sid, other) for v in obj] if isinstance(obj, list) else obj
+
+
+@pytest.mark.parametrize("ct_format", ["binary", "json"])
+@pytest.mark.parametrize("sids", [[1, 2, 3], [0, 1, 2]], ids=["from 1", "from 0"])
+def test_integer_server_ids_through_json_gradients(sids, ct_format):
+    # JSON writes the tag of server 1 under "1": the server finds it there (and it verifies under its key only)
+    w = _wrapper(lst_sid=sids, **({} if ct_format == "binary" else LEGACY))
+    grads = _grads(7)
+    prepared = prepare_aggregation(w, WEIGHTS, shape=SHAPE, label="r", servers=sids[:2])
+    sent = {nid: json.loads(json.dumps(encrypt_gradient(grads[nid], w, nid=nid, label="r").to_dict())) for nid in NIDS}
+    received = {nid: EncryptedGradient.from_dict(d) for nid, d in sent.items()}
+    partials = {sid: ThresholdPartial.from_dict(json.loads(json.dumps(
+        partial_decrypt_gradients(received, w, prepared, server=sid).to_dict()))) for sid in sids[:2]}
+    np.testing.assert_allclose(combine_partial_decryptions(partials, w, prepared), _expected(grads), atol=1e-9)
+    forged = dict(received, nid_0=EncryptedGradient.from_dict(_swap_tags(sent["nid_0"], sids[0], sids[1])))
+    with pytest.raises(FESchemeError, match="not authenticated"):
+        partial_decrypt_gradients(forged, w, prepared, server=sids[0])
 
 
 @pytest.mark.parametrize("extra", [LEGACY, {"sharing": "replicated-seeded"}, {"t": 3}],

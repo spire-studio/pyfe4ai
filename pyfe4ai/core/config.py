@@ -1191,9 +1191,10 @@ def options_rst() -> str:
         "(``bytes``, tuples, floats, ``None``, ``bool``) are not supported.",
         "",
         "JSON writes an integer that keys an object as a string (``1`` becomes ``\"1\"``). The ML adapter reads "
-        "integer ids back from the JSON of its records (``EncryptedGradient``, ``ThresholdPartial``); an "
-        "application that moves objects keyed by ids through JSON itself (key shares, the ciphertexts of a "
-        "request as ``{nid: ciphertext}``, their tags for the servers) uses string ids.",
+        "integer ids back from the JSON of its records (``EncryptedGradient``, ``ThresholdPartial``), and a "
+        "threshold server finds its tag in a ciphertext that went through JSON; an application that moves other "
+        "objects keyed by ids through JSON itself (key shares, the ciphertexts of a request as "
+        "``{nid: ciphertext}``) uses string ids.",
         "",
     ]
     lines += _heading("Security profiles", "-")

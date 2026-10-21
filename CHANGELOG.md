@@ -983,6 +983,16 @@ Mac) against BLS12-381.
   `FEKeyError` or `TypeError` at encryption, also through the ML adapter).
   Integer client ids now work as in the other schemes; string ids give the
   same keys, ciphertexts and messages as before.
+- **Integer server ids and ciphertexts sent as JSON** (the threshold schemes
+  that tag ciphertexts: `mife/lwe_threshold`, `mcfe/ring_lwe_threshold`,
+  `mcfe/fh_multi_ipe_pairing_threshold`; in v0.3.0 too). A client tags each
+  ciphertext for every server (`tags`, keyed by server id); JSON writes the
+  key of server `1` as `"1"`, so after a JSON round trip (e.g.
+  `EncryptedGradient.to_dict()` / `from_dict()` in the ML adapter) server
+  `1` found no tag and refused the ciphertext ("not authenticated"). A server
+  with an integer id now also looks for its tag under the id's decimal
+  string; the tag still verifies under that server's key only. String ids
+  are looked up as before.
 - **Server and client ids** (`pyfe4ai.core.ids`). A `lst_sid` or `lst_nid`
   whose ids cannot key a dict -- an unhashable entry (a list, a dict), or a
   value that is not a list (an int, an iterator) -- failed with a bare

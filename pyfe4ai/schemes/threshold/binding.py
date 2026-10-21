@@ -176,6 +176,20 @@ def tag_ciphertext(ct: dict, mac_keys: dict, domain: str, payload) -> dict:
     return ct
 
 
+def server_tag(tags, sid):
+    """The tag for server *sid* in a ciphertext's ``tags`` (``None`` if there
+    is none). JSON writes the key of an integer server id as its decimal
+    string (``1`` becomes ``"1"``): after a JSON round trip the tag of server
+    ``1`` is found under ``"1"``. It still verifies only under that server's
+    key."""
+    if not isinstance(tags, dict):
+        return None
+    tag = tags.get(sid)
+    if tag is None and type(sid) is int:
+        tag = tags.get(str(sid))
+    return tag
+
+
 def check_ciphertext_tags(dict_ct: dict, mac_keys: dict, sid: str, domain: str, payload_of) -> None:
     """Raise unless every ciphertext's tag for server *sid* verifies.
 
@@ -197,7 +211,7 @@ def check_ciphertext_tags(dict_ct: dict, mac_keys: dict, sid: str, domain: str, 
     for nid, ct in dict_ct.items():
         ok = False
         tags = TaggedCiphertext(ct).get("tags") if isinstance(ct, dict) else None
-        tag = tags.get(sid) if isinstance(tags, dict) else None
+        tag = server_tag(tags, sid)
         key = (mac_keys or {}).get(nid)
         if isinstance(tag, str) and isinstance(key, str):
             try:
@@ -233,7 +247,7 @@ def check_ciphertext_tag_messages(dict_ct: dict, mac_keys: dict, sid: str, messa
     for nid, ct in dict_ct.items():
         ok = False
         tags = TaggedCiphertext(ct).get("tags") if isinstance(ct, dict) else None
-        tag = tags.get(sid) if isinstance(tags, dict) else None
+        tag = server_tag(tags, sid)
         key = (mac_keys or {}).get(nid)
         if isinstance(tag, str) and isinstance(key, str):
             try:
