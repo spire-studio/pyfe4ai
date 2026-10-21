@@ -143,7 +143,7 @@ class MIFEDDHKeyGenerator(DDHKeyGeneratorBase):
             raise FEValidationError("fusion weights must cover every client")
         d, z = {}, gp.mpz(0)
         for nid in self.lst_nid:
-            y = int_vector(fusion_weight[nid], "fusion weight of " + nid, length=self.dict_eta[nid])
+            y = int_vector(fusion_weight[nid], "fusion weight of {}".format(nid), length=self.dict_eta[nid])
             d[nid] = gp.digits(sum(s * y_j for s, y_j in zip(self.msk["s"][nid], y)) % self.q)
             z += sum(u * y_j for u, y_j in zip(self.msk["u"][nid], y))
         return MIFEDDHFunctionalKey.new(
@@ -234,7 +234,7 @@ class MIFEDDH(OfflineRandomMixin, IPFEAbsCrypto):
         p = gp.mpz(self.pp["p"])
         acc = gp.powmod(gp.mpz(self.pp["g"]), -gp.mpz(key.z), p)
         for nid, ct in dct_ct.items():
-            y = int_vector(fusion_weight[nid], "fusion weight of " + nid)
+            y = int_vector(fusion_weight[nid], "fusion weight of {}".format(nid))
             c = [gp.mpz(v) for v in MIFEDDHCiphertext(ct).c]
             t = gp.mpz(MIFEDDHCiphertext(ct).t)
             if len(c) != len(y) or not all(0 < v < p and gp.legendre(v, p) == 1 for v in c + [t]):

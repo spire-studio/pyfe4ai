@@ -43,6 +43,7 @@ from pyfe4ai.core.formats.dl import MCFEDDHEncryptionKey
 from pyfe4ai.core.formats.dl import MCFEDDHFunctionalKey
 from pyfe4ai.core.formats.dl import MCFEDDHParameters
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.ids import is_id
 from pyfe4ai._validation import scale_to_int
 from pyfe4ai._validation import int_vector
 
@@ -126,7 +127,7 @@ class MCFEDDHKeyGenerator(DDHKeyGeneratorBase):
             if *nid* is invalid.
         """
         logger.debug("generating private key(s)...")
-        if nid is None or not isinstance(nid, str) or nid not in self.lst_nid:
+        if nid is None or not is_id(nid) or nid not in self.lst_nid:
             logger.error("no id or invalid id  provided.")
             warn_at_caller("no id or invalid id  provided.")
             return None

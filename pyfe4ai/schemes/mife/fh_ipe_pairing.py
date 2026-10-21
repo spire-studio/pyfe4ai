@@ -147,7 +147,7 @@ class MIFEFHIPEPairingKeyGenerator(IPFEAbsKeyGenerator):
         r = int(ctx.group.random(ZR))
         z_total, dk = 0, {}
         for nid in self.lst_nid:
-            y = int_vector(fusion_weight[nid], "fusion weight of " + nid, length=self.eta, bound=self.bound_y)
+            y = int_vector(fusion_weight[nid], "fusion weight of {}".format(nid), length=self.eta, bound=self.bound_y)
             key, z_i = ctx.fhipe.keygen(self.msk[nid], pow_many(ctx.g2, y, ctx.group), r=r)
             dk[nid] = [ctx.ser(v) for v in key]
             z_total = (z_total + z_i) % ctx.fhipe.order

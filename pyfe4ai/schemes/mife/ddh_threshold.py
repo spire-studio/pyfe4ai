@@ -189,7 +189,7 @@ class ThresholdMIFEDDH(MIFEDDH):
         c_y = gp.mpz(1)
         w = gp.powmod(g, lam * gp.mpz(share.z) % q, p)
         for nid, ct in dict_ct.items():
-            y = int_vector(credentials[nid], "fusion weight of " + nid)
+            y = int_vector(credentials[nid], "fusion weight of {}".format(nid))
             c = [gp.mpz(v) for v in MIFEDDHCiphertext(ct).c]
             t = gp.mpz(MIFEDDHCiphertext(ct).t)
             if len(c) != len(y) or not all(0 < v < p and gp.legendre(v, p) == 1 for v in c + [t]):

@@ -105,7 +105,7 @@ class MIFEDDHRistretto255KeyGenerator(ECDDHKeyGeneratorBase):
             raise FEValidationError("fusion weights must cover every client")
         d, z = {}, 0
         for nid in self.lst_nid:
-            y = int_vector(fusion_weight[nid], "fusion weight of " + nid, length=self.dict_eta[nid])
+            y = int_vector(fusion_weight[nid], "fusion weight of {}".format(nid), length=self.dict_eta[nid])
             d[nid] = eg.scalar_str(sum(s * y_j for s, y_j in zip(self.msk["s"][nid], y)))
             z += sum(u * y_j for u, y_j in zip(self.msk["u"][nid], y))
         return MIFEDDHFunctionalKey.new(d=d, z=eg.scalar_str(z), weights_id=fusion_weight_id(fusion_weight)).to_dict()
@@ -147,7 +147,7 @@ class MIFEDDHRistretto255(ECDDHCryptoBase):
             raise FESchemeError("need one ciphertext for every slot of the key")
         acc = eg.neg(eg.mul_base(eg.scalar_from(key.z, "decryption key")))
         for nid, ct in dct_ct.items():
-            y = int_vector(fusion_weight[nid], "fusion weight of " + nid)
+            y = int_vector(fusion_weight[nid], "fusion weight of {}".format(nid))
             try:
                 c = [eg.from_hex(v) for v in MIFEDDHCiphertext(ct).c]
                 t = eg.from_hex(MIFEDDHCiphertext(ct).t)

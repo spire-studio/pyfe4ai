@@ -244,7 +244,7 @@ class MIFEFHMultiIPEPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin
         dk = {}
         for client_index, nid in enumerate(self.lst_nid):
             y = int_vector(
-                fusion_weight[nid], "fusion weight of " + nid, length=self.eta, bound=int(self.bound_y)
+                fusion_weight[nid], "fusion weight of {}".format(nid), length=self.eta, bound=int(self.bound_y)
             )
 
             bstar_hat = [

@@ -39,6 +39,7 @@ from pyfe4ai.core.formats.dl import MCFEDDHEncryptionKey
 from pyfe4ai.core.formats.dl import MCFEDDHFunctionalKey
 from pyfe4ai.core.formats.dl import RistrettoParameters
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.ids import is_id
 from pyfe4ai._validation import int_vector, scale_to_int
 
 logger = logging.getLogger(__name__)
@@ -92,7 +93,7 @@ class MCFEDDHRistretto255KeyGenerator(ECDDHKeyGeneratorBase):
 
     def get_private_keys(self, nid: str) -> dict | None:
         """Client *nid*'s key ``{s}`` (one ``Z_L^2`` pair per slot), ``None`` if unknown."""
-        if not isinstance(nid, str) or nid not in self.lst_nid:
+        if not is_id(nid) or nid not in self.lst_nid:
             logger.error("no id or invalid id  provided.")
             warn_at_caller("no id or invalid id  provided.")
             return None

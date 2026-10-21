@@ -972,6 +972,17 @@ Mac) against BLS12-381.
   `pyfe4ai.core.ids.is_id`): partial decryptions of integer servers
   (`lst_sid = [1, 2, 3]`) combine as before, and a message that lists the
   contributors and the enrolled set orders ids of both types by `repr`.
+- **Integer client ids in the DDH and pairing schemes** (`mife/ddh`,
+  `mife/ddh_ristretto255`, `mife/ddh_threshold`, `mife/fh_ipe_pairing`,
+  `mife/fh_multi_ipe_pairing`, `mcfe/ddh`, `mcfe/ddh_ristretto255`,
+  `mcfe/ddh_threshold`, `mcfe/ddh_decentralized`; in v0.3.0 too). Their key
+  generators accepted `lst_nid = [0, 1, 2]`, but issuing a functional key
+  failed with a bare `TypeError` (a message built as `"fusion weight of " +
+  nid`), and the MCFE DDH key generators issued no encryption key for a
+  client id that is not a string (`None` with an `FEWarning`, then
+  `FEKeyError` or `TypeError` at encryption, also through the ML adapter).
+  Integer client ids now work as in the other schemes; string ids give the
+  same keys, ciphertexts and messages as before.
 - **Server and client ids** (`pyfe4ai.core.ids`). A `lst_sid` or `lst_nid`
   whose ids cannot key a dict -- an unhashable entry (a list, a dict), or a
   value that is not a list (an int, an iterator) -- failed with a bare
