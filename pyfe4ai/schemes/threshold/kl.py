@@ -75,10 +75,12 @@ Gaussian), whatever the sampler selected elsewhere, at
 from __future__ import annotations
 
 import math
+import os
 import threading
 
 import gmpy2 as gp
 
+from pyfe4ai.core import forksafe
 from pyfe4ai.core.config import KL
 from pyfe4ai.core.config import PER_SAMPLE
 from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
@@ -250,7 +252,13 @@ class PartialDecryptionBudget:
     setup: a server that runs as several processes or restarts must share or
     persist it, for instance by subclassing with an atomic, durable
     :meth:`consume` and starting from the stored ``used``. A budget cannot be
-    copied or pickled (a copy would count separately).
+    copied or pickled (a copy would count separately), and :meth:`check` and
+    :meth:`consume` refuse to run in another process than the one that made
+    it: after ``os.fork()`` the parent and the child would each count from
+    the copied ``used`` and together exceed the limit. Make the budget in
+    the process that answers for the server (a forked child gets a new lock
+    for the copy it holds, so reading :attr:`remaining` there does not
+    block).
 
     Args:
         limit: At most ``max_partial_decryptions`` of the public parameters.
@@ -269,6 +277,13 @@ class PartialDecryptionBudget:
                 "got limit = {}, used = {}".format(limit, used)
             )
         # re-entrant: consume() holds it while it calls check()
+        self._lock = threading.RLock()
+        self._pid = os.getpid()  # check() and consume() refuse other processes
+        forksafe.track(self)  # a forked child: a new lock (_after_fork_in_child)
+
+    def _after_fork_in_child(self) -> None:
+        """In a forked child: a new lock (another thread of the parent may hold
+        the old one); the copy refuses to count (``_pid``)."""
         self._lock = threading.RLock()
 
     def __copy__(self):
@@ -300,8 +315,10 @@ class PartialDecryptionBudget:
         """Raise unless *count* more partial decryptions fit (consumes nothing).
 
         Raises:
-            FESchemeError: If they would exceed the limit.
+            FESchemeError: If they would exceed the limit, or in another
+                process than the one that made the budget.
         """
+        self._check_process()
         if _count(count, "count") < 0:
             raise FEValidationError("count must be non-negative")
         with self._lock:
@@ -317,11 +334,20 @@ class PartialDecryptionBudget:
         """Account for *count* partial decryptions about to be produced.
 
         Raises:
-            FESchemeError: If they would exceed the limit (nothing is consumed then).
+            FESchemeError: If they would exceed the limit (nothing is consumed
+                then), or in another process than the one that made the budget.
         """
+        self._check_process()  # before the lock, as check() does
         with self._lock:  # check and increment as one step
             self.check(count)
             self._used += count
+
+    def _check_process(self) -> None:
+        if os.getpid() != self._pid:
+            raise FESchemeError(
+                "a partial decryption budget counts in the process that made it only: a copy in a forked "
+                "child would count separately and exceed max_partial_decryptions together with the parent"
+            )
 
 
 def server_budget(pp: dict, budget, flood: KLFlooding):

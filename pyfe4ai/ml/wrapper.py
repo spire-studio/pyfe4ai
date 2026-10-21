@@ -15,6 +15,7 @@ from typing import Any
 
 import numpy as np
 
+from pyfe4ai.core import forksafe
 from pyfe4ai.core import registry
 from pyfe4ai.core.status import get_scheme_status
 from pyfe4ai.ml.quantization import QuantizationConfig
@@ -251,6 +252,7 @@ class FESchemeWrapper:
         # under _label_lock), and weights aggregated, per label
         self._encrypted_labels: set[tuple[str, str]] = set()
         self._label_lock = threading.Lock()
+        forksafe.track(self)  # a forked child: a new lock (_after_fork_in_child)
         self._aggregated: dict[str, dict] = {}
 
     def __getstate__(self) -> dict:
@@ -270,6 +272,11 @@ class FESchemeWrapper:
     def __setstate__(self, state: dict) -> None:
         self.__dict__.update(state)
         self.__dict__.setdefault("_servers", {})
+        self._label_lock = threading.Lock()
+        forksafe.track(self)
+
+    def _after_fork_in_child(self) -> None:
+        """In a forked child: a new lock (another thread of the parent may hold the old one)."""
         self._label_lock = threading.Lock()
 
     # -- crypto instance management ----------------------------------------

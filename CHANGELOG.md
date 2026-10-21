@@ -805,6 +805,17 @@ Mac) against BLS12-381.
   original. A pickle of an earlier version that holds the cache loads and
   drops it (the tMCFE-Ring-LWE state version is unchanged), and pickles of
   this version load in earlier ones.
+- **A partial-decryption budget refuses to count in a forked child**
+  (`PartialDecryptionBudget`, the `"kl"` flooding accounting). After
+  `os.fork()` the parent and the child each counted from the copied `used`,
+  so together they could produce more partial decryptions than
+  `max_partial_decryptions`, beyond the KL flooding guarantee. A budget now
+  remembers the process that made it, and `check()` and `consume()` (and so
+  a `"kl"` server counting against it) raise `FESchemeError` in any other
+  process; the parent counts on as before. The locks of a budget and of an
+  `FESchemeWrapper` are renewed in a forked child (`core.forksafe.track`):
+  a lock another thread of the parent held at the fork made the child's
+  next call wait forever.
 - **`sife/fullysec_ring_lwe` samples exact Gaussians** for its keys and
   encryption noise in both layouts (`gaussian_sampler = "rounded"` restores
   the previous draws). With the rounded sampler its keys were about `2^-47`

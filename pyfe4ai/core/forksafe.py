@@ -15,7 +15,9 @@ registered:
 
 and then :func:`track` -- call ``_after_fork_in_child()`` of every tracked
 object still alive (e.g. mark the one-time precomputations used and drop
-their secret parts, :mod:`pyfe4ai.core.one_time`).
+their secret parts, :mod:`pyfe4ai.core.one_time`; give a
+:class:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget` or a
+:class:`~pyfe4ai.ml.FESchemeWrapper` a new lock).
 
 Nothing runs in the parent, nor before the fork. A handler that raises is
 reported on ``stderr`` as an ``os.register_at_fork`` hook's exception is

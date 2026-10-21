@@ -149,23 +149,30 @@ The library registers one ``os.register_at_fork`` handler
   bytes;
 * marks every one-time precomputation used and drops its secret parts (the
   native ones also refuse to run in another process than the one that made
-  them).
+  them);
+* gives the copies of the objects that have a lock of their own a new one
+  (:class:`~pyfe4ai.ml.FESchemeWrapper`,
+  :class:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget`): another
+  thread of the parent may have held the old one.
+
+A :class:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget` counts in
+the process that made it only: in a forked child its
+:meth:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget.check` and
+:meth:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget.consume` raise
+:class:`~pyfe4ai.core.exceptions.FESchemeError`, and so does a ``"kl"``
+server that counts against the copy. Otherwise the parent and the child
+would each count from the copied ``used``, together produce more partial
+decryptions than ``max_partial_decryptions``, and the KL flooding guarantee
+would no longer hold. Make a server's budget in the one process that
+answers for it (a subclass may share and persist the count, see the class).
 
 Nothing else changes in the child: it has a copy of every object of the
 parent, keys and caches included, and the public tables. The native code
 keeps no random generator state between calls (one DRBG per call), so a
-fork duplicates none. The locks of individual objects
-(:class:`~pyfe4ai.ml.FESchemeWrapper`,
-:class:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget`) are not
-renewed: fork while no other thread is inside them, or make the objects in
-the child. A :class:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget`
-copied into a child counts separately from the parent's: after the fork the
-parent and the child each count from the copied ``used``, so together they
-can produce more partial decryptions than ``max_partial_decryptions`` and
-the KL flooding guarantee no longer holds. Keep a server's budget in the one
-process that answers for it (or share and persist its count). Python warns about ``fork()`` in a process with threads; the
-``spawn`` and ``forkserver`` start methods of ``multiprocessing`` avoid
-all of the above, and their workers rebuild every cache.
+fork duplicates none. Python warns about ``fork()`` in a process with
+threads; the ``spawn`` and ``forkserver`` start methods of
+``multiprocessing`` avoid all of the above, and their workers rebuild every
+cache.
 
 Process-wide state
 ------------------
