@@ -12,9 +12,10 @@ Caches and stores of the threshold schemes, and their locks.
   under the lock), a server's weight key share parts and its cache of
   ``NTT(sk_y)``.
 
-The stores are attributes of the scheme objects (the pickled state of those
-objects is unchanged); the module locks guard the several steps of each
-lookup and eviction, never the sharing or the arithmetic. The locks are
+The stores are attributes of the scheme objects; pickles and copies of a
+server leave its :func:`share_cache` out (:func:`without_share_cache`). The
+module locks guard the several steps of each lookup and eviction, never the
+sharing or the arithmetic. The locks are
 process-wide, not per object: a shallow copy (``copy.copy``) of a key
 generator or a server shares its stores with the original, and one lock per
 store container keeps the two consistent. A forked child replaces each lock
@@ -42,13 +43,27 @@ _SHARE_CACHE_LOCK = threading.Lock()
 forksafe.renew_lock(sys.modules[__name__], "_SHARE_CACHE_LOCK")  # a forked child: the parent's may be held
 
 
+#: The attribute of a scheme object holding its :func:`share_cache`.
+SHARE_CACHE_ATTR = "_enrolled_share_cache"
+
+
 def share_cache(obj) -> OrderedDict:
     """The :func:`~pyfe4ai.schemes.threshold.sharing.share_for_enrolled` cache
     of scheme object *obj* (created on first use)."""
-    cache = getattr(obj, "_enrolled_share_cache", None)
+    cache = getattr(obj, SHARE_CACHE_ATTR, None)
     if cache is None:
         cache = obj._enrolled_share_cache = OrderedDict()
     return cache
+
+
+def without_share_cache(state: dict) -> dict:
+    """*state*, a server's ``__dict__`` (a copy) for a pickle or a copy, without
+    its :func:`share_cache`: the cache keeps the key shares callers passed in
+    and their sums, which a pickle or copy of the server does not carry (they
+    are summed again on use). Also applied when a state is loaded, so that
+    pickles of earlier versions, which hold the cache, load without it."""
+    state.pop(SHARE_CACHE_ATTR, None)
+    return state
 
 
 def cached_share(cache: OrderedDict, key: tuple, dk: dict):

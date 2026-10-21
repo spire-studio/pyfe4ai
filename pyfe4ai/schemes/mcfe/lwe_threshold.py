@@ -144,6 +144,7 @@ from pyfe4ai.schemes.threshold.sharing import share_for_enrolled
 from pyfe4ai.schemes.threshold.sharing import share_points
 from pyfe4ai.schemes.threshold.sharing import share_secret
 from pyfe4ai.schemes.threshold.sharing import validate_threshold
+from pyfe4ai.schemes.threshold.store import without_share_cache
 
 logger = logging.getLogger(__name__)
 
@@ -307,6 +308,15 @@ class ThresholdMCFELWE(MCFELWE):
     def __init__(self, config: dict, **kwargs) -> None:
         super().__init__(config, **kwargs)
         self.legacy_shamir = legacy_shamir_policy(config)
+
+    def __getstate__(self) -> dict:
+        """Pickling and copying without the cache of the sums of replicated key
+        pieces (:func:`~pyfe4ai.schemes.threshold.store.without_share_cache`:
+        it holds the key shares callers passed in; summed again on use)."""
+        return without_share_cache(self.__dict__.copy())
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(without_share_cache(dict(state)))  # pickles of earlier versions hold the cache
 
     def share_decrypt(
         self, dict_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list, _share=None

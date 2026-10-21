@@ -204,6 +204,7 @@ from pyfe4ai.schemes.threshold.sharing import share_for_enrolled
 from pyfe4ai.schemes.threshold.sharing import share_points
 from pyfe4ai.schemes.threshold.sharing import share_secret
 from pyfe4ai.schemes.threshold.sharing import validate_threshold
+from pyfe4ai.schemes.threshold.store import without_share_cache
 
 logger = logging.getLogger(__name__)
 
@@ -431,6 +432,15 @@ class ThresholdMIFELWE(MIFELWE):
         flood = kl_flooding(self.pp, 1) if getattr(self, "pp", None) else None
         if flood is not None and self._partial_budget is not None:
             server_budget(self.pp, self._partial_budget, flood)
+
+    def __getstate__(self) -> dict:
+        """Pickling and copying without the cache of the sums of replicated key
+        pieces (:func:`~pyfe4ai.schemes.threshold.store.without_share_cache`:
+        it holds the key shares callers passed in; summed again on use)."""
+        return without_share_cache(self.__dict__.copy())
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(without_share_cache(dict(state)))  # pickles of earlier versions hold the cache
 
     def _kl_flooding(self):
         """KL flooding parameters and the server's budget, or ``(None, None)``.

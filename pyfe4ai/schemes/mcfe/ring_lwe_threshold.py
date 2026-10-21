@@ -1019,12 +1019,18 @@ class ThresholdMCFERingLWE(MCFERingLWE):
     WEIGHT_SHARES_KEPT = 16
 
     def __getstate__(self) -> dict:
+        """Pickling and copying without the NTTs of the key shares (native
+        contexts) and the cache of the sums of replicated key pieces (the key
+        shares callers passed in, see
+        :func:`~pyfe4ai.schemes.threshold.store.without_share_cache`): both
+        are rebuilt on use."""
         state = super().__getstate__()
         state.pop("_hat_cache", None)  # native contexts
-        return versioned_state(state, TMCFE_RING_LWE_STATE_VERSION)
+        return versioned_state(store.without_share_cache(state), TMCFE_RING_LWE_STATE_VERSION)
 
     def __setstate__(self, state) -> None:
         check_state(self, state, TMCFE_RING_LWE_STATE_VERSION)
+        store.without_share_cache(self.__dict__)  # pickles of earlier versions hold it (same state version)
 
     def add_weight_key_share(self, share: dict) -> None:
         """Keep this server's weight key share

@@ -110,15 +110,19 @@ Copies and pickles
   (``_hat_cache``); a :class:`~pyfe4ai.ml.FESchemeWrapper` leaves out its
   lock, its crypto objects and its servers (servers get their weight key
   shares again).
+* **A threshold server's cache of the key shares callers passed in is left
+  out** (``mife/lwe_threshold``, ``mcfe/lwe_threshold``,
+  ``mcfe/ring_lwe_threshold``): the sums of replicated pieces for an
+  enrolled set, with the key shares they were summed from
+  (``_enrolled_share_cache``), are summed again on use. A pickle of an
+  earlier version that holds the cache loads without it.
 * **Everything else is kept**, secrets included: keys, the sharings a
   threshold key generator issued (``dict_weight_shares``, ``dict_dk``), a
   server's weight key shares, and the caches the objects keep in plain
-  Python values -- a threshold server's sums of replicated pieces with the
-  key shares they were summed from (``_enrolled_share_cache``), the key row
-  of a dense-LWE MCFE client (``_dense_key_<backend>``), the scalars of a
-  ristretto255 MCFE key (``_s_cache``) and ``g^u`` of a MIFE-DDH key
-  (``_g_u``). A pickle of a key generator, client or server is as secret as
-  its keys.
+  Python values -- the key row of a dense-LWE MCFE client
+  (``_dense_key_<backend>``), the scalars of a ristretto255 MCFE key
+  (``_s_cache``) and ``g^u`` of a MIFE-DDH key (``_g_u``). A pickle of a key
+  generator, client or server is as secret as its keys.
 * A **shallow copy** (``copy.copy``) shares those stores and caches with the
   original (the same dictionaries): the process-wide store locks keep the
   two consistent, but they are one store. A deep copy or a pickle has its

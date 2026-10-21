@@ -4,9 +4,10 @@ Two objects never share cache entries, and a copy or a pickle of an object
 starts without the caches that may hold native objects (rebuilt on first
 use) and works: the prepared master key of a Ring-LWE key generator, the
 encryption keys of the Ring-LWE clients and a threshold server's NTTs of its
-key shares. The stores that are state (a threshold server's weight key
-shares) are kept; a shallow copy shares them with the original. See
-``docs/threading.rst``.
+key shares. A threshold server's cache of the key shares callers passed in
+(the sums of replicated pieces) is left out too, also by a shallow copy. The
+stores that are state (a threshold server's weight key shares) are kept; a
+shallow copy shares them with the original. See ``docs/threading.rst``.
 """
 
 from __future__ import annotations
@@ -163,3 +164,82 @@ def test_copies_and_pickles_of_threshold_servers(backend, clone):
         assert (kg2.dict_weight_shares is kg.dict_weight_shares) == (clone == "copy")
         _tmcfe_round(kg2, pp, clients, twins, "M")
         _tmcfe_round(kg, pp, clients, servers, "N")
+
+
+# -- the threshold servers' caches of the sums of replicated key pieces: never copied or pickled
+
+
+def _replicated_server(kind):
+    """A server of *kind* (t = 2 < s = 3: replicated key shares) that has answered one request, and
+    ``request(server)``, that same request again (the same key share object, the same ciphertexts)."""
+    from pyfe4ai.schemes.mcfe.lwe_threshold import ThresholdMCFELWE, ThresholdMCFELWEKeyGenerator
+    from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE, ThresholdMIFELWEKeyGenerator
+
+    enrolled = SIDS[:2]
+    if kind == "mcfe/ring_lwe_threshold":
+        kg, pp, clients, servers = _tmcfe()
+        cts = {nid: cl.encrypt([[1, 2, 3]], "L") for nid, cl in clients.items()}
+        creds = {"fusion_weight": WEIGHTS, "label": "L"}
+        server = servers["s0"]
+        dk = kg.get_decryption_keys("s0", credentials=creds)
+        server.add_weight_key_share(kg.get_weight_key_share("s0", credentials=creds))
+        request = lambda srv: srv.share_decrypt(cts, creds, dk, enrolled)  # noqa: E731
+    else:
+        cfg = {"sec_param": 64, "eta": 1, "n": 3, "s": 3, "t": 2, "lst_nid": NIDS, "lst_sid": SIDS, "lwe_n": 16,
+               "bound_x": 6, "bound_y": 6}
+        mife = kind == "mife/lwe_threshold"
+        if not mife:
+            cfg.update(bound_u=2, label_modulus=8)
+        kg = (ThresholdMIFELWEKeyGenerator if mife else ThresholdMCFELWEKeyGenerator)(cfg)
+        kg.setup()
+        pp = kg.get_public_parameters()
+        crypto = ThresholdMIFELWE if mife else ThresholdMCFELWE
+        clients = {n: crypto({"id": n, "keys": {"pp": pp, "sk": kg.get_private_keys(n)}}) for n in NIDS}
+        cts = {n: (c.encrypt([2]) if mife else c.encrypt([2], "L")) for n, c in clients.items()}
+        creds = {"fusion_weight": WEIGHTS} if mife else {"fusion_weight": WEIGHTS, "label": "L"}
+        dk = kg.get_decryption_keys("s0", credentials=creds)
+        server = crypto({"id": "s0", "keys": {"pp": pp, "dk": dk}})
+        request = lambda srv: srv.share_decrypt(cts, WEIGHTS if mife else creds, dk, enrolled)  # noqa: E731
+    assert "pieces" in dk  # replicated: the server sums its pieces for the enrolled set, and caches the sum
+    first = request(server)
+    assert server.__dict__["_enrolled_share_cache"]
+    return server, request, first
+
+
+THRESHOLD_SERVERS = ["mife/lwe_threshold", "mcfe/lwe_threshold", "mcfe/ring_lwe_threshold"]
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize("clone", sorted(CLONES))
+@pytest.mark.parametrize("kind", THRESHOLD_SERVERS)
+def test_copies_and_pickles_of_threshold_servers_leave_out_the_cache_of_key_shares(kind, clone, backend):
+    """The cache holds the label key shares callers passed in and their sums: a
+    pickle, deep copy or shallow copy of the server leaves it out (it carried
+    them along before), and the copy sums them again on use, to the same
+    partial decryption."""
+    with native_backend.backend(backend):
+        server, request, first = _replicated_server(kind)
+        twin = CLONES[clone](server)
+        assert "_enrolled_share_cache" not in twin.__dict__
+        assert request(twin) == first
+        assert twin.__dict__["_enrolled_share_cache"] is not server.__dict__["_enrolled_share_cache"]
+        assert request(server) == first
+
+
+@pytest.mark.parametrize("kind", THRESHOLD_SERVERS)
+def test_pickles_that_hold_the_cache_of_key_shares_load_without_it(kind, monkeypatch):
+    """A server pickled by an earlier version carries the cache (the tMCFE
+    Ring-LWE state version is the same): it loads, drops the cache and works."""
+    server, request, first = _replicated_server(kind)
+    cls = type(server)
+    current = cls.__getstate__
+
+    def earlier(self):  # the state of earlier versions: the cache included
+        return dict(current(self), _enrolled_share_cache=self.__dict__["_enrolled_share_cache"])
+
+    monkeypatch.setattr(cls, "__getstate__", earlier)
+    data = pickle.dumps(server)
+    monkeypatch.setattr(cls, "__getstate__", current)
+    loaded = pickle.loads(data)
+    assert "_enrolled_share_cache" not in loaded.__dict__
+    assert request(loaded) == first

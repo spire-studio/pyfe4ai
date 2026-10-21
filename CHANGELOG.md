@@ -793,6 +793,18 @@ Mac) against BLS12-381.
 
 ### Changed
 
+- **Pickles and copies of threshold servers leave out the key shares callers
+  passed in** (`mife/lwe_threshold`, `mcfe/lwe_threshold`,
+  `mcfe/ring_lwe_threshold`). A server caches, per enrolled set, the sum of
+  the replicated pieces of a key share together with that key share
+  (`_enrolled_share_cache`; for tMCFE-Ring-LWE the label key shares of up
+  to 16 recent labels); `pickle`, `copy.deepcopy` and `copy.copy` carried
+  this cache along, more secret material than the server's own stores. They
+  now leave it out and the copy sums the pieces again on first use (the same
+  partial decryptions); a shallow copy no longer shares this cache with the
+  original. A pickle of an earlier version that holds the cache loads and
+  drops it (the tMCFE-Ring-LWE state version is unchanged), and pickles of
+  this version load in earlier ones.
 - **`sife/fullysec_ring_lwe` samples exact Gaussians** for its keys and
   encryption noise in both layouts (`gaussian_sampler = "rounded"` restores
   the previous draws). With the rounded sampler its keys were about `2^-47`
