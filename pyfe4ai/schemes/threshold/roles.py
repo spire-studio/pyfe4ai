@@ -30,6 +30,7 @@ import json
 import numpy as np
 
 from pyfe4ai.core.exceptions import FESchemeError
+from pyfe4ai.core.exceptions import FEValidationError
 from pyfe4ai.core.formats.threshold import PartialDecryption
 from pyfe4ai.core.formats.threshold import ThresholdKeyShare
 from pyfe4ai.core.versions import check_served_sharing
@@ -189,6 +190,12 @@ def validate_partial_decryptions(dict_ct_prime: dict, threshold: int) -> None:
     Args:
         dict_ct_prime: Mapping of server ids to partial decryptions.
         threshold: Minimum number of shares needed for reconstruction.
+
+    Raises:
+        FEValidationError: If a partial decryption's ``sid`` is not a string or
+            its ``lst_sid_enrolled`` not a list (or tuple) of strings (the
+            message holds none of the values).
+        FESchemeError: For too few, duplicate or mismatched partial decryptions.
     """
     if len(dict_ct_prime) < threshold:
         raise FESchemeError(
@@ -201,6 +208,13 @@ def validate_partial_decryptions(dict_ct_prime: dict, threshold: int) -> None:
         if "sid" not in ct_prime or "lst_sid_enrolled" not in ct_prime:
             raise FESchemeError(
                 "partial decryption is missing its server id / enrolled set"
+            )
+        enrolled_ids = ct_prime.lst_sid_enrolled
+        if not isinstance(ct_prime.sid, str) or not isinstance(enrolled_ids, (list, tuple)) or not all(
+                isinstance(sid, str) for sid in enrolled_ids):
+            # the messages below sort and print the ids: other types would fail there (TypeError)
+            raise FEValidationError(
+                "malformed partial decryption: sid and lst_sid_enrolled must be server ids (strings)"
             )
         if ct_prime.sid in contributors:
             raise FESchemeError(

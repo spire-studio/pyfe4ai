@@ -883,6 +883,13 @@ Mac) against BLS12-381.
   rows of `pk`. All of them now refuse such a key at encryption with
   `FEKeyError` ("the encryption key has fewer than eta rows of pk or u"), in
   both backends. Well-formed keys encrypt as before.
+- Threshold combiners (`combine_decrypt` of every threshold scheme): a
+  partial decryption whose `sid` was not a string (e.g. `bytes`), or whose
+  `lst_sid_enrolled` was not a list of strings, failed with a bare
+  `TypeError` while the error message was built (sorting mixed types; its
+  text depended on the hash seed), or with an unrelated `FESchemeError`. It
+  is now refused with `FEValidationError` and a constant message holding none
+  of the caller's values.
 - `EncryptedGradient.to_dict()` failed with `KeyError: ()` on the packed
   ciphertext layers of the Ring-LWE MCFE schemes (`mcfe/ring_lwe` and its
   threshold and decentralized variants), and `from_dict()` could not rebuild
