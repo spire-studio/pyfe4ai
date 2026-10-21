@@ -18,7 +18,7 @@ import pytest
 import pyfe4ai
 from pyfe4ai import backend as native_backend
 from pyfe4ai.core.exceptions import FEValidationError
-from pyfe4ai.core.ids import DUPLICATE_IDS, ID_LISTS, id_list, is_id
+from pyfe4ai.core.ids import DUPLICATE_IDS, ID_LISTS, MIXED_IDS, id_list, is_id
 
 needs_bls = pytest.mark.skipif(not native_backend.available(), reason="BLS12-381 needs the native extension")
 
@@ -152,3 +152,40 @@ def test_integer_client_ids_in_the_ddh_and_pairing_schemes(scheme, run, expected
     # these schemes took client ids to be strings ("fusion weight of " + nid, isinstance(nid, str) when
     # issuing an encryption key): integer client ids failed with TypeError or got no key
     assert run(scheme, nids) == expected
+
+
+#: lists of values that are not ids, which the key generators accepted (and which worked in memory in some
+#: schemes, but not in partial decryptions, the wire records or JSON)
+OTHER_IDS = {"bytes": lambda p: [(p + "0").encode(), (p + "1").encode()], "floats": lambda p: [1.0, 2.0],
+             "bools": lambda p: [True, False], "None": lambda p: [None, 1], "tuples": lambda p: [(p, 0), (p, 1)],
+             "numpy ints": lambda p: list(np.arange(2)), "a string": lambda p: "ab",
+             "a set": lambda p: {p + "0", p + "1"}, "a dict": lambda p: {p + "0": 0, p + "1": 1}}
+#: lists that mix str and int ids (JSON names 1 and "1" alike; sorting them fails)
+MIXED = {"str and int": lambda p: [p + "0", 1], "1 and '1'": lambda p: [1, "1"]}
+
+
+@pytest.mark.parametrize("ids", sorted(OTHER_IDS) + sorted(MIXED))
+@pytest.mark.parametrize("scheme", [_marks(s) for s in THRESHOLD])
+def test_server_ids_of_other_types_are_refused_at_setup(scheme, ids):
+    with pytest.raises(FEValidationError) as info:
+        pyfe4ai.create(scheme, _config(scheme, lst_sid=(OTHER_IDS.get(ids) or MIXED[ids])("s")))[0].setup()
+    assert str(info.value) == (MIXED_IDS if ids in MIXED else ID_LISTS)["lst_sid"]
+
+
+@pytest.mark.parametrize("ids", sorted(OTHER_IDS) + sorted(MIXED))
+@pytest.mark.parametrize("scheme", [_marks(s) for s in WITH_CLIENTS])
+def test_client_ids_of_other_types_are_refused_at_setup(scheme, ids):
+    with pytest.raises(FEValidationError) as info:
+        pyfe4ai.create(scheme, _config(scheme, lst_nid=(OTHER_IDS.get(ids) or MIXED[ids])("c")))[0].setup()
+    assert str(info.value) == (MIXED_IDS if ids in MIXED else ID_LISTS)["lst_nid"]
+
+
+@pytest.mark.parametrize("ids", ["floats", "None", "str and int"])
+def test_the_ml_adapter_refuses_them_when_it_is_built(ids):
+    from pyfe4ai.ml import FESchemeWrapper
+
+    with pytest.raises(FEValidationError):
+        FESchemeWrapper("mcfe", "ring_lwe", _config("mcfe/ring_lwe", lst_nid=(OTHER_IDS.get(ids) or MIXED[ids])("c")))
+    with pytest.raises(FEValidationError):
+        FESchemeWrapper("mcfe", "ring_lwe_threshold", _config("mcfe/ring_lwe_threshold",
+                                                              lst_sid=(OTHER_IDS.get(ids) or MIXED[ids])("s")))

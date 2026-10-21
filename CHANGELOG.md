@@ -837,6 +837,22 @@ Mac) against BLS12-381.
   `mcfe/ring_lwe_threshold` client and the ML adapter pointed inside the
   library) and a known-insecure scheme (it pointed at the scheme module;
   `core.status.warn_if_known_insecure` takes `stacklevel=None` by default).
+- **Key generators refuse server and client ids that are not a `str` or an
+  `int`** (`lst_sid`, `lst_nid`; `pyfe4ai.core.ids.check_id_list`). A list of
+  other values -- `bytes`, floats, `None`, `bool`, tuples, numpy integers --,
+  a list that mixes `str` and `int` ids, and a value that is not a list or
+  tuple (a string, a set, a dict) are now refused with `FEValidationError`
+  when the key generator (or `FESchemeWrapper`) is built ("lst_sid must be a
+  list of server ids (str or int)", "lst_sid mixes str and int server ids",
+  and the same for `lst_nid`). v0.3.0 accepted them, and some worked in
+  memory: server ids of any of these types in the threshold schemes, client
+  ids in the MIFE and MCFE LWE, Ring-LWE, Paillier and Damgård schemes and
+  the ML adapter over them (also through JSON for floats, `None`, `bool` and
+  tuples); partial decryptions and the wire records refuse them since this
+  release, and mixed or non-JSON ids failed elsewhere with a bare
+  `TypeError` (sorting `1` and `"a"`, or JSON keys). Convert such ids to
+  strings or ints (`str(sid)`, `int(np_int)`); `str` and `int` lists work as
+  before.
 - **Stricter parsing of threshold DDH key shares and serialised gradients.**
   A `mife/ddh_threshold` or `mcfe/ddh_threshold` server accepts the values
   of a key share (`d` and `z`; the two values of `d`) only as the decimal
