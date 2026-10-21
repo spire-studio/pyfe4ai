@@ -14,6 +14,7 @@ hanging it.
 
 from __future__ import annotations
 
+import os
 import signal
 
 import numpy as np
@@ -62,6 +63,26 @@ def test_a_budget_refuses_to_count_in_a_forked_child():
     assert budget.remaining == 0
     with pytest.raises(FESchemeError, match="limit reached"):
         budget.consume()
+
+
+@needs_fork
+@fork_warning
+def test_a_budget_copied_into_a_child_stays_foreign_under_its_makers_pid(monkeypatch):
+    # pid reuse: a process forked later from the child (a grandchild) can get the pid of the process that made
+    # the budget once that one has exited; the copy is marked foreign at the fork, not only told by its pid
+    budget = PartialDecryptionBudget(5, used=2)
+    maker = os.getpid()
+
+    def child():
+        monkeypatch.setattr(os, "getpid", lambda: maker)
+        for call in (budget.consume, budget.check):
+            with pytest.raises(FESchemeError, match="process that made it"):
+                call()
+        assert budget.used == 2
+
+    assert in_child(alarmed(child)) == (0, "")
+    budget.consume(3)  # the maker counts on
+    assert budget.remaining == 0
 
 
 @needs_fork

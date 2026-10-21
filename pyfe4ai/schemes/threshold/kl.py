@@ -283,8 +283,11 @@ class PartialDecryptionBudget:
 
     def _after_fork_in_child(self) -> None:
         """In a forked child: a new lock (another thread of the parent may hold
-        the old one); the copy refuses to count (``_pid``)."""
+        the old one), and the copy is marked foreign (``_pid = None``): it
+        refuses to count even in a process that later gets the pid of the
+        one that made the budget (a grandchild, once that one has exited)."""
         self._lock = threading.RLock()
+        self._pid = None
 
     def __copy__(self):
         raise TypeError("a partial decryption budget cannot be copied: the copy would count separately")
@@ -343,7 +346,7 @@ class PartialDecryptionBudget:
             self._used += count
 
     def _check_process(self) -> None:
-        if os.getpid() != self._pid:
+        if self._pid is None or os.getpid() != self._pid:
             raise FESchemeError(
                 "a partial decryption budget counts in the process that made it only: a copy in a forked "
                 "child would count separately and exceed max_partial_decryptions together with the parent"

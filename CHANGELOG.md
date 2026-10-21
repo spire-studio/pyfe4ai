@@ -814,7 +814,10 @@ Mac) against BLS12-381.
   `max_partial_decryptions`, beyond the KL flooding guarantee. A budget now
   remembers the process that made it, and `check()` and `consume()` (and so
   a `"kl"` server counting against it) raise `FESchemeError` in any other
-  process; the parent counts on as before. The locks of a budget and of an
+  process; the parent counts on as before. The copy in a forked child is
+  also marked at the fork, so it refuses to count even in a process that
+  later gets the pid of the one that made the budget (a grandchild, once
+  that one has exited). The locks of a budget and of an
   `FESchemeWrapper` are renewed in a forked child (`core.forksafe.track`):
   a lock another thread of the parent held at the fork made the child's
   next call wait forever.
