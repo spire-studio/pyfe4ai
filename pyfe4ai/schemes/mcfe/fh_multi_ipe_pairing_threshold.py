@@ -144,11 +144,11 @@ class ThresholdMCFEFHMultiIPEPairingKeyGenerator(MCFEFHMultiIPEPairingKeyGenerat
             warn_at_caller("invalid sid (not one of the key generator's lst_sid)")
             return None
         weights_id = fusion_weight_id(fusion_weight)
-        if weights_id not in self.dict_dk:
-            self.dict_dk[weights_id] = self._share_key(fusion_weight)
-        dk = TMCFEFHKeyShare.extend(
-            self.dict_dk[weights_id][sid], mac_keys={nid: self.mac_keys[nid][sid] for nid in self.lst_nid}
-        )
+        entry = self.dict_dk.get(weights_id)
+        if entry is None:
+            # one sharing per weights: of two threads dealing at once, both issue the one kept first
+            entry = self.dict_dk.setdefault(weights_id, self._share_key(fusion_weight))
+        dk = TMCFEFHKeyShare.extend(entry[sid], mac_keys={nid: self.mac_keys[nid][sid] for nid in self.lst_nid})
         return dk.to_dict()
 
     def _share_key(self, fusion_weight: dict) -> dict:

@@ -114,11 +114,11 @@ class ThresholdMIFEDDHKeyGenerator(MIFEDDHKeyGenerator):
             raise FEKeyError("need to provided credentials for tMIFE")
         key = super().get_decryption_keys(sid, credentials=credentials)
         weights_id = MIFEDDHFunctionalKey(key).weights_id
-        if weights_id not in self.dict_dk:
-            self.dict_dk[weights_id] = self._share_key(key)
-        dk = TMIFEDDHKeyShare.extend(
-            self.dict_dk[weights_id][sid], sid=sid, lst_sid=list(self.lst_sid), weights_id=weights_id
-        )
+        entry = self.dict_dk.get(weights_id)
+        if entry is None:
+            # one sharing per weights: of two threads dealing at once, both issue the one kept first
+            entry = self.dict_dk.setdefault(weights_id, self._share_key(key))
+        dk = TMIFEDDHKeyShare.extend(entry[sid], sid=sid, lst_sid=list(self.lst_sid), weights_id=weights_id)
         return dk.to_dict()
 
     def _share_key(self, key: dict) -> dict:

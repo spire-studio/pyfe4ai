@@ -208,9 +208,11 @@ class ThresholdMCFEDDHKeyGenerator(DDHKeyGeneratorBase):
             return None
 
         identifier = _fusion_weight_id(fusion_weight)
-        if identifier not in self.dict_dk:
-            self.dict_dk[identifier] = self._share_functional_key(fusion_weight)
-        d_sid = self.dict_dk[identifier][sid]
+        entry = self.dict_dk.get(identifier)
+        if entry is None:
+            # one sharing per weights: of two threads dealing at once, both issue the one kept first
+            entry = self.dict_dk.setdefault(identifier, self._share_functional_key(fusion_weight))
+        d_sid = entry[sid]
         return TMCFEDDHKeyShare.new(
             d=[gp.digits(e) for e in d_sid],
             sid=sid,

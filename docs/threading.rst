@@ -72,6 +72,10 @@ threads:
   deal, but all of them issue the sharing stored first. (These key shares
   carry no sharing id: shares of two sharings of one key would combine to a
   wrong value without an error, so the key generator never hands out two.)
+* The key generators of the threshold DDH and FH-MCFE layers
+  (``mife/ddh_threshold``, ``mcfe/ddh_threshold``,
+  ``mcfe/fh_multi_ipe_pairing_threshold``) issue one sharing per weights the
+  same way (shares of two sharings would not combine).
 * :class:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget`: checking
   and counting a partial decryption is one step under its lock.
 * One-time precomputations (the offline phases): of several threads using

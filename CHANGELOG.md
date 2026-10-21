@@ -826,6 +826,16 @@ Mac) against BLS12-381.
   now keep one sharing per weights (`dict_dk.setdefault`) and every request
   issues from the stored one. Single-threaded issuance, the key shares and
   the pickled state of the key generators are unchanged.
+- **Threshold DDH and FH-MCFE layers: the same race** (`mife/ddh_threshold`,
+  `mcfe/ddh_threshold`, `mcfe/fh_multi_ipe_pairing_threshold`; availability,
+  low; in v0.3.0 too). Two threads asking for the key shares of the same
+  weights for the first time could both deal, and the servers got shares of
+  two sharings. There the mix does not decode (the discrete logarithm of a
+  mixed reconstruction is almost never within the bound): the partial
+  decryptions combined to `None`, and the servers had to fetch their key
+  shares again. These key generators now also keep one sharing per weights
+  (`dict_dk.setdefault`) and issue every key share from it; single-threaded
+  issuance, the key shares and the pickled state are unchanged.
 - `EncryptedGradient.to_dict()` failed with `KeyError: ()` on the packed
   ciphertext layers of the Ring-LWE MCFE schemes (`mcfe/ring_lwe` and its
   threshold and decentralized variants), and `from_dict()` could not rebuild

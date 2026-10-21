@@ -266,3 +266,27 @@ def test_servers_decrypt_only_the_requested_round(kg_config):
     for forged in (dict(first, ct=dct_ct["nid_1"]["ct"]), {k: v for k, v in first.items() if k != "tags"}):
         with pytest.raises(FESchemeError, match="not authenticated"):
             _partials(kg, pp, y, dict(dct_ct, nid_0=forged), ["sid_0", "sid_1"])
+
+
+def test_concurrent_first_key_requests_issue_one_sharing(kg_config):
+    """Two threads asking for the key shares of the same weights for the first
+    time both dealt (check, deal and store were separate steps), and the
+    servers got shares of two sharings (two ``key_id``): their partial
+    decryptions did not combine. The key generator keeps the sharing stored
+    first (``dict_dk.setdefault``) and issues every key share from it."""
+    from tests.threshold.test_dealing_race import first_requests_at_once
+
+    kg, pp, y, dct_ct = _setup(kg_config)
+    combiner = ThresholdMCFEFHMultiIPEPairing({"id": "c", "keys": {"pp": pp}})
+    enrolled = ["sid_0", "sid_1", "sid_2"]
+    creds = {"fusion_weight": y, "label": "round-1"}
+    results = []
+    for _ in range(5):
+        kg.dict_dk.clear()
+        dks = first_requests_at_once(kg, "_share_key", creds, enrolled[0], enrolled[1])
+        dks[enrolled[2]] = kg.get_decryption_keys(enrolled[2], credentials=creds)
+        assert len(kg.dict_dk) == 1 and len({dk["key_id"] for dk in dks.values()}) == 1
+        parts = {sid: ThresholdMCFEFHMultiIPEPairing({"id": sid, "keys": {"pp": pp, "dk": dks[sid]}}).share_decrypt(
+            dct_ct, creds, dks[sid], enrolled, "round-1") for sid in enrolled}
+        results.append(combiner.combine_decrypt(parts))
+    assert results == [6] * 5
