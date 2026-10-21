@@ -117,6 +117,20 @@ def test_partial_decryptions_travel_as_json(servers):
     np.testing.assert_allclose(combine_partial_decryptions(partials, w, prepared), _expected(grads), atol=1e-9)
 
 
+@pytest.mark.parametrize("sids", [[1, 2, 3], [0, 1, 2]], ids=["from 1", "from 0"])
+def test_integer_server_ids(sids):
+    # a server id is a str or an int (pyfe4ai.core.ids.is_id): the partial decryptions of integer servers
+    # read back from JSON and combine
+    w = _wrapper(lst_sid=sids)
+    grads = _grads(6)
+    prepared = prepare_aggregation(w, WEIGHTS, shape=SHAPE, label="r", servers=sids[1:])
+    enc = {nid: encrypt_gradient(grads[nid], w, nid=nid, label="r") for nid in NIDS}
+    partials = {sid: ThresholdPartial.from_dict(json.loads(json.dumps(
+        partial_decrypt_gradients(enc, w, prepared, server=sid).to_dict()))) for sid in sids[1:]}
+    assert [p.sid for p in partials.values()] == sids[1:]
+    np.testing.assert_allclose(combine_partial_decryptions(partials, w, prepared), _expected(grads), atol=1e-9)
+
+
 @pytest.mark.parametrize("extra", [LEGACY, {"sharing": "replicated-seeded"}, {"t": 3}],
                          ids=["json-prime-full", "seeded", "shamir"])
 def test_threshold_rounds_with_other_options(extra):
@@ -272,7 +286,10 @@ def test_threshold_partial_layout_is_checked():
     bads = [
         (dict(d, extra=1), "keys"),
         (dict(d, format="xml"), "format"),
-        (dict(d, sid=1), "sid"),
+        (dict(d, sid=1), "sid"),  # a server id, but not the parts' server
+        (dict(d, sid=True), "sid a server id"),
+        (dict(d, sid=1.0), "sid a server id"),
+        (dict(d, sid=None), "sid a server id"),
         (dict(d, layers=[]), "non-empty"),
         (dict(d, layers=[dict(d["layers"][0], extra=1)]), "shape and parts"),
         (dict(d, layers=[dict(d["layers"][0], shape=[-1])]), "shape"),
@@ -282,6 +299,8 @@ def test_threshold_partial_layout_is_checked():
         (_with_part(d, sid="sid_1"), "sid"),
         (_with_part(d, ct_digest=5), "ct_digest"),
         (_with_part(d, lst_sid_enrolled="sid_0"), "lst_sid_enrolled"),
+        (_with_part(d, lst_sid_enrolled=["sid_0", True]), "lst_sid_enrolled"),
+        (_with_part(d, lst_sid_enrolled=["sid_0", 1.5]), "lst_sid_enrolled"),
         (_with_part(d, sharing_id=5), "sharing_id"),
         (_with_part(d, sharing_id=""), "sharing_id"),
         (_with_part(d, sharing_id="x" * 129), "sharing_id"),

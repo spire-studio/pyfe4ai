@@ -62,7 +62,7 @@ class ThresholdKeyShare(Record):
     sharing_id = Field("tMCFE-Ring-LWE: this sharing (32-char hex)", absent=None)
     label = Field("the label (tMCFE-Ring-LWE)")
     noise_key = Field("hex key of the server's flooding noise")
-    sid = Field("str, the server")
+    sid = Field("the server id (str or int)")
     lst_sid = Field("the server ids")
     weights_id = Field("hex digest of the weights")
     key_id = Field("hex id of the sharing (tMCFE FH)")
@@ -90,7 +90,7 @@ class TMIFELWEKeyShare(Record):
     z = Field("Shamir: decimal string")
     noise_version = Field("int", absent=1)
     noise_sampler = Field("the flooding sampler")
-    sid = Field("str")
+    sid = Field("the server id (str or int)")
     lst_sid = Field("server ids")
     weights_id = Field("hex digest of the weights")
     mac_keys = Field("``{client: hex key}``")
@@ -105,7 +105,7 @@ class TMCFELWEKeyShare(Record):
     seeds = Field("seeded: :class:`KeySeed`")
     layout = Field("seeded: the piece layout")
     sk_y = Field("Shamir: decimal strings")
-    sid = Field("str")
+    sid = Field("the server id (str or int)")
     lst_sid = Field("server ids")
     weights_id = Field("hex digest of the weights")
     noise_key = Field("hex key of the flooding noise")
@@ -131,7 +131,7 @@ class TMCFERingLWEKeyShare(Record):
     label = Field("str")
     noise_key = Field("hex key of the flooding noise (per server, weights and label)")
     sharing_id = Field("32-char hex, this sharing", absent=None)
-    sid = Field("str")
+    sid = Field("the server id (str or int)")
     lst_sid = Field("server ids")
     weights_id = Field("hex digest of the weights")
     mac_keys = Field("``{client: hex key}``")
@@ -151,7 +151,7 @@ class TMCFERingLWEWeightShare(Record):
     sk_y = Field("Shamir: ``{client: polynomial}``")
     part = Field("``weights``")
     share_set_id = Field("32-char hex, this sharing of ``sk_y``")
-    sid = Field("str")
+    sid = Field("the server id (str or int)")
     lst_sid = Field("server ids")
     weights_id = Field("hex digest of the weights")
     mac_keys = Field("``{client: hex key}``")
@@ -177,7 +177,7 @@ class TMCFERingLWELabelShare(Record):
     share_set_id = Field("the weight part's sharing")
     label_hash = Field("label hash mode", absent=LEGACY_LABEL_HASH)
     sharing_id = Field("32-char hex, this sharing of the label's terms", absent=None)
-    sid = Field("str")
+    sid = Field("the server id (str or int)")
     lst_sid = Field("server ids")
     weights_id = Field("hex digest of the weights")
     mac_keys = Field("``{client: hex key}``")
@@ -192,7 +192,7 @@ class TMIFEDDHKeyShare(Record):
 
     d = Field("``{client: decimal string}``")
     z = Field("decimal string")
-    sid = Field("str")
+    sid = Field("the server id (str or int)")
     lst_sid = Field("server ids")
     weights_id = Field("hex digest of the weights")
 
@@ -201,7 +201,7 @@ class TMCFEDDHKeyShare(Record):
     """Key share of the threshold MCFE over DDH (:mod:`pyfe4ai.schemes.mcfe.ddh_threshold`; Shamir)."""
 
     d = Field("two decimal strings")
-    sid = Field("str")
+    sid = Field("the server id (str or int)")
     lst_sid = Field("server ids")
     weights_id = Field("hex digest of the weights")
 
@@ -212,7 +212,7 @@ class TMCFEFHKeyShare(Record):
 
     k = Field("``{client: serialised G2 elements}``")
     z = Field("serialised GT element")
-    sid = Field("str")
+    sid = Field("the server id (str or int)")
     lst_sid = Field("server ids")
     key_id = Field("32-char hex, this sharing")
     mac_keys = Field("``{client: hex key}``")
@@ -239,7 +239,7 @@ class PartialDecryption(Record):
     ct_digest = Field("hex digest of the decrypted ciphertexts")
     key_id = Field("tMCFE FH: the key's sharing")
     label = Field("the encoded label")
-    sid = Field("str, the server")
+    sid = Field("the server id (str or int)")
     lst_sid_enrolled = Field("the servers whose partials are combined")
     sharing_id = Field("tMCFE-Ring-LWE: the key share's sharing", absent=None)
 
@@ -253,7 +253,7 @@ class TMCFERingLWEPartial(Record):
     c_y = Field("values or bytes")
     k = Field("int, the batch length")
     ct_digest = Field("hex digest")
-    sid = Field("str")
+    sid = Field("the server id (str or int)")
     lst_sid_enrolled = Field("server ids")
     sharing_id = Field("the key share's ``sharing_id`` (or null)", absent=None)
 
@@ -271,7 +271,7 @@ class TMIFELWEPartial(Record):
     w = Field("decimal string")
     c_y = Field("decimal string")
     ct_digest = Field("hex digest of the canonical ciphertexts")
-    sid = Field("str")
+    sid = Field("the server id (str or int)")
     lst_sid_enrolled = Field("server ids")
 
 
@@ -281,7 +281,7 @@ class TMCFELWEPartial(Record):
     w = Field("decimal string")
     c_y = Field("int")
     label = Field("the encoded label")
-    sid = Field("str")
+    sid = Field("the server id (str or int)")
     lst_sid_enrolled = Field("server ids")
 
 
@@ -291,7 +291,7 @@ class TMIFEDDHPartial(Record):
     c_y = Field("decimal string")
     w = Field("decimal string")
     ct_digest = Field("hex digest of the request")
-    sid = Field("str")
+    sid = Field("the server id (str or int)")
     lst_sid_enrolled = Field("server ids")
 
 
@@ -301,7 +301,7 @@ class TMCFEDDHPartial(Record):
     c_y = Field("decimal string")
     u_d = Field("decimal string")
     label = Field("the encoded label")
-    sid = Field("str")
+    sid = Field("the server id (str or int)")
     lst_sid_enrolled = Field("server ids")
 
 
@@ -312,5 +312,5 @@ class TMCFEFHPartial(Record):
     ct_digest = Field("hex digest")
     key_id = Field("the key share's ``key_id``")
     label = Field("the encoded label")
-    sid = Field("str")
+    sid = Field("the server id (str or int)")
     lst_sid_enrolled = Field("server ids")

@@ -167,7 +167,7 @@ class SchemeConfig(dict):
     s = Option("number of decryption servers (threshold schemes)", default=None)
     lst_nid = Option(
         "client ids", default=Derived("``nid_0`` ... ``nid_{n-1}`` when ``n`` is given"),
-        allowed="``n`` distinct ids",
+        allowed="``n`` distinct ids (``str`` or ``int``, see :mod:`pyfe4ai.core.ids`)",
     )
     cache_dir = Option(
         "parameter cache directory", default=Derived("``PYFE4AI_CACHE_DIR`` or the per-user cache directory"),
@@ -514,7 +514,8 @@ PAIRING_GROUP_PARAM = Option(
 T = Option("threshold: partial decryptions needed to decrypt", default=2, allowed="``1 <= t <= s``")
 S = Option("number of decryption servers", default=Derived("``len(lst_sid)``, else 1"), allowed="``len(lst_sid)``")
 LST_SID = Option(
-    "server ids", default=Derived("``sid_0`` ... ``sid_{s-1}``"), allowed="``s`` distinct ids",
+    "server ids", default=Derived("``sid_0`` ... ``sid_{s-1}``"),
+    allowed="``s`` distinct ids (``str`` or ``int``, see :mod:`pyfe4ai.core.ids`)",
 )
 SHARING = Option(
     "how the functional keys are shared among the servers",
@@ -1179,6 +1180,20 @@ def options_rst() -> str:
         "A key generator takes its configuration as a mapping of options; it is converted into the config "
         "class of its scheme (:mod:`pyfe4ai.core.config`) and completed by its security profile before the key "
         "generator is built. Crypto objects take their config as given. Options not listed are ignored.",
+        "",
+    ]
+    lines += _heading("Server and client ids", "-")
+    lines += [
+        "A server id (an entry of ``lst_sid``) or a client id (an entry of ``lst_nid``) is a ``str`` or an ``int`` "
+        "(not a ``bool``; :mod:`pyfe4ai.core.ids`). A list whose ids cannot key a dict (an unhashable entry, or a "
+        "value that is not a list) is refused with ``FEValidationError``. Partial decryptions, ``EncryptedGradient`` "
+        "and ``ThresholdPartial`` carry ids of these two types only; other values a key generator accepts "
+        "(``bytes``, tuples, floats, ``None``, ``bool``) are not supported.",
+        "",
+        "JSON writes an integer that keys an object as a string (``1`` becomes ``\"1\"``). The ML adapter reads "
+        "integer ids back from the JSON of its records (``EncryptedGradient``, ``ThresholdPartial``); an "
+        "application that moves objects keyed by ids through JSON itself (key shares, the ciphertexts of a "
+        "request as ``{nid: ciphertext}``, their tags for the servers) uses string ids.",
         "",
     ]
     lines += _heading("Security profiles", "-")

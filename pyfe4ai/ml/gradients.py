@@ -14,6 +14,7 @@ import numpy as np
 
 from pyfe4ai._validation import int_vector
 from pyfe4ai.core.exceptions import FEValidationError
+from pyfe4ai.core.ids import id_list
 from pyfe4ai.ml.quantization import QuantizationConfig
 from pyfe4ai.ml.serialization import EncryptedGradient
 from pyfe4ai.ml.threshold import (
@@ -327,7 +328,7 @@ def aggregate_gradients(
         if weights is not None and _integer_weights(weights, wrapper.qconfig)[0] != prepared.fusion_weight:
             raise ValueError("the prepared key is for other weights")
         if set(encrypted) != set(prepared.fusion_weight):
-            raise ValueError("the prepared key is for the clients {}".format(sorted(prepared.fusion_weight)))
+            raise ValueError("the prepared key is for the clients {}".format(id_list(prepared.fusion_weight)))
         if n_chunks is not None and (prepared.n_chunks or 0) < n_chunks:
             raise ValueError("the prepared key covers fewer chunks than the ciphertexts")
         if threshold and servers is not None and list(servers) != prepared.servers:

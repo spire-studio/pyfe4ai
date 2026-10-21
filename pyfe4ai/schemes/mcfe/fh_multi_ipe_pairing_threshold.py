@@ -61,6 +61,7 @@ from pyfe4ai.core.formats.pairing import TMCFEFHParameters
 from pyfe4ai.core.formats.threshold import TMCFEFHKeyShare
 from pyfe4ai.core.formats.threshold import TMCFEFHPartial
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.ids import check_id_list
 from pyfe4ai.primitives.pairing.pairing_backend import GT, ZR, multi_pair, pow_many
 
 logger = logging.getLogger(__name__)
@@ -88,6 +89,7 @@ class ThresholdMCFEFHMultiIPEPairingKeyGenerator(MCFEFHMultiIPEPairingKeyGenerat
                 plus ``s``, ``t`` and ``lst_sid``.
         """
         self.t = config.get("t", CryptoCONST.tMCFE_T)
+        check_id_list(config.get("lst_sid", []), "lst_sid")  # before len(lst_sid) could raise TypeError
         s = config.get("s") or len(config.get("lst_sid", [])) or 1
         self.lst_sid = config.get("lst_sid", ["sid_{}".format(i) for i in range(s)])
         self.dict_dk = {}

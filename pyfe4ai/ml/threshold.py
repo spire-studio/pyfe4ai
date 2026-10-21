@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from pyfe4ai.core.ids import id_list, is_id
 from pyfe4ai.core.formats.record import Field
 from pyfe4ai.core.formats.record import Record
 from pyfe4ai.core.formats.threshold import TMCFERingLWELayerPartials
@@ -70,7 +71,7 @@ _PARTIAL_FIELDS = frozenset(TMCFERingLWEPartial.FIELDS)
 class ThresholdPartialWire(Record):
     """The wire form of a :class:`ThresholdPartial` (:meth:`ThresholdPartial.to_dict`)."""
 
-    sid = Field("str, the server")
+    sid = Field("the server id (str or int)")
     label = Field("str, the round's label")
     format = Field("``binary`` (``w`` and ``c_y`` as base64) or ``json``")
     layers = Field(":class:`~pyfe4ai.core.formats.threshold.TMCFERingLWELayerPartials`")
@@ -129,16 +130,19 @@ class ThresholdPartial:
         checks the values).
 
         Raises:
-            ValueError: For another layout, a partial decryption of another
-                server, or ``w`` / ``c_y`` not of the format (strict base64
-                for ``"binary"``, lists of strings for ``"json"``).
+            ValueError: For another layout, a ``sid`` or ``lst_sid_enrolled``
+                entry that is not a server id (a ``str`` or an ``int``,
+                :func:`~pyfe4ai.core.ids.is_id`), a partial decryption of
+                another server, or ``w`` / ``c_y`` not of the format (strict
+                base64 for ``"binary"``, lists of strings for ``"json"``).
         """
         if not isinstance(d, dict) or set(d) != set(ThresholdPartialWire.FIELDS):
             raise ValueError("invalid partial decryption: keys sid, label, format and layers")
         wire = ThresholdPartialWire(d)
         sid, label, fmt, layers = wire.sid, wire.label, wire.format, wire.layers
-        if not isinstance(sid, str) or not isinstance(label, str) or fmt not in ("binary", "json"):
-            raise ValueError("invalid partial decryption: sid and label are strings, format binary or json")
+        if not is_id(sid) or not isinstance(label, str) or fmt not in ("binary", "json"):
+            raise ValueError("invalid partial decryption: sid a server id (str or int), label a string, "
+                             "format binary or json")
         if not isinstance(layers, list) or not layers:
             raise ValueError("invalid partial decryption: layers must be a non-empty list")
         out = []
@@ -158,8 +162,8 @@ class ThresholdPartial:
                 k, enrolled = view.k, view.lst_sid_enrolled
                 if type(k) is not int or k < 1 or not isinstance(view.ct_digest, str) or view.sid != sid:
                     raise ValueError("invalid {}: k >= 1, a ct_digest and this server's sid".format(where))
-                if not isinstance(enrolled, list) or not all(isinstance(v, str) for v in enrolled):
-                    raise ValueError("invalid {}: lst_sid_enrolled is a list of server ids".format(where))
+                if not isinstance(enrolled, list) or not all(is_id(v) for v in enrolled):
+                    raise ValueError("invalid {}: lst_sid_enrolled is a list of server ids (str or int)".format(where))
                 sharing_id = view.sharing_id
                 if sharing_id is not None and not (isinstance(sharing_id, str) and 0 < len(sharing_id) <= 128):
                     raise ValueError("invalid {}: sharing_id is a string (or null)".format(where))
@@ -196,7 +200,7 @@ def partial_decrypt_gradients(
     if not prepared.servers or server not in prepared.servers:
         raise ValueError("server {!r} is not enrolled in the prepared aggregation ({})".format(server, prepared.servers))
     if set(encrypted) != set(prepared.fusion_weight):
-        raise ValueError("the prepared key is for the clients {}".format(sorted(prepared.fusion_weight)))
+        raise ValueError("the prepared key is for the clients {}".format(id_list(prepared.fusion_weight)))
     layers = _serving(wrapper, server, prepared.dk[server], prepared.fusion_weight).compute_lst_ndarray_ct(
         {nid: enc.ciphertexts for nid, enc in encrypted.items()},
         {"fusion_weight": prepared.fusion_weight, "label": prepared.label},

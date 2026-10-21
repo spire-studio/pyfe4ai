@@ -29,7 +29,7 @@ import pytest
 
 from pyfe4ai import backend as native_backend
 from pyfe4ai.core.exceptions import FEKeyError
-from pyfe4ai.ml import EncryptedGradient, FESchemeWrapper, encrypt_gradient
+from pyfe4ai.ml import EncryptedGradient, FESchemeWrapper, aggregate_gradients, encrypt_gradient
 
 NIDS, SIDS = ["nid_0", "nid_1"], ["sid_0", "sid_1"]
 Y = {n: [1] for n in NIDS}
@@ -130,7 +130,10 @@ def _respelled(layer, old, new):
 
 MALFORMED = {
     "an extra key": lambda g, lay: dict(g, extra=1),
-    "nid not a string": lambda g, lay: dict(g, nid=5),
+    "nid a bool": lambda g, lay: dict(g, nid=True),
+    "nid a float": lambda g, lay: dict(g, nid=1.5),
+    "nid null": lambda g, lay: dict(g, nid=None),
+    "nid a list": lambda g, lay: dict(g, nid=["nid_0"]),
     "precision a bool": lambda g, lay: dict(g, precision=True),
     "precision a float": lambda g, lay: dict(g, precision=1.0),
     "precision a string": lambda g, lay: dict(g, precision="1"),
@@ -154,6 +157,17 @@ def test_encrypted_gradient_from_dict_is_strict(case):
     assert EncryptedGradient.from_dict(json.loads(json.dumps(g))).to_dict() == g
     with pytest.raises(ValueError):
         EncryptedGradient.from_dict(MALFORMED[case](g, g["ciphertexts"][0]))
+
+
+def test_integer_client_ids_read_back():
+    # a client id is a str or an int (pyfe4ai.core.ids.is_id): an int nid reads back through JSON
+    wrapper = FESchemeWrapper("mcfe", "lwe", {"n": 2, "lst_nid": [0, 1], "eta": 1, "lwe_n": 8, "bound_x": 50,
+                                              "bound_y": 4}, precision=1)
+    sent = {nid: json.loads(json.dumps(encrypt_gradient(np.array([0.5, -1.0]), wrapper, nid=nid, label="r").to_dict()))
+            for nid in (0, 1)}
+    restored = {nid: EncryptedGradient.from_dict(d) for nid, d in sent.items()}
+    assert [restored[nid].nid for nid in (0, 1)] == [0, 1] and all(restored[n].to_dict() == sent[n] for n in (0, 1))
+    np.testing.assert_allclose(aggregate_gradients(restored, wrapper, {0: 1, 1: 1}, label="r"), [1.0, -2.0])
 
 
 ROUND_TRIP = ["sife/lwe", "sife/paillier", "sife/damgard", "sife/fullysec_ring_lwe", "sife/fullysec_lwe",

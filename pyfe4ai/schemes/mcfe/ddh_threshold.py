@@ -76,6 +76,7 @@ from pyfe4ai.core.formats.dl import TMCFEDDHParameters
 from pyfe4ai.core.formats.threshold import TMCFEDDHKeyShare
 from pyfe4ai.core.formats.threshold import TMCFEDDHPartial
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.ids import check_id_list
 from pyfe4ai.core.versions import TMCFE_DDH_RECORD
 from pyfe4ai._validation import scale_to_int
 
@@ -117,6 +118,7 @@ class ThresholdMCFEDDHKeyGenerator(DDHKeyGeneratorBase):
         self.t = config.get("t", CryptoCONST.tMCFE_T)
         if not isinstance(self.eta, int) or self.eta < 1:
             raise FEValidationError("invalid parameter `eta`:{}".format(self.eta))
+        check_id_list(config.get("lst_sid", []), "lst_sid")  # before len(lst_sid) could raise TypeError
         if self.s is None:
             self.s = len(config.get("lst_sid", [])) or CryptoCONST.tMCFE_S
         self.lst_sid = config.get(

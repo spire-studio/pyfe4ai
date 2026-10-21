@@ -5,6 +5,13 @@ Configuration options
 
 A key generator takes its configuration as a mapping of options; it is converted into the config class of its scheme (:mod:`pyfe4ai.core.config`) and completed by its security profile before the key generator is built. Crypto objects take their config as given. Options not listed are ignored.
 
+Server and client ids
+---------------------
+
+A server id (an entry of ``lst_sid``) or a client id (an entry of ``lst_nid``) is a ``str`` or an ``int`` (not a ``bool``; :mod:`pyfe4ai.core.ids`). A list whose ids cannot key a dict (an unhashable entry, or a value that is not a list) is refused with ``FEValidationError``. Partial decryptions, ``EncryptedGradient`` and ``ThresholdPartial`` carry ids of these two types only; other values a key generator accepts (``bytes``, tuples, floats, ``None``, ``bool``) are not supported.
+
+JSON writes an integer that keys an object as a string (``1`` becomes ``"1"``). The ML adapter reads integer ids back from the JSON of its records (``EncryptedGradient``, ``ThresholdPartial``); an application that moves objects keyed by ids through JSON itself (key shares, the ciphertexts of a request as ``{nid: ciphertext}``, their tags for the servers) uses string ids.
+
 Security profiles
 -----------------
 
@@ -174,7 +181,7 @@ Options of every key generator
    * - lst_nid
      - client ids
      - ``nid_0`` ... ``nid_{n-1}`` when ``n`` is given
-     - ``n`` distinct ids
+     - ``n`` distinct ids (``str`` or ``int``, see :mod:`pyfe4ai.core.ids`)
    * - cache_dir
      - parameter cache directory
      - ``PYFE4AI_CACHE_DIR`` or the per-user cache directory
@@ -1256,7 +1263,7 @@ Crypto objects also take:
      - server ids
      - ``sid_0`` ... ``sid_{s-1}``
      - 
-     - ``s`` distinct ids
+     - ``s`` distinct ids (``str`` or ``int``, see :mod:`pyfe4ai.core.ids`)
    * - group
      - the group (fixed by the scheme)
      - ``'modp'``
@@ -1319,7 +1326,7 @@ Crypto objects also take:
      - server ids
      - ``sid_0`` ... ``sid_{s-1}``
      - 
-     - ``s`` distinct ids
+     - ``s`` distinct ids (``str`` or ``int``, see :mod:`pyfe4ai.core.ids`)
    * - sharing
      - how the functional keys are shared among the servers
      - ``replicated`` for ``t < s``, else ``shamir``
@@ -1823,7 +1830,7 @@ Crypto objects also take:
      - server ids
      - ``sid_0`` ... ``sid_{s-1}``
      - 
-     - ``s`` distinct ids
+     - ``s`` distinct ids (``str`` or ``int``, see :mod:`pyfe4ai.core.ids`)
    * - pairing_group_param
      - pairing group
      - ``'BLS12-381'``
@@ -1926,7 +1933,7 @@ Crypto objects also take:
      - server ids
      - ``sid_0`` ... ``sid_{s-1}``
      - 
-     - ``s`` distinct ids
+     - ``s`` distinct ids (``str`` or ``int``, see :mod:`pyfe4ai.core.ids`)
    * - group
      - the group (fixed by the scheme)
      - ``'modp'``
@@ -2042,7 +2049,7 @@ Crypto objects also take:
      - server ids
      - ``sid_0`` ... ``sid_{s-1}``
      - 
-     - ``s`` distinct ids
+     - ``s`` distinct ids (``str`` or ``int``, see :mod:`pyfe4ai.core.ids`)
    * - sharing
      - how the functional keys are shared among the servers
      - ``replicated`` for ``t < s``, else ``shamir``
@@ -2194,7 +2201,7 @@ Crypto objects also take:
      - server ids
      - ``sid_0`` ... ``sid_{s-1}``
      - 
-     - ``s`` distinct ids
+     - ``s`` distinct ids (``str`` or ``int``, see :mod:`pyfe4ai.core.ids`)
    * - sharing
      - how the functional keys are shared among the servers
      - ``replicated`` for ``t < s``, else ``shamir``

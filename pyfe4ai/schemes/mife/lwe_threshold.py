@@ -149,6 +149,7 @@ from pyfe4ai.core.config import check_kl_threshold
 from pyfe4ai.core.config import flooding_config
 from pyfe4ai.core.config import resolve_sharing
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.ids import check_id_list
 from pyfe4ai.primitives.lattice.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.primitives.lattice.lwe_utils import abdp15_parameters
 from pyfe4ai.primitives.lattice.lwe_utils import decode_scaled
@@ -241,6 +242,7 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
                 the module docstring).
         """
         self.t = config.get("t", CryptoCONST.tMIFE_T)
+        check_id_list(config.get("lst_sid", []), "lst_sid")  # before len(lst_sid) could raise TypeError
         s = config.get("s") or len(config.get("lst_sid", [])) or 1
         self.sharing = resolve_sharing(config, s, self.t, "mife/lwe_threshold")
         self._construction = {

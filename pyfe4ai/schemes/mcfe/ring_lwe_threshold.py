@@ -293,6 +293,7 @@ from pyfe4ai.core.config import flooding_config
 from pyfe4ai.core.config import resolve_sharing
 from pyfe4ai.core.config import threshold_key_shares
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.ids import check_id_list
 from pyfe4ai.primitives.lattice.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.primitives.lattice.lwe_utils import decode_scaled
 from pyfe4ai.primitives.lattice.ring_lwe_utils import RNS_NATIVE_FACTORS
@@ -473,6 +474,7 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         if self.flooding not in FLOODINGS:
             raise FEValidationError("unknown flooding {!r}; one of {}".format(self.flooding, ", ".join(FLOODINGS)))
         self.t = config.get("t", CryptoCONST.tMCFE_T)
+        check_id_list(config.get("lst_sid", []), "lst_sid")  # before len(lst_sid) could raise TypeError
         s = config.get("s") or len(config.get("lst_sid", [])) or 1
         self.sharing = resolve_sharing(config, s, self.t, "mcfe/ring_lwe_threshold")
         if self.flooding_accounting == KL:

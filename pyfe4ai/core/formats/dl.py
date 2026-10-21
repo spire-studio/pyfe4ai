@@ -414,5 +414,5 @@ class MCFE2KeyShare(Record):
     the MCFE2 key."""
 
     c = Field("decimal strings, the MCFE2 ciphertexts of the contribution")
-    nid = Field("str, the client")
+    nid = Field("the client id (str or int)")
     weights_id = Field("hex digest of the weights")

@@ -300,7 +300,7 @@ class DecentralizedRingLWEKeyShare(Record):
     z = Field("polynomial")
     z_chunks = Field("polynomials")
     label = Field("str")
-    nid = Field("str, the client")
+    nid = Field("the client id (str or int)")
     weights_id = Field("hex digest of the weights")
     label_hash = Field("label hash mode", absent=LEGACY_LABEL_HASH)
 

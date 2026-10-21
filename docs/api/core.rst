@@ -54,6 +54,12 @@ Serialized Objects
 .. automodule:: pyfe4ai.core.formats.threshold
    :members:
 
+Server and Client Ids
+---------------------
+
+.. automodule:: pyfe4ai.core.ids
+   :members:
+
 Versions and Compatibility
 --------------------------
 

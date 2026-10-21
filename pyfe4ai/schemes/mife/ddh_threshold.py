@@ -53,6 +53,7 @@ from pyfe4ai.core.formats.dl import MIFEDDHParameters
 from pyfe4ai.core.formats.threshold import TMIFEDDHKeyShare
 from pyfe4ai.core.formats.threshold import TMIFEDDHPartial
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.ids import check_id_list
 from pyfe4ai._validation import int_vector
 from pyfe4ai._validation import scale_to_int
 
@@ -72,6 +73,7 @@ class ThresholdMIFEDDHKeyGenerator(MIFEDDHKeyGenerator):
                 plus ``t`` and ``lst_sid`` (``s`` decryption servers).
         """
         self.t = config.get("t", CryptoCONST.tMCFE_T)
+        check_id_list(config.get("lst_sid", []), "lst_sid")  # before len(lst_sid) could raise TypeError
         s = config.get("s") or len(config.get("lst_sid", [])) or 1
         self.lst_sid = config.get("lst_sid", ["sid_{}".format(i) for i in range(s)])
         self.dict_dk = {}

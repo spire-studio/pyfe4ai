@@ -12,6 +12,7 @@ from typing import Any
 
 import numpy as np
 
+from pyfe4ai.core.ids import is_id
 from pyfe4ai.core.formats.record import Field
 from pyfe4ai.core.formats.record import Record
 from pyfe4ai.core.formats.ring_lwe import RingLWECiphertext
@@ -23,7 +24,7 @@ _BYTES = (bytes, bytearray, memoryview)
 class GradientWire(Record):
     """The wire form of an :class:`EncryptedGradient` (:meth:`EncryptedGradient.to_dict`)."""
 
-    nid = Field("str, the client")
+    nid = Field("the client id (str or int)")
     shape = Field("list of ints, the gradient's shape")
     precision = Field("int, the fixed-point digits")
     mode = Field("the quantization mode")
@@ -158,7 +159,8 @@ class EncryptedGradient:
         layout (the scheme checks the ciphertexts when decrypting).
 
         Raises:
-            ValueError: Unless *d* has exactly the keys ``nid`` (a string),
+            ValueError: Unless *d* has exactly the keys ``nid`` (a client
+                id: a ``str`` or an ``int``, :func:`~pyfe4ai.core.ids.is_id`),
                 ``shape`` (a list of non-negative ints), ``precision`` (a
                 non-negative int), ``mode`` (``"decimal"`` or ``"binary"``)
                 and ``ciphertexts`` (a non-empty list of layers); if an array's
@@ -174,10 +176,10 @@ class EncryptedGradient:
             raise ValueError("invalid encrypted gradient: keys nid, shape, precision, mode and ciphertexts")
         d = GradientWire(d)
         precision = d.precision
-        if (not isinstance(d.nid, str) or isinstance(precision, bool) or not isinstance(precision, int)
+        if (not is_id(d.nid) or isinstance(precision, bool) or not isinstance(precision, int)
                 or precision < 0 or d.mode not in cls.MODES):
-            raise ValueError("invalid encrypted gradient: nid is a string, precision a non-negative int, "
-                             "mode 'decimal' or 'binary'")
+            raise ValueError("invalid encrypted gradient: nid a client id (str or int), precision a non-negative "
+                             "int, mode 'decimal' or 'binary'")
         shape, _ = cls._checked_shape(d.shape)
         layers = d.ciphertexts
         if not isinstance(layers, list) or not layers:

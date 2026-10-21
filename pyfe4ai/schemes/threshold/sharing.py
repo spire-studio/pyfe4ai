@@ -48,6 +48,7 @@ import secrets
 import gmpy2 as gp
 
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.ids import check_id_list
 from pyfe4ai.core.formats.threshold import KeyPiece
 from pyfe4ai.core.formats.threshold import KeySeed
 from pyfe4ai.core.formats.threshold import ThresholdKeyShare
@@ -170,14 +171,15 @@ def share_points(lst_sid: list[str]) -> dict[str, int]:
 
 
 def validate_threshold(threshold: int, lst_sid: list[str]) -> None:
-    """Reject repeated server ids and thresholds outside ``1 <= t <= s`` (or ``bool``).
+    """Reject a *lst_sid* that is not a list of distinct server ids
+    (:func:`~pyfe4ai.core.ids.check_id_list`) and thresholds outside
+    ``1 <= t <= s`` (or ``bool``).
 
     Args:
         threshold: Minimum number of shares needed for reconstruction.
         lst_sid: Ordered list of all decryption-server identifiers.
     """
-    if len(set(lst_sid)) != len(lst_sid):
-        raise FEValidationError("lst_sid contains duplicate server ids")
+    check_id_list(lst_sid, "lst_sid")
     if isinstance(threshold, bool) or not isinstance(threshold, int) or not 1 <= threshold <= len(lst_sid):
         raise FEValidationError(
             "invalid threshold t={} for s={} decryption servers".format(

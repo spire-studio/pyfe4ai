@@ -1,35 +1,39 @@
-"""Server ids of partial decryptions that are not strings.
+"""Server ids of partial decryptions that are not server ids.
 
 The checks of a set of partial decryptions
 (:func:`~pyfe4ai.schemes.threshold.roles.validate_partial_decryptions`)
 build their messages from the server ids, sorted: a ``bytes`` (or any other
-non-string) ``sid`` or entry of ``lst_sid_enrolled`` made that fail with a
-bare ``TypeError`` (``'<' not supported``, ``unhashable type``, ``object is
-not iterable``), whose text depended on the hash seed. The combiners now
-refuse such a partial decryption with
+value that is not an id) ``sid`` or entry of ``lst_sid_enrolled`` made that
+fail with a bare ``TypeError`` (``'<' not supported``, ``unhashable type``,
+``object is not iterable``), whose text depended on the hash seed. The
+combiners now refuse such a partial decryption with
 :class:`~pyfe4ai.core.exceptions.FEValidationError` and a constant message
-that holds none of the caller's values.
+that holds none of the caller's values. A server id is a ``str`` or an
+``int`` (:func:`~pyfe4ai.core.ids.is_id`): integer ids combine as before, and
+a message listing ids of both types orders them by ``repr``.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from pyfe4ai.core.exceptions import FEValidationError
+from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
 from pyfe4ai.schemes.threshold.roles import validate_partial_decryptions
 
-MESSAGE = "malformed partial decryption: sid and lst_sid_enrolled must be server ids (strings)"
+MESSAGE = "malformed partial decryption: sid and lst_sid_enrolled must be server ids (str or int)"
 NIDS, SIDS = ["nid_0", "nid_1", "nid_2"], ["sid_0", "sid_1", "sid_2"]
 MARK = "\n<caller data>"
 #: (field, value): the malformed value given to the second server's partial decryption
 MALFORMED = [
     ("sid", b"sid_1"),
     ("sid", ("sid_1" + MARK).encode()),
-    ("sid", 1),
+    ("sid", True),
+    ("sid", 1.0),
     ("sid", None),
     ("sid", ["sid_1"]),
     ("lst_sid_enrolled", [b"sid_0", "sid_1"]),
-    ("lst_sid_enrolled", ["sid_0", 1]),
+    ("lst_sid_enrolled", ["sid_0", False]),
+    ("lst_sid_enrolled", ["sid_0", 1.5]),
     ("lst_sid_enrolled", 5),
     ("lst_sid_enrolled", "sid_0" + MARK),
     ("lst_sid_enrolled", {"sid_0": 1, "sid_1": 2}),
@@ -97,7 +101,7 @@ def _mcfe_ring_lwe():
 
 
 @pytest.mark.parametrize("field,value", MALFORMED, ids=IDS)
-def test_the_checks_refuse_ids_that_are_not_strings(field, value):
+def test_the_checks_refuse_values_that_are_not_ids(field, value):
     parts = {sid: {"w": "1", "sid": sid, "lst_sid_enrolled": SIDS[:2]} for sid in SIDS[:2]}
     parts["sid_1"] = dict(parts["sid_1"], **{field: value})
     with pytest.raises(FEValidationError) as info:
@@ -109,7 +113,7 @@ def test_the_checks_refuse_ids_that_are_not_strings(field, value):
 @pytest.mark.parametrize("build", [_mife_ddh, _mcfe_lwe, _mcfe_ring_lwe], ids=["mife/ddh_threshold",
                                                                             "mcfe/lwe_threshold",
                                                                             "mcfe/ring_lwe_threshold"])
-def test_combiners_refuse_ids_that_are_not_strings(build, field, value):
+def test_combiners_refuse_values_that_are_not_ids(build, field, value):
     combiner, parts, right = build()
     assert combiner.combine_decrypt(parts) == right
     bad = dict(parts, sid_1=dict(parts["sid_1"], **{field: value}))
@@ -118,3 +122,19 @@ def test_combiners_refuse_ids_that_are_not_strings(build, field, value):
     assert str(info.value) == MESSAGE and "caller data" not in str(info.value)
     with pytest.raises(FEValidationError, match="malformed partial decryption"):
         combiner.combine_decrypt([parts, bad])  # in a second enrolled set too
+
+
+def test_integer_server_ids_pass_the_checks():
+    parts = {sid: {"w": "1", "sid": sid, "lst_sid_enrolled": [1, 2]} for sid in (1, 2)}
+    validate_partial_decryptions(parts, 2)
+    validate_partial_decryptions({sid: dict(p, lst_sid_enrolled=(2, 1)) for sid, p in parts.items()}, 2)
+
+
+def test_messages_list_ids_of_both_types():
+    # a server id 2 ("sid_1" enrolled as 2): the contributors are not the enrolled set; the message lists
+    # str and int ids (sorting them by value raised TypeError: '<' not supported between 'int' and 'str')
+    parts = {sid: {"w": "1", "sid": sid, "lst_sid_enrolled": ["sid_0", 2]} for sid in SIDS[:2]}
+    with pytest.raises(FESchemeError) as info:
+        validate_partial_decryptions(parts, 2)
+    assert str(info.value) == ("partial decryptions from ['sid_0', 'sid_1'] do not match the enrolled set "
+                               "['sid_0', 2]")

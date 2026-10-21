@@ -841,7 +841,8 @@ Mac) against BLS12-381.
   `gmpy2.mpz`, which also took ints, `mpz`, bytes, floats (truncated),
   `True` or text such as `" 12"` and `"1_2"`; these now raise `FEKeyError`.
   `EncryptedGradient.from_dict()` checks the layout and the field types,
-  as `ThresholdPartial.from_dict()` does: exactly the keys `nid` (a string),
+  as `ThresholdPartial.from_dict()` does: exactly the keys `nid` (a client
+  id: a `str` or an `int`),
   `shape` (a list of non-negative ints), `precision` (a non-negative int),
   `mode` (`"decimal"` or `"binary"`) and `ciphertexts` (a non-empty list of
   layers), and per-element layers `{"shape", "data"}` with one ciphertext
@@ -852,7 +853,12 @@ Mac) against BLS12-381.
   `ciphertext` (a dict), `dim` (a positive int), `precision` (a non-negative
   int) and `mode` (`"decimal"` or `"binary"`); it took any keys and types (a
   missing key: `KeyError`). Everything the library writes reads back as
-  before.
+  before for client ids that are a `str` or an `int` (`lst_nid = [0, 1, 2]`
+  included); a gradient whose `nid` is of another type (a `float`, `None`, a
+  `bool`, a tuple, which JSON turns into a list) is refused (`ValueError`).
+  `ThresholdPartial.from_dict()` accepts integer server ids (`sid` and the
+  entries of `lst_sid_enrolled`; it took strings only), so the partial
+  decryptions of integer servers read back from JSON.
 - **Partial decryptions of different ciphertexts raise instead of combining
   to `None`** (`combine_decrypt` of every threshold scheme: tMIFE-DDH,
   tMIFE-LWE, tMCFE-DDH, tMCFE-LWE, tMCFE-Ring-LWE, tMCFE-FH-Multi-IPE). A
@@ -957,12 +963,27 @@ Mac) against BLS12-381.
   key). Both now refuse such keys and shares with `FEKeyError` (constant
   messages) before any computation, in both backends.
 - Threshold combiners (`combine_decrypt` of every threshold scheme): a
-  partial decryption whose `sid` was not a string (e.g. `bytes`), or whose
-  `lst_sid_enrolled` was not a list of strings, failed with a bare
+  partial decryption whose `sid` was not a server id (e.g. `bytes`), or whose
+  `lst_sid_enrolled` was not a list of server ids, failed with a bare
   `TypeError` while the error message was built (sorting mixed types; its
   text depended on the hash seed), or with an unrelated `FESchemeError`. It
   is now refused with `FEValidationError` and a constant message holding none
-  of the caller's values.
+  of the caller's values. A server id is a `str` or an `int` (not a `bool`;
+  `pyfe4ai.core.ids.is_id`): partial decryptions of integer servers
+  (`lst_sid = [1, 2, 3]`) combine as before, and a message that lists the
+  contributors and the enrolled set orders ids of both types by `repr`.
+- **Server and client ids** (`pyfe4ai.core.ids`). A `lst_sid` or `lst_nid`
+  whose ids cannot key a dict -- an unhashable entry (a list, a dict), or a
+  value that is not a list (an int, an iterator) -- failed with a bare
+  `TypeError` (`unhashable type`, `object of type 'int' has no len()`) in
+  the key generator; it is now refused there with `FEValidationError`
+  ("lst_sid must be a list of server ids (str or int)", "lst_nid must be a
+  list of client ids (str or int)"). Repeated ids keep their message. Error
+  messages that list client ids (`aggregate_gradients` and
+  `partial_decrypt_gradients` with a prepared key for other clients; the
+  key-share combination of `mcfe/ddh_decentralized`, `mcfe/lwe_decentralized`
+  and `mcfe/paillier_decentralized` without every client) order ids of both
+  types by `repr` instead of raising `TypeError`.
 - `EncryptedGradient.to_dict()` failed with `KeyError: ()` on the packed
   ciphertext layers of the Ring-LWE MCFE schemes (`mcfe/ring_lwe` and its
   threshold and decentralized variants), and `from_dict()` could not rebuild
