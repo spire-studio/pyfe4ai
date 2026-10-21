@@ -924,7 +924,14 @@ Mac) against BLS12-381.
   precomputation failed with a bare `IndexError`, as did any path with fewer
   rows of `pk`. All of them now refuse such a key at encryption with
   `FEKeyError` ("the encryption key has fewer than eta rows of pk or u"), in
-  both backends. Well-formed keys encrypt as before.
+  both backends. Well-formed keys encrypt as before. The same holds for
+  `sife/ring_lwe` (a `pk` with fewer rows: a bare `IndexError` /
+  `ValueError`) and `sife/fullysec_ring_lwe` (a `pk` with fewer rows silently
+  gave ciphertexts with fewer `ct` rows, refused only by the decryption; also
+  its packed and ndarray paths), and for rows of `pk` or `u` that are not
+  `ring_n` values in all of these schemes (a ciphertext of another length, or
+  an `IndexError`): `FEKeyError` ("the encryption key has a row of … that is
+  not ring_n values") before anything is drawn.
 - **Decentralized MCFE over Ring-LWE: key shares from malformed keys or
   shares** (`mcfe/ring_lwe_decentralized`; integrity on the Python backend).
   `derive_function_decryption_key_share` read the client's pad `u` and IPFE

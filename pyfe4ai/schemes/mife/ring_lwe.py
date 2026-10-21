@@ -60,6 +60,7 @@ from pyfe4ai.core.formats.ring_lwe import RingLWECiphertext
 from pyfe4ai.core.formats.ring_lwe import RingLWERecord
 from pyfe4ai.core.versions import CT_FORMATS
 from pyfe4ai.core.formats.binary import canonical_ring_ciphertext
+from pyfe4ai.primitives.lattice.ring_lwe_utils import check_key_rows
 from pyfe4ai.primitives.lattice.ring_lwe_utils import check_ring_lwe
 from pyfe4ai.primitives.lattice.ring_lwe_utils import check_ring_modulus
 from pyfe4ai.primitives.lattice.ring_lwe_utils import register_rns_modulus
@@ -411,16 +412,16 @@ class MIFERingLWE(IPFEAbsCrypto):
 
     def _check_key_rows(self) -> None:
         """Raise unless the encryption key's ``pk`` and pad ``u`` have ``eta``
-        rows (at least): with fewer, the encryption silently made a ciphertext
-        without the missing rows, or failed deep inside the backend.
+        rows (at least) of ``ring_n`` values: with fewer rows, the encryption
+        silently made a ciphertext without the missing rows, with a row of
+        another length a ciphertext of another length, or failed deep inside
+        the backend (:func:`~pyfe4ai.primitives.lattice.ring_lwe_utils.check_key_rows`).
 
         Raises:
-            FEKeyError: For fewer rows (the message holds no key data).
+            FEKeyError: For such rows (the message holds no key data).
         """
         sk = MIFERingLWEEncryptionKey(self.sk)
-        eta = self.pp["eta"]
-        if any(isinstance(rows, (list, tuple)) and len(rows) < eta for rows in (sk.get("pk"), sk.get("u"))):
-            raise FEKeyError("the encryption key has fewer than eta rows of pk or u")
+        check_key_rows({"pk": sk.get("pk"), "u": sk.get("u")}, self.pp["eta"], self.pp["ring_n"], "pk or u")
 
     def __getstate__(self) -> dict:
         """Pickling and copying without the key cache (it may hold native

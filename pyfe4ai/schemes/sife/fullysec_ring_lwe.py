@@ -107,6 +107,7 @@ from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.primitives.lattice.ring_lwe_utils import _get_ntt_root
 from pyfe4ai.primitives.lattice.ring_lwe_utils import bmms21_adaptive_choice
 from pyfe4ai.primitives.lattice.ring_lwe_utils import bmms21_adaptive_parameters
+from pyfe4ai.primitives.lattice.ring_lwe_utils import check_key_rows
 from pyfe4ai.primitives.lattice.ring_lwe_utils import check_ring_lwe
 from pyfe4ai.primitives.lattice.ring_lwe_utils import decode_vector
 from pyfe4ai.primitives.lattice.ring_lwe_utils import ntt_forward
@@ -472,8 +473,15 @@ class SIFEFullySecRingLWE(IPFEAbsCrypto):
         return self._encrypt_rows([[x_i] for x_i in x])
 
     def _encrypt_rows(self, rows: list) -> dict:
-        """``ct0`` and ``ct`` for the plaintext *rows* (``eta`` lists of ``k`` ints)."""
+        """``ct0`` and ``ct`` for the plaintext *rows* (``eta`` lists of ``k`` ints).
+
+        Raises:
+            FEKeyError: Unless ``pk`` has ``eta`` rows of ``ring_n`` values (with
+                fewer, the ciphertext lacked the missing rows), checked before
+                anything is drawn.
+        """
         q, n, root = self._ring()
+        check_key_rows({"pk": FullySecRingLWEEncryptionKey(self.sk).get("pk")}, int(self.pp["eta"]), n, "pk")
         sampler = self.gaussian_sampler
         m = int(self.pp["m"])
         a_ntt = self._a_ntt()
