@@ -235,8 +235,8 @@ def _bench_tmcfe(cfg: dict, x: dict[str, list[int]], y: dict[str, list[int]], la
     }
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+def main(argv=None, prog=None) -> None:
+    parser = argparse.ArgumentParser(prog=prog, description=__doc__)
     parser.add_argument("--rounds", type=int, default=ROUNDS)
     parser.add_argument("--profile", choices=["small", "medium", "large", "report"], default="small")
     parser.add_argument("--output", choices=["csv", "json"], default="csv")
@@ -244,7 +244,7 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--pairing-group", default=DEFAULT_PAIRING_GROUP,
                         help="BLS12-381 (Rust extension) or a charm-crypto group such as MNT224")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     prepare_benchmark(args.seed)
 
     eta = 1
@@ -268,6 +268,3 @@ def main() -> None:
         result["profile"] = args.profile
     emit_results(results, output=args.output, header=BENCHMARK_HEADER)
 
-
-if __name__ == "__main__":
-    main()

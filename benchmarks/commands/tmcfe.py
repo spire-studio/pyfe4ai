@@ -107,14 +107,14 @@ def _run_case(case: dict, rounds: int) -> dict:
     }
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+def main(argv=None, prog=None) -> None:
+    parser = argparse.ArgumentParser(prog=prog, description=__doc__)
     parser.add_argument("--rounds", type=int, default=ROUNDS)
     parser.add_argument("--profile", choices=["small", "medium", "large"], default="small")
     parser.add_argument("--output", choices=["csv", "json"], default="csv")
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--seed", type=int, default=7)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     prepare_benchmark(args.seed)
 
     lst_nid = ["nid_0", "nid_1", "nid_2"]
@@ -178,6 +178,3 @@ def main() -> None:
         results.append(result)
     emit_results(results, output=args.output, header=BENCHMARK_HEADER)
 
-
-if __name__ == "__main__":
-    main()

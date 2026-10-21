@@ -16,8 +16,8 @@ Status per entry:
 The run happens in a temporary directory, which holds the parameter cache
 (``PYFE4AI_CACHE_DIR``). Usage::
 
-    python benchmarks/fl_path_coverage.py            # Markdown table
-    python benchmarks/fl_path_coverage.py --output json
+    python benchmarks/run.py fl-coverage             # Markdown table
+    python benchmarks/run.py fl-coverage --output json
 """
 
 from __future__ import annotations
@@ -200,10 +200,10 @@ def check_entry(scheme_type: str, variant: str) -> tuple[str, str]:
     return "usable", ""
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+def main(argv=None, prog=None) -> None:
+    parser = argparse.ArgumentParser(prog=prog, description=__doc__.splitlines()[0])
     parser.add_argument("--output", choices=["md", "json"], default="md")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     logging.disable(logging.CRITICAL)
 
     missing = sorted(set(scheme.key for scheme in SCHEMES) - set(CONFIGS))
@@ -241,6 +241,3 @@ def main() -> None:
         "available" if pairing_available() else "missing",
     ))
 
-
-if __name__ == "__main__":
-    main()

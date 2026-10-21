@@ -1,4 +1,4 @@
-"""Cross-instantiation benchmark for the repository's core MCFE family."""
+"""Cross-instantiation benchmark for the repository's core MIFE family."""
 
 from __future__ import annotations
 
@@ -11,18 +11,18 @@ from _common import prepare_benchmark
 from _common import profile_value
 from _common import size_bytes
 from _common import stats
-from pyfe4ai.schemes.mcfe.damgard_ddh import MCFEDamgard
-from pyfe4ai.schemes.mcfe.damgard_ddh import MCFEDamgardKeyGenerator
-from pyfe4ai.schemes.mcfe.ddh import MCFEDDH
-from pyfe4ai.schemes.mcfe.ddh import MCFEDDHKeyGenerator
-from pyfe4ai.schemes.mcfe.fullysec_lwe import MCFEFullySecLWE
-from pyfe4ai.schemes.mcfe.fullysec_lwe import MCFEFullySecLWEKeyGenerator
-from pyfe4ai.schemes.mcfe.lwe import MCFELWE
-from pyfe4ai.schemes.mcfe.lwe import MCFELWEKeyGenerator
-from pyfe4ai.schemes.mcfe.paillier import MCFEPaillier
-from pyfe4ai.schemes.mcfe.paillier import MCFEPaillierKeyGenerator
-from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWE
-from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
+from pyfe4ai.schemes.mife.damgard_ddh import MIFEDamgard
+from pyfe4ai.schemes.mife.damgard_ddh import MIFEDamgardKeyGenerator
+from pyfe4ai.schemes.mife.ddh import MIFEDDH
+from pyfe4ai.schemes.mife.ddh import MIFEDDHKeyGenerator
+from pyfe4ai.schemes.mife.fullysec_lwe import MIFEFullySecLWE
+from pyfe4ai.schemes.mife.fullysec_lwe import MIFEFullySecLWEKeyGenerator
+from pyfe4ai.schemes.mife.lwe import MIFELWE
+from pyfe4ai.schemes.mife.lwe import MIFELWEKeyGenerator
+from pyfe4ai.schemes.mife.paillier import MIFEPaillier
+from pyfe4ai.schemes.mife.paillier import MIFEPaillierKeyGenerator
+from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWE
+from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWEKeyGenerator
 
 ROUNDS = 3
 
@@ -60,21 +60,18 @@ def _run_case(case: dict, rounds: int) -> dict:
                     "keys": {"pp": pp, "sk": sk_by_nid[nid]},
                 }
             )
-            dct_ct[nid] = enc.encrypt(case["x"][nid], case["label"])
+            dct_ct[nid] = enc.encrypt(case["x"][nid])
         encrypt_times.append(time.perf_counter() - t0)
 
         t0 = time.perf_counter()
-        # identity-based schemes (Ring-LWE) bind keys to the label; others ignore it
-        dk = kg.get_decryption_keys(
-            "sid_0", credentials={"fusion_weight": case["y"], "label": case["label"]}
-        )
+        dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": case["y"]})
         dkgen_times.append(time.perf_counter() - t0)
 
         dec = case["crypto_cls"](
             {"id": "sid_0", "precision": case.get("precision", 0), "keys": {"pp": pp}}
         )
         t0 = time.perf_counter()
-        computed = dec.decrypt(dct_ct, dk, case["y"], case["label"])
+        computed = dec.decrypt(dct_ct, dk, case["y"])
         decrypt_times.append(time.perf_counter() - t0)
 
         if computed != case["expected"]:
@@ -118,14 +115,14 @@ def _run_case(case: dict, rounds: int) -> dict:
     }
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+def main(argv=None, prog=None) -> None:
+    parser = argparse.ArgumentParser(prog=prog, description=__doc__)
     parser.add_argument("--rounds", type=int, default=ROUNDS)
     parser.add_argument("--profile", choices=["small", "medium", "large"], default="small")
     parser.add_argument("--output", choices=["csv", "json"], default="csv")
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--seed", type=int, default=7)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     prepare_benchmark(args.seed)
 
     lst_nid = ["nid_0", "nid_1", "nid_2"]
@@ -134,6 +131,7 @@ def main() -> None:
     ring_n = profile_value(args.profile, {"small": 16, "medium": 16, "large": 32})
     bit_length = profile_value(args.profile, {"small": 64, "medium": 96, "large": 128})
     bound = profile_value(args.profile, {"small": 4, "medium": 8, "large": 12})
+
     core_x = {nid: [1 for _ in range(eta)] for nid in lst_nid}
     core_y = {nid: [1 for _ in range(eta)] for nid in lst_nid}
     ring_x = {nid: [[1] for _ in range(eta)] for nid in lst_nid}
@@ -141,11 +139,10 @@ def main() -> None:
 
     cases = [
         {
-            "name": "MCFE/DDH",
-            "kg_cls": MCFEDDHKeyGenerator,
-            "crypto_cls": MCFEDDH,
+            "name": "MIFE/DDH",
+            "kg_cls": MIFEDDHKeyGenerator,
+            "crypto_cls": MIFEDDH,
             "config": {"sec_param": 256, "eta": eta, "n": 3, "s": 1, "lst_nid": lst_nid},
-            "label": "bench-mcfe-ddh",
             "precision": 3,
             "lst_nid": lst_nid,
             "x": core_x,
@@ -153,55 +150,50 @@ def main() -> None:
             "expected": sum(core_x[nid][i] * core_y[nid][i] for nid in lst_nid for i in range(eta)),
         },
         {
-            "name": "MCFE/LWE",
-            "kg_cls": MCFELWEKeyGenerator,
-            "crypto_cls": MCFELWE,
-            "config": {"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": lst_nid, "lwe_n": lwe_n, "bound_x": bound, "bound_y": bound, "bound_u": 2, "label_modulus": 8},
-            "label": "bench-mcfe-lwe",
+            "name": "MIFE/LWE",
+            "kg_cls": MIFELWEKeyGenerator,
+            "crypto_cls": MIFELWE,
+            "config": {"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": lst_nid, "lwe_n": lwe_n, "bound_x": bound, "bound_y": bound},
             "lst_nid": lst_nid,
             "x": core_x,
             "y": core_y,
             "expected": sum(core_x[nid][i] * core_y[nid][i] for nid in lst_nid for i in range(eta)),
         },
         {
-            "name": "MCFE/FullySecLWE",
-            "kg_cls": MCFEFullySecLWEKeyGenerator,
-            "crypto_cls": MCFEFullySecLWE,
-            "config": {"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": lst_nid, "lwe_n": lwe_n + 8, "bound_x": bound, "bound_y": bound, "bound_u": 2, "label_modulus": 8},
-            "label": "bench-mcfe-fullysec-lwe",
+            "name": "MIFE/FullySecLWE",
+            "kg_cls": MIFEFullySecLWEKeyGenerator,
+            "crypto_cls": MIFEFullySecLWE,
+            "config": {"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": lst_nid, "lwe_n": lwe_n + 8, "bound_x": bound, "bound_y": bound},
             "lst_nid": lst_nid,
             "x": core_x,
             "y": core_y,
             "expected": sum(core_x[nid][i] * core_y[nid][i] for nid in lst_nid for i in range(eta)),
         },
         {
-            "name": "MCFE/RingLWE",
-            "kg_cls": MCFERingLWEKeyGenerator,
-            "crypto_cls": MCFERingLWE,
-            "config": {"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": lst_nid, "ring_n": ring_n, "bound_x": bound, "bound_y": bound, "bound_u": 1, "label_modulus": 8},
-            "label": "bench-mcfe-ring-lwe",
+            "name": "MIFE/RingLWE",
+            "kg_cls": MIFERingLWEKeyGenerator,
+            "crypto_cls": MIFERingLWE,
+            "config": {"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": lst_nid, "ring_n": ring_n, "bound_x": bound, "bound_y": bound},
             "lst_nid": lst_nid,
             "x": ring_x,
             "y": ring_y,
             "expected": [sum(ring_x[nid][i][0] * ring_y[nid][i] for nid in lst_nid for i in range(eta))],
         },
         {
-            "name": "MCFE/Paillier",
-            "kg_cls": MCFEPaillierKeyGenerator,
-            "crypto_cls": MCFEPaillier,
+            "name": "MIFE/Paillier",
+            "kg_cls": MIFEPaillierKeyGenerator,
+            "crypto_cls": MIFEPaillier,
             "config": {"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": lst_nid, "bit_length": bit_length, "bound_x": bound, "bound_y": bound},
-            "label": "bench-mcfe-paillier",
             "lst_nid": lst_nid,
             "x": core_x,
             "y": core_y,
             "expected": sum(core_x[nid][i] * core_y[nid][i] for nid in lst_nid for i in range(eta)),
         },
         {
-            "name": "MCFE/DamgardDDH",
-            "kg_cls": MCFEDamgardKeyGenerator,
-            "crypto_cls": MCFEDamgard,
+            "name": "MIFE/DamgardDDH",
+            "kg_cls": MIFEDamgardKeyGenerator,
+            "crypto_cls": MIFEDamgard,
             "config": {"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": lst_nid, "modulus_length": bit_length, "bound": bound},
-            "label": "bench-mcfe-damgard",
             "lst_nid": lst_nid,
             "x": core_x,
             "y": core_y,
@@ -218,6 +210,3 @@ def main() -> None:
         results.append(result)
     emit_results(results, output=args.output, header=BENCHMARK_HEADER)
 
-
-if __name__ == "__main__":
-    main()

@@ -13,7 +13,7 @@ profile, times the scheme's encryption and decryption and their split into
 The split recomputes the scheme's own formulas and checks that it yields
 the same ciphertext and result. Usage::
 
-    python benchmarks/bench_offline_potential.py [--families ddh paillier] [--reps 20]
+    python benchmarks/run.py offline-potential [--families ddh paillier] [--reps 20]
 """
 
 from __future__ import annotations
@@ -119,12 +119,12 @@ def paillier(reps: int) -> dict:
             "agg_full_ms": dec_full, "agg_offline_ms": dec_off + t_hash, "agg_online_ms": dec_on}
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+def main(argv=None, prog=None) -> None:
+    parser = argparse.ArgumentParser(prog=prog, description=__doc__.splitlines()[0])
     parser.add_argument("--families", nargs="+", default=["ddh", "paillier"], choices=["ddh", "paillier"])
     parser.add_argument("--reps", type=int, default=15)
     parser.add_argument("--json", default=None)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     logging.disable(logging.CRITICAL)
     warnings.simplefilter("ignore")
     cwd = os.getcwd()
@@ -143,6 +143,3 @@ def main() -> None:
         with open(args.json, "w", encoding="utf-8") as f:
             json.dump(rows, f, indent=2)
 
-
-if __name__ == "__main__":
-    main()

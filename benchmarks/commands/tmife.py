@@ -119,8 +119,8 @@ def _run_case(case: dict, rounds: int) -> dict:
     }
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+def main(argv=None, prog=None) -> None:
+    parser = argparse.ArgumentParser(prog=prog, description=__doc__)
     parser.add_argument("--rounds", type=int, default=ROUNDS)
     parser.add_argument("--profile", choices=["small", "medium", "large"], default="small")
     parser.add_argument("--output", choices=["csv", "json"], default="csv")
@@ -134,7 +134,7 @@ def main() -> None:
     parser.add_argument("--threshold", type=int, default=2, help="tMIFE/LWE: threshold t of the s = 3 servers")
     parser.add_argument("--flooding-accounting", default=None, choices=["per-sample", "kl"])
     parser.add_argument("--max-partial-decryptions", type=int, default=None)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     prepare_benchmark(args.seed)
 
     lst_nid = ["nid_{}".format(i) for i in range(args.clients)]
@@ -195,6 +195,3 @@ def main() -> None:
         results.append(result)
     emit_results(results, output=args.output, header=BENCHMARK_HEADER)
 
-
-if __name__ == "__main__":
-    main()

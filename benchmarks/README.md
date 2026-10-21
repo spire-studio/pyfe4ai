@@ -1,61 +1,52 @@
 # Benchmark Guide
 
-This folder contains lightweight end-to-end benchmark entry points for major
-scheme families in the repository.
+All benchmarks run through one entry point, `benchmarks/run.py`, with one
+command per benchmark:
 
-## Available Scripts
+```bash
+python benchmarks/run.py --help               # the commands
+python benchmarks/run.py sife --help          # the options of one command
+python benchmarks/run.py sife --profile small --rounds 1 --warmup 1
+```
 
-- `benchmark_lwe_family.py`: compares `SIFE/MIFE/MCFE/dMCFE/tMCFE` over the
-  repository's LWE family.
-- `benchmark_fh_multi_ipe_family.py`: compares `MIFE/MCFE/dMCFE/tMCFE` over the
-  pairing-based `FHMultiIPE` family.
-- `benchmark_quadratic_family.py`: compares the two single-input quadratic FE
-  schemes, `Quadratic/SGP` and `Quadratic/Quad` (the multi-input
-  `quadratic/miqfe` is not benchmarked yet).
-- `benchmark_sife_instantiations.py`: compares `SIFE` instantiations such as
-  `DDH`, `LWE`, `FullySecLWE`, `RingLWE`, `Paillier`, and `DamgardDDH` under a
-  shared single-input workload (not the adaptive `sife/fullysec_ring_lwe`).
-- `benchmark_mife_instantiations.py`: compares core `MIFE` instantiations under
-  a shared multi-input workload.
-- `benchmark_mcfe_instantiations.py`: compares core label-aware `MCFE`
-  instantiations under a shared multi-client workload.
-- `benchmark_dmcfe_instantiations.py`: compares decentralized `MCFE`
-  instantiations under a shared workload.
-- `benchmark_tmife_instantiations.py`: compares threshold `MIFE`
-  instantiations.
-- `benchmark_tmcfe_instantiations.py`: compares threshold `MCFE`
-  instantiations.
-- `benchmark_ndarray_helpers.py`: compares representative `ndarray` helper
-  pipelines across `SIFE`, `FHMultiIPE`, and quadratic FE families.
-- `benchmark_ntt.py`: compares schoolbook (`O(n^2)`) and NTT (`O(n log n)`)
-  negacyclic polynomial multiplication, as used by the Ring-LWE schemes.
-- `benchmark_sampling.py`: compares the default rounded Gaussian sampler with
-  the exact `"facct"` sampler per width (`--e2e`: one MCFE Ring-LWE round,
-  `security_profile="standard"`, with each).
-- `bench_fl_compare.py`: the FL aggregation round (`encrypt_gradient` +
-  `aggregate_gradients`) per scheme family, with backend, threads, ciphertext
-  format and offline phase as options; appends JSON records for before /
-  after comparisons. Headline results are in
-  [`PERFORMANCE.md`](PERFORMANCE.md).
-- `bench_replicated_sharing.py`: the replicated key sharing of the LWE
-  threshold layers (`replicated`, `replicated-seeded`): dealing, a server's
-  piece sums and its partial decryption with a cold cache, one JSON line per
-  configuration.
-- `bench_offline_potential.py`: per-element split of the DDH and DCR MCFE
-  into label-dependent offline work and the online rest.
-- `fl_path_coverage.py`: not a timing benchmark. Runs the ML-adapter FL path
-  (`encrypt_gradient` + `aggregate_gradients`) for every registry entry with
-  that variant's own test configuration and reports `usable` / `unusable`
-  (with the reason) / `unverified` (pairing entries without a backend for
-  the default group).
-  `--output json` for machine-readable output.
+Run it from the repository with `pyfe4ai` installed (`pip install -e .`), or
+with `PYTHONPATH` set to the repository. Each command keeps the options and
+the output format of the script it replaces (the scripts were merged in
+0.4.0; the code of each command is in `benchmarks/commands/`, the shared
+helpers in `benchmarks/_common.py`).
 
-The `FHMultiIPE` and quadratic scripts, and `benchmark_ndarray_helpers.py
---group fh|quadratic|all`, need a pairing backend: the Rust extension for
-BLS12-381 (the default), or `charm-crypto-framework` for the curves chosen
-with `--pairing-group` (e.g. `MNT224`; see *Quick Start* in the top-level
-README, or the Docker image); everything else runs without either.
-All scripts use the toy default parameters unless stated otherwise.
+## Commands
+
+| Command | Former script | What it measures |
+|---|---|---|
+| `sife` | `benchmark_sife_instantiations.py` | `SIFE` instantiations such as `DDH`, `LWE`, `FullySecLWE`, `RingLWE`, `Paillier` and `DamgardDDH` under a shared single-input workload (not the adaptive `sife/fullysec_ring_lwe`) |
+| `mife` | `benchmark_mife_instantiations.py` | core `MIFE` instantiations under a shared multi-input workload |
+| `mcfe` | `benchmark_mcfe_instantiations.py` | core label-aware `MCFE` instantiations under a shared multi-client workload |
+| `dmcfe` | `benchmark_dmcfe_instantiations.py` | decentralized `MCFE` instantiations under a shared workload |
+| `tmife` | `benchmark_tmife_instantiations.py` | threshold `MIFE` instantiations |
+| `tmcfe` | `benchmark_tmcfe_instantiations.py` | threshold `MCFE` instantiations |
+| `lwe-family` | `benchmark_lwe_family.py` | `SIFE/MIFE/MCFE/dMCFE/tMCFE` over the repository's LWE family |
+| `fh-family` | `benchmark_fh_multi_ipe_family.py` | `MIFE/MCFE/dMCFE/tMCFE` over the pairing-based `FHMultiIPE` family |
+| `quadratic` | `benchmark_quadratic_family.py` | the two single-input quadratic FE schemes, `Quadratic/SGP` and `Quadratic/Quad` (the multi-input `quadratic/miqfe` is not benchmarked yet) |
+| `ndarray` | `benchmark_ndarray_helpers.py` | representative `ndarray` helper pipelines across `SIFE`, `FHMultiIPE` and quadratic FE (`--group sife\|fh\|quadratic\|all`) |
+| `ntt` | `benchmark_ntt.py` | schoolbook (`O(n^2)`) and NTT (`O(n log n)`) negacyclic polynomial multiplication, as used by the Ring-LWE schemes |
+| `sampling` | `benchmark_sampling.py` | the default rounded Gaussian sampler and the exact `"facct"` sampler per width (`--e2e`: one MCFE Ring-LWE round, `security_profile="standard"`, with each) |
+| `fl-compare` | `bench_fl_compare.py` | the FL aggregation round (`encrypt_gradient` + `aggregate_gradients`) per scheme family, with backend, threads, ciphertext format and offline phase as options; appends JSON records for before / after comparisons. Headline results are in [`PERFORMANCE.md`](PERFORMANCE.md) |
+| `fl-coverage` | `fl_path_coverage.py` | not a timing benchmark: runs the ML-adapter FL path for every registry entry with that variant's own test configuration and reports `usable` / `unusable` (with the reason) / `unverified` (pairing entries without a backend for the default group); `--output json` for machine-readable output |
+| `replicated-sharing` | `bench_replicated_sharing.py` | the replicated key sharing of the LWE threshold layers (`replicated`, `replicated-seeded`): dealing, a server's piece sums and its partial decryption with a cold cache, one JSON line per configuration (positional arguments `KIND S T SHARING [REPS]`) |
+| `offline-potential` | `bench_offline_potential.py` | per-element split of the DDH and DCR MCFE into label-dependent offline work and the online rest |
+| `fullysec-packing` | `bench_fullysec_packing.py` | the elementwise and packed layouts of `sife/fullysec_ring_lwe` |
+
+The `fh-family` and `quadratic` commands, and `ndarray --group
+fh|quadratic|all`, need a pairing backend: the Rust extension for BLS12-381
+(the default), or `charm-crypto-framework` for the curves chosen with
+`--pairing-group` (e.g. `MNT224`; see *Quick Start* in the top-level README,
+or the Docker image); everything else runs without either. All commands use
+the toy default parameters unless stated otherwise. Without the Rust
+extension the schemes run their Python implementation (about 5 to 35 times
+slower on the lattice schemes) and say so once with an `FEWarning`;
+`pyfe4ai.backend_info()` reports what is in use, and `fl-compare` stores
+`pyfe4ai.backend.describe()` with its records.
 
 ## Recommended Usage
 
@@ -74,7 +65,7 @@ All scripts use the toy default parameters unless stated otherwise.
 - Use `--output json` when you want to aggregate results with scripts or
   notebooks; the default `csv` output is easier to inspect directly in the
   terminal.
-- Use `benchmark_ndarray_helpers.py --group sife|fh|quadratic` to keep
+- Use `run.py ndarray --group sife|fh|quadratic` to keep
   comparisons fair and runs short.
 - Use `--shape ROWSxCOLS` only when you intentionally want to override the
   profile's standard array workload.
@@ -108,22 +99,20 @@ All scripts use the toy default parameters unless stated otherwise.
 ## Suggested Commands
 
 ```bash
-conda run -n pyfe4ai python benchmarks/benchmark_sife_instantiations.py --profile small --rounds 1 --warmup 1
-conda run -n pyfe4ai python benchmarks/benchmark_mife_instantiations.py --profile medium --output json
-conda run -n pyfe4ai python benchmarks/benchmark_mcfe_instantiations.py --profile medium
-conda run -n pyfe4ai python benchmarks/benchmark_dmcfe_instantiations.py --profile medium
-conda run -n pyfe4ai python benchmarks/benchmark_tmife_instantiations.py --profile medium
-conda run -n pyfe4ai python benchmarks/benchmark_tmcfe_instantiations.py --profile medium
-conda run -n pyfe4ai python benchmarks/benchmark_lwe_family.py --profile medium
-conda run -n pyfe4ai python benchmarks/benchmark_fh_multi_ipe_family.py --profile report
-conda run -n pyfe4ai python benchmarks/benchmark_quadratic_family.py --profile report
-conda run -n pyfe4ai python benchmarks/benchmark_ndarray_helpers.py --group sife --profile medium
-conda run -n pyfe4ai python benchmarks/benchmark_ndarray_helpers.py --group fh --profile report --shape 2x2 --rounds 1
-conda run -n pyfe4ai python benchmarks/benchmark_ndarray_helpers.py --group quadratic --profile report --shape 2x2 --rounds 1
+python benchmarks/run.py sife --profile small --rounds 1 --warmup 1
+python benchmarks/run.py mife --profile medium --output json
+python benchmarks/run.py mcfe --profile medium
+python benchmarks/run.py dmcfe --profile medium
+python benchmarks/run.py tmife --profile medium
+python benchmarks/run.py tmcfe --profile medium
+python benchmarks/run.py lwe-family --profile medium
+python benchmarks/run.py fh-family --profile report
+python benchmarks/run.py quadratic --profile report
+python benchmarks/run.py ndarray --group sife --profile medium
+python benchmarks/run.py ndarray --group fh --profile report --shape 2x2 --rounds 1
+python benchmarks/run.py ndarray --group quadratic --profile report --shape 2x2 --rounds 1
+python benchmarks/run.py fl-compare --families ring_lwe --elements 10000 --json out.json
+python benchmarks/run.py fl-coverage
 ```
 
-Run a benchmark from the repository root, for example:
-
-```bash
-conda run -n pyfe4ai python benchmarks/benchmark_quadratic_family.py
-```
+With conda, prefix each command with `conda run -n pyfe4ai`.

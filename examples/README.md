@@ -51,5 +51,5 @@ top-level README), for example:
 conda run -n pyfe4ai python examples/mife_lwe_minimal.py
 ```
 
-Benchmark entry points live in `benchmarks/`; see `benchmarks/README.md` for a
-short index.
+The benchmarks run through `python benchmarks/run.py <command>`; see
+`benchmarks/README.md` for the commands.

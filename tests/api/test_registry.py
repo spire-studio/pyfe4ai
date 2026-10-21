@@ -224,9 +224,26 @@ def _load(path):
 
 
 def test_the_benchmark_scripts_cover_the_registry():
-    coverage = _load(ROOT / "benchmarks" / "fl_path_coverage.py")
+    coverage = _load(ROOT / "benchmarks" / "commands" / "fl_coverage.py")
     assert set(coverage.CONFIGS) == {s.key for s in SCHEMES}
-    compare = _load(ROOT / "benchmarks" / "bench_fl_compare.py")
+    compare = _load(ROOT / "benchmarks" / "commands" / "fl_compare.py")
     for key, _, _ in compare.FAMILIES.values():
         registry.get_scheme(key)
     assert set(compare.OFFLINE_FAMILIES) <= set(compare.FAMILIES)
+
+
+def test_every_benchmark_command_has_a_module_and_help(capsys, monkeypatch):
+    """benchmarks/run.py: one module per command (and per file), whose main() parses its own options."""
+    monkeypatch.syspath_prepend(str(ROOT / "benchmarks"))
+    run = _load(ROOT / "benchmarks" / "run.py")
+    modules = {c.module for c in run.COMMANDS.values()}
+    files = {p.stem for p in (ROOT / "benchmarks" / "commands").glob("*.py")} - {"__init__"}
+    assert modules == files and len(run.COMMANDS) == 17
+    for name in run.COMMANDS:
+        with pytest.raises(SystemExit) as stop:
+            run.main([name, "--help"])
+        assert stop.value.code == 0, name
+        assert "usage: run.py " + name in capsys.readouterr().out
+    with pytest.raises(SystemExit) as stop:
+        run.main(["nope"])
+    assert stop.value.code == 2

@@ -4,9 +4,9 @@ Headline timings of PyFE4AI on the federated-learning aggregation path, with
 the native backend (the Rust extension `pyfe4ai._rust_native`) against the
 Python backend and v0.3.0. Measured on an Apple M2 Max (Python 3.13), one
 thread unless stated, `security_profile="standard"`, three clients, medians
-of interleaved runs; timings vary with the machine and its load. The scripts
-in this directory reproduce them (see `README.md`), for example
-`python benchmarks/bench_fl_compare.py --help`.
+of interleaved runs; timings vary with the machine and its load. The commands
+of `benchmarks/run.py` reproduce them (see `README.md`), for example
+`python benchmarks/run.py fl-compare --help`.
 
 ## MCFE over Ring-LWE (`mcfe/ring_lwe`), 10^4 gradient elements
 

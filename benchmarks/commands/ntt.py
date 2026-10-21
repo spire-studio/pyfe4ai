@@ -101,8 +101,8 @@ def bench_pair(ring_n: int, q_int: int, rounds: int) -> list[dict]:
     ]
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+def main(argv=None, prog=None) -> None:
+    parser = argparse.ArgumentParser(prog=prog, description=__doc__)
     parser.add_argument(
         "--rounds", type=int, default=ROUNDS, help="timing rounds per (n, q) pair"
     )
@@ -111,7 +111,7 @@ def main() -> None:
     )
     parser.add_argument("--output", choices=["csv", "json"], default="csv")
     parser.add_argument("--seed", type=int, default=42)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     prepare_benchmark(args.seed)
 
     results: list[dict] = []
@@ -122,6 +122,3 @@ def main() -> None:
 
     emit_results(results, output=args.output, header=HEADER)
 
-
-if __name__ == "__main__":
-    main()

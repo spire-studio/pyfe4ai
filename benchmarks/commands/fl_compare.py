@@ -38,13 +38,13 @@ The schemes write their parameter cache to ``<workdir>/config`` (as
 ``PYFE4AI_CACHE_DIR``); the run happens in ``--workdir`` (default: a
 temporary directory) so a cache can be reused across runs. Usage::
 
-    python benchmarks/bench_fl_compare.py --families ring_lwe --elements 10000 --json out.json
-    python benchmarks/bench_fl_compare.py --families ring_lwe --backend native --threads 4
-    python benchmarks/bench_fl_compare.py --families ring_lwe lwe --label-hash shake128-rejection
-    python benchmarks/bench_fl_compare.py --families ring_lwe_threshold  # binary, RNS, split key shares
-    python benchmarks/bench_fl_compare.py --families ring_lwe_threshold --ct-format json --ring-modulus prime \
+    python benchmarks/run.py fl-compare --families ring_lwe --elements 10000 --json out.json
+    python benchmarks/run.py fl-compare --families ring_lwe --backend native --threads 4
+    python benchmarks/run.py fl-compare --families ring_lwe lwe --label-hash shake128-rejection
+    python benchmarks/run.py fl-compare --families ring_lwe_threshold  # binary, RNS, split key shares
+    python benchmarks/run.py fl-compare --families ring_lwe_threshold --ct-format json --ring-modulus prime \
         --key-shares full  # the options of earlier versions
-    python benchmarks/bench_fl_compare.py --families ring_lwe --ring-modulus rns  # q = q1 q2 (opt-in)
+    python benchmarks/run.py fl-compare --families ring_lwe --ring-modulus rns  # q = q1 q2 (opt-in)
 """
 
 from __future__ import annotations
@@ -423,8 +423,8 @@ def measure_decentralized(family: str, elements: int, clients: int, rounds: int,
     return row
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+def main(argv=None, prog=None) -> None:
+    parser = argparse.ArgumentParser(prog=prog, description=__doc__.splitlines()[0])
     parser.add_argument("--families", nargs="+", default=["ring_lwe"], choices=sorted(FAMILIES))
     parser.add_argument("--elements", type=int, default=None, help="per family default if omitted")
     parser.add_argument("--clients", type=int, default=3)
@@ -460,7 +460,7 @@ def main() -> None:
     parser.add_argument("--workdir", default=None, help="directory holding the parameter cache config/ (default: temporary)")
     parser.add_argument("--json", default=None, help="append the results to this JSON file")
     parser.add_argument("--tag", default="", help="free-form label stored with every row")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     logging.disable(logging.CRITICAL)
     warnings.simplefilter("ignore")
     bound_x = args.bound_x or 10 ** args.precision
@@ -535,6 +535,3 @@ def main() -> None:
         with open(args.json, "w", encoding="utf-8") as f:
             json.dump(doc, f, indent=2, default=str)
 
-
-if __name__ == "__main__":
-    main()

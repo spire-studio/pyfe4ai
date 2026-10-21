@@ -100,20 +100,17 @@ def bench_e2e(rounds: int) -> list[dict]:
     return results
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+def main(argv=None, prog=None) -> None:
+    parser = argparse.ArgumentParser(prog=prog, description=__doc__)
     parser.add_argument("--rounds", type=int, default=ROUNDS)
     parser.add_argument("--count", type=int, default=4096)
     parser.add_argument("--e2e", action="store_true", help="also time an MCFE Ring-LWE round")
     parser.add_argument("--output", choices=["csv", "json"], default="csv")
     parser.add_argument("--seed", type=int, default=42)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     prepare_benchmark(args.seed)
     results = bench_widths(args.count, args.rounds)
     if args.e2e:
         results.extend(bench_e2e(args.rounds))
     emit_results(results, output=args.output, header=HEADER)
 
-
-if __name__ == "__main__":
-    main()

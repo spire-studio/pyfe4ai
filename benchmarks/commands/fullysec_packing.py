@@ -8,7 +8,7 @@ that a load from other processes affects both alike.
 
 Usage::
 
-    python benchmarks/bench_fullysec_packing.py [--runs 3] [--configs 1,4,10]
+    python benchmarks/run.py fullysec-packing [--runs 3] [--configs 1,4,10]
 """
 
 from __future__ import annotations
@@ -38,11 +38,11 @@ def _scheme(eta, x, y, layout):
     return kg, pp, SIFEFullySecRingLWE({"keys": {"pp": pp, "sk": kg.get_private_keys()}}), setup
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+def main(argv=None, prog=None) -> None:
+    parser = argparse.ArgumentParser(prog=prog, description=__doc__.splitlines()[0])
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--configs", default="1,4,10")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     print("backend:", native_backend.implementation() or "python", "| load:", os.getloadavg())
     rng = random.Random(1)
     for key in (int(c) for c in args.configs.split(",")):
@@ -88,6 +88,3 @@ def main() -> None:
                 layout, pp["ring_n"], pp["m"], int(pp["q"]).bit_length(), setup, k, js / k, raw / k,
                 e, e / k, d, d / k))
 
-
-if __name__ == "__main__":
-    main()
