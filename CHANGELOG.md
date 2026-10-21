@@ -925,6 +925,18 @@ Mac) against BLS12-381.
   rows of `pk`. All of them now refuse such a key at encryption with
   `FEKeyError` ("the encryption key has fewer than eta rows of pk or u"), in
   both backends. Well-formed keys encrypt as before.
+- **Decentralized MCFE over Ring-LWE: key shares from malformed keys or
+  shares** (`mcfe/ring_lwe_decentralized`; integrity on the Python backend).
+  `derive_function_decryption_key_share` read the client's pad `u` and IPFE
+  secret `s` (`eta` polynomials of `ring_n` values): with fewer rows the
+  Python backend dropped the missing ones and published a key share whose
+  combined key decrypted to wrong values inside the bound, while the native
+  backend failed with a bare `ValueError`; rows of another length gave
+  `IndexError` / `ValueError`. `combine_function_decryption_key_share` summed
+  shares whose `sk_y`, `z` or `z_chunks` entries were not `ring_n` values
+  (natively a bare `ValueError`, in Python the shortest length: a wrong
+  key). Both now refuse such keys and shares with `FEKeyError` (constant
+  messages) before any computation, in both backends.
 - Threshold combiners (`combine_decrypt` of every threshold scheme): a
   partial decryption whose `sid` was not a string (e.g. `bytes`), or whose
   `lst_sid_enrolled` was not a list of strings, failed with a bare

@@ -714,6 +714,31 @@ def decode_vector(poly: list[gp.mpz], p: gp.mpz, q: gp.mpz, k: int) -> list[int]
 DEFAULT_RING_N = 32
 
 
+def check_key_rows(rows: dict, eta: int, ring_n: int, what: str) -> None:
+    """Raise unless every entry of *rows* (a key field's name -> its rows, e.g.
+    an encryption key's ``pk`` and pad ``u``) is a list of at least *eta* rows
+    whose first *eta* are lists of *ring_n* values. With fewer rows or rows of
+    another length the encryption and key derivation zipped the key away:
+    short ciphertexts, keys that decrypt to wrong values (on the Python path),
+    or an ``IndexError`` / ``ValueError`` deep in a backend.
+
+    Args:
+        rows: ``{field name: rows}``.
+        eta: Rows a key field must have.
+        ring_n: Values per row.
+        what: The fields as named in the message (``"pk or u"``); constant.
+
+    Raises:
+        FEKeyError: With a constant message (no key data).
+    """
+    from pyfe4ai.core.exceptions import FEKeyError
+
+    if any(not isinstance(value, (list, tuple)) or len(value) < eta for value in rows.values()):
+        raise FEKeyError("the encryption key has fewer than eta rows of " + what)
+    if any(not isinstance(row, (list, tuple)) or len(row) != ring_n for value in rows.values() for row in value[:eta]):
+        raise FEKeyError("the encryption key has a row of " + what + " that is not ring_n values")
+
+
 def check_ring_n(ring_n) -> int:
     """Return *ring_n* if it is a power of two >= 2 (``x^n + 1`` must be the
     cyclotomic polynomial of BMMS21 and the NTT needs ``2n | q - 1``)."""

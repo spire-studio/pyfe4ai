@@ -53,7 +53,7 @@ from pyfe4ai.core.formats.ring_lwe import MCFERingLWEFunctionalKey
 from pyfe4ai.core.versions import check_key_label_hash
 from pyfe4ai.primitives.hashing import hash_to_zq_material, hash_to_zq_vector
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.primitives.lattice.ring_lwe_utils import mat_vec_mul, transpose
+from pyfe4ai.primitives.lattice.ring_lwe_utils import check_key_rows, mat_vec_mul, transpose
 from pyfe4ai._validation import int_vector
 
 logger = logging.getLogger(__name__)
@@ -144,6 +144,10 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
         Returns:
             Dict with ``sk_y`` (this slot's IPFE key), ``z`` and ``z_chunks``
             (masked pad terms), ``label``, ``nid`` and ``weights_id``.
+
+        Raises:
+            FEKeyError: Without the client's keys, or if ``u`` or ``s`` has
+                fewer than ``eta`` rows of ``ring_n`` values.
         """
         if not self._has_private_keys() or "pair_keys" not in DecentralizedRingLWEEncryptionKey(self.sk):
             raise FEKeyError("need the client's keys to derive a key share")
@@ -161,6 +165,8 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
         y = [gp.mpz(v) for v in weights]
         weights_id = fusion_weight_id(fusion_weight)
         sk = DecentralizedRingLWEEncryptionKey(self.sk)
+        # eta rows of ring_n values each (fewer: the Python path zipped them away into a wrong key share)
+        check_key_rows({"u": sk.get("u"), "s": sk.get("s")}, self.pp["eta"], ring_n, "u or s")
         s = [[gp.mpz(v) for v in row] for row in sk.s]
 
         labels = [label] + [chunk_label(label, c) for c in range(n_chunks)]
@@ -231,6 +237,8 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
         Raises:
             FESchemeError: If a client's share is missing or the shares were
                 derived for different weights, labels or chunk counts.
+            FEKeyError: If a share's ``sk_y``, ``z`` or a ``z_chunks`` entry
+                is not ``ring_n`` values.
         """
         lst_nid = self.pp["lst_nid"]
         if set(dct_dk_shares) != set(lst_nid):
@@ -245,8 +253,13 @@ class DecentralizedMCFERingLWE(MCFERingLWE):
             raise FESchemeError("key shares were derived for different weights or labels")
         for sh in shares:
             check_key_label_hash(sh.to_dict(), self.label_hash, "key shares were")
+        ring_n = self.pp["ring_n"]
+        for sh in shares:  # ring_n values each (the Python sum would stop at the shortest)
+            if any(not isinstance(poly, (list, tuple)) or len(poly) != ring_n
+                   for poly in [sh.get("sk_y"), sh.get("z")] + list(sh.z_chunks)):
+                raise FEKeyError("malformed key share: sk_y, z and every z_chunks entry are ring_n values")
         q = gp.mpz(self.pp["q"])
-        ring = backend.ring(q, self.pp["ring_n"])
+        ring = backend.ring(q, ring_n)
 
         def total(get) -> list:
             # sum mod q, natively where the extension applies, the same strings (the
