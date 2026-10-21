@@ -149,7 +149,8 @@ not compatible with v0.3.0, and modules moved and classes were renamed
   status), `CAPABILITIES`, `get_scheme_status` and `SchemeStatus`, and every
   exception and warning of the library: `FEError`, `FEConfigError`,
   `FEKeyError`, `FEValidationError`, `FESchemeError`, `MixedSharingsError`,
-  `FESecurityWarning` and `FEWarning`. It no longer re-exports `SIFE`,
+  `FESecurityWarning` and `FEWarning`, and `backend_info()` (see Added). It
+  no longer re-exports `SIFE`,
   `SIFEKeyGenerator`, `MIFE`, `MIFEKeyGenerator`, `MCFE` and
   `MCFEKeyGenerator`: use `create()`, or import the classes under their new
   names from the family packages (`from pyfe4ai.schemes.sife import
@@ -321,6 +322,55 @@ not compatible with v0.3.0, and modules moved and classes were renamed
   | `pyfe4ai.primitives.sampling._reset_xof_lock`, `pyfe4ai.backend.native_impl._reset_contexts_lock`, `pyfe4ai.schemes.threshold.store._reset_share_cache_lock` and `_reset_store_lock` (the child-side handlers) | `pyfe4ai.core.forksafe.renew_lock(module, name)` registrations (the locks keep their names: `_XOF_LOCK`, `_contexts_lock`, `_SHARE_CACHE_LOCK`, `_STORE_LOCK`) |
   | the `os.register_at_fork` call of `pyfe4ai.primitives.sampling` for `_OS_RANDOM._reset` | `pyfe4ai.core.forksafe.call_in_child(_OS_RANDOM._reset)` |
   | `pyfe4ai.core.one_time._LIVE`, `_invalidate_after_fork` | `pyfe4ai.core.forksafe.track(obj)` (`OneTimePrecomputation._after_fork_in_child()`) |
+- **Tests by topic**: the test modules at the top of `tests/` moved into
+  one directory per topic (`tests/<group>/`, file names unchanged); the
+  scheme tests (`tests/sife/`, `mife/`, `mcfe/`, `quadratic/`) and
+  `tests/review/` stay. `tests/conftest.py` marks every test with its group
+  (`pytest -m threshold`), `core` / `extended` as before, `native` (needs
+  the extension or the `rust/core` C ABI) and `slow` (2 s or more); the
+  marks are registered in `pyproject.toml`, which now passes
+  `--strict-markers`. The move adds and drops no test (node ids change with
+  the paths only); see CONTRIBUTING.md, "Tests".
+
+  | Old (`tests/`) | New |
+  |---|---|
+  | `test_api.py`, `test_registry.py`, `test_scheme_status.py`, `test_exceptions.py`, `test_warnings.py` | `tests/api/` |
+  | `test_config.py`, `test_client_lists.py`, `test_param_cache.py`, `test_param_cache_secrets.py`, `test_formats.py`, `test_versions.py` | `tests/config/` |
+  | `test_security_profiles.py`, `test_ring_parameters.py`, `test_wide_lwe.py` | `tests/params/` |
+  | `test_backend_interface.py` | `tests/backend/` |
+  | `test_native_backend.py`, `test_native_drbg.py`, `test_native_sife.py`, `test_native_dmcfe.py`, `test_dense_lwe_native.py`, `test_ristretto255_native.py`, `test_rust_core.py` | `tests/native/` |
+  | `test_sampling.py`, `test_sampling_facct.py`, `test_scheme_samplers.py`, `test_native_facct.py`, `test_native_facct_wide.py`, `test_native_gaussian_bigint.py` | `tests/sampling/` |
+  | `test_ntt.py`, `test_lwe_matrix.py`, `test_plaintext_encoding.py`, `test_ring_lwe_equivalence.py`, `test_ring_lwe_binary.py`, `test_rns_modulus.py` | `tests/lattice/` |
+  | `test_crypto_primitives.py`, `test_label_hash_modes.py`, `test_dlog_solver.py`, `test_ddh_ristretto255.py`, `test_bls12_381.py`, `test_pairing_groups.py`, `test_pairing_multiexp.py` | `tests/primitives/` |
+  | `test_threshold_binary.py`, `test_threshold_consistency.py`, `test_threshold_defaults.py`, `test_threshold_lagrange_leak.py`, `test_threshold_pp_binding.py`, `test_threshold_rns.py`, `test_threshold_split_shares.py`, `test_replicated_sharing.py`, `test_replicated_seeded_sharing.py`, `test_replicated_native.py`, `test_kl_flooding.py`, `test_uniform_flooding.py` | `tests/threshold/` |
+  | `test_one_time.py`, `test_random_offline.py`, `test_ring_lwe_precompute.py` | `tests/offline/` |
+  | `test_forksafe.py`, `test_global_state.py`, `test_object_caches.py` | `tests/state/` |
+  | `test_ml_adapter.py`, `test_ml_adapter_threshold.py`, `test_quantization.py` | `tests/ml/` |
+  | `test_weight_validation.py`, `test_paillier_decrypt_hardening.py`, `test_ndarray_decrypt_failures.py`, `test_review_fixes.py` | `tests/hardening/` |
+- **Benchmarks: one command line** `benchmarks/run.py <command>` replaces
+  the 17 scripts of `benchmarks/` (the code of each is in
+  `benchmarks/commands/`; options and output unchanged, `run.py --help` lists
+  the commands, `run.py <command> --help` the options):
+
+  | Old (`python benchmarks/...`) | New (`python benchmarks/run.py ...`) |
+  |---|---|
+  | `benchmark_sife_instantiations.py` | `sife` |
+  | `benchmark_mife_instantiations.py` | `mife` |
+  | `benchmark_mcfe_instantiations.py` | `mcfe` |
+  | `benchmark_dmcfe_instantiations.py` | `dmcfe` |
+  | `benchmark_tmife_instantiations.py` | `tmife` |
+  | `benchmark_tmcfe_instantiations.py` | `tmcfe` |
+  | `benchmark_lwe_family.py` | `lwe-family` |
+  | `benchmark_fh_multi_ipe_family.py` | `fh-family` |
+  | `benchmark_quadratic_family.py` | `quadratic` |
+  | `benchmark_ndarray_helpers.py` | `ndarray` |
+  | `benchmark_ntt.py` | `ntt` |
+  | `benchmark_sampling.py` | `sampling` |
+  | `bench_fl_compare.py` | `fl-compare` |
+  | `fl_path_coverage.py` | `fl-coverage` |
+  | `bench_replicated_sharing.py` (positional `KIND S T SHARING [REPS]`) | `replicated-sharing` (the same arguments) |
+  | `bench_offline_potential.py` | `offline-potential` |
+  | `bench_fullysec_packing.py` | `fullysec-packing` |
 - **Repository layout**: `Dockerfile.pairing` moved to
   `docker/Dockerfile.pairing` (`docker build -f docker/Dockerfile.pairing
   -t pyfe4ai-pairing .`); the parameter estimators moved to
@@ -641,6 +691,27 @@ Mac) against BLS12-381.
   operating system per call and expands it with ChaCha20 (a standard stream
   cipher, not an SP 800-90A DRBG, which matters only for FIPS validation);
   no generator state outlives a call.
+- **`pyfe4ai.backend_info()`** (also `pyfe4ai.backend.backend_info()`):
+  the backend the calling thread uses (`"native"` or `"python"`) and its
+  selection, whether the extension is available, its version, build and
+  file (or why it could not be imported), the threads per native call, the
+  Gaussian sampler (library-wide and the schemes' recorded default) and the
+  parameter cache directory, as a dict of plain values. Importing `pyfe4ai`
+  still loads neither the backend nor the extension; calling it does.
+- **Notice without the extension**: the first time the library falls back to
+  its Python implementation because the extension is not built (under the
+  default `"auto"`, or `PYFE4AI_BACKEND=native` set in the environment, which
+  still runs Python), it issues one `FEWarning` per process, attributed to
+  the application's call: the Python implementation is about 5 to 35 times
+  slower on the lattice schemes (one thread, measured with
+  `benchmarks/run.py fl-compare`), and how to
+  build the extension (`python tools/build_rust.py`). Not given under an
+  explicit `"python"` (`PYFE4AI_BACKEND=python`, `set_backend`, `backend()`),
+  nor while the library's own modules are imported; a warnings filter
+  silences it (`warnings.filterwarnings("ignore", "the native extension",
+  FEWarning)`). `set_backend("native")` and `backend("native")` still raise
+  `ImportError` without the extension. The text is
+  `pyfe4ai.backend.MISSING_EXTENSION_NOTICE`.
 - **BLS12-381** (`pyfe4ai.primitives.pairing.bls12_381`, behind charm's `PairingGroup`
   interface; `group.hash` is RFC 9380 hash_to_curve),
   `pairing_backend.multiexp`, `pow_many` and `deserialize_many`;
@@ -710,10 +781,10 @@ Mac) against BLS12-381.
   library-wide choice; output platform-independent for a given bit source
   (known-answer tests); not constant-time. `discrete_gaussian_bigint` takes
   an optional higher `precision`.
-- `examples/mcfe_ring_lwe_threshold_demo.py`; benchmark scripts
-  `bench_fl_compare.py`, `bench_offline_potential.py`,
-  `bench_replicated_sharing.py`, `bench_fullysec_packing.py` and
-  `benchmark_sampling.py`, with `benchmarks/PERFORMANCE.md`;
+- `examples/mcfe_ring_lwe_threshold_demo.py`; benchmarks
+  `fl-compare`, `offline-potential`, `replicated-sharing`,
+  `fullysec-packing` and `sampling` (commands of `benchmarks/run.py`, see
+  Code organization), with `benchmarks/PERFORMANCE.md`;
   `tools/params/estimate_rns_modulus.py`.
 - Regression tests of the October 2026 review in `tests/review/`.
 - CI: a `rust-native` job builds the extension and runs `cargo test` and the

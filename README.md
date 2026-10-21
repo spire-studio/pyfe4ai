@@ -79,7 +79,13 @@ and 6 ms for the aggregator, against 198 ms and 280 ms with v0.3.0 (0.25 ms
 per client online after an offline phase). It also provides ristretto255 for
 the `ddh_ristretto255` schemes and the BLS12-381 pairing group, the default
 of the pairing-based schemes. `PYFE4AI_BACKEND=python` (or
-`pyfe4ai.backend.set_backend("python")`) forces the Python implementation. See
+`pyfe4ai.backend.set_backend("python")`) forces the Python implementation.
+`pyfe4ai.backend_info()` reports what runs (the backend of the calling thread,
+the extension's version and build, threads, Gaussian sampler, parameter cache
+directory). Without the extension the library runs the Python implementation,
+about 5 to 35 times slower on the lattice schemes, and says so once per
+process with an `FEWarning` at its first fallback (not under
+`PYFE4AI_BACKEND=python`; a warnings filter silences it too). See
 `pyfe4ai.backend` and
 [`benchmarks/PERFORMANCE.md`](benchmarks/PERFORMANCE.md).
 
@@ -327,9 +333,9 @@ side-channel hardening, trusted parameter cache) still apply.
   - `_validation.py`: strict integer checks and rounding of scheme inputs
 - `rust/`: sources of the native extension (`rust/native`, PyO3) and of its computation core (`rust/core`)
 - `docs/`: Sphinx API documentation (see [API Documentation](#api-documentation))
-- `tests/`: end-to-end and regression tests (`sife/`, `mife/`, `mcfe/`, `quadratic/`)
+- `tests/`: end-to-end and regression tests, by topic (`api/`, `config/`, `params/`, `backend/`, `native/`, `sampling/`, `lattice/`, `primitives/`, `threshold/`, `offline/`, `state/`, `ml/`, `hardening/`), the schemes by family (`sife/`, `mife/`, `mcfe/`, `quadratic/`) and the crypto-review regressions (`review/`); pytest marks select groups (see [`CONTRIBUTING.md`](CONTRIBUTING.md))
 - `examples/`: minimal runnable usage examples
-- `benchmarks/`: lightweight benchmark scripts
+- `benchmarks/`: the benchmarks, one command each of `benchmarks/run.py` (`python benchmarks/run.py --help`)
 - `tools/`: `build_rust.py` (builds the native extension); `params/` (`estimate_dense_lwe.py`, `estimate_wide_lwe.py`, `estimate_ring_lwe.py`, `estimate_rns_modulus.py` regenerate the LWE and Ring-LWE security tables with SageMath and the lattice estimator)
 - `site/`: project landing page (published with the docs to GitHub Pages)
 - `pyproject.toml`: package metadata and the dependencies (extras `test`, `pairing`, `doc`)
@@ -382,6 +388,9 @@ CamelCase with its acronyms in capitals; the key generator adds
 python -m pytest -q                # all tests
 python -m pytest -m core -q        # core FE/IPFE smoke lane only
 python -m pytest -m extended -q    # pairing-heavy & quadratic families only
+python -m pytest -m "not slow" -q  # without the ~20 slowest tests
+python -m pytest -m "not native" -q  # what runs without the Rust extension
+python -m pytest -m threshold -q   # one group (tests/threshold); see CONTRIBUTING.md
 ```
 
 The `core` lane is the main public release lane. The `extended` lane covers
@@ -393,7 +402,7 @@ Python reference; run the suite on each backend, and the Rust core's own tests
 (`tests/native/test_rust_core.py` also loads the core's C ABI once it is built):
 
 ```bash
-PYFE4AI_BACKEND=native python -m pytest -q   # error if the extension is not built
+PYFE4AI_BACKEND=native python -m pytest -q   # without the extension: Python (the native tests skip)
 PYFE4AI_BACKEND=python python -m pytest -q   # the Python reference implementation
 (cd rust/core && cargo test --release && cargo build --release)
 ```
@@ -433,8 +442,8 @@ Minimal runnable examples are grouped as follows:
 
 For a short walkthrough of the example set, see `examples/README.md`.
 
-Lightweight benchmark scripts are available under `benchmarks/`.
-For benchmark entry points, see `benchmarks/README.md`.
+The benchmarks run through `python benchmarks/run.py <command>` (`--help` lists
+the commands); see `benchmarks/README.md`.
 
 ## API Documentation
 
