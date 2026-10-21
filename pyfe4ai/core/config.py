@@ -42,7 +42,7 @@ from pyfe4ai.core.profiles import STANDARD
 from pyfe4ai.core.profiles import STANDARD_DCR_PRIME_BITS
 from pyfe4ai.core.profiles import STANDARD_STAT_PARAM
 from pyfe4ai.core.profiles import TOY
-from pyfe4ai.core.exceptions import FESecurityWarning, FEValidationError
+from pyfe4ai.core.exceptions import FESecurityWarning, FEValidationError, warn_at_caller
 from pyfe4ai.core.registry import SCHEMES, get_scheme
 
 # ---------------------------------------------------------------------------
@@ -253,6 +253,13 @@ def resolve(config: dict, scheme: tuple | None) -> dict:
     Raises:
         FEValidationError: For an unknown profile, a scheme the profile does
             not support, or an explicit value weaker than the profile's.
+
+    Warns:
+        FESecurityWarning: For a pairing scheme under ``standard``
+            (BLS12-381, about 120 to 126-bit security), attributed to the
+            application's call (the first frame outside pyfe4ai, see
+            :func:`~pyfe4ai.core.exceptions.warn_at_caller`): Python's
+            default filter shows it once per call site of the application.
     """
     profile = config.get("security_profile", TOY)
     if profile not in PROFILES:
@@ -274,11 +281,12 @@ def resolve(config: dict, scheme: tuple | None) -> dict:
             raise FEValidationError(
                 "the '{}' profile uses pairing group {}, got {!r}".format(profile, STANDARD_PAIRING_GROUP, group)
             )
-        warnings.warn(
+        # attributed to the application's call (the first frame outside pyfe4ai),
+        # however deep the library's frames above resolve() are
+        warn_at_caller(
             "{}/{}: BLS12-381 gives about 120 to 126-bit security after the exTNFS "
             "attacks, below the 128-bit target of the '{}' profile".format(*scheme, profile),
             FESecurityWarning,
-            stacklevel=3,
         )
         return out
     for key, minimum in STANDARD_MINIMA[kind].items():

@@ -816,6 +816,14 @@ Mac) against BLS12-381.
   `FESchemeWrapper` are renewed in a forked child (`core.forksafe.track`):
   a lock another thread of the parent held at the fork made the child's
   next call wait forever.
+- The pairing schemes' `FESecurityWarning` under the `standard` profile
+  (BLS12-381, about 120 to 126-bit security) is attributed to the
+  application's call -- the first frame outside pyfe4ai, as for
+  `FEWarning` -- instead of a line inside the library (`core/base.py`).
+  Its category and text are unchanged; Python's default filter now shows
+  it once per call site of the application (it was once per process for all
+  pairing schemes and call sites together), and a warnings filter on the
+  application's module matches it.
 - **`sife/fullysec_ring_lwe` samples exact Gaussians** for its keys and
   encryption noise in both layouts (`gaussian_sampler = "rounded"` restores
   the previous draws). With the rounded sampler its keys were about `2^-47`
