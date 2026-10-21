@@ -1,6 +1,8 @@
 """
 Encodings of the threshold artifacts and their strict parsing.
 
+* The values of the threshold DDH key shares: decimal strings only
+  (:func:`is_decimal`).
 * Key material (nested dicts and lists of polynomials) as value lists --
   ints, ``mpz`` or decimal strings, read by :func:`strict_mpz` -- or binary
   words (:func:`binary_material`: ``ceil(bits(q) / 8)`` bytes per value,
@@ -113,6 +115,13 @@ def strict_mpz(value):
         return gp.mpz(value)
     except (ValueError, TypeError) as exc:
         raise FEKeyError("malformed key share value") from exc
+
+
+def is_decimal(value) -> bool:
+    """Whether *value* is a decimal string (ASCII digits only), the documented
+    type of the threshold DDH key share values (``gmpy2.digits`` of a value
+    mod ``q``); ints and other types are not."""
+    return isinstance(value, str) and value.isascii() and value.isdigit()
 
 
 def poly_kinds(material) -> set:

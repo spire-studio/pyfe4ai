@@ -149,19 +149,39 @@ class EncryptedGradient:
     #: Largest number of elements :meth:`from_dict` accepts per array.
     MAX_ELEMENTS = 10 ** 7
 
+    #: The quantization modes of a serialised gradient (:class:`~pyfe4ai.ml.quantization.QuantizationConfig`).
+    MODES = ("decimal", "binary")
+
     @classmethod
     def from_dict(cls, d: dict) -> EncryptedGradient:
-        """Deserialise from dict.
+        """Deserialise from :meth:`to_dict`, checking the field types and the
+        layout (the scheme checks the ciphertexts when decrypting).
 
         Raises:
-            ValueError: If an array's shape is invalid or has more than
-                :attr:`MAX_ELEMENTS` elements, or its entries do not cover
-                exactly the positions of that shape; if a packed layer is not a
-                valid ``{"shape", "first_chunk", "chunks"}`` layout; or if packed
-                and per-element layers are mixed.
+            ValueError: Unless *d* has exactly the keys ``nid`` (a string),
+                ``shape`` (a list of non-negative ints), ``precision`` (a
+                non-negative int), ``mode`` (``"decimal"`` or ``"binary"``)
+                and ``ciphertexts`` (a non-empty list of layers); if an array's
+                shape is invalid or has more than :attr:`MAX_ELEMENTS`
+                elements; if a per-element layer is not ``{"shape", "data"}``
+                with one ciphertext (a dict) under each index key
+                ``to_dict`` writes, ``"(i, j, ...)"``, and nothing else; if a
+                packed layer is not a valid ``{"shape", "first_chunk",
+                "chunks"}`` layout; or if packed and per-element layers are
+                mixed.
         """
+        if not isinstance(d, dict) or set(d) != set(GradientWire.FIELDS):
+            raise ValueError("invalid encrypted gradient: keys nid, shape, precision, mode and ciphertexts")
         d = GradientWire(d)
+        precision = d.precision
+        if (not isinstance(d.nid, str) or isinstance(precision, bool) or not isinstance(precision, int)
+                or precision < 0 or d.mode not in cls.MODES):
+            raise ValueError("invalid encrypted gradient: nid is a string, precision a non-negative int, "
+                             "mode 'decimal' or 'binary'")
+        shape, _ = cls._checked_shape(d.shape)
         layers = d.ciphertexts
+        if not isinstance(layers, list) or not layers:
+            raise ValueError("invalid encrypted gradient: ciphertexts must be a non-empty list of layers")
         packed = [isinstance(ct_dict, dict) and "packed" in PackedLayerWrapper(ct_dict) for ct_dict in layers]
         if any(packed) and not all(packed):
             raise ValueError("cannot mix packed and per-element ciphertext layers")
@@ -171,8 +191,8 @@ class EncryptedGradient:
             cts = [cls._element_layer(ct_dict) for ct_dict in layers]
         return cls(
             ciphertexts=cts,
-            shape=tuple(d.shape),
-            precision=d.precision,
+            shape=shape,
+            precision=precision,
             mode=d.mode,
             nid=d.nid,
         )
@@ -194,22 +214,43 @@ class EncryptedGradient:
 
     @classmethod
     def _element_layer(cls, ct_dict: dict) -> np.ndarray:
-        """Rebuild a per-element layer ``{"shape", "data"}`` as an object array."""
+        """Rebuild a per-element layer ``{"shape", "data"}`` as an object array:
+        ``data`` holds one ciphertext (a dict) under the key ``str(index)`` of
+        every index of the shape, as :meth:`to_dict` writes it, and no other
+        key (another spelling of an index, e.g. ``"( 0,)"`` or ``"(+0,)"``, is
+        refused rather than read as the same position)."""
+        if not isinstance(ct_dict, dict) or set(ct_dict) != set(ElementLayerWire.FIELDS):
+            raise ValueError("invalid ciphertext layer: keys shape and data")
         ct_dict = ElementLayerWire(ct_dict)
         shape, size = cls._checked_shape(ct_dict.shape)
+        data = ct_dict.data
+        if not isinstance(data, dict) or len(data) != size:
+            raise ValueError("ciphertext array must have an entry for every element")
         ary = np.empty(shape, dtype=object)
-        seen = set()
-        for key, val in ct_dict.data.items():
-            idx = tuple(
-                int(x) for x in key.strip("()").split(",") if x.strip()
-            )
+        for key, val in data.items():
+            idx = cls._index(key)
             if len(idx) != len(shape) or any(not 0 <= i < n for i, n in zip(idx, shape)):
                 raise ValueError("ciphertext index {} outside the shape {}".format(key, shape))
+            if not isinstance(val, dict):
+                raise ValueError("invalid ciphertext layer: every entry is a ciphertext (a dict)")
             ary[idx] = val
-            seen.add(idx)
-        if len(seen) != size:
-            raise ValueError("ciphertext array must have an entry for every element")
+        # distinct keys in the one spelling are distinct positions: len(data) == size covers every one
         return ary
+
+    @staticmethod
+    def _index(key) -> tuple:
+        """The index of a per-element layer's key, written as :meth:`to_dict`
+        writes it (``str`` of a tuple of ints: ``"(0,)"``, ``"(1, 2)"``,
+        ``"()"``); other spellings are refused."""
+        idx = None
+        if isinstance(key, str) and key[:1] == "(" and key[-1:] == ")":
+            try:
+                idx = tuple(int(x) for x in key[1:-1].split(",") if x.strip())
+            except ValueError:
+                idx = None
+        if idx is None or str(idx) != key:
+            raise ValueError("invalid ciphertext index key in a per-element layer")
+        return idx
 
     @classmethod
     def _packed_layers(cls, layers: list) -> list:

@@ -55,6 +55,7 @@ from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
 from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.schemes.threshold.binding import check_fusion_weight
 from pyfe4ai.schemes.threshold.binding import fusion_weight_id
+from pyfe4ai.schemes.threshold.codec import is_decimal
 from pyfe4ai.schemes.threshold.roles import validate_enrolled
 from pyfe4ai.schemes.threshold.roles import combine_consistently
 from pyfe4ai.schemes.threshold.roles import partial_groups
@@ -348,6 +349,8 @@ class ThresholdMCFEDDH(IPFEAbsCrypto):
         share = TMCFEDDHKeyShare.from_dict(dk)
         if not isinstance(share.get("d"), (list, tuple)) or len(share.d) != 2:
             raise FEKeyError("malformed tMCFE key share: expected d = [d0, d1]")
+        if not all(map(is_decimal, share.d)):
+            raise FEKeyError("malformed tMCFE key share: d holds decimal strings")
         p = gp.mpz(self.pp["p"])
         q = (p - 1) // 2
         lst_sid = share.lst_sid

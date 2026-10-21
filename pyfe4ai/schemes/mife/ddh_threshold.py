@@ -35,6 +35,7 @@ import numpy as np
 
 from pyfe4ai.schemes.mife.ddh import MIFEDDH, MIFEDDHKeyGenerator
 from pyfe4ai.schemes.threshold.binding import check_fusion_weight
+from pyfe4ai.schemes.threshold.codec import is_decimal
 from pyfe4ai.schemes.threshold.roles import validate_enrolled
 from pyfe4ai.schemes.threshold.roles import combine_consistently
 from pyfe4ai.schemes.threshold.roles import combine_elementwise
@@ -166,6 +167,8 @@ class ThresholdMIFEDDH(MIFEDDH):
         if not dk or "d" not in TMIFEDDHKeyShare(dk):
             raise FEKeyError("no decryption keys provided.")
         share = TMIFEDDHKeyShare.from_dict(dk)
+        if not isinstance(share.d, dict) or not all(map(is_decimal, share.d.values())) or not is_decimal(share.get("z")):
+            raise FEKeyError("malformed tMIFE key share: d (per client) and z are decimal strings")
         if self.id not in share.lst_sid or share.get("sid") != self.id:
             raise FESchemeError("the key share does not belong to server {}".format(self.id))
         validate_enrolled(self.id, share.lst_sid, lst_sid_enrolled, self.pp["t"])

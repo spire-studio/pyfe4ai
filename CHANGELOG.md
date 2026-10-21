@@ -824,6 +824,21 @@ Mac) against BLS12-381.
   it once per call site of the application (it was once per process for all
   pairing schemes and call sites together), and a warnings filter on the
   application's module matches it.
+- **Stricter parsing of threshold DDH key shares and serialised gradients.**
+  A `mife/ddh_threshold` or `mcfe/ddh_threshold` server accepts the values
+  of a key share (`d` and `z`; the two values of `d`) only as the decimal
+  strings the key generators write (as in v0.3.0): it read them with
+  `gmpy2.mpz`, which also took ints, `mpz`, bytes, floats (truncated),
+  `True` or text such as `" 12"` and `"1_2"`; these now raise `FEKeyError`.
+  `EncryptedGradient.from_dict()` checks the layout and the field types,
+  as `ThresholdPartial.from_dict()` does: exactly the keys `nid` (a string),
+  `shape` (a list of non-negative ints), `precision` (a non-negative int),
+  `mode` (`"decimal"` or `"binary"`) and `ciphertexts` (a non-empty list of
+  layers), and per-element layers `{"shape", "data"}` with one ciphertext
+  (a dict) under each index key in the spelling `to_dict()` writes
+  (`"(0, 1)"`); extra keys, other types, other spellings of an index
+  (`"(0,1)"`, `"( 0, 1)"`, `"(+0, 1)"`) and other entries now raise
+  `ValueError`. Everything the library writes reads back as before.
 - **`sife/fullysec_ring_lwe` samples exact Gaussians** for its keys and
   encryption noise in both layouts (`gaussian_sampler = "rounded"` restores
   the previous draws). With the rounded sampler its keys were about `2^-47`
