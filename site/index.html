@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PyFE4AI — Functional Encryption for Trustworthy AI</title>
-<meta name="description" content="PyFE4AI is a research-oriented Python library of functional encryption schemes for AI security and privacy: SIFE, MIFE, MCFE, threshold, decentralized, and quadratic FE across DDH, Paillier, LWE, Ring-LWE, and pairing backends.">
+<meta name="description" content="PyFE4AI is a research-oriented Python library of functional encryption schemes for AI security and privacy: SIFE, MIFE, MCFE, threshold, decentralized, and quadratic FE across DDH, Paillier, LWE, Ring-LWE, and pairing-based assumptions.">
 <link rel="canonical" href="https://spire-studio.github.io/pyfe4ai/">
 <meta property="og:type" content="website">
 <meta property="og:title" content="PyFE4AI — Functional Encryption for Trustworthy AI">
@@ -256,7 +256,7 @@
     <div class="statbar">
       <div class="stat"><b>42</b><span>scheme variants</span></div>
       <div class="stat"><b>34 / 42</b><span>reviewed · 5 experimental · 3 unreviewed</span></div>
-      <div class="stat"><b>6</b><span>crypto backends</span></div>
+      <div class="stat"><b>6</b><span>hardness assumptions</span></div>
       <div class="stat"><b>Apache-2.0</b><span>license</span></div>
     </div>
   </div>
@@ -266,8 +266,9 @@
   <div class="wrap">
     <div class="accent-bar"></div>
     <h2 class="sec-title">Why PyFE4AI</h2>
-    <p class="sec-sub">One consistent Python API — <code>setup / keygen / encrypt / decrypt</code> —
-       across the functional-encryption zoo, built for ML workloads.</p>
+    <p class="sec-sub">One entry point — <code>pyfe4ai.create("family/variant", config)</code>, then
+       <code>setup / get_decryption_keys / encrypt / decrypt</code> — across the
+       functional-encryption zoo, built for ML workloads.</p>
     <div class="grid">
       <div class="card">
         <div class="ico b" aria-hidden="true">🧩</div>
@@ -278,7 +279,7 @@
       </div>
       <div class="card">
         <div class="ico a" aria-hidden="true">🔐</div>
-        <h3>Six cryptographic backends</h3>
+        <h3>Six hardness assumptions</h3>
         <p>DDH (3072-bit groups or the ristretto255 curve), Damgård-DDH (MDDH),
            Paillier/DCR, LWE, Ring-LWE (lattice lines) and pairings (BLS12-381) — pick
            the assumption that fits your deployment.</p>
@@ -301,12 +302,12 @@
            <code>cargo</code> is available, runs the lattice hot paths, ristretto255 and
            BLS12-381 pairings with the outputs of the Python reference: an MCFE
            Ring-LWE round of 10 000 gradient elements under <code>standard</code> takes
-           about 18 ms per client and 6 ms to aggregate (v0.3.0: 198 / 280 ms).</p>
+           about 18 ms per client and 7.5 ms to aggregate (v0.3.0: 198 / 280 ms).</p>
       </div>
       <div class="card">
         <div class="ico b" aria-hidden="true">🧪</div>
         <h3>Tested</h3>
-        <p>About 2,100 tests, run in CI with and without the Rust extension (the
+        <p>About 4,100 tests, run in CI with and without the Rust extension (the
            native code is checked bit for bit against the Python reference), including
            status-table sync, security-profile and crypto-review regression tests, plus
            a structured <code>FEError</code> exception hierarchy.</p>
@@ -386,11 +387,11 @@ result = SIFEDDH({<span class="st">"precision"</span>: <span class="st">3</span>
   <div class="wrap">
     <div class="accent-bar"></div>
     <h2 class="sec-title">Scheme Matrix</h2>
-    <p class="sec-sub">Families × backends at a glance — see the
+    <p class="sec-sub">Families × hardness assumptions at a glance — see the
        <a href="docs/">documentation</a> for per-scheme papers and parameters.</p>
     <div class="matrix-scroll">
       <table class="matrix">
-        <caption class="sr">Implemented schemes by FE family (rows) and cryptographic backend (columns), with review status</caption>
+        <caption class="sr">Implemented schemes by FE family (rows) and hardness assumption (columns), with review status</caption>
         <thead>
           <tr>
             <th scope="col" style="text-align:left">Family</th>
@@ -438,7 +439,7 @@ result = SIFEDDH({<span class="st">"precision"</span>: <span class="st">3</span>
         <p>Clients encrypt local gradients with MCFE-DDH (CDGPP18), the DCR, LWE and
            MDDH constructions of ABMPSW20, or MCFE-Ring-LWE (BMMS21), which under
            <code>standard</code> encrypts 10 000 gradient elements in about 18 ms per
-           client with the Rust extension (0.36 s in pure Python); the aggregator's
+           client with the Rust extension (0.35 s in pure Python); the aggregator's
            functional key decrypts only the weighted sum. dMCFE variants remove the key
            authority, and tMCFE variants (TAPFed-style) split decryption across t-of-s
            servers that are assumed honest-but-curious;
@@ -485,6 +486,8 @@ result = SIFEDDH({<span class="st">"precision"</span>: <span class="st">3</span>
       <a href="docs/">Documentation</a>
       <a href="https://github.com/spire-studio/pyfe4ai">GitHub</a>
       <a href="https://github.com/spire-studio/pyfe4ai/issues">Issues</a>
+      <a href="https://github.com/spire-studio/pyfe4ai/blob/main/CHANGELOG.md">Changelog</a>
+      <a href="https://github.com/spire-studio/pyfe4ai/releases">Release notes</a>
       <a href="https://github.com/spire-studio/pyfe4ai#known-issues--security-notice">Known Issues</a>
       <a href="https://github.com/spire-studio/pyfe4ai/blob/main/SECURITY.md">Security Policy</a>
       <a href="https://github.com/spire-studio/pyfe4ai/blob/main/LICENSE">License</a>
