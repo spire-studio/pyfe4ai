@@ -872,6 +872,14 @@ Mac) against BLS12-381.
   `FEValidationError` before computing anything (the combiner refused their
   partial decryptions; v0.3.0 combined them), and the ML adapter refuses
   such `servers=` / `server=` with `ValueError`.
+- **Ring-LWE key rows: two numpy shapes are refused** (`mcfe/ring_lwe` and
+  its threshold and decentralized variants, `mife/ring_lwe`,
+  `sife/ring_lwe`, `sife/fullysec_ring_lwe`). The row checks of this release
+  take a row as a list, a tuple or a 1-D numpy array, in a list, a tuple or a
+  numpy array; v0.3.0 also encrypted with rows of shape `(ring_n, 1)` (a 2-D
+  column) and with a 3-D key container, which are now refused with
+  `FEKeyError`. The library never writes either form; `numpy.ravel` each row
+  (or `.tolist()` the key) to keep using such a key.
 - **Stricter parsing of threshold DDH key shares and serialised gradients.**
   A `mife/ddh_threshold` or `mcfe/ddh_threshold` server accepts the values
   of a key share (`d` and `z`; the two values of `d`) only as the decimal
