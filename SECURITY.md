@@ -97,9 +97,10 @@ limitations.
   plaintext recovery has been shown. `t = s` and the DDH and pairing
   threshold layers are not affected. Fixed after v0.3.0 by a replicated key
   sharing, the default for `t < s`; Shamir sharing with `t < s` is refused
-  under `standard`. **Re-key:** finish the rounds encrypted under the old
-  keys with v0.3.0, then issue new client keys and key shares with the fixed
-  version (it refuses v0.3.0 key shares). The README's *Known Issues* and the
+  under `standard`. **Re-key:** with `t < s` every partial decryption under
+  v0.3.0 key shares still leaks, so finish with v0.3.0 only the rounds that
+  must finish under the old keys, then issue new client keys and key shares
+  with the fixed version (it refuses v0.3.0 key shares). The README's *Known Issues* and the
   `CHANGELOG.md` give the details. No separate security advisory was
   published.
 - **Also fixed after v0.3.0** (see the Security section of `CHANGELOG.md`):

@@ -256,7 +256,7 @@
     <div class="statbar">
       <div class="stat"><b>42</b><span>scheme variants</span></div>
       <div class="stat"><b>34 / 42</b><span>reviewed · 5 experimental · 3 unreviewed</span></div>
-      <div class="stat"><b>6</b><span>hardness assumptions</span></div>
+      <div class="stat"><b>5</b><span>hardness assumptions</span></div>
       <div class="stat"><b>Apache-2.0</b><span>license</span></div>
     </div>
   </div>
@@ -279,10 +279,10 @@
       </div>
       <div class="card">
         <div class="ico a" aria-hidden="true">🔐</div>
-        <h3>Six hardness assumptions</h3>
-        <p>DDH (3072-bit groups or the ristretto255 curve), Damgård-DDH (MDDH),
-           Paillier/DCR, LWE, Ring-LWE (lattice lines) and pairings (BLS12-381) — pick
-           the assumption that fits your deployment.</p>
+        <h3>Five hardness assumptions, six instantiations</h3>
+        <p>DDH (3072-bit groups or the ristretto255 curve) and its matrix form MDDH
+           (Damgård), Paillier/DCR, LWE and Ring-LWE (lattice lines), and pairings
+           (BLS12-381) — pick the assumption that fits your deployment.</p>
       </div>
       <div class="card">
         <div class="ico t" aria-hidden="true">🤖</div>
@@ -387,11 +387,11 @@ result = SIFEDDH({<span class="st">"precision"</span>: <span class="st">3</span>
   <div class="wrap">
     <div class="accent-bar"></div>
     <h2 class="sec-title">Scheme Matrix</h2>
-    <p class="sec-sub">Families × hardness assumptions at a glance — see the
+    <p class="sec-sub">Families × instantiations at a glance — see the
        <a href="docs/">documentation</a> for per-scheme papers and parameters.</p>
     <div class="matrix-scroll">
       <table class="matrix">
-        <caption class="sr">Implemented schemes by FE family (rows) and hardness assumption (columns), with review status</caption>
+        <caption class="sr">Implemented schemes by FE family (rows) and instantiation (columns), with review status</caption>
         <thead>
           <tr>
             <th scope="col" style="text-align:left">Family</th>

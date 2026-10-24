@@ -15,10 +15,11 @@ Before you upgrade
 
 * **Threshold LWE layers** (``mife/lwe_threshold``,
   ``mcfe/ring_lwe_threshold``, ``mcfe/lwe_threshold``): 0.4.0 refuses every
-  key share issued by 0.3.0. Finish the rounds encrypted under the old keys
-  with 0.3.0 first; then re-key with 0.4.0 (`Re-keying`_). With ``t < s``
-  their 0.3.0 key shares leak part of the decryption noise (see the README's
-  Known Issues); the fix changes how the key is shared.
+  key share issued by 0.3.0. With ``t < s`` every partial decryption under
+  0.3.0 key shares leaks part of the decryption noise (see the README's
+  Known Issues), so finish with 0.3.0 only the rounds that must finish under
+  the old keys; then re-key with 0.4.0 (`Re-keying`_), whose fix changes
+  how the key is shared.
 * **Pickles** do not carry across versions: objects pickled by 0.3.0 that
   refer to a moved module or a renamed class do not load. Keep keys, public
   parameters and ciphertexts in their JSON form, and build the objects
@@ -327,7 +328,8 @@ Re-keying
      - What to do
    * - ``mife/lwe_threshold``, ``mcfe/lwe_threshold``,
        ``mcfe/ring_lwe_threshold``
-     - finish the 0.3.0 rounds with 0.3.0; run 0.4.0's key generator
+     - finish with 0.3.0 only the rounds that must finish (with ``t < s``
+       they still leak); run 0.4.0's key generator
        (``setup()``, ``get_private_keys``, ``get_decryption_keys``) and
        hand out new client keys and key shares; discard the old key shares
    * - ``sife/lwe``, ``mife/lwe`` with ``lwe_n = "auto"``

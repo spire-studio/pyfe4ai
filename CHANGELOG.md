@@ -11,18 +11,23 @@ compatibility).
 ristretto255 and BLS12-381 code natively (an MCFE Ring-LWE round of 10^4
 gradient elements: 18 ms per client instead of 198 ms); a cryptographic code
 review fixed, among others, a leak in the threshold LWE layers of v0.3.0;
-exact Gaussian sampling and faster threshold MCFE defaults; schemes are built
+exact Gaussian sampling by default for the lattice MIFE / MCFE schemes, and
+faster threshold MCFE defaults; schemes are built
 by id with `pyfe4ai.create("family/variant", config)`, and the package and
 its class names were reorganised.
 
 **Upgrading from v0.3.0** -- see the
 [upgrade guide](https://spire-studio.github.io/pyfe4ai/docs/upgrading.html):
 update imports (Code organization); re-key the threshold LWE layers after
-finishing their v0.3.0 rounds; regenerate the keys of `sife/lwe` /
-`mife/lwe` with `lwe_n = "auto"` and of the pairing schemes (BLS12-381);
-move the parameter cache from `./config/`; expect `FESchemeError` where
-`combine_decrypt` returned `None`; use `str` or `int` ids. PyFE4AI remains an
-experimental research prototype, not recommended for production use.
+finishing only the v0.3.0 rounds that must finish (with `t < s` their
+partial decryptions still leak); store and transmit the `sharing_id` of
+`mcfe/ring_lwe_threshold` key shares and partial decryptions; regenerate the
+keys of `sife/lwe` / `mife/lwe` with `lwe_n = "auto"` and of the pairing
+schemes (BLS12-381); move the parameter cache from `./config/`; expect
+`FESchemeError` where `combine_decrypt` returned `None` for partial
+decryptions of different ciphertexts (`None` still means a value out of
+range); use `str` or `int` ids. PyFE4AI remains an experimental research
+prototype, not recommended for production use.
 
 ### Code organization (breaking)
 
@@ -322,8 +327,9 @@ experimental research prototype, not recommended for production use.
   (`pp_binding`, see Security). For `t < s` the key is also shared
   differently (replicated sharing, see Security) under new parameter
   records, so `setup()` draws a new public matrix or polynomial. To upgrade:
-  1. finish the rounds encrypted under the old keys with v0.3.0 (the leak
-     described under Security remains for those rounds);
+  1. finish with v0.3.0 only the rounds that must finish under the old keys
+     (the leak described under Security remains for them: with `t < s`
+     every partial decryption under v0.3.0 key shares leaks);
   2. run this release's key generator (`setup()`, `get_private_keys`,
      `get_decryption_keys`) and hand out the new client keys and key shares;
   3. discard the old key shares.

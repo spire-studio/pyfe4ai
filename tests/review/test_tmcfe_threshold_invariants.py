@@ -12,7 +12,7 @@ Kept with the review tests so that later changes keep them:
 * tags: v1 (JSON) tags, tags of another server or client are refused;
 * the RNS ring on edge values (0, q - 1, the primes and their neighbours,
   limb boundaries) against the Python code on the composite q -- the
-  reference computed on the Python backend (tests/test_threshold_rns.py
+  reference computed on the Python backend (tests/threshold/test_threshold_rns.py
   computes it natively under the default backend);
 * RNS with the sharings and floodings its tests do not combine
   (replicated-seeded, KL, Gaussian replicated, split shares).
