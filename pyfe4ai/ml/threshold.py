@@ -162,7 +162,9 @@ class ThresholdPartial:
                     raise ValueError("invalid {}: keys {}".format(where, sorted(_PARTIAL_FIELDS)))
                 view = TMCFERingLWEPartial(part)
                 k, enrolled = view.k, view.lst_sid_enrolled
-                if type(k) is not int or k < 1 or not isinstance(view.ct_digest, str) or as_id(view.sid) != sid:
+                chunk_sid = as_id(view.sid)  # an id (1.0 and True equal server 1 but are none) and this server's
+                if (type(k) is not int or k < 1 or not isinstance(view.ct_digest, str) or not is_id(chunk_sid)
+                        or chunk_sid != sid):
                     raise ValueError("invalid {}: k >= 1, a ct_digest and this server's sid".format(where))
                 if not isinstance(enrolled, list) or not all(is_id(as_id(v)) for v in enrolled):
                     raise ValueError("invalid {}: lst_sid_enrolled is a list of server ids (str or int)".format(where))
