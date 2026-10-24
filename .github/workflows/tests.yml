@@ -170,6 +170,12 @@ jobs:
         run: |
           python -m pytest -q
 
+      - name: Check that charm-crypto provides MNT224
+        # otherwise the pairing test modules would all skip and the next step pass
+        shell: bash -l {0}
+        run: |
+          python -c "from pyfe4ai.primitives.pairing.pairing_backend import pairing_available; assert pairing_available('MNT224'), 'charm-crypto does not provide MNT224'"
+
       - name: Pairing tests on a charm-crypto curve (MNT224)
         shell: bash -l {0}
         env:
