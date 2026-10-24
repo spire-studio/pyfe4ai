@@ -191,7 +191,8 @@ def test_the_ml_adapter_refuses_them_when_it_is_built(ids):
                                                               lst_sid=(OTHER_IDS.get(ids) or MIXED[ids])("s")))
 
 
-@pytest.mark.parametrize("scheme", [_marks(s) for s in WITH_CLIENTS])
+@pytest.mark.parametrize("scheme", [pytest.param(s, marks=needs_bls) if "pairing" in s or s == "quadratic/miqfe" else s
+                                    for s in WITH_CLIENTS])  # the MIQFE setup needs BLS12-381 too
 def test_client_keys_are_issued_for_client_ids_only(scheme):
     # a client id is read as at every entry after setup (core.ids.as_id: a numpy integer is the int it equals);
     # a value that is no id is an unknown client -- None, as for an id not in lst_nid -- although True and 1.0
