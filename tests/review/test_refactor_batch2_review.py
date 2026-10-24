@@ -1,11 +1,11 @@
-"""Review of refactor batch 2 (refactor/2-threshold, ae3d47c..10b2335): FEWarning texts.
+"""FEWarning texts of unknown server ids (October 2026 code review of the threshold module split).
 
-Low (availability, log hygiene; new in 10b2335): the seven ``"invalid sid: {}".format(sid)``
+Low (availability, log hygiene; introduced by the split): the seven ``"invalid sid: {}".format(sid)``
 FEWarnings carry the caller's sid in their text. Under the default warning filters Python keeps one
 ``__warningregistry__`` entry per distinct text in the calling module and prints each one to stderr,
 so a key-distribution service that passes request sids to ``get_decryption_keys`` /
 ``get_weight_key_share`` grows without bound (20000 unknown sids: 20000 entries, +8.8 MB, 40000
-stderr lines) and writes caller-controlled text to stderr. Before 10b2335 the sid was only logged
+stderr lines) and writes caller-controlled text to stderr. Before the split the sid was only logged
 (the ``pyfe4ai`` logger has a NullHandler). A constant warning text (the sid in the log record
 only) keeps one entry per site.
 """

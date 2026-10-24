@@ -1,16 +1,17 @@
-"""Re-check of the PF-1 fix (fix/post-refactor-0.4.0, 4b50be4..e8532e1).
+"""Server ids of other types, and numpy integer ids after setup (October 2026 code review).
 
-PF-1 residual (low, compatibility): integer server ids now work end to end, but server ids of the other
-hashable types that worked on 4d876e2 -- numpy integers (e.g. ``list(np.arange(3))``), tuples, bytes -- are
-still accepted by the key generators and refused only when the partial decryptions are combined
-(``FEValidationError``, ``core.ids.is_id``). Either refuse them where they are configured (the side branch
-fix/post-refactor-0.4.0-strict-ids does) or accept them through the combination too.
+Residuals of the integer-id fix (low, compatibility). Integer server ids worked end to end, but server ids
+of the other hashable types that worked before the id checks -- numpy integers (e.g.
+``list(np.arange(3))``), tuples, bytes -- were still accepted by the key generators and refused only when
+the partial decryptions were combined (``FEValidationError``, ``core.ids.is_id``). Either refuse them where
+they are configured (the key generators now do, ``core.ids.check_id_list``) or accept them through the
+combination too.
 
-The same late refusal remains on both branches when ``lst_sid`` is valid (``[1, 2, 3]``) but the enrolled
-list or a server's own id is a numpy integer -- ``list(rng.choice(lst_sid, t, replace=False))`` gives one.
-These ids equal and hash like the ints, so every server finds its key share and answers; only the combiner
-refuses. Refuse them at the server (``share_decrypt``, or the server object) or accept them through the
-combination (numpy integers as ``operator.index``).
+The same late refusal remained when ``lst_sid`` is valid (``[1, 2, 3]``) but the enrolled list or a
+server's own id is a numpy integer -- ``list(rng.choice(lst_sid, t, replace=False))`` gives one. These ids
+equal and hash like the ints, so every server found its key share and answered; only the combiner
+refused. Refuse them at the server (``share_decrypt``, or the server object) or accept them through the
+combination (numpy integers as ``operator.index``; ``core.ids.as_id`` now reads them so).
 """
 
 from __future__ import annotations

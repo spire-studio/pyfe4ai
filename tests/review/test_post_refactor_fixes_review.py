@@ -1,12 +1,13 @@
-"""Review of the post-refactor fix batch (fix/post-refactor-0.4.0, 4d876e2..4b50be4).
+"""Integer server and client ids (October 2026 code review).
 
-PF-1 (low, compatibility; new in this batch -- I3-a b425c81 and I3-c 66f1e07): server and client ids are
-documented as "distinct ids" with no type, and on 4d876e2 integer ids work end to end -- the threshold
-schemes deal, answer and combine with ``lst_sid = [1, 2, 3]``, and the ML adapter round-trips an
-``EncryptedGradient`` of ``lst_nid = [0, 1, 2]`` through JSON. On 4b50be4 the key generators and the
-wrapper still accept these ids, but every threshold combination then raises ``FEValidationError``
-("sid and lst_sid_enrolled must be server ids (strings)") and ``EncryptedGradient.from_dict`` raises
-``ValueError`` ("nid is a string"): a deployment with integer ids breaks only at the last step.
+Low (compatibility; introduced by the stricter checks of partial decryptions and of
+``EncryptedGradient.from_dict``): server and client ids are documented as "distinct ids" with no type,
+and before those checks integer ids worked end to end -- the threshold schemes deal, answer and combine
+with ``lst_sid = [1, 2, 3]``, and the ML adapter round-trips an ``EncryptedGradient`` of
+``lst_nid = [0, 1, 2]`` through JSON. With the checks the key generators and the wrapper still accepted
+these ids, but every threshold combination then raised ``FEValidationError`` ("sid and lst_sid_enrolled
+must be server ids (strings)") and ``EncryptedGradient.from_dict`` raised ``ValueError`` ("nid is a
+string"): a deployment with integer ids broke only at the last step.
 
 These tests accept either consistent fix: refuse non-string ids where they are configured (the key
 generator or wrapper raises), or accept them in the partial-decryption and wire checks too.

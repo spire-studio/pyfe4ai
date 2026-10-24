@@ -1,6 +1,7 @@
-"""Review of refactor batch 7 (global state, fork safety, thread-safety contract; 0bb8e11..8c37871).
+"""Concurrent issuance of threshold LWE key shares (October 2026 code review of the global-state and
+fork-safety work).
 
-Medium (integrity; not introduced by batch 7, the open item O5): the key generators of the threshold LWE
+Medium (integrity; older than that work, the open item O5): the key generators of the threshold LWE
 layers (``mife/lwe_threshold``, ``mcfe/lwe_threshold``) keep the key shares they issue in ``dict_dk``
 without a lock -- check, deal, store, read. Two threads asking for the same weights for the first time
 both deal; the first returns its server's share of its sharing before the second stores its own, and
