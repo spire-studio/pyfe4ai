@@ -15,7 +15,6 @@ def main() -> None:
         "lst_sid": ["sid_0", "sid_1", "sid_2"],
         "bound_x": 4,
         "bound_y": 4,
-        "pairing_group_param": "MNT224",
     }
     label = "threshold-demo-label"
 

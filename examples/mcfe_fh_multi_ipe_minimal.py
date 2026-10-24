@@ -11,7 +11,6 @@ def main() -> None:
         "lst_nid": ["nid_0", "nid_1"],
         "bound_x": 4,
         "bound_y": 4,
-        "pairing_group_param": "MNT224",
     }
     label = "demo-label"
 

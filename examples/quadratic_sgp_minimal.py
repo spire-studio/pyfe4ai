@@ -7,7 +7,6 @@ def main() -> None:
         "sec_param": 64,
         "n": 3,
         "bound": 5,
-        "pairing_group_param": "MNT224",
     }
 
     kg = QuadraticSGPKeyGenerator(config)
