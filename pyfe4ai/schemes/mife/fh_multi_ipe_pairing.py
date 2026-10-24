@@ -59,6 +59,7 @@ from pyfe4ai.core.formats.pairing import MIFEFHMultiIPEParameters
 from pyfe4ai.core.formats.pairing import MIFEFHMultiIPERecord
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai.core.versions import record_matches
+from pyfe4ai.core.ids import issued_id
 from pyfe4ai._validation import int_vector
 from pyfe4ai._validation import scale_to_int
 
@@ -213,6 +214,7 @@ class MIFEFHMultiIPEPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin
         Returns:
             The key dict, or ``None`` for an unknown client.
         """
+        nid = issued_id(nid)  # numpy integers as ints; a value that is no id is an unknown client
         if nid not in self.msk["bhat"]:
             return None
         return MIFEFHMultiIPEEncryptionKey.new(

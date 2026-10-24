@@ -50,6 +50,7 @@ from pyfe4ai.core.formats.dl import DamgardEncryptionKey
 from pyfe4ai.core.formats.dl import MIFEDamgardFunctionalKey
 from pyfe4ai.core.formats.dl import SIFEDamgardParameters
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.ids import issued_id
 from pyfe4ai.primitives.sampling import rand_uniform_vector
 from pyfe4ai._validation import scale_to_int
 from pyfe4ai._validation import strict_int
@@ -124,6 +125,7 @@ class MIFEDamgardKeyGenerator(DamgardDDHKeyGeneratorBase):
 
         The key includes the one-time pad and must stay with the client.
         """
+        nid = issued_id(nid)  # numpy integers as ints; a value that is no id is an unknown client
         if nid not in self.mpk["pk"]:
             return None
         return DamgardEncryptionKey.new(

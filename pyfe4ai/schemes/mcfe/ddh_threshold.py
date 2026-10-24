@@ -77,7 +77,7 @@ from pyfe4ai.core.formats.dl import TMCFEDDHParameters
 from pyfe4ai.core.formats.threshold import TMCFEDDHKeyShare
 from pyfe4ai.core.formats.threshold import TMCFEDDHPartial
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
-from pyfe4ai.core.ids import as_id, check_id_list, is_id
+from pyfe4ai.core.ids import as_id, check_id_list, is_id, issued_id
 from pyfe4ai.core.versions import TMCFE_DDH_RECORD
 from pyfe4ai._validation import scale_to_int
 
@@ -174,7 +174,7 @@ class ThresholdMCFEDDHKeyGenerator(DDHKeyGeneratorBase):
             Dict with ``s`` (one ``Z_q^2`` pair per slot), or ``None`` if *nid*
             is invalid.
         """
-        nid = as_id(nid)  # a numpy integer is the int it equals
+        nid = issued_id(nid)  # numpy integers as ints; a value that is no id is an unknown client
         if nid is None or not is_id(nid) or nid not in self.lst_nid:
             logger.error("no id or invalid id provided.")
             warn_at_caller("no id or invalid id provided.")

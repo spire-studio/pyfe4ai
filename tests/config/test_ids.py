@@ -189,3 +189,21 @@ def test_the_ml_adapter_refuses_them_when_it_is_built(ids):
     with pytest.raises(FEValidationError):
         FESchemeWrapper("mcfe", "ring_lwe_threshold", _config("mcfe/ring_lwe_threshold",
                                                               lst_sid=(OTHER_IDS.get(ids) or MIXED[ids])("s")))
+
+
+@pytest.mark.parametrize("scheme", [_marks(s) for s in WITH_CLIENTS])
+def test_client_keys_are_issued_for_client_ids_only(scheme):
+    # a client id is read as at every entry after setup (core.ids.as_id: a numpy integer is the int it equals);
+    # a value that is no id is an unknown client -- None, as for an id not in lst_nid -- although True and 1.0
+    # equal client 1 (they got its key)
+    import warnings
+
+    kg, _ = pyfe4ai.create(scheme, _config(scheme, n=3, lst_nid=[0, 1, 2]))
+    kg.setup()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        one = kg.get_private_keys(1)
+        assert one is not None and kg.get_private_keys(np.int64(1)) == one
+        assert kg.get_private_keys(7) is None  # unknown
+        for value in (True, 1.0, np.float64(1), np.bool_(True)):
+            assert kg.get_private_keys(value) is None, value

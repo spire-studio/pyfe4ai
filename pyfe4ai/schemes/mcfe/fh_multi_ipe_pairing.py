@@ -53,6 +53,7 @@ from pyfe4ai.core.formats.pairing import FHMasterKey
 from pyfe4ai.core.formats.pairing import FHParameters
 from pyfe4ai.core.formats.pairing import MCFEFHFunctionalKey
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.ids import issued_id
 from pyfe4ai._validation import int_vector
 from pyfe4ai._validation import scale_to_int
 
@@ -206,6 +207,7 @@ class MCFEFHMultiIPEPairingKeyGenerator(IPFEAbsKeyGenerator):
         own slot of a functional key (outside the model: clients are not
         corrupted).
         """
+        nid = issued_id(nid)  # numpy integers as ints; a value that is no id is an unknown client
         if nid not in self.msk:
             return None
         return FHClientKey.new(imsk=self.ctx.serialise_msk(self.msk[nid], encrypt_only=True)).to_dict()

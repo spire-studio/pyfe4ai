@@ -866,8 +866,12 @@ Mac) against BLS12-381.
   integers v0.3.0 combined correctly in memory, but its key shares,
   partials and gradients did not go through `json.dumps`). Other values
   that equal an id -- `1.0`, `True`, `numpy.bool_` -- are no ids after setup
-  either: the key generators issue no key share for them (`None` with an
-  `FEWarning`, as for an unknown server), a threshold server refuses an
+  either: the key generators issue no key share and no encryption key for
+  them (`None`, as for an unknown server or client, with the `FEWarning` the
+  scheme gives an unknown one; v0.3.0 issued client 1's key for `True` or
+  `1.0` in every MIFE / MCFE scheme but the MCFE DDH ones, and in
+  `quadratic/miqfe`), a threshold
+  server refuses an
   enrolled set that holds one, or an `id` that is one, with
   `FEValidationError` before computing anything (the combiner refused their
   partial decryptions; v0.3.0 combined them), and the ML adapter refuses

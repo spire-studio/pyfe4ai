@@ -69,6 +69,7 @@ from pyfe4ai.core.formats.lwe import MIFELWEEncryptionKey
 from pyfe4ai.core.formats.lwe import MIFELWEFunctionalKey
 from pyfe4ai.core.versions import record_matches
 from pyfe4ai.core.versions import MIFE_FULLYSEC_LWE_RECORD
+from pyfe4ai.core.ids import issued_id
 from pyfe4ai._validation import scale_to_int
 from pyfe4ai._validation import strict_int
 from pyfe4ai.primitives.lattice.lwe_matrix import SeededMatrix
@@ -228,6 +229,7 @@ class MIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         Returns:
             The key dict, or ``None`` for an unknown client.
         """
+        nid = issued_id(nid)  # numpy integers as ints; a value that is no id is an unknown client
         if nid not in self.mpk["u"]:
             return None
         return MIFELWEEncryptionKey.new(

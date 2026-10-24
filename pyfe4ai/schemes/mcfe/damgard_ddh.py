@@ -61,6 +61,7 @@ from pyfe4ai.core.formats.dl import MCFEDDHFunctionalKey
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai.core.versions import record_matches
 from pyfe4ai.core.versions import MCFE_DAMGARD_RECORD
+from pyfe4ai.core.ids import issued_id
 from pyfe4ai.primitives.groups.modular_utils import pow_signed
 from pyfe4ai.primitives.sampling import rand_uniform_vector
 from pyfe4ai._validation import scale_to_int
@@ -166,6 +167,7 @@ class MCFEDamgardKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
         """Return the encryption key ``{s}`` of client *nid* (``None`` if unknown)."""
+        nid = issued_id(nid)  # numpy integers as ints; a value that is no id is an unknown client
         if nid not in self.msk["s"]:
             return None
         return MCFEDDHEncryptionKey.new(s=[[gp.digits(v) for v in s_j] for s_j in self.msk["s"][nid]]).to_dict()

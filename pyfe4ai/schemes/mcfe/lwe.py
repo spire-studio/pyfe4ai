@@ -95,6 +95,7 @@ from pyfe4ai.primitives.lattice.lwe_utils import decode_rounded_inner_product
 from pyfe4ai.primitives.lattice.lwe_utils import resolve_lwe_n
 from pyfe4ai.primitives.lattice.lwe_utils import round_to_q0
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.ids import issued_id
 from pyfe4ai.primitives.sampling import discrete_gaussian_matrix, scheme_sampler
 from pyfe4ai.primitives.sampling import rand_uniform_vector
 from pyfe4ai._validation import scale_to_int
@@ -219,6 +220,7 @@ class MCFELWEKeyGenerator(IPFEAbsKeyGenerator):
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
         """Return the encryption key ``{z, label_hash}`` of client *nid* (``None`` if unknown)."""
+        nid = issued_id(nid)  # numpy integers as ints; a value that is no id is an unknown client
         if nid not in self.msk["z"]:
             return None
         return MCFELWEEncryptionKey.new(

@@ -47,6 +47,7 @@ from pyfe4ai.core.formats.pairing import FHClientKey
 from pyfe4ai.core.formats.pairing import FHKeyEntry
 from pyfe4ai.core.formats.pairing import MCFEFHFunctionalKey
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.ids import issued_id
 from pyfe4ai.primitives.pairing.pairing_backend import ZR
 from pyfe4ai.primitives.sampling import XofRandom
 from pyfe4ai._validation import int_vector
@@ -73,6 +74,7 @@ class DecentralizedMCFEFHMultiIPEPairingKeyGenerator(MCFEFHMultiIPEPairingKeyGen
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
         """Client *nid*'s ``imsk``, its share ``t_tilde`` and its key-derivation ``seed``."""
+        nid = issued_id(nid)  # numpy integers as ints; a value that is no id is an unknown client
         if nid not in self.msk:
             return None
         sk = FHClientKey.new(imsk=self.ctx.serialise_msk(self.msk[nid]))  # DKeyGen needs a_out

@@ -1198,7 +1198,8 @@ def options_rst() -> str:
         "numpy integer (``numpy.integer``) is read as the ``int`` it equals (``list(rng.choice(lst_sid, t, "
         "replace=False))`` gives such ids), so that key shares, partial decryptions and gradients carry plain "
         "ints. Other values that equal an id (``1.0``, ``True``, ``numpy.bool_``) are no ids: the key generators "
-        "issue no key share for them (``None``, as for an unknown server), a server refuses an enrolled set that "
+        "issue no key share and no encryption key for them (``None``, as for an unknown server or client), a "
+        "server refuses an enrolled set that "
         "holds one, or an ``id`` that is one, and the ML adapter refuses such servers -- before anything is "
         "computed.",
         "",

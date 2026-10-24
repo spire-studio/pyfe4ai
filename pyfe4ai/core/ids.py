@@ -64,6 +64,15 @@ def as_id(value):
     return operator.index(value) if isinstance(value, np.integer) else value
 
 
+def issued_id(value):
+    """*value* read as the id a key is issued for: :func:`as_id` of it if that
+    is an id, else ``None`` -- which no ``lst_sid`` or ``lst_nid`` holds, so
+    that the key generator answers as for an unknown server or client
+    (``None``), also for ``True`` or ``1.0``, which equal the id ``1``."""
+    value = as_id(value)
+    return value if is_id(value) else None
+
+
 def id_list(ids) -> list:
     """*ids* sorted for a message: by value, or by ``repr`` where the values
     do not compare (``[1, "a"]``), so that listing ids never raises."""

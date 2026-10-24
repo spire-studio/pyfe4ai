@@ -52,6 +52,7 @@ from pyfe4ai.core.formats.dl import MIFEDDHFunctionalKey
 from pyfe4ai.core.formats.dl import MIFEDDHParameters
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai.core.versions import MIFE_DDH_CONSTRUCTION
+from pyfe4ai.core.ids import issued_id
 from pyfe4ai._validation import int_vector
 from pyfe4ai._validation import scale_to_int
 
@@ -114,6 +115,7 @@ class MIFEDDHKeyGenerator(DDHKeyGeneratorBase):
 
     def get_private_keys(self, nid: str) -> dict | None:
         """Return client *nid*'s encryption key ``{h, u}`` (``None`` if unknown)."""
+        nid = issued_id(nid)  # numpy integers as ints; a value that is no id is an unknown client
         if nid not in self.lst_nid:
             logger.error("no id or invalid id provided.")
             warn_at_caller("no id or invalid id provided.")

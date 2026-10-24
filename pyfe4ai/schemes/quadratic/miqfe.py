@@ -70,6 +70,7 @@ from pyfe4ai.core.formats.pairing import MIQFEEncryptionKey
 from pyfe4ai.core.formats.pairing import MIQFEFunctionalKey
 from pyfe4ai.core.formats.pairing import MIQFEParameters
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.ids import issued_id
 from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, GT, ZR, PairingGroup, multi_pair, pair
 from pyfe4ai.primitives.pairing.pairing_backend import deserialize_many, multiexp, pow_many
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
@@ -339,6 +340,7 @@ class QuadraticMIQFEKeyGenerator(IPFEAbsKeyGenerator):
         ``c`` it can still evaluate ``c`` on its own chosen inputs, which the
         functionality allows (e.g. ``sum_l c[(i,j,k,l)] x_k[l]``).
         """
+        nid = issued_id(nid)  # numpy integers as ints; a value that is no id is an unknown client
         ek = self.ek.get(nid)
         return None if ek is None else copy.deepcopy(ek)
 

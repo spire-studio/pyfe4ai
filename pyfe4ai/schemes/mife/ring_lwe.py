@@ -76,6 +76,7 @@ from pyfe4ai.primitives.sampling import discrete_gaussian_matrix, scheme_sampler
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.core.versions import record_matches
 from pyfe4ai.core.versions import RING_LWE_RECORD
+from pyfe4ai.core.ids import issued_id
 from pyfe4ai.primitives.sampling import rand_uniform_vector
 from pyfe4ai._validation import int_vector
 from pyfe4ai.primitives.lattice.ring_lwe_utils import seeded_polynomial
@@ -265,6 +266,7 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         Returns:
             The key dict, or ``None`` for an unknown client.
         """
+        nid = issued_id(nid)  # numpy integers as ints; a value that is no id is an unknown client
         if nid not in self.mpk["pk"]:
             return None
         return MIFERingLWEEncryptionKey.new(

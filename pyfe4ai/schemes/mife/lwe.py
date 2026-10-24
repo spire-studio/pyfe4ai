@@ -78,6 +78,7 @@ from pyfe4ai.core.formats.lwe import MIFELWEEncryptionKey
 from pyfe4ai.core.formats.lwe import MIFELWEFunctionalKey
 from pyfe4ai.core.formats.lwe import MIFELWEParameters
 from pyfe4ai.core.versions import MIFE_LWE_RECORD
+from pyfe4ai.core.ids import issued_id
 from pyfe4ai._validation import scale_to_int
 from pyfe4ai._validation import strict_int
 
@@ -163,6 +164,7 @@ class MIFELWEKeyGenerator(IPFEAbsKeyGenerator, ABDP15KeyGeneratorMixin):
         Returns:
             Dict with ``pk`` matrix, or ``None`` if *nid* is invalid.
         """
+        nid = issued_id(nid)  # numpy integers as ints; a value that is no id is an unknown client
         if nid not in self.mpk["pk"]:
             return None
         return MIFELWEEncryptionKey.new(

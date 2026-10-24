@@ -61,6 +61,7 @@ from pyfe4ai.core.formats.dl import PaillierEncryptionKey
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
 from pyfe4ai.core.versions import record_matches
 from pyfe4ai.core.versions import PAILLIER_RECORD
+from pyfe4ai.core.ids import issued_id
 from pyfe4ai._validation import scale_to_int
 from pyfe4ai.primitives.groups.integer_groups import is_dcr_modulus
 from pyfe4ai._validation import strict_int
@@ -199,6 +200,7 @@ class MIFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         Returns:
             The key dict, or ``None`` for an unknown client.
         """
+        nid = issued_id(nid)  # numpy integers as ints; a value that is no id is an unknown client
         if nid not in self.mpk["pk"]:
             return None
         return PaillierEncryptionKey.new(
