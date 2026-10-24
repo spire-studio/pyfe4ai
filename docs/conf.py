@@ -69,6 +69,11 @@ autodoc_mock_imports = ["charm"]
 # -- Options for HTML output -------------------------------------------------
 html_theme = "furo"
 html_static_path = ["_static"]
+# Static pages copied into the output: redirects from the pages of the v0.3.0
+# documentation that no longer exist (api/utils.html, api/base.html,
+# api/config_types.html and the source pages of moved modules) to where their
+# content is now, with the old object anchors mapped to the new ones.
+html_extra_path = ["_redirects"]
 html_title = f"pyfe4ai {release}"
 html_theme_options = {
     "light_css_variables": {
