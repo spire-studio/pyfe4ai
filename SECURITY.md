@@ -95,7 +95,7 @@ limitations.
   aggregator alone. At the `standard` parameters the leak is partial (at most
   about 25 bits of the noise per ciphertext for `s <= 10`), and no key or
   plaintext recovery has been shown. `t = s` and the DDH and pairing
-  threshold layers are not affected. Fixed after v0.3.0 by a replicated key
+  threshold layers are not affected. Fixed in v0.4.0 by a replicated key
   sharing, the default for `t < s`; Shamir sharing with `t < s` is refused
   under `standard`. **Re-key:** with `t < s` every partial decryption under
   v0.3.0 key shares still leaks, so finish with v0.3.0 only the rounds that
@@ -103,7 +103,7 @@ limitations.
   with the fixed version (it refuses v0.3.0 key shares). The upgrade guide of the
   documentation and `CHANGELOG.md` give the details. No separate security advisory was
   published.
-- **Also fixed after v0.3.0** (see the Security section of `CHANGELOG.md`):
+- **Also fixed in v0.4.0** (see the Security section of `CHANGELOG.md`):
   two concurrent `encrypt_gradient` calls of the ML adapter for one client
   and label both succeeded, which revealed the difference of two gradients;
   the double-precision rounded Gaussian sampler was far from the discrete
@@ -120,9 +120,10 @@ limitations.
 ## Supported Versions
 
 Security fixes go into `main` and the next release; only the latest release
-(currently v0.3.0) is supported. v0.2.0 and earlier contain schemes that have
-since been found insecure (see the 0.3.0 section of `CHANGELOG.md`); upgrade
-to v0.3.0 or later.
+(currently v0.4.0) is supported. v0.3.0 and earlier are affected by the
+Lagrange-multiplier leak of the threshold LWE layers described above, and
+v0.2.0 and earlier contain schemes that were found insecure; upgrade to
+v0.4.0 and re-key as the upgrade notes in `CHANGELOG.md` describe.
 
 ## Reporting a Vulnerability
 

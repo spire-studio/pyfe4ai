@@ -5,7 +5,7 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/) (pre-1.0: minor bumps may break
 compatibility).
 
-## [Unreleased]
+## [0.4.0] — 2026-10-26
 
 **Highlights.** An optional Rust extension runs the lattice, threshold,
 ristretto255 and BLS12-381 code natively (an MCFE Ring-LWE round of 10^4
@@ -1772,7 +1772,7 @@ before using them.
 
 Initial public release.
 
-[Unreleased]: https://github.com/spire-studio/pyfe4ai/compare/v0.3.0...HEAD
+[0.4.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/spire-studio/pyfe4ai/releases/tag/v0.1.0
