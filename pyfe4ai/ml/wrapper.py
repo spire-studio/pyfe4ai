@@ -114,6 +114,27 @@ def _client_keyed(mapping: dict, what: str) -> dict:
     return dict(zip(keys, mapping.values()))
 
 
+#: The ``ValueError`` of an encrypted gradient filed under another client's
+#: id than its own ``nid`` (:func:`_check_gradient_owners`).
+GRADIENT_UNDER_ANOTHER_CLIENT = "an encrypted gradient is filed under another client than the one it names (its nid)"
+
+
+def _check_gradient_owners(encrypted: dict) -> None:
+    """Raise unless every gradient of *encrypted* (``{nid: EncryptedGradient}``,
+    keys already read by :func:`_client_keyed`) names the client it is filed
+    under: the MCFE schemes decrypt each ciphertext as the client of its key,
+    so two gradients under each other's client gave a wrong aggregate
+    (silently in the lattice schemes).
+
+    Raises:
+        ValueError: :data:`GRADIENT_UNDER_ANOTHER_CLIENT` (no ids in it).
+    """
+    for nid, enc in encrypted.items():
+        owner = as_id(getattr(enc, "nid", None))
+        if not is_id(owner) or owner != nid:
+            raise ValueError(GRADIENT_UNDER_ANOTHER_CLIENT)
+
+
 def _require_served_threshold(wrapper: "FESchemeWrapper", api: str) -> None:
     if not _serves_threshold(wrapper):
         raise NotImplementedError(

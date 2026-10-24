@@ -16,7 +16,14 @@ from pyfe4ai.core.formats.record import Record
 from pyfe4ai.core.formats.threshold import TMCFERingLWELayerPartials
 from pyfe4ai.core.formats.threshold import TMCFERingLWEPartial
 from pyfe4ai.ml.serialization import _BYTES, EncryptedGradient, _from_base64
-from pyfe4ai.ml.wrapper import FESchemeWrapper, PreparedAggregation, _aggregated, _client_keyed, _require_served_threshold
+from pyfe4ai.ml.wrapper import (
+    FESchemeWrapper,
+    PreparedAggregation,
+    _aggregated,
+    _check_gradient_owners,
+    _client_keyed,
+    _require_served_threshold,
+)
 
 def _enrolled_servers(wrapper, servers) -> list:
     """The servers whose partial decryptions a threshold aggregation combines:
@@ -199,11 +206,13 @@ def partial_decrypt_gradients(
 
     Raises:
         ValueError: If *server* is not enrolled in *prepared*, the clients
-            are not those of its weights, or *encrypted* is keyed by a value
-            that is no client id (numpy integers are read as ints).
+            are not those of its weights, *encrypted* is keyed by a value
+            that is no client id (numpy integers are read as ints), or a
+            gradient is filed under another client than its ``nid``.
     """
     _require_served_threshold(wrapper, "partial_decrypt_gradients")
     encrypted = _client_keyed(encrypted, "encrypted gradients")
+    _check_gradient_owners(encrypted)
     server = as_id(server)  # a numpy integer is the int it equals
     if not prepared.servers or not is_id(server) or server not in prepared.servers:
         raise ValueError("server {!r} is not enrolled in the prepared aggregation ({})".format(server, prepared.servers))

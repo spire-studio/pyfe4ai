@@ -27,6 +27,7 @@ from pyfe4ai.ml.wrapper import (
     FESchemeWrapper,
     PreparedAggregation,
     _aggregated,
+    _check_gradient_owners,
     _client_keyed,
     _require_labelled_aggregation,
     _require_single_decryptor,
@@ -298,13 +299,16 @@ def aggregate_gradients(
 
         Raises:
             ValueError: If the policy above is violated, SIFE is given more
-                than one client, or *encrypted* or *weights* is keyed by a
+                than one client, *encrypted* or *weights* is keyed by a
                 value that is no client id (numpy integers are read as ints;
-                see :mod:`pyfe4ai.core.ids`).
+                see :mod:`pyfe4ai.core.ids`), or a gradient is filed under
+                another client than its ``nid``.
     """
     _require_labelled_aggregation(wrapper, "aggregate_gradients")
     _require_single_decryptor(wrapper, "aggregate_gradients", served_threshold=True)
     encrypted = _client_keyed(encrypted, "encrypted gradients")
+    if wrapper.scheme_type != "sife":  # one ciphertext per client: each is decrypted as the client of its key
+        _check_gradient_owners(encrypted)
     threshold = _serves_threshold(wrapper)
     if servers is not None and not threshold:
         raise ValueError("servers are those of a threshold MCFE")

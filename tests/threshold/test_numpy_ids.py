@@ -303,3 +303,29 @@ def test_ml_adapter_refuses_weights_or_gradients_keyed_by_values_that_are_no_ids
             aggregate_gradients(enc, w, weights, label="a")
         with pytest.raises(ValueError, match="client ids"):
             aggregate_gradients({0: enc[0], other: enc[1], 2: enc[2]}, w, {0: 1, 1: 2, 2: 1}, label="a")
+
+
+@pytest.mark.parametrize("variant", ["ddh", "ring_lwe_threshold", "lwe", "ring_lwe"])
+def test_gradients_filed_under_another_client_are_refused(variant):
+    # each ciphertext is decrypted as the client of its key: one filed under another client is refused before
+    # anything is decrypted (the lattice schemes gave a wrong aggregate, the others failed to decrypt it)
+    from pyfe4ai.ml import aggregate_gradients, encrypt_gradient, partial_decrypt_gradients, prepare_aggregation
+    from pyfe4ai.ml.wrapper import GRADIENT_UNDER_ANOTHER_CLIENT
+
+    w = _clients_wrapper(variant) if variant != "ddh" else None
+    if w is None:
+        from pyfe4ai.ml import FESchemeWrapper
+
+        w = FESchemeWrapper("mcfe", "ddh", {"eta": 1, "n": 3, "lst_nid": [0, 1, 2], "sec_param": 128}, precision=1)
+    enc = {n: encrypt_gradient(np.array([0.5, -0.5]), w, nid=n, label="a") for n in (0, 1, 2)}
+    weights = {0: 1, 1: 2, 2: 1}
+    for filed in ({0: enc[1], 1: enc[0], 2: enc[2]}, {np.int64(0): enc[1], 1: enc[0], 2: enc[2]}):
+        with pytest.raises(ValueError) as info:
+            aggregate_gradients(filed, w, weights, label="a")
+        assert str(info.value) == GRADIENT_UNDER_ANOTHER_CLIENT
+    if variant == "ring_lwe_threshold":
+        prepared = prepare_aggregation(w, weights, shape=(2,), label="a")
+        with pytest.raises(ValueError) as info:
+            partial_decrypt_gradients({0: enc[1], 1: enc[0], 2: enc[2]}, w, prepared, server=prepared.servers[0])
+        assert str(info.value) == GRADIENT_UNDER_ANOTHER_CLIENT
+    np.testing.assert_allclose(aggregate_gradients(enc, w, weights, label="a"), [2.0, -2.0])  # as filed

@@ -951,6 +951,19 @@ Mac) against BLS12-381.
 
 ### Fixed
 
+- **ML adapter: gradients filed under another client gave a wrong aggregate**
+  (`aggregate_gradients` of `mcfe/lwe`, `mcfe/ring_lwe`, `mcfe/fullysec_lwe`;
+  integrity, low; in v0.3.0 too). `aggregate_gradients` decrypts each
+  gradient of `{nid: EncryptedGradient}` as the client its key names and
+  never compared the key with the gradient's own `nid`: two gradients filed
+  under each other's client gave a silently wrong aggregate in the lattice
+  MCFE schemes (the DH and Paillier ones failed to decrypt them, the
+  threshold one refused them as not authenticated). `aggregate_gradients`
+  and `partial_decrypt_gradients` of every MCFE scheme now refuse a gradient
+  whose `nid` is not its key (numpy integer keys and nids read as ints) with
+  `ValueError` ("an encrypted gradient is filed under another client than
+  the one it names (its nid)"), before anything is decrypted. SIFE, which
+  aggregates one client, is unchanged.
 - **Threshold LWE layers: two threads could get key shares of two sharings
   of one key** (`mife/lwe_threshold`, `mcfe/lwe_threshold`; integrity,
   medium; in v0.3.0 too). The key generators kept the key shares they issue
