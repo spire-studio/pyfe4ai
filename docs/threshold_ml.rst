@@ -198,14 +198,21 @@ Accounting of the flooding noise
 --------------------------------
 
 By default (``flooding_accounting="per-sample"``) the flooding noise of a
-partial decryption is within ``2^-stat_param`` of its simulation per value,
-with no limit on the number of partial decryptions. The opt-in
-``flooding_accounting="kl"`` (``mife/lwe_threshold`` and
-``mcfe/ring_lwe_threshold``, ``t = s`` with Shamir's sharing only) bounds a
-whole run of at most ``max_partial_decryptions`` partial decryptions per
-server instead, for a smaller modulus and a weaker guarantee (about
-``stat_param - 7`` bits). Each server then counts its partial decryptions in
-a :class:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget` that its
+partial decryption is within statistical distance ``2^-stat_param`` of its
+simulation per flooded value, with no limit on the number of partial
+decryptions; over a run the distances add up (the number of flooded values
+times ``2^-stat_param``). The opt-in ``flooding_accounting="kl"``
+(``mife/lwe_threshold`` and ``mcfe/ring_lwe_threshold``, ``t = s`` with
+Shamir's sharing only) bounds a whole run of at most
+``max_partial_decryptions`` partial decryptions per server instead, for a
+smaller modulus and a weaker guarantee: a Hellinger distance below
+``2^(-stat_param/2)`` for the first ``max_partial_decryptions`` partial
+decryptions of every server, about ``stat_param - 6.85`` bits in the
+bit-security sense of Micciancio and Walter for decision games -- a total
+statistical distance of about ``2^-65`` at ``stat_param = 128``, not
+``2^-121`` (:mod:`pyfe4ai.schemes.threshold.kl`). Each server then counts
+its partial decryptions in a
+:class:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget` that its
 deployment creates and passes in the server's config:
 
 .. code-block:: python
@@ -376,6 +383,10 @@ What fails, and why
    * - ``NotImplementedError`` from the ML adapter
      - MIFE (no labels) for gradients, or a threshold or decentralized
        variant other than ``mcfe/ring_lwe_threshold``
-   * - ``None`` with an :class:`~pyfe4ai.core.exceptions.FEWarning`
+   * - ``None``
      - the result is outside the decoding range (bounds too small for the
-       data), or a key was requested for an unknown server or client
+       data; with an :class:`~pyfe4ai.core.exceptions.FEWarning`), or a key
+       was requested for an unknown server (with an ``FEWarning``) or an
+       unknown client (with an ``FEWarning`` in the MIFE and MCFE DDH
+       schemes and their ristretto255, threshold and decentralized variants;
+       the other schemes return ``None`` without a warning)

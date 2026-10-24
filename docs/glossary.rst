@@ -32,9 +32,10 @@ Scheme taxonomy
      - Ciphertexts are bound to a common :term:`label`
    * - dMCFE
      - Decentralized MCFE
-     - *n* encryptors, no central key authority
+     - *n* encryptors, no authority for functional keys
      - Each client derives a share of the functional key; the shares are
-       combined
+       combined. The setup is trusted: the library's key generator samples
+       every client's keys, including the pairwise zero-sum secrets
    * - tMIFE / tMCFE
      - Threshold MIFE / MCFE
      - *n* encryptors, *t*-of-*s* decryption servers
@@ -94,7 +95,8 @@ Configuration keys
       flooded value, no limit) or ``"kl"`` (opt-in, ``t = s`` only; a
       bound for a whole run of at most ``max_partial_decryptions`` partial
       decryptions per server, about ``stat_param - 7`` bits in the
-      bit-security sense of Micciancio and Walter; each server counts in
+      bit-security sense of Micciancio and Walter, a total statistical
+      distance of about ``2^-65`` at ``stat_param = 128``; each server counts in
       the ``partial_budget`` its deployment provides; much smaller ``q``
       and, for ``mife/lwe_threshold``, ``lwe_n``). See
       :mod:`pyfe4ai.schemes.threshold.kl` and :doc:`threshold_ml`.

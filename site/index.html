@@ -440,8 +440,9 @@ result = SIFEDDH({<span class="st">"precision"</span>: <span class="st">3</span>
            MDDH constructions of ABMPSW20, or MCFE-Ring-LWE (BMMS21), which under
            <code>standard</code> encrypts 10 000 gradient elements in about 18 ms per
            client with the Rust extension (0.35 s in pure Python); the aggregator's
-           functional key decrypts only the weighted sum. dMCFE variants remove the key
-           authority, and tMCFE variants (TAPFed-style) split decryption across t-of-s
+           functional key decrypts only the weighted sum. dMCFE variants need no authority
+           for functional keys (their setup, which samples every client's keys in-process,
+           is still trusted), and tMCFE variants (TAPFed-style) split decryption across t-of-s
            servers that are assumed honest-but-curious;
            their LWE, Ring-LWE and pairing threshold layers are experimental. Check the
            <a href="https://github.com/spire-studio/pyfe4ai#scheme-status">Scheme Status</a>

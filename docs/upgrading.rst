@@ -249,8 +249,10 @@ Warnings and logging
    The library no longer configures logging or writes log files (``./logs``);
    the ``pyfe4ai`` logger has a ``NullHandler``. What an application should
    see is also issued as :class:`~pyfe4ai.core.exceptions.FEWarning`: a
-   regenerated parameter record, a request answered with ``None``, a
-   slower fallback, and, once per process, a missing Rust extension. Every
+   regenerated parameter record, a decryption out of range, a key requested
+   for an unknown server (for an unknown client only in the DDH schemes;
+   the others return ``None`` without a warning), a slower fallback, and,
+   once per process, a missing Rust extension. Every
    ``FEWarning`` and ``FESecurityWarning`` is attributed to the
    application's call (the first frame outside pyfe4ai), so Python's
    default filter shows it once per call site, and a filter on a module

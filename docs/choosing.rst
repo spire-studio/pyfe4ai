@@ -41,9 +41,15 @@ Families
        combine, those of different labels do not
      - federated aggregation, one label per round
    * - ``mcfe/*_decentralized``
-     - as MCFE, but no key authority holds a master key: the clients derive
-       shares of each functional key, and the decryptor combines them
-     - aggregation without a trusted key authority
+     - as MCFE, but functional keys need no authority: the clients derive
+       shares of each functional key, and the decryptor combines them. The
+       setup is still trusted: in this library one key generator samples
+       every client's keys, including the pairwise zero-sum secrets, in
+       process; a deployment without a trusted party needs a distributed
+       setup (e.g. pairwise key exchange), which the library does not
+       provide
+     - aggregation without a key authority for functional keys (trusted
+       setup)
    * - ``mife/*_threshold``, ``mcfe/*_threshold``
      - the functional key is shared among ``s`` decryption servers; any
        ``t`` of them decrypt together, fewer learn nothing beyond the result
@@ -155,7 +161,8 @@ Which scheme for which task
      - ``mcfe/ring_lwe`` (fast with the Rust extension, packed tensors);
        ``mcfe/ddh`` or ``mcfe/ddh_ristretto255`` for short vectors;
        through :mod:`pyfe4ai.ml` (:doc:`threshold_ml`)
-   * - The same without a trusted key authority
+   * - The same without a key authority for functional keys (the setup is
+       still trusted)
      - ``mcfe/ring_lwe_decentralized`` or ``mcfe/lwe_decentralized``
        (reviewed); ``mcfe/ddh_decentralized`` (experimental)
    * - The same without a single decryptor

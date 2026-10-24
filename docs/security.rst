@@ -86,8 +86,11 @@ The opt-in KL-divergence accounting of the flooding noise
 two clients, ``s = t = 3`` and ``2^40`` flooded values. It applies only with
 ``flooding_accounting = "kl"``, ``t = s`` and an explicit
 ``max_partial_decryptions`` budget; the public matrix would still have
-4.1 * 10^9 entries (``"stream"`` mode), and the guarantee is weaker, about
-``stat_param - 6.85`` bits. The refusal under ``standard`` holds with either
+4.1 * 10^9 entries (``"stream"`` mode), and the guarantee is weaker and
+holds only for the first ``max_partial_decryptions`` partial decryptions of
+every server: about ``stat_param - 6.85`` bits in the bit-security sense of
+Micciancio and Walter, a total statistical distance of about ``2^-65`` at
+``stat_param = 128``. The refusal under ``standard`` holds with either
 accounting; ``"kl"`` applies to ``mife/lwe_threshold`` under ``toy``.
 
 The arguments of the security reviews that are part of the documentation:

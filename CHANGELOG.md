@@ -225,8 +225,9 @@ experimental research prototype, not recommended for production use.
   `UserWarning`, not an `FESecurityWarning`): a cached parameter record that
   no longer matches its configuration or is unreadable and is regenerated
   (with new parameters and seeds), a request answered with `None` (an
-  unknown client or server id, a decryption out of range or with a wrong
-  key, partial decryptions that disagree on the ciphertexts), and a slower
+  unknown server id, an unknown client id in the MIFE and MCFE DDH schemes
+  -- the other schemes answer an unknown client with `None` silently --, a
+  decryption out of range or with a wrong key), and a slower
   fallback (an RNS modulus of the threshold Ring-LWE MCFE with more factors
   than the native ring, a modulus without an NTT root). Each warning is
   attributed to the application's call (the first caller outside pyfe4ai),
@@ -703,8 +704,10 @@ Mac) against BLS12-381.
   (`flooding_accounting="kl"`, a mandatory `max_partial_decryptions` budget
   `Q`, and a `PartialDecryptionBudget` per server that the deployment keeps
   across restarts; `pyfe4ai.schemes.threshold.kl`). It gives a weaker
-  guarantee -- about `stat_param - 6.85` bits, for the first `Q` partial
-  decryptions of every server -- for a smaller `q`: 178 bits for
+  guarantee -- about `stat_param - 6.85` bits in the bit-security sense of
+  Micciancio and Walter (a total statistical distance of about `2^-65` at
+  `stat_param = 128`), for the first `Q` partial decryptions of every server
+  -- for a smaller `q`: 178 bits for
   `mcfe/ring_lwe_threshold` under `standard` with `N = s Q k = 2^53`
   flooded coefficients (Gaussian flooding, which `"kl"` uses), against 212
   bits with the default uniform flooding. `t < s` and `mcfe/lwe_threshold`
