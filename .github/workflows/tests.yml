@@ -116,7 +116,10 @@ jobs:
 
   # Pairing-enabled full suite compiles PBC + charm-crypto from source and is
   # slower/more fragile than the core lane, so it only runs on manual dispatch
-  # (Actions -> Tests -> Run workflow), typically before a release.
+  # (Actions -> Tests -> Run workflow), typically before a release. The full
+  # suite runs the pairing tests on BLS12-381 (the default group, from the
+  # Rust extension, which pip builds with the runner's cargo); the last step
+  # runs them again on a charm-crypto curve.
   full-research:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-22.04
@@ -139,8 +142,10 @@ jobs:
             m4
 
       - name: Build and install PBC
+        # the SHA-256 of the archive, as in docker/Dockerfile.pairing
         run: |
           wget -q https://crypto.stanford.edu/pbc/files/pbc-1.0.0.tar.gz
+          echo "18275a367283077bafe35f443200499e3b19c4a3754953da2a1b2f0d6b5922dc  pbc-1.0.0.tar.gz" | sha256sum -c -
           tar -xzf pbc-1.0.0.tar.gz
           cd pbc-1.0.0
           ./configure
@@ -164,3 +169,10 @@ jobs:
         shell: bash -l {0}
         run: |
           python -m pytest -q
+
+      - name: Pairing tests on a charm-crypto curve (MNT224)
+        shell: bash -l {0}
+        env:
+          PYFE4AI_TEST_PAIRING_GROUP: MNT224
+        run: |
+          python -m pytest -m extended -q

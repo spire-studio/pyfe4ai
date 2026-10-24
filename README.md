@@ -425,7 +425,8 @@ PYFE4AI_BACKEND=python python -m pytest -q   # the Python reference implementati
 CI runs the core lane without the extension and, in the `rust-native` job,
 builds the extension and runs `cargo test`, the full suite on the native
 backend (Python 3.10 and 3.13) and the full suite on the Python backend
-(Python 3.10).
+(Python 3.10). The `full-research` job (manual dispatch, before a release)
+adds charm-crypto and runs the pairing tests on MNT224 as well.
 
 ## Examples
 
