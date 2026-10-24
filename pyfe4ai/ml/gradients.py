@@ -27,6 +27,7 @@ from pyfe4ai.ml.wrapper import (
     FESchemeWrapper,
     PreparedAggregation,
     _aggregated,
+    _client_keyed,
     _require_labelled_aggregation,
     _require_single_decryptor,
     _serves_threshold,
@@ -130,7 +131,9 @@ def encrypt_gradient(
 
 def _integer_weights(weights: dict, qconfig: QuantizationConfig) -> tuple[dict, int]:
     """Return ``({nid: [int]}, scale)``: the weights as integers, multiplied
-    by the quantisation scale if any of them is fractional."""
+    by the quantisation scale if any of them is fractional; keyed by client
+    ids (numpy integer keys read as ints, other keys refused: ``ValueError``)."""
+    weights = _client_keyed(weights, "weights")
     lists = {
         nid: [w] if np.ndim(w) == 0 else list(np.ravel(w)) for nid, w in weights.items()
     }
@@ -231,7 +234,9 @@ def prepare_aggregation(
     label key shares of the round, each server given its weight key share
     once per weights (again where a copy of the wrapper or the server's store
     lacks it when the round is decrypted); *sid* is the combiner. The result
-    holds key material (see :class:`PreparedAggregation`).
+    holds key material (see :class:`PreparedAggregation`). *weights* is keyed
+    by client ids (numpy integer keys are read as ints; another key:
+    ``ValueError``).
     """
     _require_labelled_aggregation(wrapper, "prepare_aggregation")
     _require_single_decryptor(wrapper, "prepare_aggregation", served_threshold=True)
@@ -244,6 +249,7 @@ def prepare_aggregation(
         ring_n = int(wrapper.pp["ring_n"])
         size = int(np.prod(np.shape(np.empty(shape)), dtype=np.int64))
         n_chunks = max(1, -(-size // ring_n))
+    weights = _client_keyed(weights, "weights")
     fusion_weight, weight_scale, dk = _aggregation_key(
         wrapper, weights, label, sid, list(weights), allow_partial, lambda: n_chunks, enrolled
     )
@@ -291,11 +297,14 @@ def aggregate_gradients(
                 fetch them again and decrypt once more.
 
         Raises:
-            ValueError: If the policy above is violated, or SIFE is given
-                more than one client.
+            ValueError: If the policy above is violated, SIFE is given more
+                than one client, or *encrypted* or *weights* is keyed by a
+                value that is no client id (numpy integers are read as ints;
+                see :mod:`pyfe4ai.core.ids`).
     """
     _require_labelled_aggregation(wrapper, "aggregate_gradients")
     _require_single_decryptor(wrapper, "aggregate_gradients", served_threshold=True)
+    encrypted = _client_keyed(encrypted, "encrypted gradients")
     threshold = _serves_threshold(wrapper)
     if servers is not None and not threshold:
         raise ValueError("servers are those of a threshold MCFE")

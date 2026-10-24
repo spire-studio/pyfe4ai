@@ -1194,13 +1194,14 @@ def options_rst() -> str:
         "",
         "After setup, wherever an id is given -- the server or client named when keys are issued, a crypto "
         "object's ``id``, the enrolled servers of ``share_decrypt``, ``servers=`` and ``server=`` of the ML "
-        "adapter, ``nid=`` of ``encrypt_gradient``, the ids of partial decryptions and gradients read back -- a "
+        "adapter, ``nid=`` of ``encrypt_gradient``, the keys of the weights and encrypted gradients the adapter "
+        "aggregates, the ids of partial decryptions and gradients read back -- a "
         "numpy integer (``numpy.integer``) is read as the ``int`` it equals (``list(rng.choice(lst_sid, t, "
         "replace=False))`` gives such ids), so that key shares, partial decryptions and gradients carry plain "
         "ints. Other values that equal an id (``1.0``, ``True``, ``numpy.bool_``) are no ids: the key generators "
         "issue no key share and no encryption key for them (``None``, as for an unknown server or client), a "
         "server refuses an enrolled set that "
-        "holds one, or an ``id`` that is one, and the ML adapter refuses such servers -- before anything is "
+        "holds one, or an ``id`` that is one, and the ML adapter refuses such servers and such keys -- before anything is "
         "computed.",
         "",
         "JSON writes an integer that keys an object as a string (``1`` becomes ``\"1\"``). The ML adapter reads "

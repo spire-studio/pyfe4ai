@@ -861,7 +861,9 @@ Mac) against BLS12-381.
   are issued, a crypto object's `id`, the enrolled servers of
   `share_decrypt` (e.g. `list(rng.choice(lst_sid, t, replace=False))`),
   `servers=` / `server=` of the ML adapter, `nid=` of `encrypt_gradient`,
-  and the ids of partial decryptions and gradients read back; key shares,
+  the keys of the weights and of the encrypted gradients the ML adapter
+  aggregates, and the ids of partial decryptions and gradients read back;
+  key shares,
   partial decryptions and gradients then carry plain ints (with numpy
   integers v0.3.0 combined correctly in memory, but its key shares,
   partials and gradients did not go through `json.dumps`). Other values
@@ -875,7 +877,10 @@ Mac) against BLS12-381.
   enrolled set that holds one, or an `id` that is one, with
   `FEValidationError` before computing anything (the combiner refused their
   partial decryptions; v0.3.0 combined them), and the ML adapter refuses
-  such `servers=` / `server=` with `ValueError`.
+  such `servers=` / `server=`, and weights or encrypted gradients keyed by
+  them, with `ValueError` (v0.3.0 aggregated weights keyed by `1.0`; weights
+  keyed by numpy integers failed with a `TypeError` in
+  `mcfe/ring_lwe_threshold`).
 - **Ring-LWE key rows: two numpy shapes are refused** (`mcfe/ring_lwe` and
   its threshold and decentralized variants, `mife/ring_lwe`,
   `sife/ring_lwe`, `sife/fullysec_ring_lwe`). The row checks of this release

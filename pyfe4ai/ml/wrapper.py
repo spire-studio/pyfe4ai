@@ -17,6 +17,7 @@ import numpy as np
 
 from pyfe4ai.core import forksafe
 from pyfe4ai.core import registry
+from pyfe4ai.core.ids import as_id, is_id
 from pyfe4ai.core.status import get_scheme_status
 from pyfe4ai.ml.quantization import QuantizationConfig
 
@@ -93,6 +94,24 @@ def _serves_threshold(wrapper: "FESchemeWrapper") -> bool:
     (capability ``ml_servers``)."""
     return "{}/{}".format(wrapper.scheme_type, wrapper.variant) in registry.list_schemes(
         capabilities=registry.ML_SERVERS)
+
+
+def _client_keyed(mapping: dict, what: str) -> dict:
+    """*mapping* (weights or encrypted gradients, by client) keyed by client
+    ids: numpy integer keys read as the ints they equal
+    (:func:`~pyfe4ai.core.ids.as_id`); the same dict object when no key
+    changes.
+
+    Raises:
+        ValueError: For a key that is no client id (``1.0`` and ``True`` equal
+            client ``1`` but are no ids); the message holds no key.
+    """
+    keys = [as_id(nid) for nid in mapping]
+    if not all(is_id(nid) for nid in keys):
+        raise ValueError("{} must be keyed by client ids (str or int; numpy integers are read as int)".format(what))
+    if all(new is old for new, old in zip(keys, mapping)):
+        return mapping
+    return dict(zip(keys, mapping.values()))
 
 
 def _require_served_threshold(wrapper: "FESchemeWrapper", api: str) -> None:

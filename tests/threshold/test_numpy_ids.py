@@ -255,3 +255,51 @@ def test_ml_adapter_numpy_integer_client_ids(variant):
     assert type(EncryptedGradient.from_dict(in_memory).nid) is int
     with pytest.raises(ValueError):
         EncryptedGradient.from_dict(dict(in_memory, nid=np.float64(0)))
+
+
+def _clients_wrapper(variant):
+    from pyfe4ai.ml import FESchemeWrapper
+
+    config = {"eta": 1, "n": 3, "lst_nid": [0, 1, 2], "ring_n": 16, "lwe_n": 8, "bound_x": 50, "bound_y": 2,
+              "sec_param": 64}
+    if variant.endswith("threshold"):
+        config.update(s=3, t=2, lst_sid=["s0", "s1", "s2"])
+    return FESchemeWrapper("mcfe", variant, config, precision=1)
+
+
+@pytest.mark.parametrize("keyed", ["weights", "gradients", "both"])
+@pytest.mark.parametrize("variant", ["ring_lwe_threshold", "ring_lwe", "lwe"])
+def test_ml_adapter_numpy_integer_keys(variant, keyed):
+    # weights and gradients keyed by numpy integers (e.g. from np.unique of client labels): read as ints
+    from pyfe4ai.ml import aggregate_gradients, encrypt_gradient, prepare_aggregation
+
+    wkey = np.int64 if keyed in ("weights", "both") else int
+    gkey = np.int64 if keyed in ("gradients", "both") else int
+    for prepared in (False, True):
+        w = _clients_wrapper(variant)
+        enc = {gkey(n): encrypt_gradient(np.array([0.5, -0.5]), w, nid=n, label="a") for n in (0, 1, 2)}
+        weights = {wkey(n): (1, 2, 1)[n] for n in (0, 1, 2)}
+        if prepared:
+            p = prepare_aggregation(w, weights, shape=(2,), label="a")
+            assert all(type(n) is int for n in p.fusion_weight)
+            out = aggregate_gradients(enc, w, label="a", prepared=p)
+        else:
+            out = aggregate_gradients(enc, w, weights, label="a")
+        np.testing.assert_allclose(out, [2.0, -2.0])
+
+
+@pytest.mark.parametrize("variant", ["ring_lwe_threshold", "lwe"])
+def test_ml_adapter_refuses_weights_or_gradients_keyed_by_values_that_are_no_ids(variant):
+    # 1.0 or True equal client 1, but are no client ids
+    from pyfe4ai.ml import aggregate_gradients, encrypt_gradient, prepare_aggregation
+
+    w = _clients_wrapper(variant)
+    enc = {n: encrypt_gradient(np.array([0.5, -0.5]), w, nid=n, label="a") for n in (0, 1, 2)}
+    for other in (1.0, np.float64(1), True):
+        weights = {0: 1, other: 2, 2: 1}
+        with pytest.raises(ValueError, match="client ids"):
+            prepare_aggregation(w, weights, shape=(2,), label="a")
+        with pytest.raises(ValueError, match="client ids"):
+            aggregate_gradients(enc, w, weights, label="a")
+        with pytest.raises(ValueError, match="client ids"):
+            aggregate_gradients({0: enc[0], other: enc[1], 2: enc[2]}, w, {0: 1, 1: 2, 2: 1}, label="a")
