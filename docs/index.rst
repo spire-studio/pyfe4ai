@@ -4,66 +4,34 @@ pyfe4ai — Python Functional Encryption for AI
 **PyFE4AI** is a research-oriented Python library of functional encryption
 (FE) schemes for AI security and privacy. It covers single-input (SIFE),
 multi-input (MIFE), multi-client (MCFE), decentralized, threshold,
-function-hiding, and quadratic constructions across DDH, Damgård-DDH,
-Paillier, LWE, Ring-LWE, and pairing backends. Every scheme follows the same
-two-object model (a key generator and a crypto object), but operation names
-and arguments are family-specific; ``FESchemeWrapper`` offers a uniform layer
-for ML workloads. Check each scheme's review status
-(``pyfe4ai.get_scheme_status``) before relying on its privacy.
+function-hiding, and quadratic constructions under DDH (3072-bit groups or
+ristretto255), Damgård-DDH, Paillier, LWE, Ring-LWE and pairing-based
+assumptions. Every scheme is built from its id with
+:func:`pyfe4ai.create("family/variant", config) <pyfe4ai.core.registry.create>`,
+which returns a key generator and a crypto class; the arguments of
+encryption and decryption are family-specific, and
+:class:`~pyfe4ai.ml.FESchemeWrapper` offers a uniform layer for ML
+workloads. An optional Rust extension runs the hot paths natively. Check
+each scheme's review status (``pyfe4ai.get_scheme_status``) before relying
+on its privacy.
 
 `Project homepage <https://spire-studio.github.io/pyfe4ai/>`_ ·
 `GitHub <https://github.com/spire-studio/pyfe4ai>`_ ·
-`Issues <https://github.com/spire-studio/pyfe4ai/issues>`_
+`Issues <https://github.com/spire-studio/pyfe4ai/issues>`_ ·
+`Changelog <https://github.com/spire-studio/pyfe4ai/blob/main/CHANGELOG.md>`_
 
-Installation
-------------
+Where to start
+--------------
 
-.. code-block:: bash
-
-   git clone https://github.com/spire-studio/pyfe4ai.git
-   cd pyfe4ai
-   conda env create -f environment.yml
-   conda activate pyfe4ai
-   pip install -e ".[test]"
-
-With a Rust toolchain (``cargo``) on the ``PATH``, ``pip install`` also
-builds the optional native extension (:mod:`pyfe4ai.backend`):
-the Ring-LWE, dense-LWE and threshold hot paths, ristretto255, and the
-BLS12-381 pairing group that the pairing-based FE families use by default.
-Other pairing curves (MNT224, BN254, ...) need charm-crypto,
-``pip install -e ".[test,pairing]"`` (requires the PBC library; see the
-repository README for platform notes).
-
-Minimal example
----------------
-
-.. code-block:: python
-
-   import pyfe4ai
-
-   x, y = [2, 1, 3], [4, 5, 6]
-
-   # sec_param = bit length of the DDH modulus (NOT a security level);
-   # 128 keeps the demo fast but is insecure -- for real use replace it with
-   # "security_profile": "standard" (a 3072-bit group)
-   kg, SIFEDDH = pyfe4ai.create("sife/ddh", {"sec_param": 128, "eta": len(x)})
-   kg.setup()
-   pp, sk = kg.get_public_parameters(), kg.get_private_keys()
-   dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y})
-
-   ct = SIFEDDH({"precision": 3, "keys": {"pp": pp, "sk": sk}}).encrypt(x)
-   result = SIFEDDH({"precision": 3, "keys": {"pp": pp}}).decrypt(ct, dk, y)
-   print(result)  # <x, y> = 31
-
-:func:`pyfe4ai.create <pyfe4ai.core.registry.create>` returns the key
-generator of the scheme ``"family/variant"``, not yet set up, with the
-scheme's crypto class; :func:`pyfe4ai.list_schemes
-<pyfe4ai.core.registry.list_schemes>` and :func:`pyfe4ai.get_scheme
-<pyfe4ai.core.registry.get_scheme>` query the registry of the schemes
-(:doc:`api/index`).
+* New to the library: :doc:`install`, then :doc:`quickstart`.
+* Picking a scheme for a task: :doc:`choosing`.
+* Threshold decryption and federated learning: :doc:`threshold_ml`.
+* Coming from version 0.3.0: :doc:`upgrading`.
 
 Security & status
 -----------------
+
+PyFE4AI is a research prototype, not production-audited cryptography.
 
 * **Review status**: |n_schemes| registered schemes, |n_reviewed| reviewed,
   |n_experimental| experimental, |n_unreviewed| unreviewed and
@@ -97,10 +65,16 @@ Contents
 .. toctree::
    :maxdepth: 2
 
+   install
+   quickstart
+   choosing
    security
    configuration
+   environment
+   threshold_ml
    threading
    glossary
+   upgrading
    api/index
 
 Indices and tables

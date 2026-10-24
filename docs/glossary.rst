@@ -97,7 +97,69 @@ Configuration keys
       bit-security sense of Micciancio and Walter; each server counts in
       the ``partial_budget`` its deployment provides; much smaller ``q``
       and, for ``mife/lwe_threshold``, ``lwe_n``). See
-      :mod:`pyfe4ai.schemes.threshold.kl`.
+      :mod:`pyfe4ai.schemes.threshold.kl` and :doc:`threshold_ml`.
+
+   ``sharing``
+      How the threshold LWE layers (``mife/lwe_threshold``,
+      ``mcfe/lwe_threshold``, ``mcfe/ring_lwe_threshold``) share a
+      functional key among the servers: ``"shamir"`` (the default for
+      ``t = s``), ``"replicated"`` (the default for ``t < s``: additive
+      pieces, one per ``(t - 1)``-subset of the servers, so that partial
+      decryptions reveal nothing of the decryption noise) or
+      ``"replicated-seeded"`` (opt-in: all pieces but one expanded from
+      secret seeds; smaller key shares, computationally hiding). ``"shamir"``
+      with ``t < s`` is refused under ``standard``. The DDH and pairing
+      threshold layers always use Shamir's sharing.
+
+   ``flooding``
+      Distribution of the noise that floods the partial decryptions of
+      ``mcfe/ring_lwe_threshold``: ``"uniform"`` (default) or ``"gaussian"``
+      (the only one of version 0.3.0, and the one ``flooding_accounting =
+      "kl"`` uses). A public parameter.
+
+   ``ct_format``
+      Ciphertext format of the Ring-LWE MIFE / MCFE schemes: ``"json"``
+      (lists of decimal strings) or ``"binary"`` (a versioned compact
+      encoding, about a third of the size). For ``mife/ring_lwe``,
+      ``mcfe/ring_lwe`` and ``mcfe/ring_lwe_decentralized`` it is a crypto
+      option (default ``"json"``; decryption reads both); for
+      ``mcfe/ring_lwe_threshold`` a key generator option published in the
+      public parameters (default ``"binary"``), which ciphertexts, key
+      shares and partial decryptions follow.
+
+   ``ring_modulus``
+      Modulus of the Ring-LWE schemes: ``"prime"`` (an NTT-friendly prime)
+      or ``"rns"`` (a product of NTT-friendly primes; ``q_factors`` in the
+      public parameters). ``"rns"`` is the default of
+      ``mcfe/ring_lwe_threshold`` and opt-in for ``mife/ring_lwe``,
+      ``mcfe/ring_lwe`` and ``mcfe/ring_lwe_decentralized``; the SIFE
+      Ring-LWE schemes take ``"prime"`` only. See :doc:`rns_modulus_review`.
+
+   ``key_shares``
+      Key shares of ``mcfe/ring_lwe_threshold``: ``"split"`` (default) -- a
+      weight part per weight vector (``get_weight_key_share``, kept by the
+      server with ``add_weight_key_share``) and a label part per round
+      (``get_decryption_keys``) -- or ``"full"``, whole key shares per
+      label (the only kind with ``sharing = "replicated-seeded"``). See
+      :doc:`threshold_ml`.
+
+   ``label_hash``
+      How the MCFE Ring-LWE and dense-LWE schemes hash a label to values
+      mod ``q``: ``"shake128-rejection"`` (default), ``"shake256-wide"``
+      (version 0.3.0; data without the field is read as it) or
+      ``"shake256-rejection"``. Recorded in the public parameters, keys and
+      ciphertexts; data of different modes is refused.
+
+   ``cache_dir``
+      Key generator option: the parameter cache directory, overriding
+      ``PYFE4AI_CACHE_DIR`` and the per-user cache directory. See
+      :doc:`environment`.
+
+   ``legacy_shamir``
+      Crypto option of the threshold LWE servers: ``"warn"`` serves Shamir
+      key shares with ``t < s`` with an
+      :class:`~pyfe4ai.core.exceptions.FESecurityWarning` (never for public
+      parameters of the ``standard`` profile); without it they are refused.
 
    ``eta``
       Length of each client's input vector (an ``int``; MIFE-DDH also
@@ -108,7 +170,11 @@ Configuration keys
       the length of ``x``.
 
    ``lst_nid``
-      Client ids, length ``n`` (default ``nid_0`` ... ``nid_{n-1}``).
+      Client ids, length ``n`` (default ``nid_0`` ... ``nid_{n-1}``). An id
+      is a ``str`` or an ``int`` (not a ``bool``), one type per list; numpy
+      integers are refused here (convert them with ``int()``) and read as
+      ints wherever an id is given after setup (:mod:`pyfe4ai.core.ids`,
+      :doc:`configuration`).
 
    ``s``
       Number of decryption servers of the threshold schemes (tMIFE, tMCFE),
@@ -122,7 +188,8 @@ Configuration keys
       beyond the result.
 
    ``lst_sid``
-      Decryption-server ids of the threshold schemes, length ``s``.
+      Decryption-server ids of the threshold schemes, length ``s``; the same
+      rules as for ``lst_nid``.
 
    ``bound_x`` / ``bound_y``
       Bounds on the inputs and on the weights, ``|x_i| <= bound_x`` and
@@ -206,6 +273,17 @@ Labels, tags and keys
       Name of the function in the decentralized FH-MCFE
       (``mcfe/fh_multi_ipe_pairing_decentralized``): each client derives its
       key share for ``(tag_f, y_i)``, at most one per client and ``tag_f``.
+
+   ``sharing_id``
+      Random id of each sharing of a key that the ``mcfe/ring_lwe_threshold``
+      key generator issues, carried by its key shares and by the partial
+      decryptions; combiners refuse partials of two sharings
+      (:class:`~pyfe4ai.core.versions.MixedSharingsError`). Store and
+      transmit it with them (:doc:`threshold_ml`).
+
+   ``pp_binding``
+      Digest of the public-parameter fields a threshold LWE key share depends
+      on; servers refuse a key share bound to other parameters.
 
    ``mac_keys`` / ``tags``
       Client-to-server MAC keys of tMIFE-LWE, tMCFE-Ring-LWE and

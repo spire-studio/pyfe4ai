@@ -48,7 +48,9 @@ security-profile modules are documented on :doc:`../security`.
 Public and internal modules
 ---------------------------
 
-**Public** -- what applications use; changes are listed in the changelog:
+**Public** -- what applications use; changes are listed in the
+`changelog <https://github.com/spire-studio/pyfe4ai/blob/main/CHANGELOG.md>`__
+(from version 0.3.0: :doc:`../upgrading`):
 
 * :mod:`pyfe4ai` (above);
 * the family packages :mod:`pyfe4ai.schemes.sife`,
@@ -58,7 +60,9 @@ Public and internal modules
   :mod:`pyfe4ai.schemes.mcfe.ring_lwe`, document them);
 * :mod:`pyfe4ai.core.registry`, :mod:`pyfe4ai.core.config` (the config
   classes and their options), :mod:`pyfe4ai.core.status`,
-  :mod:`pyfe4ai.core.profiles` and :mod:`pyfe4ai.core.exceptions`;
+  :mod:`pyfe4ai.core.profiles`, :mod:`pyfe4ai.core.exceptions` and
+  :mod:`pyfe4ai.core.ids` (the rules for server and client ids, with
+  ``is_id`` and ``as_id``);
 * :mod:`pyfe4ai.ml` and :mod:`pyfe4ai.ml.quantization`;
 * from :mod:`pyfe4ai.backend`: ``available``, ``get_backend``,
   ``set_backend``, ``backend``, ``active_backend``, ``get_threads``,
