@@ -90,6 +90,13 @@ two clients, ``s = t = 3`` and ``2^40`` flooded values. It applies only with
 ``stat_param - 6.85`` bits. The refusal under ``standard`` holds with either
 accounting; ``"kl"`` applies to ``mife/lwe_threshold`` under ``toy``.
 
+The arguments of the security reviews that are part of the documentation:
+
+.. toctree::
+   :maxdepth: 1
+
+   rns_modulus_review
+
 Threshold trust model
 ---------------------
 

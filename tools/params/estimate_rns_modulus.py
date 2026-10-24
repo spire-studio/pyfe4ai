@@ -10,7 +10,7 @@ needs SageMath and the moduli need pyfe4ai::
     python tools/params/estimate_rns_modulus.py estimate moduli.json --estimator /path/to/lattice-estimator
 
 (the second under Sage's Python, e.g. with the ``sage-lwe`` environment's
-``bin`` on ``PATH``). Results: docs/rns_modulus_review.md, section 9.
+``bin`` on ``PATH``). Results: docs/rns_modulus_review.rst, section 9.
 """
 
 from __future__ import annotations

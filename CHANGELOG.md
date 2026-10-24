@@ -751,7 +751,8 @@ Mac) against BLS12-381.
 - Opt-in **RNS modulus** for the Ring-LWE MIFE, MCFE and decentralized MCFE
   (`ring_modulus="rns"`: `q` a product of two NTT primes of the prime's bit
   length; same ciphertext formats, `q_factors` in the public parameters).
-  Security review in `docs/rns_modulus_review.md`.
+  Security review: the documentation page *RNS modulus for the Ring-LWE
+  schemes* (`docs/rns_modulus_review.rst`).
 - Opt-in **seed-expanded replicated sharing** for the threshold LWE layers
   (`sharing="replicated-seeded"`): every key piece but one is expanded from
   a secret 32-byte seed with SHAKE-256, so a server stores at most one full

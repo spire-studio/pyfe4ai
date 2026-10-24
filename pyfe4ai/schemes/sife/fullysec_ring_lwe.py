@@ -202,7 +202,7 @@ class SIFEFullySecRingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             FEValidationError: For an unknown ``ndarray_layout`` or sampler,
                 or a ``ring_modulus`` other than ``"prime"`` (the adaptive
                 proof's Ring-LHL, Theorem 2, is for a prime ``q``; see
-                docs/rns_modulus_review.md).
+                :doc:`/rns_modulus_review`).
         """
         if config.get("ring_modulus", "prime") != "prime":
             raise FEValidationError(

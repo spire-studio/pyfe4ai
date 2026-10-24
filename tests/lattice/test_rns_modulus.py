@@ -4,7 +4,7 @@
 primes' roots), the schemes on the Python reference path, the native code
 (one 64-bit NTT per prime) against it bit for bit, the parameter cache and
 the refusals. The prime path (default) is checked to be unchanged. See
-docs/rns_modulus_review.md.
+docs/rns_modulus_review.rst.
 """
 
 from __future__ import annotations

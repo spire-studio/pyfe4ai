@@ -300,7 +300,7 @@ def _crt(residues: list, moduli: tuple) -> gp.mpz:
 
 #: ``ring_modulus`` of the selectively secure BMMS21 schemes (MIFE / MCFE /
 #: dMCFE Ring-LWE): ``"prime"`` (default) is an NTT-friendly prime, ``"rns"``
-#: a product of two (:func:`rns_ntt_modulus`; see docs/rns_modulus_review.md).
+#: a product of two (:func:`rns_ntt_modulus`; see :doc:`/rns_modulus_review`).
 RING_MODULI = ("prime", "rns")
 #: Largest bit length of an RNS factor (64-bit words of the native code, whose
 #: lazy butterflies need 4 q_i < 2^64).

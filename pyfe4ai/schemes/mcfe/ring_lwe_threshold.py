@@ -248,7 +248,7 @@ Shamir sharing over ``Z_q`` is then one field sharing per factor (CRT), with
 units for points and differences; the replicated sharing, the flooding (an
 argument over the integers), the label hash (exact rejection sampling on
 ``[0, q)``) and the decoding bound do not depend on the factorisation (see
-docs/rns_modulus_review.md). The parameter record carries ``ring_modulus``
+:doc:`/rns_modulus_review`). The parameter record carries ``ring_modulus``
 and ``q_factors`` (file ``param-rns.json``, beside the prime's
 ``param.json``); the construction ids are those of the prime modulus. The
 native backend runs the 256-bit kernels with one 64-bit NTT per factor

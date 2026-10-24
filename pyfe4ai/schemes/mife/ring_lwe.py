@@ -100,7 +100,7 @@ class MIFERingLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                 ``"auto"`` for the smallest dimension meeting the 128-bit
                 table, the ``standard`` profile's choice); ``ring_modulus``:
                 ``"prime"`` (default) or ``"rns"``, ``q`` the product of two
-                NTT primes (opt-in; see docs/rns_modulus_review.md).
+                NTT primes (opt-in; see :doc:`/rns_modulus_review`).
         """
         super().__init__(config, **kwargs)
         self.eta = config.get("eta", CryptoCONST.MIFE_ETA)
