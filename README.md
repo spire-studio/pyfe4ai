@@ -42,10 +42,12 @@ multi-client, threshold, decentralized, and function-hiding settings.
 ## Quick Start
 
 ```bash
+git clone https://github.com/spire-studio/pyfe4ai.git
+cd pyfe4ai
 conda env create -f environment.yml
 conda activate pyfe4ai
 pip install -e ".[test]"        # editable with test extras
-python -m pytest -m core -q     # run the core test suite
+python -m pytest -m core -q     # the tests that need no pairing backend
 ```
 
 Every scheme is built from its id with `pyfe4ai.create()`, e.g.
@@ -75,8 +77,9 @@ checkout; `PYFE4AI_NO_NATIVE=1` skips it). It runs the Ring-LWE MIFE / MCFE,
 the threshold MCFE and the dense-LWE MCFE hot paths natively, with the same
 outputs as the Python code, which remains the fallback: one MCFE Ring-LWE
 round of 10^4 gradient elements under `standard` takes about 18 ms per client
-and 6 ms for the aggregator, against 198 ms and 280 ms with v0.3.0 (0.25 ms
-per client online after an offline phase). It also provides ristretto255 for
+and 7.5 ms for the aggregator with the default (JSON) ciphertexts, 6 ms with
+`ct_format="binary"`, against 198 ms and 280 ms with v0.3.0 (one thread;
+0.25 ms per client online after an offline phase). It also provides ristretto255 for
 the `ddh_ristretto255` schemes and the BLS12-381 pairing group, the default
 of the pairing-based schemes. `PYFE4AI_BACKEND=python` (or
 `pyfe4ai.backend.set_backend("python")`) forces the Python implementation.
@@ -85,9 +88,13 @@ the extension's version and build, threads, Gaussian sampler, parameter cache
 directory). Without the extension the library runs the Python implementation,
 about 5 to 35 times slower on the lattice schemes, and says so once per
 process with an `FEWarning` at its first fallback (not under
-`PYFE4AI_BACKEND=python`; a warnings filter silences it too). See
-`pyfe4ai.backend` and
-[`benchmarks/PERFORMANCE.md`](benchmarks/PERFORMANCE.md).
+`PYFE4AI_BACKEND=python`; a warnings filter silences it too).
+`PYFE4AI_THREADS=k` lets one native call use `k` threads (default 1). See
+`pyfe4ai.backend`,
+[`benchmarks/PERFORMANCE.md`](benchmarks/PERFORMANCE.md) and the
+documentation's [Installation](https://spire-studio.github.io/pyfe4ai/docs/install.html)
+and [Environment variables](https://spire-studio.github.io/pyfe4ai/docs/environment.html)
+pages.
 
 ## Usage
 
@@ -132,7 +139,7 @@ kind, capabilities and review status.
 
 ## Key Features
 
-- **Multiple FE families** — DDH, LWE, Ring-LWE, FullySec-LWE, FullySec-Ring-LWE (adaptively secure, BMMS21 Sec. 5), Paillier, and Damgård instantiations across SIFE, MIFE, and MCFE
+- **Multiple FE families** — DDH (3072-bit groups or the ristretto255 curve), LWE, Ring-LWE, FullySec-LWE, FullySec-Ring-LWE (adaptively secure, BMMS21 Sec. 5), Paillier, and Damgård instantiations across SIFE, MIFE, and MCFE
 - **Threshold & decentralized** — `tMIFE`, `tMCFE`, `dMCFE` for distributed trust settings
 - **Function-hiding** — pairing-based FH-IPE and FH-Multi-IPE with full inner-product privacy
 - **Quadratic FE** — SGP and Quad (single-input, public-key) and multi-input quadratic FE with per-user keys (AGT22)
@@ -149,16 +156,19 @@ kind, capabilities and review status.
 | Family | Instantiations | Paper(s) |
 |--------|---------------|----------|
 | **SIFE** (single-input) | DDH, DDH-Dynamic, LWE | [ABDP15](https://eprint.iacr.org/2015/017.pdf) (PKC '15) |
+| | DDH over ristretto255 *(unreviewed)* | ABDP15 in the ristretto255 group ([RFC 9496](https://www.rfc-editor.org/rfc/rfc9496)) |
 | | Damgård-DDH, FullySec-LWE, Paillier | [ALS16](https://eprint.iacr.org/2015/608.pdf) (CRYPTO '16) |
 | | Ring-LWE | [BMMS21](https://eprint.iacr.org/2021/046.pdf) (PKC '22), Sec. 4 |
 | | FullySec-Ring-LWE (adaptive) | BMMS21, Sec. 5 |
 | | FH-IPE *(pairing)* | [KLMMRW](https://eprint.iacr.org/2016/440.pdf) (SCN '18) |
 | | Partial-FH-IPE *(pairing)* | [Gay20](https://eprint.iacr.org/2020/093.pdf) (PKC '20) |
 | **MIFE** (multi-input) | DDH, Damgård-DDH, LWE, FullySec-LWE, Paillier | [ACFGU18](https://eprint.iacr.org/2017/972.pdf) (CRYPTO '18), Fig. 4 + ALS16 / ABDP15 |
+| | DDH over ristretto255 *(unreviewed)* | ACFGU18 Fig. 4 + ABDP15 in ristretto255 |
 | | Ring-LWE | ACFGU18 Fig. 4 as in [BMMS21](https://eprint.iacr.org/2021/046.pdf), Sec. 6 |
 | | FH-IPE *(pairing)* | ACFGU18, Fig. 12 |
 | | FH-Multi-IPE *(pairing)* | [DOT18](https://eprint.iacr.org/2018/061.pdf) (PKC '18), Sec. 3.1 |
 | **MCFE** (multi-client) | DDH | [CDGPP18](https://eprint.iacr.org/2017/989.pdf) (ASIACRYPT '18) |
+| | DDH over ristretto255 *(unreviewed)* | CDGPP18 in ristretto255, labels hashed with [RFC 9380](https://www.rfc-editor.org/rfc/rfc9380) |
 | | Damgård-DDH (MDDH), Paillier (DCR), LWE, FullySec-LWE | [ABMPSW20](https://eprint.iacr.org/2020/788.pdf) (SCN '20), Figs. 2–4 |
 | | Ring-LWE | BMMS21, Sec. 6 (identity-based MCFE) |
 | | FH-Multi-IPE *(pairing)* | [AGT21b](https://doi.org/10.1007/978-3-030-90453-1_8) (TCC '21), Sec. 6.2 |
@@ -170,8 +180,9 @@ kind, capabilities and review status.
 | | Multi-input quadratic FE (cross-user terms) | [AGT22](https://eprint.iacr.org/2022/1168.pdf) (TCC '22), Sec. 5 |
 | | Quad (public-key) | [Gay20](https://eprint.iacr.org/2020/093.pdf) (PKC '20), Fig. 4 |
 
-> ¹ Threshold variants add a Shamir secret-sharing layer on top of the
-> corresponding MIFE or MCFE scheme; there is no separate standalone paper
+> ¹ Threshold variants add a secret-sharing layer (Shamir's, or the
+> replicated sharing described below) on top of the corresponding MIFE or
+> MCFE scheme; there is no separate standalone paper
 > for each combination. tMCFE-DDH shares the single aggregated functional
 > key of CDGPP18 and tMIFE-DDH the MIFE-DDH key, both interpolated in the
 > exponent. tMIFE-LWE, tMCFE-LWE and tMCFE-Ring-LWE additionally flood partial decryptions with noise, and
@@ -289,9 +300,9 @@ kg, SIFEDDH = pyfe4ai.create("sife/ddh", {"eta": 3, "security_profile": "standar
 | Discrete log: DDH, Damgård / MDDH (SIFE, MIFE, MCFE, tMIFE, tMCFE) | `sec_param = modulus_length = 3072`: RFC 3526 MODP group 15 (NIST SP 800-57 Part 1: 3072 bits for 128-bit security) | setup < 0.1 s; encrypt and aggregate < 1 s |
 | `mcfe/ddh_decentralized` | as above; key shares (masked with `stat_param` = 128 bits against carries) are combined under a DCR modulus of about 6410 bits | setup ≈ 2 min (two 3207-bit safe primes); key share 0.7 s |
 | DCR: Paillier (SIFE, MIFE, MCFE) | `bit_length = 1536`: two 1536-bit safe primes, N ≈ 3072 bits, generated for every key generator (a cached modulus could have known factors) | setup a few seconds (two 1536-bit safe primes) |
-| Ring-LWE (SIFE, MIFE, MCFE, tMCFE, dMCFE) | κ = `sec_param` = 128 and `ring_n = "auto"`: the smallest n in {1024, …, 32768} whose derived q (including the threshold flooding) meets a lattice-estimator bound for Ring-LWE with Gaussian secret and errors (`ring_lwe_utils.RING_LWE_128_LOG_Q`, rows by width 2–16; regenerate with `tools/params/estimate_ring_lwe.py`), read at the smallest RLWE width of the scheme's proof -- about 8 with the BMMS21 Sec. 4.2 widths, giving log2 q ≤ 31 / 57 / 111 / 218 / 435 / 872 (the Homomorphic Encryption Standard's 27 / 54 / 109 / 218 / 438 / 881 is about 125 bits by the same estimator); an explicit `ring_n` is checked against the same bound | Python backend: SIFE / MIFE (eta = 10, X = Y = 50): n = 4096; one ciphertext holds up to 4096 vectors at the same cost, encrypt 0.4–0.5 s (0.12 ms per vector when full), decrypt 0.04 s (SIFE) / 0.08 s (MIFE). MCFE, 10 000 gradient elements (X = 10^4, Y = 10): `ring_lwe` n = 4096, encrypt 0.36 s per client (exact sampler), aggregate 0.16 s; measured with v0.3.0: `ring_lwe_threshold` (3 servers, t = 2) n = 16384, encrypt 0.84 s per client, key share 0.21 s and partial decryption 0.67 s per server, combine 0.02 s; `ring_lwe_decentralized` n = 4096, encrypt 0.21 s per client, key share 0.02 s per client and label, decrypt 0.18 s. With the Rust extension the FL path is far faster (one thread, `standard`, 3 clients; MCFE 10^4 elements: about 18 ms per client with the exact sampler, 0.25 ms online after an offline phase, and 6 ms to aggregate; tMCFE with its defaults -- binary ciphertexts, a 212-bit RNS q of four factors, split key shares -- `ring_n` 8192, s = 3: 27 ms per client, 8 ms per partial decryption and 11 / 14 ms for the round's key shares at t = 2 / t = 3, 29 / 39 ms for the servers and the combiner together; with the JSON format, a prime q and whole key shares of earlier versions 39 ms, 65 / 55 ms and 41 / 43 ms), see `benchmarks/PERFORMANCE.md`. Functional keys of the MCFE variants are bound to a label (round) |
+| Ring-LWE (SIFE, MIFE, MCFE, tMCFE, dMCFE) | κ = `sec_param` = 128 and `ring_n = "auto"`: the smallest n in {1024, …, 32768} whose derived q (including the threshold flooding) meets a lattice-estimator bound for Ring-LWE with Gaussian secret and errors (`ring_lwe_utils.RING_LWE_128_LOG_Q`, rows by width 2–16; regenerate with `tools/params/estimate_ring_lwe.py`), read at the smallest RLWE width of the scheme's proof -- about 8 with the BMMS21 Sec. 4.2 widths, giving log2 q ≤ 31 / 57 / 111 / 218 / 435 / 872 (the Homomorphic Encryption Standard's 27 / 54 / 109 / 218 / 438 / 881 is about 125 bits by the same estimator); an explicit `ring_n` is checked against the same bound | Python backend: SIFE / MIFE (eta = 10, X = Y = 50): n = 4096; one ciphertext holds up to 4096 vectors at the same cost, encrypt 0.4–0.5 s (0.12 ms per vector when full), decrypt 0.04 s (SIFE) / 0.08 s (MIFE). MCFE, 10 000 gradient elements (X = 10^4, Y = 10): `ring_lwe` n = 4096, encrypt 0.36 s per client (exact sampler), aggregate 0.16 s; measured with v0.3.0: `ring_lwe_threshold` (3 servers, t = 2) n = 16384, encrypt 0.84 s per client, key share 0.21 s and partial decryption 0.67 s per server, combine 0.02 s; `ring_lwe_decentralized` n = 4096, encrypt 0.21 s per client, key share 0.02 s per client and label, decrypt 0.18 s. With the Rust extension the FL path is far faster (one thread, `standard`, 3 clients; MCFE 10^4 elements: about 18 ms per client with the exact sampler and 7.5 ms to aggregate with the default JSON ciphertexts, 6 ms with binary ones, 0.25 ms per client online after an offline phase; tMCFE with its defaults -- binary ciphertexts, a 212-bit RNS q of four factors, split key shares -- `ring_n` 8192, s = 3: 27 ms per client, 8 ms per partial decryption and 11 / 14 ms for the round's key shares at t = 2 / t = 3, 29 / 39 ms for the servers and the combiner together; with the JSON format, a prime q and whole key shares of earlier versions 39 ms, 65 / 55 ms and 41 / 43 ms), see `benchmarks/PERFORMANCE.md`. Functional keys of the MCFE variants are bound to a label (round) |
 | Adaptively secure Ring-LWE: `sife/fullysec_ring_lwe` (BMMS21 Sec. 5) | as Ring-LWE, plus `m = "auto"`: the smallest number m ≥ 5 of key polynomials whose q meets the same bound (the paper's m = 3 admits no modulus under its own constraints, see the module docstring); widths from Theorems 1–2 and Appendix C.1 with complexity leveraging over (2X+1)^(2·eta); exact FACCT Gaussians by default (`gaussian_sampler`); experimental `ndarray_layout = "packed"`: up to n vectors per ciphertext, leveraging over the span of the differences | eta = 4, X = Y = 4: n = 4096, m = 17, setup 0.25 s, encrypt 0.12 s, decrypt 66 ms; eta = 10, X = Y = 50: n = 8192, m = 8, setup 1.0 s, encrypt 0.31 s, decrypt 0.13 s; packed eta = 1, X = 100, Y = 1: n = 4096, m = 12, 4096 elements per ciphertext (182 bytes each), setup 75 ms, encrypt 79 ms, decrypt 46 ms per ciphertext (Rust extension, exact sampler) |
-| Dense LWE: the ABMPSW20 MCFE family (`mcfe/lwe`, `fullysec_lwe`, `lwe_threshold`, `lwe_decentralized`) | `lwe_n = "auto"`: the smallest n0 in {4096, 4608, …, 16384} whose derived q meets a [lattice-estimator](https://github.com/malb/lattice-estimator) bound for LWE(n0, q, ⌈2√n0⌉) with a uniform secret -- the assumption of the scheme's proof (`lwe_utils.DENSE_LWE_128_LOG_Q`, e.g. log2 q ≤ 118 / 173 / 227 for n0 = 4096 / 6144 / 8192; regenerate with `tools/params/estimate_dense_lwe.py`); an explicit `lwe_n` is checked against the same table. No public matrix: a label is hashed to n0 + m0 values. `lwe_decentralized` combines key shares under a DCR modulus of ≥ 3072 bits, so its key derivation is not post-quantum | n0 = 7168–8192 for small bounds (stat_param 128); Python backend: about 7 ms per element and client to encrypt and 6–8 ms per element to aggregate (one label per element); with the Rust extension 93 / 101 ms for 200 elements (client / aggregator, 3 clients); dMCFE key share ≈ 90 s per client |
+| Dense LWE: the ABMPSW20 MCFE family (`mcfe/lwe`, `fullysec_lwe`, `lwe_threshold`, `lwe_decentralized`) | `lwe_n = "auto"`: the smallest n0 in {4096, 4608, …, 16384} whose derived q meets a [lattice-estimator](https://github.com/malb/lattice-estimator) bound for LWE(n0, q, ⌈2√n0⌉) with a uniform secret -- the assumption of the scheme's proof (`lwe_utils.DENSE_LWE_128_LOG_Q`, e.g. log2 q ≤ 118 / 173 / 227 for n0 = 4096 / 6144 / 8192; regenerate with `tools/params/estimate_dense_lwe.py`); an explicit `lwe_n` is checked against the same table. No public matrix: a label is hashed to n0 + m0 values. `lwe_decentralized` combines key shares under a DCR modulus of ≥ 3072 bits, so its key derivation is not post-quantum | n0 = 7168–8192 for small bounds (stat_param 128); Python backend: about 2.7 ms per element and client to encrypt and 2.8 ms per element to aggregate (543 / 551 ms for 200 elements, one label per element); with the Rust extension 93 / 101 ms for 200 elements (client / aggregator, 3 clients); dMCFE key share ≈ 90 s per client |
 | LWE with a public matrix: ABDP15 (`sife/lwe`, `mife/lwe`) | `lwe_n = "auto"`: the smallest n in {512, 576, …, 6144} whose (q, σ′) meets a lattice-estimator bound on log2(q/σ′) for wide-error LWE with a uniform secret (`lwe_utils.WIDE_LWE_128_LOG_RATIO`, rows by width; regenerate with `tools/params/estimate_wide_lwe.py`), read at σ′ = σ/(1 + B√eta), the error width of the LWE problem that the security proof reduces to (B = 2X, or 4X per MIFE slot; ABDP15 full version, Thm. 4.4 with the width derived in the proof of its Thm. 6.6 = Bourse 2017, Thm. 8.2.2; its Sec. 6.2 parameter list states the stronger (ℓB + 1)σ′), not at the public key's own σ, which gives 17–67% larger dimensions for 8 ≤ X = Y ≤ 1000; an explicit `lwe_n` is checked the same way. A (m ≈ n·log2 q rows) is published as a 32-byte seed and expanded with SHAKE-128. `matrix_mode` (key generator and crypto configs, forwarded by the ML adapter): `"memory"` keeps A expanded, `"stream"` expands it again for every batch | n = 1280 / 1536 for X = Y = 50 / 256 and eta = 10 (A: 1.3·10^8 / 2.2·10^8 entries; 896 / 1088 when the table was read at σ); MIFE is sized as if its vectors had dimension n·eta (ACFGU18, footnote 14), e.g. n = 1408 for 100 slots of dimension eta = 1 with X = Y = 50 (1664 for eta = 10). Encryptor alone, n = 1536: `"memory"` 0.24 s per encryption and 5.3 GB, `"stream"` 6.9 s and 0.7 GB (0.11 s and 3.4 s at the former n = 1088); the ndarray helpers encrypt in batches of 64 (eta = 1, n = 1088: 6.6 vs 44 ms per element). Key generation (setup, the noise of the keys sampled exactly) 8.3 s / 17 s for X = Y = 50 / 256, 47 s for the 100 MIFE slots. The public key is m × eta per slot (46 MB of JSON for eta = 10), so keep eta small. `mife/lwe_threshold` (experimental) is refused, see below |
 | Pairing: FH-IPE, FH-MCFE family, quadratic FE | BLS12-381 (Rust extension; the `toy` default too): about **120–126-bit** security after the exTNFS attacks, below the target; a `FESecurityWarning` says so | `report` benchmark profile: SGP 30 ms, Quad 48 ms, MCFE FH-Multi-IPE 47 ms end to end; a pairing 0.8 ms |
 | Refused | `sife/fullysec_lwe`, `mife/fullysec_lwe` (ALS16), `mife/lwe_threshold`, `mcfe/paillier_decentralized` | `FEValidationError`: no parameter set that is both secure and usable. ALS16 at a 128-bit dimension (lattice estimator, n = 3328–4352 for X = Y ≤ 50 and eta ≤ 10, with m = 4n·log2 q as its Theorem 2 requires): A has 1–2·10^10 entries and a ciphertext 2.9–4.5·10^6 coordinates of 219–258 bits (80–145 MB); its LWE-to-mheLWE reduction loses about n^6 in the noise ratio, so the parameters cannot be tightened -- for adaptive security use `sife/fullysec_ring_lwe`, otherwise the Ring-LWE scheme of the same family. tMIFE-LWE: read at σ′, the LWE of its flooding-enlarged q (stat_param 128, two clients) needs a dimension at the very end of the table (5888–6144, A: 6.5–7.8·10^9 entries) for a few small bounds, e.g. X = Y ∈ {1, 2, 3, 8, 10} at eta = 1, and beyond it for most others (X = Y = 4–6, X = Y ≥ 12, most eta ≥ 2; about 6500 for X = Y = 50, q of 217 bits; read at σ it took 5952, with key generation 38 min and one encryption 572 s in `"stream"` mode); use `mife/ddh_threshold`, or `mcfe/ring_lwe_threshold` with labels. The opt-in KL-divergence accounting of the flooding (`flooding_accounting = "kl"`, t = s and an explicit `max_partial_decryptions` budget, a weaker guarantee of about stat_param − 6.85 bits) would bring it to about 4864 at σ′ for s = t = 3 and 2^40 flooded values (A: 4.1·10^9 entries, `"stream"` mode), but `standard` refuses tMIFE-LWE with either accounting; "kl" applies to it under `toy`. dMCFE-Paillier needs a DCR modulus above 15000 bits for combining key shares |
@@ -311,6 +322,7 @@ side-channel hardening, trusted parameter cache) still apply.
     - `base.py`: key-generator and crypto base classes, the parameter cache
     - `config.py`: the config class of every scheme and the rules that combine options
     - `formats/`, `versions.py`: the serialized objects and their version markers
+    - `ids.py`: the rules for server and client ids (`lst_sid`, `lst_nid`: a `str` or an `int`, one type per list)
     - `status.py`: review status of every registered scheme (the table above)
     - `profiles.py`: `security_profile` (`"toy"` / `"standard"`)
     - `one_time.py`: one-time precomputations of the offline / online encryption
@@ -386,16 +398,19 @@ CamelCase with its acronyms in capitals; the key generator adds
 
 ```bash
 python -m pytest -q                # all tests
-python -m pytest -m core -q        # core FE/IPFE smoke lane only
-python -m pytest -m extended -q    # pairing-heavy & quadratic families only
+python -m pytest -m core -q        # everything but the pairing-based and quadratic families
+python -m pytest -m extended -q    # the pairing-based and quadratic families only
 python -m pytest -m "not slow" -q  # without the ~20 slowest tests
 python -m pytest -m "not native" -q  # what runs without the Rust extension
 python -m pytest -m threshold -q   # one group (tests/threshold); see CONTRIBUTING.md
 ```
 
-The `core` lane is the main public release lane. The `extended` lane covers
-pairing-heavy and quadratic families that remain publicly available but are kept
-outside the minimal smoke path.
+`core` marks every test that needs no pairing backend, almost all of the
+suite; it is what CI runs without the Rust extension. `extended` marks the
+tests of the pairing-based schemes, the pairing-group checks and quadratic
+FE: they run on BLS12-381 from the Rust extension (the default), or on other
+curves with charm-crypto (`PYFE4AI_TEST_PAIRING_GROUP`), and skip when
+neither provides the group.
 
 With the Rust extension built, the tests compare the native code with the
 Python reference; run the suite on each backend, and the Rust core's own tests
@@ -511,7 +526,7 @@ limitations remain:
 | One ciphertext per client and label | all MCFE / DMCFE schemes | As in the papers, a client must not encrypt two different inputs under one label (or tag); the scheme classes do not enforce it (the ML adapter refuses a second encryption per client and label within one wrapper, and FH-DMCFE client objects a second key per `tag_f`). |
 | Rounded Gaussian by default outside the exact-default schemes | ALS16 (`fullysec_lwe`), the DCR schemes, and under `toy` ABDP15 SIFE / MIFE LWE (and the keys of tMIFE-LWE) | The proofs sample `D_{Z,sigma}`; these schemes follow the library-wide sampler, which by default rounds a continuous Gaussian: in double precision up to `2^40` (shared Box-Muller radii, ties to even, nothing beyond 8.57 sigma: 2^-25..2^-4 from i.i.d. `D_{Z,sigma}` per key or ciphertext per the October 2026 crypto review) and with MPFR at `bits(sigma) + 320` bits beyond. `sampler="facct"`, `gaussian_sampler("facct")`, `set_gaussian_sampler("facct")` or `PYFE4AI_GAUSSIAN_SAMPLER=facct` select the exact sampler for them (about 2^-185 per sample). The Ring-LWE MIFE / MCFE family, the dense-LWE MCFE keys `t` and SIFE FullySec Ring-LWE sample exactly by default and record it in their public parameters; for them the process-wide choice and the environment variable do not apply, and `standard` refuses `"rounded"`. ABDP15 (`sife/lwe`, `mife/lwe`; `mife/lwe_threshold` is refused under `standard`) does the same for its public keys' noise under `standard`, and under `toy` (also the keys of `mife/lwe_threshold`) follows its config's `gaussian_sampler`, else the library-wide choice; its public parameters record the sampler either way. The threshold flooding always uses the MPFR rounded sampler. Neither sampler is constant-time. |
 | Toy default parameters | all | `sec_param` is a modulus bit length (default 128), not a security level; LWE dimensions default to 32–64 and the Ring-LWE dimension to 32; the statistical parameter `stat_param` defaults to 64. All far below any real security level (a key column of SIFE-LWE at its defaults falls to plain LLL in minutes). Pass `security_profile="standard"` for 128-bit-oriented parameters -- except for pairings (BLS12-381, about 120–126-bit) and the refused ALS16, tMIFE-LWE and dMCFE-Paillier schemes; see [Security Profiles](#security-profiles). |
-| Parameter cache | key generators that cache parameters (most; not MCFE `lwe`, `fullysec_lwe`, `lwe_threshold`, the FH-MCFE family, MIFE `fh_ipe_pairing` and quadratic `quad` and `miqfe`) | Public parameters are written to and re-loaded from `<cache>/authority/...`, where `<cache>` is the `cache_dir` entry of the key generator's config, else `PYFE4AI_CACHE_DIR`, else the per-user cache directory (`~/Library/Caches/pyfe4ai` on macOS, `$XDG_CACHE_HOME/pyfe4ai` or `~/.cache/pyfe4ai` on Linux, `%LOCALAPPDATA%\pyfe4ai\Cache` on Windows). A cached file is used only if it matches the configuration; discrete-log groups are checked for primality, size, safe-prime structure, generator order and (at RFC 3526 sizes) for being the RFC prime; DCR moduli for size, compositeness and small factors (their factors are never stored); all other cached values are re-derived on load or expanded from a stored seed (LWE and Ring-LWE parameters and public matrices, the Paillier base, the Damgard `h`); under `standard` the lattice schemes re-check their moduli against the 128-bit tables. An unreadable file is regenerated, and files are written atomically. No check can tell whether someone knows the factors of a DCR modulus, so under `standard` the Paillier moduli and the dMCFE `N2` are generated for every key generator, never loaded or stored; under `toy` a planted modulus with known factors is still used: use a cache directory that nobody else can write to. |
+| Parameter cache | key generators that cache parameters (most; not MCFE `lwe`, `fullysec_lwe`, `lwe_threshold`, the FH-MCFE family, MIFE `fh_ipe_pairing` and quadratic `quad` and `miqfe`) | Public parameters are written to and re-loaded from `<cache>/authority/...`, where `<cache>` is the `cache_dir` entry of the key generator's config, else `PYFE4AI_CACHE_DIR`, else the per-user cache directory (`~/Library/Caches/pyfe4ai` on macOS, `$XDG_CACHE_HOME/pyfe4ai` or `~/.cache/pyfe4ai` on Linux, `%LOCALAPPDATA%\pyfe4ai\Cache` on Windows). A cached file is used only if it matches the configuration; discrete-log groups are checked for primality, size, safe-prime structure, generator order and (at RFC 3526 sizes) for being the RFC prime; DCR moduli for size, compositeness and small factors (their factors are never stored); all other cached values are re-derived on load or expanded from a stored seed (LWE and Ring-LWE parameters and public matrices, the Paillier base, the Damgard `h`); under `standard` the lattice schemes re-check their moduli against the 128-bit tables. There is one record per scheme type (`authority/SIFE/param.json`, `authority/MCFE_RING_LWE/param.json`, ...; RNS moduli in `param-rns.json`): a key generator whose configuration does not match the cached record (other dimensions, bounds or profile -- e.g. when several examples or configurations run one after another) regenerates it with new parameters and seeds, with an `FEWarning` ("the parameter record ... does not match this configuration ...: regenerated ..."); an unreadable file is regenerated the same way, and files are written atomically. Keys and ciphertexts already made keep working with the public parameters they were made with, but setting up the earlier configuration again draws new parameters: give each configuration its own `cache_dir` to keep both. The DDH crypto objects keep their discrete-log tables under `<cache>/crypto/`. No check can tell whether someone knows the factors of a DCR modulus, so under `standard` the Paillier moduli and the dMCFE `N2` are generated for every key generator, never loaded or stored; under `toy` a planted modulus with known factors is still used: use a cache directory that nobody else can write to. |
 | The ML adapter plays every party | `pyfe4ai.ml` | `FESchemeWrapper` runs the key generator, so it holds the master key and acts as clients, authority and decryptor in one trust domain; use it for experiments, not as a deployment. For `mcfe/ring_lwe_threshold` it also runs the decryption servers (`partial_decrypt_gradients`, `combine_partial_decryptions` show a deployment's messages, and a `PreparedAggregation` holds the servers' label key shares), so there the threshold protects nothing. By default `aggregate_gradients` needs a ciphertext and a non-zero weight for every enrolled client (`allow_partial=True` relaxes this), a client encrypts at most once per label and a label is aggregated with one weight vector; these checks are per wrapper object, and they do not stop very unequal weights (e.g. `(W, 1)` with `W` above twice the largest gradient entry), which separate two clients' gradients in one aggregate -- as with any inner-product FE, the weights are the key holder's choice. A pickled or copied wrapper (`multiprocessing`, Ray) carries the master key and every client's key: ship a worker its client's own crypto object (the scheme class built from `wrapper.pp` and `wrapper.kg.get_private_keys(nid)`), not the wrapper. |
 
 **v0.3.0 and earlier are affected: Lagrange-multiplier leak in the threshold
@@ -654,8 +669,10 @@ cleanly without charm-crypto.
 >   (timing, cache, power analysis, etc.).
 > - Parameter choices in examples and tests are selected for fast execution,
 >   not for cryptographic strength.
-> - Several schemes write generated public parameters into local `config/`
->   subdirectories during setup.
+> - Key generators cache the public parameters they generate in the per-user
+>   cache directory (or `PYFE4AI_CACHE_DIR`, or the `cache_dir` entry of their
+>   config); the cache is trusted, see *Parameter cache* under
+>   [Known Issues](#known-issues--security-notice).
 
 ## Citing
 

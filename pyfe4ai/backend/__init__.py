@@ -61,13 +61,16 @@ environment variable ``PYFE4AI_BACKEND=native``, not under an explicit
 (:data:`MISSING_EXTENSION_NOTICE`, attributed to the application's call): the
 Python implementation is about 5 to 35 times slower on the lattice schemes
 (one thread, ``security_profile="standard"``, ``benchmarks/run.py fl-compare``
-on an Apple M2 Max, October 2026: MCFE Ring-LWE with 10^4 elements 341 / 157
-ms per client / aggregator against 18 / 7.5 ms natively; dense-LWE MCFE with
-200 elements 541 / 548 ms against 92 / 100 ms; threshold MCFE with 10^4
-elements, ``s = 3``, ``t = 2``: 488 ms per client, 275 ms per partial
-decryption and 684 ms for the aggregator against 26, 8 and 28 ms; the gap
-grows with native threads), and the BLS12-381 pairing group has no Python
-implementation. Build the extension (``python tools/build_rust.py`` in a
+on an Apple M2 Max, October 2026, each scheme's default ciphertext format:
+MCFE Ring-LWE with 10^4 elements and JSON ciphertexts 341 / 157 ms per
+client / aggregator against 18 / 7.5 ms natively; dense-LWE MCFE with 200
+elements 541 / 548 ms against 92 / 100 ms; threshold MCFE with 10^4
+elements and binary ciphertexts, ``s = 3``, ``t = 2``: 488 ms per client,
+275 ms per partial decryption and 684 ms for the aggregator against 26, 8
+and 28 ms; ``benchmarks/PERFORMANCE.md`` has the binary format of MCFE
+Ring-LWE and more; the gap grows with native threads), and the BLS12-381
+pairing group has no Python implementation. Build the extension
+(``python tools/build_rust.py`` in a
 source checkout, or ``pip install`` with a Rust toolchain on the ``PATH``);
 or select ``"python"`` (``PYFE4AI_BACKEND=python``, :func:`set_backend`) or
 filter the warning to silence it, e.g.

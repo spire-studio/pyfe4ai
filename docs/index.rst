@@ -11,7 +11,7 @@ and arguments are family-specific; ``FESchemeWrapper`` offers a uniform layer
 for ML workloads. Check each scheme's review status
 (``pyfe4ai.get_scheme_status``) before relying on its privacy.
 
-`Project homepage <../>`_ ·
+`Project homepage <https://spire-studio.github.io/pyfe4ai/>`_ ·
 `GitHub <https://github.com/spire-studio/pyfe4ai>`_ ·
 `Issues <https://github.com/spire-studio/pyfe4ai/issues>`_
 
@@ -76,7 +76,8 @@ Security & status
   and DCR moduli, lattice-estimator bounds for LWE and Ring-LWE,
   ``stat_param`` 128), except that pairing-based schemes get BLS12-381
   (about 120-126-bit, with a ``FESecurityWarning``) and ``sife/fullysec_lwe``,
-  ``mife/fullysec_lwe`` and ``mcfe/paillier_decentralized`` are refused. The ABDP15 LWE schemes
+  ``mife/fullysec_lwe``, ``mife/lwe_threshold`` and
+  ``mcfe/paillier_decentralized`` are refused. The ABDP15 LWE schemes
   take ``matrix_mode`` (``"memory"`` or ``"stream"``) to trade memory for
   time.
 * **Threshold schemes**: decryption servers are honest-but-curious; a

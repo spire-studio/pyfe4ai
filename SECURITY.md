@@ -139,8 +139,9 @@ When reporting, please include:
 - a clear description of the issue
 - affected files and scheme(s) (`family/variant`, e.g. `mcfe/ring_lwe`) and
   the `security_profile` used
-- the pyfe4ai version or commit, and whether the Rust extension was used
-  (`pyfe4ai.backend.describe()`)
+- the pyfe4ai version or commit, and the output of
+  `pyfe4ai.backend_info()` (whether the Rust extension was built and used,
+  threads, Gaussian sampler, parameter cache directory)
 - steps to reproduce
 - impact assessment
 - any proof-of-concept or patch suggestion, if available

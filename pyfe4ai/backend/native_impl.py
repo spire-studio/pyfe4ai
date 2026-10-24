@@ -343,7 +343,7 @@ class RingContext(PythonRing):
         except ValueError as exc:
             if rnd is not None and "not enough random bytes" in str(exc):  # a test's random bytes, not the key's
                 raise RuntimeError(
-                    "native_backend.random_input: the {} test bytes ran out".format(len(rnd))) from exc
+                    "pyfe4ai.backend.native_impl.random_input: the {} test bytes ran out".format(len(rnd))) from exc
             raise FEKeyError("malformed key material") from exc  # values not below q, misaligned words
 
     def floods_natively(self, width: int) -> bool:
@@ -742,7 +742,7 @@ class NativeBackend(PythonBackend):
             if rnd is None:
                 raise
             raise RuntimeError(
-                "native_backend.random_input: the {} test bytes ran out".format(len(rnd))
+                "pyfe4ai.backend.native_impl.random_input: the {} test bytes ran out".format(len(rnd))
             ) from exc
 
     def zq_sum(self, q, count: int, rows, materials: list, subtract: bool = False, binary: bool = False,

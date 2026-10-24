@@ -10,12 +10,20 @@ of `benchmarks/run.py` reproduce them (see `README.md`), for example
 
 ## MCFE over Ring-LWE (`mcfe/ring_lwe`), 10^4 gradient elements
 
-| | client | aggregator |
-| --- | ---: | ---: |
-| v0.3.0 (Python) | 197.5 ms | 280.0 ms |
-| native, 1 thread | 17.95 ms | 6.24 ms |
-| native, 4 threads | 6.21 ms | 3.62 ms |
-| native, online phase after `precompute_gradient` / `prepare_aggregation` | 0.25 ms | 3.16 ms |
+The ciphertext format matters for the aggregator: `mcfe/ring_lwe` writes JSON
+ciphertexts by default, and `ct_format="binary"` (crypto config, or
+`FESchemeWrapper(..., crypto_options={"ct_format": "binary"})`) selects the
+compact binary format.
+
+| | ciphertexts | client | aggregator |
+| --- | --- | ---: | ---: |
+| v0.3.0 (Python) | JSON | 197.5 ms | 280.0 ms |
+| native, 1 thread | JSON (default) | 18.2 ms | 7.5 ms |
+| native, 1 thread | binary | 17.95 ms | 6.24 ms |
+| native, 4 threads | binary | 6.21 ms | 3.62 ms |
+| native, online phase after `precompute_gradient` / `prepare_aggregation` | binary | 0.25 ms | 3.16 ms |
+| Python backend (`PYFE4AI_BACKEND=python`) | JSON (default) | 345 ms | 157 ms |
+| Python backend | binary | 360 ms | 164 ms |
 
 - The offline phase takes 17.8 ms per client, most of it exact discrete
   Gaussian sampling (FACCT, the default under `standard`), and 2.9 ms for
@@ -23,9 +31,12 @@ of `benchmarks/run.py` reproduce them (see `README.md`), for example
 - Ciphertexts take 24.6 B per element with `ct_format="binary"` (68.4 B as
   JSON).
 - The opt-in `ring_modulus="rns"` brings the aggregator to 5.69 ms and its
-  online phase to 2.65 ms.
-- With `PYFE4AI_BACKEND=python` the same round takes 360 ms per client
-  (exact sampling in Python) and 164 ms for the aggregator.
+  online phase to 2.65 ms (binary ciphertexts).
+- On the Python backend most of the client's time is exact sampling in
+  Python.
+- The JSON rows of the native and Python backends were measured again for
+  the 0.4.0 release (interleaved, three runs of `fl-compare`); the binary
+  rows come from the October 2026 integration measurements.
 
 ## Other families (native, one thread)
 
@@ -34,7 +45,7 @@ of `benchmarks/run.py` reproduce them (see `README.md`), for example
 | threshold MCFE (`mcfe/ring_lwe_threshold`), 10^4 elements, `s = 3, t = 2` (replicated sharing; defaults: binary ciphertexts, RNS modulus, split key shares): client / key shares per round / partial decryption per server / aggregator | 213.5 / 275.9 / 528 / 1348 ms | 26.7 / 10.7 / 8.5 / 29.1 ms |
 | ... `t = 3` (Shamir): client / key shares / partial / aggregator | | 26.7 / 13.6 / 8.0 / 39.4 ms |
 | ... with the options of earlier versions (`ct_format="json"`, `ring_modulus="prime"`, `key_shares="full"`), `t = 2` / `t = 3` | | 39.1 / 40.9 / 65.4 / 177.0 ms; 39.2 / 43.3 / 55.3 / 215.7 ms |
-| decentralized MCFE (`mcfe/ring_lwe_decentralized`), 10^4 elements: client / key share per client / aggregator | | 17.7 / 3.28 / 5.45 ms |
+| decentralized MCFE (`mcfe/ring_lwe_decentralized`), 10^4 elements, binary ciphertexts: client / key share per client / aggregator | | 17.7 / 3.28 / 5.45 ms |
 | dense-LWE MCFE (`mcfe/lwe`), 200 elements: client / aggregator | 1021 / 1030 ms | 93.1 / 101.4 ms |
 | DDH MCFE, per element: client / aggregator / ciphertext | 10.75 / 11.10 ms, 936 B (3072-bit group) | 0.069 / 0.139 ms, 75 B (`ddh_ristretto255`) |
 | SIFE FullySec Ring-LWE, `eta = 10, X = Y = 50`: setup / encrypt / decrypt | | 1.02 s / 0.31 s / 131 ms |

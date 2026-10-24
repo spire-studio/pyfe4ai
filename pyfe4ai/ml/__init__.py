@@ -5,15 +5,21 @@ Provides two high-level APIs that hide FE complexity from ML engineers:
 **FL aggregation** (``eta=1``, ndarray helpers):
     Encrypt per-element gradients from *n* clients, aggregate with weights.
 
-    >>> wrapper = FESchemeWrapper("mcfe", "lwe", keygen_cfg, crypto_cfg)
-    >>> enc = encrypt_gradient(grad_array, wrapper, label="round-1")
+    >>> keygen_cfg = {"eta": 1, "n": 2, "lst_nid": ["c0", "c1"], "bound_x": 1000, "bound_y": 10}
+    >>> wrapper = FESchemeWrapper("mcfe", "lwe", keygen_cfg, precision=2)
+    >>> enc0 = encrypt_gradient(grad0, wrapper, nid="c0", label="round-1")
+    >>> enc1 = encrypt_gradient(grad1, wrapper, nid="c1", label="round-1")
     >>> result = aggregate_gradients(
-    ...     {"c0": enc0, "c1": enc1}, wrapper, weights, label="round-1")
+    ...     {"c0": enc0, "c1": enc1}, wrapper, {"c0": 1, "c1": 2}, label="round-1")
+
+    Extra entries of the crypto objects' config go to ``crypto_options``,
+    e.g. ``FESchemeWrapper("mcfe", "ring_lwe", keygen_cfg,
+    crypto_options={"ct_format": "binary"})``.
 
 **Encrypted inference** (``eta=feature_dim``, vector mode):
     Encrypt a feature vector, compute ``⟨x, w⟩`` without revealing *x*.
 
-    >>> wrapper = FESchemeWrapper("sife", "lwe", keygen_cfg, crypto_cfg)
+    >>> wrapper = FESchemeWrapper("sife", "lwe", {"eta": 3, "bound_x": 10, "bound_y": 10})
     >>> enc = encrypt_features(feature_vec, wrapper)
     >>> score = compute_linear(enc, wrapper, model_weights)
 

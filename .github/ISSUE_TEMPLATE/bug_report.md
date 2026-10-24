@@ -16,6 +16,7 @@ Describe the problem briefly.
 ## Environment
 
 - pyfe4ai version or commit (`python -c "import pyfe4ai; print(pyfe4ai.__version__)"`, `git rev-parse --short HEAD`):
+- `python -c "import pyfe4ai; print(pyfe4ai.backend_info())"` (Rust extension, threads, sampler, cache directory):
 - OS and architecture:
 - Python version:
 - Environment setup (conda `environment.yml`, pip, Docker `docker/Dockerfile.pairing`):
@@ -49,5 +50,5 @@ Paste the traceback, error message, or failing test output.
 
 ## Additional context
 
-- Does this affect only pairing-based schemes? (Without `charm-crypto`, run `python -m pytest -m core -q`.)
+- Does this affect only pairing-based schemes? (`python -m pytest -m core -q` runs the tests that need no pairing backend.)
 - Does it reproduce on the latest `main`?

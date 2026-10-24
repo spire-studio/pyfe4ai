@@ -5,10 +5,11 @@ every test is marked with its group (``pytest -m threshold`` runs
 ``tests/threshold``; not ``tests/native``, whose name is the ``native``
 mark below) and with:
 
-* ``core`` or ``extended``: the staged core-only release lane runs ``-m core``;
-  ``extended`` is what needs charm-crypto (the pairing schemes, the
-  pairing-group checks, quadratic FE), by the path of the test module below
-  ``tests/``;
+* ``core`` or ``extended``: ``extended`` is what needs a pairing backend
+  (the pairing schemes, the pairing-group checks, quadratic FE: BLS12-381
+  from the extension, or charm-crypto for other curves), by the path of the
+  test module below ``tests/``; ``core`` is the rest, which the CI lane
+  without the extension runs (``-m core``);
 * ``native``: the test exercises the native code -- the extension
   ``pyfe4ai._rust_native`` or the C ABI of ``rust/core`` -- and is skipped
   (or not generated) without it: a ``skipif`` whose reason names the
@@ -84,7 +85,7 @@ NATIVE_IN_REVIEW = {
 
 #: A ``skipif`` whose reason says this marks a test ``native``.
 _NATIVE_REASON = re.compile(r"native|rust|BLS12-381 backend", re.IGNORECASE)
-#: Path parts of the ``extended`` tests (they need charm-crypto): the pairing
+#: Path parts of the ``extended`` tests (they need a pairing backend): the pairing
 #: schemes (also the FH-IPFE building block mcfe/test_fh_ipe.py), the
 #: pairing-group checks and quadratic FE.
 _EXTENDED = ("fh_ipe", "fh_multi_ipe", "pairing", "quadratic")

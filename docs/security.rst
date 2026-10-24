@@ -247,9 +247,13 @@ double-precision path's artifacts, terms its adaptive proof does not budget.
 Status API
 ----------
 
+:class:`~pyfe4ai.core.registry.SchemeStatus`, which this module re-exports,
+is documented with the scheme registry (:mod:`pyfe4ai.core.registry`).
+
 .. automodule:: pyfe4ai.core.status
    :members:
    :undoc-members:
+   :exclude-members: SchemeStatus
 
 Profiles API
 ------------

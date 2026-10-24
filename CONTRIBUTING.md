@@ -35,7 +35,7 @@ docker run --rm pyfe4ai-pairing
 
 ## Running Tests
 
-Run all tests, or the core release lane (selected by marks, see below):
+Run all tests, or the `core` lane, which needs no pairing backend (selected by marks, see below):
 
 ```bash
 python -m pytest -q
@@ -80,9 +80,11 @@ tests), and the byte streams and fixtures of
 
 - its group, the directory's name: `-m threshold`, `-m "api or config"`,
   `-m "not review"` (except `tests/native/`, see `native`);
-- `core` or `extended`: `extended` needs charm-crypto (pairing schemes,
-  pairing-group checks, quadratic FE), `core` is the rest -- the CI lane
-  without the extension runs `-m core`;
+- `core` or `extended`: `extended` marks the tests of the pairing schemes,
+  the pairing-group checks and quadratic FE, which need a pairing backend
+  (BLS12-381 from the extension, or charm-crypto for other curves; they skip
+  without one), `core` the rest, which needs none -- the CI lane without the
+  extension runs `-m core`;
 - `native`: the test exercises the native code (the extension or the
   `rust/core` C ABI) and is skipped or not generated without it -- a `skipif`
   whose reason names the extension, a `"native"` backend parameter, a pairing
@@ -221,6 +223,9 @@ When filing a bug report, please include:
 - whether the problem affects only pairing-based schemes or also core schemes
 - the pyfe4ai version or commit, the scheme (`family/variant`) and the
   `security_profile`
+- the output of `python -c "import pyfe4ai; print(pyfe4ai.backend_info())"`
+  (version, whether the Rust extension is built and used, threads, Gaussian
+  sampler, parameter cache directory)
 
 ## Research and Security Notes
 

@@ -38,8 +38,9 @@ Scheme taxonomy
    * - tMIFE / tMCFE
      - Threshold MIFE / MCFE
      - *n* encryptors, *t*-of-*s* decryption servers
-     - The functional key is Shamir-shared among *s* servers; any *t* of
-       them decrypt together
+     - The functional key is shared among *s* servers -- Shamir's sharing,
+       or in the LWE threshold layers a replicated sharing (the default for
+       *t* < *s*) -- and any *t* of them decrypt together
    * - FH-
      - Function-hiding
      - as the family
@@ -60,8 +61,8 @@ Configuration keys
       classical security and refuses explicit values below them. Its
       exceptions: pairing-based schemes get BLS12-381 (about 120-126-bit, with a
       :class:`~pyfe4ai.core.exceptions.FESecurityWarning`), and
-      ``sife/fullysec_lwe``, ``mife/fullysec_lwe`` and
-      ``mcfe/paillier_decentralized`` are refused. See
+      ``sife/fullysec_lwe``, ``mife/fullysec_lwe``, ``mife/lwe_threshold``
+      and ``mcfe/paillier_decentralized`` are refused. See
       :mod:`pyfe4ai.core.profiles` and :doc:`security`.
 
    ``sec_param``
