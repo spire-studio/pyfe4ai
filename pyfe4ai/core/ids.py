@@ -8,25 +8,38 @@ client of a ciphertext or an encrypted gradient) is a ``str`` or an ``int``
 (:func:`check_id_list`); partial decryptions and the wire records of the ML
 adapter carry ids of these types only, and messages that list ids order them
 with :func:`id_list`.
+
+Where an id enters after setup -- the server or client named when keys are
+issued, a crypto object's own ``id``, the enrolled servers of a partial
+decryption, the servers of the ML adapter, the ids of partial decryptions and
+encrypted gradients read back -- a numpy integer scalar is read as the
+``int`` it equals (:func:`as_id`; ``list(rng.choice(lst_sid, t))`` gives
+such ids), and then the same rule and the same membership checks apply.
 """
 
 from __future__ import annotations
+
+import operator
+
+import numpy as np
 
 from pyfe4ai.core.exceptions import FEValidationError
 
 #: What a list of ids must be, by option name (the text of the
 #: ``FEValidationError`` for a list that is not one).
 ID_LISTS = {
-    "lst_sid": "lst_sid must be a list of server ids (str or int)",
-    "lst_nid": "lst_nid must be a list of client ids (str or int)",
+    "lst_sid": "lst_sid must be a list of server ids, each a str or an int (convert numpy integers with int(), "
+               "other ids with str())",
+    "lst_nid": "lst_nid must be a list of client ids, each a str or an int (convert numpy integers with int(), "
+               "other ids with str())",
 }
 
 #: The ``FEValidationError`` text for a list that mixes ``str`` and ``int``
 #: ids, by option name: JSON names ``1`` and ``"1"`` alike, and sorting
 #: such ids (canonical JSON digests, messages) fails.
 MIXED_IDS = {
-    "lst_sid": "lst_sid mixes str and int server ids",
-    "lst_nid": "lst_nid mixes str and int client ids",
+    "lst_sid": "lst_sid mixes str and int server ids (convert them all with str(), or all with int())",
+    "lst_nid": "lst_nid mixes str and int client ids (convert them all with str(), or all with int())",
 }
 
 #: The ``FEValidationError`` text for a repeated id, by option name.
@@ -40,6 +53,15 @@ def is_id(value) -> bool:
     """Whether *value* is a server or client id: a ``str``, or an ``int``
     other than a ``bool``."""
     return isinstance(value, str) or (isinstance(value, int) and not isinstance(value, bool))
+
+
+def as_id(value):
+    """*value* read as an id after setup: a numpy integer scalar
+    (``numpy.integer``; ``numpy.bool_`` is none) becomes the ``int`` it equals
+    (``operator.index``), which it also hashes like; every other value is
+    returned unchanged, for :func:`is_id` and the membership checks to judge
+    (a float, a ``bool``, ``None`` stay what they are)."""
+    return operator.index(value) if isinstance(value, np.integer) else value
 
 
 def id_list(ids) -> list:
@@ -56,6 +78,10 @@ def check_id_list(ids, option: str) -> None:
     """Raise unless *ids* (the value of the option *option*, ``"lst_sid"`` or
     ``"lst_nid"``) is a list (or tuple) of distinct ids, all ``str`` or all
     ``int``.
+
+    The lists themselves are taken as given (numpy integers are refused
+    here, not read as ints: the key generator keeps the list, and the public
+    parameters and key shares carry it).
 
     Raises:
         FEValidationError: ``ID_LISTS[option]`` for another value (a string,

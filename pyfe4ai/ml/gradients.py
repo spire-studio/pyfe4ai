@@ -14,7 +14,7 @@ import numpy as np
 
 from pyfe4ai._validation import int_vector
 from pyfe4ai.core.exceptions import FEValidationError
-from pyfe4ai.core.ids import id_list
+from pyfe4ai.core.ids import as_id, id_list
 from pyfe4ai.ml.quantization import QuantizationConfig
 from pyfe4ai.ml.serialization import EncryptedGradient
 from pyfe4ai.ml.threshold import (
@@ -56,6 +56,7 @@ def precompute_gradient(
             encrypted under *label*.
     """
     _require_labelled_aggregation(wrapper, "precompute_gradient")
+    nid = as_id(nid)  # a numpy integer is the int it equals
     if not wrapper.has_label or not isinstance(label, str):
         raise ValueError("precomputation needs an MCFE scheme and a string label")
     encryptor = wrapper._get_encryptor(nid)
@@ -89,6 +90,7 @@ def encrypt_gradient(
                 client, label and shape (online phase).
     """
     _require_labelled_aggregation(wrapper, "encrypt_gradient")
+    nid = as_id(nid)  # a numpy integer is the int it equals
     arr = _to_numpy(gradient).astype(np.float64)
     encryptor = wrapper._get_encryptor(nid)
 

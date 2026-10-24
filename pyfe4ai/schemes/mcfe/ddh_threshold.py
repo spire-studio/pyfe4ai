@@ -56,6 +56,7 @@ from pyfe4ai.schemes.mcfe.labels import encode_label
 from pyfe4ai.schemes.threshold.binding import check_fusion_weight
 from pyfe4ai.schemes.threshold.binding import fusion_weight_id
 from pyfe4ai.schemes.threshold.codec import is_decimal
+from pyfe4ai.schemes.threshold.roles import enrolled_ids
 from pyfe4ai.schemes.threshold.roles import validate_enrolled
 from pyfe4ai.schemes.threshold.roles import combine_consistently
 from pyfe4ai.schemes.threshold.roles import DISAGREEING_PARTIALS
@@ -76,7 +77,7 @@ from pyfe4ai.core.formats.dl import TMCFEDDHParameters
 from pyfe4ai.core.formats.threshold import TMCFEDDHKeyShare
 from pyfe4ai.core.formats.threshold import TMCFEDDHPartial
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
-from pyfe4ai.core.ids import check_id_list, is_id
+from pyfe4ai.core.ids import as_id, check_id_list, is_id
 from pyfe4ai.core.versions import TMCFE_DDH_RECORD
 from pyfe4ai._validation import scale_to_int
 
@@ -173,6 +174,7 @@ class ThresholdMCFEDDHKeyGenerator(DDHKeyGeneratorBase):
             Dict with ``s`` (one ``Z_q^2`` pair per slot), or ``None`` if *nid*
             is invalid.
         """
+        nid = as_id(nid)  # a numpy integer is the int it equals
         if nid is None or not is_id(nid) or nid not in self.lst_nid:
             logger.error("no id or invalid id provided.")
             warn_at_caller("no id or invalid id provided.")
@@ -206,7 +208,8 @@ class ThresholdMCFEDDHKeyGenerator(DDHKeyGeneratorBase):
         fusion_weight = credentials.get("fusion_weight")
         if not isinstance(fusion_weight, dict) or not fusion_weight:
             raise FEValidationError("invalid fusion weights provided, need a dict")
-        if sid not in self.lst_sid:
+        sid = as_id(sid)  # a numpy integer is the int it equals
+        if not is_id(sid) or sid not in self.lst_sid:
             logger.error("invalid sid: {}".format(sid))
             warn_at_caller("invalid sid (not one of the key generator's lst_sid)")
             return None
@@ -347,6 +350,7 @@ class ThresholdMCFEDDH(IPFEAbsCrypto):
             FESchemeError: If the server or enrolled set is invalid, or the
                 ciphertexts do not match the fusion weights / a single label.
         """
+        lst_sid_enrolled = enrolled_ids(self.id, lst_sid_enrolled)  # numpy integers read as ints; server ids only
         if not dk:
             raise FEKeyError("no decryption keys provided.")
         share = TMCFEDDHKeyShare.from_dict(dk)
@@ -530,6 +534,7 @@ class ThresholdMCFEDDH(IPFEAbsCrypto):
             lst_sid_enrolled: The servers whose shares will be combined.
             label: The label the ndarrays were encrypted under.
         """
+        lst_sid_enrolled = enrolled_ids(self.id, lst_sid_enrolled)  # numpy integers read as ints; server ids only
         sample = next(iter(dict_ndarray_ct.values()))
         lst_partial = []
         for l in range(len(sample)):

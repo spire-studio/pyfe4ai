@@ -16,7 +16,7 @@ from pyfe4ai.core import versions
 from pyfe4ai.core.status import warn_if_known_insecure
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
-from pyfe4ai.core.ids import check_id_list
+from pyfe4ai.core.ids import as_id, check_id_list
 
 logger = logging.getLogger(__name__)
 
@@ -335,7 +335,7 @@ class IPFEAbsCrypto(ABC):
         self.keys = config.get("keys", None)
         if not self.keys:
             raise FEKeyError("no keys provided to initialize crypto system")
-        self.id = config.get("id", None)
+        self.id = as_id(config.get("id", None))  # a numpy integer id is the int it equals
         self.type = config.get("type", None)
         self.precision = config.get("precision", 0)
         self.config_folder = path.join(cache_dir(config.get("cache_dir")), "crypto")

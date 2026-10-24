@@ -843,16 +843,35 @@ Mac) against BLS12-381.
   a list that mixes `str` and `int` ids, and a value that is not a list or
   tuple (a string, a set, a dict) are now refused with `FEValidationError`
   when the key generator (or `FESchemeWrapper`) is built ("lst_sid must be a
-  list of server ids (str or int)", "lst_sid mixes str and int server ids",
-  and the same for `lst_nid`). v0.3.0 accepted them, and some worked in
-  memory: server ids of any of these types in the threshold schemes, client
-  ids in the MIFE and MCFE LWE, Ring-LWE, Paillier and Damgård schemes and
-  the ML adapter over them (also through JSON for floats, `None`, `bool` and
-  tuples); partial decryptions and the wire records refuse them since this
-  release, and mixed or non-JSON ids failed elsewhere with a bare
-  `TypeError` (sorting `1` and `"a"`, or JSON keys). Convert such ids to
-  strings or ints (`str(sid)`, `int(np_int)`); `str` and `int` lists work as
-  before.
+  list of server ids, each a str or an int (convert numpy integers with
+  int(), other ids with str())", "lst_sid mixes str and int server ids
+  (convert them all with str(), or all with int())", and the same for
+  `lst_nid`). v0.3.0 accepted them, and some worked in memory: server ids of
+  any of these types in the threshold schemes, client ids in the MIFE and
+  MCFE LWE, Ring-LWE, Paillier and Damgård schemes and the ML adapter over
+  them (also through JSON for floats, `None`, `bool` and tuples); partial
+  decryptions and the wire records refuse them since this release, and
+  mixed or non-JSON ids failed elsewhere with a bare `TypeError` (sorting `1`
+  and `"a"`, or JSON keys). **Migration:** convert the ids before building
+  the key generator -- `[int(s) for s in np_ids]` for numpy integers,
+  `[str(s) for s in ids]` for bytes, tuples, floats or a mixed list -- and
+  use the same ids afterwards; `str` and `int` lists work as before.
+  After setup a numpy integer is read as the `int` it equals wherever an id
+  is given (`pyfe4ai.core.ids.as_id`): the server or client named when keys
+  are issued, a crypto object's `id`, the enrolled servers of
+  `share_decrypt` (e.g. `list(rng.choice(lst_sid, t, replace=False))`),
+  `servers=` / `server=` of the ML adapter, `nid=` of `encrypt_gradient`,
+  and the ids of partial decryptions and gradients read back; key shares,
+  partial decryptions and gradients then carry plain ints (with numpy
+  integers v0.3.0 combined correctly in memory, but its key shares,
+  partials and gradients did not go through `json.dumps`). Other values
+  that equal an id -- `1.0`, `True`, `numpy.bool_` -- are no ids after setup
+  either: the key generators issue no key share for them (`None` with an
+  `FEWarning`, as for an unknown server), a threshold server refuses an
+  enrolled set that holds one, or an `id` that is one, with
+  `FEValidationError` before computing anything (the combiner refused their
+  partial decryptions; v0.3.0 combined them), and the ML adapter refuses
+  such `servers=` / `server=` with `ValueError`.
 - **Stricter parsing of threshold DDH key shares and serialised gradients.**
   A `mife/ddh_threshold` or `mcfe/ddh_threshold` server accepts the values
   of a key share (`d` and `z`; the two values of `d`) only as the decimal

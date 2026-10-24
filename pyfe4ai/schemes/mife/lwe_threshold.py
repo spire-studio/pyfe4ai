@@ -149,7 +149,7 @@ from pyfe4ai.core.config import check_kl_threshold
 from pyfe4ai.core.config import flooding_config
 from pyfe4ai.core.config import resolve_sharing
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
-from pyfe4ai.core.ids import check_id_list
+from pyfe4ai.core.ids import as_id, check_id_list, is_id
 from pyfe4ai.primitives.lattice.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.primitives.lattice.lwe_utils import abdp15_parameters
 from pyfe4ai.primitives.lattice.lwe_utils import decode_scaled
@@ -199,6 +199,7 @@ from pyfe4ai.schemes.threshold.roles import enrolled_share_options
 from pyfe4ai.schemes.threshold.roles import flooding_noise
 from pyfe4ai.core.versions import legacy_shamir_policy
 from pyfe4ai.schemes.threshold.roles import noise_seed
+from pyfe4ai.schemes.threshold.roles import enrolled_ids
 from pyfe4ai.schemes.threshold.roles import validate_enrolled
 from pyfe4ai.schemes.threshold.roles import validate_partial_decryptions
 from pyfe4ai.schemes.threshold.sharing import deal_replicated
@@ -369,7 +370,8 @@ class ThresholdMIFELWEKeyGenerator(MIFELWEKeyGenerator):
         if not credentials:
             raise FEKeyError("need credentials for Threshold MIFE LWE")
         fusion_weight = credentials.get("fusion_weight")
-        if sid not in self.lst_sid:
+        sid = as_id(sid)  # a numpy integer is the int it equals
+        if not is_id(sid) or sid not in self.lst_sid:
             logger.error("invalid sid: {}".format(sid))
             warn_at_caller("invalid sid (not one of the key generator's lst_sid)")
             return None
@@ -491,6 +493,7 @@ class ThresholdMIFELWE(MIFELWE):
                 ``partial_budget`` or its budget is spent (refused requests
                 consume nothing).
         """
+        lst_sid_enrolled = enrolled_ids(self.id, lst_sid_enrolled)  # numpy integers read as ints; server ids only
         key = ThresholdKeyShare(dk)
         if not dk or not ("pieces" in key or ("sk_y" in key and "z" in key)):
             raise FEKeyError("no decryption keys provided")
@@ -600,6 +603,7 @@ class ThresholdMIFELWE(MIFELWE):
         """Partially decrypt every element of the slots' ndarray ciphertexts
         (under ``"kl"`` refused whole unless the budget covers all of them;
         each partial produced then counts)."""
+        lst_sid_enrolled = enrolled_ids(self.id, lst_sid_enrolled)  # numpy integers read as ints; server ids only
         sample = next(iter(dict_ndarray_ct.values()))
         share = None
         key = ThresholdKeyShare(dk)

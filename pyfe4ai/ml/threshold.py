@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from pyfe4ai.core.ids import id_list, is_id
+from pyfe4ai.core.ids import as_id, id_list, is_id
 from pyfe4ai.core.formats.record import Field
 from pyfe4ai.core.formats.record import Record
 from pyfe4ai.core.formats.threshold import TMCFERingLWELayerPartials
@@ -36,8 +36,9 @@ def _enrolled_servers(wrapper, servers) -> list:
     lst_sid, t = list(wrapper.pp["lst_sid"]), int(wrapper.pp["t"])
     if servers is None:
         return lst_sid[:t]
-    servers = list(servers)
-    if len(servers) < t or len(set(servers)) != len(servers) or not set(servers) <= set(lst_sid):
+    servers = [as_id(sid) for sid in servers]  # numpy integers read as ints
+    if (len(servers) < t or not all(is_id(sid) for sid in servers) or len(set(servers)) != len(servers)
+            or not set(servers) <= set(lst_sid)):
         raise ValueError("servers must be at least t = {} distinct servers of {}".format(t, lst_sid))
     return servers
 
@@ -132,14 +133,15 @@ class ThresholdPartial:
         Raises:
             ValueError: For another layout, a ``sid`` or ``lst_sid_enrolled``
                 entry that is not a server id (a ``str`` or an ``int``,
-                :func:`~pyfe4ai.core.ids.is_id`), a partial decryption of
+                :func:`~pyfe4ai.core.ids.is_id`; a numpy integer is read as
+                the ``int`` it equals), a partial decryption of
                 another server, or ``w`` / ``c_y`` not of the format (strict
                 base64 for ``"binary"``, lists of strings for ``"json"``).
         """
         if not isinstance(d, dict) or set(d) != set(ThresholdPartialWire.FIELDS):
             raise ValueError("invalid partial decryption: keys sid, label, format and layers")
         wire = ThresholdPartialWire(d)
-        sid, label, fmt, layers = wire.sid, wire.label, wire.format, wire.layers
+        sid, label, fmt, layers = as_id(wire.sid), wire.label, wire.format, wire.layers
         if not is_id(sid) or not isinstance(label, str) or fmt not in ("binary", "json"):
             raise ValueError("invalid partial decryption: sid a server id (str or int), label a string, "
                              "format binary or json")
@@ -160,10 +162,11 @@ class ThresholdPartial:
                     raise ValueError("invalid {}: keys {}".format(where, sorted(_PARTIAL_FIELDS)))
                 view = TMCFERingLWEPartial(part)
                 k, enrolled = view.k, view.lst_sid_enrolled
-                if type(k) is not int or k < 1 or not isinstance(view.ct_digest, str) or view.sid != sid:
+                if type(k) is not int or k < 1 or not isinstance(view.ct_digest, str) or as_id(view.sid) != sid:
                     raise ValueError("invalid {}: k >= 1, a ct_digest and this server's sid".format(where))
-                if not isinstance(enrolled, list) or not all(is_id(v) for v in enrolled):
+                if not isinstance(enrolled, list) or not all(is_id(as_id(v)) for v in enrolled):
                     raise ValueError("invalid {}: lst_sid_enrolled is a list of server ids (str or int)".format(where))
+                enrolled = [as_id(v) for v in enrolled]
                 sharing_id = view.sharing_id
                 if sharing_id is not None and not (isinstance(sharing_id, str) and 0 < len(sharing_id) <= 128):
                     raise ValueError("invalid {}: sharing_id is a string (or null)".format(where))
@@ -175,7 +178,7 @@ class ThresholdPartial:
                            for value in (view.w, view.c_y)):
                         raise ValueError("invalid {}: w and c_y are lists of decimal strings".format(where))
                     values = {"w": list(view.w), "c_y": list(view.c_y)}
-                parts.append(TMCFERingLWEPartial.extend(part, lst_sid_enrolled=list(enrolled), **values).to_dict())
+                parts.append(TMCFERingLWEPartial.extend(part, sid=sid, lst_sid_enrolled=enrolled, **values).to_dict())
             out.append(TMCFERingLWELayerPartials.new(shape=list(shape), parts=parts).to_dict())
         return cls(sid=sid, label=label, layers=out)
 
@@ -197,7 +200,8 @@ def partial_decrypt_gradients(
             are not those of its weights.
     """
     _require_served_threshold(wrapper, "partial_decrypt_gradients")
-    if not prepared.servers or server not in prepared.servers:
+    server = as_id(server)  # a numpy integer is the int it equals
+    if not prepared.servers or not is_id(server) or server not in prepared.servers:
         raise ValueError("server {!r} is not enrolled in the prepared aggregation ({})".format(server, prepared.servers))
     if set(encrypted) != set(prepared.fusion_weight):
         raise ValueError("the prepared key is for the clients {}".format(id_list(prepared.fusion_weight)))

@@ -45,6 +45,7 @@ from pyfe4ai.schemes.threshold.binding import fusion_weight_id
 from pyfe4ai.schemes.threshold.binding import tag_ciphertext
 from pyfe4ai.schemes.threshold.codec import ciphertexts_digest
 from pyfe4ai.schemes.threshold.roles import combine_elementwise
+from pyfe4ai.schemes.threshold.roles import enrolled_ids
 from pyfe4ai.schemes.threshold.roles import validate_enrolled
 from pyfe4ai.schemes.threshold.roles import combine_consistently
 from pyfe4ai.schemes.threshold.roles import DISAGREEING_PARTIALS
@@ -61,7 +62,7 @@ from pyfe4ai.core.formats.pairing import TMCFEFHParameters
 from pyfe4ai.core.formats.threshold import TMCFEFHKeyShare
 from pyfe4ai.core.formats.threshold import TMCFEFHPartial
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
-from pyfe4ai.core.ids import check_id_list
+from pyfe4ai.core.ids import as_id, check_id_list, is_id
 from pyfe4ai.primitives.pairing.pairing_backend import GT, ZR, multi_pair, pow_many
 
 logger = logging.getLogger(__name__)
@@ -142,7 +143,8 @@ class ThresholdMCFEFHMultiIPEPairingKeyGenerator(MCFEFHMultiIPEPairingKeyGenerat
             raise FEKeyError("need credentials for threshold FH-MCFE")
         fusion_weight = credentials.get("fusion_weight")
         self._validate_weights(fusion_weight)
-        if sid not in self.lst_sid:
+        sid = as_id(sid)  # a numpy integer is the int it equals
+        if not is_id(sid) or sid not in self.lst_sid:
             logger.error("invalid sid: {}".format(sid))
             warn_at_caller("invalid sid (not one of the key generator's lst_sid)")
             return None
@@ -229,6 +231,7 @@ class ThresholdMCFEFHMultiIPEPairing(MCFEFHMultiIPEPairing):
             FESchemeError: If a ciphertext is not under *label* or not tagged
                 for this server by its client.
         """
+        lst_sid_enrolled = enrolled_ids(self.id, lst_sid_enrolled)  # numpy integers read as ints; server ids only
         if not dk or "k" not in TMCFEFHKeyShare(dk):
             raise FEKeyError("no decryption keys provided")
         share = TMCFEFHKeyShare.from_dict(dk)
@@ -316,6 +319,7 @@ class ThresholdMCFEFHMultiIPEPairing(MCFEFHMultiIPEPairing):
     ) -> list:
         """Partially decrypt ndarray ciphertexts element-wise; element ``(l, i)``
         must be under its element label derived from *label*."""
+        lst_sid_enrolled = enrolled_ids(self.id, lst_sid_enrolled)  # numpy integers read as ints; server ids only
         sample = next(iter(dict_ndarray_ct.values()))
         out = []
         for l in range(len(sample)):

@@ -31,7 +31,7 @@ import numpy as np
 
 from pyfe4ai.core.exceptions import FESchemeError
 from pyfe4ai.core.exceptions import FEValidationError
-from pyfe4ai.core.ids import id_list, is_id
+from pyfe4ai.core.ids import as_id, id_list, is_id
 from pyfe4ai.core.formats.threshold import PartialDecryption
 from pyfe4ai.core.formats.threshold import ThresholdKeyShare
 from pyfe4ai.core.versions import check_served_sharing
@@ -148,6 +148,35 @@ def uniform_flooding_material(seed: bytes) -> bytes:
 # combination
 
 
+#: The ``FEValidationError`` of a server whose own id, or an entry of the
+#: enrolled set it is asked to answer for, is not a server id
+#: (:func:`enrolled_ids`).
+SERVER_IDS = "a server's id and the enrolled servers must be server ids (str or int; numpy integers are read as int)"
+
+
+def enrolled_ids(server_id, lst_sid_enrolled) -> list:
+    """The enrolled set server *server_id* is asked to answer for, as a list of
+    server ids: numpy integer scalars read as the ``int`` they equal
+    (:func:`~pyfe4ai.core.ids.as_id`; ``list(rng.choice(lst_sid, t))`` gives
+    them), so that the partial decryption carries ids the combiner accepts.
+    The membership checks (:func:`validate_enrolled`) follow.
+
+    Raises:
+        FEValidationError: :data:`SERVER_IDS` unless *server_id* and every
+            entry of *lst_sid_enrolled* (an iterable) are server ids after
+            that reading (a float, a ``bool``, ``None``, bytes, a tuple are
+            refused here rather than by the combiner; the message holds none
+            of the values).
+    """
+    try:
+        enrolled = [as_id(sid) for sid in lst_sid_enrolled]
+    except TypeError:  # not iterable
+        raise FEValidationError(SERVER_IDS) from None
+    if not is_id(as_id(server_id)) or not all(is_id(sid) for sid in enrolled):
+        raise FEValidationError(SERVER_IDS)
+    return enrolled
+
+
 def validate_enrolled(
     sid: str, lst_sid: list[str], lst_sid_enrolled: list[str], threshold: int
 ) -> None:
@@ -194,9 +223,11 @@ def validate_partial_decryptions(dict_ct_prime: dict, threshold: int) -> None:
 
     Raises:
         FEValidationError: If a partial decryption's ``sid`` is not a server
-            id (a ``str`` or an ``int``, :func:`~pyfe4ai.core.ids.is_id`) or
-            its ``lst_sid_enrolled`` not a list (or tuple) of server ids (the
-            message holds none of the values).
+            id (a ``str`` or an ``int``, :func:`~pyfe4ai.core.ids.is_id`; a
+            numpy integer is read as the ``int`` it equals,
+            :func:`~pyfe4ai.core.ids.as_id`) or its ``lst_sid_enrolled`` not a
+            list (or tuple) of server ids (the message holds none of the
+            values).
         FESchemeError: For too few, duplicate or mismatched partial decryptions.
     """
     if len(dict_ct_prime) < threshold:
@@ -211,19 +242,19 @@ def validate_partial_decryptions(dict_ct_prime: dict, threshold: int) -> None:
             raise FESchemeError(
                 "partial decryption is missing its server id / enrolled set"
             )
-        enrolled_ids = ct_prime.lst_sid_enrolled
-        if not is_id(ct_prime.sid) or not isinstance(enrolled_ids, (list, tuple)) or not all(
-                is_id(sid) for sid in enrolled_ids):
+        sid, enrolled_ids = as_id(ct_prime.sid), ct_prime.lst_sid_enrolled
+        if not is_id(sid) or not isinstance(enrolled_ids, (list, tuple)) or not all(
+                is_id(as_id(s)) for s in enrolled_ids):
             # the sets and messages below hash and print the ids: other values could fail there (TypeError)
             raise FEValidationError(
                 "malformed partial decryption: sid and lst_sid_enrolled must be server ids (str or int)"
             )
-        if ct_prime.sid in contributors:
+        if sid in contributors:
             raise FESchemeError(
-                "duplicate partial decryption from {}".format(ct_prime.sid)
+                "duplicate partial decryption from {}".format(sid)
             )
-        contributors.add(ct_prime.sid)
-        _enrolled = set(ct_prime.lst_sid_enrolled)
+        contributors.add(sid)
+        _enrolled = {as_id(s) for s in enrolled_ids}
         if enrolled is None:
             enrolled = _enrolled
         elif enrolled != _enrolled:

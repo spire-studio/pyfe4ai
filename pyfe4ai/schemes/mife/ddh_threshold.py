@@ -36,6 +36,7 @@ import numpy as np
 from pyfe4ai.schemes.mife.ddh import MIFEDDH, MIFEDDHKeyGenerator
 from pyfe4ai.schemes.threshold.binding import check_fusion_weight
 from pyfe4ai.schemes.threshold.codec import is_decimal
+from pyfe4ai.schemes.threshold.roles import enrolled_ids
 from pyfe4ai.schemes.threshold.roles import validate_enrolled
 from pyfe4ai.schemes.threshold.roles import combine_consistently
 from pyfe4ai.schemes.threshold.roles import DISAGREEING_PARTIALS
@@ -53,7 +54,7 @@ from pyfe4ai.core.formats.dl import MIFEDDHParameters
 from pyfe4ai.core.formats.threshold import TMIFEDDHKeyShare
 from pyfe4ai.core.formats.threshold import TMIFEDDHPartial
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
-from pyfe4ai.core.ids import check_id_list
+from pyfe4ai.core.ids import as_id, check_id_list, is_id
 from pyfe4ai._validation import int_vector
 from pyfe4ai._validation import scale_to_int
 
@@ -109,7 +110,8 @@ class ThresholdMIFEDDHKeyGenerator(MIFEDDHKeyGenerator):
             Dict with ``d`` (per slot), ``z``, ``sid``, ``lst_sid`` and
             ``weights_id``, or ``None`` if *sid* is unknown.
         """
-        if sid not in self.lst_sid:
+        sid = as_id(sid)  # a numpy integer is the int it equals
+        if not is_id(sid) or sid not in self.lst_sid:
             logger.error("invalid sid: {}".format(sid))
             warn_at_caller("invalid sid (not one of the key generator's lst_sid)")
             return None
@@ -167,6 +169,7 @@ class ThresholdMIFEDDH(MIFEDDH):
             Dict with ``c_y``, ``w``, ``ct_digest``, ``sid`` and
             ``lst_sid_enrolled``.
         """
+        lst_sid_enrolled = enrolled_ids(self.id, lst_sid_enrolled)  # numpy integers read as ints; server ids only
         if not dk or "d" not in TMIFEDDHKeyShare(dk):
             raise FEKeyError("no decryption keys provided.")
         share = TMIFEDDHKeyShare.from_dict(dk)
@@ -267,6 +270,7 @@ class ThresholdMIFEDDH(MIFEDDH):
         self, dict_ndarray_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list
     ) -> list:
         """Partially decrypt ndarray ciphertexts element-wise."""
+        lst_sid_enrolled = enrolled_ids(self.id, lst_sid_enrolled)  # numpy integers read as ints; server ids only
         sample = next(iter(dict_ndarray_ct.values()))
         out = []
         for l in range(len(sample)):

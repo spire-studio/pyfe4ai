@@ -12,7 +12,7 @@ from typing import Any
 
 import numpy as np
 
-from pyfe4ai.core.ids import is_id
+from pyfe4ai.core.ids import as_id, is_id
 from pyfe4ai.core.formats.record import Field
 from pyfe4ai.core.formats.record import Record
 from pyfe4ai.core.formats.ring_lwe import RingLWECiphertext
@@ -160,7 +160,9 @@ class EncryptedGradient:
 
         Raises:
             ValueError: Unless *d* has exactly the keys ``nid`` (a client
-                id: a ``str`` or an ``int``, :func:`~pyfe4ai.core.ids.is_id`),
+                id: a ``str`` or an ``int``, :func:`~pyfe4ai.core.ids.is_id`;
+                a numpy integer, as an in-memory gradient may carry, is read
+                as the ``int`` it equals),
                 ``shape`` (a list of non-negative ints), ``precision`` (a
                 non-negative int), ``mode`` (``"decimal"`` or ``"binary"``)
                 and ``ciphertexts`` (a non-empty list of layers); if an array's
@@ -175,8 +177,8 @@ class EncryptedGradient:
         if not isinstance(d, dict) or set(d) != set(GradientWire.FIELDS):
             raise ValueError("invalid encrypted gradient: keys nid, shape, precision, mode and ciphertexts")
         d = GradientWire(d)
-        precision = d.precision
-        if (not is_id(d.nid) or isinstance(precision, bool) or not isinstance(precision, int)
+        nid, precision = as_id(d.nid), d.precision
+        if (not is_id(nid) or isinstance(precision, bool) or not isinstance(precision, int)
                 or precision < 0 or d.mode not in cls.MODES):
             raise ValueError("invalid encrypted gradient: nid a client id (str or int), precision a non-negative "
                              "int, mode 'decimal' or 'binary'")
@@ -196,7 +198,7 @@ class EncryptedGradient:
             shape=shape,
             precision=precision,
             mode=d.mode,
-            nid=d.nid,
+            nid=nid,
         )
 
     @classmethod

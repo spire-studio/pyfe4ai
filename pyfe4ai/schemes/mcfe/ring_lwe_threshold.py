@@ -293,7 +293,7 @@ from pyfe4ai.core.config import flooding_config
 from pyfe4ai.core.config import resolve_sharing
 from pyfe4ai.core.config import threshold_key_shares
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
-from pyfe4ai.core.ids import check_id_list
+from pyfe4ai.core.ids import as_id, check_id_list, is_id
 from pyfe4ai.primitives.lattice.lwe_utils import GAUSSIAN_TAIL_CUT
 from pyfe4ai.primitives.lattice.lwe_utils import decode_scaled
 from pyfe4ai.primitives.lattice.ring_lwe_utils import RNS_NATIVE_FACTORS
@@ -396,6 +396,7 @@ from pyfe4ai.schemes.threshold.roles import noise_seed
 from pyfe4ai.schemes.threshold.roles import partial_groups
 from pyfe4ai.schemes.threshold.roles import uniform_flooding_material
 from pyfe4ai.schemes.threshold.roles import uniform_flooding_poly
+from pyfe4ai.schemes.threshold.roles import enrolled_ids
 from pyfe4ai.schemes.threshold.roles import validate_enrolled
 from pyfe4ai.schemes.threshold.roles import validate_partial_decryptions
 from pyfe4ai.schemes.threshold.sharing import check_rns_servers
@@ -699,7 +700,8 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         credentials = kwargs.get("credentials", None)
         if not credentials:
             raise FEKeyError("need credentials for Threshold MCFE Ring-LWE")
-        if sid not in self.lst_sid:
+        sid = as_id(sid)  # a numpy integer is the int it equals
+        if not is_id(sid) or sid not in self.lst_sid:
             logger.error("invalid sid: {}".format(sid))
             warn_at_caller("invalid sid (not one of the key generator's lst_sid)")
             return None
@@ -800,7 +802,8 @@ class ThresholdMCFERingLWEKeyGenerator(MCFERingLWEKeyGenerator):
         credentials = kwargs.get("credentials", None)
         if not credentials:
             raise FEKeyError("need credentials for Threshold MCFE Ring-LWE")
-        if sid not in self.lst_sid:
+        sid = as_id(sid)  # a numpy integer is the int it equals
+        if not is_id(sid) or sid not in self.lst_sid:
             logger.error("invalid sid: {}".format(sid))
             warn_at_caller("invalid sid (not one of the key generator's lst_sid)")
             return None
@@ -1144,6 +1147,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
                 server has no ``partial_budget`` or its budget is spent
                 (refused requests consume nothing).
         """
+        lst_sid_enrolled = enrolled_ids(self.id, lst_sid_enrolled)  # numpy integers read as ints; server ids only
         self._check_parameters_unchanged()
         dk, weight = self._key_parts(dk)
         key = ThresholdKeyShare(dk)
@@ -1435,6 +1439,7 @@ class ThresholdMCFERingLWE(MCFERingLWE):
         """Partially decrypt every chunk of the clients' packed ndarray ciphertexts
         (under ``"kl"`` refused whole unless the budget covers all of them;
         each partial produced then counts)."""
+        lst_sid_enrolled = enrolled_ids(self.id, lst_sid_enrolled)  # numpy integers read as ints; server ids only
         sample = next(iter(dict_ndarray_ct.values()))
         packed_share = None
         label_dk, weight = self._key_parts(dk) if dk else (dk, None)
