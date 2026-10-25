@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it using the metadata from this file."
-title: "PyFE4AI"
+title: "PyFE4AI: Python-based Functional Encryption for AI Security and Privacy"
 version: "0.3.0"
 date-released: "2026-10-13"
 type: software

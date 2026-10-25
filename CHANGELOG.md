@@ -754,6 +754,15 @@ Mac) against BLS12-381.
   architecture diagrams, a scheme matrix generated from the registry
   (`tools/gen_site_matrix.py`, kept in sync by `tests/api/test_site_matrix.py`),
   the Rust and Python backends compared on the same code, a social card.
+- A shorter README: what functional encryption is, the quick start and a
+  first example up front, the Rust and Python backends compared on the same
+  code, and links to the documentation pages; the generated scheme status
+  table, the parameters and measured costs per family, the details of the
+  known issues and of the fixed threshold leak, and the repository layout
+  are collapsible sections. The Docker image of the pairing tests is run with
+  `PYFE4AI_TEST_PAIRING_GROUP=MNT224` (it has no Rust extension, so the default
+  BLS12-381 would skip them). `CITATION.cff` carries the full title of the
+  BibTeX entries.
 - CI: a `rust-native` job builds the extension and runs `cargo test` and the
   full suite on the native backend (Python 3.10 and 3.13) and on the Python
   backend (Python 3.10).

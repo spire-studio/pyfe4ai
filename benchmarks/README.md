@@ -40,8 +40,8 @@ helpers in `benchmarks/_common.py`).
 The `fh-family` and `quadratic` commands, and `ndarray --group
 fh|quadratic|all`, need a pairing backend: the Rust extension for BLS12-381
 (the default), or `charm-crypto-framework` for the curves chosen with
-`--pairing-group` (e.g. `MNT224`; see *Quick Start* in the top-level README,
-or the Docker image); everything else runs without either. All commands use
+`--pairing-group` (e.g. `MNT224`; see *Pairing-Based Schemes* in the top-level
+README, or the Docker image); everything else runs without either. All commands use
 the toy default parameters unless stated otherwise. Without the Rust
 extension the schemes run their Python implementation (about 5 to 35 times
 slower on the lattice schemes) and say so once with an `FEWarning`;

@@ -25,12 +25,14 @@ pip install -e ".[test]"           # the package itself, so examples import it
 
 For the pairing-based schemes, also run `pip install -e ".[test,pairing]"`.
 `charm-crypto-framework` is built from source and needs GMP, OpenSSL and PBC
-1.0.0 first (see *Quick Start* in `README.md`); `docker/Dockerfile.pairing` builds an
-image with all of them:
+1.0.0 first (see *Pairing-Based Schemes* in `README.md`); `docker/Dockerfile.pairing`
+builds an image with all of them. The image has no Rust extension, so select a
+charm curve for the pairing tests (`PYFE4AI_TEST_PAIRING_GROUP`; the default
+BLS12-381 would skip them):
 
 ```bash
 docker build -f docker/Dockerfile.pairing -t pyfe4ai-pairing .
-docker run --rm pyfe4ai-pairing
+docker run --rm -e PYFE4AI_TEST_PAIRING_GROUP=MNT224 pyfe4ai-pairing
 ```
 
 ## Running Tests
