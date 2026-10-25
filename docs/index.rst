@@ -31,8 +31,6 @@ Where to start
 Security & status
 -----------------
 
-PyFE4AI is a research prototype, not production-audited cryptography.
-
 * **Review status**: |n_schemes| registered schemes, |n_reviewed| reviewed,
   |n_experimental| experimental, |n_unreviewed| unreviewed and
   |n_known_insecure| known-insecure. The experimental ones are the threshold
