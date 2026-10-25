@@ -749,6 +749,11 @@ Mac) against BLS12-381.
   API pages for the new modules; the pages of the v0.3.0 documentation that
   no longer exist (`api/utils.html`, `api/base.html`,
   `api/config_types.html`, moved source pages) redirect to their new place.
+- The project page (`site/`) is redesigned: dark and light themes, where FE
+  fits next to other privacy technologies, animated how-it-works and
+  architecture diagrams, a scheme matrix generated from the registry
+  (`tools/gen_site_matrix.py`, kept in sync by `tests/api/test_site_matrix.py`),
+  the Rust and Python backends compared on the same code, a social card.
 - CI: a `rust-native` job builds the extension and runs `cargo test` and the
   full suite on the native backend (Python 3.10 and 3.13) and on the Python
   backend (Python 3.10).

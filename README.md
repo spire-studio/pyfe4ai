@@ -348,7 +348,7 @@ side-channel hardening, trusted parameter cache) still apply.
 - `tests/`: end-to-end and regression tests, by topic (`api/`, `config/`, `params/`, `backend/`, `native/`, `sampling/`, `lattice/`, `primitives/`, `threshold/`, `offline/`, `state/`, `ml/`, `hardening/`), the schemes by family (`sife/`, `mife/`, `mcfe/`, `quadratic/`) and the crypto-review regressions (`review/`); pytest marks select groups (see [`CONTRIBUTING.md`](CONTRIBUTING.md))
 - `examples/`: minimal runnable usage examples
 - `benchmarks/`: the benchmarks, one command each of `benchmarks/run.py` (`python benchmarks/run.py --help`)
-- `tools/`: `build_rust.py` (builds the native extension); `params/` (`estimate_dense_lwe.py`, `estimate_wide_lwe.py`, `estimate_ring_lwe.py`, `estimate_rns_modulus.py` regenerate the LWE and Ring-LWE security tables with SageMath and the lattice estimator)
+- `tools/`: `build_rust.py` (builds the native extension); `gen_site_matrix.py` (the scheme matrix of the project page, from the registry); `params/` (`estimate_dense_lwe.py`, `estimate_wide_lwe.py`, `estimate_ring_lwe.py`, `estimate_rns_modulus.py` regenerate the LWE and Ring-LWE security tables with SageMath and the lattice estimator)
 - `site/`: project landing page (published with the docs to GitHub Pages)
 - `pyproject.toml`: package metadata and the dependencies (extras `test`, `pairing`, `doc`)
 - `environment.yml`: Conda environment (Python and the conda-forge packages); the dependencies come from `pyproject.toml` (`pip install -e ".[test]"`)

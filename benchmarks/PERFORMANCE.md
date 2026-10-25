@@ -60,6 +60,37 @@ compact binary format.
 - The v0.3.0 pairing timings come from charm in the Docker image on the same
   Mac.
 
+## Native and Python backends
+
+The same code on its two backends (`PYFE4AI_BACKEND=native` and
+`PYFE4AI_BACKEND=python`), one thread, `standard`, three clients, medians of
+three interleaved runs of each:
+
+| workload | ciphertexts | Python backend | native |
+| --- | --- | ---: | ---: |
+| MCFE Ring-LWE (`mcfe/ring_lwe`), 10^4 elements: client / aggregator | JSON (default) | 345 / 157 ms | 18.2 / 7.5 ms |
+| threshold MCFE (`mcfe/ring_lwe_threshold`), 10^4 elements, `s = 3, t = 2`, defaults: client / partial decryption per server / every party of the round on one machine | binary (default) | 493 / 274 / 686 ms | 26.4 / 8.0 / 27.8 ms |
+| dense-LWE MCFE (`mcfe/lwe`), 200 elements: client / aggregator | JSON (default) | 543 / 551 ms | 92.6 / 100.1 ms |
+
+- Measured on 2026-10-25 at commit 130e88a, whose `pyfe4ai/`, `rust/` and
+  `benchmarks/` differ from v0.4.0 only in comments, messages, the version
+  string and this file, on the machine above (Python 3.13.9), with
+  `PYFE4AI_THREADS=1 python benchmarks/run.py fl-compare --backend native|python`
+  and `--families ring_lwe --elements 10000` (5 rounds native, 3 Python),
+  `--families lwe --elements 200 --rounds 3` and
+  `--families ring_lwe_threshold --elements 10000 --servers 3 --threshold 2 --rounds 3`;
+  the runs of both backends took turns, three times.
+- "Every party of the round on one machine" is what `fl-compare` reports as
+  the threshold aggregator: the key shares of the round for the `t` enrolled
+  servers, their partial decryptions and the combination.
+- The MCFE Ring-LWE row is the JSON rows of the first table. The binary rows
+  of the first table and the "current" column of the second come from the
+  October 2026 integration measurements, hence slightly different native
+  timings for the same workloads (26.7 ms per threshold client, 93.1 ms per
+  dense-LWE client).
+- The BLS12-381 pairing group has no Python implementation (both backends
+  use the extension's), so the pairing schemes have no Python-backend row.
+
 ## Costs of the security defaults
 
 - **Exact sampling.** FACCT replaces the rounded double-precision sampler for
