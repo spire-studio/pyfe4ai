@@ -4,7 +4,7 @@ Before the fixes:
 
 * KL mode was accepted with t < s, where an honest partial decryption is the
   simulation plus e - M nu with a rational Lagrange-derived M (the
-  Lagrange-multiplier leak, tests/test_threshold_lagrange_leak.py): with
+  Lagrange-multiplier leak, tests/threshold/test_threshold_lagrange_leak.py): with
   s = 3, t = 2, server 2 corrupted and the enrolled set {1, 3} (M = 3/4),
   4 w - 3 (c_y - Delta mu) - 3 F(2) = 4 e - 3 nu gives nu mod 4 from every KL
   partial, whatever sigma_f; the KL bound assumes M = 1;

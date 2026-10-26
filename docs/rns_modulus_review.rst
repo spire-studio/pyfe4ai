@@ -317,7 +317,7 @@ arguments below hold for any number of factors above ``s``. Item by item:
   (``check_rns_servers``; the factors are about ``2^54``). The Lagrange
   coefficients are units.
 * **The Lagrange leak** (the Shamir sharing of the threshold LWE layers with
-  ``t < s``, described in the README's Known Issues) concerns the rational
+  ``t < s``, described in ``SECURITY.md``) concerns the rational
   multiplier ``M`` of the decryption noise on the integers: 0 or 1 for the
   replicated sharing and 1 for Shamir with ``t = s``, whatever the
   factorisation of ``q``.

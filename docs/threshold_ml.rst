@@ -95,8 +95,8 @@ decryption with noise and share the key
 * with Shamir's sharing for ``t = s``;
 * with a replicated sharing for ``t < s`` (``sharing="replicated"``, the
   default): Shamir shares with ``t < s`` let partial decryptions reveal the
-  decryption noise modulo small integers (the leak of v0.3.0; see the
-  README's Known Issues). A server then holds ``C(s - 1, t - 1)`` key
+  decryption noise modulo small integers (the leak of v0.3.0; see ``SECURITY.md`` and
+  :doc:`upgrading`). A server then holds ``C(s - 1, t - 1)`` key
   pieces; the opt-in ``sharing="replicated-seeded"`` expands all of them but
   one from secret seeds (smaller key shares, computational instead of
   perfect hiding).
