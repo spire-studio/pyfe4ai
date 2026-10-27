@@ -3,10 +3,12 @@ import random
 import numpy as np
 import pytest
 
-pytest.importorskip("charm", reason="charm-crypto not installed")
+from tests.pairing_group import GROUP, skip_unless_available  # noqa: E402
 
-from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPE
-from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPEKeyGenerator
+skip_unless_available()
+
+from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPEPairing
+from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPEPairingKeyGenerator
 
 
 @pytest.fixture
@@ -20,12 +22,12 @@ def kg_config():
         "lst_nid": ["nid_0", "nid_1", "nid_2"],
         "bound_x": 5,
         "bound_y": 5,
-        "pairing_group_param": "MNT224",
+        "pairing_group_param": GROUP,
     }
 
 
 def test_entire_process(kg_config):
-    kg = MIFEFHMultiIPEKeyGenerator(kg_config)
+    kg = MIFEFHMultiIPEPairingKeyGenerator(kg_config)
     kg.setup()
 
     dct_x = {
@@ -46,12 +48,12 @@ def test_entire_process(kg_config):
     pp["lst_nid"] = kg_config["lst_nid"]
     dct_ct = {}
     for nid in kg_config["lst_nid"]:
-        encryptor = MIFEFHMultiIPE(
+        encryptor = MIFEFHMultiIPEPairing(
             {"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}
         )
         dct_ct[nid] = encryptor.encrypt(dct_x[nid])
 
-    decryptor = MIFEFHMultiIPE({"id": "sid_0", "keys": {"pp": pp}})
+    decryptor = MIFEFHMultiIPEPairing({"id": "sid_0", "keys": {"pp": pp}})
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
     computed = decryptor.decrypt(dct_ct, dk)
     assert computed == expected
@@ -62,7 +64,7 @@ def test_entire_process_lst_ndarray(kg_config):
     cfg["eta"] = 1
     cfg["bound_x"] = 50
 
-    kg = MIFEFHMultiIPEKeyGenerator(cfg)
+    kg = MIFEFHMultiIPEPairingKeyGenerator(cfg)
     kg.setup()
 
     precision = 1
@@ -88,7 +90,7 @@ def test_entire_process_lst_ndarray(kg_config):
     pp = kg.get_public_parameters()
     dct_ct = {}
     for nid in cfg["lst_nid"]:
-        crypto_nid = MIFEFHMultiIPE(
+        crypto_nid = MIFEFHMultiIPEPairing(
             {
                 "id": nid,
                 "precision": precision,
@@ -97,7 +99,7 @@ def test_entire_process_lst_ndarray(kg_config):
         )
         dct_ct[nid] = crypto_nid.encrypt_lst_ndarray(dct_x[nid])
 
-    decryptor = MIFEFHMultiIPE(
+    decryptor = MIFEFHMultiIPEPairing(
         {"id": "sid_0", "precision": precision, "keys": {"pp": pp}}
     )
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
@@ -108,19 +110,19 @@ def test_entire_process_lst_ndarray(kg_config):
 
 
 def _setup(cfg):
-    kg = MIFEFHMultiIPEKeyGenerator(cfg)
+    kg = MIFEFHMultiIPEPairingKeyGenerator(cfg)
     kg.setup()
     pp = kg.get_public_parameters()
-    clients = {nid: MIFEFHMultiIPE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
+    clients = {nid: MIFEFHMultiIPEPairing({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
                for nid in cfg["lst_nid"]}
     return kg, pp, clients
 
 
 @pytest.mark.parametrize("k", [1, 2])
 def test_slots_masked_keys_unlinkable_and_no_y_needed(kg_config, k):
-    from pyfe4ai.utils.exceptions import FESchemeError
-    from pyfe4ai.utils.pairing_backend import GT, pair
-    from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
+    from pyfe4ai.core.exceptions import FESchemeError
+    from pyfe4ai.primitives.pairing.pairing_backend import GT, pair
+    from pyfe4ai.primitives.pairing.pairing_utils import bounded_discrete_log_gt
 
     cfg = dict(kg_config, sec_level=k, eta=2)
     kg, pp, clients = _setup(cfg)
@@ -128,7 +130,7 @@ def test_slots_masked_keys_unlinkable_and_no_y_needed(kg_config, k):
     y1 = {nid: [1, 0] for nid in cfg["lst_nid"]}
     y2 = {nid: [0, 1] for nid in cfg["lst_nid"]}
     cts = {nid: c.encrypt(x[nid]) for nid, c in clients.items()}
-    dec = MIFEFHMultiIPE({"id": "sid", "keys": {"pp": pp}})
+    dec = MIFEFHMultiIPEPairing({"id": "sid", "keys": {"pp": pp}})
     dk1 = kg.get_decryption_keys("sid", credentials={"fusion_weight": y1})
     dk2 = kg.get_decryption_keys("sid", credentials={"fusion_weight": y2})
     assert dec.decrypt(cts, dk1) == 0
@@ -150,14 +152,14 @@ def test_slots_masked_keys_unlinkable_and_no_y_needed(kg_config, k):
 
 
 def test_parameter_guards(kg_config):
-    from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
+    from pyfe4ai.core.exceptions import FEKeyError, FEValidationError
 
     with pytest.raises(FEKeyError):
-        MIFEFHMultiIPEKeyGenerator(dict(kg_config, n=1, lst_nid=["nid_0"], sec_level=1))
+        MIFEFHMultiIPEPairingKeyGenerator(dict(kg_config, n=1, lst_nid=["nid_0"], sec_level=1))
     with pytest.raises(FEValidationError):
-        MIFEFHMultiIPEKeyGenerator(dict(kg_config, sec_level=0))
+        MIFEFHMultiIPEPairingKeyGenerator(dict(kg_config, sec_level=0))
     with pytest.raises(FEValidationError):
-        MIFEFHMultiIPEKeyGenerator(dict(kg_config, lst_nid=["nid_0", "nid_1"]))
+        MIFEFHMultiIPEPairingKeyGenerator(dict(kg_config, lst_nid=["nid_0", "nid_1"]))
     kg, pp, clients = _setup(kg_config)
     with pytest.raises(FEValidationError):
         clients["nid_0"].encrypt([1.5, 0, 0, 0])

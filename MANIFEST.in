@@ -1,7 +1,13 @@
 include README.md
 include LICENSE
 include CITATION.cff
-recursive-include pyfe4ai *.yaml py.typed
+include pyfe4ai/py.typed
+# the whole test suite (setuptools alone picks only tests/test*.py)
+graft tests
 recursive-exclude * __pycache__
 recursive-exclude * *.pyc
 include CHANGELOG.md
+include tools/build_rust.py
+recursive-include rust *.rs *.toml *.lock
+prune rust/core/target
+prune rust/native/target

@@ -4,17 +4,21 @@ SIFE — Single-Input Functional Encryption
 .. automodule:: pyfe4ai.schemes.sife
    :no-members:
 
-The key generator and crypto class of every scheme below except the
-adaptively secure Ring-LWE one are importable from
-:mod:`pyfe4ai.schemes.sife`, where ``SIFEDamgardDDH`` and ``DynamicSIFE``
-(and their ``...KeyGenerator``) are aliases of
-:class:`~pyfe4ai.schemes.sife.damgard_ddh.SIFEDamgard` and
-:class:`~pyfe4ai.schemes.sife.ddh_dynamic.SIFEDynamic`.
+The key generator and crypto class of every scheme below are importable
+from :mod:`pyfe4ai.schemes.sife` under their own names (one name per class,
+no aliases; the naming rule is in :mod:`pyfe4ai.core.registry`).
 
 DDH
 ---
 
 .. automodule:: pyfe4ai.schemes.sife.ddh
+   :members:
+   :undoc-members:
+
+DDH over ristretto255
+---------------------
+
+.. automodule:: pyfe4ai.schemes.sife.ddh_ristretto255
    :members:
    :undoc-members:
 

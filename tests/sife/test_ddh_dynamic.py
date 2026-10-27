@@ -7,11 +7,12 @@ from contextlib import contextmanager
 
 import gmpy2 as gp
 
-from pyfe4ai.schemes.sife.ddh_dynamic import SIFEDynamic
-from pyfe4ai.schemes.sife.ddh_dynamic import SIFEDynamicKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
+from pyfe4ai.schemes.sife.ddh_dynamic import SIFEDDHDynamic
+from pyfe4ai.schemes.sife.ddh_dynamic import SIFEDDHDynamicKeyGenerator
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.base import cache_dir
 
-from pyfe4ai.logger import init_logging_config
+from tests.log_config import init_logging_config
 
 init_logging_config()
 logger = logging.getLogger(__name__)
@@ -36,12 +37,12 @@ def kg_config():
 
 
 def test_key_generator(kg_config):
-    kg = SIFEDynamicKeyGenerator(kg_config)
+    kg = SIFEDDHDynamicKeyGenerator(kg_config)
 
     assert kg.sec_param == kg_config["sec_param"]
     assert kg.eta == kg_config["eta"]
 
-    config_folder = os.path.join("config", "authority", CryptoCONST.TYPE_SIFE)
+    config_folder = os.path.join(cache_dir(), "authority", CryptoCONST.TYPE_SIFE)
     assert os.path.exists(config_folder)
     param_file = os.path.join(config_folder, "param.json")
     assert os.path.exists(param_file)
@@ -61,7 +62,7 @@ def test_key_generator(kg_config):
 
 
 def test_entire_process(kg_config):
-    kg = SIFEDynamicKeyGenerator(kg_config)
+    kg = SIFEDDHDynamicKeyGenerator(kg_config)
     kg.setup()
     precision = 3
 
@@ -83,7 +84,7 @@ def test_entire_process(kg_config):
         "precision": precision,
         "keys": {"pp": pp, "sk": sk_nid},
     }
-    crypto_nid = SIFEDynamic(config_nid)
+    crypto_nid = SIFEDDHDynamic(config_nid)
     ct_nid = crypto_nid.encrypt(x)
     assert isinstance(ct_nid, dict)
     assert "ct0" in ct_nid
@@ -95,7 +96,7 @@ def test_entire_process(kg_config):
         "precision": precision,
         "keys": {"pp": pp},
     }
-    crypto_sid = SIFEDynamic(config_sid)
+    crypto_sid = SIFEDDHDynamic(config_sid)
     dk = kg.get_decryption_keys(config_sid["id"], credentials={"fusion_weight": y})
     computed_inner_prod = crypto_sid.decrypt(ct_nid, dk, y)
     logger.info("<{},{}> expected inner-prod = {}".format(x, y, expected_inner_prod))

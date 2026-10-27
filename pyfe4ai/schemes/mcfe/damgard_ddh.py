@@ -41,28 +41,36 @@ import os
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
-from pyfe4ai.schemes.ipfe import decoded_layer
-from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
-from pyfe4ai.schemes.ipfe import ParameterCacheMixin
+from pyfe4ai.core.base import IPFEAbsCrypto
+from pyfe4ai.core.base import decoded_layer
+from pyfe4ai.core.base import IPFEAbsKeyGenerator
+from pyfe4ai.core.base import ParameterCacheMixin
 from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
 from pyfe4ai.schemes.mcfe.labels import encode_label
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.crypto_utils import group_generator_fe
-from pyfe4ai.utils.crypto_utils import hash_to_qr_group
-from pyfe4ai.utils.dlog_solver import dlog_table_solve
-from pyfe4ai.utils.dlog_solver import load_or_build_dlog_table
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.modular_utils import pow_signed
-from pyfe4ai.utils.sampling_utils import rand_uniform_vector
-from pyfe4ai.utils.validation import scale_to_int
-from pyfe4ai.utils.crypto_utils import is_dl_group
-from pyfe4ai.utils.validation import strict_int
+from pyfe4ai.schemes.mcfe.offline import OfflineMCFEMixin
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.primitives.groups.integer_groups import group_generator_fe
+from pyfe4ai.primitives.hashing import hash_to_qr_group
+from pyfe4ai.primitives.groups.dlog_solver import dlog_table_solve
+from pyfe4ai.primitives.groups.dlog_solver import load_or_build_dlog_table
+from pyfe4ai.core.formats.dl import MCFEDamgardParameters
+from pyfe4ai.core.formats.dl import MCFEDamgardRecord
+from pyfe4ai.core.formats.dl import MCFEDDHCiphertext
+from pyfe4ai.core.formats.dl import MCFEDDHEncryptionKey
+from pyfe4ai.core.formats.dl import MCFEDDHFunctionalKey
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.versions import record_matches
+from pyfe4ai.core.versions import MCFE_DAMGARD_RECORD
+from pyfe4ai.core.ids import issued_id
+from pyfe4ai.primitives.groups.modular_utils import pow_signed
+from pyfe4ai.primitives.sampling import rand_uniform_vector
+from pyfe4ai._validation import scale_to_int
+from pyfe4ai.primitives.groups.integer_groups import is_dl_group
+from pyfe4ai._validation import strict_int
 
 logger = logging.getLogger(__name__)
 
 _LABEL_HASH_DOMAIN = "pyfe4ai/mcfe/mddh/H(label)"
-_CONSTRUCTION = "abmpsw20-mddh/v1"
 
 
 def _hash_label(label, p: gp.mpz, k: int) -> list:
@@ -102,15 +110,13 @@ class MCFEDamgardKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self._validate_bounds()
 
     def _apply_parameters(self, param: dict) -> None:
-        self.p = gp.mpz(param["p"])
-        self.q = gp.mpz(param["q"])
-        self.g = gp.mpz(param["g"])
+        record = MCFEDamgardRecord.from_dict(param)
+        self.p = gp.mpz(record.p)
+        self.q = gp.mpz(record.q)
+        self.g = gp.mpz(record.g)
 
     def _param_verification(self, param: dict) -> bool:
-        return (
-            param.get("construction") == _CONSTRUCTION
-            and param.get("modulus_length") == self.modulus_length
-        )
+        return record_matches(param, {"construction": MCFE_DAMGARD_RECORD, "modulus_length": self.modulus_length})
 
     def _loaded_parameters_valid(self) -> bool:
         return is_dl_group(self.p, self.q, self.g, self.modulus_length)
@@ -119,13 +125,13 @@ class MCFEDamgardKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.p, self.q, _, self.g = group_generator_fe(self.modulus_length)
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(
-                {
-                    "construction": _CONSTRUCTION,
-                    "modulus_length": self.modulus_length,
-                    "p": gp.digits(self.p),
-                    "q": gp.digits(self.q),
-                    "g": gp.digits(self.g),
-                },
+                MCFEDamgardRecord.new(
+                    construction=MCFE_DAMGARD_RECORD,
+                    modulus_length=self.modulus_length,
+                    p=gp.digits(self.p),
+                    q=gp.digits(self.q),
+                    g=gp.digits(self.g),
+                ).to_dict(),
                 f,
             )
 
@@ -147,23 +153,24 @@ class MCFEDamgardKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
     def get_public_parameters(self) -> dict:
         """Return serialisable public parameters."""
-        return {
-            "p": gp.digits(self.p),
-            "q": gp.digits(self.q),
-            "g": gp.digits(self.g),
-            "mddh_k": self.mddh_k,
-            "eta": self.eta,
-            "n": self.n,
-            "bound": self.bound,
-            "sec_param": self.sec_param,
-            "modulus_length": self.modulus_length,
-        }
+        return MCFEDamgardParameters.new(
+            p=gp.digits(self.p),
+            q=gp.digits(self.q),
+            g=gp.digits(self.g),
+            mddh_k=self.mddh_k,
+            eta=self.eta,
+            n=self.n,
+            bound=self.bound,
+            sec_param=self.sec_param,
+            modulus_length=self.modulus_length,
+        ).to_dict()
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
         """Return the encryption key ``{s}`` of client *nid* (``None`` if unknown)."""
+        nid = issued_id(nid)  # numpy integers as ints; a value that is no id is an unknown client
         if nid not in self.msk["s"]:
             return None
-        return {"s": [[gp.digits(v) for v in s_j] for s_j in self.msk["s"][nid]]}
+        return MCFEDDHEncryptionKey.new(s=[[gp.digits(v) for v in s_j] for s_j in self.msk["s"][nid]]).to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Derive the functional key ``sk_y = sum y_{i,j} S_{i,j} in Z_q^{k+1}``.
@@ -199,11 +206,13 @@ class MCFEDamgardKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                     raise FEValidationError("fusion weight exceeds configured bound")
                 y_j = gp.mpz(int(y_j))
                 d = [acc + y_j * s for acc, s in zip(d, s_j)]
-        return {"d": [gp.digits(v % self.q) for v in d]}
+        return MCFEDDHFunctionalKey.new(d=[gp.digits(v % self.q) for v in d]).to_dict()
 
 
-class MCFEDamgard(IPFEAbsCrypto):
+class MCFEDamgard(OfflineMCFEMixin, IPFEAbsCrypto):
     """Crypto operations for MDDH-based multi-client inner-product FE (ABMPSW20 Fig. 2)."""
+
+    _online_bound = "bound"  # checked by the online phase before the precomputation is used
 
     def __init__(self, config: dict, **kwargs) -> None:
         """Initialise with ``keys.pp`` and, for clients, ``keys.sk``."""
@@ -242,23 +251,38 @@ class MCFEDamgard(IPFEAbsCrypto):
             raise FEKeyError("no public parameters provided for encryption")
         if not self._has_private_keys():
             raise FEKeyError("no private keys provided for encryption")
-        if len(lst_pt) > len(self.sk["s"]):
+        if len(lst_pt) > len(MCFEDDHEncryptionKey(self.sk).s):
             raise FEValidationError("invalid size of input plaintext")
         if any(abs(strict_int(v, "plaintext")) > self.pp["bound"] for v in lst_pt):
             raise FEValidationError("plaintext exceeds configured bound")
+        return self._encrypt_masked(lst_pt, self._label_mask(label))
 
+    def _label_mask(self, label: str) -> list:
+        """``prod_m H_m(l)^{s_jm} mod p`` for every slot j (offline part, see
+        :mod:`pyfe4ai.schemes.mcfe.offline`)."""
+        p = gp.mpz(self.pp["p"])
+        u_l = _hash_label(label, p, self.pp["mddh_k"])
+        masks = []
+        for s_j in MCFEDDHEncryptionKey(self.sk).s:
+            m = gp.mpz(1)
+            for u_m, s_jm in zip(u_l, s_j):
+                m = m * gp.powmod(u_m, gp.mpz(s_jm), p) % p
+            masks.append(m)
+        return masks
+
+    def _encrypt_masked(self, lst_pt: list, masks: list) -> dict:
+        """``g^{x_j}`` times the label masks: the ciphertext of :meth:`encrypt`."""
+        if len(lst_pt) > len(masks):
+            raise FEValidationError("invalid size of input plaintext")
+        if any(abs(strict_int(v, "plaintext")) > self.pp["bound"] for v in lst_pt):
+            raise FEValidationError("plaintext exceeds configured bound")
         p = gp.mpz(self.pp["p"])
         g = gp.mpz(self.pp["g"])
-        u_l = _hash_label(label, p, self.pp["mddh_k"])
-        c = []
-        for x_j, s_j in zip(lst_pt, self.sk["s"]):
-            c_j = pow_signed(g, gp.mpz(int(x_j)), p)
-            for u_m, s_jm in zip(u_l, s_j):
-                c_j = c_j * gp.powmod(u_m, gp.mpz(s_jm), p) % p
-            c.append(gp.digits(c_j))
-        return {"c": c}
+        return MCFEDDHCiphertext.new(
+            c=[gp.digits(pow_signed(g, gp.mpz(int(x_j)), p) * m % p) for x_j, m in zip(lst_pt, masks)]
+        ).to_dict()
 
-    def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict, label: str):
+    def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict, label: str, term=None):
         """Recover ``sum_i <x_i, y_i>`` from all clients' ciphertexts under one label.
 
         Args:
@@ -266,6 +290,8 @@ class MCFEDamgard(IPFEAbsCrypto):
             dk: Functional key ``{d}`` derived for *fusion_weight*.
             fusion_weight: Mapping of client IDs to weight lists.
             label: The encryption label.
+            term: ``prod_m H_m(l)^{d_m} mod p`` if already computed
+                (:meth:`~pyfe4ai.schemes.mcfe.offline.OfflineMCFEMixin.prepare_key`).
 
         Returns:
             The inner product, or ``None`` if it is out of the dlog bound
@@ -276,7 +302,8 @@ class MCFEDamgard(IPFEAbsCrypto):
             FESchemeError: If ciphertexts and weights do not match.
         """
         k = self.pp["mddh_k"]
-        if not dk or not isinstance(dk.get("d"), (list, tuple)) or len(dk["d"]) != k + 1:
+        d = MCFEDDHFunctionalKey(dk).get("d") if dk else None
+        if not isinstance(d, (list, tuple)) or len(d) != k + 1:
             raise FEKeyError("malformed MCFE MDDH key: expected d of length k + 1")
         if dct_ct.keys() != fusion_weight.keys():
             raise FESchemeError("inconsistent input among ct and fusion weight")
@@ -284,19 +311,26 @@ class MCFEDamgard(IPFEAbsCrypto):
         p = gp.mpz(self.pp["p"])
         num = gp.mpz(1)
         for nid, ct in dct_ct.items():
-            if len(ct["c"]) != len(fusion_weight[nid]):
+            c = MCFEDDHCiphertext(ct).c
+            if len(c) != len(fusion_weight[nid]):
                 raise FESchemeError(
                     "ciphertext and fusion weight of {} differ in length".format(nid)
                 )
-            for c_j, y_j in zip(ct["c"], fusion_weight[nid]):
+            for c_j, y_j in zip(c, fusion_weight[nid]):
                 c_j = gp.mpz(c_j)
                 if not 0 < c_j < p:
                     raise FEValidationError("ciphertext element of {} out of range".format(nid))
                 num = num * pow_signed(c_j, gp.mpz(int(y_j)), p) % p
-        den = gp.mpz(1)
-        for u_m, d_m in zip(_hash_label(label, p, k), dk["d"]):
-            den = den * gp.powmod(u_m, gp.mpz(d_m), p) % p
+        den = self._key_term(dk, label) if term is None else term
         return self._solve_dlog(gp.divm(num, den, p))
+
+    def _key_term(self, dk: dict, label: str):
+        """``prod_m H_m(l)^{d_m} mod p``, the label part of :meth:`decrypt`."""
+        p = gp.mpz(self.pp["p"])
+        den = gp.mpz(1)
+        for u_m, d_m in zip(_hash_label(label, p, self.pp["mddh_k"]), MCFEDDHFunctionalKey(dk).d):
+            den = den * gp.powmod(u_m, gp.mpz(d_m), p) % p
+        return den
 
     def _solve_dlog(self, encoded_value) -> int | None:
         if self.dlog_table is None:
@@ -308,6 +342,7 @@ class MCFEDamgard(IPFEAbsCrypto):
             )
         except (ValueError, RuntimeError):
             logger.error("inner-product is out of bound supported by crypto system")
+            warn_at_caller("inner-product is out of bound supported by crypto system")
             return None
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
@@ -322,6 +357,8 @@ class MCFEDamgard(IPFEAbsCrypto):
         label = kwargs.get("label", None)
         if not isinstance(label, str):
             raise FEValidationError("need a string label for encrypt_lst_ndarray")
+        if kwargs.get("precomputed") is not None:
+            return self._encrypt_precomputed(lst_ndarray, label, kwargs["precomputed"])
         lst_ndarray_ct = []
         for l, ary_src in enumerate(lst_ndarray):
             ary = scale_to_int(ary_src, self.precision)
@@ -363,13 +400,15 @@ class MCFEDamgard(IPFEAbsCrypto):
             raise FEKeyError("need to provide decryption key, fusion weight and label")
 
         sample = next(iter(dict_ndarray_ct.values()))
+        terms = self._prepared_terms(dk, label, sample)
         lst_ndarray = []
         for l in range(len(sample)):
             ary_dec = np.empty(sample[l].shape, dtype=object)
             for i, _ in np.ndenumerate(sample[l]):
                 dct_ct = {nid: dict_ndarray_ct[nid][l][i] for nid in dict_ndarray_ct}
                 ary_dec[i] = self.decrypt(
-                    dct_ct, dk, fusion_weight, _element_label(label, l, i)
+                    dct_ct, dk, fusion_weight, _element_label(label, l, i),
+                    term=None if terms is None else terms[l][i],
                 )
             lst_ndarray.append(decoded_layer(ary_dec, l, 10 ** self.precision))
         return lst_ndarray

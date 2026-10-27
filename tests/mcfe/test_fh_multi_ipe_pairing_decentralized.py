@@ -3,10 +3,12 @@ import random
 import numpy as np
 import pytest
 
-pytest.importorskip("charm", reason="charm-crypto not installed")
+from tests.pairing_group import GROUP, skip_unless_available  # noqa: E402
 
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import DecentralizedMCFEFHMultiIPE
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import DecentralizedMCFEFHMultiIPEKeyGenerator
+skip_unless_available()
+
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import DecentralizedMCFEFHMultiIPEPairing
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_decentralized import DecentralizedMCFEFHMultiIPEPairingKeyGenerator
 
 
 @pytest.fixture
@@ -19,13 +21,13 @@ def kg_config():
         "lst_nid": ["nid_0", "nid_1", "nid_2"],
         "bound_x": 4,
         "bound_y": 4,
-        "pairing_group_param": "MNT224",
+        "pairing_group_param": GROUP,
     }
 
 
 def test_entire_process(kg_config):
     label = "dmcfe-fhmultiipe"
-    kg = DecentralizedMCFEFHMultiIPEKeyGenerator(kg_config)
+    kg = DecentralizedMCFEFHMultiIPEPairingKeyGenerator(kg_config)
     kg.setup()
 
     dct_x = {
@@ -46,13 +48,13 @@ def test_entire_process(kg_config):
     dct_ct = {}
     dct_dk_shares = {}
     for nid in kg_config["lst_nid"]:
-        crypto_nid = DecentralizedMCFEFHMultiIPE(
+        crypto_nid = DecentralizedMCFEFHMultiIPEPairing(
             {"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}
         )
         dct_ct[nid] = crypto_nid.encrypt(dct_x[nid], label)
         dct_dk_shares[nid] = crypto_nid.derive_function_decryption_key_share(dct_y[nid], "weights-1")
 
-    decryptor = DecentralizedMCFEFHMultiIPE({"id": "sid_0", "keys": {"pp": pp}})
+    decryptor = DecentralizedMCFEFHMultiIPEPairing({"id": "sid_0", "keys": {"pp": pp}})
     dk = decryptor.combine_function_decryption_key_share(dct_dk_shares)
     computed = decryptor.decrypt(dct_ct, dk, dct_y, label)
     assert computed == expected
@@ -63,7 +65,7 @@ def test_entire_process_lst_ndarray(kg_config):
     cfg["eta"] = 1
     cfg["bound_x"] = 50
 
-    kg = DecentralizedMCFEFHMultiIPEKeyGenerator(cfg)
+    kg = DecentralizedMCFEFHMultiIPEPairingKeyGenerator(cfg)
     kg.setup()
 
     precision = 1
@@ -91,7 +93,7 @@ def test_entire_process_lst_ndarray(kg_config):
     dct_ct = {}
     dct_dk_shares = {}
     for nid in cfg["lst_nid"]:
-        crypto_nid = DecentralizedMCFEFHMultiIPE(
+        crypto_nid = DecentralizedMCFEFHMultiIPEPairing(
             {
                 "id": nid,
                 "precision": precision,
@@ -101,7 +103,7 @@ def test_entire_process_lst_ndarray(kg_config):
         dct_ct[nid] = crypto_nid.encrypt_lst_ndarray(dct_x[nid], label=label)
         dct_dk_shares[nid] = crypto_nid.derive_function_decryption_key_share(dct_y[nid], "weights-1")
 
-    decryptor = DecentralizedMCFEFHMultiIPE(
+    decryptor = DecentralizedMCFEFHMultiIPEPairing(
         {"id": "sid_0", "precision": precision, "keys": {"pp": pp}}
     )
     dk = decryptor.combine_function_decryption_key_share(dct_dk_shares)
@@ -115,7 +117,7 @@ def test_entire_process_lst_ndarray(kg_config):
 
 def test_get_decryption_keys_raises_not_implemented(kg_config):
     """Regression (N12): the method used to *return* NotImplementedError."""
-    kg = DecentralizedMCFEFHMultiIPEKeyGenerator(kg_config)
+    kg = DecentralizedMCFEFHMultiIPEPairingKeyGenerator(kg_config)
     kg.setup()
     with pytest.raises(NotImplementedError, match="derive_function_decryption_key_share"):
         kg.get_decryption_keys("sid_0", credentials={"fusion_weight": {}})
@@ -124,15 +126,15 @@ def test_get_decryption_keys_raises_not_implemented(kg_config):
 def _clients(kg, cfg):
     pp = kg.get_public_parameters()
     return pp, {
-        nid: DecentralizedMCFEFHMultiIPE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
+        nid: DecentralizedMCFEFHMultiIPEPairing({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
         for nid in cfg["lst_nid"]
     }
 
 
 def test_key_share_is_deterministic_and_bound(kg_config):
-    from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
+    from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
 
-    kg = DecentralizedMCFEFHMultiIPEKeyGenerator(kg_config)
+    kg = DecentralizedMCFEFHMultiIPEPairingKeyGenerator(kg_config)
     kg.setup()
     pp, clients = _clients(kg, kg_config)
     y1 = {"nid_0": [1, 2], "nid_1": [0, 1], "nid_2": [-1, 3]}
@@ -153,7 +155,7 @@ def test_key_share_is_deterministic_and_bound(kg_config):
     with pytest.raises(FEValidationError):
         c0.derive_function_decryption_key_share(y1, "")
 
-    decryptor = DecentralizedMCFEFHMultiIPE({"id": "sid_0", "keys": {"pp": pp}})
+    decryptor = DecentralizedMCFEFHMultiIPEPairing({"id": "sid_0", "keys": {"pp": pp}})
     # shares carry nothing derived from y (function hiding) ...
     share = c0.derive_function_decryption_key_share(y1, "f")
     assert set(share) == {"k", "z", "nid", "tag_f"}
@@ -179,15 +181,15 @@ def test_a_corrupted_client_cannot_test_guesses_of_the_honest_weights():
     import itertools
 
     cfg = {"n": 3, "lst_nid": ["a", "b", "c"], "eta": 1, "bound_x": 3, "bound_y": 1,
-           "pairing_group_param": "MNT224"}
-    kg = DecentralizedMCFEFHMultiIPEKeyGenerator(cfg)
+           "pairing_group_param": GROUP}
+    kg = DecentralizedMCFEFHMultiIPEPairingKeyGenerator(cfg)
     kg.setup()
     pp, clients = _clients(kg, cfg)
     x = {"a": [2], "b": [-3], "c": [1]}
     cts = {nid: c.encrypt(x[nid], "round-1") for nid, c in clients.items()}
     secret = {"a": [1], "b": [-1], "c": [1]}
     honest = {nid: clients[nid].derive_function_decryption_key_share(secret, "f") for nid in ("a", "b")}
-    decryptor = DecentralizedMCFEFHMultiIPE({"id": "d", "keys": {"pp": pp}})
+    decryptor = DecentralizedMCFEFHMultiIPEPairing({"id": "d", "keys": {"pp": pp}})
     results = set()
     for ya, yb in itertools.product([-1, 0, 1], repeat=2):
         guess = {"a": [ya], "b": [yb], "c": secret["c"]}
@@ -198,13 +200,13 @@ def test_a_corrupted_client_cannot_test_guesses_of_the_honest_weights():
 
 
 def test_wrong_tag_does_not_decrypt(kg_config):
-    kg = DecentralizedMCFEFHMultiIPEKeyGenerator(kg_config)
+    kg = DecentralizedMCFEFHMultiIPEPairingKeyGenerator(kg_config)
     kg.setup()
     pp, clients = _clients(kg, kg_config)
     x = {"nid_0": [1, -2], "nid_1": [0, 3], "nid_2": [2, 1]}
     y = {"nid_0": [2, 1], "nid_1": [-1, 2], "nid_2": [1, -2]}
     dct_ct = {nid: c.encrypt(x[nid], "round-1") for nid, c in clients.items()}
-    decryptor = DecentralizedMCFEFHMultiIPE({"id": "sid_0", "keys": {"pp": pp}})
+    decryptor = DecentralizedMCFEFHMultiIPEPairing({"id": "sid_0", "keys": {"pp": pp}})
     dk = decryptor.combine_function_decryption_key_share(
         {nid: c.derive_function_decryption_key_share(y[nid], "f") for nid, c in clients.items()}
     )
@@ -217,7 +219,8 @@ def test_wrong_tag_does_not_decrypt(kg_config):
 
 
 def test_symmetric_group_rejected(kg_config):
-    from pyfe4ai.utils.exceptions import FEValidationError
+    pytest.importorskip("charm", reason="SS512 is a charm-crypto group")
+    from pyfe4ai.core.exceptions import FEValidationError
 
     with pytest.raises(FEValidationError, match="symmetric"):
-        DecentralizedMCFEFHMultiIPEKeyGenerator(dict(kg_config, pairing_group_param="SS512"))
+        DecentralizedMCFEFHMultiIPEPairingKeyGenerator(dict(kg_config, pairing_group_param="SS512"))

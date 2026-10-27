@@ -18,6 +18,10 @@ parameters (see *Security Profiles* in the top-level README).
 - `mcfe_lwe_minimal.py`: minimal `MCFE/LWE`
 - `mcfe_lwe_decentralized_demo.py`: decentralized `dMCFE/LWE`
 - `mcfe_lwe_threshold_demo.py`: threshold `tMCFE/LWE` (experimental threshold layer)
+- `mcfe_ring_lwe_threshold_demo.py`: threshold `tMCFE/Ring-LWE` (experimental threshold layer):
+  federated rounds with the default split key shares (a weight key share per
+  server once, a label key share per round), then the same through the ML
+  adapter with ciphertexts and partial decryptions sent as JSON
 - `mife_lwe_threshold_demo.py`: threshold `tMIFE/LWE` (experimental threshold layer)
 
 ## ML / Privacy-Preserving AI
@@ -27,11 +31,16 @@ parameters (see *Security Profiles* in the top-level README).
 - `ml_fl_aggregation.py`: federated gradient aggregation with `MCFE/DDH`
   through the ML adapter (one wrapper plays every party: for experiments only)
 
-## Pairing-Based Examples (need `charm-crypto-framework`)
+## Pairing-Based Examples (need a pairing backend)
 
-Install it with `pip install -e ".[pairing]"` (needs GMP, OpenSSL and PBC
-first) or run the examples in the `Dockerfile.pairing` image; see *Quick Start*
-and *Pairing-Based Schemes* in the top-level README.
+These run on BLS12-381, the default pairing group, which the Rust extension
+provides (built by `pip install` when `cargo` is on the `PATH`, or by
+`python tools/build_rust.py`; `pyfe4ai.backend_info()` shows whether it is
+available). Other curves, such as MNT224 or BN254 (`"pairing_group_param"`
+in the key generator config), need `charm-crypto-framework`:
+`pip install -e ".[pairing]"` (needs GMP, OpenSSL and PBC first) or the
+`docker/Dockerfile.pairing` image; see *Quick Start* and *Pairing-Based
+Schemes* in the top-level README.
 
 - `mife_fh_multi_ipe_minimal.py`: `MIFE/FHMultiIPE` example
 - `mcfe_fh_multi_ipe_minimal.py`: `MCFE/FHMultiIPE` example
@@ -47,5 +56,5 @@ top-level README), for example:
 conda run -n pyfe4ai python examples/mife_lwe_minimal.py
 ```
 
-Benchmark entry points live in `benchmarks/`; see `benchmarks/README.md` for a
-short index.
+The benchmarks run through `python benchmarks/run.py <command>`; see
+`benchmarks/README.md` for the commands.

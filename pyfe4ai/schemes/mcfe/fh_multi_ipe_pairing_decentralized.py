@@ -8,7 +8,7 @@ Decentralized function-hiding multi-client inner-product FE over pairings.
 | under SXDH in the random-oracle model, static corruptions.
 
 * type:     decentralised multi-client encryption with function-hiding keys
-* setting:  asymmetric pairing group (default MNT224), random oracle
+* setting:  asymmetric pairing group (default BLS12-381), random oracle
 
 Setup samples one FH-IPFE master key ``imsk_i`` per client
 (:mod:`pyfe4ai.schemes.mcfe.fh_ipe`) and a sharing ``t~_1 + ... + t~_n = 0``:
@@ -39,20 +39,25 @@ import json
 import logging
 import secrets
 
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPE
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.pairing_backend import ZR
-from pyfe4ai.utils.sampling_utils import XofRandom
-from pyfe4ai.utils.validation import int_vector
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEPairing
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEPairingKeyGenerator
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.formats.pairing import FHCiphertext
+from pyfe4ai.core.formats.pairing import FHClientKey
+from pyfe4ai.core.formats.pairing import FHKeyEntry
+from pyfe4ai.core.formats.pairing import MCFEFHFunctionalKey
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.ids import issued_id
+from pyfe4ai.primitives.pairing.pairing_backend import ZR
+from pyfe4ai.primitives.sampling import XofRandom
+from pyfe4ai._validation import int_vector
 
 logger = logging.getLogger(__name__)
 
 _KEY_RNG_DOMAIN = b"pyfe4ai/fh-dmcfe/DKeyGen|"
 
 
-class DecentralizedMCFEFHMultiIPEKeyGenerator(MCFEFHMultiIPEKeyGenerator):
+class DecentralizedMCFEFHMultiIPEPairingKeyGenerator(MCFEFHMultiIPEPairingKeyGenerator):
     """Setup of the NPS24 selectively function-hiding DMCFE."""
 
     _scheme_type = CryptoCONST.TYPE_DMCFE_FH_MULTI_IPE
@@ -69,12 +74,13 @@ class DecentralizedMCFEFHMultiIPEKeyGenerator(MCFEFHMultiIPEKeyGenerator):
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
         """Client *nid*'s ``imsk``, its share ``t_tilde`` and its key-derivation ``seed``."""
+        nid = issued_id(nid)  # numpy integers as ints; a value that is no id is an unknown client
         if nid not in self.msk:
             return None
-        sk = {"imsk": self.ctx.serialise_msk(self.msk[nid])}  # DKeyGen needs a_out
-        sk["t_tilde"] = str(self.t_tilde[nid])
-        sk["seed"] = self.key_seeds[nid]
-        return sk
+        sk = FHClientKey.new(imsk=self.ctx.serialise_msk(self.msk[nid]))  # DKeyGen needs a_out
+        sk.t_tilde = str(self.t_tilde[nid])
+        sk.seed = self.key_seeds[nid]
+        return sk.to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Not available: functional keys are derived by the clients."""
@@ -84,7 +90,7 @@ class DecentralizedMCFEFHMultiIPEKeyGenerator(MCFEFHMultiIPEKeyGenerator):
         )
 
 
-class DecentralizedMCFEFHMultiIPE(MCFEFHMultiIPE):
+class DecentralizedMCFEFHMultiIPEPairing(MCFEFHMultiIPEPairing):
     """Encryption, key derivation and decryption of the NPS24 FH-DMCFE."""
 
     def __init__(self, config: dict, **kwargs) -> None:
@@ -94,11 +100,11 @@ class DecentralizedMCFEFHMultiIPE(MCFEFHMultiIPE):
     def encrypt(self, lst_pt: list, label: str) -> dict:
         """``iEnc(imsk_i, [(x_i, H1(label)^t~_i, 0, ...)]_1)``; once per client and label."""
         x = self._check_plaintext(lst_pt)
-        if "t_tilde" not in self.sk:
+        if "t_tilde" not in FHClientKey(self.sk):
             raise FEKeyError("need the client's DMCFE keys to encrypt")
-        omega_t = self.ctx.h1(label) ** self.ctx.zr(int(self.sk["t_tilde"]))
+        omega_t = self.ctx.h1(label) ** self.ctx.zr(int(FHClientKey(self.sk).t_tilde))
         x_hat = self.ctx.x_hat(x, omega_t)
-        return {"ct": [self.ctx.ser(v) for v in self.ctx.fhipe.encrypt(self.imsk, x_hat)]}
+        return FHCiphertext.new(ct=[self.ctx.ser(v) for v in self.ctx.fhipe.encrypt(self.imsk, x_hat)]).to_dict()
 
     def derive_function_decryption_key_share(self, fusion_weight, tag_f: str) -> dict:
         """Derive this client's key ``dk_i`` for its weights ``y_i`` (NPS24 DKeyGen).
@@ -118,7 +124,7 @@ class DecentralizedMCFEFHMultiIPE(MCFEFHMultiIPE):
             FESchemeError: If this object already derived a key for other
                 weights under *tag_f*.
         """
-        if not self._has_private_keys() or "seed" not in self.sk:
+        if not self._has_private_keys() or "seed" not in FHClientKey(self.sk):
             raise FEKeyError("need the client's keys to derive a key share")
         if not isinstance(tag_f, str) or not tag_f:
             raise FEValidationError("tag_f must be a non-empty string")
@@ -135,11 +141,11 @@ class DecentralizedMCFEFHMultiIPE(MCFEFHMultiIPE):
         # nothing about the other clients' weights enters this client's key
         context = json.dumps([tag_f, weights])
         y_hat = self.ctx.y_hat(weights, self.ctx.h2(tag_f))
-        rng = XofRandom(bytes.fromhex(self.sk["seed"]) + _KEY_RNG_DOMAIN + context.encode("utf-8"))
+        rng = XofRandom(bytes.fromhex(FHClientKey(self.sk).seed) + _KEY_RNG_DOMAIN + context.encode("utf-8"))
         key, z_sum = self.ctx.fhipe.keygen(self.imsk, y_hat, rng=rng)
-        share = self.ctx.key_entry(key, z_sum)
-        share.update({"nid": self.id, "tag_f": tag_f})
-        return share
+        share = FHKeyEntry(self.ctx.key_entry(key, z_sum))
+        share.update(nid=self.id, tag_f=tag_f)
+        return share.to_dict()
 
     def combine_function_decryption_key_share(self, dct_dk_shares: dict) -> dict:
         """Collect every client's ``dk_i`` into the functional key.
@@ -151,13 +157,14 @@ class DecentralizedMCFEFHMultiIPE(MCFEFHMultiIPE):
         """
         if set(dct_dk_shares) != set(self.pp["lst_nid"]):
             raise FESchemeError("key shares of all clients are required")
-        shares = list(dct_dk_shares.values())
+        shares = [FHKeyEntry(sh) for sh in dct_dk_shares.values()]
         first = shares[0]
-        if any(sh["tag_f"] != first["tag_f"] for sh in shares):
+        if any(sh.tag_f != first.tag_f for sh in shares):
             raise FESchemeError("key shares were derived for different function tags")
-        if any(sh.get("nid", nid) != nid for nid, sh in dct_dk_shares.items()):
+        if any(FHKeyEntry(sh).get("nid", nid) != nid for nid, sh in dct_dk_shares.items()):
             raise FESchemeError("key share filed under the wrong client id")
-        return {
-            "dk": {nid: {"k": sh["k"], "z": sh["z"]} for nid, sh in dct_dk_shares.items()},
-            "tag_f": first["tag_f"],
-        }
+        return MCFEFHFunctionalKey.new(
+            dk={nid: FHKeyEntry.new(k=FHKeyEntry(sh).k, z=FHKeyEntry(sh).z).to_dict()
+                for nid, sh in dct_dk_shares.items()},
+            tag_f=first.tag_f,
+        ).to_dict()

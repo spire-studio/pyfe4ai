@@ -5,6 +5,1021 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/) (pre-1.0: minor bumps may break
 compatibility).
 
+## [0.4.0] — 2026-10-26
+
+**Highlights.** An optional Rust extension runs the lattice, threshold,
+ristretto255 and BLS12-381 code natively (an MCFE Ring-LWE round of 10^4
+gradient elements: 18 ms per client instead of 198 ms); a cryptographic code
+review fixed, among others, a leak in the threshold LWE layers of v0.3.0;
+exact Gaussian sampling by default for the lattice MIFE / MCFE schemes, and
+faster threshold MCFE defaults; schemes are built
+by id with `pyfe4ai.create("family/variant", config)`, and the package and
+its class names were reorganised.
+
+**Upgrading from v0.3.0** -- see the
+[upgrade guide](https://spire-studio.github.io/pyfe4ai/docs/upgrading.html):
+update imports (Code organization); re-key the threshold LWE layers after
+finishing only the v0.3.0 rounds that must finish (with `t < s` their
+partial decryptions still leak); store and transmit the `sharing_id` of
+`mcfe/ring_lwe_threshold` key shares and partial decryptions; regenerate the
+keys of `sife/lwe` / `mife/lwe` with `lwe_n = "auto"` and of the pairing
+schemes (BLS12-381); move the parameter cache from `./config/`; expect
+`FESchemeError` where `combine_decrypt` returned `None` for partial
+decryptions of different ciphertexts (`None` still means a value out of
+range); use `str` or `int` ids. PyFE4AI remains an experimental research
+prototype, not recommended for production use.
+
+### Code organization (breaking)
+
+- **Modules moved** (no aliases remain at the old paths; algorithms,
+  parameters and serialized formats are unchanged). The package is now in
+  layers: `pyfe4ai.core` (base classes and the parameter cache, the
+  configurations, the serialized objects and their versions, security
+  profiles, review status, one-time precomputations, exceptions),
+  `pyfe4ai.schemes` (the families, plus `schemes.common` and
+  `schemes.threshold`), `pyfe4ai.primitives` (lattices, sampling, hashing,
+  groups, pairings), `pyfe4ai.backend` (native or Python implementation)
+  and `pyfe4ai.ml` (the ML adapter). `pyfe4ai` exports its entry points
+  (see `pyfe4ai.create()` below); the configuration types are the config classes of
+  `pyfe4ai.core.config` (see Formats, versions and configurations), no
+  longer re-exported by `pyfe4ai.schemes`. Update imports as follows:
+
+  | Old | New |
+  |---|---|
+  | `pyfe4ai.utils.ml_adapter` | `pyfe4ai.ml` (defined in `ml.wrapper`, `ml.serialization`, `ml.gradients`, `ml.threshold` and `ml.inference`; its scheme table `_SCHEME_REGISTRY` and `_LABEL_SCHEMES`: the scheme registry `pyfe4ai.core.registry`, see Scheme registry) |
+  | `pyfe4ai.utils.quantization` | `pyfe4ai.ml.quantization` |
+  | `pyfe4ai.utils.exceptions`, the exceptions re-exported by `pyfe4ai.utils` | `pyfe4ai.core.exceptions` |
+  | `pyfe4ai.utils.crypto_constants` | `pyfe4ai.core.constants` |
+  | `pyfe4ai.utils.crypto_utils`, its hashes (`hash_to_qr_group`, `hash_to_zn2_star`, `paillier_base`, `hash_to_zq_vector`, ...) | `pyfe4ai.primitives.hashing` |
+  | `pyfe4ai.utils.crypto_utils`, its groups (`generate_group_primes`, `group_generator_fe`, `group_generator_threshold_fe`, `is_dl_group`, `is_dcr_modulus`, `RFC3526_PRIMES`, ...) | `pyfe4ai.primitives.groups.integer_groups` |
+  | `pyfe4ai.utils.sampling_utils` | `pyfe4ai.primitives.sampling` |
+  | `pyfe4ai.utils.ring_lwe_utils`, `.lwe_utils`, `.lwe_matrix`, `.matrix_utils` | `pyfe4ai.primitives.lattice.ring_lwe_utils`, `.lwe_utils`, `.lwe_matrix`, `.matrix_utils` (`canonical_ring_ciphertext`: `pyfe4ai.core.formats.binary`, see Formats, versions and configurations) |
+  | `pyfe4ai.utils.modular_utils`, `.dlog_solver` | `pyfe4ai.primitives.groups.modular_utils`, `.dlog_solver` |
+  | `pyfe4ai.utils.pairing_backend`, `.pairing_utils` | `pyfe4ai.primitives.pairing.pairing_backend`, `.pairing_utils` |
+  | `pyfe4ai.utils.validation` | `pyfe4ai._validation` (internal) |
+  | `pyfe4ai.schemes.ipfe` | `pyfe4ai.core.base` |
+  | `pyfe4ai.schemes.status`, `pyfe4ai.schemes.profiles` | `pyfe4ai.core.status`, `pyfe4ai.core.profiles` (the profile rules, `resolve` and its tables: `pyfe4ai.core.config`; the status entries, `SchemeStatus` and the status values, and the scheme kinds: `pyfe4ai.core.registry`, see Scheme registry) |
+  | `pyfe4ai.schemes.abdp15_lwe`, `.ddh_base` | `pyfe4ai.schemes.common.abdp15_lwe`, `.ddh_base` |
+  | `pyfe4ai.schemes.config_types` (TypedDicts) | `pyfe4ai.core.config` (config classes; see Formats, versions and configurations) |
+  | `pyfe4ai.schemes.threshold_utils` | split into `pyfe4ai.schemes.threshold.sharing`, `.binding`, `.codec` and `.roles` (names unchanged; see the next table) |
+  | `pyfe4ai.logger` (`init_logging_config`), `pyfe4ai/config.yaml` | removed (see Logging) |
+
+  The threshold schemes share these modules (`schemes.threshold`):
+  `sharing` (Shamir, replicated and seed-expanded replicated sharing, dealt
+  and added up for an enrolled set), `binding` (what key shares,
+  ciphertexts and partial decryptions are bound to: `pp_binding`, the
+  binding fields of each threshold LWE scheme, weights, client MAC tags),
+  `codec` (encodings
+  of key material, threshold ciphertexts and partial decryptions, strict
+  parsing), `store` (stores and caches of key-share parts and sums, their
+  locks), `roles` (server and combiner logic: checks, the flooding noise,
+  combination) and `kl`. The names of v0.3.0's `threshold_utils` moved:
+
+  | Old (`pyfe4ai.schemes.threshold_utils`) | New |
+  |---|---|
+  | `eval_poly`, `share_secret`, `lagrange_coefficient_at_zero`, `lagrange_at_zero`, `center_mod`, `share_points`, `validate_threshold` | `pyfe4ai.schemes.threshold.sharing` |
+  | `fusion_weight_id`, `check_fusion_weight`, `client_server_mac_keys`, `ciphertext_tag`, `tag_ciphertext`, `check_ciphertext_tags` | `pyfe4ai.schemes.threshold.binding` |
+  | `ciphertexts_digest` | `pyfe4ai.schemes.threshold.codec` |
+  | `validate_enrolled`, `validate_partial_decryptions`, `partial_groups`, `combine_consistently`, `combine_elementwise` | `pyfe4ai.schemes.threshold.roles` |
+
+  The construction ids of the threshold LWE layers (private constants of the
+  scheme modules) are in `pyfe4ai.core.versions` (`TMIFE_LWE_*`,
+  `TMCFE_LWE_*`, `TMCFE_RING_LWE_*`).
+
+  Objects pickled by an earlier version that refer to a moved module (for
+  example a pickled `FESchemeWrapper`, which holds a `QuantizationConfig`)
+  do not load. The serialized keys, shares, ciphertexts and partial
+  decryptions (JSON and binary) are unchanged.
+- **Formats, versions and configurations** (this reorganisation itself
+  changes no serialized byte, accepted or refused input, or exception):
+  - `pyfe4ai.core.formats` declares every serialized object -- parameter
+    records, public parameters, encryption keys, functional keys, key
+    shares (whole, weight and label parts, replicated pieces), ciphertexts,
+    partial decryptions, the ML wire objects -- as a `Record`: its fields in
+    wire order, what each holds and what an absent field means. A record is
+    a typed view of the object's dict itself (`Record.from_dict(d).to_dict()
+    is d`; reading a field is the dict read, with its exception), and the
+    schemes build and read their objects through them. The byte codecs of
+    the Ring-LWE ciphertexts are in `core.formats.binary`.
+  - `pyfe4ai.core.versions` holds every version marker and compatibility
+    decision in one place: parameter-record ids, the threshold construction
+    ids, the sharing, flooding, label-hash and ciphertext-format markers with
+    what their absence means, sharing ids, key-share parts, the flooding
+    noise version and the state versions, with the checks that accept,
+    refuse or regenerate (the schemes call them where they checked before).
+  - `pyfe4ai.core.config`: a key generator's config is converted at entry
+    into the config class of its scheme (`MCFERingLWEConfig`,
+    `ThresholdMCFERingLWEConfig`, ...; a `dict` subclass, so dict configs keep
+    working) and completed by its security profile there; each class
+    declares its options with their defaults and accepted values
+    (`config.ring_n` reads an option with its default). The page
+    *Configuration options* of the documentation lists every scheme's
+    options, their defaults under each profile and the refused combinations,
+    rendered from these declarations. The `TypedDict`s of
+    `schemes.config_types` are replaced by these classes, which keep
+    their names where a class remains (`DDHConfig(sec_param=128, eta=3)`
+    still builds a config); for static typing they are `dict` subclasses,
+    not `TypedDict`s.
+
+  | Old | New |
+  |---|---|
+  | `pyfe4ai.schemes.config_types`: `FEBaseConfig`; `DDHConfig`, `DamgardDDHConfig`, `LWEConfig`, `RingLWEConfig`, `PaillierConfig`, `PairingIPEConfig`, `CryptoConfig`; `MCFELWEConfig`, `MCFERingLWEConfig`, `ThresholdMCFELWEConfig`, `ThresholdMCFERingLWEConfig`, `QuadraticQuadConfig`, `QuadraticSGPConfig`, `MultiInputQuadraticConfig` | `pyfe4ai.core.config`: `SchemeConfig`; the same names, but `QuadraticMIQFEConfig` (see Class names) |
+  | the same module: `PairingMultiIPEConfig`, `PartFHIPEConfig`, `ThresholdDDHConfig`, `ThresholdLWEConfig`, `ThresholdPairingMultiIPEConfig` | `pyfe4ai.core.config`: `MIFEFHMultiIPEPairingConfig`, `SIFEPartFHIPEPairingConfig`, `ThresholdConfig` (and `ThresholdMIFEDDHConfig`, `ThresholdMCFEDDHConfig`), `ThresholdSharingConfig` (and `ThresholdMIFELWEConfig`), `ThresholdMCFEFHMultiIPEPairingConfig` |
+  | `pyfe4ai.schemes.profiles`: `resolve`, `STANDARD_PAIRING_GROUP`, `_STANDARD_MINIMA`, `_STANDARD_FIXED`, `_REFUSED` | `pyfe4ai.core.config`: `resolve`, `STANDARD_PAIRING_GROUP`, `STANDARD_MINIMA`, `STANDARD_FIXED` (and `STANDARD_PRESETS`); `_REFUSED`: the `refused` reason of each scheme in `pyfe4ai.core.registry` |
+  | `pyfe4ai.utils.ring_lwe_utils.canonical_ring_ciphertext` | `pyfe4ai.core.formats.binary.canonical_ring_ciphertext` |
+  | `pyfe4ai.schemes.abdp15_lwe.CONSTRUCTION`; the record ids of the other schemes (private constants) | `pyfe4ai.core.versions`: `SIFE_LWE_RECORD`, `MIFE_LWE_RECORD`, `SIFE_FULLYSEC_LWE_RECORD`, ..., `DMCFE_PAILLIER_RECORD` (the same values) |
+- **`pyfe4ai.create()` and the top-level package**:
+  `pyfe4ai.create("family/variant", config=None, **options)` builds the
+  key generator of a scheme exactly as its class does (config class and
+  security profile; not set up -- call `setup()`) and returns it with the
+  scheme's crypto class as `CreatedScheme(key_generator, crypto)`:
+  `kg, MCFE = pyfe4ai.create("mcfe/ring_lwe", n=3)`; `options` are added to
+  a copy of `config`. `pyfe4ai` now exports `create`, `CreatedScheme`, the
+  registry queries `list_schemes(family, capabilities=..., status=...,
+  kind=...)`, `get_scheme` (a `Scheme`: classes, kind, capabilities, review
+  status), `CAPABILITIES`, `get_scheme_status` and `SchemeStatus`, and every
+  exception and warning of the library: `FEError`, `FEConfigError`,
+  `FEKeyError`, `FEValidationError`, `FESchemeError`, `MixedSharingsError`,
+  `FESecurityWarning` and `FEWarning`, and `backend_info()` (see Added). It
+  no longer re-exports `SIFE`,
+  `SIFEKeyGenerator`, `MIFE`, `MIFEKeyGenerator`, `MCFE` and
+  `MCFEKeyGenerator`: use `create()`, or import the classes under their new
+  names from the family packages (`from pyfe4ai.schemes.sife import
+  SIFEDDH`). `import pyfe4ai` no longer imports the scheme modules (and with
+  them the native extension); they are imported when first used. The API
+  page of the documentation lists the public modules (`pyfe4ai`, the family
+  packages, `core.registry`, `core.config`, `core.status`, `core.profiles`,
+  `core.exceptions`, `pyfe4ai.ml`, the backend selection of
+  `pyfe4ai.backend` and a few named entry points) and the internal ones
+  (`core.base`, `core.formats`, `core.versions`, `core.one_time`,
+  `core.forksafe`, `schemes.common`, `schemes.threshold`, `primitives`, ...), which may change
+  without notice.
+- **Scheme registry** (`pyfe4ai.core.registry`): one entry per scheme,
+  `SCHEMES`, the single source of what the library records about it -- its
+  id `family/variant`, module and classes (key generator, crypto class,
+  config class; named after the id, see Class names), its kind, the reason
+  the `standard` profile refuses it (if it does), its review status and its
+  capabilities: `labels`, `threshold`, `decentralized`, `pairing`,
+  `ml_servers` (the ML adapter runs its decryption servers), `binary_ct`
+  and `rns`. The tables that were kept apart are derived from it:
+  `core.status.SCHEME_STATUS` (and the README and documentation tables),
+  `core.profiles.SCHEME_KIND`, the refusals of `core.config.resolve` (the
+  former `_REFUSED`), the schemes of the ML adapter (its private
+  `_SCHEME_REGISTRY` and `_LABEL_SCHEMES` are removed) and the scheme lookups
+  of the benchmark scripts. `SchemeStatus` and the status values are defined in the registry
+  (still importable from `pyfe4ai.core.status`, which keeps the status
+  queries); `get_scheme_status` also takes `"family/variant"`. The
+  configuration page lists the schemes of each kind and the refusals in
+  registry order.
+- **Class names**: the classes of every scheme are named after its id
+  `family/variant`, one name per class: `Threshold` or `Decentralized` for
+  the variants with that suffix, then the family (`SIFE`, `MIFE`, `MCFE`,
+  `Quadratic`), then the rest of the variant in CamelCase with its acronyms
+  in capitals; the key generator adds `KeyGenerator`, the config class
+  `Config` (`mcfe/ring_lwe`: `MCFERingLWE`, `MCFERingLWEKeyGenerator`,
+  `MCFERingLWEConfig`). The classes below are renamed (each with its
+  `...KeyGenerator`); the aliases that the family packages exported
+  (`DMCFE`, `DMCFELWE`, `DMCFERingLWE`, `DynamicSIFE`, `SIFEDamgardDDH`,
+  `MIFEDamgardDDH`, `MCFEDamgardDDH` and their `...KeyGenerator`) are
+  removed, and no alias remains at an old name. `pyfe4ai.schemes.sife`,
+  `.mife`, `.mcfe` and `.quadratic` export the classes of every scheme of
+  their family (now also `SIFEDDHRistretto255`, `SIFEFullySecRingLWE`,
+  `MIFEDDHRistretto255` and `MCFEDDHRistretto255`). Serialized keys,
+  shares, ciphertexts, partial decryptions and parameter records contain
+  no class name and are unchanged (the scheme-type folders of the parameter
+  cache, such as `authority/SIFE/`, keep their names). Objects pickled by an
+  earlier version that refer to a renamed class do not load
+  (`AttributeError`); the threshold MCFE over Ring-LWE keeps its names, and
+  refuses its key generators, clients and servers pickled by v0.3.0 ("pickled
+  by an incompatible version of pyfe4ai").
+
+  | Scheme | Old (v0.3.0) | New |
+  |---|---|---|
+  | `sife/ddh` | `SIFE`, `SIFEKeyGenerator` | `SIFEDDH`, `SIFEDDHKeyGenerator` |
+  | `sife/ddh_dynamic` | `SIFEDynamic` (alias `DynamicSIFE`) | `SIFEDDHDynamic` |
+  | `sife/damgard` | `SIFEDamgard` (alias `SIFEDamgardDDH`) | `SIFEDamgard` |
+  | `sife/fh_ipe_pairing` | `SIFEFHIPE` | `SIFEFHIPEPairing` |
+  | `sife/part_fh_ipe_pairing` | `SIFEPartFHIPE` | `SIFEPartFHIPEPairing` |
+  | `mife/ddh` | `MIFE` | `MIFEDDH` |
+  | `mife/damgard` | `MIFEDamgard` (alias `MIFEDamgardDDH`) | `MIFEDamgard` |
+  | `mife/fh_ipe_pairing` | `MIFEFHIPE` | `MIFEFHIPEPairing` |
+  | `mife/fh_multi_ipe_pairing` | `MIFEFHMultiIPE` | `MIFEFHMultiIPEPairing` |
+  | `mife/ddh_threshold` | `ThresholdMIFE` | `ThresholdMIFEDDH` |
+  | `mcfe/ddh` | `MCFE` | `MCFEDDH` |
+  | `mcfe/damgard` | `MCFEDamgard` (alias `MCFEDamgardDDH`) | `MCFEDamgard` |
+  | `mcfe/fh_multi_ipe_pairing` | `MCFEFHMultiIPE` | `MCFEFHMultiIPEPairing` |
+  | `mcfe/fh_multi_ipe_pairing_threshold` | `ThresholdMCFEFHMultiIPE` | `ThresholdMCFEFHMultiIPEPairing` |
+  | `mcfe/fh_multi_ipe_pairing_decentralized` | `DecentralizedMCFEFHMultiIPE` | `DecentralizedMCFEFHMultiIPEPairing` |
+  | `mcfe/ddh_threshold` | `ThresholdMCFE` | `ThresholdMCFEDDH` |
+  | `mcfe/ddh_decentralized` | `DecentralizedMCFE` (alias `DMCFE`) | `DecentralizedMCFEDDH` |
+  | `mcfe/lwe_decentralized` | `DecentralizedMCFELWE` (alias `DMCFELWE`) | `DecentralizedMCFELWE` |
+  | `mcfe/ring_lwe_decentralized` | `DecentralizedMCFERingLWE` (alias `DMCFERingLWE`) | `DecentralizedMCFERingLWE` |
+  | `quadratic/miqfe` | `MultiInputQuadratic` | `QuadraticMIQFE` |
+
+  The other schemes keep their class names (`SIFELWE`, `MCFERingLWE`,
+  `ThresholdMCFERingLWE`, `DecentralizedMCFEPaillier`, `QuadraticSGP`, ...).
+- **Logging**: the library no longer configures logging or writes log
+  files. `pyfe4ai.logger.init_logging_config()` and the packaged
+  `config.yaml` (console and rotating files under `./logs/`) are removed;
+  the `pyfe4ai` logger has a `NullHandler`, and the modules log to
+  `logging.getLogger(__name__)` as before. Configure logging in the
+  application (e.g. `logging.basicConfig(level=logging.DEBUG)`); without
+  it, the library's log messages are no longer printed by Python's
+  last-resort handler. What an application should see is therefore also
+  issued as a warning, `pyfe4ai.core.exceptions.FEWarning` (a
+  `UserWarning`, not an `FESecurityWarning`): a cached parameter record that
+  no longer matches its configuration or is unreadable and is regenerated
+  (with new parameters and seeds), a request answered with `None` (an
+  unknown server id, an unknown client id in the MIFE and MCFE DDH schemes
+  -- the other schemes answer an unknown client with `None` silently --, a
+  decryption out of range or with a wrong key), and a slower
+  fallback (an RNS modulus of the threshold Ring-LWE MCFE with more factors
+  than the native ring, a modulus without an NTT root). Each warning is
+  attributed to the application's call (the first caller outside pyfe4ai),
+  so the default filter shows it once per call site, and its text holds no
+  caller-supplied value (an unknown id is in the log record only). A
+  warnings filter by module therefore matches the application's module: a
+  filter such as `ignore::pyfe4ai.core.exceptions.FEWarning:pyfe4ai.*` no
+  longer matches the library's `FEWarning`s, while one on the
+  application's own module does; filters by category are unaffected
+  (`FESecurityWarning`s are attributed the same way, see Changed). PyYAML is
+  no longer a dependency.
+- **Parameter cache location**: key generators keep their parameter
+  records in a per-user cache directory instead of `./config/` of the
+  working directory: `~/Library/Caches/pyfe4ai` on macOS,
+  `$XDG_CACHE_HOME/pyfe4ai` (`~/.cache/pyfe4ai`) on Linux and other POSIX
+  systems, `%LOCALAPPDATA%\pyfe4ai\Cache` on Windows
+  (`pyfe4ai.core.base.default_cache_dir()`). The `PYFE4AI_CACHE_DIR`
+  environment variable overrides it, and a `cache_dir` entry in a key
+  generator's config (also through the ML wrapper's key-generator config)
+  overrides both. Below that directory the layout and the records are
+  unchanged (`authority/<scheme type>/param.json`, `param-rns.json`, ...):
+  to keep an existing cache, move `./config/authority` there or set
+  `PYFE4AI_CACHE_DIR=./config`. The cache is trusted (see the README's
+  known issues): it must not be writable by others.
+- **Threads, processes and copies**: a documentation page
+  (`docs/threading.rst`) lists the process-wide state, the objects several
+  threads may share, and what copies, pickles and `fork()` do to caches,
+  locks and secrets; the library registers one fork handler
+  (`pyfe4ai.core.forksafe`), and `tests/state/test_global_state.py` refuses
+  new module-level caches or locks.
+- **Tests by topic**: the test modules at the top of `tests/` moved into
+  one directory per topic (`tests/<group>/`, file names unchanged); the
+  scheme tests (`tests/sife/`, `mife/`, `mcfe/`, `quadratic/`) stay, and the
+  regression tests of the October 2026 review are in `tests/review/`.
+  `tests/conftest.py` marks every test with its group (`pytest -m
+  threshold`), `core` (no pairing backend needed) or `extended` (pairing
+  schemes and quadratic FE), `native` (needs the extension or the
+  `rust/core` C ABI) and `slow` (2 s or more); the marks are registered in
+  `pyproject.toml`, which now passes `--strict-markers`. See CONTRIBUTING.md,
+  "Tests".
+
+  | Old (`tests/`) | New |
+  |---|---|
+  | `test_scheme_status.py`, `test_exceptions.py` | `tests/api/` |
+  | `test_client_lists.py`, `test_param_cache.py`, `test_param_cache_secrets.py` | `tests/config/` |
+  | `test_security_profiles.py`, `test_ring_parameters.py`, `test_wide_lwe.py` | `tests/params/` |
+  | `test_sampling.py` | `tests/sampling/` |
+  | `test_ntt.py`, `test_lwe_matrix.py`, `test_plaintext_encoding.py` | `tests/lattice/` |
+  | `test_crypto_primitives.py`, `test_dlog_solver.py`, `test_pairing_groups.py` | `tests/primitives/` |
+  | `test_threshold_consistency.py` | `tests/threshold/` |
+  | `test_ml_adapter.py`, `test_quantization.py` | `tests/ml/` |
+  | `test_weight_validation.py`, `test_paillier_decrypt_hardening.py`, `test_ndarray_decrypt_failures.py` | `tests/hardening/` |
+
+  The groups `backend`, `native`, `offline` and `state` hold tests added
+  after v0.3.0.
+- **Benchmarks: one command line** `benchmarks/run.py <command>` replaces
+  the scripts of `benchmarks/` (the code of each command is in
+  `benchmarks/commands/`; options and output unchanged, `run.py --help` lists
+  the commands, `run.py <command> --help` the options; the new benchmarks are
+  listed under Added):
+
+  | Old (`python benchmarks/...`) | New (`python benchmarks/run.py ...`) |
+  |---|---|
+  | `benchmark_sife_instantiations.py` | `sife` |
+  | `benchmark_mife_instantiations.py` | `mife` |
+  | `benchmark_mcfe_instantiations.py` | `mcfe` |
+  | `benchmark_dmcfe_instantiations.py` | `dmcfe` |
+  | `benchmark_tmife_instantiations.py` | `tmife` |
+  | `benchmark_tmcfe_instantiations.py` | `tmcfe` |
+  | `benchmark_lwe_family.py` | `lwe-family` |
+  | `benchmark_fh_multi_ipe_family.py` | `fh-family` |
+  | `benchmark_quadratic_family.py` | `quadratic` |
+  | `benchmark_ndarray_helpers.py` | `ndarray` |
+  | `benchmark_ntt.py` | `ntt` |
+  | `fl_path_coverage.py` | `fl-coverage` |
+- **Repository layout**: `Dockerfile.pairing` moved to
+  `docker/Dockerfile.pairing` (`docker build -f docker/Dockerfile.pairing
+  -t pyfe4ai-pairing .`); the parameter estimators moved to
+  `tools/params/` (`tools/params/estimate_ring_lwe.py`, ...); the `logs/`
+  folder is gone (Logging);
+  `requirements.txt` is removed: `pyproject.toml` is the only list of
+  dependencies (`pip install -e ".[test]"`), and `environment.yml` keeps
+  the conda-specific parts (Python, pip, gmpy2 from conda-forge).
+
+### Breaking changes and upgrade notes
+
+- **Re-key the threshold LWE layers** (`mife/lwe_threshold`,
+  `mcfe/ring_lwe_threshold`, `mcfe/lwe_threshold`). This release refuses
+  every key share issued by v0.3.0 (`FEKeyError`): the derandomised flooding
+  noise has a new derivation (decryption keys carry `noise_version = 2`; new
+  construction ids), and key shares are bound to their public parameters
+  (`pp_binding`, see Security). For `t < s` the key is also shared
+  differently (replicated sharing, see Security) under new parameter
+  records, so `setup()` draws a new public matrix or polynomial. To upgrade:
+  1. finish with v0.3.0 only the rounds that must finish under the old keys
+     (the leak described under Security remains for them: with `t < s`
+     every partial decryption under v0.3.0 key shares leaks);
+  2. run this release's key generator (`setup()`, `get_private_keys`,
+     `get_decryption_keys`) and hand out the new client keys and key shares;
+  3. discard the old key shares.
+- **Shamir sharing with `t < s` is refused** by the key generators of these
+  layers under `standard` and warns (`FESecurityWarning`) under `toy`.
+  Servers refuse Shamir key shares with `t < s` (`FESchemeError`) unless
+  their crypto config has `legacy_shamir="warn"`, which never applies to
+  public parameters of the `standard` profile and has no environment
+  variable. `"shamir"` stays the default for `t = s`, with unchanged outputs.
+- **New defaults of `mcfe/ring_lwe_threshold`** (both profiles):
+  * binary ciphertexts and partial decryptions (`ct_format="binary"`);
+  * an RNS modulus (`ring_modulus="rns"`): `q` is a product of at least three
+    NTT primes below `2^62` (four of about 54 bits under `standard`), each
+    above `s`;
+  * split key shares (`key_shares="split"`): a server first receives its
+    share of the label-independent part of the key once per weight vector
+    (`get_weight_key_share` at the key generator, `add_weight_key_share` at
+    the server; `has_weight_key_share`), then per round only the shares of
+    the label terms, which `get_decryption_keys` returns unless
+    `key_part="full"`. The key generator keeps the sharings of the last 64
+    weight vectors (`threshold.store.WEIGHT_SHARINGS_KEPT`); weights issued again after that
+    get a new share set, and their servers need the new weight part;
+  * uniform flooding of the partial decryptions (`flooding="uniform"`, noise
+    on `[-2^tau, 2^tau)` with `tau = bits(B) + stat_param`, read from the
+    request's seeded SHAKE-256 stream): the same statistical distance per
+    coefficient as the Gaussian, and `q` of 212 instead of 215 bits under
+    `standard` (what it gives up against the Gaussian beyond that bound is in
+    the module docstring).
+
+  `ct_format="json"`, `ring_modulus="prime"`, `key_shares="full"` and
+  `flooding="gaussian"` select the formats of v0.3.0 (JSON ciphertexts, a
+  prime `q`, whole key shares, Gaussian flooding); re-keying is still
+  required (above). Cached v0.3.0 parameter records are re-derived; RNS
+  records are kept in `param-rns.json`, beside the prime's `param.json`.
+  Mixed formats are refused with a message that names the fix (a label part
+  without its weight part, JSON ciphertexts under binary public parameters,
+  and the other way round). The opt-in `sharing="replicated-seeded"` issues
+  whole key shares.
+- **Sharing ids** (`mcfe/ring_lwe_threshold`). Every sharing the key
+  generator issues -- whole key shares, or the label parts of one label --
+  has a random `sharing_id`, which the partial decryptions carry. Partials of
+  two sharings of one key would decode to a wrong value inside the decoding
+  bound rather than fail, so combiners refuse them
+  (`pyfe4ai.core.versions.MixedSharingsError`:
+  fetch the label parts again for all servers; the ML adapter's
+  `aggregate_gradients` does this once by itself). A label part asked for
+  again after it left the key generator's cache (the last 16 labels per
+  weight vector, `threshold.store.LABEL_PARTS_KEPT`) is a new sharing. **Store and transmit
+  the `sharing_id` with every key share and partial decryption**: partials
+  without one combine only with each other, so a layer that drops it on all
+  sides would let two sharings be mixed unnoticed.
+- **MCFE label hash** (`mcfe/ring_lwe` and its threshold and decentralized
+  variants; the dense-LWE MCFE family `mcfe/lwe`, `fullysec_lwe`,
+  `lwe_threshold`, `lwe_decentralized`): labels are hashed to `Z_q` by
+  rejection sampling from SHAKE128 (`label_hash="shake128-rejection"`, the
+  new default), exactly uniform and cheaper, so **MCFE ciphertexts and
+  functional-key terms differ from v0.3.0**. Data without the field -- that
+  of v0.3.0 -- is read as `"shake256-wide"`, the v0.3.0 hash, so v0.3.0
+  public parameters, keys and ciphertexts keep working together;
+  `label_hash="shake256-wide"` gives new setups the old hash. The mode is
+  recorded in the public parameters, client keys, functional keys, key shares
+  and ciphertext layers, and data of different modes is refused instead of
+  decrypting to wrong sums.
+- **ABDP15 LWE dimensions** (`sife/lwe`, `mife/lwe`; see Security): records
+  cached for `lwe_n = "auto"`, in any profile, no longer match their
+  re-derivation and are regenerated on load with a new seed for `A`. Keys,
+  public parameters and ciphertexts made under the old record stop matching
+  it, and the only signs are a logged error and an `FEWarning`: **generate
+  keys again after upgrading.** Records for an explicit `lwe_n` (such as the `toy` default 32)
+  are kept; under `standard` an explicit `lwe_n` that meets only the old rule
+  is refused. Under `toy`, `mife/lwe_threshold` with `lwe_n = "auto"` picks a
+  larger dimension (3456 -> 3904 for `X = Y = 20`, `stat_param = 64`) and
+  raises where nothing up to 6144 fits.
+- **Ring-LWE MIFE / MCFE parameters** (`mife/ring_lwe`, `mcfe/ring_lwe` and
+  its threshold and decentralized variants) are sized for messages of norm
+  `3X` (see Security): cached parameters are re-derived (construction
+  `acfgu18-bmms21/v5`), and `q` grows by 3 to 4 bits.
+- **Pairing groups:** every pairing-based scheme defaults to BLS12-381 from
+  the Rust extension, under both profiles. Toy keys, public parameters and
+  ciphertexts of earlier versions (MNT224) cannot be read on it; pass
+  `pairing_group_param="MNT224"`, with charm-crypto installed, to keep using
+  them. Under `standard` BLS12-381 replaces BN254 (about 100-bit) and still
+  emits a `FESecurityWarning` (about 120-126-bit security). Without the Rust
+  extension the pairing-based schemes need charm-crypto and an explicit
+  group.
+- **Exact Gaussian sampling by default** (FACCT, see Security) for the
+  Ring-LWE MIFE / MCFE family (keys and encryption noise), the dense-LWE
+  MCFE keys `t`, `sife/fullysec_ring_lwe` and, under `standard`, the
+  public-key noise of ABDP15 (`sife/lwe`, `mife/lwe`). These schemes record
+  `gaussian_sampler` in their public parameters and ignore the process-wide
+  choice (`set_gaussian_sampler`, `PYFE4AI_GAUSSIAN_SAMPLER`); `standard`
+  refuses `gaussian_sampler="rounded"` for them, `toy` still accepts it.
+  Formats are unchanged; public parameters without the field (earlier
+  versions) give FACCT to new encryptions.
+- **Refused under `standard`**, besides the ALS16 schemes and
+  `mcfe/paillier_decentralized`: `mife/lwe_threshold` (no parameter set is
+  both secure and usable, see Security), an explicit `sharing="shamir"` with
+  `t < s`, `gaussian_sampler="rounded"` for the schemes above, and ABDP15
+  dimensions below the new rule. Both profiles refuse `stat_param` above 256
+  and thresholds that are not integers (also `t=True`).
+- **Pickles are not portable across versions.** Keep pickled scheme objects
+  within one version (e.g. for multiprocessing or Ray); the threshold
+  Ring-LWE MCFE key generator, clients and servers refuse a state pickled by
+  another version with a clear error (create the object again).
+- The threshold LWE layers record `threshold_construction` and
+  `security_profile` in their public parameters, and servers refuse
+  constructions they do not know or of another sharing. The `ddh` key
+  generators refuse a `group` other than `"modp"` instead of ignoring it
+  (ristretto255 is the `ddh_ristretto255` variant, see Added).
+
+### Security
+
+Fixes from a cryptographic code review of the schemes and of the new native
+code (October 2026), and from the follow-up checks of the fixes.
+
+- **Threshold LWE layers: Lagrange-multiplier leak; v0.3.0 and earlier are
+  affected** (`mife/lwe_threshold`, `mcfe/ring_lwe_threshold`,
+  `mcfe/lwe_threshold` with `t < s`; severity High, practical impact
+  Medium).
+  * **Mechanism.** These layers Shamir-shared the functional key for every
+    `t < s`. An honest partial decryption then differs from its simulation
+    (from the result and a coalition's key shares) by `M nu`, where `nu` is
+    the decryption noise and `M` a product of Lagrange coefficients. For
+    `s >= 3` and `t < s`, `M = r / d` is not an integer for some corrupted
+    set, enrolled set and server, and `d` times the partial minus the
+    computable part reveals `nu mod d`, whatever the flooding width.
+  * **Who can read it.** With `s = 3, t = 2`, server 2 corrupted and enrolled
+    set {1, 3}, `nu mod 4` was read from every tMIFE-LWE partial and every
+    tMCFE-Ring-LWE coefficient. Combining enrolled sets raises the modulus
+    (144 at `(5, 3)`, about `2^25` at `(10, 6)`, at most `2^25.5` for
+    `s <= 10`). Fewer than `t - 1` corrupted servers can suffice, and for
+    many `(s, t)` none: the aggregator alone reads `nu` modulo `(s - 1)!` for
+    `t = 1`, 6 at `(5, 2)` and 120 at `(7, 2)`. At `(2, 1)` no residue leaks;
+    integer multipliers above 1 (up to 4 at `(3, 2)`) multiply the
+    statistical distance of the flooding.
+  * **Consequences.** With `nu` exact, the tMIFE-LWE functional key would
+    follow from the partials by linear algebra. At the `standard` parameters
+    the leak is partial -- at most about 25 bits of `nu` per ciphertext for
+    `s <= 10`, against noise bounds of about `2^67` (tMIFE-LWE) and `2^71`
+    (tMCFE-Ring-LWE) -- and no key or plaintext recovery has been shown. In
+    tMCFE-LWE the multipliers narrow the error of its LWE argument, up to
+    9-fold at `(3, 2)` and 869-fold at `(5, 3)`.
+  * **Not affected:** `t = s`, and the DDH and pairing threshold layers,
+    which interpolate exactly in the exponent.
+  * **Fix.** For `t < s` the key is shared additively over the
+    `(t - 1)`-subsets of the servers (`sharing="replicated"`, the new
+    default): piece `T` is held by the servers outside `T` and added by the
+    smallest enrolled one, every multiplier is 0 or 1 and the flooding
+    argument holds, with `q`, `ring_n` and `lwe_n` unchanged. A server holds
+    `C(s - 1, t - 1)` key pieces instead of one share (126 at `(10, 5)`); the
+    opt-in `sharing="replicated-seeded"` (see Added) stores at most one full
+    piece. Re-key as described in the upgrade notes; the README's Known
+    Issues has the details.
+- **Exact discrete Gaussians.** The double-precision rounded sampler (shared
+  Box-Muller radii, ties to even, nothing beyond 8.57 sigma) is about
+  `2^-12` to `2^-4` from i.i.d. `D_{Z,sigma}` per ciphertext and `2^-25` to
+  `2^-15` per key, against the `2^-128` budgets of the BMMS21 and ABMPSW20
+  proofs. The schemes listed in the upgrade notes now sample with FACCT
+  (Zhao, Steinfeld and Sakzad 2020; about `2^-185` per sample). ALS16, the
+  DCR schemes and ABDP15 under `toy` still follow the library-wide sampler,
+  rounded by default (README, Known Issues).
+- **ABDP15 LWE schemes sized by the proof that covers them** (`sife/lwe`,
+  `mife/lwe`). Theorem 2 of the PKC 2015 paper, cited so far, does not cover
+  noisy LWE keys. The proof is that of the full version (ePrint 2015/017,
+  Oct. 2015: Thm. 4.4 with Thms. 6.6 and 6.7), written out in F. Bourse's PhD
+  thesis (ENS 2017, Thm. 4.3.5 with Thms. 8.2.2, 8.2.3, 8.3.2). It reduces to
+  LWE with error width `sigma' = sigma / (1 + B sqrt(eta))` (`B = 2X`, and
+  `4X` per slot of `mife/lwe` in the library's ACFGU18 composition), and
+  `standard` now reads the 128-bit lattice-estimator table at `sigma'`
+  instead of `sigma`: `lwe_n` grows by 17 to 67 percent for
+  `8 <= X = Y <= 1000`, e.g. 896 -> 1280 for `eta = 10`, `X = Y = 50`, and
+  1024 -> 1408 for 100 MIFE slots of `eta = 1`; an encryption costs about
+  twice as much. No attack is known: the old dimensions still meet the
+  estimator for an attack on the public key alone.
+- **`mife/lwe_threshold` is refused under `standard`**, like ALS16 and
+  dMCFE-Paillier: at `sigma'` its flooding-enlarged `q` needs a dimension at
+  the very end of the 128-bit table (5888 to 6144) for a few small bounds and
+  beyond it for most others. Use `mife/ddh_threshold`, or
+  `mcfe/ring_lwe_threshold` with labels. The opt-in KL accounting (see
+  Added) would bring it within the table, but the refusal stays with it.
+- **Ring-LWE MIFE / MCFE sized for `3X`.** The ACFGU18 MIFE compiler needs a
+  single-input scheme secure for messages of norm `3X` (Fig. 4, footnote 12).
+  Up to v0.3.0 the BMMS21 widths were sized for `X`, which met the condition
+  only for nine or more clients (with three clients `sigma1` was 0.58 of the
+  required width). No attack is known.
+- **Threshold key shares bound to their public parameters.** Every key share
+  of the threshold LWE layers carries `pp_binding`, a digest of the
+  public-parameter fields its partial decryptions depend on (modulus and
+  dimension, servers and threshold, flooding distribution, width and
+  accounting, label hash, and the formats of the threshold MCFE), and a
+  server refuses a share bound to other parameters; the derandomised
+  flooding noise is seeded with the digest as well. A share served under
+  parameters that differ in one of these fields would answer a request a
+  second time under another derivation; for the label hash of the dense
+  tMCFE-LWE that gave an exact linear relation on the key share.
+- **Wide Gaussians at `bits(sigma) + 320` bits of MPFR precision**
+  (`BIGINT_GUARD_BITS`): the DCR keys and masks and all threshold flooding
+  were 2 to 19 bits short of their budgets at `+ 128`. The threshold
+  Gaussian flooding always uses this sampler, recorded in the decryption
+  keys.
+- **ML adapter: one ciphertext per client and label under threads** (since
+  v0.3.0). `encrypt_gradient` checked `(nid, label)` before encrypting and
+  recorded it afterwards, so two concurrent calls for one client and label
+  both succeeded and an aggregator could learn `gA - gB`. The pair is now
+  reserved under a lock first. A pickled or copied wrapper refuses the pairs
+  used so far but does not learn of later ones, so send each client's
+  gradient for a label through one wrapper. A pickled wrapper also carries
+  the master key and every client's key: ship a worker its client's own
+  crypto object (built from `wrapper.pp` and
+  `wrapper.kg.get_private_keys(nid)`), not the wrapper.
+- **`XofRandom` counters** are claimed atomically: two threads sharing an
+  instance could draw the same SHAKE block.
+- **The rounded Python sampler no longer uses `SystemRandom.gauss`**, which
+  kept the second Box-Muller value in a global: a future secret coefficient
+  stayed in memory between calls, and parent and child drew the same sample
+  after `fork()`.
+- **New code hardened during the review** (no released version affected):
+  the precomputations of the offline / online APIs are strictly one-time
+  (claimed under a lock, refused in another process, invalidated in a
+  forked child, not copyable or picklable); the native code wipes secret
+  rows, pads, key pieces and noise material on every path, errors included,
+  takes the exact sampler's constant at full precision and checks its
+  tables, checks sizes (`ValueError` instead of a panic) and never waits for
+  a lock while holding the GIL; binary threshold ciphertexts have a unique
+  encoding (values `>= q` refused, tags over the public parameters' digest
+  and the bytes), so a client cannot redraw the flooding noise of a key part
+  by re-encoding a ciphertext; servers and combiners refuse public
+  parameters changed in place and malformed key shares (`FEKeyError`);
+  BLS12-381 and ristretto255 decoders accept only canonical encodings, and
+  their discrete-log caches are bounded in size.
+
+### Performance
+
+Measured on an Apple M2 Max, one thread, `security_profile="standard"`,
+three clients, with the Rust extension (`benchmarks/PERFORMANCE.md` has the
+method and more rows):
+
+| workload | v0.3.0 (Python) | this release |
+| --- | ---: | ---: |
+| MCFE Ring-LWE, 10^4 gradient elements: client / aggregator | 197.5 / 280.0 ms | 18.2 / 7.5 ms; 17.95 / 6.24 ms with binary ciphertexts |
+| ... online, after `precompute_gradient` / `prepare_aggregation` (binary ciphertexts) | | 0.25 / 3.16 ms |
+| threshold MCFE Ring-LWE, 10^4 elements, `s = 3, t = 2`: client / key shares per round / partial decryption per server / aggregator | 213.5 / 275.9 / 528 / 1348 ms ¹ | 26.7 / 10.7 / 8.5 / 29.1 ms |
+| dense-LWE MCFE (`mcfe/lwe`), 200 elements: client / aggregator | 1021 / 1030 ms | 93.1 / 101.4 ms |
+| DDH MCFE, per element: client / aggregator / ciphertext | 10.75 / 11.10 ms, 936 B | 0.069 / 0.139 ms, 75 B ² |
+| SGP / Quad / MCFE FH-Multi-IPE, one round | 320 / 506 / 889 ms ³ | 30 / 48 / 47 ms |
+
+¹ The Python path at the same 212-bit `q`. ² `mcfe/ddh_ristretto255`
+against the 3072-bit `Z_p^*` group. ³ charm-crypto on MNT224 (Docker, same
+Mac) against BLS12-381.
+
+- **Native backend** (`pyfe4ai._rust_native`, see Added): the Ring-LWE MIFE
+  / MCFE encryption, decryption and key derivation of a whole tensor per
+  call, with the GIL released and optional threads (4 threads, binary
+  ciphertexts: MCFE client 6.2 ms, aggregator 3.6 ms); the threshold MCFE
+  (256-bit words for moduli up to `2^253`, the RNS ring, Shamir and
+  replicated dealing, partial decryption and combination); the dense-LWE MCFE label sums; the exact
+  FACCT sampler (0.45 to 1.1 us per sample instead of 7 to 12 us) and the
+  wide MPFR Gaussians (0.55 to 2 us instead of 8 to 12 us); ristretto255; and
+  BLS12-381 pairings (0.9 ms; charm MNT224 2.4 ms) with multi-scalar
+  multiplication for every product of powers. The outputs are those of the
+  Python code, which the tests check bit for bit; unsupported parameters
+  fall back to Python.
+- **Threshold MCFE defaults**: ciphertexts of 71 instead of 222 bytes per
+  element, a server's key shares per round of 0.89 / 0.44 MB at
+  `t = 2` / `t = 3` instead of 6.75 / 3.38 MB (plus the weight part once).
+  With the options of v0.3.0 the same round takes 39.1 / 40.9 / 65.4 /
+  177.0 ms on the native backend.
+- **Replicated sharing natively**: key shares at `(s, t) = (3, 2)` 272 -> 43
+  ms, at `(10, 5)` 26.9 -> 2.2 s (tMCFE Ring-LWE, 10^4 elements).
+- **Offline / online phases** (see Added) move the randomness and label
+  masks out of the round: online, 20 elements, MCFE-DDH / Damgård / Paillier
+  clients 212 / 212 / 717 -> 0.67 / 0.67 / 0.39 ms.
+- **Cheaper label hash** (SHAKE128 with rejection): MCFE Ring-LWE aggregator
+  7.40 -> 5.87 ms (binary ciphertexts). With the opt-in RNS modulus of the
+  MIFE / MCFE / dMCFE Ring-LWE schemes the aggregator takes 5.69 ms and its
+  online phase 2.65 ms (3.16 ms with the prime).
+- **Costs of the security defaults.** FACCT is most of the MCFE client's 18
+  ms (the offline phase moves it out of the round); on the Python backend the
+  same client takes about 350 ms. ABDP15 key generation under `standard` takes
+  about twice as long (`sife/lwe`, `eta = 10`, `X = Y = 50`: `lwe_n` 1280,
+  setup 8.3 s; `mife/lwe` with 100 slots: 47 s).
+- Python path: `NTT(a)`, `NTT(pk)` and `NTT(sk_y)` cached and decryption
+  products summed in the NTT domain (same outputs); dense-LWE MCFE keys
+  parsed once per object.
+
+### Added
+
+- **Native backend** in Rust and PyO3 (`pyfe4ai._rust_native`, sources in
+  `rust/`; `rust/core` has no dependencies). `pip install` builds it when
+  `cargo` is on the `PATH` (in a source checkout also `python
+  tools/build_rust.py`; `PYFE4AI_NO_NATIVE=1` skips it); without it the
+  package runs its Python implementation. `pyfe4ai.backend`
+  selects `"auto"` (default), `"python"` or `"native"` per process
+  (`set_backend`), per block (`with backend(...)`) or with
+  `PYFE4AI_BACKEND`, and the threads of one call (`set_threads`,
+  `PYFE4AI_THREADS`, default 1); `describe()` reports the build for
+  benchmark records. The scheme and primitive layers call its operations
+  (`pyfe4ai.backend.interface`, on `pyfe4ai.backend.ops()` and
+  `pyfe4ai.backend.ring(q, ring_n)`): `pyfe4ai.backend.python_impl` is the
+  reference, `pyfe4ai.backend.native_impl` the extension, which hands every
+  input its kernels do not take to the reference; the tests check that both
+  give the same outputs. Native sampling reads one 32-byte seed from the
+  operating system per call and expands it with ChaCha20 (a standard stream
+  cipher, not an SP 800-90A DRBG, which matters only for FIPS validation);
+  no generator state outlives a call.
+- **`pyfe4ai.backend_info()`** (also `pyfe4ai.backend.backend_info()`):
+  the backend the calling thread uses (`"native"` or `"python"`) and its
+  selection, whether the extension is available, its version, build and
+  file (or why it could not be imported), the threads per native call, the
+  Gaussian sampler (library-wide and the schemes' recorded default) and the
+  parameter cache directory, as a dict of plain values. Importing `pyfe4ai`
+  still loads neither the backend nor the extension; calling it does.
+- **Notice without the extension**: the first time the library falls back to
+  its Python implementation because the extension is not built (under the
+  default `"auto"`, or `PYFE4AI_BACKEND=native` set in the environment, which
+  still runs Python), it issues one `FEWarning` per process, attributed to
+  the application's call: the Python implementation is about 5 to 35 times
+  slower on the lattice schemes (one thread, measured with
+  `benchmarks/run.py fl-compare`), and the extension is built by installing
+  from source with a Rust toolchain on the `PATH` (the notice points to the
+  installation documentation and names no file of a source checkout, which a
+  wheel does not ship). Not given under an
+  explicit `"python"` (`PYFE4AI_BACKEND=python`, `set_backend`, `backend()`),
+  nor while the library's own modules are imported; a warnings filter
+  silences it (`warnings.filterwarnings("ignore", "the native extension",
+  FEWarning)`). `set_backend("native")` and `backend("native")` still raise
+  `ImportError` without the extension. The text is
+  `pyfe4ai.backend.MISSING_EXTENSION_NOTICE`.
+- **BLS12-381** (`pyfe4ai.primitives.pairing.bls12_381`, behind charm's `PairingGroup`
+  interface; `group.hash` is RFC 9380 hash_to_curve),
+  `pairing_backend.multiexp`, `pow_many` and `deserialize_many`;
+  `gt_dlog(..., cache=False)`. charm-crypto is needed only for other curves.
+- **DDH schemes over ristretto255** (`sife/`, `mife/`,
+  `mcfe/ddh_ristretto255`, or `group="ristretto255"` with the `ddh` variants
+  in `FESchemeWrapper`; status *unreviewed*): RFC 9496, labels hashed with
+  RFC 9380 `hash_to_ristretto255`, about 126-bit security; curve25519-dalek in
+  the extension, a pure-Python fallback (not constant-time) without it.
+- **ML adapter for the threshold MCFE** (`mcfe/ring_lwe_threshold`):
+  `FESchemeWrapper` runs the decryption servers in-process;
+  `prepare_aggregation` and `aggregate_gradients` take `servers=` (default
+  the first `t` of `lst_sid`) and hand each server its label key share per
+  round and its weight key share once per weights. The steps are also
+  separate functions, `partial_decrypt_gradients` (one server) and
+  `combine_partial_decryptions`, whose `ThresholdPartial` has `to_dict` /
+  `from_dict` (binary values as base64, layout checked).
+  `EncryptedGradient.to_dict` writes chunk fields holding bytes as base64
+  strings named in the layer's `base64` list. A `PreparedAggregation` holds
+  key material (the servers' label key shares). The adapter refuses
+  `flooding_accounting="kl"` and the other threshold variants.
+- **Offline / online encryption and key preparation**:
+  `MCFERingLWE.precompute(label, shapes)` and `encrypt_lst_ndarray(...,
+  precomputed=...)`; `precompute(label, shapes)` and `prepare_key(dk, label,
+  shapes)` for MCFE-DDH, -Damgård and -Paillier and their decentralized
+  variants; `precompute(shapes)` for SIFE- / MIFE-Paillier and MIFE-DDH; ML
+  adapter `precompute_gradient`, `encrypt_gradient(precomputed=...)`,
+  `prepare_aggregation` and `aggregate_gradients(prepared=...)`. The same
+  ciphertexts as the one-shot calls. A precomputation can be used once
+  (`pyfe4ai.core.one_time`).
+- `ct_format="binary"` for the Ring-LWE MIFE / MCFE ciphertexts (crypto
+  config; `FESchemeWrapper(crypto_options=...)`): a versioned compact
+  encoding, 37 % of the JSON size; JSON stays their default, and decryption
+  reads both.
+- Opt-in **RNS modulus** for the Ring-LWE MIFE, MCFE and decentralized MCFE
+  (`ring_modulus="rns"`: `q` a product of two NTT primes of the prime's bit
+  length; same ciphertext formats, `q_factors` in the public parameters).
+  Security review: the documentation page *RNS modulus for the Ring-LWE
+  schemes* (`docs/rns_modulus_review.rst`).
+- Opt-in **seed-expanded replicated sharing** for the threshold LWE layers
+  (`sharing="replicated-seeded"`): every key piece but one is expanded from
+  a secret 32-byte seed with SHAKE-256, so a server stores at most one full
+  piece -- the largest tMCFE-Ring-LWE key share under `standard` (3 clients,
+  `ring_n` 8192) at `(10, 5)` is 3.4 MB instead of 428 MB, dealt in 2.0
+  instead of 30 s. Its key shares hide the key computationally (SHAKE-256
+  keyed by the seeds as a PRF) instead of perfectly; full replicated sharing
+  stays the default.
+- Opt-in **KL accounting of the threshold flooding** for `mife/lwe_threshold`
+  and `mcfe/ring_lwe_threshold` with `t = s`
+  (`flooding_accounting="kl"`, a mandatory `max_partial_decryptions` budget
+  `Q`, and a `PartialDecryptionBudget` per server that the deployment keeps
+  across restarts; `pyfe4ai.schemes.threshold.kl`). It gives a weaker
+  guarantee -- about `stat_param - 6.85` bits in the bit-security sense of
+  Micciancio and Walter (a total statistical distance of about `2^-65` at
+  `stat_param = 128`), for the first `Q` partial decryptions of every server
+  -- for a smaller `q`: 178 bits for
+  `mcfe/ring_lwe_threshold` under `standard` with `N = s Q k = 2^53`
+  flooded coefficients (Gaussian flooding, which `"kl"` uses), against 212
+  bits with the default uniform flooding. `t < s` and `mcfe/lwe_threshold`
+  refuse it. A budget cannot be copied or pickled and counts only in the
+  process that made it: in a forked child (also one that later gets the
+  parent's pid) `check()` and `consume()` raise `FESchemeError`, since parent
+  and child would otherwise each count from the copied value.
+- Opt-in **packed layout for `sife/fullysec_ring_lwe`**
+  (`ndarray_layout="packed"`, experimental: the leveraging argument is the
+  project's own, independently checked, not externally reviewed): one
+  ciphertext carries up to `ring_n` inner products, e.g. 4096 elements at 182
+  bytes each for `eta = 1`, `X = 100`.
+- **Exact sampler API**: `pyfe4ai.primitives.sampling.discrete_gaussian_facct`,
+  `sampler="facct"` on `discrete_gaussian_matrix` / `discrete_gaussian_bigint`,
+  the `gaussian_sampler()` context manager, `set_gaussian_sampler()` and
+  `PYFE4AI_GAUSSIAN_SAMPLER=facct` for the schemes that follow the
+  library-wide choice; output platform-independent for a given bit source
+  (known-answer tests); not constant-time. `discrete_gaussian_bigint` takes
+  an optional higher `precision`.
+- `examples/mcfe_ring_lwe_threshold_demo.py`; benchmarks
+  `fl-compare`, `offline-potential`, `replicated-sharing`,
+  `fullysec-packing` and `sampling` (commands of `benchmarks/run.py`, see
+  Code organization), with `benchmarks/PERFORMANCE.md`;
+  `tools/params/estimate_rns_modulus.py`.
+- Regression tests of the October 2026 review in `tests/review/`.
+- The pairing examples run on the default BLS12-381 (they named MNT224).
+- Documentation pages: Installation, Quick start, Choosing a scheme (the
+  registry's families, assumptions, capabilities and status, and a
+  task-to-scheme table), Configuration options (every scheme's options,
+  generated from the config classes), Environment variables and the
+  parameter cache, Threshold decryption and the ML adapter, Threads,
+  processes and copies, Upgrading from 0.3.0, the RNS modulus review, and
+  API pages for the new modules; the pages of the v0.3.0 documentation that
+  no longer exist (`api/utils.html`, `api/base.html`,
+  `api/config_types.html`, moved source pages) redirect to their new place.
+- The project page (`site/`) is redesigned: dark and light themes, where FE
+  fits next to other privacy technologies, animated how-it-works and
+  architecture diagrams, a scheme matrix generated from the registry
+  (`tools/gen_site_matrix.py`, kept in sync by `tests/api/test_site_matrix.py`),
+  the Rust and Python backends compared on the same code, a social card.
+- A shorter README: what functional encryption is, the quick start and a
+  first example up front, the Rust and Python backends compared on the same
+  code, and links to the documentation pages; the generated scheme status
+  table, the parameters and measured costs per family, the details of the
+  known issues and of the fixed threshold leak, and the repository layout
+  are collapsible sections. The Docker image of the pairing tests is run with
+  `PYFE4AI_TEST_PAIRING_GROUP=MNT224` (it has no Rust extension, so the default
+  BLS12-381 would skip them). `CITATION.cff` carries the full title of the
+  BibTeX entries.
+- CI: a `rust-native` job builds the extension and runs `cargo test` and the
+  full suite on the native backend (Python 3.10 and 3.13) and on the Python
+  backend (Python 3.10).
+
+### Changed
+
+- **`FESecurityWarning`s are attributed to the application's call** -- the
+  first frame outside pyfe4ai, as for `FEWarning` -- instead of a line inside
+  the library: the warning of the pairing schemes under `standard` (now
+  about BLS12-381's 120 to 126-bit security; it pointed at the library's base
+  class), that of a known-insecure scheme (it pointed at the scheme module;
+  `core.status.warn_if_known_insecure` takes `stacklevel=None` by default)
+  and the new ones of this release (an explicit Shamir sharing with `t < s`,
+  a legacy Shamir key share served, a Gaussian sampler overriding that of
+  the public parameters). Python's default filter shows each once per call
+  site of the application (the pairing warning was shown once per process),
+  and a warnings filter on the application's module matches them.
+- **Key generators refuse server and client ids that are not a `str` or an
+  `int`** (`lst_sid`, `lst_nid`; `pyfe4ai.core.ids.check_id_list`). A list of
+  other values -- `bytes`, floats, `None`, `bool`, tuples, numpy integers --,
+  a list that mixes `str` and `int` ids, and a value that is not a list or
+  tuple (a string, a set, a dict) are now refused with `FEValidationError`
+  when the key generator (or `FESchemeWrapper`) is built ("lst_sid must be a
+  list of server ids, each a str or an int (convert numpy integers with
+  int(), other ids with str())", "lst_sid mixes str and int server ids
+  (convert them all with str(), or all with int())", and the same for
+  `lst_nid`). v0.3.0 accepted them, and some worked in memory: server ids of
+  any of these types in the threshold schemes, client ids in the MIFE and
+  MCFE LWE, Ring-LWE, Paillier and Damgård schemes and the ML adapter over
+  them (also through JSON for floats, `None`, `bool` and tuples); partial
+  decryptions and the wire records refuse them since this release, and
+  mixed or non-JSON ids failed elsewhere with a bare `TypeError` (sorting `1`
+  and `"a"`, or JSON keys). **Migration:** convert the ids before building
+  the key generator -- `[int(s) for s in np_ids]` for numpy integers,
+  `[str(s) for s in ids]` for bytes, tuples, floats or a mixed list -- and
+  use the same ids afterwards; `str` and `int` lists work as before.
+  After setup a numpy integer is read as the `int` it equals wherever an id
+  is given (`pyfe4ai.core.ids.as_id`): the server or client named when keys
+  are issued, a crypto object's `id`, the enrolled servers of
+  `share_decrypt` (e.g. `list(rng.choice(lst_sid, t, replace=False))`),
+  `servers=` / `server=` of the ML adapter, `nid=` of `encrypt_gradient`,
+  the keys of the weights and of the encrypted gradients the ML adapter
+  aggregates, and the ids of partial decryptions and gradients read back;
+  key shares,
+  partial decryptions and gradients then carry plain ints (with numpy
+  integers v0.3.0 combined correctly in memory, but its key shares,
+  partials and gradients did not go through `json.dumps`). Other values
+  that equal an id -- `1.0`, `True`, `numpy.bool_` -- are no ids after setup
+  either: the key generators issue no key share and no encryption key for
+  them (`None`, as for an unknown server or client, with the `FEWarning` the
+  scheme gives an unknown one; v0.3.0 issued client 1's key for `True` or
+  `1.0` in every MIFE / MCFE scheme but the MCFE DDH ones, and in
+  `quadratic/miqfe`), a threshold
+  server refuses an
+  enrolled set that holds one, or an `id` that is one, with
+  `FEValidationError` before computing anything (the combiner refused their
+  partial decryptions; v0.3.0 combined them), and the ML adapter refuses
+  such `servers=` / `server=`, and weights or encrypted gradients keyed by
+  them, with `ValueError` (v0.3.0 aggregated weights keyed by `1.0`; weights
+  keyed by numpy integers failed with a `TypeError` in
+  `mcfe/ring_lwe_threshold`).
+- **Ring-LWE key rows: two numpy shapes are refused** (`mcfe/ring_lwe` and
+  its threshold and decentralized variants, `mife/ring_lwe`,
+  `sife/ring_lwe`, `sife/fullysec_ring_lwe`). The row checks of this release
+  take a row as a list, a tuple or a 1-D numpy array, in a list, a tuple or a
+  numpy array; v0.3.0 also encrypted with rows of shape `(ring_n, 1)` (a 2-D
+  column) and with a 3-D key container, which are now refused with
+  `FEKeyError`. The library never writes either form; `numpy.ravel` each row
+  (or `.tolist()` the key) to keep using such a key.
+- **Stricter parsing of threshold DDH key shares and serialised gradients.**
+  A `mife/ddh_threshold` or `mcfe/ddh_threshold` server accepts the values
+  of a key share (`d` and `z`; the two values of `d`) only as the decimal
+  strings the key generators write (as in v0.3.0): it read them with
+  `gmpy2.mpz`, which also took ints, `mpz`, bytes, floats (truncated),
+  `True` or text such as `" 12"` and `"1_2"`; these now raise `FEKeyError`.
+  `EncryptedGradient.from_dict()` checks the layout and the field types,
+  as `ThresholdPartial.from_dict()` does: exactly the keys `nid` (a client
+  id: a `str` or an `int`),
+  `shape` (a list of non-negative ints), `precision` (a non-negative int),
+  `mode` (`"decimal"` or `"binary"`) and `ciphertexts` (a non-empty list of
+  layers), and per-element layers `{"shape", "data"}` with one ciphertext
+  (a dict) under each index key in the spelling `to_dict()` writes
+  (`"(0, 1)"`); extra keys, other types, other spellings of an index
+  (`"(0,1)"`, `"( 0, 1)"`, `"(+0, 1)"`) and other entries now raise
+  `ValueError`. `EncryptedFeatures.from_dict()` likewise: exactly the keys
+  `ciphertext` (a dict), `dim` (a positive int), `precision` (a non-negative
+  int) and `mode` (`"decimal"` or `"binary"`); it took any keys and types (a
+  missing key: `KeyError`). Everything the library writes reads back as
+  before for client ids that are a `str` or an `int` (`lst_nid = [0, 1, 2]`
+  included); a gradient whose `nid` is of another type (a `float`, `None`, a
+  `bool`, a tuple, which JSON turns into a list) is refused (`ValueError`).
+- **Partial decryptions of different ciphertexts raise instead of combining
+  to `None`** (`combine_decrypt` of every threshold scheme: tMIFE-DDH,
+  tMIFE-LWE, tMCFE-DDH, tMCFE-LWE, tMCFE-Ring-LWE, tMCFE-FH-Multi-IPE). A
+  group whose partial decryptions disagree on the ciphertexts they
+  decrypted (a server that decrypted another round, a faulty server; for
+  tMCFE-FH-Multi-IPE also key shares of two sharings, `key_id`) returned
+  `None`, while the ndarray path (`decrypt_lst_ndarray_ct`) raised
+  `FESchemeError` ("element ... does not decrypt"). Both now raise
+  `FESchemeError` with the one message "partial decryptions disagree on the
+  ciphertexts they decrypted"
+  (`pyfe4ai.schemes.threshold.roles.DISAGREEING_PARTIALS`); the ndarray path
+  reports that message instead of "element ... does not decrypt" for such
+  elements. `None` (with an `FEWarning`) stays the answer to a value out of
+  range. Code that tested the result of
+  `combine_decrypt` for `None` to detect a faulty server catches
+  `FESchemeError` instead.
+- **`sife/fullysec_ring_lwe` samples exact Gaussians** for its keys and
+  encryption noise in both layouts (`gaussian_sampler = "rounded"` restores
+  the previous draws). With the rounded sampler its keys were about `2^-47`
+  to `2^-40.5` from `D_{Z,sigma1}` for an ideal rounded Gaussian, and about
+  `2^-12` with the double-precision path, terms its adaptive proof does not
+  budget.
+- The pairing-scheme tests run on `PYFE4AI_TEST_PAIRING_GROUP` (default
+  BLS12-381) and skip when no backend implements it.
+- The NTT root search requires `root^n = -1 (mod q)`, which selects the same
+  roots for every prime.
+- Discrete-log tables are keyed by value (the old string keys are still
+  read).
+- Documentation claimed more than the code: the flooding argument of tMCFE
+  (Ring-LWE) and tMIFE (LWE) is statistical per answer and gives no bound
+  for many answers to varied ciphertexts of a corrupted client, and the
+  per-sample `0.02 / sigma^2` figure of the rounded sampler holds for the
+  ideal rounded Gaussian only, not for its double-precision implementation.
+
+### Fixed
+
+- **ML adapter: gradients filed under another client gave a wrong aggregate**
+  (`aggregate_gradients` of `mcfe/lwe`, `mcfe/ring_lwe`, `mcfe/fullysec_lwe`;
+  integrity, low; in v0.3.0 too). `aggregate_gradients` decrypts each
+  gradient of `{nid: EncryptedGradient}` as the client its key names and
+  never compared the key with the gradient's own `nid`: two gradients filed
+  under each other's client gave a silently wrong aggregate in the lattice
+  MCFE schemes (the DH and Paillier ones failed to decrypt them, the
+  threshold one refused them as not authenticated). `aggregate_gradients`
+  and `partial_decrypt_gradients` of every MCFE scheme now refuse a gradient
+  whose `nid` is not its key (numpy integer keys and nids read as ints) with
+  `ValueError` ("an encrypted gradient is filed under another client than
+  the one it names (its nid)"), before anything is decrypted. SIFE, which
+  aggregates one client, is unchanged.
+- **Threshold LWE layers: two threads could get key shares of two sharings
+  of one key** (`mife/lwe_threshold`, `mcfe/lwe_threshold`; integrity,
+  medium; in v0.3.0 too). The key generators kept the key shares they issue
+  in `dict_dk` with no synchronisation between the check, the dealing and
+  the store: two threads asking for the key shares of the same weights for
+  the first time both dealt, and servers got shares of two different
+  sharings. These key shares carry no sharing id, so the combiner could not
+  refuse the mix, and the partial decryptions combined to a wrong value
+  without an error (tMCFE-LWE almost always inside the decoding bound,
+  tMIFE-LWE about one time in five, otherwise `None`). The key generators
+  now keep one sharing per weights (`dict_dk.setdefault`) and every request
+  issues from the stored one. Single-threaded issuance, the key shares and
+  the pickled state of the key generators are unchanged.
+- **Threshold DDH and FH-MCFE layers: the same race** (`mife/ddh_threshold`,
+  `mcfe/ddh_threshold`, `mcfe/fh_multi_ipe_pairing_threshold`; availability,
+  low; in v0.3.0 too). Two threads asking for the key shares of the same
+  weights for the first time could both deal, and the servers got shares of
+  two sharings. There the mix does not decode (the discrete logarithm of a
+  mixed reconstruction is almost never within the bound): the partial
+  decryptions combined to `None`, and the servers had to fetch their key
+  shares again. These key generators now also keep one sharing per weights
+  (`dict_dk.setdefault`) and issue every key share from it; single-threaded
+  issuance, the key shares and the pickled state are unchanged.
+- **Ring-LWE encryption keys with fewer than `eta` rows** (`mcfe/ring_lwe`
+  and its threshold and decentralized variants, `mife/ring_lwe`; info). An
+  encryption key whose pad `u` had fewer rows than `eta` gave a single
+  ciphertext without the missing `ct0` rows (refused only by the decryption,
+  as a malformed ciphertext), and the packed ndarray encryption and its
+  precomputation failed with a bare `IndexError`, as did any path with fewer
+  rows of `pk`. All of them now refuse such a key at encryption with
+  `FEKeyError` ("the encryption key has fewer than eta rows of pk or u"), in
+  both backends. Well-formed keys encrypt as before. The same holds for
+  `sife/ring_lwe` (a `pk` with fewer rows: a bare `IndexError` /
+  `ValueError`) and `sife/fullysec_ring_lwe` (a `pk` with fewer rows silently
+  gave ciphertexts with fewer `ct` rows, refused only by the decryption; also
+  its packed and ndarray paths), and for rows of `pk` or `u` that are not
+  `ring_n` values in all of these schemes (a ciphertext of another length, or
+  an `IndexError`): `FEKeyError` ("the encryption key has a row of … that is
+  not ring_n values") before anything is drawn. A row is any 1-D sequence of
+  values -- a list, a tuple or a 1-D numpy array, in a list, a tuple or a
+  numpy array -- so keys converted to numpy arrays encrypt as before.
+- **An encryption key that is not a dict** (`keys["sk"]` given as `None`, a
+  list, a string, ...; info). The encryption paths that read the key's
+  fields through `.get` or `in` failed on it with a bare `AttributeError`
+  or `TypeError` (`mcfe/lwe`, `mcfe/fullysec_lwe` and their threshold and
+  decentralized variants, `mife/lwe_threshold`, `mcfe/ring_lwe_threshold`;
+  for `None` or an int also `mife/ring_lwe`, `mcfe/ring_lwe` and its
+  decentralized variant, and `sife/ring_lwe` and `sife/fullysec_ring_lwe`).
+  These schemes now refuse such a key with
+  `FEKeyError` ("the encryption key (keys['sk']) is not a dict of its
+  fields") in every encryption path (single values, ndarrays, the
+  precomputation, a decentralized key share), before anything is drawn. A
+  crypto object built without `sk` and keys that are dicts behave as before.
+- **Decentralized MCFE over Ring-LWE: key shares from malformed keys or
+  shares** (`mcfe/ring_lwe_decentralized`; integrity on the Python backend).
+  `derive_function_decryption_key_share` read the client's pad `u` and IPFE
+  secret `s` (`eta` polynomials of `ring_n` values): with fewer rows the
+  Python backend dropped the missing ones and published a key share whose
+  combined key decrypted to wrong values inside the bound, while the native
+  backend failed with a bare `ValueError`; rows of another length gave
+  `IndexError` / `ValueError`. `combine_function_decryption_key_share` summed
+  shares whose `sk_y`, `z` or `z_chunks` entries were not `ring_n` values
+  (natively a bare `ValueError`, in Python the shortest length: a wrong
+  key). Both now refuse such keys and shares with `FEKeyError` (constant
+  messages) before any computation, in both backends. Rows and values held as
+  tuples or 1-D numpy arrays are accepted as before.
+- Threshold combiners (`combine_decrypt` of every threshold scheme): a
+  partial decryption whose `sid` was not a server id (e.g. `bytes`), or whose
+  `lst_sid_enrolled` was not a list of server ids, failed with a bare
+  `TypeError` while the error message was built (sorting mixed types; its
+  text depended on the hash seed), or with an unrelated `FESchemeError`. It
+  is now refused with `FEValidationError` and a constant message holding none
+  of the caller's values. A server id is a `str` or an `int` (not a `bool`;
+  `pyfe4ai.core.ids.is_id`): partial decryptions of integer servers
+  (`lst_sid = [1, 2, 3]`) combine as before, and a message that lists the
+  contributors and the enrolled set orders ids of both types by `repr`.
+- **Integer client ids in the DDH and pairing schemes** (`mife/ddh`,
+  `mife/ddh_ristretto255`, `mife/ddh_threshold`, `mife/fh_ipe_pairing`,
+  `mife/fh_multi_ipe_pairing`, `mcfe/ddh`, `mcfe/ddh_ristretto255`,
+  `mcfe/ddh_threshold`, `mcfe/ddh_decentralized`; in v0.3.0 too). Their key
+  generators accepted `lst_nid = [0, 1, 2]`, but issuing a functional key
+  failed with a bare `TypeError` (a message built as `"fusion weight of " +
+  nid`), and the MCFE DDH key generators issued no encryption key for a
+  client id that is not a string (`None` with an `FEWarning`, then
+  `FEKeyError` or `TypeError` at encryption, also through the ML adapter).
+  Integer client ids now work as in the other schemes; string ids give the
+  same keys, ciphertexts and messages as before.
+- **Integer server ids and ciphertexts sent as JSON** (the threshold schemes
+  that tag ciphertexts: `mife/lwe_threshold`, `mcfe/ring_lwe_threshold`,
+  `mcfe/fh_multi_ipe_pairing_threshold`; in v0.3.0 too). A client tags each
+  ciphertext for every server (`tags`, keyed by server id); JSON writes the
+  key of server `1` as `"1"`, so after a JSON round trip (e.g.
+  `EncryptedGradient.to_dict()` / `from_dict()` in the ML adapter) server
+  `1` found no tag and refused the ciphertext ("not authenticated"). A server
+  with an integer id now also looks for its tag under the id's decimal
+  string; the tag still verifies under that server's key only. String ids
+  are looked up as before.
+- **Server and client ids** (`pyfe4ai.core.ids`). A `lst_sid` or `lst_nid`
+  whose ids cannot key a dict -- an unhashable entry (a list, a dict), or a
+  value that is not a list (an int, an iterator) -- failed with a bare
+  `TypeError` (`unhashable type`, `object of type 'int' has no len()`) in
+  the key generator; it is now refused there with `FEValidationError`
+  ("lst_sid must be a list of server ids (str or int)", "lst_nid must be a
+  list of client ids (str or int)"). Repeated ids keep their message. Error
+  messages that list client ids (`aggregate_gradients` and
+  `partial_decrypt_gradients` with a prepared key for other clients; the
+  key-share combination of `mcfe/ddh_decentralized`, `mcfe/lwe_decentralized`
+  and `mcfe/paillier_decentralized` without every client) order ids of both
+  types by `repr` instead of raising `TypeError`.
+- `EncryptedGradient.to_dict()` failed with `KeyError: ()` on the packed
+  ciphertext layers of the Ring-LWE MCFE schemes (`mcfe/ring_lwe` and its
+  threshold and decentralized variants; in v0.3.0 too), and `from_dict()`
+  could not rebuild them. Packed layers are written as `{"packed": {"shape", "first_chunk",
+  "chunks"}}` (the per-element format is unchanged), and `from_dict()` checks
+  the packed layout.
+
+
 ## [0.3.0] — 2026-10-13
 
 Privacy fixes: every scheme that was insecure in v0.2.0 now implements a
@@ -757,6 +1772,7 @@ before using them.
 
 Initial public release.
 
+[0.4.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/spire-studio/pyfe4ai/releases/tag/v0.1.0

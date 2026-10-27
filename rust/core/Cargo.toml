@@ -1,0 +1,20 @@
+[package]
+name = "pyfe4ai-core"
+version = "0.4.0"
+edition = "2021"
+rust-version = "1.77"
+license = "Apache-2.0"
+description = "Ring-LWE and dense-LWE kernels of PyFE4AI (no dependencies); bound to Python by pyfe4ai-native"
+publish = false
+
+# Standalone: no dependencies, so it builds and tests offline.
+[workspace]
+
+[lib]
+path = "src/lib.rs"
+# cdylib: the C ABI of src/capi.rs, which the Python tests load with ctypes
+crate-type = ["rlib", "cdylib"]
+
+[profile.release]
+opt-level = 3
+codegen-units = 1

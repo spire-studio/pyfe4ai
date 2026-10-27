@@ -7,7 +7,8 @@ import pytest
 
 from pyfe4ai.schemes.sife.fullysec_lwe import SIFEFullySecLWE
 from pyfe4ai.schemes.sife.fullysec_lwe import SIFEFullySecLWEKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.base import cache_dir
 
 
 @pytest.fixture
@@ -29,7 +30,7 @@ def test_key_generator(kg_config):
     assert kg.lwe_n == kg_config["lwe_n"]
 
     config_folder = os.path.join(
-        "config", "authority", CryptoCONST.TYPE_SIFE_FULLYSEC_LWE
+        cache_dir(), "authority", CryptoCONST.TYPE_SIFE_FULLYSEC_LWE
     )
     assert os.path.exists(config_folder)
     param_file = os.path.join(config_folder, "param.json")
@@ -125,7 +126,7 @@ def test_m_meets_theorem_2_of_als16(bound, eta, lwe_n):
     """ALS16 Theorem 2 assumes m >= 4 n log2 q; the recipe used 1.01 n log2 q."""
     import math
 
-    from pyfe4ai.utils.lwe_utils import derive_fullysec_lwe_parameters
+    from pyfe4ai.primitives.lattice.lwe_utils import derive_fullysec_lwe_parameters
 
     _, q, m, *_ = derive_fullysec_lwe_parameters(bound, bound, eta, lwe_n)
     assert m >= 4 * lwe_n * math.log2(int(q))

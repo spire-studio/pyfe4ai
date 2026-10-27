@@ -8,10 +8,10 @@ Dec1 output encodes <x_i + u_i, y_i> for a uniform u_i.
 import gmpy2 as gp
 import pytest
 
-from pyfe4ai.utils.exceptions import FESchemeError
-from pyfe4ai.utils.lwe_utils import decode_scaled
-from pyfe4ai.utils.matrix_utils import digits_to_vector, vecdot_mod
-from pyfe4ai.utils.modular_utils import pow_signed
+from pyfe4ai.core.exceptions import FESchemeError
+from pyfe4ai.primitives.lattice.lwe_utils import decode_scaled
+from pyfe4ai.primitives.lattice.matrix_utils import digits_to_vector, vecdot_mod
+from pyfe4ai.primitives.groups.modular_utils import pow_signed
 
 NIDS = ["nid_0", "nid_1", "nid_2"]
 
@@ -37,7 +37,7 @@ def _damgard():
 
 
 def _ddh():
-    from pyfe4ai.schemes.mife.ddh import MIFE, MIFEKeyGenerator
+    from pyfe4ai.schemes.mife.ddh import MIFEDDH, MIFEDDHKeyGenerator
 
     cfg = {"sec_param": 128, "eta": 2, "n": 3, "s": 1, "lst_nid": NIDS}
 
@@ -51,7 +51,7 @@ def _ddh():
     def expected(pp, value):
         return gp.powmod(gp.mpz(pp["g"]), gp.mpz(value), gp.mpz(pp["p"]))
 
-    return MIFEKeyGenerator, MIFE, cfg, slot_value, expected
+    return MIFEDDHKeyGenerator, MIFEDDH, cfg, slot_value, expected
 
 
 def _paillier():

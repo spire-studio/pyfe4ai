@@ -6,7 +6,7 @@ Public-key functional encryption for degree-2 polynomials (Quad)
 
 * type:     public-key encryption; keys for matrices ``F``, decryption gives
   ``x^T F y``
-* setting:  asymmetric pairing group (default MNT224); semi-adaptive
+* setting:  asymmetric pairing group (default BLS12-381); semi-adaptive
   simulation security from bilateral DLIN, DDH in G1 and SXDH
 
 Setup: ``a <- DDH`` (``(1, a)``), ``B <- DLIN`` (``[[b1, 0], [0, b2], [1, 1]]``),
@@ -46,17 +46,22 @@ import random
 
 import numpy as np
 
-from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
-from pyfe4ai.schemes.ipfe import decoded_layer
-from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup, pair
-from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
-from pyfe4ai.utils.pairing_backend import require_pairing_backend
-from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.validation import int_vector
-from pyfe4ai.utils.validation import scale_to_int
+from pyfe4ai.core.base import IPFEAbsCrypto
+from pyfe4ai.core.base import decoded_layer
+from pyfe4ai.core.base import IPFEAbsKeyGenerator
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, ZR, PairingGroup, multi_pair, pair
+from pyfe4ai.primitives.pairing.pairing_backend import deserialize_many, multiexp, pow_many
+from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
+from pyfe4ai.primitives.pairing.pairing_backend import require_pairing_backend
+from pyfe4ai.primitives.pairing.pairing_utils import bounded_discrete_log_gt
+from pyfe4ai.core.formats.pairing import QuadCiphertext
+from pyfe4ai.core.formats.pairing import QuadFunctionalKey
+from pyfe4ai.core.formats.pairing import QuadIPFEPublicKey
+from pyfe4ai.core.formats.pairing import QuadParameters
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai._validation import int_vector
+from pyfe4ai._validation import scale_to_int
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +86,14 @@ class _Ctx:
         self.p = int(self.group.order())
         self.g1 = g1 if g1 is not None else self.group.random(G1)
         self.g2 = g2 if g2 is not None else self.group.random(G2)
-        self.gt = pair(self.g1, self.g2)
+        self._gt = None
+
+    @property
+    def gt(self):
+        """``e(g1, g2)``, computed on first use (decryption only)."""
+        if self._gt is None:
+            self._gt = pair(self.g1, self.g2)
+        return self._gt
 
     def rand(self) -> int:
         return _CSPRNG.randrange(1, self.p)
@@ -95,13 +107,18 @@ class _Ctx:
     def de(self, text: str):
         return self.group.deserialize(text.encode("utf-8"))
 
+    def de_many(self, texts: list) -> list:
+        return deserialize_many(self.group, texts)
+
     def multiexp(self, bases: list, exps: list):
-        acc = bases[0] ** self.zr(0)
-        for b, e in zip(bases, exps):
-            e = int(e) % self.p
-            if e:
-                acc = acc * (b ** self.zr(e))
-        return acc
+        """prod_j bases[j]^exps[j]: one multi-scalar multiplication on BLS12-381."""
+        return multiexp(bases, exps, self.group)
+
+    def g1v(self, values: list) -> list:
+        return [self.ser(v) for v in pow_many(self.g1, values, self.group)]
+
+    def g2v(self, values: list) -> list:
+        return [self.ser(v) for v in pow_many(self.g2, values, self.group)]
 
 
 class QuadraticQuadKeyGenerator(IPFEAbsKeyGenerator):
@@ -115,7 +132,7 @@ class QuadraticQuadKeyGenerator(IPFEAbsKeyGenerator):
         Args:
             config: ``n`` (length of ``x``), ``m`` (length of ``y``), ``bound``
                 (``B`` on every entry of ``x``, ``y`` and ``F``) and
-                ``pairing_group_param`` (asymmetric, default MNT224).
+                ``pairing_group_param`` (asymmetric, default BLS12-381).
         """
         super().__init__(config, **kwargs)
         require_pairing_backend()
@@ -157,27 +174,29 @@ class QuadraticQuadKeyGenerator(IPFEAbsKeyGenerator):
         ua = [(row[0] * a[0] + row[1] * a[1]) % p for row in u]
         u2a2 = [(row[0] * a2[0] + row[1] * a2[1]) % p for row in u2]
 
-        def g1v(values):
-            return [ctx.ser(ctx.g1 ** ctx.zr(x)) for x in values]
-
+        # every G1 entry of the public key as powers of g1, in one call
+        g1_rows = [ua, a2, u2a2] + v2t_m + mat
+        flat = iter(ctx.g1v([x for row in g1_rows for x in row]))
+        ua_g, a2_g, u2a2_g, *rest = [[next(flat) for _ in row] for row in g1_rows]
+        flat = iter(ctx.g2v([x for row in vb for x in row]))
         self.ctx = ctx
-        self.pp = {
-            "pairing_group_param": self.pairing_group_param,
-            "n": n,
-            "m": m,
-            "bound": self.bound,
-            "sec_param": self.sec_param,
-            "g1": ctx.ser(ctx.g1),
-            "g2": ctx.ser(ctx.g2),
-            "ua": g1v(ua),
-            "vb": [[ctx.ser(ctx.g2 ** ctx.zr(x)) for x in row] for row in vb],
-            "ipfe": {
-                "a": g1v(a2),
-                "ua": g1v(u2a2),
-                "vt_m": [g1v(row) for row in v2t_m],
-                "m": [g1v(row) for row in mat],
-            },
-        }
+        self.pp = QuadParameters.new(
+            pairing_group_param=self.pairing_group_param,
+            n=n,
+            m=m,
+            bound=self.bound,
+            sec_param=self.sec_param,
+            g1=ctx.ser(ctx.g1),
+            g2=ctx.ser(ctx.g2),
+            ua=ua_g,
+            vb=[[next(flat) for _ in row] for row in vb],
+            ipfe=QuadIPFEPublicKey.new(
+                a=a2_g,
+                ua=u2a2_g,
+                vt_m=rest[: len(v2t_m)],
+                m=rest[len(v2t_m):],
+            ).to_dict(),
+        ).to_dict()
         self.msk = {"u": u, "v": v, "ipfe": {"b": b2, "u": u2, "v": v2}}
         logger.info("Quadratic Quad (Gay20 Fig. 4) setup successfully")
 
@@ -213,10 +232,10 @@ class QuadraticQuadKeyGenerator(IPFEAbsKeyGenerator):
         bs = [b * s2 % p for b in ipfe["b"]]
         w = bs + [(z_i + row[0] * bs[0] + row[1] * bs[1]) % p for z_i, row in zip(z, ipfe["v"])]
         head = [(-sum(row[c] * w_j for row, w_j in zip(ipfe["u"], w))) % p for c in (0, 1)]
-        return {
-            "f": [[str(x) for x in row] for row in f_mat],
-            "k": [ctx.ser(ctx.g2 ** ctx.zr(x)) for x in head + w],
-        }
+        return QuadFunctionalKey.new(
+            f=[[str(x) for x in row] for row in f_mat],
+            k=ctx.g2v(head + w),
+        ).to_dict()
 
 
 class QuadraticQuad(IPFEAbsCrypto):
@@ -232,6 +251,23 @@ class QuadraticQuad(IPFEAbsCrypto):
             group.deserialize(self.pp["g1"].encode("utf-8")),
             group.deserialize(self.pp["g2"].encode("utf-8")),
         )
+        self._pk = None
+
+    def _public_key(self) -> dict:
+        """The group elements of ``pp``, deserialised (and checked) once per instance."""
+        if self._pk is None:
+            pp, de = self.pp, self.ctx.de_many
+            ipfe = pp["ipfe"]
+            rows = [pp["ua"], ipfe["a"], ipfe["ua"]] + list(pp["vb"]) + list(ipfe["vt_m"]) + list(ipfe["m"])
+            flat = iter(de([v for row in rows for v in row]))
+            ua, a2, u2a2, *rest = [[next(flat) for _ in row] for row in rows]
+            n_vb, n_vt = len(pp["vb"]), len(ipfe["vt_m"])
+            self._pk = {
+                "ua": ua,
+                "vb": rest[:n_vb],
+                "ipfe": {"a": a2, "ua": u2a2, "vt_m": rest[n_vb:n_vb + n_vt], "m": rest[n_vb + n_vt:]},
+            }
+        return self._pk
 
     def encrypt(self, payload: dict) -> dict:
         """Encrypt ``{"x": n integers, "y": m integers}`` (entries bounded by ``bound``)."""
@@ -241,60 +277,57 @@ class QuadraticQuad(IPFEAbsCrypto):
         p, bound = ctx.p, int(pp["bound"])
         x = int_vector(payload.get("x"), "x", length=pp["n"], bound=bound)
         y = int_vector(payload.get("y"), "y", length=pp["m"], bound=bound)
+        pk = self._public_key()
         r, s = ctx.rand(), [ctx.rand(), ctx.rand()]
-        ct_x = [
-            (ctx.g1 ** ctx.zr(x_i)) * (ctx.de(ua_i) ** ctx.zr(r)) for x_i, ua_i in zip(x, pp["ua"])
-        ]
-        ct_y = [
-            (ctx.g2 ** ctx.zr(y_j)) * ctx.multiexp([ctx.de(v) for v in row], s)
-            for y_j, row in zip(y, pp["vb"])
-        ]
+        ct_x = [ctx.multiexp([ctx.g1, ua_i], [x_i, r]) for x_i, ua_i in zip(x, pk["ua"])]
+        ct_y = [ctx.multiexp([ctx.g2] + row, [y_j] + s) for y_j, row in zip(y, pk["vb"])]
         t = (
             [r * y_j % p for y_j in y]
             + [r * s_c % p for s_c in s]
             + [x_i * s_c % p for x_i in x for s_c in s]
         )
-        ipfe = pp["ipfe"]
-        r2 = ctx.zr(ctx.rand())
-        c = [ctx.de(v) ** r2 for v in ipfe["a"]]
-        neg_vtmt = [
-            ctx.multiexp([ctx.de(v) for v in row], [(-t_j) % p for t_j in t]) for row in ipfe["vt_m"]
+        ipfe = pk["ipfe"]
+        r2 = ctx.rand()
+        c = [v ** ctx.zr(r2) for v in ipfe["a"]]
+        neg_t = [(-t_j) % p for t_j in t]
+        # (-V'^T M t ; M t) + U' c, each entry one product of powers with [U' a']_1^{r'}
+        body = [
+            ctx.multiexp(row + [u], exps + [r2])
+            for (row, exps), u in zip(
+                [(row, neg_t) for row in ipfe["vt_m"]] + [(row, t) for row in ipfe["m"]], ipfe["ua"]
+            )
         ]
-        mt = [ctx.multiexp([ctx.de(v) for v in row], t) for row in ipfe["m"]]
-        body = [lhs * (ctx.de(u) ** r2) for lhs, u in zip(neg_vtmt + mt, ipfe["ua"])]
-        return {
-            "ct_x": [ctx.ser(v) for v in ct_x],
-            "ct_y": [ctx.ser(v) for v in ct_y],
-            "ct": [ctx.ser(v) for v in c + body],
-        }
+        return QuadCiphertext.new(
+            ct_x=[ctx.ser(v) for v in ct_x],
+            ct_y=[ctx.ser(v) for v in ct_y],
+            ct=[ctx.ser(v) for v in c + body],
+        ).to_dict()
 
     def decrypt(self, ct: dict, dk: dict) -> int | None:
         """``log(e(ct_x, F ct_y) / Dec_IPFE)``; ``None`` beyond ``n m B^3``."""
-        if not dk or "k" not in dk:
+        if not dk or "k" not in QuadFunctionalKey(dk):
             raise FEKeyError("no decryption key provided")
+        key_rec, ct = QuadFunctionalKey.from_dict(dk), QuadCiphertext.from_dict(ct)
         pp, ctx = self.pp, self.ctx
         n, m = pp["n"], pp["m"]
-        if len(dk["f"]) != n or any(len(row) != m for row in dk["f"]):
+        if len(key_rec.f) != n or any(len(row) != m for row in key_rec.f):
             raise FESchemeError("the key's function matrix does not match the parameters")
-        f_mat = [[int(v) for v in row] for row in dk["f"]]
-        key = [ctx.de(v) for v in dk["k"]]
-        ct_ipfe = [ctx.de(v) for v in ct["ct"]]
-        ct_x = [ctx.de(v) for v in ct["ct_x"]]
-        ct_y = [ctx.de(v) for v in ct["ct_y"]]
+        f_mat = [[int(v) for v in row] for row in key_rec.f]
+        key = ctx.de_many(key_rec.k)
+        ct_ipfe = ctx.de_many(ct.ct)
+        ct_x = ctx.de_many(ct.ct_x)
+        ct_y = ctx.de_many(ct.ct_y)
         n_ipfe = 2 * m + 3 * n + 4
         if len(ct_x) != n or len(ct_y) != m or len(ct_ipfe) != n_ipfe or len(key) != n_ipfe:
             raise FESchemeError("ciphertext and key do not match the parameters")
-        d = ctx.group.init(GT, 1)
-        for c_j, k_j in zip(ct_ipfe, key):
-            d *= pair(c_j, k_j)
-        v = ctx.group.init(GT, 1)
-        for x_i, row in zip(ct_x, f_mat):
-            v *= pair(x_i, ctx.multiexp(ct_y, row))
+        d = multi_pair(ct_ipfe, key)
+        v = multi_pair(ct_x, [ctx.multiexp(ct_y, row) for row in f_mat])
         bound = n * m * int(pp["bound"]) ** 3
         try:
             return bounded_discrete_log_gt(ctx.group, ctx.gt, v / d, bound)
         except ValueError:
             logger.error("quadratic result out of bound (wrong key or ciphertext?)")
+            warn_at_caller("quadratic result out of bound (wrong key or ciphertext?)")
             return None
 
     def _prepare_quadratic_ndarray_payload(self, lhs_lst_ndarray: list, rhs_lst_ndarray: list) -> tuple:

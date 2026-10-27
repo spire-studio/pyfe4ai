@@ -1,0 +1,121 @@
+"""Tests for the FE exception hierarchy and common error paths.
+
+Validates that the custom exceptions from :mod:`utils.exceptions` are raised
+in the expected situations and conform to the inheritance hierarchy.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from pyfe4ai.core.exceptions import (
+    FEConfigError,
+    FEError,
+    FEKeyError,
+    FESchemeError,
+    FEValidationError,
+)
+
+
+# ---------------------------------------------------------------------------
+# Exception hierarchy
+# ---------------------------------------------------------------------------
+
+class TestExceptionHierarchy:
+    """All custom exceptions inherit from FEError (and thus Exception)."""
+
+    def test_fe_error_is_exception(self):
+        assert issubclass(FEError, Exception)
+
+    @pytest.mark.parametrize("exc_cls", [FEConfigError, FEKeyError, FEValidationError, FESchemeError])
+    def test_subclass_of_fe_error(self, exc_cls):
+        assert issubclass(exc_cls, FEError)
+
+    def test_validation_error_is_value_error(self):
+        assert issubclass(FEValidationError, ValueError)
+
+    def test_scheme_error_is_runtime_error(self):
+        assert issubclass(FESchemeError, RuntimeError)
+
+    def test_catch_fe_error_catches_subtypes(self):
+        for cls in (FEConfigError, FEKeyError, FEValidationError, FESchemeError):
+            with pytest.raises(FEError):
+                raise cls("test")
+
+
+# ---------------------------------------------------------------------------
+# Key error paths — missing keys / credentials
+# ---------------------------------------------------------------------------
+
+class TestKeyErrors:
+    """Crypto classes must reject missing keys at construction time."""
+
+    def test_crypto_init_no_keys(self):
+        """IPFEAbsCrypto raises FEKeyError when config has no 'keys'."""
+        from pyfe4ai.schemes.sife.ddh import SIFEDDH
+
+        with pytest.raises(FEKeyError, match="no keys"):
+            SIFEDDH({"keys": None})
+
+    def test_sife_dk_no_credentials(self):
+        """SIFEDDHKeyGenerator.get_decryption_keys raises on missing credentials."""
+        from pyfe4ai.schemes.sife.ddh import SIFEDDHKeyGenerator
+
+        kg = SIFEDDHKeyGenerator({"sec_param": 128, "eta": 3})
+        kg.setup()
+        with pytest.raises(FEKeyError, match="credentials"):
+            kg.get_decryption_keys("sid_1")
+
+
+# ---------------------------------------------------------------------------
+# Validation error paths — bad inputs
+# ---------------------------------------------------------------------------
+
+class TestValidationErrors:
+    """Schemes must reject invalid inputs with FEValidationError."""
+
+    def test_mife_invalid_eta_type(self):
+        """MIFEDDHKeyGenerator rejects non-int/non-dict eta."""
+        from pyfe4ai.schemes.mife.ddh import MIFEDDHKeyGenerator
+
+        with pytest.raises(FEValidationError, match="invalid parameter"):
+            MIFEDDHKeyGenerator({"sec_param": 128, "eta": "bad", "n": 2, "s": 1,
+                              "lst_nid": ["a", "b"]})
+
+    def test_sife_dk_invalid_fusion_weights(self):
+        """SIFEDDHKeyGenerator.get_decryption_keys rejects non-list fusion weights."""
+        from pyfe4ai.schemes.sife.ddh import SIFEDDHKeyGenerator
+
+        kg = SIFEDDHKeyGenerator({"sec_param": 128, "eta": 3})
+        kg.setup()
+        with pytest.raises(FEValidationError, match="fusion weight must be a sequence"):
+            kg.get_decryption_keys("sid_1", credentials={"fusion_weight": "not_a_list"})
+
+    def test_sife_dk_fusion_weight_length_mismatch(self):
+        """SIFEDDHKeyGenerator.get_decryption_keys rejects wrong-length fusion weights."""
+        from pyfe4ai.schemes.sife.ddh import SIFEDDHKeyGenerator
+
+        kg = SIFEDDHKeyGenerator({"sec_param": 128, "eta": 3})
+        kg.setup()
+        with pytest.raises(FEValidationError, match="must have 3 entries"):
+            kg.get_decryption_keys("sid_1", credentials={"fusion_weight": [1, 2]})
+
+    def test_sife_encrypt_plaintext_length(self):
+        """SIFEDDH.encrypt rejects plaintext with wrong length."""
+        from pyfe4ai.schemes.sife.ddh import SIFEDDH, SIFEDDHKeyGenerator
+
+        kg = SIFEDDHKeyGenerator({"sec_param": 128, "eta": 3})
+        kg.setup()
+        pp = kg.get_public_parameters()
+        sk = kg.get_private_keys()
+        crypto = SIFEDDH({"keys": {"pp": pp, "sk": sk}})
+        with pytest.raises(FEValidationError, match="must have 3 entries"):
+            crypto.encrypt([1, 2, 3, 4])  # eta=3 but 4 elements
+
+
+def test_duplicate_client_ids_rejected():
+    """A repeated id in lst_nid silently merged two clients' keys."""
+    from pyfe4ai.schemes.mcfe.ddh import MCFEDDHKeyGenerator
+
+    with pytest.raises(FEValidationError, match="duplicate"):
+        MCFEDDHKeyGenerator({"sec_param": 128, "n": 3, "lst_nid": ["a", "a", "b"]})

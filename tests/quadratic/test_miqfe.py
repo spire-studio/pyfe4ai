@@ -4,11 +4,13 @@ import random
 
 import pytest
 
-pytest.importorskip("charm", reason="charm-crypto not installed")
+from tests.pairing_group import GROUP, skip_unless_available  # noqa: E402
 
-from pyfe4ai.schemes.quadratic.miqfe import MultiInputQuadratic  # noqa: E402
-from pyfe4ai.schemes.quadratic.miqfe import MultiInputQuadraticKeyGenerator  # noqa: E402
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError  # noqa: E402
+skip_unless_available()
+
+from pyfe4ai.schemes.quadratic.miqfe import QuadraticMIQFE  # noqa: E402
+from pyfe4ai.schemes.quadratic.miqfe import QuadraticMIQFEKeyGenerator  # noqa: E402
+from pyfe4ai.core.exceptions import FESchemeError, FEValidationError  # noqa: E402
 
 NIDS = ["nid_0", "nid_1"]
 
@@ -16,17 +18,17 @@ NIDS = ["nid_0", "nid_1"]
 @pytest.fixture(scope="module")
 def small():
     """n = 2 users with m = 1 integer each."""
-    kg = MultiInputQuadraticKeyGenerator(
-        {"n": 2, "m": 1, "lst_nid": NIDS, "bound_x": 4, "bound_c": 3, "pairing_group_param": "MNT224"}
+    kg = QuadraticMIQFEKeyGenerator(
+        {"n": 2, "m": 1, "lst_nid": NIDS, "bound_x": 4, "bound_c": 3, "pairing_group_param": GROUP}
     )
     kg.setup()
     pp = kg.get_public_parameters()
-    clients = {nid: MultiInputQuadratic({"keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}) for nid in NIDS}
+    clients = {nid: QuadraticMIQFE({"keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}) for nid in NIDS}
     return kg, pp, clients
 
 
 def _dec(pp, cts, dk):
-    return MultiInputQuadratic({"keys": {"pp": pp}}).decrypt(cts, dk)
+    return QuadraticMIQFE({"keys": {"pp": pp}}).decrypt(cts, dk)
 
 
 def test_cross_term_and_extremes(small):
@@ -65,21 +67,21 @@ def test_function_class_and_inputs_validated(small):
 
 def test_parameter_guards():
     with pytest.raises(FEValidationError):
-        MultiInputQuadraticKeyGenerator({"n": 1, "m": 1, "lst_nid": ["a"]})
+        QuadraticMIQFEKeyGenerator({"n": 1, "m": 1, "lst_nid": ["a"], "pairing_group_param": GROUP})
     with pytest.raises(FEValidationError):
-        MultiInputQuadraticKeyGenerator({"n": 2, "m": 1, "lst_nid": NIDS, "mddh_k": 1})
+        QuadraticMIQFEKeyGenerator({"n": 2, "m": 1, "lst_nid": NIDS, "mddh_k": 1, "pairing_group_param": GROUP})
 
 
 def test_random_cross_terms_two_entries():
     m, n, X, C = 2, 2, 5, 3
-    kg = MultiInputQuadraticKeyGenerator(
-        {"n": n, "m": m, "lst_nid": NIDS, "bound_x": X, "bound_c": C, "pairing_group_param": "MNT224"}
+    kg = QuadraticMIQFEKeyGenerator(
+        {"n": n, "m": m, "lst_nid": NIDS, "bound_x": X, "bound_c": C, "pairing_group_param": GROUP}
     )
     kg.setup()
     pp = kg.get_public_parameters()
     x = {nid: [random.randint(-X, X) for _ in range(m)] for nid in NIDS}
     cts = {
-        nid: MultiInputQuadratic({"keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(x[nid])
+        nid: QuadraticMIQFE({"keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(x[nid])
         for nid in NIDS
     }
     coeffs = [[0] * (n * m) for _ in range(n * m)]
@@ -95,13 +97,13 @@ def test_random_cross_terms_two_entries():
 def test_three_users_cross_blocks():
     """With n = 3 the blocks (0,1), (0,2), (1,2) are allowed: an i/k swap would show."""
     nids = ["u0", "u1", "u2"]
-    kg = MultiInputQuadraticKeyGenerator(
-        {"n": 3, "m": 1, "lst_nid": nids, "bound_x": 6, "bound_c": 4, "pairing_group_param": "MNT224"}
+    kg = QuadraticMIQFEKeyGenerator(
+        {"n": 3, "m": 1, "lst_nid": nids, "bound_x": 6, "bound_c": 4, "pairing_group_param": GROUP}
     )
     kg.setup()
     pp = kg.get_public_parameters()
     x = {"u0": [5], "u1": [-3], "u2": [6]}
-    cts = {nid: MultiInputQuadratic({"keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(x[nid])
+    cts = {nid: QuadraticMIQFE({"keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(x[nid])
            for nid in nids}
     coeffs = [[0, 2, -4], [0, 0, 3], [0, 0, 0]]
     dk = kg.get_decryption_keys(None, credentials={"coefficients": coeffs})

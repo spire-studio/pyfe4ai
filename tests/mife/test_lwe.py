@@ -1,10 +1,11 @@
 import logging
+import os
 import random
 
 import numpy as np
 import pytest
 
-from pyfe4ai.logger import init_logging_config
+from tests.log_config import init_logging_config
 from pyfe4ai.schemes.mife.lwe import MIFELWE
 from pyfe4ai.schemes.mife.lwe import MIFELWEKeyGenerator
 
@@ -132,6 +133,7 @@ def _noise_margin(n_slots, tmp_path, monkeypatch):
     import math
 
     monkeypatch.chdir(tmp_path / str(n_slots))
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path / str(n_slots), "config"))
     nids = ["nid_{}".format(i) for i in range(n_slots)]
     kg = MIFELWEKeyGenerator({"n": n_slots, "lst_nid": nids, "eta": 1, "lwe_n": 64,
                               "bound_x": 20, "bound_y": 20})
@@ -149,7 +151,7 @@ def test_noise_is_sized_for_all_slots(tmp_path, monkeypatch):
 
 
 def test_parameters_are_deterministic():
-    from pyfe4ai.utils.lwe_utils import abdp15_parameters
+    from pyfe4ai.primitives.lattice.lwe_utils import abdp15_parameters
 
     first = abdp15_parameters(20, 20, 3, 64)
     assert abdp15_parameters(20, 20, 3, 64) == first

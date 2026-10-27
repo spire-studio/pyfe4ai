@@ -7,9 +7,10 @@ import pytest
 
 from pyfe4ai.schemes.mife.ring_lwe import MIFERingLWEKeyGenerator
 from pyfe4ai.schemes.sife.ring_lwe import SIFERingLWE, SIFERingLWEKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
-from pyfe4ai.utils.ring_lwe_utils import DEFAULT_RING_N
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.primitives.lattice.ring_lwe_utils import DEFAULT_RING_N
+from pyfe4ai.core.base import cache_dir
 
 CFG = {"sec_param": 64, "eta": 3, "bound_x": 4, "bound_y": 4}
 
@@ -52,7 +53,7 @@ def test_inputs_validated_and_key_bound(scheme):
 
 
 def test_mife_parameters_do_not_overwrite_sife_cache(scheme):
-    path = os.path.join("config", "authority", CryptoCONST.TYPE_SIFE_RING_LWE, "param.json")
+    path = os.path.join(cache_dir(), "authority", CryptoCONST.TYPE_SIFE_RING_LWE, "param.json")
     with open(path, encoding="utf-8") as f:
         before = json.load(f)
     MIFERingLWEKeyGenerator({"sec_param": 64, "n": 2, "eta": 5, "bound_x": 3, "bound_y": 3})

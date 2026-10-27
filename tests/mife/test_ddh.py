@@ -5,9 +5,10 @@ import logging
 
 import gmpy2 as gp
 
-from pyfe4ai.schemes.mife.ddh import MIFE
-from pyfe4ai.schemes.mife.ddh import MIFEKeyGenerator
-from pyfe4ai.logger import init_logging_config
+from pyfe4ai.schemes.mife.ddh import MIFEDDH
+from pyfe4ai.schemes.mife.ddh import MIFEDDHKeyGenerator
+from pyfe4ai.core.base import cache_dir
+from tests.log_config import init_logging_config
 
 init_logging_config()
 logger = logging.getLogger(__name__)
@@ -26,7 +27,7 @@ def kg_config(request):
 
 
 def test_key_generator(kg_config):
-    kg = MIFEKeyGenerator(kg_config)
+    kg = MIFEDDHKeyGenerator(kg_config)
 
     assert kg.sec_param == kg_config["sec_param"]
     assert kg.n == kg_config["n"]
@@ -34,7 +35,7 @@ def test_key_generator(kg_config):
     assert kg.eta == kg_config["eta"]
     assert kg.lst_nid == kg_config["lst_nid"]
 
-    config_folder = os.path.join("config", "authority", "MIFE")
+    config_folder = os.path.join(cache_dir(), "authority", "MIFE")
     assert os.path.exists(config_folder)
     param_file = os.path.join(config_folder, "param.json")
     assert os.path.exists(param_file)
@@ -67,7 +68,7 @@ def test_entire_process(kg_config):
 
     precision = 3
 
-    kg = MIFEKeyGenerator(kg_config)
+    kg = MIFEDDHKeyGenerator(kg_config)
     kg.setup()
 
     # prepare input: full eta-length vectors so the multi-element encrypt
@@ -94,7 +95,7 @@ def test_entire_process(kg_config):
             "precision": precision,
             "keys": {"pp": _pp, "sk": _sk_nid},
         }
-        crypto_nid = MIFE(_config_nid)
+        crypto_nid = MIFEDDH(_config_nid)
         ct_nid = crypto_nid.encrypt(dct_x[nid])
         assert isinstance(ct_nid, dict)
         assert "t" in ct_nid
@@ -107,7 +108,7 @@ def test_entire_process(kg_config):
         "precision": precision,
         "keys": {"pp": _pp},
     }
-    crypto_sid = MIFE(_config_sid)
+    crypto_sid = MIFEDDH(_config_sid)
     dk = kg.get_decryption_keys(_config_sid["id"], credentials={"fusion_weight": dct_y})
     computed_inner_prod = crypto_sid.decrypt(dct_ct, dk, dct_y)
     logger.info(
@@ -124,7 +125,7 @@ def test_client_keys_are_independent():
     client could remove the mask of another client's ciphertext and learn
     differences of that client's plaintexts."""
     lst_nid = ["nid_0", "nid_1", "nid_2"]
-    kg = MIFEKeyGenerator(
+    kg = MIFEDDHKeyGenerator(
         {"sec_param": 256, "lst_nid": lst_nid, "eta": 2, "n": 3, "s": 1}
     )
     kg.setup()
@@ -136,7 +137,7 @@ def test_client_cannot_unmask_other_client():
     """With its own key, client A must not be able to strip the IPFE mask
     of client B's ciphertext (worked with the shared ``w``)."""
     lst_nid = ["nid_0", "nid_1"]
-    kg = MIFEKeyGenerator(
+    kg = MIFEDDHKeyGenerator(
         {"sec_param": 256, "lst_nid": lst_nid, "eta": 1, "n": 2, "s": 1}
     )
     kg.setup()
@@ -145,7 +146,7 @@ def test_client_cannot_unmask_other_client():
     g = gp.mpz(pp["g"])
     sk_a = kg.get_private_keys("nid_0")
     sk_b = kg.get_private_keys("nid_1")
-    ct_b = MIFE({"id": "nid_1", "precision": 3, "keys": {"pp": pp, "sk": sk_b}}).encrypt([5])
+    ct_b = MIFEDDH({"id": "nid_1", "precision": 3, "keys": {"pp": pp, "sk": sk_b}}).encrypt([5])
 
     # even knowing its own slot secret s_a, client A cannot strip B's mask
     s_a = kg.msk["s"]["nid_0"][0]

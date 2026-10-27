@@ -2,10 +2,12 @@ import random
 
 import pytest
 
-pytest.importorskip("charm", reason="charm-crypto not installed")
+from tests.pairing_group import GROUP, skip_unless_available  # noqa: E402
 
-from pyfe4ai.schemes.mife.fh_ipe_pairing import MIFEFHIPE
-from pyfe4ai.schemes.mife.fh_ipe_pairing import MIFEFHIPEKeyGenerator
+skip_unless_available()
+
+from pyfe4ai.schemes.mife.fh_ipe_pairing import MIFEFHIPEPairing
+from pyfe4ai.schemes.mife.fh_ipe_pairing import MIFEFHIPEPairingKeyGenerator
 
 
 @pytest.fixture
@@ -18,12 +20,12 @@ def kg_config():
         "lst_nid": ["nid_0", "nid_1", "nid_2"],
         "bound_x": 6,
         "bound_y": 6,
-        "pairing_group_param": "MNT224",
+        "pairing_group_param": GROUP,
     }
 
 
 def test_entire_process(kg_config):
-    kg = MIFEFHIPEKeyGenerator(kg_config)
+    kg = MIFEFHIPEPairingKeyGenerator(kg_config)
     kg.setup()
 
     dct_x = {
@@ -43,23 +45,23 @@ def test_entire_process(kg_config):
     pp = kg.get_public_parameters()
     dct_ct = {}
     for nid in kg_config["lst_nid"]:
-        encryptor = MIFEFHIPE(
+        encryptor = MIFEFHIPEPairing(
             {"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}
         )
         dct_ct[nid] = encryptor.encrypt(dct_x[nid])
 
-    decryptor = MIFEFHIPE({"id": "sid_0", "keys": {"pp": pp}})
+    decryptor = MIFEFHIPEPairing({"id": "sid_0", "keys": {"pp": pp}})
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
     computed = decryptor.decrypt(dct_ct, dk, dct_y)
     assert computed == expected
 
 
 def _round(kg_config, dct_x, dct_y):
-    kg = MIFEFHIPEKeyGenerator(kg_config)
+    kg = MIFEFHIPEPairingKeyGenerator(kg_config)
     kg.setup()
     pp = kg.get_public_parameters()
     cts = {
-        nid: MIFEFHIPE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(dct_x[nid])
+        nid: MIFEFHIPEPairing({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(dct_x[nid])
         for nid in kg_config["lst_nid"]
     }
     return kg, pp, cts
@@ -68,16 +70,16 @@ def _round(kg_config, dct_x, dct_y):
 def test_slot_results_are_masked_and_keys_do_not_mix(kg_config):
     """v0.2.0 decoded every slot separately (per-slot <x_i, y_i>) and slot keys
     of different functional keys could be recombined."""
-    from pyfe4ai.utils.exceptions import FESchemeError
-    from pyfe4ai.utils.pairing_backend import GT
-    from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
+    from pyfe4ai.core.exceptions import FESchemeError
+    from pyfe4ai.primitives.pairing.pairing_backend import GT
+    from pyfe4ai.primitives.pairing.pairing_utils import bounded_discrete_log_gt
 
     nids = kg_config["lst_nid"]
     x = {"nid_0": [5, 0, 0, 0], "nid_1": [-5, 0, 0, 0], "nid_2": [0, 0, 0, 0]}
     y1 = {nid: [1, 0, 0, 0] for nid in nids}
     y2 = {nid: [0, 1, 0, 0] for nid in nids}
     kg, pp, cts = _round(kg_config, x, y1)
-    dec = MIFEFHIPE({"id": "sid_0", "keys": {"pp": pp}})
+    dec = MIFEFHIPEPairing({"id": "sid_0", "keys": {"pp": pp}})
     dk1 = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y1})
     dk2 = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y2})
     assert dec.decrypt(cts, dk1, y1) == 0
@@ -107,4 +109,4 @@ def test_eta_one_and_zero_weights(kg_config):
     y = {"nid_0": [0], "nid_1": [4], "nid_2": [-1]}
     kg, pp, cts = _round(cfg, x, y)
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y})
-    assert MIFEFHIPE({"id": "sid_0", "keys": {"pp": pp}}).decrypt(cts, dk, y) == -8 - 6
+    assert MIFEFHIPEPairing({"id": "sid_0", "keys": {"pp": pp}}).decrypt(cts, dk, y) == -8 - 6

@@ -7,7 +7,7 @@ Function-hiding multi-input inner-product FE over pairings.
 | of Fig. 11, with ``k = 1`` (SXDH) and the LV16 padding of Appendix B.
 
 * type:     private-key multi-input encryption with function-hiding keys
-* setting:  asymmetric pairing group (default MNT224)
+* setting:  asymmetric pairing group (default BLS12-381)
 
 Slot ``i`` has the master key ``msk_i`` of a function-hiding IPFE
 (:class:`pyfe4ai.schemes.mcfe.fh_ipe.FHIPE`, which contains the inner
@@ -36,17 +36,22 @@ import secrets
 
 import gmpy2 as gp
 
-from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
-from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
+from pyfe4ai.core.base import IPFEAbsCrypto
+from pyfe4ai.core.base import IPFEAbsKeyGenerator
 from pyfe4ai.schemes.mcfe.fh_ipe import FHIPE
 from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import FHContext
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup
-from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
-from pyfe4ai.utils.pairing_backend import require_pairing_backend
-from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.validation import int_vector
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, GT, ZR, PairingGroup, deserialize_many, pow_many
+from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
+from pyfe4ai.primitives.pairing.pairing_backend import require_pairing_backend
+from pyfe4ai.primitives.pairing.pairing_utils import bounded_discrete_log_gt
+from pyfe4ai.core.formats.pairing import FHCiphertext
+from pyfe4ai.core.formats.pairing import FHClientKey
+from pyfe4ai.core.formats.pairing import FHParameters
+from pyfe4ai.core.formats.pairing import MIFEFHIPEFunctionalKey
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.ids import issued_id
+from pyfe4ai._validation import int_vector
 
 logger = logging.getLogger(__name__)
 
@@ -71,8 +76,11 @@ class _Group:
     def de(self, text: str):
         return self.group.deserialize(text.encode("utf-8"))
 
+    def de_many(self, texts: list) -> list:
+        return deserialize_many(self.group, texts)
 
-class MIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator):
+
+class MIFEFHIPEPairingKeyGenerator(IPFEAbsKeyGenerator):
     """Key generator for the ACFGU18 function-hiding MIFE."""
 
     _scheme_type = CryptoCONST.TYPE_MIFE_FH_IPE
@@ -82,7 +90,7 @@ class MIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator):
 
         Args:
             config: ``n``, ``lst_nid``, ``eta``, ``bound_x``, ``bound_y`` and
-                ``pairing_group_param`` (asymmetric, default MNT224).
+                ``pairing_group_param`` (asymmetric, default BLS12-381).
         """
         super().__init__(config, **kwargs)
         require_pairing_backend()
@@ -97,17 +105,17 @@ class MIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator):
     def setup(self) -> None:
         """Sample the generators and one FH-IPFE master key per slot."""
         group = PairingGroup(self.pairing_group_param)
-        self.pp = {
-            "pairing_group_param": self.pairing_group_param,
-            "g1": group.serialize(group.random(G1)).decode("utf-8"),
-            "g2": group.serialize(group.random(G2)).decode("utf-8"),
-            "eta": self.eta,
-            "n": self.n,
-            "lst_nid": list(self.lst_nid),
-            "bound_x": self.bound_x,
-            "bound_y": self.bound_y,
-            "sec_param": self.sec_param,
-        }
+        self.pp = FHParameters.new(
+            pairing_group_param=self.pairing_group_param,
+            g1=group.serialize(group.random(G1)).decode("utf-8"),
+            g2=group.serialize(group.random(G2)).decode("utf-8"),
+            eta=self.eta,
+            n=self.n,
+            lst_nid=list(self.lst_nid),
+            bound_x=self.bound_x,
+            bound_y=self.bound_y,
+            sec_param=self.sec_param,
+        ).to_dict()
         self.ctx = _Group(self.pp)
         self.msk = {nid: self.ctx.fhipe.setup() for nid in self.lst_nid}
         logger.info("FH-MIFE (ACFGU18 Fig. 12) setup successfully")
@@ -118,10 +126,11 @@ class MIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator):
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
         """Return slot *nid*'s FH-IPFE master key ``{imsk}`` (``None`` if unknown)."""
+        nid = issued_id(nid)  # numpy integers as ints; a value that is no id is an unknown client
         if nid not in self.msk:
             return None
         # the outer A' is only needed for key generation (least privilege)
-        return {"imsk": FHContext.serialise_msk(self.msk[nid], encrypt_only=True)}
+        return FHClientKey.new(imsk=FHContext.serialise_msk(self.msk[nid], encrypt_only=True)).to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Key for weights ``y`` covering every slot (one ``r`` for all slots).
@@ -140,18 +149,18 @@ class MIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator):
         r = int(ctx.group.random(ZR))
         z_total, dk = 0, {}
         for nid in self.lst_nid:
-            y = int_vector(fusion_weight[nid], "fusion weight of " + nid, length=self.eta, bound=self.bound_y)
-            key, z_i = ctx.fhipe.keygen(self.msk[nid], [ctx.g2 ** ctx.zr(v) for v in y], r=r)
+            y = int_vector(fusion_weight[nid], "fusion weight of {}".format(nid), length=self.eta, bound=self.bound_y)
+            key, z_i = ctx.fhipe.keygen(self.msk[nid], pow_many(ctx.g2, y, ctx.group), r=r)
             dk[nid] = [ctx.ser(v) for v in key]
             z_total = (z_total + z_i) % ctx.fhipe.order
-        return {
-            "dk": dk,
-            "z": ctx.ser(ctx.fhipe.gt ** ctx.zr(z_total)),
-            "key_id": secrets.token_hex(16),
-        }
+        return MIFEFHIPEFunctionalKey.new(
+            dk=dk,
+            z=ctx.ser(ctx.fhipe.gt ** ctx.zr(z_total)),
+            key_id=secrets.token_hex(16),
+        ).to_dict()
 
 
-class MIFEFHIPE(IPFEAbsCrypto):
+class MIFEFHIPEPairing(IPFEAbsCrypto):
     """Crypto operations for the ACFGU18 function-hiding MIFE."""
 
     def __init__(self, config: dict, **kwargs) -> None:
@@ -161,7 +170,7 @@ class MIFEFHIPE(IPFEAbsCrypto):
         self.ctx = _Group(self.pp)
         if self._has_private_keys():
             self.sk = self.keys["sk"]
-            self.imsk = FHContext.deserialise_msk(self.sk["imsk"])
+            self.imsk = FHContext.deserialise_msk(FHClientKey(self.sk).imsk)
 
     def encrypt(self, lst_pt: list) -> dict:
         """``FHIPE.Enc(msk_i, [x_i]_1)`` for this slot's ``eta`` integers."""
@@ -169,8 +178,8 @@ class MIFEFHIPE(IPFEAbsCrypto):
             raise FEKeyError("no encryption key provided")
         x = int_vector(lst_pt, "plaintext", length=self.pp["eta"], bound=self.pp["bound_x"])
         ctx = self.ctx
-        ct = ctx.fhipe.encrypt(self.imsk, [ctx.g1 ** ctx.zr(v) for v in x])
-        return {"ct": [ctx.ser(v) for v in ct]}
+        ct = ctx.fhipe.encrypt(self.imsk, pow_many(ctx.g1, x, ctx.group))
+        return FHCiphertext.new(ct=[ctx.ser(v) for v in ct]).to_dict()
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict | None = None):
         """``log prod_i FHIPE.Dec(ct_i, dk_i) / [z]_T``; ``None`` if out of bound.
@@ -181,22 +190,22 @@ class MIFEFHIPE(IPFEAbsCrypto):
         Raises:
             FESchemeError: If the ciphertexts do not cover every slot of the key.
         """
-        if not dk or "dk" not in dk:
+        if not dk or "dk" not in MIFEFHIPEFunctionalKey(dk):
             raise FEKeyError("no decryption key provided")
-        if set(dct_ct) != set(dk["dk"]):
+        key = MIFEFHIPEFunctionalKey.from_dict(dk)
+        if set(dct_ct) != set(key.dk):
             raise FESchemeError("need one ciphertext for every slot of the key")
         ctx = self.ctx
         acc = ctx.group.init(GT, 1)
         for nid, ct in dct_ct.items():
-            acc *= ctx.fhipe.decrypt(
-                [ctx.de(v) for v in ct["ct"]], [ctx.de(v) for v in dk["dk"][nid]], ctx.group.init(GT, 1)
-            )
-        acc /= ctx.de(dk["z"])
+            acc *= ctx.fhipe.decrypt(ctx.de_many(FHCiphertext(ct).ct), ctx.de_many(key.dk[nid]), ctx.group.init(GT, 1))
+        acc /= ctx.de(key.z)
         bound = int(self.pp["n"] * self.pp["eta"] * gp.mpz(self.pp["bound_x"]) * gp.mpz(self.pp["bound_y"]))
         try:
             return bounded_discrete_log_gt(ctx.group, ctx.fhipe.gt, acc, bound)
         except ValueError:
             logger.error("inner product out of bound (wrong key or ciphertexts?)")
+            warn_at_caller("inner product out of bound (wrong key or ciphertexts?)")
             return None
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:

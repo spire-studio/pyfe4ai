@@ -8,8 +8,9 @@ import numpy as np
 
 from pyfe4ai.schemes.sife.paillier import SIFEPaillier
 from pyfe4ai.schemes.sife.paillier import SIFEPaillierKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.logger import init_logging_config
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.base import cache_dir
+from tests.log_config import init_logging_config
 
 init_logging_config()
 logger = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ def test_key_generator(kg_config):
     assert kg.bit_length == kg_config["bit_length"]
 
     config_folder = os.path.join(
-        "config", "authority", CryptoCONST.TYPE_SIFE_PAILLIER
+        cache_dir(), "authority", CryptoCONST.TYPE_SIFE_PAILLIER
     )
     assert os.path.exists(config_folder)
     param_file = os.path.join(config_folder, "param.json")

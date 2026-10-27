@@ -1,0 +1,113 @@
+Core
+====
+
+.. automodule:: pyfe4ai.core
+   :no-members:
+
+The status and security-profile modules (:mod:`pyfe4ai.core.status`,
+:mod:`pyfe4ai.core.profiles`) are documented on :doc:`../security`.
+
+Scheme Registry
+---------------
+
+.. automodule:: pyfe4ai.core.registry
+   :members:
+
+The registered schemes (``standard``: whether the ``standard`` profile
+gives the scheme parameters; see :doc:`../security`):
+
+.. scheme-registry-table::
+
+Base Classes and the Parameter Cache
+------------------------------------
+
+Abstract base classes shared by all IPFE schemes.
+
+.. automodule:: pyfe4ai.core.base
+   :members:
+   :undoc-members:
+
+Serialized Objects
+------------------
+
+.. automodule:: pyfe4ai.core.formats
+   :no-members:
+
+.. automodule:: pyfe4ai.core.formats.record
+   :members:
+
+.. automodule:: pyfe4ai.core.formats.binary
+   :members:
+
+.. automodule:: pyfe4ai.core.formats.lwe
+   :members:
+
+.. automodule:: pyfe4ai.core.formats.ring_lwe
+   :members:
+
+.. automodule:: pyfe4ai.core.formats.dl
+   :members:
+
+.. automodule:: pyfe4ai.core.formats.pairing
+   :members:
+
+.. automodule:: pyfe4ai.core.formats.threshold
+   :members:
+
+Server and Client Ids
+---------------------
+
+.. automodule:: pyfe4ai.core.ids
+   :members:
+
+Versions and Compatibility
+--------------------------
+
+.. automodule:: pyfe4ai.core.versions
+   :members:
+
+Configuration
+-------------
+
+The config classes and option rules (:mod:`pyfe4ai.core.config`) are
+documented on :doc:`config`, every scheme's options on
+:doc:`../configuration`.
+
+Offline Phases and One-Time Precomputations
+-------------------------------------------
+
+.. automodule:: pyfe4ai.core.one_time
+   :members:
+
+.. automodule:: pyfe4ai.schemes.mcfe.offline
+   :members:
+
+Fork Safety
+-----------
+
+What a forked child renews; the process-wide state and what threads,
+copies, pickles and ``fork`` do to it are on :doc:`../threading`.
+
+.. automodule:: pyfe4ai.core.forksafe
+   :members:
+
+Exceptions
+----------
+
+.. automodule:: pyfe4ai.core.exceptions
+   :members:
+   :undoc-members:
+
+Constants
+---------
+
+.. automodule:: pyfe4ai.core.constants
+   :members:
+   :undoc-members:
+
+Input Validation
+----------------
+
+.. automodule:: pyfe4ai._validation
+   :members:
+   :undoc-members:

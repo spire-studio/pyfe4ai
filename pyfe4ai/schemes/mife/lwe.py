@@ -7,7 +7,8 @@ LWE multi-input inner-product FE (selective security).
 | (ePrint 2017/972) -- Fig. 4 (transformation for bounded-norm inner
 | products), instantiated with the LWE IPFE of Abdalla, Bourse, De Caro,
 | Pointcheval, "Simple Functional Encryption Schemes for Inner Products",
-| PKC 2015, using the two-step decryption of ACFGU18 Section 4.2.
+| PKC 2015 (full version: ePrint 2015/017), using the two-step decryption
+| of ACFGU18 Section 4.2.
 
 * type:     private-key multi-input encryption (MIFE, LWE)
 * setting:  Integer based (Z_q, plaintext modulus p, Delta = floor(q / p))
@@ -31,9 +32,18 @@ the selectively secure ABDP15 IPFE, whose two-step decryption is the same.
 All slots share ``A`` (secrets and pads are independent per slot). A
 decryption needs ciphertexts of every slot named in the key.
 
+Security of a slot's IPFE rests on the LWE proof of the ABDP15 full version,
+Thm. 4.4 with Thms. 6.6 and 6.7 (see :mod:`pyfe4ai.schemes.sife.lwe`). Here
+it reduces to LWE with errors of width ``sigma / (1 + 4 X sqrt(eta))``, since
+the per-slot challenge vectors of the ACFGU18 reduction differ by up to
+``4 X`` per coordinate; this composition is the library's own, and neither
+paper covers it. The pad makes
+the slot plaintexts ``w`` uniform mod ``q``; the proof only needs their
+difference to be short. ``standard`` reads the 128-bit table at that width.
+
 ``A`` is published as a seed and expanded with SHAKE-128; encryption runs
 in numpy over an ``A`` kept in memory or expanded per batch
-(``matrix_mode``), see :mod:`pyfe4ai.schemes.abdp15_lwe`. Versions <= 0.2.0
+(``matrix_mode``), see :mod:`pyfe4ai.schemes.common.abdp15_lwe`. Versions <= 0.2.0
 published ``A`` entry by entry.
 """
 
@@ -46,25 +56,31 @@ import os
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.schemes.abdp15_lwe import ENCRYPT_BATCH
-from pyfe4ai.schemes.abdp15_lwe import ABDP15CryptoMixin
-from pyfe4ai.schemes.abdp15_lwe import ABDP15KeyGeneratorMixin
-from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
-from pyfe4ai.schemes.ipfe import decoded_layer
-from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.lwe_utils import abdp15_parameters
-from pyfe4ai.utils.lwe_utils import decode_scaled
-from pyfe4ai.utils.matrix_utils import digits_to_vector
-from pyfe4ai.utils.matrix_utils import matrix_to_digits
-from pyfe4ai.utils.matrix_utils import matvec_mod
-from pyfe4ai.utils.matrix_utils import vecdot_mod
-from pyfe4ai.utils.matrix_utils import vector_to_digits
-from pyfe4ai.utils.sampling_utils import rand_uniform_matrix
-from pyfe4ai.utils.sampling_utils import rand_uniform_vector
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.validation import scale_to_int
-from pyfe4ai.utils.validation import strict_int
+from pyfe4ai.schemes.common.abdp15_lwe import ENCRYPT_BATCH
+from pyfe4ai.schemes.common.abdp15_lwe import ABDP15CryptoMixin
+from pyfe4ai.schemes.common.abdp15_lwe import ABDP15KeyGeneratorMixin
+from pyfe4ai.core.base import IPFEAbsCrypto
+from pyfe4ai.core.base import decoded_layer
+from pyfe4ai.core.base import IPFEAbsKeyGenerator
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.primitives.lattice.lwe_utils import abdp15_parameters
+from pyfe4ai.primitives.lattice.lwe_utils import decode_scaled
+from pyfe4ai.primitives.lattice.matrix_utils import digits_to_vector
+from pyfe4ai.primitives.lattice.matrix_utils import matrix_to_digits
+from pyfe4ai.primitives.lattice.matrix_utils import matvec_mod
+from pyfe4ai.primitives.lattice.matrix_utils import vecdot_mod
+from pyfe4ai.primitives.lattice.matrix_utils import vector_to_digits
+from pyfe4ai.primitives.sampling import rand_uniform_matrix
+from pyfe4ai.primitives.sampling import rand_uniform_vector
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.formats.lwe import LWECiphertext
+from pyfe4ai.core.formats.lwe import MIFELWEEncryptionKey
+from pyfe4ai.core.formats.lwe import MIFELWEFunctionalKey
+from pyfe4ai.core.formats.lwe import MIFELWEParameters
+from pyfe4ai.core.versions import MIFE_LWE_RECORD
+from pyfe4ai.core.ids import issued_id
+from pyfe4ai._validation import scale_to_int
+from pyfe4ai._validation import strict_int
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +89,11 @@ class MIFELWEKeyGenerator(IPFEAbsKeyGenerator, ABDP15KeyGeneratorMixin):
     """Key generator for LWE-based multi-input inner-product FE."""
 
     _scheme_type = CryptoCONST.TYPE_MIFE_LWE
-    _construction = "acfgu18-abdp15-lwe-seeded-a/v2"
+    _construction = MIFE_LWE_RECORD
+    # ACFGU18, proof of Thm. 3: a slot's IPFE is challenged with
+    # x^(j,0) - x^(1,0) + x^(1,1) against x^(j,1), which differ by up to 4X
+    _challenge_spread = 4
+
     def __init__(self, config: dict, **kwargs) -> None:
         """Initialise the MIFE LWE key generator.
 
@@ -83,7 +103,7 @@ class MIFELWEKeyGenerator(IPFEAbsKeyGenerator, ABDP15KeyGeneratorMixin):
                 ``"auto"`` for the smallest dimension meeting the 128-bit
                 table, the ``standard`` profile's choice), ``bound_x``,
                 ``bound_y`` and ``matrix_mode`` (``"memory"`` or
-                ``"stream"``, see :mod:`pyfe4ai.schemes.abdp15_lwe`).
+                ``"stream"``, see :mod:`pyfe4ai.schemes.common.abdp15_lwe`).
         """
         super().__init__(config, **kwargs)
         self.eta = config.get("eta", CryptoCONST.MIFE_ETA)
@@ -99,7 +119,10 @@ class MIFELWEKeyGenerator(IPFEAbsKeyGenerator, ABDP15KeyGeneratorMixin):
     def _derive(self) -> dict:
         # ACFGU18, footnote 14: the ALS16 parameters for vectors of dimension
         # n * eta, since decryption adds the noise of all n slots
-        return abdp15_parameters(self.bound_x, self.bound_y, self.n * self.eta, self.lwe_n_config)
+        return abdp15_parameters(
+            self.bound_x, self.bound_y, self.n * self.eta, self.lwe_n_config,
+            lwe_sigma=self._table_sigma,
+        )
 
     def setup(self) -> None:
         """Generate per-client secret keys and public keys (one pass over ``A``)."""
@@ -121,16 +144,16 @@ class MIFELWEKeyGenerator(IPFEAbsKeyGenerator, ABDP15KeyGeneratorMixin):
             Dict containing ``A_seed``, ``m``, ``lwe_n``, ``p``, ``q``,
             ``eta``, ``n``, ``bound_x``, ``bound_y``, ``sec_param``.
         """
-        return {
+        return MIFELWEParameters.new(
             **self._matrix_parameters(),
-            "p": gp.digits(self.p),
-            "q": gp.digits(self.q),
-            "eta": self.eta,
-            "n": self.n,
-            "bound_x": gp.digits(self.bound_x),
-            "bound_y": gp.digits(self.bound_y),
-            "sec_param": self.sec_param,
-        }
+            p=gp.digits(self.p),
+            q=gp.digits(self.q),
+            eta=self.eta,
+            n=self.n,
+            bound_x=gp.digits(self.bound_x),
+            bound_y=gp.digits(self.bound_y),
+            sec_param=self.sec_param,
+        ).to_dict()
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
         """Return encryption keys for client *nid*.
@@ -141,12 +164,13 @@ class MIFELWEKeyGenerator(IPFEAbsKeyGenerator, ABDP15KeyGeneratorMixin):
         Returns:
             Dict with ``pk`` matrix, or ``None`` if *nid* is invalid.
         """
+        nid = issued_id(nid)  # numpy integers as ints; a value that is no id is an unknown client
         if nid not in self.mpk["pk"]:
             return None
-        return {
-            "pk": matrix_to_digits(self.mpk["pk"][nid]),
-            "u": vector_to_digits(self.msk["u"][nid]),
-        }
+        return MIFELWEEncryptionKey.new(
+            pk=matrix_to_digits(self.mpk["pk"][nid]),
+            u=vector_to_digits(self.msk["u"][nid]),
+        ).to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Derive a functional decryption key for the given fusion weights.
@@ -185,7 +209,7 @@ class MIFELWEKeyGenerator(IPFEAbsKeyGenerator, ABDP15KeyGeneratorMixin):
                 matvec_mod(self.msk["sk"][nid], y_vec, self.q)
             )
             z += sum(u * y_j for u, y_j in zip(self.msk["u"][nid], y_vec))
-        return {"sk_y": sk_y, "z": gp.digits(z % self.q)}
+        return MIFELWEFunctionalKey.new(sk_y=sk_y, z=gp.digits(z % self.q)).to_dict()
 
 
 class MIFELWE(IPFEAbsCrypto, ABDP15CryptoMixin):
@@ -230,19 +254,19 @@ class MIFELWE(IPFEAbsCrypto, ABDP15CryptoMixin):
 
     def _encrypt_batch(self, plaintexts: list) -> list:
         """Ciphertexts ``(A^T r, pk^T r + Delta (x + u))`` of validated plaintexts."""
-        if "u" not in self.sk:
+        if "u" not in MIFELWEEncryptionKey(self.sk):
             raise FEKeyError("encryption key lacks the one-time pad u")
         q = gp.mpz(self.pp["q"])
         delta = q // gp.mpz(self.pp["p"])
-        pad = [gp.mpz(u) for u in self.sk["u"]]
+        pad = [gp.mpz(u) for u in MIFELWEEncryptionKey(self.sk).u]
         ct0s, masks = self._masks(len(plaintexts))
         out = []
         for x, ct0, mask in zip(plaintexts, ct0s, masks):
             w = [(gp.mpz(int(x_j)) + u) % q for x_j, u in zip(x, pad)]
-            out.append({
-                "ct0": vector_to_digits([gp.mpz(v) for v in ct0]),
-                "ct1": vector_to_digits([(gp.mpz(v) + delta * w_j) % q for v, w_j in zip(mask, w)]),
-            })
+            out.append(LWECiphertext.new(
+                ct0=vector_to_digits([gp.mpz(v) for v in ct0]),
+                ct1=vector_to_digits([(gp.mpz(v) + delta * w_j) % q for v, w_j in zip(mask, w)]),
+            ).to_dict())
         return out
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict):
@@ -260,15 +284,16 @@ class MIFELWE(IPFEAbsCrypto, ABDP15CryptoMixin):
             FEKeyError: If decryption key is missing.
             FEValidationError: If fusion weight length or values are invalid.
         """
-        if not dk or "z" not in dk:
+        if not dk or "z" not in MIFELWEFunctionalKey(dk):
             raise FEKeyError("no decryption key provided")
-        if set(dct_ct) != set(dk["sk_y"]) or set(dct_ct) != set(fusion_weight):
+        key = MIFELWEFunctionalKey(dk)
+        if set(dct_ct) != set(key.sk_y) or set(dct_ct) != set(fusion_weight):
             raise FESchemeError("need one ciphertext for every slot of the key")
 
         q = gp.mpz(self.pp["q"])
         p = gp.mpz(self.pp["p"])
         delta = q // p
-        total = -delta * gp.mpz(dk["z"])
+        total = -delta * gp.mpz(key.z)
         for nid in dct_ct:
             y = fusion_weight[nid]
             if len(y) != self.pp["eta"]:
@@ -277,9 +302,9 @@ class MIFELWE(IPFEAbsCrypto, ABDP15CryptoMixin):
                 raise FEValidationError("fusion weight exceeds configured bound_y")
 
             y_vec = [gp.mpz(v) for v in y]
-            ct0 = digits_to_vector(dct_ct[nid]["ct0"])
-            ct1 = digits_to_vector(dct_ct[nid]["ct1"])
-            sk_y = digits_to_vector(dk["sk_y"][nid])
+            ct0 = digits_to_vector(LWECiphertext(dct_ct[nid]).ct0)
+            ct1 = digits_to_vector(LWECiphertext(dct_ct[nid]).ct1)
+            sk_y = digits_to_vector(key.sk_y[nid])
 
             total += vecdot_mod(y_vec, ct1, q) - vecdot_mod(ct0, sk_y, q)
         bound = self.pp["n"] * self.pp["eta"] * gp.mpz(self.pp["bound_x"]) * gp.mpz(self.pp["bound_y"])

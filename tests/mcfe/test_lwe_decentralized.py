@@ -5,10 +5,11 @@ import random
 import numpy as np
 import pytest
 
-from pyfe4ai.logger import init_logging_config
+from tests.log_config import init_logging_config
 from pyfe4ai.schemes.mcfe.lwe_decentralized import DecentralizedMCFELWE
 from pyfe4ai.schemes.mcfe.lwe_decentralized import DecentralizedMCFELWEKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.base import cache_dir
 
 init_logging_config()
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ def test_key_generator(kg_config):
     assert kg.eta == kg_config["eta"]
     assert kg.lwe_n == kg_config["lwe_n"]
 
-    config_folder = os.path.join("config", "authority", CryptoCONST.TYPE_DMCFE_LWE)
+    config_folder = os.path.join(cache_dir(), "authority", CryptoCONST.TYPE_DMCFE_LWE)
     assert os.path.exists(config_folder)
     assert os.path.exists(os.path.join(config_folder, "param.json"))
 
@@ -49,7 +50,7 @@ def test_key_generator(kg_config):
     assert pp["lst_nid"] == kg_config["lst_nid"]
 
     sk = kg.get_private_keys("nid_0")
-    assert set(sk) == {"z", "s2"}
+    assert set(sk) == {"z", "s2", "label_hash"}
     assert len(sk["s2"]) == kg.dim
     assert all(sum(col) == 0 for col in zip(*kg.msk["s2"].values()))
 

@@ -37,11 +37,12 @@ import gmpy2 as gp
 
 from pyfe4ai.schemes.mcfe.paillier import _hash_label as _dcr_hash_label
 from pyfe4ai.schemes.mcfe.paillier import dcr_sigma
-from pyfe4ai.schemes.threshold_utils import fusion_weight_id
-from pyfe4ai.utils.crypto_utils import generate_group_primes
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
-from pyfe4ai.utils.modular_utils import pow_signed_many
-from pyfe4ai.utils.sampling_utils import discrete_gaussian_bigint
+from pyfe4ai.schemes.threshold.binding import fusion_weight_id
+from pyfe4ai.primitives.groups.integer_groups import generate_group_primes
+from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.core.ids import id_list
+from pyfe4ai.primitives.groups.modular_utils import pow_signed_many
+from pyfe4ai.primitives.sampling import discrete_gaussian_bigint
 
 #: Smallest prime size of N2, whatever the contribution bound.
 MIN_PRIME_BITS = 128
@@ -133,7 +134,7 @@ def combine_contributions(n2_mod, shares: dict, lst_nid: list) -> list:
     """
     if set(shares) != set(lst_nid):
         raise FESchemeError(
-            "key shares of all clients are required, got {}".format(sorted(shares))
+            "key shares of all clients are required, got {}".format(id_list(shares))
         )
     n2_mod = gp.mpz(n2_mod)
     n2_square = n2_mod * n2_mod

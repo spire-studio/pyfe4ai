@@ -5,17 +5,20 @@ MCFE — Multi-Client Functional Encryption
    :no-members:
 
 The key generator and crypto class of every scheme below are importable
-from :mod:`pyfe4ai.schemes.mcfe`, where ``MCFEDamgardDDH``, ``DMCFE``,
-``DMCFELWE`` and ``DMCFERingLWE`` (and their ``...KeyGenerator``) are aliases
-of :class:`~pyfe4ai.schemes.mcfe.damgard_ddh.MCFEDamgard`,
-:class:`~pyfe4ai.schemes.mcfe.ddh_decentralized.DecentralizedMCFE`,
-:class:`~pyfe4ai.schemes.mcfe.lwe_decentralized.DecentralizedMCFELWE` and
-:class:`~pyfe4ai.schemes.mcfe.ring_lwe_decentralized.DecentralizedMCFERingLWE`.
+from :mod:`pyfe4ai.schemes.mcfe` under their own names (one name per class,
+no aliases; the naming rule is in :mod:`pyfe4ai.core.registry`).
 
 DDH
 ---
 
 .. automodule:: pyfe4ai.schemes.mcfe.ddh
+   :members:
+   :undoc-members:
+
+DDH over ristretto255
+---------------------
+
+.. automodule:: pyfe4ai.schemes.mcfe.ddh_ristretto255
    :members:
    :undoc-members:
 

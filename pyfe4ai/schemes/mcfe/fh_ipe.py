@@ -31,9 +31,9 @@ With ``x' = (x, 0^m)``, ``y' = (y, 0^m)`` (``m2 = 2m``) and ``l = m2 + 3``:
 
 from __future__ import annotations
 
-from pyfe4ai.utils.pairing_backend import GT, ZR, PairingGroup, pair
-from pyfe4ai.utils.pairing_backend import check_asymmetric  # noqa: F401  (re-export)
-from pyfe4ai.utils.exceptions import FEValidationError
+from pyfe4ai.primitives.pairing.pairing_backend import ZR, PairingGroup, multi_pair, multiexp, pair, pow_many
+from pyfe4ai.primitives.pairing.pairing_backend import check_asymmetric  # noqa: F401  (re-export)
+from pyfe4ai.core.exceptions import FEValidationError
 
 class FHIPE:
     """ACFGU18 Fig. 12 (n = 1, k = 1) with LV16 padding, for vectors of length *m*."""
@@ -42,11 +42,18 @@ class FHIPE:
         self.group = group
         self.g1 = g1
         self.g2 = g2
-        self.gt = pair(g1, g2)
+        self._gt = None
         self.m = m
         self.m2 = 2 * m
         self.ell = self.m2 + 3
         self.order = int(group.order())
+
+    @property
+    def gt(self):
+        """``e(g1, g2)``, computed on first use (encryption does not need it)."""
+        if self._gt is None:
+            self._gt = pair(self.g1, self.g2)
+        return self._gt
 
     # -- helpers ---------------------------------------------------------------
     def _zr(self, value: int):
@@ -57,13 +64,13 @@ class FHIPE:
             return int(self.group.random(ZR))
         return rng.getrandbits(self.order.bit_length() + 128) % self.order
 
-    def _multiexp(self, bases: list, exps: list, identity):
-        acc = identity
-        for b, e in zip(bases, exps):
-            e = int(e) % self.order
-            if e:
-                acc = acc * (b ** self._zr(e))
-        return acc
+    def _multiexp(self, bases: list, exps: list):
+        """prod_j bases[j]^exps[j]: one multi-scalar multiplication on BLS12-381."""
+        return multiexp(bases, exps, self.group)
+
+    def _powers(self, base, exps: list) -> list:
+        """[base^e for e in exps] with one precomputation for *base* on BLS12-381."""
+        return pow_many(base, exps, self.group)
 
     def identity1(self):
         return self.g1 ** self._zr(0)
@@ -95,15 +102,13 @@ class FHIPE:
         s = self._rand(rng)
         as_ = [(a * s) % p for a in msk["a_in"]]
         uas = [(row[0] * as_[0] + row[1] * as_[1]) % p for row in msk["u"]]
-        ct_in = [self.g1 ** self._zr(v) for v in as_]
+        powers = self._powers(self.g1, as_ + uas[: self.m2] + [msk["z"] + uas[self.m2]])
+        ct_in = powers[:2]
         for j in range(self.m2):
-            ct_in.append(x_pad[j] * (self.g1 ** self._zr(uas[j])))
-        ct_in.append(self.g1 ** self._zr(msk["z"] + uas[self.m2]))
+            ct_in.append(x_pad[j] * powers[2 + j])
+        ct_in.append(powers[-1])
         # outer KeyGen of [ct_in]_1: (W'^T ct_in ; ct_in)
-        head = [
-            self._multiexp(ct_in, [row[c] for row in msk["w"]], self.identity1())
-            for c in (0, 1)
-        ]
+        head = [self._multiexp(ct_in, [row[c] for row in msk["w"]]) for c in (0, 1)]
         return head + ct_in
 
     def keygen(self, msk: dict, y_enc: list, rng=None, r=None) -> tuple:
@@ -117,18 +122,17 @@ class FHIPE:
             raise FEValidationError("FH-IPE key vector must have {} entries".format(self.m))
         p = self.order
         r = self._rand(rng) if r is None else int(r) % p
-        v = list(y_enc) + [self.identity2()] * self.m + [self.g2 ** self._zr(r)]
-        sk_in = [
-            self._multiexp(v, [(-row[c]) % p for row in msk["u"]], self.identity2())
-            for c in (0, 1)
-        ] + v
         # outer Enc of [sk_in]_2: (-A' r' ; sk_in + W' A' r')
         r2 = self._rand(rng)
         ar = [(a * r2) % p for a in msk["a_out"]]
-        key = [self.g2 ** self._zr(-v_) for v_ in ar]
+        powers = self._powers(
+            self.g2, [r] + [-v_ for v_ in ar] + [row[0] * ar[0] + row[1] * ar[1] for row in msk["w"]]
+        )
+        v = list(y_enc) + [self.identity2()] * self.m + [powers[0]]
+        sk_in = [self._multiexp(v, [(-row[c]) % p for row in msk["u"]]) for c in (0, 1)] + v
+        key = powers[1:3]
         for j in range(self.ell):
-            row = msk["w"][j]
-            key.append(sk_in[j] * (self.g2 ** self._zr(row[0] * ar[0] + row[1] * ar[1])))
+            key.append(sk_in[j] * powers[3 + j])
         return key, (msk["z"] * r) % p
 
     def keygen_exponents(self, msk: dict, y: list, r=None) -> tuple:
@@ -155,7 +159,4 @@ class FHIPE:
         """Return ``[<x, y>]_T`` from a ciphertext, a key and the key's ``[z_sum]_T``."""
         if len(ct) != self.ell + 2 or len(key) != self.ell + 2:
             raise FEValidationError("FH-IPE ciphertext and key must have {} elements".format(self.ell + 2))
-        acc = self.group.init(GT, 1)
-        for c, k in zip(ct, key):
-            acc *= pair(c, k)
-        return acc / z_sum_gt
+        return multi_pair(ct, key) / z_sum_gt

@@ -3,18 +3,18 @@
 import gmpy2 as gp
 import pytest
 
-from pyfe4ai.schemes.mife.ddh import MIFE, MIFEKeyGenerator
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.schemes.mife.ddh import MIFEDDH, MIFEDDHKeyGenerator
+from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
 
 NIDS = ["nid_0", "nid_1"]
 
 
 @pytest.fixture(scope="module")
 def scheme():
-    kg = MIFEKeyGenerator({"sec_param": 128, "lst_nid": NIDS, "eta": 2, "n": 2, "s": 1})
+    kg = MIFEDDHKeyGenerator({"sec_param": 128, "lst_nid": NIDS, "eta": 2, "n": 2, "s": 1})
     kg.setup()
     pp = kg.get_public_parameters()
-    clients = {nid: MIFE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}) for nid in NIDS}
+    clients = {nid: MIFEDDH({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}) for nid in NIDS}
     return kg, pp, clients
 
 
@@ -42,7 +42,7 @@ def test_slot_coverage_and_weight_binding(scheme):
     y = {"nid_0": [1, 2], "nid_1": [-1, 3]}
     dk = kg.get_decryption_keys(None, credentials={"fusion_weight": y})
     cts = {nid: c.encrypt([4, 5]) for nid, c in clients.items()}
-    dec = MIFE({"keys": {"pp": pp}})
+    dec = MIFEDDH({"keys": {"pp": pp}})
     assert dec.decrypt(cts, dk, y) == 14 + 11
     with pytest.raises(FESchemeError):
         dec.decrypt({"nid_0": cts["nid_0"]}, dk, y)
@@ -59,5 +59,5 @@ def test_dlog_bound_option(scheme):
     y = {"nid_0": [600, 0], "nid_1": [400, 0]}
     dk = kg.get_decryption_keys(None, credentials={"fusion_weight": y})
     cts = {nid: c.encrypt([9, 0]) for nid, c in clients.items()}
-    assert MIFE({"keys": {"pp": pp}}).decrypt(cts, dk, y) is None
-    assert MIFE({"keys": {"pp": pp}, "dlog_bound": 10 ** 4}).decrypt(cts, dk, y) == 9000
+    assert MIFEDDH({"keys": {"pp": pp}}).decrypt(cts, dk, y) is None
+    assert MIFEDDH({"keys": {"pp": pp}, "dlog_bound": 10 ** 4}).decrypt(cts, dk, y) == 9000

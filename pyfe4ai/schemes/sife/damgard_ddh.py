@@ -28,16 +28,20 @@ import numpy as np
 
 _CSPRNG = random.SystemRandom()
 
-from pyfe4ai.schemes.ddh_base import DamgardDDHKeyGeneratorBase
-from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
-from pyfe4ai.schemes.ipfe import decoded_layer
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.crypto_utils import _random
-from pyfe4ai.utils.dlog_solver import load_or_build_dlog_table, dlog_table_solve
-from pyfe4ai.utils.modular_utils import pow_signed
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.validation import int_vector
-from pyfe4ai.utils.validation import scale_to_int
+from pyfe4ai.schemes.common.ddh_base import DamgardDDHKeyGeneratorBase
+from pyfe4ai.core.base import IPFEAbsCrypto
+from pyfe4ai.core.base import decoded_layer
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.primitives.groups.integer_groups import _random
+from pyfe4ai.primitives.groups.dlog_solver import load_or_build_dlog_table, dlog_table_solve
+from pyfe4ai.primitives.groups.modular_utils import pow_signed
+from pyfe4ai.core.formats.dl import DamgardCiphertext
+from pyfe4ai.core.formats.dl import DamgardEncryptionKey
+from pyfe4ai.core.formats.dl import SIFEDamgardFunctionalKey
+from pyfe4ai.core.formats.dl import SIFEDamgardParameters
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai._validation import int_vector
+from pyfe4ai._validation import scale_to_int
 
 logger = logging.getLogger(__name__)
 
@@ -85,16 +89,16 @@ class SIFEDamgardKeyGenerator(DamgardDDHKeyGeneratorBase):
         logger.info("SIFE Damgard setup successfully")
 
     def get_public_parameters(self) -> dict:
-        return {
-            "p": gp.digits(self.mpk["p"]),
-            "q": gp.digits(self.mpk["q"]),
-            "g": gp.digits(self.mpk["g"]),
-            "h": gp.digits(self.mpk["h"]),
-            "eta": self.eta,
-            "bound": self.bound,
-            "sec_param": self.sec_param,
-            "modulus_length": self.modulus_length,
-        }
+        return SIFEDamgardParameters.new(
+            p=gp.digits(self.mpk["p"]),
+            q=gp.digits(self.mpk["q"]),
+            g=gp.digits(self.mpk["g"]),
+            h=gp.digits(self.mpk["h"]),
+            eta=self.eta,
+            bound=self.bound,
+            sec_param=self.sec_param,
+            modulus_length=self.modulus_length,
+        ).to_dict()
 
     def get_private_keys(self, nid: str = "nid_default", **kwargs) -> dict | None:
         """Return the encryption key (public key vector ``pk``).
@@ -102,7 +106,7 @@ class SIFEDamgardKeyGenerator(DamgardDDHKeyGeneratorBase):
         Args:
             nid: Client identifier (unused for single-input schemes).
         """
-        return {"pk": [gp.digits(v) for v in self.mpk["pk"]]}
+        return DamgardEncryptionKey.new(pk=[gp.digits(v) for v in self.mpk["pk"]]).to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Derive a functional decryption key for the given fusion weights.
@@ -120,7 +124,7 @@ class SIFEDamgardKeyGenerator(DamgardDDHKeyGeneratorBase):
         )
         key1 = sum(s_i * y_i for s_i, y_i in zip(self.msk["s"], y))
         key2 = sum(t_i * y_i for t_i, y_i in zip(self.msk["t"], y))
-        return {"k1": gp.digits(key1 % self.q), "k2": gp.digits(key2 % self.q), "y": y}
+        return SIFEDamgardFunctionalKey.new(k1=gp.digits(key1 % self.q), k2=gp.digits(key2 % self.q), y=y).to_dict()
 
 
 class SIFEDamgard(IPFEAbsCrypto):
@@ -162,7 +166,7 @@ class SIFEDamgard(IPFEAbsCrypto):
         q = gp.mpz(self.pp["q"])
         g = gp.mpz(self.pp["g"])
         h = gp.mpz(self.pp["h"])
-        pk = [gp.mpz(v) for v in self.sk["pk"]]
+        pk = [gp.mpz(v) for v in DamgardEncryptionKey(self.sk).pk]
         r = _random(q, self.pp["modulus_length"])
 
         c = gp.powmod(g, r, p)
@@ -174,7 +178,7 @@ class SIFEDamgard(IPFEAbsCrypto):
             )
             e.append(gp.digits(ct_i))
 
-        return {"c": gp.digits(c), "d": gp.digits(dd), "e": e}
+        return DamgardCiphertext.new(c=gp.digits(c), d=gp.digits(dd), e=e).to_dict()
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: list):
         """Decrypt ciphertexts and recover the inner product.
@@ -191,21 +195,22 @@ class SIFEDamgard(IPFEAbsCrypto):
         fusion_weight = int_vector(
             fusion_weight, "fusion weight", length=self.pp["eta"], bound=self.pp["bound"]
         )
-        if fusion_weight != dk.get("y"):
+        if fusion_weight != SIFEDamgardFunctionalKey(dk).get("y"):
             raise FESchemeError("fusion weights differ from those of the decryption key")
         p = gp.mpz(self.pp["p"])
-        elems = [gp.mpz(v) for v in dct_ct["e"]] + [gp.mpz(dct_ct["c"]), gp.mpz(dct_ct["d"])]
-        if len(dct_ct["e"]) != self.pp["eta"] or not all(0 < v < p for v in elems):
+        ct = DamgardCiphertext(dct_ct)
+        elems = [gp.mpz(v) for v in ct.e] + [gp.mpz(ct.c), gp.mpz(ct.d)]
+        if len(ct.e) != self.pp["eta"] or not all(0 < v < p for v in elems):
             raise FEValidationError("malformed ciphertext")
 
         num = gp.mpz(1)
-        for ct_i, y_i in zip(dct_ct["e"], fusion_weight):
+        for ct_i, y_i in zip(ct.e, fusion_weight):
             num = gp.mod(num * pow_signed(gp.mpz(ct_i), gp.mpz(y_i), p), p)
 
         denom = gp.mod(
             gp.mul(
-                gp.powmod(gp.mpz(dct_ct["c"]), gp.mpz(dk["k1"]), p),
-                gp.powmod(gp.mpz(dct_ct["d"]), gp.mpz(dk["k2"]), p),
+                gp.powmod(gp.mpz(ct.c), gp.mpz(SIFEDamgardFunctionalKey(dk).k1), p),
+                gp.powmod(gp.mpz(ct.d), gp.mpz(SIFEDamgardFunctionalKey(dk).k2), p),
             ),
             p,
         )
@@ -222,6 +227,7 @@ class SIFEDamgard(IPFEAbsCrypto):
             )
         except (ValueError, RuntimeError):
             logger.error("inner-product is out of bound supported by crypto system")
+            warn_at_caller("inner-product is out of bound supported by crypto system")
             return None
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:

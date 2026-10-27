@@ -7,12 +7,13 @@ import logging
 import numpy as np
 import gmpy2 as gp
 
-from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFE
-from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFEKeyGenerator
+from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFEDDH
+from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFEDDHKeyGenerator
 from pyfe4ai.schemes.mcfe.labels import encode_label
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
-from pyfe4ai.logger import init_logging_config
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.core.base import cache_dir
+from tests.log_config import init_logging_config
 
 init_logging_config()
 logger = logging.getLogger(__name__)
@@ -36,7 +37,7 @@ def kg_config():
 
 
 def test_key_generator(kg_config):
-    kg = ThresholdMCFEKeyGenerator(kg_config)
+    kg = ThresholdMCFEDDHKeyGenerator(kg_config)
 
     assert kg.sec_param == kg_config["sec_param"]
     assert kg.eta == kg_config["eta"]
@@ -44,7 +45,7 @@ def test_key_generator(kg_config):
     assert kg.t == kg_config["t"]
     assert kg.s == kg_config["s"]
 
-    config_folder = os.path.join("config", "authority", CryptoCONST.TYPE_TMCFE)
+    config_folder = os.path.join(cache_dir(), "authority", CryptoCONST.TYPE_TMCFE)
     assert os.path.exists(config_folder)
     param_file = os.path.join(config_folder, "param.json")
     assert os.path.exists(param_file)
@@ -92,7 +93,7 @@ def test_key_generator(kg_config):
 
 
 def test_entire_process(kg_config):
-    kg = ThresholdMCFEKeyGenerator(kg_config)
+    kg = ThresholdMCFEDDHKeyGenerator(kg_config)
     kg.setup()
 
     precision = 3
@@ -126,7 +127,7 @@ def test_entire_process(kg_config):
             "precision": precision,
             "keys": {"pp": pp, "sk": sk_nid},
         }
-        tmife_nid = ThresholdMCFE(config_nid)
+        tmife_nid = ThresholdMCFEDDH(config_nid)
         ct_nid = tmife_nid.encrypt(dict_tmife_n_x[nid], label)
         assert isinstance(ct_nid, dict)
         assert set(ct_nid) == {"c", "label"}
@@ -146,7 +147,7 @@ def test_entire_process(kg_config):
             "precision": precision,
             "keys": {"pp": pp, "dk": dk_sid},
         }
-        tmife_sid = ThresholdMCFE(config_sid)
+        tmife_sid = ThresholdMCFEDDH(config_sid)
         ct_sid = tmife_sid.share_decrypt(
             dict_tmife_n_ct, dict_tmife_n_y, dk_sid, lst_sid_enrolled, label
         )
@@ -164,7 +165,7 @@ def test_entire_process(kg_config):
 
 
 def test_entire_process_lst_ndarray(kg_config):
-    kg = ThresholdMCFEKeyGenerator(kg_config)
+    kg = ThresholdMCFEDDHKeyGenerator(kg_config)
     kg.setup()
 
     precision = 3
@@ -185,7 +186,10 @@ def test_entire_process_lst_ndarray(kg_config):
     lst_check_points = [[0, (0, 1)], [1, (1, 1, 1)], [2, (3, 1)]]
     lst_expected_inner_prod = []
     for cp in lst_check_points:
-        lst_x = [dict_tmife_n_x[nid][cp[0]][cp[1]] for nid in lst_nid]
+        # the inputs as encrypted: quantised to `precision` decimals (scale_to_int
+        # rounds); the unquantised product differs by up to 0.5e-3 * sum(y) = 0.015
+        lst_x = [float(np.rint(dict_tmife_n_x[nid][cp[0]][cp[1]] * 10 ** precision)) / 10 ** precision
+                 for nid in lst_nid]
         lst_y = list(dict_tmife_n_y.values())
         logger.debug("x[{}][{}]: {}".format(cp[0], cp[1], lst_x))
         logger.debug("y: {}".format(lst_y))
@@ -204,7 +208,7 @@ def test_entire_process_lst_ndarray(kg_config):
             "precision": precision,
             "keys": {"pp": pp, "sk": sk_nid},
         }
-        tmife_nid = ThresholdMCFE(config_nid)
+        tmife_nid = ThresholdMCFEDDH(config_nid)
         ct_nid = tmife_nid.encrypt_lst_ndarray(dict_tmife_n_x[nid], label=label)
         assert isinstance(ct_nid, list)
         assert isinstance(ct_nid[0], np.ndarray)
@@ -226,7 +230,7 @@ def test_entire_process_lst_ndarray(kg_config):
             "precision": precision,
             "keys": {"pp": pp, "dk": dk_sid},
         }
-        tmife_sid = ThresholdMCFE(config_sid)
+        tmife_sid = ThresholdMCFEDDH(config_sid)
         ct_sid = tmife_sid.compute_lst_ndarray_ct(
             dict_tmife_n_ct, dict_tmife_n_y, dk_sid, lst_sid_enrolled, label
         )
@@ -243,7 +247,7 @@ def test_entire_process_lst_ndarray(kg_config):
             dec_lst_ndarray = tmife_nid.decrypt_lst_ndarray_ct(dict_tmife_s_ct, label)
             assert isinstance(dec_lst_ndarray, list)
             assert (
-                abs(dec_lst_ndarray[cp[0]][cp[1]] - lst_expected_inner_prod[i]) < 1e-2
+                abs(dec_lst_ndarray[cp[0]][cp[1]] - lst_expected_inner_prod[i]) < 1e-6
             )
             logger.info(
                 "{}-{}-inner prod-{}".format(nid, cp, dec_lst_ndarray[cp[0]][cp[1]])
@@ -253,7 +257,7 @@ def test_entire_process_lst_ndarray(kg_config):
 def _setup_round(n, s, t, eta, label, precision=0):
     lst_nid = ["nid_{}".format(i) for i in range(n)]
     lst_sid = ["sid_{}".format(i) for i in range(s)]
-    kg = ThresholdMCFEKeyGenerator(
+    kg = ThresholdMCFEDDHKeyGenerator(
         {
             "sec_param": 128,
             "lst_nid": lst_nid,
@@ -272,7 +276,7 @@ def _setup_round(n, s, t, eta, label, precision=0):
         x_i * y_i for nid in lst_nid for x_i, y_i in zip(dct_x[nid], dct_y[nid])
     )
     clients = {
-        nid: ThresholdMCFE(
+        nid: ThresholdMCFEDDH(
             {
                 "id": nid,
                 "precision": precision,
@@ -291,7 +295,7 @@ def _share_decrypt(kg, pp, dct_ct, dct_y, label, lst_sid_enrolled, precision=0):
         dk_sid = kg.get_decryption_keys(
             sid, credentials={"fusion_weight": dct_y, "label": label}
         )
-        server = ThresholdMCFE(
+        server = ThresholdMCFEDDH(
             {"id": sid, "precision": precision, "keys": {"pp": pp, "dk": dk_sid}}
         )
         shares[sid] = server.share_decrypt(dct_ct, dct_y, dk_sid, lst_sid_enrolled, label)
@@ -335,7 +339,7 @@ def test_single_server_cannot_decrypt():
     dk_sid0 = kg.get_decryption_keys(
         "sid_0", credentials={"fusion_weight": dct_y, "label": label}
     )
-    server0 = ThresholdMCFE({"id": "sid_0", "precision": 0, "keys": {"pp": pp, "dk": dk_sid0}})
+    server0 = ThresholdMCFEDDH({"id": "sid_0", "precision": 0, "keys": {"pp": pp, "dk": dk_sid0}})
     with pytest.raises(FESchemeError):
         server0.share_decrypt(dct_ct, dct_y, dk_sid0, ["sid_0"], label)
     shares = _share_decrypt(kg, pp, dct_ct, dct_y, label, ["sid_0", "sid_1"])
@@ -345,10 +349,10 @@ def test_single_server_cannot_decrypt():
     # and the single share is cryptographically useless: even with the
     # count checks bypassed (t forged to 1) it does not reveal the result
     forged_pp = dict(pp, t=1)
-    forged_server = ThresholdMCFE(
+    forged_server = ThresholdMCFEDDH(
         {"id": "sid_0", "precision": 0, "keys": {"pp": forged_pp, "dk": dk_sid0}}
     )
-    forged_combiner = ThresholdMCFE(
+    forged_combiner = ThresholdMCFEDDH(
         {
             "id": "nid_0",
             "precision": 0,
@@ -372,7 +376,7 @@ def test_shares_must_match_enrolled_set():
 
 def test_invalid_threshold_rejected():
     with pytest.raises(FEValidationError):
-        ThresholdMCFEKeyGenerator(
+        ThresholdMCFEDDHKeyGenerator(
             {
                 "sec_param": 128,
                 "lst_nid": ["nid_0", "nid_1"],
@@ -412,7 +416,7 @@ def test_key_is_label_independent():
         dct_ct = {nid: clients[nid].encrypt(dct_x[nid], label) for nid in clients}
         shares = {}
         for sid in enrolled:
-            server = ThresholdMCFE(
+            server = ThresholdMCFEDDH(
                 {"id": sid, "precision": 0, "keys": {"pp": pp, "dk": dks[sid]}}
             )
             shares[sid] = server.share_decrypt(dct_ct, dct_y, dks[sid], enrolled, label)
@@ -434,7 +438,7 @@ def test_mixed_labels_rejected():
     kg, pp, clients, dct_ct, dct_y, _ = _setup_round(3, 3, 2, 1, label)
     dct_ct["nid_1"] = clients["nid_1"].encrypt([1], "label-b")
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
-    server = ThresholdMCFE({"id": "sid_0", "precision": 0, "keys": {"pp": pp, "dk": dk}})
+    server = ThresholdMCFEDDH({"id": "sid_0", "precision": 0, "keys": {"pp": pp, "dk": dk}})
     with pytest.raises(FESchemeError):
         server.share_decrypt(dct_ct, dct_y, dk, ["sid_0", "sid_1"], label)
 
@@ -466,7 +470,7 @@ def test_server_rejects_other_weights():
     label = "weights"
     kg, pp, clients, dct_ct, dct_y, _ = _setup_round(3, 3, 2, 1, label)
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
-    server = ThresholdMCFE({"id": "sid_0", "precision": 0, "keys": {"pp": pp, "dk": dk}})
+    server = ThresholdMCFEDDH({"id": "sid_0", "precision": 0, "keys": {"pp": pp, "dk": dk}})
     other = {nid: [y[0] + 1] for nid, y in dct_y.items()}
     with pytest.raises(FESchemeError):
         server.share_decrypt(dct_ct, other, dk, ["sid_0", "sid_1"], label)
@@ -475,7 +479,7 @@ def test_server_rejects_other_weights():
 def test_dlog_bound_is_configurable():
     """|<x, y>| above the default 10^(precision+2) needs a larger dlog_bound."""
     lst_nid = ["nid_0", "nid_1", "nid_2"]
-    kg = ThresholdMCFEKeyGenerator(
+    kg = ThresholdMCFEDDHKeyGenerator(
         {"sec_param": 128, "lst_nid": lst_nid, "lst_sid": ["sid_0", "sid_1"],
          "eta": 2, "n": 3, "s": 2, "t": 2}
     )
@@ -484,15 +488,15 @@ def test_dlog_bound_is_configurable():
     dct_x = {nid: [-9, -9] for nid in lst_nid}
     dct_y = {nid: [9, 9] for nid in lst_nid}
     dct_ct = {
-        nid: ThresholdMCFE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(dct_x[nid], "big")
+        nid: ThresholdMCFEDDH({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(dct_x[nid], "big")
         for nid in lst_nid
     }
     enrolled = ["sid_0", "sid_1"]
     shares = {}
     for sid in enrolled:
         dk = kg.get_decryption_keys(sid, credentials={"fusion_weight": dct_y})
-        server = ThresholdMCFE({"id": sid, "keys": {"pp": pp, "dk": dk}})
+        server = ThresholdMCFEDDH({"id": sid, "keys": {"pp": pp, "dk": dk}})
         shares[sid] = server.share_decrypt(dct_ct, dct_y, dk, enrolled, "big")
-    assert ThresholdMCFE({"id": "c", "keys": {"pp": pp}}).combine_decrypt(shares) is None
-    combiner = ThresholdMCFE({"id": "c", "dlog_bound": 500, "keys": {"pp": pp}})
+    assert ThresholdMCFEDDH({"id": "c", "keys": {"pp": pp}}).combine_decrypt(shares) is None
+    combiner = ThresholdMCFEDDH({"id": "c", "dlog_bound": 500, "keys": {"pp": pp}})
     assert combiner.combine_decrypt(shares) == -486

@@ -5,7 +5,7 @@ Function-Hiding Inner-Product Encryption over Pairings
 | Section 3; structure as in GoFE's ``innerprod/fullysec/fhipe.go``.
 
 * type:     secret-key encryption with function-hiding keys
-* setting:  asymmetric pairing group (default MNT224); secure in the generic
+* setting:  asymmetric pairing group (default BLS12-381); secure in the generic
   bilinear group model
 
 ``B <- GL_n(Z_q)`` (rejection sampling), ``B* = det(B) (B^{-1})^T``. The key for
@@ -30,16 +30,23 @@ import logging
 
 import gmpy2 as gp
 
-from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
-from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
-from pyfe4ai.schemes.ipfe import ParameterCacheMixin
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup, pair
-from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
-from pyfe4ai.utils.pairing_backend import require_pairing_backend
-from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
-from pyfe4ai.utils.validation import int_vector
-from pyfe4ai.utils.pairing_utils import (
+from pyfe4ai.core.base import IPFEAbsCrypto
+from pyfe4ai.core.base import IPFEAbsKeyGenerator
+from pyfe4ai.core.base import ParameterCacheMixin
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, ZR, PairingGroup, multi_pair, pair
+from pyfe4ai.primitives.pairing.pairing_backend import deserialize_many, pow_many
+from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
+from pyfe4ai.primitives.pairing.pairing_backend import require_pairing_backend
+from pyfe4ai.core.formats.pairing import SIFEFHIPECiphertext
+from pyfe4ai.core.formats.pairing import SIFEFHIPEEncryptionKey
+from pyfe4ai.core.formats.pairing import SIFEFHIPEFunctionalKey
+from pyfe4ai.core.formats.pairing import SIFEFHIPEParameters
+from pyfe4ai.core.formats.pairing import SIFEFHIPERecord
+from pyfe4ai.core.exceptions import FEKeyError, FEValidationError
+from pyfe4ai.core.versions import record_matches
+from pyfe4ai._validation import int_vector
+from pyfe4ai.primitives.pairing.pairing_utils import (
     bounded_discrete_log_gt,
     mat_vec_mod,
     matrix_inverse_mod,
@@ -59,7 +66,7 @@ _matrix_inverse_mod = matrix_inverse_mod
 _bounded_discrete_log_gt = bounded_discrete_log_gt
 
 
-class SIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
+class SIFEFHIPEPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
     """Key generator for function-hiding inner-product encryption over pairings."""
 
     _scheme_type = CryptoCONST.TYPE_SIFE_FH_IPE
@@ -69,7 +76,7 @@ class SIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         Args:
             config: Scheme configuration. Recognised keys: ``eta``,
                 ``bound_x``, ``bound_y`` and ``pairing_group_param``
-                (asymmetric group, default ``"MNT224"``).
+                (asymmetric group, default ``"BLS12-381"``).
         """
         super().__init__(config, **kwargs)
         require_pairing_backend()
@@ -85,24 +92,21 @@ class SIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.order = gp.mpz(int(self.group.order()))
 
     def _param_verification(self, param: dict) -> bool:
-        return (
-            param.get("sec_param") == self.sec_param
-            and param.get("eta") == self.eta
-            and param.get("bound_x") == gp.digits(self.bound_x)
-            and param.get("bound_y") == gp.digits(self.bound_y)
-            and param.get("pairing_group_param") == self.pairing_group_param
-        )
+        return record_matches(param, {
+            "sec_param": self.sec_param, "eta": self.eta, "bound_x": gp.digits(self.bound_x),
+            "bound_y": gp.digits(self.bound_y), "pairing_group_param": self.pairing_group_param,
+        })
 
     def _generate_and_save(self, param_file: str) -> None:
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(
-                {
-                    "sec_param": self.sec_param,
-                    "eta": self.eta,
-                    "bound_x": gp.digits(self.bound_x),
-                    "bound_y": gp.digits(self.bound_y),
-                    "pairing_group_param": self.pairing_group_param,
-                },
+                SIFEFHIPERecord.new(
+                    sec_param=self.sec_param,
+                    eta=self.eta,
+                    bound_x=gp.digits(self.bound_x),
+                    bound_y=gp.digits(self.bound_y),
+                    pairing_group_param=self.pairing_group_param,
+                ).to_dict(),
                 f,
             )
         self.group = PairingGroup(self.pairing_group_param)
@@ -141,12 +145,12 @@ class SIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         logger.info("SIFE FH-IPE setup successfully")
 
     def get_public_parameters(self) -> dict:
-        return {
-            "eta": self.eta,
-            "bound_x": gp.digits(self.bound_x),
-            "bound_y": gp.digits(self.bound_y),
-            "pairing_group_param": self.pairing_group_param,
-        }
+        return SIFEFHIPEParameters.new(
+            eta=self.eta,
+            bound_x=gp.digits(self.bound_x),
+            bound_y=gp.digits(self.bound_y),
+            pairing_group_param=self.pairing_group_param,
+        ).to_dict()
 
     def get_private_keys(self, nid: str = "nid_default", **kwargs) -> dict | None:
         """Return the encryption key (``g2``, ``b_star``); it is equivalent to
@@ -155,10 +159,10 @@ class SIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         Args:
             nid: Client identifier (unused for single-input schemes).
         """
-        return {
-            "g2": self.msk["g2"],
-            "b_star": self.msk["b_star"],
-        }
+        return SIFEFHIPEEncryptionKey.new(
+            g2=self.msk["g2"],
+            b_star=self.msk["b_star"],
+        ).to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Derive a functional decryption key for the given fusion weights.
@@ -184,15 +188,14 @@ class SIFEFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         by = [(alpha_int * entry) % self.order for entry in by]
 
         g1 = self.group.deserialize(self.msk["g1"].encode("utf-8"))
-        k1 = g1 ** _to_zr(self.group, (alpha_int * det) % self.order)
-        k2 = [g1 ** _to_zr(self.group, entry) for entry in by]
-        return {
-            "k1": self.group.serialize(k1).decode("utf-8"),
-            "k2": [self.group.serialize(v).decode("utf-8") for v in k2],
-        }
+        k1, *k2 = pow_many(g1, [(alpha_int * det) % self.order] + by, self.group)
+        return SIFEFHIPEFunctionalKey.new(
+            k1=self.group.serialize(k1).decode("utf-8"),
+            k2=[self.group.serialize(v).decode("utf-8") for v in k2],
+        ).to_dict()
 
 
-class SIFEFHIPE(IPFEAbsCrypto):
+class SIFEFHIPEPairing(IPFEAbsCrypto):
     """Crypto operations for function-hiding inner-product encryption over pairings."""
 
     def __init__(self, config: dict, **kwargs) -> None:
@@ -216,19 +219,19 @@ class SIFEFHIPE(IPFEAbsCrypto):
             raise FEKeyError("no encryption key provided")
         x = int_vector(lst_pt, "plaintext", length=self.pp["eta"], bound=int(self.pp["bound_x"]))
         x = [gp.mpz(v) for v in x] + [gp.mpz(1), gp.mpz(0)]
-        b_star = [[gp.mpz(v) for v in row] for row in self.sk["b_star"]]
-        g2 = self.group.deserialize(self.sk["g2"].encode("utf-8"))
+        sk = SIFEFHIPEEncryptionKey.from_dict(self.sk)
+        b_star = [[gp.mpz(v) for v in row] for row in sk.b_star]
+        g2 = self.group.deserialize(sk.g2.encode("utf-8"))
         beta = _random_nonzero_zr(self.group)
         beta_int = gp.mpz(int(beta))
 
         bstar_x = _mat_vec_mod(b_star, x, self.order)
         bstar_x = [(beta_int * entry) % self.order for entry in bstar_x]
-        c1 = g2 ** _to_zr(self.group, beta_int)
-        c2 = [g2 ** _to_zr(self.group, entry) for entry in bstar_x]
-        return {
-            "c1": self.group.serialize(c1).decode("utf-8"),
-            "c2": [self.group.serialize(v).decode("utf-8") for v in c2],
-        }
+        c1, *c2 = pow_many(g2, [beta_int] + bstar_x, self.group)
+        return SIFEFHIPECiphertext.new(
+            c1=self.group.serialize(c1).decode("utf-8"),
+            c2=[self.group.serialize(v).decode("utf-8") for v in c2],
+        ).to_dict()
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: list | None = None):
         """Decrypt ciphertexts and recover the inner product.
@@ -242,21 +245,19 @@ class SIFEFHIPE(IPFEAbsCrypto):
         if fusion_weight is not None:
             int_vector(fusion_weight, "fusion weight", length=self.pp["eta"], bound=int(self.pp["bound_y"]))
 
-        c1 = self.group.deserialize(dct_ct["c1"].encode("utf-8"))
-        c2 = [self.group.deserialize(v.encode("utf-8")) for v in dct_ct["c2"]]
-        k1 = self.group.deserialize(dk["k1"].encode("utf-8"))
-        k2 = [self.group.deserialize(v.encode("utf-8")) for v in dk["k2"]]
+        ct, key = SIFEFHIPECiphertext.from_dict(dct_ct), SIFEFHIPEFunctionalKey.from_dict(dk)
+        c1, *c2 = deserialize_many(self.group, [ct.c1] + list(ct.c2))
+        k1, *k2 = deserialize_many(self.group, [key.k1] + list(key.k2))
 
         if len(c2) != self.pp["eta"] + 2 or len(k2) != self.pp["eta"] + 2:
             raise FEValidationError("key or ciphertext length mismatch")
 
         d1 = pair(k1, c1)
-        d2 = self.group.init(GT, 1)
-        for lhs, rhs in zip(k2, c2):
-            d2 *= pair(lhs, rhs)
+        d2 = multi_pair(k2, c2)
 
         bound = int(self.pp["eta"] * gp.mpz(self.pp["bound_x"]) * gp.mpz(self.pp["bound_y"]))
-        return _bounded_discrete_log_gt(self.group, d1, d2, bound)
+        # d1 = e(k1, c1) is a new base for every decryption: no cached table
+        return _bounded_discrete_log_gt(self.group, d1, d2, bound, cache=False)
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
         """Not implemented for this scheme; raises :class:`NotImplementedError`."""

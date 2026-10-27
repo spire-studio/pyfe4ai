@@ -4,484 +4,1127 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PyFE4AI — Functional Encryption for Trustworthy AI</title>
-<meta name="description" content="PyFE4AI is a research-oriented Python library of functional encryption schemes for AI security and privacy: SIFE, MIFE, MCFE, threshold, decentralized, and quadratic FE across DDH, Paillier, LWE, Ring-LWE, and pairing backends.">
+<meta name="description" content="PyFE4AI is a research-oriented Python library of functional encryption for AI security and privacy: 42 SIFE, MIFE, MCFE, threshold, decentralized and quadratic FE schemes over DDH, Paillier, LWE, Ring-LWE and pairings, with an optional Rust backend.">
 <link rel="canonical" href="https://spire-studio.github.io/pyfe4ai/">
 <meta property="og:type" content="website">
-<meta property="og:title" content="PyFE4AI — Functional Encryption for Trustworthy AI">
-<meta property="og:description" content="A research-oriented Python library of functional encryption for AI security and privacy: 39 SIFE, MIFE, MCFE, threshold, decentralized and quadratic FE schemes over DDH, Paillier, LWE, Ring-LWE and pairings.">
+<meta property="og:site_name" content="PyFE4AI">
+<meta property="og:title" content="PyFE4AI — Compute on encrypted data. Reveal only the result.">
+<meta property="og:description" content="A research-oriented Python library of functional encryption for AI security and privacy: 42 SIFE, MIFE, MCFE, threshold, decentralized and quadratic FE schemes over DDH, Paillier, LWE, Ring-LWE and pairings, with an optional Rust backend. Version 0.4.0.">
 <meta property="og:url" content="https://spire-studio.github.io/pyfe4ai/">
-<meta property="og:image" content="https://spire-studio.github.io/pyfe4ai/assets/branding/logo-simple.png">
-<meta property="og:image:alt" content="PyFE4AI logo">
-<meta name="twitter:card" content="summary">
-<link rel="icon" type="image/png" href="assets/branding/logo-simple.png">
-<style>
-  :root {
-    --blue:   #3b6cab;   /* links, buttons: 5.4:1 against white */
-    --blue-dk:#2f5a92;   /* hover */
-    --brand-blue: #4d82c4; /* decorative only (accent bar) */
-    --amber:  #f5a800;   /* decorative only */
-    --teal:   #2ec4a5;   /* decorative only */
-    --amber-ink: #996300; /* amber text: 5.1:1 against white */
-    --teal-ink:  #0e7f68; /* teal text: 4.9:1 against white */
-    --ink:    #24292f;
-    --muted:  #6a737d;
-    --line:   #e4e8ec;
-    --bg:     #ffffff;
-    --bg-alt: #f7f9fb;
-    --code-bg:#0f172a;
-    --radius: 12px;
-  }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-                 "Helvetica Neue", Arial, sans-serif;
-    color: var(--ink);
-    background: var(--bg);
-    line-height: 1.65;
-  }
-  a { color: var(--blue); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-  .sr {
-    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
-  }
-
-  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
-
-  /* ---------- top nav ---------- */
-  nav {
-    position: sticky; top: 0; z-index: 50;
-    background: rgba(255,255,255,.92);
-    backdrop-filter: blur(8px);
-    border-bottom: 1px solid var(--line);
-  }
-  .nav-inner {
-    display: flex; align-items: center; justify-content: space-between;
-    height: 60px;
-  }
-  .nav-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; color: var(--ink); }
-  .nav-brand:hover { text-decoration: none; }
-  .nav-brand img { height: 34px; }
-  .nav-links { display: flex; align-items: center; gap: 22px; font-size: 15px; }
-  .nav-links a { color: var(--ink); font-weight: 500; }
-  .nav-links a:hover { color: var(--blue); text-decoration: none; }
-  .nav-links a.cta {
-    background: var(--blue); color: #fff; padding: 6px 16px;
-    border-radius: 8px; font-weight: 600;
-  }
-  .nav-links a.cta:hover { background: var(--blue-dk); }
-  @media (max-width: 640px) {
-    .nav-links { gap: 14px; font-size: 14px; }
-    .nav-links .opt { display: none; } /* in-page anchors; Cite, GitHub, Docs stay */
-  }
-
-  /* ---------- hero ---------- */
-  header { padding: 84px 0 72px; text-align: center; background:
-    radial-gradient(1000px 420px at 50% -80px, #eaf1fa 0%, rgba(255,255,255,0) 60%); }
-  header img.logo { width: min(520px, 82vw); height: auto; }
-  header h1 { position: absolute; left: -9999px; } /* logo carries the name; keep h1 for SEO */
-  header p.tagline {
-    margin: 26px auto 8px; max-width: 720px;
-    font-size: 21px; color: var(--ink); font-weight: 500;
-  }
-  header p.sub {
-    margin: 0 auto; max-width: 680px; font-size: 16.5px; color: var(--muted);
-  }
-  .hero-actions { margin-top: 34px; display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
-  .btn {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 11px 26px; border-radius: 10px; font-size: 16px; font-weight: 600;
-    transition: transform .12s ease, box-shadow .12s ease;
-  }
-  .btn:hover { text-decoration: none; transform: translateY(-1px); }
-  .btn-primary { background: var(--blue); color: #fff; box-shadow: 0 2px 10px rgba(59,108,171,.35); }
-  .btn-primary:hover { background: var(--blue-dk); }
-  .btn-dark { background: var(--ink); color: #fff; }
-  .btn-dark:hover { background: #000; }
-  .btn-ghost { border: 1.5px solid var(--line); color: var(--ink); background: #fff; }
-  .btn-ghost:hover { border-color: var(--blue); color: var(--blue); }
-
-  .statbar {
-    margin: 58px auto 0; display: flex; justify-content: center; gap: 0;
-    flex-wrap: wrap; border: 1px solid var(--line); border-radius: var(--radius);
-    max-width: 860px; overflow: hidden; background: #fff;
-  }
-  .stat { flex: 1 1 160px; padding: 18px 12px; border-right: 1px solid var(--line); }
-  .stat:last-child { border-right: none; }
-  .stat b { display: block; font-size: 26px; font-weight: 800; }
-  .stat span { font-size: 13.5px; color: var(--muted); }
-  .stat:nth-child(1) b { color: var(--blue); }
-  .stat:nth-child(2) b { color: var(--amber-ink); }
-  .stat:nth-child(3) b { color: var(--teal-ink); }
-  .stat:nth-child(4) b { color: var(--ink); }
-
-  /* ---------- sections ---------- */
-  section { padding: 72px 0; }
-  section.alt { background: var(--bg-alt); }
-  h2.sec-title { font-size: 30px; text-align: center; margin-bottom: 10px; letter-spacing: -.3px; }
-  p.sec-sub { text-align: center; color: var(--muted); max-width: 640px; margin: 0 auto 46px; font-size: 16.5px; }
-  .accent-bar {
-    width: 64px; height: 5px; border-radius: 3px; margin: 0 auto 22px;
-    background: linear-gradient(90deg, var(--brand-blue), var(--amber), var(--teal));
-  }
-
-  /* feature grid */
-  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
-  @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } }
-  @media (max-width: 620px) { .grid { grid-template-columns: 1fr; } }
-  .card {
-    background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
-    padding: 26px 24px; transition: box-shadow .15s ease, transform .15s ease;
-  }
-  .card:hover { box-shadow: 0 8px 28px rgba(36,41,47,.08); transform: translateY(-2px); }
-  .card.wide { grid-column: 1 / -1; }
-  .card .ico {
-    width: 44px; height: 44px; border-radius: 10px; display: flex;
-    align-items: center; justify-content: center; font-size: 22px; margin-bottom: 14px;
-  }
-  .ico.b { background: #eaf1fa; } .ico.a { background: #fdf3dc; } .ico.t { background: #e4f7f2; }
-  .card h3 { font-size: 17.5px; margin-bottom: 8px; }
-  .card p { font-size: 14.5px; color: var(--muted); overflow-wrap: anywhere; } /* long file names on narrow phones */
-  .card code { background: var(--bg-alt); padding: 1px 6px; border-radius: 5px; font-size: 13px; }
-
-  /* quickstart */
-  .qs-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: start; }
-  @media (max-width: 860px) { .qs-cols { grid-template-columns: 1fr; } }
-  .codebox {
-    background: var(--code-bg); border-radius: var(--radius); padding: 22px 24px;
-    overflow-x: auto; font-size: 13.5px; line-height: 1.7;
-  }
-  .codebox pre { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; color: #e2e8f0; }
-  .codebox .cm { color: #8b9ab0; }
-  .codebox .kw { color: #93c5fd; }
-  .codebox .st { color: #fbbf24; }
-  .codebox .fn { color: #6ee7b7; }
-  .qs-note h3 { font-size: 19px; margin: 18px 0 8px; }
-  .qs-note h3:first-child { margin-top: 0; }
-  .qs-note p { color: var(--muted); font-size: 15px; margin-bottom: 10px; }
-
-  /* scheme matrix */
-  .matrix-scroll { position: relative; /* clips the .sr cell text too */ overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; }
-  table.matrix { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 14px; }
-  .matrix th, .matrix td { padding: 10px 14px; text-align: center; border-bottom: 1px solid var(--line); }
-  .matrix thead th { background: var(--bg-alt); font-weight: 700; font-size: 13.5px; }
-  .matrix .fam { text-align: left; font-weight: 600; white-space: nowrap; }
-  .matrix .fam small { display: block; font-weight: 400; color: var(--muted); }
-  .matrix .y, .matrix-legend .y { color: var(--teal-ink); font-weight: 700; }
-  .matrix .n, .matrix-legend .n { color: var(--muted); }
-  .matrix .w, .matrix-legend .w { color: var(--amber-ink); font-weight: 700; }
-  p.matrix-legend { margin: 14px auto 0; max-width: 860px; font-size: 13.5px; color: var(--muted); text-align: center; }
-
-  /* known-issues notice */
-  .notice {
-    margin: 30px auto 0; max-width: 760px; padding: 12px 18px;
-    background: #fdf3dc; border: 1px solid #f3d27a; border-radius: 10px;
-    color: #6b4e00; font-size: 14.5px; text-align: left;
-  }
-  .notice a { color: #6b4e00; font-weight: 600; text-decoration: underline; }
-  .matrix tbody tr:last-child td { border-bottom: none; }
-
-  /* use cases */
-  .uc { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
-  @media (max-width: 760px) { .uc { grid-template-columns: 1fr; } }
-  .uc .card h3 { display: flex; align-items: center; gap: 10px; }
-
-  /* citation */
-  .cite-box {
-    background: #fff; border: 1px solid var(--line); border-left: 5px solid var(--amber);
-    border-radius: var(--radius); padding: 24px 28px; max-width: 800px; margin: 0 auto;
-  }
-  .cite-box pre {
-    font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
-    font-size: 13px; color: var(--ink); overflow-x: auto; line-height: 1.6;
-    background: var(--bg-alt); border-radius: 8px; padding: 16px 18px; margin-top: 12px;
-  }
-
-  /* footer */
-  footer { border-top: 1px solid var(--line); padding: 38px 0 46px; text-align: center; color: var(--muted); font-size: 14px; }
-  footer .flinks { margin-bottom: 10px; display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
-  footer .flinks a { color: var(--ink); font-weight: 500; }
-  .badge-note {
-    display: inline-block; margin-left: 8px; padding: 2px 9px; border-radius: 999px;
-    background: #fdf3dc; color: #8a5d00; font-size: 12px; font-weight: 600; vertical-align: middle;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    html { scroll-behavior: auto; }
-    .btn, .card { transition: none; }
-    .btn:hover, .card:hover { transform: none; }
-  }
-</style>
+<meta property="og:image" content="https://spire-studio.github.io/pyfe4ai/assets/img/social-card.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="PyFE4AI: compute on encrypted data, reveal only the result. Functional encryption for trustworthy AI, 42 schemes in Python with an optional Rust core.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://spire-studio.github.io/pyfe4ai/assets/img/social-card.png">
+<meta name="twitter:image:alt" content="PyFE4AI: compute on encrypted data, reveal only the result. Functional encryption for trustworthy AI, 42 schemes in Python with an optional Rust core.">
+<meta name="theme-color" content="#050913" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f5f8fc" media="(prefers-color-scheme: light)">
+<link rel="icon" type="image/png" href="assets/branding/logo-simple.png" sizes="any">
+<link rel="icon" type="image/svg+xml" href="assets/img/favicon.svg">
+<script>
+  /* before first paint: the visitor's theme choice, and a flag for the script-only styles */
+  (function () {
+    var d = document.documentElement;
+    d.className += " js";
+    try { var t = localStorage.getItem("pyfe4ai-theme"); if (t === "light" || t === "dark") d.setAttribute("data-theme", t); } catch (e) {}
+  })();
+</script>
+<link rel="stylesheet" href="assets/css/site.css">
 </head>
-<body>
+<body id="top">
+<a class="skip" href="#main">Skip to content</a>
 
-<nav>
-  <div class="wrap nav-inner">
-    <a class="nav-brand" href="#top"><img src="assets/branding/logo-simple.png" alt="PyFE4AI, back to top"></a>
+<!-- icon sprite -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-split" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="14" y="4" width="7" height="7" rx="1.5"/><rect x="8.5" y="13" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-wave" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10c2-4 4-4 6 0s4 4 6 0 4-4 6 0"/><path d="M2 16c2-2 4-2 6 0s4 2 6 0 4-2 6 0" opacity=".55"/></symbol>
+    <symbol id="i-chip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3M14 9l2 2"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></symbol>
+    <symbol id="i-github" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.65.5.5 5.65.5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.87-1.37-3.87-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.69 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.56-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.62 1.59.23 2.76.11 3.05.74.81 1.18 1.84 1.18 3.1 0 4.42-2.69 5.39-5.25 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 4.3L2.6 18a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z"/><path d="M12 10v4M12 17.5h.01"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></symbol>
+    <symbol id="i-flask" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v6L4.5 19a1.5 1.5 0 0 0 1.3 2h12.4a1.5 1.5 0 0 0 1.3-2L14 9V3"/><path d="M7 15h10"/></symbol>
+    <symbol id="i-net" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4M12 11.5L6.7 17M12 11.5l5.3 5.5"/></symbol>
+    <symbol id="i-doc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h6"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5l12 7-12 7z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></symbol>
+    <symbol id="i-prev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></symbol>
+    <symbol id="i-next" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></symbol>
+    <symbol id="i-servers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/></symbol>
+    <symbol id="mark" viewBox="0 60 420 420"><g fill="none" stroke-width="52" stroke-linecap="round" stroke-linejoin="round"><path d="M165 105 35 270l130 165" stroke="#4c87c8"/><path d="m255 105 130 165-130 165" stroke="#22c7b7"/></g><circle cx="210" cy="252" r="50" fill="#f69e0b"/><path fill="#f69e0b" d="M190 252h40v114h-40z"/></symbol>
+  </defs>
+</svg>
+
+<header class="nav">
+  <nav class="wrap nav-inner" aria-label="Main">
+    <a class="brand" href="#top" aria-label="PyFE4AI, back to top">
+      <svg aria-hidden="true"><use href="#mark"/></svg>
+      <span class="wordmark" aria-hidden="true"><span class="w-py">Py</span><span class="w-fe">FE</span><span class="w-4">4</span><span class="w-ai">AI</span></span>
+    </a>
     <div class="nav-links">
-      <a class="opt" href="#features">Features</a>
-      <a class="opt" href="#quickstart">Quickstart</a>
+      <a class="opt" href="#positioning">Why FE</a>
+      <a class="opt" href="#how">How it works</a>
       <a class="opt" href="#schemes">Schemes</a>
-      <a href="#citation">Cite</a>
-      <a href="https://github.com/spire-studio/pyfe4ai">GitHub</a>
-      <a class="cta" href="docs/">Docs</a>
+      <a class="opt" href="#performance">Performance</a>
+      <a class="opt" href="#quickstart">Quickstart</a>
+      <a class="opt" href="#security">Security</a>
+      <a href="docs/">Docs</a>
     </div>
-  </div>
-</nav>
-
-<header>
-  <div class="wrap">
-    <img class="logo" src="assets/branding/logo-simple.png" alt="PyFE4AI — Research-oriented Implementations of FE for Trustworthy AI">
-    <h1>PyFE4AI — Python Functional Encryption for Trustworthy AI</h1>
-    <p class="tagline">Compute on encrypted data. Reveal only the result.</p>
-    <p class="sub">
-      A research-oriented Python library of <strong>functional encryption</strong> (FE)
-      schemes for AI security and privacy — from single-input inner products to
-      multi-client, threshold, decentralized, and quadratic constructions.
-    </p>
-    <div class="hero-actions">
-      <a class="btn btn-primary" href="docs/"><span aria-hidden="true">📖</span> Documentation</a>
-      <a class="btn btn-dark" href="https://github.com/spire-studio/pyfe4ai"><span aria-hidden="true">⭐</span> GitHub</a>
-      <a class="btn btn-ghost" href="#quickstart"><span aria-hidden="true">🚀</span> Quickstart</a>
+    <div class="nav-actions">
+      <a class="icon-btn" href="https://github.com/spire-studio/pyfe4ai" aria-label="PyFE4AI on GitHub"><svg aria-hidden="true"><use href="#i-github"/></svg></a>
+      <button class="icon-btn theme-toggle" type="button" aria-label="Switch between dark and light theme">
+        <svg class="i-moon" aria-hidden="true"><use href="#i-moon"/></svg>
+        <svg class="i-sun" aria-hidden="true"><use href="#i-sun"/></svg>
+      </button>
+      <details class="nav-menu">
+        <summary class="icon-btn" aria-label="Sections"><svg aria-hidden="true"><use href="#i-menu"/></svg></summary>
+        <div class="menu-panel">
+          <a href="#features">Features</a>
+          <a href="#positioning">Where FE fits</a>
+          <a href="#how">How it works</a>
+          <a href="#schemes">Schemes</a>
+          <a href="#use-cases">Use cases</a>
+          <a href="#performance">Performance</a>
+          <a href="#quickstart">Quickstart</a>
+          <a href="#security">Security &amp; status</a>
+          <a href="#citation">Cite</a>
+          <a href="https://github.com/spire-studio/pyfe4ai">GitHub</a>
+        </div>
+      </details>
     </div>
-
-    <p class="notice"><span aria-hidden="true">⚠️</span> <strong>Research prototype.</strong>
-      Every scheme has been checked against its paper, but four threshold layers and
-      the dMCFE-DDH carry mask are our own (experimental) and default parameters are toy-sized.
-      <a href="https://github.com/spire-studio/pyfe4ai#known-issues--security-notice">Read the Known Issues</a>
-      before using any scheme beyond experiments.</p>
-
-    <div class="statbar">
-      <div class="stat"><b>39</b><span>scheme variants</span></div>
-      <div class="stat"><b>34 / 39</b><span>reviewed · 5 experimental</span></div>
-      <div class="stat"><b>6</b><span>crypto backends</span></div>
-      <div class="stat"><b>Apache-2.0</b><span>license</span></div>
-    </div>
-  </div>
+  </nav>
 </header>
 
-<section id="features">
+<main id="main">
+
+<!-- ================= HERO ================= -->
+<section class="hero bg-grid" aria-labelledby="hero-title">
   <div class="wrap">
-    <div class="accent-bar"></div>
-    <h2 class="sec-title">Why PyFE4AI</h2>
-    <p class="sec-sub">One consistent Python API — <code>setup / keygen / encrypt / decrypt</code> —
-       across the functional-encryption zoo, built for ML workloads.</p>
-    <div class="grid">
-      <div class="card">
-        <div class="ico b" aria-hidden="true">🧩</div>
+    <div class="hero-grid">
+      <div>
+        <a class="pill" href="https://github.com/spire-studio/pyfe4ai/releases"><span class="tag">v0.4.0</span> Functional encryption for trustworthy AI <svg width="14" height="14" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+        <h1 id="hero-title">Compute on encrypted data. <span class="line2 grad-text">Reveal only the result.</span></h1>
+        <p class="lede"><strong>PyFE4AI</strong> is a research-oriented Python library of
+          <strong>functional encryption</strong> (FE) schemes for AI security and privacy — from
+          single-input inner products to multi-client, threshold, decentralized and quadratic
+          constructions, with an optional Rust core for the hot paths.</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="docs/"><svg aria-hidden="true"><use href="#i-book"/></svg>Documentation</a>
+          <a class="btn" href="https://github.com/spire-studio/pyfe4ai"><svg aria-hidden="true"><use href="#i-github"/></svg>GitHub</a>
+          <a class="btn" href="#quickstart">Quickstart <svg aria-hidden="true"><use href="#i-arrow"/></svg></a>
+        </div>
+      </div>
+
+      <div class="hero-visual anim-gate">
+        <svg class="hv-anim" viewBox="0 0 560 420" role="img" aria-labelledby="hv-title hv-desc">
+          <title id="hv-title">Functional encryption in one picture</title>
+          <desc id="hv-desc">Three clients hold vectors x1 = (2, 1, 3), x2 = (1, 0, 2) and x3 = (3, 2, 1) and send only
+            ciphertexts. A key holder with the functional key for the weights y1 = (4, 5, 6), y2 = (1, 1, 1) and
+            y3 = (2, 0, 1) decrypts a single number, the sum of the inner products, 41, and nothing else about the vectors.</desc>
+          <defs>
+            <linearGradient id="hvWire" x1="0" x2="1"><stop offset="0" stop-color="#3ddccb"/><stop offset="1" stop-color="#7cb2f2"/></linearGradient>
+            <radialGradient id="hvHalo"><stop offset="0" stop-color="#22c7b7" stop-opacity=".55"/><stop offset=".6" stop-color="#4c87c8" stop-opacity=".18"/><stop offset="1" stop-color="#4c87c8" stop-opacity="0"/></radialGradient>
+          </defs>
+          <!-- phase labels -->
+          <text class="hv-label" x="95" y="18" text-anchor="middle">1 · ENCRYPT</text>
+          <text class="hv-label" x="360" y="18" text-anchor="middle">2 · DECRYPT WITH dk_y</text>
+          <text class="hv-label" x="496" y="134" text-anchor="middle">3 · REVEAL</text>
+
+          <!-- wires -->
+          <path class="hv-wire" d="M180 80H223L360 215"/>
+          <path class="hv-wire" d="M180 215H360"/>
+          <path class="hv-wire" d="M180 350H223L360 215"/>
+          <path class="hv-wire" d="M410 215H440"/>
+          <path class="hv-wire-flow" d="M180 80H223L360 215"/>
+          <path class="hv-wire-flow" d="M180 215H360"/>
+          <path class="hv-wire-flow" d="M180 350H223L360 215"/>
+
+          <!-- clients -->
+          <g>
+            <rect class="hv-panel" x="10" y="36" width="170" height="88" rx="14"/>
+            <text class="hv-label" x="24" y="58">CLIENT 1 · x₁</text>
+            <rect class="hv-cell" x="24" y="72" width="40" height="34" rx="8"/><rect class="hv-cell" x="70" y="72" width="40" height="34" rx="8"/><rect class="hv-cell" x="116" y="72" width="40" height="34" rx="8"/>
+            <text class="hv-digit" x="44" y="95">2</text><text class="hv-digit" x="90" y="95">1</text><text class="hv-digit" x="136" y="95">3</text>
+            <text class="hv-hex" x="44" y="94">9f</text><text class="hv-hex" x="90" y="94">3a</text><text class="hv-hex" x="136" y="94">c7</text>
+          </g>
+          <g>
+            <rect class="hv-panel" x="10" y="171" width="170" height="88" rx="14"/>
+            <text class="hv-label" x="24" y="193">CLIENT 2 · x₂</text>
+            <rect class="hv-cell" x="24" y="207" width="40" height="34" rx="8"/><rect class="hv-cell" x="70" y="207" width="40" height="34" rx="8"/><rect class="hv-cell" x="116" y="207" width="40" height="34" rx="8"/>
+            <text class="hv-digit" x="44" y="230">1</text><text class="hv-digit" x="90" y="230">0</text><text class="hv-digit" x="136" y="230">2</text>
+            <text class="hv-hex" x="44" y="229">e1</text><text class="hv-hex" x="90" y="229">04</text><text class="hv-hex" x="136" y="229">7b</text>
+          </g>
+          <g>
+            <rect class="hv-panel" x="10" y="306" width="170" height="88" rx="14"/>
+            <text class="hv-label" x="24" y="328">CLIENT 3 · x₃</text>
+            <rect class="hv-cell" x="24" y="342" width="40" height="34" rx="8"/><rect class="hv-cell" x="70" y="342" width="40" height="34" rx="8"/><rect class="hv-cell" x="116" y="342" width="40" height="34" rx="8"/>
+            <text class="hv-digit" x="44" y="365">3</text><text class="hv-digit" x="90" y="365">2</text><text class="hv-digit" x="136" y="365">1</text>
+            <text class="hv-hex" x="44" y="364">5d</text><text class="hv-hex" x="90" y="364">b2</text><text class="hv-hex" x="136" y="364">f8</text>
+          </g>
+
+          <!-- key holder -->
+          <circle class="hv-halo" cx="360" cy="215" r="92"/>
+          <circle class="hv-ring" cx="360" cy="215" r="66"/>
+          <circle class="hv-core" cx="360" cy="215" r="50"/>
+          <circle cx="360" cy="206" r="11" fill="#f69e0b"/>
+          <rect x="355.5" y="206" width="9" height="24" rx="1.5" fill="#f69e0b"/>
+          <g class="hv-key">
+            <rect x="320" y="108" width="80" height="26" rx="8"/>
+            <svg x="327" y="113" width="16" height="16" style="color:var(--blue)"><use href="#i-key"/></svg>
+            <text x="348" y="126">dk_y</text>
+          </g>
+          <text class="hv-cap" x="360" y="304">key holder</text>
+          <text class="hv-sub" x="360" y="322">key for y₁, y₂, y₃</text>
+
+          <!-- packets (ciphertexts) -->
+          <g class="hv-pkt" style="--dx:99px;--dy:98px">
+            <rect x="188" y="67" width="76" height="26" rx="8"/>
+            <path d="M197 79h10v8h-10zM199 79v-3a3 3 0 0 1 6 0v3"/>
+            <text x="212" y="84">Enc(x₁)</text>
+          </g>
+          <g class="hv-pkt" style="--dx:93px;--dy:0px;animation-delay:.12s">
+            <rect x="188" y="202" width="76" height="26" rx="8"/>
+            <path d="M197 214h10v8h-10zM199 214v-3a3 3 0 0 1 6 0v3"/>
+            <text x="212" y="219">Enc(x₂)</text>
+          </g>
+          <g class="hv-pkt" style="--dx:99px;--dy:-98px;animation-delay:.24s">
+            <rect x="188" y="337" width="76" height="26" rx="8"/>
+            <path d="M197 349h10v8h-10zM199 349v-3a3 3 0 0 1 6 0v3"/>
+            <text x="212" y="354">Enc(x₃)</text>
+          </g>
+
+          <!-- output -->
+          <rect class="hv-out" x="440" y="160" width="112" height="110" rx="16"/>
+          <text class="hv-out-label" x="496" y="184" text-anchor="middle">Σ⟨xᵢ, yᵢ⟩</text>
+          <text class="hv-q" x="496" y="236">?</text>
+          <text class="hv-num" x="496" y="240">41</text>
+          <text class="hv-cap" x="496" y="296">only the result,</text>
+          <text class="hv-cap" x="496" y="313">in the clear</text>
+        </svg>
+      </div>
+    </div>
+
+    <dl class="stats" aria-label="PyFE4AI at a glance">
+      <div class="stat"><dt class="sr-only">Schemes</dt><dd><b class="grad-text" data-count="schemes">42</b><span>registered schemes</span></dd></div>
+      <div class="stat"><dt class="sr-only">Assumptions</dt><dd><b class="grad-text">5</b><span>hardness assumptions</span></dd></div>
+      <div class="stat"><dt class="sr-only">Native backend</dt><dd><b class="grad-text">Rust</b><span>optional native core</span></dd></div>
+      <div class="stat"><dt class="sr-only">Tests</dt><dd><b class="grad-text">~4,100</b><span>tests, both backends</span></dd></div>
+      <div class="stat"><dt class="sr-only">License</dt><dd><b class="grad-text">Apache-2.0</b><span>open source</span></dd></div>
+    </dl>
+  </div>
+</section>
+
+<!-- ================= FEATURES ================= -->
+<section id="features" class="section" aria-labelledby="features-title">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Why PyFE4AI</span>
+      <h2 id="features-title">The functional-encryption zoo, behind one entry point</h2>
+      <p><code>pyfe4ai.create("family/variant", config)</code> returns a scheme's key generator and
+        crypto class; then <code>setup</code> / <code>get_decryption_keys</code> / <code>encrypt</code> /
+        <code>decrypt</code> — across every family, built for ML workloads.</p>
+    </div>
+    <div class="grid grid-3">
+      <article class="card reveal">
+        <div class="ico"><svg aria-hidden="true"><use href="#i-layers"/></svg></div>
         <h3>Complete FE family coverage</h3>
-        <p>SIFE, MIFE, MCFE, decentralized MCFE, threshold MIFE/MCFE, function-hiding
-           IPE / Multi-IPE, and quadratic FE (SGP, Quad, multi-input MIQFE) — 39
-           (family, variant) combinations under one roof.</p>
-      </div>
-      <div class="card">
-        <div class="ico a" aria-hidden="true">🔐</div>
-        <h3>Six cryptographic backends</h3>
-        <p>DDH, Damgård-DDH (MDDH), Paillier/DCR, LWE, Ring-LWE (lattice lines) and
-           pairings — pick the assumption that fits your deployment.</p>
-      </div>
-      <div class="card">
-        <div class="ico t" aria-hidden="true">🤖</div>
+        <p>SIFE, MIFE, MCFE, decentralized MCFE, threshold MIFE/MCFE, function-hiding IPE /
+          Multi-IPE, and quadratic FE (SGP, Quad, multi-input MIQFE) — 42 (family, variant)
+          combinations under one roof.</p>
+      </article>
+      <article class="card reveal">
+        <div class="ico amber"><svg aria-hidden="true"><use href="#i-lock"/></svg></div>
+        <h3>Five hardness assumptions, six instantiations</h3>
+        <p>DDH (3072-bit groups or the ristretto255 curve) and its matrix form MDDH (Damgård),
+          Paillier/DCR, LWE and Ring-LWE (lattice lines), and pairings (BLS12-381) — pick the
+          assumption that fits your deployment.</p>
+      </article>
+      <article class="card reveal">
+        <div class="ico blue"><svg aria-hidden="true"><use href="#i-net"/></svg></div>
         <h3>ML-native adapter</h3>
-        <p><code>ml_adapter</code> runs SIFE and MCFE schemes for encrypted linear
-           inference and gradient aggregation. Its wrapper holds the master key and
-           plays every party (one trust domain, for experiments) and by default
-           refuses MIFE aggregation, partial aggregates and label reuse; threshold and
-           decentralized variants go through the scheme classes. A quantization
-           toolkit handles float ↔ integer precision.</p>
-      </div>
-      <div class="card">
-        <div class="ico t" aria-hidden="true">⚡</div>
+        <p><code>pyfe4ai.ml</code> runs SIFE and MCFE schemes for encrypted linear inference and
+          gradient aggregation, including threshold MCFE over Ring-LWE with its decryption servers
+          in-process. Its wrapper holds the master key and plays every party (one trust domain, for
+          experiments) and by default refuses MIFE aggregation, partial aggregates and label reuse;
+          the other threshold and decentralized variants go through the scheme classes. A
+          quantization toolkit handles float ↔ integer precision.</p>
+      </article>
+      <article class="card reveal">
+        <div class="ico"><svg aria-hidden="true"><use href="#i-bolt"/></svg></div>
         <h3>Engineered for speed</h3>
-        <p>NTT polynomial multiplication for Ring-LWE, O(√n) baby-step giant-step
-           discrete log with caching, CSPRNG batch sampling, and ndarray batch
-           helpers throughout.</p>
-      </div>
-      <div class="card">
-        <div class="ico b" aria-hidden="true">🧪</div>
+        <p>An optional Rust extension, built by <code>pip install</code> when <code>cargo</code> is
+          available, runs the lattice hot paths, ristretto255 and BLS12-381 pairings with the outputs
+          of the Python reference: an MCFE Ring-LWE round of 10 000 gradient elements under
+          <code>standard</code> takes about 18 ms per client and 7.5 ms to aggregate, against 345 / 157 ms on the
+          Python backend (JSON ciphertexts, one thread).</p>
+      </article>
+      <article class="card reveal">
+        <div class="ico blue"><svg aria-hidden="true"><use href="#i-flask"/></svg></div>
         <h3>Tested</h3>
-        <p>500+ tests in the core CI lane, including status-table sync and
-           security-profile tests, plus TypedDict config schemas and a
-           structured <code>FEError</code> exception hierarchy.</p>
-      </div>
-      <div class="card">
-        <div class="ico a" aria-hidden="true">📚</div>
+        <p>About 4,100 tests, run in CI with and without the Rust extension (the native code is
+          checked bit for bit against the Python reference), including status-table sync,
+          security-profile and crypto-review regression tests, plus a structured
+          <code>FEError</code> exception hierarchy.</p>
+      </article>
+      <article class="card reveal">
+        <div class="ico amber"><svg aria-hidden="true"><use href="#i-doc"/></svg></div>
         <h3>Paper-referenced</h3>
-        <p>Every scheme cites its source construction (PKC'15, CRYPTO'16/'18,
-           ASIACRYPT'18, SCN'20, TCC'21/'22, PKC'22, IACR CiC'24, IEEE TDSC TAPFed, …)
-           in the module docstring. Deviations from the paper are listed in the
-           <a href="https://github.com/spire-studio/pyfe4ai#scheme-status">Scheme Status</a> table.</p>
+        <p>Every scheme cites its source construction (PKC'15, CRYPTO'16/'18, ASIACRYPT'18, SCN'20,
+          TCC'21/'22, PKC'22, IACR CiC'24, IEEE TDSC TAPFed, …) in the module docstring. Deviations
+          from the paper are listed in the
+          <a href="https://github.com/spire-studio/pyfe4ai#scheme-status">Scheme Status</a> table.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ================= POSITIONING ================= -->
+<section id="positioning" class="section alt" aria-labelledby="positioning-title">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Where FE fits</span>
+      <h2 id="positioning-title">Who sees what — FE next to other privacy technologies</h2>
+      <p>Functional encryption gives the holder of a functional key exactly <em>f(x)</em>, in the clear,
+        and nothing else about <em>x</em>. Other techniques draw the line elsewhere. A simplified,
+        qualitative picture of typical deployments:</p>
+    </div>
+
+    <div class="lanes anim-gate" role="list">
+      <div class="lane-head" aria-hidden="true"><span>Technique</span><span>Input owner</span><span>During the computation</span><span>The result</span></div>
+
+      <div class="lane is-fe reveal" role="listitem">
+        <div class="lane-name">Functional encryption <small>this library</small></div>
+        <div class="stop"><span class="chip clear"><svg aria-hidden="true"><use href="#i-eye"/></svg></span><span><span class="where">Input · </span>x stays with its owner</span></div>
+        <div class="stop"><span class="chip enc"><svg aria-hidden="true"><use href="#i-lock"/></svg></span><span><span class="where">Computing · </span>the decryptor sees only Enc(x)</span></div>
+        <div class="stop"><span class="chip clear"><svg aria-hidden="true"><use href="#i-key"/></svg></span><span><span class="where">Result · </span>the key holder learns f(x), nothing else</span></div>
       </div>
-      <div class="card wide">
-        <div class="ico a" aria-hidden="true">🛡️</div>
-        <h3>Security profiles &amp; review status</h3>
-        <p>Default parameters are <strong>toy</strong>: fast and not secure.
-           <code>"security_profile": "standard"</code> selects 3072-bit discrete-log groups
-           (RFC 3526) and DCR moduli, lattice-estimator-sized LWE and Ring-LWE dimensions
-           and <code>stat_param</code> 128, except for pairings, which stay on BN254
-           (about 100-bit, the strongest curve charm-crypto offers; a
-           <code>FESecurityWarning</code> says so), and for ALS16 FullySec-LWE (SIFE, MIFE)
-           and dMCFE-Paillier, which it refuses. Of the 39 registered schemes, 34 are
-           reviewed against their papers, 5 are experimental (our own threshold layers
-           and the dMCFE-DDH carry mask) and none is known to be insecure;
-           <code>get_scheme_status(family, variant)</code> reports each at runtime.
-           <a href="https://github.com/spire-studio/pyfe4ai#security-profiles">Security Profiles →</a></p>
+      <div class="lane reveal" role="listitem">
+        <div class="lane-name">Homomorphic encryption <small>HE / FHE</small></div>
+        <div class="stop"><span class="chip clear"><svg aria-hidden="true"><use href="#i-eye"/></svg></span><span><span class="where">Input · </span>x stays with its owner</span></div>
+        <div class="stop"><span class="chip enc"><svg aria-hidden="true"><use href="#i-lock"/></svg></span><span><span class="where">Computing · </span>the evaluator computes on Enc(x)</span></div>
+        <div class="stop"><span class="chip enc"><svg aria-hidden="true"><use href="#i-lock"/></svg></span><span><span class="where">Result · </span>Enc(f(x)); the secret-key holder decrypts</span></div>
+      </div>
+      <div class="lane reveal" role="listitem">
+        <div class="lane-name">Secure multi-party computation <small>MPC</small></div>
+        <div class="stop"><span class="chip clear"><svg aria-hidden="true"><use href="#i-eye"/></svg></span><span><span class="where">Input · </span>x stays with its owner</span></div>
+        <div class="stop"><span class="chip shares"><svg aria-hidden="true"><use href="#i-split"/></svg></span><span><span class="where">Computing · </span>parties exchange shares or masked messages</span></div>
+        <div class="stop"><span class="chip clear"><svg aria-hidden="true"><use href="#i-eye"/></svg></span><span><span class="where">Result · </span>designated parties learn f(x)</span></div>
+      </div>
+      <div class="lane reveal" role="listitem">
+        <div class="lane-name">Differential privacy <small>DP, central model</small></div>
+        <div class="stop"><span class="chip clear"><svg aria-hidden="true"><use href="#i-eye"/></svg></span><span><span class="where">Input · </span>x is sent to a curator</span></div>
+        <div class="stop"><span class="chip clear"><svg aria-hidden="true"><use href="#i-eye"/></svg></span><span><span class="where">Computing · </span>the curator sees x in the clear</span></div>
+        <div class="stop"><span class="chip noisy"><svg aria-hidden="true"><use href="#i-wave"/></svg></span><span><span class="where">Result · </span>f(x) + calibrated noise, for anyone</span></div>
+      </div>
+      <div class="lane reveal" role="listitem">
+        <div class="lane-name">Trusted execution <small>TEE / enclave</small></div>
+        <div class="stop"><span class="chip clear"><svg aria-hidden="true"><use href="#i-eye"/></svg></span><span><span class="where">Input · </span>x leaves its owner encrypted, for the enclave</span></div>
+        <div class="stop"><span class="chip hw"><svg aria-hidden="true"><use href="#i-chip"/></svg></span><span><span class="where">Computing · </span>clear inside the enclave, hidden from the host</span></div>
+        <div class="stop"><span class="chip clear"><svg aria-hidden="true"><use href="#i-eye"/></svg></span><span><span class="where">Result · </span>whatever the enclave code releases</span></div>
+      </div>
+    </div>
+    <div class="lane-legend" aria-hidden="true">
+      <span><span class="chip clear"><svg><use href="#i-eye"/></svg></span>in the clear</span>
+      <span><span class="chip enc"><svg><use href="#i-lock"/></svg></span>encrypted</span>
+      <span><span class="chip shares"><svg><use href="#i-split"/></svg></span>secret-shared</span>
+      <span><span class="chip noisy"><svg><use href="#i-wave"/></svg></span>noisy</span>
+      <span><span class="chip hw"><svg><use href="#i-chip"/></svg></span>hardware-isolated</span>
+    </div>
+
+    <div class="compare-wrap reveal">
+      <table class="compare">
+        <caption class="sr-only">Qualitative comparison of functional encryption with homomorphic encryption, secure multi-party computation, differential privacy and trusted execution environments</caption>
+        <thead>
+          <tr><th scope="col">Technique</th><th scope="col">Functions</th><th scope="col">Interaction</th><th scope="col">Must be trusted</th><th scope="col">Output</th><th scope="col">Post-quantum options</th></tr>
+        </thead>
+        <tbody>
+          <tr class="is-fe">
+            <th scope="row">FE</th>
+            <td data-label="Functions">Specific classes: here inner products and quadratic functions</td>
+            <td data-label="Interaction">None to compute: one ciphertext per client, then decryption with a functional key from the authority; threshold variants add one partial decryption per server</td>
+            <td data-label="Must be trusted">The key authority (setup and functional keys); the hardness assumption</td>
+            <td data-label="Output">f(x) in the clear, to the key holder</td>
+            <td data-label="Post-quantum">Yes: the LWE and Ring-LWE schemes (dMCFE-LWE derives its keys under DCR); not the DDH, DCR or pairing ones</td>
+          </tr>
+          <tr>
+            <th scope="row">HE</th>
+            <td data-label="Functions">Arbitrary circuits with fully homomorphic schemes; narrower classes with additive ones</td>
+            <td data-label="Interaction">None while computing; the key holder decrypts the result</td>
+            <td data-label="Must be trusted">The secret-key holder (or a threshold of them); the hardness assumption</td>
+            <td data-label="Output">Encrypted until the key holder decrypts</td>
+            <td data-label="Post-quantum">Yes: the common FHE schemes are lattice-based</td>
+          </tr>
+          <tr>
+            <th scope="row">MPC</th>
+            <td data-label="Functions">Arbitrary functions</td>
+            <td data-label="Interaction">Parties exchange messages during the computation</td>
+            <td data-label="Must be trusted">That no more than a threshold of parties collude, in the protocol's adversary model</td>
+            <td data-label="Output">In the clear, to the designated parties</td>
+            <td data-label="Post-quantum">Yes: information-theoretic protocols exist; others depend on their primitives</td>
+          </tr>
+          <tr>
+            <th scope="row">DP</th>
+            <td data-label="Functions">Statistics and learning that tolerate noise</td>
+            <td data-label="Interaction">None</td>
+            <td data-label="Must be trusted">The curator who sees the raw data (central model; local DP removes it at a cost in accuracy)</td>
+            <td data-label="Output">In the clear, with calibrated noise</td>
+            <td data-label="Post-quantum">Not applicable: a statistical guarantee, not a hardness assumption</td>
+          </tr>
+          <tr>
+            <th scope="row">TEE</th>
+            <td data-label="Functions">Arbitrary code</td>
+            <td data-label="Interaction">Remote attestation, then a secure channel to the enclave</td>
+            <td data-label="Must be trusted">The hardware vendor, attestation, and the absence of side channels</td>
+            <td data-label="Output">As the enclave code releases it</td>
+            <td data-label="Post-quantum">Rests on hardware isolation, not on a hardness assumption</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note" style="margin-top:12px">Simplified on purpose: each row stands for a family of techniques with many
+      variants (threshold and multi-key HE, MPC with a dealer, local and central DP, …), and they combine — noise can be
+      added before FE encryption, or MPC can replace a trusted setup. No performance comparison is implied.</p>
+
+    <div class="limits reveal">
+      <svg aria-hidden="true"><use href="#i-warn"/></svg>
+      <div>
+        <h3>FE's limits, honestly</h3>
+        <ul>
+          <li><strong>Narrow function classes:</strong> inner products and quadratic functions, not arbitrary programs.</li>
+          <li><strong>The result itself is revealed:</strong> every functional key discloses one value f(x), and enough keys
+            (e.g. η independent weight vectors for vectors of length η) determine x — which keys exist is the key authority's decision.</li>
+          <li><strong>Trusted setup:</strong> most schemes need a key authority for setup and functional keys; the decentralized
+            variants drop it for functional keys but still have a trusted setup in this library, and the threshold variants assume
+            honest-but-curious servers (<a href="docs/choosing.html">Choosing a scheme</a>, <a href="docs/security.html">Security &amp; status</a>).</li>
+        </ul>
       </div>
     </div>
   </div>
 </section>
 
-<section id="quickstart" class="alt">
+<!-- ================= HOW IT WORKS ================= -->
+<section id="how" class="section" aria-labelledby="how-title">
   <div class="wrap">
-    <div class="accent-bar"></div>
-    <h2 class="sec-title">Quickstart</h2>
-    <p class="sec-sub">Encrypt a vector, hand out a functional key, learn only the inner product.
-       Demo parameters are toy-sized: <code>sec_param</code> is a modulus bit length,
-       not a security level; <code>"security_profile": "standard"</code> selects
-       128-bit-oriented parameters, except for pairings (BN254, about 100-bit) and the
-       schemes it refuses (<a href="https://github.com/spire-studio/pyfe4ai#security-profiles">Security Profiles</a>).</p>
-    <div class="qs-cols">
-      <div class="codebox"><pre><span class="cm"># install</span>
+    <div class="sec-head">
+      <span class="eyebrow">How it works</span>
+      <h2 id="how-title">One federated-learning round, three ways to deploy it</h2>
+      <p>Clients encrypt their gradients under the round's label; whoever holds the functional key for the
+        weights learns the weighted sum — not a single client's gradient. Step through it, or let it play.</p>
+    </div>
+
+    <div class="player anim-gate" id="p-fl" data-player="fl">
+      <div class="player-bar">
+        <div class="tabs" role="group" aria-label="Deployment">
+          <button class="tab" type="button" data-scn="mcfe" aria-pressed="true">MCFE · key authority</button>
+          <button class="tab" type="button" data-scn="thr" aria-pressed="false">Threshold MCFE</button>
+          <button class="tab" type="button" data-scn="dec" aria-pressed="false">Decentralized MCFE</button>
+        </div>
+        <div class="ctls">
+          <button class="ctl prev" type="button" aria-label="Previous step"><svg aria-hidden="true"><use href="#i-prev"/></svg></button>
+          <button class="ctl play" type="button" aria-label="Pause"><svg class="i-p" aria-hidden="true"><use href="#i-pause"/></svg></button>
+          <button class="ctl next" type="button" aria-label="Next step"><svg aria-hidden="true"><use href="#i-next"/></svg></button>
+        </div>
+      </div>
+      <div class="stage">
+        <div class="stage-svg">
+          <svg class="dg" viewBox="0 0 760 430" role="img" aria-labelledby="fl-title">
+            <title id="fl-title">Messages of one aggregation round between key authority, clients, servers and aggregator; the steps are listed next to the diagram</title>
+            <!-- edges -->
+            <path class="edge" data-edge="a-c1" d="M300 70C280 110 220 150 170 154"/>
+            <path class="edge" data-edge="a-c2" d="M315 70C290 150 230 240 170 244"/>
+            <path class="edge" data-edge="a-c3" d="M330 70C300 190 240 330 170 334"/>
+            <path class="edge" data-v="mcfe" data-edge="a-agg" d="M475 42C610 42 661 120 661 210"/>
+            <path class="edge" data-v="mcfe dec" data-edge="c1-agg" d="M170 154C400 154 480 236 578 238"/>
+            <path class="edge" data-v="mcfe dec" data-edge="c2-agg" d="M170 244C380 244 480 242 578 242"/>
+            <path class="edge" data-v="mcfe dec" data-edge="c3-agg" d="M170 334C400 334 480 248 578 246"/>
+            <path class="edge" data-edge="agg-res" d="M661 274L661 352"/>
+            <path class="edge off" data-v="thr" data-edge="a-s1" d="M380 70L380 128"/>
+            <path class="edge off" data-v="thr" data-edge="a-s2" d="M468 70C525 110 525 230 448 244"/>
+            <path class="edge off" data-v="thr" data-edge="a-s3" d="M475 60C560 100 560 320 448 334"/>
+            <path class="edge off" data-v="thr" data-edge="c1-s1" d="M170 154L312 154"/>
+            <path class="edge off" data-v="thr" data-edge="c1-s2" d="M170 154C240 154 242 244 312 244"/>
+            <path class="edge off" data-v="thr" data-edge="c1-s3" d="M170 154C240 154 242 334 312 334"/>
+            <path class="edge off" data-v="thr" data-edge="c2-s1" d="M170 244C240 244 242 154 312 154"/>
+            <path class="edge off" data-v="thr" data-edge="c2-s2" d="M170 244L312 244"/>
+            <path class="edge off" data-v="thr" data-edge="c2-s3" d="M170 244C240 244 242 334 312 334"/>
+            <path class="edge off" data-v="thr" data-edge="c3-s1" d="M170 334C240 334 242 154 312 154"/>
+            <path class="edge off" data-v="thr" data-edge="c3-s2" d="M170 334C240 334 242 244 312 244"/>
+            <path class="edge off" data-v="thr" data-edge="c3-s3" d="M170 334L312 334"/>
+            <path class="edge off" data-v="thr" data-edge="s1-comb" d="M448 154C520 154 520 238 578 238"/>
+            <path class="edge off" data-v="thr" data-edge="s2-comb" d="M448 244L578 242"/>
+            <path class="edge off" data-v="thr" data-edge="s3-comb" d="M448 334C520 334 520 246 578 246"/>
+            <!-- nodes -->
+            <g class="node" data-id="auth" data-v="mcfe thr">
+              <rect class="box" x="285" y="14" width="190" height="56" rx="12"/>
+              <text class="t-title" x="380" y="38" text-anchor="middle">Key authority</text>
+              <text class="t-sub" x="380" y="58" text-anchor="middle">setup() · master key</text>
+            </g>
+            <g class="node ghost off" data-id="joint" data-v="dec">
+              <rect class="box" x="285" y="14" width="190" height="56" rx="12"/>
+              <text class="t-title" x="380" y="38" text-anchor="middle">Trusted setup</text>
+              <text class="t-sub" x="380" y="58" text-anchor="middle">once, in process</text>
+            </g>
+            <g class="node" data-id="c1">
+              <rect class="box" x="20" y="126" width="150" height="56" rx="12"/>
+              <text class="t-title" x="95" y="150" text-anchor="middle">Client 1</text>
+              <text class="t-sub" x="95" y="169" text-anchor="middle">gradient x₁</text>
+            </g>
+            <g class="node" data-id="c2">
+              <rect class="box" x="20" y="216" width="150" height="56" rx="12"/>
+              <text class="t-title" x="95" y="240" text-anchor="middle">Client 2</text>
+              <text class="t-sub" x="95" y="259" text-anchor="middle">gradient x₂</text>
+            </g>
+            <g class="node" data-id="c3">
+              <rect class="box" x="20" y="306" width="150" height="56" rx="12"/>
+              <text class="t-title" x="95" y="330" text-anchor="middle">Client 3</text>
+              <text class="t-sub" x="95" y="349" text-anchor="middle">gradient x₃</text>
+            </g>
+            <g class="node off" data-id="s1" data-v="thr">
+              <rect class="box" x="312" y="128" width="136" height="52" rx="12"/>
+              <text class="t-title" x="380" y="150" text-anchor="middle">Server 1</text>
+              <text class="t-sub" x="380" y="168" text-anchor="middle">key share 1</text>
+            </g>
+            <g class="node off" data-id="s2" data-v="thr">
+              <rect class="box" x="312" y="218" width="136" height="52" rx="12"/>
+              <text class="t-title" x="380" y="240" text-anchor="middle">Server 2</text>
+              <text class="t-sub" x="380" y="258" text-anchor="middle">key share 2</text>
+            </g>
+            <g class="node off" data-id="s3" data-v="thr">
+              <rect class="box" x="312" y="308" width="136" height="52" rx="12"/>
+              <text class="t-title" x="380" y="330" text-anchor="middle">Server 3</text>
+              <text class="t-sub" x="380" y="348" text-anchor="middle">key share 3</text>
+            </g>
+            <g class="node" data-id="agg" data-v="mcfe">
+              <rect class="box" x="578" y="210" width="166" height="64" rx="12"/>
+              <text class="t-title" x="661" y="236" text-anchor="middle">Aggregator</text>
+              <text class="t-sub" x="661" y="256" text-anchor="middle">functional key dk_y</text>
+            </g>
+            <g class="node off" data-id="aggd" data-v="dec">
+              <rect class="box" x="578" y="210" width="166" height="64" rx="12"/>
+              <text class="t-title" x="661" y="236" text-anchor="middle">Aggregator</text>
+              <text class="t-sub" x="661" y="256" text-anchor="middle">combines key shares</text>
+            </g>
+            <g class="node off" data-id="comb" data-v="thr">
+              <rect class="box" x="578" y="210" width="166" height="64" rx="12"/>
+              <text class="t-title" x="661" y="236" text-anchor="middle">Combiner</text>
+              <text class="t-sub" x="661" y="256" text-anchor="middle">holds no secret</text>
+            </g>
+            <g class="node res" data-id="res">
+              <rect class="box" x="578" y="352" width="166" height="58" rx="12"/>
+              <text class="t-title" x="661" y="378" text-anchor="middle">Σ yᵢ·xᵢ</text>
+              <text class="t-sub" x="661" y="397" text-anchor="middle">in the clear</text>
+            </g>
+            <text class="t-lane" x="20" y="420">ℓ = the round's label</text>
+            <g class="packets"></g>
+          </svg>
+        </div>
+        <div>
+          <ol class="steps" data-scn="mcfe" aria-label="Steps, MCFE with a key authority">
+            <li>Once: the key authority runs <code>setup()</code> and gives every client its encryption key <em>skᵢ</em>.</li>
+            <li>Each round has a label ℓ. Every client encrypts its gradient under ℓ and sends only the ciphertext — one per client and label.</li>
+            <li>The authority issues the aggregator a functional key for the weights <em>y</em> (in <code>mcfe/ring_lwe</code> also bound to ℓ).</li>
+            <li>The aggregator decrypts Σ yᵢ·xᵢ for label ℓ — the weighted sum, never a single gradient. Ciphertexts of different labels do not combine.</li>
+          </ol>
+          <ol class="steps" data-scn="thr" aria-label="Steps, threshold MCFE">
+            <li>The key authority gives every client its encryption key and each of the s = 3 servers its share of the functional key for <em>y</em>; with t &lt; s the LWE layers use a replicated sharing (the default).</li>
+            <li>Clients encrypt as usual under ℓ; the ciphertexts reach the servers (in tMCFE-Ring-LWE tagged for each server).</li>
+            <li>An enrolled set of t = 2 servers computes partial decryptions with <code>share_decrypt</code>; the LWE layers flood them with noise. Server 3 can stay offline.</li>
+            <li>A combiner — any party, it holds no secret — joins the t partials with <code>combine_decrypt</code> and decodes Σ yᵢ·xᵢ. Fewer than t servers learn nothing beyond the result.</li>
+          </ol>
+          <ol class="steps" data-scn="dec" aria-label="Steps, decentralized MCFE">
+            <li>No authority for functional keys — but the setup is trusted: in this library one key generator samples every client's keys, including the pairwise zero-sum secrets, in process.</li>
+            <li>Each round, every client sends its ciphertext; for each functional key it also sends its own share of the key for <em>y</em> (every round in dMCFE-Ring-LWE, whose keys are bound to the label).</li>
+            <li>The aggregator combines the shares into the functional key and decrypts Σ yᵢ·xᵢ.</li>
+          </ol>
+        </div>
+      </div>
+      <p class="player-foot">Threshold servers are assumed honest-but-curious: a partial decryption carries no proof of
+        correctness. <code>pyfe4ai.ml</code> runs MCFE — and the servers of <code>mcfe/ring_lwe_threshold</code> — in one
+        process for experiments. Details: <a href="docs/threshold_ml.html">Threshold decryption and the ML adapter</a>.</p>
+    </div>
+
+    <div id="architecture" class="sec-head sub-head">
+      <h3 class="h3-lg">Inside the library: one call through the stack</h3>
+      <p>Python on top, one backend interface in the middle, and two implementations of it: the Python reference and
+        the optional Rust extension, which computes the same values. Follow a call down to the Rust core and back.</p>
+    </div>
+
+    <div class="player anim-gate" id="p-arch" data-player="arch" data-nofollow>
+      <div class="player-bar">
+        <div class="tabs" role="group" aria-label="Call">
+          <button class="tab" type="button" data-scn="create" aria-pressed="true">pyfe4ai.create → native</button>
+          <button class="tab" type="button" data-scn="ml" aria-pressed="false">ML adapter</button>
+          <button class="tab" type="button" data-scn="py" aria-pressed="false">Python fallback</button>
+        </div>
+        <div class="ctls">
+          <button class="ctl prev" type="button" aria-label="Previous step"><svg aria-hidden="true"><use href="#i-prev"/></svg></button>
+          <button class="ctl play" type="button" aria-label="Pause"><svg aria-hidden="true"><use href="#i-pause"/></svg></button>
+          <button class="ctl next" type="button" aria-label="Next step"><svg aria-hidden="true"><use href="#i-next"/></svg></button>
+        </div>
+      </div>
+      <div class="stage">
+        <div class="stage-svg">
+          <svg class="dg dg-arch" viewBox="0 0 640 630" role="img" aria-labelledby="arch-title">
+            <title id="arch-title">The layers of PyFE4AI from your code to the Rust core: application, ML adapter, pyfe4ai.create and the registry, schemes, primitives, the backend interface, and its two implementations, the Rust extension with rust/core and the Python reference; the steps are listed next to the diagram</title>
+            <!-- ticks from the lanes into the layers -->
+            <path class="tick" d="M22 42H60M22 118H60M22 194H60M22 270H60M22 346H60M22 422H60"/>
+            <!-- call (down) and return (up) lanes -->
+            <path class="edge" data-edge="d0" d="M22 42V118"/>
+            <path class="edge" data-edge="d1" d="M22 118V194"/>
+            <path class="edge" data-edge="d2" d="M22 194V270"/>
+            <path class="edge" data-edge="d3" d="M22 270V346"/>
+            <path class="edge" data-edge="d4" d="M22 346V422"/>
+            <path class="edge" data-edge="dr" d="M22 422V535H60"/>
+            <path class="edge" data-edge="dp" d="M22 422V612H536V600"/>
+            <path class="edge up" data-edge="ur" d="M60 547H40V422"/>
+            <path class="edge up" data-edge="up" d="M548 600V622H40V422"/>
+            <path class="edge up" data-edge="u4" d="M40 422V346"/>
+            <path class="edge up" data-edge="u3" d="M40 346V270"/>
+            <path class="edge up" data-edge="u2" d="M40 270V194"/>
+            <path class="edge up" data-edge="u1" d="M40 194V118"/>
+            <path class="edge up" data-edge="u0" d="M40 118V42"/>
+            <!-- layers -->
+            <g class="node" data-id="app">
+              <rect class="box" x="60" y="12" width="560" height="60" rx="12"/>
+              <text class="t-title" x="80" y="38">Application</text>
+              <text class="t-sub" x="80" y="58">your code · examples/ · benchmarks/</text>
+              <text class="t-tag" x="604" y="38" text-anchor="end">you</text>
+            </g>
+            <g class="node" data-id="ml">
+              <rect class="box" x="60" y="88" width="560" height="60" rx="12"/>
+              <text class="t-title" x="80" y="114">ML adapter</text>
+              <text class="t-sub" x="80" y="134">FESchemeWrapper · encrypt_gradient · aggregate_gradients · quantization</text>
+              <text class="t-tag" x="604" y="114" text-anchor="end">pyfe4ai.ml</text>
+            </g>
+            <g class="node" data-id="core">
+              <rect class="box" x="60" y="164" width="560" height="60" rx="12"/>
+              <text class="t-title" x="80" y="190">pyfe4ai.create · registry</text>
+              <text class="t-sub" x="80" y="210">config · security profiles · review status · formats · versions</text>
+              <text class="t-tag" x="604" y="190" text-anchor="end">pyfe4ai.core</text>
+            </g>
+            <g class="node" data-id="sch">
+              <rect class="box" x="60" y="240" width="560" height="60" rx="12"/>
+              <text class="t-title" x="80" y="266">Schemes · 42</text>
+              <text class="t-sub" x="80" y="286">sife · mife · mcfe · quadratic · threshold · common</text>
+              <text class="t-tag" x="604" y="266" text-anchor="end">pyfe4ai.schemes</text>
+            </g>
+            <g class="node" data-id="prim">
+              <rect class="box" x="60" y="316" width="560" height="60" rx="12"/>
+              <text class="t-title" x="80" y="342">Primitives</text>
+              <text class="t-sub" x="80" y="362">lattice · sampling · hashing · groups · pairing</text>
+              <text class="t-tag" x="604" y="342" text-anchor="end">pyfe4ai.primitives</text>
+            </g>
+            <g class="node" data-id="be">
+              <rect class="box" x="60" y="392" width="560" height="60" rx="12"/>
+              <text class="t-title" x="80" y="418">Backend interface</text>
+              <text class="t-sub" x="80" y="438">ops() · ring(q, n) · PYFE4AI_BACKEND = auto | python | native</text>
+              <text class="t-tag" x="604" y="418" text-anchor="end">pyfe4ai.backend</text>
+            </g>
+            <g class="node rust" data-id="rust">
+              <rect class="box" x="60" y="470" width="388" height="130" rx="12"/>
+              <text class="t-title" x="78" y="494">Rust · pyfe4ai._rust_native</text>
+              <text class="t-sub" x="78" y="513">rust/native (PyO3) · GIL released</text>
+              <text class="t-sub" x="78" y="530">BLS12-381 · ristretto255 · ChaCha20 per call</text>
+              <rect class="inner" x="76" y="542" width="356" height="46" rx="9"/>
+              <text class="t-sub t-strong" x="90" y="561">rust/core · no dependencies · C ABI for tests</text>
+              <text class="t-sub" x="90" y="578">ntt · rlwe · rns · facct · keccak · shamir · …</text>
+            </g>
+            <g class="node py" data-id="py">
+              <rect class="box" x="464" y="470" width="156" height="130" rx="12"/>
+              <text class="t-title" x="480" y="494">Python</text>
+              <text class="t-title" x="480" y="512">reference</text>
+              <text class="t-sub" x="480" y="536">python_impl</text>
+              <text class="t-sub" x="480" y="554">gmpy2 · NumPy</text>
+            </g>
+            <g class="packets"></g>
+          </svg>
+        </div>
+        <div>
+          <ol class="steps" data-scn="create" aria-label="Steps, pyfe4ai.create and a native encryption">
+            <li><code>pyfe4ai.create("mcfe/ring_lwe", cfg)</code> — the registry finds the scheme by id and builds its key generator, the config completed by the security profile; you get <code>kg</code> and the class <code>MCFERingLWE</code>.</li>
+            <li><code>client.encrypt_lst_ndarray([grad], label=ℓ)</code> — the scheme packs the tensor into chunks: one Ring-LWE ciphertext per chunk, each with its own label pad.</li>
+            <li>Primitives: the label is hashed to Z<sub>q</sub>, and the noise comes from the scheme's sampler — exact (FACCT) Gaussians by default for the Ring-LWE family.</li>
+            <li><code>backend.ring(q, n).encrypt_tensor(…)</code> — under <code>auto</code> the extension is built and q &lt; 2<sup>253</sup> has the root of unity it needs, so the native implementation runs.</li>
+            <li><code>pyfe4ai._rust_native</code> runs the <code>rust/core</code> kernels: one call per tensor with the GIL released, chunks in parallel with <code>PYFE4AI_THREADS</code>, one ChaCha20 stream per chunk from one OS seed, overwritten when the call ends.</li>
+            <li>The ciphertexts return to your code — JSON by default for <code>mcfe/ring_lwe</code>, or binary with <code>ct_format="binary"</code>.</li>
+          </ol>
+          <ol class="steps" data-scn="ml" aria-label="Steps, the ML adapter">
+            <li><code>encrypt_gradient(grad, wrapper, nid="c1", label=ℓ)</code> — one client's step of a federated round.</li>
+            <li><code>pyfe4ai.ml</code> reserves (client, ℓ) — a second encryption under ℓ is refused — and takes the client's crypto object, which the wrapper built from the registry.</li>
+            <li>The scheme scales the floats to integers at the wrapper's precision and packs them into chunks …</li>
+            <li>… through the same primitives, backend interface and Rust kernels as a direct call.</li>
+            <li>An <code>EncryptedGradient</code> comes back, ready to serialise for the aggregator (<code>to_dict()</code>).</li>
+          </ol>
+          <ol class="steps" data-scn="py" aria-label="Steps, the Python fallback">
+            <li><code>PYFE4AI_BACKEND=python</code> — or the extension is not built, or the parameters are outside what it handles (moduli of 2<sup>253</sup> or more, rings without a 2n-th root of unity, wider Gaussians).</li>
+            <li>The layers above the backend run the same code as before.</li>
+            <li>The backend interface hands the operation to the Python reference (<code>backend/python_impl</code>: gmpy2, NumPy).</li>
+            <li>Same results, only slower: the tests run every backend operation through both implementations and require the same outputs. Without the extension the library says so once per process (<code>FEWarning</code>; not under an explicit <code>python</code>).</li>
+          </ol>
+        </div>
+      </div>
+      <p class="player-foot">Simplified: the lanes on the left carry the call down (amber) and the result back up (teal); the
+        layers above the backend also share <code>pyfe4ai.core</code>. What runs natively is listed in the docstring of
+        <code>pyfe4ai.backend</code> and in <a href="docs/threading.html">Threads, processes and copies</a>.</p>
+    </div>
+
+    <div class="grid grid-4 rules">
+      <div class="rule reveal"><b>Python is the reference</b><p>The extension computes the reference's values — same NTT roots and tables, samplers and hash reductions — and tests compare the two.</p></div>
+      <div class="rule reveal"><b>One random source per call</b><p>A tensor call expands one 32-byte OS seed with ChaCha20, one stream per chunk; seed and states are overwritten when it ends.</p></div>
+      <div class="rule reveal"><b>GIL released, threads optional</b><p>One native call per tensor; <code>PYFE4AI_THREADS=k</code> lets it use k threads (default 1).</p></div>
+      <div class="rule reveal"><b>Unsupported inputs fall back</b><p>Inputs it does not handle go to the reference: moduli ≥ 2<sup>253</sup>, rings without the root of unity, wider Gaussians.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SCHEMES ================= -->
+<section id="schemes" class="section alt" aria-labelledby="schemes-title">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Scheme families</span>
+      <h2 id="schemes-title">42 schemes, one registry</h2>
+      <p>A scheme is named <code>"family/variant"</code>: the family says who encrypts and who decrypts, the variant
+        which assumption and construction it uses. <code>pyfe4ai.list_schemes()</code> and
+        <code>pyfe4ai.get_scheme_status("family/variant")</code> answer the same questions at runtime.</p>
+    </div>
+
+    <div class="grid grid-4 fam-cards">
+      <article class="card fam reveal">
+        <div class="fam-top"><h3>SIFE</h3><span class="fam-n" data-count="sife">11</span></div>
+        <p class="fam-kind">single-input</p>
+        <p>One encryptor; the holder of a key for <em>y</em> learns ⟨x, y⟩ — one party's vector scored by another party's linear model.</p>
+      </article>
+      <article class="card fam reveal">
+        <div class="fam-top"><h3>MIFE</h3><span class="fam-n" data-count="mife">11</span></div>
+        <p class="fam-kind">multi-input</p>
+        <p><em>n</em> clients each encrypt a slot; the key holder learns Σ⟨xᵢ, yᵢ⟩. No labels: for one-shot joint inputs, not for repeated rounds.</p>
+      </article>
+      <article class="card fam reveal">
+        <div class="fam-top"><h3>MCFE</h3><span class="fam-n" data-count="mcfe">17</span></div>
+        <p class="fam-kind">multi-client, labelled</p>
+        <p>Clients encrypt under a shared label, and only ciphertexts of one label combine — federated aggregation, one label per round.</p>
+      </article>
+      <article class="card fam reveal">
+        <div class="fam-top"><h3>Quadratic</h3><span class="fam-n" data-count="quadratic">3</span></div>
+        <p class="fam-kind">SGP · Quad · MIQFE</p>
+        <p>The key holder learns xᵀFy (<code>sgp</code>, <code>quad</code>), or the cross-user quadratic terms of several clients (<code>miqfe</code>).</p>
+      </article>
+    </div>
+    <ul class="cap-chips" aria-label="Variants across the families">
+      <li><b data-count="threshold">6</b> threshold — the functional key shared among s servers, any t decrypt</li>
+      <li><b data-count="decentralized">5</b> decentralized — no authority for functional keys (trusted setup)</li>
+      <li><b data-count="function-hiding">7</b> function-hiding — keys also hide the weights</li>
+      <li><b data-count="refused">4</b> refused under <code>standard</code></li>
+    </ul>
+
+    <div class="matrix-card reveal">
+      <div class="matrix-head">
+        <h3>Families × instantiations</h3>
+        <ul class="status-legend" aria-label="Legend">
+          <li><i class="dot rev" aria-hidden="true"></i>reviewed</li>
+          <li><i class="dot exp" aria-hidden="true"></i>experimental</li>
+          <li><i class="dot unr" aria-hidden="true"></i>unreviewed</li>
+          <li><i class="dot ins" aria-hidden="true"></i>known-insecure (none)</li>
+        </ul>
+      </div>
+      <div class="matrix-scroll">
+<!--matrix:start-->
+<table class="matrix">
+  <caption class="sr-only">Registered schemes by family (rows) and instantiation (columns), with each scheme's review status</caption>
+  <thead><tr><th scope="col">Family</th><th scope="col">DDH</th><th scope="col">Damgård</th><th scope="col">Paillier</th><th scope="col">LWE</th><th scope="col">Ring-LWE</th><th scope="col">Pairing</th></tr></thead>
+  <tbody>
+    <tr><th scope="row">SIFE <small>single-input</small></th><td><button type="button" class="cell" data-cell="SIFE × DDH" data-schemes="sife/ddh|reviewed|;sife/ddh_ristretto255|unreviewed|;sife/ddh_dynamic|reviewed|"><span class="dots" aria-hidden="true"><i class="dot rev"></i><i class="dot unr"></i><i class="dot rev"></i></span><span class="cnt" aria-hidden="true">3</span><span class="sr-only">3 schemes: sife/ddh reviewed, sife/ddh_ristretto255 unreviewed, sife/ddh_dynamic reviewed</span></button></td><td><button type="button" class="cell" data-cell="SIFE × Damgård" data-schemes="sife/damgard|reviewed|"><span class="dots" aria-hidden="true"><i class="dot rev"></i></span><span class="cnt" aria-hidden="true">1</span><span class="sr-only">1 scheme: sife/damgard reviewed</span></button></td><td><button type="button" class="cell" data-cell="SIFE × Paillier" data-schemes="sife/paillier|reviewed|"><span class="dots" aria-hidden="true"><i class="dot rev"></i></span><span class="cnt" aria-hidden="true">1</span><span class="sr-only">1 scheme: sife/paillier reviewed</span></button></td><td><button type="button" class="cell" data-cell="SIFE × LWE" data-schemes="sife/lwe|reviewed|;sife/fullysec_lwe|reviewed|refused"><span class="dots" aria-hidden="true"><i class="dot rev"></i><i class="dot rev"></i></span><span class="cnt" aria-hidden="true">2</span><span class="sr-only">2 schemes: sife/lwe reviewed, sife/fullysec_lwe reviewed, refused under standard</span></button></td><td><button type="button" class="cell" data-cell="SIFE × Ring-LWE" data-schemes="sife/ring_lwe|reviewed|;sife/fullysec_ring_lwe|reviewed|"><span class="dots" aria-hidden="true"><i class="dot rev"></i><i class="dot rev"></i></span><span class="cnt" aria-hidden="true">2</span><span class="sr-only">2 schemes: sife/ring_lwe reviewed, sife/fullysec_ring_lwe reviewed</span></button></td><td><button type="button" class="cell" data-cell="SIFE × Pairing" data-schemes="sife/fh_ipe_pairing|reviewed|;sife/part_fh_ipe_pairing|reviewed|"><span class="dots" aria-hidden="true"><i class="dot rev"></i><i class="dot rev"></i></span><span class="cnt" aria-hidden="true">2</span><span class="sr-only">2 schemes: sife/fh_ipe_pairing reviewed, sife/part_fh_ipe_pairing reviewed</span></button></td></tr>
+    <tr><th scope="row">MIFE <small>multi-input</small></th><td><button type="button" class="cell" data-cell="MIFE × DDH" data-schemes="mife/ddh|reviewed|;mife/ddh_ristretto255|unreviewed|"><span class="dots" aria-hidden="true"><i class="dot rev"></i><i class="dot unr"></i></span><span class="cnt" aria-hidden="true">2</span><span class="sr-only">2 schemes: mife/ddh reviewed, mife/ddh_ristretto255 unreviewed</span></button></td><td><button type="button" class="cell" data-cell="MIFE × Damgård" data-schemes="mife/damgard|reviewed|"><span class="dots" aria-hidden="true"><i class="dot rev"></i></span><span class="cnt" aria-hidden="true">1</span><span class="sr-only">1 scheme: mife/damgard reviewed</span></button></td><td><button type="button" class="cell" data-cell="MIFE × Paillier" data-schemes="mife/paillier|reviewed|"><span class="dots" aria-hidden="true"><i class="dot rev"></i></span><span class="cnt" aria-hidden="true">1</span><span class="sr-only">1 scheme: mife/paillier reviewed</span></button></td><td><button type="button" class="cell" data-cell="MIFE × LWE" data-schemes="mife/lwe|reviewed|;mife/fullysec_lwe|reviewed|refused"><span class="dots" aria-hidden="true"><i class="dot rev"></i><i class="dot rev"></i></span><span class="cnt" aria-hidden="true">2</span><span class="sr-only">2 schemes: mife/lwe reviewed, mife/fullysec_lwe reviewed, refused under standard</span></button></td><td><button type="button" class="cell" data-cell="MIFE × Ring-LWE" data-schemes="mife/ring_lwe|reviewed|"><span class="dots" aria-hidden="true"><i class="dot rev"></i></span><span class="cnt" aria-hidden="true">1</span><span class="sr-only">1 scheme: mife/ring_lwe reviewed</span></button></td><td><button type="button" class="cell" data-cell="MIFE × Pairing" data-schemes="mife/fh_ipe_pairing|reviewed|;mife/fh_multi_ipe_pairing|reviewed|"><span class="dots" aria-hidden="true"><i class="dot rev"></i><i class="dot rev"></i></span><span class="cnt" aria-hidden="true">2</span><span class="sr-only">2 schemes: mife/fh_ipe_pairing reviewed, mife/fh_multi_ipe_pairing reviewed</span></button></td></tr>
+    <tr><th scope="row">MCFE <small>multi-client, labelled</small></th><td><button type="button" class="cell" data-cell="MCFE × DDH" data-schemes="mcfe/ddh|reviewed|;mcfe/ddh_ristretto255|unreviewed|"><span class="dots" aria-hidden="true"><i class="dot rev"></i><i class="dot unr"></i></span><span class="cnt" aria-hidden="true">2</span><span class="sr-only">2 schemes: mcfe/ddh reviewed, mcfe/ddh_ristretto255 unreviewed</span></button></td><td><button type="button" class="cell" data-cell="MCFE × Damgård" data-schemes="mcfe/damgard|reviewed|"><span class="dots" aria-hidden="true"><i class="dot rev"></i></span><span class="cnt" aria-hidden="true">1</span><span class="sr-only">1 scheme: mcfe/damgard reviewed</span></button></td><td><button type="button" class="cell" data-cell="MCFE × Paillier" data-schemes="mcfe/paillier|reviewed|"><span class="dots" aria-hidden="true"><i class="dot rev"></i></span><span class="cnt" aria-hidden="true">1</span><span class="sr-only">1 scheme: mcfe/paillier reviewed</span></button></td><td><button type="button" class="cell" data-cell="MCFE × LWE" data-schemes="mcfe/lwe|reviewed|;mcfe/fullysec_lwe|reviewed|"><span class="dots" aria-hidden="true"><i class="dot rev"></i><i class="dot rev"></i></span><span class="cnt" aria-hidden="true">2</span><span class="sr-only">2 schemes: mcfe/lwe reviewed, mcfe/fullysec_lwe reviewed</span></button></td><td><button type="button" class="cell" data-cell="MCFE × Ring-LWE" data-schemes="mcfe/ring_lwe|reviewed|"><span class="dots" aria-hidden="true"><i class="dot rev"></i></span><span class="cnt" aria-hidden="true">1</span><span class="sr-only">1 scheme: mcfe/ring_lwe reviewed</span></button></td><td><button type="button" class="cell" data-cell="MCFE × Pairing" data-schemes="mcfe/fh_multi_ipe_pairing|reviewed|"><span class="dots" aria-hidden="true"><i class="dot rev"></i></span><span class="cnt" aria-hidden="true">1</span><span class="sr-only">1 scheme: mcfe/fh_multi_ipe_pairing reviewed</span></button></td></tr>
+    <tr><th scope="row">dMCFE <small>decentralized</small></th><td><button type="button" class="cell" data-cell="dMCFE × DDH" data-schemes="mcfe/ddh_decentralized|experimental|"><span class="dots" aria-hidden="true"><i class="dot exp"></i></span><span class="cnt" aria-hidden="true">1</span><span class="sr-only">1 scheme: mcfe/ddh_decentralized experimental</span></button></td><td class="none"><span aria-hidden="true">—</span><span class="sr-only">none</span></td><td><button type="button" class="cell" data-cell="dMCFE × Paillier" data-schemes="mcfe/paillier_decentralized|reviewed|refused"><span class="dots" aria-hidden="true"><i class="dot rev"></i></span><span class="cnt" aria-hidden="true">1</span><span class="sr-only">1 scheme: mcfe/paillier_decentralized reviewed, refused under standard</span></button></td><td><button type="button" class="cell" data-cell="dMCFE × LWE" data-schemes="mcfe/lwe_decentralized|reviewed|"><span class="dots" aria-hidden="true"><i class="dot rev"></i></span><span class="cnt" aria-hidden="true">1</span><span class="sr-only">1 scheme: mcfe/lwe_decentralized reviewed</span></button></td><td><button type="button" class="cell" data-cell="dMCFE × Ring-LWE" data-schemes="mcfe/ring_lwe_decentralized|reviewed|"><span class="dots" aria-hidden="true"><i class="dot rev"></i></span><span class="cnt" aria-hidden="true">1</span><span class="sr-only">1 scheme: mcfe/ring_lwe_decentralized reviewed</span></button></td><td><button type="button" class="cell" data-cell="dMCFE × Pairing" data-schemes="mcfe/fh_multi_ipe_pairing_decentralized|reviewed|"><span class="dots" aria-hidden="true"><i class="dot rev"></i></span><span class="cnt" aria-hidden="true">1</span><span class="sr-only">1 scheme: mcfe/fh_multi_ipe_pairing_decentralized reviewed</span></button></td></tr>
+    <tr><th scope="row">tMIFE <small>threshold</small></th><td><button type="button" class="cell" data-cell="tMIFE × DDH" data-schemes="mife/ddh_threshold|reviewed|"><span class="dots" aria-hidden="true"><i class="dot rev"></i></span><span class="cnt" aria-hidden="true">1</span><span class="sr-only">1 scheme: mife/ddh_threshold reviewed</span></button></td><td class="none"><span aria-hidden="true">—</span><span class="sr-only">none</span></td><td class="none"><span aria-hidden="true">—</span><span class="sr-only">none</span></td><td><button type="button" class="cell" data-cell="tMIFE × LWE" data-schemes="mife/lwe_threshold|experimental|refused"><span class="dots" aria-hidden="true"><i class="dot exp"></i></span><span class="cnt" aria-hidden="true">1</span><span class="sr-only">1 scheme: mife/lwe_threshold experimental, refused under standard</span></button></td><td class="none"><span aria-hidden="true">—</span><span class="sr-only">none</span></td><td class="none"><span aria-hidden="true">—</span><span class="sr-only">none</span></td></tr>
+    <tr><th scope="row">tMCFE <small>threshold</small></th><td><button type="button" class="cell" data-cell="tMCFE × DDH" data-schemes="mcfe/ddh_threshold|reviewed|"><span class="dots" aria-hidden="true"><i class="dot rev"></i></span><span class="cnt" aria-hidden="true">1</span><span class="sr-only">1 scheme: mcfe/ddh_threshold reviewed</span></button></td><td class="none"><span aria-hidden="true">—</span><span class="sr-only">none</span></td><td class="none"><span aria-hidden="true">—</span><span class="sr-only">none</span></td><td><button type="button" class="cell" data-cell="tMCFE × LWE" data-schemes="mcfe/lwe_threshold|experimental|"><span class="dots" aria-hidden="true"><i class="dot exp"></i></span><span class="cnt" aria-hidden="true">1</span><span class="sr-only">1 scheme: mcfe/lwe_threshold experimental</span></button></td><td><button type="button" class="cell" data-cell="tMCFE × Ring-LWE" data-schemes="mcfe/ring_lwe_threshold|experimental|"><span class="dots" aria-hidden="true"><i class="dot exp"></i></span><span class="cnt" aria-hidden="true">1</span><span class="sr-only">1 scheme: mcfe/ring_lwe_threshold experimental</span></button></td><td><button type="button" class="cell" data-cell="tMCFE × Pairing" data-schemes="mcfe/fh_multi_ipe_pairing_threshold|experimental|"><span class="dots" aria-hidden="true"><i class="dot exp"></i></span><span class="cnt" aria-hidden="true">1</span><span class="sr-only">1 scheme: mcfe/fh_multi_ipe_pairing_threshold experimental</span></button></td></tr>
+    <tr><th scope="row">Quadratic <small>SGP · Quad · MIQFE</small></th><td class="none"><span aria-hidden="true">—</span><span class="sr-only">none</span></td><td class="none"><span aria-hidden="true">—</span><span class="sr-only">none</span></td><td class="none"><span aria-hidden="true">—</span><span class="sr-only">none</span></td><td class="none"><span aria-hidden="true">—</span><span class="sr-only">none</span></td><td class="none"><span aria-hidden="true">—</span><span class="sr-only">none</span></td><td><button type="button" class="cell" data-cell="Quadratic × Pairing" data-schemes="quadratic/quad|reviewed|;quadratic/sgp|reviewed|;quadratic/miqfe|reviewed|"><span class="dots" aria-hidden="true"><i class="dot rev"></i><i class="dot rev"></i><i class="dot rev"></i></span><span class="cnt" aria-hidden="true">3</span><span class="sr-only">3 schemes: quadratic/quad reviewed, quadratic/sgp reviewed, quadratic/miqfe reviewed</span></button></td></tr>
+  </tbody>
+</table>
+<!--matrix:end-->
+      </div>
+      <div class="cell-detail" aria-live="polite">
+        <p class="cd-empty">Select a cell to list its schemes, their review status and whether <code>standard</code> refuses them.</p>
+      </div>
+    </div>
+    <p class="note" style="margin-top:14px">One dot per registered scheme, from the registry (<code>pyfe4ai/core/registry.py</code>). The DDH column
+      includes the <code>ddh_ristretto255</code> schemes; pairing-based and quadratic schemes run on BLS12-381 from the Rust
+      extension, other curves need <code>charm-crypto</code>. Per-scheme papers, fidelity and deviations:
+      <a href="docs/security.html">Security &amp; status</a> and <a href="docs/choosing.html">Choosing a scheme</a>.</p>
+  </div>
+</section>
+
+<!-- ================= USE CASES ================= -->
+<section id="use-cases" class="section" aria-labelledby="uc-title">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Use cases</span>
+      <h2 id="uc-title">Built for privacy-preserving ML</h2>
+      <p>Functional encryption reveals a chosen function of the data — not the data itself.</p>
+    </div>
+    <div class="grid grid-3">
+      <article class="card uc reveal">
+        <div class="ico"><svg aria-hidden="true"><use href="#i-net"/></svg></div>
+        <h3>Secure aggregation in federated learning</h3>
+        <p>Clients encrypt local gradients with MCFE-DDH (CDGPP18), the DCR, LWE and MDDH constructions of ABMPSW20,
+          or MCFE-Ring-LWE (BMMS21), which under <code>standard</code> encrypts 10 000 gradient elements in about
+          18 ms per client with the Rust extension (0.35 s in pure Python); the aggregator's functional key decrypts
+          only the weighted sum. dMCFE variants need no authority for functional keys (their setup, which samples every
+          client's keys in-process, is still trusted).</p>
+        <p class="uc-links"><a href="https://github.com/spire-studio/pyfe4ai/blob/main/examples/ml_fl_aggregation.py">examples/ml_fl_aggregation.py</a></p>
+      </article>
+      <article class="card uc reveal">
+        <div class="ico blue"><svg aria-hidden="true"><use href="#i-target"/></svg></div>
+        <h3>Encrypted inference</h3>
+        <p>Score features with a linear model (SIFE), or evaluate a bilinear form x<sup>T</sup>Fy with quadratic FE
+          (BLS12-381 from the Rust extension), directly over ciphertexts — the model owner learns the result, never
+          the raw features.</p>
+        <p class="uc-links"><a href="https://github.com/spire-studio/pyfe4ai/blob/main/examples/ml_encrypted_inference.py">examples/ml_encrypted_inference.py</a>
+          <a href="https://github.com/spire-studio/pyfe4ai/blob/main/examples/quadratic_quad_minimal.py">examples/quadratic_quad_minimal.py</a></p>
+      </article>
+      <article class="card uc reveal">
+        <div class="ico amber"><svg aria-hidden="true"><use href="#i-servers"/></svg></div>
+        <h3>Threshold aggregation</h3>
+        <p>tMCFE variants (TAPFed-style) split decryption across t-of-s servers that are assumed honest-but-curious;
+          their LWE, Ring-LWE and pairing threshold layers are experimental. For <code>mcfe/ring_lwe_threshold</code>
+          the ML adapter runs the servers in-process — for experiments — and shows the messages of a deployment
+          (<code>partial_decrypt_gradients</code>, <code>combine_partial_decryptions</code>).</p>
+        <p class="uc-links"><a href="https://github.com/spire-studio/pyfe4ai/blob/main/examples/mcfe_ring_lwe_threshold_demo.py">examples/mcfe_ring_lwe_threshold_demo.py</a>
+          <a href="docs/threshold_ml.html">Threshold decryption and the ML adapter</a></p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PERFORMANCE ================= -->
+<section id="performance" class="section alt bg-grid" aria-labelledby="perf-title">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Performance</span>
+      <h2 id="perf-title">A Rust core under the Python reference</h2>
+      <p>The same 0.4.0 code on its two backends — the Rust extension and the plain Python implementation — on one
+        machine, one thread, under <code>standard</code>. Ciphertext formats are labelled: JSON is the default of
+        <code>mcfe/ring_lwe</code>, binary that of the threshold MCFE.</p>
+    </div>
+
+    <div class="grid grid-4 kpis">
+      <div class="kpi reveal"><b class="grad-text">18.2 ms</b><span>per client to encrypt</span><small>MCFE Ring-LWE, 10<sup>4</sup> elements · JSON (default) · Python backend: 345 ms</small></div>
+      <div class="kpi reveal"><b class="grad-text">7.5 ms</b><span>to aggregate</span><small>JSON (default) · Python backend: 157 ms</small></div>
+      <div class="kpi reveal"><b class="grad-text">0.25 ms</b><span>per client online</span><small>after an offline phase · binary ciphertexts</small></div>
+      <div class="kpi reveal"><b class="grad-text">24.6 B</b><span>per element</span><small>binary ciphertexts · 68.4 B as JSON</small></div>
+    </div>
+
+    <div class="perf-legend" aria-hidden="true"><span><i class="sw before"></i>Python backend</span><span><i class="sw after"></i>Rust backend (native)</span></div>
+    <div class="grid grid-2 perf-groups anim-gate">
+      <figure class="card pg reveal">
+        <figcaption><b>MCFE Ring-LWE</b> · <code>mcfe/ring_lwe</code>, 10<sup>4</sup> elements <small>by ciphertext format</small></figcaption>
+        <div class="bars">
+          <div class="bar-row"><span class="bl">client · JSON (default)</span><span class="b before" style="--w:95.83%"><em>345 ms</em></span><span class="b after" style="--w:5.06%"><em>18.2 ms</em></span></div>
+          <div class="bar-row"><span class="bl">aggregator · JSON (default)</span><span class="b before" style="--w:43.61%"><em>157 ms</em></span><span class="b after" style="--w:2.08%"><em>7.5 ms</em></span></div>
+          <div class="bar-row"><span class="bl">client · binary</span><span class="b before" style="--w:100%"><em>360 ms</em></span><span class="b after" style="--w:4.99%"><em>17.95 ms</em></span></div>
+          <div class="bar-row"><span class="bl">aggregator · binary</span><span class="b before" style="--w:45.56%"><em>164 ms</em></span><span class="b after" style="--w:1.73%"><em>6.24 ms</em></span></div>
+        </div>
+      </figure>
+      <figure class="card pg reveal">
+        <figcaption><b>Threshold MCFE</b> · 10<sup>4</sup> elements, s = 3, t = 2 <small>defaults: binary ciphertexts, RNS modulus, split key shares; aggregation = every party of the round on one machine</small></figcaption>
+        <div class="bars">
+          <div class="bar-row"><span class="bl">client</span><span class="b before" style="--w:71.96%"><em>493 ms</em></span><span class="b after" style="--w:3.85%"><em>26.4 ms</em></span></div>
+          <div class="bar-row"><span class="bl">partial decryption, per server</span><span class="b before" style="--w:40.02%"><em>274 ms</em></span><span class="b after" style="--w:1.17%"><em>8.0 ms</em></span></div>
+          <div class="bar-row"><span class="bl">aggregation: key shares, t partial decryptions, combine</span><span class="b before" style="--w:100%"><em>686 ms</em></span><span class="b after" style="--w:4.06%"><em>27.8 ms</em></span></div>
+        </div>
+      </figure>
+      <figure class="card pg reveal">
+        <figcaption><b>Dense-LWE MCFE</b> · <code>mcfe/lwe</code>, 200 elements <small>JSON ciphertexts (default)</small></figcaption>
+        <div class="bars">
+          <div class="bar-row"><span class="bl">client</span><span class="b before" style="--w:98.45%"><em>543 ms</em></span><span class="b after" style="--w:16.80%"><em>92.6 ms</em></span></div>
+          <div class="bar-row"><span class="bl">aggregator</span><span class="b before" style="--w:100%"><em>551 ms</em></span><span class="b after" style="--w:18.16%"><em>100.1 ms</em></span></div>
+        </div>
+      </figure>
+      <figure class="card pg native-only reveal">
+        <figcaption><b>Rust backend only</b> <small>no Python comparison: the BLS12-381 pairing group has no Python implementation (both backends use the Rust one), and the Python backend of ristretto255 was not measured</small></figcaption>
+        <dl class="abs-list">
+          <div><dt>Pairing schemes on BLS12-381, one round of setup, keys, encryption and decryption</dt><dd>SGP <b>30 ms</b> · Quad <b>48 ms</b> · MCFE FH-Multi-IPE <b>47 ms</b></dd></div>
+          <div><dt>DDH MCFE over ristretto255 (<code>ddh_ristretto255</code>, unreviewed), per element</dt><dd>client <b>0.069 ms</b> · aggregator <b>0.139 ms</b> · ciphertext <b>75 B</b></dd></div>
+        </dl>
+      </figure>
+    </div>
+    <details class="perf-table">
+      <summary>Show these numbers as a table</summary>
+      <div class="table-scroll">
+        <table class="data">
+          <caption class="sr-only">Timings of the Rust and Python backends, from benchmarks/PERFORMANCE.md</caption>
+          <thead><tr><th scope="col">Workload</th><th scope="col">Measure</th><th scope="col">Python backend</th><th scope="col">Rust backend</th></tr></thead>
+          <tbody>
+            <tr><th scope="row" rowspan="6">MCFE Ring-LWE, 10<sup>4</sup> elements</th><td>client, JSON (default)</td><td>345 ms</td><td>18.2 ms</td></tr>
+            <tr><td>aggregator, JSON (default)</td><td>157 ms</td><td>7.5 ms</td></tr>
+            <tr><td>client, binary</td><td>360 ms</td><td>17.95 ms</td></tr>
+            <tr><td>aggregator, binary</td><td>164 ms</td><td>6.24 ms</td></tr>
+            <tr><td>online, after the offline phase (binary)</td><td>—</td><td>0.25 ms client · 3.16 ms aggregator</td></tr>
+            <tr><td>4 threads (binary)</td><td>—</td><td>6.21 ms client · 3.62 ms aggregator</td></tr>
+            <tr><th scope="row" rowspan="3">Threshold MCFE, 10<sup>4</sup> elements, s = 3, t = 2, defaults (binary)</th><td>client</td><td>493 ms</td><td>26.4 ms</td></tr>
+            <tr><td>partial decryption, per server</td><td>274 ms</td><td>8.0 ms</td></tr>
+            <tr><td>aggregation (key shares, t partial decryptions, combine)</td><td>686 ms</td><td>27.8 ms</td></tr>
+            <tr><th scope="row" rowspan="2">Dense-LWE MCFE, 200 elements (JSON)</th><td>client</td><td>543 ms</td><td>92.6 ms</td></tr>
+            <tr><td>aggregator</td><td>551 ms</td><td>100.1 ms</td></tr>
+            <tr><th scope="row" rowspan="3">Pairing round, BLS12-381</th><td>SGP</td><td rowspan="3">no Python implementation</td><td>30 ms</td></tr>
+            <tr><td>Quad</td><td>48 ms</td></tr>
+            <tr><td>MCFE FH-Multi-IPE</td><td>47 ms</td></tr>
+            <tr><th scope="row" rowspan="3">DDH MCFE over ristretto255, per element</th><td>client</td><td rowspan="3">not measured</td><td>0.069 ms</td></tr>
+            <tr><td>aggregator</td><td>0.139 ms</td></tr>
+            <tr><td>ciphertext</td><td>75 B</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+    <p class="note" style="margin-top:14px">Apple M2 Max, Python 3.13, one thread unless stated, <code>security_profile="standard"</code>, three clients,
+      medians of interleaved runs; timings vary with the machine and its load. Bars are to scale within each group.
+      Source and commands: <a href="https://github.com/spire-studio/pyfe4ai/blob/main/benchmarks/PERFORMANCE.md">benchmarks/PERFORMANCE.md</a>.</p>
+  </div>
+</section>
+
+<!-- ================= QUICKSTART ================= -->
+<section id="quickstart" class="section" aria-labelledby="qs-title">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Quickstart</span>
+      <h2 id="qs-title">From clone to first inner product</h2>
+      <p>Encrypt a vector, hand out a functional key, learn only the inner product. Demo parameters are toy-sized:
+        <code>sec_param</code> is a modulus bit length, not a security level; <code>"security_profile": "standard"</code>
+        selects 128-bit-oriented parameters, except for pairings (BLS12-381, about 120–126-bit) and the schemes it refuses
+        (<a href="https://github.com/spire-studio/pyfe4ai#security-profiles">Security Profiles</a>).</p>
+    </div>
+    <div class="qs">
+      <div class="code">
+        <div class="code-head"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="fname">install · shell</span></div>
+<pre><code><span class="cm"># from source</span>
 git clone https://github.com/spire-studio/pyfe4ai.git
 cd pyfe4ai
 conda env create -f environment.yml
 conda activate pyfe4ai
+<span class="cm"># with cargo on the PATH this also builds the optional Rust</span>
+<span class="cm"># extension (BLS12-381 for the pairing &amp; quadratic FE)</span>
 pip install -e ".[test]"
 
-<span class="cm"># pairing &amp; quadratic FE: GMP, OpenSSL, PBC 1.0.0 first</span>
+<span class="cm"># other pairing curves (charm-crypto): GMP, OpenSSL, PBC first</span>
 pip install -e ".[test,pairing]"
 
 <span class="cm"># run the core test suite</span>
-python -m pytest -m core -q</pre></div>
-      <div class="codebox"><pre><span class="kw">from</span> pyfe4ai <span class="kw">import</span> SIFE, SIFEKeyGenerator
+python -m pytest -m core -q</code></pre>
+      </div>
+      <div class="code code-tabs">
+        <div class="code-head">
+          <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <div class="ctabs" role="tablist" aria-label="Examples">
+            <button type="button" role="tab" id="qt-1" aria-controls="qp-1" aria-selected="true">Inner product</button>
+            <button type="button" role="tab" id="qt-2" aria-controls="qp-2" aria-selected="false" tabindex="-1">Several clients</button>
+            <button type="button" role="tab" id="qt-3" aria-controls="qp-3" aria-selected="false" tabindex="-1">Federated learning</button>
+            <button type="button" role="tab" id="qt-4" aria-controls="qp-4" aria-selected="false" tabindex="-1">Find a scheme</button>
+          </div>
+        </div>
+        <div class="cpanel" role="tabpanel" id="qp-1" aria-labelledby="qt-1">
+          <p class="cpanel-title">sife_ddh.py</p>
+<pre><code><span class="kw">import</span> pyfe4ai
 
-x, y = [<span class="st">2</span>, <span class="st">1</span>, <span class="st">3</span>], [<span class="st">4</span>, <span class="st">5</span>, <span class="st">6</span>]
+x, y = [<span class="nu">2</span>, <span class="nu">1</span>, <span class="nu">3</span>], [<span class="nu">4</span>, <span class="nu">5</span>, <span class="nu">6</span>]
 
 <span class="cm"># sec_param = 128 is a toy modulus size: fast, NOT secure. For a</span>
 <span class="cm"># 3072-bit group pass {"security_profile": "standard", "eta": 3}.</span>
-kg = SIFEKeyGenerator({<span class="st">"sec_param"</span>: <span class="st">128</span>, <span class="st">"eta"</span>: <span class="st">3</span>})
+kg, SIFEDDH = pyfe4ai.<span class="fn">create</span>(<span class="st">"sife/ddh"</span>, {<span class="st">"sec_param"</span>: <span class="nu">128</span>, <span class="st">"eta"</span>: <span class="nu">3</span>})
 kg.<span class="fn">setup</span>()
 pp, sk = kg.<span class="fn">get_public_parameters</span>(), kg.<span class="fn">get_private_keys</span>()
 dk = kg.<span class="fn">get_decryption_keys</span>(<span class="st">"sid_0"</span>,
         credentials={<span class="st">"fusion_weight"</span>: y})
 
-ct = SIFE({<span class="st">"precision"</span>: <span class="st">3</span>, <span class="st">"keys"</span>: {<span class="st">"pp"</span>: pp, <span class="st">"sk"</span>: sk}}).<span class="fn">encrypt</span>(x)
-result = SIFE({<span class="st">"precision"</span>: <span class="st">3</span>, <span class="st">"keys"</span>: {<span class="st">"pp"</span>: pp}}).<span class="fn">decrypt</span>(ct, dk, y)
-<span class="fn">print</span>(result)  <span class="cm"># 31 = ⟨x, y⟩</span></pre></div>
-    </div>
-  </div>
-</section>
+ct = SIFEDDH({<span class="st">"precision"</span>: <span class="nu">3</span>, <span class="st">"keys"</span>: {<span class="st">"pp"</span>: pp, <span class="st">"sk"</span>: sk}}).<span class="fn">encrypt</span>(x)
+result = SIFEDDH({<span class="st">"precision"</span>: <span class="nu">3</span>, <span class="st">"keys"</span>: {<span class="st">"pp"</span>: pp}}).<span class="fn">decrypt</span>(ct, dk, y)
+<span class="fn">print</span>(result)  <span class="cm"># 31 = ⟨x, y⟩</span></code></pre>
+        </div>
+        <div class="cpanel" role="tabpanel" id="qp-2" aria-labelledby="qt-2">
+          <p class="cpanel-title">mcfe_ddh.py</p>
+<pre><code><span class="kw">import</span> pyfe4ai
 
-<section id="schemes">
-  <div class="wrap">
-    <div class="accent-bar"></div>
-    <h2 class="sec-title">Scheme Matrix</h2>
-    <p class="sec-sub">Families × backends at a glance — see the
-       <a href="docs/">documentation</a> for per-scheme papers and parameters.</p>
-    <div class="matrix-scroll">
-      <table class="matrix">
-        <caption class="sr">Implemented schemes by FE family (rows) and cryptographic backend (columns), with review status</caption>
-        <thead>
-          <tr>
-            <th scope="col" style="text-align:left">Family</th>
-            <th scope="col">DDH</th><th scope="col">Damgård</th><th scope="col">Paillier</th>
-            <th scope="col">LWE</th><th scope="col">Ring-LWE</th><th scope="col">Pairing</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr><th scope="row" class="fam">SIFE <small>single-input</small></th>
-            <td class="y">✓<span class="sr"> reviewed</span></td><td class="y">✓<span class="sr"> reviewed</span></td><td class="y">✓<span class="sr"> reviewed</span></td><td class="y">✓<span class="sr"> reviewed</span></td><td class="y">✓<span class="sr"> reviewed</span></td><td class="y">✓<span class="sr"> reviewed</span></td></tr>
-          <tr><th scope="row" class="fam">MIFE <small>multi-input</small></th>
-            <td class="y">✓<span class="sr"> reviewed</span></td><td class="y">✓<span class="sr"> reviewed</span></td><td class="y">✓<span class="sr"> reviewed</span></td><td class="y">✓<span class="sr"> reviewed</span></td><td class="y">✓<span class="sr"> reviewed</span></td><td class="y">✓<span class="sr"> reviewed</span></td></tr>
-          <tr><th scope="row" class="fam">MCFE <small>multi-client, labeled</small></th>
-            <td class="y">✓<span class="sr"> reviewed</span></td><td class="y">✓<span class="sr"> reviewed</span></td><td class="y">✓<span class="sr"> reviewed</span></td><td class="y">✓<span class="sr"> reviewed</span></td><td class="y">✓<span class="sr"> reviewed</span></td><td class="y">✓<span class="sr"> reviewed</span></td></tr>
-          <tr><th scope="row" class="fam">dMCFE <small>decentralized</small></th>
-            <td class="w" title="experimental (our own carry mask)">✓*<span class="sr"> experimental</span></td><td class="n">—<span class="sr"> not implemented</span></td><td class="y">✓<span class="sr"> reviewed</span></td><td class="y">✓<span class="sr"> reviewed</span></td><td class="y">✓<span class="sr"> reviewed</span></td><td class="y">✓<span class="sr"> reviewed</span></td></tr>
-          <tr><th scope="row" class="fam">tMIFE <small>threshold</small></th>
-            <td class="y">✓<span class="sr"> reviewed</span></td><td class="n">—<span class="sr"> not implemented</span></td><td class="n">—<span class="sr"> not implemented</span></td><td class="w" title="experimental (our own threshold layer)">✓*<span class="sr"> experimental</span></td><td class="n">—<span class="sr"> not implemented</span></td><td class="n">—<span class="sr"> not implemented</span></td></tr>
-          <tr><th scope="row" class="fam">tMCFE <small>threshold</small></th>
-            <td class="y">✓<span class="sr"> reviewed</span></td><td class="n">—<span class="sr"> not implemented</span></td><td class="n">—<span class="sr"> not implemented</span></td><td class="w" title="experimental (our own threshold layer)">✓*<span class="sr"> experimental</span></td><td class="w" title="experimental (our own threshold layer)">✓*<span class="sr"> experimental</span></td><td class="w" title="experimental (our own threshold layer)">✓*<span class="sr"> experimental</span></td></tr>
-          <tr><th scope="row" class="fam">Quadratic <small>SGP · Quad · MIQFE</small></th>
-            <td class="n">—<span class="sr"> not implemented</span></td><td class="n">—<span class="sr"> not implemented</span></td><td class="n">—<span class="sr"> not implemented</span></td><td class="n">—<span class="sr"> not implemented</span></td><td class="n">—<span class="sr"> not implemented</span></td><td class="y">✓<span class="sr"> reviewed</span></td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p class="matrix-legend"><b class="y">✓</b> reviewed against its paper ·
-       <b class="w">✓*</b> experimental (our own layer) ·
-       <span class="n">—</span> not implemented; per-scheme state in the
-       <a href="https://github.com/spire-studio/pyfe4ai#scheme-status">Scheme Status</a> table.
-       Pairing-based and quadratic schemes need <code>charm-crypto</code>
-       (<code>pip install -e ".[test,pairing]"</code> after GMP, OpenSSL and PBC 1.0.0, or the
-       Docker image; see <a href="https://github.com/spire-studio/pyfe4ai#pairing-based-schemes">Pairing-Based Schemes</a>)
-       and are not exercised in the default CI lane.</p>
-  </div>
-</section>
+x = {<span class="st">"alice"</span>: [<span class="nu">1</span>, <span class="nu">2</span>], <span class="st">"bob"</span>: [<span class="nu">3</span>, -<span class="nu">1</span>], <span class="st">"carol"</span>: [<span class="nu">0</span>, <span class="nu">4</span>]}
+y = {<span class="st">"alice"</span>: [<span class="nu">2</span>, <span class="nu">1</span>], <span class="st">"bob"</span>: [<span class="nu">1</span>, <span class="nu">1</span>], <span class="st">"carol"</span>: [-<span class="nu">1</span>, <span class="nu">3</span>]}
 
-<section class="alt">
-  <div class="wrap">
-    <div class="accent-bar"></div>
-    <h2 class="sec-title">Built for Privacy-Preserving ML</h2>
-    <p class="sec-sub">Functional encryption reveals a chosen function of the data — not the data itself.</p>
-    <div class="uc">
-      <div class="card">
-        <h3><span aria-hidden="true">🌐</span> Federated-learning secure aggregation</h3>
-        <p>Clients encrypt local gradients with MCFE-DDH (CDGPP18), the DCR, LWE and
-           MDDH constructions of ABMPSW20, or MCFE-Ring-LWE (BMMS21), which under
-           <code>standard</code> encrypts 10 000 gradient elements in about 0.3 s per
-           client; the aggregator's functional key decrypts only the weighted sum.
-           dMCFE variants remove the key authority, and tMCFE variants (TAPFed-style)
-           split decryption across t-of-s servers that are assumed honest-but-curious;
-           their LWE, Ring-LWE and pairing threshold layers are experimental. Check the
-           <a href="https://github.com/spire-studio/pyfe4ai#scheme-status">Scheme Status</a>
-           before choosing one.</p>
-        <p><a href="https://github.com/spire-studio/pyfe4ai/blob/main/examples/ml_fl_aggregation.py">examples/ml_fl_aggregation.py →</a></p>
-      </div>
-      <div class="card">
-        <h3><span aria-hidden="true">🔎</span> Encrypted inference</h3>
-        <p>Score features with a linear model (SIFE), or evaluate a bilinear form
-           x<sup>T</sup>Fy with quadratic FE (needs <code>charm-crypto</code>), directly over
-           ciphertexts — the model owner learns the result, never the raw features.</p>
-        <p><a href="https://github.com/spire-studio/pyfe4ai/blob/main/examples/ml_encrypted_inference.py">examples/ml_encrypted_inference.py →</a><br>
-           <a href="https://github.com/spire-studio/pyfe4ai/blob/main/examples/quadratic_quad_minimal.py">examples/quadratic_quad_minimal.py →</a></p>
+kg, MCFEDDH = pyfe4ai.<span class="fn">create</span>(<span class="st">"mcfe/ddh"</span>, {<span class="st">"eta"</span>: <span class="nu">2</span>, <span class="st">"n"</span>: <span class="nu">3</span>, <span class="st">"lst_nid"</span>: <span class="fn">list</span>(x)})
+kg.<span class="fn">setup</span>()
+pp = kg.<span class="fn">get_public_parameters</span>()
+
+<span class="cm"># every client encrypts its own vector under the round's label</span>
+label = <span class="st">"round-1"</span>
+cts = {}
+<span class="kw">for</span> nid <span class="kw">in</span> x:
+    client = MCFEDDH({<span class="st">"id"</span>: nid, <span class="st">"keys"</span>: {<span class="st">"pp"</span>: pp, <span class="st">"sk"</span>: kg.<span class="fn">get_private_keys</span>(nid)}})
+    cts[nid] = client.<span class="fn">encrypt</span>(x[nid], label)
+
+<span class="cm"># the functional key reveals only the weighted sum, for one label</span>
+dk = kg.<span class="fn">get_decryption_keys</span>(<span class="st">"aggregator"</span>, credentials={<span class="st">"fusion_weight"</span>: y})
+aggregator = MCFEDDH({<span class="st">"id"</span>: <span class="st">"aggregator"</span>, <span class="st">"keys"</span>: {<span class="st">"pp"</span>: pp}})
+<span class="fn">print</span>(aggregator.<span class="fn">decrypt</span>(cts, dk, y, label))  <span class="cm"># 18</span></code></pre>
+        </div>
+        <div class="cpanel" role="tabpanel" id="qp-3" aria-labelledby="qt-3">
+          <p class="cpanel-title">fl_round.py</p>
+<pre><code><span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> pyfe4ai.ml <span class="kw">import</span> FESchemeWrapper, aggregate_gradients, encrypt_gradient
+
+clients = [<span class="st">"c0"</span>, <span class="st">"c1"</span>, <span class="st">"c2"</span>]
+<span class="cm"># the wrapper runs the key generator and plays every party: experiments only</span>
+wrapper = <span class="fn">FESchemeWrapper</span>(<span class="st">"mcfe"</span>, <span class="st">"ring_lwe"</span>,
+                          {<span class="st">"eta"</span>: <span class="nu">1</span>, <span class="st">"n"</span>: <span class="nu">3</span>, <span class="st">"lst_nid"</span>: clients,
+                           <span class="st">"bound_x"</span>: <span class="nu">10</span>**<span class="nu">4</span>, <span class="st">"bound_y"</span>: <span class="nu">10</span>},
+                          precision=<span class="nu">3</span>)
+grads = {nid: np.random.<span class="fn">default_rng</span>(i).<span class="fn">uniform</span>(-<span class="nu">1</span>, <span class="nu">1</span>, <span class="nu">1000</span>)
+         <span class="kw">for</span> i, nid <span class="kw">in</span> <span class="fn">enumerate</span>(clients)}
+enc = {nid: <span class="fn">encrypt_gradient</span>(g, wrapper, nid=nid, label=<span class="st">"round-1"</span>)
+       <span class="kw">for</span> nid, g <span class="kw">in</span> grads.<span class="fn">items</span>()}
+total = <span class="fn">aggregate_gradients</span>(enc, wrapper, {nid: <span class="nu">1</span> <span class="kw">for</span> nid <span class="kw">in</span> clients},
+                            label=<span class="st">"round-1"</span>)
+<span class="fn">print</span>(np.<span class="fn">allclose</span>(total, <span class="fn">sum</span>(grads.<span class="fn">values</span>()), atol=<span class="nu">1e-2</span>))  <span class="cm"># True</span></code></pre>
+        </div>
+        <div class="cpanel" role="tabpanel" id="qp-4" aria-labelledby="qt-4">
+          <p class="cpanel-title">registry.py</p>
+<pre><code><span class="kw">import</span> pyfe4ai
+
+<span class="fn">print</span>(<span class="fn">len</span>(pyfe4ai.<span class="fn">list_schemes</span>()))                         <span class="cm"># 42</span>
+<span class="fn">print</span>(pyfe4ai.<span class="fn">list_schemes</span>(<span class="st">"mcfe"</span>, capabilities=<span class="st">"threshold"</span>))  <span class="cm"># the threshold MCFEs</span>
+scheme = pyfe4ai.<span class="fn">get_scheme</span>(<span class="st">"mcfe/ring_lwe"</span>)
+<span class="fn">print</span>(scheme.kind, <span class="fn">sorted</span>(scheme.capabilities), scheme.status.status)
+<span class="fn">print</span>(pyfe4ai.<span class="fn">get_scheme_status</span>(<span class="st">"mcfe/ring_lwe_threshold"</span>).status)  <span class="cm"># experimental</span></code></pre>
+        </div>
       </div>
     </div>
+    <div class="links-row">
+      <a class="btn btn-sm" href="docs/install.html">Installation</a>
+      <a class="btn btn-sm" href="docs/quickstart.html">Quick start guide</a>
+      <a class="btn btn-sm" href="docs/choosing.html">Choosing a scheme</a>
+      <a class="btn btn-sm" href="docs/configuration.html">Configuration</a>
+      <a class="btn btn-sm" href="https://github.com/spire-studio/pyfe4ai/tree/main/examples">All examples</a>
+    </div>
   </div>
 </section>
 
-<section id="citation">
+<!-- ================= SECURITY ================= -->
+<section id="security" class="section alt" aria-labelledby="sec-title">
   <div class="wrap">
-    <div class="accent-bar"></div>
-    <h2 class="sec-title">Citing PyFE4AI</h2>
-    <p class="sec-sub">A technical report is in preparation<span class="badge-note">coming soon</span></p>
-    <div class="cite-box">
-      <strong>BibTeX</strong>
-      <pre>@software{pyfe4ai2026,
+    <div class="sec-head">
+      <span class="eyebrow">Security &amp; status</span>
+      <h2 id="sec-title">Honest about what is reviewed — and what is not</h2>
+      <p>Every registered scheme carries a review status in the registry, reported at runtime by
+        <code>pyfe4ai.get_scheme_status("family/variant")</code>.</p>
+    </div>
+    <div class="grid grid-3 sec-cards">
+      <article class="card reveal">
+        <h3>Review status</h3>
+        <div class="status-bar" role="img" aria-label="Of 42 registered schemes: 34 reviewed, 5 experimental, 3 unreviewed, 0 known-insecure">
+          <span class="seg rev" style="--n:34"></span><span class="seg exp" style="--n:5"></span><span class="seg unr" style="--n:3"></span>
+        </div>
+        <dl class="status-list">
+          <div><dt><i class="dot rev" aria-hidden="true"></i>reviewed</dt><dd><b data-status="reviewed">34</b> checked against the cited construction; no defect known</dd></div>
+          <div><dt><i class="dot exp" aria-hidden="true"></i>experimental</dt><dd><b data-status="experimental">5</b> our own layer, no published proof: the threshold layers of tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE and tMCFE-FH-Multi-IPE, and the dMCFE-DDH carry mask</dd></div>
+          <div><dt><i class="dot unr" aria-hidden="true"></i>unreviewed</dt><dd><b data-status="unreviewed">3</b> the DDH schemes over ristretto255, new code</dd></div>
+          <div><dt><i class="dot ins" aria-hidden="true"></i>known-insecure</dt><dd><b data-status="known-insecure">0</b> none is known to be insecure</dd></div>
+        </dl>
+      </article>
+      <article class="card reveal">
+        <h3>Security profiles</h3>
+        <div class="profile">
+          <p class="pf-name"><code>"toy"</code> <span class="pf-tag">default</span></p>
+          <p>Fast and <strong>not secure</strong>: <code>sec_param</code> is a modulus bit length, LWE dimensions default to 32–64 and the Ring-LWE dimension to 32.</p>
+        </div>
+        <div class="profile">
+          <p class="pf-name"><code>"standard"</code></p>
+          <p>Aims at 128-bit security: 3072-bit discrete-log groups (RFC 3526) and DCR moduli, lattice-estimator-sized LWE and Ring-LWE dimensions, <code>stat_param</code> 128. Pairings run on BLS12-381, about 120–126-bit (a <code>FESecurityWarning</code> says so).</p>
+        </div>
+        <p class="refused">Refused under <code>standard</code> — no parameter set both secure and usable:
+          <code>sife/fullysec_lwe</code> <code>mife/fullysec_lwe</code> <code>mife/lwe_threshold</code> <code>mcfe/paillier_decentralized</code></p>
+      </article>
+      <article class="card reveal">
+        <h3>Trust model</h3>
+        <ul class="ticks">
+          <li>Threshold servers are honest-but-curious: partial decryptions carry no proof of correctness; redundant enrolled sets can detect a deviating server.</li>
+          <li>Decentralized MCFE needs no authority for functional keys, but its setup is trusted.</li>
+          <li>The ML adapter holds the master key and plays every party: one trust domain, for experiments.</li>
+          <li>No side-channel hardening; authenticated channels between parties are assumed.</li>
+        </ul>
+      </article>
+    </div>
+    <div class="links-row">
+      <a class="btn btn-sm" href="docs/security.html"><svg aria-hidden="true"><use href="#i-shield"/></svg>Security &amp; status docs</a>
+      <a class="btn btn-sm" href="https://github.com/spire-studio/pyfe4ai#known-issues--security-notice">Known Issues</a>
+      <a class="btn btn-sm" href="https://github.com/spire-studio/pyfe4ai/blob/main/SECURITY.md">Security Policy (SECURITY.md)</a>
+      <a class="btn btn-sm" href="docs/upgrading.html">Upgrading from 0.3.0</a>
+    </div>
+  </div>
+</section>
+
+<!-- ================= CITATION ================= -->
+<section id="citation" class="section" aria-labelledby="cite-title">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Cite</span>
+      <h2 id="cite-title">Citing PyFE4AI</h2>
+      <p>If you use PyFE4AI in your research, please cite the software. A technical report is in preparation
+        <span class="soon">coming soon</span></p>
+    </div>
+    <div class="code cite-code">
+      <div class="code-head"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="fname">pyfe4ai.bib</span></div>
+<pre><code>@software{pyfe4ai2026,
   author  = {{Spire Studio}},
   title   = {{PyFE4AI}: Python-based Functional Encryption
              for {AI} Security and Privacy},
   year    = {2026},
-  version = {0.3.0},
+  version = {0.4.0},
   license = {Apache-2.0},
   url     = {https://github.com/spire-studio/pyfe4ai}
-}</pre>
+}</code></pre>
     </div>
+    <p class="note" style="margin-top:14px">Citation metadata is also in
+      <a href="https://github.com/spire-studio/pyfe4ai/blob/main/CITATION.cff">CITATION.cff</a> — GitHub's
+      “Cite this repository” button gives APA and BibTeX.</p>
   </div>
 </section>
 
-<footer>
-  <div class="wrap">
-    <div class="flinks">
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <a class="brand" href="#top" aria-label="PyFE4AI, back to top">
+      <svg aria-hidden="true"><use href="#mark"/></svg>
+      <span class="wordmark" aria-hidden="true"><span class="w-py">Py</span><span class="w-fe">FE</span><span class="w-4">4</span><span class="w-ai">AI</span></span>
+    </a>
+    <nav class="flinks" aria-label="Footer">
       <a href="docs/">Documentation</a>
       <a href="https://github.com/spire-studio/pyfe4ai">GitHub</a>
       <a href="https://github.com/spire-studio/pyfe4ai/issues">Issues</a>
+      <a href="https://github.com/spire-studio/pyfe4ai/blob/main/CHANGELOG.md">Changelog</a>
+      <a href="https://github.com/spire-studio/pyfe4ai/releases">Release notes</a>
       <a href="https://github.com/spire-studio/pyfe4ai#known-issues--security-notice">Known Issues</a>
       <a href="https://github.com/spire-studio/pyfe4ai/blob/main/SECURITY.md">Security Policy</a>
       <a href="https://github.com/spire-studio/pyfe4ai/blob/main/LICENSE">License</a>
-    </div>
-    <p>© 2026 <strong>Spire Studio</strong> · Research prototype — not production-audited cryptography.</p>
+    </nav>
+  </div>
+  <div class="wrap footer-meta">
+    <p class="tagline">Research-oriented implementations of FE for trustworthy AI</p>
+    <p>© 2026 <strong>Spire Studio</strong> · Apache-2.0</p>
   </div>
 </footer>
 
+<script src="assets/js/site.js" defer></script>
 </body>
 </html>

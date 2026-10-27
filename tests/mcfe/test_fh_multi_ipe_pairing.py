@@ -3,10 +3,12 @@ import random
 import numpy as np
 import pytest
 
-pytest.importorskip("charm", reason="charm-crypto not installed")
+from tests.pairing_group import GROUP, skip_unless_available  # noqa: E402
 
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPE
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEKeyGenerator
+skip_unless_available()
+
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEPairing
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEPairingKeyGenerator
 
 
 @pytest.fixture
@@ -22,13 +24,13 @@ def kg_config():
         "bound_y": 4,
         "u_bound": 3,
         "label_modulus": 17,
-        "pairing_group_param": "MNT224",
+        "pairing_group_param": GROUP,
     }
 
 
 def test_entire_process(kg_config):
     label = "mcfe-fh-multi-ipe"
-    kg = MCFEFHMultiIPEKeyGenerator(kg_config)
+    kg = MCFEFHMultiIPEPairingKeyGenerator(kg_config)
     kg.setup()
 
     dct_x = {
@@ -54,12 +56,12 @@ def test_entire_process(kg_config):
     pp = kg.get_public_parameters()
     dct_ct = {}
     for nid in kg_config["lst_nid"]:
-        encryptor = MCFEFHMultiIPE(
+        encryptor = MCFEFHMultiIPEPairing(
             {"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}
         )
         dct_ct[nid] = encryptor.encrypt(dct_x[nid], label)
 
-    decryptor = MCFEFHMultiIPE({"id": "sid_0", "keys": {"pp": pp}})
+    decryptor = MCFEFHMultiIPEPairing({"id": "sid_0", "keys": {"pp": pp}})
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
     computed = decryptor.decrypt(dct_ct, dk, dct_y, label)
     assert computed == expected
@@ -70,7 +72,7 @@ def test_entire_process_lst_ndarray(kg_config):
     cfg["eta"] = 1
     cfg["bound_x"] = 50
 
-    kg = MCFEFHMultiIPEKeyGenerator(cfg)
+    kg = MCFEFHMultiIPEPairingKeyGenerator(cfg)
     kg.setup()
 
     precision = 1
@@ -97,7 +99,7 @@ def test_entire_process_lst_ndarray(kg_config):
     pp = kg.get_public_parameters()
     dct_ct = {}
     for nid in cfg["lst_nid"]:
-        crypto_nid = MCFEFHMultiIPE(
+        crypto_nid = MCFEFHMultiIPEPairing(
             {
                 "id": nid,
                 "precision": precision,
@@ -106,7 +108,7 @@ def test_entire_process_lst_ndarray(kg_config):
         )
         dct_ct[nid] = crypto_nid.encrypt_lst_ndarray(dct_x[nid], label=label)
 
-    decryptor = MCFEFHMultiIPE(
+    decryptor = MCFEFHMultiIPEPairing(
         {"id": "sid_0", "precision": precision, "keys": {"pp": pp}}
     )
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
@@ -119,16 +121,17 @@ def test_entire_process_lst_ndarray(kg_config):
 
 
 def test_symmetric_group_rejected(kg_config):
-    from pyfe4ai.utils.exceptions import FEValidationError
+    pytest.importorskip("charm", reason="SS512 is a charm-crypto group")
+    from pyfe4ai.core.exceptions import FEValidationError
 
     with pytest.raises(FEValidationError):
-        MCFEFHMultiIPEKeyGenerator(dict(kg_config, pairing_group_param="SS512"))
+        MCFEFHMultiIPEPairingKeyGenerator(dict(kg_config, pairing_group_param="SS512"))
 
 
 def test_key_is_function_hiding_and_tag_bound(kg_config):
     """Keys are randomised (two keys for one y differ) and only decrypt the right tag."""
     cfg = dict(kg_config, eta=1)
-    kg = MCFEFHMultiIPEKeyGenerator(cfg)
+    kg = MCFEFHMultiIPEPairingKeyGenerator(cfg)
     kg.setup()
     pp = kg.get_public_parameters()
     dct_x = {nid: [2] for nid in cfg["lst_nid"]}
@@ -137,12 +140,12 @@ def test_key_is_function_hiding_and_tag_bound(kg_config):
     dk2 = kg.get_decryption_keys("sid", credentials={"fusion_weight": dct_y})
     assert dk1["dk"]["nid_0"]["k"] != dk2["dk"]["nid_0"]["k"]
     dct_ct = {
-        nid: MCFEFHMultiIPE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(dct_x[nid], "tag-a")
+        nid: MCFEFHMultiIPEPairing({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(dct_x[nid], "tag-a")
         for nid in cfg["lst_nid"]
     }
-    dec = MCFEFHMultiIPE({"id": "sid", "keys": {"pp": pp}})
+    dec = MCFEFHMultiIPEPairing({"id": "sid", "keys": {"pp": pp}})
     assert dec.decrypt(dct_ct, dk1, dct_y, "tag-a") == 18
     assert dec.decrypt(dct_ct, dk2, dct_y, "tag-a") == 18
     # mixing a ciphertext of another tag breaks the zero-sum mask
-    other = MCFEFHMultiIPE({"id": "nid_1", "keys": {"pp": pp, "sk": kg.get_private_keys("nid_1")}}).encrypt([2], "tag-b")
+    other = MCFEFHMultiIPEPairing({"id": "nid_1", "keys": {"pp": pp, "sk": kg.get_private_keys("nid_1")}}).encrypt([2], "tag-b")
     assert dec.decrypt(dict(dct_ct, nid_1=other), dk1, dct_y, "tag-a") is None

@@ -5,12 +5,13 @@ CDGPP18 contributions reduced mod q would expose the carry of that sum (a
 comparison oracle on the clients' secrets); LWE contributions reduced mod q
 would expose, per coordinate, how many y_i t_i are negative."""
 
+import os
 import random
 
 import gmpy2 as gp
 import pytest
 
-from pyfe4ai.schemes.mcfe.ddh_decentralized import DecentralizedMCFE, DecentralizedMCFEKeyGenerator
+from pyfe4ai.schemes.mcfe.ddh_decentralized import DecentralizedMCFEDDH, DecentralizedMCFEDDHKeyGenerator
 from pyfe4ai.schemes.mcfe.decentralize import combine_contributions
 from pyfe4ai.schemes.mcfe.lwe_decentralized import DecentralizedMCFELWE, DecentralizedMCFELWEKeyGenerator
 
@@ -20,6 +21,7 @@ NIDS = ["nid_0", "nid_1", "nid_2"]
 @pytest.fixture(autouse=True)
 def _cache_in_tmp(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
 
 
 def _shares(kg, crypto_cls, weights):
@@ -29,18 +31,18 @@ def _shares(kg, crypto_cls, weights):
 
 
 def test_ddh_shares_hide_the_carry_of_the_reduced_contributions():
-    kg = DecentralizedMCFEKeyGenerator({"sec_param": 64, "n": 3, "lst_nid": NIDS, "eta": 2})
+    kg = DecentralizedMCFEDDHKeyGenerator({"sec_param": 64, "n": 3, "lst_nid": NIDS, "eta": 2})
     kg.setup()
     rng = random.Random(4)
     quotients = []
     for _ in range(4):
         weights = {nid: [rng.randint(-9, 9) for _ in range(2)] for nid in NIDS}
-        pp, shares = _shares(kg, DecentralizedMCFE, weights)
+        pp, shares = _shares(kg, DecentralizedMCFEDDH, weights)
         q = (gp.mpz(pp["p"]) - 1) // 2
         sums = combine_contributions(pp["n2_mod"], {n: s["c"] for n, s in shares.items()}, NIDS)
         quotients += [int(v // q) for v in sums]
         # repeated derivation for the same weights gives the same share (no averaging)
-        assert _shares(kg, DecentralizedMCFE, weights)[1] == shares
+        assert _shares(kg, DecentralizedMCFEDDH, weights)[1] == shares
     # the bare carry lies in 0..n-1; with masking the quotient is spread over 2^stat_param n
     assert min(quotients) > len(NIDS)
 

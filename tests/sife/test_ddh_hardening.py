@@ -3,14 +3,14 @@
 import gmpy2 as gp
 import pytest
 
-from pyfe4ai.schemes.sife.ddh import SIFE, SIFEKeyGenerator
-from pyfe4ai.schemes.sife.ddh_dynamic import SIFEDynamic, SIFEDynamicKeyGenerator
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.schemes.sife.ddh import SIFEDDH, SIFEDDHKeyGenerator
+from pyfe4ai.schemes.sife.ddh_dynamic import SIFEDDHDynamic, SIFEDDHDynamicKeyGenerator
+from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
 
 ETA = 4
 
 
-@pytest.fixture(params=[(SIFEKeyGenerator, SIFE), (SIFEDynamicKeyGenerator, SIFEDynamic)])
+@pytest.fixture(params=[(SIFEDDHKeyGenerator, SIFEDDH), (SIFEDDHDynamicKeyGenerator, SIFEDDHDynamic)])
 def scheme(request):
     kg_cls, crypto_cls = request.param
     kg = kg_cls({"sec_param": 128, "eta": ETA})
@@ -64,9 +64,9 @@ def test_inputs_are_validated(scheme):
 
 
 def test_full_length_required_for_fixed_scheme():
-    kg = SIFEKeyGenerator({"sec_param": 128, "eta": ETA})
+    kg = SIFEDDHKeyGenerator({"sec_param": 128, "eta": ETA})
     kg.setup()
-    enc = SIFE({"keys": {"pp": kg.get_public_parameters(), "sk": kg.get_private_keys()}})
+    enc = SIFEDDH({"keys": {"pp": kg.get_public_parameters(), "sk": kg.get_private_keys()}})
     with pytest.raises(FEValidationError):
         enc.encrypt([1, 2])
     with pytest.raises(FEValidationError):
@@ -74,11 +74,11 @@ def test_full_length_required_for_fixed_scheme():
 
 
 def test_dlog_bound_option():
-    kg = SIFEKeyGenerator({"sec_param": 128, "eta": 2})
+    kg = SIFEDDHKeyGenerator({"sec_param": 128, "eta": 2})
     kg.setup()
     pp = kg.get_public_parameters()
-    enc = SIFE({"keys": {"pp": pp, "sk": kg.get_private_keys()}})
+    enc = SIFEDDH({"keys": {"pp": pp, "sk": kg.get_private_keys()}})
     dk = kg.get_decryption_keys(None, credentials={"fusion_weight": [100, 100]})
     ct = enc.encrypt([30, 20])
-    assert SIFE({"keys": {"pp": pp}}).decrypt(ct, dk, [100, 100]) is None
-    assert SIFE({"keys": {"pp": pp}, "dlog_bound": 10 ** 4}).decrypt(ct, dk, [100, 100]) == 5000
+    assert SIFEDDH({"keys": {"pp": pp}}).decrypt(ct, dk, [100, 100]) is None
+    assert SIFEDDH({"keys": {"pp": pp}, "dlog_bound": 10 ** 4}).decrypt(ct, dk, [100, 100]) == 5000

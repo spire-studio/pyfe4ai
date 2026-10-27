@@ -7,7 +7,7 @@ Full-hiding multi-input inner-product FE over pairings (bounded slots)
 | vector spaces; structure as in GoFE's ``innerprod/fullysec/fh_multi_ipe.go``.
 
 * type:     private-key multi-input encryption with function-hiding keys
-* setting:  asymmetric pairing group (default MNT224), ``k = sec_level``
+* setting:  asymmetric pairing group (default BLS12-381), ``k = sec_level``
 
 Per slot dual orthogonal bases ``B_i, B*_i`` of dimension ``2 eta + 2k + 1``
 (``B_i B*_i^T = mu I``), ``g_T = e(g1, g2)^mu`` public.
@@ -35,25 +35,33 @@ import logging
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
-from pyfe4ai.schemes.ipfe import decoded_layer
-from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
-from pyfe4ai.schemes.ipfe import ParameterCacheMixin
-from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
-from pyfe4ai.utils.pairing_utils import matrix_inverse_mod
-from pyfe4ai.utils.pairing_utils import random_nonzero_zr
-from pyfe4ai.utils.pairing_utils import to_zr
-from pyfe4ai.utils.pairing_utils import transpose_mod
-from pyfe4ai.utils.pairing_utils import vector_add_mod
-from pyfe4ai.utils.pairing_utils import vector_scalar_mod
-from pyfe4ai.utils.pairing_utils import serialize_matrix_g
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.pairing_backend import G1, G2, GT, ZR, PairingGroup, pair
-from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
-from pyfe4ai.utils.pairing_backend import require_pairing_backend
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.validation import int_vector
-from pyfe4ai.utils.validation import scale_to_int
+from pyfe4ai.core.base import IPFEAbsCrypto
+from pyfe4ai.core.base import decoded_layer
+from pyfe4ai.core.base import IPFEAbsKeyGenerator
+from pyfe4ai.core.base import ParameterCacheMixin
+from pyfe4ai.primitives.pairing.pairing_utils import bounded_discrete_log_gt
+from pyfe4ai.primitives.pairing.pairing_utils import matrix_inverse_mod
+from pyfe4ai.primitives.pairing.pairing_utils import random_nonzero_zr
+from pyfe4ai.primitives.pairing.pairing_utils import to_zr
+from pyfe4ai.primitives.pairing.pairing_utils import transpose_mod
+from pyfe4ai.primitives.pairing.pairing_utils import vector_add_mod
+from pyfe4ai.primitives.pairing.pairing_utils import vector_scalar_mod
+from pyfe4ai.primitives.pairing.pairing_utils import serialize_matrix_g
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, ZR, PairingGroup, multi_pair, pair
+from pyfe4ai.primitives.pairing.pairing_backend import deserialize_many, pow_many
+from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
+from pyfe4ai.primitives.pairing.pairing_backend import require_pairing_backend
+from pyfe4ai.core.formats.pairing import FHCiphertext
+from pyfe4ai.core.formats.pairing import MIFEFHMultiIPEEncryptionKey
+from pyfe4ai.core.formats.pairing import MIFEFHMultiIPEFunctionalKey
+from pyfe4ai.core.formats.pairing import MIFEFHMultiIPEParameters
+from pyfe4ai.core.formats.pairing import MIFEFHMultiIPERecord
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.versions import record_matches
+from pyfe4ai.core.ids import issued_id
+from pyfe4ai._validation import int_vector
+from pyfe4ai._validation import scale_to_int
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +92,7 @@ def _random_ob_matrix(
     return b, b_star
 
 
-class MIFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
+class MIFEFHMultiIPEPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
     """Key generator for function-hiding multi-slot multi-input IPE over pairings."""
 
     _scheme_type = CryptoCONST.TYPE_MIFE_FH_MULTI_IPE
@@ -96,7 +104,7 @@ class MIFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                 clients, at least 2), ``lst_nid``, ``eta``, ``sec_level``
                 (``k`` of k-LIN, default 2), ``bound_x``, ``bound_y`` and
                 ``pairing_group_param`` (asymmetric group, default
-                ``"MNT224"``).
+                ``"BLS12-381"``).
         """
         super().__init__(config, **kwargs)
         require_pairing_backend()
@@ -124,28 +132,24 @@ class MIFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.dim = 2 * self.eta + 2 * self.sec_level + 1
 
     def _param_verification(self, param: dict) -> bool:
-        return (
-            param.get("sec_param") == self.sec_param
-            and param.get("sec_level") == self.sec_level
-            and param.get("eta") == self.eta
-            and param.get("n") == self.n
-            and param.get("bound_x") == gp.digits(self.bound_x)
-            and param.get("bound_y") == gp.digits(self.bound_y)
-            and param.get("pairing_group_param") == self.pairing_group_param
-        )
+        return record_matches(param, {
+            "sec_param": self.sec_param, "sec_level": self.sec_level, "eta": self.eta, "n": self.n,
+            "bound_x": gp.digits(self.bound_x), "bound_y": gp.digits(self.bound_y),
+            "pairing_group_param": self.pairing_group_param,
+        })
 
     def _generate_and_save(self, param_file: str) -> None:
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(
-                {
-                    "sec_param": self.sec_param,
-                    "sec_level": self.sec_level,
-                    "eta": self.eta,
-                    "n": self.n,
-                    "bound_x": gp.digits(self.bound_x),
-                    "bound_y": gp.digits(self.bound_y),
-                    "pairing_group_param": self.pairing_group_param,
-                },
+                MIFEFHMultiIPERecord.new(
+                    sec_param=self.sec_param,
+                    sec_level=self.sec_level,
+                    eta=self.eta,
+                    n=self.n,
+                    bound_x=gp.digits(self.bound_x),
+                    bound_y=gp.digits(self.bound_y),
+                    pairing_group_param=self.pairing_group_param,
+                ).to_dict(),
                 f,
             )
         self.group = PairingGroup(self.pairing_group_param)
@@ -184,18 +188,18 @@ class MIFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             "bhat": bhat,
             "bstar_hat": bstar_hat,
         }
-        self.pp = {
-            "sec_level": self.sec_level,
-            "eta": self.eta,
-            "n": self.n,
-            "lst_nid": list(self.lst_nid),
-            "bound_x": gp.digits(self.bound_x),
-            "bound_y": gp.digits(self.bound_y),
-            "pairing_group_param": self.pairing_group_param,
-            "g1": self.group.serialize(g1).decode("utf-8"),
-            "g2": self.group.serialize(g2).decode("utf-8"),
-            "pub": self.group.serialize(pub).decode("utf-8"),
-        }
+        self.pp = MIFEFHMultiIPEParameters.new(
+            sec_level=self.sec_level,
+            eta=self.eta,
+            n=self.n,
+            lst_nid=list(self.lst_nid),
+            bound_x=gp.digits(self.bound_x),
+            bound_y=gp.digits(self.bound_y),
+            pairing_group_param=self.pairing_group_param,
+            g1=self.group.serialize(g1).decode("utf-8"),
+            g2=self.group.serialize(g2).decode("utf-8"),
+            pub=self.group.serialize(pub).decode("utf-8"),
+        ).to_dict()
         logger.info("MIFE FHMultiIPE setup successfully")
 
     def get_public_parameters(self) -> dict:
@@ -210,11 +214,12 @@ class MIFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         Returns:
             The key dict, or ``None`` for an unknown client.
         """
+        nid = issued_id(nid)  # numpy integers as ints; a value that is no id is an unknown client
         if nid not in self.msk["bhat"]:
             return None
-        return {
-            "bhat": self.msk["bhat"][nid],
-        }
+        return MIFEFHMultiIPEEncryptionKey.new(
+            bhat=self.msk["bhat"][nid],
+        ).to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Derive a functional decryption key for the given fusion weights.
@@ -241,7 +246,7 @@ class MIFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         dk = {}
         for client_index, nid in enumerate(self.lst_nid):
             y = int_vector(
-                fusion_weight[nid], "fusion weight of " + nid, length=self.eta, bound=int(self.bound_y)
+                fusion_weight[nid], "fusion weight of {}".format(nid), length=self.eta, bound=int(self.bound_y)
             )
 
             bstar_hat = [
@@ -259,13 +264,13 @@ class MIFEFHMultiIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                 )
                 key_vec = vector_add_mod(key_vec, contribution, self.order)
             g2 = self.group.deserialize(self.pp["g2"].encode("utf-8"))
-            g2_row = [g2 ** to_zr(self.group, value) for value in key_vec]
+            g2_row = pow_many(g2, key_vec, self.group)
             dk[nid] = serialize_matrix_g(self.group, [g2_row])[0]
 
-        return {"dk": dk}
+        return MIFEFHMultiIPEFunctionalKey.new(dk=dk).to_dict()
 
 
-class MIFEFHMultiIPE(IPFEAbsCrypto):
+class MIFEFHMultiIPEPairing(IPFEAbsCrypto):
     """Crypto operations for function-hiding multi-slot multi-input IPE over pairings."""
 
     def __init__(self, config: dict, **kwargs) -> None:
@@ -291,7 +296,7 @@ class MIFEFHMultiIPE(IPFEAbsCrypto):
             gp.mpz(v)
             for v in int_vector(lst_pt, "plaintext", length=self.pp["eta"], bound=int(self.pp["bound_x"]))
         ]
-        bhat = [[gp.mpz(v) for v in row] for row in self.sk["bhat"]]
+        bhat = [[gp.mpz(v) for v in row] for row in MIFEFHMultiIPEEncryptionKey(self.sk).bhat]
         phi = [gp.mpz(int(self.group.random(ZR))) for _ in range(self.pp["sec_level"])]
 
         order = gp.mpz(int(self.group.order()))
@@ -307,8 +312,8 @@ class MIFEFHMultiIPE(IPFEAbsCrypto):
             key_vec = vector_add_mod(key_vec, contribution, order)
 
         g1 = self.group.deserialize(self.pp["g1"].encode("utf-8"))
-        ct = [g1 ** to_zr(self.group, value) for value in key_vec]
-        return {"ct": [self.group.serialize(value).decode("utf-8") for value in ct]}
+        ct = pow_many(g1, key_vec, self.group)
+        return FHCiphertext.new(ct=[self.group.serialize(value).decode("utf-8") for value in ct]).to_dict()
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict | None = None):
         """``log_{g_T} prod_i e(c_i, k_i)``; ``None`` if out of bound.
@@ -319,20 +324,22 @@ class MIFEFHMultiIPE(IPFEAbsCrypto):
         Raises:
             FESchemeError: Unless there is one ciphertext and one key part per slot.
         """
-        if not dk or "dk" not in dk:
+        if not dk or "dk" not in MIFEFHMultiIPEFunctionalKey(dk):
             raise FEKeyError("no decryption key provided")
         lst_nid = self.pp["lst_nid"]
-        if not set(dct_ct) == set(dk["dk"]) == set(lst_nid):
+        key_parts = MIFEFHMultiIPEFunctionalKey(dk).dk
+        if not set(dct_ct) == set(key_parts) == set(lst_nid):
             raise FESchemeError("need one ciphertext and one key part for every slot")
         pub = self.group.deserialize(self.pp["pub"].encode("utf-8"))
-        acc = self.group.init(GT, 1)
+        lhs, rhs = [], []
         for nid in lst_nid:
-            ct = [self.group.deserialize(v.encode("utf-8")) for v in dct_ct[nid]["ct"]]
-            key = [self.group.deserialize(v.encode("utf-8")) for v in dk["dk"][nid]]
+            ct = deserialize_many(self.group, FHCiphertext(dct_ct[nid]).ct)
+            key = deserialize_many(self.group, key_parts[nid])
             if len(ct) != self.dim or len(key) != self.dim:
                 raise FESchemeError("ciphertext or key of {} has the wrong length".format(nid))
-            for lhs, rhs in zip(ct, key):
-                acc *= pair(lhs, rhs)
+            lhs.extend(ct)
+            rhs.extend(key)
+        acc = multi_pair(lhs, rhs)
 
         bound = int(
             self.pp["n"]
@@ -344,6 +351,7 @@ class MIFEFHMultiIPE(IPFEAbsCrypto):
             return bounded_discrete_log_gt(self.group, pub, acc, bound)
         except ValueError:
             logger.error("inner product out of bound (wrong key or ciphertexts?)")
+            warn_at_caller("inner product out of bound (wrong key or ciphertexts?)")
             return None
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:

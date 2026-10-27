@@ -20,15 +20,17 @@ from __future__ import annotations
 
 import logging
 
-from pyfe4ai.schemes.sife.ddh import SIFE
-from pyfe4ai.schemes.sife.ddh import SIFEKeyGenerator
-from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
-from pyfe4ai.utils.validation import int_vector
+from pyfe4ai.schemes.sife.ddh import SIFEDDH
+from pyfe4ai.schemes.sife.ddh import SIFEDDHKeyGenerator
+from pyfe4ai.core.formats.dl import SIFEDDHEncryptionKey
+from pyfe4ai.core.formats.dl import SIFEDDHFunctionalKey
+from pyfe4ai.core.exceptions import FEKeyError, FEValidationError
+from pyfe4ai._validation import int_vector
 
 logger = logging.getLogger(__name__)
 
 
-class SIFEDynamicKeyGenerator(SIFEKeyGenerator):
+class SIFEDDHDynamicKeyGenerator(SIFEDDHKeyGenerator):
     """ABDP15 key generator issuing keys for weight vectors of length <= ``eta``."""
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
@@ -43,14 +45,15 @@ class SIFEDynamicKeyGenerator(SIFEKeyGenerator):
         y = int_vector(credentials.get("fusion_weight"), "fusion weight")
         if not 0 < len(y) <= self.eta:
             raise FEValidationError("fusion weight must have 1..{} entries".format(self.eta))
-        return {"z": str(int(self._key(y))), "y": y, "size": len(y)}
+        return SIFEDDHFunctionalKey.new(z=str(int(self._key(y))), y=y, size=len(y)).to_dict()
 
 
-class SIFEDynamic(SIFE):
+class SIFEDDHDynamic(SIFEDDH):
     """ABDP15 encryption of vectors of length <= ``eta``."""
 
     def _plaintext(self, lst_pt: list) -> list:
         x = int_vector(lst_pt, "plaintext")
-        if not 0 < len(x) <= len(self.sk["gs"]):
-            raise FEValidationError("plaintext must have 1..{} entries".format(len(self.sk["gs"])))
+        gs = SIFEDDHEncryptionKey(self.sk).gs
+        if not 0 < len(x) <= len(gs):
+            raise FEValidationError("plaintext must have 1..{} entries".format(len(gs)))
         return x

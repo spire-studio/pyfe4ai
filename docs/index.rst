@@ -4,52 +4,29 @@ pyfe4ai — Python Functional Encryption for AI
 **PyFE4AI** is a research-oriented Python library of functional encryption
 (FE) schemes for AI security and privacy. It covers single-input (SIFE),
 multi-input (MIFE), multi-client (MCFE), decentralized, threshold,
-function-hiding, and quadratic constructions across DDH, Damgård-DDH,
-Paillier, LWE, Ring-LWE, and pairing backends. Every scheme follows the same
-two-object model (a key generator and a crypto object), but operation names
-and arguments are family-specific; ``FESchemeWrapper`` offers a uniform layer
-for ML workloads. Check each scheme's review status
-(``pyfe4ai.get_scheme_status``) before relying on its privacy.
+function-hiding, and quadratic constructions under DDH (3072-bit groups or
+ristretto255), Damgård-DDH, Paillier, LWE, Ring-LWE and pairing-based
+assumptions. Every scheme is built from its id with
+:func:`pyfe4ai.create("family/variant", config) <pyfe4ai.core.registry.create>`,
+which returns a key generator and a crypto class; the arguments of
+encryption and decryption are family-specific, and
+:class:`~pyfe4ai.ml.FESchemeWrapper` offers a uniform layer for ML
+workloads. An optional Rust extension runs the hot paths natively. Check
+each scheme's review status (``pyfe4ai.get_scheme_status``) before relying
+on its privacy.
 
-`Project homepage <../>`_ ·
+`Project homepage <https://spire-studio.github.io/pyfe4ai/>`_ ·
 `GitHub <https://github.com/spire-studio/pyfe4ai>`_ ·
-`Issues <https://github.com/spire-studio/pyfe4ai/issues>`_
+`Issues <https://github.com/spire-studio/pyfe4ai/issues>`_ ·
+`Changelog <https://github.com/spire-studio/pyfe4ai/blob/main/CHANGELOG.md>`_
 
-Installation
-------------
+Where to start
+--------------
 
-.. code-block:: bash
-
-   git clone https://github.com/spire-studio/pyfe4ai.git
-   cd pyfe4ai
-   conda env create -f environment.yml
-   conda activate pyfe4ai
-   pip install -e ".[test]"
-
-For pairing-based FE families, additionally install
-``pip install -e ".[test,pairing]"`` (requires the PBC library; see the
-repository README for platform notes).
-
-Minimal example
----------------
-
-.. code-block:: python
-
-   from pyfe4ai import SIFE, SIFEKeyGenerator
-
-   x, y = [2, 1, 3], [4, 5, 6]
-
-   # sec_param = bit length of the DDH modulus (NOT a security level);
-   # 128 keeps the demo fast but is insecure -- for real use replace it with
-   # "security_profile": "standard" (a 3072-bit group)
-   kg = SIFEKeyGenerator({"sec_param": 128, "eta": len(x)})
-   kg.setup()
-   pp, sk = kg.get_public_parameters(), kg.get_private_keys()
-   dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y})
-
-   ct = SIFE({"precision": 3, "keys": {"pp": pp, "sk": sk}}).encrypt(x)
-   result = SIFE({"precision": 3, "keys": {"pp": pp}}).decrypt(ct, dk, y)
-   print(result)  # <x, y> = 31
+* New to the library: :doc:`install`, then :doc:`quickstart`.
+* Picking a scheme for a task: :doc:`choosing`.
+* Threshold decryption and federated learning: :doc:`threshold_ml`.
+* Coming from version 0.3.0: :doc:`upgrading`.
 
 Security & status
 -----------------
@@ -59,13 +36,14 @@ Security & status
   |n_known_insecure| known-insecure. The experimental ones are the threshold
   layers of tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE and tMCFE-FH-Multi-IPE and
   the carry mask of dMCFE-DDH (our own constructions, no published proof).
-  ``pyfe4ai.get_scheme_status(family, variant)`` returns a scheme's entry.
+  ``pyfe4ai.get_scheme_status("family/variant")`` returns a scheme's entry.
 * **Security profiles**: ``security_profile="toy"``, the default, is **not
   secure**; ``"standard"`` aims at 128-bit security (3072-bit DL groups
   and DCR moduli, lattice-estimator bounds for LWE and Ring-LWE,
-  ``stat_param`` 128), except that pairing-based schemes get BN254 (about
-  100-bit, with a ``FESecurityWarning``) and ``sife/fullysec_lwe``,
-  ``mife/fullysec_lwe`` and ``mcfe/paillier_decentralized`` are refused. The ABDP15 LWE schemes
+  ``stat_param`` 128), except that pairing-based schemes get BLS12-381
+  (about 120-126-bit, with a ``FESecurityWarning``) and ``sife/fullysec_lwe``,
+  ``mife/fullysec_lwe``, ``mife/lwe_threshold`` and
+  ``mcfe/paillier_decentralized`` are refused. The ABDP15 LWE schemes
   take ``matrix_mode`` (``"memory"`` or ``"stream"``) to trade memory for
   time.
 * **Threshold schemes**: decryption servers are honest-but-curious; a
@@ -85,8 +63,16 @@ Contents
 .. toctree::
    :maxdepth: 2
 
+   install
+   quickstart
+   choosing
    security
+   configuration
+   environment
+   threshold_ml
+   threading
    glossary
+   upgrading
    api/index
 
 Indices and tables

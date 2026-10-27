@@ -8,8 +8,9 @@ import pytest
 
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWE
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.base import cache_dir
 
 
 @pytest.fixture
@@ -47,15 +48,16 @@ def _random_round(cfg, cols=4):
 
 def test_key_generator(kg_config):
     kg = MCFERingLWEKeyGenerator(kg_config)
-    assert os.path.exists(os.path.join("config", "authority", CryptoCONST.TYPE_MCFE_RING_LWE, "param.json"))
+    assert os.path.exists(os.path.join(cache_dir(), "authority", CryptoCONST.TYPE_MCFE_RING_LWE, "param.json"))
     kg.setup()
     pp = kg.get_public_parameters()
     assert pp["eta"] == kg_config["eta"] and pp["ring_n"] == kg_config["ring_n"]
     sk = kg.get_private_keys("nid_0")
-    assert set(sk) == {"pk", "u", "u_prime"}
+    assert set(sk) == {"pk", "u", "u_prime", "label_hash"}
     y = {"nid_0": [1, -1], "nid_1": [0, 1], "nid_2": [1, 1]}
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y, "label": "l"})
-    assert set(dk) == {"sk_y", "z", "z_chunks", "label"} and dk["z_chunks"] == []
+    assert set(dk) == {"sk_y", "z", "z_chunks", "label", "label_hash"} and dk["z_chunks"] == []
+    assert dk["label_hash"] == pp["label_hash"] == "shake128-rejection"
     with pytest.raises(FEValidationError):
         kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y})  # no label
 
@@ -88,8 +90,8 @@ def test_key_only_decrypts_its_label(kg_config):
 
 def test_slot_partial_is_padded(kg_config):
     """A slot's Dec1 output encodes x_i + u_i + H(u'_i, l), not x_i."""
-    from pyfe4ai.utils.lwe_utils import decode_scaled
-    from pyfe4ai.utils.ring_lwe_utils import mat_vec_mul, poly_add, poly_mul, poly_neg, transpose
+    from pyfe4ai.primitives.lattice.lwe_utils import decode_scaled
+    from pyfe4ai.primitives.lattice.ring_lwe_utils import mat_vec_mul, poly_add, poly_mul, poly_neg, transpose
     import gmpy2 as gp
 
     kg = MCFERingLWEKeyGenerator(kg_config)

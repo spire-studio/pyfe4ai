@@ -38,17 +38,22 @@ import os
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.schemes.ddh_base import DamgardDDHKeyGeneratorBase
-from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
-from pyfe4ai.schemes.ipfe import decoded_layer
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.crypto_utils import _random
-from pyfe4ai.utils.dlog_solver import load_or_build_dlog_table, dlog_table_solve
-from pyfe4ai.utils.modular_utils import pow_signed
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.sampling_utils import rand_uniform_vector
-from pyfe4ai.utils.validation import scale_to_int
-from pyfe4ai.utils.validation import strict_int
+from pyfe4ai.schemes.common.ddh_base import DamgardDDHKeyGeneratorBase
+from pyfe4ai.core.base import IPFEAbsCrypto
+from pyfe4ai.core.base import decoded_layer
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.primitives.groups.integer_groups import _random
+from pyfe4ai.primitives.groups.dlog_solver import load_or_build_dlog_table, dlog_table_solve
+from pyfe4ai.primitives.groups.modular_utils import pow_signed
+from pyfe4ai.core.formats.dl import DamgardCiphertext
+from pyfe4ai.core.formats.dl import DamgardEncryptionKey
+from pyfe4ai.core.formats.dl import MIFEDamgardFunctionalKey
+from pyfe4ai.core.formats.dl import SIFEDamgardParameters
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.ids import issued_id
+from pyfe4ai.primitives.sampling import rand_uniform_vector
+from pyfe4ai._validation import scale_to_int
+from pyfe4ai._validation import strict_int
 
 logger = logging.getLogger(__name__)
 
@@ -103,29 +108,30 @@ class MIFEDamgardKeyGenerator(DamgardDDHKeyGeneratorBase):
 
     def get_public_parameters(self) -> dict:
         """Return serialisable public parameters."""
-        return {
-            "p": gp.digits(self.p),
-            "q": gp.digits(self.q),
-            "g": gp.digits(self.g),
-            "h": gp.digits(self.h),
-            "eta": self.eta,
-            "n": self.n,
-            "bound": self.bound,
-            "sec_param": self.sec_param,
-            "modulus_length": self.modulus_length,
-        }
+        return SIFEDamgardParameters.new(
+            p=gp.digits(self.p),
+            q=gp.digits(self.q),
+            g=gp.digits(self.g),
+            h=gp.digits(self.h),
+            eta=self.eta,
+            n=self.n,
+            bound=self.bound,
+            sec_param=self.sec_param,
+            modulus_length=self.modulus_length,
+        ).to_dict()
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
         """Return slot *nid*'s encryption key ``{pk, u}`` (``None`` if unknown).
 
         The key includes the one-time pad and must stay with the client.
         """
+        nid = issued_id(nid)  # numpy integers as ints; a value that is no id is an unknown client
         if nid not in self.mpk["pk"]:
             return None
-        return {
-            "pk": [gp.digits(v) for v in self.mpk["pk"][nid]],
-            "u": [gp.digits(v) for v in self.msk["u"][nid]],
-        }
+        return DamgardEncryptionKey.new(
+            pk=[gp.digits(v) for v in self.mpk["pk"][nid]],
+            u=[gp.digits(v) for v in self.msk["u"][nid]],
+        ).to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Derive ``({(<s_i, y_i>, <t_i, y_i>)}_i, z = sum <u_i, y_i> mod q)``.
@@ -160,7 +166,7 @@ class MIFEDamgardKeyGenerator(DamgardDDHKeyGeneratorBase):
             k1[nid] = gp.digits(sum(a * b for a, b in zip(self.msk["s"][nid], ys)) % self.q)
             k2[nid] = gp.digits(sum(a * b for a, b in zip(self.msk["t"][nid], ys)) % self.q)
             z += sum(a * b for a, b in zip(self.msk["u"][nid], ys))
-        return {"k1": k1, "k2": k2, "z": gp.digits(z % self.q)}
+        return MIFEDamgardFunctionalKey.new(k1=k1, k2=k2, z=gp.digits(z % self.q)).to_dict()
 
 
 class MIFEDamgard(IPFEAbsCrypto):
@@ -193,7 +199,7 @@ class MIFEDamgard(IPFEAbsCrypto):
         """
         if not self._has_public_parameters():
             raise FEKeyError("no public parameters provided for encryption")
-        if not self._has_private_keys() or "u" not in self.sk:
+        if not self._has_private_keys() or "u" not in DamgardEncryptionKey(self.sk):
             raise FEKeyError("no private keys provided for encryption")
         if len(lst_pt) != self.pp["eta"]:
             raise FEValidationError("invalid size of input plaintext")
@@ -206,10 +212,11 @@ class MIFEDamgard(IPFEAbsCrypto):
         h = gp.mpz(self.pp["h"])
         r = _random(q, int(q).bit_length())
         e = []
-        for x_j, u_j, pk_j in zip(lst_pt, self.sk["u"], self.sk["pk"]):
+        sk = DamgardEncryptionKey.from_dict(self.sk)
+        for x_j, u_j, pk_j in zip(lst_pt, sk.u, sk.pk):
             w_j = (gp.mpz(int(x_j)) + gp.mpz(u_j)) % q
             e.append(gp.digits(gp.powmod(g, w_j, p) * gp.powmod(gp.mpz(pk_j), r, p) % p))
-        return {"c": gp.digits(gp.powmod(g, r, p)), "d": gp.digits(gp.powmod(h, r, p)), "e": e}
+        return DamgardCiphertext.new(c=gp.digits(gp.powmod(g, r, p)), d=gp.digits(gp.powmod(h, r, p)), e=e).to_dict()
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict):
         """Recover ``sum_i <x_i, y_i>`` from one ciphertext per slot.
@@ -223,9 +230,10 @@ class MIFEDamgard(IPFEAbsCrypto):
         """
         if not self._has_public_parameters():
             raise FEKeyError("no public parameters provided for decryption")
-        if not dk or "z" not in dk:
+        if not dk or "z" not in MIFEDamgardFunctionalKey(dk):
             raise FEKeyError("no decryption key provided")
-        if set(dct_ct) != set(dk["k1"]) or set(dct_ct) != set(fusion_weight):
+        key = MIFEDamgardFunctionalKey.from_dict(dk)
+        if set(dct_ct) != set(key.k1) or set(dct_ct) != set(fusion_weight):
             raise FESchemeError("need one ciphertext for every slot of the key")
 
         p = gp.mpz(self.pp["p"])
@@ -233,12 +241,13 @@ class MIFEDamgard(IPFEAbsCrypto):
         acc = gp.mpz(1)
         for nid, ct in dct_ct.items():
             # Dec1 of slot nid: [<x_i + u_i, y_i>]
-            for e_j, y_j in zip(ct["e"], fusion_weight[nid]):
+            ct = DamgardCiphertext.from_dict(ct)
+            for e_j, y_j in zip(ct.e, fusion_weight[nid]):
                 acc = acc * pow_signed(gp.mpz(e_j), gp.mpz(int(y_j)), p) % p
-            den = gp.powmod(gp.mpz(ct["c"]), gp.mpz(dk["k1"][nid]), p)
-            den = den * gp.powmod(gp.mpz(ct["d"]), gp.mpz(dk["k2"][nid]), p) % p
+            den = gp.powmod(gp.mpz(ct.c), gp.mpz(key.k1[nid]), p)
+            den = den * gp.powmod(gp.mpz(ct.d), gp.mpz(key.k2[nid]), p) % p
             acc = gp.divm(acc, den, p)
-        acc = gp.divm(acc, gp.powmod(g, gp.mpz(dk["z"]), p), p)
+        acc = gp.divm(acc, gp.powmod(g, gp.mpz(key.z), p), p)
         return self._solve_dlog(acc)
 
     def _solve_dlog(self, encoded_value: gp.mpz) -> int | None:
@@ -251,6 +260,7 @@ class MIFEDamgard(IPFEAbsCrypto):
             )
         except (ValueError, RuntimeError):
             logger.error("inner-product is out of bound supported by crypto system")
+            warn_at_caller("inner-product is out of bound supported by crypto system")
             return None
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:

@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from pyfe4ai.schemes.mcfe.lwe import MCFELWE
 from pyfe4ai.schemes.mcfe.lwe import MCFELWEKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
+from pyfe4ai.core.constants import CryptoCONST
 
 
 class MCFEFullySecLWEKeyGenerator(MCFELWEKeyGenerator):

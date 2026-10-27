@@ -6,11 +6,12 @@ import logging
 import numpy as np
 import gmpy2 as gp
 
-from pyfe4ai.schemes.mife.ddh_threshold import ThresholdMIFE
-from pyfe4ai.schemes.mife.ddh_threshold import ThresholdMIFEKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.exceptions import FESchemeError, FEValidationError
-from pyfe4ai.logger import init_logging_config
+from pyfe4ai.schemes.mife.ddh_threshold import ThresholdMIFEDDH
+from pyfe4ai.schemes.mife.ddh_threshold import ThresholdMIFEDDHKeyGenerator
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.core.base import cache_dir
+from tests.log_config import init_logging_config
 
 init_logging_config()
 logger = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ def kg_config():
 
 
 def test_key_generator(kg_config):
-    kg = ThresholdMIFEKeyGenerator(kg_config)
+    kg = ThresholdMIFEDDHKeyGenerator(kg_config)
 
     assert kg.lambd == kg_config["sec_param"]
     assert kg.eta == kg_config["eta"]
@@ -42,7 +43,7 @@ def test_key_generator(kg_config):
     assert kg.t == kg_config["t"]
     assert kg.s == kg_config["s"]
 
-    config_folder = os.path.join("config", "authority", CryptoCONST.TYPE_TMIFE)
+    config_folder = os.path.join(cache_dir(), "authority", CryptoCONST.TYPE_TMIFE)
     assert os.path.exists(config_folder)
     param_file = os.path.join(config_folder, "param.json")
     assert os.path.exists(param_file)
@@ -88,7 +89,7 @@ def test_key_generator(kg_config):
 
 
 def test_threshold_mife(kg_config):
-    kg = ThresholdMIFEKeyGenerator(kg_config)
+    kg = ThresholdMIFEDDHKeyGenerator(kg_config)
     kg.setup()
 
     precision = 3
@@ -120,7 +121,7 @@ def test_threshold_mife(kg_config):
             "precision": precision,
             "keys": {"pp": pp, "sk": sk_nid},
         }
-        tmife_nid = ThresholdMIFE(config_nid)
+        tmife_nid = ThresholdMIFEDDH(config_nid)
         ct_nid = tmife_nid.encrypt(dict_tmife_n_x[nid])
         assert isinstance(ct_nid, dict)
         assert "t" in ct_nid
@@ -141,7 +142,7 @@ def test_threshold_mife(kg_config):
             "precision": precision,
             "keys": {"pp": pp, "dk": dk_sid},
         }
-        tmife_sid = ThresholdMIFE(config_sid)
+        tmife_sid = ThresholdMIFEDDH(config_sid)
         ct_sid = tmife_sid.share_decrypt(
             dict_tmife_n_ct, dict_tmife_n_y, dk_sid, lst_sid_enrolled
         )
@@ -161,7 +162,7 @@ def test_threshold_mife(kg_config):
 def _setup_round(n, s, t, eta, precision=0):
     lst_nid = ["nid_{}".format(i) for i in range(n)]
     lst_sid = ["sid_{}".format(i) for i in range(s)]
-    kg = ThresholdMIFEKeyGenerator(
+    kg = ThresholdMIFEDDHKeyGenerator(
         {
             "sec_param": 256,
             "lst_nid": lst_nid,
@@ -180,7 +181,7 @@ def _setup_round(n, s, t, eta, precision=0):
         x_i * y_i for nid in lst_nid for x_i, y_i in zip(dct_x[nid], dct_y[nid])
     )
     clients = {
-        nid: ThresholdMIFE(
+        nid: ThresholdMIFEDDH(
             {
                 "id": nid,
                 "precision": precision,
@@ -197,7 +198,7 @@ def _share_decrypt(kg, pp, dct_ct, dct_y, lst_sid_enrolled, precision=0):
     shares = {}
     for sid in lst_sid_enrolled:
         dk_sid = kg.get_decryption_keys(sid, credentials={"fusion_weight": dct_y})
-        server = ThresholdMIFE(
+        server = ThresholdMIFEDDH(
             {"id": sid, "precision": precision, "keys": {"pp": pp, "dk": dk_sid}}
         )
         shares[sid] = server.share_decrypt(dct_ct, dct_y, dk_sid, lst_sid_enrolled)
@@ -237,7 +238,7 @@ def test_single_server_cannot_decrypt():
 
     # the protocol refuses fewer than t participants on both sides
     dk_sid0 = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
-    server0 = ThresholdMIFE({"id": "sid_0", "precision": 0, "keys": {"pp": pp, "dk": dk_sid0}})
+    server0 = ThresholdMIFEDDH({"id": "sid_0", "precision": 0, "keys": {"pp": pp, "dk": dk_sid0}})
     with pytest.raises(FESchemeError):
         server0.share_decrypt(dct_ct, dct_y, dk_sid0, ["sid_0"])
     shares = _share_decrypt(kg, pp, dct_ct, dct_y, ["sid_0", "sid_1"])
@@ -247,10 +248,10 @@ def test_single_server_cannot_decrypt():
     # and the single share is cryptographically useless: even with the
     # count checks bypassed (t forged to 1) it does not reveal the result
     forged_pp = dict(pp, t=1)
-    forged_server = ThresholdMIFE(
+    forged_server = ThresholdMIFEDDH(
         {"id": "sid_0", "precision": 0, "keys": {"pp": forged_pp, "dk": dk_sid0}}
     )
-    forged_combiner = ThresholdMIFE(
+    forged_combiner = ThresholdMIFEDDH(
         {
             "id": "nid_0",
             "precision": 0,
@@ -271,7 +272,7 @@ def test_shares_must_match_enrolled_set():
 
 def test_invalid_threshold_rejected():
     with pytest.raises(FEValidationError):
-        ThresholdMIFEKeyGenerator(
+        ThresholdMIFEDDHKeyGenerator(
             {
                 "sec_param": 256,
                 "lst_nid": ["nid_0", "nid_1"],
@@ -297,7 +298,7 @@ def test_duplicate_partial_decryption_rejected():
 def test_key_shares_are_bound_to_weights():
     kg, pp, clients, dct_ct, dct_y, _ = _setup_round(3, 3, 2, 1)
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
-    server = ThresholdMIFE({"id": "sid_0", "precision": 0, "keys": {"pp": pp, "dk": dk}})
+    server = ThresholdMIFEDDH({"id": "sid_0", "precision": 0, "keys": {"pp": pp, "dk": dk}})
     other = {nid: [v + 1 for v in y] for nid, y in dct_y.items()}
     with pytest.raises(FESchemeError):
         server.share_decrypt(dct_ct, other, dk, ["sid_0", "sid_1"])
@@ -308,5 +309,5 @@ def test_key_shares_are_bound_to_weights():
 def test_pp_only_combiner_decrypts():
     kg, pp, _, dct_ct, dct_y, expected = _setup_round(3, 3, 2, 1)
     shares = _share_decrypt(kg, pp, dct_ct, dct_y, ["sid_0", "sid_2"])
-    combiner = ThresholdMIFE({"id": "c", "precision": 0, "keys": {"pp": pp}})
+    combiner = ThresholdMIFEDDH({"id": "c", "precision": 0, "keys": {"pp": pp}})
     assert combiner.combine_decrypt(shares) == expected

@@ -20,14 +20,106 @@ jobs:
           environment-file: environment.yml
           auto-activate-base: false
 
+      # the dependencies are those of pyproject.toml; this lane tests the
+      # Python implementation, so the native extension is not built
+      - name: Install the package with test extras
+        shell: bash -l {0}
+        env:
+          PYFE4AI_NO_NATIVE: "1"
+        run: |
+          python -m pip install -e ".[test]"
+
       - name: Run core release test suite
         shell: bash -l {0}
         run: |
           python -m pytest -m core -q
 
+  # Native backend lane: builds the Rust extension pyfe4ai._rust_native
+  # (pip install runs tools/build_rust.py through setup.py when cargo is on
+  # the PATH) and the C ABI of rust/core, runs `cargo test` in rust/core, and
+  # the full suite on the native backend. The Python 3.10 entry (the minimum
+  # of requires-python) also runs the full suite with PYFE4AI_BACKEND=python,
+  # the reference implementation the native code must match bit for bit; the
+  # Python 3.13 entry runs the native suite with 4 threads per native call.
+  # The pairing tests run on BLS12-381 from the extension (no charm needed).
+  rust-native:
+    name: rust-native (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python-version: "3.10"
+            threads: "1"
+            python-backend-suite: true
+          - python-version: "3.13"
+            threads: "4"
+            python-backend-suite: false
+    env:
+      CARGO_TERM_COLOR: always
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install the stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and build outputs
+        uses: Swatinem/rust-cache@v2
+        with:
+          # the two crates are separate workspaces; the extension's build
+          # depends on the interpreter, hence the Python version in the key
+          workspaces: |
+            rust/core -> target
+            rust/native -> target
+          key: py${{ matrix.python-version }}
+
+      - name: Install the package with test extras (builds the extension)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test]"
+
+      - name: Check that the native extension was built
+        # setup.py treats the extension as optional and only warns when the
+        # build fails; this lane must not fall back to Python silently
+        run: |
+          python -c "from pyfe4ai import backend as nb; assert nb.available(), 'pyfe4ai._rust_native was not built'; print(nb.describe())"
+
+      - name: cargo test (rust/core)
+        working-directory: rust/core
+        run: cargo test --release --locked
+
+      - name: Build the rust/core C ABI (loaded by tests/native/test_rust_core.py)
+        working-directory: rust/core
+        run: cargo build --release --locked
+
+      - name: Full test suite, native backend
+        env:
+          PYFE4AI_BACKEND: native
+          PYFE4AI_THREADS: ${{ matrix.threads }}
+        run: python -m pytest -q -rs
+
+      - name: Full test suite, Python backend
+        if: ${{ matrix.python-backend-suite }}
+        env:
+          PYFE4AI_BACKEND: python
+        run: python -m pytest -q
+
   # Pairing-enabled full suite compiles PBC + charm-crypto from source and is
   # slower/more fragile than the core lane, so it only runs on manual dispatch
-  # (Actions -> Tests -> Run workflow), typically before a release.
+  # (Actions -> Tests -> Run workflow), typically before a release. The full
+  # suite runs the pairing tests on BLS12-381 (the default group, from the
+  # Rust extension, which pip builds with the runner's cargo); the last step
+  # runs them again on a charm-crypto curve.
   full-research:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-22.04
@@ -50,8 +142,10 @@ jobs:
             m4
 
       - name: Build and install PBC
+        # the SHA-256 of the archive, as in docker/Dockerfile.pairing
         run: |
           wget -q https://crypto.stanford.edu/pbc/files/pbc-1.0.0.tar.gz
+          echo "18275a367283077bafe35f443200499e3b19c4a3754953da2a1b2f0d6b5922dc  pbc-1.0.0.tar.gz" | sha256sum -c -
           tar -xzf pbc-1.0.0.tar.gz
           cd pbc-1.0.0
           ./configure
@@ -75,3 +169,16 @@ jobs:
         shell: bash -l {0}
         run: |
           python -m pytest -q
+
+      - name: Check that charm-crypto provides MNT224
+        # otherwise the pairing test modules would all skip and the next step pass
+        shell: bash -l {0}
+        run: |
+          python -c "from pyfe4ai.primitives.pairing.pairing_backend import pairing_available; assert pairing_available('MNT224'), 'charm-crypto does not provide MNT224'"
+
+      - name: Pairing tests on a charm-crypto curve (MNT224)
+        shell: bash -l {0}
+        env:
+          PYFE4AI_TEST_PAIRING_GROUP: MNT224
+        run: |
+          python -m pytest -m extended -q

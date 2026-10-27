@@ -1,28 +1,29 @@
-"""Minimal end-to-end example for the SIFE scheme."""
+"""Minimal end-to-end example for the SIFE scheme (``sife/ddh``), built with
+``pyfe4ai.create``."""
 
-from pyfe4ai.schemes.sife.ddh import SIFE
-from pyfe4ai.schemes.sife.ddh import SIFEKeyGenerator
+import pyfe4ai
 
 
 def main() -> None:
     x = [2, 1, 3]
     y = [4, 5, 6]
 
-    kg = SIFEKeyGenerator({"sec_param": 128, "eta": len(x)})
+    # the key generator of sife/ddh (not yet set up) and its crypto class
+    kg, SIFEDDH = pyfe4ai.create("sife/ddh", {"sec_param": 128, "eta": len(x)})
     kg.setup()
 
     pp = kg.get_public_parameters()
     sk = kg.get_private_keys()
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": y})
 
-    encryptor = SIFE(
+    encryptor = SIFEDDH(
         {
             "id": "nid_default",
             "precision": 3,
             "keys": {"pp": pp, "sk": sk},
         }
     )
-    decryptor = SIFE(
+    decryptor = SIFEDDH(
         {
             "id": "sid_0",
             "precision": 3,

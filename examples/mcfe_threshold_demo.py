@@ -1,7 +1,7 @@
 """Threshold MCFE example: any 2 of 3 decryption servers can decrypt."""
 
-from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFE
-from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFEKeyGenerator
+from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFEDDH
+from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFEDDHKeyGenerator
 
 
 def main() -> None:
@@ -26,14 +26,14 @@ def main() -> None:
         "lst_sid": ["sid_0", "sid_1", "sid_2"],
     }
 
-    kg = ThresholdMCFEKeyGenerator(config)
+    kg = ThresholdMCFEDDHKeyGenerator(config)
     kg.setup()
     pp = kg.get_public_parameters()
 
     ciphertexts = {}
     decryptors = {}
     for nid, vec in x.items():
-        encryptor = ThresholdMCFE(
+        encryptor = ThresholdMCFEDDH(
             {
                 "id": nid,
                 "precision": 3,
@@ -50,7 +50,7 @@ def main() -> None:
             sid,
             credentials={"fusion_weight": y, "label": label},
         )
-        partial = ThresholdMCFE(
+        partial = ThresholdMCFEDDH(
             {
                 "id": sid,
                 "precision": 3,

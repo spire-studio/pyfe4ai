@@ -28,8 +28,8 @@ therefore derive a distinct label per element.
 
 Implementation notes: ``H`` is SHAKE-256 expanded to ``bits(N^2) + 128`` bits
 (the paper's implementation uses counter-mode SHA-256); ``D_{Z, sigma}`` is
-a rounded continuous Gaussian computed at ``bits(sigma) + 128`` bits of
-precision (:func:`pyfe4ai.utils.sampling_utils.discrete_gaussian_bigint`).
+a rounded continuous Gaussian computed at ``bits(sigma) + 320`` bits of
+precision (:func:`pyfe4ai.primitives.sampling.discrete_gaussian_bigint`).
 ``bit_length`` is the size of each prime and is far below any real security
 level by default.
 """
@@ -42,26 +42,34 @@ import logging
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
-from pyfe4ai.schemes.ipfe import decoded_layer
-from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
-from pyfe4ai.schemes.ipfe import ParameterCacheMixin
+from pyfe4ai.core.base import IPFEAbsCrypto
+from pyfe4ai.core.base import decoded_layer
+from pyfe4ai.core.base import IPFEAbsKeyGenerator
+from pyfe4ai.core.base import ParameterCacheMixin
 from pyfe4ai.schemes.mcfe.labels import element_label as _element_label
 from pyfe4ai.schemes.mcfe.labels import encode_label
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.crypto_utils import generate_group_primes
-from pyfe4ai.utils.crypto_utils import hash_to_zn2_star
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.modular_utils import pow_signed
-from pyfe4ai.utils.sampling_utils import discrete_gaussian_bigint
-from pyfe4ai.utils.validation import scale_to_int
-from pyfe4ai.utils.crypto_utils import is_dcr_modulus
-from pyfe4ai.utils.validation import strict_int
+from pyfe4ai.schemes.mcfe.offline import OfflineMCFEMixin
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.primitives.groups.integer_groups import generate_group_primes
+from pyfe4ai.primitives.hashing import hash_to_zn2_star
+from pyfe4ai.core.formats.dl import MCFEDDHCiphertext
+from pyfe4ai.core.formats.dl import MCFEDDHEncryptionKey
+from pyfe4ai.core.formats.dl import MCFEPaillierFunctionalKey
+from pyfe4ai.core.formats.dl import MCFEPaillierParameters
+from pyfe4ai.core.formats.dl import MCFEPaillierRecord
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.versions import record_matches
+from pyfe4ai.core.versions import MCFE_PAILLIER_RECORD
+from pyfe4ai.core.ids import issued_id
+from pyfe4ai.primitives.groups.modular_utils import pow_signed
+from pyfe4ai.primitives.sampling import discrete_gaussian_bigint
+from pyfe4ai._validation import scale_to_int
+from pyfe4ai.primitives.groups.integer_groups import is_dcr_modulus
+from pyfe4ai._validation import strict_int
 
 logger = logging.getLogger(__name__)
 
 _LABEL_HASH_DOMAIN = "pyfe4ai/mcfe/paillier/H(label)"
-_CONSTRUCTION = "abmpsw20-dcr/v2"  # v1 caches stored p and q
 _DEFAULT_STAT_PARAM = 64
 
 
@@ -119,14 +127,11 @@ class MCFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self._validate_bounds()
 
     def _apply_parameters(self, param: dict) -> None:
-        self.n_mod = gp.mpz(param["n_mod"])
+        self.n_mod = gp.mpz(MCFEPaillierRecord(param).n_mod)
         self.n_square = self.n_mod * self.n_mod
 
     def _param_verification(self, param: dict) -> bool:
-        return (
-            param.get("construction") == _CONSTRUCTION
-            and param.get("bit_length") == self.bit_length
-        )
+        return record_matches(param, {"construction": MCFE_PAILLIER_RECORD, "bit_length": self.bit_length})
 
     def _loaded_parameters_valid(self) -> bool:
         return is_dcr_modulus(self.n_mod, self.bit_length)
@@ -144,11 +149,11 @@ class MCFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.n_square = self.n_mod * self.n_mod
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(
-                {
-                    "construction": _CONSTRUCTION,
-                    "bit_length": self.bit_length,
-                    "n_mod": gp.digits(self.n_mod),
-                },
+                MCFEPaillierRecord.new(
+                    construction=MCFE_PAILLIER_RECORD,
+                    bit_length=self.bit_length,
+                    n_mod=gp.digits(self.n_mod),
+                ).to_dict(),
                 f,
             )
 
@@ -175,22 +180,23 @@ class MCFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
     def get_public_parameters(self) -> dict:
         """Return serialisable public parameters."""
-        return {
-            "n_mod": gp.digits(self.n_mod),
-            "n_square": gp.digits(self.n_square),
-            "eta": self.eta,
-            "n": self.n,
-            "sec_param": self.sec_param,
-            "bit_length": self.bit_length,
-            "bound_x": self.bound_x,
-            "bound_y": self.bound_y,
-        }
+        return MCFEPaillierParameters.new(
+            n_mod=gp.digits(self.n_mod),
+            n_square=gp.digits(self.n_square),
+            eta=self.eta,
+            n=self.n,
+            sec_param=self.sec_param,
+            bit_length=self.bit_length,
+            bound_x=self.bound_x,
+            bound_y=self.bound_y,
+        ).to_dict()
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
         """Return the encryption key ``{s}`` of client *nid* (``None`` if unknown)."""
+        nid = issued_id(nid)  # numpy integers as ints; a value that is no id is an unknown client
         if nid not in self.msk["s"]:
             return None
-        return {"s": [gp.digits(v) for v in self.msk["s"][nid]]}
+        return MCFEDDHEncryptionKey.new(s=[gp.digits(v) for v in self.msk["s"][nid]]).to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Derive the functional key ``k = sum y_{i,j} s_{i,j}`` (over Z).
@@ -225,11 +231,13 @@ class MCFEPaillierKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                 if abs(strict_int(y_j, "fusion weight")) > self.bound_y:
                     raise FEValidationError("fusion weight exceeds configured bound_y")
                 k += s_j * gp.mpz(int(y_j))
-        return {"k": gp.digits(k)}
+        return MCFEPaillierFunctionalKey.new(k=gp.digits(k)).to_dict()
 
 
-class MCFEPaillier(IPFEAbsCrypto):
+class MCFEPaillier(OfflineMCFEMixin, IPFEAbsCrypto):
     """Crypto operations for DCR-based multi-client inner-product FE (ABMPSW20 Fig. 3)."""
+
+    _online_bound = "bound_x"  # checked by the online phase before the precomputation is used
 
     def __init__(self, config: dict, **kwargs) -> None:
         """Initialise with ``keys.pp`` and, for clients, ``keys.sk``."""
@@ -257,21 +265,35 @@ class MCFEPaillier(IPFEAbsCrypto):
             raise FEKeyError("no public parameters provided for encryption")
         if not self._has_private_keys():
             raise FEKeyError("no private keys provided for encryption")
-        if len(lst_pt) > len(self.sk["s"]):
+        if len(lst_pt) > len(MCFEDDHEncryptionKey(self.sk).s):
             raise FEValidationError("invalid size of input plaintext")
         if any(abs(strict_int(v, "plaintext")) > self.pp["bound_x"] for v in lst_pt):
             raise FEValidationError("plaintext exceeds configured bound_x")
+        return self._encrypt_masked(lst_pt, self._label_mask(label))
 
+    def _label_mask(self, label: str) -> list:
+        """``H(l)^{s_j} mod N^2`` for every slot j (offline part, see
+        :mod:`pyfe4ai.schemes.mcfe.offline`)."""
         n_mod = gp.mpz(self.pp["n_mod"])
         n_square = n_mod * n_mod
         h_l = _hash_label(label, n_mod)
-        c = []
-        for x_j, s_j in zip(lst_pt, self.sk["s"]):
-            x_term = (1 + gp.mpz(int(x_j)) * n_mod) % n_square  # (1 + N)^x
-            c.append(gp.digits(x_term * pow_signed(h_l, gp.mpz(s_j), n_square) % n_square))
-        return {"c": c}
+        return [pow_signed(h_l, gp.mpz(s_j), n_square) for s_j in MCFEDDHEncryptionKey(self.sk).s]
 
-    def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict, label: str):
+    def _encrypt_masked(self, lst_pt: list, masks: list) -> dict:
+        """``(1 + N)^{x_j}`` times the label masks: the ciphertext of :meth:`encrypt`."""
+        if len(lst_pt) > len(masks):
+            raise FEValidationError("invalid size of input plaintext")
+        if any(abs(strict_int(v, "plaintext")) > self.pp["bound_x"] for v in lst_pt):
+            raise FEValidationError("plaintext exceeds configured bound_x")
+        n_mod = gp.mpz(self.pp["n_mod"])
+        n_square = n_mod * n_mod
+        c = []
+        for x_j, m in zip(lst_pt, masks):
+            x_term = (1 + gp.mpz(int(x_j)) * n_mod) % n_square  # (1 + N)^x
+            c.append(gp.digits(x_term * m % n_square))
+        return MCFEDDHCiphertext.new(c=c).to_dict()
+
+    def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict, label: str, term=None):
         """Recover ``sum_i <x_i, y_i>`` from all clients' ciphertexts under one label.
 
         Args:
@@ -290,7 +312,7 @@ class MCFEPaillier(IPFEAbsCrypto):
         """
         if not self._has_public_parameters():
             raise FEKeyError("no public parameters provided for decryption")
-        if not dk or "k" not in dk:
+        if not dk or "k" not in MCFEPaillierFunctionalKey(dk):
             raise FEKeyError("no decryption key provided")
         if dct_ct.keys() != fusion_weight.keys():
             raise FESchemeError("inconsistent input among ct and fusion weight")
@@ -299,22 +321,28 @@ class MCFEPaillier(IPFEAbsCrypto):
         n_square = n_mod * n_mod
         acc = gp.mpz(1)
         for nid, ct in dct_ct.items():
-            if len(ct["c"]) != len(fusion_weight[nid]):
+            c = MCFEDDHCiphertext(ct).c
+            if len(c) != len(fusion_weight[nid]):
                 raise FESchemeError(
                     "ciphertext and fusion weight of {} differ in length".format(nid)
                 )
-            for c_j, y_j in zip(ct["c"], fusion_weight[nid]):
+            for c_j, y_j in zip(c, fusion_weight[nid]):
                 acc = acc * pow_signed(gp.mpz(c_j), gp.mpz(int(y_j)), n_square) % n_square
-        h_l = _hash_label(label, n_mod)
-        acc = acc * pow_signed(h_l, -gp.mpz(dk["k"]), n_square) % n_square
+        acc = acc * (self._key_term(dk, label) if term is None else term) % n_square
 
         if (acc - 1) % n_mod != 0:
             logger.error("invalid decryption: wrong label, key or ciphertexts")
+            warn_at_caller("invalid decryption: wrong label, key or ciphertexts")
             return None
         ret = ((acc - 1) % n_square) // n_mod
         if ret > n_mod // 2:
             ret -= n_mod
         return int(ret)
+
+    def _key_term(self, dk: dict, label: str):
+        """``H(l)^{-k} mod N^2``, the label part of :meth:`decrypt` (term=)."""
+        n_mod = gp.mpz(self.pp["n_mod"])
+        return pow_signed(_hash_label(label, n_mod), -gp.mpz(MCFEPaillierFunctionalKey(dk).k), n_mod * n_mod)
 
     def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
         """Encrypt ndarrays element-wise (``eta = 1``), one derived label per element.
@@ -328,6 +356,8 @@ class MCFEPaillier(IPFEAbsCrypto):
         label = kwargs.get("label", None)
         if not isinstance(label, str):
             raise FEValidationError("need a string label for encrypt_lst_ndarray")
+        if kwargs.get("precomputed") is not None:
+            return self._encrypt_precomputed(lst_ndarray, label, kwargs["precomputed"])
         lst_ndarray_ct = []
         for l, ary_src in enumerate(lst_ndarray):
             ary = scale_to_int(ary_src, self.precision)
@@ -369,13 +399,15 @@ class MCFEPaillier(IPFEAbsCrypto):
             raise FEKeyError("need to provide decryption key, fusion weight and label")
 
         sample = next(iter(dict_ndarray_ct.values()))
+        terms = self._prepared_terms(dk, label, sample)
         lst_ndarray = []
         for l in range(len(sample)):
             ary_dec = np.empty(sample[l].shape, dtype=object)
             for i, _ in np.ndenumerate(sample[l]):
                 dct_ct = {nid: dict_ndarray_ct[nid][l][i] for nid in dict_ndarray_ct}
                 ary_dec[i] = self.decrypt(
-                    dct_ct, dk, fusion_weight, _element_label(label, l, i)
+                    dct_ct, dk, fusion_weight, _element_label(label, l, i),
+                    term=None if terms is None else terms[l][i],
                 )
             lst_ndarray.append(decoded_layer(ary_dec, l, 10 ** self.precision))
         return lst_ndarray

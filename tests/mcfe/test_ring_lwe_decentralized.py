@@ -8,7 +8,7 @@ import pytest
 from pyfe4ai.schemes.mcfe.ring_lwe import MCFERingLWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe_decentralized import DecentralizedMCFERingLWE
 from pyfe4ai.schemes.mcfe.ring_lwe_decentralized import DecentralizedMCFERingLWEKeyGenerator
-from pyfe4ai.utils.exceptions import FESchemeError
+from pyfe4ai.core.exceptions import FESchemeError
 
 
 @pytest.fixture
@@ -28,7 +28,7 @@ def test_key_generator(kg_config):
     kg = DecentralizedMCFERingLWEKeyGenerator(kg_config)
     kg.setup()
     sk = kg.get_private_keys("nid_0")
-    assert set(sk) == {"pk", "u", "u_prime", "s", "pair_keys"}
+    assert set(sk) == {"pk", "u", "u_prime", "s", "pair_keys", "label_hash"}
     assert set(sk["pair_keys"]) == {"nid_1", "nid_2"}
 
 

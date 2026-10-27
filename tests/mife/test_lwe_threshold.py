@@ -5,11 +5,12 @@ import logging
 import numpy as np
 import pytest
 
-from pyfe4ai.logger import init_logging_config
+from tests.log_config import init_logging_config
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWE
 from pyfe4ai.schemes.mife.lwe_threshold import ThresholdMIFELWEKeyGenerator
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.exceptions import FESchemeError
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.core.exceptions import FESchemeError
+from pyfe4ai.core.base import cache_dir
 
 init_logging_config()
 logger = logging.getLogger(__name__)
@@ -39,7 +40,7 @@ def test_key_generator(kg_config):
     assert kg.t == kg_config["t"]
     assert kg.eta == kg_config["eta"]
 
-    config_folder = os.path.join("config", "authority", CryptoCONST.TYPE_TMIFE_LWE)
+    config_folder = os.path.join(cache_dir(), "authority", CryptoCONST.TYPE_TMIFE_LWE)
     assert os.path.exists(config_folder)
     assert os.path.exists(os.path.join(config_folder, "param.json"))
 
@@ -55,8 +56,12 @@ def test_key_generator(kg_config):
 
     fusion_weight = {nid: [1] for nid in kg_config["lst_nid"]}
     dk_sid = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": fusion_weight})
-    assert set(dk_sid) == {"sk_y", "z", "sid", "lst_sid", "weights_id", "noise_key", "mac_keys"}
-    assert set(dk_sid["sk_y"]) == set(kg_config["lst_nid"])
+    # t < s: replicated sharing, C(s - 1, t - 1) = 2 pieces of (sk_y, z)
+    assert pp["sharing"] == "replicated"
+    assert set(dk_sid) == {"sharing", "pieces", "sid", "lst_sid", "weights_id", "noise_key", "noise_version",
+                           "noise_sampler", "mac_keys", "pp_binding"}
+    assert len(dk_sid["pieces"]) == 2
+    assert all(set(piece["share"]["sk_y"]) == set(kg_config["lst_nid"]) for piece in dk_sid["pieces"])
     # server k holds client i's key for the tags meant for k, and only those
     assert dk_sid["mac_keys"] == {
         nid: kg.get_private_keys(nid)["mac_keys"]["sid_0"] for nid in kg_config["lst_nid"]
@@ -196,8 +201,8 @@ def test_any_enrolled_set_decrypts_extreme_values(kg_config, s, t, enrolled):
 def test_partials_are_flooded_and_derandomised(kg_config):
     import gmpy2 as gp
 
-    from pyfe4ai.schemes.threshold_utils import lagrange_coefficient_at_zero
-    from pyfe4ai.utils.matrix_utils import digits_to_vector, vecdot_mod
+    from pyfe4ai.schemes.threshold.sharing import share_for_enrolled
+    from pyfe4ai.primitives.lattice.matrix_utils import digits_to_vector, vecdot_mod
 
     dct_x = {nid: [1] for nid in kg_config["lst_nid"]}
     dct_y = {nid: [1] for nid in kg_config["lst_nid"]}
@@ -209,10 +214,12 @@ def test_partials_are_flooded_and_derandomised(kg_config):
 
     q = gp.mpz(pp["q"])
     delta = q // gp.mpz(pp["p"])
-    exact = delta * gp.mpz(dk["z"])
+    # what the server multiplies (its assigned key pieces, or its Shamir share) and by what
+    share, multiplier, _ = share_for_enrolled(dk, "sid_0", enrolled, pp["t"], q)
+    exact = delta * gp.mpz(share["z"])
     for nid, ct in dct_ct.items():
-        exact += vecdot_mod(digits_to_vector(ct["ct0"]), [gp.mpz(v) for v in dk["sk_y"][nid]], q)
-    exact = lagrange_coefficient_at_zero(1, [1, 2], q) * exact % q
+        exact += vecdot_mod(digits_to_vector(ct["ct0"]), [gp.mpz(v) for v in share["sk_y"][nid]], q)
+    exact = multiplier * exact % q
     noise = (gp.mpz(partials["sid_0"]["w"]) - exact) % q
     assert noise != 0 and min(noise, q - noise) <= 12 * int(pp["sigma_f"])
     assert combiner.combine_decrypt(partials) == 3
@@ -237,6 +244,7 @@ def test_m_leaves_room_for_the_leftover_hash_lemma_at_the_enlarged_q(kg_config, 
     # m >= (lwe_n + eta + 1) log2 q + 2 lwe_n + 1 (the recipe of derive_lwe_parameters),
     # for the q that is actually used, not the one before the flooding enlarged it
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(tmp_path, "config"))
     kg = ThresholdMIFELWEKeyGenerator(kg_config)
     need = (kg.lwe_n + kg.eta + 1) * int(kg.q).bit_length() + 2 * kg.lwe_n + 1
     assert kg.m >= need
@@ -269,7 +277,7 @@ def test_servers_refuse_ciphertexts_not_made_by_the_clients(kg_config):
 
 
 def test_encryption_needs_the_mac_keys(kg_config):
-    from pyfe4ai.utils.exceptions import FEKeyError
+    from pyfe4ai.core.exceptions import FEKeyError
 
     kg = ThresholdMIFELWEKeyGenerator(kg_config)
     kg.setup()
@@ -303,7 +311,7 @@ def test_a_client_cannot_redraw_the_noise_by_changing_ct1(kg_config):
     """The key part depends on ct0 only; a corrupted client re-tagging its own
     ciphertext with another ct1 used to get fresh noise on the same key part."""
     from pyfe4ai.schemes.mife.lwe_threshold import _TAG_DOMAIN, _tag_payload
-    from pyfe4ai.schemes.threshold_utils import tag_ciphertext
+    from pyfe4ai.schemes.threshold.binding import tag_ciphertext
 
     dct_x = {nid: [1] for nid in kg_config["lst_nid"]}
     dct_y = {nid: [1] for nid in kg_config["lst_nid"]}

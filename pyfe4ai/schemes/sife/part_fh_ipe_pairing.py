@@ -7,7 +7,7 @@ Partially Function-Hiding Inner-Product Encryption over Pairings
 
 * type:     public-key encryption for vectors in the span of a public matrix
   ``M``; secret-key encryption (``Enc'``) of arbitrary vectors
-* setting:  asymmetric pairing group (default MNT224)
+* setting:  asymmetric pairing group (default BLS12-381)
 
 ``a, b <- (1, Z_q)``, ``U in Z_q^{(eta+2) x 2}``, ``V in Z_q^{eta x 2}`` and a
 random full-rank ``M in Z^{eta x k}`` with ``k = subspace_dim < eta``; the
@@ -15,7 +15,7 @@ public key is ``([a]_1, [U a]_1, V^T M, M)`` and ``msk = (b, U, V)``.
 
 * Enc(t):   ``[c = a r ; (-V^T M t ; M t) + U c]_1`` for ``t in Z^k``.
 * Enc'(x):  the same with ``(-V^T x ; x)``; needs ``V``, so it is run by the
-  key generator (:meth:`SIFEPartFHIPEKeyGenerator.sec_encrypt`).
+  key generator (:meth:`SIFEPartFHIPEPairingKeyGenerator.sec_encrypt`).
 * KeyGen(y): ``[(-U^T w ; w)]_2`` with ``w = (b s ; y + V b s)``.
 * Dec:      ``prod_j e(ct_j, sk_j) = [<x, y>]_T`` and a bounded discrete log.
 
@@ -40,22 +40,27 @@ import gmpy2 as gp
 
 _CSPRNG = random.SystemRandom()
 
-from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
-from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
-from pyfe4ai.schemes.ipfe import ParameterCacheMixin
-from pyfe4ai.utils.pairing_utils import bounded_discrete_log_gt
-from pyfe4ai.utils.pairing_utils import mat_vec_mod
-from pyfe4ai.utils.pairing_utils import random_nonzero_zr
-from pyfe4ai.utils.pairing_utils import to_zr
-from pyfe4ai.utils.pairing_utils import transpose_mod
-from pyfe4ai.utils.crypto_constants import CryptoCONST
-from pyfe4ai.utils.pairing_backend import G1, G2, PairingGroup, pair
-from pyfe4ai.utils.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
-from pyfe4ai.utils.pairing_backend import require_pairing_backend
-from pyfe4ai.utils.exceptions import FEKeyError, FEValidationError
-from pyfe4ai.utils.pairing_utils import matrix_inverse_mod
-from pyfe4ai.utils.validation import int_vector
-from pyfe4ai.utils.validation import strict_int
+from pyfe4ai.core.base import IPFEAbsCrypto
+from pyfe4ai.core.base import IPFEAbsKeyGenerator
+from pyfe4ai.core.base import ParameterCacheMixin
+from pyfe4ai.primitives.pairing.pairing_utils import bounded_discrete_log_gt
+from pyfe4ai.primitives.pairing.pairing_utils import mat_vec_mod
+from pyfe4ai.primitives.pairing.pairing_utils import random_nonzero_zr
+from pyfe4ai.primitives.pairing.pairing_utils import transpose_mod
+from pyfe4ai.core.constants import CryptoCONST
+from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, PairingGroup, multi_pair, pair
+from pyfe4ai.primitives.pairing.pairing_backend import deserialize_many, pow_many
+from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
+from pyfe4ai.primitives.pairing.pairing_backend import require_pairing_backend
+from pyfe4ai.core.formats.pairing import PartFHIPECiphertext
+from pyfe4ai.core.formats.pairing import PartFHIPEFunctionalKey
+from pyfe4ai.core.formats.pairing import PartFHIPEParameters
+from pyfe4ai.core.formats.pairing import PartFHIPERecord
+from pyfe4ai.core.exceptions import FEKeyError, FEValidationError
+from pyfe4ai.core.versions import record_matches
+from pyfe4ai.primitives.pairing.pairing_utils import matrix_inverse_mod
+from pyfe4ai._validation import int_vector
+from pyfe4ai._validation import strict_int
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +146,7 @@ def _g1_pow_vec(group: PairingGroup, g1, scalars: list[gp.mpz]):
             g1: Generator element in G1.
             scalars: Vector of scalar exponents.
     """
-    return [g1 ** to_zr(group, s) for s in scalars]
+    return pow_many(g1, scalars, group)
 
 
 def _g2_pow_vec(group: PairingGroup, g2, scalars: list[gp.mpz]):
@@ -152,7 +157,7 @@ def _g2_pow_vec(group: PairingGroup, g2, scalars: list[gp.mpz]):
             g2: Generator element in G2.
             scalars: Vector of scalar exponents.
     """
-    return [g2 ** to_zr(group, s) for s in scalars]
+    return pow_many(g2, scalars, group)
 
 
 def _serialize_vec(group: PairingGroup, vec) -> list[str]:
@@ -172,10 +177,10 @@ def _deserialize_vec(group: PairingGroup, vec: list[str]):
             group: Pairing group instance.
             vec: Input vector.
     """
-    return [group.deserialize(v.encode("utf-8")) for v in vec]
+    return deserialize_many(group, vec)
 
 
-class SIFEPartFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
+class SIFEPartFHIPEPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
     """Key generator for partially function-hiding inner-product encryption over pairings."""
 
     _scheme_type = CryptoCONST.TYPE_SIFE_PART_FH_IPE
@@ -188,7 +193,7 @@ class SIFEPartFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                 eta``, default 1), ``coeff_bound`` (bound on the coefficients
                 ``t`` of public encryption, default 1) and
                 ``pairing_group_param`` (asymmetric group, default
-                ``"MNT224"``).
+                ``"BLS12-381"``).
         """
         super().__init__(config, **kwargs)
         require_pairing_backend()
@@ -209,26 +214,23 @@ class SIFEPartFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self.order = gp.mpz(int(self.group.order()))
 
     def _param_verification(self, param: dict) -> bool:
-        return (
-            param.get("sec_param") == self.sec_param
-            and param.get("eta") == self.eta
-            and param.get("bound") == gp.digits(self.bound)
-            and param.get("subspace_dim") == self.subspace_dim
-            and param.get("coeff_bound") == gp.digits(self.coeff_bound)
-            and param.get("pairing_group_param") == self.pairing_group_param
-        )
+        return record_matches(param, {
+            "sec_param": self.sec_param, "eta": self.eta, "bound": gp.digits(self.bound),
+            "subspace_dim": self.subspace_dim, "coeff_bound": gp.digits(self.coeff_bound),
+            "pairing_group_param": self.pairing_group_param,
+        })
 
     def _generate_and_save(self, param_file: str) -> None:
         with open(param_file, "w", encoding="utf-8") as f:
             json.dump(
-                {
-                    "sec_param": self.sec_param,
-                    "eta": self.eta,
-                    "bound": gp.digits(self.bound),
-                    "subspace_dim": self.subspace_dim,
-                    "coeff_bound": gp.digits(self.coeff_bound),
-                    "pairing_group_param": self.pairing_group_param,
-                },
+                PartFHIPERecord.new(
+                    sec_param=self.sec_param,
+                    eta=self.eta,
+                    bound=gp.digits(self.bound),
+                    subspace_dim=self.subspace_dim,
+                    coeff_bound=gp.digits(self.coeff_bound),
+                    pairing_group_param=self.pairing_group_param,
+                ).to_dict(),
                 f,
             )
         self.group = PairingGroup(self.pairing_group_param)
@@ -256,19 +258,19 @@ class SIFEPartFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         ua_scalars = mat_vec_mod(u, a_vec, order)
         vt_m = _matmul_mod(transpose_mod(v), m, order)
 
-        self.pp = {
-            "eta": self.eta,
-            "bound": gp.digits(self.bound),
-            "subspace_dim": self.subspace_dim,
-            "coeff_bound": gp.digits(self.coeff_bound),
-            "pairing_group_param": self.pairing_group_param,
-            "g1": self.group.serialize(self.g1).decode("utf-8"),
-            "g2": self.group.serialize(self.g2).decode("utf-8"),
-            "a": _serialize_vec(self.group, _g1_pow_vec(self.group, self.g1, a_vec)),
-            "ua": _serialize_vec(self.group, _g1_pow_vec(self.group, self.g1, ua_scalars)),
-            "vt_m": [[gp.digits(v) for v in row] for row in vt_m],
-            "m": [[gp.digits(v) for v in row] for row in m],
-        }
+        self.pp = PartFHIPEParameters.new(
+            eta=self.eta,
+            bound=gp.digits(self.bound),
+            subspace_dim=self.subspace_dim,
+            coeff_bound=gp.digits(self.coeff_bound),
+            pairing_group_param=self.pairing_group_param,
+            g1=self.group.serialize(self.g1).decode("utf-8"),
+            g2=self.group.serialize(self.g2).decode("utf-8"),
+            a=_serialize_vec(self.group, _g1_pow_vec(self.group, self.g1, a_vec)),
+            ua=_serialize_vec(self.group, _g1_pow_vec(self.group, self.g1, ua_scalars)),
+            vt_m=[[gp.digits(v) for v in row] for row in vt_m],
+            m=[[gp.digits(v) for v in row] for row in m],
+        ).to_dict()
         self.msk = {
             "b": [gp.digits(v) for v in b_vec],
             "u": [[gp.digits(v) for v in row] for row in u],
@@ -298,7 +300,7 @@ class SIFEPartFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         neg_vt_x = [(-v) % order for v in mat_vec_mod(vt, [gp.mpz(v) for v in x], order)]
         body = _g1_pow_vec(self.group, g1, neg_vt_x + [gp.mpz(v) for v in x])
         cipher = [elem ** r for elem in a] + [lhs * (rhs ** r) for lhs, rhs in zip(body, ua)]
-        return {"ct": _serialize_vec(self.group, cipher)}
+        return PartFHIPECiphertext.new(ct=_serialize_vec(self.group, cipher)).to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Derive a functional decryption key for the given fusion weights.
@@ -331,10 +333,10 @@ class SIFEPartFHIPEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         key = key1 + key2
 
         g2 = self.group.deserialize(self.pp["g2"].encode("utf-8"))
-        return {"k": _serialize_vec(self.group, _g2_pow_vec(self.group, g2, key))}
+        return PartFHIPEFunctionalKey.new(k=_serialize_vec(self.group, _g2_pow_vec(self.group, g2, key))).to_dict()
 
 
-class SIFEPartFHIPE(IPFEAbsCrypto):
+class SIFEPartFHIPEPairing(IPFEAbsCrypto):
     """Crypto operations for partially function-hiding inner-product encryption over pairings."""
 
     def __init__(self, config: dict, **kwargs) -> None:
@@ -376,12 +378,10 @@ class SIFEPartFHIPE(IPFEAbsCrypto):
 
         vt_mt = mat_vec_mod(vt_m, t, self.order)
         neg_vt_mt = [(-v) % self.order for v in vt_mt]
-        mt_g1 = _g1_pow_vec(self.group, g1, x)
-        prefix = _g1_pow_vec(self.group, g1, neg_vt_mt)
-        cipher2 = prefix + mt_g1
+        cipher2 = _g1_pow_vec(self.group, g1, neg_vt_mt + x)
         cipher2 = [lhs * rhs for lhs, rhs in zip(cipher2, uc)]
         cipher = c + cipher2
-        return {"ct": _serialize_vec(self.group, cipher)}
+        return PartFHIPECiphertext.new(ct=_serialize_vec(self.group, cipher)).to_dict()
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: list | None = None):
         """Decrypt ciphertexts and recover the inner product.
@@ -391,14 +391,12 @@ class SIFEPartFHIPE(IPFEAbsCrypto):
                 dk: Functional decryption key.
                 fusion_weight: Fusion weight vector (or dict of per-client weight vectors).
         """
-        cipher = _deserialize_vec(self.group, dct_ct["ct"])
-        key = _deserialize_vec(self.group, dk["k"])
+        cipher = _deserialize_vec(self.group, PartFHIPECiphertext(dct_ct).ct)
+        key = _deserialize_vec(self.group, PartFHIPEFunctionalKey(dk).k)
         if len(cipher) != self.pp["eta"] + 4 or len(key) != self.pp["eta"] + 4:
             raise FEValidationError("ciphertext or key length mismatch")
 
-        acc = pair(cipher[0], key[0])
-        for lhs, rhs in zip(cipher[1:], key[1:]):
-            acc *= pair(lhs, rhs)
+        acc = multi_pair(cipher, key)
 
         g1 = self.group.deserialize(self.pp["g1"].encode("utf-8"))
         g2 = self.group.deserialize(self.pp["g2"].encode("utf-8"))

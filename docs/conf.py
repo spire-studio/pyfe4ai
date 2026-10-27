@@ -15,6 +15,11 @@ author = "Spire Studio"
 
 from pyfe4ai import __version__  # noqa: E402
 
+# The pairing layer checks charm's group type codes when it is imported; import
+# it before autodoc mocks charm (autodoc_mock_imports below), so that it sees
+# the real environment (charm absent: BLS12-381 from the Rust extension only).
+import pyfe4ai.primitives.pairing.pairing_backend  # noqa: E402,F401
+
 version = __version__
 release = __version__
 
@@ -64,6 +69,11 @@ autodoc_mock_imports = ["charm"]
 # -- Options for HTML output -------------------------------------------------
 html_theme = "furo"
 html_static_path = ["_static"]
+# Static pages copied into the output: redirects from the pages of the v0.3.0
+# documentation that no longer exist (api/utils.html, api/base.html,
+# api/config_types.html and the source pages of moved modules) to where their
+# content is now, with the old object anchors mapped to the new ones.
+html_extra_path = ["_redirects"]
 html_title = f"pyfe4ai {release}"
 html_theme_options = {
     "light_css_variables": {
@@ -78,13 +88,13 @@ html_theme_options = {
 
 # -- Scheme status ------------------------------------------------------------
 # The status counts (|n_schemes| etc.) and the ``scheme-status-table``
-# directive are rendered from pyfe4ai.schemes.status at build time, so the
+# directive are rendered from pyfe4ai.core.status at build time, so the
 # docs cannot drift from the code.
 from docutils import nodes  # noqa: E402
 from docutils.statemachine import StringList  # noqa: E402
 from sphinx.util.docutils import SphinxDirective  # noqa: E402
 
-from pyfe4ai.schemes import status as _status  # noqa: E402
+from pyfe4ai.core import status as _status  # noqa: E402
 
 _status_counts = Counter(entry.status for entry in _status.SCHEME_STATUS.values())
 rst_prolog = f"""
@@ -102,7 +112,7 @@ def _rst_text(text: str) -> str:
 
 
 class SchemeStatusTable(SphinxDirective):
-    """Render ``pyfe4ai.schemes.status.SCHEME_STATUS`` as a table."""
+    """Render ``pyfe4ai.core.status.SCHEME_STATUS`` as a table."""
 
     def run(self):
         lines = [
@@ -127,7 +137,44 @@ class SchemeStatusTable(SphinxDirective):
             ]
         container = nodes.container()
         self.state.nested_parse(
-            StringList(lines, source="pyfe4ai.schemes.status.SCHEME_STATUS"),
+            StringList(lines, source="pyfe4ai.core.status.SCHEME_STATUS"),
+            self.content_offset,
+            container,
+        )
+        return container.children
+
+
+class SchemeRegistryTable(SphinxDirective):
+    """Render ``pyfe4ai.core.registry.SCHEMES`` (ids, classes, kinds,
+    capabilities, refusals) as a table."""
+
+    def run(self):
+        from pyfe4ai.core import registry
+
+        lines = [
+            ".. list-table::",
+            "   :header-rows: 1",
+            "   :widths: 18 30 8 24 8",
+            "",
+            "   * - Scheme",
+            "     - Classes (crypto, key generator, config)",
+            "     - Kind",
+            "     - Capabilities",
+            "     - ``standard``",
+        ]
+        for scheme in registry.SCHEMES:
+            lines += [
+                f"   * - ``{scheme.id}``",
+                f"     - :class:`~{scheme.module}.{scheme.crypto_name}`, "
+                f":class:`~{scheme.module}.{scheme.key_generator_name}`, "
+                f":class:`~pyfe4ai.core.config.{scheme.config_name}`",
+                f"     - ``{scheme.kind}``",
+                "     - " + (", ".join(f"``{c}``" for c in sorted(scheme.capabilities)) or "--"),
+                "     - " + ("refused" if scheme.refused else "yes"),
+            ]
+        container = nodes.container()
+        self.state.nested_parse(
+            StringList(lines, source="pyfe4ai.core.registry.SCHEMES"),
             self.content_offset,
             container,
         )
@@ -136,3 +183,4 @@ class SchemeStatusTable(SphinxDirective):
 
 def setup(app):
     app.add_directive("scheme-status-table", SchemeStatusTable)
+    app.add_directive("scheme-registry-table", SchemeRegistryTable)

@@ -4,8 +4,8 @@ import random
 import pytest
 import numpy as np
 
-from pyfe4ai.logger import init_logging_config
-from pyfe4ai.utils.exceptions import FESchemeError
+from tests.log_config import init_logging_config
+from pyfe4ai.core.exceptions import FESchemeError
 from pyfe4ai.schemes.mcfe.paillier_decentralized import DecentralizedMCFEPaillier
 from pyfe4ai.schemes.mcfe.paillier_decentralized import DecentralizedMCFEPaillierKeyGenerator
 

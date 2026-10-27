@@ -1,7 +1,7 @@
 import random
 
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold import ThresholdMCFEFHMultiIPE
-from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold import ThresholdMCFEFHMultiIPEKeyGenerator
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold import ThresholdMCFEFHMultiIPEPairing
+from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing_threshold import ThresholdMCFEFHMultiIPEPairingKeyGenerator
 
 
 def main() -> None:
@@ -15,11 +15,10 @@ def main() -> None:
         "lst_sid": ["sid_0", "sid_1", "sid_2"],
         "bound_x": 4,
         "bound_y": 4,
-        "pairing_group_param": "MNT224",
     }
     label = "threshold-demo-label"
 
-    kg = ThresholdMCFEFHMultiIPEKeyGenerator(config)
+    kg = ThresholdMCFEFHMultiIPEPairingKeyGenerator(config)
     kg.setup()
 
     dct_x = {
@@ -36,7 +35,7 @@ def main() -> None:
     pp = kg.get_public_parameters()
     dct_ct = {}
     for nid in config["lst_nid"]:
-        encryptor = ThresholdMCFEFHMultiIPE(
+        encryptor = ThresholdMCFEFHMultiIPEPairing(
             {"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}
         )
         dct_ct[nid] = encryptor.encrypt(dct_x[nid], label)
@@ -46,10 +45,10 @@ def main() -> None:
     dct_prime = {}
     for sid in enrolled:
         dk = kg.get_decryption_keys(sid, credentials=credentials)
-        decryptor = ThresholdMCFEFHMultiIPE({"id": sid, "keys": {"pp": pp, "dk": dk}})
+        decryptor = ThresholdMCFEFHMultiIPEPairing({"id": sid, "keys": {"pp": pp, "dk": dk}})
         dct_prime[sid] = decryptor.share_decrypt(dct_ct, credentials, dk, enrolled, label)
 
-    combiner = ThresholdMCFEFHMultiIPE(
+    combiner = ThresholdMCFEFHMultiIPEPairing(
         {"id": config["lst_nid"][0], "keys": {"pp": pp, "sk": kg.get_private_keys(config["lst_nid"][0])}}
     )
     result = combiner.combine_decrypt(dct_prime)

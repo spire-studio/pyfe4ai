@@ -43,32 +43,38 @@ import tempfile
 import gmpy2 as gp
 import numpy as np
 
-from pyfe4ai.schemes.ipfe import IPFEAbsCrypto
-from pyfe4ai.schemes.ipfe import decoded_layer
-from pyfe4ai.schemes.ipfe import IPFEAbsKeyGenerator
-from pyfe4ai.schemes.ipfe import ParameterCacheMixin
-from pyfe4ai.utils.lwe_utils import decode_scaled
-from pyfe4ai.utils.crypto_constants import CryptoCONST
+from pyfe4ai.core.base import IPFEAbsCrypto
+from pyfe4ai.core.base import decoded_layer
+from pyfe4ai.core.base import IPFEAbsKeyGenerator
+from pyfe4ai.core.base import ParameterCacheMixin
+from pyfe4ai.primitives.lattice.lwe_utils import decode_scaled
+from pyfe4ai.core.constants import CryptoCONST
 
-from pyfe4ai.utils.lwe_utils import derive_fullysec_lwe_parameters
-from pyfe4ai.utils.matrix_utils import digits_to_matrix
-from pyfe4ai.utils.matrix_utils import digits_to_vector
-from pyfe4ai.utils.matrix_utils import matrix_to_digits
-from pyfe4ai.utils.matrix_utils import matmul_mod
-from pyfe4ai.utils.matrix_utils import matvec_mod
-from pyfe4ai.utils.matrix_utils import transpose
-from pyfe4ai.utils.matrix_utils import vecdot_mod
-from pyfe4ai.utils.matrix_utils import vector_to_digits
-from pyfe4ai.utils.sampling_utils import discrete_gaussian_matrix
-from pyfe4ai.utils.sampling_utils import rand_uniform_vector
-from pyfe4ai.utils.exceptions import FEKeyError, FESchemeError, FEValidationError
-from pyfe4ai.utils.validation import scale_to_int
-from pyfe4ai.utils.validation import strict_int
-from pyfe4ai.utils.lwe_matrix import SeededMatrix
+from pyfe4ai.primitives.lattice.lwe_utils import derive_fullysec_lwe_parameters
+from pyfe4ai.primitives.lattice.matrix_utils import digits_to_matrix
+from pyfe4ai.primitives.lattice.matrix_utils import digits_to_vector
+from pyfe4ai.primitives.lattice.matrix_utils import matrix_to_digits
+from pyfe4ai.primitives.lattice.matrix_utils import matmul_mod
+from pyfe4ai.primitives.lattice.matrix_utils import matvec_mod
+from pyfe4ai.primitives.lattice.matrix_utils import transpose
+from pyfe4ai.primitives.lattice.matrix_utils import vecdot_mod
+from pyfe4ai.primitives.lattice.matrix_utils import vector_to_digits
+from pyfe4ai.primitives.sampling import discrete_gaussian_matrix
+from pyfe4ai.primitives.sampling import rand_uniform_vector
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.core.formats.lwe import FullySecLWEParameters
+from pyfe4ai.core.formats.lwe import FullySecLWERecord
+from pyfe4ai.core.formats.lwe import LWECiphertext
+from pyfe4ai.core.formats.lwe import MIFELWEEncryptionKey
+from pyfe4ai.core.formats.lwe import MIFELWEFunctionalKey
+from pyfe4ai.core.versions import record_matches
+from pyfe4ai.core.versions import MIFE_FULLYSEC_LWE_RECORD
+from pyfe4ai.core.ids import issued_id
+from pyfe4ai._validation import scale_to_int
+from pyfe4ai._validation import strict_int
+from pyfe4ai.primitives.lattice.lwe_matrix import SeededMatrix
 
 logger = logging.getLogger(__name__)
-
-_CONSTRUCTION = "acfgu18-als16-lwe/v4"  # m = 4 n log2 q, B_tau ~ sqrt(m)
 
 
 def _seeded_matrix(seed: str, rows: int, cols: int, q) -> list:
@@ -99,35 +105,32 @@ class MIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         self._load_parameters()
 
     def _apply_parameters(self, param: dict) -> None:
-        self.k = gp.mpz(param["k"])
-        self.q = gp.mpz(param["q"])
-        self.m = int(param["m"])
-        self.sigma_q = float(param["sigma_q"])
-        self.l_sigma_q = gp.mpz(param["l_sigma_q"])
-        self.sigma1 = float(param["sigma1"])
-        self.l_sigma1 = gp.mpz(param["l_sigma1"])
-        self.sigma2 = float(param["sigma2"])
-        self.l_sigma2 = gp.mpz(param["l_sigma2"])
-        self.a_seed = param["A_seed"]
+        record = FullySecLWERecord.from_dict(param)
+        self.k = gp.mpz(record.k)
+        self.q = gp.mpz(record.q)
+        self.m = int(record.m)
+        self.sigma_q = float(record.sigma_q)
+        self.l_sigma_q = gp.mpz(record.l_sigma_q)
+        self.sigma1 = float(record.sigma1)
+        self.l_sigma1 = gp.mpz(record.l_sigma1)
+        self.sigma2 = float(record.sigma2)
+        self.l_sigma2 = gp.mpz(record.l_sigma2)
+        self.a_seed = record.A_seed
         self.A = _seeded_matrix(self.a_seed, self.m, self.lwe_n, self.q)
 
     def _param_verification(self, param: dict) -> bool:
-        if not (
-            param.get("construction") == _CONSTRUCTION
-            and param.get("sec_param") == self.sec_param
-            and param.get("eta") == self.eta
-            and param.get("n") == self.n
-            and param.get("lwe_n") == self.lwe_n
-            and param.get("bound_x") == gp.digits(self.bound_x)
-            and param.get("bound_y") == gp.digits(self.bound_y)
-        ):
+        if not record_matches(param, {
+            "construction": MIFE_FULLYSEC_LWE_RECORD, "sec_param": self.sec_param, "eta": self.eta, "n": self.n,
+            "lwe_n": self.lwe_n, "bound_x": gp.digits(self.bound_x), "bound_y": gp.digits(self.bound_y),
+        }):
             return False
         expected = derive_fullysec_lwe_parameters(3 * self.bound_x, self.bound_y, self.n * self.eta, self.lwe_n)
         names = ("k", "q", "m", "sigma_q", "l_sigma_q", "sigma1", "l_sigma1", "sigma2", "l_sigma2")
-        for name, value in zip(names, expected):
-            if param.get(name) != (value if isinstance(value, (int, float)) else gp.digits(value)):
-                return False
-        seed = param.get("A_seed")
+        if not record_matches(param, {
+            name: value if isinstance(value, (int, float)) else gp.digits(value) for name, value in zip(names, expected)
+        }):
+            return False
+        seed = FullySecLWERecord(param).get("A_seed")
         return isinstance(seed, str) and len(bytes.fromhex(seed)) == 32
 
     def _generate_and_save(self, param_file: str) -> None:
@@ -151,25 +154,25 @@ class MIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             "w", encoding="utf-8", dir=os.path.dirname(param_file), delete=False
         ) as f:
             json.dump(
-                {
-                    "construction": _CONSTRUCTION,
-                    "sec_param": self.sec_param,
-                    "eta": self.eta,
-                    "n": self.n,
-                    "lwe_n": self.lwe_n,
-                    "m": self.m,
-                    "bound_x": gp.digits(self.bound_x),
-                    "bound_y": gp.digits(self.bound_y),
-                    "k": gp.digits(self.k),
-                    "q": gp.digits(self.q),
-                    "sigma_q": self.sigma_q,
-                    "l_sigma_q": gp.digits(self.l_sigma_q),
-                    "sigma1": self.sigma1,
-                    "l_sigma1": gp.digits(self.l_sigma1),
-                    "sigma2": self.sigma2,
-                    "l_sigma2": gp.digits(self.l_sigma2),
-                    "A_seed": self.a_seed,
-                },
+                FullySecLWERecord.new(
+                    construction=MIFE_FULLYSEC_LWE_RECORD,
+                    sec_param=self.sec_param,
+                    eta=self.eta,
+                    n=self.n,
+                    lwe_n=self.lwe_n,
+                    m=self.m,
+                    bound_x=gp.digits(self.bound_x),
+                    bound_y=gp.digits(self.bound_y),
+                    k=gp.digits(self.k),
+                    q=gp.digits(self.q),
+                    sigma_q=self.sigma_q,
+                    l_sigma_q=gp.digits(self.l_sigma_q),
+                    sigma1=self.sigma1,
+                    l_sigma1=gp.digits(self.l_sigma1),
+                    sigma2=self.sigma2,
+                    l_sigma2=gp.digits(self.l_sigma2),
+                    A_seed=self.a_seed,
+                ).to_dict(),
                 f,
             )
             temp_name = f.name
@@ -201,21 +204,21 @@ class MIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         logger.info("MIFE fully secure LWE setup successfully")
 
     def get_public_parameters(self) -> dict:
-        return {
-            "A": matrix_to_digits(self.A),
-            "k": gp.digits(self.k),
-            "q": gp.digits(self.q),
-            "m": self.m,
-            "eta": self.eta,
-            "n": self.n,
-            "lwe_n": self.lwe_n,
-            "bound_x": gp.digits(self.bound_x),
-            "bound_y": gp.digits(self.bound_y),
-            "sigma_q": self.sigma_q,
-            "sigma1": self.sigma1,
-            "sigma2": self.sigma2,
-            "sec_param": self.sec_param,
-        }
+        return FullySecLWEParameters.new(
+            A=matrix_to_digits(self.A),
+            k=gp.digits(self.k),
+            q=gp.digits(self.q),
+            m=self.m,
+            eta=self.eta,
+            n=self.n,
+            lwe_n=self.lwe_n,
+            bound_x=gp.digits(self.bound_x),
+            bound_y=gp.digits(self.bound_y),
+            sigma_q=self.sigma_q,
+            sigma1=self.sigma1,
+            sigma2=self.sigma2,
+            sec_param=self.sec_param,
+        ).to_dict()
 
     def get_private_keys(self, nid: str, **kwargs) -> dict | None:
         """Return client *nid*'s encryption key (``pk`` and its pad ``u``).
@@ -226,12 +229,13 @@ class MIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         Returns:
             The key dict, or ``None`` for an unknown client.
         """
+        nid = issued_id(nid)  # numpy integers as ints; a value that is no id is an unknown client
         if nid not in self.mpk["u"]:
             return None
-        return {
-            "pk": matrix_to_digits(self.mpk["u"][nid]),
-            "u": vector_to_digits(self.msk["pad"][nid]),
-        }
+        return MIFELWEEncryptionKey.new(
+            pk=matrix_to_digits(self.mpk["u"][nid]),
+            u=vector_to_digits(self.msk["pad"][nid]),
+        ).to_dict()
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
         """Derive a functional decryption key for the given fusion weights.
@@ -262,7 +266,7 @@ class MIFEFullySecLWEKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             z_t = transpose(self.msk["z"][nid])
             z_y[nid] = vector_to_digits(matvec_mod(z_t, y_vec, self.q))
             pad_term += sum(u * y_j for u, y_j in zip(self.msk["pad"][nid], y_vec))
-        return {"sk_y": z_y, "z": gp.digits(pad_term % self.q)}
+        return MIFELWEFunctionalKey.new(sk_y=z_y, z=gp.digits(pad_term % self.q)).to_dict()
 
 
 class MIFEFullySecLWE(IPFEAbsCrypto):
@@ -293,7 +297,7 @@ class MIFEFullySecLWE(IPFEAbsCrypto):
 
         q = gp.mpz(self.pp["q"])
         k = gp.mpz(self.pp["k"])
-        pk = digits_to_matrix(self.sk["pk"])
+        pk = digits_to_matrix(MIFELWEEncryptionKey(self.sk).pk)
         r = rand_uniform_vector(self.pp["lwe_n"], q)
         e0 = discrete_gaussian_matrix(1, self.pp["m"], self.pp["sigma_q"])[0]
         e1 = discrete_gaussian_matrix(1, self.pp["eta"], self.pp["sigma_q"])[0]
@@ -301,13 +305,13 @@ class MIFEFullySecLWE(IPFEAbsCrypto):
         c0 = matvec_mod(self.A, r, q)
         c0 = [(a + b) % q for a, b in zip(c0, e0)]
 
-        if "u" not in self.sk:
+        if "u" not in MIFELWEEncryptionKey(self.sk):
             raise FEKeyError("encryption key lacks the one-time pad u")
         delta = q // k
         c1 = matvec_mod(pk, r, q)
-        w = [(gp.mpz(int(x)) + gp.mpz(u)) % q for x, u in zip(lst_pt, self.sk["u"])]
+        w = [(gp.mpz(int(x)) + gp.mpz(u)) % q for x, u in zip(lst_pt, MIFELWEEncryptionKey(self.sk).u)]
         c1 = [(a + b + delta * w_j) % q for a, b, w_j in zip(c1, e1, w)]
-        return {"ct0": vector_to_digits(c0), "ct1": vector_to_digits(c1)}
+        return LWECiphertext.new(ct0=vector_to_digits(c0), ct1=vector_to_digits(c1)).to_dict()
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict):
         """Decrypt ciphertexts and recover the inner product.
@@ -317,15 +321,16 @@ class MIFEFullySecLWE(IPFEAbsCrypto):
                 dk: Functional decryption key.
                 fusion_weight: Fusion weight vector (or dict of per-client weight vectors).
         """
-        if not dk or "z" not in dk:
+        if not dk or "z" not in MIFELWEFunctionalKey(dk):
             raise FEKeyError("no decryption key provided")
-        if set(dct_ct) != set(dk["sk_y"]) or set(dct_ct) != set(fusion_weight):
+        key = MIFELWEFunctionalKey(dk)
+        if set(dct_ct) != set(key.sk_y) or set(dct_ct) != set(fusion_weight):
             raise FESchemeError("need one ciphertext for every slot of the key")
 
         q = gp.mpz(self.pp["q"])
         k = gp.mpz(self.pp["k"])
         delta = q // k
-        total = -delta * gp.mpz(dk["z"])
+        total = -delta * gp.mpz(key.z)
         for nid in dct_ct:
             y = fusion_weight[nid]
             if len(y) != self.pp["eta"]:
@@ -334,9 +339,9 @@ class MIFEFullySecLWE(IPFEAbsCrypto):
                 raise FEValidationError("fusion weight exceeds configured bound_y")
 
             y_vec = [gp.mpz(v) for v in y]
-            ct0 = digits_to_vector(dct_ct[nid]["ct0"])
-            ct1 = digits_to_vector(dct_ct[nid]["ct1"])
-            z_y = digits_to_vector(dk["sk_y"][nid])
+            ct0 = digits_to_vector(LWECiphertext(dct_ct[nid]).ct0)
+            ct1 = digits_to_vector(LWECiphertext(dct_ct[nid]).ct1)
+            z_y = digits_to_vector(key.sk_y[nid])
 
             total += vecdot_mod(y_vec, ct1, q) - vecdot_mod(z_y, ct0, q)
         bound = self.pp["n"] * self.pp["eta"] * gp.mpz(self.pp["bound_x"]) * gp.mpz(self.pp["bound_y"])

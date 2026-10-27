@@ -8,7 +8,6 @@ def main() -> None:
         "n": 3,
         "m": 2,
         "bound": 5,
-        "pairing_group_param": "MNT224",
     }
 
     kg = QuadraticQuadKeyGenerator(config)

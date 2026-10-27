@@ -2,9 +2,10 @@ Glossary
 ========
 
 Parameter names and conventions used across the PyFE4AI schemes. Key
-generators take a configuration dict (``SIFEKeyGenerator(config)``); the
-accepted keys per family are listed in :mod:`pyfe4ai.schemes.config_types`
-and in each key generator's ``__init__``.
+generators take a configuration dict (``SIFEDDHKeyGenerator(config)``); the
+accepted keys of every scheme, their defaults and the refused combinations
+are listed on :doc:`configuration` (from the config classes of
+:mod:`pyfe4ai.core.config`).
 
 Scheme taxonomy
 ---------------
@@ -31,14 +32,16 @@ Scheme taxonomy
      - Ciphertexts are bound to a common :term:`label`
    * - dMCFE
      - Decentralized MCFE
-     - *n* encryptors, no central key authority
+     - *n* encryptors, no authority for functional keys
      - Each client derives a share of the functional key; the shares are
-       combined
+       combined. The setup is trusted: the library's key generator samples
+       every client's keys, including the pairwise zero-sum secrets
    * - tMIFE / tMCFE
      - Threshold MIFE / MCFE
      - *n* encryptors, *t*-of-*s* decryption servers
-     - The functional key is Shamir-shared among *s* servers; any *t* of
-       them decrypt together
+     - The functional key is shared among *s* servers -- Shamir's sharing,
+       or in the LWE threshold layers a replicated sharing (the default for
+       *t* < *s*) -- and any *t* of them decrypt together
    * - FH-
      - Function-hiding
      - as the family
@@ -57,11 +60,11 @@ Configuration keys
       ``"toy"`` (the default) keeps the small default parameters: fast, and
       **not secure**. ``"standard"`` fills in parameters aiming at 128-bit
       classical security and refuses explicit values below them. Its
-      exceptions: pairing-based schemes get BN254 (about 100-bit, with a
-      :class:`~pyfe4ai.utils.exceptions.FESecurityWarning`), and
-      ``sife/fullysec_lwe``, ``mife/fullysec_lwe`` and
-      ``mcfe/paillier_decentralized`` are refused. See
-      :mod:`pyfe4ai.schemes.profiles` and :doc:`security`.
+      exceptions: pairing-based schemes get BLS12-381 (about 120-126-bit, with a
+      :class:`~pyfe4ai.core.exceptions.FESecurityWarning`), and
+      ``sife/fullysec_lwe``, ``mife/fullysec_lwe``, ``mife/lwe_threshold``
+      and ``mcfe/paillier_decentralized`` are refused. See
+      :mod:`pyfe4ai.core.profiles` and :doc:`security`.
 
    ``sec_param``
       **Not a security level.** The bit length of the safe prime ``p`` in
@@ -80,6 +83,85 @@ Configuration keys
       the ABMPSW20 schemes, noise flooding of the threshold schemes, the
       masks of ``mcfe/ddh_decentralized`` and the Paillier and MCFE2 key
       distributions. Default 64; 128 (and at least 128) under ``standard``.
+      With ``flooding_accounting = "kl"`` (``mife/lwe_threshold``,
+      ``mcfe/ring_lwe_threshold``) it bounds the Hellinger distance of a
+      run of at most ``max_partial_decryptions`` partial decryptions per
+      server instead of the statistical distance per sample.
+
+   ``flooding_accounting``
+      How the threshold schemes ``mife/lwe_threshold`` and
+      ``mcfe/ring_lwe_threshold`` size their flooding noise:
+      ``"per-sample"`` (default; statistical distance ``2^-stat_param`` per
+      flooded value, no limit) or ``"kl"`` (opt-in, ``t = s`` only; a
+      bound for a whole run of at most ``max_partial_decryptions`` partial
+      decryptions per server, about ``stat_param - 7`` bits in the
+      bit-security sense of Micciancio and Walter, a total statistical
+      distance of about ``2^-65`` at ``stat_param = 128``; each server counts in
+      the ``partial_budget`` its deployment provides; much smaller ``q``
+      and, for ``mife/lwe_threshold``, ``lwe_n``). See
+      :mod:`pyfe4ai.schemes.threshold.kl` and :doc:`threshold_ml`.
+
+   ``sharing``
+      How the threshold LWE layers (``mife/lwe_threshold``,
+      ``mcfe/lwe_threshold``, ``mcfe/ring_lwe_threshold``) share a
+      functional key among the servers: ``"shamir"`` (the default for
+      ``t = s``), ``"replicated"`` (the default for ``t < s``: additive
+      pieces, one per ``(t - 1)``-subset of the servers, so that partial
+      decryptions reveal nothing of the decryption noise) or
+      ``"replicated-seeded"`` (opt-in: all pieces but one expanded from
+      secret seeds; smaller key shares, computationally hiding). ``"shamir"``
+      with ``t < s`` is refused under ``standard``. The DDH and pairing
+      threshold layers always use Shamir's sharing.
+
+   ``flooding``
+      Distribution of the noise that floods the partial decryptions of
+      ``mcfe/ring_lwe_threshold``: ``"uniform"`` (default) or ``"gaussian"``
+      (the only one of version 0.3.0, and the one ``flooding_accounting =
+      "kl"`` uses). A public parameter.
+
+   ``ct_format``
+      Ciphertext format of the Ring-LWE MIFE / MCFE schemes: ``"json"``
+      (lists of decimal strings) or ``"binary"`` (a versioned compact
+      encoding, about a third of the size). For ``mife/ring_lwe``,
+      ``mcfe/ring_lwe`` and ``mcfe/ring_lwe_decentralized`` it is a crypto
+      option (default ``"json"``; decryption reads both); for
+      ``mcfe/ring_lwe_threshold`` a key generator option published in the
+      public parameters (default ``"binary"``), which ciphertexts, key
+      shares and partial decryptions follow.
+
+   ``ring_modulus``
+      Modulus of the Ring-LWE schemes: ``"prime"`` (an NTT-friendly prime)
+      or ``"rns"`` (a product of NTT-friendly primes; ``q_factors`` in the
+      public parameters). ``"rns"`` is the default of
+      ``mcfe/ring_lwe_threshold`` and opt-in for ``mife/ring_lwe``,
+      ``mcfe/ring_lwe`` and ``mcfe/ring_lwe_decentralized``; the SIFE
+      Ring-LWE schemes take ``"prime"`` only. See :doc:`rns_modulus_review`.
+
+   ``key_shares``
+      Key shares of ``mcfe/ring_lwe_threshold``: ``"split"`` (default) -- a
+      weight part per weight vector (``get_weight_key_share``, kept by the
+      server with ``add_weight_key_share``) and a label part per round
+      (``get_decryption_keys``) -- or ``"full"``, whole key shares per
+      label (the only kind with ``sharing = "replicated-seeded"``). See
+      :doc:`threshold_ml`.
+
+   ``label_hash``
+      How the MCFE Ring-LWE and dense-LWE schemes hash a label to values
+      mod ``q``: ``"shake128-rejection"`` (default), ``"shake256-wide"``
+      (version 0.3.0; data without the field is read as it) or
+      ``"shake256-rejection"``. Recorded in the public parameters, keys and
+      ciphertexts; data of different modes is refused.
+
+   ``cache_dir``
+      Key generator option: the parameter cache directory, overriding
+      ``PYFE4AI_CACHE_DIR`` and the per-user cache directory. See
+      :doc:`environment`.
+
+   ``legacy_shamir``
+      Crypto option of the threshold LWE servers: ``"warn"`` serves Shamir
+      key shares with ``t < s`` with an
+      :class:`~pyfe4ai.core.exceptions.FESecurityWarning` (never for public
+      parameters of the ``standard`` profile); without it they are refused.
 
    ``eta``
       Length of each client's input vector (an ``int``; MIFE-DDH also
@@ -90,7 +172,11 @@ Configuration keys
       the length of ``x``.
 
    ``lst_nid``
-      Client ids, length ``n`` (default ``nid_0`` ... ``nid_{n-1}``).
+      Client ids, length ``n`` (default ``nid_0`` ... ``nid_{n-1}``). An id
+      is a ``str`` or an ``int`` (not a ``bool``), one type per list; numpy
+      integers are refused here (convert them with ``int()``) and read as
+      ints wherever an id is given after setup (:mod:`pyfe4ai.core.ids`,
+      :doc:`configuration`).
 
    ``s``
       Number of decryption servers of the threshold schemes (tMIFE, tMCFE),
@@ -104,7 +190,8 @@ Configuration keys
       beyond the result.
 
    ``lst_sid``
-      Decryption-server ids of the threshold schemes, length ``s``.
+      Decryption-server ids of the threshold schemes, length ``s``; the same
+      rules as for ``lst_nid``.
 
    ``bound_x`` / ``bound_y``
       Bounds on the inputs and on the weights, ``|x_i| <= bound_x`` and
@@ -133,31 +220,33 @@ Configuration keys
       ABDP15 (``sife/lwe``, ``mife/lwe``, ``mife/lwe_threshold``) and
       ABMPSW20 (``mcfe/lwe`` family) schemes also take ``"auto"``, the
       ``standard`` choice: the smallest dimension whose derived modulus
-      meets the 128-bit lattice-estimator table.
+      meets the 128-bit lattice-estimator table (for ABDP15 read at the
+      error width of its security reduction, see
+      :func:`~pyfe4ai.primitives.lattice.lwe_utils.abdp15_reduction_sigma`).
 
    ``ring_n``
       Ring-LWE ring dimension, a power of two; default
-      :data:`~pyfe4ai.utils.ring_lwe_utils.DEFAULT_RING_N` (32, a toy
+      :data:`~pyfe4ai.primitives.lattice.ring_lwe_utils.DEFAULT_RING_N` (32, a toy
       value). ``"auto"``, the ``standard`` choice, selects the smallest
       dimension (1024 to 32768) whose derived modulus meets
-      :data:`~pyfe4ai.utils.ring_lwe_utils.RING_LWE_128_LOG_Q` (see
-      :func:`~pyfe4ai.utils.ring_lwe_utils.resolve_ring_n`).
+      :data:`~pyfe4ai.primitives.lattice.ring_lwe_utils.RING_LWE_128_LOG_Q` (see
+      :func:`~pyfe4ai.primitives.lattice.ring_lwe_utils.resolve_ring_n`).
 
    ``matrix_mode``
       How the ABDP15 LWE schemes (``sife/lwe``, ``mife/lwe``,
       ``mife/lwe_threshold``) hold their seeded public matrix ``A``:
       ``"memory"`` (default) keeps it expanded, ``"stream"`` expands it again
       for every batch (little memory, slower). Accepted by key generator and
-      crypto configs; ``standard`` fixes ``"stream"`` for
-      ``mife/lwe_threshold``. See :mod:`pyfe4ai.schemes.abdp15_lwe`.
+      crypto configs. See :mod:`pyfe4ai.schemes.common.abdp15_lwe`.
 
    ``pairing_group_param``
-      Pairing group of the pairing-based schemes; default ``"MNT224"``. Only
+      Pairing group of the pairing-based schemes; default ``"BLS12-381"``
+      (the Rust extension; other names are charm-crypto groups). Only
       asymmetric (type-3) groups are accepted: symmetric ones such as
-      ``"SS512"`` are rejected. ``standard`` uses ``"BN254"``, about 100-bit,
-      with a :class:`~pyfe4ai.utils.exceptions.FESecurityWarning`. The
-      ``group`` attribute of a scheme object is the charm ``PairingGroup``
-      built from it.
+      ``"SS512"`` are rejected. ``standard`` requires ``"BLS12-381"``, about
+      120-126-bit, with a :class:`~pyfe4ai.core.exceptions.FESecurityWarning`.
+      The ``group`` attribute of a scheme object is the ``PairingGroup``
+      built from it (:mod:`pyfe4ai.primitives.pairing.pairing_backend`).
 
    ``sec_level``
       ``k`` of k-LIN in ``mife/fh_multi_ipe_pairing`` (default 2).
@@ -186,6 +275,17 @@ Labels, tags and keys
       Name of the function in the decentralized FH-MCFE
       (``mcfe/fh_multi_ipe_pairing_decentralized``): each client derives its
       key share for ``(tag_f, y_i)``, at most one per client and ``tag_f``.
+
+   ``sharing_id``
+      Random id of each sharing of a key that the ``mcfe/ring_lwe_threshold``
+      key generator issues, carried by its key shares and by the partial
+      decryptions; combiners refuse partials of two sharings
+      (:class:`~pyfe4ai.core.versions.MixedSharingsError`). Store and
+      transmit it with them (:doc:`threshold_ml`).
+
+   ``pp_binding``
+      Digest of the public-parameter fields a threshold LWE key share depends
+      on; servers refuse a key share bound to other parameters.
 
    ``mac_keys`` / ``tags``
       Client-to-server MAC keys of tMIFE-LWE, tMCFE-Ring-LWE and
@@ -239,7 +339,7 @@ Review status and trust
 
    known-insecure
       A concrete privacy defect is known; the key generator and crypto
-      objects emit :class:`~pyfe4ai.utils.exceptions.FESecurityWarning`.
+      objects emit :class:`~pyfe4ai.core.exceptions.FESecurityWarning`.
 
    honest-but-curious
       The trust model of the threshold decryption servers: fewer than ``t``
