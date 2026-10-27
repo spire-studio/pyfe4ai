@@ -110,16 +110,22 @@ def test_matches_libsodium():
         buf2 = out()
         SODIUM.crypto_scalarmult_ristretto255(buf2, k2.to_bytes(32, "little"), buf.raw)
         assert R.encode(R.mul(point, k2)) == buf2.raw
+    # RFC 9496 rejects every encoding with bit 255 set. libsodium before 1.0.19
+    # (e.g. 1.0.18 of Ubuntu 24.04) ignores that bit in its canonical check, so
+    # the comparison uses the low 255 bits and the high bit is checked on its own.
     agree = 0
     for _ in range(500):
         data = rng.randbytes(32)
+        low = data[:31] + bytes([data[31] & 0x7F])
         try:
-            R.decode(data)
+            R.decode(low)
             mine = True
         except ValueError:
             mine = False
-        assert mine == (SODIUM.crypto_core_ristretto255_is_valid_point(data) == 1)
+        assert mine == (SODIUM.crypto_core_ristretto255_is_valid_point(low) == 1)
         agree += mine
+        with pytest.raises(ValueError):
+            R.decode(low[:31] + bytes([low[31] | 0x80]))
     assert agree  # some random strings are valid encodings
 
 
