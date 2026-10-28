@@ -142,16 +142,30 @@ jobs:
             m4
 
       - name: Build and install PBC
-        # the SHA-256 of the archive, as in docker/Dockerfile.pairing
+        # the SHA-256 of the archive, as in docker/Dockerfile.pairing; the
+        # Internet Archive copy when crypto.stanford.edu does not answer, and
+        # Ubuntu's libpbc-dev (PBC 0.5.14) when neither gives that archive
         run: |
-          wget -q https://crypto.stanford.edu/pbc/files/pbc-1.0.0.tar.gz
-          echo "18275a367283077bafe35f443200499e3b19c4a3754953da2a1b2f0d6b5922dc  pbc-1.0.0.tar.gz" | sha256sum -c -
-          tar -xzf pbc-1.0.0.tar.gz
-          cd pbc-1.0.0
-          ./configure
-          make
-          sudo make install
-          sudo ldconfig
+          for url in \
+            https://crypto.stanford.edu/pbc/files/pbc-1.0.0.tar.gz \
+            https://web.archive.org/web/2020id_/https://crypto.stanford.edu/pbc/files/pbc-1.0.0.tar.gz
+          do
+            rm -f pbc-1.0.0.tar.gz
+            if wget -q --timeout=30 --tries=2 -O pbc-1.0.0.tar.gz "$url" &&
+               echo "18275a367283077bafe35f443200499e3b19c4a3754953da2a1b2f0d6b5922dc  pbc-1.0.0.tar.gz" | sha256sum -c -; then
+              echo "PBC 1.0.0 from $url"
+              tar -xzf pbc-1.0.0.tar.gz
+              cd pbc-1.0.0
+              ./configure
+              make
+              sudo make install
+              sudo ldconfig
+              exit 0
+            fi
+          done
+          echo "PBC 1.0.0 not available; installing Ubuntu's libpbc-dev"
+          sudo apt-get install -y libpbc-dev
+          dpkg -s libpbc-dev | grep '^Version'
 
       - name: Set up Conda
         uses: conda-incubator/setup-miniconda@v3
