@@ -16,10 +16,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # PBC 1.0.0 for charm-crypto, checked against the SHA-256 of the archive
-# (computed when the archive was downloaded, 2026-10)
+# (computed when the archive was downloaded, 2026-10); the Internet Archive
+# copy when crypto.stanford.edu does not answer
 ARG PBC_SHA256=18275a367283077bafe35f443200499e3b19c4a3754953da2a1b2f0d6b5922dc
-RUN wget -q https://crypto.stanford.edu/pbc/files/pbc-1.0.0.tar.gz \
-    && echo "${PBC_SHA256}  pbc-1.0.0.tar.gz" | sha256sum -c - \
+RUN for url in \
+        https://crypto.stanford.edu/pbc/files/pbc-1.0.0.tar.gz \
+        https://web.archive.org/web/2020id_/https://crypto.stanford.edu/pbc/files/pbc-1.0.0.tar.gz; \
+    do \
+        rm -f pbc-1.0.0.tar.gz; \
+        wget -q --timeout=30 --tries=2 -O pbc-1.0.0.tar.gz "$url" \
+            && echo "${PBC_SHA256}  pbc-1.0.0.tar.gz" | sha256sum -c - \
+            && break; \
+    done \
     && tar -xzf pbc-1.0.0.tar.gz \
     && cd pbc-1.0.0 \
     && ./configure \
