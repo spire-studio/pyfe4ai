@@ -15,6 +15,8 @@ compatibility).
   through the ML adapter, the threshold and decentralized flows, and
   parameter generation of every registry entry); the family commands also
   cover the SIFE, MIFE and quadratic schemes they left out.
+- Benchmarks: `fl-compare --weights`, one integer weight per client (default
+  all 1), for the weighted FL aggregation.
 
 ## [0.4.0] — 2026-10-26
 
