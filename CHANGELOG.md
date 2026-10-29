@@ -5,6 +5,17 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/) (pre-1.0: minor bumps may break
 compatibility).
 
+## [Unreleased]
+
+### Added
+
+- Benchmarks: `--security-profile` for the scheme-family commands of
+  `benchmarks/run.py` (`sife` to `quadratic`, `ndarray`), and the commands
+  `fl-aggregation`, `fl-multiparty` and `setup-costs` (gradient aggregation
+  through the ML adapter, the threshold and decentralized flows, and
+  parameter generation of every registry entry); the family commands also
+  cover the SIFE, MIFE and quadratic schemes they left out.
+
 ## [0.4.0] — 2026-10-26
 
 **Highlights.** An optional Rust extension runs the lattice, threshold,

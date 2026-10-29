@@ -9,6 +9,9 @@ import numpy as np
 
 from _common import BENCHMARK_HEADER
 from _common import emit_results
+from _common import keygen_config
+from _common import parse_args
+from _common import run_cases
 from _common import profile_value
 from _common import prepare_benchmark
 from _common import resolve_rounds
@@ -63,7 +66,7 @@ def _bench_sife_helper(name: str, kg_cls, crypto_cls, config: dict, weight: int)
     fusion_weight = [weight]
 
     for _ in range(ROUNDS):
-        kg = kg_cls(config)
+        kg = kg_cls(keygen_config(config))
         kg.setup()
         pp = kg.get_public_parameters()
         enc = crypto_cls(
@@ -137,7 +140,7 @@ def _bench_mife_fh_multi_ipe() -> dict:
     )
 
     for _ in range(ROUNDS):
-        kg = MIFEFHMultiIPEPairingKeyGenerator(cfg)
+        kg = MIFEFHMultiIPEPairingKeyGenerator(keygen_config(cfg))
         kg.setup()
         pp = kg.get_public_parameters()
         dct_ct = {}
@@ -219,13 +222,13 @@ def _bench_mcfe_fh_multi_ipe(name: str, decentralized: bool = False, threshold: 
 
     for _ in range(ROUNDS):
         if decentralized:
-            kg = DecentralizedMCFEFHMultiIPEPairingKeyGenerator(base_cfg)
+            kg = DecentralizedMCFEFHMultiIPEPairingKeyGenerator(keygen_config(base_cfg))
             actor_cls = DecentralizedMCFEFHMultiIPEPairing
         elif threshold:
-            kg = ThresholdMCFEFHMultiIPEPairingKeyGenerator(base_cfg)
+            kg = ThresholdMCFEFHMultiIPEPairingKeyGenerator(keygen_config(base_cfg))
             actor_cls = ThresholdMCFEFHMultiIPEPairing
         else:
-            kg = MCFEFHMultiIPEPairingKeyGenerator(base_cfg)
+            kg = MCFEFHMultiIPEPairingKeyGenerator(keygen_config(base_cfg))
             actor_cls = MCFEFHMultiIPEPairing
         kg.setup()
         pp = kg.get_public_parameters()
@@ -344,7 +347,7 @@ def _bench_quadratic(name: str, quad_cls, kg_cls, config: dict, lhs: list[np.nda
     )
 
     for _ in range(ROUNDS):
-        kg = kg_cls(config)
+        kg = kg_cls(keygen_config(config))
         kg.setup()
         pp = kg.get_public_parameters()
         enc = quad_cls({"id": "nid_default", "precision": PRECISION, "keys": {"pp": pp}})
@@ -413,7 +416,7 @@ def main(argv=None, prog=None) -> None:
     parser.add_argument("--output", choices=["csv", "json"], default="csv")
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--seed", type=int, default=7)
-    args = parser.parse_args(argv)
+    args = parse_args(parser, argv)
     prepare_benchmark(args.seed)
 
     override_shape = None
@@ -459,30 +462,30 @@ def main(argv=None, prog=None) -> None:
         )
 
     def sife_group() -> list[dict]:
-        return [
-            sife_lwe(),
-            _bench_sife_helper(
+        return run_cases([
+            sife_lwe,
+            lambda: _bench_sife_helper(
                 "SIFE/FullySecLWE",
                 SIFEFullySecLWEKeyGenerator,
                 SIFEFullySecLWE,
                 {"sec_param": 64, "eta": 1, "lwe_n": sife_lwe_n + 4, "bound_x": FH_BOUND_X, "bound_y": 3},
                 2,
             ),
-            _bench_sife_helper(
+            lambda: _bench_sife_helper(
                 "SIFE/Paillier",
                 SIFEPaillierKeyGenerator,
                 SIFEPaillier,
                 {"sec_param": 64, "eta": 1, "bit_length": sife_bit_length, "bound_x": FH_BOUND_X, "bound_y": 3},
                 2,
             ),
-            _bench_sife_helper(
+            lambda: _bench_sife_helper(
                 "SIFE/DamgardDDH",
                 SIFEDamgardKeyGenerator,
                 SIFEDamgard,
                 {"sec_param": 64, "eta": 1, "modulus_length": sife_bit_length, "bound": max(20, sife_bound * 4)},
                 3,
             ),
-        ]
+        ])
 
     def fh_group() -> list[dict]:
         results = [
