@@ -96,5 +96,6 @@ markers = [
   "mife: tests/mife -- the multi-input schemes",
   "mcfe: tests/mcfe -- the multi-client schemes",
   "quadratic: tests/quadratic -- quadratic FE",
+  "policy: tests/policy -- the policy language, its compilers and encodings",
   "review: tests/review -- regression tests of the crypto reviews",
 ]
