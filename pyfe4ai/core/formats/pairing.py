@@ -1,7 +1,8 @@
 """
 The serialized objects of the pairing schemes: function-hiding IPFE
 (:mod:`pyfe4ai.schemes.sife.fh_ipe_pairing`), partially function-hiding IPFE
-(:mod:`pyfe4ai.schemes.sife.part_fh_ipe_pairing`), the function-hiding MIFE
+(:mod:`pyfe4ai.schemes.sife.part_fh_ipe_pairing`), ciphertext-policy
+attribute-based IPFE (:mod:`pyfe4ai.schemes.sife.cp_ab_pairing`), the function-hiding MIFE
 (:mod:`pyfe4ai.schemes.mife.fh_ipe_pairing`,
 :mod:`pyfe4ai.schemes.mife.fh_multi_ipe_pairing`), the function-hiding MCFE
 (:mod:`pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing` and its threshold and
@@ -103,6 +104,75 @@ class PartFHIPECiphertext(Record):
     """Ciphertext of SIFE partially FH-IPE (``Enc`` and ``Enc'``)."""
 
     ct = Field("``eta + 4`` G1 elements")
+
+
+# ---------------------------------------------------------------------------
+# SIFE ciphertext-policy attribute-based IPFE (ACGU20)
+
+
+class CPABRecord(Record):
+    """Parameter record of the attribute-based IPFE (the configuration only)."""
+
+    sec_param = Field("int")
+    eta = Field("int")
+    bound_x = Field("decimal string")
+    bound_y = Field("decimal string")
+    universe = Field("the attribute universe, :meth:`~pyfe4ai.policy.attributes.Universe.encoding`")
+    max_columns = Field("int, the columns a policy's span program may have")
+    max_rows = Field("int, the rows a policy's span program may have")
+    pairing_group_param = Field("the pairing group")
+    policy_compiler = Field("version marker, :data:`~pyfe4ai.policy.encoding.POLICY_COMPILER`")
+
+
+class CPABParameters(Record):
+    """Public parameters of the attribute-based IPFE (the public key included).
+
+    ``w_a`` and ``w_b`` have ``size + max_columns`` entries, ``size`` the slots
+    of the universe: index ``i < size`` is the slot
+    :meth:`~pyfe4ai.policy.attributes.Universe.index`, index ``size + k`` is
+    column ``k`` of a policy's span program.
+    """
+
+    eta = Field("int")
+    bound_x = Field("decimal string")
+    bound_y = Field("decimal string")
+    universe = Field("the attribute universe, :meth:`~pyfe4ai.policy.attributes.Universe.encoding`")
+    max_columns = Field("int, the columns a policy's span program may have")
+    max_rows = Field("int, the rows a policy's span program may have")
+    pairing_group_param = Field("the pairing group")
+    policy_compiler = Field("version marker, :data:`~pyfe4ai.policy.encoding.POLICY_COMPILER`")
+    universe_digest = Field(":meth:`~pyfe4ai.policy.attributes.Universe.digest` of ``universe``")
+    g1 = Field("G1")
+    g2 = Field("G2")
+    a = Field("two G1 elements, ``[a]_1``")
+    b = Field("two G2 elements, ``[b]_2``")
+    ua = Field("``eta`` G1 elements, ``[U^T a]_1``")
+    w_a = Field("pairs of G1 elements, ``[W_i^T a]_1``")
+    w_b = Field("pairs of G2 elements, ``[W_i b]_2``")
+    pp_binding = Field(":func:`~pyfe4ai.schemes.common.ac_binding.pp_digest` of the other fields")
+
+
+class CPABFunctionalKey(Record):
+    """Functional key of the attribute-based IPFE."""
+
+    attributes = Field("the sorted attribute labels of the key")
+    y = Field("``eta`` decimal strings, the weights")
+    k1 = Field("two G2 elements")
+    k0 = Field("two G2 elements")
+    k_attr = Field("``{\"label#copy\": two G2 elements}``, every copy of every label of the key")
+    pp_binding = Field("``pp_binding`` of the public parameters")
+
+
+class CPABCiphertext(Record):
+    """Ciphertext of the attribute-based IPFE."""
+
+    policy = Field("the policy, :func:`~pyfe4ai.policy.encoding.canonical_encoding`")
+    policy_digest = Field(":func:`~pyfe4ai.policy.encoding.policy_digest` of the policy")
+    policy_compiler = Field("version marker, :data:`~pyfe4ai.policy.encoding.POLICY_COMPILER`")
+    c1 = Field("two G1 elements")
+    c2 = Field("one pair of G1 elements per row of the policy's span program")
+    c3 = Field("``eta`` G1 elements")
+    pp_binding = Field("``pp_binding`` of the public parameters")
 
 
 # ---------------------------------------------------------------------------
