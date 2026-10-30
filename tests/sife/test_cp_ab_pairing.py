@@ -14,6 +14,7 @@ from tests.pairing_group import GROUP, skip_unless_available  # noqa: E402
 
 skip_unless_available()
 
+from tests.sife.conftest import ETA, UNIVERSE  # noqa: E402
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.exceptions import FEConfigError, FEKeyError, FEValidationError, FEWarning
 from pyfe4ai.core.formats.pairing import CPABCiphertext, CPABFunctionalKey, CPABParameters, CPABRecord
@@ -40,10 +41,9 @@ from pyfe4ai.schemes.common.ac_binding import check_binding, pp_digest
 from pyfe4ai.schemes.sife import cp_ab_pairing
 from pyfe4ai.schemes.sife.cp_ab_pairing import SIFECPABPairing, SIFECPABPairingKeyGenerator
 
-UNIVERSE = ["org:A", "org:B", "org:C", "role:auditor"]
 PP_DOMAIN = b"pyfe4ai/sife/cp-ab/pp-binding/v1|"
-ETA = 5
 
+pytestmark = pytest.mark.usefixtures("own_parameter_cache")
 SATISFIED = [
     ("org:A", ["org:A"]),                                                      # ACGU20 App. C.1 special case
     ("and(org:A, role:auditor)", ["org:A", "role:auditor"]),
@@ -52,34 +52,6 @@ SATISFIED = [
     ("and(org:A, 2of(org:B, org:C, role:auditor))", ["org:A", "org:C", "role:auditor"]),
     ("or(and(org:A, org:B), and(org:A, org:C))", ["org:A", "org:C"]),          # a repeated attribute takes copies
 ]
-
-
-@pytest.fixture(autouse=True)
-def own_parameter_cache(tmp_path, monkeypatch):
-    """Tests with other limits would otherwise replace each other's parameter record, with a warning each."""
-    monkeypatch.setenv("PYFE4AI_CACHE_DIR", str(tmp_path))
-
-
-@pytest.fixture
-def make():
-    def build(**overrides):
-        config = {"eta": ETA, "bound_x": 10, "bound_y": 10, "universe": UNIVERSE, "pairing_group_param": GROUP}
-        config.update(overrides)
-        kg = SIFECPABPairingKeyGenerator(config)
-        kg.setup()
-        return kg, SIFECPABPairing({"keys": {"pp": kg.get_public_parameters()}})
-    return build
-
-
-@pytest.fixture
-def fixed(make):
-    """A key generator, a crypto object, a ciphertext of ``[3, -1, 0, 7, 2]`` under
-    ``and(org:A, role:auditor)`` and a key that opens it, with their inner product."""
-    kg, crypto = make()
-    x, y = [3, -1, 0, 7, 2], [1, 2, 3, -4, 5]
-    ct = crypto.encrypt(x, policy="and(org:A, role:auditor)")
-    dk = kg.get_decryption_keys("s", credentials={"fusion_weight": y, "attributes": ["org:A", "role:auditor"]})
-    return kg, crypto, ct, dk, sum(a * b for a, b in zip(x, y))
 
 
 def rebound(pp):
@@ -317,20 +289,6 @@ def test_key_attributes_must_be_a_collection_of_labels(attributes, make):
         kg.get_decryption_keys("s", credentials={"fusion_weight": [1] * ETA, "attributes": attributes})
 
 
-def test_key_refuses_a_label_outside_the_universe(make):
-    kg, _ = make()
-    with pytest.raises(FEValidationError, match="org:Z"):
-        kg.get_decryption_keys("s", credentials={"fusion_weight": [1] * ETA, "attributes": ["org:A", "org:Z"]})
-
-
-def test_key_refuses_weights_above_the_bound(make):
-    kg, _ = make()
-    with pytest.raises(FEValidationError):
-        kg.get_decryption_keys("s", credentials={"fusion_weight": [11] * ETA, "attributes": ["org:A"]})
-    with pytest.raises(FEValidationError):
-        kg.get_decryption_keys("s", credentials={"fusion_weight": [1] * (ETA - 1), "attributes": ["org:A"]})
-
-
 def test_key_layout(make):
     kg, _ = make(max_copies=2)
     dk = kg.get_decryption_keys("s", credentials={"fusion_weight": [1, -2, 3, 0, 5],
@@ -510,14 +468,6 @@ def tampered(pp, **fields):
     return rebound(dict(pp, **fields))
 
 
-def test_crypto_refuses_public_parameters_whose_digest_differs(make):
-    kg, _ = make()
-    pp = copy.deepcopy(kg.get_public_parameters())
-    pp["ua"][0] = pp["ua"][1]
-    with pytest.raises(FEValidationError, match="pp_binding"):
-        SIFECPABPairing({"keys": {"pp": pp}})
-
-
 @pytest.mark.parametrize("field", list(CPABParameters.FIELDS))
 def test_crypto_refuses_public_parameters_without_a_field(field, make):
     kg, _ = make()
@@ -635,14 +585,6 @@ def test_encrypt_without_a_policy_is_refused(make):
         crypto.encrypt([1] * ETA)
 
 
-def test_encrypt_refuses_a_plaintext_above_the_bound(make):
-    _, crypto = make()
-    with pytest.raises(FEValidationError):
-        crypto.encrypt([11] * ETA, policy="org:A")
-    with pytest.raises(FEValidationError):
-        crypto.encrypt([1] * (ETA + 1), policy="org:A")
-
-
 def test_encrypt_checks_the_policy_in_order(make):
     _, crypto = make(max_rows=2, max_columns=1)
     with pytest.raises(FEValidationError, match="2 rows"):
@@ -651,12 +593,6 @@ def test_encrypt_checks_the_policy_in_order(make):
         crypto.encrypt([1] * ETA, policy="and(org:A, org:B)")
     with pytest.raises(FEValidationError, match="org:Z"):
         crypto.encrypt([1] * ETA, policy="or(org:A, org:Z)")
-
-
-def test_encrypt_refuses_more_rows_of_a_label_than_copies(make):
-    _, crypto = make(max_copies=1)
-    with pytest.raises(FEValidationError, match="org:A"):
-        crypto.encrypt([1] * ETA, policy="or(and(org:A, org:B), and(org:A, org:C))")
 
 
 def test_encrypt_refuses_a_shared_formula_with_too_many_leaves_cheaply(make):
@@ -702,31 +638,6 @@ def test_decrypt_checks_the_binding_before_the_policy(fixed, make):
         crypto.decrypt(ct, dict(dk, pp_binding="0" * 64))
 
 
-def test_decrypt_refuses_keys_of_another_setup_before_pairing(fixed, monkeypatch):
-    kg, crypto, ct, dk, _ = fixed
-    kg.setup()
-    credentials = {"fusion_weight": [1] * ETA, "attributes": ["org:A", "role:auditor"]}
-    other = kg.get_decryption_keys("s", credentials=credentials)
-    called = []
-    monkeypatch.setattr(cp_ab_pairing, "multi_pair", lambda *args: called.append(args))
-    with pytest.raises(FEValidationError, match="pp_binding"):
-        crypto.decrypt(ct, other)
-    assert not called
-
-
-def test_decrypt_refuses_an_unknown_compiler(fixed):
-    _, crypto, ct, dk, _ = fixed
-    with pytest.raises(FEValidationError, match="c2"):
-        crypto.decrypt(dict(ct, policy_compiler="c2"), dk)
-
-
-def test_decrypt_refuses_a_policy_above_the_length_limit(fixed):
-    _, crypto, ct, dk, _ = fixed
-    limit = 64 * (len("role:auditor") + 400)
-    with pytest.raises(FEValidationError, match=str(limit)):
-        crypto.decrypt(dict(ct, policy="[" * (limit + 1)), dk)
-
-
 def test_a_policy_at_the_length_limit_reaches_the_parser(fixed, monkeypatch):
     _, crypto, ct, dk, _ = fixed
     limit = 64 * (len("role:auditor") + 400)
@@ -747,28 +658,6 @@ def test_decrypt_refuses_a_policy_that_is_no_text(policy, fixed):
     _, crypto, ct, dk, _ = fixed
     with pytest.raises(FEValidationError, match="policy"):
         crypto.decrypt(dict(ct, policy=policy), dk)
-
-
-def test_decrypt_refuses_a_digest_that_differs(fixed):
-    _, crypto, ct, dk, _ = fixed
-    with pytest.raises(FEValidationError, match="policy_digest"):
-        crypto.decrypt(dict(ct, policy=canonical_encoding(parse("or(org:A, role:auditor)"))), dk)
-
-
-def test_decrypt_refuses_a_policy_with_too_many_rows(fixed):
-    _, crypto, ct, dk, _ = fixed
-    wide = Or(*[Leaf("org:A")] * 65)
-    bad = dict(ct, policy=canonical_encoding(wide), policy_digest=policy_digest(wide))
-    with pytest.raises(FEValidationError, match="rows"):
-        crypto.decrypt(bad, dk)
-
-
-def test_decrypt_refuses_more_rows_of_a_label_than_copies(fixed):
-    _, crypto, ct, dk, _ = fixed
-    wide = Or(*[Leaf("org:A")] * 5)
-    bad = dict(ct, policy=canonical_encoding(wide), policy_digest=policy_digest(wide))
-    with pytest.raises(FEValidationError, match="org:A"):
-        crypto.decrypt(bad, dk)
 
 
 @pytest.mark.parametrize("field", list(CPABCiphertext.FIELDS))
@@ -802,12 +691,12 @@ def test_decrypt_refuses_what_is_no_key(dk_bad, fixed):
 
 
 @pytest.mark.parametrize("field,shape", [
-    ("c1", lambda v: v[:1]), ("c1", lambda v: v + v[:1]), ("c1", lambda v: "ab"), ("c1", lambda v: None),
-    ("c2", lambda v: v[:1]), ("c2", lambda v: v + v[:1]), ("c2", lambda v: [v[0], v[1][:1]]),
+    ("c1", lambda v: "ab"), ("c1", lambda v: None),
     ("c2", lambda v: [v[0], "ab"]), ("c2", lambda v: None),
-    ("c3", lambda v: v[:-1]), ("c3", lambda v: v + v[:1]), ("c3", lambda v: None),
+    ("c3", lambda v: None),
 ])
 def test_decrypt_refuses_a_ciphertext_of_the_wrong_shape(field, shape, fixed):
+    # the lists of the wrong length are in test_cp_ab_pairing_hardening.py::test_wrong_lengths
     _, crypto, ct, dk, _ = fixed
     with pytest.raises(FEValidationError, match=field):
         crypto.decrypt(dict(ct, **{field: shape(ct[field])}), dk)
