@@ -111,7 +111,7 @@ the schemes by how the security profiles size them
        extension makes it the fastest choice for large vectors and
        gradients; post-quantum assumption
    * - ``pairing``
-     - the function-hiding and quadratic schemes
+     - the function-hiding and quadratic schemes, ``sife/cp_ab_pairing``
      - BLS12-381, about 120 to 126-bit security (below the 128-bit target);
        needs the Rust extension (or charm-crypto for other curves)
 
@@ -135,7 +135,10 @@ Each scheme lists its capabilities
 * ``binary_ct`` -- binary ciphertexts (``ct_format="binary"``, about a third
   of the JSON size);
 * ``rns`` -- an RNS modulus, a product of NTT primes
-  (``ring_modulus="rns"``).
+  (``ring_modulus="rns"``);
+* ``access_control`` -- the ciphertext carries an access policy
+  (``encrypt(..., policy=...)``), and a functional key decrypts it only if
+  its attributes satisfy the policy (``sife/cp_ab_pairing``).
 
 Review status
 -------------
@@ -146,7 +149,8 @@ Every scheme carries a review status (the full table is on
 its security argument is the project's own (the threshold layers of
 tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE and tMCFE-FH-Multi-IPE, and the carry
 mask of dMCFE-DDH); *unreviewed* -- not yet checked (the three
-``ddh_ristretto255`` schemes). No scheme is currently *known-insecure*.
+``ddh_ristretto255`` schemes and ``sife/cp_ab_pairing``). No scheme is
+currently *known-insecure*.
 
 Which scheme for which task
 ---------------------------

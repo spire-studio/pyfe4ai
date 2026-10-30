@@ -60,19 +60,20 @@ def test_unknown_schemes(bad):
 
 def test_list_schemes():
     ids = pyfe4ai.list_schemes()
-    assert ids == [s.id for s in registry.SCHEMES] and len(ids) == 42
+    assert ids == [s.id for s in registry.SCHEMES] and len(ids) == 43
     assert pyfe4ai.list_schemes("quadratic") == ["quadratic/quad", "quadratic/sgp", "quadratic/miqfe"]
     assert pyfe4ai.list_schemes("mcfe", capabilities="threshold") == [
         "mcfe/fh_multi_ipe_pairing_threshold", "mcfe/ddh_threshold", "mcfe/lwe_threshold", "mcfe/ring_lwe_threshold"]
     assert pyfe4ai.list_schemes(capabilities=["threshold", "ml_servers"]) == ["mcfe/ring_lwe_threshold"]
     assert pyfe4ai.list_schemes(status="unreviewed") == [
-        "sife/ddh_ristretto255", "mife/ddh_ristretto255", "mcfe/ddh_ristretto255"]
+        "sife/ddh_ristretto255", "sife/cp_ab_pairing", "mife/ddh_ristretto255", "mcfe/ddh_ristretto255"]
+    assert pyfe4ai.list_schemes(capabilities="access_control") == ["sife/cp_ab_pairing"]
     assert pyfe4ai.list_schemes(kind="lwe_matrix") == ["sife/fullysec_lwe", "mife/fullysec_lwe"]
     for kwargs in ({"family": "tmcfe"}, {"capabilities": "thresold"}, {"status": "ok"}, {"kind": "lattice"}):
         with pytest.raises(exceptions.FEValidationError, match="unknown"):
             pyfe4ai.list_schemes(**kwargs)
     assert set(pyfe4ai.CAPABILITIES) == {"labels", "threshold", "decentralized", "pairing", "ml_servers",
-                                          "binary_ct", "rns"}
+                                          "binary_ct", "rns", "access_control"}
 
 
 def test_get_scheme():

@@ -108,6 +108,13 @@ Pairing Utilities
    :members:
    :undoc-members:
 
+Dual Pairing Vector Spaces
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. automodule:: pyfe4ai.primitives.pairing.dpvs
+   :members:
+   :undoc-members:
+
 BLS12-381
 ^^^^^^^^^
 

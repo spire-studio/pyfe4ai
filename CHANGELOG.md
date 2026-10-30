@@ -5,6 +5,50 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/) (pre-1.0: minor bumps may break
 compatibility).
 
+## [Unreleased]
+
+### Added
+
+- **`pyfe4ai.policy`**, monotone access policies in pure Python (standard
+  library and `pyfe4ai.core.exceptions` only, Python integers). A policy is a
+  formula of attribute labels (`namespace:value`) built from `And`, `Or` and
+  `Threshold` nodes, written in a text syntax (`and(org:A, 2of(org:B, org:C,
+  role:auditor))`, `parse`) with a canonical encoding and a policy digest
+  (`canonical_encoding`, `policy_digest`). `Universe` fixes the labels of a
+  setup and the copies of each, and `attribute_to_zq` hashes a label to `Z_q`.
+  `compile_formula` turns a formula into a monotone span program by nested
+  Shamir sharing with the Lewko-Waters rules, with its shares and its
+  reconstruction coefficients (`compile_zero_one` rewrites the formula so
+  that every coefficient is 0 or 1); `read_once_rows` gives each row that
+  carries a repeated label a copy of its own; `qualified_families` lists the
+  minimal qualified and the maximal unqualified sets of a short list of
+  holders and `q2_violation` checks the Q2 condition. A formula is at most
+  `MAX_DEPTH` gates deep and compiles to at most `DEFAULT_MAX_ROWS` rows by
+  default; invalid input raises `FEValidationError`.
+- **`sife/cp_ab_pairing`** (`SIFECPABPairing`, `SIFECPABPairingKeyGenerator`,
+  `SIFECPABPairingConfig`; status *unreviewed*, it has had no cryptographic
+  review): ciphertext-policy attribute-based inner-product functional
+  encryption over pairings, after Abdalla, Catalano, Gay and Ursu (ASIACRYPT
+  2020), Sec. 3.1 Fig. 1 with the read-once span-program encoding of App. B.2
+  (`k = 1`). `encrypt(x, policy=...)` encrypts under a policy; a functional
+  key for a vector `y` and a set of attribute labels opens `<x, y>` only if
+  the labels satisfy the policy. Options: `universe` (required),
+  `max_copies` (default 4), `max_columns` (16) and `max_rows` (64). Rows of
+  attributes outside the policy are omitted from the ciphertext, a repeated
+  attribute takes copies, and the Decode of App. B.2 is used with the sign
+  corrected (see the module documentation). Ciphertexts, keys and public
+  parameters are bound to their setup. Like `sife/part_fh_ipe_pairing`, the
+  scheme has no ndarray helpers.
+- **`pyfe4ai.primitives.pairing.dpvs`**: dual pairing vector spaces over an
+  asymmetric pairing group (dual bases `B`, `B*` with `B B*^T = mu I`, vectors
+  of group elements, scalar combinations and the coordinate-wise pairing),
+  factored out of `mife/fh_multi_ipe_pairing` as a shared module.
+- **`access_control` capability** (`pyfe4ai.CAPABILITIES`): the ciphertext
+  carries an access policy and a functional key decrypts it only if its
+  attributes satisfy the policy;
+  `pyfe4ai.list_schemes(capabilities="access_control")` lists
+  `sife/cp_ab_pairing`. There are now 43 registered schemes.
+
 ## [0.4.0] — 2026-10-26
 
 **Highlights.** An optional Rust extension runs the lattice, threshold,

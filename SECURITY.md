@@ -27,7 +27,7 @@ Responsible reporting of security issues is appreciated, especially for:
   (`pyfe4ai.get_scheme_status(family, variant)`, README *Scheme Status*):
   four threshold layers and the dMCFE-DDH carry mask are our own constructions
   (*experimental*, no published proof), and the DDH schemes over ristretto255
-  are not yet reviewed.
+  and `sife/cp_ab_pairing` are not yet reviewed.
 - **Network and parties.** The library adds no defence against active network
   attackers and assumes authenticated channels between parties.
 - **Threshold schemes.** Decryption servers are honest-but-curious: partial

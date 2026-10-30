@@ -13,7 +13,7 @@ PAIRING_SCHEMES = sorted(
 _CONFIG = {
     "n": 2, "m": 2, "s": 2, "t": 2, "eta": 2,
     "lst_nid": ["nid_0", "nid_1"], "lst_sid": ["sid_0", "sid_1"],
-    "bound": 3, "bound_x": 3, "bound_y": 3,
+    "bound": 3, "bound_x": 3, "bound_y": 3, "universe": ["org:A", "role:auditor"],
 }
 #: BLS12-381 from the Rust extension (native); the others from charm-crypto
 ASYMMETRIC_GROUPS = [pytest.param("BLS12-381", marks=pytest.mark.native), "MNT224", "BN254"]
@@ -28,8 +28,8 @@ def _key_generator(key):
     return registry.get_scheme(key).key_generator
 
 
-def test_registry_has_ten_pairing_schemes():
-    assert len(PAIRING_SCHEMES) == 10
+def test_registry_has_eleven_pairing_schemes():
+    assert len(PAIRING_SCHEMES) == 11
 
 
 @pytest.mark.parametrize("name", ["SS512", "SS1024"])

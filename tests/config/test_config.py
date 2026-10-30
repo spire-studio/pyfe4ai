@@ -27,7 +27,7 @@ MINIMAL = {
     ("sife", "ddh"): {}, ("sife", "ddh_ristretto255"): {}, ("sife", "lwe"): {}, ("sife", "paillier"): {},
     ("sife", "damgard"): {}, ("sife", "ring_lwe"): {}, ("sife", "fullysec_ring_lwe"): {},
     ("sife", "fullysec_lwe"): {}, ("sife", "ddh_dynamic"): {}, ("sife", "fh_ipe_pairing"): {},
-    ("sife", "part_fh_ipe_pairing"): {},
+    ("sife", "part_fh_ipe_pairing"): {}, ("sife", "cp_ab_pairing"): {"universe": ["org:A", "role:auditor"]},
     ("mife", "ddh"): {"n": 2}, ("mife", "ddh_ristretto255"): {"n": 2}, ("mife", "lwe"): {"n": 2},
     ("mife", "paillier"): {"n": 2}, ("mife", "damgard"): {"n": 2}, ("mife", "ring_lwe"): {"n": 2},
     ("mife", "fullysec_lwe"): {"n": 2}, ("mife", "fh_ipe_pairing"): {"n": 2},
@@ -187,7 +187,8 @@ def test_key_generators_read_declared_options_only(scheme, monkeypatch):
 
 _ATTRIBUTE_DEFAULTS = {"eta", "bound_x", "bound_y", "bound", "bit_length", "ring_modulus", "label_hash", "t",
                        "flooding_accounting", "ct_format", "matrix_mode", "mddh_k", "m", "sec_level",
-                       "subspace_dim", "coeff_bound", "bound_c", "sec_param", "group", "stat_param"}
+                       "subspace_dim", "coeff_bound", "bound_c", "sec_param", "group", "stat_param", "max_copies",
+                       "max_columns", "max_rows"}
 
 
 @pytest.mark.parametrize("scheme", SCHEMES, ids="/".join)

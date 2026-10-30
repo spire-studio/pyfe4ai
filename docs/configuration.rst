@@ -44,7 +44,7 @@ Security profiles
      - ``sife/fullysec_lwe``, ``mife/fullysec_lwe``
      - refused
    * - pairing
-     - ``sife/fh_ipe_pairing``, ``sife/part_fh_ipe_pairing``, ``mife/fh_ipe_pairing``, ``mife/fh_multi_ipe_pairing``, ``mcfe/fh_multi_ipe_pairing``, ``mcfe/fh_multi_ipe_pairing_threshold``, ``mcfe/fh_multi_ipe_pairing_decentralized``, ``quadratic/quad``, ``quadratic/sgp``, ``quadratic/miqfe``
+     - ``sife/fh_ipe_pairing``, ``sife/part_fh_ipe_pairing``, ``sife/cp_ab_pairing``, ``mife/fh_ipe_pairing``, ``mife/fh_multi_ipe_pairing``, ``mcfe/fh_multi_ipe_pairing``, ``mcfe/fh_multi_ipe_pairing_threshold``, ``mcfe/fh_multi_ipe_pairing_decentralized``, ``quadratic/quad``, ``quadratic/sgp``, ``quadratic/miqfe``
      - ``pairing_group_param = 'BLS12-381'`` only, with a ``FESecurityWarning``
    * - ring_lwe
      - ``sife/ring_lwe``, ``sife/fullysec_ring_lwe``, ``mife/ring_lwe``, ``mcfe/ring_lwe``, ``mcfe/ring_lwe_threshold``, ``mcfe/ring_lwe_decentralized``
@@ -146,6 +146,9 @@ Refused and constrained combinations
    * - ``sife/part_fh_ipe_pairing``
      - ``subspace_dim`` not in ``1 .. eta - 1``; ``bound < subspace_dim * coeff_bound`` (at a public encryption)
      - ``FEValidationError``
+   * - ``sife/cp_ab_pairing``
+     - no ``universe``; ``eta * bound_x * bound_y`` above ``2^48``
+     - ``FEConfigError`` (no ``universe``); ``FEValidationError`` (the bound)
    * - pairing and quadratic schemes
      - a discrete-log bound above ``2^48`` (e.g. ``eta bound_x bound_y``, ``n m bound^3``)
      - ``ValueError`` at decryption (quadratic schemes: ``None`` and a warning)
@@ -786,6 +789,65 @@ Crypto objects also take:
      - ``1``
      - 
      - a positive int with ``k coeff_bound <= bound``
+
+``sife/cp_ab_pairing``
+~~~~~~~~~~~~~~~~~~~~~~
+
+:class:`~pyfe4ai.core.config.SIFECPABPairingConfig`; kind ``pairing``.
+
+.. list-table::
+   :header-rows: 1
+
+   * - option
+     - meaning
+     - default
+     - ``standard``
+     - accepted
+   * - sec_param
+     - unused (the pairing group fixes the security)
+     - ``128``
+     - 
+     - 
+   * - pairing_group_param
+     - pairing group
+     - ``'BLS12-381'``
+     - ``BLS12-381`` only
+     - an asymmetric pairing group (other than BLS12-381: needs charm-crypto)
+   * - eta
+     - inputs per client (the length of each inner product)
+     - ``5``
+     - 
+     - a positive int
+   * - bound_x
+     - bound X on the plaintext entries
+     - ``16``
+     - 
+     - a positive int
+   * - bound_y
+     - bound Y on the weights
+     - ``16``
+     - 
+     - a positive int
+   * - universe
+     - the attribute labels of the setup (the labels of every policy and every key)
+     - --
+     - 
+     - required: at least one label, each a ``str`` (see :mod:`pyfe4ai.policy.attributes`)
+   * - max_copies
+     - copies of each label that a policy may use (a repeated attribute takes copies)
+     - ``4``
+     - 
+     - a positive int
+   * - max_columns
+     - columns of a policy's span program (the limit on the policy's depth of thresholds)
+     - ``16``
+     - 
+     - a positive int
+   * - max_rows
+     - rows of a policy's span program (the limit on the policy's size)
+     - ``64``
+     - 
+     - a positive int
 
 ``mife/ddh``
 ~~~~~~~~~~~~

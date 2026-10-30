@@ -64,6 +64,10 @@ CONFIGS: dict[tuple[str, str], dict] = {
         "sec_param": 64, "bound": 10, "subspace_dim": 3, "coeff_bound": 1,
         "pairing_group_param": DEFAULT_PAIRING_GROUP,
     },
+    ("sife", "cp_ab_pairing"): {
+        "sec_param": 64, "bound_x": 8, "bound_y": 8, "universe": ["org:A", "org:B", "role:auditor"],
+        "pairing_group_param": DEFAULT_PAIRING_GROUP,
+    },
     ("mife", "ddh"): {"sec_param": 256, **_MULTI},
     ("mife", "ddh_ristretto255"): {**_MULTI},
     ("mife", "lwe"): {"sec_param": 64, "lwe_n": 16, "bound_x": 6, "bound_y": 6, **_MULTI},

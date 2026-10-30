@@ -137,6 +137,7 @@ PAIRING_GROUP = "pairing"
 ML_SERVERS = "ml_servers"
 BINARY_CT = "binary_ct"
 RNS = "rns"
+ACCESS_CONTROL = "access_control"
 #: The capabilities a scheme may have, with what they mean. ``labels``,
 #: ``threshold``, ``decentralized`` and ``pairing`` follow from the id and the
 #: kind; the others are declared per scheme.
@@ -151,6 +152,8 @@ CAPABILITIES = {
     "prepare_aggregation)",
     BINARY_CT: "binary ciphertexts (crypto option ct_format='binary', or the public parameters' format)",
     RNS: "an RNS modulus, a product of NTT primes (key generator option ring_modulus='rns')",
+    ACCESS_CONTROL: "the ciphertext carries an access policy (encrypt(..., policy=...)); a functional key "
+    "decrypts it only if its attributes satisfy the policy",
 }
 
 _REFUSED_TMIFE_LWE = (
@@ -182,6 +185,7 @@ _WORDS = {
     "ddh": "DDH", "lwe": "LWE", "ring": "Ring", "fullysec": "FullySec", "ristretto255": "Ristretto255",
     "dynamic": "Dynamic", "fh": "FH", "ipe": "IPE", "multi": "Multi", "part": "Part", "pairing": "Pairing",
     "paillier": "Paillier", "damgard": "Damgard", "quad": "Quad", "sgp": "SGP", "miqfe": "MIQFE",
+    "cp": "CP", "kp": "KP", "ab": "AB",
 }
 _MODIFIERS = ("threshold", "decentralized")
 
@@ -392,6 +396,12 @@ SCHEMES: tuple[Scheme, ...] = (
         "published with V^T M in the clear; keys leak M^T y, which for small "
         "eta - subspace_dim often determines a bounded y; public Enc needs bounded "
         "t; Enc' is run by the key generator; no QANIZK",
+    ),
+    _scheme(
+        "sife/cp_ab_pairing", PAIRING, UNREVIEWED, ADAPTED, "ACGU20 Sec. 3.1 Fig. 1 + App. B.2 (read-once MSP)",
+        note="k = 1; rows of attributes outside the policy are omitted; a repeated attribute "
+        "takes copies (max_copies); the Decode of App. B.2 with its sign corrected",
+        capabilities=(ACCESS_CONTROL,),
     ),
     # --- multi-input --------------------------------------------------------
     _scheme(

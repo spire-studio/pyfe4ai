@@ -63,6 +63,7 @@ Public and internal modules
   :mod:`pyfe4ai.core.profiles`, :mod:`pyfe4ai.core.exceptions` and
   :mod:`pyfe4ai.core.ids` (the rules for server and client ids, with
   ``is_id`` and ``as_id``);
+* :mod:`pyfe4ai.policy` (policy formulas, attribute universes, span programs);
 * :mod:`pyfe4ai.ml` and :mod:`pyfe4ai.ml.quantization`;
 * from :mod:`pyfe4ai.backend`: ``available``, ``get_backend``,
   ``set_backend``, ``backend``, ``active_backend``, ``get_threads``,
@@ -105,6 +106,8 @@ The package is organised in layers:
 * ``pyfe4ai.schemes`` -- the schemes by family (``sife``, ``mife``,
   ``mcfe``, ``quadratic``), with the components several families share in
   :mod:`pyfe4ai.schemes.common` and :mod:`pyfe4ai.schemes.threshold`;
+* :mod:`pyfe4ai.policy` -- monotone access policies and their span programs,
+  for the attribute-based schemes (pure Python);
 * :mod:`pyfe4ai.primitives` -- lattices, Gaussian sampling, hashing, groups
   and pairings;
 * :mod:`pyfe4ai.backend` -- the operations the schemes and primitives take
@@ -122,6 +125,7 @@ The package is organised in layers:
    mcfe
    quadratic
    common
+   policy
    config
    primitives
    backend

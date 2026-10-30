@@ -765,6 +765,25 @@ class SIFEPartFHIPEPairingConfig(SchemeConfig):
                          allowed="a positive int with ``k coeff_bound <= bound``")
 
 
+class SIFECPABPairingConfig(SchemeConfig):
+    """Config of :class:`~pyfe4ai.schemes.sife.cp_ab_pairing.SIFECPABPairingKeyGenerator`."""
+
+    SCHEME = ("sife", "cp_ab_pairing")
+    sec_param = PairingIPEConfig.sec_param
+    pairing_group_param = PAIRING_GROUP_PARAM
+    eta = ETA(default=5)
+    bound_x = BOUND_X(default=16)
+    bound_y = BOUND_Y(default=16)
+    universe = Option("the attribute labels of the setup (the labels of every policy and every key)", default=None,
+                      allowed="required: at least one label, each a ``str`` (see :mod:`pyfe4ai.policy.attributes`)")
+    max_copies = Option("copies of each label that a policy may use (a repeated attribute takes copies)", default=4,
+                        allowed="a positive int")
+    max_columns = Option("columns of a policy's span program (the limit on the policy's depth of thresholds)",
+                         default=16, allowed="a positive int")
+    max_rows = Option("rows of a policy's span program (the limit on the policy's size)", default=64,
+                      allowed="a positive int")
+
+
 # ---------------------------------------------------------------------------
 # MIFE
 
@@ -1116,6 +1135,8 @@ COMBINATIONS = (
     Combination("``mcfe/damgard``", "``mddh_k < 1``", "``FEValidationError``"),
     Combination("``sife/part_fh_ipe_pairing``", "``subspace_dim`` not in ``1 .. eta - 1``; "
                 "``bound < subspace_dim * coeff_bound`` (at a public encryption)", "``FEValidationError``"),
+    Combination("``sife/cp_ab_pairing``", "no ``universe``; ``eta * bound_x * bound_y`` above ``2^48``",
+                "``FEConfigError`` (no ``universe``); ``FEValidationError`` (the bound)"),
     Combination("pairing and quadratic schemes", "a discrete-log bound above ``2^48`` (e.g. "
                 "``eta bound_x bound_y``, ``n m bound^3``)", "``ValueError`` at decryption (quadratic "
                 "schemes: ``None`` and a warning)"),

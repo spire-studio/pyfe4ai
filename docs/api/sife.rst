@@ -84,3 +84,10 @@ Partial FH-IPE (Pairing)
 .. automodule:: pyfe4ai.schemes.sife.part_fh_ipe_pairing
    :members:
    :undoc-members:
+
+Ciphertext-Policy Attribute-Based IPFE (Pairing)
+------------------------------------------------
+
+.. automodule:: pyfe4ai.schemes.sife.cp_ab_pairing
+   :members:
+   :undoc-members:

@@ -9,6 +9,7 @@ import warnings
 
 import pytest
 
+import pyfe4ai
 from tests.pairing_group import GROUP, skip_unless_available  # noqa: E402
 
 skip_unless_available()
@@ -893,3 +894,14 @@ def test_multi_pair_is_called_once(fixed, monkeypatch):
     monkeypatch.setattr(cp_ab_pairing, "multi_pair", spy)
     assert crypto.decrypt(ct, dk) == expected
     assert calls == [5]
+
+
+def test_create_and_list():
+    kg, crypto_cls = pyfe4ai.create("sife/cp_ab_pairing", eta=2, universe=["a:1"], pairing_group_param=GROUP)
+    assert (type(kg).__name__, crypto_cls.__name__) == ("SIFECPABPairingKeyGenerator", "SIFECPABPairing")
+    assert pyfe4ai.list_schemes("sife", capabilities="access_control") == ["sife/cp_ab_pairing"]
+
+
+def test_missing_universe():
+    with pytest.raises(FEConfigError, match="universe"):
+        pyfe4ai.create("sife/cp_ab_pairing", eta=2, pairing_group_param=GROUP)
