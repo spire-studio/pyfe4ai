@@ -31,8 +31,14 @@ hold ``[a]_1, [b]_2, [U^T a]_1, [W_i^T a]_1, [W_i b]_2``; ``msk = U``, and the
   ``a^T W b = b^T W^T a``, and a bounded discrete log gives the result.
 
 ACGU20 Thm. 3.2 proves the scheme of Fig. 1 selectively simulation secure
-(SEL-SIM) from DDH in G1 and G2, for a secure predicate encoding. This
-implementation is unreviewed: it has had no cryptographic review yet.
+(SEL-SIM) from DDH in G1 and G2, for a secure predicate encoding. The proof is
+selective: it covers a challenge (the policy and the plaintext) chosen before
+the public parameters are seen. The policy of a ciphertext (``ct["policy"]``) and
+the attribute list of a key (``dk["attributes"]``) are public: they travel in
+the clear and hide nothing. Keys are trusted input to ``decrypt``: the
+``pp_binding`` of a key tells the objects of two setups apart and is not a
+signature. This implementation is unreviewed: it has had no cryptographic
+review yet.
 
 Deviations:
 
@@ -102,7 +108,8 @@ _DEFAULT_MAX_COPIES = 4
 _DEFAULT_MAX_COLUMNS = 16
 _GROUP_NAMES = {G1: "G1", G2: "G2"}
 
-# every decimal string of these objects is below 2**48: 16 digits refuse a long string before int() reads it
+# a decimal string of these objects (bound_x, bound_y, the entries of y) has at most 16 digits, so it stands for
+# an integer below 10**16, a little above 2**48; the pattern refuses a longer string before int() reads it
 _DECIMAL = re.compile(r"0|-?[1-9][0-9]{0,15}")
 
 
@@ -416,6 +423,15 @@ class SIFECPABPairing(IPFEAbsCrypto):
         self.max_policy_length = self.max_rows * (max(len(label) for label in universe.labels) + 400)
 
     def _check_policy_length(self, policy: str) -> None:
+        """Refuse a policy text of more than ``max_policy_length`` characters.
+
+        The limit is ``max_rows`` times the longest label of the universe plus a
+        margin per row, and it counts the characters of the canonical encoding.
+        That encoding is JSON, which writes ``"`` and ``\\`` of a label as two
+        characters each, so a policy over labels made mostly of those can be
+        refused at encryption although its labels fit: on purpose, because the
+        limit bounds the text that a ciphertext carries and a decryption reads.
+        """
         if len(policy) > self.max_policy_length:
             raise FEValidationError(
                 "the policy has {} characters, more than the limit of {} "

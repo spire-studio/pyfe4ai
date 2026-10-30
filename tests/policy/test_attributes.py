@@ -30,6 +30,10 @@ DESERET_LONG_I = "\N{DESERET CAPITAL LETTER LONG I}"           # U+10400, two UT
 DECOMPOSED_E_ACUTE = "e\N{COMBINING ACUTE ACCENT}"             # "e" + U+0301, not in NFC
 
 
+#: The limit on the digits of ``int(str)``, 0 for none; ``sys.get_int_max_str_digits`` exists from Python 3.10.7 on.
+_LIMIT = getattr(sys, "get_int_max_str_digits", lambda: 0)()
+
+
 class _MyStr(str):
     """A str subclass."""
 
@@ -313,11 +317,11 @@ def test_from_encoding_converts_a_recursion_error():
             Universe.from_encoding(text)
 
 
-@pytest.mark.skipif(not sys.get_int_max_str_digits(), reason="the interpreter has no limit on integer digits")
+@pytest.mark.skipif(not _LIMIT, reason="the interpreter has no limit on integer digits")
 def test_from_encoding_converts_the_integer_digit_limit():
     # int() refuses more digits than the limit and raises ValueError, which is converted
     with pytest.raises(FEValidationError, match="JSON"):
-        Universe.from_encoding("[" + "9" * (sys.get_int_max_str_digits() + 1) + ',["a:1"]]')
+        Universe.from_encoding("[" + "9" * (_LIMIT + 1) + ',["a:1"]]')
 
 
 def test_from_encoding_errors_name_the_fault_and_clip_big_input():

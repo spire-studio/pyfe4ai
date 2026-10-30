@@ -1,8 +1,8 @@
 """The exponent side of pyfe4ai.primitives.pairing.dpvs, on stub groups.
 
 No pairing backend is needed: ``random_dual_bases`` draws exponents from
-``group.random(ZR)`` only, and ``combine`` refuses malformed input before it
-touches the group. The stub hands out a fixed sequence of draws, so the order
+``group.random(ZR)`` only, and ``combine`` and ``vector_pair`` refuse malformed
+input before they touch the group. The stub hands out a fixed sequence of draws, so the order
 of the draws, the rejection of singular matrices and the scaling by ``mu`` are
 pinned. The expected answers of ``test_dual_bases_known_answer`` and
 ``test_singular_first_draw_and_mu_scaling`` were produced by the original
@@ -14,7 +14,7 @@ import gmpy2 as gp
 import pytest
 
 from pyfe4ai.core.exceptions import FEValidationError
-from pyfe4ai.primitives.pairing.dpvs import combine, random_dual_bases
+from pyfe4ai.primitives.pairing.dpvs import combine, random_dual_bases, vector_pair
 from pyfe4ai.primitives.pairing.pairing_backend import ZR
 
 MPZ = type(gp.mpz(0))
@@ -82,3 +82,15 @@ def test_combine_refuses_vectors_of_different_lengths():
 def test_combine_refuses_a_scalar_count_that_is_not_the_vector_count(scalars):
     with pytest.raises(FEValidationError, match="one scalar per vector"):
         combine([["a", "b"], ["c", "d"]], scalars, None)
+
+
+def test_vector_pair_refuses_empty_vectors():
+    # multi_pair would return None for an empty product: the pairing of no coordinates is not an element
+    with pytest.raises(FEValidationError, match="at least one"):
+        vector_pair([], [])
+
+
+@pytest.mark.parametrize("xs, ys", [(["a", "b"], ["c"]), (["a"], ["b", "c"]), ([], ["c"]), (["a"], [])])
+def test_vector_pair_refuses_vectors_of_different_lengths(xs, ys):
+    with pytest.raises(FEValidationError, match="same length"):
+        vector_pair(xs, ys)

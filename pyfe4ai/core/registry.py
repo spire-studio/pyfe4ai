@@ -91,7 +91,9 @@ class SchemeStatus:
         ``"faithful"``: the published construction as written.
         ``"adapted"``: the published construction with documented deviations or
         extensions (see ``note``). ``"ad-hoc"``: a composition with no published
-        construction behind it. ``"unknown"``: not assessed (unreviewed schemes).
+        construction behind it. ``"unknown"``: not assessed (the three
+        ``ddh_ristretto255`` schemes); a scheme that is unreviewed can have any
+        other fidelity, such as ``sife/cp_ab_pairing``, which is ``"adapted"``.
 
     ``module`` is the scheme's module, ``reference`` the construction it
     implements. All schemes additionally share the caveats of the README
@@ -152,8 +154,8 @@ CAPABILITIES = {
     "prepare_aggregation)",
     BINARY_CT: "binary ciphertexts (crypto option ct_format='binary', or the public parameters' format)",
     RNS: "an RNS modulus, a product of NTT primes (key generator option ring_modulus='rns')",
-    ACCESS_CONTROL: "the ciphertext carries an access policy (encrypt(..., policy=...)); a functional key "
-    "decrypts it only if its attributes satisfy the policy",
+    ACCESS_CONTROL: "the ciphertext or the key carries an access policy or an attribute set (from "
+    "pyfe4ai.policy); decryption succeeds only if the attributes satisfy the policy",
 }
 
 _REFUSED_TMIFE_LWE = (

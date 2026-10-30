@@ -111,6 +111,13 @@ def vector_pair(xs: list, ys: list):
     :func:`~pyfe4ai.primitives.pairing.pairing_backend.multi_pair`).
 
     Raises:
-        ValueError: If the vectors differ in length.
+        FEValidationError: If the vectors are empty (the product of no
+            pairings is not a group element) or differ in length.
     """
+    if len(xs) != len(ys):
+        raise FEValidationError(
+            "vector_pair needs vectors of the same length, got lengths {} and {}".format(len(xs), len(ys))
+        )
+    if not xs:
+        raise FEValidationError("vector_pair needs at least one coordinate")
     return multi_pair(xs, ys)

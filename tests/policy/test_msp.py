@@ -339,6 +339,18 @@ def test_reconstruction_checks_its_own_result():
         wrong.reconstruction({"h:a", "h:c"})
 
 
+def test_reconstruction_refuses_a_hand_built_program_around_a_deep_formula():
+    # compile_formula validates its formula, the constructor does not, and _solve recurses
+    deep = Leaf("a:0")
+    for i in range(3000):
+        deep = Or(Leaf("a:{}".format(i + 1)), deep)
+    hand_built = MSP(matrix=((1,),), row_labels=("a:0",), modulus=P, formula=deep)
+    with pytest.raises(FEValidationError, match="depth"):
+        hand_built.reconstruction({"a:0"})
+    with pytest.raises(FEValidationError, match="depth"):
+        hand_built.is_qualified({"a:0"})
+
+
 # ---------------------------------------------------------------------------
 # shares
 # ---------------------------------------------------------------------------

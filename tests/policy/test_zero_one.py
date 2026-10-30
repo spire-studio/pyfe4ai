@@ -185,6 +185,68 @@ def test_the_size_of_a_gate_with_many_children_does_not_overflow_the_message():
     assert "64" in str(info.value)
 
 
+@pytest.mark.parametrize("t", [300, 301])
+def test_a_very_wide_gate_is_refused_from_a_lower_bound_without_the_exact_binomial(monkeypatch, t):
+    # comb(n, k) >= 2**k for k <= n / 2: for k = min(t - 1, m - t) above 256 the count is bounded below, not computed
+    def guarded(n, k):
+        assert k <= 256, "comb was asked for k = {}, a count of more than 256 bits".format(k)
+        return comb(n, k)
+
+    monkeypatch.setattr(zero_one, "comb", guarded)
+    formula = Threshold(t, *_distinct_leaves(600))
+    with pytest.raises(FEValidationError, match="rows") as info:
+        threshold_to_cnf(formula)
+    with pytest.raises(FEValidationError, match="rows"):
+        compile_zero_one(formula, R)
+    k = 299                                          # min(t - 1, 600 - t) for both values of t
+    # the bound is given as a bound, never as an exact count, and it does not claim more than the exact count has
+    text = "at least 2**{}".format((600 * 2 ** k).bit_length() - 1)
+    assert text in str(info.value)
+    assert "64" in str(info.value)
+    assert 2 ** ((600 * 2 ** k).bit_length() - 1) <= 600 * comb(599, t - 1)
+
+
+def test_the_binomial_is_exact_up_to_k_256_and_bounded_from_k_257(monkeypatch):
+    asked = []
+
+    def spy(n, k):
+        asked.append(k)
+        return comb(n, k)
+
+    monkeypatch.setattr(zero_one, "comb", spy)
+    # k = min(t - 1, 600 - t) is 256 for t = 257 and 257 for t = 258
+    exact = 600 * comb(599, 256)
+    with pytest.raises(FEValidationError, match="rows") as info:
+        threshold_to_cnf(Threshold(257, *_distinct_leaves(600)))
+    assert asked == [256]
+    assert "at least 2**{}".format(exact.bit_length() - 1) in str(info.value)
+    del asked[:]
+    with pytest.raises(FEValidationError, match="rows") as info:
+        threshold_to_cnf(Threshold(258, *_distinct_leaves(600)))
+    assert asked == []
+    assert "at least 2**{}".format((600 * 2 ** 257).bit_length() - 1) in str(info.value)
+
+
+def test_the_binomial_uses_the_smaller_side_so_a_gate_with_t_near_m_is_counted_exactly(monkeypatch):
+    def guarded(n, k):
+        assert k <= 256, "comb was asked for k = {}".format(k)
+        return comb(n, k)
+
+    monkeypatch.setattr(zero_one, "comb", guarded)
+    with pytest.raises(FEValidationError, match="rows") as info:
+        threshold_to_cnf(Threshold(599, *_distinct_leaves(600)))       # comb(599, 598) = 599, so 600 * 599 rows
+    assert str(600 * 599) in str(info.value)
+    assert "at least" not in str(info.value)
+
+
+def test_a_limit_above_the_bound_still_decides_from_the_exact_count():
+    # with max_rows = 2**300 the bound 600 * 2**257 cannot decide, so the exact count of about 2**590 is used
+    exact = 600 * comb(599, 257)
+    with pytest.raises(FEValidationError, match="rows") as info:
+        threshold_to_cnf(Threshold(258, *_distinct_leaves(600)), max_rows=2 ** 300)
+    assert "at least 2**{}".format(exact.bit_length() - 1) in str(info.value)
+
+
 def test_the_size_of_a_shared_subformula_object_is_computed_without_expanding_it():
     f = Leaf("a:1")
     for _ in range(MAX_DEPTH):                  # 2**32 leaves when written out

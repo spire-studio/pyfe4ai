@@ -44,8 +44,9 @@ compatibility).
   of group elements, scalar combinations and the coordinate-wise pairing),
   factored out of `mife/fh_multi_ipe_pairing` as a shared module.
 - **`access_control` capability** (`pyfe4ai.CAPABILITIES`): the ciphertext
-  carries an access policy and a functional key decrypts it only if its
-  attributes satisfy the policy;
+  or the key carries an access policy or an attribute set (from
+  `pyfe4ai.policy`), and decryption succeeds only if the attributes satisfy
+  the policy;
   `pyfe4ai.list_schemes(capabilities="access_control")` lists
   `sife/cp_ab_pairing`. There are now 43 registered schemes.
 

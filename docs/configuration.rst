@@ -149,7 +149,7 @@ Refused and constrained combinations
    * - ``sife/cp_ab_pairing``
      - no ``universe``; ``eta * bound_x * bound_y`` above ``2^48``
      - ``FEConfigError`` (no ``universe``); ``FEValidationError`` (the bound)
-   * - pairing and quadratic schemes
+   * - the other pairing and quadratic schemes
      - a discrete-log bound above ``2^48`` (e.g. ``eta bound_x bound_y``, ``n m bound^3``)
      - ``ValueError`` at decryption (quadratic schemes: ``None`` and a warning)
 
@@ -839,7 +839,7 @@ Crypto objects also take:
      - 
      - a positive int
    * - max_columns
-     - columns of a policy's span program (the limit on the policy's depth of thresholds)
+     - columns of a policy's span program (1 for ``or``, one per child of ``and``, ``t`` for a threshold gate; a gate nested in another adds one less than that); each column takes one entry of the public parameters
      - ``16``
      - 
      - a positive int

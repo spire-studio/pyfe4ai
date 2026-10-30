@@ -23,7 +23,11 @@ several clauses share counted once per clause, number
   ``comb(m, t - 1) * (m - t + 1)`` leaves).
 
 The size is computed first, from the original formula, and a rewrite that would
-pass the row limit is refused before any node of it is built.
+pass the row limit is refused before any node of it is built. For a gate so wide
+that ``k = min(t - 1, m - t)`` is above 256, the binomial is not worked out when
+``2**k`` alone passes the limit: the count is bounded below by ``2**k`` times the
+sum, because ``comb(n, k) >= 2**k`` for ``k <= n / 2``, and the bound refuses the
+rewrite as the exact count would.
 :func:`compile_zero_one` hands the rewrite to
 :func:`~pyfe4ai.policy.msp.compile_formula`. Pure Python: the standard library,
 :mod:`pyfe4ai.core.exceptions` and :mod:`pyfe4ai.policy` only.
@@ -48,18 +52,42 @@ from pyfe4ai.policy.formula import (
 from pyfe4ai.policy.msp import MSP, compile_formula
 
 
+#: A count of up to this many bits is worked out and given in full; a larger one is
+#: given as a power of two that it reaches, and a gate that would need one is bounded.
+_EXACT_BITS = 256
+
+
 def _count_text(count: int) -> str:
     """*count* for an error message. The default limit on the digits of ``str(int)``
     would turn a gate with thousands of children into a ``ValueError``, so a count
-    beyond 256 bits is given as a power of two it reaches."""
-    if count.bit_length() <= 256:
+    beyond 256 bits is given as a power of two it reaches. Every lower bound of
+    :func:`_expanded_rows` has more than 256 bits, so a bound is always given as
+    "at least" and never as an exact count."""
+    if count.bit_length() <= _EXACT_BITS:
         return str(count)
     return "at least 2**{}".format(count.bit_length() - 1)
 
 
-def _expanded_rows(formula: Formula) -> int:
+def _gate_factor(m: int, t: int, max_rows: int) -> int:
+    """``comb(m - 1, t - 1)``, the number of clauses in which each child sits, or
+    a lower bound of it that already exceeds *max_rows*.
+
+    ``comb(n, k) >= 2**k`` for ``k <= n / 2``, and ``n = m - 1`` splits as
+    ``(t - 1) + (m - t)``, so ``k = min(t - 1, m - t)`` is at most ``n / 2`` and
+    ``comb(m - 1, t - 1) = comb(m - 1, k)``. Up to ``k = 256`` the binomial is
+    worked out; above it, ``2**k`` is returned when that alone passes *max_rows*,
+    which decides the refusal as the exact value would, and the binomial is
+    worked out when it does not."""
+    k = min(t - 1, m - t)
+    if k > _EXACT_BITS and (1 << k) > max_rows:
+        return 1 << k
+    return comb(m - 1, k)
+
+
+def _expanded_rows(formula: Formula, max_rows: int) -> int:
     """The number of leaves of ``threshold_to_cnf(formula)`` written out as a
-    tree, from the formula alone (see the module docstring). Each distinct node
+    tree, from the formula alone (see the module docstring), or a lower bound
+    of it that exceeds *max_rows* (:func:`_gate_factor`). Each distinct node
     object is visited once, so a formula whose shared sub-formulas stand for
     2**32 leaves answers at once."""
     rows: dict[int, int] = {}
@@ -69,7 +97,7 @@ def _expanded_rows(formula: Formula) -> int:
             continue
         total = sum(rows[id(child)] for child in node.children)
         if isinstance(node, Threshold) and 1 < node.t < len(node.children):
-            total *= comb(len(node.children) - 1, node.t - 1)
+            total *= _gate_factor(len(node.children), node.t, max_rows)
         rows[id(node)] = total
     return rows[id(formula)]
 
@@ -110,7 +138,8 @@ def threshold_to_cnf(formula: Formula, *, max_rows: int = DEFAULT_MAX_ROWS) -> F
     :func:`~pyfe4ai.policy.formula.validate_formula` (the rewrite drops the
     threshold gates and with them the rule on their leaf children, so it is
     checked here), for an expansion of more than *max_rows* leaves (the message
-    gives the number and the limit), and for a result nested deeper than
+    gives the number and the limit; a number of more than 256 bits is given as
+    "at least 2**N"), and for a result nested deeper than
     :data:`~pyfe4ai.policy.formula.MAX_DEPTH`.
     """
     # type(...) is int: a bool is not a limit here, and neither is an int subclass or a float
@@ -119,7 +148,7 @@ def threshold_to_cnf(formula: Formula, *, max_rows: int = DEFAULT_MAX_ROWS) -> F
     if not isinstance(formula, Formula):
         raise FEValidationError("formula must be a Formula, got {}".format(type(formula).__name__))
     validate_formula(formula)
-    rows = _expanded_rows(formula)
+    rows = _expanded_rows(formula, max_rows)
     if rows > max_rows:
         raise FEValidationError(
             "the formula has {} leaves after its threshold gates are rewritten to conjunctive normal form, "

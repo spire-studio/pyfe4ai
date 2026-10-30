@@ -25,6 +25,13 @@ ABDP15 LWE Base
    :members:
    :undoc-members:
 
+Access-Control Binding
+----------------------
+
+.. automodule:: pyfe4ai.schemes.common.ac_binding
+   :members:
+   :undoc-members:
+
 Threshold Schemes
 -----------------
 

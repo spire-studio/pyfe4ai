@@ -6,7 +6,8 @@ the leaf's attribute. A set of labels is *qualified* exactly when the formula
 holds, and then the rows its labels select combine, with the coefficients of
 :meth:`MSP.reconstruction`, to ``e_1 = (1, 0, ..., 0)``. A secret ``s`` is
 dealt as ``M * (s, r_2, ..., r_d)`` with random ``r_i`` (:meth:`MSP.shares`);
-the shares of a qualified set add up to ``s``, and for any other set ``e_1`` is
+the shares of a qualified set, combined with the reconstruction coefficients
+``w``, give ``s`` (``sum_j w_j share_j = s``), and for any other set ``e_1`` is
 not in the span of its rows (over a prime modulus), so its shares say nothing
 about ``s``.
 
@@ -65,7 +66,7 @@ class MSP:
     ``matrix[i]`` is row ``i``, the row of the ``i``-th leaf of the formula,
     and ``row_labels[i]`` is that leaf's attribute label. Make one with
     :func:`compile_formula`: the constructor does not check the pieces against
-    each other (:meth:`reconstruction` does check its own result).
+    each other (:meth:`reconstruction` does check the formula and its own result).
     """
 
     matrix: tuple[tuple[int, ...], ...]
@@ -107,7 +108,13 @@ class MSP:
         an ``Or`` gate uses its first satisfied child, an ``And`` gate all of
         its children, a ``Threshold`` gate its first ``t`` satisfied children
         with their Lagrange coefficients at 0.
+
+        The walk recurses, so the formula is validated first
+        (:func:`~pyfe4ai.policy.formula.validate_formula`): a program built by
+        hand around a formula that is too deep raises ``FEValidationError``,
+        not ``RecursionError``.
         """
+        validate_formula(self.formula)
         held = held_labels(labels)
         _, weights = self._solve(self.formula, 0, held)
         if weights is None:

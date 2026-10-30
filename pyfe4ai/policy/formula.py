@@ -207,6 +207,10 @@ def validate_formula(formula: Formula) -> None:
       :class:`And` and :class:`Or` and across the children of a threshold
       gate, so ``Threshold(2, a, Or(a, b))`` is valid and one holder of ``a``
       satisfies both of its children.
+
+    The rule looks at the direct leaf children of a threshold gate and no
+    deeper, so ``Threshold(2, a, Threshold(1, a))`` also passes: the second
+    child is a gate, whatever it holds.
     """
     height: dict[int, int] = {}
     for node in _postorder(formula):

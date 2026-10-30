@@ -136,9 +136,11 @@ Each scheme lists its capabilities
   of the JSON size);
 * ``rns`` -- an RNS modulus, a product of NTT primes
   (``ring_modulus="rns"``);
-* ``access_control`` -- the ciphertext carries an access policy
-  (``encrypt(..., policy=...)``), and a functional key decrypts it only if
-  its attributes satisfy the policy (``sife/cp_ab_pairing``).
+* ``access_control`` -- the ciphertext or the key carries an access policy
+  or an attribute set (:mod:`pyfe4ai.policy`), and decryption succeeds only
+  if the attributes satisfy the policy (``sife/cp_ab_pairing``: the
+  ciphertext carries the policy, ``encrypt(..., policy=...)``, and the key
+  the attributes).
 
 Review status
 -------------
@@ -192,6 +194,10 @@ Which scheme for which task
      - the ``lwe`` and ``ring_lwe`` variants (the decentralized
        ``lwe_decentralized`` derives its keys under a DCR modulus, which is
        not post-quantum)
+   * - Decrypt only for keys whose attributes satisfy an access policy
+       chosen at encryption
+     - ``sife/cp_ab_pairing`` (unreviewed; policies of ``and``, ``or`` and
+       threshold gates over attribute labels, see :doc:`api/policy`)
 
 The registered schemes
 ----------------------
