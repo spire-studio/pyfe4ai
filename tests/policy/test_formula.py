@@ -7,13 +7,25 @@ or paste step can normalize one spelling of a label into another, and look-alike
 from __future__ import annotations
 
 import dataclasses
+import time
 import unicodedata
 
 import pytest
 
 from pyfe4ai.core.exceptions import FEValidationError
 from pyfe4ai.policy.attributes import validate_label
-from pyfe4ai.policy.formula import MAX_DEPTH, And, Leaf, Or, Threshold, evaluate, validate_formula
+from pyfe4ai.policy.formula import (
+    MAX_DEPTH,
+    And,
+    Formula,
+    Leaf,
+    Or,
+    Threshold,
+    evaluate,
+    held_labels,
+    leaf_count,
+    validate_formula,
+)
 
 DECOMPOSED_E_ACUTE = "e\N{COMBINING ACUTE ACCENT}"             # "e" + U+0301, not in NFC
 PRECOMPOSED_E_ACUTE = "\N{LATIN SMALL LETTER E WITH ACUTE}"    # U+00E9, in NFC
@@ -249,3 +261,49 @@ def test_shared_subformulas_are_visited_once():
     shared = And(Leaf("a:1"), Leaf("a:2"))
     with pytest.raises(FEValidationError, match="a:1"):
         validate_formula(Threshold(2, shared, shared))
+
+
+# ---------------------------------------------------------------------------
+# leaf_count and held_labels
+# ---------------------------------------------------------------------------
+
+def test_leaf_count_is_the_number_of_leaves_written_out():
+    a, b, c, d = (Leaf("a:{}".format(i)) for i in range(4))
+    shared = Or(a, b)
+    for f in (a, And(a, b), Or(a, And(b, c)), Threshold(2, a, And(b, c), d), And(shared, shared),
+              Threshold(1, a), Or(a, a, a)):
+        assert leaf_count(f) == len(f.leaves())
+    assert leaf_count(a) == 1
+    assert leaf_count(And(shared, shared)) == 4          # a shared object counts once per occurrence
+
+
+def test_leaf_count_does_not_list_the_leaves_or_recurse(monkeypatch):
+    def refuse(self):
+        raise AssertionError("leaves() was called")
+
+    f = Leaf("a:1")
+    for _ in range(MAX_DEPTH):           # 2**32 leaves when written out
+        f = And(f, f)
+    chain = Leaf("a:1")
+    for i in range(20000):               # deeper than the interpreter's recursion limit
+        chain = And(chain, Leaf("b:{}".format(i)))
+    monkeypatch.setattr(Formula, "leaves", refuse)
+    started = time.perf_counter()
+    assert leaf_count(f) == 2**32
+    assert time.perf_counter() - started < 1.0
+    assert leaf_count(chain) == 20001
+
+
+@pytest.mark.parametrize("bad", [None, "a:1", 5, ["a:1"], Formula()])
+def test_leaf_count_refuses_what_is_not_a_formula(bad):
+    with pytest.raises(FEValidationError):
+        leaf_count(bad)
+
+
+def test_held_labels_is_the_check_evaluate_uses():
+    assert held_labels(["a:1", "a:2", "a:1"]) == frozenset({"a:1", "a:2"})
+    assert held_labels(iter(("a:1",))) == frozenset({"a:1"})
+    assert held_labels(set()) == frozenset()
+    for bad in ("a:1", b"a:1", 5, None, [["a:1"]]):
+        with pytest.raises(FEValidationError):
+            held_labels(bad)

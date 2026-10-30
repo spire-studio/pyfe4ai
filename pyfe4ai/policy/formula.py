@@ -8,14 +8,15 @@ can see locally (the label, the number of children, ``t``);
 the labels under one threshold gate). :func:`evaluate` says whether a set of
 labels satisfies a formula.
 
-:meth:`Formula.leaves`, :func:`evaluate` and :func:`validate_formula` walk a
-formula with an explicit stack, not recursion, so a formula nested deeper than
-the interpreter's recursion limit is refused by ``validate_formula`` with
-``FEValidationError``, not ``RecursionError``. (The ``==``, ``hash`` and
-``repr`` that the dataclasses generate do recurse: validate a formula before
-comparing or hashing it.) A sub-formula object that several gates share is
-visited once by ``evaluate`` and ``validate_formula``, but ``leaves()`` lists
-its labels once per occurrence.
+:meth:`Formula.leaves`, :func:`leaf_count`, :func:`evaluate` and
+:func:`validate_formula` walk a formula with an explicit stack, not recursion,
+so a formula nested deeper than the interpreter's recursion limit is refused by
+``validate_formula`` with ``FEValidationError``, not ``RecursionError``. (The
+``==``, ``hash`` and ``repr`` that the dataclasses generate do recurse:
+validate a formula before comparing or hashing it.) A sub-formula object that
+several gates share is visited once by ``leaf_count``, ``evaluate`` and
+``validate_formula``, but ``leaves()`` lists its labels once per occurrence: a
+formula of unknown size is counted with ``leaf_count`` before it is listed.
 """
 
 from __future__ import annotations
@@ -144,20 +145,42 @@ def _postorder(root) -> Iterator[Formula]:
             stack.extend((child, False) for child in reversed(_children(node)) if id(child) not in done)
 
 
+def leaf_count(formula: Formula) -> int:
+    """The number of leaves of *formula* written out as a tree, a sub-formula
+    object that several gates share counted once per occurrence.
+
+    It does not list the leaves and does not recurse: each distinct node
+    object is visited once, so a formula that stands for 2**32 leaves through
+    32 nested gates of shared children answers at once. Call it before
+    :meth:`Formula.leaves` on a formula whose size is not known.
+    """
+    count: dict[int, int] = {}
+    for node in _postorder(formula):
+        count[id(node)] = 1 if isinstance(node, Leaf) else sum(count[id(child)] for child in node.children)
+    return count[id(formula)]
+
+
+def held_labels(labels: Iterable[str]) -> frozenset[str]:
+    """The attribute *labels* a key holds, as a set: any iterable of hashable
+    labels, but not a single ``str`` or ``bytes`` (which would be read as a set
+    of one-character labels). Anything else raises ``FEValidationError``."""
+    if isinstance(labels, (str, bytes)):
+        raise FEValidationError("labels must be an iterable of attribute labels, not a single {}".format(
+            type(labels).__name__))
+    try:
+        return frozenset(labels)
+    except TypeError as exc:
+        raise FEValidationError("labels must be an iterable of attribute labels") from exc
+
+
 def evaluate(formula: Formula, labels: Iterable[str]) -> bool:
     """Whether the set of attribute *labels* satisfies *formula*.
 
     Labels that no leaf names are ignored, so adding labels never turns a
     satisfied formula into an unsatisfied one. *labels* is any iterable of
-    labels, not a single ``str``.
+    labels, not a single ``str`` (:func:`held_labels`).
     """
-    if isinstance(labels, (str, bytes)):
-        raise FEValidationError("labels must be an iterable of attribute labels, not a single {}".format(
-            type(labels).__name__))
-    try:
-        held = frozenset(labels)
-    except TypeError as exc:
-        raise FEValidationError("labels must be an iterable of attribute labels") from exc
+    held = held_labels(labels)
     value: dict[int, bool] = {}
     for node in _postorder(formula):
         if isinstance(node, Leaf):
