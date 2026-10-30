@@ -46,6 +46,9 @@ EXHAUSTIVE = [f for f, _ in KNOWN] + [
     Threshold(1, A, B),
     Threshold(1, A),
     Threshold(2, Threshold(2, A, B, C), Threshold(2, D, Leaf("h:e"), Leaf("h:f"))),
+    Threshold(2, A, Or(A, B)),                             # a label on a leaf child and inside another child
+    Threshold(2, And(A, B), And(A, C)),
+    Threshold(2, A, And(B, Or(C, A)), D),
 ]
 
 
@@ -203,19 +206,22 @@ def test_shares_of_a_set_that_does_not_satisfy_the_formula_do_not_depend_on_the_
     assert checked > 100
 
 
-def _random_formula(rng, pool, depth):
-    """A random formula over *pool*; the children of a Threshold gate get disjoint parts of the pool."""
+def _random_formula(rng, pool, depth, disjoint=True):
+    """A random formula over *pool*; with *disjoint*, the children of a Threshold gate get disjoint parts of the
+    pool, otherwise they all draw from the whole pool (and two direct leaf children may then share a label)."""
     if depth == 0 or len(pool) < 2 or rng.random() < 0.2:
         return Leaf(rng.choice(pool))
     kind = rng.choice(["and", "or", "threshold"])
     size = rng.randint(2, 4)
-    if kind == "threshold":
+    if kind == "threshold" and disjoint:
         size = min(size, len(pool))
         cuts = [0] + sorted(rng.sample(range(1, len(pool)), size - 1)) + [len(pool)]
         shuffled = rng.sample(pool, len(pool))
         children = [_random_formula(rng, shuffled[a:b], depth - 1) for a, b in zip(cuts, cuts[1:])]
         return Threshold(rng.randint(1, size), *children)
-    children = [_random_formula(rng, pool, depth - 1) for _ in range(size)]
+    children = [_random_formula(rng, pool, depth - 1, disjoint) for _ in range(size)]
+    if kind == "threshold":
+        return Threshold(rng.randint(1, size), *children)
     return And(*children) if kind == "and" else Or(*children)
 
 
@@ -231,6 +237,35 @@ def test_random_formulas_agree():
             held = {label for label in pool if rng.random() < 0.5}
             _check_labels(msp, formula, held, prime=True)
     assert seen_gates == {"Leaf", "And", "Or", "Threshold"}
+
+
+def _repeats_under_a_threshold(formula):
+    """Whether some Threshold gate has two children that name a label in common."""
+    for node in _nodes(formula):
+        if isinstance(node, Threshold):
+            names = [set(child.leaves()) for child in node.children]
+            if any(left & right for left, right in itertools.combinations(names, 2)):
+                return True
+    return False
+
+
+def test_random_formulas_with_a_label_in_several_threshold_children_agree():
+    rng = random.Random(20261101)
+    pool = ["r:{}".format(c) for c in "abcdef"]
+    checked = repeated = 0
+    while checked < 300:
+        formula = _random_formula(rng, pool, 3, disjoint=False)
+        try:
+            msp = compile_formula(formula, P)
+        except FEValidationError as exc:
+            assert "two leaf children of a Threshold gate share the label" in str(exc)
+            continue
+        checked += 1
+        repeated += _repeats_under_a_threshold(formula)
+        for _ in range(5):
+            held = {label for label in pool if rng.random() < 0.5}
+            _check_labels(msp, formula, held, prime=True)
+    assert repeated > 100
 
 
 def _nodes(formula):
@@ -265,6 +300,18 @@ def test_reconstruction_uses_every_row_of_a_repeated_label():
     assert weights is not None and set(weights) == {0, 1}
     assert _combination(msp, weights) == _unit(msp)
     assert msp.reconstruction({"h:b"}) is None
+
+
+def test_one_holder_of_a_label_in_two_children_of_a_threshold_gate_satisfies_both():
+    f = Threshold(2, A, Or(A, B))
+    assert evaluate(f, {"h:a"})
+    msp = compile_formula(f, P)
+    assert msp.row_labels == ("h:a", "h:a", "h:b")
+    weights = msp.reconstruction({"h:a"})
+    assert weights is not None and set(weights) == {0, 1}               # the two rows of the one label
+    assert _combination(msp, weights) == _unit(msp)
+    assert msp.reconstruction({"h:b"}) is None
+    assert msp.reconstruction({"h:a", "h:b"}) is not None
 
 
 def test_reconstruction_ignores_labels_the_formula_does_not_name():
@@ -475,7 +522,8 @@ def test_formula_must_be_a_formula(formula):
 
 def test_formulas_that_do_not_validate_are_refused():
     with pytest.raises(FEValidationError, match="h:a"):
-        compile_formula(Threshold(2, And(A, B), And(A, C)), P)           # one label under two threshold children
+        compile_formula(Threshold(2, A, B, A), P)                        # two direct leaf children of one label
+    compile_formula(Threshold(2, And(A, B), And(A, C)), P)               # a label inside two gate children is fine
     deep = Leaf("a:0")
     for i in range(MAX_DEPTH + 1):
         deep = Or(Leaf("a:{}".format(i + 1)), deep)

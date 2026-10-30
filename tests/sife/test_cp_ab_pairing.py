@@ -51,6 +51,7 @@ SATISFIED = [
     ("2of(org:A, org:B, role:auditor)", ["org:B", "role:auditor"]),
     ("and(org:A, 2of(org:B, org:C, role:auditor))", ["org:A", "org:C", "role:auditor"]),
     ("or(and(org:A, org:B), and(org:A, org:C))", ["org:A", "org:C"]),          # a repeated attribute takes copies
+    ("2of(org:A, or(org:A, org:B))", ["org:A"]),                               # one holder meets both children
 ]
 
 
@@ -120,7 +121,7 @@ def test_random_formulas(make):
         if max(leaves.count(label) for label in leaves) > 4 or len(leaves) > 12:
             continue
         try:
-            validate_formula(policy)    # the children of a threshold gate must not share a label
+            validate_formula(policy)    # two leaf children of a threshold gate must not share a label
         except FEValidationError:
             continue
         held = [label for label in labels if rng.random() < 0.6]
@@ -157,6 +158,7 @@ def test_objects_survive_json(fixed):
 
 @pytest.mark.parametrize("policy,held", [("and(org:A, role:auditor)", ["org:A"]),
                                          ("2of(org:A, org:B, org:C)", ["org:C"]),
+                                         ("2of(org:A, or(org:A, org:B))", ["org:B"]),
                                          ("org:A", [])])
 def test_unsatisfied_is_refused(policy, held, make):
     kg, crypto = make()

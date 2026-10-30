@@ -149,6 +149,17 @@ def test_parse_and_round_trip():
     assert from_canonical(canonical_encoding(F)) == F
 
 
+@pytest.mark.parametrize("text", [
+    "2of(a:1, or(a:1, a:2))",                           # a label inside a gate child does not count
+    "2of(and(a:1, a:2), and(a:1, a:3))",
+    "1of(a:1, and(a:2, 2of(a:1, a:3, a:4)))",
+])
+def test_a_label_repeated_inside_a_threshold_child_is_read_and_round_trips(text):
+    formula = parse(text)
+    assert from_canonical(canonical_encoding(formula)) == formula
+    assert policy_digest(formula) == policy_digest(parse(text))
+
+
 def test_parse_a_lone_leaf_and_whitespace():
     assert parse("org:A") == Leaf("org:A")
     assert parse("  \t\n org:A \r\n") == Leaf("org:A")
@@ -175,7 +186,7 @@ def test_parse_reads_labels_with_special_characters():
     "and a:1, a:2", "and (a:1, a:2)", "2 of(a:1, a:2)", "1of (a:1)",
     "nocolon", "a:", ":1", "and(a:1, bad)", "and(a:1, a:2#3)", "and(a:1, a:2\x00)", "and(a:1, a:2\x0b)",
     "and(a:1,\N{NO-BREAK SPACE}a:2)", "and(a:1, a:2\N{ZERO WIDTH SPACE})",
-    "2of(a:1, a:1)", "and(a:1, 2of(a:2, and(a:3, a:2), a:4), 2of(a:5, a:5))",
+    "2of(a:1, a:1)", "and(a:1, 2of(a:2, and(a:3, a:4), a:2), 2of(a:5, a:6))",
 ])
 def test_parse_errors(text):
     with pytest.raises(FEValidationError, match="position"):
@@ -321,8 +332,9 @@ def test_non_canonical_is_refused(data):
     '["leaf","a:1(2"]', '["leaf","a:1#2"]', '["leaf","a:\\u0000"]', '["leaf","a:\\ud800"]',
     '["leaf","a:\\u200b"]', '["leaf","a:\\n"]',
     '["leaf","a:' + DECOMPOSED_E_ACUTE + '"]',
-    # a threshold gate whose children share a label
-    '["th",2,["leaf","a:1"],["leaf","a:1"]]', '["th",2,["and",["leaf","a:1"],["leaf","a:2"]],["leaf","a:1"]]',
+    # a threshold gate with two leaf children of one label
+    '["th",2,["leaf","a:1"],["leaf","a:1"]]',
+    '["th",2,["leaf","a:1"],["and",["leaf","a:2"],["leaf","a:3"]],["leaf","a:1"]]',
 ])
 def test_from_canonical_refuses(data):
     with pytest.raises(FEValidationError):

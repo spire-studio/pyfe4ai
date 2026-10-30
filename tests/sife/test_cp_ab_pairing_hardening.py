@@ -167,7 +167,7 @@ def test_hostile_policy(text, reason, fixed):
 def test_too_many_rows(fixed):
     _, crypto, ct, dk, _ = fixed
     wide = "or({})".format(", ".join(["org:A"] * 65))
-    with pytest.raises(FEValidationError, match="rows"):
+    with pytest.raises(FEValidationError, match="more than the limit of 64 rows"):
         crypto.decrypt(swap_policy(ct, wide), dk)
 
 
@@ -184,7 +184,7 @@ def test_unknown_label(make):
 
 
 @pytest.mark.parametrize("option,policy,fragment", [
-    ("max_copies", "or(and(org:A, org:B), and(org:A, org:C))", "org:A"),    # org:A on two rows, one copy
+    ("max_copies", "or(and(org:A, org:B), and(org:A, org:C))", "copies per label"),   # org:A on two rows, one copy
     ("max_columns", "and(org:A, org:B)", "max_columns"),                    # two columns, one allowed
 ], ids=["max_copies", "max_columns"])
 def test_limits(option, policy, fragment, make):

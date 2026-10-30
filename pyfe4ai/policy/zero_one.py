@@ -108,7 +108,7 @@ def threshold_to_cnf(formula: Formula, *, max_rows: int = DEFAULT_MAX_ROWS) -> F
     bound is checked before anything is built. Raises ``FEValidationError`` for
     an invalid argument, for a formula that does not pass
     :func:`~pyfe4ai.policy.formula.validate_formula` (the rewrite drops the
-    threshold gates and with them the rule on their children's labels, so it is
+    threshold gates and with them the rule on their leaf children, so it is
     checked here), for an expansion of more than *max_rows* leaves (the message
     gives the number and the limit), and for a result nested deeper than
     :data:`~pyfe4ai.policy.formula.MAX_DEPTH`.

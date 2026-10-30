@@ -312,7 +312,7 @@ def parse(text: str) -> Formula:
     :func:`~pyfe4ai.policy.attributes.validate_label` refuses, a nesting
     deeper than ``MAX_DEPTH`` gates, a misplaced token, or text that ends
     early or goes on after the policy. A fault that only the whole formula
-    shows (a leaf label shared by the children of a threshold gate) is
+    shows (two leaf children of a threshold gate with the same label) is
     reported at the position where the policy starts.
     """
     if type(text) is not str:

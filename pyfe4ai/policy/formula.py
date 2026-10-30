@@ -5,8 +5,8 @@ label, :mod:`pyfe4ai.policy.attributes`), :class:`And`, :class:`Or` and
 :class:`Threshold` (``t`` of its children). The constructors check what they
 can see locally (the label, the number of children, ``t``);
 :func:`validate_formula` checks what only the whole tree shows (its depth and
-the labels under one threshold gate). :func:`evaluate` says whether a set of
-labels satisfies a formula.
+the leaf children of each threshold gate). :func:`evaluate` says whether a set
+of labels satisfies a formula.
 
 :meth:`Formula.leaves`, :func:`leaf_count`, :func:`evaluate` and
 :func:`validate_formula` walk a formula with an explicit stack, not recursion,
@@ -201,33 +201,29 @@ def validate_formula(formula: Formula) -> None:
     """Check what only the whole tree shows, or raise ``FEValidationError``:
 
     * its depth is at most :data:`MAX_DEPTH`;
-    * no two children of one :class:`Threshold` gate have a leaf label in
-      common, at any depth inside those children (the message names the
-      label). A label may repeat under :class:`And` and :class:`Or`, and
-      inside one child of a threshold gate.
+    * no :class:`Threshold` gate has two direct children that are leaves with
+      the same label (the message names the label). Labels inside the
+      children that are gates do not count: a label may repeat under
+      :class:`And` and :class:`Or` and across the children of a threshold
+      gate, so ``Threshold(2, a, Or(a, b))`` is valid and one holder of ``a``
+      satisfies both of its children.
     """
     height: dict[int, int] = {}
-    labels: dict[int, frozenset] = {}
     for node in _postorder(formula):
         key = id(node)
         if isinstance(node, Leaf):
             height[key] = 0
-            labels[key] = frozenset((node.label,))
             continue
-        children = [id(child) for child in node.children]
-        height[key] = 1 + max(height[child] for child in children)
+        height[key] = 1 + max(height[id(child)] for child in node.children)
         if height[key] > MAX_DEPTH:
             raise FEValidationError("formula depth exceeds the limit of {} gates on a path".format(MAX_DEPTH))
         if isinstance(node, Threshold):
             seen: set[str] = set()
-            for child in children:
-                shared = seen.intersection(labels[child])
-                if shared:
-                    raise FEValidationError(
-                        "the children of a Threshold gate share the leaf label {}; "
-                        "they must use distinct labels".format(clip(repr(min(shared))))
-                    )
-                seen.update(labels[child])
-            labels[key] = frozenset(seen)
-        else:
-            labels[key] = frozenset().union(*(labels[child] for child in children))
+            for child in node.children:
+                if isinstance(child, Leaf):
+                    if child.label in seen:
+                        raise FEValidationError(
+                            "two leaf children of a Threshold gate share the label {}; "
+                            "they must use distinct labels".format(clip(repr(child.label)))
+                        )
+                    seen.add(child.label)

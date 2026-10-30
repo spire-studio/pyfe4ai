@@ -134,6 +134,9 @@ EXHAUSTIVE = [
     Threshold(3, A, Or(B, C), And(D, E), Threshold(2, Leaf("h:f"), Leaf("h:g"), Leaf("h:h"))),
     Or(Threshold(2, A, B, C), And(D, E)),
     Threshold(2, Threshold(2, A, B, C), Threshold(2, D, E, Leaf("h:f"))),
+    Threshold(2, A, Or(A, B)),                                 # a label on a leaf child and inside another child
+    Threshold(2, And(A, B), And(A, C)),
+    Threshold(2, A, And(B, Or(C, A)), D),
 ]
 
 
@@ -239,17 +242,19 @@ def test_default_row_limit_is_64():
 # validation
 # ---------------------------------------------------------------------------
 
-def test_a_repeated_label_under_a_threshold_gate_is_refused():
+def test_two_direct_leaf_children_of_one_label_under_a_threshold_gate_are_refused():
     # the rewrite removes the threshold gate and with it the rule, so the input is validated first
     with pytest.raises(FEValidationError, match="a:1"):
         threshold_to_cnf(Threshold(2, Leaf("a:1"), Leaf("a:1")))
     with pytest.raises(FEValidationError, match="h:a"):
-        threshold_to_cnf(And(C, Threshold(2, And(A, B), And(A, D))))
+        threshold_to_cnf(And(C, Threshold(2, And(A, B), A, D, A)))
     with pytest.raises(FEValidationError, match="a:1"):
         compile_zero_one(Threshold(2, Leaf("a:1"), Leaf("a:1")), R)
-    # a label may repeat under And and Or, and inside one child of a threshold gate
+    # a label may repeat under And and Or, inside a child of a threshold gate, and across its gate children
     assert len(threshold_to_cnf(And(A, Or(A, B))).leaves()) == 3
     assert threshold_to_cnf(Threshold(2, And(A, A), B)) == And(And(A, A), B)
+    assert threshold_to_cnf(Threshold(2, A, Or(A, B))) == And(A, Or(A, B))
+    assert compile_zero_one(And(C, Threshold(2, And(A, B), And(A, D))), R).num_rows == 5
 
 
 def _nested_and_around_threshold(depth):

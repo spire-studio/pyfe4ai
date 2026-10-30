@@ -199,22 +199,35 @@ def test_a_label_may_repeat_outside_a_threshold():
     validate_formula(Threshold(1, And(Leaf("a:1"), Or(Leaf("a:1"), Leaf("a:2")))))   # inside one child
 
 
-def test_threshold_children_share_no_leaf_at_any_depth():
-    def threshold_with(clash):
-        return Threshold(2, Leaf("a:1"), And(Leaf("a:2"), Or(Leaf("a:3"), Leaf("a:9"))), clash)
-
-    validate_formula(threshold_with(Leaf("a:4")))
-    for clash, label in ((Leaf("a:9"), "a:9"), (And(Leaf("a:5"), Leaf("a:3")), "a:3"),
-                         (Or(Leaf("a:1"), Leaf("a:6")), "a:1")):
-        with pytest.raises(FEValidationError, match=label):
-            validate_formula(threshold_with(clash))
-    # two children that are equal subtrees share all their leaves
-    with pytest.raises(FEValidationError, match="x:1"):
-        validate_formula(Threshold(2, And(Leaf("x:1"), Leaf("x:2")), And(Leaf("x:1"), Leaf("x:2"))))
+def test_threshold_refuses_two_direct_leaf_children_with_one_label():
+    one, other = Leaf("a:1"), Leaf("a:2")
+    for f in (Threshold(2, Leaf("a:1"), Leaf("a:1")),
+              Threshold(2, one, one),                                       # the same Leaf object twice
+              Threshold(2, Leaf("a:1"), And(other, Leaf("a:3")), Leaf("a:1")),
+              Threshold(1, Leaf("a:2"), Leaf("a:1"), Or(other, Leaf("a:4")), Leaf("a:1"))):
+        with pytest.raises(FEValidationError, match="a:1"):
+            validate_formula(f)
     # the rule holds at every Threshold gate, however deep
-    nested = Or(Leaf("c:1"), And(Leaf("c:2"), Threshold(2, Leaf("c:3"), Or(Leaf("c:4"), Leaf("c:3")))))
+    nested = Or(Leaf("c:1"), And(Leaf("c:2"), Threshold(2, Leaf("c:3"), Leaf("c:4"), Leaf("c:3"))))
     with pytest.raises(FEValidationError, match="c:3"):
         validate_formula(nested)
+
+
+def test_threshold_accepts_a_label_that_repeats_inside_a_gate_child():
+    # only direct leaf children are compared: a label inside a gate child does not count
+    validate_formula(Threshold(2, Leaf("a:1"), Or(Leaf("a:1"), Leaf("a:2"))))
+    validate_formula(Threshold(2, And(Leaf("a:1"), Leaf("a:2")), And(Leaf("a:1"), Leaf("a:3"))))
+    validate_formula(Threshold(2, Leaf("a:1"), And(Leaf("a:2"), Or(Leaf("a:3"), Leaf("a:1"))), Leaf("a:4")))
+    validate_formula(Threshold(2, And(Leaf("x:1"), Leaf("x:2")), And(Leaf("x:1"), Leaf("x:2"))))   # equal subtrees
+    validate_formula(Or(Leaf("c:1"), And(Leaf("c:2"), Threshold(2, Leaf("c:3"), Or(Leaf("c:4"), Leaf("c:3"))))))
+
+
+def test_a_label_in_two_children_of_a_threshold_gate_is_one_holder_satisfying_both():
+    f = Threshold(2, Leaf("a:1"), Or(Leaf("a:1"), Leaf("a:2")))
+    validate_formula(f)
+    assert evaluate(f, {"a:1"})                     # one holder of a:1 satisfies both children
+    assert not evaluate(f, {"a:2"}) and not evaluate(f, set())
+    assert evaluate(f, {"a:1", "a:2"})
 
 
 def test_validate_formula_refuses_a_non_formula():
@@ -259,14 +272,16 @@ def test_shared_subformulas_are_visited_once():
     assert evaluate(f, {"a:1"})
     assert not evaluate(f, set())
     shared = And(Leaf("a:1"), Leaf("a:2"))
+    validate_formula(Threshold(2, shared, shared))         # gates, not direct leaves: their labels do not count
+    leaf = Leaf("a:1")
     with pytest.raises(FEValidationError, match="a:1"):
-        validate_formula(Threshold(2, shared, shared))
+        validate_formula(Threshold(2, leaf, leaf))
 
 
 def test_threshold_sharing_error_clips_the_label():
     label = "a:" + "x" * 100000
-    with pytest.raises(FEValidationError, match="share the leaf label") as caught:
-        validate_formula(Threshold(2, Leaf(label), And(Leaf(label), Leaf("a:2"))))
+    with pytest.raises(FEValidationError, match="share the label") as caught:
+        validate_formula(Threshold(2, Leaf(label), Leaf("a:2"), Leaf(label)))
     assert len(str(caught.value)) < 300
 
 
