@@ -16,7 +16,7 @@ import sys
 import pytest
 
 from pyfe4ai.core.exceptions import FEValidationError
-from pyfe4ai.policy.attributes import Universe, attribute_to_zq
+from pyfe4ai.policy.attributes import Universe, attribute_to_zq, clip, validate_label
 from pyfe4ai.policy.formula import And, Leaf, Or, Threshold
 from pyfe4ai.policy.msp import compile_formula
 from pyfe4ai.policy.read_once import read_once_rows
@@ -352,6 +352,62 @@ def test_from_encoding_refuses_text_with_one_extra_character():
         for extra in (" ", ",", "\n"):
             with pytest.raises(FEValidationError):
                 Universe.from_encoding(text[:pos] + extra + text[pos:])
+
+
+# ---------------------------------------------------------------------------
+# hostile text in error messages
+# ---------------------------------------------------------------------------
+
+HUGE = 100000
+
+
+def test_clip():
+    assert clip("") == "" and clip("abc") == "abc"
+    assert clip("x" * 40) == "x" * 40                     # the limit itself is kept whole
+    assert clip("x" * 41) == "x" * 40 + "..."
+    assert clip("x" * HUGE) == "x" * 40 + "..."
+    assert clip("abcdef", 3) == "abc..." and clip("abc", 3) == "abc"
+
+
+@pytest.mark.parametrize("label", [
+    "x" * HUGE,                                  # no colon
+    "a b" * HUGE + ":x",                         # the namespace
+    "a:" + "x" * HUGE + " ",                     # whitespace in the value
+    "a:" + "x" * HUGE + ",",                     # a reserved character
+    "a:" + "x" * HUGE + "\x00",                  # a control character
+    "a:" + "x" * HUGE + "\u200b",                # an invisible format character
+    "a:" + "x" * HUGE + "\ud800",                # a lone surrogate
+    "a:" + "x" * HUGE + DECOMPOSED_E_ACUTE,      # not in NFC
+    "a:" + "\x00" * HUGE,
+], ids=["no-colon", "namespace", "whitespace", "reserved", "control", "format", "surrogate", "nfc", "all-control"])
+def test_validate_label_clips_the_label_in_its_message(label):
+    with pytest.raises(FEValidationError) as caught:
+        validate_label(label)
+    assert 0 < len(str(caught.value)) < 300
+
+
+def test_validate_label_keeps_a_short_label_whole_in_its_message():
+    with pytest.raises(FEValidationError, match=r"'org:A B'"):
+        validate_label("org:A B")
+
+
+def test_universe_index_clips_the_label_in_its_message():
+    universe = Universe(["a:1"], 2)
+    for label in ("x" * HUGE, "a:" + "x" * HUGE, "\x00" * HUGE):
+        with pytest.raises(FEValidationError, match="not in the universe") as caught:
+            universe.index(label, 1)
+        assert len(str(caught.value)) < 300
+    with pytest.raises(FEValidationError, match="copy") as caught:
+        universe.index("a:1", "9" * HUGE)
+    assert len(str(caught.value)) < 300
+
+
+def test_read_once_rows_clip_the_label_in_their_message():
+    label = "a:" + "x" * HUGE
+    msp = compile_formula(Or(Leaf(label), Leaf(label), Leaf(label)), R, max_rows=3)
+    with pytest.raises(FEValidationError, match="limit of 2") as caught:
+        read_once_rows(msp, 2)
+    assert len(str(caught.value)) < 300
 
 
 # ---------------------------------------------------------------------------

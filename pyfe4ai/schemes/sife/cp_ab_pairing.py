@@ -82,6 +82,7 @@ from pyfe4ai.policy import (
     policy_digest,
     read_once_rows,
 )
+from pyfe4ai.policy.attributes import clip
 from pyfe4ai.primitives.pairing.bls12_381 import MAX_DLOG_BOUND
 from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, ZR, PairingGroup, multi_pair, pair
 from pyfe4ai.primitives.pairing.pairing_backend import deserialize_many, multiexp, pow_many
@@ -293,7 +294,7 @@ class SIFECPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             raise FEValidationError("attributes must be a collection of labels") from exc
         for label in items:
             if label not in self.universe:
-                raise FEValidationError("attribute label {!r} is not in the universe".format(label))
+                raise FEValidationError("attribute label {} is not in the universe".format(clip(repr(label))))
         return sorted(set(items))
 
     def get_decryption_keys(self, sid: str, **kwargs) -> dict | None:
@@ -366,7 +367,13 @@ class SIFECPABPairing(IPFEAbsCrypto):
             raise FEKeyError("no public parameters: keys needs the entry pp")
         self._read_parameters(pp)
         self.pp = pp
-        self.group = PairingGroup(pp["pairing_group_param"])
+        try:
+            self.group = PairingGroup(pp["pairing_group_param"])
+        except ImportError:     # no backend for a group that may exist: the installation, not the parameters
+            raise
+        except Exception as exc:    # charm raises AssertionError or its own Error for a name it does not know
+            raise FEValidationError("pairing_group_param {} is not a pairing group".format(
+                clip(repr(pp["pairing_group_param"])))) from exc
         check_asymmetric(self.group)
         self.order = gp.mpz(int(self.group.order()))
 
@@ -382,8 +389,11 @@ class SIFECPABPairing(IPFEAbsCrypto):
         if pp_digest(pp, _PP_DOMAIN) != parameters.pp_binding:
             raise FEValidationError("the public parameters do not agree with their pp_binding")
         if parameters.policy_compiler != POLICY_COMPILER:
-            raise FEValidationError("policy compiler {!r} is not this version's {!r}".format(
-                parameters.policy_compiler, POLICY_COMPILER))
+            raise FEValidationError("policy compiler {} is not this version's {!r}".format(
+                clip(repr(parameters.policy_compiler)), POLICY_COMPILER))
+        if type(parameters.pairing_group_param) is not str:
+            raise FEValidationError("pairing_group_param must be a str, got {}".format(
+                type(parameters.pairing_group_param).__name__))
         universe = Universe.from_encoding(parameters.universe)
         if parameters.universe_digest != universe.digest():
             raise FEValidationError("the universe_digest of the public parameters is not the digest of their universe")
@@ -420,7 +430,8 @@ class SIFECPABPairing(IPFEAbsCrypto):
                 msp.num_cols, self.max_columns))
         for label in msp.row_labels:
             if label not in self.universe:
-                raise FEValidationError("attribute label {!r} of the policy is not in the universe".format(label))
+                raise FEValidationError("attribute label {} of the policy is not in the universe".format(
+                    clip(repr(label))))
         return msp, read_once_rows(msp, self.universe.max_copies)
 
     def encrypt(self, lst_pt: list, policy=None) -> dict:
@@ -515,8 +526,8 @@ class SIFECPABPairing(IPFEAbsCrypto):
         _require_fields(ct, "ciphertext")
         _require_fields(key, "functional key")
         if ct.policy_compiler != POLICY_COMPILER:
-            raise FEValidationError("policy compiler {!r} is not this version's {!r}".format(
-                ct.policy_compiler, POLICY_COMPILER))
+            raise FEValidationError("policy compiler {} is not this version's {!r}".format(
+                clip(repr(ct.policy_compiler)), POLICY_COMPILER))
 
         if type(ct.policy) is not str:
             raise FEValidationError("the policy of a ciphertext must be a str")
@@ -537,12 +548,14 @@ class SIFECPABPairing(IPFEAbsCrypto):
 
         weights = msp.reconstruction(key.attributes)
         if weights is None:
-            raise FEKeyError("the attributes {} of the functional key do not satisfy the policy".format(key.attributes))
+            raise FEKeyError("the attributes {} of the functional key do not satisfy the policy".format(
+                clip(repr(key.attributes), 120)))
         names = ["{}#{}".format(*rows[j]) for j in weights]
         for name in names:
             if name not in key.k_attr:
                 raise FEValidationError(
-                    "k_attr has no entry {!r}: the attributes and the k_attr of the key disagree".format(name)
+                    "k_attr has no entry {}: the attributes and the k_attr of the key disagree".format(
+                        clip(repr(name)))
                 )
 
         group, order, pp = self.group, int(self.order), self.pp

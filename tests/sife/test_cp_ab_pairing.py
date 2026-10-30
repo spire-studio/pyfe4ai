@@ -34,7 +34,7 @@ from pyfe4ai.policy import (
 )
 from pyfe4ai.primitives.pairing import pairing_backend
 from pyfe4ai.primitives.pairing.pairing_backend import G1, G2
-from pyfe4ai.primitives.pairing.pairing_backend import PairingGroup
+from pyfe4ai.primitives.pairing.pairing_backend import PairingGroup, pairing_available
 from pyfe4ai.schemes.common import ac_binding
 from pyfe4ai.schemes.common.ac_binding import check_binding, pp_digest
 from pyfe4ai.schemes.sife import cp_ab_pairing
@@ -484,6 +484,15 @@ def test_check_binding():
         check_binding(pp, {}, "functional key")
 
 
+def test_check_binding_refuses_public_parameters_without_a_binding():
+    check_binding({"pp_binding": "abc"}, {"pp_binding": "abc"}, "ciphertext")
+    for pp in ({}, {"pp_binding": None}):
+        with pytest.raises(FEValidationError, match="public parameters.*pp_binding"):
+            check_binding(pp, {"pp_binding": "abc"}, "ciphertext")
+        with pytest.raises(FEValidationError, match="pp_binding"):      # neither side has one: not equal by default
+            check_binding(pp, {}, "ciphertext")
+
+
 def test_ac_binding_depends_on_the_standard_library_and_exceptions_only():
     with open(ac_binding.__file__, encoding="utf-8") as f:
         tree = ast.parse(f.read())
@@ -529,6 +538,33 @@ def test_crypto_refuses_an_unknown_compiler(make):
     kg, _ = make()
     with pytest.raises(FEValidationError, match="c2"):
         SIFECPABPairing({"keys": {"pp": tampered(kg.get_public_parameters(), policy_compiler="c2")}})
+
+
+@pytest.mark.parametrize("value", [5, None, ["BLS12-381"], {"name": "BLS12-381"}, True])
+def test_crypto_refuses_a_pairing_group_that_is_no_name(value, make):
+    kg, _ = make()
+    with pytest.raises(FEValidationError, match="pairing_group_param"):
+        SIFECPABPairing({"keys": {"pp": tampered(kg.get_public_parameters(), pairing_group_param=value)}})
+
+
+@pytest.mark.parametrize("name", ["nonsense", "", "x" * 100000], ids=["unknown", "empty", "huge"])
+def test_crypto_refuses_a_pairing_group_that_does_not_exist(name, make):
+    if not pairing_available("MNT224"):
+        pytest.skip("no charm: other groups than BLS12-381 are not built")
+    kg, _ = make()
+    with pytest.raises(FEValidationError, match="pairing_group_param") as caught:
+        SIFECPABPairing({"keys": {"pp": tampered(kg.get_public_parameters(), pairing_group_param=name)}})
+    assert len(str(caught.value)) < 300
+
+
+def test_a_symmetric_group_is_refused_by_both_classes(make):
+    if not pairing_available("SS512"):
+        pytest.skip("no charm: SS512 is not built")
+    with pytest.raises(FEValidationError, match="symmetric"):
+        SIFECPABPairingKeyGenerator({"eta": ETA, "universe": UNIVERSE, "pairing_group_param": "SS512"})
+    kg, _ = make()
+    with pytest.raises(FEValidationError, match="symmetric"):
+        SIFECPABPairing({"keys": {"pp": tampered(kg.get_public_parameters(), pairing_group_param="SS512")}})
 
 
 def test_crypto_refuses_a_universe_of_another_spelling(make):
@@ -862,10 +898,21 @@ def test_a_used_row_missing_from_k_attr_is_refused(fixed):
         crypto.decrypt(ct, dict(dk, k_attr=k_attr))
 
 
-def test_an_unused_row_may_be_missing_from_k_attr(fixed):
-    _, crypto, ct, dk, expected = fixed
-    k_attr = {name: value for name, value in dk["k_attr"].items() if name != "role:auditor#4"}
-    assert crypto.decrypt(ct, dict(dk, k_attr=k_attr)) == expected
+def test_an_unused_row_may_be_missing_from_k_attr(make):
+    kg, crypto = make()
+    x, y = [3, -1, 0, 7, 2], [1, 2, 3, -4, 5]
+    ct = crypto.encrypt(x, policy="or(org:A, org:B)")
+    dk = kg.get_decryption_keys("s", credentials={"fusion_weight": y, "attributes": ["org:A", "org:B"]})
+    msp = compile_formula(parse("or(org:A, org:B)"), int(PairingGroup(GROUP).order()), max_rows=64)
+    assert msp.reconstruction(dk["attributes"]) == {0: 1}        # the first row only: the weight of the second is 0
+    expected = sum(a * b for a, b in zip(x, y))
+
+    def without(name):
+        return dict(dk, k_attr={key: value for key, value in dk["k_attr"].items() if key != name})
+
+    assert crypto.decrypt(ct, without("org:B#1")) == expected
+    with pytest.raises(FEValidationError, match="org:A#1"):
+        crypto.decrypt(ct, without("org:A#1"))
 
 
 def test_decrypt_needs_the_keys_attributes_to_satisfy_the_policy_even_with_k_attr(fixed):
@@ -894,6 +941,64 @@ def test_multi_pair_is_called_once(fixed, monkeypatch):
     monkeypatch.setattr(cp_ab_pairing, "multi_pair", spy)
     assert crypto.decrypt(ct, dk) == expected
     assert calls == [5]
+
+
+# ---------------------------------------------------------------------------
+# hostile text in error messages
+
+
+HUGE = 100000
+
+
+def test_a_huge_policy_compiler_is_clipped_in_the_message(fixed, make):
+    _, crypto, ct, dk, _ = fixed
+    with pytest.raises(FEValidationError, match="policy compiler") as caught:
+        crypto.decrypt(dict(ct, policy_compiler="c" * HUGE), dk)
+    assert len(str(caught.value)) < 300
+    kg, _ = make()
+    with pytest.raises(FEValidationError, match="policy compiler") as caught:
+        SIFECPABPairing({"keys": {"pp": tampered(kg.get_public_parameters(), policy_compiler="c" * HUGE)}})
+    assert len(str(caught.value)) < 300
+
+
+def test_a_huge_label_is_clipped_in_the_message_of_the_key_generator(make):
+    kg, _ = make()
+    for label in ("org:" + "x" * HUGE, "x" * HUGE, "\x00" * HUGE):
+        with pytest.raises(FEValidationError, match="not in the universe") as caught:
+            kg.get_decryption_keys("s", credentials={"fusion_weight": [1] * ETA, "attributes": [label]})
+        assert len(str(caught.value)) < 300
+
+
+def test_a_huge_label_of_the_policy_is_clipped_in_the_message(fixed):
+    _, crypto, ct, dk, _ = fixed
+    # a valid label that is in no universe, short enough for the policy to pass the length limit
+    unknown = Leaf("org:" + "x" * 20000)
+    bad = dict(ct, policy=canonical_encoding(unknown), policy_digest=policy_digest(unknown))
+    with pytest.raises(FEValidationError, match="not in the universe") as caught:
+        crypto.decrypt(bad, dk)
+    assert len(str(caught.value)) < 300
+    with pytest.raises(FEValidationError, match="not in the universe") as caught:
+        crypto.encrypt([1] * ETA, policy=unknown)
+    assert len(str(caught.value)) < 300
+
+
+def test_huge_attributes_of_a_key_are_clipped_in_the_message(fixed):
+    _, crypto, ct, dk, _ = fixed
+    for attributes in (["org:A", "org:" + "x" * HUGE], ["org:{}".format(i) for i in range(HUGE // 10)]):
+        with pytest.raises(FEKeyError) as caught:
+            crypto.decrypt(ct, dict(dk, attributes=attributes))
+        assert len(str(caught.value)) < 300
+
+
+def test_a_huge_label_of_the_universe_is_clipped_in_the_message_about_k_attr(make):
+    label = "org:" + "x" * 5000
+    kg, crypto = make(universe=[label, "org:A"])
+    ct = crypto.encrypt([1] * ETA, policy=label)
+    dk = kg.get_decryption_keys("s", credentials={"fusion_weight": [1] * ETA, "attributes": [label]})
+    k_attr = {name: value for name, value in dk["k_attr"].items() if name != label + "#1"}
+    with pytest.raises(FEValidationError, match="k_attr has no entry") as caught:
+        crypto.decrypt(ct, dict(dk, k_attr=k_attr))
+    assert len(str(caught.value)) < 300
 
 
 def test_create_and_list():

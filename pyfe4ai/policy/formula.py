@@ -25,7 +25,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 
 from pyfe4ai.core.exceptions import FEValidationError
-from pyfe4ai.policy.attributes import validate_label
+from pyfe4ai.policy.attributes import clip, validate_label
 
 #: The default limit on the rows of a compiled policy matrix.
 DEFAULT_MAX_ROWS = 64
@@ -224,8 +224,8 @@ def validate_formula(formula: Formula) -> None:
                 shared = seen.intersection(labels[child])
                 if shared:
                     raise FEValidationError(
-                        "the children of a Threshold gate share the leaf label {!r}; "
-                        "they must use distinct labels".format(min(shared))
+                        "the children of a Threshold gate share the leaf label {}; "
+                        "they must use distinct labels".format(clip(repr(min(shared))))
                     )
                 seen.update(labels[child])
             labels[key] = frozenset(seen)

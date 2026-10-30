@@ -15,6 +15,7 @@ from __future__ import annotations
 from collections import Counter
 
 from pyfe4ai.core.exceptions import FEValidationError
+from pyfe4ai.policy.attributes import clip
 from pyfe4ai.policy.msp import MSP
 
 
@@ -38,8 +39,8 @@ def read_once_rows(msp: MSP, max_copies: int) -> tuple[tuple[str, int], ...]:
     for label in msp.row_labels:
         if total[label] > max_copies:
             raise FEValidationError(
-                "attribute label {!r} is on {} rows of the policy, more than the limit of {} copies "
-                "per label".format(label, total[label], max_copies)
+                "attribute label {} is on {} rows of the policy, more than the limit of {} copies "
+                "per label".format(clip(repr(label)), total[label], max_copies)
             )
     used: Counter = Counter()
     rows = []

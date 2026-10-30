@@ -40,6 +40,7 @@ import json
 import re
 
 from pyfe4ai.core.exceptions import FEValidationError
+from pyfe4ai.policy.attributes import clip
 from pyfe4ai.policy.formula import MAX_DEPTH, And, Formula, Leaf, Or, Threshold, validate_formula
 
 #: The version marker of the policy compiler. A change to the canonical
@@ -58,11 +59,6 @@ _THRESHOLD_NAME = re.compile(r"([1-9][0-9]*)of")
 # bracket; inside one, the quote that ends it or the backslash that escapes the next character
 _OUTSIDE_STRING = re.compile(r'["\[\]{}]')
 _INSIDE_STRING = re.compile(r'["\\]')
-
-
-def _clip(text: str, limit: int = 40) -> str:
-    """*text* shortened for an error message, so that input of any size is not echoed whole."""
-    return text if len(text) <= limit else text[:limit] + "..."
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +174,7 @@ def _node(obj: object, path: tuple) -> Formula:
             "an empty array" if obj == [] else type(obj).__name__))
     tag = obj[0]
     if type(tag) is not str or tag not in ("leaf", "and", "or", "th"):
-        raise _bad(path, "unknown node tag {}".format(_clip(repr(tag))))
+        raise _bad(path, "unknown node tag {}".format(clip(repr(tag))))
     if tag == "leaf":
         if len(obj) != 2 or type(obj[1]) is not str:
             raise _bad(path, 'a leaf is ["leaf", label] with a string label')
@@ -279,13 +275,13 @@ class _Parser:
             threshold = _THRESHOLD_NAME.fullmatch(name)
             if threshold is None:
                 raise self.fail(start, "unknown gate {!r}: expected and(, or( or <t>of( with t a positive "
-                                       "integer in ASCII digits without a sign or a leading zero".format(_clip(name)))
+                                       "integer in ASCII digits without a sign or a leading zero".format(clip(name)))
             digits = threshold.group(1)
             # t cannot exceed the number of children, which cannot exceed the length of the text: this
             # keeps int() off a long digit string
             if len(digits) > len(str(len(self.text))):
                 raise self.fail(start, "the threshold {} exceeds the number of children that the "
-                                       "text can hold".format(_clip(digits, 12)))
+                                       "text can hold".format(clip(digits, 12)))
             kind, args = Threshold, (int(digits),)
         if depth >= MAX_DEPTH:
             raise self.fail(start, "formula depth exceeds the limit of {} gates on a path".format(MAX_DEPTH))

@@ -40,6 +40,11 @@ _ATTRIBUTE_DOMAIN = b"PYFE4AI-V05-POLICY-ATTR-Zq"
 _UNIVERSE_DOMAIN = b"PYFE4AI-V05-POLICY-UNIVERSE"
 
 
+def clip(text: str, limit: int = 40) -> str:
+    """*text* shortened for an error message, so that input of any size is not echoed whole."""
+    return text if len(text) <= limit else text[:limit] + "..."
+
+
 def validate_label(label: str) -> str:
     """Return *label* unchanged if it is a valid attribute label, or raise
     ``FEValidationError`` naming the label and the rule it breaks."""
@@ -48,31 +53,37 @@ def validate_label(label: str) -> str:
         raise FEValidationError("an attribute label must be a str, got {}".format(type(label).__name__))
     namespace, colon, value = label.partition(":")
     if not colon:
-        raise FEValidationError("attribute label {!r} is not of the form namespace:value".format(label))
+        raise FEValidationError("attribute label {} is not of the form namespace:value".format(clip(repr(label))))
     if _NAMESPACE.fullmatch(namespace) is None:
         raise FEValidationError(
-            "attribute label {!r}: the namespace must be one or more of A-Z a-z 0-9 _ . -".format(label)
+            "attribute label {}: the namespace must be one or more of A-Z a-z 0-9 _ . -".format(clip(repr(label)))
         )
     if not value:
-        raise FEValidationError("attribute label {!r}: the value is empty".format(label))
+        raise FEValidationError("attribute label {}: the value is empty".format(clip(repr(label))))
     for char in value:
         if char.isspace():
-            raise FEValidationError("attribute label {!r}: the value contains whitespace".format(label))
+            raise FEValidationError("attribute label {}: the value contains whitespace".format(clip(repr(label))))
         if char in _RESERVED:
             raise FEValidationError(
-                "attribute label {!r}: the value contains the reserved character {!r}".format(label, char)
+                "attribute label {}: the value contains the reserved character {!r}".format(clip(repr(label)), char)
             )
         category = unicodedata.category(char)
         if category == "Cc":
-            raise FEValidationError("attribute label {!r}: the value contains a control character".format(label))
+            raise FEValidationError(
+                "attribute label {}: the value contains a control character".format(clip(repr(label)))
+            )
         if category == "Cf":
             raise FEValidationError(
-                "attribute label {!r}: the value contains an invisible format character".format(label)
+                "attribute label {}: the value contains an invisible format character".format(clip(repr(label)))
             )
         if category == "Cs":
-            raise FEValidationError("attribute label {!r}: the value contains a lone surrogate".format(label))
+            raise FEValidationError(
+                "attribute label {}: the value contains a lone surrogate".format(clip(repr(label)))
+            )
     if not unicodedata.is_normalized("NFC", label):
-        raise FEValidationError("attribute label {!r} is not in Unicode normalization form NFC".format(label))
+        raise FEValidationError(
+            "attribute label {} is not in Unicode normalization form NFC".format(clip(repr(label)))
+        )
     return label
 
 
@@ -166,12 +177,12 @@ class Universe:
         """
         position = self._position(label)
         if position is None:
-            raise FEValidationError("attribute label {!r} is not in the universe".format(label))
+            raise FEValidationError("attribute label {} is not in the universe".format(clip(repr(label))))
         # type(copy) is int: a bool or a float would be a second spelling of the same copy
         if type(copy) is not int or not 1 <= copy <= self.max_copies:
             raise FEValidationError(
-                "copy {!r} of label {!r}: the copy must be an int from 1 to {}, the limit max_copies".format(
-                    copy, label, self.max_copies)
+                "copy {} of label {}: the copy must be an int from 1 to {}, the limit max_copies".format(
+                    clip(repr(copy)), clip(repr(label)), self.max_copies)
             )
         return position * self.max_copies + copy - 1
 

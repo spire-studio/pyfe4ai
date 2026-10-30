@@ -263,6 +263,13 @@ def test_shared_subformulas_are_visited_once():
         validate_formula(Threshold(2, shared, shared))
 
 
+def test_threshold_sharing_error_clips_the_label():
+    label = "a:" + "x" * 100000
+    with pytest.raises(FEValidationError, match="share the leaf label") as caught:
+        validate_formula(Threshold(2, Leaf(label), And(Leaf(label), Leaf("a:2"))))
+    assert len(str(caught.value)) < 300
+
+
 # ---------------------------------------------------------------------------
 # leaf_count and held_labels
 # ---------------------------------------------------------------------------

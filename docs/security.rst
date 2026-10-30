@@ -46,6 +46,14 @@ including ``matrix_mode`` for the ABDP15 LWE schemes; :doc:`configuration`
 lists every option with its default under each profile, and the option
 combinations that are refused.
 
+The pairing backends differ in what they check of a serialised element. The
+default BLS12-381 backend checks the encoding and the subgroup of every
+element and is not affected by what follows. charm, which provides the other
+groups (MNT224, BN254, ...), does not: its deserializer may hang on a
+malformed G2 string, and it accepts junk under a valid type tag. Keys and
+public parameters for the charm groups must therefore come from a trusted
+source.
+
 For the ABDP15 LWE schemes (``sife/lwe``, ``mife/lwe``) the 128 bits are
 those of the LWE problem that their security proof reduces to. The
 lattice-estimator table is read at the error width

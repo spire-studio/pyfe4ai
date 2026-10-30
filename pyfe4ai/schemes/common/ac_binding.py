@@ -43,8 +43,11 @@ def check_binding(pp: dict, record, name: str) -> None:
             :class:`~pyfe4ai.core.formats.record.Record`.
         name: What *record* is, for the message.
     """
+    expected = pp.get("pp_binding")
+    if expected is None:
+        raise FEValidationError("the public parameters have no pp_binding")
     binding = record.get("pp_binding")
     if binding is None:
         raise FEValidationError("the {} has no pp_binding".format(name))
-    if binding != pp["pp_binding"]:
+    if binding != expected:
         raise FEValidationError("the {} was made under other public parameters: its pp_binding differs".format(name))
