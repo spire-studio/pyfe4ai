@@ -1,14 +1,26 @@
-"""Monotone access formulas and attribute labels (pyfe4ai.policy.formula, pyfe4ai.policy.attributes)."""
+"""Monotone access formulas and attribute labels (pyfe4ai.policy.formula, pyfe4ai.policy.attributes).
+
+Every non-ASCII string below is written as an escape, so that this file is pure ASCII: no editor, formatter
+or paste step can normalize one spelling of a label into another, and look-alike characters can be told apart.
+"""
 
 from __future__ import annotations
 
 import dataclasses
+import unicodedata
 
 import pytest
 
 from pyfe4ai.core.exceptions import FEValidationError
 from pyfe4ai.policy.attributes import validate_label
 from pyfe4ai.policy.formula import MAX_DEPTH, And, Leaf, Or, Threshold, evaluate, validate_formula
+
+DECOMPOSED_E_ACUTE = "e\N{COMBINING ACUTE ACCENT}"             # "e" + U+0301, not in NFC
+PRECOMPOSED_E_ACUTE = "\N{LATIN SMALL LETTER E WITH ACUTE}"    # U+00E9, in NFC
+
+
+class _MyStr(str):
+    """A str subclass."""
 
 
 # ---------------------------------------------------------------------------
@@ -58,10 +70,18 @@ def test_evaluate_refuses_a_non_formula():
 
 @pytest.mark.parametrize("bad", ["", "org", ":A", "org:", "org:A B", "org:A,B",
                                  "org:(A)", "org:A#1", "org:\x07",
-                                 "org:é",        # decomposed (e + U+0301), not NFC
-                                 "org:\ud800",         # a lone surrogate (category Cs)
-                                 "or g:A", "oø:A", "org\n:A", "org:A\n", "org:A\tB",
-                                 "org:A B", "org:A B", "org:A\x7f", "org:A\x00"])
+                                 "org:" + DECOMPOSED_E_ACUTE,            # not in NFC
+                                 "org:\ud800",                           # a lone surrogate (category Cs)
+                                 "org:A\N{ZERO WIDTH SPACE}B",           # U+200B, category Cf
+                                 "org:A\N{RIGHT-TO-LEFT OVERRIDE}B",     # U+202E, category Cf
+                                 "org:A\N{ZERO WIDTH NO-BREAK SPACE}",   # U+FEFF, category Cf
+                                 "org:A\N{SOFT HYPHEN}B",                # U+00AD, category Cf
+                                 "or g:A",                               # a space in the namespace
+                                 "\xf8rg:A",                             # U+00F8 in the namespace
+                                 "org\n:A", "org:A\n", "org:A\tB",
+                                 "org:A\N{NO-BREAK SPACE}B",             # U+00A0
+                                 "org:A\N{EM SPACE}B",                   # U+2003
+                                 "org:A\x7f", "org:A\x00"])
 def test_bad_labels_are_refused(bad):
     with pytest.raises(FEValidationError):
         validate_label(bad)
@@ -69,8 +89,9 @@ def test_bad_labels_are_refused(bad):
         Leaf(bad)
 
 
-@pytest.mark.parametrize("bad", [None, 7, b"org:A", ("org", "A"), ["org:A"]])
+@pytest.mark.parametrize("bad", [None, 7, b"org:A", ("org", "A"), ["org:A"], _MyStr("org:A")])
 def test_a_label_must_be_a_str(bad):
+    # a str subclass is refused too: it could carry a different encoding, hash or equality than its text
     with pytest.raises(FEValidationError, match="str"):
         validate_label(bad)
     with pytest.raises(FEValidationError, match="str"):
@@ -78,12 +99,15 @@ def test_a_label_must_be_a_str(bad):
 
 
 def test_labels_are_kept_as_written():
+    # the refused and the accepted spelling of "org:e-acute" are a real pair: NFC maps one onto the other
+    assert "org:" + DECOMPOSED_E_ACUTE != "org:" + PRECOMPOSED_E_ACUTE
+    assert unicodedata.normalize("NFC", "org:" + DECOMPOSED_E_ACUTE) == "org:" + PRECOMPOSED_E_ACUTE
     assert validate_label("cert:HIPAA-2026") == "cert:HIPAA-2026"
-    assert validate_label("org:é") == "org:é"          # precomposed (U+00E9), NFC
+    assert validate_label("org:" + PRECOMPOSED_E_ACUTE) == "org:" + PRECOMPOSED_E_ACUTE
     assert validate_label("Org_1.x-y:Value") == "Org_1.x-y:Value"  # no case folding
     assert validate_label("a:b:c") == "a:b:c"                    # the namespace ends at the first ":"
     assert validate_label("a:b=c/d@e") == "a:b=c/d@e"
-    assert Leaf("org:é").label == "org:é"
+    assert Leaf("org:" + PRECOMPOSED_E_ACUTE).label == "org:" + PRECOMPOSED_E_ACUTE
 
 
 def test_the_refusal_names_the_label():

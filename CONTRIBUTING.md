@@ -70,6 +70,7 @@ The tests are grouped by topic, one directory each:
 | `tests/ml/` | the ML adapter and quantization |
 | `tests/hardening/` | input validation and decryption hardening across schemes, review fixes outside `tests/review/` |
 | `tests/sife/`, `tests/mife/`, `tests/mcfe/`, `tests/quadratic/` | the schemes, one module per scheme |
+| `tests/policy/` | the policy language, its compilers and encodings |
 | `tests/review/` | regression tests of the crypto reviews, one per finding (kept as the review wrote them) |
 
 Helpers shared by several groups stay where they are: `tests/pairing_group.py`
