@@ -4,6 +4,7 @@ import base64
 
 import pytest
 
+from pyfe4ai import backend as native_backend
 from pyfe4ai.primitives.pairing import bls12_381 as B
 
 pytestmark = pytest.mark.skipif(not B.available(), reason="Rust extension not built")
@@ -317,3 +318,64 @@ def test_gt_membership_check():
             B._kernels.deserialize(B.GT, _f12_to_bytes(bad))
     with pytest.raises(ValueError):
         B._kernels.deserialize(B.GT, P.to_bytes(48, "little") + s.to_bytes()[48:])  # non-canonical
+
+
+# ------------------------------------------------------- batches, on one thread and on several
+
+@pytest.fixture(params=[1, 4])
+def threads(request):
+    native_backend.set_threads(request.param)
+    yield request.param
+    native_backend.set_threads(1)
+
+
+def _mixed(group, each=12):
+    return [group.random(kind) for kind in (B.ZR, B.G1, B.G2, B.GT) for _ in range(each)]
+
+
+def test_deserialize_many_matches_one_by_one(group, threads):
+    texts = [group.serialize(x) for x in _mixed(group)]
+    texts += texts[:5]      # equal encodings, decoded once
+    assert group.deserialize_many(texts) == [group.deserialize(text) for text in texts]
+
+
+@pytest.mark.parametrize("at", [0, 17, 39])
+def test_deserialize_many_refuses_an_invalid_element_anywhere(group, threads, at):
+    texts = [group.serialize(group.random(B.G1)) for _ in range(40)]
+    texts[at] = b"1:" + base64.b64encode(b"\xff" * 48)
+    with pytest.raises(ValueError, match="invalid serialised"):
+        group.deserialize_many(texts)
+
+
+def test_deserialize_many_refuses_a_repeated_invalid_element(group, threads):
+    good = [group.serialize(group.random(B.G1)) for _ in range(30)]
+    bad = b"1:" + base64.b64encode(b"\xff" * 48)
+    with pytest.raises(ValueError, match="invalid serialised"):
+        group.deserialize_many(good[:10] + [bad] + good[10:] + [bad])
+
+
+@pytest.mark.parametrize("kind", [B.G1, B.G2, B.GT])
+def test_msm_many_matches_msm(group, kind, threads):
+    gs = [group.random(kind) for _ in range(6)]
+    rows = [gs[:1 + i % len(gs)] for i in range(40)]
+    ks = [[EXPONENTS[(i + j) % len(EXPONENTS)] for j in range(len(row))] for i, row in enumerate(rows)]
+    assert B.msm_many(rows, ks) == [B.msm(row, k) for row, k in zip(rows, ks)]
+
+
+def test_msm_many_refuses_what_msm_refuses(group, threads):
+    g1, g2 = group.random(B.G1), group.random(B.G2)
+    assert B.msm_many([], []) == []
+    with pytest.raises(ValueError, match="rows"):
+        B.msm_many([[g1]], [[1], [2]])
+    with pytest.raises(ValueError, match="as many scalars"):
+        B.msm_many([[g1, g1]], [[1]])
+    with pytest.raises(ValueError, match="at least one base"):
+        B.msm_many([[g1], []], [[1], []])
+    with pytest.raises(TypeError, match="of one group"):
+        B.msm_many([[g1, g2]], [[1, 2]])
+
+
+def test_serialize_many_matches_serialize(group, threads):
+    items = _mixed(group) + [group.init(B.G1), group.init(B.G2), group.init(B.GT)]
+    assert group.serialize_many(items) == [group.serialize(x) for x in items]
+    assert group.serialize_many([]) == []

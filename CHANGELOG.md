@@ -25,6 +25,12 @@ compatibility).
   holders and `q2_violation` checks the Q2 condition. A formula is at most
   `MAX_DEPTH` gates deep and compiles to at most `DEFAULT_MAX_ROWS` rows by
   default; invalid input raises `FEValidationError`.
+- **Threads over BLS12-381 batches.** `set_threads` (`PYFE4AI_THREADS`, default
+  one) now also applies to `PairingGroup.deserialize_many` and to the new
+  `PairingGroup.serialize_many`, `bls12_381.msm_many` and, for every pairing
+  group, `pairing_backend.multiexp_many` and `pairing_backend.serialize_many`.
+  A batch below 16 items stays on one thread, and the result does not depend
+  on the number of threads.
 - **`sife/cp_ab_pairing`** (`SIFECPABPairing`, `SIFECPABPairingKeyGenerator`,
   `SIFECPABPairingConfig`; status *unreviewed*, it has had no cryptographic
   review): ciphertext-policy attribute-based inner-product functional

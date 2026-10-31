@@ -134,6 +134,21 @@ def multiexp(bases, exps, group=None):
     return acc
 
 
+def multiexp_many(rows, exps, group=None) -> list:
+    """``[multiexp(b, e, group) for b, e in zip(rows, exps)]``, in one call on BLS12-381.
+
+    Raises:
+        ValueError: Without as many rows of exponents as rows of bases, or for
+            a row :func:`multiexp` refuses.
+    """
+    rows, exps = list(rows), list(exps)
+    if len(rows) != len(exps):
+        raise ValueError("multiexp_many needs as many rows of exponents as rows of bases")
+    if rows and rows[0] and _bls.is_element(rows[0][0]):
+        return _bls.msm_many(rows, exps)
+    return [multiexp(row, row_exps, group) for row, row_exps in zip(rows, exps)]
+
+
 def pow_many(base, exps, group=None) -> list:
     """``[base ** e for e in exps]``; on BLS12-381 with one precomputation for *base*.
 
@@ -165,6 +180,13 @@ def deserialize_many(group, items) -> list:
     if isinstance(group, _bls.PairingGroup):
         return group.deserialize_many(items)
     return [group.deserialize(x.encode("utf-8") if isinstance(x, str) else x) for x in items]
+
+
+def serialize_many(group, items) -> list:
+    """``[group.serialize(x) for x in items]``, in one call on BLS12-381."""
+    if isinstance(group, _bls.PairingGroup):
+        return group.serialize_many(items)
+    return [group.serialize(x) for x in items]
 
 
 def require_pairing_backend(name=None) -> None:

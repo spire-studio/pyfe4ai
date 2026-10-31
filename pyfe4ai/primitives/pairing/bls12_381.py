@@ -18,9 +18,10 @@ exponentiation; :func:`gt_dlog` is a bounded discrete logarithm in GT
 (bounds up to :data:`MAX_DLOG_BOUND`) with a baby-step table cached per base
 and bound (a few tables at most, least recently used evicted), or built for
 one call for a base used once. Products of powers
-(:func:`msm`) are one multi-scalar multiplication, powers of one base
-(:func:`pow_many`) share one table, and :meth:`PairingGroup.deserialize_many`
-decodes a list in one call.
+(:func:`msm`) are one multi-scalar multiplication and powers of one base
+(:func:`pow_many`) share one table. :meth:`PairingGroup.deserialize_many`,
+:meth:`PairingGroup.serialize_many` and :func:`msm_many` handle a list in
+one call, on :func:`pyfe4ai.backend.get_threads` threads.
 
 BLS12-381 gives about 120-126 bits of security after the exTNFS attacks on
 its 381-bit field (Barbulescu and Duquesne, J. Cryptol. 2019), below the
@@ -116,6 +117,12 @@ class PairingGroup:
         except (ValueError, TypeError, OverflowError) as exc:
             raise ValueError("invalid serialised BLS12-381 element") from exc
 
+    def serialize_many(self, elements) -> list:
+        """``[serialize(x) for x in elements]`` in one call."""
+        elements = list(elements)
+        return ["{}:".format(element.type).encode("ascii") + base64.b64encode(raw)
+                for element, raw in zip(elements, self._k.serialize_many(elements))]
+
     def ismember(self, element) -> bool:
         return getattr(element, "type", None) in (ZR, G1, G2, GT)
 
@@ -157,6 +164,12 @@ def msm(bases: list, scalars: list):
     """prod_i bases[i] ** scalars[i] for elements of one group (G1, G2 or GT)
     and int or ZR scalars, as one multi-scalar multiplication."""
     return _require().msm(list(bases), list(scalars))
+
+
+def msm_many(bases: list, scalars: list) -> list:
+    """``[msm(b, k) for b, k in zip(bases, scalars)]`` in one call; ``ValueError``
+    without as many rows of scalars as rows of bases."""
+    return _require().msm_many([list(row) for row in bases], [list(row) for row in scalars])
 
 
 def pow_many(base, scalars: list) -> list:

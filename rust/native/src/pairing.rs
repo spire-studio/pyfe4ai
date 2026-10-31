@@ -8,7 +8,9 @@
 //! serialization is the arkworks compressed form, deserialization checks
 //! the encoding and subgroup membership. Random elements are g^r for scalars
 //! from 64 OS-random bytes reduced mod r. Exponentiations and products of
-//! powers (`bls_msm`, `bls_pow_many`) use the methods of `msm.rs`. Not
+//! powers (`bls_msm`, `bls_pow_many`) use the methods of `msm.rs`. Batches
+//! (`bls_deserialize_many`, `bls_serialize_many`, `bls_msm_many`) take a number
+//! of threads, and give the same result on any number of them. Not
 //! constant-time in general.
 
 use crate::dlog::{self, TableCache};
@@ -18,7 +20,7 @@ use ark_ec::pairing::{Pairing, PairingOutput};
 use ark_ec::{CurveGroup, PrimeGroup};
 use ark_ff::{BigInteger, Field, One, PrimeField, Zero};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
-use pyfe4ai_core::osrand;
+use pyfe4ai_core::{osrand, parallel_for};
 use pyo3::basic::CompareOp;
 use pyo3::exceptions::{PyOSError, PyTypeError, PyValueError, PyZeroDivisionError};
 use pyo3::prelude::*;
@@ -27,7 +29,7 @@ use pyo3::types::{PyBytes, PyInt};
 use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
 use std::hash::{BuildHasher, Hash, Hasher};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// charm's type codes.
 pub const ZR: u8 = 0;
@@ -36,6 +38,18 @@ pub const G2: u8 = 2;
 pub const GT: u8 = 3;
 
 type Gt = PairingOutput<Bls12_381>;
+
+/// From this many items on a batch uses threads: below, starting them costs about as much as the work.
+const PARALLEL_MIN: usize = 16;
+
+/// [f(i) for i in 0..count], on up to `threads` threads for a batch of at least `PARALLEL_MIN` items.
+fn map_parallel<T: Send, F: Fn(usize) -> T + Sync>(count: usize, threads: usize, f: F) -> Vec<T> {
+    let outs: Vec<Mutex<Option<T>>> = (0..count).map(|_| Mutex::new(None)).collect();
+    parallel_for(count, if count < PARALLEL_MIN { 1 } else { threads }, |i| {
+        *outs[i].lock().unwrap() = Some(f(i));
+    });
+    outs.into_iter().map(|out| out.into_inner().unwrap().expect("parallel_for visits every index")).collect()
+}
 
 // GT (576 bytes) dominates; boxing it would cost an allocation per element
 #[allow(clippy::large_enum_variant)]
@@ -424,22 +438,39 @@ fn bls_deserialize(t: u8, data: &[u8]) -> PyResult<Elem> {
 /// Elements from (type, encoding) pairs, each checked as by bls_deserialize;
 /// equal pairs are decoded once. Raises ValueError at the first invalid one.
 #[pyfunction]
-fn bls_deserialize_many(py: Python<'_>, items: Vec<(u8, Vec<u8>)>) -> PyResult<Vec<Elem>> {
-    let vals: Vec<PyResult<Val>> = py.detach(|| {
-        let mut seen: HashMap<(u8, &[u8]), Val> = HashMap::new();
-        items
+#[pyo3(signature = (items, threads=1))]
+fn bls_deserialize_many(py: Python<'_>, items: Vec<(u8, Vec<u8>)>, threads: usize) -> PyResult<Vec<Elem>> {
+    let (decoded, slots) = py.detach(|| {
+        let mut first: HashMap<(u8, &[u8]), usize> = HashMap::new();
+        let mut distinct: Vec<(u8, &[u8])> = Vec::new();
+        let slots: Vec<usize> = items
             .iter()
             .map(|(t, data)| {
-                if let Some(v) = seen.get(&(*t, data.as_slice())) {
-                    return Ok(*v);
-                }
-                let v = deserialize_val(*t, data)?;
-                seen.insert((*t, data.as_slice()), v);
-                Ok(v)
+                *first.entry((*t, data.as_slice())).or_insert_with(|| {
+                    distinct.push((*t, data.as_slice()));
+                    distinct.len() - 1
+                })
             })
-            .collect()
+            .collect();
+        (map_parallel(distinct.len(), threads, |i| deserialize_val(distinct[i].0, distinct[i].1)), slots)
     });
-    vals.into_iter().map(|v| v.map(elem)).collect()
+    slots
+        .into_iter()
+        .map(|slot| match &decoded[slot] {
+            Ok(v) => Ok(elem(*v)),
+            Err(e) => Err(e.clone_ref(py)),
+        })
+        .collect()
+}
+
+/// [x.to_bytes() for x in elements].
+#[pyfunction]
+#[pyo3(signature = (elements, threads=1))]
+fn bls_serialize_many<'py>(py: Python<'py>, elements: Vec<Bound<'py, Elem>>, threads: usize)
+    -> Vec<Bound<'py, PyBytes>> {
+    let vals: Vec<Val> = elements.iter().map(|e| e.get().v).collect();
+    let raw = py.detach(|| map_parallel(vals.len(), threads, |i| serialize_val(&vals[i])));
+    raw.iter().map(|data| PyBytes::new(py, data)).collect()
 }
 
 /// The bases of a product of powers: elements of one group (G1, G2 or GT).
@@ -455,17 +486,20 @@ fn group_bases(bases: &[Bound<'_, Elem>]) -> PyResult<Vec<Val>> {
     }
 }
 
-/// prod_i bases[i] ** scalars[i] for bases of one group (G1, G2 or GT) and
-/// scalars ints or ZR elements: one multi-scalar multiplication.
-#[pyfunction]
-fn bls_msm(py: Python<'_>, bases: Vec<Bound<'_, Elem>>, scalars: &Bound<'_, PyAny>) -> PyResult<Elem> {
-    let vals = group_bases(&bases)?;
+/// The bases and the scalars of a product of powers, of equal length.
+fn msm_terms(bases: &[Bound<'_, Elem>], scalars: &Bound<'_, PyAny>) -> PyResult<(Vec<Val>, Vec<Fr>)> {
+    let vals = group_bases(bases)?;
     let ks = frs_from_seq(scalars)?;
     if ks.len() != vals.len() {
         return Err(PyValueError::new_err("msm takes as many scalars as bases"));
     }
+    Ok((vals, ks))
+}
+
+/// prod_i vals[i] ** ks[i] for the terms of `msm_terms`.
+fn msm_vals(vals: &[Val], ks: &[Fr]) -> Val {
     // group_bases checked that every base is of the group of the first
-    Ok(elem(py.detach(|| match vals[0] {
+    match vals[0] {
         Val::G1(_) => {
             let ps: Vec<_> = vals.iter().filter_map(|v| if let Val::G1(p) = v { Some(*p) } else { None }).collect();
             Val::G1(msm::curve_msm(&ps, &ks))
@@ -479,7 +513,28 @@ fn bls_msm(py: Python<'_>, bases: Vec<Bound<'_, Elem>>, scalars: &Bound<'_, PyAn
             Val::Gt(PairingOutput(msm::gt_msm(&fs, &ks)))
         }
         Val::Zr(_) => unreachable!("group_bases rejects ZR"),
-    })))
+    }
+}
+
+/// prod_i bases[i] ** scalars[i] for bases of one group (G1, G2 or GT) and
+/// scalars ints or ZR elements: one multi-scalar multiplication.
+#[pyfunction]
+fn bls_msm(py: Python<'_>, bases: Vec<Bound<'_, Elem>>, scalars: &Bound<'_, PyAny>) -> PyResult<Elem> {
+    let (vals, ks) = msm_terms(&bases, scalars)?;
+    Ok(elem(py.detach(|| msm_vals(&vals, &ks))))
+}
+
+/// [bls_msm(b, k) for b, k in zip(bases, scalars)].
+#[pyfunction]
+#[pyo3(signature = (bases, scalars, threads=1))]
+fn bls_msm_many(py: Python<'_>, bases: Vec<Vec<Bound<'_, Elem>>>, scalars: Vec<Bound<'_, PyAny>>, threads: usize)
+    -> PyResult<Vec<Elem>> {
+    if bases.len() != scalars.len() {
+        return Err(PyValueError::new_err("msm_many takes as many rows of scalars as rows of bases"));
+    }
+    let rows = bases.iter().zip(&scalars).map(|(b, k)| msm_terms(b, k)).collect::<PyResult<Vec<_>>>()?;
+    let out = py.detach(|| map_parallel(rows.len(), threads, |i| msm_vals(&rows[i].0, &rows[i].1)));
+    Ok(out.into_iter().map(elem).collect())
 }
 
 /// [base ** k for k in scalars] for base in G1, G2 or GT (one table for the base).
@@ -669,7 +724,8 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(bls_random, m)?, wrap_pyfunction!(bls_init, m)?, wrap_pyfunction!(bls_generator, m)?,
         wrap_pyfunction!(bls_order, m)?, wrap_pyfunction!(bls_deserialize, m)?, wrap_pyfunction!(bls_pair, m)?,
         wrap_pyfunction!(bls_multi_pair, m)?, wrap_pyfunction!(bls_gt_dlog, m)?, wrap_pyfunction!(bls_hash, m)?,
-        wrap_pyfunction!(bls_deserialize_many, m)?, wrap_pyfunction!(bls_msm, m)?, wrap_pyfunction!(bls_pow_many, m)?,
+        wrap_pyfunction!(bls_deserialize_many, m)?, wrap_pyfunction!(bls_serialize_many, m)?,
+        wrap_pyfunction!(bls_msm, m)?, wrap_pyfunction!(bls_msm_many, m)?, wrap_pyfunction!(bls_pow_many, m)?,
         wrap_pyfunction!(bls_gt_dlog_cache, m)?,
     ] {
         m.add_function(f)?;

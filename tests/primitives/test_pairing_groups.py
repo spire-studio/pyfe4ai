@@ -109,3 +109,21 @@ def test_standard_profile_fh_ipe_round_trip():
     enc = SIFEFHIPEPairing({"keys": {"pp": pp, "sk": kg.get_private_keys()}})
     dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": [2, -1]})
     assert SIFEFHIPEPairing({"keys": {"pp": pp}}).decrypt(enc.encrypt([3, 1]), dk, [2, -1]) == 5
+
+
+@pytest.mark.parametrize("name", ASYMMETRIC_GROUPS)
+def test_batch_helpers_match_one_by_one(name):
+    from pyfe4ai.primitives.pairing.pairing_backend import G1, ZR
+    from pyfe4ai.primitives.pairing.pairing_backend import multiexp, multiexp_many, serialize_many
+
+    _need(name)
+    group = PairingGroup(name)
+    bases = [[group.random(G1), group.random(G1)] for _ in range(3)]
+    exps = [[i + 1, 5 * i] for i in range(3)]
+    assert multiexp_many(bases, exps, group) == [multiexp(row, e, group) for row, e in zip(bases, exps)]
+    assert multiexp_many([], [], group) == []
+    with pytest.raises(ValueError, match="rows"):
+        multiexp_many(bases, exps[:2], group)
+    # the identity of G1 has its own encoding on charm groups
+    items = [group.random(G1) ** group.init(ZR, 0)] + [row[0] for row in bases]
+    assert serialize_many(group, items) == [group.serialize(x) for x in items]
