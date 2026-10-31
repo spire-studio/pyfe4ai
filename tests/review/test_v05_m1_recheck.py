@@ -91,6 +91,7 @@ def test_r1_n04_the_examples_pass_no_key_that_draws_the_warning():
     """R1-N04: three examples still pass ``bound_u`` and ``label_modulus``, so what the project hands to a new user
     now prints two warnings about keys of versions <= 0.2.0."""
     root = Path(__file__).resolve().parents[2] / "examples"
-    stale = {path.name: sorted(key for key in configs.LEGACY_OPTIONS if '"{}"'.format(key) in path.read_text("utf-8"))
+    keys = configs.LEGACY_OPTIONS - set(configs.MIFEFHMultiIPEPairingConfig.OPTIONS)    # sec_level is live there
+    stale = {path.name: sorted(key for key in keys if '"{}"'.format(key) in path.read_text("utf-8"))
              for path in root.glob("*.py")}
     assert not {name: keys for name, keys in stale.items() if keys}

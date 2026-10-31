@@ -1063,7 +1063,7 @@ class QuadraticMIQFEConfig(SchemeConfig):
 
 #: Keys of versions <= 0.2.0 that the key generators of those versions read and
 #: these ignore.
-LEGACY_OPTIONS = frozenset({"bound_u", "label_modulus", "u_bound"})
+LEGACY_OPTIONS = frozenset({"bound_u", "label_modulus", "sec_level", "u_bound"})
 
 #: The name of every option of a key generator or a crypto object of any scheme.
 _ALL_OPTIONS = frozenset(
@@ -1262,9 +1262,10 @@ def options_rst() -> str:
         "generator is built. Crypto objects take their config as given. A key generator refuses a key that no "
         "scheme declares (``FEConfigError``), so that a misspelt ``security_profile`` does not give the ``toy`` "
         "profile. It ignores, with a ``FEWarning`` that names it, an option of another scheme and a key of versions "
-        "<= 0.2.0 (``bound_u``, ``label_modulus``, ``u_bound``). Under ``standard`` an option of another scheme is "
-        "refused too: ``m=4`` on a threshold scheme would leave ``t`` at its default. A subclass of a key generator "
-        "may read options of its own, so a key that its scheme does not declare only draws the warning.",
+        "<= 0.2.0 (" + ", ".join("``{}``".format(key) for key in sorted(LEGACY_OPTIONS)) + "). Under ``standard`` an "
+        "option of another scheme is refused too: ``m=4`` on a threshold scheme would leave ``t`` at its default. A "
+        "subclass of a key generator may read options of its own, so a key that its scheme does not declare only "
+        "draws the warning: there a misspelt ``security_profile`` does leave the ``toy`` profile.",
         "",
     ]
     lines += _heading("Server and client ids", "-")
