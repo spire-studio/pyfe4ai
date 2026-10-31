@@ -156,7 +156,8 @@ def pair(a, b):
 
 
 def multi_pair(lhs: list, rhs: list):
-    """prod_i e(lhs[i], rhs[i]) with one final exponentiation."""
+    """prod_i e(lhs[i], rhs[i]) with one final exponentiation; the Miller loops
+    take :func:`~pyfe4ai.backend.get_threads` threads from 16 pairs on."""
     return _require().multi_pair(list(lhs), list(rhs))
 
 

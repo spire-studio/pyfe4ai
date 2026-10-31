@@ -385,7 +385,8 @@ def test_serialize_many_matches_serialize(group, threads):
 def test_serialize_many_keeps_the_order_of_points_and_identities(group, threads, size):
     g1, g2 = group.generator(B.G1), group.generator(B.G2)
     pool = [g1 ** 3, group.init(B.G1), g2 ** 5, group.init(B.G2), g1 * g1 * g1, group.init(B.ZR, 7), group.init(B.GT)]
-    items = [pool[i * 5 % len(pool)] ** (i + 2) if pool[i * 5 % len(pool)].type != B.ZR else pool[5] for i in range(size)]
+    picks = [pool[i * 5 % len(pool)] for i in range(size)]
+    items = [x if x.type == B.ZR else x ** (i + 2) for i, x in enumerate(picks)]
     assert group.serialize_many(items) == [group.serialize(x) for x in items]
 
 

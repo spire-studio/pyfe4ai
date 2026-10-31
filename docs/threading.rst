@@ -23,9 +23,9 @@ Selection: backend, threads, sampler
   it for the current thread inside the block (a ``threading.local``):
   threads started inside the block use the process-wide selection.
 * :func:`pyfe4ai.backend.set_threads` and ``PYFE4AI_THREADS`` set how many
-  threads *one* native call may use over the chunks of a tensor or the
-  elements of a BLS12-381 batch (Rust threads, with the GIL released), for
-  the whole process. It does not limit
+  threads *one* native call may use over the chunks of a tensor, the
+  elements of a BLS12-381 batch or the pairs of a product of pairings (Rust
+  threads, with the GIL released), for the whole process. It does not limit
   how many Python threads call the library: ``P`` Python threads running
   native calls at once use up to ``P`` times that many threads.
 * :func:`pyfe4ai.primitives.sampling.set_gaussian_sampler` and

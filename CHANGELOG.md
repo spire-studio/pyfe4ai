@@ -42,9 +42,18 @@ compatibility).
 - **Threads over BLS12-381 batches.** `set_threads` (`PYFE4AI_THREADS`, default
   one) now also applies to `PairingGroup.deserialize_many` and to the new
   `PairingGroup.serialize_many`, `bls12_381.msm_many` and, for every pairing
-  group, `pairing_backend.multiexp_many` and `pairing_backend.serialize_many`.
-  A batch below 16 items stays on one thread, and the result does not depend
-  on the number of threads.
+  group, `pairing_backend.multiexp_many` and `pairing_backend.serialize_many`,
+  and to the Miller loops of `multi_pair`. A batch below 16 items stays on one
+  thread, and the result does not depend on the number of threads.
+- **Faster BLS12-381 kernels.** `serialize_many` inverts once per group instead
+  of once per point (the bytes are the same), and one power in G2 uses the
+  endomorphism of the curve as four 64-bit terms, about a quarter faster.
+- **Offline / online encryption of `sife/cp_ab_pairing`.**
+  `precompute(policy)` computes all of a future ciphertext but the plaintext
+  term, and `encrypt(x, precomputed=...)` multiplies that term in; with the
+  same randomness the ciphertext is the one of `encrypt`. The precomputation
+  opens its ciphertext without a key, so it is secret and one-time: it cannot
+  be used twice, copied, pickled, or used by another object or process.
 - **`sife/cp_ab_pairing`** (`SIFECPABPairing`, `SIFECPABPairingKeyGenerator`,
   `SIFECPABPairingConfig`; status *unreviewed*, it has had no cryptographic
   review): ciphertext-policy attribute-based inner-product functional

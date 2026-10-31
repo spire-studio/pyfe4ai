@@ -42,6 +42,15 @@ eavesdroppers only: anyone can multiply ``c3[i]`` by ``g1``, which adds ``y[i]``
 to what a key decrypts, or multiply two ciphertexts of one policy, which adds
 their inner products. Authenticate ciphertexts where tampering matters.
 
+Offline / online: :meth:`SIFECPABPairing.precompute` computes all of a future
+ciphertext under a policy but the plaintext term of ``c3``, and
+``encrypt(x, precomputed=...)`` multiplies that term in. With the same ``s`` the
+ciphertext is the one of ``encrypt``. The result of ``precompute`` opens the
+ciphertext it makes without any key, so it is kept like a key and used once
+(:class:`CPABPrecomputation`, :mod:`pyfe4ai.core.one_time`): a second use of one
+``s`` gives ``x - x'`` to anyone. Like every exponentiation of this library the
+online phase is not constant-time, and its table reads depend on ``x``.
+
 The policy of a ciphertext (``ct["policy"]``) and
 the attribute list of a key (``dk["attributes"]``) are public: they travel in
 the clear and hide nothing. Keys are trusted input to ``decrypt``: the
@@ -87,6 +96,7 @@ from pyfe4ai.core.base import IPFEAbsKeyGenerator
 from pyfe4ai.core.base import ParameterCacheMixin
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.exceptions import FEConfigError, FEKeyError, FEValidationError
+from pyfe4ai.core.one_time import OneTimePrecomputation
 from pyfe4ai.core.formats.pairing import CPABCiphertext
 from pyfe4ai.core.formats.pairing import CPABFunctionalKey
 from pyfe4ai.core.formats.pairing import CPABParameters
@@ -373,6 +383,21 @@ class SIFECPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         ).to_dict()
 
 
+class CPABPrecomputation(OneTimePrecomputation):
+    """What a future ciphertext holds of its randomness ``s``, for one policy. Secret, one-time."""
+
+    _secret = ("parts", "masks")
+
+    def __init__(self, owner, parts: dict, masks: list) -> None:
+        super().__init__()
+        self.owner = owner
+        self.parts = parts
+        self.masks = masks
+
+    def __repr__(self) -> str:
+        return "CPABPrecomputation(used={})".format(self.used)
+
+
 class SIFECPABPairing(IPFEAbsCrypto):
     """Crypto operations for ciphertext-policy attribute-based IPFE over pairings."""
 
@@ -490,19 +515,60 @@ class SIFECPABPairing(IPFEAbsCrypto):
                     clip(repr(label))))
         return msp, read_once_rows(msp, self.universe.max_copies)
 
-    def encrypt(self, lst_pt: list, policy=None) -> dict:
+    def encrypt(self, lst_pt: list, policy=None, precomputed: CPABPrecomputation | None = None) -> dict:
         """Encrypt a vector under a policy.
 
         Args:
             lst_pt: The ``eta`` integers ``x`` with ``|x_i| <= bound_x``.
             policy: A :class:`~pyfe4ai.policy.formula.Formula` or its text
                 (:func:`~pyfe4ai.policy.encoding.parse`).
+            precomputed: The result of :meth:`precompute` of this object, in
+                place of *policy*. A call refused for its input leaves it
+                unused.
 
         Raises:
-            FEValidationError: For a plaintext out of bounds, no policy, or a
-                policy outside the limits of the public parameters.
+            FEValidationError: For a plaintext out of bounds, no policy, a
+                policy outside the limits of the public parameters, or a
+                precomputation that is spent, of another object, or given
+                with a policy.
         """
         x = int_vector(lst_pt, "plaintext", length=self.eta, bound=self.bound_x)
+        group, order = self.group, int(self.order)
+        g1 = _elements(group, [self.pp["g1"]], G1, "g1")[0]
+        if precomputed is None:
+            s, parts = self._random_part(policy)
+            ua = self._pp_elements(G1, "ua")
+            return self._ciphertext(parts, multiexp_many(
+                [[g1, ua_i] for ua_i in ua], [[x_i % order, s] for x_i in x], group))
+        if not isinstance(precomputed, CPABPrecomputation) or precomputed.owner is not self:
+            raise FEValidationError("the precomputation belongs to another object")
+        if policy is not None:
+            raise FEValidationError("a precomputation has its policy: give one of the two")
+        parts, masks = precomputed._claim()     # atomic: of two callers one gets them
+        powers = pow_many(g1, [x_i % order for x_i in x], group)
+        return self._ciphertext(parts, [mask * power for mask, power in zip(masks, powers)])
+
+    def precompute(self, policy) -> CPABPrecomputation:
+        """Offline phase of :meth:`encrypt`: a fresh ``s``, and all of a ciphertext under *policy* but the plaintext.
+
+        Args:
+            policy: A :class:`~pyfe4ai.policy.formula.Formula` or its text.
+
+        Returns:
+            One future ciphertext, for ``encrypt(x, precomputed=...)``. Secret:
+            it opens that ciphertext without a key. It can be used once, in
+            this process, by this object, and cannot be copied or pickled.
+
+        Raises:
+            FEValidationError: For no policy, or a policy outside the limits
+                of the public parameters.
+        """
+        s, parts = self._random_part(policy)
+        ua = self._pp_elements(G1, "ua")
+        return CPABPrecomputation(self, parts, multiexp_many([[ua_i] for ua_i in ua], [[s] for _ in ua], self.group))
+
+    def _random_part(self, policy) -> tuple[int, dict]:
+        """A fresh ``s``, and the fields of a ciphertext under *policy* but ``c3`` and the fixed ones."""
         if isinstance(policy, str):
             policy = parse(policy)
         if not isinstance(policy, Formula):
@@ -512,7 +578,7 @@ class SIFECPABPairing(IPFEAbsCrypto):
         encoding = canonical_encoding(policy)
         self._check_policy_length(encoding)     # no decryption would read it
 
-        group, order, pp = self.group, int(self.order), self.pp
+        group, order = self.group, int(self.order)
         size = self.universe.size
         indices = [self.universe.index(label, copy) for label, copy in rows]
         columns = [[(k, entry) for k, entry in enumerate(row) if entry != 0] for row in msp.matrix]
@@ -526,18 +592,19 @@ class SIFECPABPairing(IPFEAbsCrypto):
             exps = [s] + [(s * entry) % order for _, entry in row]
             bases = [w_a[index]] + [w_a[size + k] for k, _ in row]
             c2.append([multiexp([base[t] for base in bases], exps, group) for t in (0, 1)])
-        g1 = _elements(group, [pp["g1"]], G1, "g1")[0]
-        ua = self._pp_elements(G1, "ua")
-        c3 = multiexp_many([[g1, ua_i] for ua_i in ua], [[x_i % order, s] for x_i in x], group)
+        return s, {
+            "policy": encoding,
+            "policy_digest": policy_digest(policy),
+            "c1": _serialize_vec(group, c1),
+            "c2": serialize_matrix_g(group, c2),
+        }
 
+    def _ciphertext(self, parts: dict, c3: list) -> dict:
         return CPABCiphertext.new(
-            policy=encoding,
-            policy_digest=policy_digest(policy),
             policy_compiler=POLICY_COMPILER,
-            c1=_serialize_vec(group, c1),
-            c2=serialize_matrix_g(group, c2),
-            c3=_serialize_vec(group, c3),
-            pp_binding=pp["pp_binding"],
+            c3=_serialize_vec(self.group, c3),
+            pp_binding=self.pp["pp_binding"],
+            **parts,
         ).to_dict()
 
     def _check_key(self, key: CPABFunctionalKey) -> list[int]:

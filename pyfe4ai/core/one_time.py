@@ -41,6 +41,9 @@ ciphertext needs of it) and ``_encrypt_with(lst_pt, part)`` (the ciphertext
 of ``encrypt`` for that part, with its checks), and names in
 ``_online_bound`` the public parameter that bounds the plaintexts, if
 ``_encrypt_with`` checks one (checked before the precomputation is used).
+
+Schemes without element-wise helpers subclass :class:`OneTimePrecomputation`
+for their own offline phase (``sife/cp_ab_pairing``).
 """
 
 from __future__ import annotations
