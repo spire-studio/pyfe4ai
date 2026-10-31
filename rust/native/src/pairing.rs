@@ -463,13 +463,40 @@ fn bls_deserialize_many(py: Python<'_>, items: Vec<(u8, Vec<u8>)>, threads: usiz
         .collect()
 }
 
+/// [serialize_val(v) for v in vals], with one inversion per group instead of one per point.
+fn serialize_vals(vals: &[Val], threads: usize) -> Vec<Vec<u8>> {
+    let g1: Vec<_> = vals.iter().filter_map(|v| if let Val::G1(p) = v { Some(*p) } else { None }).collect();
+    let g2: Vec<_> = vals.iter().filter_map(|v| if let Val::G2(p) = v { Some(*p) } else { None }).collect();
+    let (g1, g2) = (G1Projective::normalize_batch(&g1), G2Projective::normalize_batch(&g2));
+    // each point's place in its group, in the order of vals
+    let (mut in_g1, mut in_g2) = (0..g1.len(), 0..g2.len());
+    let places: Vec<usize> = vals
+        .iter()
+        .map(|v| match v {
+            Val::G1(_) => in_g1.next().expect("one place per G1 point"),
+            Val::G2(_) => in_g2.next().expect("one place per G2 point"),
+            _ => 0,
+        })
+        .collect();
+    map_parallel(vals.len(), threads, |i| {
+        let mut out = Vec::new();
+        match &vals[i] {
+            Val::G1(_) => g1[places[i]].serialize_compressed(&mut out),
+            Val::G2(_) => g2[places[i]].serialize_compressed(&mut out),
+            other => return serialize_val(other),
+        }
+        .expect("serialization into a vector");
+        out
+    })
+}
+
 /// [x.to_bytes() for x in elements].
 #[pyfunction]
 #[pyo3(signature = (elements, threads=1))]
 fn bls_serialize_many<'py>(py: Python<'py>, elements: Vec<Bound<'py, Elem>>, threads: usize)
     -> Vec<Bound<'py, PyBytes>> {
     let vals: Vec<Val> = elements.iter().map(|e| e.get().v).collect();
-    let raw = py.detach(|| map_parallel(vals.len(), threads, |i| serialize_val(&vals[i])));
+    let raw = py.detach(|| serialize_vals(&vals, threads));
     raw.iter().map(|data| PyBytes::new(py, data)).collect()
 }
 
