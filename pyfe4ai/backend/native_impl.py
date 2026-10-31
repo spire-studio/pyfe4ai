@@ -467,9 +467,9 @@ class Bls12381Kernels:
     ``deserialize(kind, raw)``, ``deserialize_many(items)``,
     ``serialize_many(elements)``, ``hash(kind, msg, dst)``, ``pair``,
     ``multi_pair``, ``msm``, ``msm_many(bases, scalars)``, ``pow_many``,
-    ``gt_dlog`` and the element type ``Element``. The batches use
-    :func:`~pyfe4ai.backend.get_threads` threads. Like the extension module,
-    not picklable."""
+    ``gt_dlog`` and the element type ``Element``. The batches and
+    ``multi_pair`` use :func:`~pyfe4ai.backend.get_threads` threads. Like the
+    extension module, not picklable."""
 
     def __init__(self, ext) -> None:
         self._ext = ext  # holds the module: a group holding these is not picklable, as before
@@ -480,7 +480,6 @@ class Bls12381Kernels:
         self.deserialize = ext.bls_deserialize
         self.hash = ext.bls_hash
         self.pair = ext.bls_pair
-        self.multi_pair = ext.bls_multi_pair
         self.msm = ext.bls_msm
         self.pow_many = ext.bls_pow_many
         self.gt_dlog = ext.bls_gt_dlog
@@ -494,6 +493,9 @@ class Bls12381Kernels:
 
     def msm_many(self, bases, scalars) -> list:
         return self._ext.bls_msm_many(bases, scalars, _b._threads)
+
+    def multi_pair(self, lhs, rhs):
+        return self._ext.bls_multi_pair(lhs, rhs, _b._threads)
 
 
 _bls_kernels = None

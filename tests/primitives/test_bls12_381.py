@@ -387,3 +387,69 @@ def test_serialize_many_keeps_the_order_of_points_and_identities(group, threads,
     pool = [g1 ** 3, group.init(B.G1), g2 ** 5, group.init(B.G2), g1 * g1 * g1, group.init(B.ZR, 7), group.init(B.GT)]
     items = [pool[i * 5 % len(pool)] ** (i + 2) if pool[i * 5 % len(pool)].type != B.ZR else pool[5] for i in range(size)]
     assert group.serialize_many(items) == [group.serialize(x) for x in items]
+
+
+@pytest.mark.parametrize("size", [0, 1, 2, 15, 16, 17, 40])
+def test_multi_pair_on_threads_matches_one_thread(group, threads, size):
+    lhs = [group.random(B.G1) for _ in range(size)]
+    rhs = [group.random(B.G2) for _ in range(size)]
+    expected = group.init(B.GT)
+    for a, b in zip(lhs, rhs):
+        expected = expected * B.pair(a, b)
+    assert B.multi_pair(lhs, rhs) == expected
+
+
+def test_multi_pair_on_threads_takes_identities_and_either_order(group, threads):
+    g1, g2 = group.random(B.G1), group.random(B.G2)
+    lhs = [g1 ** (i + 1) for i in range(20)] + [group.init(B.G1)]
+    rhs = [g2 for _ in range(20)] + [g2]
+    expected = B.pair(g1, g2) ** sum(range(1, 21))
+    assert B.multi_pair(lhs, rhs) == expected
+    assert B.multi_pair(rhs, lhs) == expected
+    assert B.multi_pair(lhs[:10] + rhs[10:], rhs[:10] + lhs[10:]) == expected
+
+
+def test_multi_pair_gives_the_same_on_any_number_of_threads(group):
+    lhs = [group.random(B.G1) for _ in range(33)]
+    rhs = [group.random(B.G2) for _ in range(33)]
+    results = []
+    try:
+        for count in (1, 2, 3, 4, 8, 32, 64):
+            native_backend.set_threads(count)
+            results.append(B.multi_pair(lhs, rhs))
+    finally:
+        native_backend.set_threads(1)
+    assert all(result == results[0] for result in results)
+
+
+def test_multi_pair_on_threads_refuses_what_it_refused(group, threads):
+    g1, g2 = group.random(B.G1), group.random(B.G2)
+    with pytest.raises(ValueError, match="as many"):
+        B.multi_pair([g1] * 20, [g2] * 19)
+    with pytest.raises(ValueError, match="pairs of a G1 and a G2"):
+        B.multi_pair([g1] * 20, [g1] * 20)
+
+
+U = 0xd201000000010000
+
+
+@pytest.mark.parametrize("k", [0, 1, 2, U - 1, U, U + 1, U ** 2, U ** 3, U ** 3 + 1, R - U, R - 1, R, R + 1,
+                               (R - 1) // 2, 2 ** 192, 2 ** 254])
+def test_g2_power_matches_square_and_multiply_at_the_digit_edges(group, k):
+    g = group.random(B.G2)
+    assert g ** k == _ref_pow(group, g, k)
+    assert B.msm([g], [k]) == _ref_pow(group, g, k)
+    assert g ** k == B.msm([g, g ** 0], [k, 0])         # two terms stay on the GLV path
+
+
+def test_g2_power_of_the_identity_and_the_generator(group):
+    assert group.init(B.G2) ** (R - 1) == group.init(B.G2)
+    g = group.generator(B.G2)
+    assert (g ** U) ** (R - 1) * (g ** U) == group.init(B.G2)
+    assert g ** R == group.init(B.G2)
+
+
+def test_g2_powers_match_on_random_exponents(group):
+    for _ in range(200):
+        g, k = group.random(B.G2), int(group.random(B.ZR))
+        assert g ** k == B.msm([g, group.generator(B.G2)], [k, 0])

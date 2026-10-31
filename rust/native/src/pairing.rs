@@ -9,14 +9,14 @@
 //! the encoding and subgroup membership. Random elements are g^r for scalars
 //! from 64 OS-random bytes reduced mod r. Exponentiations and products of
 //! powers (`bls_msm`, `bls_pow_many`) use the methods of `msm.rs`. Batches
-//! (`bls_deserialize_many`, `bls_serialize_many`, `bls_msm_many`) take a number
-//! of threads, and give the same result on any number of them. Not
-//! constant-time in general.
+//! (`bls_deserialize_many`, `bls_serialize_many`, `bls_msm_many`) and
+//! `bls_multi_pair` take a number of threads, and give the same result on any
+//! number of them. Not constant-time in general.
 
 use crate::dlog::{self, TableCache};
 use crate::msm;
 use ark_bls12_381::{Bls12_381, Fq12, Fr, G1Projective, G2Projective};
-use ark_ec::pairing::{Pairing, PairingOutput};
+use ark_ec::pairing::{MillerLoopOutput, Pairing, PairingOutput};
 use ark_ec::{CurveGroup, PrimeGroup};
 use ark_ff::{BigInteger, Field, One, PrimeField, Zero};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
@@ -42,13 +42,18 @@ type Gt = PairingOutput<Bls12_381>;
 /// From this many items on a batch uses threads: below, starting them costs about as much as the work.
 const PARALLEL_MIN: usize = 16;
 
-/// [f(i) for i in 0..count], on up to `threads` threads for a batch of at least `PARALLEL_MIN` items.
-fn map_parallel<T: Send, F: Fn(usize) -> T + Sync>(count: usize, threads: usize, f: F) -> Vec<T> {
+/// [f(i) for i in 0..count], on up to `threads` threads.
+fn map_threads<T: Send, F: Fn(usize) -> T + Sync>(count: usize, threads: usize, f: F) -> Vec<T> {
     let outs: Vec<Mutex<Option<T>>> = (0..count).map(|_| Mutex::new(None)).collect();
-    parallel_for(count, if count < PARALLEL_MIN { 1 } else { threads }, |i| {
+    parallel_for(count, threads, |i| {
         *outs[i].lock().unwrap() = Some(f(i));
     });
     outs.into_iter().map(|out| out.into_inner().unwrap().expect("parallel_for visits every index")).collect()
+}
+
+/// [f(i) for i in 0..count], on up to `threads` threads for a batch of at least `PARALLEL_MIN` items.
+fn map_parallel<T: Send, F: Fn(usize) -> T + Sync>(count: usize, threads: usize, f: F) -> Vec<T> {
+    map_threads(count, if count < PARALLEL_MIN { 1 } else { threads }, f)
 }
 
 // GT (576 bytes) dominates; boxing it would cost an allocation per element
@@ -134,7 +139,7 @@ fn gt_generator() -> Gt {
 fn group_pow(v: &Val, e: &Fr) -> Val {
     match v {
         Val::G1(p) => Val::G1(msm::curve_msm(&[*p], &[*e])),
-        Val::G2(p) => Val::G2(msm::curve_msm(&[*p], &[*e])),
+        Val::G2(p) => Val::G2(msm::g2_pow(p, e)),
         Val::Gt(t) => Val::Gt(PairingOutput(msm::gt_msm(&[t.0], &[*e]))),
         Val::Zr(_) => unreachable!("ZR is not a group here"),
     }
@@ -531,6 +536,7 @@ fn msm_vals(vals: &[Val], ks: &[Fr]) -> Val {
             let ps: Vec<_> = vals.iter().filter_map(|v| if let Val::G1(p) = v { Some(*p) } else { None }).collect();
             Val::G1(msm::curve_msm(&ps, &ks))
         }
+        Val::G2(p) if vals.len() == 1 => Val::G2(msm::g2_pow(&p, &ks[0])),
         Val::G2(_) => {
             let ps: Vec<_> = vals.iter().filter_map(|v| if let Val::G2(p) = v { Some(*p) } else { None }).collect();
             Val::G2(msm::curve_msm(&ps, &ks))
@@ -591,10 +597,27 @@ fn bls_pair(py: Python<'_>, a: &Bound<'_, Elem>, b: &Bound<'_, Elem>) -> PyResul
     Ok(elem(Val::Gt(py.detach(|| Bls12_381::pairing(p, q)))))
 }
 
+/// prod_i e(ps_i, qs_i): the Miller loops of a chunk of the pairs on each thread, their product, and one final
+/// exponentiation.
+fn multi_pairing(ps: &[G1Projective], qs: &[G2Projective], threads: usize) -> Gt {
+    let (ps, qs) = (G1Projective::normalize_batch(ps), G2Projective::normalize_batch(qs));
+    if threads < 2 || ps.len() < PARALLEL_MIN {
+        return Bls12_381::multi_pairing(ps, qs);
+    }
+    let size = ps.len().div_ceil(threads);
+    let loops = map_threads(ps.len().div_ceil(size), threads, |i| {
+        let (p, q) = (ps.chunks(size).nth(i).expect("a chunk"), qs.chunks(size).nth(i).expect("a chunk"));
+        Bls12_381::multi_miller_loop(p.iter().copied(), q.iter().copied()).0
+    });
+    let product = loops.into_iter().fold(Fq12::one(), |acc, part| acc * part);
+    Bls12_381::final_exponentiation(MillerLoopOutput(product)).expect("the Miller loop of curve points is nonzero")
+}
+
 /// prod_i e(a_i, b_i): one Miller loop product and one final exponentiation.
 /// Each pair is a G1 and a G2 element in either order, as for pair().
 #[pyfunction]
-fn bls_multi_pair(py: Python<'_>, a: Vec<Bound<'_, Elem>>, b: Vec<Bound<'_, Elem>>) -> PyResult<Elem> {
+#[pyo3(signature = (a, b, threads=1))]
+fn bls_multi_pair(py: Python<'_>, a: Vec<Bound<'_, Elem>>, b: Vec<Bound<'_, Elem>>, threads: usize) -> PyResult<Elem> {
     if a.len() != b.len() {
         return Err(PyValueError::new_err("multi_pair takes as many left as right elements"));
     }
@@ -609,9 +632,7 @@ fn bls_multi_pair(py: Python<'_>, a: Vec<Bound<'_, Elem>>, b: Vec<Bound<'_, Elem
             _ => return Err(PyValueError::new_err("multi_pair() takes pairs of a G1 and a G2 element")),
         }
     }
-    Ok(elem(Val::Gt(py.detach(|| {
-        Bls12_381::multi_pairing(G1Projective::normalize_batch(&ps), G2Projective::normalize_batch(&qs))
-    }))))
+    Ok(elem(Val::Gt(py.detach(|| multi_pairing(&ps, &qs, threads)))))
 }
 
 // ----------------------------------------------------------- dlog in GT
