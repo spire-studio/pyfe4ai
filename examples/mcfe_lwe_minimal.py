@@ -27,8 +27,6 @@ def main() -> None:
             "lwe_n": 16,
             "bound_x": 8,
             "bound_y": 8,
-            "bound_u": 2,
-            "label_modulus": 8,
         }
     )
     kg.setup()

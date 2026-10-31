@@ -333,6 +333,39 @@ def test_the_options_of_the_scheme_and_of_its_crypto_objects_draw_no_warning(rec
     assert not [w for w in recwarn if issubclass(w.category, FEWarning)]
 
 
+def test_the_standard_profile_refuses_an_option_of_another_scheme():
+    with pytest.raises(FEConfigError, match="ring_n"):
+        pyfe4ai.create("sife/ddh_ristretto255", eta=2, ring_n=1024, security_profile="standard")
+
+
+def test_the_standard_profile_ignores_a_key_of_an_old_version_with_a_warning():
+    with pytest.warns(FEWarning, match="label_modulus"):
+        pyfe4ai.create("sife/ddh_ristretto255", eta=2, label_modulus=8, security_profile="standard")
+
+
+class _Audited(get_scheme(("sife", "ddh_ristretto255")).key_generator):
+    """A key generator that extends a scheme, with an option of its own."""
+
+    def __init__(self, config, **kwargs):
+        self.audit_log = config.get("audit_log")
+        super().__init__(config, **kwargs)
+
+
+def test_a_subclass_reads_its_own_option_with_a_warning():
+    with pytest.warns(FEWarning, match="audit_log"):
+        assert _Audited({"eta": 2, "audit_log": "yes"}).audit_log == "yes"
+
+
+def test_a_subclass_is_warned_of_a_misspelt_option():
+    with pytest.warns(FEWarning, match="security_prfile"):
+        _Audited({"eta": 2, "security_prfile": "standard"})
+
+
+def test_a_subclass_keeps_the_rules_of_the_profile():
+    with pytest.warns(FEWarning, match="audit_log"):
+        assert _Audited({"eta": 2, "audit_log": "yes", "security_profile": "standard"}).security_profile == "standard"
+
+
 def test_a_key_generator_outside_the_registry_keeps_its_own_options(recwarn):
     configs.check_options({"an_option_of_its_own": 1}, None)
     assert not [w for w in recwarn if issubclass(w.category, FEWarning)]

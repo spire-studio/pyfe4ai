@@ -198,7 +198,7 @@ class _ProfiledKeyGeneratorMeta(ABCMeta):
                 "a key generator config must be a mapping, got {}".format(type(config).__name__)
             )
         scheme = profiles.scheme_of(cls)
-        configs.check_options(config, scheme)
+        configs.check_options(config, scheme, subclass=profiles.scheme_for_module(cls.__module__) is None)
         return configs.resolve(configs.config_class(scheme)(config), scheme)
 
 

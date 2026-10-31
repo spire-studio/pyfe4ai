@@ -233,8 +233,9 @@ class FESchemeWrapper:
         variant: Variant name within the family, e.g. ``"ddh"``, ``"lwe"``,
             ``"damgard"``, ``"paillier"``, ``"ring_lwe"`` or
             ``"lwe_threshold"`` (see :func:`pyfe4ai.list_schemes <pyfe4ai.core.registry.list_schemes>`).
-        keygen_config: Configuration dict for the KeyGenerator (``sec_param``,
-            ``eta``, ``n``, ``bound_x``, ``security_profile``, etc.).
+        keygen_config: Configuration dict for the KeyGenerator: the options
+            of the scheme (``sec_param``, ``n``, ``security_profile`` and those
+            of the variant, see the page *Configuration options*).
             ``group="ristretto255"`` selects the elliptic-curve instantiation
             of the ``ddh`` variants (``ddh_ristretto255``).
         precision: Quantization precision (0: no quantization).

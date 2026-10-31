@@ -14,8 +14,8 @@ it holds, its default, the values it accepts), so ``config.ring_n`` reads an
 option with its default, and the page *Configuration options* of the
 documentation is rendered from these declarations (:func:`options_rst`). A
 key that no scheme declares is refused, so that a misspelt option does not
-quietly become its default, and one that this scheme does not read draws a
-warning (:func:`check_options`).
+quietly become its default; an option of another scheme draws a warning, and
+is refused under ``standard`` (:func:`check_options`).
 
 The rules that combine the options of the threshold schemes -- the key
 sharing for ``t < s``, the flooding accounting, the key-share layout -- are
@@ -1071,22 +1071,28 @@ _ALL_OPTIONS = frozenset(
 )
 
 
-def check_options(config: dict, scheme: tuple | None) -> None:
+def check_options(config: dict, scheme: tuple | None, subclass: bool = False) -> None:
     """Check the names of the options of a key generator's *config*.
 
     A misspelt option would otherwise leave its default in place without a
     word, and for ``security_profile`` that default is ``toy``. A config may
     be shared between schemes, or with the scheme's crypto objects, so a name
-    that some scheme declares stays accepted.
+    that some scheme declares stays accepted, except under ``standard``: that
+    profile has no floor under every setting, and ``m=4`` on a threshold
+    scheme would leave ``t`` at its default.
 
     Args:
         config: The key generator's configuration.
         scheme: ``(family, variant)`` of the key generator, or ``None`` if it
             is not a registered scheme: its options are its own, and not
             checked.
+        subclass: The key generator extends the one of *scheme* and may read
+            options of its own, which it has no way to declare, so that a
+            name unknown here is only warned of.
 
     Raises:
-        FEConfigError: For a key that no scheme declares.
+        FEConfigError: For a key that no scheme declares, or an option of
+            another scheme under ``standard``.
 
     Warns:
         FEWarning: For an option of another scheme, or a key of
@@ -1095,13 +1101,15 @@ def check_options(config: dict, scheme: tuple | None) -> None:
     if scheme is None:
         return
     klass = config_class(scheme)
+    shared = config.get("security_profile") != STANDARD
     for key in config:
         if key in klass.OPTIONS or key in klass.CRYPTO:
             continue
-        if key not in _ALL_OPTIONS and key not in LEGACY_OPTIONS:
+        if subclass or key in LEGACY_OPTIONS or (shared and key in _ALL_OPTIONS):
+            warn_at_caller("{}/{} has no option {!r}".format(scheme[0], scheme[1], key), FEWarning)
+        else:
             raise FEConfigError("{}/{} has no option {!r}; its options are {}".format(
                 scheme[0], scheme[1], key, ", ".join(sorted(klass.OPTIONS))))
-        warn_at_caller("{}/{} has no option {!r} and ignores it".format(scheme[0], scheme[1], key), FEWarning)
 
 
 # ---------------------------------------------------------------------------
@@ -1254,7 +1262,9 @@ def options_rst() -> str:
         "generator is built. Crypto objects take their config as given. A key generator refuses a key that no "
         "scheme declares (``FEConfigError``), so that a misspelt ``security_profile`` does not give the ``toy`` "
         "profile. It ignores, with a ``FEWarning`` that names it, an option of another scheme and a key of versions "
-        "<= 0.2.0 (``bound_u``, ``label_modulus``, ``u_bound``).",
+        "<= 0.2.0 (``bound_u``, ``label_modulus``, ``u_bound``). Under ``standard`` an option of another scheme is "
+        "refused too: ``m=4`` on a threshold scheme would leave ``t`` at its default. A subclass of a key generator "
+        "may read options of its own, so a key that its scheme does not declare only draws the warning.",
         "",
     ]
     lines += _heading("Server and client ids", "-")

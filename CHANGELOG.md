@@ -14,7 +14,11 @@ compatibility).
   without a word, so `security_prfile="standard"` ran the `toy` profile. An
   option of another scheme, and the keys `bound_u`, `label_modulus` and
   `u_bound` of versions <= 0.2.0, stay ignored and now draw a `FEWarning` that
-  names them. Crypto objects take their config as before.
+  names them. Under `standard` an option of another scheme raises
+  `FEConfigError` too: `m=4` on a threshold scheme would leave `t` at its
+  default. A subclass of a key generator may read options of its own, so a
+  key that its scheme does not declare only draws the warning. Crypto objects
+  take their config as before.
 
 ### Added
 

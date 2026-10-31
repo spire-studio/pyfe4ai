@@ -53,7 +53,8 @@ class FEWarning(UserWarning):
     It is attributed to the application's call (the first caller outside
     pyfe4ai, see :func:`warn_at_caller`), so Python's default filter shows it
     once per call site of the application, not once per library line. Its text
-    holds no caller-supplied values (an unknown id is in the log record only).
+    holds no caller-supplied values but the name of a config option (an
+    unknown id is in the log record only).
     """
 
 

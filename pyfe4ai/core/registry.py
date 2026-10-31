@@ -702,7 +702,8 @@ def create(scheme: str | tuple[str, str], config: Mapping | None = None, **optio
     Raises:
         FEValidationError: For an unknown scheme, a config that is not a
             mapping, or a config the key generator refuses.
-        FEConfigError: For an option that no scheme has.
+        FEConfigError: For an option that no scheme has, or an option of
+            another scheme under the ``standard`` profile.
     """
     entry = get_scheme(scheme)
     if options:

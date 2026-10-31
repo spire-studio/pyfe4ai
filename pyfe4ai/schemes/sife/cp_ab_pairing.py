@@ -397,7 +397,7 @@ class SIFECPABPairing(IPFEAbsCrypto):
             raise FEKeyError("no public parameters: keys needs the entry pp")
         try:
             pp = copy.deepcopy(pp)      # what is checked below stays what is used, whatever the caller's dict does
-        except (TypeError, RecursionError) as exc:
+        except Exception as exc:        # deepcopy raises what the __reduce_ex__ of any object raises
             raise FEValidationError("public parameters must be JSON data: {}".format(exc)) from exc
         self._read_parameters(pp)
         self.pp = pp

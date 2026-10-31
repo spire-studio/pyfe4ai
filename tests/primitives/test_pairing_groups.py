@@ -6,6 +6,7 @@ from pyfe4ai.core import registry
 from pyfe4ai.core.exceptions import FEValidationError
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP
 from pyfe4ai.primitives.pairing.pairing_backend import PairingGroup, check_asymmetric, pairing_available
+from tests.scheme_config import of_scheme
 
 PAIRING_SCHEMES = sorted(
     registry.get_scheme(scheme).key for scheme in registry.list_schemes(capabilities=registry.PAIRING_GROUP)
@@ -26,6 +27,10 @@ def _need(name):
 
 def _key_generator(key):
     return registry.get_scheme(key).key_generator
+
+
+def _config(key, **options):
+    return of_scheme(key, dict(_CONFIG, **options))
 
 
 def test_registry_has_eleven_pairing_schemes():
@@ -51,7 +56,7 @@ def test_asymmetric_groups_accepted(name):
 def test_key_generator_rejects_symmetric_group(key):
     _need("SS512")
     with pytest.raises(FEValidationError, match="symmetric"):
-        _key_generator(key)(dict(_CONFIG, pairing_group_param="SS512"))
+        _key_generator(key)(_config(key, pairing_group_param="SS512"))
 
 
 @pytest.mark.native  # the default group, BLS12-381
@@ -59,7 +64,7 @@ def test_key_generator_rejects_symmetric_group(key):
 def test_key_generator_defaults_to_asymmetric_group(key):
     _need(DEFAULT_PAIRING_GROUP)
     assert DEFAULT_PAIRING_GROUP == "BLS12-381"
-    assert _key_generator(key)(dict(_CONFIG)).pairing_group_param == DEFAULT_PAIRING_GROUP
+    assert _key_generator(key)(_config(key)).pairing_group_param == DEFAULT_PAIRING_GROUP
 
 
 @pytest.mark.parametrize("name", ASYMMETRIC_GROUPS)
@@ -93,7 +98,7 @@ def test_standard_profile_uses_bls12_381(key):
 
     _need("BLS12-381")
     with pytest.warns(FESecurityWarning, match="120 to 126-bit"):
-        kg = _key_generator(key)(dict(_CONFIG, security_profile="standard"))
+        kg = _key_generator(key)(_config(key, security_profile="standard"))
     assert kg.pairing_group_param == "BLS12-381"
 
 
@@ -103,7 +108,8 @@ def test_standard_profile_fh_ipe_round_trip():
 
     _need("BLS12-381")
     with pytest.warns(Warning):
-        kg = _key_generator(("sife", "fh_ipe_pairing"))(dict(_CONFIG, security_profile="standard"))
+        key = ("sife", "fh_ipe_pairing")
+        kg = _key_generator(key)(_config(key, security_profile="standard"))
     kg.setup()
     pp = kg.get_public_parameters()
     enc = SIFEFHIPEPairing({"keys": {"pp": pp, "sk": kg.get_private_keys()}})
