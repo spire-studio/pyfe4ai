@@ -11,9 +11,11 @@ from pathlib import Path
 import gmpy2 as gp
 import pytest
 
+import pyfe4ai
 from pyfe4ai.core import config as configs
 from pyfe4ai.core import profiles
-from pyfe4ai.core.exceptions import FEValidationError
+from pyfe4ai.core.exceptions import FEConfigError, FEValidationError, FEWarning
+from pyfe4ai.core.registry import get_scheme
 from pyfe4ai.core.status import SCHEME_STATUS
 from pyfe4ai.primitives.pairing.pairing_backend import pairing_available
 from tests.pairing_group import GROUP, GROUP_MARKS
@@ -296,3 +298,41 @@ def test_key_generators_read_no_option_as_an_attribute(scheme, monkeypatch):
     kg = generator(scheme)(dict(MINIMAL[scheme]))
     kg.setup()
     assert not reads, reads
+
+
+# ---------------------------------------------------------------------------
+# option names
+
+
+@pytest.mark.parametrize("scheme", sorted(configs.config_classes()), ids="/".join)
+def test_a_name_no_scheme_has_is_refused(scheme):
+    with pytest.raises(FEConfigError, match="security_prfile"):
+        get_scheme(scheme).key_generator({"security_prfile": "standard"})
+
+
+def test_the_refusal_lists_the_options_of_the_scheme():
+    with pytest.raises(FEConfigError) as caught:
+        pyfe4ai.create("sife/ddh_ristretto255", eta=2, etaa=3)
+    assert "'etaa'" in str(caught.value) and "security_profile" in str(caught.value)
+
+
+def test_an_option_of_another_scheme_is_ignored_with_a_warning():
+    with pytest.warns(FEWarning, match="ring_n"):
+        kg, _ = pyfe4ai.create("sife/ddh_ristretto255", eta=2, ring_n=1024)
+    assert kg.eta == 2 and not hasattr(kg, "ring_n")
+
+
+@pytest.mark.parametrize("key", sorted(configs.LEGACY_OPTIONS))
+def test_a_key_of_an_old_version_is_ignored_with_a_warning(key):
+    with pytest.warns(FEWarning, match=key):
+        pyfe4ai.create("mcfe/lwe", {"n": 2, key: 3})
+
+
+def test_the_options_of_the_scheme_and_of_its_crypto_objects_draw_no_warning(recwarn):
+    pyfe4ai.create("sife/ddh_ristretto255", eta=2, sec_param=128, group="ristretto255", dlog_bound=100)
+    assert not [w for w in recwarn if issubclass(w.category, FEWarning)]
+
+
+def test_a_key_generator_outside_the_registry_keeps_its_own_options(recwarn):
+    configs.check_options({"an_option_of_its_own": 1}, None)
+    assert not [w for w in recwarn if issubclass(w.category, FEWarning)]

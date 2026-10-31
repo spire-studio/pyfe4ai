@@ -52,7 +52,14 @@ element it deserializes and is not affected by what follows. For the groups
 that charm provides (MNT224, BN254, ...) two things have been observed: its
 deserializer may hang on a malformed G2 string, and it accepts junk under a
 valid type tag. Keys and public parameters for the charm groups must
-therefore come from a trusted source.
+therefore come from a trusted source. Ciphertexts come from outside:
+``sife/cp_ab_pairing`` holds only G1 elements in them, refuses any other type
+tag before charm reads a string, and refuses a string that is not the one its
+element serialises to. charm ignores bytes after an element, and strings cut
+short have decoded to the honest element, which suggests that it reads past
+the end of its buffer; that check runs after the read, and the other pairing
+schemes do not make it. Prefer BLS12-381 for ciphertexts from parties you do
+not trust.
 
 For the ABDP15 LWE schemes (``sife/lwe``, ``mife/lwe``) the 128 bits are
 those of the LWE problem that their security proof reduces to. The

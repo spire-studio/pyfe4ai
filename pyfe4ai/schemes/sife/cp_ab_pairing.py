@@ -33,7 +33,16 @@ hold ``[a]_1, [b]_2, [U^T a]_1, [W_i^T a]_1, [W_i b]_2``; ``msk = U``, and the
 ACGU20 Thm. 3.2 proves the scheme of Fig. 1 selectively simulation secure
 (SEL-SIM) from DDH in G1 and G2, for a secure predicate encoding. The proof is
 selective: it covers a challenge (the policy and the plaintext) chosen before
-the public parameters are seen. The policy of a ciphertext (``ct["policy"]``) and
+the public parameters are seen, and one challenge ciphertext. Several
+ciphertexts get SEL-IND by a hybrid argument, not SEL-SIM. Fig. 1 is the scheme
+of ``k = 1``, on SXDH.
+
+Ciphertexts are malleable and not authenticated, and the proof is against
+eavesdroppers only: anyone can multiply ``c3[i]`` by ``g1``, which adds ``y[i]``
+to what a key decrypts, or multiply two ciphertexts of one policy, which adds
+their inner products. Authenticate ciphertexts where tampering matters.
+
+The policy of a ciphertext (``ct["policy"]``) and
 the attribute list of a key (``dk["attributes"]``) are public: they travel in
 the clear and hide nothing. Keys are trusted input to ``decrypt``: the
 ``pp_binding`` of a key tells the objects of two setups apart and is not a
@@ -54,11 +63,18 @@ Deviations:
   ``(0 ; C | K) d`` is not ``(1, 0, ..., 0)``.
 * ``x_i`` and ``y_i`` may be negative within their bounds, not only in
   ``[0, B]``; the discrete log covers ``|<x, y>| <= eta bound_x bound_y``.
-* ``k = 1`` (SXDH) only.
+* ``a = (1, a2)`` and ``b = (1, b2)`` where the DDH distribution of the paper has
+  ``(a, 1)``: swapping the two coordinates of every vector and matrix maps one
+  scheme to the other.
+* ``g1`` and ``g2`` are random generators drawn at setup, not those of the
+  group description.
+* ``s``, ``r``, ``a2`` and ``b2`` are drawn nonzero, within a statistical distance
+  of ``(Q + 3) / p`` for ``Q`` keys.
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import re
@@ -89,6 +105,7 @@ from pyfe4ai.policy import (
     read_once_rows,
 )
 from pyfe4ai.policy.attributes import clip
+from pyfe4ai.primitives.pairing import bls12_381
 from pyfe4ai.primitives.pairing.bls12_381 import MAX_DLOG_BOUND
 from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, ZR, PairingGroup, multi_pair, pair
 from pyfe4ai.primitives.pairing.pairing_backend import deserialize_many, multiexp, multiexp_many, pow_many
@@ -160,9 +177,13 @@ def _elements(group: PairingGroup, items, kind, name: str) -> list:
     if type(items) is not list or not all(type(item) is str and item.startswith(tag) for item in items):
         raise FEValidationError("{} must be a list of serialised elements of {}".format(name, _GROUP_NAMES[kind]))
     try:
-        return deserialize_many(group, items)
+        elements = deserialize_many(group, items)
     except ValueError as exc:
         raise FEValidationError("{} holds an element that does not deserialize".format(name)) from exc
+    # one spelling per element: BLS12-381 has refused any other, charm ignores the bytes after an element
+    if not isinstance(group, bls12_381.PairingGroup) and _serialize_vec(group, elements) != items:
+        raise FEValidationError("{} holds an element that is not in its serialised form".format(name))
+    return elements
 
 
 def _record(cls, data, name: str):
@@ -360,7 +381,8 @@ class SIFECPABPairing(IPFEAbsCrypto):
 
         Args:
             config: Must contain ``keys`` with ``pp`` (public parameters);
-                encryption is public-key.
+                encryption is public-key. The object keeps a copy of ``pp``, so
+                later changes to that dict do not reach it.
 
         Raises:
             FEKeyError: Without public parameters.
@@ -373,6 +395,10 @@ class SIFECPABPairing(IPFEAbsCrypto):
         pp = self.keys.get("pp")
         if pp is None:
             raise FEKeyError("no public parameters: keys needs the entry pp")
+        try:
+            pp = copy.deepcopy(pp)      # what is checked below stays what is used, whatever the caller's dict does
+        except (TypeError, RecursionError) as exc:
+            raise FEValidationError("public parameters must be JSON data: {}".format(exc)) from exc
         self._read_parameters(pp)
         self.pp = pp
         self._decoded = {}
@@ -534,7 +560,9 @@ class SIFECPABPairing(IPFEAbsCrypto):
         """Decrypt a ciphertext and recover the inner product.
 
         The bindings are checked before the policy is read, and the policy
-        before any group element is.
+        before any group element is. Every row of the ciphertext is decoded,
+        also those the key does not use, so a malformed ciphertext is refused
+        whichever key opens it.
 
         Args:
             dct_ct: Ciphertext.
@@ -590,7 +618,7 @@ class SIFECPABPairing(IPFEAbsCrypto):
 
         group, order, pp = self.group, int(self.order), self.pp
         c1 = _elements(group, ct.c1, G1, "c1")
-        c2 = [_elements(group, ct.c2[j], G1, "c2") for j in weights]
+        c2 = _pairs(_elements(group, [item for row in ct.c2 for item in row], G1, "c2"))
         c3 = _elements(group, ct.c3, G1, "c3")
         k1 = _elements(group, key.k1, G2, "k1")
         k0 = _elements(group, key.k0, G2, "k0")
@@ -600,7 +628,7 @@ class SIFECPABPairing(IPFEAbsCrypto):
 
         exps = list(weights.values())
         folded_y = multiexp(c3, [value % order for value in y], group)
-        folded_c = [multiexp([row[t] for row in c2], exps, group) for t in (0, 1)]
+        folded_c = [multiexp([c2[j][t] for j in weights], exps, group) for t in (0, 1)]
         folded_k = [multiexp([k0[t]] + [entry[t] for entry in k_attr], [1] + exps, group) for t in (0, 1)]
         c1_inv = [multiexp([elem], [order - 1], group) for elem in c1]
         target = multi_pair([folded_y, folded_c[0], folded_c[1], c1_inv[0], c1_inv[1]],

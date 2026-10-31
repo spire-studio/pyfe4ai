@@ -138,9 +138,9 @@ Each scheme lists its capabilities
   (``ring_modulus="rns"``);
 * ``access_control`` -- the ciphertext or the key carries an access policy
   or an attribute set (:mod:`pyfe4ai.policy`), and decryption succeeds only
-  if the attributes satisfy the policy (``sife/cp_ab_pairing``: the
-  ciphertext carries the policy, ``encrypt(..., policy=...)``, and the key
-  the attributes).
+  if the attributes satisfy the policy, within the security proof of the
+  scheme (``sife/cp_ab_pairing``: the ciphertext carries the policy,
+  ``encrypt(..., policy=...)``, and the key the attributes).
 
 Review status
 -------------
@@ -196,7 +196,9 @@ Which scheme for which task
        not post-quantum)
    * - Decrypt only for keys whose attributes satisfy an access policy
        chosen at encryption
-     - ``sife/cp_ab_pairing`` (unreviewed; policies of ``and``, ``or`` and
+     - ``sife/cp_ab_pairing`` (unreviewed; selective security for one
+       challenge ciphertext, and ciphertexts are malleable, so authenticate
+       them where tampering matters; policies of ``and``, ``or`` and
        threshold gates over attribute labels, see :doc:`api/policy`)
 
 The registered schemes

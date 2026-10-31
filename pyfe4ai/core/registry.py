@@ -155,7 +155,8 @@ CAPABILITIES = {
     BINARY_CT: "binary ciphertexts (crypto option ct_format='binary', or the public parameters' format)",
     RNS: "an RNS modulus, a product of NTT primes (key generator option ring_modulus='rns')",
     ACCESS_CONTROL: "the ciphertext or the key carries an access policy or an attribute set (from "
-    "pyfe4ai.policy); decryption succeeds only if the attributes satisfy the policy",
+    "pyfe4ai.policy); decryption succeeds only if the attributes satisfy the policy, within the security "
+    "proof of the scheme (see its note)",
 }
 
 _REFUSED_TMIFE_LWE = (
@@ -401,8 +402,9 @@ SCHEMES: tuple[Scheme, ...] = (
     ),
     _scheme(
         "sife/cp_ab_pairing", PAIRING, UNREVIEWED, ADAPTED, "ACGU20 Sec. 3.1 Fig. 1 + App. B.2 (read-once MSP)",
-        note="k = 1; rows of attributes outside the policy are omitted; a repeated attribute "
-        "takes copies (max_copies); the Decode of App. B.2 with its sign corrected",
+        note="selective (SEL-SIM, one challenge ciphertext); ciphertexts malleable, not authenticated; "
+        "a = (1, a2) for the paper's (a, 1); rows of attributes outside the policy are omitted; a repeated "
+        "attribute takes copies (max_copies); the Decode of App. B.2 with its sign corrected",
         capabilities=(ACCESS_CONTROL,),
     ),
     # --- multi-input --------------------------------------------------------
@@ -700,6 +702,7 @@ def create(scheme: str | tuple[str, str], config: Mapping | None = None, **optio
     Raises:
         FEValidationError: For an unknown scheme, a config that is not a
             mapping, or a config the key generator refuses.
+        FEConfigError: For an option that no scheme has.
     """
     entry = get_scheme(scheme)
     if options:

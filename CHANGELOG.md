@@ -7,6 +7,15 @@ compatibility).
 
 ## [Unreleased]
 
+### Changed
+
+- **Key generators check the names of their options.** A key that no scheme
+  declares now raises `FEConfigError`: before, a misspelt option was dropped
+  without a word, so `security_prfile="standard"` ran the `toy` profile. An
+  option of another scheme, and the keys `bound_u`, `label_modulus` and
+  `u_bound` of versions <= 0.2.0, stay ignored and now draw a `FEWarning` that
+  names them. Crypto objects take their config as before.
+
 ### Added
 
 - **`pyfe4ai.policy`**, monotone access policies in pure Python (standard
@@ -42,9 +51,11 @@ compatibility).
   `max_copies` (default 4), `max_columns` (16) and `max_rows` (64). Rows of
   attributes outside the policy are omitted from the ciphertext, a repeated
   attribute takes copies, and the Decode of App. B.2 is used with the sign
-  corrected (see the module documentation). Ciphertexts, keys and public
-  parameters are bound to their setup. Like `sife/part_fh_ipe_pairing`, the
-  scheme has no ndarray helpers.
+  corrected (see the module documentation). Ciphertexts and keys carry a
+  digest of their public parameters, which tells two setups apart and is not
+  a signature. The security is selective, for one challenge ciphertext, and
+  ciphertexts are malleable and not authenticated. Like
+  `sife/part_fh_ipe_pairing`, the scheme has no ndarray helpers.
 - **`pyfe4ai.primitives.pairing.dpvs`**: dual pairing vector spaces over an
   asymmetric pairing group (dual bases `B`, `B*` with `B B*^T = mu I`, vectors
   of group elements, scalar combinations and the coordinate-wise pairing),
@@ -52,7 +63,7 @@ compatibility).
 - **`access_control` capability** (`pyfe4ai.CAPABILITIES`): the ciphertext
   or the key carries an access policy or an attribute set (from
   `pyfe4ai.policy`), and decryption succeeds only if the attributes satisfy
-  the policy;
+  the policy, within the security proof of the scheme;
   `pyfe4ai.list_schemes(capabilities="access_control")` lists
   `sife/cp_ab_pairing`. There are now 43 registered schemes.
 

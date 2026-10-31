@@ -37,12 +37,17 @@ def random_dual_bases(
     Args:
         group: Pairing group instance.
         dim: Vector dimension.
-        mu: Scalar of the dual bases (``B B*^T = mu I``).
+        mu: Scalar of the dual bases (``B B*^T = mu I``), nonzero modulo *order*.
         order: Group order, the modulus of the exponents.
 
     Returns:
         The two ``dim x dim`` matrices of ``mpz``, row by row.
+
+    Raises:
+        FEValidationError: For ``mu = 0`` modulo *order*, which makes ``B*`` the zero matrix.
     """
+    if mu % order == 0:
+        raise FEValidationError("mu must be nonzero modulo the group order: B* would be the zero matrix")
     while True:
         b = [
             [gp.mpz(int(group.random(ZR))) for _ in range(dim)]

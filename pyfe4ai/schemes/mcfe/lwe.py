@@ -153,7 +153,7 @@ class MCFELWEKeyGenerator(IPFEAbsKeyGenerator):
                 ``"shake128-rejection"``, ``"shake256-wide"`` for the
                 ciphertexts of versions <= 0.3.0; a public parameter).
                 The keys ``bound_u`` and ``label_modulus`` of versions <= 0.2.0
-                are ignored.
+                are ignored, with a ``FEWarning``.
         """
         self.label_hash = label_hash_mode(config.get("label_hash", DEFAULT_LABEL_HASH))
         super().__init__(config, **kwargs)

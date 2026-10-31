@@ -9,6 +9,7 @@ field, these tests are the attacks that leave every field well formed.
 
 import copy
 import hashlib
+import threading
 
 import pytest
 
@@ -142,6 +143,33 @@ def test_tampered_pp(make):
     pp["ua"][0] = pp["ua"][1]
     with pytest.raises(FEValidationError, match="pp_binding"):
         SIFECPABPairing({"keys": {"pp": pp}})
+
+
+@pytest.mark.parametrize("field", ["g1", "pp_binding", "a"])
+def test_parameters_changed_after_construction_do_not_reach_the_object(field, make):
+    kg, _ = make()
+    original = kg.get_public_parameters()
+    mine = copy.deepcopy(original)
+    crypto = SIFECPABPairing({"keys": {"pp": mine}})
+    mine[field] = make()[0].get_public_parameters()[field]
+    ct = crypto.encrypt(X, policy="org:A")
+    assert ct["pp_binding"] == original["pp_binding"]
+    expected = sum(a * b for a, b in zip(X, Y))
+    assert SIFECPABPairing({"keys": {"pp": original}}).decrypt(ct, key(kg, ["org:A"])) == expected
+
+
+def _nested(depth):
+    value = []
+    for _ in range(depth):
+        value = [value]
+    return value
+
+
+@pytest.mark.parametrize("extra", [_nested(5000), threading.Lock()], ids=["too-deep", "not-data"])
+def test_parameters_that_cannot_be_copied_are_refused(extra, make):
+    kg, _ = make()
+    with pytest.raises(FEValidationError, match="JSON data"):
+        SIFECPABPairing({"keys": {"pp": dict(kg.get_public_parameters(), extra=extra)}})
 
 
 # ---------------------------------------------------------------------------

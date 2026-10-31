@@ -164,7 +164,7 @@ class MCFEFHMultiIPEPairingKeyGenerator(IPFEAbsKeyGenerator):
             config: ``n``, ``lst_nid``, ``eta``, ``bound_x``, ``bound_y`` and
                 ``pairing_group_param`` (asymmetric, default BLS12-381). The keys
                 ``sec_level``, ``u_bound`` and ``label_modulus`` of versions
-                <= 0.2.0 are ignored.
+                <= 0.2.0 are ignored, with a ``FEWarning``.
         """
         super().__init__(config, **kwargs)
         require_pairing_backend()

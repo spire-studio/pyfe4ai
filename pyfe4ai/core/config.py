@@ -12,7 +12,10 @@ security profile is applied (:func:`resolve`): unknown profiles, schemes the
 Each config class declares the options of its scheme (:class:`Option`: what
 it holds, its default, the values it accepts), so ``config.ring_n`` reads an
 option with its default, and the page *Configuration options* of the
-documentation is rendered from these declarations (:func:`options_rst`).
+documentation is rendered from these declarations (:func:`options_rst`). A
+key that no scheme declares is refused, so that a misspelt option does not
+quietly become its default, and one that this scheme does not read draws a
+warning (:func:`check_options`).
 
 The rules that combine the options of the threshold schemes -- the key
 sharing for ``t < s``, the flooding accounting, the key-share layout -- are
@@ -41,7 +44,7 @@ from pyfe4ai.core.profiles import STANDARD
 from pyfe4ai.core.profiles import STANDARD_DCR_PRIME_BITS
 from pyfe4ai.core.profiles import STANDARD_STAT_PARAM
 from pyfe4ai.core.profiles import TOY
-from pyfe4ai.core.exceptions import FESecurityWarning, FEValidationError, warn_at_caller
+from pyfe4ai.core.exceptions import FEConfigError, FESecurityWarning, FEValidationError, FEWarning, warn_at_caller
 from pyfe4ai.core.registry import SCHEMES, get_scheme
 
 # ---------------------------------------------------------------------------
@@ -1055,6 +1058,53 @@ class QuadraticMIQFEConfig(SchemeConfig):
 
 
 # ---------------------------------------------------------------------------
+# option names
+
+
+#: Keys of versions <= 0.2.0 that the key generators of those versions read and
+#: these ignore.
+LEGACY_OPTIONS = frozenset({"bound_u", "label_modulus", "u_bound"})
+
+#: The name of every option of a key generator or a crypto object of any scheme.
+_ALL_OPTIONS = frozenset(
+    name for klass in (*_CONFIGS.values(), CryptoConfig) for name in (*klass.OPTIONS, *getattr(klass, "CRYPTO", ()))
+)
+
+
+def check_options(config: dict, scheme: tuple | None) -> None:
+    """Check the names of the options of a key generator's *config*.
+
+    A misspelt option would otherwise leave its default in place without a
+    word, and for ``security_profile`` that default is ``toy``. A config may
+    be shared between schemes, or with the scheme's crypto objects, so a name
+    that some scheme declares stays accepted.
+
+    Args:
+        config: The key generator's configuration.
+        scheme: ``(family, variant)`` of the key generator, or ``None`` if it
+            is not a registered scheme: its options are its own, and not
+            checked.
+
+    Raises:
+        FEConfigError: For a key that no scheme declares.
+
+    Warns:
+        FEWarning: For an option of another scheme, or a key of
+            :data:`LEGACY_OPTIONS`: this key generator ignores it.
+    """
+    if scheme is None:
+        return
+    klass = config_class(scheme)
+    for key in config:
+        if key in klass.OPTIONS or key in klass.CRYPTO:
+            continue
+        if key not in _ALL_OPTIONS and key not in LEGACY_OPTIONS:
+            raise FEConfigError("{}/{} has no option {!r}; its options are {}".format(
+                scheme[0], scheme[1], key, ", ".join(sorted(klass.OPTIONS))))
+        warn_at_caller("{}/{} has no option {!r} and ignores it".format(scheme[0], scheme[1], key), FEWarning)
+
+
+# ---------------------------------------------------------------------------
 # refused and constrained combinations (documentation)
 
 
@@ -1201,7 +1251,10 @@ def options_rst() -> str:
         "",
         "A key generator takes its configuration as a mapping of options; it is converted into the config "
         "class of its scheme (:mod:`pyfe4ai.core.config`) and completed by its security profile before the key "
-        "generator is built. Crypto objects take their config as given. Options not listed are ignored.",
+        "generator is built. Crypto objects take their config as given. A key generator refuses a key that no "
+        "scheme declares (``FEConfigError``), so that a misspelt ``security_profile`` does not give the ``toy`` "
+        "profile. It ignores, with a ``FEWarning`` that names it, an option of another scheme and a key of versions "
+        "<= 0.2.0 (``bound_u``, ``label_modulus``, ``u_bound``).",
         "",
     ]
     lines += _heading("Server and client ids", "-")

@@ -4,9 +4,11 @@ A label is ``namespace:value``. The namespace is a non-empty string of ASCII
 letters, digits, ``_``, ``.`` and ``-``; it ends at the first ``:``. The value
 is a non-empty string without whitespace, without control characters (Unicode
 category ``Cc``), without invisible format characters such as zero-width and
-bidirectional marks (``Cf``), without lone surrogates (``Cs``) and without
-``,``, ``(``, ``)`` or ``#`` (``#`` is kept for the copies of a label that a
-compiled policy numbers). A label must be in Unicode normalization form NFC:
+bidirectional marks (``Cf``), without other code points that render as nothing
+(Unicode's Default_Ignorable_Code_Point: variation selectors, Hangul fillers,
+the grapheme joiner), without lone surrogates (``Cs``) and without ``,``,
+``(``, ``)`` or ``#`` (``#`` is kept for the copies of a label that a compiled
+policy numbers). A label must be in Unicode normalization form NFC:
 it is checked, never normalized, so the label that is hashed is the one the
 caller wrote and two spellings of one text are not silently one attribute. It
 must be a ``str`` itself, not an instance of a subclass.
@@ -36,8 +38,19 @@ _NAMESPACE = re.compile(r"[A-Za-z0-9_.\-]+")
 #: Characters a value may not contain besides whitespace and control characters.
 _RESERVED = frozenset(",()#")
 
+#: Default_Ignorable_Code_Point of the Unicode character database, which :mod:`unicodedata` does not give: two labels
+#: that differ by one of these look the same, whatever the category of the code point.
+_IGNORABLE = re.compile(
+    "[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u202a-\u202e\u2060-\u206f"
+    "\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufff8\U0001bca0-\U0001bca3\U0001d173-\U0001d17a"
+    "\U000e0000-\U000e0fff]"
+)
+
 _ATTRIBUTE_DOMAIN = b"PYFE4AI-V05-POLICY-ATTR-Zq"
 _UNIVERSE_DOMAIN = b"PYFE4AI-V05-POLICY-UNIVERSE"
+
+#: :func:`attribute_to_zq` reads 512 bits of hash, 128 more than the modulus can have.
+_MAX_MODULUS_BITS = 384
 
 
 def clip(text: str, limit: int = 40) -> str:
@@ -80,6 +93,10 @@ def validate_label(label: str) -> str:
             raise FEValidationError(
                 "attribute label {}: the value contains a lone surrogate".format(clip(repr(label)))
             )
+        if _IGNORABLE.fullmatch(char) is not None:
+            raise FEValidationError(
+                "attribute label {}: the value contains a character that renders as nothing".format(clip(repr(label)))
+            )
     if not unicodedata.is_normalized("NFC", label):
         raise FEValidationError(
             "attribute label {} is not in Unicode normalization form NFC".format(clip(repr(label)))
@@ -93,8 +110,8 @@ def attribute_to_zq(label: str, q: int) -> int:
     ``SHAKE256("PYFE4AI-V05-POLICY-ATTR-Zq" || len(b) || b)`` read to 64 bytes,
     with ``b`` the UTF-8 bytes of the label and ``len(b)`` four bytes
     big-endian, taken as a big-endian integer modulo *q*. Within 2^-128 of
-    uniform for ``q < 2^384``. *label* must be a valid label
-    (:func:`validate_label`) and *q* an ``int`` of at least 2;
+    uniform, which is why *q* stops at ``2^384``. *label* must be a valid label
+    (:func:`validate_label`) and *q* an ``int`` with ``2 <= q < 2^384``;
     ``FEValidationError`` otherwise.
     """
     validate_label(label)
@@ -103,6 +120,11 @@ def attribute_to_zq(label: str, q: int) -> int:
         raise FEValidationError("the modulus q must be an int, got {}".format(type(q).__name__))
     if q < 2:
         raise FEValidationError("the modulus q must be at least 2, got {}".format(q))
+    if q.bit_length() > _MAX_MODULUS_BITS:
+        raise FEValidationError(
+            "the modulus q must be below 2^{}, got {} bits: 64 bytes of hash do not cover a larger one".format(
+                _MAX_MODULUS_BITS, q.bit_length())
+        )
     data = label.encode("utf-8")
     digest = hashlib.shake_256(_ATTRIBUTE_DOMAIN + len(data).to_bytes(4, "big") + data).digest(64)
     return int.from_bytes(digest, "big") % q
