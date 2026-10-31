@@ -23,8 +23,9 @@ Selection: backend, threads, sampler
   it for the current thread inside the block (a ``threading.local``):
   threads started inside the block use the process-wide selection.
 * :func:`pyfe4ai.backend.set_threads` and ``PYFE4AI_THREADS`` set how many
-  threads *one* native call may use over the chunks of a tensor (Rust
-  threads, with the GIL released), for the whole process. It does not limit
+  threads *one* native call may use over the chunks of a tensor or the
+  elements of a BLS12-381 batch (Rust threads, with the GIL released), for
+  the whole process. It does not limit
   how many Python threads call the library: ``P`` Python threads running
   native calls at once use up to ``P`` times that many threads.
 * :func:`pyfe4ai.primitives.sampling.set_gaussian_sampler` and
@@ -88,7 +89,8 @@ threads:
 
 Everything else is not synchronised. Crypto objects only read their keys
 when they encrypt or decrypt, and their caches (the key in the form
-encryption uses, the native key) are built on first use: several threads
+encryption uses, the native key, the decoded public parameters) are built on
+first use: several threads
 may share one, and their first calls may each build the cache (the same
 values; one of them is kept). A key generator's ``setup()`` replaces its
 keys: do not call it while other threads use the generator. When in doubt,

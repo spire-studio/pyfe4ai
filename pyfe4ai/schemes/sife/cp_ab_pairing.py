@@ -91,7 +91,8 @@ from pyfe4ai.policy import (
 from pyfe4ai.policy.attributes import clip
 from pyfe4ai.primitives.pairing.bls12_381 import MAX_DLOG_BOUND
 from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, ZR, PairingGroup, multi_pair, pair
-from pyfe4ai.primitives.pairing.pairing_backend import deserialize_many, multiexp, pow_many
+from pyfe4ai.primitives.pairing.pairing_backend import deserialize_many, multiexp, multiexp_many, pow_many
+from pyfe4ai.primitives.pairing.pairing_backend import serialize_many
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.primitives.pairing.pairing_backend import require_pairing_backend
 from pyfe4ai.primitives.pairing.pairing_utils import bounded_discrete_log_gt
@@ -144,7 +145,7 @@ def _rand_matrix(group: PairingGroup, rows: int, cols: int) -> list[list[gp.mpz]
 
 
 def _serialize_vec(group: PairingGroup, vec) -> list[str]:
-    return [group.serialize(v).decode("utf-8") for v in vec]
+    return [item.decode("utf-8") for item in serialize_many(group, vec)]
 
 
 def _pairs(items: list) -> list[list]:
@@ -374,6 +375,7 @@ class SIFECPABPairing(IPFEAbsCrypto):
             raise FEKeyError("no public parameters: keys needs the entry pp")
         self._read_parameters(pp)
         self.pp = pp
+        self._decoded = {}
         try:
             self.group = PairingGroup(pp["pairing_group_param"])
         except ImportError:     # no backend for a group that may exist: the installation, not the parameters
@@ -421,6 +423,18 @@ class SIFECPABPairing(IPFEAbsCrypto):
                 _check_length(entry, 2, name)
         self.universe = universe
         self.max_policy_length = self.max_rows * (max(len(label) for label in universe.labels) + 400)
+
+    def _pp_elements(self, kind, name: str, index: int | None = None) -> list:
+        """The elements of the field *name* of the public parameters (entry *index* of a table).
+
+        Decoded and checked at their first use, as a table entry no policy
+        reads need not be valid, and kept: encryption reads the same ones each time.
+        """
+        key = (name, index)
+        if key not in self._decoded:
+            items = self.pp[name] if index is None else self.pp[name][index]
+            self._decoded[key] = _elements(self.group, items, kind, name)
+        return self._decoded[key]
 
     def _check_policy_length(self, policy: str) -> None:
         """Refuse a policy text of more than ``max_policy_length`` characters.
@@ -477,18 +491,18 @@ class SIFECPABPairing(IPFEAbsCrypto):
         indices = [self.universe.index(label, copy) for label, copy in rows]
         columns = [[(k, entry) for k, entry in enumerate(row) if entry != 0] for row in msp.matrix]
         used = set(indices) | {size + k for row in columns for k, _ in row}
-        w_a = {index: _elements(group, pp["w_a"][index], G1, "w_a") for index in used}
+        w_a = {index: self._pp_elements(G1, "w_a", index) for index in used}
 
         s = int(random_nonzero_zr(group))
-        c1 = [multiexp([elem], [s], group) for elem in _elements(group, pp["a"], G1, "a")]
+        c1 = [multiexp([elem], [s], group) for elem in self._pp_elements(G1, "a")]
         c2 = []
         for index, row in zip(indices, columns):
             exps = [s] + [(s * entry) % order for _, entry in row]
             bases = [w_a[index]] + [w_a[size + k] for k, _ in row]
             c2.append([multiexp([base[t] for base in bases], exps, group) for t in (0, 1)])
         g1 = _elements(group, [pp["g1"]], G1, "g1")[0]
-        ua = _elements(group, pp["ua"], G1, "ua")
-        c3 = [multiexp([g1, ua_i], [x_i % order, s], group) for x_i, ua_i in zip(x, ua)]
+        ua = self._pp_elements(G1, "ua")
+        c3 = multiexp_many([[g1, ua_i] for ua_i in ua], [[x_i % order, s] for x_i in x], group)
 
         return CPABCiphertext.new(
             policy=encoding,

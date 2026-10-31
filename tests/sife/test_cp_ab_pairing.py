@@ -15,6 +15,7 @@ from tests.pairing_group import GROUP, skip_unless_available  # noqa: E402
 skip_unless_available()
 
 from tests.sife.conftest import ETA, UNIVERSE  # noqa: E402
+from pyfe4ai import backend as native_backend
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.exceptions import FEConfigError, FEKeyError, FEValidationError, FEWarning
 from pyfe4ai.core.formats.pairing import CPABCiphertext, CPABFunctionalKey, CPABParameters, CPABRecord
@@ -615,6 +616,60 @@ def test_encrypt_reads_only_the_table_entries_of_its_policy(make):
         pp["w_a"][index] = ["junk", "junk"]
     crypto = SIFECPABPairing({"keys": {"pp": rebound(pp)}})
     assert len(crypto.encrypt([1] * ETA, policy="org:A")["c2"]) == 1
+
+
+def test_encrypt_decodes_the_public_parameters_once(make, monkeypatch):
+    _, crypto = make()
+    decoded = []
+    real = cp_ab_pairing.deserialize_many
+    monkeypatch.setattr(cp_ab_pairing, "deserialize_many",
+                        lambda group, items: decoded.append(list(items)) or real(group, items))
+    for _ in range(3):
+        crypto.encrypt([1] * ETA, policy="org:A")
+    pp = crypto.pp
+    assert decoded.count(pp["ua"]) == 1
+    assert decoded.count(pp["a"]) == 1
+    assert sum(items in pp["w_a"] for items in decoded) == 2     # the slot of the label and the first column
+
+
+def test_kept_public_parameters_give_correct_ciphertexts(fixed):
+    kg, crypto, _, dk, expected = fixed
+    for _ in range(3):
+        ct = crypto.encrypt([3, -1, 0, 7, 2], policy="and(org:A, role:auditor)")
+        assert crypto.decrypt(ct, dk) == expected
+
+
+def test_ciphertexts_stay_randomised_with_kept_parameters(make):
+    _, crypto = make()
+    first = crypto.encrypt([1] * ETA, policy="org:A")
+    second = crypto.encrypt([1] * ETA, policy="org:A")
+    assert first["c1"] != second["c1"]
+    assert not set(first["c3"]) & set(second["c3"])
+
+
+def test_a_tampered_element_of_a_read_entry_is_still_refused(make):
+    kg, _ = make()
+    pp = copy.deepcopy(kg.get_public_parameters())
+    pp["ua"][0] = pp["b"][0]    # an element of G2: charm reads almost any text as some element of G1
+    crypto = SIFECPABPairing({"keys": {"pp": rebound(pp)}})
+    for _ in range(2):      # a refusal is not kept as a result
+        with pytest.raises(FEValidationError, match="ua"):
+            crypto.encrypt([1] * ETA, policy="org:A")
+
+
+@pytest.mark.parametrize("threads", [1, 4])
+def test_threads_do_not_change_the_result(threads, make):
+    # above the size from which the native batches use threads
+    eta = 40
+    native_backend.set_threads(threads)
+    try:
+        kg, crypto = make(eta=eta)
+        x, y = [(-1) ** i * (i % 7) for i in range(eta)], [i % 5 for i in range(eta)]
+        ct = crypto.encrypt(x, policy="and(org:A, role:auditor)")
+        dk = kg.get_decryption_keys("s", credentials={"fusion_weight": y, "attributes": ["org:A", "role:auditor"]})
+        assert crypto.decrypt(ct, dk) == sum(a * b for a, b in zip(x, y))
+    finally:
+        native_backend.set_threads(1)
 
 
 def test_encrypt_refuses_a_policy_decryption_would_refuse(make):
