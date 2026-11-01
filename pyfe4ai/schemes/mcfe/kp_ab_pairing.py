@@ -211,10 +211,24 @@ def _in_element(layer: int, index: tuple):
 
 
 class MCFEKPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
-    """Key generator for multi-client key-policy attribute-based IPFE over pairings."""
+    """Key generator for multi-client key-policy attribute-based IPFE over pairings.
+
+    The class attributes ``H_DIM``, ``_pp_domain``, ``_H_STAR_ROWS``, ``_ClientKey`` and ``_FunctionalKey`` and the
+    methods :meth:`_client_extras`, :meth:`_roots` and :meth:`_extra_coordinates` are what a variation of this scheme
+    changes (``mcfe/kp_ab_pairing_per_client`` is one); the key generator of a variation also has a ``_scheme_type``
+    of its own.
+    """
 
     _scheme_type = CryptoCONST.TYPE_MCFE_KP_AB
     _config_only_record = True  # the record holds the configuration only (see ParameterCacheMixin)
+    #: The dimension of the bases ``H_i`` and ``H_i*``.
+    H_DIM = H_DIM
+    #: The domain of the ``pp_binding`` digest.
+    _pp_domain = _PP_DOMAIN
+    #: The rows of ``H_i*`` that the master key keeps, as elements of ``G2`` (``h*_1, h*_2, h*_3``).
+    _H_STAR_ROWS = (0, 1, 2)
+    _ClientKey = MCKPABClientKey
+    _FunctionalKey = MCKPABFunctionalKey
 
     def __init__(self, config: dict, **kwargs) -> None:
         """Initialise the multi-client key-policy attribute-based IPFE key generator.
@@ -319,14 +333,17 @@ class MCFEKPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             g1=group.serialize(g1).decode("utf-8"),
             g2=group.serialize(g2).decode("utf-8"),
         ).to_dict()
-        self.pp = MCKPABParameters.extend(body, pp_binding=pp_digest(body, _PP_DOMAIN)).to_dict()
+        self.pp = MCKPABParameters.extend(body, pp_binding=pp_digest(body, self._pp_domain)).to_dict()
 
         f_g1 = serialize_matrix_g(group, basis_vectors(f, [0, 1, 2], g1, group))
-        client_keys, h_star = {}, {}
+        client_keys, h_star, extra_secrets = {}, {}, {}
         for nid, p_i in zip(self.lst_nid, p):
-            h, h_dual = random_dual_bases(group, H_DIM, gp.mpz(1), order)
-            h_star[nid] = basis_vectors(h_dual, [0, 1, 2], g2, group)
-            client_keys[nid] = MCKPABClientKey.new(
+            h, h_dual = random_dual_bases(group, self.H_DIM, gp.mpz(1), order)
+            h_star[nid] = basis_vectors(h_dual, self._H_STAR_ROWS, g2, group)
+            extra_fields, secrets = self._client_extras(nid, h, g1)
+            for name, value in secrets.items():
+                extra_secrets.setdefault(name, {})[nid] = value
+            client_keys[nid] = self._ClientKey.new(
                 nid=nid,
                 s=gp.digits(s[nid]),
                 u=gp.digits(u[nid]),
@@ -335,17 +352,26 @@ class MCFEKPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
                 h3=_serialize_vec(group, basis_vectors(h, [2], g1, group)[0]),
                 f=[list(row) for row in f_g1],
                 pp_binding=self.pp["pp_binding"],
+                **extra_fields,
             ).to_dict()
         # what the paper keeps: S, U and f*_1..3, (h*_i,1..3)_i as elements of G2, and the encryption keys; the
         # bases F, H_i, F*, H*_i stay behind
         self.msk = {
             "s": {nid: gp.digits(value) for nid, value in s.items()},
             "u": {nid: gp.digits(value) for nid, value in u.items()},
+            **extra_secrets,
             "f_star": basis_vectors(f_star, [0, 1, 2], g2, group),
             "h_star": h_star,
         }
         self._client_keys = client_keys
         logger.info("MCFE key-policy attribute-based IPFE setup successfully")
+
+    def _client_extras(self, nid, h, g1) -> tuple[dict, dict]:
+        """What a variation of the scheme adds for client *nid* at setup, given its basis ``H_i`` (*h*, the exponents)
+        and the generator *g1*: the fields of its encryption key (a dict, for the record ``_ClientKey``) and the
+        entries of the master key for it (a dict from a name to a decimal string; the master key holds
+        ``{name: {nid: value}}``). None here."""
+        return {}, {}
 
     def get_public_parameters(self) -> dict:
         return self.pp
@@ -409,20 +435,24 @@ class MCFEKPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         check_policy_length(encoding, self.max_policy_length)       # no decryption would read it
 
         group, order, msk = self.group, int(self.order), self.msk
-        # one a0, one set of shares and one z for the key, whatever the client; only the pi are fresh for each
-        a0, z = int(group.random(ZR)), int(group.random(ZR))
-        shares = msp.shares(a0, [int(group.random(ZR)) for _ in range(msp.num_cols - 1)])
+        # one z for the key, whatever the client; the root a0 and the shares are those of _roots (one set for all
+        # clients here); only the pi are fresh for each client and row
+        z = int(group.random(ZR))
+        roots = self._roots(msp)
+        extra = self._extra_coordinates()
         s_y = sum(int(msk["s"][nid]) * y[nid] for nid in self.lst_nid) % order
         u_y = sum(int(msk["u"][nid]) * y[nid] for nid in self.lst_nid) % order
         k_rows, k_ipfe = {}, {}
         for nid in self.lst_nid:
+            a0, shares = roots[nid]
             k_rows[nid] = serialize_matrix_g(group, [
                 key_row(msk["f_star"], label, int(group.random(ZR)), share * z, order, group)
                 for label, share in zip(msp.row_labels, shares)
             ])
-            k_ipfe[nid] = _serialize_vec(group, combine(msk["h_star"][nid], [s_y, u_y, a0 * z % order], group))
+            k_ipfe[nid] = _serialize_vec(
+                group, combine(msk["h_star"][nid], [s_y, u_y, a0 * z % order, *extra[nid]], group))
 
-        return MCKPABFunctionalKey.new(
+        return self._FunctionalKey.new(
             policy=encoding,
             policy_digest=policy_digest(formula),
             policy_compiler=POLICY_COMPILER,
@@ -432,9 +462,41 @@ class MCFEKPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             pp_binding=self.pp["pp_binding"],
         ).to_dict()
 
+    def _roots(self, msp) -> dict:
+        """The root ``a0`` and the shares ``a_j = (M (a0, r))_j`` of the span program *msp* for each client, as
+        ``{nid: (a0, shares)}``: one pair for all clients here (Fig. 3 writes ``a_j`` without an index ``i``)."""
+        group = self.group
+        a0 = int(group.random(ZR))
+        shares = msp.shares(a0, [int(group.random(ZR)) for _ in range(msp.num_cols - 1)])
+        return {nid: (a0, shares) for nid in self.lst_nid}
+
+    def _extra_coordinates(self) -> dict:
+        """The coefficients of ``k*_i,ipfe`` after ``(<S, y>, <U, y>, a0 z)``, as ``{nid: tuple}``: none here."""
+        return {nid: () for nid in self.lst_nid}
+
 
 class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
-    """Crypto operations for multi-client key-policy attribute-based IPFE over pairings."""
+    """Crypto operations for multi-client key-policy attribute-based IPFE over pairings.
+
+    What a variation of the scheme changes (``mcfe/kp_ab_pairing_per_client`` is one) is in the class attributes
+    ``H_DIM``, ``_pp_domain``, ``_scheme_id`` and the record classes ``_ClientKey``, ``_FunctionalKey`` and
+    ``_Ciphertext``, ``_CLAIMS``, and in the methods :meth:`_check_extra_key_fields`, :meth:`_attribute_claim`,
+    :meth:`_complete_ipfe`, :meth:`_unsatisfied` and :meth:`_other_attributes`. The attributes of the ciphertexts and the
+    reconstruction coefficients are kept for each client throughout, as ``{nid: ...}``; here they are the same for all.
+    """
+
+    #: The dimension of the bases ``H_i`` and ``H_i*``, which is the length of ``c_i,ipfe``, ``k*_i,ipfe`` and the
+    #: tables of the client key.
+    H_DIM = H_DIM
+    #: The domain of the ``pp_binding`` digest.
+    _pp_domain = _PP_DOMAIN
+    #: The identifier that is hashed into the points of a tag.
+    _scheme_id = _SCHEME_ID
+    _ClientKey = MCKPABClientKey
+    _FunctionalKey = MCKPABFunctionalKey
+    _Ciphertext = MCKPABCiphertext
+    #: The fields that the ciphertexts of all clients of a decryption must give alike.
+    _CLAIMS = ("label", "attributes_digest")
 
     def __init__(self, config: dict, **kwargs) -> None:
         """Initialise the multi-client key-policy attribute-based IPFE crypto object.
@@ -476,7 +538,7 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
         """
         parameters = _record(MCKPABParameters, pp, "public parameters")
         _require_fields(parameters, "public parameters")
-        if pp_digest(pp, _PP_DOMAIN) != parameters.pp_binding:
+        if pp_digest(pp, self._pp_domain) != parameters.pp_binding:
             raise FEValidationError("the public parameters do not agree with their pp_binding")
         _check_marker(parameters.policy_compiler, POLICY_COMPILER, "the policy_compiler of the public parameters")
         _check_marker(parameters.attr_hash, ATTR_HASH, "the attr_hash of the public parameters")
@@ -501,7 +563,7 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
 
     def _read_client_key(self, sk: dict) -> None:
         """Check the encryption key *sk*, which comes from outside, and keep its exponents."""
-        ek = _record(MCKPABClientKey, sk, "client key")
+        ek = _record(self._ClientKey, sk, "client key")
         _require_fields(ek, "client key")
         check_binding(self.pp, ek, "client key")
         nid = as_id(ek.nid)
@@ -511,9 +573,10 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
         if self.id is not None and self.id != nid:
             raise FEValidationError("the client key is for {} but the id of the crypto object is {}".format(
                 clip(repr(nid)), clip(repr(self.id))))
-        _check_length(ek.p_h1, H_DIM, "p_h1")
-        _check_length(ek.p_h2, H_DIM, "p_h2")
-        _check_length(ek.h3, H_DIM, "h3")
+        _check_length(ek.p_h1, self.H_DIM, "p_h1")
+        _check_length(ek.p_h2, self.H_DIM, "p_h2")
+        _check_length(ek.h3, self.H_DIM, "h3")
+        self._check_extra_key_fields(ek)
         _check_length(ek.f, 3, "f")
         for row in ek.f:
             _check_length(row, F_DIM, "f")
@@ -526,6 +589,21 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
             "p_h2": [_scalar(value, "p_h2", order) for value in ek.p_h2],
         }
         self._client_key = ek
+
+    def _check_extra_key_fields(self, ek) -> None:
+        """Check the fields that a variation of the scheme adds to the encryption key *ek*, a record of
+        ``_ClientKey``. None here."""
+
+    def _attribute_claim(self, labels: list):
+        """What a ciphertext claims about its set of attributes *labels* (sorted, each once), besides listing it: the
+        digest of the set, which is also hashed into the points of the tag (``attributes_digest``), or ``None`` for a
+        scheme whose tag does not depend on the set and whose ciphertexts carry no digest."""
+        return attribute_set_digest(labels)
+
+    def _complete_ipfe(self, c_ipfe: list) -> list:
+        """The vector ``c_i,ipfe`` of ``G1`` from the elements that ``omega p_i H_i^(1) + omega' p_i H_i^(2) +
+        psi h_i,3`` gives: unchanged here; a variation adds the other coordinates of its ciphertext."""
+        return c_ipfe
 
     def encrypt(self, lst_pt: list, label, attributes=None) -> dict:
         """Encrypt one scalar for a tag and a set of attributes.
@@ -554,35 +632,36 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
         x = int_vector(lst_pt, "plaintext", length=1, bound=self.bound_x)[0]
         encoded_label = encode_label(label)
         labels = held_attributes(attributes, self.max_attributes)
-        digest = attribute_set_digest(labels)
+        claim = self._attribute_claim(labels)
         group, order, secret = self.group, int(self.order), self._secret
         g1 = self._generator("g1", G1)
         f = [self._key_elements("f", i) for i in range(3)]
         h3 = self._key_elements("h3")
 
-        omega, omega_prime = tag_points(group, _SCHEME_ID, self.pp["pp_binding"], encoded_label, digest)
+        omega, omega_prime = tag_points(group, self._scheme_id, self.pp["pp_binding"], encoded_label, claim)
         psi = int(group.random(ZR))
         c_attr = [attribute_vector(f, name, int(group.random(ZR)), psi, order, group) for name in labels]
         # t = omega^s omega'^u g1^x and c_ipfe[k] = omega^(p h1[k]) omega'^(p h2[k]) h3[k]^psi, in one call
-        rows = [[omega, omega_prime, g1]] + [[omega, omega_prime, h3[k]] for k in range(H_DIM)]
+        rows = [[omega, omega_prime, g1]] + [[omega, omega_prime, h3[k]] for k in range(self.H_DIM)]
         exponents = [[secret["s"], secret["u"], x % order]]
-        exponents += [[secret["p_h1"][k], secret["p_h2"][k], psi] for k in range(H_DIM)]
+        exponents += [[secret["p_h1"][k], secret["p_h2"][k], psi] for k in range(self.H_DIM)]
         t, *c_ipfe = multiexp_many(rows, exponents, group)
-        return MCKPABCiphertext.new(
+        claims = {} if claim is None else {"attributes_digest": claim}
+        return self._Ciphertext.new(
             nid=self._nid,
             label=encoded_label,
             attributes=labels,
-            attributes_digest=digest,
+            **claims,
             policy_compiler=POLICY_COMPILER,
             attr_hash=ATTR_HASH,
             tag_hash=TAG_HASH,
             c_attr=serialize_matrix_g(group, c_attr),
             t=group.serialize(t).decode("utf-8"),
-            c_ipfe=_serialize_vec(group, c_ipfe),
+            c_ipfe=_serialize_vec(group, self._complete_ipfe(c_ipfe)),
             pp_binding=self.pp["pp_binding"],
         ).to_dict()
 
-    def _check_key(self, key: MCKPABFunctionalKey, rows: int) -> dict:
+    def _check_key(self, key, rows: int) -> dict:
         """Check the clients and the shape of the fields of *key*, and return the weights as ints by client."""
         y = _by_client(key.y, "y of the functional key")
         k_rows = _by_client(key.k_rows, "k_rows of the functional key")
@@ -594,15 +673,16 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
             _check_length(k_rows[nid], rows, "k_rows of {}".format(nid))
             for row in k_rows[nid]:
                 _check_length(row, F_DIM, "k_rows of {}".format(nid))
-            _check_length(k_ipfe[nid], H_DIM, "k_ipfe of {}".format(nid))
+            _check_length(k_ipfe[nid], self.H_DIM, "k_ipfe of {}".format(nid))
             weights[nid] = _decimal(y[nid], "y of {}".format(nid))
             if abs(weights[nid]) > self.bound_y:
                 raise FEValidationError("y of {} is {}, beyond the limit bound_y = {}".format(
                     nid, weights[nid], self.bound_y))
         return weights
 
-    def _check_tags(self, cts: dict, label) -> list:
-        """Check that the ciphertexts agree on the tag and on the set of attributes, and return the attributes.
+    def _check_tags(self, cts: dict, label) -> dict:
+        """Check that the ciphertexts agree on the tag and on the set of attributes (the fields of ``_CLAIMS``), and
+        return the attributes of each client, as ``{nid: list}``.
 
         The label and the digest are claims of the clients: a decryption does not hash them again (the points are
         inside ``t`` and ``c_ipfe``), but a client that used other ones gives a value that does not decrypt, and this
@@ -611,7 +691,7 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
         first_nid = self.lst_nid[0]
         first = cts[first_nid]
         for nid in self.lst_nid:
-            for name in ("label", "attributes_digest"):
+            for name in self._CLAIMS:
                 value = getattr(cts[nid], name)
                 if type(value) is not str:
                     raise FEValidationError("the {} of the ciphertext of {} must be a str".format(name, nid))
@@ -626,10 +706,11 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
         sets = {}
         for nid in self.lst_nid:
             sets[nid] = read_attributes(cts[nid].attributes, self.max_attributes)
-            if attribute_set_digest(sets[nid]) != cts[nid].attributes_digest:
+            claim = self._attribute_claim(sets[nid])
+            if claim is not None and claim != cts[nid].attributes_digest:
                 raise FEValidationError(
                     "the attributes_digest of the ciphertext of {} is not the digest of its attributes".format(nid))
-        return sets[first_nid]
+        return sets
 
     def _check_records(self, key, cts: dict) -> None:
         """Check the bindings, then the fields, then the version markers of *key* and of the ciphertexts *cts*, a dict
@@ -677,16 +758,17 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
         msp = compile_policy(formula, self.order, self.max_rows)
         return msp, self._check_key(key, msp.num_rows)
 
-    def _check_shapes(self, cts: dict, attributes: list) -> None:
-        """Check the length of every field of the ciphertexts *cts* that is read as a vector."""
+    def _check_shapes(self, cts: dict, attributes: dict) -> None:
+        """Check the length of every field of the ciphertexts *cts* that is read as a vector; *attributes*: those of
+        each client."""
         for nid in self.lst_nid:
             ct = cts[nid]
-            _check_length(ct.c_attr, len(attributes), "c_attr of {}".format(nid))
+            _check_length(ct.c_attr, len(attributes[nid]), "c_attr of {}".format(nid))
             for row in ct.c_attr:
                 _check_length(row, F_DIM, "c_attr of {}".format(nid))
             if type(ct.t) is not str:
                 raise FEValidationError("t of {} must be a serialised element of G1".format(nid))
-            _check_length(ct.c_ipfe, H_DIM, "c_ipfe of {}".format(nid))
+            _check_length(ct.c_ipfe, self.H_DIM, "c_ipfe of {}".format(nid))
 
     def _check_fusion_weight(self, fusion_weight, y: dict) -> None:
         """Check that *fusion_weight*, if given, is the weights *y* of the key."""
@@ -697,17 +779,27 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
                 if int_vector(given[nid], "fusion weight of {}".format(nid), length=1) != [y[nid]]:
                     raise FEValidationError("the fusion weight of {} is not the y of the functional key".format(nid))
 
-    @staticmethod
-    def _satisfying_weights(msp, attributes: list) -> dict:
-        """The reconstruction coefficients of the rows of *msp* that *attributes* satisfy.
+    def _unsatisfied(self, nid, attributes: list) -> FEKeyError:
+        """The error for the client *nid* whose *attributes* do not satisfy the policy of the key."""
+        return FEKeyError("the attributes {} of the ciphertexts do not satisfy the policy of the functional key"
+                          .format(clip(repr(attributes), 120)))
+
+    def _satisfying_weights(self, msp, attributes: dict) -> dict:
+        """The reconstruction coefficients of the rows of *msp* that the attributes of each client satisfy, as
+        ``{nid: {row: coefficient}}``; *attributes*: those of each client (clients with one set share one result).
 
         Raises:
-            FEKeyError: If *attributes* do not satisfy the policy.
+            FEKeyError: If the attributes of a client (the first, in the order of ``lst_nid``) do not satisfy the
+                policy (:meth:`_unsatisfied`).
         """
-        weights = msp.reconstruction(attributes)
-        if weights is None:
-            raise FEKeyError("the attributes {} of the ciphertexts do not satisfy the policy of the functional key"
-                             .format(clip(repr(attributes), 120)))
+        found, weights = {}, {}
+        for nid in self.lst_nid:
+            held = tuple(attributes[nid])
+            if held not in found:
+                found[held] = msp.reconstruction(attributes[nid])
+            if found[held] is None:
+                raise self._unsatisfied(nid, attributes[nid])
+            weights[nid] = found[held]
         return weights
 
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict | None = None, label=None):
@@ -739,8 +831,8 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
             ValueError: If the discrete log is not found: the key and the ciphertexts do not fit, whatever their
                 fields say.
         """
-        key = _record(MCKPABFunctionalKey, dk, "functional key")
-        cts = {nid: _record(MCKPABCiphertext, ct, "ciphertext of {}".format(nid))
+        key = _record(self._FunctionalKey, dk, "functional key")
+        cts = {nid: _record(self._Ciphertext, ct, "ciphertext of {}".format(nid))
                for nid, ct in _by_client(dct_ct, "the ciphertexts").items()}
 
         self._check_records(key, cts)
@@ -759,8 +851,9 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
             t.append(_elements(group, [ct.t], G1, "t of {}".format(nid))[0])
             c_ipfe = _elements(group, ct.c_ipfe, G1, "c_ipfe of {}".format(nid))
             k_ipfe = _elements(group, key.k_ipfe[nid], G2, "k_ipfe of {}".format(nid))
-            k_rows = {row: _elements(group, key.k_rows[nid][row], G2, "k_rows of {}".format(nid)) for row in weights}
-            pairs = attribute_pairs(weights, msp.row_labels, attributes, c_attr, k_rows, group, order)
+            k_rows = {row: _elements(group, key.k_rows[nid][row], G2, "k_rows of {}".format(nid))
+                      for row in weights[nid]}
+            pairs = attribute_pairs(weights[nid], msp.row_labels, attributes[nid], c_attr, k_rows, group, order)
             lhs.extend(pairs[0])
             rhs.extend(pairs[1])
             lhs.extend(element ** (order - 1) for element in c_ipfe)
@@ -891,8 +984,8 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
 
     def _key_points(self, key, weights: dict) -> list:
         """The points of ``G2`` that every element is paired with, for :func:`prepare_g2`: for each client, in order,
-        the eight points of each row the policy uses (in the order of *weights*) and the four of ``k*_i,ipfe``; the
-        last is ``g2``.
+        the eight points of each row that its attributes use (in the order of its *weights*, ``{nid: {row: w}}``) and
+        the ``H_DIM`` points of ``k*_i,ipfe``; the last is ``g2``.
 
         The reconstruction coefficient ``w`` of a row and the sign of ``k*_i,ipfe`` sit in the points
         (``e(c, w k) = e(c, k)^w``, ``e(c, -k) = e(c, k)^-1``). They are the same for every element, so they cost one
@@ -902,48 +995,62 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
         group, order = self.group, int(self.order)
         spans = []
         for nid in self.lst_nid:
-            spans.extend(("k_rows", nid, key.k_rows[nid][row]) for row in weights)
+            spans.extend(("k_rows", nid, key.k_rows[nid][row]) for row in weights[nid])
             spans.append(("k_ipfe", nid, key.k_ipfe[nid]))
         points = self._decode(spans, G2)
         folded, exponents, at = [], [], 0
-        for _ in self.lst_nid:
-            for weight in weights.values():
+        for nid in self.lst_nid:
+            for weight in weights[nid].values():
                 if weight % order != 1:
                     folded.extend(range(at, at + F_DIM))
                     exponents.extend([weight % order] * F_DIM)
                 at += F_DIM
-            folded.extend(range(at, at + H_DIM))
-            exponents.extend([order - 1] * H_DIM)
-            at += H_DIM
+            folded.extend(range(at, at + self.H_DIM))
+            exponents.extend([order - 1] * self.H_DIM)
+            at += self.H_DIM
         powers = multiexp_many([[points[slot]] for slot in folded], [[exponent] for exponent in exponents], group)
         for slot, power in zip(folded, powers):
             points[slot] = power
         points.append(self._generator("g2", G2))
         return points
 
-    def _element_rows(self, elements: list, cts: list, used: list, attributes: list, y: dict) -> list:
+    def _element_rows(self, elements: list, cts: list, used: dict, attributes: dict, y: dict) -> list:
         """For each of *elements*, the row of ``G1`` elements that is paired with :meth:`_key_points`: for each
-        client the vector of ``c_attr`` of each used row (*used*: their positions among the *attributes*) and
-        ``c_ipfe``, and last ``prod_i t_i^y_i``, which goes with ``g2``. All the ``G1`` fields of these elements are
-        decoded in one call."""
-        order, n = int(self.order), len(self.lst_nid)
+        client the vector of ``c_attr`` of each used row (*used*: their positions among the *attributes* of the client,
+        ``{nid: list}``) and ``c_ipfe``, and last ``prod_i t_i^y_i``, which goes with ``g2``. All the ``G1`` fields of
+        these elements are decoded in one call."""
+        order = int(self.order)
+        # in the decoded elements of a client's ciphertext: c_attr, then t, then c_ipfe; clients follow each other
+        t_at = {nid: F_DIM * len(attributes[nid]) for nid in self.lst_nid}
+        offset, stride = {}, 0
+        for nid in self.lst_nid:
+            offset[nid] = stride
+            stride += t_at[nid] + 1 + self.H_DIM
         decoded = self._decode(list(self._ciphertext_spans(elements, cts)), G1)
-        t_at = F_DIM * len(attributes)              # in the elements of a ciphertext: c_attr, then t, then c_ipfe
         rows, masks = [], []
         for element in range(len(cts)):
             row, t = [], []
-            for client in range(n):
-                start = (element * n + client) * (t_at + 1 + H_DIM)
-                for vector in used:
+            for nid in self.lst_nid:
+                start = element * stride + offset[nid]
+                for vector in used[nid]:
                     row.extend(decoded[start + F_DIM * vector:start + F_DIM * (vector + 1)])
-                row.extend(decoded[start + t_at + 1:start + t_at + 1 + H_DIM])
-                t.append(decoded[start + t_at])
+                row.extend(decoded[start + t_at[nid] + 1:start + t_at[nid] + 1 + self.H_DIM])
+                t.append(decoded[start + t_at[nid]])
             rows.append(row)
             masks.append(t)
         exponent_row = [y[nid] % order for nid in self.lst_nid]
         for row, mask in zip(rows, multiexp_many(masks, [exponent_row] * len(masks), self.group)):
             row.append(mask)
         return rows
+
+    def _other_attributes(self, held: dict, attributes: dict, where: tuple, first: tuple) -> FEValidationError:
+        """The error for an element, at *where* (its ``(layer, index)``), whose *held* attributes (those of each
+        client) are not the *attributes* of the first element, at *first*: the elements of an array are for one set."""
+        nid = self.lst_nid[0]
+        return FEValidationError(
+            "layer {}, element {}: the attributes {} are not those of layer {}, element {}, {}: the elements "
+            "of an array are for one set of attributes".format(
+                where[0], where[1], clip(repr(held[nid]), 120), first[0], first[1], clip(repr(attributes[nid]), 120)))
 
     def _check_arrays(self, dict_ndarray_ct, label: str, key=None) -> tuple:
         """The checks of a decryption of arrays that need no decoded point, in the order of :meth:`decrypt`: the
@@ -954,8 +1061,8 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
 
         Returns:
             ``(shapes, elements, cts, attributes, msp, y)``: the shape of each layer, the ``(layer, index)`` of each
-            element, its records by client, the common set of attributes (``None`` without elements), and, for a *key*,
-            its span program and weights (``None`` otherwise).
+            element, its records by client, the attributes of each client (``None`` without elements; the same for
+            all elements) and, for a *key*, its span program and weights (``None`` otherwise).
         """
         arrays = self._read_arrays(dict_ndarray_ct)
         shapes = [array.shape for array in arrays[self.lst_nid[0]]]
@@ -966,7 +1073,7 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
             by_client = {}
             for nid in self.lst_nid:
                 where = "{}, layer {}, element {}".format(nid, layer, index)
-                by_client[nid] = flat[where] = _record(MCKPABCiphertext, arrays[nid][layer][index],
+                by_client[nid] = flat[where] = _record(self._Ciphertext, arrays[nid][layer][index],
                                                        "ciphertext of " + where)
             cts.append(by_client)
         self._check_records(key, flat)
@@ -977,10 +1084,7 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
             if attributes is None:
                 attributes, first = held, (layer, index)
             elif held != attributes:
-                raise FEValidationError(
-                    "layer {}, element {}: the attributes {} are not those of layer {}, element {}, {}: the elements "
-                    "of an array are for one set of attributes".format(
-                        layer, index, clip(repr(held), 120), first[0], first[1], clip(repr(attributes), 120)))
+                raise self._other_attributes(held, attributes, (layer, index), first)
         msp, y = (None, None) if key is None else self._read_key(key)
         for (layer, index), by_client in zip(elements, cts):
             with _in_element(layer, index):
@@ -1071,14 +1175,14 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
             raise FEKeyError("need to provide the decryption key dk")
         if not isinstance(label, str):
             raise FEValidationError("need a string label for decrypt_lst_ndarray_ct, got {}".format(clip(repr(label))))
-        key = _record(MCKPABFunctionalKey, dk, "functional key")
+        key = _record(self._FunctionalKey, dk, "functional key")
         shapes, elements, cts, attributes, msp, y = self._check_arrays(dict_ndarray_ct, label, key)
         self._check_fusion_weight(fusion_weight, y)
 
         values = [np.empty(shape, dtype=object) for shape in shapes]
         if elements:
             weights = self._satisfying_weights(msp, attributes)
-            used = vector_positions(weights, msp.row_labels, attributes)
+            used = {nid: vector_positions(weights[nid], msp.row_labels, attributes[nid]) for nid in self.lst_nid}
             prepared = prepare_g2(self._key_points(key, weights))               # the lines are not kept after the call
             base, bound = self._generator_pair(), self.n * self.bound_x * self.bound_y
             for start in range(0, len(elements), _BATCH_ELEMENTS):
