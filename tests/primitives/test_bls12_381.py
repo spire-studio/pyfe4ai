@@ -557,6 +557,7 @@ def test_prepared_with_identities(group, threads, normalise):
     id1, id2, one = group.init(B.G1), group.init(B.G2), group.init(B.GT)
     g2s = _g2_points(group, 6)
     g2s[2] = id2
+    g2s[5] = g2s[5] / g2s[5]                    # an identity of G2 that was computed (z = 0)
     rows = _g1_rows(group, 6, 6)
     rows[0][0] = id1                            # at position 0 of a row
     rows[1][3], rows[1][5] = id1, id1           # further on, the last point among them
@@ -567,6 +568,22 @@ def test_prepared_with_identities(group, threads, normalise):
     got = B._kernels._ext.bls_multi_pair_prepared(rows, prepared, threads)
     assert got == [multi_pair(row, g2s) for row in rows]
     assert got[2] == got[3] == one
+
+
+@pytest.mark.parametrize("normalise", [None, [False] * 3])
+def test_prepared_of_a_computed_identity_of_g2(group, normalise):
+    # the identity of G2 that came out of a computation has z = 0 and coordinates that are no point; decoded or made
+    # by init, it is the same element, and gives the same lines (none)
+    g1s, g2, id1 = group.random(B.G1), group.random(B.G2), group.init(B.G1)
+    computed, made = g2 / g2, group.init(B.G2)
+    assert computed == made
+    g2s = [g2, computed, g2]
+    rows = [[g1s, g1s, g1s], [g1s, id1, g1s], [id1, g1s, id1]]
+    kernels = B._kernels._ext
+    got = kernels.bls_multi_pair_prepared(rows, kernels.bls_prepare_g2(g2s, 1, normalise))
+    assert got == kernels.bls_multi_pair_prepared(rows, kernels.bls_prepare_g2([g2, made, g2], 1, normalise))
+    assert got == [multi_pair(row, g2s) for row in rows]
+    assert got[2] == group.init(B.GT)           # every pair of this row has an identity in it
 
 
 def test_prepared_of_identities_only(group, threads):
@@ -581,6 +598,17 @@ def test_prepared_needs_one_g1_per_point(group, threads):
     for short in ([g1] * 2, [g1] * 4, []):
         with pytest.raises(ValueError, match="row 1 has {} elements, expected 3".format(len(short))):
             multi_pair_prepared([[g1] * 3, short], prepared)
+
+
+def test_prepared_checks_the_length_of_every_row_before_it_reads_any_element(group):
+    # the lengths first: the room for the elements is reserved from them, so a malformed input of many rows must not
+    # get as far as that
+    g1, g2 = group.random(B.G1), group.random(B.G2)
+    prepared = prepare_g2([g2, g2])
+    with pytest.raises(ValueError, match="row 1 has 3 elements, expected 2"):
+        multi_pair_prepared([[g2, g2], [g1, g1, g1]], prepared)         # row 0 holds the wrong group, row 1 is long
+    with pytest.raises(ValueError, match="row 2 has 0 elements, expected 2"):
+        multi_pair_prepared([[g1, g1], [g2, g1], []], prepared)
 
 
 def test_prepared_of_no_points():

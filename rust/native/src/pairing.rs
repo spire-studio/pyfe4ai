@@ -734,8 +734,8 @@ fn prepared_product(ps: &[G1Affine], lines: &[Lines]) -> Gt {
     Bls12_381::final_exponentiation(MillerLoopOutput(f)).expect("the Miller loop of curve points is nonzero")
 }
 
-/// The lines of the Miller loops of some G2 points, in their order. Public values, but they derive from a functional
-/// key: there is no `__repr__` to print them.
+/// The lines of the Miller loops of some G2 points, in their order. A prepared point is as sensitive as the key
+/// element it comes from, not a public value: there is no `__repr__` to print it.
 #[pyclass(frozen, module = "pyfe4ai._rust_native", name = "PreparedG2")]
 pub struct PreparedG2 {
     lines: Vec<Lines>,
@@ -778,13 +778,17 @@ fn bls_prepare_g2(py: Python<'_>, points: Vec<Bound<'_, Elem>>, threads: usize, 
 fn bls_multi_pair_prepared(py: Python<'_>, rows: Vec<Vec<Bound<'_, Elem>>>, prepared: &Bound<'_, PreparedG2>,
                            threads: usize) -> PyResult<Vec<Elem>> {
     let lines = prepared.get().lines.as_slice();
-    let mut ps = Vec::with_capacity(rows.len() * lines.len());
+    // the lengths first: the room for the elements is reserved from them, and a malformed input of many rows must
+    // not reach that
     for (r, row) in rows.iter().enumerate() {
         if row.len() != lines.len() {
             return Err(PyValueError::new_err(format!(
                 "multi_pair_prepared: row {r} has {} elements, expected {}", row.len(), lines.len()
             )));
         }
+    }
+    let mut ps = Vec::with_capacity(rows.len() * lines.len());
+    for (r, row) in rows.iter().enumerate() {
         for (at, x) in row.iter().enumerate() {
             match x.get().v {
                 Val::G1(p) => ps.push(p),
