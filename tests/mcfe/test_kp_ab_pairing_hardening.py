@@ -908,6 +908,21 @@ def test_ndarray_clients_send_the_same_layers(change, match, array_fixed, monkey
         aggregate(agg, cts, dk)
 
 
+@pytest.mark.parametrize("owners,named", [(["nid_0"], "nid_0"), (["nid_2"], "nid_2"), (LST, "nid_0")],
+                         ids=["first client", "last client", "all clients"])
+def test_ndarray_refuses_a_layer_that_is_a_scalar(owners, named, array_fixed, monkeypatch):
+    # a 0-d array has no shape to go through, and decoded_layer cannot divide it as an array (when all clients
+    # sent one, it was a bare AttributeError there)
+    _, clients, agg, _, cts, dk = array_fixed
+    for owner in owners:            # a scalar layer as a client would have sent it if encrypt had accepted one
+        scalar = np.empty((), dtype=object)
+        scalar[()] = clients[owner].encrypt([1], ElementLabel("round-1", 1, ()), attributes=ATTRS)
+        cts[owner] = [cts[owner][0], scalar]
+    refuse_to_compute(monkeypatch)
+    with pytest.raises(FEValidationError, match=r"{}: layer 1 is a scalar".format(named)):
+        aggregate(agg, cts, dk)
+
+
 @pytest.mark.parametrize("field,value,reason", [
     ("pp_binding", "0" * 64, "pp_binding"), ("policy_compiler", "v9", "policy_compiler"),
     ("attr_hash", "v9", "attr_hash"), ("tag_hash", "v9", "tag_hash"),
@@ -1066,6 +1081,15 @@ def test_encrypt_lst_ndarray_checks_the_attributes_also_for_an_empty_array(attri
     for layers in ([np.ones((2,), dtype=np.int64)], [np.zeros((0,), dtype=np.int64)], []):
         with pytest.raises(FEValidationError):
             clients["nid_0"].encrypt_lst_ndarray(layers, label="round-1", attributes=attributes)
+
+
+@pytest.mark.parametrize("layer", [np.array(3), 3, np.int64(2), 1.5, np.float64(0.5)])
+def test_encrypt_lst_ndarray_refuses_a_layer_that_is_a_scalar(layer, array_fixed):
+    # it used to be accepted, and then the aggregation failed with a bare AttributeError in decoded_layer
+    _, clients, _, _, _, _ = array_fixed
+    with pytest.raises(FEValidationError, match="layer 1 of the arrays to encrypt is a scalar"):
+        clients["nid_0"].encrypt_lst_ndarray([np.ones((2,), dtype=np.int64), layer], label="round-1",
+                                             attributes=ATTRS)
 
 
 @pytest.mark.parametrize("layer", [np.array([11]), np.array([-11]), np.array([10.6]), np.array([np.nan]),

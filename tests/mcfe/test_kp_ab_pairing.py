@@ -598,7 +598,13 @@ def spied(monkeypatch, module, name):
     ("and(purpose:research, region:EU)", ATTRS, 2, 2),                              # two rows of weight 1
     ("region:EU", ["region:EU"], 1, 1),                                             # one row of weight 1
 ])
-def test_ndarray_pairs_all_elements_in_one_batch(policy, attributes, rows, unit_rows, make_mc, monkeypatch):
+@pytest.mark.parametrize("batch", [None, 4, 1])
+def test_ndarray_pairs_all_elements_in_slices(batch, policy, attributes, rows, unit_rows, make_mc, monkeypatch):
+    # the key is prepared once per call; the 10 elements (6 + 4) are decoded, paired and solved in slices
+    if batch is not None:
+        monkeypatch.setattr(kp_ab_pairing, "_BATCH_ELEMENTS", batch)
+    assert kp_ab_pairing._BATCH_ELEMENTS == (256 if batch is None else batch)
+    sizes = [min(kp_ab_pairing._BATCH_ELEMENTS, 10 - start) for start in range(0, 10, kp_ab_pairing._BATCH_ELEMENTS)]
     kg, clients, agg = make_mc()
     arrays = random_arrays()
     cts = encrypt_arrays(clients, arrays, attributes=attributes)
@@ -615,14 +621,61 @@ def test_ndarray_pairs_all_elements_in_one_batch(policy, attributes, rows, unit_
         assert all((layer == expected).all() for layer, expected in zip(got, combined(arrays)))
     per_row = 3 * (8 * rows + 4) + 1                        # the pairs of decrypt: a product per element
     assert [len(args[0]) for args in prepared] == [per_row] * 2     # the points of the key, prepared once per call
-    assert [[len(row) for row in args[0]] for args in products] == [[per_row] * 10] * 2     # 6 + 4 elements
+    assert [[len(row) for row in args[0]] for args in products] == [[per_row] * size for size in sizes] * 2
     assert single == [] and len(dlogs) == 20                # one discrete log per element, and no pairing by itself
-    # the key is folded once for all elements (the rows whose weight is not 1, and the sign of k_ipfe), the y of all
-    # elements once
-    assert [len(args[0]) for args in exponentiated] == [3 * (8 * (rows - unit_rows) + 4), 10] * 2
+    # the key is folded once (the rows whose weight is not 1, and the sign of k_ipfe), the y of the elements of a
+    # slice once for each slice
+    assert [len(args[0]) for args in exponentiated] == [3 * (8 * (rows - unit_rows) + 4), *sizes] * 2
     # the used vectors of the key are decoded in one call (the rows and k_ipfe, per client), and every G1 field of
-    # every ciphertext in another (the rows of c_attr, t and c_ipfe, per client and element)
-    assert [len(args[1]) for args in decoded] == [3 * (8 * rows + 4), 10 * 3 * (8 * len(attributes) + 5)] * 2
+    # the ciphertexts of a slice in one (the rows of c_attr, t and c_ipfe, per client and element)
+    assert [len(args[1]) for args in decoded] == [
+        3 * (8 * rows + 4), *(size * 3 * (8 * len(attributes) + 5) for size in sizes)] * 2
+
+
+@pytest.mark.parametrize("batch", [1, 3, 4, 10, 11])
+def test_ndarray_does_not_depend_on_the_slices(batch, make_mc, monkeypatch):
+    kg, clients, agg = make_mc()
+    arrays = random_arrays()
+    cts = encrypt_arrays(clients, arrays)
+    dk = kg.get_decryption_keys("agg", credentials=creds(POLICIES[2][0]))
+    monkeypatch.setattr(kp_ab_pairing, "_BATCH_ELEMENTS", batch)
+    got = aggregate(agg, cts, dk)
+    assert [layer.shape for layer in got] == [(2, 3), (4,)]
+    assert all((layer == expected).all() for layer, expected in zip(got, combined(arrays)))
+
+
+def test_ndarray_refuses_a_wrong_tag_in_a_late_slice_before_it_pairs_anything(make_mc, monkeypatch):
+    kg, clients, agg = make_mc()
+    cts = encrypt_arrays(clients, random_arrays())
+    dk = kg.get_decryption_keys("agg", credentials=creds())
+    monkeypatch.setattr(kp_ab_pairing, "_BATCH_ELEMENTS", 4)       # the last element is in the third slice
+    ct = cts["nid_2"][1][3]
+    cts["nid_2"][1][3] = dict(ct, c_ipfe=[*ct["c_ipfe"][:3], dk["k_ipfe"]["nid_0"][0]])         # a G2 element
+    refuse_to_compute(monkeypatch)                          # nothing decoded, prepared or paired
+    with pytest.raises(FEValidationError, match=r"c_ipfe of nid_2, layer 1, element \(3,\)"):
+        aggregate(agg, cts, dk)
+
+
+def test_ndarray_finds_an_item_that_is_no_element_when_its_slice_is_decoded(make_mc, monkeypatch):
+    # an item with the right tag that is no point of the group cannot be told without decoding it: the slices before
+    # its own were paired by then (docstring of decrypt_lst_ndarray_ct); the call raises and returns nothing
+    kg, clients, agg = make_mc()
+    cts = encrypt_arrays(clients, random_arrays())
+    dk = kg.get_decryption_keys("agg", credentials=creds())
+    monkeypatch.setattr(kp_ab_pairing, "_BATCH_ELEMENTS", 4)
+    ct = cts["nid_2"][1][3]
+    cts["nid_2"][1][3] = dict(ct, c_ipfe=[*ct["c_ipfe"][:3], "1:not an element"])
+    products = spied(monkeypatch, kp_ab_pairing, "multi_pair_prepared")
+    with pytest.raises(FEValidationError, match=r"c_ipfe of nid_2, layer 1, element \(3,\)"):
+        aggregate(agg, cts, dk)
+    assert [len(args[0]) for args in products] == [4, 4]    # the first two slices; the third was not paired
+    cts["nid_2"][1][3] = ct
+    first = cts["nid_2"][1][0]                              # the seventh element of ten: in the second slice
+    cts["nid_2"][1][0] = dict(first, c_ipfe=[*first["c_ipfe"][:3], "1:not an element"])
+    del products[:]
+    with pytest.raises(FEValidationError, match=r"c_ipfe of nid_2, layer 1, element \(0,\)"):
+        aggregate(agg, cts, dk)
+    assert [len(args[0]) for args in products] == [4]       # the first slice was paired
 
 
 def test_ndarray_with_no_elements(mc_fixed, monkeypatch):
@@ -810,6 +863,15 @@ def test_check_marker():
         with pytest.raises(FEValidationError, match="a marker is") as error:
             ac_codec.check_marker(array, "c1", "a marker")
         assert type(error.value) is FEValidationError
+
+
+def test_has_tags_and_check_tags():
+    assert ac_codec.has_tags([], G1) and ac_codec.has_tags(["1:x", "1:y"], G1) and ac_codec.has_tags(["2:x"], G2)
+    for bad in (["1:x", "2:y"], ["2:x"], [b"1:x"], ["x"], [None], "1:x", ("1:x",), None, np.array(["1:x"])):
+        assert not ac_codec.has_tags(bad, G1), bad
+        with pytest.raises(FEValidationError, match="^a field must be a list of serialised elements of G1"):
+            ac_codec.check_tags(bad, G1, "a field")
+    ac_codec.check_tags(["1:x"], G1, "a field")
 
 
 def test_scalar():

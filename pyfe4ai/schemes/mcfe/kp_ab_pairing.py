@@ -60,9 +60,9 @@ The ndarray helpers encrypt each element under ``element_label(label, layer, ind
 all elements of all layers in one batch. The points of the key that every element is paired with (the rows the policy
 uses, with their reconstruction coefficients folded in, and ``-k*_i,ipfe``) are prepared once per call
 (:func:`~pyfe4ai.primitives.pairing.pairing_backend.prepare_g2`; nothing is kept between calls), and each element is
-then one product of pairings over them. The elements of an array are for one set of attributes, and the arrays of a
-call hold every field of every ciphertext in memory as decoded group elements (about 29 per client and element for
-three attributes).
+then one product of pairings over them. The elements of an array are for one set of attributes. All elements are
+checked first; they are then decoded, paired and solved 256 at a time, so that the memory of the decoded group
+elements does not grow with the size of the arrays (see :meth:`MCFEKPABPairing.decrypt_lst_ndarray_ct`).
 
 The policy of a key (``dk["policy"]``) and the attributes of a ciphertext (``ct["attributes"]``, with the tag in
 ``ct["label"]``) are public: they travel in the clear and hide nothing. Keys are trusted input to the decryption: the
@@ -142,8 +142,10 @@ from pyfe4ai.schemes.common.ac_binding import check_binding, pp_digest
 from pyfe4ai.schemes.common.ac_codec import check_dlog_limit as _check_dlog_limit
 from pyfe4ai.schemes.common.ac_codec import check_length as _check_length
 from pyfe4ai.schemes.common.ac_codec import check_marker as _check_marker
+from pyfe4ai.schemes.common.ac_codec import check_tags as _check_tags_of
 from pyfe4ai.schemes.common.ac_codec import copy_parameters as _copy_parameters
 from pyfe4ai.schemes.common.ac_codec import decimal as _decimal
+from pyfe4ai.schemes.common.ac_codec import has_tags as _has_tags
 from pyfe4ai.schemes.common.ac_codec import load_group as _load_group
 from pyfe4ai.schemes.common.ac_codec import positive_int as _positive_int
 from pyfe4ai.schemes.common.ac_codec import read_elements as _elements
@@ -154,13 +156,18 @@ from pyfe4ai.schemes.common.ac_codec import serialize_vec as _serialize_vec
 from pyfe4ai.schemes.common.kp_ab import DEFAULT_MAX_ATTRIBUTES, F_DIM, H_DIM, TAG_HASH
 from pyfe4ai.schemes.common.kp_ab import attribute_pairs, attribute_vector, check_policy_labels, check_policy_length
 from pyfe4ai.schemes.common.kp_ab import compile_policy, held_attributes, key_row, policy_length_limit
-from pyfe4ai.schemes.common.kp_ab import read_attributes, read_policy, tag_points
+from pyfe4ai.schemes.common.kp_ab import read_attributes, read_policy, tag_points, vector_positions
 from pyfe4ai.schemes.mcfe.labels import element_label, encode_label
 
 logger = logging.getLogger(__name__)
 
 _PP_DOMAIN = b"pyfe4ai/mcfe/kp-ab/pp-binding/v1|"
 _SCHEME_ID = "mcfe/kp_ab_pairing"
+
+#: The elements of an array that :meth:`MCFEKPABPairing.decrypt_lst_ndarray_ct` decodes, pairs and solves at a time.
+#: An element holds ``n (8 |S| + 5)`` decoded group elements (``n`` clients, ``|S|`` attributes), some hundred bytes
+#: each: this bounds the memory of the decoded elements, whatever the size of the arrays.
+_BATCH_ELEMENTS = 256
 
 
 def _by_client(entries, what: str) -> dict:
@@ -789,6 +796,7 @@ class MCFEKPABPairing(IPFEAbsCrypto):
 
         Args:
             lst_ndarray: The arrays to encrypt, real or integer valued, scaled by ``10 ** precision`` and rounded.
+                Each has at least one dimension.
             label: The label of the round, a ``str``; all clients of a decryption use the same one.
             attributes: The labels the ciphertexts are for, as for :meth:`encrypt`: the same set for every element.
                 An iterator is read once.
@@ -799,7 +807,8 @@ class MCFEKPABPairing(IPFEAbsCrypto):
         Raises:
             FEKeyError: Without the encryption key ``sk``.
             FEValidationError: For a label that is not a ``str``, attributes that are not a collection of valid labels
-                within the limits, an array that is not made of numbers, and an element beyond ``bound_x``.
+                within the limits, an array that is not made of numbers or is a scalar, and an element beyond
+                ``bound_x``.
         """
         if self._secret is None:
             raise FEKeyError("no encryption key: keys needs the entry sk to encrypt")
@@ -809,6 +818,9 @@ class MCFEKPABPairing(IPFEAbsCrypto):
         out = []
         for layer, source in enumerate(lst_ndarray):
             scaled = scale_to_int(source, self.precision)
+            if scaled.ndim == 0:
+                raise FEValidationError("layer {} of the arrays to encrypt is a scalar: it needs at least one "
+                                        "dimension".format(layer))
             cts = np.empty(scaled.shape, dtype=object)
             for index, value in np.ndenumerate(scaled):
                 cts[index] = self.encrypt([int(value)], element_label(label, layer, index), attributes=labels)
@@ -837,13 +849,24 @@ class MCFEKPABPairing(IPFEAbsCrypto):
                 if not isinstance(array, np.ndarray):
                     raise FEValidationError("the ciphertext arrays of {}: layer {} must be an ndarray, got {}".format(
                         nid, layer, type(array).__name__))
+                if array.ndim == 0:
+                    raise FEValidationError("the ciphertext arrays of {}: layer {} is a scalar: it needs at least one "
+                                            "dimension".format(nid, layer))
                 if array.shape != arrays[first][layer].shape:
                     raise FEValidationError("the ciphertext arrays of {}: layer {} has the shape {}, that of {} has {}"
                                             .format(nid, layer, array.shape, first, arrays[first][layer].shape))
         return arrays
 
+    @staticmethod
+    def _span_name(field: str, who) -> str:
+        """The name of a vector of the key (*who*: its client) or of a ciphertext (*who*: ``(client, layer, index)``),
+        for a message."""
+        if isinstance(who, tuple):
+            return "{} of {}, layer {}, element {}".format(field, *who)
+        return "{} of {}".format(field, who)
+
     def _decode(self, spans: list, kind) -> list:
-        """The elements of *kind* in all of *spans*, a list of ``(name, items)``, decoded in one call.
+        """The elements of *kind* in all of *spans*, a list of ``(field, who, items)``, decoded in one call.
 
         Every span is checked as :func:`~pyfe4ai.schemes.common.ac_codec.read_elements` checks a vector. When one is
         not, the spans are read one at a time to find the first and name it.
@@ -851,42 +874,53 @@ class MCFEKPABPairing(IPFEAbsCrypto):
         Raises:
             FEValidationError: Naming the first span with an item that is no element of *kind*.
         """
-        items = [item for _, part in spans for item in part]
+        items = [item for _, _, part in spans for item in part]
         try:
             return _elements(self.group, items, kind, "the elements")
         except FEValidationError:
-            for name, part in spans:
-                _elements(self.group, part, kind, name)
+            for field, who, part in spans:
+                _elements(self.group, part, kind, self._span_name(field, who))
             raise
 
-    def _batch(self, key, elements: list, cts: list, msp, weights: dict, attributes: list, y: dict) -> tuple:
-        """The products of pairings of all elements: the points of ``G2`` of the key, and for each element the row of
-        ``G1`` elements that is paired with them.
+    def _ciphertext_spans(self, elements: list, cts: list):
+        """The vectors of ``G1`` of the ciphertexts of *elements*, as ``(field, who, items)``, per element and
+        client: the rows of ``c_attr`` flattened, then ``[t]``, then ``c_ipfe``."""
+        for (layer, index), by_client in zip(elements, cts):
+            for nid in self.lst_nid:
+                ct, who = by_client[nid], (nid, layer, index)
+                yield "c_attr", who, [item for row in ct.c_attr for item in row]
+                yield "t", who, [ct.t]
+                yield "c_ipfe", who, ct.c_ipfe
 
-        For each client, in order, the points are the eight of each row the policy uses (in the order of *weights*)
-        and the four of ``k*_i,ipfe``; the last is ``g2``. A row of an element holds the matching elements: the vector
-        of ``c_attr`` of each used row, then ``c_ipfe``, and last the ``G1`` element that goes with ``g2``,
-        ``prod_i t_i^y_i``. The reconstruction coefficient ``w`` of a row and the sign of ``k*_i,ipfe`` sit in the
-        points (``e(c, w k) = e(c, k)^w``, ``e(c, -k) = e(c, k)^-1``): they are the same for every element, so they
-        cost one exponentiation of each point of the key rather than one of each ``G1`` element of each element.
-        All the ``G1`` fields of all ciphertexts are decoded in one call, so memory grows with the number of elements.
+    def _check_field_tags(self, elements: list, cts: list) -> None:
+        """Check that every vector of ``G1`` of the ciphertexts is a list of strings with the type tag of ``G1``.
 
-        Returns:
-            ``(rows, points)``.
+        This is what :func:`~pyfe4ai.schemes.common.ac_codec.read_elements` checks first, and it costs no decoding:
+        a decryption makes it for all elements before it prepares anything. What it cannot tell is an item with the
+        right tag that is no element of the group; that is found when the slice of the item is decoded.
+
+        Raises:
+            FEValidationError: Naming the first vector that is not.
         """
-        group, order, n = self.group, int(self.order), len(self.lst_nid)
-        position = {label: index for index, label in enumerate(attributes)}
-        used = []
-        for row in weights:
-            if msp.row_labels[row] not in position:
-                raise FEValidationError("row {} of the policy names the label {}, which the ciphertexts do not carry"
-                                        .format(row, clip(repr(msp.row_labels[row]))))
-            used.append(position[msp.row_labels[row]])
+        for field, who, part in self._ciphertext_spans(elements, cts):
+            if not _has_tags(part, G1):
+                _check_tags_of(part, G1, self._span_name(field, who))
 
+    def _key_points(self, key, weights: dict) -> list:
+        """The points of ``G2`` that every element is paired with, for :func:`prepare_g2`: for each client, in order,
+        the eight points of each row the policy uses (in the order of *weights*) and the four of ``k*_i,ipfe``; the
+        last is ``g2``.
+
+        The reconstruction coefficient ``w`` of a row and the sign of ``k*_i,ipfe`` sit in the points
+        (``e(c, w k) = e(c, k)^w``, ``e(c, -k) = e(c, k)^-1``). They are the same for every element, so they cost one
+        exponentiation of each point of the key, in one call, rather than one of each ``G1`` element of each element;
+        a coefficient of 1 costs none.
+        """
+        group, order = self.group, int(self.order)
         spans = []
         for nid in self.lst_nid:
-            spans.extend(("k_rows of {}".format(nid), key.k_rows[nid][row]) for row in weights)
-            spans.append(("k_ipfe of {}".format(nid), key.k_ipfe[nid]))
+            spans.extend(("k_rows", nid, key.k_rows[nid][row]) for row in weights)
+            spans.append(("k_ipfe", nid, key.k_ipfe[nid]))
         points = self._decode(spans, G2)
         folded, exponents, at = [], [], 0
         for _ in self.lst_nid:
@@ -902,15 +936,15 @@ class MCFEKPABPairing(IPFEAbsCrypto):
         for slot, power in zip(folded, powers):
             points[slot] = power
         points.append(self._generator("g2", G2))
+        return points
 
-        spans = []
-        for (layer, index), by_client in zip(elements, cts):
-            for nid in self.lst_nid:
-                ct, where = by_client[nid], "{}, layer {}, element {}".format(nid, layer, index)
-                spans.append(("c_attr of " + where, [item for row in ct.c_attr for item in row]))
-                spans.append(("t of " + where, [ct.t]))
-                spans.append(("c_ipfe of " + where, ct.c_ipfe))
-        decoded = self._decode(spans, G1)
+    def _element_rows(self, elements: list, cts: list, used: list, attributes: list, y: dict) -> list:
+        """For each of *elements*, the row of ``G1`` elements that is paired with :meth:`_key_points`: for each
+        client the vector of ``c_attr`` of each used row (*used*: their positions among the *attributes*) and
+        ``c_ipfe``, and last ``prod_i t_i^y_i``, which goes with ``g2``. All the ``G1`` fields of these elements are
+        decoded in one call."""
+        order, n = int(self.order), len(self.lst_nid)
+        decoded = self._decode(list(self._ciphertext_spans(elements, cts)), G1)
         t_at = F_DIM * len(attributes)              # in the elements of a ciphertext: c_attr, then t, then c_ipfe
         rows, masks = [], []
         for element in range(len(cts)):
@@ -924,22 +958,32 @@ class MCFEKPABPairing(IPFEAbsCrypto):
             rows.append(row)
             masks.append(t)
         exponent_row = [y[nid] % order for nid in self.lst_nid]
-        for row, mask in zip(rows, multiexp_many(masks, [exponent_row] * len(masks), group)):
+        for row, mask in zip(rows, multiexp_many(masks, [exponent_row] * len(masks), self.group)):
             row.append(mask)
-        return rows, points
+        return rows
 
     def decrypt_lst_ndarray_ct(self, dict_ndarray_ct: dict, dk: dict | None = None,
                                fusion_weight: dict | None = None, label: str | None = None) -> list:
-        """Decrypt the ciphertext arrays of all clients, all elements in one batch.
+        """Decrypt the ciphertext arrays of all clients, all elements with one preparation of the key.
 
         The elements go through the checks of :meth:`decrypt` (the label of an element must be the one that
-        :meth:`encrypt_lst_ndarray` gave it), they must all be for one set of attributes, and nothing is decoded or
-        paired before every element has passed. The key is read once. The points of the key are prepared once and each
-        element is one product of pairings over them (see the module docstring), then a discrete log.
+        :meth:`encrypt_lst_ndarray` gave it), and they must all be for one set of attributes. These checks, and that
+        every vector of ``G1`` is a list of strings with the type tag of ``G1``, are made for all elements before
+        anything is decoded, prepared or paired. The key is read once. Its points are prepared once, and the elements
+        are then decoded, paired (one product of pairings each, over the prepared points) and solved
+        ``_BATCH_ELEMENTS`` (256) at a time. A string with the right tag that is no element of the group is found
+        when the slice that holds it is decoded, after the slices before it were paired; the call then raises and
+        returns nothing, as for any other malformed input.
+
+        Memory: the ciphertexts are the caller's. The call adds about 4 KB for each of them (a record view, a name and
+        the lists of the checks, measured at ``n = 10``, ``|S| = 3``) and the prepared points of the key, up to about
+        20 KB each, ``n (8 rows + 4) + 1`` of them. The decoded group elements, ``n (8 |S| + 5)`` for each element of
+        a slice, and the rows built from them are held for one slice at a time: about 0.5 to 0.8 MB per element of the
+        slice at ``n = 10``, ``|S| = 3`` (measured), some 250 MB for a slice of 256, whatever the size of the arrays.
 
         Args:
-            dict_ndarray_ct: The ciphertext arrays by client id: for each client a list of arrays (the layers) of
-                ciphertexts, with the same shapes for all clients.
+            dict_ndarray_ct: The ciphertext arrays by client id: for each client a list of arrays (the layers, each of
+                at least one dimension) of ciphertexts, with the same shapes for all clients.
             dk: Functional decryption key.
             fusion_weight: Optional; if given it must be the ``y`` of the key, as for :meth:`decrypt`.
             label: The label the arrays were encrypted under, a ``str``.
@@ -993,12 +1037,16 @@ class MCFEKPABPairing(IPFEAbsCrypto):
         values = [np.empty(shape, dtype=object) for shape in shapes]
         if elements:
             weights = self._satisfying_weights(msp, attributes)
-            rows, points = self._batch(key, elements, cts, msp, weights, attributes, y)
-            products = multi_pair_prepared(rows, prepare_g2(points))        # the lines of the key are not kept
+            used = vector_positions(weights, msp.row_labels, attributes)
+            self._check_field_tags(elements, cts)
+            prepared = prepare_g2(self._key_points(key, weights))               # the lines are not kept after the call
             base, bound = self._generator_pair(), self.n * self.bound_x * self.bound_y
-            for (layer, index), product in zip(elements, products):
-                try:
-                    values[layer][index] = bounded_discrete_log_gt(self.group, base, product, bound)
-                except ValueError:
-                    values[layer][index] = None         # decoded_layer names the element
+            for start in range(0, len(elements), _BATCH_ELEMENTS):
+                part, part_cts = elements[start:start + _BATCH_ELEMENTS], cts[start:start + _BATCH_ELEMENTS]
+                products = multi_pair_prepared(self._element_rows(part, part_cts, used, attributes, y), prepared)
+                for (layer, index), product in zip(part, products):
+                    try:
+                        values[layer][index] = bounded_discrete_log_gt(self.group, base, product, bound)
+                    except ValueError:
+                        values[layer][index] = None     # decoded_layer names the element
         return [decoded_layer(array, layer, 10 ** self.precision) for layer, array in enumerate(values)]

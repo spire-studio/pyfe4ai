@@ -79,13 +79,23 @@ def serialize_vec(group: PairingGroup, vec) -> list[str]:
     return [item.decode("utf-8") for item in serialize_many(group, vec)]
 
 
+def has_tags(items, kind) -> bool:
+    """Whether *items* is a list of strings that all start with the type tag of the group *kind*."""
+    tag = "{}:".format(kind)
+    return type(items) is list and all(type(item) is str and item.startswith(tag) for item in items)
+
+
+def check_tags(items, kind, name: str) -> None:
+    """``FEValidationError`` naming the field *name* unless :func:`has_tags` holds for *items*."""
+    if not has_tags(items, kind):
+        raise FEValidationError("{} must be a list of serialised elements of {}".format(name, _GROUP_NAMES[kind]))
+
+
 def read_elements(group: PairingGroup, items, kind, name: str) -> list:
     """*items* deserialized, all of the group *kind*, or ``FEValidationError`` naming the field *name*."""
     # the type tag before the element: charm reads almost any text as an element of some group, and
     # never returns from some strings tagged G2, which must not reach it from a field of G1 elements
-    tag = "{}:".format(kind)
-    if type(items) is not list or not all(type(item) is str and item.startswith(tag) for item in items):
-        raise FEValidationError("{} must be a list of serialised elements of {}".format(name, _GROUP_NAMES[kind]))
+    check_tags(items, kind, name)
     try:
         elements = deserialize_many(group, items)
     except ValueError as exc:

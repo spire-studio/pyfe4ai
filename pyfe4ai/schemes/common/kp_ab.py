@@ -214,6 +214,31 @@ def attribute_vector(f: Sequence[list], label: str, sigma, psi, order, group: Pa
     return combine(f, [sigma % order, -j * sigma % order, psi % order], group)
 
 
+def vector_positions(weights: Mapping[int, int], rows: Sequence[str], attributes: Sequence[str]) -> list[int]:
+    """The position, in *attributes*, of the vector of ``c_attr`` that each used row is paired with, in the order of
+    *weights*: the row's label stands at that position.
+
+    The rows of :meth:`~pyfe4ai.policy.msp.MSP.reconstruction` are those of labels the ciphertext holds, so the
+    error below is for a caller that passes something else.
+
+    Args:
+        weights: The reconstruction coefficients, from the index of a used row to its coefficient.
+        rows: The label of every row of the policy (``msp.row_labels``).
+        attributes: The sorted labels of the ciphertext.
+
+    Raises:
+        FEValidationError: For a used row whose label is not in *attributes*.
+    """
+    position = {label: index for index, label in enumerate(attributes)}
+    positions = []
+    for row in weights:
+        if rows[row] not in position:
+            raise FEValidationError("row {} of the policy names the label {}, which the ciphertext does not carry"
+                                    .format(row, clip(repr(rows[row]))))
+        positions.append(position[rows[row]])
+    return positions
+
+
 def attribute_pairs(weights: Mapping[int, int], rows: Sequence[str], attributes: Sequence[str],
                     c_attr: Sequence[list], k_rows: Mapping[int, list], group: PairingGroup,
                     order) -> tuple[list, list]:
@@ -242,13 +267,10 @@ def attribute_pairs(weights: Mapping[int, int], rows: Sequence[str], attributes:
             :data:`F_DIM`.
     """
     order = int(order)
-    position = {label: index for index, label in enumerate(attributes)}
+    positions = vector_positions(weights, rows, attributes)
     lhs, rhs, powered, exponents = [], [], [], []
-    for row, weight in weights.items():
-        if rows[row] not in position:
-            raise FEValidationError("row {} of the policy names the label {}, which the ciphertext does not carry"
-                                    .format(row, clip(repr(rows[row]))))
-        c, k = c_attr[position[rows[row]]], k_rows[row]
+    for (row, weight), at in zip(weights.items(), positions):
+        c, k = c_attr[at], k_rows[row]
         if len(c) != F_DIM or len(k) != F_DIM:
             raise FEValidationError("the vectors of row {} must have {} elements".format(row, F_DIM))
         weight %= order

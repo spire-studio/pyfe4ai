@@ -38,6 +38,7 @@ from pyfe4ai.schemes.common.kp_ab import (
     held_attributes,
     policy_length_limit,
     read_attributes,
+    vector_positions,
 )
 from pyfe4ai.schemes.sife import kp_ab_pairing
 from pyfe4ai.schemes.sife.kp_ab_pairing import SIFEKPABPairing, SIFEKPABPairingKeyGenerator
@@ -284,6 +285,16 @@ def test_check_policy_labels():
     with pytest.raises(FEValidationError, match="MAX_LABEL_CHARS = 1024") as caught:
         check_policy_labels(["a:1", label_of(MAX_LABEL_CHARS + 1), label_of(5000)])
     assert "1025 characters" in str(caught.value) and len(str(caught.value)) < 300       # the first one, clipped
+
+
+def test_vector_positions_are_those_of_the_labels_of_the_used_rows_in_the_order_of_the_weights():
+    rows = ["b:1", "x:1", "y:1", "a:1"]
+    assert vector_positions({0: 1, 3: 5}, rows, ["a:1", "b:1"]) == [1, 0]
+    assert vector_positions({3: 5, 0: 1}, rows, ["a:1", "b:1"]) == [0, 1]
+    assert vector_positions({1: 1, 2: 1}, rows, ["a:1", "x:1", "y:1"]) == [1, 2]
+    assert vector_positions({}, rows, ["a:1"]) == []
+    with pytest.raises(FEValidationError, match="row 1 of the policy names the label 'x:1'"):
+        vector_positions({0: 1, 1: 1}, rows, ["a:1", "b:1"])
 
 
 def test_attribute_pairs_refuses_a_label_the_ciphertext_does_not_carry(make_kp):
