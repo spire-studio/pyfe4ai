@@ -36,16 +36,16 @@ def make():
 
 @pytest.fixture
 def make_kp():
-    """``make_kp(**overrides)``: a key-policy key generator after ``setup()``, and ``None`` where its crypto object
-    will stand (the object comes with encryption and decryption)."""
+    """``make_kp(**overrides)``: a key-policy key generator after ``setup()`` and a crypto object on its public
+    parameters."""
     def build(**overrides):
-        from pyfe4ai.schemes.sife.kp_ab_pairing import SIFEKPABPairingKeyGenerator
+        from pyfe4ai.schemes.sife.kp_ab_pairing import SIFEKPABPairing, SIFEKPABPairingKeyGenerator
 
         config = {"eta": ETA, "bound_x": 10, "bound_y": 10, "pairing_group_param": GROUP}
         config.update(overrides)
         kg = SIFEKPABPairingKeyGenerator(config)
         kg.setup()
-        return kg, None
+        return kg, SIFEKPABPairing({"keys": {"pp": kg.get_public_parameters()}})
     return build
 
 

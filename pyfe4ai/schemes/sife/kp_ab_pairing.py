@@ -50,39 +50,60 @@ Deviations:
 * A label is an attribute by its hash to ``Z_q``, where the paper takes the attributes in ``Z_q``. A label on several
   rows of a policy takes a fresh ``pi`` for each, as ``List-Att(A)`` of the paper, which allows repetitions.
 * The policy is compiled to a span program by :func:`~pyfe4ai.policy.msp.compile_formula` (nested Shamir sharing),
-  with at most ``max_rows`` rows, and a ciphertext carries at most ``max_attributes`` labels: limits of this
-  implementation, not of the paper.
+  with at most ``max_rows`` rows, and a ciphertext carries at most ``max_attributes`` labels of at most
+  :data:`~pyfe4ai.schemes.common.kp_ab.MAX_LABEL_CHARS` characters each. A decryption reads a policy text of at most
+  ``max_rows * (MAX_LABEL_CHARS + 400)`` characters, which the key generator also keeps to. These are limits of this
+  implementation, not of the paper: a ciphertext and a key come from outside, and no universe of labels bounds them.
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 
 import gmpy2 as gp
 
 from pyfe4ai._validation import int_vector
+from pyfe4ai.core.base import IPFEAbsCrypto
 from pyfe4ai.core.base import IPFEAbsKeyGenerator
 from pyfe4ai.core.base import ParameterCacheMixin
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.exceptions import FEKeyError, FEValidationError
+from pyfe4ai.core.formats.pairing import KPABCiphertext
 from pyfe4ai.core.formats.pairing import KPABFunctionalKey
 from pyfe4ai.core.formats.pairing import KPABParameters
 from pyfe4ai.core.formats.pairing import KPABRecord
 from pyfe4ai.core.versions import record_matches
-from pyfe4ai.policy import ATTR_HASH, DEFAULT_MAX_ROWS, POLICY_COMPILER, canonical_encoding, policy_digest
+from pyfe4ai.policy import (
+    ATTR_HASH,
+    DEFAULT_MAX_ROWS,
+    POLICY_COMPILER,
+    canonical_encoding,
+    from_canonical,
+    policy_digest,
+)
+from pyfe4ai.policy.attributes import clip
 from pyfe4ai.primitives.pairing.dpvs import basis_vectors, combine, encode, random_dual_bases
-from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, ZR, PairingGroup, pow_many
+from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, ZR, PairingGroup, multi_pair, multiexp, multiexp_many
+from pyfe4ai.primitives.pairing.pairing_backend import pair, pow_many
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.primitives.pairing.pairing_backend import require_pairing_backend
+from pyfe4ai.primitives.pairing.pairing_utils import bounded_discrete_log_gt
 from pyfe4ai.primitives.pairing.pairing_utils import random_nonzero_zr
 from pyfe4ai.primitives.pairing.pairing_utils import serialize_matrix_g
-from pyfe4ai.schemes.common.ac_binding import pp_digest
+from pyfe4ai.schemes.common.ac_binding import check_binding, pp_digest
 from pyfe4ai.schemes.common.ac_codec import check_dlog_limit as _check_dlog_limit
+from pyfe4ai.schemes.common.ac_codec import check_length as _check_length
+from pyfe4ai.schemes.common.ac_codec import decimal as _decimal
 from pyfe4ai.schemes.common.ac_codec import positive_int as _positive_int
+from pyfe4ai.schemes.common.ac_codec import read_elements as _elements
+from pyfe4ai.schemes.common.ac_codec import read_record as _record
+from pyfe4ai.schemes.common.ac_codec import require_fields as _require_fields
 from pyfe4ai.schemes.common.ac_codec import serialize_vec as _serialize_vec
 from pyfe4ai.schemes.common.kp_ab import DEFAULT_MAX_ATTRIBUTES, F_DIM, H_DIM
-from pyfe4ai.schemes.common.kp_ab import compile_policy, key_row, read_policy
+from pyfe4ai.schemes.common.kp_ab import attribute_pairs, attribute_vector, check_policy_length, compile_policy
+from pyfe4ai.schemes.common.kp_ab import held_attributes, key_row, policy_length_limit, read_attributes, read_policy
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +138,7 @@ class SIFEKPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         _check_dlog_limit(self.eta, self.bound_x, self.bound_y)
         self.pairing_group_param = config.get("pairing_group_param", DEFAULT_PAIRING_GROUP)
         check_asymmetric(self.pairing_group_param)
+        self.max_policy_length = policy_length_limit(self.max_rows)
         self.pp = None
         self.msk = None
         self._load_parameters()
@@ -209,7 +231,8 @@ class SIFEKPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         Raises:
             FEKeyError: Before :meth:`setup`, or without credentials.
             FEValidationError: For credentials that are not a dict with both entries, weights out of bounds, a
-                policy that does not parse or has more than ``max_rows`` rows.
+                policy that does not parse, has more than ``max_rows`` rows or is longer than a decryption reads
+                (``max_rows * (MAX_LABEL_CHARS + 400)`` characters).
         """
         if self.msk is None:
             raise FEKeyError("no master key: run setup() before deriving a functional key")
@@ -226,6 +249,8 @@ class SIFEKPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         formula = read_policy(credentials["policy"])
         # compile first: it bounds the leaves of a formula built from shared sub-formulas
         msp = compile_policy(formula, self.order, self.max_rows)
+        encoding = canonical_encoding(formula)
+        check_policy_length(encoding, self.max_policy_length)       # no decryption would read it
 
         group, order, msk = self.group, int(self.order), self.msk
         z = int(msk["z"])
@@ -240,7 +265,7 @@ class SIFEKPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         k_ipfe = combine(msk["h_star"], [s_y, u_y, a0 * z % order], group)
 
         return KPABFunctionalKey.new(
-            policy=canonical_encoding(formula),
+            policy=encoding,
             policy_digest=policy_digest(formula),
             policy_compiler=POLICY_COMPILER,
             y=[str(value) for value in y],
@@ -248,3 +273,240 @@ class SIFEKPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             k_ipfe=_serialize_vec(group, k_ipfe),
             pp_binding=self.pp["pp_binding"],
         ).to_dict()
+
+
+def _check_marker(value, expected: str, field: str, what: str) -> None:
+    """Refuse a version marker other than the one of this version."""
+    if value != expected:
+        raise FEValidationError("the {} of the {} is {}, not this version's {!r}".format(
+            field, what, clip(repr(value)), expected))
+
+
+class SIFEKPABPairing(IPFEAbsCrypto):
+    """Crypto operations for key-policy attribute-based IPFE over pairings."""
+
+    def __init__(self, config: dict, **kwargs) -> None:
+        """Initialise the key-policy attribute-based IPFE crypto object.
+
+        Args:
+            config: Must contain ``keys`` with ``pp`` (public parameters); encryption is public-key. The object
+                keeps a copy of ``pp``, so later changes to that dict do not reach it.
+
+        Raises:
+            FEKeyError: Without public parameters.
+            FEValidationError: For public parameters that do not agree with their ``pp_binding``, or whose fields
+                do not agree with each other.
+        """
+        super().__init__(config, **kwargs)
+        require_pairing_backend()
+        pp = self.keys.get("pp")
+        if pp is None:
+            raise FEKeyError("no public parameters: keys needs the entry pp")
+        try:
+            pp = copy.deepcopy(pp)      # what is checked below stays what is used, whatever the caller's dict does
+        except Exception as exc:        # deepcopy raises what the __reduce_ex__ of any object raises
+            raise FEValidationError("public parameters must be JSON data: {}".format(exc)) from exc
+        self._read_parameters(pp)
+        self.pp = pp
+        self._decoded = {}
+        self._gt = None
+        try:
+            self.group = PairingGroup(pp["pairing_group_param"])
+        except ImportError:     # no backend for a group that may exist: the installation, not the parameters
+            raise
+        except Exception as exc:    # charm raises AssertionError or its own Error for a name it does not know
+            raise FEValidationError("pairing_group_param {} is not a pairing group".format(
+                clip(repr(pp["pairing_group_param"])))) from exc
+        check_asymmetric(self.group)
+        self.order = gp.mpz(int(self.group.order()))
+
+    def _read_parameters(self, pp: dict) -> None:
+        """Check *pp*, which comes from outside, and keep what its fields say.
+
+        The digest binds the fields to each other and nothing to a key authority, so the lengths are checked too:
+        they bound what later calls read.
+        """
+        parameters = _record(KPABParameters, pp, "public parameters")
+        _require_fields(parameters, "public parameters")
+        if pp_digest(pp, _PP_DOMAIN) != parameters.pp_binding:
+            raise FEValidationError("the public parameters do not agree with their pp_binding")
+        _check_marker(parameters.policy_compiler, POLICY_COMPILER, "policy_compiler", "public parameters")
+        _check_marker(parameters.attr_hash, ATTR_HASH, "attr_hash", "public parameters")
+        if type(parameters.pairing_group_param) is not str:
+            raise FEValidationError("pairing_group_param must be a str, got {}".format(
+                type(parameters.pairing_group_param).__name__))
+
+        self.eta = _positive_int(parameters.eta, "eta")
+        self.bound_x = _positive_int(_decimal(parameters.bound_x, "bound_x"), "bound_x")
+        self.bound_y = _positive_int(_decimal(parameters.bound_y, "bound_y"), "bound_y")
+        self.max_rows = _positive_int(parameters.max_rows, "max_rows")
+        self.max_attributes = _positive_int(parameters.max_attributes, "max_attributes")
+        _check_dlog_limit(self.eta, self.bound_x, self.bound_y)
+        _check_length(parameters.h_mask, H_DIM, "h_mask")
+        _check_length(parameters.h3, H_DIM, "h3")
+        _check_length(parameters.f, 3, "f")
+        for row in parameters.f:
+            _check_length(row, F_DIM, "f")
+        _check_length(parameters.t, self.eta, "t")
+        self.max_policy_length = policy_length_limit(self.max_rows)
+
+    def _pp_elements(self, kind, name: str, index: int | None = None) -> list:
+        """The elements of the field *name* of the public parameters (row *index* of a table).
+
+        Decoded and checked at their first use, and kept: encryption reads the same ones each time.
+        """
+        key = (name, index)
+        if key not in self._decoded:
+            items = self.pp[name] if index is None else self.pp[name][index]
+            self._decoded[key] = _elements(self.group, items, kind, name)
+        return self._decoded[key]
+
+    def _generator(self, name: str, kind):
+        """The generator ``g1`` or ``g2`` of the public parameters, decoded at its first use."""
+        key = (name, None)
+        if key not in self._decoded:
+            self._decoded[key] = _elements(self.group, [self.pp[name]], kind, name)[0]
+        return self._decoded[key]
+
+    def _generator_pair(self):
+        """``e(g1, g2)``, computed once."""
+        if self._gt is None:
+            self._gt = pair(self._generator("g1", G1), self._generator("g2", G2))
+        return self._gt
+
+    def encrypt(self, lst_pt: list, attributes=None) -> dict:
+        """Encrypt a vector for a set of attributes.
+
+        Args:
+            lst_pt: The ``eta`` integers ``x`` with ``|x_i| <= bound_x``.
+            attributes: The labels the ciphertext is for: any collection of valid labels (a ``set``, or a list
+                with repeats), at most ``max_attributes`` distinct ones of at most ``MAX_LABEL_CHARS`` characters
+                each. The ciphertext lists them sorted and each once. The empty collection is allowed: no policy
+                is satisfied by it.
+
+        Returns:
+            The ciphertext, a dict.
+
+        Raises:
+            FEValidationError: For a plaintext out of bounds, no attributes, or attributes that are not a
+                collection of valid labels within the limits.
+        """
+        x = int_vector(lst_pt, "plaintext", length=self.eta, bound=self.bound_x)
+        labels = held_attributes(attributes, self.max_attributes)
+        group, order = self.group, int(self.order)
+        g1 = self._generator("g1", G1)
+        f = [self._pp_elements(G1, "f", i) for i in range(3)]
+        h_mask, h3, t = self._pp_elements(G1, "h_mask"), self._pp_elements(G1, "h3"), self._pp_elements(G1, "t")
+
+        omega, psi = int(group.random(ZR)), int(group.random(ZR))
+        c_attr = [attribute_vector(f, label, int(group.random(ZR)), psi, order, group) for label in labels]
+        t_masked = multiexp_many([[g1, t_i] for t_i in t], [[x_i % order, omega] for x_i in x], group)
+        c_ipfe = combine([h_mask, h3], [omega, psi], group)
+        return KPABCiphertext.new(
+            attributes=labels,
+            attr_hash=ATTR_HASH,
+            policy_compiler=POLICY_COMPILER,
+            c_attr=serialize_matrix_g(group, c_attr),
+            t=_serialize_vec(group, t_masked),
+            c_ipfe=_serialize_vec(group, c_ipfe),
+            pp_binding=self.pp["pp_binding"],
+        ).to_dict()
+
+    def _check_key(self, key: KPABFunctionalKey) -> list[int]:
+        """Check the weights of *key*, and return them as ints."""
+        _check_length(key.y, self.eta, "y")
+        y = [_decimal(value, "y") for value in key.y]
+        if any(abs(value) > self.bound_y for value in y):
+            raise FEValidationError("y has an entry above the limit bound_y = {}".format(self.bound_y))
+        return y
+
+    def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: list | None = None):
+        """Decrypt a ciphertext and recover the inner product.
+
+        The bindings are checked before anything else, then the fields and the version markers, then the policy
+        of the key and the shape of both records, before any group element is read. A ciphertext is decoded
+        whole: every vector of it, also those the key does not use, so that a malformed ciphertext is refused
+        whichever key opens it. A key is read where the policy uses it.
+
+        Args:
+            dct_ct: Ciphertext.
+            dk: Functional decryption key.
+            fusion_weight: Optional; if given it must be the ``y`` of the key.
+
+        Returns:
+            ``<x, y>``.
+
+        Raises:
+            FEKeyError: If the attributes of the ciphertext do not satisfy the policy of the key.
+            FEValidationError: For an object made under other public parameters, or one that is malformed.
+            ValueError: If the discrete log is not found: the key and the ciphertext do not fit, whatever their
+                fields say.
+        """
+        ct = _record(KPABCiphertext, dct_ct, "ciphertext")
+        key = _record(KPABFunctionalKey, dk, "functional key")
+
+        check_binding(self.pp, ct, "ciphertext")
+        check_binding(self.pp, key, "functional key")
+        _require_fields(ct, "ciphertext")
+        _require_fields(key, "functional key")
+        _check_marker(ct.policy_compiler, POLICY_COMPILER, "policy_compiler", "ciphertext")
+        _check_marker(ct.attr_hash, ATTR_HASH, "attr_hash", "ciphertext")
+        _check_marker(key.policy_compiler, POLICY_COMPILER, "policy_compiler", "functional key")
+
+        if type(key.policy) is not str:
+            raise FEValidationError("the policy of a functional key must be a str")
+        check_policy_length(key.policy, self.max_policy_length)
+        formula = from_canonical(key.policy)
+        if policy_digest(formula) != key.policy_digest:
+            raise FEValidationError("the policy_digest of the functional key is not the digest of its policy")
+        msp = compile_policy(formula, self.order, self.max_rows)
+
+        attributes = read_attributes(ct.attributes, self.max_attributes)
+        _check_length(key.k_rows, msp.num_rows, "k_rows")
+        for row in key.k_rows:
+            _check_length(row, F_DIM, "k_rows")
+        _check_length(key.k_ipfe, H_DIM, "k_ipfe")
+        _check_length(ct.c_attr, len(attributes), "c_attr")
+        for row in ct.c_attr:
+            _check_length(row, F_DIM, "c_attr")
+        _check_length(ct.t, self.eta, "t")
+        _check_length(ct.c_ipfe, H_DIM, "c_ipfe")
+        y = self._check_key(key)
+        if fusion_weight is not None:
+            if int_vector(fusion_weight, "fusion weight", length=self.eta) != y:
+                raise FEValidationError("the fusion weight is not the y of the functional key")
+
+        weights = msp.reconstruction(attributes)
+        if weights is None:
+            raise FEKeyError("the attributes {} of the ciphertext do not satisfy the policy of the functional key"
+                             .format(clip(repr(attributes), 120)))
+
+        group, order = self.group, int(self.order)
+        flat = _elements(group, [item for row in ct.c_attr for item in row], G1, "c_attr")
+        c_attr = [flat[i:i + F_DIM] for i in range(0, len(flat), F_DIM)]
+        t = _elements(group, ct.t, G1, "t")
+        c_ipfe = _elements(group, ct.c_ipfe, G1, "c_ipfe")
+        k_ipfe = _elements(group, key.k_ipfe, G2, "k_ipfe")
+        k_rows = {row: _elements(group, key.k_rows[row], G2, "k_rows") for row in weights}
+        g2 = self._generator("g2", G2)
+
+        lhs, rhs = attribute_pairs(weights, msp.row_labels, attributes, c_attr, k_rows, group, order)
+        lhs.append(multiexp(t, [value % order for value in y], group))
+        rhs.append(g2)
+        lhs.extend(element ** (order - 1) for element in c_ipfe)
+        rhs.extend(k_ipfe)
+        target = multi_pair(lhs, rhs)
+        return bounded_discrete_log_gt(group, self._generator_pair(), target,
+                                       self.eta * self.bound_x * self.bound_y)
+
+    def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
+        """Not implemented for this scheme; raises :class:`NotImplementedError`."""
+        raise NotImplementedError("ndarray helper is not implemented for the attribute-based IPFE")
+
+    def compute_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:
+        """Not implemented for this scheme; raises :class:`NotImplementedError`."""
+        raise NotImplementedError("ndarray helper is not implemented for the attribute-based IPFE")
+
+    def decrypt_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:
+        """Not implemented for this scheme; raises :class:`NotImplementedError`."""
+        raise NotImplementedError("ndarray helper is not implemented for the attribute-based IPFE")

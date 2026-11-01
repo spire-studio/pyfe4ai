@@ -197,8 +197,9 @@ class KPABRecord(Record):
 class KPABParameters(Record):
     """Public parameters of the key-policy attribute-based IPFE (the public key included).
 
-    ``h_mask`` and ``h3`` are vectors of the basis ``H`` of ``G1^4``, ``f`` the first three vectors of the basis
-    ``F`` of ``G1^8``; the dual bases ``F*``, ``H*`` stay in the master key.
+    ``h_mask`` is the combination ``h1 + mu h2`` of two vectors of the basis ``H`` of ``G1^4`` and ``h3`` the third;
+    ``f`` holds the first three vectors of the basis ``F`` of ``G1^8``. The dual bases ``F*``, ``H*`` stay in the
+    master key.
     """
 
     eta = Field("int")
