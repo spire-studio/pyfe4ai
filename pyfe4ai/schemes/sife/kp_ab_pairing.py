@@ -86,7 +86,7 @@ from pyfe4ai.policy import (
 from pyfe4ai.policy.attributes import clip
 from pyfe4ai.primitives.pairing.dpvs import basis_vectors, combine, encode, random_dual_bases
 from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, ZR, PairingGroup, multi_pair, multiexp, multiexp_many
-from pyfe4ai.primitives.pairing.pairing_backend import pair, pow_many
+from pyfe4ai.primitives.pairing.pairing_backend import pow_many
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.primitives.pairing.pairing_backend import require_pairing_backend
 from pyfe4ai.primitives.pairing.pairing_utils import bounded_discrete_log_gt
@@ -104,6 +104,7 @@ from pyfe4ai.schemes.common.ac_codec import read_elements as _elements
 from pyfe4ai.schemes.common.ac_codec import read_record as _record
 from pyfe4ai.schemes.common.ac_codec import require_fields as _require_fields
 from pyfe4ai.schemes.common.ac_codec import serialize_vec as _serialize_vec
+from pyfe4ai.schemes.common.ac_decoded import DecodedElementsMixin
 from pyfe4ai.schemes.common.kp_ab import DEFAULT_MAX_ATTRIBUTES, F_DIM, H_DIM
 from pyfe4ai.schemes.common.kp_ab import attribute_pairs, attribute_vector, check_policy_labels, check_policy_length
 from pyfe4ai.schemes.common.kp_ab import compile_policy, held_attributes, key_row, policy_length_limit
@@ -281,7 +282,7 @@ class SIFEKPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         ).to_dict()
 
 
-class SIFEKPABPairing(IPFEAbsCrypto):
+class SIFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
     """Crypto operations for key-policy attribute-based IPFE over pairings."""
 
     def __init__(self, config: dict, **kwargs) -> None:
@@ -304,8 +305,7 @@ class SIFEKPABPairing(IPFEAbsCrypto):
         pp = _copy_parameters(pp)       # what is checked below stays what is used, whatever the caller's dict does
         self._read_parameters(pp)
         self.pp = pp
-        self._decoded = {}
-        self._gt = None
+        self._init_decoded()
         self.group = _load_group(pp["pairing_group_param"])
         self.order = gp.mpz(int(self.group.order()))
 
@@ -338,30 +338,6 @@ class SIFEKPABPairing(IPFEAbsCrypto):
             _check_length(row, F_DIM, "f")
         _check_length(parameters.t, self.eta, "t")
         self.max_policy_length = policy_length_limit(self.max_rows)
-
-    def _pp_elements(self, kind, name: str, index: int | None = None) -> list:
-        """The elements of the field *name* of the public parameters (row *index* of a table).
-
-        Decoded and checked at their first use, and kept: encryption reads the same ones each time.
-        """
-        key = (name, index)
-        if key not in self._decoded:
-            items = self.pp[name] if index is None else self.pp[name][index]
-            self._decoded[key] = _elements(self.group, items, kind, name)
-        return self._decoded[key]
-
-    def _generator(self, name: str, kind):
-        """The generator ``g1`` or ``g2`` of the public parameters, decoded at its first use."""
-        key = (name, None)
-        if key not in self._decoded:
-            self._decoded[key] = _elements(self.group, [self.pp[name]], kind, name)[0]
-        return self._decoded[key]
-
-    def _generator_pair(self):
-        """``e(g1, g2)``, computed once."""
-        if self._gt is None:
-            self._gt = pair(self._generator("g1", G1), self._generator("g2", G2))
-        return self._gt
 
     def encrypt(self, lst_pt: list, attributes=None) -> dict:
         """Encrypt a vector for a set of attributes.

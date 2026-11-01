@@ -35,7 +35,7 @@ from pyfe4ai.policy import ATTR_HASH, POLICY_COMPILER, attribute_set_digest
 from pyfe4ai.primitives.pairing import pairing_backend
 from pyfe4ai.primitives.pairing.dpvs import vector_pair
 from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, PairingGroup, deserialize_many, hash_to_g1, pair
-from pyfe4ai.schemes.common import ac_codec
+from pyfe4ai.schemes.common import ac_codec, ac_decoded
 from pyfe4ai.schemes.common.ac_binding import pp_digest
 from pyfe4ai.schemes.common.kp_ab import TAG_DST, TAG_HASH, attribute_vector, tag_points
 from pyfe4ai.schemes.mcfe import kp_ab_pairing
@@ -456,7 +456,7 @@ def test_the_generator_pair_is_computed_once(mc_fixed, monkeypatch):
     _, _, agg, cts, dk = mc_fixed
     calls = []
     real = pairing_backend.pair
-    monkeypatch.setattr(kp_ab_pairing, "pair", lambda a, b: calls.append(1) or real(a, b))
+    monkeypatch.setattr(ac_decoded, "pair", lambda a, b: calls.append(1) or real(a, b))
     for _ in range(3):
         assert agg.decrypt(cts, dk) == EXPECTED
     assert calls == [1]
@@ -465,8 +465,8 @@ def test_the_generator_pair_is_computed_once(mc_fixed, monkeypatch):
 def test_encrypt_decodes_the_key_once(make_mc, monkeypatch):
     kg, clients, _ = make_mc()
     calls = []
-    real = kp_ab_pairing._elements
-    monkeypatch.setattr(kp_ab_pairing, "_elements", lambda *args: calls.append(args[3]) or real(*args))
+    real = ac_decoded.read_elements
+    monkeypatch.setattr(ac_decoded, "read_elements", lambda *args: calls.append(args[3]) or real(*args))
     for _ in range(3):
         clients["nid_0"].encrypt([1], "round-1", attributes=ATTRS)
     assert sorted(calls) == ["f", "f", "f", "g1", "h3"]

@@ -47,7 +47,7 @@ from pyfe4ai.policy import (
 from pyfe4ai.primitives.pairing import pairing_backend
 from pyfe4ai.primitives.pairing.dpvs import vector_pair
 from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, PairingGroup, deserialize_many, pair
-from pyfe4ai.schemes.common import ac_codec, kp_ab
+from pyfe4ai.schemes.common import ac_codec, ac_decoded, kp_ab
 from pyfe4ai.schemes.common.ac_binding import pp_digest
 from pyfe4ai.schemes.common.ac_codec import serialize_vec
 from pyfe4ai.schemes.common.kp_ab import (
@@ -942,7 +942,7 @@ def test_the_generator_pair_is_computed_once(kp_fixed, monkeypatch):
     _, crypto, ct, dk, expected = kp_fixed
     calls = []
     real = pairing_backend.pair
-    monkeypatch.setattr(kp_ab_pairing, "pair", lambda a, b: calls.append(1) or real(a, b))
+    monkeypatch.setattr(ac_decoded, "pair", lambda a, b: calls.append(1) or real(a, b))
     for _ in range(3):
         assert crypto.decrypt(ct, dk) == expected
     assert calls == [1]
