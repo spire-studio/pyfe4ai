@@ -446,7 +446,7 @@ class SIFEKPABPairing(IPFEAbsCrypto):
             raise FEValidationError("the policy of a functional key must be a str")
         check_policy_length(key.policy, self.max_policy_length)
         formula = from_canonical(key.policy)
-        if policy_digest(formula) != key.policy_digest:
+        if type(key.policy_digest) is not str or policy_digest(formula) != key.policy_digest:
             raise FEValidationError("the policy_digest of the functional key is not the digest of its policy")
         msp = compile_policy(formula, self.order, self.max_rows)
 

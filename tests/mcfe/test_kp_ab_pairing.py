@@ -24,9 +24,11 @@ from tests.pairing_group import GROUP, skip_unless_available
 skip_unless_available()
 
 from tests.mcfe.conftest import ATTRS, EXPECTED, LST, POLICY, X, Y
-from tests.mcfe.conftest import creds, encrypt_all, refuse_to_compute, through_json
+from tests.mcfe.conftest import aggregate, combined, creds, encrypt_all, encrypt_arrays, random_arrays
+from tests.mcfe.conftest import refuse_to_compute, through_json
+from pyfe4ai import backend as native_backend
 from pyfe4ai.core.constants import CryptoCONST
-from pyfe4ai.core.exceptions import FEKeyError, FEValidationError, FEWarning
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, FEWarning
 from pyfe4ai.core.formats.pairing import MCKPABCiphertext, MCKPABClientKey, MCKPABFunctionalKey
 from pyfe4ai.core.formats.pairing import MCKPABParameters, MCKPABRecord
 from pyfe4ai.policy import ATTR_HASH, POLICY_COMPILER, attribute_set_digest
@@ -38,7 +40,7 @@ from pyfe4ai.schemes.common.ac_binding import pp_digest
 from pyfe4ai.schemes.common.kp_ab import TAG_DST, TAG_HASH, attribute_vector, tag_points
 from pyfe4ai.schemes.mcfe import kp_ab_pairing
 from pyfe4ai.schemes.mcfe.kp_ab_pairing import MCFEKPABPairing, MCFEKPABPairingKeyGenerator
-from pyfe4ai.schemes.mcfe.labels import ElementLabel, encode_label
+from pyfe4ai.schemes.mcfe.labels import ElementLabel, element_label, encode_label
 
 PP_DOMAIN = b"pyfe4ai/mcfe/kp-ab/pp-binding/v1|"
 SCHEME_ID = "mcfe/kp_ab_pairing"
@@ -470,11 +472,178 @@ def test_encrypt_decodes_the_key_once(make_mc, monkeypatch):
     assert sorted(calls) == ["f", "f", "f", "g1", "h3"]
 
 
-def test_ndarray_helpers_are_not_implemented(make_mc):
-    _, _, agg = make_mc()
-    for name in ("encrypt_lst_ndarray", "compute_lst_ndarray_ct", "decrypt_lst_ndarray_ct"):
-        with pytest.raises(NotImplementedError):
-            getattr(agg, name)([])
+# ---------------------------------------------------------------------------
+# arrays: each element under a tag of its own, all decrypted in one batch
+
+
+@pytest.mark.parametrize("policy,attributes", POLICIES)
+def test_ndarray_matches_decrypt(policy, attributes, make_mc):
+    kg, clients, agg = make_mc()
+    arrays = random_arrays()                                # per client a 2 x 3 array and a vector of 4
+    cts = encrypt_arrays(clients, arrays, attributes=attributes)
+    dk = kg.get_decryption_keys("agg", credentials=creds(policy))
+    got = aggregate(agg, cts, dk)
+    assert [layer.shape for layer in got] == [(2, 3), (4,)]
+    for layer, expected in zip(got, combined(arrays)):
+        assert layer.dtype == float and (layer == expected).all()           # the plaintext
+    for l, layer in enumerate(got):
+        for i, value in np.ndenumerate(layer):                              # and what decrypt gives for the element
+            ct = {nid: cts[nid][l][i] for nid in LST}
+            assert value == agg.decrypt(ct, dk, label=element_label("round-1", l, i))
+
+
+def test_compute_is_decrypt(mc_fixed):
+    kg, clients, agg, _, dk = mc_fixed
+    arrays = random_arrays()
+    cts = encrypt_arrays(clients, arrays)
+    got = agg.compute_lst_ndarray_ct(cts, dk=dk, fusion_weight={nid: [Y[nid]] for nid in LST}, label="round-1")
+    assert all((layer == expected).all() for layer, expected in zip(got, combined(arrays)))
+
+
+def test_ndarray_scales_by_the_precision(make_mc):
+    kg, _, _ = make_mc(bound_x=1000)
+    pp = kg.get_public_parameters()
+    scaled = {nid: MCFEKPABPairing({"id": nid, "precision": 2, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}})
+              for nid in LST}
+    agg = MCFEKPABPairing({"precision": 2, "keys": {"pp": pp}})
+    arrays = {nid: [np.array([[1.25, -0.5], [3.0, 0.07]]) * (i + 1)] for i, nid in enumerate(LST)}
+    cts = encrypt_arrays(scaled, arrays)
+    dk = kg.get_decryption_keys("agg", credentials=creds())
+    expected = sum(np.rint(arrays[nid][0] * 100) * Y[nid] for nid in LST) / 100
+    assert np.allclose(aggregate(agg, cts, dk)[0], expected, rtol=0, atol=1e-12)
+
+
+def test_elements_are_under_their_own_tags(make_mc):
+    kg, clients, _ = make_mc()
+    arrays = random_arrays()
+    cts = encrypt_arrays(clients, arrays)
+    group = PairingGroup(GROUP)
+    order = int(group.order())
+    pp = kg.get_public_parameters()
+    g1, g2 = (group.deserialize(pp[name].encode("utf-8")) for name in ("g1", "g2"))
+    for nid in ("nid_0", "nid_2"):
+        tags = set()
+        for l, layer in enumerate(cts[nid]):
+            for i, ct in np.ndenumerate(layer):
+                assert ct["label"] == encode_label(ElementLabel("round-1", l, i))
+                omega, omega_prime = tag_points(group, SCHEME_ID, pp["pp_binding"], ct["label"],
+                                                attribute_set_digest(ATTRS))
+                tags.add(tuple(group.serialize(point) for point in (omega, omega_prime)))
+                t = group.deserialize(ct["t"].encode("utf-8"))      # t = omega s + omega' u + x, so the tag is in it
+                assert pair(t, g2) == (pair(omega, g2) ** int(kg.msk["s"][nid]) * pair(omega_prime, g2)
+                                       ** int(kg.msk["u"][nid]) * pair(g1, g2) ** (int(arrays[nid][l][i]) % order))
+        assert len(tags) == 6 + 4                           # no two elements of a client share a tag point
+
+
+def test_swapped_elements_do_not_decrypt(make_mc, monkeypatch):
+    kg, clients, agg = make_mc()
+    cts = encrypt_arrays(clients, random_arrays())
+    dk = kg.get_decryption_keys("agg", credentials=creds())
+    layer = cts["nid_1"][0]
+    layer[0, 0], layer[0, 1] = layer[0, 1], layer[0, 0]
+    with monkeypatch.context() as patched:                  # the label fields give them away, before any pairing
+        refuse_to_compute(patched)
+        with pytest.raises(FEValidationError, match=r"layer 0, element \(0, 0\).*differ in their label"):
+            aggregate(agg, cts, dk)
+    for index in ((0, 0), (0, 1)):                          # with the label fields forged too: no value
+        layer[index] = dict(layer[index], label=encode_label(ElementLabel("round-1", 0, index)))
+    with pytest.raises(FESchemeError, match=r"element \(0, 0\) of layer 0 does not decrypt"):
+        aggregate(agg, cts, dk)
+
+
+def test_threads_give_the_same_result(make_mc):
+    kg, clients, agg = make_mc()
+    arrays = random_arrays()
+    cts = encrypt_arrays(clients, arrays)
+    dk = kg.get_decryption_keys("agg", credentials=creds(POLICIES[2][0]))       # weights other than 1
+    before = native_backend.get_threads()
+    got = {}
+    try:
+        for count in (1, 4):
+            native_backend.set_threads(count)
+            got[count] = aggregate(agg, cts, dk)
+    finally:
+        native_backend.set_threads(before)
+    for one, four, expected in zip(got[1], got[4], combined(arrays)):
+        assert (one == four).all() and (one == expected).all()
+
+
+def test_one_attribute_set_per_array(make_mc, monkeypatch):
+    kg, clients, agg = make_mc()
+    arrays = random_arrays()
+    cts = encrypt_arrays(clients, arrays)
+    dk = kg.get_decryption_keys("agg", credentials=creds())
+    for nid in LST:         # element (1, 2) of layer 0 is for another set of attributes, and all clients agree on it
+        cts[nid][0][1, 2] = clients[nid].encrypt([int(arrays[nid][0][1, 2])], ElementLabel("round-1", 0, (1, 2)),
+                                                 attributes=ATTRS + ["org:A"])
+    refuse_to_compute(monkeypatch)
+    with pytest.raises(FEValidationError, match=r"layer 0, element \(1, 2\).*one set of attributes"):
+        aggregate(agg, cts, dk)
+
+
+def spied(monkeypatch, module, name):
+    """The list of the arguments of the calls to ``module.name``, which still does what it did."""
+    calls, real = [], getattr(module, name)
+
+    def wrapper(*args, **kwargs):
+        calls.append(args)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(module, name, wrapper)
+    return calls
+
+
+@pytest.mark.parametrize("policy,attributes,rows,unit_rows", [
+    ("2of(purpose:research, region:EU, org:A)", ["org:A", "region:EU"], 2, 0),     # two rows, neither of weight 1
+    ("and(purpose:research, region:EU)", ATTRS, 2, 2),                              # two rows of weight 1
+    ("region:EU", ["region:EU"], 1, 1),                                             # one row of weight 1
+])
+def test_ndarray_pairs_all_elements_in_one_batch(policy, attributes, rows, unit_rows, make_mc, monkeypatch):
+    kg, clients, agg = make_mc()
+    arrays = random_arrays()
+    cts = encrypt_arrays(clients, arrays, attributes=attributes)
+    dk = kg.get_decryption_keys("agg", credentials=creds(policy))
+    aggregate(agg, cts, dk)                                 # the generators are decoded at their first use
+    prepared = spied(monkeypatch, kp_ab_pairing, "prepare_g2")
+    products = spied(monkeypatch, kp_ab_pairing, "multi_pair_prepared")
+    single = spied(monkeypatch, kp_ab_pairing, "multi_pair")
+    exponentiated = spied(monkeypatch, kp_ab_pairing, "multiexp_many")
+    decoded = spied(monkeypatch, ac_codec, "deserialize_many")
+    dlogs = spied(monkeypatch, kp_ab_pairing, "bounded_discrete_log_gt")
+    for _ in range(2):
+        got = aggregate(agg, cts, dk)
+        assert all((layer == expected).all() for layer, expected in zip(got, combined(arrays)))
+    per_row = 3 * (8 * rows + 4) + 1                        # the pairs of decrypt: a product per element
+    assert [len(args[0]) for args in prepared] == [per_row] * 2     # the points of the key, prepared once per call
+    assert [[len(row) for row in args[0]] for args in products] == [[per_row] * 10] * 2     # 6 + 4 elements
+    assert single == [] and len(dlogs) == 20                # one discrete log per element, and no pairing by itself
+    # the key is folded once for all elements (the rows whose weight is not 1, and the sign of k_ipfe), the y of all
+    # elements once
+    assert [len(args[0]) for args in exponentiated] == [3 * (8 * (rows - unit_rows) + 4), 10] * 2
+    # the used vectors of the key are decoded in one call (the rows and k_ipfe, per client), and every G1 field of
+    # every ciphertext in another (the rows of c_attr, t and c_ipfe, per client and element)
+    assert [len(args[1]) for args in decoded] == [3 * (8 * rows + 4), 10 * 3 * (8 * len(attributes) + 5)] * 2
+
+
+def test_ndarray_with_no_elements(mc_fixed, monkeypatch):
+    _, clients, agg, _, dk = mc_fixed
+    arrays = {nid: [np.zeros((0, 3), dtype=np.int64)] for nid in LST}
+    cts = encrypt_arrays(clients, arrays)
+    refuse_to_compute(monkeypatch)
+    got = aggregate(agg, cts, dk)
+    assert len(got) == 1 and got[0].shape == (0, 3) and got[0].dtype == float
+    assert agg.decrypt_lst_ndarray_ct({nid: [] for nid in LST}, dk=dk, label="round-1") == []
+
+
+def test_encrypt_lst_ndarray_reads_the_attributes_once(make_mc):
+    # attributes given as an iterator are read once for the whole array, not once for each element
+    kg, clients, agg = make_mc()
+    arrays = random_arrays()
+    cts = {nid: clients[nid].encrypt_lst_ndarray(arrays[nid], label="round-1", attributes=iter(reversed(ATTRS)))
+           for nid in LST}
+    assert all(ct["attributes"] == ATTRS for layer in cts["nid_0"] for ct in layer.flat)
+    got = aggregate(agg, cts, kg.get_decryption_keys("agg", credentials=creds()))
+    assert all((layer == expected).all() for layer, expected in zip(got, combined(arrays)))
 
 
 # ---------------------------------------------------------------------------
@@ -613,6 +782,10 @@ def test_copy_parameters():
         ac_codec.copy_parameters({"f": threading.Lock()}, "client key")
     with pytest.raises(FEValidationError, match="public parameters must be JSON data"):
         ac_codec.copy_parameters({"f": threading.Lock()})
+    holding_an_array = {"f": np.array([1, 2, 3])}           # an array in a field is copied as well, not shared
+    copied = ac_codec.copy_parameters(holding_an_array)
+    copied["f"][0] = 9
+    assert holding_an_array["f"].tolist() == [1, 2, 3] and copied["f"].tolist() == [9, 2, 3]
 
 
 def test_load_group():
@@ -632,6 +805,11 @@ def test_check_marker():
         ac_codec.check_marker("c2", "c1", "the policy_compiler of the ciphertext")
     with pytest.raises(FEValidationError, match="x" * 39 + r"\.\.\."):
         ac_codec.check_marker("x" * 500, "c1", "a marker")
+    # an array is refused, not compared: `array != "c1"` is an array, and `if` on it a bare ValueError
+    for array in (np.array(["c1", "c1"]), np.array([0, 1]), np.array("c1")):
+        with pytest.raises(FEValidationError, match="a marker is") as error:
+            ac_codec.check_marker(array, "c1", "a marker")
+        assert type(error.value) is FEValidationError
 
 
 def test_scalar():

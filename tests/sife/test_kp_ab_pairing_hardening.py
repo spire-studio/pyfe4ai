@@ -14,6 +14,7 @@ import hashlib
 import json
 import threading
 
+import numpy as np
 import pytest
 
 import pyfe4ai
@@ -710,6 +711,19 @@ def test_digest_mismatch(kp_fixed):
     _, crypto, ct, dk, _ = kp_fixed
     with pytest.raises(FEValidationError, match="policy_digest"):
         crypto.decrypt(ct, dict(dk, policy=canonical_encoding(parse("or(org:A, role:auditor)"))))
+
+
+@pytest.mark.parametrize("make", [
+    lambda digest: np.array([0, 1]),                    # `digest != array` is an array, and `if` on it a ValueError
+    lambda digest: np.array([digest]),                  # and this one would compare equal and be accepted
+    lambda digest: np.array(digest),
+    lambda digest: [digest], lambda digest: 5, lambda digest: None,
+])
+def test_a_digest_that_is_no_text_is_refused_and_not_compared(make, kp_fixed):
+    _, crypto, ct, dk, _ = kp_fixed
+    with pytest.raises(FEValidationError, match="policy_digest") as caught:
+        crypto.decrypt(ct, dict(dk, policy_digest=make(dk["policy_digest"])))
+    assert type(caught.value) is FEValidationError
 
 
 @pytest.mark.parametrize("spelling", [

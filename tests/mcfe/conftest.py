@@ -9,6 +9,7 @@ group.
 
 import json
 
+import numpy as np
 import pytest
 
 from tests.pairing_group import GROUP
@@ -37,14 +38,38 @@ def through_json(value):
     return json.loads(json.dumps(value))
 
 
+def random_arrays(shapes=((2, 3), (4,)), seed=1, bound=10, lst=LST):
+    """The plaintext of every client of *lst* for the ndarray helpers: one integer array of each of *shapes*, with
+    entries in ``[-bound, bound]``."""
+    rng = np.random.default_rng(seed)
+    return {nid: [rng.integers(-bound, bound + 1, size=shape) for shape in shapes] for nid in lst}
+
+
+def encrypt_arrays(clients, arrays, label="round-1", attributes=ATTRS):
+    """The ciphertext arrays of every client of *arrays*, under one tag and one set of attributes."""
+    return {nid: clients[nid].encrypt_lst_ndarray(arrays[nid], label=label, attributes=attributes) for nid in arrays}
+
+
+def combined(arrays, y=Y):
+    """``sum_i y_i x_i``, layer by layer: what the aggregation of the arrays of *arrays* under the weights *y* is."""
+    layers = len(next(iter(arrays.values())))
+    return [sum(arrays[nid][layer] * y[nid] for nid in arrays) for layer in range(layers)]
+
+
+def aggregate(agg, cts, dk, y=Y, label="round-1"):
+    """The decryption of the ciphertext arrays *cts* with the weights *y* given as the caller of the ML layer does."""
+    return agg.decrypt_lst_ndarray_ct(cts, dk=dk, fusion_weight={nid: [y[nid]] for nid in y}, label=label)
+
+
 def refuse_to_compute(monkeypatch):
-    """Make the decoding of a group element, a pairing and a discrete log fail the test."""
+    """Make the decoding of a group element, a pairing (single, or over prepared points) and a discrete log fail the
+    test."""
     from pyfe4ai.schemes.mcfe import kp_ab_pairing
 
     def never(*args, **kwargs):
         pytest.fail("a group element was decoded, or a pairing or a discrete log was computed")
 
-    for name in ("_elements", "multi_pair", "bounded_discrete_log_gt"):
+    for name in ("_elements", "multi_pair", "prepare_g2", "multi_pair_prepared", "bounded_discrete_log_gt"):
         monkeypatch.setattr(kp_ab_pairing, name, never)
 
 

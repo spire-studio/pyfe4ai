@@ -41,16 +41,28 @@ same ``H(tag, S)``) and their ``t`` values differ by the difference of the plain
 layer does not check this, as with the other labelled multi-client schemes (:mod:`pyfe4ai.schemes.mcfe.labels`).
 All clients must use the same set of attributes under a tag, since it is hashed with the tag (NPP22 Remark 11), and a
 decryption needs the ciphertexts of all ``n`` clients, also those whose weight is 0, since ``p_1 + ... + p_n = 1``
-(NPP22 Remark 10). Ciphertexts are malleable and not authenticated: the security notion of the paper (Def. 9) lets the
-adversary corrupt clients and ask for functional keys, and says nothing about a ciphertext that was modified or forged.
+(NPP22 Remark 10). Ciphertexts are malleable and not authenticated: the security notion of the paper (Def. 12, Fig. 2)
+lets the adversary corrupt clients and ask for functional keys, and says nothing about a ciphertext that was modified
+or forged.
 
 The ``label`` and the ``attributes_digest`` of a ciphertext are claims of its client. The points ``H(tag, S)`` are
 inside ``t`` and ``c_ipfe``, and checking them against the two fields would need the master key, so a decryption does
 not hash again. It checks that the ciphertexts of all clients agree on both fields, that the digest is the one of the
 listed attributes and, if the caller gives a ``label``, that this is the one the ciphertexts claim. One client that
-hashed other points than it says gives a ``ValueError`` from the discrete log (no value, and not a wrong one); all
-clients relabelled alike decrypt to the correct value, since the fields are not what a ciphertext is made of. A caller
-who needs to know that ciphertexts belong to a round authenticates them.
+hashed other points than it says gives a ``ValueError`` from the discrete log (no value, and not a wrong one). All
+clients that change the ``label`` alike still decrypt to the correct value, since the label is not what a ciphertext
+is made of. The list of attributes is not a claim of that kind: it says which vector of ``c_attr`` pairs with which
+row of the key. All clients that change it alike get a ``FEKeyError`` (the policy is not satisfied) or no value (the
+``ValueError`` of the discrete log), never a wrong one; a label that no row of the policy reads can be renamed without
+effect. A caller who needs to know that ciphertexts belong to a round authenticates them.
+
+The ndarray helpers encrypt each element under ``element_label(label, layer, index)``, a tag of its own, and decrypt
+all elements of all layers in one batch. The points of the key that every element is paired with (the rows the policy
+uses, with their reconstruction coefficients folded in, and ``-k*_i,ipfe``) are prepared once per call
+(:func:`~pyfe4ai.primitives.pairing.pairing_backend.prepare_g2`; nothing is kept between calls), and each element is
+then one product of pairings over them. The elements of an array are for one set of attributes, and the arrays of a
+call hold every field of every ciphertext in memory as decoded group elements (about 29 per client and element for
+three attributes).
 
 The policy of a key (``dk["policy"]``) and the attributes of a ciphertext (``ct["attributes"]``, with the tag in
 ``ct["label"]``) are public: they travel in the clear and hide nothing. Keys are trusted input to the decryption: the
@@ -89,13 +101,16 @@ from __future__ import annotations
 import copy
 import json
 import logging
+from contextlib import contextmanager
 
 import gmpy2 as gp
+import numpy as np
 
-from pyfe4ai._validation import int_vector
+from pyfe4ai._validation import int_vector, scale_to_int
 from pyfe4ai.core.base import IPFEAbsCrypto
 from pyfe4ai.core.base import IPFEAbsKeyGenerator
 from pyfe4ai.core.base import ParameterCacheMixin
+from pyfe4ai.core.base import decoded_layer
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.exceptions import FEConfigError, FEKeyError, FEValidationError
 from pyfe4ai.core.formats.pairing import MCKPABCiphertext
@@ -116,7 +131,8 @@ from pyfe4ai.policy import (
 )
 from pyfe4ai.policy.attributes import clip
 from pyfe4ai.primitives.pairing.dpvs import basis_vectors, combine, random_dual_bases
-from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, ZR, multi_pair, multiexp, multiexp_many, pair
+from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, ZR, multi_pair, multi_pair_prepared, multiexp
+from pyfe4ai.primitives.pairing.pairing_backend import multiexp_many, pair, prepare_g2
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, PairingGroup, check_asymmetric
 from pyfe4ai.primitives.pairing.pairing_backend import require_pairing_backend
 from pyfe4ai.primitives.pairing.pairing_utils import bounded_discrete_log_gt
@@ -139,7 +155,7 @@ from pyfe4ai.schemes.common.kp_ab import DEFAULT_MAX_ATTRIBUTES, F_DIM, H_DIM, T
 from pyfe4ai.schemes.common.kp_ab import attribute_pairs, attribute_vector, check_policy_labels, check_policy_length
 from pyfe4ai.schemes.common.kp_ab import compile_policy, held_attributes, key_row, policy_length_limit
 from pyfe4ai.schemes.common.kp_ab import read_attributes, read_policy, tag_points
-from pyfe4ai.schemes.mcfe.labels import encode_label
+from pyfe4ai.schemes.mcfe.labels import element_label, encode_label
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +188,15 @@ def _check_clients(entries: dict, lst_nid: list, what: str) -> None:
     if missing or unknown:
         raise FEValidationError("{} must cover every client and no other: missing {}, not a client {}".format(
             what, clip(repr(missing), 120), clip(repr(unknown), 120)))
+
+
+@contextmanager
+def _in_element(layer: int, index: tuple):
+    """Say, in a ``FEValidationError`` raised inside the block, which element of which layer it is about."""
+    try:
+        yield
+    except FEValidationError as exc:
+        raise FEValidationError("layer {}, element {}: {}".format(layer, index, exc)) from exc
 
 
 class MCFEKPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
@@ -620,6 +645,81 @@ class MCFEKPABPairing(IPFEAbsCrypto):
                     "the attributes_digest of the ciphertext of {} is not the digest of its attributes".format(nid))
         return sets[first_nid]
 
+    def _check_records(self, key, cts: dict) -> None:
+        """Check the bindings, then the fields, then the version markers of *key* and of the ciphertexts *cts*, a dict
+        from where each comes from (its client, or its client and element in an array) to its record."""
+        check_binding(self.pp, key, "functional key")
+        for whose, ct in cts.items():
+            check_binding(self.pp, ct, "ciphertext of {}".format(whose))
+        _require_fields(key, "functional key")
+        for whose, ct in cts.items():
+            _require_fields(ct, "ciphertext of {}".format(whose))
+        _check_marker(key.policy_compiler, POLICY_COMPILER, "the policy_compiler of the functional key")
+        for whose, ct in cts.items():
+            owner = "the ciphertext of {}".format(whose)
+            _check_marker(ct.policy_compiler, POLICY_COMPILER, "the policy_compiler of " + owner)
+            _check_marker(ct.attr_hash, ATTR_HASH, "the attr_hash of " + owner)
+            _check_marker(ct.tag_hash, TAG_HASH, "the tag_hash of " + owner)
+
+    def _check_ciphertexts(self, cts: dict, label) -> list:
+        """Check that *cts* are the ciphertexts of all clients and no other, each in the slot of its client, under one
+        tag and one set of attributes (and under *label*, if it is not ``None``), and return the attributes."""
+        _check_clients(cts, self.lst_nid, "the ciphertexts")
+        for nid, ct in cts.items():
+            named = as_id(ct.nid)       # a numpy integer is the int it equals; an array is not compared with a str
+            if not is_id(named):
+                raise FEValidationError("the ciphertext given for {} names the client {}, which is no client id".format(
+                    clip(repr(nid)), clip(repr(ct.nid))))
+            if named != nid:
+                raise FEValidationError("the ciphertext given for {} is the one of {}".format(
+                    clip(repr(nid)), clip(repr(named))))
+        return self._check_tags(cts, label)
+
+    def _read_key(self, key) -> tuple:
+        """The span program of the policy of *key* and the weights ``y`` of its clients as ints, after the checks of
+        the policy, its digest and the shape of the key."""
+        if type(key.policy) is not str:
+            raise FEValidationError("the policy of a functional key must be a str")
+        check_policy_length(key.policy, self.max_policy_length)
+        formula = from_canonical(key.policy)
+        if type(key.policy_digest) is not str or policy_digest(formula) != key.policy_digest:
+            raise FEValidationError("the policy_digest of the functional key is not the digest of its policy")
+        msp = compile_policy(formula, self.order, self.max_rows)
+        return msp, self._check_key(key, msp.num_rows)
+
+    def _check_shapes(self, cts: dict, attributes: list) -> None:
+        """Check the length of every field of the ciphertexts *cts* that is read as a vector."""
+        for nid in self.lst_nid:
+            ct = cts[nid]
+            _check_length(ct.c_attr, len(attributes), "c_attr of {}".format(nid))
+            for row in ct.c_attr:
+                _check_length(row, F_DIM, "c_attr of {}".format(nid))
+            if type(ct.t) is not str:
+                raise FEValidationError("t of {} must be a serialised element of G1".format(nid))
+            _check_length(ct.c_ipfe, H_DIM, "c_ipfe of {}".format(nid))
+
+    def _check_fusion_weight(self, fusion_weight, y: dict) -> None:
+        """Check that *fusion_weight*, if given, is the weights *y* of the key."""
+        if fusion_weight is not None:
+            given = _by_client(fusion_weight, "the fusion weight")
+            _check_clients(given, self.lst_nid, "the fusion weight")
+            for nid in self.lst_nid:
+                if int_vector(given[nid], "fusion weight of {}".format(nid), length=1) != [y[nid]]:
+                    raise FEValidationError("the fusion weight of {} is not the y of the functional key".format(nid))
+
+    @staticmethod
+    def _satisfying_weights(msp, attributes: list) -> dict:
+        """The reconstruction coefficients of the rows of *msp* that *attributes* satisfy.
+
+        Raises:
+            FEKeyError: If *attributes* do not satisfy the policy.
+        """
+        weights = msp.reconstruction(attributes)
+        if weights is None:
+            raise FEKeyError("the attributes {} of the ciphertexts do not satisfy the policy of the functional key"
+                             .format(clip(repr(attributes), 120)))
+        return weights
+
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict | None = None, label=None):
         """Decrypt the ciphertexts of all clients and recover the inner product.
 
@@ -653,58 +753,12 @@ class MCFEKPABPairing(IPFEAbsCrypto):
         cts = {nid: _record(MCKPABCiphertext, ct, "ciphertext of {}".format(nid))
                for nid, ct in _by_client(dct_ct, "the ciphertexts").items()}
 
-        check_binding(self.pp, key, "functional key")
-        for nid, ct in cts.items():
-            check_binding(self.pp, ct, "ciphertext of {}".format(nid))
-        _require_fields(key, "functional key")
-        for nid, ct in cts.items():
-            _require_fields(ct, "ciphertext of {}".format(nid))
-        _check_marker(key.policy_compiler, POLICY_COMPILER, "the policy_compiler of the functional key")
-        for nid, ct in cts.items():
-            owner = "the ciphertext of {}".format(nid)
-            _check_marker(ct.policy_compiler, POLICY_COMPILER, "the policy_compiler of " + owner)
-            _check_marker(ct.attr_hash, ATTR_HASH, "the attr_hash of " + owner)
-            _check_marker(ct.tag_hash, TAG_HASH, "the tag_hash of " + owner)
-
-        _check_clients(cts, self.lst_nid, "the ciphertexts")
-        for nid, ct in cts.items():
-            named = as_id(ct.nid)       # a numpy integer is the int it equals; an array is not compared with a str
-            if not is_id(named):
-                raise FEValidationError("the ciphertext given for {} names the client {}, which is no client id".format(
-                    clip(repr(nid)), clip(repr(ct.nid))))
-            if named != nid:
-                raise FEValidationError("the ciphertext given for {} is the one of {}".format(
-                    clip(repr(nid)), clip(repr(named))))
-        attributes = self._check_tags(cts, label)
-
-        if type(key.policy) is not str:
-            raise FEValidationError("the policy of a functional key must be a str")
-        check_policy_length(key.policy, self.max_policy_length)
-        formula = from_canonical(key.policy)
-        if type(key.policy_digest) is not str or policy_digest(formula) != key.policy_digest:
-            raise FEValidationError("the policy_digest of the functional key is not the digest of its policy")
-        msp = compile_policy(formula, self.order, self.max_rows)
-
-        y = self._check_key(key, msp.num_rows)
-        for nid in self.lst_nid:
-            ct = cts[nid]
-            _check_length(ct.c_attr, len(attributes), "c_attr of {}".format(nid))
-            for row in ct.c_attr:
-                _check_length(row, F_DIM, "c_attr of {}".format(nid))
-            if type(ct.t) is not str:
-                raise FEValidationError("t of {} must be a serialised element of G1".format(nid))
-            _check_length(ct.c_ipfe, H_DIM, "c_ipfe of {}".format(nid))
-        if fusion_weight is not None:
-            given = _by_client(fusion_weight, "the fusion weight")
-            _check_clients(given, self.lst_nid, "the fusion weight")
-            for nid in self.lst_nid:
-                if int_vector(given[nid], "fusion weight of {}".format(nid), length=1) != [y[nid]]:
-                    raise FEValidationError("the fusion weight of {} is not the y of the functional key".format(nid))
-
-        weights = msp.reconstruction(attributes)
-        if weights is None:
-            raise FEKeyError("the attributes {} of the ciphertexts do not satisfy the policy of the functional key"
-                             .format(clip(repr(attributes), 120)))
+        self._check_records(key, cts)
+        attributes = self._check_ciphertexts(cts, label)
+        msp, y = self._read_key(key)
+        self._check_shapes(cts, attributes)
+        self._check_fusion_weight(fusion_weight, y)
+        weights = self._satisfying_weights(msp, attributes)
 
         group, order = self.group, int(self.order)
         lhs, rhs, t = [], [], []
@@ -726,14 +780,225 @@ class MCFEKPABPairing(IPFEAbsCrypto):
         target = multi_pair(lhs, rhs)
         return bounded_discrete_log_gt(group, self._generator_pair(), target, self.n * self.bound_x * self.bound_y)
 
-    def encrypt_lst_ndarray(self, lst_ndarray: list, **kwargs) -> list | None:
-        """Not implemented for this scheme; raises :class:`NotImplementedError`."""
-        raise NotImplementedError("ndarray helper is not implemented for the attribute-based IPFE")
+    def encrypt_lst_ndarray(self, lst_ndarray: list, label: str | None = None, attributes=None) -> list:
+        """Encrypt arrays element by element, each element under a tag of its own.
 
-    def compute_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:
-        """Not implemented for this scheme; raises :class:`NotImplementedError`."""
-        raise NotImplementedError("ndarray helper is not implemented for the attribute-based IPFE")
+        The tag of the element at ``index`` of layer ``layer`` is ``element_label(label, layer, index)``
+        (:mod:`pyfe4ai.schemes.mcfe.labels`), so that no two elements of a client share one. A client calls this once
+        under a label; the scheme layer does not check it.
 
-    def decrypt_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list | None:
-        """Not implemented for this scheme; raises :class:`NotImplementedError`."""
-        raise NotImplementedError("ndarray helper is not implemented for the attribute-based IPFE")
+        Args:
+            lst_ndarray: The arrays to encrypt, real or integer valued, scaled by ``10 ** precision`` and rounded.
+            label: The label of the round, a ``str``; all clients of a decryption use the same one.
+            attributes: The labels the ciphertexts are for, as for :meth:`encrypt`: the same set for every element.
+                An iterator is read once.
+
+        Returns:
+            One object array of ciphertexts for every array, of its shape.
+
+        Raises:
+            FEKeyError: Without the encryption key ``sk``.
+            FEValidationError: For a label that is not a ``str``, attributes that are not a collection of valid labels
+                within the limits, an array that is not made of numbers, and an element beyond ``bound_x``.
+        """
+        if self._secret is None:
+            raise FEKeyError("no encryption key: keys needs the entry sk to encrypt")
+        if not isinstance(label, str):
+            raise FEValidationError("need a string label for encrypt_lst_ndarray, got {}".format(clip(repr(label))))
+        labels = held_attributes(attributes, self.max_attributes)       # once: an iterator has no second reading
+        out = []
+        for layer, source in enumerate(lst_ndarray):
+            scaled = scale_to_int(source, self.precision)
+            cts = np.empty(scaled.shape, dtype=object)
+            for index, value in np.ndenumerate(scaled):
+                cts[index] = self.encrypt([int(value)], element_label(label, layer, index), attributes=labels)
+            out.append(cts)
+        return out
+
+    def compute_lst_ndarray_ct(self, dict_ndarray_ct: dict, **kwargs) -> list:
+        """Aggregate the ciphertext arrays of all clients: :meth:`decrypt_lst_ndarray_ct`."""
+        return self.decrypt_lst_ndarray_ct(dict_ndarray_ct, **kwargs)
+
+    def _read_arrays(self, dict_ndarray_ct) -> dict:
+        """The ciphertext arrays by client: a list of arrays for every client, and for all of them the layers and
+        shapes of the first client."""
+        arrays = _by_client(dict_ndarray_ct, "the ciphertext arrays")
+        _check_clients(arrays, self.lst_nid, "the ciphertext arrays")
+        for nid in self.lst_nid:
+            if type(arrays[nid]) not in (list, tuple):
+                raise FEValidationError("the ciphertext arrays of {} must be a list of arrays, got {}".format(
+                    nid, type(arrays[nid]).__name__))
+        first = self.lst_nid[0]
+        for nid in self.lst_nid:        # the first client is checked first, so that it is a list of arrays below
+            if len(arrays[nid]) != len(arrays[first]):
+                raise FEValidationError("the ciphertext arrays of {} hold {} layers, those of {} hold {}".format(
+                    nid, len(arrays[nid]), first, len(arrays[first])))
+            for layer, array in enumerate(arrays[nid]):
+                if not isinstance(array, np.ndarray):
+                    raise FEValidationError("the ciphertext arrays of {}: layer {} must be an ndarray, got {}".format(
+                        nid, layer, type(array).__name__))
+                if array.shape != arrays[first][layer].shape:
+                    raise FEValidationError("the ciphertext arrays of {}: layer {} has the shape {}, that of {} has {}"
+                                            .format(nid, layer, array.shape, first, arrays[first][layer].shape))
+        return arrays
+
+    def _decode(self, spans: list, kind) -> list:
+        """The elements of *kind* in all of *spans*, a list of ``(name, items)``, decoded in one call.
+
+        Every span is checked as :func:`~pyfe4ai.schemes.common.ac_codec.read_elements` checks a vector. When one is
+        not, the spans are read one at a time to find the first and name it.
+
+        Raises:
+            FEValidationError: Naming the first span with an item that is no element of *kind*.
+        """
+        items = [item for _, part in spans for item in part]
+        try:
+            return _elements(self.group, items, kind, "the elements")
+        except FEValidationError:
+            for name, part in spans:
+                _elements(self.group, part, kind, name)
+            raise
+
+    def _batch(self, key, elements: list, cts: list, msp, weights: dict, attributes: list, y: dict) -> tuple:
+        """The products of pairings of all elements: the points of ``G2`` of the key, and for each element the row of
+        ``G1`` elements that is paired with them.
+
+        For each client, in order, the points are the eight of each row the policy uses (in the order of *weights*)
+        and the four of ``k*_i,ipfe``; the last is ``g2``. A row of an element holds the matching elements: the vector
+        of ``c_attr`` of each used row, then ``c_ipfe``, and last the ``G1`` element that goes with ``g2``,
+        ``prod_i t_i^y_i``. The reconstruction coefficient ``w`` of a row and the sign of ``k*_i,ipfe`` sit in the
+        points (``e(c, w k) = e(c, k)^w``, ``e(c, -k) = e(c, k)^-1``): they are the same for every element, so they
+        cost one exponentiation of each point of the key rather than one of each ``G1`` element of each element.
+        All the ``G1`` fields of all ciphertexts are decoded in one call, so memory grows with the number of elements.
+
+        Returns:
+            ``(rows, points)``.
+        """
+        group, order, n = self.group, int(self.order), len(self.lst_nid)
+        position = {label: index for index, label in enumerate(attributes)}
+        used = []
+        for row in weights:
+            if msp.row_labels[row] not in position:
+                raise FEValidationError("row {} of the policy names the label {}, which the ciphertexts do not carry"
+                                        .format(row, clip(repr(msp.row_labels[row]))))
+            used.append(position[msp.row_labels[row]])
+
+        spans = []
+        for nid in self.lst_nid:
+            spans.extend(("k_rows of {}".format(nid), key.k_rows[nid][row]) for row in weights)
+            spans.append(("k_ipfe of {}".format(nid), key.k_ipfe[nid]))
+        points = self._decode(spans, G2)
+        folded, exponents, at = [], [], 0
+        for _ in self.lst_nid:
+            for weight in weights.values():
+                if weight % order != 1:
+                    folded.extend(range(at, at + F_DIM))
+                    exponents.extend([weight % order] * F_DIM)
+                at += F_DIM
+            folded.extend(range(at, at + H_DIM))
+            exponents.extend([order - 1] * H_DIM)
+            at += H_DIM
+        powers = multiexp_many([[points[slot]] for slot in folded], [[exponent] for exponent in exponents], group)
+        for slot, power in zip(folded, powers):
+            points[slot] = power
+        points.append(self._generator("g2", G2))
+
+        spans = []
+        for (layer, index), by_client in zip(elements, cts):
+            for nid in self.lst_nid:
+                ct, where = by_client[nid], "{}, layer {}, element {}".format(nid, layer, index)
+                spans.append(("c_attr of " + where, [item for row in ct.c_attr for item in row]))
+                spans.append(("t of " + where, [ct.t]))
+                spans.append(("c_ipfe of " + where, ct.c_ipfe))
+        decoded = self._decode(spans, G1)
+        t_at = F_DIM * len(attributes)              # in the elements of a ciphertext: c_attr, then t, then c_ipfe
+        rows, masks = [], []
+        for element in range(len(cts)):
+            row, t = [], []
+            for client in range(n):
+                start = (element * n + client) * (t_at + 1 + H_DIM)
+                for vector in used:
+                    row.extend(decoded[start + F_DIM * vector:start + F_DIM * (vector + 1)])
+                row.extend(decoded[start + t_at + 1:start + t_at + 1 + H_DIM])
+                t.append(decoded[start + t_at])
+            rows.append(row)
+            masks.append(t)
+        exponent_row = [y[nid] % order for nid in self.lst_nid]
+        for row, mask in zip(rows, multiexp_many(masks, [exponent_row] * len(masks), group)):
+            row.append(mask)
+        return rows, points
+
+    def decrypt_lst_ndarray_ct(self, dict_ndarray_ct: dict, dk: dict | None = None,
+                               fusion_weight: dict | None = None, label: str | None = None) -> list:
+        """Decrypt the ciphertext arrays of all clients, all elements in one batch.
+
+        The elements go through the checks of :meth:`decrypt` (the label of an element must be the one that
+        :meth:`encrypt_lst_ndarray` gave it), they must all be for one set of attributes, and nothing is decoded or
+        paired before every element has passed. The key is read once. The points of the key are prepared once and each
+        element is one product of pairings over them (see the module docstring), then a discrete log.
+
+        Args:
+            dict_ndarray_ct: The ciphertext arrays by client id: for each client a list of arrays (the layers) of
+                ciphertexts, with the same shapes for all clients.
+            dk: Functional decryption key.
+            fusion_weight: Optional; if given it must be the ``y`` of the key, as for :meth:`decrypt`.
+            label: The label the arrays were encrypted under, a ``str``.
+
+        Returns:
+            One float array for every layer, the inner products divided by ``10 ** precision``.
+
+        Raises:
+            FEKeyError: Without a key, or if the attributes of the ciphertexts do not satisfy the policy of the key.
+            FEValidationError: As :meth:`decrypt`, and for a label that is not a ``str``, arrays that do not have the
+                same layers and shapes for all clients, and elements that are for different sets of attributes. The
+                message names the layer and the element.
+            FESchemeError: For the first element whose discrete log was not found (the key and the ciphertexts do not
+                fit, whatever their fields say).
+        """
+        if dk is None:
+            raise FEKeyError("need to provide the decryption key dk")
+        if not isinstance(label, str):
+            raise FEValidationError("need a string label for decrypt_lst_ndarray_ct, got {}".format(clip(repr(label))))
+        key = _record(MCKPABFunctionalKey, dk, "functional key")
+        arrays = self._read_arrays(dict_ndarray_ct)
+        shapes = [array.shape for array in arrays[self.lst_nid[0]]]
+        elements = [(layer, index) for layer, shape in enumerate(shapes) for index in np.ndindex(shape)]
+
+        flat, cts = {}, []
+        for layer, index in elements:
+            by_client = {}
+            for nid in self.lst_nid:
+                where = "{}, layer {}, element {}".format(nid, layer, index)
+                by_client[nid] = flat[where] = _record(MCKPABCiphertext, arrays[nid][layer][index],
+                                                       "ciphertext of " + where)
+            cts.append(by_client)
+        self._check_records(key, flat)
+        attributes, first = None, None
+        for (layer, index), by_client in zip(elements, cts):
+            with _in_element(layer, index):
+                held = self._check_ciphertexts(by_client, element_label(label, layer, index))
+            if attributes is None:
+                attributes, first = held, (layer, index)
+            elif held != attributes:
+                raise FEValidationError(
+                    "layer {}, element {}: the attributes {} are not those of layer {}, element {}, {}: the elements "
+                    "of an array are for one set of attributes".format(
+                        layer, index, clip(repr(held), 120), first[0], first[1], clip(repr(attributes), 120)))
+        msp, y = self._read_key(key)
+        for (layer, index), by_client in zip(elements, cts):
+            with _in_element(layer, index):
+                self._check_shapes(by_client, attributes)
+        self._check_fusion_weight(fusion_weight, y)
+
+        values = [np.empty(shape, dtype=object) for shape in shapes]
+        if elements:
+            weights = self._satisfying_weights(msp, attributes)
+            rows, points = self._batch(key, elements, cts, msp, weights, attributes, y)
+            products = multi_pair_prepared(rows, prepare_g2(points))        # the lines of the key are not kept
+            base, bound = self._generator_pair(), self.n * self.bound_x * self.bound_y
+            for (layer, index), product in zip(elements, products):
+                try:
+                    values[layer][index] = bounded_discrete_log_gt(self.group, base, product, bound)
+                except ValueError:
+                    values[layer][index] = None         # decoded_layer names the element
+        return [decoded_layer(array, layer, 10 ** self.precision) for layer, array in enumerate(values)]

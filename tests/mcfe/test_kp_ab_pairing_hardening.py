@@ -10,12 +10,15 @@ tests are the refusals and the attacks.
 
 The ``label`` and the ``attributes_digest`` of a ciphertext are claims of its client: the points ``H(tag, S)`` are
 inside ``t`` and ``c_ipfe``, and the master key would be needed to check the fields against them. A decryption checks
-that the clients agree, so that one client that lies gives no value; all clients that are relabelled alike give the
-right one (``test_the_label_and_the_digest_of_a_ciphertext_are_claims``).
+that the clients agree, so that one client that lies gives no value; all clients that change the label alike still give
+the right one; the list of attributes is read by the decryption (it says which vector pairs with which row), so
+changing it gives a refusal or no value, never a wrong one
+(``test_the_label_and_the_digest_of_a_ciphertext_are_claims``).
 """
 
 import copy
 import hashlib
+import re
 import threading
 
 import numpy as np
@@ -26,8 +29,9 @@ from tests.pairing_group import GROUP, skip_unless_available
 skip_unless_available()
 
 from tests.mcfe.conftest import ATTRS, EXPECTED, LST, POLICY, X, Y
-from tests.mcfe.conftest import creds, encrypt_all, refuse_to_compute
-from pyfe4ai.core.exceptions import FEConfigError, FEKeyError, FEValidationError
+from tests.mcfe.conftest import aggregate, combined, creds, encrypt_all, encrypt_arrays, random_arrays
+from tests.mcfe.conftest import refuse_to_compute
+from pyfe4ai.core.exceptions import FEConfigError, FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.core.formats.pairing import MCKPABCiphertext, MCKPABClientKey, MCKPABFunctionalKey, MCKPABParameters
 from pyfe4ai.policy import attribute_set_digest, canonical_encoding, parse
 from pyfe4ai.primitives.pairing import pairing_backend
@@ -681,11 +685,31 @@ def test_a_client_that_hashed_another_set_of_attributes_than_it_says_gives_no_va
 def test_the_label_and_the_digest_of_a_ciphertext_are_claims(mc_fixed):
     # the points of the tag are inside t and c_ipfe; the fields are checked against each other and cannot be checked
     # against the points without the master key. Ciphertexts are not authenticated (module docstring).
-    _, _, agg, cts, dk = mc_fixed
+    kg, clients, agg, cts, dk = mc_fixed
     for ct in cts.values():
         ct["label"] = encode_label("round-2")
     assert agg.decrypt(cts, dk) == EXPECTED
     assert agg.decrypt(cts, dk, label="round-2") == EXPECTED
+
+    # the list of attributes is no claim of that kind: it says which vector of c_attr pairs with which row of the key.
+    # All clients that change it alike get a refusal or no value, never a wrong one.
+    cts = encrypt_all(clients, attributes=["b:1", "c:1"])               # the vector of b:1 first, then that of c:1
+
+    def relabelled(attributes):
+        return {nid: dict(ct, attributes=list(attributes), attributes_digest=attribute_set_digest(attributes))
+                for nid, ct in cts.items()}
+
+    both = kg.get_decryption_keys("agg", credentials=creds("and(b:1, c:1)"))
+    only_b = kg.get_decryption_keys("agg", credentials=creds("b:1"))
+    assert agg.decrypt(cts, both) == agg.decrypt(cts, only_b) == EXPECTED
+    with pytest.raises(FEKeyError, match="do not satisfy"):             # c:1 renamed: the policy is not satisfied
+        agg.decrypt(relabelled(["b:1", "d:1"]), both)
+    with pytest.raises(ValueError, match="discrete log") as error:      # b:1 now stands where the vector of c:1 is
+        agg.decrypt(relabelled(["a:1", "b:1"]), only_b)
+    assert not isinstance(error.value, FEValidationError)
+    with pytest.raises(FEValidationError, match="sorted"):              # the order of the list is not a choice either
+        agg.decrypt(relabelled(["c:1", "b:1"]), both)
+    assert agg.decrypt(relabelled(["b:1", "d:1"]), only_b) == EXPECTED  # what no row reads can be renamed
 
 
 def test_a_ciphertext_of_another_client_with_the_right_nid_gives_no_value(mc_fixed):
@@ -812,5 +836,244 @@ def test_splice_of_keys_of_one_function(mc_fixed):
     with pytest.raises(ValueError, match="discrete log") as error:
         agg.decrypt(cts, mixed)
     assert not isinstance(error.value, FEValidationError)
+
+
+# ---------------------------------------------------------------------------
+# arrays: what the ndarray helpers refuse, before anything is paired
+
+
+@pytest.fixture
+def array_fixed(make_mc):
+    """A key generator, the clients, an aggregator, the plaintext arrays of the clients (a 2 x 3 array and a vector of
+    4 each), their ciphertexts under ``round-1`` for ``ATTRS`` and a key for ``POLICY`` and ``Y``."""
+    kg, clients, agg = make_mc()
+    arrays = random_arrays()
+    return (kg, clients, agg, arrays, encrypt_arrays(clients, arrays),
+            kg.get_decryption_keys("agg", credentials=creds()))
+
+
+def test_ndarray_decryption_needs_a_key_and_a_string_label(array_fixed, monkeypatch):
+    _, _, agg, _, cts, dk = array_fixed
+    refuse_to_compute(monkeypatch)
+    with pytest.raises(FEKeyError, match="decryption key"):
+        agg.decrypt_lst_ndarray_ct(cts, label="round-1")
+    for label in (None, 5, b"round-1", ["round-1"], ElementLabel("round-1", 0, (0,))):
+        with pytest.raises(FEValidationError, match="label"):
+            agg.decrypt_lst_ndarray_ct(cts, dk=dk, label=label)
+    with pytest.raises(FEValidationError, match="label"):
+        agg.decrypt_lst_ndarray_ct(cts, dk=dk)
+
+
+def test_ndarray_label_must_be_the_one_of_the_ciphertexts(array_fixed, monkeypatch):
+    _, _, agg, _, cts, dk = array_fixed
+    refuse_to_compute(monkeypatch)
+    with pytest.raises(FEValidationError, match=r"layer 0, element \(0, 0\).*claim the label"):
+        aggregate(agg, cts, dk, label="round-2")
+
+
+def test_ndarray_every_client_is_needed(array_fixed, monkeypatch):           # Review Focus 2
+    _, _, agg, _, cts, dk = array_fixed
+    refuse_to_compute(monkeypatch)
+    for missing in LST:
+        with pytest.raises(FEValidationError, match=missing):
+            aggregate(agg, {nid: layers for nid, layers in cts.items() if nid != missing}, dk)
+    with pytest.raises(FEValidationError, match="nid_9"):
+        aggregate(agg, dict(cts, nid_9=cts["nid_0"]), dk)
+    with pytest.raises(FEValidationError, match="nid_0"):
+        aggregate(agg, {}, dk)
+
+
+@pytest.mark.parametrize("bad", [None, [], "cts", 5, [("nid_0", [])]])
+def test_ndarray_refuses_what_is_no_dict_of_arrays(bad, array_fixed):
+    _, _, agg, _, _, dk = array_fixed
+    with pytest.raises(FEValidationError):
+        agg.decrypt_lst_ndarray_ct(bad, dk=dk, label="round-1")
+
+
+@pytest.mark.parametrize("change,match", [
+    (lambda layers: layers[:1], "nid_1.*1 layers.*nid_0.*2"),
+    (lambda layers: layers + layers, "nid_1.*4 layers.*nid_0.*2"),
+    (lambda layers: [layers[0][:1], layers[1]], r"nid_1.*layer 0.*shape \(1, 3\).*\(2, 3\)"),
+    (lambda layers: [layers[0], layers[1][:3]], r"nid_1.*layer 1.*shape \(3,\).*\(4,\)"),
+    (lambda layers: [layers[0], layers[1].tolist()], r"nid_1.*layer 1.*ndarray"),
+    (lambda layers: [layers[0], None], r"nid_1.*layer 1.*ndarray"),
+    (lambda layers: "layers", "nid_1.*list of arrays"),
+    (lambda layers: None, "nid_1.*list of arrays"),
+])
+def test_ndarray_clients_send_the_same_layers(change, match, array_fixed, monkeypatch):
+    _, _, agg, _, cts, dk = array_fixed
+    cts["nid_1"] = change(cts["nid_1"])
+    refuse_to_compute(monkeypatch)
+    with pytest.raises(FEValidationError, match=match):
+        aggregate(agg, cts, dk)
+
+
+@pytest.mark.parametrize("field,value,reason", [
+    ("pp_binding", "0" * 64, "pp_binding"), ("policy_compiler", "v9", "policy_compiler"),
+    ("attr_hash", "v9", "attr_hash"), ("tag_hash", "v9", "tag_hash"),
+    ("t", 5, "t of nid_1"), ("t", ["1:x"], "t of nid_1"), ("c_attr", [], "c_attr of nid_1"),
+    ("c_attr", [["1:x"] * 7, ["1:x"] * 8], "c_attr of nid_1"), ("c_ipfe", ["1:x"] * 3, "c_ipfe of nid_1"),
+    ("nid", "nid_2", "nid_1"), ("nid", None, "client id"), ("nid", np.array([0, 1]), "client id"),
+    ("label", 5, "label of the ciphertext of nid_1"), ("attributes", ["region:EU", "org:A"], "sorted"),
+    ("attributes", 5, "attributes"), ("attributes_digest", "00" * 32, "attributes_digest"),
+    ("attributes_digest", np.array([0, 1]), "attributes_digest"),
+])
+def test_ndarray_refuses_a_hostile_element_and_names_it(field, value, reason, array_fixed, monkeypatch):
+    _, _, agg, _, cts, dk = array_fixed
+    cts["nid_1"][1][2] = dict(cts["nid_1"][1][2], **{field: value})
+    refuse_to_compute(monkeypatch)
+    with pytest.raises(FEValidationError) as error:
+        aggregate(agg, cts, dk)
+    assert "layer 1, element (2,)" in str(error.value) and re.search(reason, str(error.value)), str(error.value)
+
+
+def test_ndarray_refuses_an_element_without_a_field_or_that_is_no_ciphertext(array_fixed, monkeypatch):
+    _, _, agg, _, cts, dk = array_fixed
+    refuse_to_compute(monkeypatch)
+    element = cts["nid_2"][0][1, 1]
+    cts["nid_2"][0][1, 1] = {name: value for name, value in element.items() if name != "c_ipfe"}
+    with pytest.raises(FEValidationError, match=r"nid_2, layer 0, element \(1, 1\).*c_ipfe"):
+        aggregate(agg, cts, dk)
+    for bad in (None, "ct", [element], 5):
+        cts["nid_2"][0][1, 1] = bad
+        with pytest.raises(FEValidationError, match=r"nid_2, layer 0, element \(1, 1\)"):
+            aggregate(agg, cts, dk)
+
+
+def test_ndarray_ciphertext_in_the_slot_of_another_client_is_refused(array_fixed, monkeypatch):
+    _, _, agg, _, cts, dk = array_fixed
+    refuse_to_compute(monkeypatch)
+    swapped = dict(cts, nid_0=cts["nid_1"], nid_1=cts["nid_0"])
+    with pytest.raises(FEValidationError, match=r"layer 0, element \(0, 0\).*nid_0.*nid_1"):
+        aggregate(agg, swapped, dk)
+
+
+def test_ndarray_clients_agree_on_the_digest_of_each_element(make_mc, monkeypatch):
+    kg, clients, agg = make_mc()
+    arrays = random_arrays()
+    cts = encrypt_arrays(clients, arrays)
+    dk = kg.get_decryption_keys("agg", credentials=creds())
+    cts["nid_2"][1][3] = clients["nid_2"].encrypt([int(arrays["nid_2"][1][3])], ElementLabel("round-1", 1, (3,)),
+                                                  attributes=ATTRS + ["org:A"])
+    refuse_to_compute(monkeypatch)
+    with pytest.raises(FEValidationError, match=r"layer 1, element \(3,\).*differ in their attributes_digest"):
+        aggregate(agg, cts, dk)
+
+
+def test_ndarray_unsatisfied_is_refused_before_any_pairing(make_mc, monkeypatch):
+    kg, clients, agg = make_mc()
+    cts = encrypt_arrays(clients, random_arrays(), attributes=["region:EU"])
+    dk = kg.get_decryption_keys("agg", credentials=creds())
+    refuse_to_compute(monkeypatch)
+    with pytest.raises(FEKeyError, match="do not satisfy"):
+        aggregate(agg, cts, dk)
+
+
+def test_ndarray_fusion_weight_must_be_the_weights_of_the_key(array_fixed, monkeypatch):
+    _, _, agg, _, cts, dk = array_fixed
+    refuse_to_compute(monkeypatch)
+    with pytest.raises(FEValidationError, match="the fusion weight of nid_1 is not the y of the functional key"):
+        aggregate(agg, cts, dk, y=dict(Y, nid_1=Y["nid_1"] + 1))
+    with pytest.raises(FEValidationError, match="the fusion weight"):
+        agg.decrypt_lst_ndarray_ct(cts, dk=dk, fusion_weight={"nid_0": [1]}, label="round-1")
+
+
+def test_ndarray_refuses_a_key_that_is_not_these_parameters_or_not_well_formed(array_fixed, make_mc, monkeypatch):
+    _, _, agg, _, cts, dk = array_fixed
+    other_kg, _, _ = make_mc()
+    refuse_to_compute(monkeypatch)
+    with pytest.raises(FEValidationError, match="functional key.*pp_binding"):
+        aggregate(agg, cts, other_kg.get_decryption_keys("agg", credentials=creds()))
+    with pytest.raises(FEValidationError, match="policy_digest"):
+        aggregate(agg, cts, dict(dk, policy_digest="0" * 64))
+    with pytest.raises(FEValidationError, match="k_rows of nid_1"):
+        aggregate(agg, cts, dict(dk, k_rows=dict(dk["k_rows"], nid_1=dk["k_rows"]["nid_1"][:1])))
+    with pytest.raises(FEValidationError, match="y of nid_2"):
+        aggregate(agg, cts, dict(dk, y=dict(dk["y"], nid_2="11")))
+
+
+def test_ndarray_decodes_every_vector_of_every_element_also_the_unused(make_mc):
+    kg, clients, agg = make_mc()
+    arrays = random_arrays()
+    cts = encrypt_arrays(clients, arrays, attributes=ATTRS + ["org:A"])        # org:A is no row of the policy
+    dk = kg.get_decryption_keys("agg", credentials=creds())
+    assert all((layer == expected).all() for layer, expected in zip(aggregate(agg, cts, dk), combined(arrays)))
+    ct = cts["nid_1"][1][3]
+    cts["nid_1"][1][3] = dict(ct, c_attr=[row[:] for row in ct["c_attr"]])
+    cts["nid_1"][1][3]["c_attr"][0][5] = "1:not an element"                      # in the vector of org:A, the first
+    with pytest.raises(FEValidationError, match=r"c_attr of nid_1, layer 1, element \(3,\)"):
+        aggregate(agg, cts, dk)
+    cts["nid_1"][1][3]["c_attr"][0][5] = dk["k_ipfe"]["nid_0"][0]                # an element of G2
+    with pytest.raises(FEValidationError, match=r"c_attr of nid_1, layer 1, element \(3,\)"):
+        aggregate(agg, cts, dk)
+    cts["nid_1"][1][3] = dict(ct, t=dk["k_ipfe"]["nid_0"][0])                    # G2 where G1 is due
+    with pytest.raises(FEValidationError, match=r"t of nid_1, layer 1, element \(3,\)"):
+        aggregate(agg, cts, dk)
+    cts["nid_1"][1][3] = dict(ct, c_ipfe=ct["c_ipfe"][:3] + ["1:x"])
+    with pytest.raises(FEValidationError, match=r"c_ipfe of nid_1, layer 1, element \(3,\)"):
+        aggregate(agg, cts, dk)
+
+
+def test_ndarray_decodes_the_used_rows_of_the_key_only(make_mc):
+    kg, clients, agg = make_mc()
+    arrays = random_arrays()
+    cts = encrypt_arrays(clients, arrays, attributes=["region:EU"])
+    dk = kg.get_decryption_keys("agg", credentials=creds("or(region:EU, org:A)"))      # the first leaf is used
+    good = copy.deepcopy(dk)
+    dk["k_rows"]["nid_1"][1][2] = "2:not an element"
+    assert all((layer == expected).all() for layer, expected in zip(aggregate(agg, cts, dk), combined(arrays)))
+    dk["k_rows"]["nid_1"][0][2] = "2:not an element"
+    with pytest.raises(FEValidationError, match="k_rows of nid_1"):
+        aggregate(agg, cts, dk)
+    dk = copy.deepcopy(good)
+    dk["k_rows"]["nid_1"][0][2] = cts["nid_0"][0][0, 0]["t"]                            # G1 where G2 is due
+    with pytest.raises(FEValidationError, match="k_rows of nid_1"):
+        aggregate(agg, cts, dk)
+    dk = copy.deepcopy(good)
+    dk["k_ipfe"]["nid_0"][1] = cts["nid_0"][0][0, 0]["c_ipfe"][0]
+    with pytest.raises(FEValidationError, match="k_ipfe of nid_0"):
+        aggregate(agg, cts, dk)
+
+
+def test_ndarray_with_a_key_of_another_function_gives_no_value(array_fixed):
+    kg, _, agg, _, cts, dk = array_fixed
+    spliced = dict(dk, y=kg.get_decryption_keys("agg", credentials=creds(y=dict(Y, nid_1=5)))["y"])
+    with pytest.raises(FESchemeError, match=r"element \(0, 0\) of layer 0 does not decrypt") as error:
+        aggregate(agg, cts, spliced, y={nid: int(spliced["y"][nid]) for nid in LST})
+    assert not isinstance(error.value, ValueError)
+
+
+def test_encrypt_lst_ndarray_needs_the_encryption_key(array_fixed):
+    _, _, agg, _, _, _ = array_fixed
+    with pytest.raises(FEKeyError, match="encryption key"):
+        agg.encrypt_lst_ndarray([np.zeros((2,), dtype=np.int64)], label="round-1", attributes=ATTRS)
+    with pytest.raises(FEKeyError, match="encryption key"):
+        agg.encrypt_lst_ndarray([], label="round-1", attributes=ATTRS)
+
+
+@pytest.mark.parametrize("label", [None, 5, b"round-1", ["round-1"], ElementLabel("round-1", 0, (0,))])
+def test_encrypt_lst_ndarray_needs_a_string_label(label, array_fixed):
+    _, clients, _, _, _, _ = array_fixed
+    with pytest.raises(FEValidationError, match="label"):
+        clients["nid_0"].encrypt_lst_ndarray([np.ones((2,), dtype=np.int64)], label=label, attributes=ATTRS)
+    with pytest.raises(FEValidationError, match="label"):
+        clients["nid_0"].encrypt_lst_ndarray([], label=label, attributes=ATTRS)
+
+
+@pytest.mark.parametrize("attributes", [None, "region:EU", 5, ["region"], [5], ["region:EU", None]])
+def test_encrypt_lst_ndarray_checks_the_attributes_also_for_an_empty_array(attributes, array_fixed):
+    _, clients, _, _, _, _ = array_fixed
+    for layers in ([np.ones((2,), dtype=np.int64)], [np.zeros((0,), dtype=np.int64)], []):
+        with pytest.raises(FEValidationError):
+            clients["nid_0"].encrypt_lst_ndarray(layers, label="round-1", attributes=attributes)
+
+
+@pytest.mark.parametrize("layer", [np.array([11]), np.array([-11]), np.array([10.6]), np.array([np.nan]),
+                                   np.array(["a"]), np.array([None])])
+def test_encrypt_lst_ndarray_checks_the_plaintext(layer, array_fixed):
+    _, clients, _, _, _, _ = array_fixed
+    with pytest.raises(FEValidationError):
+        clients["nid_0"].encrypt_lst_ndarray([np.ones((1,), dtype=np.int64), layer], label="round-1",
+                                             attributes=ATTRS)
 
 
