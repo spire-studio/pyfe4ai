@@ -11,8 +11,9 @@ of ``F*`` per row of its span program, ``(pi j, pi, share z, 0, ..., 0)_F*`` for
 ``(sigma, -j sigma, psi, 0, ..., 0)_F`` (:func:`attribute_vector`). Their pairing is
 ``sigma pi (j' - j) + psi share z`` in the exponent, which is ``psi share z`` for a row of the label ``j`` and
 a masked value for any other. The module also reads the two inputs of the schemes, the policy of a key and the
-attributes of a ciphertext, with the checks that both need, and sets up the pairings of a decryption
-(:func:`attribute_pairs`).
+attributes of a ciphertext, with the checks that both need, sets up the pairings of a decryption
+(:func:`attribute_pairs`) and hashes a tag to the two points of ``G1`` that the multi-client schemes use
+(:func:`tag_points`).
 
 Labels are hashed to ``Z_q`` by :func:`~pyfe4ai.policy.attributes.attribute_to_zq`, so that a label stands for the
 attribute ``j in Z_q`` of the paper.
@@ -20,13 +21,14 @@ attribute ``j in Z_q`` of the paper.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 
 from pyfe4ai.core.exceptions import FEValidationError
 from pyfe4ai.policy import MSP, Formula, attribute_to_zq, compile_formula, parse, validate_label
 from pyfe4ai.policy.attributes import clip
 from pyfe4ai.primitives.pairing.dpvs import combine
-from pyfe4ai.primitives.pairing.pairing_backend import PairingGroup, multiexp_many
+from pyfe4ai.primitives.pairing.pairing_backend import PairingGroup, hash_to_g1, multiexp_many
 
 #: The dimension of ``F`` and ``F*``: two coordinates for ``(j, 1)``, one for the share and five that stay zero.
 F_DIM = 8
@@ -39,6 +41,11 @@ DEFAULT_MAX_ATTRIBUTES = 64
 MAX_LABEL_CHARS = 1024
 #: What a row of a policy may add to its label in the canonical encoding (gate names, quotes, brackets, commas).
 _POLICY_MARGIN_PER_ROW = 400
+#: The version marker of :func:`tag_points`, which a multi-client scheme keeps in its public parameters and refuses
+#: any other value of.
+TAG_HASH = "PYFE4AI-V05-MCFE-KPAB-TAG"
+#: The domain separation tag of :func:`tag_points`: the marker as bytes.
+TAG_DST = TAG_HASH.encode("ascii")
 
 
 def read_policy(policy) -> Formula:
@@ -255,3 +262,39 @@ def attribute_pairs(weights: Mapping[int, int], rows: Sequence[str], attributes:
         for slot, element in zip(powered, raised):
             lhs[slot] = element
     return lhs, rhs
+
+
+def tag_points(group: PairingGroup, scheme_id: str, pp_binding: str, encoded_label: str,
+               attributes_digest: str | None) -> tuple:
+    """The two points ``([omega]_1, [omega']_1)`` of ``G1`` that a tag and a set of attributes hash to: the
+    ``H(tag, S)`` of NPP22 Fig. 3, with unknown discrete logarithms.
+
+    Both points hash ``m`` followed by ``|0`` and ``|1``, under :data:`TAG_DST`, with ``m`` the compact JSON of
+    ``[scheme_id, pp_binding, encoded_label, attributes_digest]``. The suffix has no NUL byte: a charm group reads a
+    C string and ends it at the first one. A scheme that hashes the tag only passes ``None`` for the digest (JSON
+    ``null``).
+
+    Args:
+        group: Pairing group instance.
+        scheme_id: The scheme, so that two schemes never hash to the same points.
+        pp_binding: The ``pp_binding`` of the public parameters, so that two setups do not either.
+        encoded_label: The label as :func:`~pyfe4ai.schemes.mcfe.labels.encode_label` writes it. The caller encodes
+            it: ``schemes/common`` does not import ``schemes.mcfe``.
+        attributes_digest: The :func:`~pyfe4ai.policy.attributes.attribute_set_digest` of the set of attributes, or
+            ``None``.
+
+    Returns:
+        ``(omega, omega_prime)``, elements of ``G1``.
+
+    Raises:
+        FEValidationError: If an argument is not a ``str``, or ``None`` for the digest.
+    """
+    for name, value in (("scheme_id", scheme_id), ("pp_binding", pp_binding), ("encoded_label", encoded_label)):
+        if type(value) is not str:
+            raise FEValidationError("{} must be a str, got {}".format(name, type(value).__name__))
+    if attributes_digest is not None and type(attributes_digest) is not str:
+        raise FEValidationError("attributes_digest must be a str or None, got {}".format(
+            type(attributes_digest).__name__))
+    message = json.dumps([scheme_id, pp_binding, encoded_label, attributes_digest],
+                         separators=(",", ":")).encode("ascii")
+    return hash_to_g1(group, message + b"|0", TAG_DST), hash_to_g1(group, message + b"|1", TAG_DST)

@@ -6,18 +6,22 @@ positive ``int``, a decimal string in its one spelling, a list of the length
 that the parameters fix, a list of group elements of the right group in their
 one serialised form, and a record view with all its fields. Each raises
 ``FEValidationError`` naming the field, so that the schemes read their records
-alike.
+alike. The module also holds what the constructors of the crypto objects have in
+common: the copy of the public parameters, the pairing group they name and the
+version markers they carry.
 """
 
 from __future__ import annotations
 
+import copy
 import re
 
 from pyfe4ai.core.exceptions import FEValidationError
+from pyfe4ai.policy.attributes import clip
 from pyfe4ai.primitives.pairing import bls12_381
 from pyfe4ai.primitives.pairing.bls12_381 import MAX_DLOG_BOUND
 from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, PairingGroup
-from pyfe4ai.primitives.pairing.pairing_backend import deserialize_many, serialize_many
+from pyfe4ai.primitives.pairing.pairing_backend import check_asymmetric, deserialize_many, serialize_many
 
 _GROUP_NAMES = {G1: "G1", G2: "G2"}
 
@@ -33,10 +37,15 @@ def positive_int(value, name: str) -> int:
     return value
 
 
-def check_dlog_limit(eta: int, bound_x: int, bound_y: int) -> None:
+def check_dlog_limit(eta: int, bound_x: int, bound_y: int, first: str = "eta") -> None:
+    """Refuse ``eta * bound_x * bound_y`` above ``2**48``, the limit of the discrete log.
+
+    *first* names the first factor in the message: ``"eta"``, or ``"n"`` for a scheme whose clients encrypt one
+    scalar each (the number of clients is then passed as *eta*).
+    """
     if eta * bound_x * bound_y > MAX_DLOG_BOUND:
         raise FEValidationError(
-            "eta * bound_x * bound_y must be at most 2**48, the limit of the discrete log"
+            "{} * bound_x * bound_y must be at most 2**48, the limit of the discrete log".format(first)
         )
 
 
@@ -44,6 +53,20 @@ def decimal(value, name: str) -> int:
     """The int that *value*, a decimal string in its one spelling, stands for."""
     if type(value) is not str or _DECIMAL.fullmatch(value) is None:
         raise FEValidationError("{} must hold decimal strings of integers of at most 16 digits".format(name))
+    return int(value)
+
+
+_SCALAR = re.compile(r"0|[1-9][0-9]*")
+
+
+def scalar(value, name: str, order) -> int:
+    """The int in ``[0, order)`` that *value*, a decimal string in its one spelling, stands for: a secret exponent.
+
+    The length is checked before the string is converted, so that a long string costs nothing.
+    """
+    if (type(value) is not str or len(value) > len(str(order)) or _SCALAR.fullmatch(value) is None
+            or int(value) >= order):
+        raise FEValidationError("{} must hold decimal strings of integers below the group order".format(name))
     return int(value)
 
 
@@ -84,3 +107,48 @@ def require_fields(record, name: str) -> None:
     for field in record.FIELDS:
         if field not in record:
             raise FEValidationError("the {} has no field {}".format(name, field))
+
+
+def copy_parameters(pp, name: str = "public parameters"):
+    """A deep copy of *pp*, so that what a constructor checks stays what it uses, whatever the caller's dict does.
+
+    Raises:
+        FEValidationError: If *pp* cannot be copied (``deepcopy`` raises what the ``__reduce_ex__`` of any object
+            raises). *name* says what *pp* is, in the message.
+    """
+    try:
+        return copy.deepcopy(pp)
+    except Exception as exc:
+        raise FEValidationError("{} must be JSON data: {}".format(name, exc)) from exc
+
+
+def load_group(name) -> PairingGroup:
+    """The asymmetric pairing group that the parameter ``pairing_group_param`` = *name* names.
+
+    Raises:
+        FEValidationError: For a name that is no pairing group, and for a symmetric group.
+        ImportError: If no backend is installed for a group that may exist: the installation, not the parameters.
+    """
+    try:
+        group = PairingGroup(name)
+    except ImportError:
+        raise
+    except Exception as exc:    # charm raises AssertionError or its own Error for a name it does not know
+        raise FEValidationError("pairing_group_param {} is not a pairing group".format(clip(repr(name)))) from exc
+    check_asymmetric(group)
+    return group
+
+
+def check_marker(value, expected: str, name: str) -> None:
+    """Refuse a version marker other than the one of this version.
+
+    Args:
+        value: The marker in the record.
+        expected: The marker of this version.
+        name: Whose marker it is, for the message: ``"the policy_compiler of the ciphertext"``.
+
+    Raises:
+        FEValidationError: For any other value.
+    """
+    if value != expected:
+        raise FEValidationError("{} is {}, not this version's {!r}".format(name, clip(repr(value)), expected))

@@ -42,6 +42,7 @@ class CryptoCONST(object):
     TYPE_MCFE_FULLYSEC_LWE = "MCFE_FULLYSEC_LWE"
     TYPE_MCFE_RING_LWE = "MCFE_RING_LWE"
     TYPE_MCFE_FH_MULTI_IPE = "MCFE_FH_MULTI_IPE"
+    TYPE_MCFE_KP_AB = "MCFE_KP_AB"
 
     DEC_STAGE_1 = "partial_decryption"
     DEC_STAGE_2 = "final_decryption"

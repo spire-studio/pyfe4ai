@@ -59,7 +59,6 @@ Deviations:
 
 from __future__ import annotations
 
-import copy
 import json
 import logging
 
@@ -96,7 +95,10 @@ from pyfe4ai.primitives.pairing.pairing_utils import serialize_matrix_g
 from pyfe4ai.schemes.common.ac_binding import check_binding, pp_digest
 from pyfe4ai.schemes.common.ac_codec import check_dlog_limit as _check_dlog_limit
 from pyfe4ai.schemes.common.ac_codec import check_length as _check_length
+from pyfe4ai.schemes.common.ac_codec import check_marker as _check_marker
+from pyfe4ai.schemes.common.ac_codec import copy_parameters as _copy_parameters
 from pyfe4ai.schemes.common.ac_codec import decimal as _decimal
+from pyfe4ai.schemes.common.ac_codec import load_group as _load_group
 from pyfe4ai.schemes.common.ac_codec import positive_int as _positive_int
 from pyfe4ai.schemes.common.ac_codec import read_elements as _elements
 from pyfe4ai.schemes.common.ac_codec import read_record as _record
@@ -279,13 +281,6 @@ class SIFEKPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         ).to_dict()
 
 
-def _check_marker(value, expected: str, field: str, what: str) -> None:
-    """Refuse a version marker other than the one of this version."""
-    if value != expected:
-        raise FEValidationError("the {} of the {} is {}, not this version's {!r}".format(
-            field, what, clip(repr(value)), expected))
-
-
 class SIFEKPABPairing(IPFEAbsCrypto):
     """Crypto operations for key-policy attribute-based IPFE over pairings."""
 
@@ -306,22 +301,12 @@ class SIFEKPABPairing(IPFEAbsCrypto):
         pp = self.keys.get("pp")
         if pp is None:
             raise FEKeyError("no public parameters: keys needs the entry pp")
-        try:
-            pp = copy.deepcopy(pp)      # what is checked below stays what is used, whatever the caller's dict does
-        except Exception as exc:        # deepcopy raises what the __reduce_ex__ of any object raises
-            raise FEValidationError("public parameters must be JSON data: {}".format(exc)) from exc
+        pp = _copy_parameters(pp)       # what is checked below stays what is used, whatever the caller's dict does
         self._read_parameters(pp)
         self.pp = pp
         self._decoded = {}
         self._gt = None
-        try:
-            self.group = PairingGroup(pp["pairing_group_param"])
-        except ImportError:     # no backend for a group that may exist: the installation, not the parameters
-            raise
-        except Exception as exc:    # charm raises AssertionError or its own Error for a name it does not know
-            raise FEValidationError("pairing_group_param {} is not a pairing group".format(
-                clip(repr(pp["pairing_group_param"])))) from exc
-        check_asymmetric(self.group)
+        self.group = _load_group(pp["pairing_group_param"])
         self.order = gp.mpz(int(self.group.order()))
 
     def _read_parameters(self, pp: dict) -> None:
@@ -334,8 +319,8 @@ class SIFEKPABPairing(IPFEAbsCrypto):
         _require_fields(parameters, "public parameters")
         if pp_digest(pp, _PP_DOMAIN) != parameters.pp_binding:
             raise FEValidationError("the public parameters do not agree with their pp_binding")
-        _check_marker(parameters.policy_compiler, POLICY_COMPILER, "policy_compiler", "public parameters")
-        _check_marker(parameters.attr_hash, ATTR_HASH, "attr_hash", "public parameters")
+        _check_marker(parameters.policy_compiler, POLICY_COMPILER, "the policy_compiler of the public parameters")
+        _check_marker(parameters.attr_hash, ATTR_HASH, "the attr_hash of the public parameters")
         if type(parameters.pairing_group_param) is not str:
             raise FEValidationError("pairing_group_param must be a str, got {}".format(
                 type(parameters.pairing_group_param).__name__))
@@ -453,9 +438,9 @@ class SIFEKPABPairing(IPFEAbsCrypto):
         check_binding(self.pp, key, "functional key")
         _require_fields(ct, "ciphertext")
         _require_fields(key, "functional key")
-        _check_marker(ct.policy_compiler, POLICY_COMPILER, "policy_compiler", "ciphertext")
-        _check_marker(ct.attr_hash, ATTR_HASH, "attr_hash", "ciphertext")
-        _check_marker(key.policy_compiler, POLICY_COMPILER, "policy_compiler", "functional key")
+        _check_marker(ct.policy_compiler, POLICY_COMPILER, "the policy_compiler of the ciphertext")
+        _check_marker(ct.attr_hash, ATTR_HASH, "the attr_hash of the ciphertext")
+        _check_marker(key.policy_compiler, POLICY_COMPILER, "the policy_compiler of the functional key")
 
         if type(key.policy) is not str:
             raise FEValidationError("the policy of a functional key must be a str")
