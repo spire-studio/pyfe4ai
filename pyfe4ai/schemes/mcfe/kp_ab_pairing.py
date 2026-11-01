@@ -63,6 +63,8 @@ uses, with their reconstruction coefficients folded in, and ``-k*_i,ipfe``) are 
 then one product of pairings over them. The elements of an array are for one set of attributes. All elements are
 checked first; they are then decoded, paired and solved 256 at a time, so that the memory of the decoded group
 elements does not grow with the size of the arrays (see :meth:`MCFEKPABPairing.decrypt_lst_ndarray_ct`).
+:meth:`MCFEKPABPairing.check_ndarray_ct` makes the checks that need no key and no decoded point, for a caller that
+issues the functional key before it decrypts.
 
 The policy of a key (``dk["policy"]``) and the attributes of a ciphertext (``ct["attributes"]``, with the tag in
 ``ct["label"]``) are public: they travel in the clear and hide nothing. Keys are trusted input to the decryption: the
@@ -654,14 +656,18 @@ class MCFEKPABPairing(IPFEAbsCrypto):
 
     def _check_records(self, key, cts: dict) -> None:
         """Check the bindings, then the fields, then the version markers of *key* and of the ciphertexts *cts*, a dict
-        from where each comes from (its client, or its client and element in an array) to its record."""
-        check_binding(self.pp, key, "functional key")
+        from where each comes from (its client, or its client and element in an array) to its record. *key* is
+        ``None`` where only the ciphertexts are checked."""
+        if key is not None:
+            check_binding(self.pp, key, "functional key")
         for whose, ct in cts.items():
             check_binding(self.pp, ct, "ciphertext of {}".format(whose))
-        _require_fields(key, "functional key")
+        if key is not None:
+            _require_fields(key, "functional key")
         for whose, ct in cts.items():
             _require_fields(ct, "ciphertext of {}".format(whose))
-        _check_marker(key.policy_compiler, POLICY_COMPILER, "the policy_compiler of the functional key")
+        if key is not None:
+            _check_marker(key.policy_compiler, POLICY_COMPILER, "the policy_compiler of the functional key")
         for whose, ct in cts.items():
             owner = "the ciphertext of {}".format(whose)
             _check_marker(ct.policy_compiler, POLICY_COMPILER, "the policy_compiler of " + owner)
@@ -962,18 +968,90 @@ class MCFEKPABPairing(IPFEAbsCrypto):
             row.append(mask)
         return rows
 
+    def _check_arrays(self, dict_ndarray_ct, label: str, key=None) -> tuple:
+        """The checks of a decryption of arrays that need no decoded point, in the order of :meth:`decrypt`: the
+        structure of the arrays, the ciphertexts as records, their bindings, fields and version markers (with those of
+        *key*, a functional key record, unless it is ``None``), the clients, tags and digests of each element under
+        its label, one set of attributes for all elements, (the policy and shape of *key*,) the length of every field
+        and the type tag of every vector of ``G1``.
+
+        Returns:
+            ``(shapes, elements, cts, attributes, msp, y)``: the shape of each layer, the ``(layer, index)`` of each
+            element, its records by client, the common set of attributes (``None`` without elements), and, for a *key*,
+            its span program and weights (``None`` otherwise).
+        """
+        arrays = self._read_arrays(dict_ndarray_ct)
+        shapes = [array.shape for array in arrays[self.lst_nid[0]]]
+        elements = [(layer, index) for layer, shape in enumerate(shapes) for index in np.ndindex(shape)]
+
+        flat, cts = {}, []
+        for layer, index in elements:
+            by_client = {}
+            for nid in self.lst_nid:
+                where = "{}, layer {}, element {}".format(nid, layer, index)
+                by_client[nid] = flat[where] = _record(MCKPABCiphertext, arrays[nid][layer][index],
+                                                       "ciphertext of " + where)
+            cts.append(by_client)
+        self._check_records(key, flat)
+        attributes, first = None, None
+        for (layer, index), by_client in zip(elements, cts):
+            with _in_element(layer, index):
+                held = self._check_ciphertexts(by_client, element_label(label, layer, index))
+            if attributes is None:
+                attributes, first = held, (layer, index)
+            elif held != attributes:
+                raise FEValidationError(
+                    "layer {}, element {}: the attributes {} are not those of layer {}, element {}, {}: the elements "
+                    "of an array are for one set of attributes".format(
+                        layer, index, clip(repr(held), 120), first[0], first[1], clip(repr(attributes), 120)))
+        msp, y = (None, None) if key is None else self._read_key(key)
+        for (layer, index), by_client in zip(elements, cts):
+            with _in_element(layer, index):
+                self._check_shapes(by_client, attributes)
+        self._check_field_tags(elements, cts)
+        return shapes, elements, cts, attributes, msp, y
+
+    def check_ndarray_ct(self, dict_ndarray_ct: dict, label: str | None = None) -> None:
+        """Check the ciphertext arrays of all clients as far as :meth:`decrypt_lst_ndarray_ct` can before it has a key:
+        every check that needs neither a functional key nor a decoded group element.
+
+        These are the structure of the arrays (a list of arrays for every client, the same layers and shapes), the
+        ciphertexts as records, their bindings, fields and version markers, for each element the clients (all of them
+        and no other, each in its own slot), the tag (each element under the label that :meth:`encrypt_lst_ndarray`
+        gave it, for *label*), the attributes and their digest, one set of attributes for all elements, the length of
+        every field, and that every vector of ``G1`` is a list of strings with the type tag of ``G1``. The messages
+        are those of :meth:`decrypt_lst_ndarray_ct`, which makes the same checks (with those of its key) before it
+        decodes anything.
+
+        What this does not see: an item with the right type tag that is no element of the group is found when it is
+        decoded, and a ciphertext whose ``label`` or attributes are not those it was made with (the points are inside
+        ``t`` and ``c_ipfe``) gives no value at the discrete log. A caller that hands the arrays to a service that
+        issues keys calls this first, so that a key is not issued for arrays that a decryption would refuse.
+
+        Args:
+            dict_ndarray_ct: The ciphertext arrays by client id, as for :meth:`decrypt_lst_ndarray_ct`.
+            label: The label the arrays were encrypted under, a ``str``.
+
+        Raises:
+            FEValidationError: For a label that is not a ``str``, and for the arrays that :meth:`decrypt_lst_ndarray_ct`
+                refuses before it decodes a point, as it does; the message names the layer and the element.
+        """
+        if not isinstance(label, str):
+            raise FEValidationError("need a string label for check_ndarray_ct, got {}".format(clip(repr(label))))
+        self._check_arrays(dict_ndarray_ct, label)
+
     def decrypt_lst_ndarray_ct(self, dict_ndarray_ct: dict, dk: dict | None = None,
                                fusion_weight: dict | None = None, label: str | None = None) -> list:
         """Decrypt the ciphertext arrays of all clients, all elements with one preparation of the key.
 
         The elements go through the checks of :meth:`decrypt` (the label of an element must be the one that
-        :meth:`encrypt_lst_ndarray` gave it), and they must all be for one set of attributes. These checks, and that
-        every vector of ``G1`` is a list of strings with the type tag of ``G1``, are made for all elements before
-        anything is decoded, prepared or paired. The key is read once. Its points are prepared once, and the elements
-        are then decoded, paired (one product of pairings each, over the prepared points) and solved
-        ``_BATCH_ELEMENTS`` (256) at a time. A string with the right tag that is no element of the group is found
-        when the slice that holds it is decoded, after the slices before it were paired; the call then raises and
-        returns nothing, as for any other malformed input.
+        :meth:`encrypt_lst_ndarray` gave it), and they must all be for one set of attributes. These checks, those of
+        :meth:`check_ndarray_ct` with the key's, and that every vector of ``G1`` is a list of strings with the type tag
+        of ``G1``, are made for all elements before anything is decoded, prepared or paired. The key is read once. Its
+        points are prepared once, and the elements are then decoded, paired (one product of pairings each, over the
+        prepared points) and solved ``_BATCH_ELEMENTS`` (256) at a time. A string with the right tag that is no element
+        of the group is found when the slice that holds it is decoded, after the slices before it were paired; the call
+        then raises and returns nothing, as for any other malformed input.
 
         Memory: the ciphertexts are the caller's. The call adds about 4 KB for each of them (a record view, a name and
         the lists of the checks, measured at ``n = 10``, ``|S| = 3``) and the prepared points of the key, up to about
@@ -1004,41 +1082,13 @@ class MCFEKPABPairing(IPFEAbsCrypto):
         if not isinstance(label, str):
             raise FEValidationError("need a string label for decrypt_lst_ndarray_ct, got {}".format(clip(repr(label))))
         key = _record(MCKPABFunctionalKey, dk, "functional key")
-        arrays = self._read_arrays(dict_ndarray_ct)
-        shapes = [array.shape for array in arrays[self.lst_nid[0]]]
-        elements = [(layer, index) for layer, shape in enumerate(shapes) for index in np.ndindex(shape)]
-
-        flat, cts = {}, []
-        for layer, index in elements:
-            by_client = {}
-            for nid in self.lst_nid:
-                where = "{}, layer {}, element {}".format(nid, layer, index)
-                by_client[nid] = flat[where] = _record(MCKPABCiphertext, arrays[nid][layer][index],
-                                                       "ciphertext of " + where)
-            cts.append(by_client)
-        self._check_records(key, flat)
-        attributes, first = None, None
-        for (layer, index), by_client in zip(elements, cts):
-            with _in_element(layer, index):
-                held = self._check_ciphertexts(by_client, element_label(label, layer, index))
-            if attributes is None:
-                attributes, first = held, (layer, index)
-            elif held != attributes:
-                raise FEValidationError(
-                    "layer {}, element {}: the attributes {} are not those of layer {}, element {}, {}: the elements "
-                    "of an array are for one set of attributes".format(
-                        layer, index, clip(repr(held), 120), first[0], first[1], clip(repr(attributes), 120)))
-        msp, y = self._read_key(key)
-        for (layer, index), by_client in zip(elements, cts):
-            with _in_element(layer, index):
-                self._check_shapes(by_client, attributes)
+        shapes, elements, cts, attributes, msp, y = self._check_arrays(dict_ndarray_ct, label, key)
         self._check_fusion_weight(fusion_weight, y)
 
         values = [np.empty(shape, dtype=object) for shape in shapes]
         if elements:
             weights = self._satisfying_weights(msp, attributes)
             used = vector_positions(weights, msp.row_labels, attributes)
-            self._check_field_tags(elements, cts)
             prepared = prepare_g2(self._key_points(key, weights))               # the lines are not kept after the call
             base, bound = self._generator_pair(), self.n * self.bound_x * self.bound_y
             for start in range(0, len(elements), _BATCH_ELEMENTS):

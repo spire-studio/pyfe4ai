@@ -242,7 +242,11 @@ class FESchemeWrapper:
     object instead -- the scheme class built from ``wrapper.pp`` and
     ``wrapper.kg.get_private_keys(nid)`` (e.g. ``MCFERingLWE({"id": nid,
     "precision": p, "keys": {"pp": pp, "sk": sk}})`` for ``mcfe/ring_lwe``),
-    whose ``encrypt_lst_ndarray`` the worker calls.
+    whose ``encrypt_lst_ndarray`` the worker calls. The wrapper of a pairing
+    scheme cannot be pickled or copied at all (``TypeError``: its key generator
+    holds a pairing-group object and group elements); build the crypto object
+    of such a worker the same way, from ``wrapper.pp`` and
+    ``wrapper.kg.get_private_keys(nid)``, which do pickle.
 
     Args:
         scheme_type: ``"sife"``, ``"mife"``, ``"mcfe"`` or ``"quadratic"``.

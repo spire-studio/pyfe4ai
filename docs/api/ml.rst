@@ -69,13 +69,20 @@ that :func:`~pyfe4ai.ml.aggregate_gradients` (or
    total = aggregate_gradients(encrypted, wrapper, {"c0": 1, "c1": 2, "c2": 3}, label="round-1",
                                policy="and(purpose:research, region:EU)")
 
-A request that cannot succeed is refused before a key is issued and before
-any pairing is computed: clients that encrypted for different sets of
-attributes (``ValueError``, naming the first ciphertext that differs), a set
-that does not satisfy the policy (:class:`~pyfe4ai.core.exceptions.FEKeyError`),
-a client that is missing, and ``allow_partial=True`` (``ValueError``: the
-shares of the clients' keys add up to 1, so a result opens only with the
-ciphertexts of every enrolled client, also those of weight 0). A
+The aggregation is refused before a key is issued and before any pairing is
+computed when the scheme's own checks of the ciphertexts refuse them
+(``ValueError`` naming the layer and the element: records that are malformed
+or of other parameters, ciphertexts of another label, arrays of other shapes,
+clients that encrypted for different sets of attributes), when the set of
+attributes does not satisfy the policy
+(:class:`~pyfe4ai.core.exceptions.FEKeyError`), when a client is missing, and
+for ``allow_partial=True`` (``ValueError``: the shares of the clients' keys add
+up to 1, so a result opens only with the ciphertexts of every enrolled client,
+also those of weight 0). What only a decoding or a discrete logarithm shows
+is found after the key is issued: an item that has the type tag of a group
+element and is none, and a ciphertext whose label or attributes are not those
+it was made with. The label is then tied to the weights of that call, and a
+second try under it needs the same weights. A
 :class:`~pyfe4ai.ml.PreparedAggregation` keeps the canonical encoding of its
 policy in ``policy``; the attributes are judged against it when the round is
 aggregated, and a policy that differs from it is refused. Each client
@@ -87,8 +94,8 @@ not supported by the adapter.
 per aggregate, released under an access policy. It is not a way to aggregate
 the gradients of a large model: every element is a ciphertext of its own, of
 a few kilobytes, and the aggregator pairs several group elements per client
-and element. With 10 clients, 10^3 elements and a policy of three attributes
-the aggregation takes about 52 s on one thread and about 9 s on eight, and a
+and element. With 10 clients, 10^3 elements and ciphertexts for three
+attributes the aggregation takes about 52 s on one thread and about 9 s on eight, and a
 client uploads about 2.4 KB per element as JSON. For comparison, the
 Ring-LWE MCFE of the ``fl_aggregation_10k`` benchmark (10^4 elements,
 ``standard`` profile) takes the client 22.2 ms and the aggregator 10.4 ms, at

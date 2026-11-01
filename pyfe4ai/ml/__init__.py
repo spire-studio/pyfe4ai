@@ -54,16 +54,21 @@ base64).
     ...     {"c0": enc0, "c1": enc1}, wrapper, {"c0": 1, "c1": 2}, label="round-1",
     ...     policy="and(purpose:research, region:EU)")
 
-    ``aggregate_gradients`` (and ``prepare_aggregation``) refuse, before a key
-    is issued and before any pairing, clients that did not all encrypt for one
-    set of attributes (``ValueError``), a set that does not satisfy the policy
-    (:class:`~pyfe4ai.core.exceptions.FEKeyError`), a missing client and
-    ``allow_partial=True`` (``ValueError``: the shares of the clients' keys add
-    up to 1, so every enrolled client must take part). They warn
-    (:class:`~pyfe4ai.core.exceptions.FEWarning`) of a job of more than 1000
-    elements, with the time it takes, and of a discrete-logarithm bound
-    ``n * bound_x * bound_y`` above ``2**26``. Other schemes take neither
-    ``attributes`` nor ``policy``.
+    ``aggregate_gradients`` refuses, before a key is issued and before any
+    pairing, ciphertexts that the scheme's own checks refuse
+    (``ValueError``: malformed records, records of other parameters or of
+    another label, arrays of different shapes, clients that did not all
+    encrypt for one set of attributes), a set of attributes that does not
+    satisfy the policy (:class:`~pyfe4ai.core.exceptions.FEKeyError`), a
+    missing client and ``allow_partial=True`` (``ValueError``: the shares of
+    the clients' keys add up to 1, so every enrolled client must take part).
+    It warns (:class:`~pyfe4ai.core.exceptions.FEWarning`) of a job of more
+    than 1000 elements, with the time it takes, and of a discrete-logarithm
+    bound ``n * bound_x * bound_y`` above ``2**26``. ``prepare_aggregation``
+    sees no ciphertexts: it takes the policy, refuses ``allow_partial=True``
+    and weights that leave a client out, and the attributes are judged
+    against the policy when the round is aggregated. Other schemes take
+    neither ``attributes`` nor ``policy``.
 
 **Single trust domain.** A :class:`FESchemeWrapper` runs the key generator
 itself, so it holds the master secret key and plays every party (clients,

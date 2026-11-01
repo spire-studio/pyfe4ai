@@ -9,9 +9,11 @@ warns of the cost of a large job.
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 import importlib.util
 import json
+import re
 import warnings
 from pathlib import Path
 from types import SimpleNamespace
@@ -239,6 +241,13 @@ def test_precompute_has_no_offline_phase_here(wrapper):
         precompute_gradient(SHAPE, wrapper, nid="c0", label=LABEL)
 
 
+def test_a_precomputation_is_refused_for_a_scheme_without_an_offline_phase(wrapper):
+    with pytest.raises(ValueError, match="no offline encryption phase"):
+        encrypt_gradient(gradients()["c0"], wrapper, nid="c0", label=LABEL, attributes=ATTRIBUTES,
+                         precomputed=object())
+    encrypt_gradient(gradients()["c0"], wrapper, nid="c0", label=LABEL, attributes=ATTRIBUTES)   # label not used up
+
+
 # ---------------------------------------------------------------------------
 # one ciphertext of a client under a label (Review Focus 5)
 
@@ -320,6 +329,126 @@ def test_a_zero_weight_is_not_offered_the_override(wrapper, monkeypatch):
     with pytest.raises(ValueError, match="non-zero weights") as raised:
         aggregate_gradients(encrypted, wrapper, {"c0": 1, "c1": 0, "c2": 3}, label=LABEL, policy=POLICY)
     assert "allow_partial" not in str(raised.value)          # this scheme has no such override
+
+
+# ---------------------------------------------------------------------------
+# a request that the scheme would refuse is refused before a key is issued: the scheme's own checks of the
+# ciphertexts (MCFEKPABPairing.check_ndarray_ct), not the adapter's copy of them
+
+
+def spy_on_the_key(wrapper, monkeypatch):
+    """The calls to the issue of a functional key (it still issues them)."""
+    calls = []
+    issue = wrapper.kg.get_decryption_keys
+
+    def spy(*args, **kwargs):
+        calls.append(args)
+        return issue(*args, **kwargs)
+
+    monkeypatch.setattr(wrapper.kg, "get_decryption_keys", spy)
+    return calls
+
+
+def change_element(client, layer, index, **fields):
+    """A change of the gradients that alters the fields of the ciphertext record of one element."""
+    def change(encrypted):
+        array = encrypted[client].ciphertexts[layer]
+        array[index] = dict(array[index], **fields)
+    return change
+
+
+def drop_field(client, layer, index, field):
+    def change(encrypted):
+        array = encrypted[client].ciphertexts[layer]
+        array[index] = {name: value for name, value in array[index].items() if name != field}
+    return change
+
+
+def reshape_layer(encrypted):
+    encrypted["c1"].ciphertexts[0] = encrypted["c1"].ciphertexts[0].reshape(4)           # (2, 2) for the others
+
+
+def add_a_layer(encrypted):
+    encrypted["c1"].ciphertexts.append(encrypted["c1"].ciphertexts[0].copy())            # two layers for c1 only
+
+
+def short_attribute_vectors(encrypted):
+    array = encrypted["c2"].ciphertexts[0]
+    array[1, 0] = dict(array[1, 0], c_attr=array[1, 0]["c_attr"][:1])
+
+
+SCHEME_REFUSES = [
+    ("a non-first attributes list that its digest does not stand for",
+     change_element("c2", 0, (1, 0), attributes=["region:EU"])),
+    ("a wrong label field", change_element("c1", 0, (0, 1), label="round-0")),
+    ("a swapped nid", change_element("c1", 0, (1, 1), nid="c0")),
+    ("a wrong pp_binding", change_element("c1", 0, (0, 0), pp_binding="0" * 64)),
+    ("a wrong tag_hash", change_element("c2", 0, (1, 1), tag_hash="v9")),
+    ("a missing c_attr", drop_field("c1", 0, (0, 0), "c_attr")),
+    ("a short c_attr", short_attribute_vectors),
+    ("a malformed t", change_element("c0", 0, (1, 0), t=7)),
+    ("a malformed c_ipfe", change_element("c0", 0, (0, 1), c_ipfe=["1:x"] * 3)),
+    ("an array of another shape", reshape_layer),
+    ("another number of layers", add_a_layer),
+]
+
+
+@pytest.mark.parametrize("change", [change for _, change in SCHEME_REFUSES], ids=[name for name, _ in SCHEME_REFUSES])
+def test_what_the_scheme_refuses_is_refused_before_a_key_is_issued(change, wrapper, monkeypatch):
+    grads = gradients()
+    encrypted = encrypt_all(wrapper, grads)
+    tampered = copy.deepcopy(encrypted)
+    change(tampered)
+    calls = spy_on_the_key(wrapper, monkeypatch)
+    with pytest.raises(FEValidationError):
+        aggregate_gradients(tampered, wrapper, WEIGHTS, label=LABEL, policy=POLICY)
+    assert calls == []                                       # no key was issued
+    assert LABEL not in wrapper._aggregated                  # and the label is not tied to the weights
+    other = {"c0": 2, "c1": 1, "c2": 1}                      # so the round can be run again, with other weights
+    total = aggregate_gradients(encrypted, wrapper, other, label=LABEL, policy=POLICY)
+    np.testing.assert_allclose(total, weighted(grads, other), atol=1e-9)
+    assert len(calls) == 1
+
+
+def test_ciphertexts_of_a_previous_round_are_refused_before_a_key_is_issued(wrapper, monkeypatch):
+    grads = gradients()
+    previous = encrypt_all(wrapper, grads, label="round-0")
+    encrypted = encrypt_all(wrapper, grads)
+    calls = spy_on_the_key(wrapper, monkeypatch)
+    with pytest.raises(FEValidationError, match="claim the label"):
+        aggregate_gradients(previous, wrapper, WEIGHTS, label=LABEL, policy=POLICY)
+    assert calls == [] and LABEL not in wrapper._aggregated
+    total = aggregate_gradients(encrypted, wrapper, {"c0": 2, "c1": 1, "c2": 1}, label=LABEL, policy=POLICY)
+    np.testing.assert_allclose(total, weighted(grads, {"c0": 2, "c1": 1, "c2": 1}), atol=1e-9)
+
+
+def test_a_prepared_key_is_checked_by_the_scheme_too(wrapper, monkeypatch):
+    grads = gradients()
+    encrypted = encrypt_all(wrapper, grads)
+    prepared = prepare_aggregation(wrapper, WEIGHTS, shape=SHAPE, label=LABEL, policy=POLICY)
+    tampered = copy.deepcopy(encrypted)
+    change_element("c1", 0, (0, 1), pp_binding="0" * 64)(tampered)
+    refuse_to_compute(monkeypatch)
+    with pytest.raises(FEValidationError, match="pp_binding"):
+        aggregate_gradients(tampered, wrapper, label=LABEL, prepared=prepared)
+
+
+def test_a_missing_label_is_refused_as_before(wrapper, monkeypatch):
+    encrypted = encrypt_all(wrapper, gradients())
+    no_key(wrapper, monkeypatch)
+    with pytest.raises(ValueError, match="require a label"):
+        aggregate_gradients(encrypted, wrapper, WEIGHTS, policy=POLICY)
+
+
+def test_what_the_scheme_cannot_see_before_a_decode_is_found_after_the_key(wrapper, monkeypatch):
+    """The limit of the gate: an item with the type tag of a group element that is no element is found when its slice
+    is decoded, after the key is issued; the call raises and the label stays tied to the weights."""
+    encrypted = encrypt_all(wrapper, gradients())
+    change_element("c1", 0, (0, 0), t="1:not an element")(encrypted)
+    calls = spy_on_the_key(wrapper, monkeypatch)
+    with pytest.raises(FEValidationError, match=r"t of c1, layer 0, element \(0, 0\)"):
+        aggregate_gradients(encrypted, wrapper, WEIGHTS, label=LABEL, policy=POLICY)
+    assert len(calls) == 1 and LABEL in wrapper._aggregated
 
 
 # ---------------------------------------------------------------------------
@@ -466,16 +595,46 @@ def test_more_than_1000_elements_warn():
     assert len(caught) == 1
 
 
-def test_the_estimate_follows_the_pairings_of_the_job():
-    pairs = 1001 * (10 * (8 * 3 + 4) + 1)       # per element, 10 clients: 8 pairs for each of 3 rows and 4 more, and 1
-    assert pairs == 281281
-    seconds = round(pairs * ml_gradients._SECONDS_PER_PAIR)
-    with pytest.warns(FEWarning, match="pairs {} group elements, about {} s".format(pairs, seconds)):
-        ml_gradients._warn_policy_cost(1001, clients=10, rows=3, bound=2 ** 20)
-    more = round(1001 * (10 * (8 * 6 + 4) + 1) * ml_gradients._SECONDS_PER_PAIR)
-    assert more > seconds                                     # more rows of the policy, more pairings
+def estimate(elements, clients, rows, attributes):
+    """The seconds on one thread: the group elements decoded, the pairings, the discrete logarithms."""
+    return (elements * clients * (8 * attributes + 5) * ml_gradients._SECONDS_PER_DECODE
+            + elements * (clients * (8 * rows + 4) + 1) * ml_gradients._SECONDS_PER_PAIRING
+            + elements * ml_gradients._SECONDS_PER_DLOG)
+
+
+def test_the_estimate_follows_the_decoding_the_pairings_and_the_logarithms_of_the_job():
+    decodes = 1001 * 10 * (8 * 3 + 5)          # per element and client: 8 per attribute, t and the 4 of c_ipfe
+    pairs = 1001 * (10 * (8 * 3 + 4) + 1)      # per element, 10 clients: 8 pairs for each of 3 rows and 4 more, and 1
+    assert (decodes, pairs) == (290290, 281281)
+    seconds = round(estimate(1001, 10, 3, 3))
+    text = "decodes {} group elements and pairs {}, about {} s".format(decodes, pairs, seconds)
+    with pytest.warns(FEWarning, match=text):
+        ml_gradients._warn_policy_cost(1001, clients=10, rows=3, bound=2 ** 20, attributes=3)
+    more = round(estimate(1001, 10, 6, 3))
+    assert more > seconds                      # more rows of the policy, more pairings
     with pytest.warns(FEWarning, match="about {} s".format(more)):
-        ml_gradients._warn_policy_cost(1001, clients=10, rows=6, bound=2 ** 20)
+        ml_gradients._warn_policy_cost(1001, clients=10, rows=6, bound=2 ** 20, attributes=3)
+
+
+def test_the_estimate_grows_with_the_attributes_of_the_ciphertexts():
+    texts = []
+    for attributes in (3, 12, 24):
+        with pytest.warns(FEWarning) as caught:
+            ml_gradients._warn_policy_cost(1001, clients=3, rows=3, bound=2 ** 20, attributes=attributes)
+        texts.append(str(caught[0].message))
+        assert "about {} s".format(round(estimate(1001, 3, 3, attributes))) in texts[-1]
+    seconds = [int(re.search(r"about (\d+) s", text).group(1)) for text in texts]
+    assert seconds[0] < seconds[1] < seconds[2]
+    # the attributes left out are those of the rows
+    with pytest.warns(FEWarning) as left_out:
+        ml_gradients._warn_policy_cost(1001, clients=3, rows=3, bound=2 ** 20)
+    assert str(left_out[0].message) == texts[0]
+
+
+def test_the_estimate_matches_the_measured_aggregation():
+    """1000 elements of 10 clients under a policy of 3 rows, for ciphertexts of 3 attributes: 51.57 s on one thread,
+    the measurement that the constants come from (decoding 19.24 s, pairings 31.21 s, logarithms 0.64 s)."""
+    assert estimate(1000, 10, 3, 3) == pytest.approx(51.57, rel=0.05)
 
 
 def test_a_large_bound_warns():
@@ -514,11 +673,12 @@ def test_the_aggregation_passes_the_size_of_the_job(wrapper, monkeypatch):
     monkeypatch.setattr(ml_gradients, "_warn_policy_cost", lambda *args: seen.append(args))
     encrypted = encrypt_all(wrapper, gradients())
     aggregate_gradients(encrypted, wrapper, WEIGHTS, label=LABEL, policy=POLICY)
-    # 4 elements, 3 clients, the 2 rows of the policy that the attributes hold, and n * bound_x * bound_y
-    assert seen == [(4, 3, 2, 3 * 1000 * 10)]
+    # 4 elements, 3 clients, the 2 rows of the policy that the attributes hold, n * bound_x * bound_y, and the 2
+    # attributes of the ciphertexts
+    assert seen == [(4, 3, 2, 3 * 1000 * 10, 2)]
     seen.clear()
     aggregate_gradients(encrypted, wrapper, WEIGHTS, label=LABEL, policy="or(region:EU, region:US, org:A)")
-    assert seen == [(4, 3, 1, 3 * 1000 * 10)]                 # rows the attributes hold: at most these are used
+    assert seen == [(4, 3, 1, 3 * 1000 * 10, 2)]              # rows the attributes hold: at most these are used
 
 
 def test_the_aggregation_warns_of_a_large_bound():
@@ -541,6 +701,12 @@ def test_a_refused_request_does_not_warn(monkeypatch, recwarn):
 
 # ---------------------------------------------------------------------------
 # the benchmark that lists the usable schemes
+
+
+def test_the_module_carries_the_mark_of_the_pairing_tests(request):
+    """It needs a pairing backend: ``-m extended`` runs it (tests/conftest.py)."""
+    assert request.node.get_closest_marker("extended") is not None
+    assert request.node.get_closest_marker("core") is None
 
 
 def test_the_fl_coverage_benchmark_finds_the_scheme_usable():

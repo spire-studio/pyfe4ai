@@ -209,7 +209,7 @@ Which scheme for which task
 ``mcfe/kp_ab_pairing`` is for aggregates of up to about 10^3 elements, not
 for the gradients of a large model. Every element is a ciphertext of its
 own, and the aggregator pairs several group elements per client and element.
-With 10 clients, 10^3 elements and a policy of three attributes the
+With 10 clients, 10^3 elements and ciphertexts for three attributes the
 aggregation takes about 52 s on one thread and about 9 s on eight, and a
 client uploads about 2.4 KB per element as JSON. The Ring-LWE MCFE of the
 ``fl_aggregation_10k`` benchmark (10^4 elements, ``standard`` profile) takes

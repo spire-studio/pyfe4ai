@@ -40,11 +40,14 @@ from pyfe4ai.policy.attributes import clip
 from pyfe4ai.policy.formula import leaf_count
 from pyfe4ai.schemes.common.kp_ab import read_policy
 
-#: Seconds that one pairing costs the aggregator of ``mcfe/kp_ab_pairing`` on one thread, the whole decryption
-#: counted (decoding the group elements, folding the key, the products of pairings, the discrete logarithms). It
-#: comes from the aggregation of 1000 elements of 10 clients under a policy of 3 rows, 1000 * 281 pairings, which took
-#: 51.57 s on one thread of an Apple M2 Max (0.1835 ms each), rounded up. See :func:`_warn_policy_cost`.
-_SECONDS_PER_PAIR = 0.19e-3
+#: What the aggregator of ``mcfe/kp_ab_pairing`` spends on one thread (see :func:`_warn_policy_cost`): to decode one
+#: group element, for one pairing of a product of pairings, and for the discrete logarithm of one element. They come
+#: from the aggregation of 1000 elements of 10 clients under a policy of 3 rows, for ciphertexts of 3 attributes, on one
+#: thread of an Apple M2 Max (decoding 19.24 s of 290,000 elements, pairings 31.21 s of 281,000, discrete logarithms
+#: 0.64 s of 1000), rounded.
+_SECONDS_PER_DECODE = 66e-6
+_SECONDS_PER_PAIRING = 111e-6
+_SECONDS_PER_DLOG = 0.64e-3
 #: More elements than this in one aggregation under a policy: a warning of the time it takes.
 _WARN_ELEMENTS = 1000
 #: A larger bound ``n * bound_x * bound_y`` of the discrete logarithm: a warning of its cost.
@@ -132,7 +135,8 @@ def encrypt_gradient(
                 label, so a label this wrapper already used for *nid* is
                 refused.
             precomputed: The result of :func:`precompute_gradient` for this
-                client, label and shape (online phase).
+                client, label and shape (online phase); ``mcfe/kp_ab_pairing``
+                has no offline phase (``ValueError``).
             attributes: ``mcfe/kp_ab_pairing`` only, and required there: the
                 attributes (a collection of labels, see
                 :mod:`pyfe4ai.policy.attributes`) the gradient is encrypted
@@ -148,6 +152,9 @@ def encrypt_gradient(
     _require_labelled_aggregation(wrapper, "encrypt_gradient")
     nid = as_id(nid)  # a numpy integer is the int it equals
     _access_argument(wrapper, "attributes", attributes)
+    if precomputed is not None and _with_access_control(wrapper):
+        raise ValueError("{}/{} has no offline encryption phase: precomputed= is for the schemes of "
+                         "precompute_gradient".format(wrapper.scheme_type, wrapper.variant))
     arr = _to_numpy(gradient).astype(np.float64)
     encryptor = wrapper._get_encryptor(nid)
 
@@ -299,7 +306,9 @@ def _common_attributes(encrypted: dict, label) -> list | None:
 
     It is read from the ciphertext records: each element carries its ``attributes`` and the ``attributes_digest`` of
     them. The digests of all elements of all clients must be the same, and the attributes of the first element must be
-    the ones its digest stands for (the scheme checks the rest before it pairs anything).
+    the ones its digest stands for. :func:`aggregate_gradients` has the scheme check every record before this
+    (:func:`_check_ciphertext_arrays`), so that there this is a second look at records that are known to be well formed;
+    called alone it sees the digests and the first record only.
 
     Raises:
         FEValidationError: For a record without a digest, ciphertexts that are for different sets of attributes (the
@@ -335,6 +344,24 @@ def _common_attributes(encrypted: dict, label) -> list | None:
     return attributes
 
 
+def _check_ciphertext_arrays(wrapper: FESchemeWrapper, encrypted: dict, label, sid) -> None:
+    """Refuse, before a key is issued, ciphertexts that the scheme would refuse before it decodes a point.
+
+    The scheme does it
+    (:meth:`~pyfe4ai.schemes.mcfe.kp_ab_pairing.MCFEKPABPairing.check_ndarray_ct`, through the decryptor of *sid*): the
+    structure of the arrays, the bindings, fields, version markers, clients, tags, digests and lengths of every record,
+    each element under its label, one set of attributes for all. Its ``FEValidationError`` (a ``ValueError``) is raised
+    as it is, naming the layer and the element, like the other refusals of the records here.
+
+    Raises:
+        ValueError: Without a *label* (as :func:`_aggregation_key`).
+        FEValidationError: As above.
+    """
+    if label is None:
+        raise ValueError("MCFE schemes require a label for decryption")
+    wrapper._get_decryptor(sid).check_ndarray_ct({nid: enc.ciphertexts for nid, enc in encrypted.items()}, label=label)
+
+
 def _check_policy_aggregation(encrypted: dict, policy, label) -> None:
     """Refuse an aggregation under *policy* before a key is issued or anything is paired: the ciphertexts of
     *encrypted* (by client, the gradients of round *label*) must all be for one set of attributes, and that set must
@@ -357,41 +384,50 @@ def _check_policy_aggregation(encrypted: dict, policy, label) -> None:
 
 def _policy_job(wrapper: FESchemeWrapper, encrypted: dict, formula: Formula) -> tuple:
     """The size of the aggregation under *formula* of the gradients *encrypted*, for :func:`_warn_policy_cost`:
-    ``(elements, clients, rows, bound)``. The ciphertexts have passed :func:`_check_policy_aggregation`.
+    ``(elements, clients, rows, bound, attributes)``. The ciphertexts have passed :func:`_check_policy_aggregation`.
 
     ``rows`` is the number of leaves of the policy that the attributes hold: at most that many rows of the policy are
     used for each element (an ``or`` uses one of its branches). ``bound`` is ``n * bound_x * bound_y``: ``bound_x``
-    bounds the quantised integers, the gradient entries times ``10 ** precision``.
+    bounds the quantised integers, the gradient entries times ``10 ** precision``. ``attributes`` is the number of
+    attributes the ciphertexts are for.
     """
     elements = sum(array.size for array in next(iter(encrypted.values())).ciphertexts)
     record = next((record for *_, record in _ciphertext_records(encrypted)), None)
     held = set(record["attributes"]) if record is not None else set()
     rows = sum(label in held for label in formula.leaves())
     kg = wrapper.kg
-    return elements, len(encrypted), rows, kg.n * kg.bound_x * kg.bound_y
+    return elements, len(encrypted), rows, kg.n * kg.bound_x * kg.bound_y, len(held)
 
 
-def _warn_policy_cost(elements: int, clients: int, rows: int, bound: int) -> None:
+def _warn_policy_cost(elements: int, clients: int, rows: int, bound: int, attributes: int | None = None) -> None:
     """Warn (:class:`~pyfe4ai.core.exceptions.FEWarning`) when an aggregation under a policy is costly.
 
-    More than 1000 elements: the aggregator pairs ``elements * (clients * (8 * rows + 4) + 1)`` group elements, and
-    the warning gives the time that this takes at :data:`_SECONDS_PER_PAIR` on one thread; the scheme is meant for
-    small vectors and statistics. A bound of the discrete logarithm above ``2**26``: its table and its search grow
-    with the square root of the bound. Neither refuses the call.
+    More than 1000 elements: for each element the aggregator decodes ``clients * (8 * attributes + 5)`` group elements
+    and pairs ``clients * (8 * rows + 4) + 1``, and takes one discrete logarithm. The warning gives the time that this
+    takes on one thread, at :data:`_SECONDS_PER_DECODE`, :data:`_SECONDS_PER_PAIRING` and :data:`_SECONDS_PER_DLOG`;
+    the scheme is meant for small vectors and statistics. A bound of the discrete logarithm above ``2**26``: its table
+    and its search grow with the square root of the bound. Neither refuses the call.
 
     Args:
         elements: The number of elements of the gradients.
         clients: The number of clients, all of which take part.
         rows: The number of rows of the policy used for each element.
         bound: ``n * bound_x * bound_y``, the range of the discrete logarithm.
+        attributes: The number of attributes the ciphertexts are for; every ciphertext holds a vector of ``G1`` for
+            each, which is decoded whether the policy uses it or not. ``None``: as many as *rows*.
     """
+    if attributes is None:
+        attributes = rows
     if elements > _WARN_ELEMENTS:
+        decodes = elements * clients * (8 * attributes + 5)
         pairs = elements * (clients * (8 * rows + 4) + 1)
+        seconds = decodes * _SECONDS_PER_DECODE + pairs * _SECONDS_PER_PAIRING + elements * _SECONDS_PER_DLOG
         warn_at_caller(
-            "{} elements under a policy: the aggregation of {} clients pairs {} group elements, about {:.0f} s on one "
-            "thread (less with more threads; at most {} rows of the policy are used for each element). "
-            "mcfe/kp_ab_pairing is meant for small vectors and statistics of up to {} elements".format(
-                elements, clients, pairs, pairs * _SECONDS_PER_PAIR, rows, _WARN_ELEMENTS),
+            "{} elements under a policy: the aggregation of {} clients decodes {} group elements and pairs {}, about "
+            "{:.0f} s on one thread (less with more threads; the ciphertexts are for {} attributes, and at most {} "
+            "rows of the policy are used for each element). mcfe/kp_ab_pairing is meant for small vectors and "
+            "statistics of up to {} elements".format(elements, clients, decodes, pairs, seconds, attributes, rows,
+                                                      _WARN_ELEMENTS),
             FEWarning)
     if bound > _WARN_BOUND:
         warn_at_caller(
@@ -563,7 +599,9 @@ def aggregate_gradients(
                 attributes=)``) must be one set that satisfies it. Before a
                 key is issued or anything is paired, the aggregation is
                 refused (``FEValidationError``, a ``ValueError``) if the
-                clients differ in their attributes, or (``FEKeyError``) if
+                scheme's checks of the ciphertexts refuse them (malformed
+                records, other parameters or label, other shapes, clients
+                that differ in their attributes), or (``FEKeyError``) if
                 the set does not satisfy the policy, and it warns
                 (:class:`~pyfe4ai.core.exceptions.FEWarning`) of a job of
                 more than 1000 elements or a discrete-logarithm bound
@@ -593,6 +631,7 @@ def aggregate_gradients(
     formula = _aggregation_policy(wrapper, policy, prepared)
     if formula is not None:  # refuse before a key is issued or anything is paired
         _require_every_client(wrapper, allow_partial, ciphertexts=encrypted, weights=weights)
+        _check_ciphertext_arrays(wrapper, encrypted, label, prepared.sid if prepared is not None else sid)
         _check_policy_aggregation(encrypted, formula, label)
         _warn_policy_cost(*_policy_job(wrapper, encrypted, formula))
     decryptor = None

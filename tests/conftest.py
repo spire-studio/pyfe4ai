@@ -87,8 +87,9 @@ NATIVE_IN_REVIEW = {
 _NATIVE_REASON = re.compile(r"native|rust|BLS12-381 backend", re.IGNORECASE)
 #: Path parts of the ``extended`` tests (they need a pairing backend): the pairing
 #: schemes (also the FH-IPFE building block mcfe/test_fh_ipe.py), the
-#: pairing-group checks and quadratic FE.
-_EXTENDED = ("fh_ipe", "fh_multi_ipe", "pairing", "quadratic")
+#: pairing-group checks, quadratic FE and the ML adapter with the attribute-based
+#: scheme (ml/test_ml_adapter_policy.py, whose name has no "pairing").
+_EXTENDED = ("fh_ipe", "fh_multi_ipe", "pairing", "quadratic", "ml_adapter_policy")
 
 
 def pytest_configure(config):

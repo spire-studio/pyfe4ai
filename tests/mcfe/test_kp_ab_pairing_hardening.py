@@ -1058,6 +1058,115 @@ def test_ndarray_with_a_key_of_another_function_gives_no_value(array_fixed):
     assert not isinstance(error.value, ValueError)
 
 
+# ---------------------------------------------------------------------------
+# check_ndarray_ct: the checks of a decryption that need neither a key nor a decoded point
+
+
+def hostile_element(cts, field, value):
+    """The ciphertexts *cts* with the element ``(2,)`` of layer 1 of ``nid_1`` changed in one field."""
+    cts["nid_1"][1][2] = dict(cts["nid_1"][1][2], **{field: value})
+
+
+CHECKED_WITHOUT_A_KEY = [
+    ("pp_binding", "0" * 64, "pp_binding"), ("policy_compiler", "v9", "policy_compiler"),
+    ("attr_hash", "v9", "attr_hash"), ("tag_hash", "v9", "tag_hash"),
+    ("t", 5, "t of nid_1"), ("c_attr", [], "c_attr of nid_1"),
+    ("c_attr", [["1:x"] * 7, ["1:x"] * 8], "c_attr of nid_1"),
+    ("c_ipfe", ["1:x"] * 3, "c_ipfe of nid_1"),
+    ("nid", "nid_2", "nid_1"), ("nid", None, "client id"),
+    ("label", 5, "label of the ciphertext of nid_1"), ("label", "other", "differ in their label"),
+    ("attributes", ["region:EU", "org:A"], "sorted"),
+    ("attributes", ["region:EU"], "is not the digest of its attributes"),     # a list the digest does not stand for
+    ("attributes_digest", "00" * 32, "attributes_digest"),
+]
+
+
+def test_check_ndarray_ct_accepts_the_ciphertexts_of_a_round_without_a_key(array_fixed, monkeypatch):
+    _, _, agg, _, cts, _ = array_fixed
+    before = copy.deepcopy(cts)
+    refuse_to_compute(monkeypatch)
+    assert agg.check_ndarray_ct(cts, label="round-1") is None
+    assert all((np.array_equal(cts[nid][layer], before[nid][layer])) for nid in LST for layer in range(2))
+
+
+@pytest.mark.parametrize("field,value,reason", CHECKED_WITHOUT_A_KEY)
+def test_check_ndarray_ct_refuses_what_a_decryption_refuses_and_says_the_same(field, value, reason, array_fixed,
+                                                                              monkeypatch):
+    _, _, agg, _, cts, dk = array_fixed
+    hostile_element(cts, field, value)
+    refuse_to_compute(monkeypatch)
+    with pytest.raises(FEValidationError) as checked:
+        agg.check_ndarray_ct(cts, label="round-1")
+    assert "layer 1, element (2,)" in str(checked.value) and re.search(reason, str(checked.value)), str(checked.value)
+    with pytest.raises(FEValidationError) as decrypted:
+        aggregate(agg, cts, dk)
+    assert str(decrypted.value) == str(checked.value)
+
+
+@pytest.mark.parametrize("change,match", [
+    (lambda layers: layers[:1], "nid_1.*1 layers.*nid_0.*2"),
+    (lambda layers: [layers[0][:1], layers[1]], r"nid_1.*layer 0.*shape \(1, 3\).*\(2, 3\)"),
+    (lambda layers: [layers[0], layers[1].tolist()], r"nid_1.*layer 1.*ndarray"),
+    (lambda layers: None, "nid_1.*list of arrays"),
+])
+def test_check_ndarray_ct_wants_every_client_to_send_the_same_layers(change, match, array_fixed, monkeypatch):
+    _, _, agg, _, cts, _ = array_fixed
+    cts["nid_1"] = change(cts["nid_1"])
+    refuse_to_compute(monkeypatch)
+    with pytest.raises(FEValidationError, match=match):
+        agg.check_ndarray_ct(cts, label="round-1")
+    for missing in LST:
+        with pytest.raises(FEValidationError, match=missing):
+            agg.check_ndarray_ct({nid: layers for nid, layers in cts.items() if nid != missing}, label="round-1")
+
+
+def test_check_ndarray_ct_checks_the_label_the_elements_claim(array_fixed, monkeypatch):
+    _, _, agg, _, cts, _ = array_fixed
+    refuse_to_compute(monkeypatch)
+    with pytest.raises(FEValidationError, match=r"layer 0, element \(0, 0\).*claim the label"):
+        agg.check_ndarray_ct(cts, label="round-2")
+    for label in (None, 5, b"round-1", ElementLabel("round-1", 0, (0,))):
+        with pytest.raises(FEValidationError, match="label"):
+            agg.check_ndarray_ct(cts, label=label)
+    with pytest.raises(FEValidationError, match="label"):
+        agg.check_ndarray_ct(cts)
+
+
+def test_check_ndarray_ct_checks_that_the_elements_are_for_one_set_of_attributes(make_mc, monkeypatch):
+    _, clients, agg = make_mc()
+    arrays = random_arrays()
+    cts = encrypt_arrays(clients, arrays)
+    cts["nid_2"][1][3] = clients["nid_2"].encrypt([int(arrays["nid_2"][1][3])], ElementLabel("round-1", 1, (3,)),
+                                                  attributes=ATTRS + ["org:A"])
+    refuse_to_compute(monkeypatch)
+    with pytest.raises(FEValidationError, match=r"layer 1, element \(3,\).*differ in their attributes_digest"):
+        agg.check_ndarray_ct(cts, label="round-1")
+    cts = encrypt_arrays(clients, arrays, label="round-2")
+    cts["nid_1"][0][1, 1] = clients["nid_1"].encrypt([int(arrays["nid_1"][0][1, 1])],
+                                                     ElementLabel("round-2", 0, (1, 1)), attributes=["region:EU"])
+    with pytest.raises(FEValidationError, match=r"layer 0, element \(1, 1\).*differ in their attributes_digest"):
+        agg.check_ndarray_ct(cts, label="round-2")      # an element that is not the first
+
+
+def test_check_ndarray_ct_sees_the_type_of_a_group_element_but_decodes_none(array_fixed):
+    _, _, agg, _, cts, dk = array_fixed
+    wrong_group = dk["k_ipfe"]["nid_0"][0]                  # an element of G2 where G1 is due: the type tag tells
+    cts["nid_1"][1][2] = dict(cts["nid_1"][1][2], t=wrong_group)
+    with pytest.raises(FEValidationError, match=r"t of nid_1, layer 1, element \(2,\)"):
+        agg.check_ndarray_ct(cts, label="round-1")
+    # an item with the right tag that is no element is found when it is decoded, which the check does not do
+    cts["nid_1"][1][2] = dict(cts["nid_1"][1][2], t="1:not an element")
+    assert agg.check_ndarray_ct(cts, label="round-1") is None
+    with pytest.raises(FEValidationError, match=r"t of nid_1, layer 1, element \(2,\)"):
+        aggregate(agg, cts, dk)
+
+
+def test_check_ndarray_ct_has_nothing_to_check_in_arrays_without_elements(make_mc):
+    _, clients, agg = make_mc()
+    cts = encrypt_arrays(clients, {nid: [np.zeros((0, 3), dtype=np.int64)] for nid in LST})
+    assert agg.check_ndarray_ct(cts, label="round-1") is None
+
+
 def test_encrypt_lst_ndarray_needs_the_encryption_key(array_fixed):
     _, _, agg, _, _, _ = array_fixed
     with pytest.raises(FEKeyError, match="encryption key"):
