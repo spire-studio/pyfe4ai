@@ -2,7 +2,8 @@
 The serialized objects of the pairing schemes: function-hiding IPFE
 (:mod:`pyfe4ai.schemes.sife.fh_ipe_pairing`), partially function-hiding IPFE
 (:mod:`pyfe4ai.schemes.sife.part_fh_ipe_pairing`), ciphertext-policy
-attribute-based IPFE (:mod:`pyfe4ai.schemes.sife.cp_ab_pairing`), the function-hiding MIFE
+attribute-based IPFE (:mod:`pyfe4ai.schemes.sife.cp_ab_pairing`), key-policy
+attribute-based IPFE (:mod:`pyfe4ai.schemes.sife.kp_ab_pairing`), the function-hiding MIFE
 (:mod:`pyfe4ai.schemes.mife.fh_ipe_pairing`,
 :mod:`pyfe4ai.schemes.mife.fh_multi_ipe_pairing`), the function-hiding MCFE
 (:mod:`pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing` and its threshold and
@@ -172,6 +173,72 @@ class CPABCiphertext(Record):
     c1 = Field("two G1 elements")
     c2 = Field("one pair of G1 elements per row of the policy's span program")
     c3 = Field("``eta`` G1 elements")
+    pp_binding = Field("``pp_binding`` of the public parameters")
+
+
+# ---------------------------------------------------------------------------
+# SIFE key-policy attribute-based IPFE (NPP22 Sec. 4 Fig. 1)
+
+
+class KPABRecord(Record):
+    """Parameter record of the key-policy attribute-based IPFE (the configuration only)."""
+
+    sec_param = Field("int")
+    eta = Field("int")
+    bound_x = Field("decimal string")
+    bound_y = Field("decimal string")
+    max_rows = Field("int, the rows a policy's span program may have")
+    max_attributes = Field("int, the attributes a ciphertext may carry")
+    pairing_group_param = Field("the pairing group")
+    policy_compiler = Field("version marker, :data:`~pyfe4ai.policy.encoding.POLICY_COMPILER`")
+    attr_hash = Field("version marker, :data:`~pyfe4ai.policy.attributes.ATTR_HASH`")
+
+
+class KPABParameters(Record):
+    """Public parameters of the key-policy attribute-based IPFE (the public key included).
+
+    ``h_mask`` and ``h3`` are vectors of the basis ``H`` of ``G1^4``, ``f`` the first three vectors of the basis
+    ``F`` of ``G1^8``; the dual bases ``F*``, ``H*`` stay in the master key.
+    """
+
+    eta = Field("int")
+    bound_x = Field("decimal string")
+    bound_y = Field("decimal string")
+    max_rows = Field("int, the rows a policy's span program may have")
+    max_attributes = Field("int, the attributes a ciphertext may carry")
+    pairing_group_param = Field("the pairing group")
+    policy_compiler = Field("version marker, :data:`~pyfe4ai.policy.encoding.POLICY_COMPILER`")
+    attr_hash = Field("version marker, :data:`~pyfe4ai.policy.attributes.ATTR_HASH`")
+    g1 = Field("G1")
+    g2 = Field("G2")
+    h_mask = Field("four G1 elements, ``h1 + mu h2``")
+    h3 = Field("four G1 elements, ``h3``")
+    f = Field("three vectors of eight G1 elements, ``f1, f2, f3``")
+    t = Field("``eta`` G1 elements, ``[s_i + mu u_i]_1``")
+    pp_binding = Field(":func:`~pyfe4ai.schemes.common.ac_binding.pp_digest` of the other fields")
+
+
+class KPABFunctionalKey(Record):
+    """Functional key of the key-policy attribute-based IPFE: for a policy and a weight vector."""
+
+    policy = Field("the policy, :func:`~pyfe4ai.policy.encoding.canonical_encoding`")
+    policy_digest = Field(":func:`~pyfe4ai.policy.encoding.policy_digest` of the policy")
+    policy_compiler = Field("version marker, :data:`~pyfe4ai.policy.encoding.POLICY_COMPILER`")
+    y = Field("``eta`` decimal strings, the weights")
+    k_rows = Field("one vector of eight G2 elements per row of the policy's span program")
+    k_ipfe = Field("four G2 elements")
+    pp_binding = Field("``pp_binding`` of the public parameters")
+
+
+class KPABCiphertext(Record):
+    """Ciphertext of the key-policy attribute-based IPFE: for a set of attributes."""
+
+    attributes = Field("the attribute labels, sorted, each once")
+    attr_hash = Field("version marker, :data:`~pyfe4ai.policy.attributes.ATTR_HASH`")
+    policy_compiler = Field("version marker, :data:`~pyfe4ai.policy.encoding.POLICY_COMPILER`")
+    c_attr = Field("one vector of eight G1 elements per attribute")
+    t = Field("``eta`` G1 elements")
+    c_ipfe = Field("four G1 elements")
     pp_binding = Field("``pp_binding`` of the public parameters")
 
 

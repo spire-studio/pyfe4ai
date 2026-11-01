@@ -1,7 +1,8 @@
-"""Fixtures shared by the tests of the attribute-based IPFE (test_cp_ab_pairing.py, test_cp_ab_pairing_hardening.py).
+"""Fixtures shared by the tests of the attribute-based IPFE (test_cp_ab_pairing.py, test_cp_ab_pairing_hardening.py,
+test_kp_ab_pairing.py).
 
 ``own_parameter_cache`` is not autouse, so that the other tests of ``tests/sife`` keep the parameter cache of the run:
-the two modules enable it with ``pytestmark``. The scheme is imported when a fixture runs, as the test modules skip
+the modules enable it with ``pytestmark``. The scheme is imported when a fixture runs, as the test modules skip
 themselves before they import it where no pairing backend implements the group.
 """
 
@@ -30,6 +31,21 @@ def make():
         kg = SIFECPABPairingKeyGenerator(config)
         kg.setup()
         return kg, SIFECPABPairing({"keys": {"pp": kg.get_public_parameters()}})
+    return build
+
+
+@pytest.fixture
+def make_kp():
+    """``make_kp(**overrides)``: a key-policy key generator after ``setup()``, and ``None`` where its crypto object
+    will stand (the object comes with encryption and decryption)."""
+    def build(**overrides):
+        from pyfe4ai.schemes.sife.kp_ab_pairing import SIFEKPABPairingKeyGenerator
+
+        config = {"eta": ETA, "bound_x": 10, "bound_y": 10, "pairing_group_param": GROUP}
+        config.update(overrides)
+        kg = SIFEKPABPairingKeyGenerator(config)
+        kg.setup()
+        return kg, None
     return build
 
 
