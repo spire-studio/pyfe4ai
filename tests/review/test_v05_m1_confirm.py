@@ -1,14 +1,19 @@
-"""Confirmation of the fixes of R1-N01 to R1-N04 (b6ae92b to 9478f20): one failing test per new finding.
+"""Confirmation of the fixes of R1-N01 to R1-N04 (b6ae92b to 9478f20): the tests of the new findings.
 
-Every test here fails on 9478f20 for the reason its finding states. Both findings come from the rule that ``standard``
-refuses an option of another scheme. The names carry the ids of the report: R1-N05 is Low, R1-N06 is Info.
+The first two tests fail on 9478f20 for the reason their findings state; the third pins the side R1-N06 was settled on.
+Both findings come from the rule that ``standard`` refuses an option of another scheme. The names carry the ids of the
+report: R1-N05 is Low, R1-N06 is Info.
 """
 
 import importlib.util
+import re
 from pathlib import Path
 
+import pytest
+
+from pyfe4ai import get_scheme
 from pyfe4ai.core import config as configs
-from pyfe4ai.core.exceptions import FEConfigError
+from pyfe4ai.core.exceptions import FEConfigError, FEWarning
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -38,12 +43,32 @@ def test_r1_n05_fl_compare_runs_every_family_under_its_default_profile():
     assert not refused
 
 
-def test_r1_n06_a_key_the_docstring_calls_ignored_is_not_refused():
-    """R1-N06: the docstring of ``mcfe/fh_multi_ipe_pairing`` lists ``sec_level`` with ``u_bound`` and ``label_modulus``
+@pytest.mark.filterwarnings("ignore:.*has no option")
+def test_r1_n06_the_keys_a_docstring_calls_ignored_are_not_refused():
+    """R1-N06: the docstring of ``mcfe/fh_multi_ipe_pairing`` listed ``sec_level``, ``u_bound`` and ``label_modulus``
     as keys of versions <= 0.2.0, ignored with a warning. ``LEGACY_OPTIONS`` holds only the other two, so under
-    ``standard`` ``sec_level`` counts as an option of another scheme (``mife/fh_multi_ipe_pairing``) and is refused.
-    Either side may change: the test holds once the two agree."""
-    from pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing import MCFEFHMultiIPEPairingKeyGenerator
+    ``standard`` ``sec_level`` counts as an option of another scheme (``mife/fh_multi_ipe_pairing``) and is refused."""
+    named, refused = {}, {}
+    for scheme in configs.config_classes():
+        doc = " ".join((get_scheme(scheme).key_generator.__init__.__doc__ or "").split())
+        sentence = re.search(r"The keys (.+?) of versions <= 0\.2\.0", doc)
+        if sentence:
+            named[scheme] = re.findall(r"``(\w+)``", sentence.group(1))
+    for scheme, keys in named.items():
+        for key in keys:
+            try:
+                configs.check_options({key: 1, "security_profile": "standard"}, scheme)
+            except FEConfigError:
+                refused.setdefault(scheme, []).append(key)
+    assert {("mcfe", "lwe"), ("mcfe", "fh_multi_ipe_pairing")} <= set(named)
+    assert not refused
 
-    if "sec_level" in MCFEFHMultiIPEPairingKeyGenerator.__init__.__doc__:
-        configs.check_options({"sec_level": 2, "security_profile": "standard"}, ("mcfe", "fh_multi_ipe_pairing"))
+
+def test_r1_n06_sec_level_stays_an_option_of_another_scheme():
+    """``sec_level`` is the ``k`` of k-Lin on ``mife/fh_multi_ipe_pairing``, so a caller who sets it on the MCFE scheme
+    may believe it holds. ``LEGACY_OPTIONS`` applies to every scheme and would let it through ``standard`` on all."""
+    scheme = ("mcfe", "fh_multi_ipe_pairing")
+    with pytest.warns(FEWarning, match="sec_level"):
+        configs.check_options({"sec_level": 2}, scheme)
+    with pytest.raises(FEConfigError, match="sec_level"):
+        configs.check_options({"sec_level": 2, "security_profile": "standard"}, scheme)

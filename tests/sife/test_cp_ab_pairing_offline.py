@@ -56,6 +56,22 @@ def test_an_online_ciphertext_takes_every_plaintext_in_bounds(make, x):
     assert crypto.decrypt(crypto.encrypt(x, precomputed=crypto.precompute(POLICY)), key(kg)) == expected
 
 
+def test_a_negative_plaintext_is_not_a_long_exponent(make, monkeypatch):
+    """``x_i % order`` would make it one, and the time of the online phase would then show how many there are."""
+    _, crypto = make()
+    exponents, real = [], cp_ab_pairing.pow_many
+
+    def recorded(base, exps, group):
+        exponents.extend(exps)
+        return real(base, exps, group)
+
+    monkeypatch.setattr(cp_ab_pairing, "pow_many", recorded)
+    pre = crypto.precompute(POLICY)
+    exponents.clear()
+    crypto.encrypt([3, -1, 0, 7, -2], precomputed=pre)
+    assert exponents == [3, 1, 0, 7, 2]
+
+
 @pytest.mark.parametrize("threads", [1, 4])
 def test_the_same_randomness_gives_the_ciphertext_of_encrypt(make, monkeypatch, threads):
     _, crypto = make()

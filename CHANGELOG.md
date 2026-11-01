@@ -12,11 +12,11 @@ compatibility).
 - **Key generators check the names of their options.** A key that no scheme
   declares now raises `FEConfigError`: before, a misspelt option was dropped
   without a word, so `security_prfile="standard"` ran the `toy` profile. An
-  option of another scheme, and the keys `bound_u`, `label_modulus`,
-  `sec_level` and `u_bound` of versions <= 0.2.0, stay ignored and now draw a
-  `FEWarning` that names them. Under `standard` an option of another scheme
-  raises `FEConfigError` too: `m=4` on a threshold scheme would leave `t` at
-  its default. A subclass of a key generator may read options of its own, so
+  option of another scheme, and the keys `bound_u`, `label_modulus` and
+  `u_bound` of versions <= 0.2.0, stay ignored and now draw a `FEWarning` that
+  names them. Under `standard` an option of another scheme raises
+  `FEConfigError` too: `m=4` on a threshold scheme would leave `t` at its
+  default. A subclass of a key generator may read options of its own, so
   a key that its scheme does not declare only draws the warning: there a
   misspelt `security_profile` does leave the `toy` profile. Crypto objects
   take their config as before.
@@ -52,8 +52,11 @@ compatibility).
   `precompute(policy)` computes all of a future ciphertext but the plaintext
   term, and `encrypt(x, precomputed=...)` multiplies that term in; with the
   same randomness the ciphertext is the one of `encrypt`. The precomputation
-  opens its ciphertext without a key, so it is secret and one-time: it cannot
-  be used twice, copied, pickled, or used by another object or process.
+  opens its ciphertext without a key, so it is secret and one-time: a second
+  use, `copy`, `pickle` and use by another object or process are refused, and
+  only copying its attributes by hand gets past that. The online phase is not
+  constant-time: its time does not show the signs of `x`, but it shows roughly
+  how large the coordinates are and how many are zero (`docs/security.rst`).
 - **`sife/cp_ab_pairing`** (`SIFECPABPairing`, `SIFECPABPairingKeyGenerator`,
   `SIFECPABPairingConfig`; status *unreviewed*, it has had no cryptographic
   review): ciphertext-policy attribute-based inner-product functional

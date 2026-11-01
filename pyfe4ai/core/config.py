@@ -1063,7 +1063,7 @@ class QuadraticMIQFEConfig(SchemeConfig):
 
 #: Keys of versions <= 0.2.0 that the key generators of those versions read and
 #: these ignore.
-LEGACY_OPTIONS = frozenset({"bound_u", "label_modulus", "sec_level", "u_bound"})
+LEGACY_OPTIONS = frozenset({"bound_u", "label_modulus", "u_bound"})
 
 #: The name of every option of a key generator or a crypto object of any scheme.
 _ALL_OPTIONS = frozenset(

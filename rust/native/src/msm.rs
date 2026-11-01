@@ -6,10 +6,11 @@
 //! k = k1 + lambda k2 (|k1|, |k2| ~ 2^128; arkworks' `GLVConfig`), whose 128
 //! doublings are shared by all terms; arkworks' Pippenger (`VariableBaseMSM`,
 //! which does not use the endomorphism) from `PIPPENGER_MIN` terms on. One
-//! exponentiation is the one-term case (arkworks multiplies in G2 by plain
-//! double-and-add over 255 bits). One base to many exponents: a table of the
-//! multiples d 2^(w j) P of the base, so that each power is ~2 * 129 / w
-//! additions without doublings (w by the number of exponents).
+//! exponentiation in G1 is the one-term case; in G2 it is `g2_pow` below
+//! (arkworks multiplies there by plain double-and-add over 255 bits). One
+//! base to many exponents: a table of the multiples d 2^(w j) P of the base,
+//! so that each power is ~2 * 129 / w additions without doublings (w by the
+//! number of exponents).
 //!
 //! One power in G2: since [U] P = -psi(P) on the subgroup, for the untwisted
 //! Frobenius map psi and U as below, with k = k0 + k1 U + k2 U^2 + k3 U^3 the
@@ -181,8 +182,8 @@ pub fn g2_pow(p: &G2Projective, k: &Fr) -> G2Projective {
     let t3: Vec<G2Affine> = t2.iter().map(times_u).collect();
     let mut terms = Vec::with_capacity(4);
     for (digit, table) in base_u_digits(k).iter().zip([&t0, &t1, &t2, &t3]) {
-        // two limbs: the wNAF of a 64-bit digit can carry past bit 63
-        let digits = wnaf(&BigInt::<2>([*digit, 0]), CURVE_W);
+        // digit + 15 < 2^64 keeps the working value in one limb; the wNAF can end at bit 64
+        let digits = wnaf(&BigInt::<1>([*digit]), CURVE_W);
         if !digits.is_empty() {
             terms.push(CurveTerm { digits, table });
         }

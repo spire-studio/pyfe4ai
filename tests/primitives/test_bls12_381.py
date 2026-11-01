@@ -443,6 +443,15 @@ def test_g2_power_matches_square_and_multiply_at_the_digit_edges(group, k):
     assert g ** k == B.msm([g, g ** 0], [k, 0])         # two terms stay on the GLV path
 
 
+DIGIT = 0xc800000000000000      # below U, and its wNAF ends at bit 64
+
+
+@pytest.mark.parametrize("k", [DIGIT * U ** i for i in range(4)] + [DIGIT * (1 + U + U ** 2 + U ** 3)])
+def test_g2_power_where_the_wnaf_of_a_digit_ends_past_the_digit(group, k):
+    g = group.random(B.G2)
+    assert g ** k == _ref_pow(group, g, k)
+
+
 def test_g2_power_of_the_identity_and_the_generator(group):
     assert group.init(B.G2) ** (R - 1) == group.init(B.G2)
     g = group.generator(B.G2)

@@ -159,6 +159,26 @@ combiner given those of another deployment of the same format is not warned
 (it holds no secret; under the honest-but-curious model above the servers
 send the partials of its deployment).
 
+Offline / online encryption
+---------------------------
+
+``precompute`` of ``sife/cp_ab_pairing`` computes a ciphertext under a policy
+but for its plaintext term, and ``encrypt(x, precomputed=...)`` multiplies that
+term in. The precomputation opens the ciphertext without a key, so it is kept
+like a key and used once: a second use of its randomness gives ``x - x'`` to
+anyone.
+
+Like every exponentiation of this library the online phase is not
+constant-time, and the plaintext is all it works on. It raises ``g1`` to
+``|x_i|`` and divides for a negative ``x_i``, so that its time does not show the
+signs: at ``eta = 1000`` the share of negative coordinates moved it by less than
+its noise. One measurement of it still tells roughly how large the ``x_i`` are
+and how many of them are zero, and its table reads depend on ``x``. ``encrypt``
+depends on ``x`` as well, and a negative ``x_i`` costs more there, but the term
+of the random ``s`` takes about nine tenths of its time and adds noise of its
+own. So the online phase is the weaker of the two where someone can time a
+single encryption.
+
 ML adapter
 ----------
 

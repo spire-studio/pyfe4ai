@@ -49,7 +49,10 @@ ciphertext is the one of ``encrypt``. The result of ``precompute`` opens the
 ciphertext it makes without any key, so it is kept like a key and used once
 (:class:`CPABPrecomputation`, :mod:`pyfe4ai.core.one_time`): a second use of one
 ``s`` gives ``x - x'`` to anyone. Like every exponentiation of this library the
-online phase is not constant-time, and its table reads depend on ``x``.
+online phase is not constant-time. It raises ``g1`` to ``|x_i|`` and divides for
+a negative ``x_i``, so that its time does not show the signs, but one
+measurement of it tells roughly how large the ``x_i`` are and how many are zero,
+and its table reads depend on ``x`` (see ``docs/security.rst``).
 
 The policy of a ciphertext (``ct["policy"]``) and
 the attribute list of a key (``dk["attributes"]``) are public: they travel in
@@ -529,8 +532,8 @@ class SIFECPABPairing(IPFEAbsCrypto):
         Raises:
             FEValidationError: For a plaintext out of bounds, no policy, a
                 policy outside the limits of the public parameters, or a
-                precomputation that is spent, of another object, or given
-                with a policy.
+                precomputation that is spent, of another object or process,
+                or given with a policy.
         """
         x = int_vector(lst_pt, "plaintext", length=self.eta, bound=self.bound_x)
         group, order = self.group, int(self.order)
@@ -545,8 +548,9 @@ class SIFECPABPairing(IPFEAbsCrypto):
         if policy is not None:
             raise FEValidationError("a precomputation has its policy: give one of the two")
         parts, masks = precomputed._claim()     # atomic: of two callers one gets them
-        powers = pow_many(g1, [x_i % order for x_i in x], group)
-        return self._ciphertext(parts, [mask * power for mask, power in zip(masks, powers)])
+        powers = pow_many(g1, [abs(x_i) % order for x_i in x], group)
+        return self._ciphertext(parts, [mask / power if x_i < 0 else mask * power
+                                        for x_i, mask, power in zip(x, masks, powers)])
 
     def precompute(self, policy) -> CPABPrecomputation:
         """Offline phase of :meth:`encrypt`: a fresh ``s``, and all of a ciphertext under *policy* but the plaintext.
