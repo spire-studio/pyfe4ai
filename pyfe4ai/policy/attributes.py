@@ -17,8 +17,9 @@ A :class:`Universe` is the set of labels that a scheme setup covers, with the
 number of copies of each label that it provides. Its encoding is public
 data, so it has one spelling: :meth:`Universe.from_encoding` accepts no other
 text than :meth:`Universe.encoding` gives. :func:`attribute_to_zq` hashes a
-label to an element of ``Z_q``. Pure Python: the standard library and
-:mod:`pyfe4ai.core.exceptions` only.
+label to an element of ``Z_q``. :func:`attribute_set_digest` hashes the set of
+labels that a key or a ciphertext is made for, however it was written down.
+Pure Python: the standard library and :mod:`pyfe4ai.core.exceptions` only.
 """
 
 from __future__ import annotations
@@ -48,6 +49,11 @@ _IGNORABLE = re.compile(
 
 _ATTRIBUTE_DOMAIN = b"PYFE4AI-V05-POLICY-ATTR-Zq"
 _UNIVERSE_DOMAIN = b"PYFE4AI-V05-POLICY-UNIVERSE"
+_ATTRSET_DOMAIN = b"PYFE4AI-V05-POLICY-ATTRSET"
+
+#: The version marker of :func:`attribute_set_digest`: SHAKE256 read to 32 bytes, written as 64 hexadecimal
+#: characters. A scheme keeps it in its public parameters and refuses any other value.
+ATTR_HASH = "shake256-64"
 
 #: :func:`attribute_to_zq` reads 512 bits of hash, 128 more than the modulus can have.
 _MAX_MODULUS_BITS = 384
@@ -130,6 +136,47 @@ def attribute_to_zq(label: str, q: int) -> int:
     return int.from_bytes(digest, "big") % q
 
 
+def _label_list(labels: Iterable[str]) -> list[str]:
+    """The labels of the iterable *labels* as a list, each one valid."""
+    # a bare str or bytes would be read one character or one byte at a time
+    if isinstance(labels, (str, bytes, bytearray)):
+        raise FEValidationError(
+            "labels must be an iterable of attribute labels, not a bare {}".format(type(labels).__name__)
+        )
+    try:
+        iterator = iter(labels)
+    except TypeError as exc:
+        raise FEValidationError(
+            "labels must be an iterable of attribute labels, got {}".format(type(labels).__name__)
+        ) from exc
+    items = list(iterator)
+    for label in items:
+        validate_label(label)
+    return items
+
+
+def attribute_set_encoding(labels: Iterable[str]) -> str:
+    """The canonical text of a set of attribute labels: compact JSON array of the distinct labels sorted by
+    code point, with non-ASCII characters kept as they are, e.g. ``["a:1","b:1"]``.
+
+    *labels* is an iterable of valid labels (:func:`validate_label`), not a bare ``str`` or ``bytes``, in any order
+    and with repeats: a ``set`` and a list that names a label twice give the same text. The empty set is allowed
+    and gives ``[]``. ``FEValidationError`` otherwise.
+    """
+    return json.dumps(sorted(set(_label_list(labels))), separators=(",", ":"), ensure_ascii=False)
+
+
+def attribute_set_digest(labels: Iterable[str]) -> str:
+    """``SHAKE256("PYFE4AI-V05-POLICY-ATTRSET" || encoding)`` read to 32 bytes, in hexadecimal (64 characters),
+    with *encoding* the UTF-8 bytes of :func:`attribute_set_encoding` of *labels*; its version marker is
+    :data:`ATTR_HASH`.
+
+    Whatever order and repetition the labels were written in, the digest is the same, so that parties that write the
+    attributes of one set down differently agree on it.
+    """
+    return hashlib.shake_256(_ATTRSET_DOMAIN + attribute_set_encoding(labels).encode("utf-8")).hexdigest(32)
+
+
 @dataclass(frozen=True, init=False)
 class Universe:
     """The attribute labels of a setup, with *max_copies* copies of each.
@@ -155,22 +202,9 @@ class Universe:
             raise FEValidationError("max_copies must be an int, got {}".format(type(max_copies).__name__))
         if max_copies < 1:
             raise FEValidationError("max_copies must be at least 1, got {}".format(max_copies))
-        # a bare str or bytes would be read one character or one byte at a time
-        if isinstance(labels, (str, bytes, bytearray)):
-            raise FEValidationError(
-                "labels must be an iterable of attribute labels, not a bare {}".format(type(labels).__name__)
-            )
-        try:
-            iterator = iter(labels)
-        except TypeError as exc:
-            raise FEValidationError(
-                "labels must be an iterable of attribute labels, got {}".format(type(labels).__name__)
-            ) from exc
-        items = list(iterator)
+        items = _label_list(labels)
         if not items:
             raise FEValidationError("a universe needs at least one attribute label")
-        for label in items:
-            validate_label(label)
         object.__setattr__(self, "labels", tuple(sorted(set(items))))
         object.__setattr__(self, "max_copies", max_copies)
 

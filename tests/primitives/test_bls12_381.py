@@ -6,6 +6,7 @@ import pytest
 
 from pyfe4ai import backend as native_backend
 from pyfe4ai.primitives.pairing import bls12_381 as B
+from pyfe4ai.primitives.pairing.pairing_backend import hash_to_g1
 
 pytestmark = pytest.mark.skipif(not B.available(), reason="Rust extension not built")
 
@@ -51,6 +52,27 @@ def group():
 @pytest.mark.parametrize("msg,x,y", G1_VECTORS)
 def test_hash_to_g1_rfc9380(msg, x, y):
     assert B._kernels.hash(B.G1, msg, G1_DST).to_bytes() == _compressed([x], y > (P - 1) // 2)
+
+
+@pytest.mark.parametrize("msg,x,y", G1_VECTORS)
+def test_hash_to_g1_rfc9380_vectors(group, msg, x, y):
+    # hash_to_g1 with the DST of the RFC gives the point of the RFC's test vector
+    assert hash_to_g1(group, msg, G1_DST).to_bytes() == _compressed([x], y > (P - 1) // 2)
+
+
+def test_group_hash_takes_a_dst_and_keeps_its_default(group):
+    for msg in (b"", b"abc", b"pyfe4ai/fh-mcfe/H1(tag)|label"):
+        by_dst = group.hash(msg, B.G1, dst=G1_DST)
+        assert by_dst.to_bytes() == B._kernels.hash(B.G1, msg, G1_DST).to_bytes()
+        # no dst, or the default dst itself: the output the group always gave
+        assert group.hash(msg, B.G1, dst=None) == group.hash(msg, B.G1) == group.hash(msg, B.G1, dst=B.HASH_DST[B.G1])
+        assert group.hash(msg, B.G1) == hash_to_g1(group, msg, B.HASH_DST[B.G1])
+        assert by_dst != group.hash(msg, B.G1)
+    g2_dst = b"QUUX-V01-CS02-with-BLS12381G2_XMD:SHA-256_SSWU_RO_"
+    assert group.hash(b"abc", B.G2, dst=g2_dst) != group.hash(b"abc", B.G2)
+    assert group.hash("abc", B.G1, dst=G1_DST) == group.hash(b"abc", B.G1, dst=G1_DST)
+    with pytest.raises(ValueError):
+        group.hash(b"abc", B.G1, dst=b"D" * 256)
 
 
 @pytest.mark.parametrize("msg,x,y", G2_VECTORS)

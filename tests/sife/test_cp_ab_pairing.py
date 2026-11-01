@@ -2,6 +2,7 @@ import ast
 import copy
 import hashlib
 import json
+import logging
 import os
 import random
 import sys
@@ -37,7 +38,7 @@ from pyfe4ai.policy import (
 from pyfe4ai.primitives.pairing import pairing_backend
 from pyfe4ai.primitives.pairing.pairing_backend import G1, G2
 from pyfe4ai.primitives.pairing.pairing_backend import PairingGroup, pairing_available
-from pyfe4ai.schemes.common import ac_binding
+from pyfe4ai.schemes.common import ac_binding, ac_codec
 from pyfe4ai.schemes.common.ac_binding import check_binding, pp_digest
 from pyfe4ai.schemes.sife import cp_ab_pairing
 from pyfe4ai.schemes.sife.cp_ab_pairing import SIFECPABPairing, SIFECPABPairingKeyGenerator
@@ -365,10 +366,38 @@ def test_a_new_universe_replaces_the_cached_record(make, tmp_path):
     assert record["universe"] == Universe(UNIVERSE, 4).encoding()
 
     other = ["org:A", "org:Z"]
-    with pytest.warns(FEWarning, match="does not match this configuration"):
-        make(universe=other, cache_dir=cache)
+    make(universe=other, cache_dir=cache)
     with open(record_file, encoding="utf-8") as f:
         assert json.load(f)["universe"] == Universe(other, 4).encoding()
+
+
+def test_config_only_record_replaced_without_a_warning(make, tmp_path, recwarn, caplog):
+    # the record holds the configuration and no group element or seed: nothing that a user holds depends on it
+    cache = str(tmp_path)
+    make(cache_dir=cache)
+    record_file = os.path.join(cache, "authority", CryptoCONST.TYPE_SIFE_CP_AB, "param.json")
+    other = ["org:A", "org:Z"]
+    with caplog.at_level(logging.INFO, logger="pyfe4ai.core.base"):
+        make(universe=other, cache_dir=cache)
+    assert not [w for w in recwarn if issubclass(w.category, FEWarning)], [str(w.message) for w in recwarn]
+    assert [r.levelno for r in caplog.records if "does not match" in r.getMessage()] == [logging.INFO]
+    with open(record_file, encoding="utf-8") as f:
+        assert json.load(f)["universe"] == Universe(other, 4).encoding()
+
+
+@pytest.mark.parametrize("content", ["", '{"sec_param": 128, "universe": ', "[1, 2]", '{"sec_param": 128}'])
+def test_unreadable_config_only_record_replaced_without_a_warning(make, tmp_path, recwarn, caplog, content):
+    cache = str(tmp_path)
+    make(cache_dir=cache)
+    record_file = os.path.join(cache, "authority", CryptoCONST.TYPE_SIFE_CP_AB, "param.json")
+    with open(record_file, "w", encoding="utf-8") as f:
+        f.write(content)
+    with caplog.at_level(logging.INFO, logger="pyfe4ai.core.base"):
+        make(cache_dir=cache)
+    assert not [w for w in recwarn if issubclass(w.category, FEWarning)], [str(w.message) for w in recwarn]
+    assert not [r for r in caplog.records if r.levelno > logging.INFO]
+    with open(record_file, encoding="utf-8") as f:
+        assert json.load(f)["universe"] == Universe(UNIVERSE, 4).encoding()
 
 
 def test_same_configuration_keeps_the_cached_record(make, tmp_path):
@@ -621,8 +650,8 @@ def test_encrypt_reads_only_the_table_entries_of_its_policy(make):
 def test_encrypt_decodes_the_public_parameters_once(make, monkeypatch):
     _, crypto = make()
     decoded = []
-    real = cp_ab_pairing.deserialize_many
-    monkeypatch.setattr(cp_ab_pairing, "deserialize_many",
+    real = ac_codec.deserialize_many
+    monkeypatch.setattr(ac_codec, "deserialize_many",
                         lambda group, items: decoded.append(list(items)) or real(group, items))
     for _ in range(3):
         crypto.encrypt([1] * ETA, policy="org:A")
@@ -780,13 +809,13 @@ def test_decrypt_refuses_a_key_of_the_wrong_shape(field, shape, fixed):
 def test_decrypt_refuses_a_g2_string_in_a_field_of_g1_before_reading_it(fixed, monkeypatch):
     _, crypto, ct, dk, _ = fixed
     read = []
-    real = cp_ab_pairing.deserialize_many
+    real = ac_codec.deserialize_many
 
     def spy(group, items):
         read.append(items)
         return real(group, items)
 
-    monkeypatch.setattr(cp_ab_pairing, "deserialize_many", spy)
+    monkeypatch.setattr(ac_codec, "deserialize_many", spy)
     with pytest.raises(FEValidationError, match="c3"):
         crypto.decrypt(dict(ct, c3=dk["k1"][:1] + ct["c3"][1:]), dk)
     assert not any(dk["k1"][0] in items for items in read)

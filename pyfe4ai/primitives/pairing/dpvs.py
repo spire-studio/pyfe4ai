@@ -8,9 +8,10 @@ vector ``b_i = g1^(B_i)`` of ``G1^dim`` and row ``j`` of ``B*`` that of
     e(b_i, b*_j) = prod_k e(b_ik, b*_jk) = e(g1, g2)^(mu delta_ij).
 
 The module samples the pair, turns rows of a matrix into vectors of group
-elements, combines vectors by scalars and pairs two vectors. It is shared by
-the DOT18 multi-input scheme (``mu`` random, ``g_T = e(g1, g2)^mu`` public)
-and the NPP22 schemes (``mu = 1``). Group elements are handled by
+elements, combines vectors by scalars (:func:`encode` does the same from the
+exponents, in one step) and pairs two vectors. It is shared by the DOT18
+multi-input scheme (``mu`` random, ``g_T = e(g1, g2)^mu`` public) and the NPP22
+schemes (``mu = 1``). Group elements are handled by
 :mod:`pyfe4ai.primitives.pairing.pairing_backend`, so the functions run on
 BLS12-381 and on charm groups alike; importing the module needs no backend.
 """
@@ -20,7 +21,7 @@ from collections.abc import Sequence
 import gmpy2 as gp
 
 from pyfe4ai.core.exceptions import FEValidationError
-from pyfe4ai.primitives.pairing.pairing_backend import ZR, PairingGroup, multi_pair, multiexp, pow_many
+from pyfe4ai.primitives.pairing.pairing_backend import ZR, PairingGroup, multi_pair, multiexp_many, pow_many
 from pyfe4ai.primitives.pairing.pairing_utils import matrix_inverse_mod, transpose_mod
 
 
@@ -106,7 +107,51 @@ def combine(vectors: Sequence[list], scalars: Sequence[int], group: PairingGroup
         raise FEValidationError(
             "combine needs one scalar per vector, got {} scalars for {} vectors".format(len(scalars), len(vectors))
         )
-    return [multiexp([vector[j] for vector in vectors], scalars, group) for j in range(width)]
+    return multiexp_many(([vector[j] for vector in vectors] for j in range(width)), [scalars] * width, group)
+
+
+def encode(
+    coefficients: Sequence[int], matrix: Sequence[Sequence[gp.mpz]], generator, order: gp.mpz, group: PairingGroup
+) -> list:
+    """The vector ``generator ** (sum_i coefficients[i] matrix[i])``, coordinate by coordinate.
+
+    The same vector as ``combine(basis_vectors(matrix, range(len(matrix)), generator, group), coefficients, group)``,
+    but the combination is taken on the exponents, ``Z_order`` integers, and the group is touched once: a single
+    :func:`~pyfe4ai.primitives.pairing.pairing_backend.pow_many` of *generator*, with one precomputation for it, in
+    place of one exponentiation per entry of *matrix* and one multi-exponentiation per coordinate.
+
+    Args:
+        coefficients: One integer (or ``Z_order`` element) per row of *matrix*, reduced modulo *order*.
+        matrix: Exponent matrix, one row per basis vector (``B`` or ``B*``), all of one length.
+        generator: Generator of ``G1`` (for ``B``) or ``G2`` (for ``B*``).
+        order: Group order, the modulus of the exponents.
+        group: Pairing group instance.
+
+    Returns:
+        ``len(matrix[0])`` group elements.
+
+    Raises:
+        FEValidationError: If there is no row, the rows differ in length, or there
+            is not one coefficient per row.
+    """
+    if not matrix:
+        raise FEValidationError("encode needs at least one row")
+    width = len(matrix[0])
+    if any(len(row) != width for row in matrix):
+        raise FEValidationError(
+            "encode needs rows of the same length, got lengths {}".format(sorted({len(row) for row in matrix}))
+        )
+    if len(coefficients) != len(matrix):
+        raise FEValidationError(
+            "encode needs one coefficient per row, got {} coefficients for {} rows".format(
+                len(coefficients), len(matrix))
+        )
+    exponents = [gp.mpz(0)] * width
+    for coefficient, row in zip(coefficients, matrix):
+        coefficient = gp.mpz(int(coefficient)) % order
+        if coefficient:
+            exponents = [total + coefficient * entry for total, entry in zip(exponents, row)]
+    return pow_many(generator, [total % order for total in exponents], group)
 
 
 def vector_pair(xs: list, ys: list):

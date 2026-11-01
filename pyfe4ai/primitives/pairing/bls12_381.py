@@ -10,8 +10,8 @@ only the canonical string -- a type tag ``0`` to ``3``, canonical base64 of
 exactly the element's encoding -- and checks the encoding and subgroup
 membership), ``hash(msg, G1 | G2)`` (RFC 9380 hash_to_curve, suites
 ``BLS12381G1_XMD:SHA-256_SSWU_RO_`` and ``BLS12381G2_XMD:SHA-256_SSWU_RO_``,
-with the domain separation tags of :data:`HASH_DST`), ``ismember``,
-``groupType``; elements
+with the domain separation tags of :data:`HASH_DST` unless a ``dst`` is
+given), ``ismember``, ``groupType``; elements
 written multiplicatively (``*``, ``/``, ``**``), ZR elements with ``+ - * /
 **`` and ``int()``. Products of pairings (:func:`multi_pair`) take one final
 exponentiation; :func:`gt_dlog` is a bounded discrete logarithm in GT
@@ -126,13 +126,21 @@ class PairingGroup:
     def ismember(self, element) -> bool:
         return getattr(element, "type", None) in (ZR, G1, G2, GT)
 
-    def hash(self, msg, kind=G1):
-        """H(msg) in G1 or G2; *msg* is bytes or a str (hashed as UTF-8)."""
+    def hash(self, msg, kind=G1, dst=None):
+        """H(msg) in G1 or G2; *msg* is bytes or a str (hashed as UTF-8).
+
+        *dst* is the domain separation tag of RFC 9380, at most 255 bytes;
+        ``None`` takes the one of :data:`HASH_DST` for *kind*.
+        """
         if kind not in HASH_DST:
             raise ValueError("BLS12-381 hashes into G1 or G2 only")
         if isinstance(msg, str):
             msg = msg.encode("utf-8")
-        return self._k.hash(kind, bytes(msg), HASH_DST[kind])
+        if dst is None:
+            dst = HASH_DST[kind]
+        elif not isinstance(dst, (bytes, bytearray)):
+            raise ValueError("the dst must be bytes, got {}".format(type(dst).__name__))
+        return self._k.hash(kind, bytes(msg), bytes(dst))
 
 
 def _split(data) -> tuple:

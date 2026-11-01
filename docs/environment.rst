@@ -105,7 +105,12 @@ the expensive steps of ``setup()``.
   the public parameters they were made with; setting up the earlier
   configuration again draws new parameters. Give each configuration its own
   ``cache_dir`` to keep both. An unreadable record is regenerated the same
-  way; records are written atomically.
+  way; records are written atomically. The pairing schemes whose record holds
+  the configuration only (``sife/fh_ipe_pairing``, ``sife/part_fh_ipe_pairing``,
+  ``sife/cp_ab_pairing``, ``mife/fh_multi_ipe_pairing`` and
+  ``quadratic/sgp``: no group element, no seed) replace it without the warning,
+  with a message at INFO from the ``pyfe4ai.core.base`` logger: nothing made
+  under the old record depends on it.
 * **Checks.** A cached record is used only if it matches the configuration:
   discrete-log groups are checked for primality, size, safe-prime structure
   and generator order, DCR moduli for size and small factors (their factors

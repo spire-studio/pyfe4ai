@@ -69,6 +69,7 @@ class MIFEFHMultiIPEPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin
     """Key generator for function-hiding multi-slot multi-input IPE over pairings."""
 
     _scheme_type = CryptoCONST.TYPE_MIFE_FH_MULTI_IPE
+    _config_only_record = True  # the record holds the configuration only (see ParameterCacheMixin)
     def __init__(self, config: dict, **kwargs) -> None:
         """Initialise the MIFE FH-Multi-IPE key generator.
 

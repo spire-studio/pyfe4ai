@@ -10,13 +10,22 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import itertools
+import json
 import random
 import sys
 
 import pytest
 
 from pyfe4ai.core.exceptions import FEValidationError
-from pyfe4ai.policy.attributes import Universe, attribute_to_zq, clip, validate_label
+from pyfe4ai.policy.attributes import (
+    ATTR_HASH,
+    Universe,
+    attribute_set_digest,
+    attribute_set_encoding,
+    attribute_to_zq,
+    clip,
+    validate_label,
+)
 from pyfe4ai.policy.formula import And, Leaf, Or, Threshold
 from pyfe4ai.policy.msp import compile_formula
 from pyfe4ai.policy.read_once import read_once_rows
@@ -92,6 +101,74 @@ def test_attribute_refuses_a_bad_modulus():
         with pytest.raises(FEValidationError, match="modulus"):
             attribute_to_zq("a:1", bad)
     assert attribute_to_zq("a:1", 2) in (0, 1)
+
+
+# ---------------------------------------------------------------------------
+# attribute_set_encoding, attribute_set_digest
+# ---------------------------------------------------------------------------
+
+def test_attribute_set_digest_ignores_order_and_repeats():
+    assert attribute_set_digest({"b:1", "a:1"}) == attribute_set_digest(["a:1", "b:1", "a:1"])
+    assert attribute_set_encoding(["b:1", "a:1"]) == '["a:1","b:1"]'
+    assert attribute_set_digest([]) != attribute_set_digest(["a:1"])
+
+
+def test_attribute_set_refuses_bad_labels():
+    with pytest.raises(FEValidationError):
+        attribute_set_digest(["a b"])
+    with pytest.raises(FEValidationError):
+        attribute_set_digest("a:1")               # a bare string is not a collection of labels
+
+
+def test_attribute_set_known_answers():
+    assert ATTR_HASH == "shake256-64"
+    assert attribute_set_encoding([]) == "[]"
+    assert attribute_set_encoding(["b:1", "a:1", "b:1"]) == '["a:1","b:1"]'
+    assert attribute_set_digest(["a:1", "b:1"]) == hashlib.shake_256(
+        b'PYFE4AI-V05-POLICY-ATTRSET["a:1","b:1"]').hexdigest(32)
+    assert attribute_set_digest([]) == hashlib.shake_256(b"PYFE4AI-V05-POLICY-ATTRSET[]").hexdigest(32)
+    assert attribute_set_digest(["a:1", "b:1"]) == "070190d087bcba266a33ee4804b4bb1ba20441b1c6b20c12fc38bf556fb24085"
+    assert attribute_set_digest([]) == "bb381f97eb0917ec23931f052d2f041841f9c767f2bc059918324252f3a5c042"
+    assert len(attribute_set_digest(["a:1"])) == 64
+
+
+def test_attribute_set_encoding_sorts_by_code_point_and_keeps_non_ascii():
+    labels = ["k:" + FULLWIDTH_TILDE, "k:" + DESERET_LONG_I, "k:b", "k:" + E_ACUTE]
+    text = attribute_set_encoding(labels)
+    assert json.loads(text) == sorted(labels)
+    assert text == "[" + ",".join('"{}"'.format(label) for label in sorted(labels)) + "]"
+    assert E_ACUTE in text                                          # not escaped
+    assert attribute_set_digest(labels) == hashlib.shake_256(
+        b"PYFE4AI-V05-POLICY-ATTRSET" + text.encode("utf-8")).hexdigest(32)
+
+
+def test_attribute_set_digest_tells_sets_apart():
+    digests = {attribute_set_digest(labels) for labels in ([], ["a:1"], ["a:2"], ["b:1"], ["a:1", "a:2"])}
+    assert len(digests) == 5
+
+
+def test_attribute_set_accepts_any_iterable_of_labels():
+    want = attribute_set_digest(["a:1", "b:1"])
+    for labels in (("b:1", "a:1"), frozenset({"a:1", "b:1"}), iter(["a:1", "b:1", "a:1"]),
+                   (label for label in ("b:1", "a:1")), {"a:1": 0, "b:1": 1}):
+        assert attribute_set_digest(labels) == want
+
+
+def test_attribute_set_refuses_what_is_not_a_collection_of_valid_labels():
+    for bad in ("a:1", b"a:1", bytearray(b"a:1"), 7, None):
+        with pytest.raises(FEValidationError, match="iterable of attribute labels"):
+            attribute_set_encoding(bad)
+    for bad in (["a:1", "bad"], ["a:1", 7], ["a:1", None], ["a:1", b"b:1"], [_MyStr("a:1")],
+                ["a:" + DECOMPOSED_E_ACUTE]):
+        with pytest.raises(FEValidationError):
+            attribute_set_digest(bad)
+        with pytest.raises(FEValidationError):
+            attribute_set_encoding(bad)
+
+
+def test_attribute_set_error_names_the_label():
+    with pytest.raises(FEValidationError, match="b#1"):
+        attribute_set_digest(["a:1", "a:b#1"])
 
 
 # ---------------------------------------------------------------------------

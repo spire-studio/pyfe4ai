@@ -81,6 +81,10 @@ class ParameterCacheMixin:
     #: can tell whether someone knows its factors, so under the ``standard``
     #: profile such parameters are generated afresh, never loaded or stored.
     _holds_dcr_modulus = False
+    #: Set by key generators whose record holds the configuration and nothing else: no group element, no seed. A
+    #: record of another configuration (or an unreadable one) is then replaced with a log message at INFO and no
+    #: ``FEWarning``, since no key, public parameter or ciphertext depends on what it held.
+    _config_only_record = False
 
     def _load_parameters(self) -> None:
         """Load cached parameters from disk, or generate and save fresh ones.
@@ -117,18 +121,25 @@ class ParameterCacheMixin:
                 ):
                     logger.debug("load param file successfully")
                     return
-                logger.error("param file is invalid, regenerate...")
-                warn_at_caller(
-                    "the parameter record {} does not match this configuration (for example a record of an "
-                    "earlier version): regenerated with new parameters and seeds; keys, public parameters and "
-                    "ciphertexts made with the old record no longer match".format(param_file),
-                )
+                if self._config_only_record:
+                    logger.info("param file %s does not match this configuration, regenerate...", param_file)
+                else:
+                    logger.error("param file is invalid, regenerate...")
+                    warn_at_caller(
+                        "the parameter record {} does not match this configuration (for example a record of an "
+                        "earlier version): regenerated with new parameters and seeds; keys, public parameters and "
+                        "ciphertexts made with the old record no longer match".format(param_file),
+                    )
             except (OSError, ValueError, KeyError, TypeError, IndexError) as exc:
-                logger.error("param file is unreadable (%s), regenerate...", exc)
-                warn_at_caller(
-                    "the parameter record {} is unreadable ({}): regenerated with new parameters and seeds; keys, "
-                    "public parameters and ciphertexts made with the old record no longer match".format(param_file, exc),
-                )
+                if self._config_only_record:
+                    logger.info("param file %s is unreadable (%s), regenerate...", param_file, exc)
+                else:
+                    logger.error("param file is unreadable (%s), regenerate...", exc)
+                    warn_at_caller(
+                        "the parameter record {} is unreadable ({}): regenerated with new parameters and seeds; keys, "
+                        "public parameters and ciphertexts made with the old record no longer match".format(
+                            param_file, exc),
+                    )
         fd, tmp_file = tempfile.mkstemp(dir=folder, prefix=".param-", suffix=".json")
         os.close(fd)
         try:

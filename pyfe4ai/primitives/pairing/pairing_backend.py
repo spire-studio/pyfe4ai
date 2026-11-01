@@ -189,6 +189,38 @@ def serialize_many(group, items) -> list:
     return [group.serialize(x) for x in items]
 
 
+def hash_to_g1(group, msg: bytes, dst: bytes):
+    """``H(msg)`` in G1 under the domain separation tag *dst*.
+
+    On BLS12-381 this is RFC 9380 ``hash_to_curve`` of the suite
+    ``BLS12381G1_XMD:SHA-256_SSWU_RO_`` with *dst* as its DST, so that a known
+    answer of the RFC can be reproduced. A charm group has no DST: it hashes
+    ``dst || "|" || msg`` as a C string. The same *msg* under two tags gives
+    unrelated points on either backend.
+
+    Raises:
+        FEValidationError: If *msg* or *dst* is not ``bytes``, or *dst* is
+            empty or longer than 255 bytes (the DST of RFC 9380 has 1 to 255
+            bytes; the limit is the same on every group). On a charm group
+            also if *dst* contains ``|`` (the tag would blur into the message)
+            or *dst* or *msg* contains a NUL byte (charm reads a C string and
+            ignores what follows the first NUL, so two messages would collide).
+    """
+    if type(msg) is not bytes:
+        raise FEValidationError("msg must be bytes, got {}".format(type(msg).__name__))
+    if type(dst) is not bytes:
+        raise FEValidationError("dst must be bytes, got {}".format(type(dst).__name__))
+    if not 1 <= len(dst) <= 255:
+        raise FEValidationError("dst must be 1 to 255 bytes, got {} bytes".format(len(dst)))
+    if isinstance(group, _bls.PairingGroup):
+        return group.hash(msg, G1, dst=dst)
+    if b"|" in dst or b"\x00" in dst or b"\x00" in msg:
+        raise FEValidationError(
+            "on a charm group dst must not contain | or a NUL byte and msg must not contain a NUL byte"
+        )
+    return group.hash(dst + b"|" + msg, G1)
+
+
 def require_pairing_backend(name=None) -> None:
     """Raise a clear error if no backend implements the pairing group *name*.
 

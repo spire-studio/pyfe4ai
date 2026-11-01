@@ -32,6 +32,13 @@ Access-Control Binding
    :members:
    :undoc-members:
 
+Access-Control Record Codec
+---------------------------
+
+.. automodule:: pyfe4ai.schemes.common.ac_codec
+   :members:
+   :undoc-members:
+
 Threshold Schemes
 -----------------
 

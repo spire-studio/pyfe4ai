@@ -89,7 +89,6 @@ from __future__ import annotations
 import copy
 import json
 import logging
-import re
 
 import gmpy2 as gp
 
@@ -118,11 +117,8 @@ from pyfe4ai.policy import (
     read_once_rows,
 )
 from pyfe4ai.policy.attributes import clip
-from pyfe4ai.primitives.pairing import bls12_381
-from pyfe4ai.primitives.pairing.bls12_381 import MAX_DLOG_BOUND
 from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, ZR, PairingGroup, multi_pair, pair
 from pyfe4ai.primitives.pairing.pairing_backend import deserialize_many, multiexp, multiexp_many, pow_many
-from pyfe4ai.primitives.pairing.pairing_backend import serialize_many
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, check_asymmetric
 from pyfe4ai.primitives.pairing.pairing_backend import require_pairing_backend
 from pyfe4ai.primitives.pairing.pairing_utils import bounded_discrete_log_gt
@@ -131,91 +127,35 @@ from pyfe4ai.primitives.pairing.pairing_utils import random_nonzero_zr
 from pyfe4ai.primitives.pairing.pairing_utils import serialize_matrix_g
 from pyfe4ai.primitives.pairing.pairing_utils import transpose_mod
 from pyfe4ai.schemes.common.ac_binding import check_binding, pp_digest
+from pyfe4ai.schemes.common.ac_codec import check_dlog_limit as _check_dlog_limit
+from pyfe4ai.schemes.common.ac_codec import check_length as _check_length
+from pyfe4ai.schemes.common.ac_codec import decimal as _decimal
+from pyfe4ai.schemes.common.ac_codec import positive_int as _positive_int
+from pyfe4ai.schemes.common.ac_codec import read_elements as _elements
+from pyfe4ai.schemes.common.ac_codec import read_record as _record
+from pyfe4ai.schemes.common.ac_codec import require_fields as _require_fields
+from pyfe4ai.schemes.common.ac_codec import serialize_vec as _serialize_vec
 
 logger = logging.getLogger(__name__)
 
 _PP_DOMAIN = b"pyfe4ai/sife/cp-ab/pp-binding/v1|"
 _DEFAULT_MAX_COPIES = 4
 _DEFAULT_MAX_COLUMNS = 16
-_GROUP_NAMES = {G1: "G1", G2: "G2"}
-
-# a decimal string of these objects (bound_x, bound_y, the entries of y) has at most 16 digits, so it stands for
-# an integer below 10**16, a little above 2**48; the pattern refuses a longer string before int() reads it
-_DECIMAL = re.compile(r"0|-?[1-9][0-9]{0,15}")
-
-
-def _positive_int(value, name: str) -> int:
-    # type(value) is int: a bool or a float would be a second spelling of the same limit
-    if type(value) is not int or value < 1:
-        raise FEValidationError("{} must be a positive int".format(name))
-    return value
-
-
-def _check_dlog_limit(eta: int, bound_x: int, bound_y: int) -> None:
-    if eta * bound_x * bound_y > MAX_DLOG_BOUND:
-        raise FEValidationError(
-            "eta * bound_x * bound_y must be at most 2**48, the limit of the discrete log"
-        )
-
-
-def _decimal(value, name: str) -> int:
-    """The int that *value*, a decimal string in its one spelling, stands for."""
-    if type(value) is not str or _DECIMAL.fullmatch(value) is None:
-        raise FEValidationError("{} must hold decimal strings of integers of at most 16 digits".format(name))
-    return int(value)
-
-
-def _check_length(items, length: int, name: str) -> None:
-    if type(items) is not list or len(items) != length:
-        raise FEValidationError("{} must be a list of {} entries".format(name, length))
 
 
 def _rand_matrix(group: PairingGroup, rows: int, cols: int) -> list[list[gp.mpz]]:
     return [[gp.mpz(int(group.random(ZR))) for _ in range(cols)] for _ in range(rows)]
 
 
-def _serialize_vec(group: PairingGroup, vec) -> list[str]:
-    return [item.decode("utf-8") for item in serialize_many(group, vec)]
-
-
 def _pairs(items: list) -> list[list]:
     return [items[i:i + 2] for i in range(0, len(items), 2)]
-
-
-def _elements(group: PairingGroup, items, kind, name: str) -> list:
-    """*items* deserialized, all of the group *kind*, or ``FEValidationError`` naming the field *name*."""
-    # the type tag before the element: charm reads almost any text as an element of some group, and
-    # never returns from some strings tagged G2, which must not reach it from a field of G1 elements
-    tag = "{}:".format(kind)
-    if type(items) is not list or not all(type(item) is str and item.startswith(tag) for item in items):
-        raise FEValidationError("{} must be a list of serialised elements of {}".format(name, _GROUP_NAMES[kind]))
-    try:
-        elements = deserialize_many(group, items)
-    except ValueError as exc:
-        raise FEValidationError("{} holds an element that does not deserialize".format(name)) from exc
-    # one spelling per element: BLS12-381 has refused any other, charm ignores the bytes after an element
-    if not isinstance(group, bls12_381.PairingGroup) and _serialize_vec(group, elements) != items:
-        raise FEValidationError("{} holds an element that is not in its serialised form".format(name))
-    return elements
-
-
-def _record(cls, data, name: str):
-    """The record view of the dict *data*."""
-    if not isinstance(data, dict):
-        raise FEValidationError("the {} must be a dict, got {}".format(name, type(data).__name__))
-    return cls(data)
-
-
-def _require_fields(record, name: str) -> None:
-    for field in record.FIELDS:
-        if field not in record:
-            raise FEValidationError("the {} has no field {}".format(name, field))
 
 
 class SIFECPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
     """Key generator for ciphertext-policy attribute-based IPFE over pairings."""
 
     _scheme_type = CryptoCONST.TYPE_SIFE_CP_AB
+    _config_only_record = True  # the record holds the configuration only (see ParameterCacheMixin)
 
     def __init__(self, config: dict, **kwargs) -> None:
         """Initialise the attribute-based IPFE key generator.

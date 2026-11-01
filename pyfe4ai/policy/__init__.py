@@ -8,8 +8,8 @@ A policy is a formula built from :class:`~pyfe4ai.policy.formula.Leaf`,
 * :mod:`~pyfe4ai.policy.formula` -- the node types, :func:`~pyfe4ai.policy.formula.evaluate`
   and :func:`~pyfe4ai.policy.formula.validate_formula`;
 * :mod:`~pyfe4ai.policy.attributes` -- attribute labels, the
-  :class:`~pyfe4ai.policy.attributes.Universe` of labels a setup covers and
-  the hash of a label to ``Z_q``;
+  :class:`~pyfe4ai.policy.attributes.Universe` of labels a setup covers, the
+  hash of a label to ``Z_q`` and the digest of a set of labels;
 * :mod:`~pyfe4ai.policy.encoding` -- the text syntax (:func:`~pyfe4ai.policy.encoding.parse`),
   the canonical encoding and the policy digest;
 * :mod:`~pyfe4ai.policy.msp` -- compiling a formula to a monotone span program
@@ -26,7 +26,14 @@ The names in ``__all__`` are imported here; the submodules define them. Pure
 Python: the standard library and :mod:`pyfe4ai.core.exceptions` only.
 """
 
-from pyfe4ai.policy.attributes import Universe, attribute_to_zq, validate_label
+from pyfe4ai.policy.attributes import (
+    ATTR_HASH,
+    Universe,
+    attribute_set_digest,
+    attribute_set_encoding,
+    attribute_to_zq,
+    validate_label,
+)
 from pyfe4ai.policy.encoding import POLICY_COMPILER, canonical_encoding, from_canonical, parse, policy_digest
 from pyfe4ai.policy.formula import (
     DEFAULT_MAX_ROWS,
@@ -45,6 +52,7 @@ from pyfe4ai.policy.structure import MAX_HOLDERS, q2_violation, qualified_famili
 from pyfe4ai.policy.zero_one import compile_zero_one, threshold_to_cnf
 
 __all__ = [
+    "ATTR_HASH",
     "And",
     "DEFAULT_MAX_ROWS",
     "Formula",
@@ -56,6 +64,8 @@ __all__ = [
     "POLICY_COMPILER",
     "Threshold",
     "Universe",
+    "attribute_set_digest",
+    "attribute_set_encoding",
     "attribute_to_zq",
     "canonical_encoding",
     "compile_formula",

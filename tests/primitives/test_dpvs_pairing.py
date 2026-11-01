@@ -15,7 +15,7 @@ skip_unless_available()
 
 from pyfe4ai.core.exceptions import FEValidationError  # noqa: E402
 from pyfe4ai.primitives.pairing import pairing_backend as pb  # noqa: E402
-from pyfe4ai.primitives.pairing.dpvs import basis_vectors, combine, random_dual_bases, vector_pair  # noqa: E402
+from pyfe4ai.primitives.pairing.dpvs import basis_vectors, combine, encode, random_dual_bases, vector_pair  # noqa: E402
 from pyfe4ai.primitives.pairing.pairing_utils import random_nonzero_zr, to_zr  # noqa: E402
 
 DIM = 4
@@ -126,3 +126,55 @@ def test_combine_refuses_malformed_input_on_the_group(group, generators):
         combine([[g1, g1], [g1]], [1, 1], group)
     with pytest.raises(FEValidationError):
         combine([[g1], [g1]], [1], group)
+
+
+def test_encode_is_the_combination_of_the_rows(group, order, generators):
+    g1 = generators[0]
+    b, _ = random_dual_bases(group, 4, gp.mpz(1), order)
+    rows = basis_vectors(b, [0, 1], g1, group)
+    assert encode([5, 7], b[:2], g1, order, group) == combine(rows, [5, 7], group)
+
+
+def test_encode_reduces_every_coefficient_modulo_the_order(group, order, generators):
+    g1 = generators[0]
+    b, _ = random_dual_bases(group, DIM, gp.mpz(1), order)
+    rows = basis_vectors(b, range(DIM), g1, group)
+    random_scalar = int(group.random(pb.ZR))
+    # negative, zero, above the order, an mpz and a ZR-sized value
+    for coefficients in ([3, -4, 0, 9], [0, 0, 0, 0], [-1, int(order) + 7, gp.mpz(2), -int(order)],
+                         [random_scalar, 1, random_scalar, -random_scalar]):
+        assert encode(coefficients, b, g1, order, group) == combine(rows, coefficients, group)
+
+
+def test_encode_of_one_row_and_of_a_wide_matrix(group, order, generators):
+    g2 = generators[1]
+    _, b_star = random_dual_bases(group, DIM, gp.mpz(1), order)
+    assert encode([1], b_star[2:3], g2, order, group) == basis_vectors(b_star, [2], g2, group)[0]
+    assert encode([6], b_star[2:3], g2, order, group) == [_power(group, g2, 6 * entry) for entry in b_star[2]]
+    wide = [[gp.mpz(i * 10 + j + 1) for j in range(9)] for i in range(3)]
+    got = encode([2, -1, 5], wide, g2, order, group)
+    assert len(got) == 9
+    for j in range(9):
+        assert got[j] == _power(group, g2, 2 * wide[0][j] - wide[1][j] + 5 * wide[2][j])
+
+
+def test_encode_pairs_to_the_inner_product(group, order, generators):
+    # the NPP22 use: coefficients on the rows of B and of B* of one dual pair
+    b, b_star = random_dual_bases(group, DIM, gp.mpz(1), order)
+    g1, g2 = generators
+    x, y = [3, -4, 0, 8], [5, 2, 9, -1]
+    got = vector_pair(encode(x, b, g1, order, group), encode(y, b_star, g2, order, group))
+    assert got == _power(group, pb.pair(g1, g2), sum(a * c for a, c in zip(x, y)))
+
+
+def test_encode_refuses_malformed_input(group, order, generators):
+    g1 = generators[0]
+    b, _ = random_dual_bases(group, DIM, gp.mpz(1), order)
+    with pytest.raises(FEValidationError):
+        encode([], [], g1, order, group)
+    with pytest.raises(FEValidationError):
+        encode([1], b[:2], g1, order, group)
+    with pytest.raises(FEValidationError):
+        encode([1, 2, 3], b[:2], g1, order, group)
+    with pytest.raises(FEValidationError):
+        encode([1, 1], [b[0], b[1][:-1]], g1, order, group)

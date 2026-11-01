@@ -11,6 +11,7 @@ import random
 
 import pyfe4ai.policy as policy
 from pyfe4ai.policy import (
+    ATTR_HASH,
     DEFAULT_MAX_ROWS,
     MAX_DEPTH,
     MAX_HOLDERS,
@@ -22,6 +23,8 @@ from pyfe4ai.policy import (
     Or,
     Threshold,
     Universe,
+    attribute_set_digest,
+    attribute_set_encoding,
     attribute_to_zq,
     canonical_encoding,
     compile_formula,
@@ -42,10 +45,11 @@ from pyfe4ai.policy import (
 P = 0x73EDA753299D7D483339D80809A1D80553BDA402FFFE5BFEFFFFFFFF00000001
 
 EXPECTED = [
-    "And", "DEFAULT_MAX_ROWS", "Formula", "Leaf", "MAX_DEPTH", "MAX_HOLDERS", "MSP", "Or", "POLICY_COMPILER",
-    "Threshold", "Universe", "attribute_to_zq", "canonical_encoding", "compile_formula", "compile_zero_one",
-    "evaluate", "from_canonical", "parse", "policy_digest", "q2_violation", "qualified_families", "read_once_rows",
-    "threshold_to_cnf", "validate_formula", "validate_label",
+    "ATTR_HASH", "And", "DEFAULT_MAX_ROWS", "Formula", "Leaf", "MAX_DEPTH", "MAX_HOLDERS", "MSP", "Or",
+    "POLICY_COMPILER", "Threshold", "Universe", "attribute_set_digest", "attribute_set_encoding", "attribute_to_zq",
+    "canonical_encoding", "compile_formula", "compile_zero_one", "evaluate", "from_canonical", "parse",
+    "policy_digest", "q2_violation", "qualified_families", "read_once_rows", "threshold_to_cnf", "validate_formula",
+    "validate_label",
 ]
 
 
@@ -67,6 +71,7 @@ def test_the_constants_have_the_agreed_values():
     assert MAX_DEPTH == 32
     assert MAX_HOLDERS == 8
     assert POLICY_COMPILER == "c1"
+    assert ATTR_HASH == "shake256-64"
 
 
 def test_parse_compile_reconstruct_and_digest():
@@ -106,6 +111,10 @@ def test_the_other_names_work_together():
     assert parse("or(and(org:A, org:B), and(org:A, role:x))") == formula
     universe = Universe(formula.leaves(), 2)
     assert "org:A" in universe and universe.size == 6
+
+    # the set of labels a client holds, however it is spelled
+    assert attribute_set_encoding({"role:x", "org:A"}) == '["org:A","role:x"]'
+    assert attribute_set_digest({"role:x", "org:A"}) == attribute_set_digest(["org:A", "role:x", "org:A"])
 
     # read-once copies of the rows of a compiled policy
     msp = compile_formula(formula, P)

@@ -20,6 +20,12 @@ compatibility).
   a key that its scheme does not declare only draws the warning: there a
   misspelt `security_profile` does leave the `toy` profile. Crypto objects
   take their config as before.
+- **No warning for a parameter record that holds the configuration only.**
+  `sife/fh_ipe_pairing`, `sife/part_fh_ipe_pairing`, `sife/cp_ab_pairing`,
+  `mife/fh_multi_ipe_pairing` and `quadratic/sgp` store no group element and no
+  seed, so replacing their record, for another configuration or because it
+  is unreadable, no longer draws a `FEWarning` (a message at INFO is logged);
+  every other scheme warns as before.
 
 ### Added
 
@@ -29,7 +35,9 @@ compatibility).
   `Threshold` nodes, written in a text syntax (`and(org:A, 2of(org:B, org:C,
   role:auditor))`, `parse`) with a canonical encoding and a policy digest
   (`canonical_encoding`, `policy_digest`). `Universe` fixes the labels of a
-  setup and the copies of each, and `attribute_to_zq` hashes a label to `Z_q`.
+  setup and the copies of each, `attribute_to_zq` hashes a label to `Z_q` and
+  `attribute_set_digest` hashes the set of labels of a key or a ciphertext,
+  whatever order and repeats it was written in.
   `compile_formula` turns a formula into a monotone span program by nested
   Shamir sharing with the Lewko-Waters rules, with its shares and its
   reconstruction coefficients (`compile_zero_one` rewrites the formula so

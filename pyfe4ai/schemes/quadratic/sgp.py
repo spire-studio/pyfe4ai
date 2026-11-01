@@ -146,6 +146,7 @@ class QuadraticSGPKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
     """Setup and key generation of DSGPP18's quadratic FE (Fig. 2)."""
 
     _scheme_type = CryptoCONST.TYPE_QUADRATIC_SGP
+    _config_only_record = True  # the record holds the configuration only (see ParameterCacheMixin)
     def __init__(self, config: dict, **kwargs) -> None:
         """Initialise the DSGPP18 quadratic FE key generator.
 
