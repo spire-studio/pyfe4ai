@@ -39,7 +39,7 @@ MINIMAL = {
     ("mcfe", "ddh"): {"n": 2}, ("mcfe", "ddh_ristretto255"): {"n": 2}, ("mcfe", "lwe"): {"n": 2},
     ("mcfe", "paillier"): {"n": 2}, ("mcfe", "damgard"): {"n": 2}, ("mcfe", "ring_lwe"): {"n": 2},
     ("mcfe", "fullysec_lwe"): {"n": 2}, ("mcfe", "fh_multi_ipe_pairing"): {"n": 2},
-    ("mcfe", "kp_ab_pairing"): {"n": 2},
+    ("mcfe", "kp_ab_pairing"): {"n": 2}, ("mcfe", "kp_ab_pairing_per_client"): {"n": 2},
     ("mcfe", "fh_multi_ipe_pairing_threshold"): {"n": 2, "lst_sid": _SIDS2},
     ("mcfe", "fh_multi_ipe_pairing_decentralized"): {"n": 2}, ("mcfe", "ddh_threshold"): {"n": 2},
     ("mcfe", "ddh_decentralized"): {"n": 2}, ("mcfe", "lwe_threshold"): {"n": 2},

@@ -24,7 +24,7 @@ PyFE4AI is a research-oriented Python library of functional encryption (FE)
 for trustworthy AI. In functional encryption, a functional key reveals one
 chosen function of encrypted data and nothing else about it: here an inner
 product `<x, y>` with the key's weights `y`, a weighted sum over several
-clients' vectors, or a quadratic form. PyFE4AI implements 45 inner-product
+clients' vectors, or a quadratic form. PyFE4AI implements 46 inner-product
 and quadratic FE schemes built on published constructions -- single-input,
 multi-input, multi-client, decentralized, threshold and function-hiding,
 under DDH, DCR, LWE, Ring-LWE and pairings -- behind one entry point,
@@ -176,24 +176,26 @@ emits a `pyfe4ai.FESecurityWarning`.
   *faithful* = the published construction as written; *adapted* = the
   published construction with the documented deviation in the last column.
 - **experimental**: implemented and checked here, but the construction or
-  its security argument is our own (*ad-hoc*) rather than published; no
-  defect known.
+  its security argument is our own (*ad-hoc*) rather than published, or the
+  paper only sketches the proof of the published construction; no defect
+  known.
 - **unreviewed**: not yet checked against its paper; no defect is known,
   but none was looked for systematically either.
 - **known-insecure**: a concrete privacy defect is known; the scheme computes
   correct results but provides no meaningful privacy. Use it only for
   functionality or performance experiments.
 
-Currently 34 reviewed, 5 experimental and 6 unreviewed out of 45 registered
+Currently 34 reviewed, 6 experimental and 6 unreviewed out of 46 registered
 schemes; none is known to be insecure. Experimental: the threshold layers of
 `mife/lwe_threshold`, `mcfe/lwe_threshold`, `mcfe/ring_lwe_threshold` and
-`mcfe/fh_multi_ipe_pairing_threshold`, and the carry mask of
-`mcfe/ddh_decentralized`. Unreviewed: the DDH schemes over ristretto255
+`mcfe/fh_multi_ipe_pairing_threshold`, the carry mask of
+`mcfe/ddh_decentralized`, and `mcfe/kp_ab_pairing_per_client`, a published
+construction (NPP22 Sec. 5.4) whose proof the paper only sketches. Unreviewed: the DDH schemes over ristretto255
 (`*/ddh_ristretto255`, selected with `group="ristretto255"`) and
 `sife/cp_ab_pairing`, `sife/kp_ab_pairing` and `mcfe/kp_ab_pairing`, new code.
 
 <details>
-<summary><strong>Status, construction and deviations of every scheme</strong> (45 rows, rendered by <code>pyfe4ai.core.status.markdown_table()</code>; a test keeps it in sync)</summary>
+<summary><strong>Status, construction and deviations of every scheme</strong> (46 rows, rendered by <code>pyfe4ai.core.status.markdown_table()</code>; a test keeps it in sync)</summary>
 
 | Scheme | Status | Fidelity | Construction | Notes |
 |---|---|---|---|---|
@@ -239,6 +241,7 @@ schemes; none is known to be insecure. Experimental: the threshold layers of
 | `mcfe/ring_lwe_decentralized` | reviewed | adapted | BMMS21 Sec. 6 identity-based DMCFE (ABKW19 + GDSum) | GDSum realised as pairwise PRF zero-sum masks (its full specification is only in the ePrint version); pairwise secrets sampled in-process |
 | `mcfe/paillier_decentralized` | reviewed | adapted | ABMPSW20 Fig. 14 (MCFE1 = Fig. 3) | MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) are sampled in-process |
 | `mcfe/kp_ab_pairing` | unreviewed | faithful | NPP22 Sec. 5.2 Fig. 3 | random oracle (tags hash to G1); one attribute set per tag, shared by all clients; one ciphertext per client and tag; every client must encrypt, no all-or-nothing layer (Remark 10); ciphertexts not authenticated; a key covers every tag |
+| `mcfe/kp_ab_pairing_per_client` | experimental | adapted | NPP22 Sec. 5.4 | proof only sketched (App. B.5); each client has its own attribute set; a fifth coordinate stops keys of two policies being spliced; the msk also holds h*_{i,5}, which the paper's list omits |
 | `quadratic/quad` | reviewed | adapted | Gay20 Fig. 4 over Fig. 8 (CPA) | signed inputs (discrete log in [-n m B^3, n m B^3]); CPA variant (no QANIZK); asymmetric pairing (default BLS12-381) |
 | `quadratic/sgp` | reviewed | adapted | DSGPP18 Fig. 2 | public key pk = (g1^s, g2^t) as in the paper; signed inputs with one bound B for x, y and F (discrete log in [-n^2 B^3, n^2 B^3]); generic bilinear group model |
 | `quadratic/miqfe` | reviewed | adapted | AGT22 Sec. 5 (MIFE for quadratic functions) | cross-user terms only (Def. 2.9); per-user encryption keys made of master ciphertexts; building blocks TAO20 FH-IPFE, Fig. 9 and Fig. 1 as in the paper; PRF = HMAC-SHA512; pos-security (every user contributes); k = mddh_k >= 2 |

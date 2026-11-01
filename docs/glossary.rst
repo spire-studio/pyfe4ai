@@ -332,7 +332,9 @@ Review status and trust
 
    experimental
       Implemented and checked here, but the construction or its security
-      argument is our own (fidelity *ad-hoc*); no defect known.
+      argument is our own (fidelity *ad-hoc*), or the paper only sketches
+      the proof of the published construction (fidelity *adapted*); no
+      defect known.
 
    unreviewed
       Not yet checked against its paper.

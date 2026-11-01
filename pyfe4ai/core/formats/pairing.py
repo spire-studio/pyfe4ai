@@ -3,8 +3,9 @@ The serialized objects of the pairing schemes: function-hiding IPFE
 (:mod:`pyfe4ai.schemes.sife.fh_ipe_pairing`), partially function-hiding IPFE
 (:mod:`pyfe4ai.schemes.sife.part_fh_ipe_pairing`), ciphertext-policy
 attribute-based IPFE (:mod:`pyfe4ai.schemes.sife.cp_ab_pairing`), key-policy
-attribute-based IPFE (:mod:`pyfe4ai.schemes.sife.kp_ab_pairing` and its multi-client version
-:mod:`pyfe4ai.schemes.mcfe.kp_ab_pairing`), the function-hiding MIFE
+attribute-based IPFE (:mod:`pyfe4ai.schemes.sife.kp_ab_pairing` and its multi-client versions
+:mod:`pyfe4ai.schemes.mcfe.kp_ab_pairing` and :mod:`pyfe4ai.schemes.mcfe.kp_ab_pairing_per_client`), the function-hiding
+MIFE
 (:mod:`pyfe4ai.schemes.mife.fh_ipe_pairing`,
 :mod:`pyfe4ai.schemes.mife.fh_multi_ipe_pairing`), the function-hiding MCFE
 (:mod:`pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing` and its threshold and
@@ -335,6 +336,61 @@ class MCKPABCiphertext(Record):
     c_attr = Field("one vector of eight G1 elements per attribute")
     t = Field("G1")
     c_ipfe = Field("four G1 elements")
+    pp_binding = Field("``pp_binding`` of the public parameters")
+
+
+# ---------------------------------------------------------------------------
+# MCFE key-policy attribute-based IPFE with an attribute set for each client (NPP22 Sec. 5.4)
+#
+# The configuration record (MCKPABRecord) and the public parameters (MCKPABParameters) are those of the scheme of Sec.
+# 5.2, with another ``pp_binding`` domain. The bases H_i have a fifth dimension, which the three records below show.
+
+
+class PCKPABClientKey(MCKPABClientKey):
+    """Encryption key ``ek_i`` of a client of the multi-client key-policy attribute-based IPFE with an attribute set
+    for each client: secret, and nothing of another client in it.
+
+    As :class:`MCKPABClientKey`, with the bases ``H_i`` of dimension five, and ``theta_h5``, the fifth basis vector
+    ``h_i,5`` times the client's secret ``theta_i`` (the paper's ``theta_i h_i,5``). ``theta_i`` itself is in the
+    master key only.
+    """
+
+    ORDER = ("nid", "s", "u", "p_h1", "p_h2", "h3", "theta_h5", "f", "pp_binding")
+
+    p_h1 = Field("five decimal strings, ``p_i H_i^(1)``")
+    p_h2 = Field("five decimal strings, ``p_i H_i^(2)``")
+    h3 = Field("five G1 elements, ``h_i,3``")
+    theta_h5 = Field("five G1 elements, ``theta_i h_i,5``")
+
+
+class PCKPABFunctionalKey(MCKPABFunctionalKey):
+    """Functional key of the multi-client key-policy attribute-based IPFE with an attribute set for each client.
+
+    As :class:`MCKPABFunctionalKey`, with five elements in ``k_ipfe``: the fifth coordinate holds a ``d_i`` of its
+    own, and the ``d_i`` of a key satisfy ``sum_i theta_i d_i = 0``. The rows of a client are all of the policy; the
+    ones a decryption reads are those of the attributes of that client.
+    """
+
+    k_ipfe = Field("``{client: five G2 elements}``")
+
+
+class PCKPABCiphertext(Record):
+    """Ciphertext of a client of the multi-client key-policy attribute-based IPFE with an attribute set for each
+    client: for a tag and the client's own set of attributes.
+
+    As :class:`MCKPABCiphertext` without ``attributes_digest``: the set of a client is not hashed with the tag and
+    the other clients do not check it against theirs. ``c_ipfe`` has five elements.
+    """
+
+    nid = Field("the client")
+    label = Field("the tag, :func:`~pyfe4ai.schemes.mcfe.labels.encode_label` of the label")
+    attributes = Field("the attribute labels of this client, sorted, each once")
+    policy_compiler = Field("version marker, :data:`~pyfe4ai.policy.encoding.POLICY_COMPILER`")
+    attr_hash = Field("version marker, :data:`~pyfe4ai.policy.attributes.ATTR_HASH`")
+    tag_hash = Field("version marker, :data:`~pyfe4ai.schemes.common.kp_ab.TAG_HASH`")
+    c_attr = Field("one vector of eight G1 elements per attribute")
+    t = Field("G1")
+    c_ipfe = Field("five G1 elements")
     pp_binding = Field("``pp_binding`` of the public parameters")
 
 

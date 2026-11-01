@@ -139,6 +139,11 @@ CONFIGS: dict[tuple[str, str], dict] = {
     ("mcfe", "kp_ab_pairing"): {
         "sec_param": 64, "bound_x": 4, "bound_y": 4, "pairing_group_param": DEFAULT_PAIRING_GROUP, **_MULTI,
     },
+    # the per-client version: the ML adapter refuses it (the clients of one label may hold different sets of
+    # attributes), so the entry is recorded as unusable there; the scheme classes are used directly
+    ("mcfe", "kp_ab_pairing_per_client"): {
+        "sec_param": 64, "bound_x": 4, "bound_y": 4, "pairing_group_param": DEFAULT_PAIRING_GROUP, **_MULTI,
+    },
     ("quadratic", "quad"): {"sec_param": 64, "n": 4, "m": 3, "bound": 5, "pairing_group_param": DEFAULT_PAIRING_GROUP},
     ("quadratic", "sgp"): {"sec_param": 64, "n": 5, "bound": 6, "pairing_group_param": DEFAULT_PAIRING_GROUP},
     ("quadratic", "miqfe"): {

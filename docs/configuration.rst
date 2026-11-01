@@ -44,7 +44,7 @@ Security profiles
      - ``sife/fullysec_lwe``, ``mife/fullysec_lwe``
      - refused
    * - pairing
-     - ``sife/fh_ipe_pairing``, ``sife/part_fh_ipe_pairing``, ``sife/cp_ab_pairing``, ``sife/kp_ab_pairing``, ``mife/fh_ipe_pairing``, ``mife/fh_multi_ipe_pairing``, ``mcfe/fh_multi_ipe_pairing``, ``mcfe/fh_multi_ipe_pairing_threshold``, ``mcfe/fh_multi_ipe_pairing_decentralized``, ``mcfe/kp_ab_pairing``, ``quadratic/quad``, ``quadratic/sgp``, ``quadratic/miqfe``
+     - ``sife/fh_ipe_pairing``, ``sife/part_fh_ipe_pairing``, ``sife/cp_ab_pairing``, ``sife/kp_ab_pairing``, ``mife/fh_ipe_pairing``, ``mife/fh_multi_ipe_pairing``, ``mcfe/fh_multi_ipe_pairing``, ``mcfe/fh_multi_ipe_pairing_threshold``, ``mcfe/fh_multi_ipe_pairing_decentralized``, ``mcfe/kp_ab_pairing``, ``mcfe/kp_ab_pairing_per_client``, ``quadratic/quad``, ``quadratic/sgp``, ``quadratic/miqfe``
      - ``pairing_group_param = 'BLS12-381'`` only, with a ``FESecurityWarning``
    * - ring_lwe
      - ``sife/ring_lwe``, ``sife/fullysec_ring_lwe``, ``mife/ring_lwe``, ``mcfe/ring_lwe``, ``mcfe/ring_lwe_threshold``, ``mcfe/ring_lwe_decentralized``
@@ -152,7 +152,7 @@ Refused and constrained combinations
    * - ``sife/kp_ab_pairing``
      - ``eta * bound_x * bound_y`` above ``2^48``
      - ``FEValidationError``
-   * - ``mcfe/kp_ab_pairing``
+   * - ``mcfe/kp_ab_pairing`` and ``mcfe/kp_ab_pairing_per_client``
      - no ``n``; ``eta`` other than 1; ``n * bound_x * bound_y`` above ``2^48``
      - ``FEConfigError`` (no ``n``); ``FEValidationError`` (the others)
    * - the other pairing and quadratic schemes
@@ -2548,6 +2548,60 @@ Crypto objects also take:
 ~~~~~~~~~~~~~~~~~~~~~~
 
 :class:`~pyfe4ai.core.config.MCFEKPABPairingConfig`; kind ``pairing``.
+
+.. list-table::
+   :header-rows: 1
+
+   * - option
+     - meaning
+     - default
+     - ``standard``
+     - accepted
+   * - sec_param
+     - unused (the pairing group fixes the security)
+     - ``128``
+     - 
+     - 
+   * - n
+     - number of clients (slots)
+     - --
+     - 
+     - required: a positive int (``FEConfigError`` without it)
+   * - pairing_group_param
+     - pairing group
+     - ``'BLS12-381'``
+     - ``BLS12-381`` only
+     - an asymmetric pairing group (other than BLS12-381: needs charm-crypto)
+   * - eta
+     - inputs per client (the length of each inner product)
+     - ``1``
+     - 
+     - 1 (each client encrypts one scalar under a tag)
+   * - bound_x
+     - bound X on the plaintext entries
+     - ``16``
+     - 
+     - a positive int
+   * - bound_y
+     - bound Y on the weights
+     - ``16``
+     - 
+     - a positive int
+   * - max_rows
+     - rows of a policy's span program (the limit on the policy's size)
+     - ``64``
+     - 
+     - a positive int
+   * - max_attributes
+     - labels that a ciphertext may carry (the limit on the size of a set of attributes)
+     - ``64``
+     - 
+     - a positive int
+
+``mcfe/kp_ab_pairing_per_client``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+:class:`~pyfe4ai.core.config.MCFEKPABPairingPerClientConfig`; kind ``pairing``.
 
 .. list-table::
    :header-rows: 1

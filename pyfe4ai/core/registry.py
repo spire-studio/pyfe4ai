@@ -188,7 +188,7 @@ _WORDS = {
     "ddh": "DDH", "lwe": "LWE", "ring": "Ring", "fullysec": "FullySec", "ristretto255": "Ristretto255",
     "dynamic": "Dynamic", "fh": "FH", "ipe": "IPE", "multi": "Multi", "part": "Part", "pairing": "Pairing",
     "paillier": "Paillier", "damgard": "Damgard", "quad": "Quad", "sgp": "SGP", "miqfe": "MIQFE",
-    "cp": "CP", "kp": "KP", "ab": "AB",
+    "cp": "CP", "kp": "KP", "ab": "AB", "per": "Per", "client": "Client",
 }
 _MODIFIERS = ("threshold", "decentralized")
 
@@ -590,6 +590,12 @@ SCHEMES: tuple[Scheme, ...] = (
         note="random oracle (tags hash to G1); one attribute set per tag, shared by all clients; one ciphertext "
         "per client and tag; every client must encrypt, no all-or-nothing layer (Remark 10); ciphertexts not "
         "authenticated; a key covers every tag",
+        capabilities=(ACCESS_CONTROL,),
+    ),
+    _scheme(
+        "mcfe/kp_ab_pairing_per_client", PAIRING, EXPERIMENTAL, ADAPTED, "NPP22 Sec. 5.4",
+        note="proof only sketched (App. B.5); each client has its own attribute set; a fifth coordinate stops "
+        "keys of two policies being spliced; the msk also holds h*_{i,5}, which the paper's list omits",
         capabilities=(ACCESS_CONTROL,),
     ),
     # --- quadratic ----------------------------------------------------------

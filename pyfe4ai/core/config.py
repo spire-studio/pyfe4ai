@@ -1049,6 +1049,12 @@ class MCFEKPABPairingConfig(SchemeConfig):
                             default=64, allowed="a positive int")
 
 
+class MCFEKPABPairingPerClientConfig(MCFEKPABPairingConfig):
+    """Config of :class:`~pyfe4ai.schemes.mcfe.kp_ab_pairing_per_client.MCFEKPABPairingPerClientKeyGenerator`."""
+
+    SCHEME = ("mcfe", "kp_ab_pairing_per_client")
+
+
 # ---------------------------------------------------------------------------
 # quadratic FE
 
@@ -1228,7 +1234,8 @@ COMBINATIONS = (
     Combination("``sife/cp_ab_pairing``", "no ``universe``; ``eta * bound_x * bound_y`` above ``2^48``",
                 "``FEConfigError`` (no ``universe``); ``FEValidationError`` (the bound)"),
     Combination("``sife/kp_ab_pairing``", "``eta * bound_x * bound_y`` above ``2^48``", "``FEValidationError``"),
-    Combination("``mcfe/kp_ab_pairing``", "no ``n``; ``eta`` other than 1; ``n * bound_x * bound_y`` above ``2^48``",
+    Combination("``mcfe/kp_ab_pairing`` and ``mcfe/kp_ab_pairing_per_client``",
+                "no ``n``; ``eta`` other than 1; ``n * bound_x * bound_y`` above ``2^48``",
                 "``FEConfigError`` (no ``n``); ``FEValidationError`` (the others)"),
     Combination("the other pairing and quadratic schemes", "a discrete-log bound above ``2^48`` (e.g. "
                 "``eta bound_x bound_y``, ``n m bound^3``)", "``ValueError`` at decryption (quadratic "

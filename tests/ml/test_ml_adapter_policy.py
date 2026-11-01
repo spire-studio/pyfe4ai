@@ -16,7 +16,6 @@ import json
 import re
 import warnings
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -30,7 +29,6 @@ from pyfe4ai.core.exceptions import FEKeyError, FEValidationError, FEWarning
 from pyfe4ai.ml import EncryptedGradient, FESchemeWrapper, PreparedAggregation
 from pyfe4ai.ml import aggregate_gradients, encrypt_gradient, precompute_gradient, prepare_aggregation
 from pyfe4ai.ml import gradients as ml_gradients
-from pyfe4ai.ml.wrapper import _require_labelled_aggregation
 from pyfe4ai.policy import attribute_set_digest, canonical_encoding, parse
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, pairing_available
 
@@ -50,10 +48,14 @@ def _own_parameter_cache(tmp_path, monkeypatch):
     monkeypatch.setenv("PYFE4AI_CACHE_DIR", str(tmp_path))
 
 
-def make_wrapper(**overrides):
+def make_wrapper_of(variant, **overrides):
     config = {"n": 3, "lst_nid": NIDS, "bound_x": 1000, "bound_y": 10, "pairing_group_param": GROUP}
     config.update(overrides)
-    return FESchemeWrapper("mcfe", "kp_ab_pairing", config, precision=1)
+    return FESchemeWrapper("mcfe", variant, config, precision=1)
+
+
+def make_wrapper(**overrides):
+    return make_wrapper_of("kp_ab_pairing", **overrides)
 
 
 @pytest.fixture
@@ -228,12 +230,22 @@ def test_the_single_input_attribute_schemes_keep_their_refusal():
         encrypt_gradient(np.array([1.0]), wrapper, nid="nid_default", attributes=["a:1"])
 
 
-def test_the_per_client_variant_is_named_in_the_refusal():
-    """The per-client scheme of NPP22 Sec. 5.4 lets the clients of one tag hold different sets of attributes; the
-    adapter aggregates one set. (The scheme is not registered yet: a stand-in names it here.)"""
-    stand_in = SimpleNamespace(scheme_type="mcfe", variant="kp_ab_pairing_per_client")
-    with pytest.raises(NotImplementedError, match="kp_ab_pairing_per_client.*different sets of attributes"):
-        _require_labelled_aggregation(stand_in, "aggregate_gradients")
+def test_the_per_client_scheme_is_refused_by_every_entry_point():
+    """The per-client scheme of NPP22 Sec. 5.4 lets the clients of one tag hold different sets of attributes, and the
+    adapter aggregates one set. The scheme is registered with the capability ``access_control``, and the adapter
+    names it in its refusal at the first line of each entry point, before it encrypts or issues a key."""
+    wrapper = make_wrapper_of("kp_ab_pairing_per_client")
+    assert wrapper.access_control is True
+    grads = gradients()
+    match = "kp_ab_pairing_per_client.*different sets of attributes"
+    with pytest.raises(NotImplementedError, match=match):
+        encrypt_gradient(grads["c0"], wrapper, nid="c0", label=LABEL, attributes=ATTRIBUTES)
+    with pytest.raises(NotImplementedError, match=match):
+        precompute_gradient(SHAPE, wrapper, nid="c0", label=LABEL)
+    with pytest.raises(NotImplementedError, match=match):
+        prepare_aggregation(wrapper, WEIGHTS, shape=SHAPE, label=LABEL, policy=POLICY)
+    with pytest.raises(NotImplementedError, match=match):
+        aggregate_gradients({}, wrapper, WEIGHTS, label=LABEL, policy=POLICY)
 
 
 def test_precompute_has_no_offline_phase_here(wrapper):
@@ -761,3 +773,5 @@ def test_the_fl_coverage_benchmark_finds_the_scheme_usable():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", FEWarning)             # the options of its shared configuration that it ignores
         assert coverage.check_entry("mcfe", "kp_ab_pairing") == ("usable", "")
+        status, detail = coverage.check_entry("mcfe", "kp_ab_pairing_per_client")     # the adapter refuses it
+        assert status == "unusable" and "different sets of attributes" in detail
