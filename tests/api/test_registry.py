@@ -36,7 +36,7 @@ def _cache(tmp_path, monkeypatch):
 
 
 def test_entries_are_unique_and_complete():
-    assert len(SCHEMES) == len(set(IDS)) == 43
+    assert len(SCHEMES) == len(set(IDS)) == 44
     assert {s.family for s in SCHEMES} == set(registry.FAMILIES)
     for s in SCHEMES:
         assert s.kind in registry.KINDS

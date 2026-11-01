@@ -24,7 +24,7 @@ PyFE4AI is a research-oriented Python library of functional encryption (FE)
 for trustworthy AI. In functional encryption, a functional key reveals one
 chosen function of encrypted data and nothing else about it: here an inner
 product `<x, y>` with the key's weights `y`, a weighted sum over several
-clients' vectors, or a quadratic form. PyFE4AI implements 43 inner-product
+clients' vectors, or a quadratic form. PyFE4AI implements 44 inner-product
 and quadratic FE schemes built on published constructions -- single-input,
 multi-input, multi-client, decentralized, threshold and function-hiding,
 under DDH, DCR, LWE, Ring-LWE and pairings -- behind one entry point,
@@ -184,16 +184,16 @@ emits a `pyfe4ai.FESecurityWarning`.
   correct results but provides no meaningful privacy. Use it only for
   functionality or performance experiments.
 
-Currently 34 reviewed, 5 experimental and 4 unreviewed out of 43 registered
+Currently 34 reviewed, 5 experimental and 5 unreviewed out of 44 registered
 schemes; none is known to be insecure. Experimental: the threshold layers of
 `mife/lwe_threshold`, `mcfe/lwe_threshold`, `mcfe/ring_lwe_threshold` and
 `mcfe/fh_multi_ipe_pairing_threshold`, and the carry mask of
 `mcfe/ddh_decentralized`. Unreviewed: the DDH schemes over ristretto255
 (`*/ddh_ristretto255`, selected with `group="ristretto255"`) and
-`sife/cp_ab_pairing`, new code.
+`sife/cp_ab_pairing` and `sife/kp_ab_pairing`, new code.
 
 <details>
-<summary><strong>Status, construction and deviations of every scheme</strong> (43 rows, rendered by <code>pyfe4ai.core.status.markdown_table()</code>; a test keeps it in sync)</summary>
+<summary><strong>Status, construction and deviations of every scheme</strong> (44 rows, rendered by <code>pyfe4ai.core.status.markdown_table()</code>; a test keeps it in sync)</summary>
 
 | Scheme | Status | Fidelity | Construction | Notes |
 |---|---|---|---|---|
@@ -209,6 +209,7 @@ schemes; none is known to be insecure. Experimental: the threshold layers of
 | `sife/fh_ipe_pairing` | reviewed | adapted | KLMMRW18 Sec. 3 | vectors padded to (x, 1, 0) / (y, 0, 1), so eta = 1 and zero vectors are safe; keys in G1, ciphertexts in G2; generic bilinear group model; the encryption key is master-secret equivalent |
 | `sife/part_fh_ipe_pairing` | reviewed | adapted | Gay20 Fig. 8 (CPA, k = 1) | M is a random full-rank public matrix (subspace_dim < eta, default 1), published with V^T M in the clear; keys leak M^T y, which for small eta - subspace_dim often determines a bounded y; public Enc needs bounded t; Enc' is run by the key generator; no QANIZK |
 | `sife/cp_ab_pairing` | unreviewed | adapted | ACGU20 Sec. 3.1 Fig. 1 + App. B.2 (read-once MSP) | selective (SEL-SIM, one challenge ciphertext); ciphertexts malleable, not authenticated; a = (1, a2) for the paper's (a, 1); rows of attributes outside the policy are omitted; a repeated attribute takes copies (max_copies); the Decode of App. B.2 with its sign corrected |
+| `sife/kp_ab_pairing` | unreviewed | faithful | NPP22 Sec. 4 Fig. 1 (selective version) | selective; ciphertexts malleable, not authenticated; attributes hashed to Z_q; [y]_2 is computed by the decryptor, not sent in the key |
 | `mife/ddh` | reviewed | adapted | ACFGU18 Fig. 4 + ABDP15 (DDH) | ACFGU18 instantiates Fig. 4 with ALS16; here the selectively secure ABDP15 IPFE in every slot |
 | `mife/ddh_ristretto255` | unreviewed | unknown | ACFGU18 Fig. 4 + ABDP15 (DDH) in ristretto255 | ristretto255 (RFC 9496, about 126-bit security: Pollard rho in a group of order 2^252) instead of a 3072-bit Z_p^* subgroup; group arithmetic in Rust (curve25519-dalek) with the native extension, else in pure Python and not constant-time; new code, not yet reviewed |
 | `mife/lwe` | reviewed | adapted | ACFGU18 Fig. 4 + ABDP15 (LWE) | ACFGU18 instantiates Fig. 4 with ALS16; here the selectively secure ABDP15 IPFE (same two-step decryption; full-version proof, see sife/lwe), with parameters for dimension n * eta (footnote 14); the slot challenges of the ACFGU18 reduction differ by up to 4X, so standard reads the 128-bit table at sigma / (1 + 4X sqrt(eta)); slots share A, expanded from a public seed (SHAKE-128); pk noise exact (FACCT) under standard |

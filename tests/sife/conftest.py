@@ -49,6 +49,23 @@ def make_kp():
     return build
 
 
+#: What ``kp_fixed`` encrypts, the policy of its key and the weights of the key, and the attributes of its ciphertext.
+KP_X = [3, -1, 0, 7, 2]
+KP_Y = [1, 2, 3, -4, 5]
+KP_POLICY = "and(org:A, role:auditor)"
+KP_HELD = ["org:A", "org:B", "role:auditor"]        # org:B is no row of KP_POLICY
+
+
+@pytest.fixture
+def kp_fixed(make_kp):
+    """A key-policy key generator, a crypto object, a ciphertext of ``KP_X`` for ``KP_HELD``, a key for ``KP_POLICY``
+    and ``KP_Y`` that opens it, and their inner product."""
+    kg, crypto = make_kp()
+    ct = crypto.encrypt(KP_X, attributes=KP_HELD)
+    dk = kg.get_decryption_keys("s", credentials={"fusion_weight": KP_Y, "policy": KP_POLICY})
+    return kg, crypto, ct, dk, sum(a * b for a, b in zip(KP_X, KP_Y))
+
+
 @pytest.fixture
 def fixed(make):
     """A key generator, a crypto object, a ciphertext of ``[3, -1, 0, 7, 2]`` under

@@ -407,6 +407,12 @@ SCHEMES: tuple[Scheme, ...] = (
         "attribute takes copies (max_copies); the Decode of App. B.2 with its sign corrected",
         capabilities=(ACCESS_CONTROL,),
     ),
+    _scheme(
+        "sife/kp_ab_pairing", PAIRING, UNREVIEWED, FAITHFUL, "NPP22 Sec. 4 Fig. 1 (selective version)",
+        note="selective; ciphertexts malleable, not authenticated; attributes hashed to Z_q; "
+        "[y]_2 is computed by the decryptor, not sent in the key",
+        capabilities=(ACCESS_CONTROL,),
+    ),
     # --- multi-input --------------------------------------------------------
     _scheme(
         "mife/ddh", DL, REVIEWED, ADAPTED, "ACFGU18 Fig. 4 + ABDP15 (DDH)",

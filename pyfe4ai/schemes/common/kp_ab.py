@@ -90,6 +90,22 @@ def compile_policy(formula: Formula, order, max_rows: int) -> MSP:
     return compile_formula(formula, int(order), max_rows=max_rows)
 
 
+def check_policy_labels(labels: Sequence[str]) -> None:
+    """Refuse a policy with a label of more than :data:`MAX_LABEL_CHARS` characters (*labels*: the labels of its rows).
+
+    A ciphertext carries no such label (:func:`held_attributes`, :func:`read_attributes`), so no ciphertext could
+    satisfy its row; a key for the policy is refused when it is issued rather than found useless at the decryption.
+
+    Raises:
+        FEValidationError: Naming the first label that is too long and the limit.
+    """
+    for label in labels:
+        if len(label) > MAX_LABEL_CHARS:
+            raise FEValidationError(
+                "the policy has the label {} of {} characters, more than the limit MAX_LABEL_CHARS = {}: "
+                "no ciphertext can hold it".format(clip(repr(label)), len(label), MAX_LABEL_CHARS))
+
+
 def _check_label(label) -> None:
     """*label* is a valid label (:func:`~pyfe4ai.policy.attributes.validate_label`) of at most
     :data:`MAX_LABEL_CHARS` characters; the length is checked first, so that a huge string is not scanned."""

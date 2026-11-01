@@ -13,6 +13,7 @@ from pyfe4ai.schemes.sife.ddh_dynamic import SIFEDDHDynamic, SIFEDDHDynamicKeyGe
 from pyfe4ai.schemes.sife.fh_ipe_pairing import SIFEFHIPEPairing, SIFEFHIPEPairingKeyGenerator
 from pyfe4ai.schemes.sife.part_fh_ipe_pairing import SIFEPartFHIPEPairing, SIFEPartFHIPEPairingKeyGenerator
 from pyfe4ai.schemes.sife.cp_ab_pairing import SIFECPABPairing, SIFECPABPairingKeyGenerator
+from pyfe4ai.schemes.sife.kp_ab_pairing import SIFEKPABPairing, SIFEKPABPairingKeyGenerator
 
 __all__ = [
     "SIFEDDH",
@@ -39,4 +40,6 @@ __all__ = [
     "SIFEPartFHIPEPairingKeyGenerator",
     "SIFECPABPairing",
     "SIFECPABPairingKeyGenerator",
+    "SIFEKPABPairing",
+    "SIFEKPABPairingKeyGenerator",
 ]

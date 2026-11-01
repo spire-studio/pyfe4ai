@@ -22,10 +22,10 @@ compatibility).
   take their config as before.
 - **No warning for a parameter record that holds the configuration only.**
   `sife/fh_ipe_pairing`, `sife/part_fh_ipe_pairing`, `sife/cp_ab_pairing`,
-  `mife/fh_multi_ipe_pairing` and `quadratic/sgp` store no group element and no
-  seed, so replacing their record, for another configuration or because it
-  is unreadable, no longer draws a `FEWarning` (a message at INFO is logged);
-  every other scheme warns as before.
+  `sife/kp_ab_pairing`, `mife/fh_multi_ipe_pairing` and `quadratic/sgp`
+  store no group element and no seed, so replacing their record, for another
+  configuration or because it is unreadable, no longer draws a `FEWarning` (a
+  message at INFO is logged); every other scheme warns as before.
 
 ### Added
 
@@ -81,6 +81,27 @@ compatibility).
   a signature. The security is selective, for one challenge ciphertext, and
   ciphertexts are malleable and not authenticated. Like
   `sife/part_fh_ipe_pairing`, the scheme has no ndarray helpers.
+- **`sife/kp_ab_pairing`** (`SIFEKPABPairing`, `SIFEKPABPairingKeyGenerator`,
+  `SIFEKPABPairingConfig`; status *unreviewed*, it has had no cryptographic
+  review): key-policy attribute-based inner-product functional encryption
+  over pairings, after Nguyen, Phan and Pointcheval (ASIACRYPT 2022), Sec. 4
+  Fig. 1 without the boxed components (the selective version). The policy is
+  in the functional key (`credentials={"fusion_weight": y, "policy": ...}`)
+  and the attributes are in the ciphertext (`encrypt(x, attributes=...)`, any
+  collection of labels): a key opens `<x, y>` only if the labels satisfy its
+  policy. Options: `max_rows` (default 64, the rows of a policy's span
+  program) and `max_attributes` (64, the labels of a ciphertext); there is no
+  universe, a label has at most 1024 characters (`MAX_LABEL_CHARS`) and
+  the key generator refuses a policy with a longer one. A label is hashed to
+  `Z_q`, and `[y]_2` is computed by the decryptor and is not part of the key.
+  Decryption checks the version markers, the digest of the policy, every
+  length and every element of a ciphertext before it pairs anything, and
+  refuses attributes that do not satisfy the policy before any pairing.
+  Ciphertexts, keys and public parameters carry a digest of their public
+  parameters, which tells two setups apart and is not a signature. The paper
+  proves the version with the boxed components and says the selective one
+  follows with similar techniques; ciphertexts are malleable and not
+  authenticated. The scheme has no ndarray helpers.
 - **`pyfe4ai.primitives.pairing.dpvs`**: dual pairing vector spaces over an
   asymmetric pairing group (dual bases `B`, `B*` with `B B*^T = mu I`, vectors
   of group elements, scalar combinations and the coordinate-wise pairing),
@@ -90,7 +111,8 @@ compatibility).
   `pyfe4ai.policy`), and decryption succeeds only if the attributes satisfy
   the policy, within the security proof of the scheme;
   `pyfe4ai.list_schemes(capabilities="access_control")` lists
-  `sife/cp_ab_pairing`. There are now 43 registered schemes.
+  `sife/cp_ab_pairing` and `sife/kp_ab_pairing`. There are now 44 registered
+  schemes.
 
 ## [0.4.0] — 2026-10-26
 

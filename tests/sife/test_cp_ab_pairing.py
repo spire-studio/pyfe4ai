@@ -979,7 +979,7 @@ def test_a_huge_label_of_the_universe_is_clipped_in_the_message_about_k_attr(mak
 def test_create_and_list():
     kg, crypto_cls = pyfe4ai.create("sife/cp_ab_pairing", eta=2, universe=["a:1"], pairing_group_param=GROUP)
     assert (type(kg).__name__, crypto_cls.__name__) == ("SIFECPABPairingKeyGenerator", "SIFECPABPairing")
-    assert pyfe4ai.list_schemes("sife", capabilities="access_control") == ["sife/cp_ab_pairing"]
+    assert "sife/cp_ab_pairing" in pyfe4ai.list_schemes("sife", capabilities="access_control")
 
 
 def test_missing_universe():

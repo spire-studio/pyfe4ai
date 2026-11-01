@@ -33,8 +33,8 @@ def _config(key, **options):
     return of_scheme(key, dict(_CONFIG, **options))
 
 
-def test_registry_has_eleven_pairing_schemes():
-    assert len(PAIRING_SCHEMES) == 11
+def test_registry_has_twelve_pairing_schemes():
+    assert len(PAIRING_SCHEMES) == 12
 
 
 @pytest.mark.parametrize("name", ["SS512", "SS1024"])

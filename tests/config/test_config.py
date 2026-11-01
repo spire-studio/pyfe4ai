@@ -30,6 +30,7 @@ MINIMAL = {
     ("sife", "damgard"): {}, ("sife", "ring_lwe"): {}, ("sife", "fullysec_ring_lwe"): {},
     ("sife", "fullysec_lwe"): {}, ("sife", "ddh_dynamic"): {}, ("sife", "fh_ipe_pairing"): {},
     ("sife", "part_fh_ipe_pairing"): {}, ("sife", "cp_ab_pairing"): {"universe": ["org:A", "role:auditor"]},
+    ("sife", "kp_ab_pairing"): {},
     ("mife", "ddh"): {"n": 2}, ("mife", "ddh_ristretto255"): {"n": 2}, ("mife", "lwe"): {"n": 2},
     ("mife", "paillier"): {"n": 2}, ("mife", "damgard"): {"n": 2}, ("mife", "ring_lwe"): {"n": 2},
     ("mife", "fullysec_lwe"): {"n": 2}, ("mife", "fh_ipe_pairing"): {"n": 2},

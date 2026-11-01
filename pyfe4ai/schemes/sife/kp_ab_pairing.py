@@ -51,7 +51,8 @@ Deviations:
   rows of a policy takes a fresh ``pi`` for each, as ``List-Att(A)`` of the paper, which allows repetitions.
 * The policy is compiled to a span program by :func:`~pyfe4ai.policy.msp.compile_formula` (nested Shamir sharing),
   with at most ``max_rows`` rows, and a ciphertext carries at most ``max_attributes`` labels of at most
-  :data:`~pyfe4ai.schemes.common.kp_ab.MAX_LABEL_CHARS` characters each. A decryption reads a policy text of at most
+  :data:`~pyfe4ai.schemes.common.kp_ab.MAX_LABEL_CHARS` characters each; the key generator refuses a policy with a
+  longer label, which no ciphertext could satisfy. A decryption reads a policy text of at most
   ``max_rows * (MAX_LABEL_CHARS + 400)`` characters, which the key generator also keeps to. These are limits of this
   implementation, not of the paper: a ciphertext and a key come from outside, and no universe of labels bounds them.
 """
@@ -102,8 +103,9 @@ from pyfe4ai.schemes.common.ac_codec import read_record as _record
 from pyfe4ai.schemes.common.ac_codec import require_fields as _require_fields
 from pyfe4ai.schemes.common.ac_codec import serialize_vec as _serialize_vec
 from pyfe4ai.schemes.common.kp_ab import DEFAULT_MAX_ATTRIBUTES, F_DIM, H_DIM
-from pyfe4ai.schemes.common.kp_ab import attribute_pairs, attribute_vector, check_policy_length, compile_policy
-from pyfe4ai.schemes.common.kp_ab import held_attributes, key_row, policy_length_limit, read_attributes, read_policy
+from pyfe4ai.schemes.common.kp_ab import attribute_pairs, attribute_vector, check_policy_labels, check_policy_length
+from pyfe4ai.schemes.common.kp_ab import compile_policy, held_attributes, key_row, policy_length_limit
+from pyfe4ai.schemes.common.kp_ab import read_attributes, read_policy
 
 logger = logging.getLogger(__name__)
 
@@ -231,8 +233,9 @@ class SIFEKPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         Raises:
             FEKeyError: Before :meth:`setup`, or without credentials.
             FEValidationError: For credentials that are not a dict with both entries, weights out of bounds, a
-                policy that does not parse, has more than ``max_rows`` rows or is longer than a decryption reads
-                (``max_rows * (MAX_LABEL_CHARS + 400)`` characters).
+                policy that does not parse, has more than ``max_rows`` rows, has a label of more than
+                :data:`~pyfe4ai.schemes.common.kp_ab.MAX_LABEL_CHARS` characters (no ciphertext can hold it) or is
+                longer than a decryption reads (``max_rows * (MAX_LABEL_CHARS + 400)`` characters).
         """
         if self.msk is None:
             raise FEKeyError("no master key: run setup() before deriving a functional key")
@@ -249,6 +252,7 @@ class SIFEKPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         formula = read_policy(credentials["policy"])
         # compile first: it bounds the leaves of a formula built from shared sub-formulas
         msp = compile_policy(formula, self.order, self.max_rows)
+        check_policy_labels(msp.row_labels)                         # no ciphertext could satisfy such a row
         encoding = canonical_encoding(formula)
         check_policy_length(encoding, self.max_policy_length)       # no decryption would read it
 

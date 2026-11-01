@@ -788,6 +788,21 @@ class SIFECPABPairingConfig(SchemeConfig):
                       allowed="a positive int")
 
 
+class SIFEKPABPairingConfig(SchemeConfig):
+    """Config of :class:`~pyfe4ai.schemes.sife.kp_ab_pairing.SIFEKPABPairingKeyGenerator`."""
+
+    SCHEME = ("sife", "kp_ab_pairing")
+    sec_param = PairingIPEConfig.sec_param
+    pairing_group_param = PAIRING_GROUP_PARAM
+    eta = ETA(default=5)
+    bound_x = BOUND_X(default=16)
+    bound_y = BOUND_Y(default=16)
+    max_rows = Option("rows of a policy's span program (the limit on the policy's size)", default=64,
+                      allowed="a positive int")
+    max_attributes = Option("labels that a ciphertext may carry (the limit on the size of a set of attributes)",
+                            default=64, allowed="a positive int")
+
+
 # ---------------------------------------------------------------------------
 # MIFE
 
@@ -1196,6 +1211,7 @@ COMBINATIONS = (
                 "``bound < subspace_dim * coeff_bound`` (at a public encryption)", "``FEValidationError``"),
     Combination("``sife/cp_ab_pairing``", "no ``universe``; ``eta * bound_x * bound_y`` above ``2^48``",
                 "``FEConfigError`` (no ``universe``); ``FEValidationError`` (the bound)"),
+    Combination("``sife/kp_ab_pairing``", "``eta * bound_x * bound_y`` above ``2^48``", "``FEValidationError``"),
     Combination("the other pairing and quadratic schemes", "a discrete-log bound above ``2^48`` (e.g. "
                 "``eta bound_x bound_y``, ``n m bound^3``)", "``ValueError`` at decryption (quadratic "
                 "schemes: ``None`` and a warning)"),
