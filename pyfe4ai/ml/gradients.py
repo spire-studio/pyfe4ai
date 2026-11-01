@@ -351,7 +351,10 @@ def _check_ciphertext_arrays(wrapper: FESchemeWrapper, encrypted: dict, label, s
     (:meth:`~pyfe4ai.schemes.mcfe.kp_ab_pairing.MCFEKPABPairing.check_ndarray_ct`, through the decryptor of *sid*): the
     structure of the arrays, the bindings, fields, version markers, clients, tags, digests and lengths of every record,
     each element under its label, one set of attributes for all. Its ``FEValidationError`` (a ``ValueError``) is raised
-    as it is, naming the layer and the element, like the other refusals of the records here.
+    as it is, naming the layer and the element (or the client and the layer for a wrong shape), like the other refusals
+    of the records here. What it cannot see is in
+    :meth:`~pyfe4ai.schemes.mcfe.kp_ab_pairing.MCFEKPABPairing.check_ndarray_ct`: the ``label`` and the attributes are
+    claims of the clients.
 
     Raises:
         ValueError: Without a *label* (as :func:`_aggregation_key`).
@@ -607,7 +610,12 @@ def aggregate_gradients(
                 more than 1000 elements or a discrete-logarithm bound
                 ``n * bound_x * bound_y`` above ``2**26``. The scheme needs
                 the ciphertexts of every enrolled client, so *allow_partial*
-                and a missing client are refused (``ValueError``).
+                and a missing client are refused (``ValueError``). The
+                ``label`` and the attributes of a ciphertext are claims of its
+                client that the checks cannot verify: a replay of an earlier
+                round that all clients relabelled alike is aggregated,
+                silently, to the sum of the round it was made in, so
+                authenticate the ciphertexts where that matters.
 
         Raises:
             ValueError: If the policy above is violated, SIFE is given more

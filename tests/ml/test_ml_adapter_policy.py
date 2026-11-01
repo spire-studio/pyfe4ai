@@ -451,6 +451,46 @@ def test_what_the_scheme_cannot_see_before_a_decode_is_found_after_the_key(wrapp
     assert len(calls) == 1 and LABEL in wrapper._aggregated
 
 
+def relabel(encrypted, source):
+    """The gradients *encrypted*, with the ``label`` field of every element of every client copied from the same
+    element of *source* (the gradients of the same shape under another label)."""
+    relabelled = copy.deepcopy(encrypted)
+    for nid, enc in relabelled.items():
+        for layer, array in enumerate(enc.ciphertexts):
+            for index in np.ndindex(array.shape):
+                array[index] = dict(array[index], label=source[nid].ciphertexts[layer][index]["label"])
+    return relabelled
+
+
+def test_a_relabelled_replay_by_all_clients_decrypts_to_the_sum_of_the_round_the_ciphertexts_were_made_in(
+        wrapper, monkeypatch):
+    """A stated limit, not a defence. The ``label`` of a ciphertext is a claim of its client: the points it was hashed
+    to are inside ``t`` and ``c_ipfe``, and only the master key could check them. The ciphertexts of round-0 with the
+    label fields of round-1 pass every check of the scheme and are aggregated under round-1 (one key is issued) to the
+    sum of round-0, silently. A caller who must know that ciphertexts belong to a round authenticates them."""
+    old, new = gradients(seed=10), gradients(seed=11)
+    replayed = encrypt_all(wrapper, old, label="round-0")
+    current = encrypt_all(wrapper, new)
+    calls = spy_on_the_key(wrapper, monkeypatch)
+    total = aggregate_gradients(relabel(replayed, current), wrapper, WEIGHTS, label=LABEL, policy=POLICY)
+    np.testing.assert_allclose(total, weighted(old), atol=1e-9)              # the sum of round-0 ...
+    assert not np.allclose(total, weighted(new), atol=1e-3)                  # ... under the label of round-1
+    assert len(calls) == 1 and LABEL in wrapper._aggregated
+
+
+def test_a_relabelled_replay_by_one_client_is_refused(wrapper, monkeypatch):
+    """The claims are caught where the clients disagree: one client that relabels alone differs from the others."""
+    old = gradients(seed=10)
+    replayed = encrypt_all(wrapper, old, label="round-0")
+    current = encrypt_all(wrapper, gradients(seed=11))
+    relabelled = relabel(replayed, current)
+    relabelled["c0"] = replayed["c0"]                                       # c0 keeps its label of round-0
+    calls = spy_on_the_key(wrapper, monkeypatch)
+    with pytest.raises(FEValidationError, match="c0"):
+        aggregate_gradients(relabelled, wrapper, WEIGHTS, label=LABEL, policy=POLICY)
+    assert calls == [] and LABEL not in wrapper._aggregated
+
+
 # ---------------------------------------------------------------------------
 # a prepared key keeps its policy
 

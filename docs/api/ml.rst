@@ -71,19 +71,31 @@ that :func:`~pyfe4ai.ml.aggregate_gradients` (or
 
 The aggregation is refused before a key is issued and before any pairing is
 computed when the scheme's own checks of the ciphertexts refuse them
-(``ValueError`` naming the layer and the element: records that are malformed
-or of other parameters, ciphertexts of another label, arrays of other shapes,
-clients that encrypted for different sets of attributes), when the set of
-attributes does not satisfy the policy
+(``ValueError``, naming the layer and the element, or the client and the layer
+for the shape of an array: records that are malformed or of other parameters,
+ciphertexts that claim another label, arrays of other shapes or with other
+numbers of layers, clients that encrypted for different sets of attributes),
+when the set of attributes does not satisfy the policy
 (:class:`~pyfe4ai.core.exceptions.FEKeyError`), when a client is missing, and
 for ``allow_partial=True`` (``ValueError``: the shares of the clients' keys add
 up to 1, so a result opens only with the ciphertexts of every enrolled client,
-also those of weight 0). What only a decoding or a discrete logarithm shows
-is found after the key is issued: an item that has the type tag of a group
-element and is none, and a ciphertext whose label or attributes are not those
-it was made with. The label is then tied to the weights of that call, and a
-second try under it needs the same weights. A
-:class:`~pyfe4ai.ml.PreparedAggregation` keeps the canonical encoding of its
+also those of weight 0).
+
+What the checks cannot see. The ``label`` and the attributes of a ciphertext are
+claims of its client: the points they were hashed to are inside ``t`` and
+``c_ipfe``, and only the master key could check them. A client whose points
+differ from its claim gives no value (a ``ValueError`` at the discrete
+logarithm), and clients that disagree on the label are refused; but if all
+clients copy the label of a round onto ciphertexts of an earlier round, that
+relabelled replay is aggregated, silently, to the sum of the round the
+ciphertexts were made in. Attributes that all clients change alike give
+``FEKeyError`` or no value, never a wrong one. A caller who must know that
+ciphertexts belong to a round has to authenticate them. An item that has the
+type tag of a group element and is none is found when it is decoded. These
+are found, if at all, after the key is issued; the label is then tied to the
+weights of that call, and a second try under it needs the same weights.
+
+A :class:`~pyfe4ai.ml.PreparedAggregation` keeps the canonical encoding of its
 policy in ``policy``; the attributes are judged against it when the round is
 aggregated, and a policy that differs from it is refused. Each client
 encrypts once per label, as with the other MCFE schemes. The per-client

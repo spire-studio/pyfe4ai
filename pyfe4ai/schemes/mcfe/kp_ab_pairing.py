@@ -1023,10 +1023,16 @@ class MCFEKPABPairing(IPFEAbsCrypto):
         are those of :meth:`decrypt_lst_ndarray_ct`, which makes the same checks (with those of its key) before it
         decodes anything.
 
-        What this does not see: an item with the right type tag that is no element of the group is found when it is
-        decoded, and a ciphertext whose ``label`` or attributes are not those it was made with (the points are inside
-        ``t`` and ``c_ipfe``) gives no value at the discrete log. A caller that hands the arrays to a service that
-        issues keys calls this first, so that a key is not issued for arrays that a decryption would refuse.
+        What this does not see. An item with the right type tag that is no element of the group is found when it is
+        decoded. The ``label`` and the attributes of a ciphertext are claims of its client: the points ``H(tag, S)`` are
+        inside ``t`` and ``c_ipfe``, and only the master key could check them. Clients that disagree on the label or
+        the digest are refused, and one client whose points differ from its claim gives no value at the discrete log
+        (a ``ValueError``). But if all clients copy the label of a round onto ciphertexts of an earlier round, that
+        relabelled replay passes this check and decrypts, silently, to the sum of the round the ciphertexts were made
+        in: the key covers every tag. Attributes that all clients change alike are different: they give a
+        ``FEKeyError`` or no value, never a wrong one. A caller who must know that ciphertexts belong to a round has to
+        authenticate them. A caller that hands the arrays to a service that issues keys calls this first, so that a
+        key is not issued for arrays that a decryption would refuse.
 
         Args:
             dict_ndarray_ct: The ciphertext arrays by client id, as for :meth:`decrypt_lst_ndarray_ct`.
@@ -1034,7 +1040,8 @@ class MCFEKPABPairing(IPFEAbsCrypto):
 
         Raises:
             FEValidationError: For a label that is not a ``str``, and for the arrays that :meth:`decrypt_lst_ndarray_ct`
-                refuses before it decodes a point, as it does; the message names the layer and the element.
+                refuses before it decodes a point, as it does; the message names the layer and the element, or the
+                client and the layer where the shape of an array is wrong.
         """
         if not isinstance(label, str):
             raise FEValidationError("need a string label for check_ndarray_ct, got {}".format(clip(repr(label))))
@@ -1051,7 +1058,9 @@ class MCFEKPABPairing(IPFEAbsCrypto):
         points are prepared once, and the elements are then decoded, paired (one product of pairings each, over the
         prepared points) and solved ``_BATCH_ELEMENTS`` (256) at a time. A string with the right tag that is no element
         of the group is found when the slice that holds it is decoded, after the slices before it were paired; the call
-        then raises and returns nothing, as for any other malformed input.
+        then raises and returns nothing, as for any other malformed input. The type tags are checked with the lengths,
+        before the fusion weight and the satisfaction of the policy: an input both unsatisfied and wrongly tagged gets
+        a ``FEValidationError`` here and a ``FEKeyError`` from :meth:`decrypt`.
 
         Memory: the ciphertexts are the caller's. The call adds about 4 KB for each of them (a record view, a name and
         the lists of the checks, measured at ``n = 10``, ``|S| = 3``) and the prepared points of the key, up to about
@@ -1073,7 +1082,7 @@ class MCFEKPABPairing(IPFEAbsCrypto):
             FEKeyError: Without a key, or if the attributes of the ciphertexts do not satisfy the policy of the key.
             FEValidationError: As :meth:`decrypt`, and for a label that is not a ``str``, arrays that do not have the
                 same layers and shapes for all clients, and elements that are for different sets of attributes. The
-                message names the layer and the element.
+                message names the layer and the element, or the client and the layer for a wrong shape.
             FESchemeError: For the first element whose discrete log was not found (the key and the ciphertexts do not
                 fit, whatever their fields say).
         """

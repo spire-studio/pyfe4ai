@@ -55,20 +55,27 @@ base64).
     ...     policy="and(purpose:research, region:EU)")
 
     ``aggregate_gradients`` refuses, before a key is issued and before any
-    pairing, ciphertexts that the scheme's own checks refuse
-    (``ValueError``: malformed records, records of other parameters or of
-    another label, arrays of different shapes, clients that did not all
+    pairing, ciphertexts that the scheme's own checks refuse (``ValueError``,
+    naming the layer and the element, or the client and the layer for the
+    shape of an array: malformed records, records of other parameters or that
+    claim another label, arrays of different shapes, clients that did not all
     encrypt for one set of attributes), a set of attributes that does not
     satisfy the policy (:class:`~pyfe4ai.core.exceptions.FEKeyError`), a
     missing client and ``allow_partial=True`` (``ValueError``: the shares of
     the clients' keys add up to 1, so every enrolled client must take part).
-    It warns (:class:`~pyfe4ai.core.exceptions.FEWarning`) of a job of more
-    than 1000 elements, with the time it takes, and of a discrete-logarithm
-    bound ``n * bound_x * bound_y`` above ``2**26``. ``prepare_aggregation``
-    sees no ciphertexts: it takes the policy, refuses ``allow_partial=True``
-    and weights that leave a client out, and the attributes are judged
-    against the policy when the round is aggregated. Other schemes take
-    neither ``attributes`` nor ``policy``.
+    The ``label`` and the attributes of a ciphertext are claims of its client
+    that the checks cannot verify: clients that disagree are refused, but a
+    relabelled replay by all clients decrypts, silently, to the sum of the
+    round the ciphertexts were made in; authenticate ciphertexts where that
+    matters (:meth:`~pyfe4ai.schemes.mcfe.kp_ab_pairing.MCFEKPABPairing.check_ndarray_ct`
+    says exactly what is checked). It warns
+    (:class:`~pyfe4ai.core.exceptions.FEWarning`) of a job of more than 1000
+    elements, with the time it takes, and of a discrete-logarithm bound
+    ``n * bound_x * bound_y`` above ``2**26``. ``prepare_aggregation`` sees no
+    ciphertexts: it takes the policy, refuses ``allow_partial=True`` and
+    weights that leave a client out, and the attributes are judged against
+    the policy when the round is aggregated. Other schemes take neither
+    ``attributes`` nor ``policy``.
 
 **Single trust domain.** A :class:`FESchemeWrapper` runs the key generator
 itself, so it holds the master secret key and plays every party (clients,
