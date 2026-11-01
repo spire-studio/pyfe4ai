@@ -11,14 +11,18 @@
 //! powers (`bls_msm`, `bls_pow_many`) use the methods of `msm.rs`. Batches
 //! (`bls_deserialize_many`, `bls_serialize_many`, `bls_msm_many`) and
 //! `bls_multi_pair` take a number of threads, and give the same result on any
-//! number of them. Not constant-time in general.
+//! number of them. `bls_prepare_g2` stores the lines of fixed G2 points, and
+//! `bls_multi_pair_prepared` takes one product of pairings per row of G1 points
+//! over those lines, with the same results as `bls_multi_pair`. Not
+//! constant-time in general.
 
 use crate::dlog::{self, TableCache};
 use crate::msm;
-use ark_bls12_381::{Bls12_381, Fq12, Fr, G1Projective, G2Projective};
+use ark_bls12_381::{Bls12_381, Config, Fq12, Fq12Config, Fq2, Fr, G1Affine, G1Projective, G2Affine, G2Projective};
+use ark_ec::bls12::{Bls12Config, G2Prepared};
 use ark_ec::pairing::{MillerLoopOutput, Pairing, PairingOutput};
-use ark_ec::{CurveGroup, PrimeGroup};
-use ark_ff::{BigInteger, Field, One, PrimeField, Zero};
+use ark_ec::{AffineRepr, CurveGroup, PrimeGroup};
+use ark_ff::{BigInteger, BitIteratorBE, CyclotomicMultSubgroup, Field, Fp12Config, One, PrimeField, Zero};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
 use pyfe4ai_core::{osrand, parallel_for};
 use pyo3::basic::CompareOp;
@@ -635,6 +639,169 @@ fn bls_multi_pair(py: Python<'_>, a: Vec<Bound<'_, Elem>>, b: Vec<Bound<'_, Elem
     Ok(elem(Val::Gt(py.detach(|| multi_pairing(&ps, &qs, threads)))))
 }
 
+// ------------------------------------------- products of pairings over prepared G2 points
+
+/// f *= 1 + c1 v + c4 v w: ark-ff's `mul_by_014` with c0 = 1.
+#[inline]
+fn mul_by_unit_line(f: &mut Fq12, c1: &Fq2, c4: &Fq2) {
+    let mut aa = f.c0;
+    let mut t = f.c0;
+    t.mul_by_1(c1);
+    aa += &t;
+    let mut bb = f.c1;
+    bb.mul_by_1(c4);
+    let mut o = *c1;
+    o += c4;
+    f.c1 += &f.c0;
+    let mut t = f.c1;
+    t.mul_by_1(&o);
+    f.c1 += &t;
+    f.c1 -= &aa;
+    f.c1 -= &bb;
+    f.c0 = bb;
+    Fq12Config::mul_fp6_by_nonresidue_in_place(&mut f.c0);
+    f.c0 += &aa;
+}
+
+/// The lines of the Miller loop of a G2 point, in the order of the loop.
+enum Lines {
+    /// The identity of G2 has none, and contributes nothing to a product.
+    Identity,
+    /// (c0, c1, c2) of every line, as in arkworks' `G2Prepared`.
+    Full(Vec<(Fq2, Fq2, Fq2)>),
+    /// (c1 / c0, c2 / c0): each line differs from the full one by a constant of Fq2, which the final exponentiation
+    /// removes.
+    Unit(Vec<(Fq2, Fq2)>),
+}
+
+impl Lines {
+    /// The lines of q: `Unit` if `normalise` is set and no line has c0 = 0, a point with such a line stays `Full`.
+    fn of(q: G2Affine, normalise: bool) -> Lines {
+        let prepared = G2Prepared::<Config>::from(q);
+        if prepared.infinity {
+            return Lines::Identity;
+        }
+        let lines = prepared.ell_coeffs;
+        if !normalise || lines.iter().any(|c| c.0.is_zero()) {
+            return Lines::Full(lines);
+        }
+        let mut inverses: Vec<Fq2> = lines.iter().map(|c| c.0).collect();
+        ark_ff::batch_inversion(&mut inverses);
+        Lines::Unit(lines.iter().zip(&inverses).map(|(c, i)| (c.1 * i, c.2 * i)).collect())
+    }
+
+    /// f *= line number `at`, evaluated at p, which is not the identity.
+    #[inline]
+    fn multiply(&self, f: &mut Fq12, at: usize, p: &G1Affine) {
+        match self {
+            Lines::Identity => {}
+            Lines::Full(lines) => {
+                let (c0, mut c1, mut c2) = lines[at];
+                c1.mul_assign_by_fp(&p.x);
+                c2.mul_assign_by_fp(&p.y);
+                f.mul_by_014(&c0, &c1, &c2);
+            }
+            Lines::Unit(lines) => {
+                let (mut c1, mut c2) = lines[at];
+                c1.mul_assign_by_fp(&p.x);
+                c2.mul_assign_by_fp(&p.y);
+                mul_by_unit_line(f, &c1, &c2);
+            }
+        }
+    }
+}
+
+/// prod_i e(ps[i], q_i) for the G2 points q_i of `lines`: one Miller loop over the pairs and one final exponentiation.
+/// The identity of G1 is left out, as in arkworks' `multi_miller_loop`: its coordinates (0, 0) are not a curve point.
+fn prepared_product(ps: &[G1Affine], lines: &[Lines]) -> Gt {
+    let pairs: Vec<(&G1Affine, &Lines)> = ps.iter().zip(lines).filter(|(p, _)| !p.is_zero()).collect();
+    let mut f = Fq12::one();
+    let mut at = 0;
+    let mut multiply = |f: &mut Fq12| {
+        for (p, q) in &pairs {
+            q.multiply(f, at, p);
+        }
+        at += 1;
+    };
+    for bit in BitIteratorBE::without_leading_zeros(<Config as Bls12Config>::X).skip(1) {
+        f.square_in_place();
+        multiply(&mut f);
+        if bit {
+            multiply(&mut f);
+        }
+    }
+    f.cyclotomic_inverse_in_place(); // x is negative
+    Bls12_381::final_exponentiation(MillerLoopOutput(f)).expect("the Miller loop of curve points is nonzero")
+}
+
+/// The lines of the Miller loops of some G2 points, in their order. Public values, but they derive from a functional
+/// key: there is no `__repr__` to print them.
+#[pyclass(frozen, module = "pyfe4ai._rust_native", name = "PreparedG2")]
+pub struct PreparedG2 {
+    lines: Vec<Lines>,
+}
+
+/// The lines of `points` (at least one, all in G2) for `bls_multi_pair_prepared`. `normalise` has one flag per point,
+/// whether to store its lines scaled to c0 = 1; without it, all of them are.
+#[pyfunction]
+#[pyo3(signature = (points, threads=1, normalise=None))]
+fn bls_prepare_g2(py: Python<'_>, points: Vec<Bound<'_, Elem>>, threads: usize, normalise: Option<Vec<bool>>)
+    -> PyResult<PreparedG2> {
+    if points.is_empty() {
+        return Err(PyValueError::new_err("prepare_g2 needs at least one point"));
+    }
+    let normalise = normalise.unwrap_or_else(|| vec![true; points.len()]);
+    if normalise.len() != points.len() {
+        return Err(PyValueError::new_err(format!(
+            "prepare_g2: normalise has {} flags for {} points", normalise.len(), points.len()
+        )));
+    }
+    let mut qs = Vec::with_capacity(points.len());
+    for (at, point) in points.iter().enumerate() {
+        match point.get().v {
+            Val::G2(q) => qs.push(q),
+            _ => return Err(PyValueError::new_err(format!("prepare_g2: position {at}: expected a G2 element"))),
+        }
+    }
+    let lines = py.detach(|| {
+        let qs = G2Projective::normalize_batch(&qs);
+        map_parallel(qs.len(), threads, |i| Lines::of(qs[i], normalise[i]))
+    });
+    Ok(PreparedG2 { lines })
+}
+
+/// [prod_i e(row[i], q_i) for row in rows] for the G2 points q_i of `prepared`: one G1 element per point in every row,
+/// one final exponentiation per row. The rows are normalised in one batch, and take up to `threads` threads however
+/// few they are: a row costs at least a final exponentiation, far more than starting a thread.
+#[pyfunction]
+#[pyo3(signature = (rows, prepared, threads=1))]
+fn bls_multi_pair_prepared(py: Python<'_>, rows: Vec<Vec<Bound<'_, Elem>>>, prepared: &Bound<'_, PreparedG2>,
+                           threads: usize) -> PyResult<Vec<Elem>> {
+    let lines = prepared.get().lines.as_slice();
+    let mut ps = Vec::with_capacity(rows.len() * lines.len());
+    for (r, row) in rows.iter().enumerate() {
+        if row.len() != lines.len() {
+            return Err(PyValueError::new_err(format!(
+                "multi_pair_prepared: row {r} has {} elements, expected {}", row.len(), lines.len()
+            )));
+        }
+        for (at, x) in row.iter().enumerate() {
+            match x.get().v {
+                Val::G1(p) => ps.push(p),
+                _ => return Err(PyValueError::new_err(format!(
+                    "multi_pair_prepared: row {r}, position {at}: expected a G1 element"
+                ))),
+            }
+        }
+    }
+    let count = rows.len();
+    let out = py.detach(|| {
+        let ps = G1Projective::normalize_batch(&ps);
+        map_threads(count, threads, |r| prepared_product(&ps[r * lines.len()..(r + 1) * lines.len()], lines))
+    });
+    Ok(out.into_iter().map(|t| elem(Val::Gt(t))).collect())
+}
+
 // ----------------------------------------------------------- dlog in GT
 
 struct GtTable {
@@ -768,13 +935,15 @@ fn bls_hash(t: u8, msg: &[u8], dst: &[u8]) -> PyResult<Elem> {
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Elem>()?;
+    m.add_class::<PreparedG2>()?;
     for f in [
         wrap_pyfunction!(bls_random, m)?, wrap_pyfunction!(bls_init, m)?, wrap_pyfunction!(bls_generator, m)?,
         wrap_pyfunction!(bls_order, m)?, wrap_pyfunction!(bls_deserialize, m)?, wrap_pyfunction!(bls_pair, m)?,
         wrap_pyfunction!(bls_multi_pair, m)?, wrap_pyfunction!(bls_gt_dlog, m)?, wrap_pyfunction!(bls_hash, m)?,
         wrap_pyfunction!(bls_deserialize_many, m)?, wrap_pyfunction!(bls_serialize_many, m)?,
         wrap_pyfunction!(bls_msm, m)?, wrap_pyfunction!(bls_msm_many, m)?, wrap_pyfunction!(bls_pow_many, m)?,
-        wrap_pyfunction!(bls_gt_dlog_cache, m)?,
+        wrap_pyfunction!(bls_gt_dlog_cache, m)?, wrap_pyfunction!(bls_prepare_g2, m)?,
+        wrap_pyfunction!(bls_multi_pair_prepared, m)?,
     ] {
         m.add_function(f)?;
     }

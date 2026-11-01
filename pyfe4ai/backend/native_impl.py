@@ -466,10 +466,12 @@ class Bls12381Kernels:
     ``random(kind)``, ``init(kind[, value])``, ``generator(kind)``,
     ``deserialize(kind, raw)``, ``deserialize_many(items)``,
     ``serialize_many(elements)``, ``hash(kind, msg, dst)``, ``pair``,
-    ``multi_pair``, ``msm``, ``msm_many(bases, scalars)``, ``pow_many``,
-    ``gt_dlog`` and the element type ``Element``. The batches and
-    ``multi_pair`` use :func:`~pyfe4ai.backend.get_threads` threads. Like the
-    extension module, not picklable."""
+    ``multi_pair``, ``prepare_g2(points)``,
+    ``multi_pair_prepared(rows, prepared)``, ``msm``,
+    ``msm_many(bases, scalars)``, ``pow_many``, ``gt_dlog`` and the element
+    type ``Element``. The batches, ``multi_pair``, ``prepare_g2`` and
+    ``multi_pair_prepared`` use :func:`~pyfe4ai.backend.get_threads` threads.
+    Like the extension module, not picklable."""
 
     def __init__(self, ext) -> None:
         self._ext = ext  # holds the module: a group holding these is not picklable, as before
@@ -496,6 +498,12 @@ class Bls12381Kernels:
 
     def multi_pair(self, lhs, rhs):
         return self._ext.bls_multi_pair(lhs, rhs, _b._threads)
+
+    def prepare_g2(self, points):
+        return self._ext.bls_prepare_g2(points, _b._threads)
+
+    def multi_pair_prepared(self, rows, prepared) -> list:
+        return self._ext.bls_multi_pair_prepared(rows, prepared, _b._threads)
 
 
 _bls_kernels = None

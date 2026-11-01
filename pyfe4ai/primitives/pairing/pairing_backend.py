@@ -5,9 +5,9 @@
 default, and charm-crypto's group of that name otherwise (MNT224, BN254, ...).
 charm is optional when the Rust extension is built; it is the fallback for
 BLS12-381 only in the sense that every other curve still comes from charm.
-``pair``, ``multi_pair``, ``multiexp`` and ``pow_many`` dispatch on their
-arguments, and ``ZR``, ``G1``, ``G2``, ``GT`` are charm's type codes, which
-both backends share.
+``pair``, ``multi_pair``, ``multi_pair_prepared``, ``multiexp`` and
+``pow_many`` dispatch on their arguments, and ``ZR``, ``G1``, ``G2``, ``GT``
+are charm's type codes, which both backends share.
 """
 
 from pyfe4ai.primitives.pairing import bls12_381 as _bls
@@ -108,6 +108,37 @@ def multi_pair(lhs, rhs):
         e = pair(a, b)
         out = e if out is None else out * e
     return out
+
+
+def prepare_g2(points):
+    """The G2 *points* in the form :func:`multi_pair_prepared` takes: their stored
+    lines on BLS12-381, the list of the points on charm groups.
+
+    Raises:
+        ValueError: Without points, or, on BLS12-381, for an element that is
+            not in G2.
+    """
+    points = list(points)
+    if not points:
+        raise ValueError("prepare_g2 needs at least one point")
+    if _bls.is_element(points[0]):
+        return _bls.prepare_g2(points)
+    return points
+
+
+def multi_pair_prepared(rows, prepared) -> list:
+    """``[multi_pair(row, points) for row in rows]`` for the points given to
+    :func:`prepare_g2`, one final exponentiation per row. BLS12-381 keeps the
+    lines of the points from row to row, and takes the rows on
+    :func:`~pyfe4ai.backend.get_threads` threads.
+
+    Raises:
+        ValueError: For a row without one G1 element per point.
+    """
+    rows = [list(row) for row in rows]
+    if isinstance(prepared, list):
+        return [multi_pair(row, prepared) for row in rows]
+    return _bls.multi_pair_prepared(rows, prepared)
 
 
 def multiexp(bases, exps, group=None):

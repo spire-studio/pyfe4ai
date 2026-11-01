@@ -14,7 +14,9 @@ with the domain separation tags of :data:`HASH_DST` unless a ``dst`` is
 given), ``ismember``, ``groupType``; elements
 written multiplicatively (``*``, ``/``, ``**``), ZR elements with ``+ - * /
 **`` and ``int()``. Products of pairings (:func:`multi_pair`) take one final
-exponentiation; :func:`gt_dlog` is a bounded discrete logarithm in GT
+exponentiation, and :func:`multi_pair_prepared` takes one such product per row
+over the lines :func:`prepare_g2` stores for fixed G2 points;
+:func:`gt_dlog` is a bounded discrete logarithm in GT
 (bounds up to :data:`MAX_DLOG_BOUND`) with a baby-step table cached per base
 and bound (a few tables at most, least recently used evicted), or built for
 one call for a base used once. Products of powers
@@ -167,6 +169,29 @@ def multi_pair(lhs: list, rhs: list):
     """prod_i e(lhs[i], rhs[i]) with one final exponentiation; the Miller loops
     take :func:`~pyfe4ai.backend.get_threads` threads from 16 pairs on."""
     return _require().multi_pair(list(lhs), list(rhs))
+
+
+def prepare_g2(points: list):
+    """The lines of the Miller loops of the G2 *points*, for
+    :func:`multi_pair_prepared`, on :func:`~pyfe4ai.backend.get_threads` threads
+    from 16 points on. Opaque, with no text form: the points may come from a
+    functional key.
+
+    Raises:
+        ValueError: Without points, or for an element that is not in G2.
+    """
+    return _require().prepare_g2(list(points))
+
+
+def multi_pair_prepared(rows: list, prepared) -> list:
+    """``[multi_pair(row, points) for row in rows]`` for the points of
+    *prepared* (:func:`prepare_g2`), with the rows on
+    :func:`~pyfe4ai.backend.get_threads` threads.
+
+    Raises:
+        ValueError: For a row without one G1 element per point.
+    """
+    return _require().multi_pair_prepared([list(row) for row in rows], prepared)
 
 
 def msm(bases: list, scalars: list):

@@ -6,7 +6,14 @@ import pytest
 
 from pyfe4ai import backend as native_backend
 from pyfe4ai.primitives.pairing import bls12_381 as B
-from pyfe4ai.primitives.pairing.pairing_backend import hash_to_g1
+from pyfe4ai.primitives.pairing.pairing_backend import (
+    PairingGroup,
+    hash_to_g1,
+    multi_pair,
+    multi_pair_prepared,
+    pairing_available,
+    prepare_g2,
+)
 
 pytestmark = pytest.mark.skipif(not B.available(), reason="Rust extension not built")
 
@@ -485,3 +492,146 @@ def test_g2_powers_match_on_random_exponents(group):
     for _ in range(200):
         g, k = group.random(B.G2), int(group.random(B.ZR))
         assert g ** k == B.msm([g, group.generator(B.G2)], [k, 0])
+
+
+# ---------------------------------------------- products of pairings over prepared G2 points
+
+@pytest.fixture
+def restored_threads():
+    count = native_backend.get_threads()
+    yield
+    native_backend.set_threads(count)
+
+
+def _g1_rows(group, rows, k):
+    return [[group.random(B.G1) for _ in range(k)] for _ in range(rows)]
+
+
+def _g2_points(group, k):
+    return [group.random(B.G2) for _ in range(k)]
+
+
+@pytest.mark.parametrize("k", [1, 15, 16, 17, 281])
+@pytest.mark.parametrize("count", [1, 2, 8])
+def test_prepared_matches_multi_pair(group, restored_threads, k, count):
+    g2s, rows = _g2_points(group, k), _g1_rows(group, 3, k)
+    native_backend.set_threads(count)
+    got = multi_pair_prepared(rows, prepare_g2(g2s))
+    assert got == [multi_pair(row, g2s) for row in rows]
+
+
+@pytest.mark.parametrize("count", [1, 2, 8])
+def test_prepared_keeps_the_order_of_many_rows(group, restored_threads, count):
+    g2s, rows = _g2_points(group, 3), _g1_rows(group, 40, 3)
+    native_backend.set_threads(count)
+    assert multi_pair_prepared(rows, prepare_g2(g2s)) == [multi_pair(row, g2s) for row in rows]
+
+
+def test_prepared_serves_any_number_of_calls(group):
+    g2s = _g2_points(group, 5)
+    prepared = prepare_g2(g2s)
+    for _ in range(2):
+        rows = _g1_rows(group, 2, 5)
+        assert multi_pair_prepared(rows, prepared) == [multi_pair(row, g2s) for row in rows]
+
+
+def test_prepared_takes_points_that_were_decoded_and_points_that_were_computed(group):
+    # a decoded point has z = 1, a computed one does not
+    g2s = _g2_points(group, 4)
+    g2s[1:3] = [group.deserialize(group.serialize(q)) for q in g2s[1:3]]
+    row = [p * group.random(B.G1) for p in _g1_rows(group, 1, 4)[0]]
+    row[0] = group.deserialize(group.serialize(row[0]))
+    assert multi_pair_prepared([row], prepare_g2(g2s)) == [multi_pair(row, g2s)]
+
+
+@pytest.mark.parametrize("normalise", [[True] * 8, [False] * 8, [True, False] * 4])
+def test_prepared_lines_with_and_without_normalisation(group, normalise):
+    g2s, rows = _g2_points(group, 8), _g1_rows(group, 3, 8)
+    kernels = B._kernels._ext
+    prepared = kernels.bls_prepare_g2(g2s, 1, normalise)
+    assert kernels.bls_multi_pair_prepared(rows, prepared) == [multi_pair(row, g2s) for row in rows]
+
+
+@pytest.mark.parametrize("normalise", [None, [False] * 6, [True, False] * 3])
+def test_prepared_with_identities(group, threads, normalise):
+    id1, id2, one = group.init(B.G1), group.init(B.G2), group.init(B.GT)
+    g2s = _g2_points(group, 6)
+    g2s[2] = id2
+    rows = _g1_rows(group, 6, 6)
+    rows[0][0] = id1                            # at position 0 of a row
+    rows[1][3], rows[1][5] = id1, id1           # further on, the last point among them
+    rows[2] = [id1] * 6                         # identities only
+    rows[3] = [id1, id1, rows[3][2], id1, id1, id1]     # its one point meets the identity of G2
+    rows[4][4] = rows[4][4] / rows[4][4]        # an identity that was computed
+    prepared = B._kernels._ext.bls_prepare_g2(g2s, threads, normalise)
+    got = B._kernels._ext.bls_multi_pair_prepared(rows, prepared, threads)
+    assert got == [multi_pair(row, g2s) for row in rows]
+    assert got[2] == got[3] == one
+
+
+def test_prepared_of_identities_only(group, threads):
+    id2, one = group.init(B.G2), group.init(B.GT)
+    rows = _g1_rows(group, 2, 3)
+    assert multi_pair_prepared(rows, prepare_g2([id2] * 3)) == [one, one]
+
+
+def test_prepared_needs_one_g1_per_point(group, threads):
+    g1, g2 = group.random(B.G1), group.random(B.G2)
+    prepared = prepare_g2([g2] * 3)
+    for short in ([g1] * 2, [g1] * 4, []):
+        with pytest.raises(ValueError, match="row 1 has {} elements, expected 3".format(len(short))):
+            multi_pair_prepared([[g1] * 3, short], prepared)
+
+
+def test_prepared_of_no_points():
+    with pytest.raises(ValueError, match="at least one point"):
+        prepare_g2([])
+
+
+def test_prepared_of_no_rows(group):
+    assert multi_pair_prepared([], prepare_g2([group.random(B.G2)])) == []
+
+
+def test_prepared_type_checks(group, threads):
+    g1, g2 = group.random(B.G1), group.random(B.G2)
+    prepared = prepare_g2([g2, g2])
+    for bad in (g2, group.random(B.GT), group.init(B.ZR, 1)):
+        with pytest.raises(ValueError, match="row 1, position 1: expected a G1 element"):
+            multi_pair_prepared([[g1, g1], [g1, bad]], prepared)
+    for bad in (g1, group.random(B.GT), group.init(B.ZR, 1)):
+        with pytest.raises(ValueError, match="position 1: expected a G2 element"):
+            prepare_g2([g2, bad])
+    with pytest.raises(TypeError):
+        B._kernels._ext.bls_multi_pair_prepared([[g1]], [g2])
+
+
+def test_prepared_takes_one_normalise_flag_per_point(group):
+    g2s = _g2_points(group, 3)
+    for flags in ([], [True] * 2, [False] * 4):
+        with pytest.raises(ValueError, match="normalise has {} flags for 3 points".format(len(flags))):
+            B._kernels._ext.bls_prepare_g2(g2s, 1, flags)
+
+
+def test_prepared_does_not_print_its_lines(group):
+    prepared = prepare_g2([group.random(B.G2)])
+    assert type(prepared).__repr__ is object.__repr__
+    assert type(prepared).__str__ is object.__str__
+
+
+def test_prepared_on_a_list_of_points(group):
+    # what prepare_g2 gives on charm: multi_pair_prepared pairs row by row
+    g2s, rows = _g2_points(group, 3), _g1_rows(group, 2, 3)
+    assert multi_pair_prepared(rows, g2s) == [multi_pair(row, g2s) for row in rows]
+
+
+@pytest.mark.skipif(not pairing_available("MNT224"), reason="no charm-crypto")
+def test_prepared_on_a_charm_group():
+    group = PairingGroup("MNT224")
+    g2s, rows = _g2_points(group, 3), _g1_rows(group, 2, 3)
+    prepared = prepare_g2(g2s)
+    assert isinstance(prepared, list)
+    assert multi_pair_prepared(rows, prepared) == [multi_pair(row, g2s) for row in rows]
+    with pytest.raises(ValueError):
+        multi_pair_prepared([rows[0][:2]], prepared)
+    with pytest.raises(ValueError, match="at least one point"):
+        prepare_g2([])
