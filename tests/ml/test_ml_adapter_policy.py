@@ -479,14 +479,16 @@ def test_a_relabelled_replay_by_all_clients_decrypts_to_the_sum_of_the_round_the
 
 
 def test_a_relabelled_replay_by_one_client_is_refused(wrapper, monkeypatch):
-    """The claims are caught where the clients disagree: one client that relabels alone differs from the others."""
+    """The claims are caught where the clients disagree: the last client keeps the label of round-0 and differs from the
+    others. (The message names the first client and the first that differs from it, whichever of them lies, so it is
+    the refusal and the missing key that this pins.)"""
     old = gradients(seed=10)
     replayed = encrypt_all(wrapper, old, label="round-0")
     current = encrypt_all(wrapper, gradients(seed=11))
     relabelled = relabel(replayed, current)
-    relabelled["c0"] = replayed["c0"]                                       # c0 keeps its label of round-0
+    relabelled["c2"] = replayed["c2"]                                       # c2 keeps its label of round-0
     calls = spy_on_the_key(wrapper, monkeypatch)
-    with pytest.raises(FEValidationError, match="c0"):
+    with pytest.raises(FEValidationError, match="differ in their label"):
         aggregate_gradients(relabelled, wrapper, WEIGHTS, label=LABEL, policy=POLICY)
     assert calls == [] and LABEL not in wrapper._aggregated
 

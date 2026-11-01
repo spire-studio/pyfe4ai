@@ -49,12 +49,13 @@ The ``label`` and the ``attributes_digest`` of a ciphertext are claims of its cl
 inside ``t`` and ``c_ipfe``, and checking them against the two fields would need the master key, so a decryption does
 not hash again. It checks that the ciphertexts of all clients agree on both fields, that the digest is the one of the
 listed attributes and, if the caller gives a ``label``, that this is the one the ciphertexts claim. One client that
-hashed other points than it says gives a ``ValueError`` from the discrete log (no value, and not a wrong one). All
-clients that change the ``label`` alike still decrypt to the correct value, since the label is not what a ciphertext
-is made of. The list of attributes is not a claim of that kind: it says which vector of ``c_attr`` pairs with which
-row of the key. All clients that change it alike get a ``FEKeyError`` (the policy is not satisfied) or no value (the
-``ValueError`` of the discrete log), never a wrong one; a label that no row of the policy reads can be renamed without
-effect. A caller who needs to know that ciphertexts belong to a round authenticates them.
+hashed other points than it says gives a ``ValueError`` from the discrete log (a ``FESchemeError`` from the array
+helpers; no value, and not a wrong one). All clients that change the ``label`` alike still decrypt to the correct
+value, since the label is not what a ciphertext is made of. The list of attributes is not a claim of that kind: it
+says which vector of ``c_attr`` pairs with which row of the key. All clients that change it alike get a ``FEKeyError``
+(the policy is not satisfied) or no value (the ``ValueError`` of the discrete log), never a wrong one; a label that no
+row of the policy reads can be renamed without effect. A caller who needs to know that ciphertexts belong to a round
+authenticates them.
 
 The ndarray helpers encrypt each element under ``element_label(label, layer, index)``, a tag of its own, and decrypt
 all elements of all layers in one batch. The points of the key that every element is paired with (the rows the policy
@@ -1027,12 +1028,14 @@ class MCFEKPABPairing(IPFEAbsCrypto):
         decoded. The ``label`` and the attributes of a ciphertext are claims of its client: the points ``H(tag, S)`` are
         inside ``t`` and ``c_ipfe``, and only the master key could check them. Clients that disagree on the label or
         the digest are refused, and one client whose points differ from its claim gives no value at the discrete log
-        (a ``ValueError``). But if all clients copy the label of a round onto ciphertexts of an earlier round, that
-        relabelled replay passes this check and decrypts, silently, to the sum of the round the ciphertexts were made
-        in: the key covers every tag. Attributes that all clients change alike are different: they give a
-        ``FEKeyError`` or no value, never a wrong one. A caller who must know that ciphertexts belong to a round has to
-        authenticate them. A caller that hands the arrays to a service that issues keys calls this first, so that a
-        key is not issued for arrays that a decryption would refuse.
+        (a ``FESchemeError`` from the array helpers, a ``ValueError`` from :meth:`decrypt`). But if all clients copy
+        the label of a round onto ciphertexts of an earlier round, that relabelled replay passes this check and
+        decrypts, silently, to the sum of the round the ciphertexts were made in: the key covers every tag. Attributes
+        that all clients change alike are different: they give a ``FEKeyError`` or no value, never a wrong one (a
+        label that no row of the policy reads can be renamed without effect, and the value is the right one). A
+        caller who must know that ciphertexts belong to a round has to authenticate them. A caller that hands the arrays
+        to a service that issues keys calls this first, so that a key is not issued for arrays that a decryption would
+        refuse.
 
         Args:
             dict_ndarray_ct: The ciphertext arrays by client id, as for :meth:`decrypt_lst_ndarray_ct`.
@@ -1040,8 +1043,9 @@ class MCFEKPABPairing(IPFEAbsCrypto):
 
         Raises:
             FEValidationError: For a label that is not a ``str``, and for the arrays that :meth:`decrypt_lst_ndarray_ct`
-                refuses before it decodes a point, as it does; the message names the layer and the element, or the
-                client and the layer where the shape of an array is wrong.
+                refuses before it decodes a point, as it does; the message names the layer and the element, the client
+                and the layer where the shape of an array is wrong, or the clients and the counts where they send
+                other numbers of layers.
         """
         if not isinstance(label, str):
             raise FEValidationError("need a string label for check_ndarray_ct, got {}".format(clip(repr(label))))
@@ -1082,7 +1086,8 @@ class MCFEKPABPairing(IPFEAbsCrypto):
             FEKeyError: Without a key, or if the attributes of the ciphertexts do not satisfy the policy of the key.
             FEValidationError: As :meth:`decrypt`, and for a label that is not a ``str``, arrays that do not have the
                 same layers and shapes for all clients, and elements that are for different sets of attributes. The
-                message names the layer and the element, or the client and the layer for a wrong shape.
+                message names the layer and the element, the client and the layer for a wrong shape, or the clients
+                and the counts for other numbers of layers.
             FESchemeError: For the first element whose discrete log was not found (the key and the ciphertexts do not
                 fit, whatever their fields say).
         """

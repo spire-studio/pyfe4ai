@@ -71,8 +71,9 @@ that :func:`~pyfe4ai.ml.aggregate_gradients` (or
 
 The aggregation is refused before a key is issued and before any pairing is
 computed when the scheme's own checks of the ciphertexts refuse them
-(``ValueError``, naming the layer and the element, or the client and the layer
-for the shape of an array: records that are malformed or of other parameters,
+(``ValueError``, naming the layer and the element, the client and the layer for
+the shape of an array, or the clients and the counts for other numbers of
+layers: records that are malformed or of other parameters,
 ciphertexts that claim another label, arrays of other shapes or with other
 numbers of layers, clients that encrypted for different sets of attributes),
 when the set of attributes does not satisfy the policy
@@ -84,12 +85,14 @@ also those of weight 0).
 What the checks cannot see. The ``label`` and the attributes of a ciphertext are
 claims of its client: the points they were hashed to are inside ``t`` and
 ``c_ipfe``, and only the master key could check them. A client whose points
-differ from its claim gives no value (a ``ValueError`` at the discrete
-logarithm), and clients that disagree on the label are refused; but if all
+differ from its claim gives no value (a
+:class:`~pyfe4ai.core.exceptions.FESchemeError` at the discrete logarithm,
+after the key is issued), and clients that disagree on the label are refused; but if all
 clients copy the label of a round onto ciphertexts of an earlier round, that
 relabelled replay is aggregated, silently, to the sum of the round the
 ciphertexts were made in. Attributes that all clients change alike give
-``FEKeyError`` or no value, never a wrong one. A caller who must know that
+``FEKeyError`` or no value, never a wrong one (a label that no row of the
+policy reads can be renamed without effect, and the value is the right one). A caller who must know that
 ciphertexts belong to a round has to authenticate them. An item that has the
 type tag of a group element and is none is found when it is decoded. These
 are found, if at all, after the key is issued; the label is then tied to the
