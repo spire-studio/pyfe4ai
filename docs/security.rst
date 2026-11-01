@@ -170,14 +170,14 @@ anyone.
 
 Like every exponentiation of this library the online phase is not
 constant-time, and the plaintext is all it works on. It raises ``g1`` to
-``|x_i|`` and divides for a negative ``x_i``, so that its time does not show the
+``|x_i|`` and divides for a negative ``x_i``, so that its time hardly shows the
 signs: at ``eta = 1000`` the share of negative coordinates moved it by less than
-its noise. One measurement of it still tells roughly how large the ``x_i`` are
-and how many of them are zero, and its table reads depend on ``x``. ``encrypt``
-depends on ``x`` as well, and a negative ``x_i`` costs more there, but the term
-of the random ``s`` takes about nine tenths of its time and adds noise of its
-own. So the online phase is the weaker of the two where someone can time a
-single encryption.
+the noise of one measurement. One measurement of it still tells roughly how
+large the ``x_i`` are and how many of them are zero, and its table reads depend
+on ``x``. ``encrypt`` depends on ``x`` as well, but the term of the random ``s``
+takes about nine tenths of its time and adds noise of its own, and a negative
+``x_i`` is a long exponent there. So one timed call shows the sizes and the
+zeros better on the online phase, and the signs better on ``encrypt``.
 
 ML adapter
 ----------

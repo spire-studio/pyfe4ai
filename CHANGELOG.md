@@ -55,7 +55,7 @@ compatibility).
   opens its ciphertext without a key, so it is secret and one-time: a second
   use, `copy`, `pickle` and use by another object or process are refused, and
   only copying its attributes by hand gets past that. The online phase is not
-  constant-time: its time does not show the signs of `x`, but it shows roughly
+  constant-time: its time hardly shows the signs of `x`, but it shows roughly
   how large the coordinates are and how many are zero (`docs/security.rst`).
 - **`sife/cp_ab_pairing`** (`SIFECPABPairing`, `SIFECPABPairingKeyGenerator`,
   `SIFECPABPairingConfig`; status *unreviewed*, it has had no cryptographic

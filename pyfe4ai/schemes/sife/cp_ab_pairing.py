@@ -50,7 +50,7 @@ ciphertext it makes without any key, so it is kept like a key and used once
 (:class:`CPABPrecomputation`, :mod:`pyfe4ai.core.one_time`): a second use of one
 ``s`` gives ``x - x'`` to anyone. Like every exponentiation of this library the
 online phase is not constant-time. It raises ``g1`` to ``|x_i|`` and divides for
-a negative ``x_i``, so that its time does not show the signs, but one
+a negative ``x_i``, so that its time hardly shows the signs, but one
 measurement of it tells roughly how large the ``x_i`` are and how many are zero,
 and its table reads depend on ``x`` (see ``docs/security.rst``).
 
@@ -561,7 +561,7 @@ class SIFECPABPairing(IPFEAbsCrypto):
         Returns:
             One future ciphertext, for ``encrypt(x, precomputed=...)``. Secret:
             it opens that ciphertext without a key. It can be used once, in
-            this process, by this object, and cannot be copied or pickled.
+            this process, by this object; ``copy`` and ``pickle`` are refused.
 
         Raises:
             FEValidationError: For no policy, or a policy outside the limits
