@@ -17,7 +17,7 @@ from tests.sife.conftest import ETA  # noqa: E402
 from pyfe4ai import backend as native_backend
 from pyfe4ai.core.exceptions import FEValidationError
 from pyfe4ai.policy import parse
-from pyfe4ai.primitives.pairing.pairing_backend import ZR
+from pyfe4ai.primitives.pairing.pairing_backend import G1, ZR, multiexp, serialize_many
 from pyfe4ai.schemes.sife import cp_ab_pairing
 from pyfe4ai.schemes.sife.cp_ab_pairing import SIFECPABPairing
 
@@ -28,6 +28,7 @@ LABELS = ["org:A", "role:auditor"]
 X = [3, -1, 0, 7, 2]
 Y = [1, 2, 3, -4, 5]
 VALUE = sum(a * b for a, b in zip(X, Y))
+S = 1234567891011
 
 
 def key(kg, attributes=LABELS, y=Y):
@@ -70,6 +71,34 @@ def test_a_negative_plaintext_is_not_a_long_exponent(make, monkeypatch):
     exponents.clear()
     crypto.encrypt([3, -1, 0, 7, -2], precomputed=pre)
     assert exponents == [3, 1, 0, 7, 2]
+
+
+def test_a_negative_plaintext_is_not_a_long_exponent_of_encrypt(make, monkeypatch):
+    """``x_i % order`` would make it one, and the time of ``encrypt`` would then show how many there are."""
+    _, crypto = make()
+    exponents, real = [], cp_ab_pairing.multiexp_many
+
+    def recorded(rows, exps, group):
+        exponents.extend(exps)
+        return real(rows, exps, group)
+
+    monkeypatch.setattr(cp_ab_pairing, "multiexp_many", recorded)
+    monkeypatch.setattr(cp_ab_pairing, "random_nonzero_zr", lambda group: group.init(ZR, S))
+    crypto.encrypt([3, -1, 0, 7, -2], policy=POLICY)
+    assert exponents == [[3, S], [1, S], [0, S], [7, S], [2, S]]
+
+
+@pytest.mark.parametrize("x", [
+    [0] * ETA, [1] * ETA, [-1] * ETA, [10] * ETA, [-10] * ETA, [10, -10, 0, 1, -1],
+], ids=["zero", "one", "minus-one", "bound", "minus-bound", "mixed"])
+def test_encrypt_gives_the_element_of_the_exponent_mod_the_order(make, monkeypatch, x):
+    """``|x_i|`` on the inverse of ``g1`` and ``x_i % order`` on ``g1`` are one element, so ``c3`` keeps its bytes."""
+    _, crypto = make()
+    monkeypatch.setattr(cp_ab_pairing, "random_nonzero_zr", lambda group: group.init(ZR, S))
+    group, order = crypto.group, int(crypto.order)
+    g1, ua = group.deserialize(crypto.pp["g1"].encode("utf-8")), crypto._pp_elements(G1, "ua")
+    expected = [multiexp([g1, ua_i], [x_i % order, S], group) for x_i, ua_i in zip(x, ua)]
+    assert crypto.encrypt(x, policy=POLICY)["c3"] == [item.decode("utf-8") for item in serialize_many(group, expected)]
 
 
 @pytest.mark.parametrize("threads", [1, 4])

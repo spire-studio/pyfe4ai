@@ -54,9 +54,11 @@ compatibility).
   same randomness the ciphertext is the one of `encrypt`. The precomputation
   opens its ciphertext without a key, so it is secret and one-time: a second
   use, `copy`, `pickle` and use by another object or process are refused, and
-  only copying its attributes by hand gets past that. The online phase is not
-  constant-time: its time hardly shows the signs of `x`, but it shows roughly
-  how large the coordinates are and how many are zero (`docs/security.rst`).
+  only copying its attributes by hand gets past that. Neither path is
+  constant-time: `encrypt` and the online phase both take `|x_i|` as the
+  exponent, so their time hardly shows the signs of `x`, but the online phase
+  shows roughly how large the coordinates are and how many are zero
+  (`docs/security.rst`).
 - **`sife/cp_ab_pairing`** (`SIFECPABPairing`, `SIFECPABPairingKeyGenerator`,
   `SIFECPABPairingConfig`; status *unreviewed*, it has had no cryptographic
   review): ciphertext-policy attribute-based inner-product functional

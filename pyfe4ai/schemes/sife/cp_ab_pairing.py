@@ -48,11 +48,13 @@ ciphertext under a policy but the plaintext term of ``c3``, and
 ciphertext is the one of ``encrypt``. The result of ``precompute`` opens the
 ciphertext it makes without any key, so it is kept like a key and used once
 (:class:`CPABPrecomputation`, :mod:`pyfe4ai.core.one_time`): a second use of one
-``s`` gives ``x - x'`` to anyone. Like every exponentiation of this library the
-online phase is not constant-time. It raises ``g1`` to ``|x_i|`` and divides for
-a negative ``x_i``, so that its time hardly shows the signs, but one
-measurement of it tells roughly how large the ``x_i`` are and how many are zero,
-and its table reads depend on ``x`` (see ``docs/security.rst``).
+``s`` gives ``x - x'`` to anyone. Like every exponentiation of this library
+neither path is constant-time. Both take ``|x_i|`` as the exponent: the online
+phase raises ``g1`` to it and divides for a negative ``x_i``, and ``encrypt``
+takes ``1 / g1`` as the base of a negative ``x_i``, so that the time of both
+hardly shows the signs. One measurement of the online phase tells roughly how
+large the ``x_i`` are and how many are zero, and its table reads depend on ``x``
+(see ``docs/security.rst``).
 
 The policy of a ciphertext (``ct["policy"]``) and
 the attribute list of a key (``dk["attributes"]``) are public: they travel in
@@ -541,8 +543,10 @@ class SIFECPABPairing(IPFEAbsCrypto):
         if precomputed is None:
             s, parts = self._random_part(policy)
             ua = self._pp_elements(G1, "ua")
+            g1_inverse = 1 / g1
             return self._ciphertext(parts, multiexp_many(
-                [[g1, ua_i] for ua_i in ua], [[x_i % order, s] for x_i in x], group))
+                [[g1_inverse if x_i < 0 else g1, ua_i] for x_i, ua_i in zip(x, ua)],
+                [[abs(x_i) % order, s] for x_i in x], group))
         if not isinstance(precomputed, CPABPrecomputation) or precomputed.owner is not self:
             raise FEValidationError("the precomputation belongs to another object")
         if policy is not None:
