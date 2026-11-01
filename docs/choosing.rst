@@ -200,6 +200,21 @@ Which scheme for which task
        challenge ciphertext, and ciphertexts are malleable, so authenticate
        them where tampering matters; policies of ``and``, ``or`` and
        threshold gates over attribute labels, see :doc:`api/policy`)
+   * - Release the sum of small vectors or statistics only for a key whose
+       policy the clients' attributes satisfy
+     - ``mcfe/kp_ab_pairing`` (unreviewed; one set of attributes for all
+       clients of a label; through :mod:`pyfe4ai.ml` with ``attributes=`` and
+       ``policy=``, see :doc:`api/ml`)
+
+``mcfe/kp_ab_pairing`` is for aggregates of up to about 10^3 elements, not
+for the gradients of a large model. Every element is a ciphertext of its
+own, and the aggregator pairs several group elements per client and element.
+With 10 clients, 10^3 elements and a policy of three attributes the
+aggregation takes about 52 s on one thread and about 9 s on eight, and a
+client uploads about 2.4 KB per element as JSON. The Ring-LWE MCFE of the
+``fl_aggregation_10k`` benchmark (10^4 elements, ``standard`` profile) takes
+the client 22.2 ms and the aggregator 10.4 ms, at 25.9 B per element in the
+compact encoding: use ``mcfe/ring_lwe`` when there is no policy to enforce.
 
 The registered schemes
 ----------------------

@@ -38,6 +38,33 @@ server, :func:`combine_partial_decryptions` at the combiner -- whose
 (binary ciphertexts and partial decryptions, the scheme's default format, as
 base64).
 
+**Policy-gated aggregation** (``mcfe/kp_ab_pairing``):
+    The clients encrypt for a set of attributes, the key is for a policy, and
+    the sum is released only if the set satisfies the policy. The scheme is
+    for small vectors and statistics (up to about 10^3 elements), not for the
+    gradients of a large model: every element is a ciphertext of its own that
+    costs the aggregator several pairings per client (see :doc:`/choosing`).
+
+    >>> keygen_cfg = {"n": 2, "lst_nid": ["c0", "c1"], "bound_x": 1000, "bound_y": 10}
+    >>> wrapper = FESchemeWrapper("mcfe", "kp_ab_pairing", keygen_cfg, precision=1)
+    >>> attributes = {"purpose:research", "region:EU"}
+    >>> enc0 = encrypt_gradient(grad0, wrapper, nid="c0", label="round-1", attributes=attributes)
+    >>> enc1 = encrypt_gradient(grad1, wrapper, nid="c1", label="round-1", attributes=attributes)
+    >>> result = aggregate_gradients(
+    ...     {"c0": enc0, "c1": enc1}, wrapper, {"c0": 1, "c1": 2}, label="round-1",
+    ...     policy="and(purpose:research, region:EU)")
+
+    ``aggregate_gradients`` (and ``prepare_aggregation``) refuse, before a key
+    is issued and before any pairing, clients that did not all encrypt for one
+    set of attributes (``ValueError``), a set that does not satisfy the policy
+    (:class:`~pyfe4ai.core.exceptions.FEKeyError`), a missing client and
+    ``allow_partial=True`` (``ValueError``: the shares of the clients' keys add
+    up to 1, so every enrolled client must take part). They warn
+    (:class:`~pyfe4ai.core.exceptions.FEWarning`) of a job of more than 1000
+    elements, with the time it takes, and of a discrete-logarithm bound
+    ``n * bound_x * bound_y`` above ``2**26``. Other schemes take neither
+    ``attributes`` nor ``policy``.
+
 **Single trust domain.** A :class:`FESchemeWrapper` runs the key generator
 itself, so it holds the master secret key and plays every party (clients,
 key authority, decryptor). It is meant for experiments and for code that

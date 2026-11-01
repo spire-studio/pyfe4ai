@@ -149,8 +149,8 @@ CONFIGS: dict[tuple[str, str], dict] = {
 
 
 #: The attribute-based multi-client scheme: every client encrypts for the same attributes (``encrypt_gradient(...,
-#: attributes=)``) and the key is for a policy that they satisfy (``aggregate_gradients(..., policy=)``). The ML adapter
-#: takes neither argument yet, so the entry is recorded as unusable until it does.
+#: attributes=)``) and the key is for a policy that they satisfy (``aggregate_gradients(..., policy=)``). No other
+#: scheme takes either argument.
 ATTRIBUTES = ["org:A", "role:auditor"]
 POLICY = "and(org:A, role:auditor)"
 ENCRYPT_ARGS: dict[tuple[str, str], dict] = {("mcfe", "kp_ab_pairing"): {"attributes": ATTRIBUTES}}

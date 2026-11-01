@@ -234,8 +234,8 @@ def test_the_benchmark_scripts_cover_the_registry():
 
 def test_fl_coverage_gives_mcfe_kp_ab_pairing_its_attributes_and_its_policy(monkeypatch):
     """The FL path of the attribute-based multi-client scheme takes the attributes of a ciphertext and the policy of
-    the key; the ML adapter does not take them yet, so until it does the entry is recorded as unusable, and the entry
-    is the one that passes them (no other scheme gets them)."""
+    the key, and the entry is the one that passes them (no other scheme gets them). That the scheme is then found
+    usable is checked in tests/ml/test_ml_adapter_policy.py."""
     from pyfe4ai import policy
 
     coverage = _load(ROOT / "benchmarks" / "commands" / "fl_coverage.py")

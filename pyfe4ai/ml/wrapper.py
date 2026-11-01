@@ -151,7 +151,17 @@ def _require_labelled_aggregation(wrapper: "FESchemeWrapper", api: str) -> None:
     it learns the differences between a client's values -- the client's
     update up to one offset. Federated aggregation needs MCFE, whose
     ciphertexts are bound to labels.
+
+    The per-client attribute-based MCFE is refused too: its clients may
+    encrypt under one label for different sets of attributes, and the
+    adapter aggregates the elements for one set.
     """
+    if (wrapper.scheme_type, wrapper.variant) == ("mcfe", "kp_ab_pairing_per_client"):
+        raise NotImplementedError(
+            "{}() does not support '{}/{}': under one label its clients may encrypt for different sets of "
+            "attributes, which the adapter does not aggregate. Use 'mcfe/kp_ab_pairing' (one set of attributes "
+            "for all clients) or the scheme class directly.".format(api, wrapper.scheme_type, wrapper.variant)
+        )
     if wrapper.scheme_type == "mife":
         raise NotImplementedError(
             "{}() does not support '{}/{}': multi-input FE has no labels, so a "
@@ -216,6 +226,12 @@ class FESchemeWrapper:
     docstring): :func:`aggregate_gradients` and :func:`prepare_aggregation`
     take it, with the enrolled ``servers``.
 
+    ``mcfe/kp_ab_pairing`` (capability ``access_control``) takes the
+    ``attributes`` of the round in :func:`encrypt_gradient` and the ``policy``
+    of the key in :func:`aggregate_gradients` and
+    :func:`prepare_aggregation`; no other scheme takes either (see
+    :mod:`pyfe4ai.ml`).
+
     A wrapper can be pickled and copied (``multiprocessing``, Ray): the copy
     carries the ``(nid, label)`` pairs used so far and refuses them as the
     original does. Copies do not learn of labels used later by the original
@@ -275,6 +291,9 @@ class FESchemeWrapper:
         self.crypto_options = dict(crypto_options or {})
         self.qconfig = QuantizationConfig(precision=precision, mode=qmode)
         self.has_label = scheme.has(registry.LABELS)
+        #: Whether the scheme has the capability ``access_control``. The FL helpers take ``attributes=`` and
+        #: ``policy=`` for the labelled one, ``mcfe/kp_ab_pairing`` (see :mod:`pyfe4ai.ml`).
+        self.access_control = scheme.has(registry.ACCESS_CONTROL)
         #: Review status of the scheme (see :mod:`pyfe4ai.core.status`).
         self.status = get_scheme_status(*key)
 
@@ -313,6 +332,7 @@ class FESchemeWrapper:
     def __setstate__(self, state: dict) -> None:
         self.__dict__.update(state)
         self.__dict__.setdefault("_servers", {})
+        self.__dict__.setdefault("access_control", False)  # a wrapper pickled before the attribute existed
         self._label_lock = threading.Lock()
         forksafe.track(self)
 
@@ -376,7 +396,12 @@ class PreparedAggregation:
 
     ``dk`` is key material (a functional key, or the servers' label key shares
     with their MAC and noise keys): keep it where the wrapper is, and do not
-    send, log or store it elsewhere."""
+    send, log or store it elsewhere.
+
+    For ``mcfe/kp_ab_pairing`` ``policy`` is the canonical encoding
+    (:func:`~pyfe4ai.policy.encoding.canonical_encoding`) of the policy the
+    key is for; the attributes of the ciphertexts are judged against it when
+    the round is aggregated. It is ``None`` for the other schemes."""
 
     label: str | None
     sid: str
@@ -386,6 +411,7 @@ class PreparedAggregation:
     dk: dict
     allow_partial: bool
     servers: list | None = None
+    policy: str | None = None
 
 
 def _aggregated(result_arrays: list, weight_scale: int) -> np.ndarray:
