@@ -22,10 +22,19 @@ compatibility).
   take their config as before.
 - **No warning for a parameter record that holds the configuration only.**
   `sife/fh_ipe_pairing`, `sife/part_fh_ipe_pairing`, `sife/cp_ab_pairing`,
-  `sife/kp_ab_pairing`, `mife/fh_multi_ipe_pairing` and `quadratic/sgp`
-  store no group element and no seed, so replacing their record, for another
-  configuration or because it is unreadable, no longer draws a `FEWarning` (a
-  message at INFO is logged); every other scheme warns as before.
+  `sife/kp_ab_pairing`, `mife/fh_multi_ipe_pairing`, `mcfe/kp_ab_pairing` and
+  `quadratic/sgp` store no group element and no seed, so replacing their
+  record, for another configuration or because it is unreadable, no longer
+  draws a `FEWarning` (a message at INFO is logged); every other scheme warns
+  as before.
+- **Labels that are not text are refused.** A label of the labelled
+  multi-client schemes (`mcfe/*`) that holds a lone surrogate, such as the two
+  halves of the UTF-16 pair of U+1F600 held as two characters, now raises
+  `FEValidationError`. Before, it was encoded like the character U+1F600, so
+  two different labels gave one tag, and a client that used both encrypted
+  twice under a tag without the library noticing. An element label
+  whose layer or index is not made of integers raises `FEValidationError` too,
+  where it raised `ValueError` or `TypeError`.
 
 ### Added
 
@@ -102,6 +111,27 @@ compatibility).
   proves the version with the boxed components and says the selective one
   follows with similar techniques; ciphertexts are malleable and not
   authenticated. The scheme has no ndarray helpers.
+- **`mcfe/kp_ab_pairing`** (`MCFEKPABPairing`, `MCFEKPABPairingKeyGenerator`,
+  `MCFEKPABPairingConfig`; status *unreviewed*, it has had no cryptographic
+  review): multi-client key-policy attribute-based inner-product functional
+  encryption over pairings, after Nguyen, Phan and Pointcheval (ASIACRYPT
+  2022), Sec. 5.2 Fig. 3. Each client encrypts one scalar under a tag and a set
+  of attribute labels (`encrypt([x], label, attributes=...)`); a functional key
+  for weights `y` (a dict from every client to a list of one integer) and a
+  policy (`credentials={"fusion_weight": y, "policy": ...}`) opens `sum x_i y_i`
+  under any tag, if the attributes satisfy the policy. The tag is hashed to `G1`
+  (the random oracle of the paper; RFC 9380 under the domain separation tag
+  `PYFE4AI-V05-MCFE-KPAB-TAG`), all clients of a decryption use one tag and one
+  set of attributes, and the decryption needs the ciphertext of every client,
+  also of one with weight 0 (Remark 10). Options: `n` (required), `lst_nid`,
+  `bound_x` and `bound_y` (default 16), `max_rows` (64) and `max_attributes`
+  (64); `eta` is 1. A client must encrypt once under a tag, which the scheme
+  layer does not check, as with the other labelled schemes. The `label` and the
+  `attributes_digest` of a ciphertext are claims that cannot be checked without
+  the master key: the decryption checks that the clients agree and gives a
+  `ValueError` (no discrete log) for one that hashed other points than it
+  says. Ciphertexts are malleable and not authenticated; the scheme has no
+  ndarray helpers and is not yet served by the ML adapter.
 - **`pyfe4ai.primitives.pairing.dpvs`**: dual pairing vector spaces over an
   asymmetric pairing group (dual bases `B`, `B*` with `B B*^T = mu I`, vectors
   of group elements, scalar combinations and the coordinate-wise pairing),
@@ -111,8 +141,8 @@ compatibility).
   `pyfe4ai.policy`), and decryption succeeds only if the attributes satisfy
   the policy, within the security proof of the scheme;
   `pyfe4ai.list_schemes(capabilities="access_control")` lists
-  `sife/cp_ab_pairing` and `sife/kp_ab_pairing`. There are now 44 registered
-  schemes.
+  `sife/cp_ab_pairing`, `sife/kp_ab_pairing` and `mcfe/kp_ab_pairing`. There
+  are now 45 registered schemes.
 
 ## [0.4.0] — 2026-10-26
 

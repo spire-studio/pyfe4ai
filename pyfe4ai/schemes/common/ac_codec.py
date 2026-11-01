@@ -148,7 +148,8 @@ def check_marker(value, expected: str, name: str) -> None:
         name: Whose marker it is, for the message: ``"the policy_compiler of the ciphertext"``.
 
     Raises:
-        FEValidationError: For any other value.
+        FEValidationError: For any other value, of any type (an array is not compared with a string: the comparison
+            would be an array, and ``if`` on it a ``ValueError``).
     """
-    if value != expected:
+    if type(value) is not str or value != expected:
         raise FEValidationError("{} is {}, not this version's {!r}".format(name, clip(repr(value)), expected))

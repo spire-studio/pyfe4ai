@@ -49,5 +49,5 @@ def check_binding(pp: dict, record, name: str) -> None:
     binding = record.get("pp_binding")
     if binding is None:
         raise FEValidationError("the {} has no pp_binding".format(name))
-    if binding != expected:
+    if type(binding) is not str or binding != expected:     # not an array, whose comparison with a str is an array
         raise FEValidationError("the {} was made under other public parameters: its pp_binding differs".format(name))

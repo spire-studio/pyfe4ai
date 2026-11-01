@@ -36,7 +36,7 @@ def _cache(tmp_path, monkeypatch):
 
 
 def test_entries_are_unique_and_complete():
-    assert len(SCHEMES) == len(set(IDS)) == 44
+    assert len(SCHEMES) == len(set(IDS)) == 45
     assert {s.family for s in SCHEMES} == set(registry.FAMILIES)
     for s in SCHEMES:
         assert s.kind in registry.KINDS
@@ -230,6 +230,37 @@ def test_the_benchmark_scripts_cover_the_registry():
     for key, _, _ in compare.FAMILIES.values():
         registry.get_scheme(key)
     assert set(compare.OFFLINE_FAMILIES) <= set(compare.FAMILIES)
+
+
+def test_fl_coverage_gives_mcfe_kp_ab_pairing_its_attributes_and_its_policy(monkeypatch):
+    """The FL path of the attribute-based multi-client scheme takes the attributes of a ciphertext and the policy of
+    the key; the ML adapter does not take them yet, so until it does the entry is recorded as unusable, and the entry
+    is the one that passes them (no other scheme gets them)."""
+    from pyfe4ai import policy
+
+    coverage = _load(ROOT / "benchmarks" / "commands" / "fl_coverage.py")
+    seen = {"encrypt": [], "aggregate": []}
+    monkeypatch.setattr(coverage, "pairing_available", lambda *args: True)
+    monkeypatch.setattr(coverage, "FESchemeWrapper", lambda *args: None)
+    monkeypatch.setattr(coverage, "encrypt_gradient",
+                        lambda gradient, wrapper, **kwargs: seen["encrypt"].append(kwargs) or gradient)
+    monkeypatch.setattr(coverage, "aggregate_gradients",
+                        lambda encrypted, wrapper, weights, **kwargs: seen["aggregate"].append(kwargs)
+                        or sum(encrypted.values()))
+    assert coverage.check_entry("mcfe", "kp_ab_pairing") == ("usable", "")
+    n = coverage.CONFIGS[("mcfe", "kp_ab_pairing")]["n"]
+    assert len(seen["encrypt"]) == n
+    assert all(set(kwargs) == {"label", "nid", "attributes"} for kwargs in seen["encrypt"])
+    assert [set(kwargs) for kwargs in seen["aggregate"]] == [{"label", "policy"}]
+    attributes, text = seen["encrypt"][0]["attributes"], seen["aggregate"][0]["policy"]
+    assert all(kwargs["attributes"] == attributes for kwargs in seen["encrypt"])
+    assert policy.evaluate(policy.parse(text), attributes)          # the policy is one that the attributes satisfy
+
+    seen["encrypt"].clear()
+    seen["aggregate"].clear()
+    assert coverage.check_entry("mcfe", "ddh") == ("usable", "")
+    assert all(set(kwargs) == {"label", "nid"} for kwargs in seen["encrypt"])
+    assert [set(kwargs) for kwargs in seen["aggregate"]] == [{"label"}]
 
 
 def test_every_benchmark_command_has_a_module_and_help(capsys, monkeypatch):

@@ -41,17 +41,28 @@ same ``H(tag, S)``) and their ``t`` values differ by the difference of the plain
 layer does not check this, as with the other labelled multi-client schemes (:mod:`pyfe4ai.schemes.mcfe.labels`).
 All clients must use the same set of attributes under a tag, since it is hashed with the tag (NPP22 Remark 11), and a
 decryption needs the ciphertexts of all ``n`` clients, also those whose weight is 0, since ``p_1 + ... + p_n = 1``
-(NPP22 Remark 10). Ciphertexts are malleable and not authenticated, and the proof is against eavesdroppers only.
+(NPP22 Remark 10). Ciphertexts are malleable and not authenticated: the security notion of the paper (Def. 9) lets the
+adversary corrupt clients and ask for functional keys, and says nothing about a ciphertext that was modified or forged.
+
+The ``label`` and the ``attributes_digest`` of a ciphertext are claims of its client. The points ``H(tag, S)`` are
+inside ``t`` and ``c_ipfe``, and checking them against the two fields would need the master key, so a decryption does
+not hash again. It checks that the ciphertexts of all clients agree on both fields, that the digest is the one of the
+listed attributes and, if the caller gives a ``label``, that this is the one the ciphertexts claim. One client that
+hashed other points than it says gives a ``ValueError`` from the discrete log (no value, and not a wrong one); all
+clients relabelled alike decrypt to the correct value, since the fields are not what a ciphertext is made of. A caller
+who needs to know that ciphertexts belong to a round authenticates them.
 
 The policy of a key (``dk["policy"]``) and the attributes of a ciphertext (``ct["attributes"]``, with the tag in
 ``ct["label"]``) are public: they travel in the clear and hide nothing. Keys are trusted input to the decryption: the
 ``pp_binding`` of a key tells the objects of two setups apart and is not a signature. A client key ``ek_i`` is secret.
 
+A key has one ``a0``, one set of shares ``a_j`` and one ``z`` for all clients, and only the ``pi_ij`` are fresh for each
+client and row. This is the reading of Fig. 3, which writes ``a_j`` and ``z`` without an index ``i`` in ``k*_ij``, and
+of Sec. 3.3 ("all clients i using the same a0"). The proof text of App. B.4 says "for each i" where it samples ``a0``,
+while the forms of its keys have no index; this module follows Fig. 3 and Sec. 3.3.
+
 Deviations:
 
-* A key has one ``a0``, one set of shares ``a_j`` and one ``z`` for all clients: Fig. 3 writes ``a_j`` and ``z``
-  without an index ``i`` in ``k*_ij`` (and Sec. 3.3 says "all clients i using the same a0"). Only the ``pi_ij`` are
-  fresh for each client and row.
 * ``g1`` and ``g2`` are random generators drawn at setup, not those of the group description.
 * ``y_i`` and ``x_i`` may be negative within their bounds, not only in ``[0, B]``; the discrete log covers
   ``|<x, y>| <= n bound_x bound_y``. Each client encrypts one scalar (``eta = 1``), as Remark 10 has it; a vector is
@@ -573,9 +584,10 @@ class MCFEKPABPairing(IPFEAbsCrypto):
             for row in k_rows[nid]:
                 _check_length(row, F_DIM, "k_rows of {}".format(nid))
             _check_length(k_ipfe[nid], H_DIM, "k_ipfe of {}".format(nid))
-            weights[nid] = _decimal(y[nid], "y")
+            weights[nid] = _decimal(y[nid], "y of {}".format(nid))
             if abs(weights[nid]) > self.bound_y:
-                raise FEValidationError("y has an entry above the limit bound_y = {}".format(self.bound_y))
+                raise FEValidationError("y of {} is {}, beyond the limit bound_y = {}".format(
+                    nid, weights[nid], self.bound_y))
         return weights
 
     def _check_tags(self, cts: dict, label) -> list:
@@ -595,9 +607,11 @@ class MCFEKPABPairing(IPFEAbsCrypto):
                 if value != getattr(first, name):
                     raise FEValidationError("the ciphertexts of {} and {} differ in their {}: {} and {}".format(
                         first_nid, nid, name, clip(repr(getattr(first, name))), clip(repr(value))))
-        if label is not None and encode_label(label) != first.label:
-            raise FEValidationError("the ciphertexts are under the label {}, not {}".format(
-                clip(repr(first.label)), clip(repr(encode_label(label)))))
+        if label is not None:
+            claimed = encode_label(label)       # a FEValidationError if it cannot be encoded, never a ValueError
+            if claimed != first.label:
+                raise FEValidationError("the ciphertexts claim the label {}, not {}".format(
+                    clip(repr(first.label)), clip(repr(claimed))))
         sets = {}
         for nid in self.lst_nid:
             sets[nid] = read_attributes(cts[nid].attributes, self.max_attributes)
@@ -620,7 +634,9 @@ class MCFEKPABPairing(IPFEAbsCrypto):
             dk: Functional decryption key.
             fusion_weight: Optional; if given it must be the ``y`` of the key, as a dict from every client to a list
                 of one int.
-            label: Optional; if given it must be the label the ciphertexts were made under.
+            label: Optional; if given it must be the label that the ciphertexts claim (the ``label`` field of each,
+                which all agree on): this checks the claim and not how the ciphertexts were made. A label that cannot
+                be encoded (:func:`~pyfe4ai.schemes.mcfe.labels.encode_label`) is a ``FEValidationError``.
 
         Returns:
             ``<x, y>``.
@@ -628,8 +644,8 @@ class MCFEKPABPairing(IPFEAbsCrypto):
         Raises:
             FEKeyError: If the attributes of the ciphertexts do not satisfy the policy of the functional key.
             FEValidationError: For an object made under other public parameters, ciphertexts that are not those of
-                every client and no other, or under different tags or sets of attributes, or a label or weights that
-                are not those of the key and ciphertexts, or an object that is malformed.
+                every client and no other, or that claim different tags or sets of attributes, or a label or weights
+                that are not those of the key and ciphertexts, or an object that is malformed.
             ValueError: If the discrete log is not found: the key and the ciphertexts do not fit, whatever their
                 fields say.
         """
@@ -652,16 +668,20 @@ class MCFEKPABPairing(IPFEAbsCrypto):
 
         _check_clients(cts, self.lst_nid, "the ciphertexts")
         for nid, ct in cts.items():
-            if ct.nid != nid:
-                raise FEValidationError("the ciphertext given for {} is the one of {}".format(
+            named = as_id(ct.nid)       # a numpy integer is the int it equals; an array is not compared with a str
+            if not is_id(named):
+                raise FEValidationError("the ciphertext given for {} names the client {}, which is no client id".format(
                     clip(repr(nid)), clip(repr(ct.nid))))
+            if named != nid:
+                raise FEValidationError("the ciphertext given for {} is the one of {}".format(
+                    clip(repr(nid)), clip(repr(named))))
         attributes = self._check_tags(cts, label)
 
         if type(key.policy) is not str:
             raise FEValidationError("the policy of a functional key must be a str")
         check_policy_length(key.policy, self.max_policy_length)
         formula = from_canonical(key.policy)
-        if policy_digest(formula) != key.policy_digest:
+        if type(key.policy_digest) is not str or policy_digest(formula) != key.policy_digest:
             raise FEValidationError("the policy_digest of the functional key is not the digest of its policy")
         msp = compile_policy(formula, self.order, self.max_rows)
 

@@ -585,6 +585,13 @@ SCHEMES: tuple[Scheme, ...] = (
         note=_FIG14_NOTE,
         refused=_REFUSED_DMCFE_PAILLIER,
     ),
+    _scheme(
+        "mcfe/kp_ab_pairing", PAIRING, UNREVIEWED, FAITHFUL, "NPP22 Sec. 5.2 Fig. 3",
+        note="random oracle (tags hash to G1); one attribute set per tag, shared by all clients; one ciphertext "
+        "per client and tag; every client must encrypt, no all-or-nothing layer (Remark 10); ciphertexts not "
+        "authenticated; a key covers every tag",
+        capabilities=(ACCESS_CONTROL,),
+    ),
     # --- quadratic ----------------------------------------------------------
     _scheme(
         "quadratic/quad", PAIRING, REVIEWED, ADAPTED, "Gay20 Fig. 4 over Fig. 8 (CPA)",

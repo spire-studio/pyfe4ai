@@ -30,6 +30,20 @@ def element_label(label: str, layer: int, index) -> ElementLabel:
     return ElementLabel(label, int(layer), tuple(int(v) for v in index))
 
 
+def _check_text(text: str, what: str) -> None:
+    """Raise unless *text* is text: it holds no surrogate code point, which is no character and has no UTF-8 encoding.
+
+    ``json.dumps`` writes a character outside the Basic Multilingual Plane as the pair of ``\\u`` escapes of its two
+    UTF-16 halves, and writes a pair of lone surrogates as the same two escapes, so without this check two labels
+    gave one encoding, and one tag.
+    """
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise FEValidationError("{} must be valid text, but it contains a lone surrogate (U+{:04X}) at position {}"
+                                .format(what, ord(text[exc.start]), exc.start)) from None
+
+
 def encode_label(label) -> str:
     """Return the unambiguous string that is hashed for *label*.
 
@@ -37,13 +51,20 @@ def encode_label(label) -> str:
         label: A user label (``str``) or an :class:`ElementLabel`.
 
     Raises:
-        FEValidationError: For any other type.
+        FEValidationError: For any other type, for a string that is not valid text (it contains a lone surrogate),
+            and for an :class:`ElementLabel` whose layer or index is not made of integers.
     """
     if isinstance(label, ElementLabel):
-        return json.dumps(
-            ["element", label.label, int(label.layer), [int(v) for v in label.index]]
-        )
+        if isinstance(label.label, str):
+            _check_text(label.label, "the label of an element label")
+        try:
+            layer, index = int(label.layer), [int(v) for v in label.index]
+        except (TypeError, ValueError, OverflowError):
+            # not the error of int(): a ValueError out of a decryption is read as "no discrete log"
+            raise FEValidationError("the layer and the index of an element label must be integers") from None
+        return json.dumps(["element", label.label, layer, index])
     if isinstance(label, str):
+        _check_text(label, "label")
         return json.dumps(["label", label])
     raise FEValidationError("label must be a string, got {!r}".format(label))
 

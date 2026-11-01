@@ -16,6 +16,8 @@ _CONFIG = {
     "lst_nid": ["nid_0", "nid_1"], "lst_sid": ["sid_0", "sid_1"],
     "bound": 3, "bound_x": 3, "bound_y": 3, "universe": ["org:A", "role:auditor"],
 }
+#: The options that a scheme fixes: each client of ``mcfe/kp_ab_pairing`` encrypts one scalar under a tag.
+_FIXED = {("mcfe", "kp_ab_pairing"): {"eta": 1}}
 #: BLS12-381 from the Rust extension (native); the others from charm-crypto
 ASYMMETRIC_GROUPS = [pytest.param("BLS12-381", marks=pytest.mark.native), "MNT224", "BN254"]
 
@@ -30,11 +32,11 @@ def _key_generator(key):
 
 
 def _config(key, **options):
-    return of_scheme(key, dict(_CONFIG, **options))
+    return of_scheme(key, dict(_CONFIG, **_FIXED.get(key, {}), **options))
 
 
-def test_registry_has_twelve_pairing_schemes():
-    assert len(PAIRING_SCHEMES) == 12
+def test_registry_has_thirteen_pairing_schemes():
+    assert len(PAIRING_SCHEMES) == 13
 
 
 @pytest.mark.parametrize("name", ["SS512", "SS1024"])
