@@ -85,7 +85,9 @@ tests), and the byte streams and fixtures of
 - its group, the directory's name: `-m threshold`, `-m "api or config"`,
   `-m "not review"` (except `tests/native/`, see `native`);
 - `core` or `extended`: `extended` marks the tests of the pairing schemes,
-  the pairing-group checks and quadratic FE, which need a pairing backend
+  the pairing-group checks, quadratic FE, the ML adapter with the
+  attribute-based scheme and the examples of the pairing schemes
+  (`tests/examples/`), which need a pairing backend
   (BLS12-381 from the extension, or charm-crypto for other curves; they skip
   without one), `core` the rest, which needs none -- the CI lane without the
   extension runs `-m core`;

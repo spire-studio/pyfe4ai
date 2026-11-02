@@ -57,6 +57,7 @@ def test_the_example_runs_and_shows_what_it_is_for(name, tmp_path):
     res = subprocess.run([sys.executable, str(ROOT / "examples" / name)], capture_output=True, text=True,
                          env=env, cwd=str(tmp_path), timeout=600)
     assert res.returncode == 0, res.stderr
+    assert res.stderr == ""                       # no warning either: an example is what a new user runs first
     lines = res.stdout.splitlines()
     for line in EXAMPLES[name]:
         assert line in lines

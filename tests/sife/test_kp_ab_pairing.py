@@ -664,8 +664,8 @@ def test_unsatisfied_is_refused_before_any_pairing(policy, attributes, make_kp, 
 def test_identity_equality_is_a_one_leaf_policy(policy, opens, make_kp):
     """The attributes ``["id:alice"]`` in the ciphertext and the policy ``id:alice`` in the key give the functionality
     of identity-based IPFE: the key of that identity opens ``<x, y>``, a key of another identity is refused. This is the
-    scheme's general policy with one leaf, not the predicate encoding of ACGU20 App. C.1 for equality (which the
-    library does not implement)."""
+    scheme's general policy with one leaf, not the function encoding of ACGU20 App. C.1 for identity-based IPFE (which
+    the library does not implement)."""
     kg, crypto = make_kp()
     ct = crypto.encrypt(X, attributes=["id:alice"])
     dk = kg.get_decryption_keys("s", credentials=creds(policy, Y))

@@ -7,9 +7,9 @@ otherwise. It is a public-key scheme: anyone with the public parameters
 encrypts. The labels are fixed at setup (``universe``).
 
 A policy with one leaf, such as ``id:alice``, gives the functionality of
-identity-based IPFE: the key of ``id:alice`` opens the ciphertext, no other key
-does. (This is a one-leaf policy of the library's general scheme, not the
-direct encoding of ACGU20 App. C.1.)
+identity-based IPFE: the key of ``id:alice`` opens the ciphertext, and a key of
+another identity is refused. (This is a one-leaf policy of the library's
+general scheme, not the function encoding of ACGU20 App. C.1.)
 """
 
 import pyfe4ai

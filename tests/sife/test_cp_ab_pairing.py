@@ -175,7 +175,8 @@ def test_unsatisfied_is_refused(policy, held, make):
 def test_identity_equality_is_a_one_leaf_policy(held, opens, make):
     """The policy ``id:alice`` gives the functionality of identity-based IPFE: the key of the identity ``id:alice``
     opens ``<x, y>``, a key of another identity or of no attribute is refused. This is the scheme's general policy with
-    one leaf, not the predicate encoding of ACGU20 App. C.1 for equality (which the library does not implement)."""
+    one leaf, not the function encoding of ACGU20 App. C.1 for identity-based IPFE (which the library does not
+    implement)."""
     kg, crypto = make(universe=["id:alice", "id:bob"])
     x, y = [3, -1, 0, 7, 2], [1, 2, 3, -4, 5]
     ct = crypto.encrypt(x, policy="id:alice")

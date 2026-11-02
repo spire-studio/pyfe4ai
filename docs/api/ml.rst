@@ -22,7 +22,10 @@ For ``mcfe/ring_lwe_threshold`` the wrapper also runs the decryption servers
 and :func:`~pyfe4ai.ml.aggregate_gradients` take ``servers=``
 (default: the first ``t`` of the public parameters' ``lst_sid``) and give each
 enrolled server its label key share for the round and, once per weights, its
-weight key share. The messages of a deployment are those of the separate
+weight key share. A label is tied to the weights of one call; the section
+"Policy-gated aggregation" below describes the tie, and what happens to the
+key shares of the call that loses a race for a label. The messages of a
+deployment are those of the separate
 steps: :func:`~pyfe4ai.ml.partial_decrypt_gradients` at each
 server and :func:`~pyfe4ai.ml.combine_partial_decryptions` at
 the combiner, exchanging :class:`~pyfe4ai.ml.ThresholdPartial`
@@ -114,7 +117,8 @@ pass the check at once with other weights for one label, the first to tie it
 keeps the label and the other is refused (``ValueError``) only after it has
 obtained its key; in the threshold MCFE that the wrapper runs, the losing call
 has already obtained key shares from the servers (its weight key share is added
-to the wrapper's server objects), and these shares never reach the caller.
+to the wrapper's server objects where they lack it), and these shares never
+reach the caller.
 
 A :class:`~pyfe4ai.ml.PreparedAggregation` keeps the canonical encoding of its
 policy in ``policy``; the attributes are judged against it when the round is

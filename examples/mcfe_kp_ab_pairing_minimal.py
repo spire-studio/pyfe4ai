@@ -3,8 +3,8 @@
 Each of three clients holds one number and encrypts it under a tag (the round)
 and the round's set of attributes; all clients use the same set. A functional
 key is for a weight vector and a policy: when the round's attributes satisfy the
-policy it gives the weighted sum of the clients' numbers and nothing else, and
-when they do not it is refused. The key authority holds the master key and the
+policy it gives the weighted sum of the clients' numbers, and when they do not
+it is refused. The key authority holds the master key and the
 clients' secret keys, so this is a private-key scheme.
 
 A decryption needs the ciphertexts of every client (the shares of the clients'

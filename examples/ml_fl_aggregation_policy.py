@@ -1,9 +1,9 @@
 """Policy-gated federated gradient aggregation with PyFE4AI.
 
 Three FL clients each hold a gradient. They encrypt it for a set of attributes
-(``encrypt_gradient(..., attributes=...)``), and the aggregator receives the
-weighted sum only for a policy those attributes satisfy
-(``aggregate_gradients(..., policy=...)``); for a policy they do not satisfy
+(``encrypt_gradient(..., attributes=...)``), and
+``aggregate_gradients(..., policy=...)`` issues the key for the weighted sum
+only if those attributes satisfy the policy; for a policy they do not satisfy
 the adapter refuses before any key is issued.
 
 This is ``mcfe/kp_ab_pairing`` (NPP22 Sec. 5.2) behind the ML adapter. Every
