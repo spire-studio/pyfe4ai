@@ -129,14 +129,8 @@ from pyfe4ai.primitives.pairing.pairing_utils import random_nonzero_zr
 from pyfe4ai.primitives.pairing.pairing_utils import serialize_matrix_g
 from pyfe4ai.primitives.pairing.pairing_utils import transpose_mod
 from pyfe4ai.schemes.common.ac_binding import check_binding, pp_digest
-from pyfe4ai.schemes.common.ac_codec import check_dlog_limit as _check_dlog_limit
-from pyfe4ai.schemes.common.ac_codec import check_length as _check_length
-from pyfe4ai.schemes.common.ac_codec import decimal as _decimal
-from pyfe4ai.schemes.common.ac_codec import positive_int as _positive_int
-from pyfe4ai.schemes.common.ac_codec import read_elements as _elements
-from pyfe4ai.schemes.common.ac_codec import read_record as _record
-from pyfe4ai.schemes.common.ac_codec import require_fields as _require_fields
-from pyfe4ai.schemes.common.ac_codec import serialize_vec as _serialize_vec
+from pyfe4ai.schemes.common.ac_codec import check_dlog_limit, check_length, decimal, positive_int
+from pyfe4ai.schemes.common.ac_codec import read_elements, read_record, require_fields, serialize_vec
 
 logger = logging.getLogger(__name__)
 
@@ -179,13 +173,13 @@ class SIFECPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         require_pairing_backend()
         if config.get("universe") is None:
             raise FEConfigError("the attribute-based IPFE needs the config option universe")
-        self.eta = _positive_int(config.get("eta", CryptoCONST.SIFE_DEFAULT_ETA), "eta")
-        self.bound_x = _positive_int(config.get("bound_x", 16), "bound_x")
-        self.bound_y = _positive_int(config.get("bound_y", 16), "bound_y")
-        self.max_copies = _positive_int(config.get("max_copies", _DEFAULT_MAX_COPIES), "max_copies")
-        self.max_columns = _positive_int(config.get("max_columns", _DEFAULT_MAX_COLUMNS), "max_columns")
-        self.max_rows = _positive_int(config.get("max_rows", DEFAULT_MAX_ROWS), "max_rows")
-        _check_dlog_limit(self.eta, self.bound_x, self.bound_y)
+        self.eta = positive_int(config.get("eta", CryptoCONST.SIFE_DEFAULT_ETA), "eta")
+        self.bound_x = positive_int(config.get("bound_x", 16), "bound_x")
+        self.bound_y = positive_int(config.get("bound_y", 16), "bound_y")
+        self.max_copies = positive_int(config.get("max_copies", _DEFAULT_MAX_COPIES), "max_copies")
+        self.max_columns = positive_int(config.get("max_columns", _DEFAULT_MAX_COLUMNS), "max_columns")
+        self.max_rows = positive_int(config.get("max_rows", DEFAULT_MAX_ROWS), "max_rows")
+        check_dlog_limit(self.eta, self.bound_x, self.bound_y)
         self.universe = Universe(config["universe"], self.max_copies)
         self.pairing_group_param = config.get("pairing_group_param", DEFAULT_PAIRING_GROUP)
         check_asymmetric(self.pairing_group_param)
@@ -250,9 +244,9 @@ class SIFECPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
             universe_digest=self.universe.digest(),
             g1=group.serialize(g1).decode("utf-8"),
             g2=group.serialize(g2).decode("utf-8"),
-            a=_serialize_vec(group, pow_many(g1, a, group)),
-            b=_serialize_vec(group, pow_many(g2, b, group)),
-            ua=_serialize_vec(group, pow_many(g1, ua, group)),
+            a=serialize_vec(group, pow_many(g1, a, group)),
+            b=serialize_vec(group, pow_many(g2, b, group)),
+            ua=serialize_vec(group, pow_many(g1, ua, group)),
             w_a=serialize_matrix_g(group, _pairs(pow_many(g1, w_a, group))),
             w_b=serialize_matrix_g(group, _pairs(pow_many(g2, w_b, group))),
         ).to_dict()
@@ -316,13 +310,13 @@ class SIFECPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         for label in attributes:
             for copy in range(1, self.universe.max_copies + 1):
                 entry = deserialize_many(group, pp["w_b"][self.universe.index(label, copy)])
-                k_attr["{}#{}".format(label, copy)] = _serialize_vec(group, [elem ** r for elem in entry])
+                k_attr["{}#{}".format(label, copy)] = serialize_vec(group, [elem ** r for elem in entry])
 
         return CPABFunctionalKey.new(
             attributes=attributes,
             y=[str(value) for value in y],
-            k1=_serialize_vec(group, k1),
-            k0=_serialize_vec(group, k0),
+            k1=serialize_vec(group, k1),
+            k0=serialize_vec(group, k0),
             k_attr=k_attr,
             pp_binding=pp["pp_binding"],
         ).to_dict()
@@ -389,8 +383,8 @@ class SIFECPABPairing(IPFEAbsCrypto):
         authority, so the lengths are checked too: they bound what later
         calls read, ``max_copies`` of a hostile ``universe`` among it.
         """
-        parameters = _record(CPABParameters, pp, "public parameters")
-        _require_fields(parameters, "public parameters")
+        parameters = read_record(CPABParameters, pp, "public parameters")
+        require_fields(parameters, "public parameters")
         if pp_digest(pp, _PP_DOMAIN) != parameters.pp_binding:
             raise FEValidationError("the public parameters do not agree with their pp_binding")
         if parameters.policy_compiler != POLICY_COMPILER:
@@ -403,20 +397,20 @@ class SIFECPABPairing(IPFEAbsCrypto):
         if parameters.universe_digest != universe.digest():
             raise FEValidationError("the universe_digest of the public parameters is not the digest of their universe")
 
-        self.eta = _positive_int(parameters.eta, "eta")
-        self.bound_x = _positive_int(_decimal(parameters.bound_x, "bound_x"), "bound_x")
-        self.bound_y = _positive_int(_decimal(parameters.bound_y, "bound_y"), "bound_y")
-        self.max_columns = _positive_int(parameters.max_columns, "max_columns")
-        self.max_rows = _positive_int(parameters.max_rows, "max_rows")
-        _check_dlog_limit(self.eta, self.bound_x, self.bound_y)
-        _check_length(parameters.a, 2, "a")
-        _check_length(parameters.b, 2, "b")
-        _check_length(parameters.ua, self.eta, "ua")
+        self.eta = positive_int(parameters.eta, "eta")
+        self.bound_x = positive_int(decimal(parameters.bound_x, "bound_x"), "bound_x")
+        self.bound_y = positive_int(decimal(parameters.bound_y, "bound_y"), "bound_y")
+        self.max_columns = positive_int(parameters.max_columns, "max_columns")
+        self.max_rows = positive_int(parameters.max_rows, "max_rows")
+        check_dlog_limit(self.eta, self.bound_x, self.bound_y)
+        check_length(parameters.a, 2, "a")
+        check_length(parameters.b, 2, "b")
+        check_length(parameters.ua, self.eta, "ua")
         for name in ("w_a", "w_b"):
             table = getattr(parameters, name)
-            _check_length(table, universe.size + self.max_columns, name)
+            check_length(table, universe.size + self.max_columns, name)
             for entry in table:
-                _check_length(entry, 2, name)
+                check_length(entry, 2, name)
         self.universe = universe
         self.max_policy_length = self.max_rows * (max(len(label) for label in universe.labels) + 400)
 
@@ -429,7 +423,7 @@ class SIFECPABPairing(IPFEAbsCrypto):
         key = (name, index)
         if key not in self._decoded:
             items = self.pp[name] if index is None else self.pp[name][index]
-            self._decoded[key] = _elements(self.group, items, kind, name)
+            self._decoded[key] = read_elements(self.group, items, kind, name)
         return self._decoded[key]
 
     def _check_policy_length(self, policy: str) -> None:
@@ -479,7 +473,7 @@ class SIFECPABPairing(IPFEAbsCrypto):
         """
         x = int_vector(lst_pt, "plaintext", length=self.eta, bound=self.bound_x)
         group, order = self.group, int(self.order)
-        g1 = _elements(group, [self.pp["g1"]], G1, "g1")[0]
+        g1 = read_elements(group, [self.pp["g1"]], G1, "g1")[0]
         if precomputed is None:
             s, parts = self._random_part(policy)
             ua = self._pp_elements(G1, "ua")
@@ -543,30 +537,30 @@ class SIFECPABPairing(IPFEAbsCrypto):
         return s, {
             "policy": encoding,
             "policy_digest": policy_digest(policy),
-            "c1": _serialize_vec(group, c1),
+            "c1": serialize_vec(group, c1),
             "c2": serialize_matrix_g(group, c2),
         }
 
     def _ciphertext(self, parts: dict, c3: list) -> dict:
         return CPABCiphertext.new(
             policy_compiler=POLICY_COMPILER,
-            c3=_serialize_vec(self.group, c3),
+            c3=serialize_vec(self.group, c3),
             pp_binding=self.pp["pp_binding"],
             **parts,
         ).to_dict()
 
     def _check_key(self, key: CPABFunctionalKey) -> list[int]:
         """Check the shape of *key*, and return its weights ``y`` as ints."""
-        _check_length(key.k1, 2, "k1")
-        _check_length(key.k0, 2, "k0")
+        check_length(key.k1, 2, "k1")
+        check_length(key.k0, 2, "k0")
         if type(key.k_attr) is not dict:
             raise FEValidationError("k_attr must be a dict from label#copy to two group elements")
         for entry in key.k_attr.values():
-            _check_length(entry, 2, "k_attr")
+            check_length(entry, 2, "k_attr")
         if type(key.attributes) is not list or not all(type(label) is str for label in key.attributes):
             raise FEValidationError("attributes must be a list of labels")
-        _check_length(key.y, self.eta, "y")
-        y = [_decimal(value, "y") for value in key.y]
+        check_length(key.y, self.eta, "y")
+        y = [decimal(value, "y") for value in key.y]
         if any(abs(value) > self.bound_y for value in y):
             raise FEValidationError("y has an entry above the limit bound_y = {}".format(self.bound_y))
         return y
@@ -591,13 +585,13 @@ class SIFECPABPairing(IPFEAbsCrypto):
             ValueError: If the discrete log is not found: the key and the
                 ciphertext do not fit, whatever their fields say.
         """
-        ct = _record(CPABCiphertext, dct_ct, "ciphertext")
-        key = _record(CPABFunctionalKey, dk, "functional key")
+        ct = read_record(CPABCiphertext, dct_ct, "ciphertext")
+        key = read_record(CPABFunctionalKey, dk, "functional key")
 
         check_binding(self.pp, ct, "ciphertext")
         check_binding(self.pp, key, "functional key")
-        _require_fields(ct, "ciphertext")
-        _require_fields(key, "functional key")
+        require_fields(ct, "ciphertext")
+        require_fields(key, "functional key")
         if ct.policy_compiler != POLICY_COMPILER:
             raise FEValidationError("policy compiler {} is not this version's {!r}".format(
                 clip(repr(ct.policy_compiler)), POLICY_COMPILER))
@@ -609,11 +603,11 @@ class SIFECPABPairing(IPFEAbsCrypto):
         if policy_digest(formula) != ct.policy_digest:
             raise FEValidationError("the policy_digest of the ciphertext is not the digest of its policy")
         msp, rows = self._compile(formula)
-        _check_length(ct.c1, 2, "c1")
-        _check_length(ct.c2, msp.num_rows, "c2")
+        check_length(ct.c1, 2, "c1")
+        check_length(ct.c2, msp.num_rows, "c2")
         for row in ct.c2:
-            _check_length(row, 2, "c2")
-        _check_length(ct.c3, self.eta, "c3")
+            check_length(row, 2, "c2")
+        check_length(ct.c3, self.eta, "c3")
         y = self._check_key(key)
         if fusion_weight is not None:
             if int_vector(fusion_weight, "fusion weight", length=self.eta) != y:
@@ -632,14 +626,14 @@ class SIFECPABPairing(IPFEAbsCrypto):
                 )
 
         group, order, pp = self.group, int(self.order), self.pp
-        c1 = _elements(group, ct.c1, G1, "c1")
-        c2 = _pairs(_elements(group, [item for row in ct.c2 for item in row], G1, "c2"))
-        c3 = _elements(group, ct.c3, G1, "c3")
-        k1 = _elements(group, key.k1, G2, "k1")
-        k0 = _elements(group, key.k0, G2, "k0")
-        k_attr = [_elements(group, key.k_attr[name], G2, "k_attr") for name in names]
-        g1 = _elements(group, [pp["g1"]], G1, "g1")[0]
-        g2 = _elements(group, [pp["g2"]], G2, "g2")[0]
+        c1 = read_elements(group, ct.c1, G1, "c1")
+        c2 = _pairs(read_elements(group, [item for row in ct.c2 for item in row], G1, "c2"))
+        c3 = read_elements(group, ct.c3, G1, "c3")
+        k1 = read_elements(group, key.k1, G2, "k1")
+        k0 = read_elements(group, key.k0, G2, "k0")
+        k_attr = [read_elements(group, key.k_attr[name], G2, "k_attr") for name in names]
+        g1 = read_elements(group, [pp["g1"]], G1, "g1")[0]
+        g2 = read_elements(group, [pp["g2"]], G2, "g2")[0]
 
         exps = list(weights.values())
         folded_y = multiexp(c3, [value % order for value in y], group)
