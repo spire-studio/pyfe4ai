@@ -732,9 +732,10 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
             _check_marker(ct.attr_hash, ATTR_HASH, "the attr_hash of " + owner)
             _check_marker(ct.tag_hash, TAG_HASH, "the tag_hash of " + owner)
 
-    def _check_ciphertexts(self, cts: dict, label) -> list:
+    def _check_ciphertexts(self, cts: dict, label) -> dict:
         """Check that *cts* are the ciphertexts of all clients and no other, each in the slot of its client, under one
-        tag and one set of attributes (and under *label*, if it is not ``None``), and return the attributes."""
+        tag and the claims of ``_CLAIMS`` (one set of attributes, here; and under *label*, if it is not ``None``), and
+        return the attributes of each client, as ``{nid: list}``."""
         _check_clients(cts, self.lst_nid, "the ciphertexts")
         for nid, ct in cts.items():
             named = as_id(ct.nid)       # a numpy integer is the int it equals; an array is not compared with a str

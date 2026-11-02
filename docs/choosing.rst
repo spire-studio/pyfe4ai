@@ -151,8 +151,15 @@ Every scheme carries a review status (the full table is on
 its security argument is the project's own (the threshold layers of
 tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE and tMCFE-FH-Multi-IPE, and the carry
 mask of dMCFE-DDH); *unreviewed* -- not yet checked (the three
-``ddh_ristretto255`` schemes and ``sife/cp_ab_pairing``). No scheme is
-currently *known-insecure*.
+``ddh_ristretto255`` schemes and the attribute-based ``sife/cp_ab_pairing``,
+``sife/kp_ab_pairing`` and ``mcfe/kp_ab_pairing``); *known-insecure* -- a
+concrete privacy defect is known: ``mcfe/kp_ab_pairing_per_client``, the
+version of ``mcfe/kp_ab_pairing`` in which each client has an attribute set of
+its own (NPP22 Sec. 5.4). Its fifth coordinate does not depend on the tag, so
+two keys of one ``y`` that each refuse both of two rounds give the difference of
+the two rounds' inner products. It warns when built, the ``standard`` profile
+refuses it, and the ML adapter does not take it; it is for functionality and
+performance experiments and as the record of the attack.
 
 Which scheme for which task
 ---------------------------

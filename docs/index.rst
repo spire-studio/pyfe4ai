@@ -36,6 +36,10 @@ Security & status
   |n_known_insecure| known-insecure. The experimental ones are the threshold
   layers of tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE and tMCFE-FH-Multi-IPE and
   the carry mask of dMCFE-DDH (our own constructions, no published proof).
+  The known-insecure one is ``mcfe/kp_ab_pairing_per_client`` (the attribute
+  set of each client of NPP22 Sec. 5.4: two rounds and two keys give the
+  difference of the rounds' inner products); it warns when built and the
+  ``standard`` profile refuses it.
   ``pyfe4ai.get_scheme_status("family/variant")`` returns a scheme's entry.
 * **Security profiles**: ``security_profile="toy"``, the default, is **not
   secure**; ``"standard"`` aims at 128-bit security (3072-bit DL groups

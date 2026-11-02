@@ -25,7 +25,7 @@ from tests.pairing_group import GROUP, skip_unless_available
 skip_unless_available()
 
 from tests.mcfe.conftest import refuse_to_compute
-from pyfe4ai.core.exceptions import FEKeyError, FEValidationError, FEWarning
+from pyfe4ai.core.exceptions import FEKeyError, FESecurityWarning, FEValidationError, FEWarning
 from pyfe4ai.ml import EncryptedGradient, FESchemeWrapper, PreparedAggregation
 from pyfe4ai.ml import aggregate_gradients, encrypt_gradient, precompute_gradient, prepare_aggregation
 from pyfe4ai.ml import gradients as ml_gradients
@@ -233,8 +233,10 @@ def test_the_single_input_attribute_schemes_keep_their_refusal():
 def test_the_per_client_scheme_is_refused_by_every_entry_point():
     """The per-client scheme of NPP22 Sec. 5.4 lets the clients of one tag hold different sets of attributes, and the
     adapter aggregates one set. The scheme is registered with the capability ``access_control``, and the adapter
-    names it in its refusal at the first line of each entry point, before it encrypts or issues a key."""
-    wrapper = make_wrapper_of("kp_ab_pairing_per_client")
+    names it in its refusal at the first line of the four aggregation entry points, before it encrypts or issues a
+    key."""
+    with pytest.warns(FESecurityWarning, match="mcfe/kp_ab_pairing_per_client is known to be insecure"):
+        wrapper = make_wrapper_of("kp_ab_pairing_per_client")        # the adapter does not hide the status
     assert wrapper.access_control is True
     grads = gradients()
     match = "kp_ab_pairing_per_client.*different sets of attributes"
@@ -763,7 +765,7 @@ def test_the_module_carries_the_mark_of_the_pairing_tests(request):
     assert request.node.get_closest_marker("core") is None
 
 
-def test_the_fl_coverage_benchmark_finds_the_scheme_usable():
+def test_the_fl_coverage_benchmark_finds_the_scheme_usable_and_the_per_client_scheme_refused():
     if not pairing_available(DEFAULT_PAIRING_GROUP):         # the benchmark runs the default group, not GROUP
         pytest.skip("no backend for pairing group {}".format(DEFAULT_PAIRING_GROUP))
     path = ROOT / "benchmarks" / "commands" / "fl_coverage.py"
@@ -773,5 +775,6 @@ def test_the_fl_coverage_benchmark_finds_the_scheme_usable():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", FEWarning)             # the options of its shared configuration that it ignores
         assert coverage.check_entry("mcfe", "kp_ab_pairing") == ("usable", "")
-        status, detail = coverage.check_entry("mcfe", "kp_ab_pairing_per_client")     # the adapter refuses it
+        with pytest.warns(FESecurityWarning, match="known to be insecure"):
+            status, detail = coverage.check_entry("mcfe", "kp_ab_pairing_per_client")     # the adapter refuses it
         assert status == "unusable" and "different sets of attributes" in detail

@@ -61,6 +61,36 @@ def aggregate(agg, cts, dk, y=Y, label="round-1"):
     return agg.decrypt_lst_ndarray_ct(cts, dk=dk, fusion_weight={nid: [y[nid]] for nid in y}, label=label)
 
 
+def key_part(group, ct, dk, nid, policy):
+    """``prod_j e(c_j, k*_j)^w_j / e(c_ipfe, k*_ipfe)``: the part of the client *nid* in a decryption with the key *dk*
+    for *policy*, from the fields of the records, a span program of :mod:`pyfe4ai.policy` and the pairing alone (the
+    scheme under test is not called). It holds for both multi-client schemes: the vectors of ``c_ipfe`` and ``k_ipfe``
+    are as long as the scheme's."""
+    from pyfe4ai.policy import compile_formula, parse
+    from pyfe4ai.primitives.pairing.dpvs import vector_pair
+    from pyfe4ai.primitives.pairing.pairing_backend import deserialize_many
+
+    order = int(group.order())
+    msp = compile_formula(parse(policy), order)
+    weights = msp.reconstruction(ct["attributes"])
+    assert weights is not None, "the client's attributes do not satisfy the policy"
+    part = None
+    for row, weight in weights.items():
+        at = ct["attributes"].index(msp.row_labels[row])
+        term = vector_pair(deserialize_many(group, ct["c_attr"][at]),
+                           deserialize_many(group, dk["k_rows"][nid][row])) ** (weight % order)
+        part = term if part is None else part * term
+    ipfe = vector_pair(deserialize_many(group, ct["c_ipfe"]), deserialize_many(group, dk["k_ipfe"][nid]))
+    return part / ipfe
+
+
+def masked_plaintext(group, ct, y_i, g2):
+    """``e(t_i, [y_i]_2)``: the masked plaintext of the ciphertext *ct* against the weight *y_i* of its client."""
+    from pyfe4ai.primitives.pairing.pairing_backend import pair
+
+    return pair(group.deserialize(ct["t"].encode("utf-8")), g2 ** (y_i % int(group.order())))
+
+
 def refuse_to_compute(monkeypatch):
     """Make the decoding of a group element, a pairing (single, or over prepared points) and a discrete log fail the
     test."""

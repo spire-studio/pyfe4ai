@@ -170,29 +170,32 @@ Every registered scheme carries a review status, declared with the scheme in
 the registry [`pyfe4ai/core/registry.py`](pyfe4ai/core/registry.py) and
 available at runtime as `pyfe4ai.get_scheme_status("family/variant")`.
 Instantiating a key generator or crypto object of a known-insecure scheme
-emits a `pyfe4ai.FESecurityWarning`.
+emits a `pyfe4ai.FESecurityWarning` that names the issue, and
+`security_profile="standard"` refuses such a scheme (`FEConfigError`).
 
 - **reviewed**: checked against the cited construction; no defect known.
   *faithful* = the published construction as written; *adapted* = the
   published construction with the documented deviation in the last column.
 - **experimental**: implemented and checked here, but the construction or
-  its security argument is our own (*ad-hoc*) rather than published, or the
-  paper only sketches the proof of the published construction; no defect
-  known.
+  its security argument is our own (*ad-hoc*) rather than published; no
+  defect known.
 - **unreviewed**: not yet checked against its paper; no defect is known,
   but none was looked for systematically either.
-- **known-insecure**: a concrete privacy defect is known; the scheme computes
-  correct results but provides no meaningful privacy. Use it only for
-  functionality or performance experiments.
+- **known-insecure**: a concrete privacy defect is known (the Known Issues
+  below say what leaks); the scheme computes correct results but does not give
+  the privacy it claims. Use it only for functionality or performance
+  experiments.
 
-Currently 34 reviewed, 6 experimental and 6 unreviewed out of 46 registered
-schemes; none is known to be insecure. Experimental: the threshold layers of
+Currently 34 reviewed, 5 experimental, 6 unreviewed and 1 known-insecure out
+of 46 registered schemes. Experimental: the threshold layers of
 `mife/lwe_threshold`, `mcfe/lwe_threshold`, `mcfe/ring_lwe_threshold` and
-`mcfe/fh_multi_ipe_pairing_threshold`, the carry mask of
-`mcfe/ddh_decentralized`, and `mcfe/kp_ab_pairing_per_client`, a published
-construction (NPP22 Sec. 5.4) whose proof the paper only sketches. Unreviewed: the DDH schemes over ristretto255
+`mcfe/fh_multi_ipe_pairing_threshold`, and the carry mask of
+`mcfe/ddh_decentralized`. Unreviewed: the DDH schemes over ristretto255
 (`*/ddh_ristretto255`, selected with `group="ristretto255"`) and
 `sife/cp_ab_pairing`, `sife/kp_ab_pairing` and `mcfe/kp_ab_pairing`, new code.
+Known-insecure: `mcfe/kp_ab_pairing_per_client`, the version of
+`mcfe/kp_ab_pairing` in which each client has an attribute set of its own
+(NPP22 Sec. 5.4); see Known Issues.
 
 <details>
 <summary><strong>Status, construction and deviations of every scheme</strong> (46 rows, rendered by <code>pyfe4ai.core.status.markdown_table()</code>; a test keeps it in sync)</summary>
@@ -241,7 +244,7 @@ construction (NPP22 Sec. 5.4) whose proof the paper only sketches. Unreviewed: t
 | `mcfe/ring_lwe_decentralized` | reviewed | adapted | BMMS21 Sec. 6 identity-based DMCFE (ABKW19 + GDSum) | GDSum realised as pairwise PRF zero-sum masks (its full specification is only in the ePrint version); pairwise secrets sampled in-process |
 | `mcfe/paillier_decentralized` | reviewed | adapted | ABMPSW20 Fig. 14 (MCFE1 = Fig. 3) | MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) are sampled in-process |
 | `mcfe/kp_ab_pairing` | unreviewed | faithful | NPP22 Sec. 5.2 Fig. 3 | random oracle (tags hash to G1); one attribute set per tag, shared by all clients; one ciphertext per client and tag; every client must encrypt, no all-or-nothing layer (Remark 10); ciphertexts not authenticated; a key covers every tag |
-| `mcfe/kp_ab_pairing_per_client` | experimental | adapted | NPP22 Sec. 5.4 | proof only sketched (App. B.5); each client has its own attribute set; a fifth coordinate stops keys of two policies being spliced; the msk also holds h*_{i,5}, which the paper's list omits |
+| `mcfe/kp_ab_pairing_per_client` | known-insecure | adapted | NPP22 Sec. 5.4 | see [Known Issues](#known-issues--security-notice) |
 | `quadratic/quad` | reviewed | adapted | Gay20 Fig. 4 over Fig. 8 (CPA) | signed inputs (discrete log in [-n m B^3, n m B^3]); CPA variant (no QANIZK); asymmetric pairing (default BLS12-381) |
 | `quadratic/sgp` | reviewed | adapted | DSGPP18 Fig. 2 | public key pk = (g1^s, g2^t) as in the paper; signed inputs with one bound B for x, y and F (discrete log in [-n^2 B^3, n^2 B^3]); generic bilinear group model |
 | `quadratic/miqfe` | reviewed | adapted | AGT22 Sec. 5 (MIFE for quadratic functions) | cross-user terms only (Def. 2.9); per-user encryption keys made of master ciphertexts; building blocks TAO20 FH-IPFE, Fig. 9 and Fig. 1 as in the paper; PRF = HMAC-SHA512; pos-security (every user contributes); k = mddh_k >= 2 |
@@ -278,6 +281,7 @@ an `FEWarning`. Give each configuration its own `cache_dir` to keep both (see
 | LWE with a public matrix (`sife/lwe`, `mife/lwe`) | `lwe_n = "auto"`, read at the error width of the LWE problem the proof reduces to; `matrix_mode` trades memory for time |
 | Pairings: FH-IPE, FH-MCFE family, quadratic FE | BLS12-381: about **120–126-bit** after the exTNFS attacks, below the target; a `FESecurityWarning` says so |
 | Refused (`FEValidationError`) | `sife/fullysec_lwe`, `mife/fullysec_lwe` (ALS16), `mife/lwe_threshold`, `mcfe/paillier_decentralized`: no parameter set that is both secure and usable |
+| Refused (`FEConfigError`) | every *known-insecure* scheme (`mcfe/kp_ab_pairing_per_client`): `standard` is for security |
 
 The statistical parameter `stat_param` (rounding and leftover-hash slack,
 flooding, masks) is 128 under `standard`; lower explicit values are refused.
@@ -326,13 +330,15 @@ ciphertext formats, several threads and the other families.
 
 ## Known Issues / Security Notice
 
-No registered scheme is currently known to be insecure (should one be found,
-the [Scheme Status](#scheme-status) table marks it *known-insecure* and its
-key generator emits a `pyfe4ai.FESecurityWarning`). The following
-limitations remain:
+One registered scheme is known to be insecure, `mcfe/kp_ab_pairing_per_client`
+(first row below; the [Scheme Status](#scheme-status) table marks it
+*known-insecure*, its key generator and crypto objects emit a
+`pyfe4ai.FESecurityWarning`, and `security_profile="standard"` refuses it).
+The following limitations remain as well:
 
 | Issue | Affected | In short |
 |---|---|---|
+| Two rounds and two keys leak the difference of the rounds' inner products | `mcfe/kp_ab_pairing_per_client` (*known-insecure*) | the fifth coordinate of NPP22 Sec. 5.4 does not depend on the tag, so Thm. 25 as stated fails; for functionality and performance experiments only |
 | Toy default parameters | all schemes | not secure; pass `security_profile="standard"` (pairings stay at about 120–126 bits) |
 | No side-channel hardening | all schemes | CPython and big-integer arithmetic are not constant-time, nor is the pure-Python ristretto255 fallback |
 | No labels in multi-input FE | all MIFE schemes, quadratic `miqfe` | several inputs per client under one key reveal their differences; use MCFE for federated learning |
@@ -348,6 +354,7 @@ limitations remain:
 
 | Issue | Affected schemes | Consequence |
 |---|---|---|
+| Two rounds and two keys leak the difference of the rounds' inner products | `mcfe/kp_ab_pairing_per_client` | In NPP22 Sec. 5.4 each client encrypts for an attribute set of its own, which opens a mix-and-match attack on keys of different policies; the paper adds a fifth coordinate `d_i` to `k_i,ipfe` with `sum theta_i d_i = 0`. That obstacle depends on the key and the client, not on the tag. Two keys of one `y`, each given to the clients whose set it satisfies and each refused by both of two rounds (two tags: two labels, or two elements of one array), therefore give the difference of the two rounds' inner products `<x - x', y>`. The adversary is admissible in the paper's security game, so Theorem 25 (App. B.5, whose proof is only sketched) fails as stated. `mcfe/kp_ab_pairing`, with one attribute set per tag, is not affected. The scheme is kept for functionality and performance experiments and as the record of the attack (`test_two_tags_and_two_keys_read_the_difference_of_two_rounds`). |
 | No labels in multi-input FE | all MIFE schemes and quadratic `miqfe` | By definition, the holder of a functional key may combine any ciphertext of each slot. Encrypting several inputs per client under one key epoch -- e.g. a gradient element by element -- therefore reveals the differences between that client's values. The ML adapter refuses MIFE for gradient aggregation; use MCFE (labelled ciphertexts) for federated learning. |
 | Constructions of our own | tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE, tMCFE-FH-Multi-IPE; the dMCFE-DDH carry mask | The threshold layers (noise flooding, replicated or Shamir key sharing, sharing in the exponent) and the carry mask of `mcfe/ddh_decentralized` are our own and have no published security proof; see the module docstrings. |
 | Honest-but-curious decryption servers | all threshold schemes (tMIFE, tMCFE) | Fewer than `t` servers learn nothing beyond the result, but partial decryptions carry no proof of correctness: one server that deviates changes the result without notice. `combine_decrypt` accepts partial decryptions for several enrolled sets (a list of `{sid: partial}` mappings) and raises `FESchemeError` if they disagree; this detects one faulty server (not which one) if every server is left out of some set, e.g. the `t + 1` subsets of size `t` of `t + 1` servers. tMCFE-DDH and tMCFE-FH-Multi-IPE servers decrypt only ciphertexts under the label they are asked for (`share_decrypt(..., label)`). tMCFE-Ring-LWE key shares and partial decryptions carry a `sharing_id`: store and transmit it with them. A combiner refuses partials of two sharings of one key (`MixedSharingsError`), which would otherwise decode to a wrong value inside the decoding bound; partials without an id combine only with each other, so a storage or transport layer that drops the id everywhere would let two sharings be mixed unnoticed. |

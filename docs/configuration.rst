@@ -155,6 +155,9 @@ Refused and constrained combinations
    * - ``mcfe/kp_ab_pairing`` and ``mcfe/kp_ab_pairing_per_client``
      - no ``n``; ``eta`` other than 1; ``n * bound_x * bound_y`` above ``2^48``
      - ``FEConfigError`` (no ``n``); ``FEValidationError`` (the others)
+   * - a known-insecure scheme (``mcfe/kp_ab_pairing_per_client``)
+     - ``security_profile = 'standard'``
+     - ``FEConfigError``; under ``toy`` a ``FESecurityWarning`` from the key generator and the crypto objects
    * - the other pairing and quadratic schemes
      - a discrete-log bound above ``2^48`` (e.g. ``eta bound_x bound_y``, ``n m bound^3``)
      - ``ValueError`` at decryption (quadratic schemes: ``None`` and a warning)

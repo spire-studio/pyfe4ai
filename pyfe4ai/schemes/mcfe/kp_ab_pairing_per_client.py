@@ -9,8 +9,12 @@ each client
   attribute labels (:mod:`pyfe4ai.policy`); a functional key for a weight vector ``y`` and a policy opens ``<x, y>``
   when the set of every client satisfies the policy
 * setting:  asymmetric pairing group (default BLS12-381), random oracle (the hash of the tag to ``G1``)
-* status:   **experimental**. The paper gives the construction and sketches its proof in App. B.5 as the changes to
-  that of Thm. 14; it states no theorem. Nothing here is a security proof, and the implementation has had no review.
+* status:   **known-insecure**. App. B.5 of the paper states Theorem 25 for this construction and sketches its proof
+  as changes to that of Thm. 14. Thm. 25 as stated fails: two tags and two keys of one ``y``, neither of which opens
+  either round, give the difference of the two rounds' inner products (see "The attack that the fifth coordinate does
+  not stop" below). The scheme is kept for functionality and performance experiments and as the record of that attack.
+  Its key generator and crypto objects emit a ``FESecurityWarning`` that names the issue, and the ``standard``
+  security profile refuses it (``FEConfigError``). The implementation has had no review.
 
 Sec. 5.2 hashes ``(tag, S)``, so all clients must agree on the set of attributes at the time of encryption. Sec. 5.4
 hashes the tag only (``[omega]_1, [omega']_1 = H(tag)``) and lets each client ``i`` encrypt for a set ``S_i`` of its
@@ -25,8 +29,20 @@ opens the ciphertexts. The scheme closes it with a fifth dimension of the bases 
   ``sum_i theta_i d_i = 0`` (the first ``n - 1`` at random, the last solved: :func:`_zero_sum_coordinates`).
 
 The terms ``theta_i d_i`` add up to zero in a decryption with one key, so it is as in Fig. 3. With the parts of two
-keys they add up to ``theta_1 d_A,1 + theta_2 d_B,2``, which is not zero except with negligible probability. This holds
-for any two keys, also of one policy and one ``y``: the keys of one function cannot be spliced either.
+keys under one tag they add up to ``theta_1 d_A,1 + theta_2 d_B,2``, which is not zero except with negligible
+probability. This holds for any two keys, also of one policy and one ``y``: under one tag the keys of one function
+cannot be spliced either.
+
+The attack that the fifth coordinate does not stop. ``theta_i d_{K,i}`` depends on the key ``K`` and the client, not on
+the tag. Take two keys ``A`` and ``B`` of one ``y``, each given to the clients whose set it satisfies, and two tags. The
+part of a client, ``V_i(tag)`` (its attribute rows, minus ``c_i,ipfe`` against ``k*_i,ipfe``, plus ``e(t_i, [y_i]_2)``),
+carries the same obstacle ``theta_i d_{K,i}`` under both tags, so ``sum_i (V_i(tag) - V_i(tag'))`` is
+``[<x_tag - x_tag', y>]_T``. Neither key opens either round (each refuses both with ``FEKeyError``), yet together they
+give the difference of the two rounds' inner products. The two tags can be two labels or two elements of one array,
+which the helpers encrypt under a tag each. The adversary is admissible under Def. 9 of the paper (encryptions under a tag
+other than the challenge tag are allowed, and the keys are unrelated to both rounds), so Thm. 25 as stated fails.
+``test_two_tags_and_two_keys_read_the_difference_of_two_rounds`` reproduces it from the fields of the records.
+``mcfe/kp_ab_pairing`` is not affected: one attribute set per tag, so a key that gives a part opens the tag.
 
 Everything else is as in :mod:`pyfe4ai.schemes.mcfe.kp_ab_pairing`, which this module extends (its documentation
 applies): ``(F, F*)`` are dual bases of ``G1^8`` and ``G2^8`` shared by all clients, the rows of a policy sit in the
@@ -50,12 +66,11 @@ its client, ``t_i = [omega s_i + omega' u_i + x_i]_1`` with ``S, U`` in ``(Z_q^*
   (NPP22 Remark 10), so no decryption leaves one out. The pairing is one ``multi_pair`` of
   ``sum_i (8 |A_i| + 5) + 1`` pairs, ``|A_i|`` the rows that client ``i`` uses.
 
-A client encrypts once under a tag, and with this scheme that is the whole safeguard. Two ciphertexts of one client
-under one tag have the same ``omega, omega'`` and ``t`` values that differ by the difference of the plaintexts in the
-exponent (``t_1 / t_2 = g1^(x_1 - x_2)``). In ``mcfe/kp_ab_pairing`` the points also depend on the set of attributes,
-so a client that encrypts for two sets does not give that away; here the tag no longer binds the set, and nothing
-does. The scheme layer does not check it, as with the other labelled multi-client schemes
-(:mod:`pyfe4ai.schemes.mcfe.labels`).
+A client encrypts once under a tag; that is necessary here and, as the attack above shows, not enough. Two ciphertexts
+of one client under one tag have the same ``omega, omega'`` and ``t`` values that differ by the difference of the
+plaintexts in the exponent (``t_1 / t_2 = g1^(x_1 - x_2)``). In ``mcfe/kp_ab_pairing`` the points also depend on the set
+of attributes, so a client that encrypts for two sets does not give that away; here the tag does not bind the set. The
+scheme layer does not check it, as with the other labelled multi-client schemes (:mod:`pyfe4ai.schemes.mcfe.labels`).
 
 Of a ciphertext only the ``label`` is a claim that the clients must agree on; the set of attributes of a client is its
 own (the ciphertexts carry no ``attributes_digest``), so a decryption cannot check one client's set against another's.
@@ -137,7 +152,9 @@ def _zero_sum_coordinates(thetas, order, group) -> list[int]:
 
 class MCFEKPABPairingPerClientKeyGenerator(MCFEKPABPairingKeyGenerator):
     """Key generator for multi-client key-policy attribute-based IPFE over pairings with an attribute set for each
-    client (NPP22 Sec. 5.4; experimental). The options are those of :class:`MCFEKPABPairingKeyGenerator`.
+    client (NPP22 Sec. 5.4; **known-insecure**, see the module documentation: constructing it emits a
+    ``FESecurityWarning`` and the ``standard`` profile refuses it). The options are those of
+    :class:`MCFEKPABPairingKeyGenerator`.
 
     Setup draws a secret ``theta_i`` for each client, whose ``theta_i h_i,5`` goes into the encryption key and which
     the master key keeps with ``h*_i,5``; a functional key gives each client its own root and shares and the fifth
@@ -178,7 +195,7 @@ class MCFEKPABPairingPerClientKeyGenerator(MCFEKPABPairingKeyGenerator):
 
 class MCFEKPABPairingPerClient(MCFEKPABPairing):
     """Crypto operations for multi-client key-policy attribute-based IPFE over pairings with an attribute set for each
-    client (NPP22 Sec. 5.4; experimental).
+    client (NPP22 Sec. 5.4; **known-insecure**, see the module documentation).
 
     Each client encrypts for a set of attributes of its own; a decryption needs the ciphertexts of all clients under one
     tag, and the set of every client must satisfy the policy of the key. The public parameters and the configuration
@@ -221,9 +238,10 @@ class MCFEKPABPairingPerClient(MCFEKPABPairing):
     def encrypt(self, lst_pt: list, label, attributes=None) -> dict:
         """Encrypt one scalar for a tag and the client's own set of attributes.
 
-        A client must encrypt once under a tag, and here that is the whole safeguard: the points of the tag do not
-        depend on the set of attributes, so two ciphertexts of one client under one tag, whatever their sets, give the
-        difference of the plaintexts away. The scheme layer does not check it.
+        A client must encrypt once under a tag. That is necessary here, and not enough (see the module documentation,
+        the attack of two tags and two keys): the points of the tag do not depend on the set of attributes, so two
+        ciphertexts of one client under one tag, whatever their sets, give the difference of the plaintexts away. The
+        scheme layer does not check it.
 
         Args:
             lst_pt: The one integer ``x_i`` with ``|x_i| <= bound_x``, in a list.

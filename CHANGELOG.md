@@ -9,6 +9,11 @@ compatibility).
 
 ### Changed
 
+- **The `standard` profile refuses a known-insecure scheme.** A key generator
+  of a scheme whose status is `known-insecure` raises `FEConfigError` under
+  `security_profile="standard"`, naming the issue; under `toy` it still warns
+  (`FESecurityWarning`) and builds. Before, no registered scheme was
+  known-insecure; `mcfe/kp_ab_pairing_per_client` is the first.
 - **Key generators check the names of their options.** A key that no scheme
   declares now raises `FEConfigError`: before, a misspelt option was dropped
   without a word, so `security_prfile="standard"` ran the `toy` profile. An
@@ -130,33 +135,44 @@ compatibility).
   `attributes_digest` of a ciphertext are claims that cannot be checked without
   the master key: the decryption checks that the clients agree and gives a
   `ValueError` (no discrete log) for one that hashed other points than it
-  says. Ciphertexts are malleable and not authenticated; the scheme has no
-  ndarray helpers and is not yet served by the ML adapter.
+  says. Ciphertexts are malleable and not authenticated. The scheme has ndarray
+  helpers (`encrypt_lst_ndarray`, `decrypt_lst_ndarray_ct`, `check_ndarray_ct`),
+  and the ML adapter serves it (`encrypt_gradient(..., attributes=)`,
+  `aggregate_gradients(..., policy=)`).
 - **`mcfe/kp_ab_pairing_per_client`** (`MCFEKPABPairingPerClient`,
   `MCFEKPABPairingPerClientKeyGenerator`, `MCFEKPABPairingPerClientConfig`;
-  status *experimental*: the proof is only sketched in App. B.5 of the paper
-  and no theorem is stated): the version of `mcfe/kp_ab_pairing` in which each
+  status *known-insecure*): the version of `mcfe/kp_ab_pairing` in which each
   client encrypts for a set of attributes of its own, after Nguyen, Phan and
   Pointcheval (ASIACRYPT 2022), Sec. 5.4. The tag alone is hashed, so the
   clients need not agree on the set; the bases `H_i` have a fifth dimension,
   with `theta_i h_i,5` in the encryption key and a fifth coordinate `d_i` in
-  the functional key, drawn afresh for each key with `sum theta_i d_i = 0`,
-  which stops the mix-and-match attack of two keys of different policies (it
-  stops the splice of any two keys, also of one function). The master key
-  holds `h*_i,5` as well, which the paper's list leaves out; each client has
-  its own root `a_i,0` and shares in a key, and `z` is shared. A decryption
-  reconstructs with the attributes of each client, and gives a `FEKeyError`
-  that names the first client whose attributes do not satisfy the policy,
-  also one with weight 0. The options and the public parameters are those of
-  `mcfe/kp_ab_pairing`; the ciphertext has no `attributes_digest`, `c_ipfe` and
-  `k_ipfe` have five elements. The ndarray helpers (`encrypt_lst_ndarray`,
-  `decrypt_lst_ndarray_ct`, `check_ndarray_ct`) take one set of attributes for
-  each client for the whole call, and the sets may differ between clients. A
-  client must encrypt once under a tag, and here that is the whole safeguard:
-  the tag no longer binds the set of attributes, so two ciphertexts of one
-  client under one tag give away the difference of the plaintexts whatever
-  their sets. The ML adapter refuses the scheme (the clients of one label may
-  hold different sets, which it does not aggregate).
+  the functional key, drawn afresh for each key with `sum theta_i d_i = 0`.
+  Under one tag that stops the mix-and-match attack of two keys of different
+  policies (and the splice of any two keys, also of one function). It does not
+  stop the same attack across tags: `theta_i d_i` depends on the key and the
+  client, not on the tag, so two keys of one `y`, each given to the clients
+  whose set it satisfies and each refusing both of two rounds (two labels, or
+  two elements of one array), give the difference of the two rounds' inner
+  products. App. B.5 of the paper states Theorem 25 for the construction and
+  sketches its proof; the adversary above is admissible in the game of that
+  theorem, so Theorem 25 as stated fails
+  (`test_two_tags_and_two_keys_read_the_difference_of_two_rounds`). The scheme
+  is kept for functionality and performance experiments and as the record of the
+  attack; its key generator and crypto objects emit a `FESecurityWarning` that
+  names the issue, and the `standard` profile refuses it. The master key holds
+  `h*_i,5` as well, which the paper's list leaves out; each client has its own
+  root `a_i,0` and shares in a key, and `z` is shared. A decryption reconstructs
+  with the attributes of each client, and gives a `FEKeyError` that names the
+  first client whose attributes do not satisfy the policy, also one with weight
+  0. The options and the public parameters are those of `mcfe/kp_ab_pairing`;
+  the ciphertext has no `attributes_digest`, `c_ipfe` and `k_ipfe` have five
+  elements. The ndarray helpers (`encrypt_lst_ndarray`, `decrypt_lst_ndarray_ct`,
+  `check_ndarray_ct`) take one set of attributes for each client for the whole
+  call, and the sets may differ between clients. A client must encrypt once
+  under a tag (two ciphertexts of one client under one tag give away the
+  difference of the plaintexts whatever their sets), which is necessary and, as
+  the attack shows, not enough. The ML adapter refuses the scheme (the clients
+  of one label may hold different sets, which it does not aggregate).
 - **`pyfe4ai.primitives.pairing.dpvs`**: dual pairing vector spaces over an
   asymmetric pairing group (dual bases `B`, `B*` with `B B*^T = mu I`, vectors
   of group elements, scalar combinations and the coordinate-wise pairing),

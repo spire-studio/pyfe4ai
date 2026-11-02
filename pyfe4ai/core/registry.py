@@ -85,7 +85,10 @@ class SchemeStatus:
         checked against its paper; no defect is known, but none was looked for
         systematically either. ``"known-insecure"``: a concrete privacy defect is
         known (see ``issue``); the scheme computes correct results but must only
-        be used for functionality or performance experiments.
+        be used for functionality or performance experiments: its key
+        generators and crypto objects emit a
+        :class:`~pyfe4ai.core.exceptions.FESecurityWarning`, and the
+        ``standard`` security profile refuses it (``FEConfigError``).
 
     ``fidelity``
         ``"faithful"``: the published construction as written.
@@ -593,9 +596,14 @@ SCHEMES: tuple[Scheme, ...] = (
         capabilities=(ACCESS_CONTROL,),
     ),
     _scheme(
-        "mcfe/kp_ab_pairing_per_client", PAIRING, EXPERIMENTAL, ADAPTED, "NPP22 Sec. 5.4",
-        note="proof only sketched (App. B.5); each client has its own attribute set; a fifth coordinate stops "
-        "keys of two policies being spliced; the msk also holds h*_{i,5}, which the paper's list omits",
+        "mcfe/kp_ab_pairing_per_client", PAIRING, KNOWN_INSECURE, ADAPTED, "NPP22 Sec. 5.4",
+        note="each client has its own attribute set and the tag alone is hashed; a fifth dimension of H_i; the msk "
+        "also holds h*_{i,5}, which the paper's list omits; App. B.5 states Thm. 25 and only sketches its proof, and "
+        "the theorem fails (see the issue); kept for functionality and performance experiments and as the record "
+        "of the attack",
+        issue="the fifth coordinate of NPP22 Sec. 5.4 does not depend on the tag, so two keys of one y that each "
+        "refuse both of two tags (two rounds, or two elements of one array) give the difference of the two inner "
+        "products, and Thm. 25 as stated fails",
         capabilities=(ACCESS_CONTROL,),
     ),
     # --- quadratic ----------------------------------------------------------

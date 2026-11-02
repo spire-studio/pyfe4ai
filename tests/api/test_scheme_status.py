@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from pyfe4ai import FESecurityWarning, get_scheme_status
+import pyfe4ai
+from pyfe4ai import FEConfigError, FESecurityWarning, get_scheme_status
 from pyfe4ai.core import registry
 from pyfe4ai.core import status as st
 
@@ -53,6 +54,19 @@ def test_known_insecure_crypto_object_warns(insecure_mife_lwe):
 
     with pytest.warns(FESecurityWarning, match="mife/lwe"):
         MIFELWE({"keys": {"pp": {"A": [["1"]]}}})
+
+
+def test_the_standard_profile_refuses_a_known_insecure_scheme(insecure_mife_lwe):
+    """``toy`` warns (see above) and goes on; ``standard`` is for security, so it refuses, whatever the scheme."""
+    from pyfe4ai.schemes.mife.lwe import MIFELWEKeyGenerator
+
+    config = {"n": 2, "bound_x": 2, "bound_y": 2}
+    with pytest.raises(FEConfigError, match="mife/lwe.*known to be insecure: test issue"):
+        MIFELWEKeyGenerator(dict(config, security_profile="standard"))
+    with pytest.raises(FEConfigError, match="known to be insecure: test issue"):
+        pyfe4ai.create("mife/lwe", dict(config, security_profile="standard"))
+    with pytest.warns(FESecurityWarning, match="known to be insecure: test issue"):
+        MIFELWEKeyGenerator(dict(config, lwe_n=8))
 
 
 def test_reviewed_key_generator_does_not_warn():

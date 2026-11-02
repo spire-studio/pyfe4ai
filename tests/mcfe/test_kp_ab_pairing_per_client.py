@@ -1,11 +1,14 @@
 """The multi-client key-policy attribute-based IPFE with an attribute set for each client (NPP22 Sec. 5.4): what it
-computes, setup and key generation, the fifth coordinate that stops keys of two policies from being spliced, the
-records, what it refuses, and the helpers for arrays.
+computes, setup and key generation, the fifth coordinate and the splice of two keys under one tag, the attack that
+the fifth coordinate does not stop (two tags, two keys; the test is named for it), the records, what it refuses, the
+helpers for arrays, and its status.
 
-The scheme is experimental: the paper sketches its proof in App. B.5 and states no theorem. These tests check that it
-computes what Sec. 5.4 writes, that the objects have the shape the module documents, that the splice the paper
-describes does not work on the keys, and the refusals it shares with ``mcfe/kp_ab_pairing`` (which has tests of its
-own); they are no evidence of security.
+The scheme is known-insecure. App. B.5 of the paper states Theorem 25 for it and sketches the proof as changes to that
+of Thm. 14; Thm. 25 as stated fails against the attack above, which these tests reproduce. The other tests check that
+the scheme computes what Sec. 5.4 writes, that the objects have the shape the module documents, that the splice of
+Sec. 5.4 (one tag) does not work on the keys, and the refusals it shares with ``mcfe/kp_ab_pairing`` (which has tests
+of its own). They are no evidence of security. The scheme is kept for functionality and performance experiments and as
+the record of the attack.
 
 A key whose policy the attributes of one client do not satisfy gives a ``FEKeyError`` that names the client; malformed
 input, ciphertexts that are not those of every client under one tag, or objects of another setup a
@@ -17,6 +20,7 @@ import copy
 import json
 import logging
 import os
+import re
 import warnings
 
 import gmpy2 as gp
@@ -29,16 +33,18 @@ from tests.pairing_group import GROUP, skip_unless_available
 skip_unless_available()
 
 from tests.mcfe.conftest import EXPECTED, LST, X, Y
-from tests.mcfe.conftest import aggregate, combined, creds, random_arrays, refuse_to_compute, through_json
+from tests.mcfe.conftest import aggregate, combined, creds, key_part, masked_plaintext, random_arrays
+from tests.mcfe.conftest import refuse_to_compute, through_json
 from pyfe4ai.core.constants import CryptoCONST
-from pyfe4ai.core.exceptions import FEConfigError, FEKeyError, FESchemeError, FEValidationError, FEWarning
+from pyfe4ai.core.exceptions import FEConfigError, FEKeyError, FESchemeError, FESecurityWarning, FEValidationError
+from pyfe4ai.core.exceptions import FEWarning
 from pyfe4ai.core.formats.pairing import MCKPABParameters, MCKPABRecord
 from pyfe4ai.core.formats.pairing import PCKPABCiphertext, PCKPABClientKey, PCKPABFunctionalKey
-from pyfe4ai.policy import ATTR_HASH, POLICY_COMPILER, compile_formula, parse
+from pyfe4ai.policy import ATTR_HASH, POLICY_COMPILER
 from pyfe4ai.primitives.pairing import pairing_backend
 from pyfe4ai.primitives.pairing.dpvs import vector_pair
 from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, PairingGroup, deserialize_many, hash_to_g1, pair
-from pyfe4ai.primitives.pairing.pairing_utils import random_nonzero_zr
+from pyfe4ai.primitives.pairing.pairing_utils import bounded_discrete_log_gt, random_nonzero_zr
 from pyfe4ai.schemes.common import ac_codec
 from pyfe4ai.schemes.common.ac_binding import pp_digest
 from pyfe4ai.schemes.common.kp_ab import MAX_LABEL_CHARS, TAG_DST, TAG_HASH, attribute_vector, tag_points
@@ -55,7 +61,12 @@ SCHEME_ID = "mcfe/kp_ab_pairing_per_client"
 POLICY = "or(region:EU, region:US)"
 SETS = {"nid_0": {"region:EU"}, "nid_1": {"region:US"}, "nid_2": {"region:EU", "org:A"}}
 
-pytestmark = pytest.mark.usefixtures("own_parameter_cache")
+#: The scheme is known-insecure, so every key generator and crypto object of these tests warns; the test of the warning
+#: records it (``pytest.warns`` sees it whatever the filters).
+pytestmark = [
+    pytest.mark.usefixtures("own_parameter_cache"),
+    pytest.mark.filterwarnings("ignore:mcfe/kp_ab_pairing_per_client is known to be insecure:UserWarning"),
+]
 
 
 @pytest.fixture
@@ -557,28 +568,12 @@ def test_the_fifth_coordinates_of_a_key_cancel(make_pc):
     assert all(terms[0][nid] != terms[1][nid] for nid in LST)   # independent for each key
 
 
-def key_part(group, ct, dk, nid, policy):
-    """``prod_j e(c_j, k*_j)^w_j / e(c_ipfe, k*_ipfe)``: the part of the client *nid* in a decryption with the key *dk*
-    for *policy*, from the fields of the records, a span program of :mod:`pyfe4ai.policy` and the pairing alone."""
-    order = int(group.order())
-    msp = compile_formula(parse(policy), order)
-    weights = msp.reconstruction(ct["attributes"])
-    assert weights is not None, "the client's attributes do not satisfy the policy"
-    part = None
-    for row, weight in weights.items():
-        at = ct["attributes"].index(msp.row_labels[row])
-        term = vector_pair(deserialize_many(group, ct["c_attr"][at]),
-                           deserialize_many(group, dk["k_rows"][nid][row])) ** (weight % order)
-        part = term if part is None else part * term
-    ipfe = vector_pair(deserialize_many(group, ct["c_ipfe"]), deserialize_many(group, dk["k_ipfe"][nid]))
-    return part / ipfe
-
-
 def test_splice_of_two_keys_fails(make_pc):
-    # NPP22 Sec. 5.4. Two clients encrypt for the sets S_1 = {p} and S_2 = {q}; the key A is for the policy p (client
-    # 1 satisfies it, client 2 does not) and the key B for q, both for the same y. Client 1 takes its part from A and
-    # client 2 from B, each of which opens its own policy. Without the fifth coordinate the two parts would add up
-    # to <x, y>: the paper's mix-and-match attack. With it they leave -theta_1 d_A,1 - theta_2 d_B,2.
+    # NPP22 Sec. 5.4, under ONE tag. Two clients encrypt for the sets S_1 = {p} and S_2 = {q}; the key A is for the
+    # policy p (client 1 satisfies it, client 2 does not) and the key B for q, both for the same y. Client 1 takes its
+    # part from A and client 2 from B, each of which opens its own policy. Without the fifth coordinate the two parts
+    # would add up to <x, y>: the paper's mix-and-match attack. With it they leave -theta_1 d_A,1 - theta_2 d_B,2.
+    # That term does not depend on the tag: see test_two_tags_and_two_keys_read_the_difference_of_two_rounds.
     kg, clients, agg = make_pc(n=2)
     group = PairingGroup(GROUP)
     order = int(group.order())
@@ -620,6 +615,71 @@ def test_splice_of_two_keys_fails(make_pc):
                 * vector_pair(theta_h5["nid_1"], deserialize_many(group, key_b["k_ipfe"]["nid_1"])))
     assert obstacle != gt ** 0
     assert spliced * obstacle == target
+
+
+@pytest.mark.parametrize("rounds", ["two labels", "two elements of one array"])
+def test_two_tags_and_two_keys_read_the_difference_of_two_rounds(rounds, make_pc):
+    """THE ATTACK THAT THE FIFTH COORDINATE DOES NOT STOP (why the scheme is known-insecure).
+
+    ``theta_i d_{K,i}`` is a function of the key ``K`` and the client, not of the tag. So for two keys A and B of one
+    ``y``, each given to the clients whose set it satisfies, the part ``V_i(tag)`` of a client (its attribute rows,
+    minus ``c_ipfe x k_ipfe``, plus ``e(t_i, [y_i]_2)``) has the same obstacle ``theta_i d_{K,i}`` under every tag, and
+    ``sum_i (V_i(tag) - V_i(tag'))`` is ``[<x_tag - x_tag', y>]_T``. Neither key opens either round (``FEKeyError``):
+    the adversary is admissible under Def. 9 of the paper (encryptions under ``tag' != tag*`` are allowed, and both keys
+    are unrelated to both rounds), so Thm. 25 as stated fails. The two tags are two labels, or two elements of one
+    array, which the helpers encrypt under a tag each. The parts are computed from the fields of the records alone.
+    """
+    kg, clients, agg = make_pc(n=2)
+    group = PairingGroup(GROUP)
+    order = int(group.order())
+    nids = kg.lst_nid
+    pp = kg.get_public_parameters()
+    g1, g2 = (group.deserialize(pp[name].encode("utf-8")) for name in ("g1", "g2"))
+    gt = pair(g1, g2)
+    sets = {"nid_0": ["org:p"], "nid_1": ["org:q"]}
+    y = {"nid_0": 2, "nid_1": 3}
+    x_1, x_2 = {"nid_0": 5, "nid_1": -3}, {"nid_0": 1, "nid_1": 7}      # the two rounds' plaintexts
+    if rounds == "two labels":
+        cts_1 = encrypt_each(clients, sets, x_1, "round-1")
+        cts_2 = encrypt_each(clients, sets, x_2, "round-2")
+    else:
+        arrays = {nid: [np.array([x_1[nid], x_2[nid]])] for nid in nids}
+        elements = encrypt_arrays_each(clients, arrays, sets)
+        cts_1 = {nid: elements[nid][0][0] for nid in nids}
+        cts_2 = {nid: elements[nid][0][1] for nid in nids}
+
+    key_a = kg.get_decryption_keys("agg", credentials=creds("org:p", y))
+    key_b = kg.get_decryption_keys("agg", credentials=creds("org:q", y))
+    # each key refuses both rounds through the scheme: client 1 does not satisfy A, client 0 does not satisfy B
+    for cts in (cts_1, cts_2):
+        for dk in (key_a, key_b):
+            with pytest.raises(FEKeyError, match="do not satisfy the policy"):
+                agg.decrypt(cts, dk)
+
+    parts = {"nid_0": (key_a, "org:p"), "nid_1": (key_b, "org:q")}      # each client: the key that it satisfies
+
+    def spliced(cts):
+        """``prod_i V_i``: the parts of the clients, each from its own key, with the masked plaintexts."""
+        value = gt ** 0
+        for nid in nids:
+            dk, policy = parts[nid]
+            part = key_part(group, cts[nid], dk, nid, policy)
+            value = value * part * masked_plaintext(group, cts[nid], y[nid], g2)
+        return value
+
+    inner_1 = sum(x_1[nid] * y[nid] for nid in nids)
+    inner_2 = sum(x_2[nid] * y[nid] for nid in nids)
+    bound = len(nids) * 10 * 10
+    # under one tag the splice gives no value (the obstacle theta_0 d_A,0 + theta_1 d_B,1 is a random exponent) ...
+    for round_value, inner in ((spliced(cts_1), inner_1), (spliced(cts_2), inner_2)):
+        assert round_value != gt ** (inner % order)
+        with pytest.raises(ValueError, match="discrete log"):
+            bounded_discrete_log_gt(group, gt, round_value, bound)
+    # ... and under two tags the obstacle is the same, so the quotient is the difference of the two inner products
+    quotient = spliced(cts_1) / spliced(cts_2)
+    assert quotient == gt ** ((inner_1 - inner_2) % order)
+    assert bounded_discrete_log_gt(group, gt, quotient, bound) == inner_1 - inner_2 == -22
+    assert inner_1 - inner_2 not in (inner_1, inner_2, 0)
 
 
 def test_splice_of_keys_of_one_function_fails(pc_fixed):
@@ -1278,14 +1338,42 @@ def test_same_configuration_keeps_the_cached_record(make_pc, tmp_path):
 # registry
 
 
-def test_status_is_experimental():
+def test_status_is_known_insecure():
     scheme = pyfe4ai.get_scheme(SCHEME_ID)
-    assert (scheme.status.status, scheme.status.fidelity) == ("experimental", "adapted")
+    assert (scheme.status.status, scheme.status.fidelity) == ("known-insecure", "adapted")
     assert scheme.status.reference == "NPP22 Sec. 5.4"
-    assert "proof only sketched" in scheme.status.note and "h*_{i,5}" in scheme.status.note
+    issue, note = scheme.status.issue, scheme.status.note
+    # the attack in one sentence: two tags, two keys of one y that open neither, the difference of the inner products
+    assert "\n" not in issue and not issue.endswith(".")
+    for words in ("fifth coordinate", "does not depend on the tag", "two keys", "difference", "Thm. 25"):
+        assert words in issue, words
+    assert "h*_{i,5}" in note and "stops" not in note and "splic" not in note       # the note no longer claims it
     assert scheme.capabilities == {"access_control", "labels", "pairing"}
-    assert SCHEME_ID in pyfe4ai.list_schemes(status="experimental")
-    assert SCHEME_ID not in pyfe4ai.list_schemes(status="unreviewed")
+    for status, listed in (("known-insecure", True), ("experimental", False), ("unreviewed", False)):
+        assert (SCHEME_ID in pyfe4ai.list_schemes(status=status)) is listed, status
+
+
+def test_the_key_generator_and_the_crypto_object_warn_of_the_issue(make_pc):
+    issue = pyfe4ai.get_scheme(SCHEME_ID).status.issue
+    message = "mcfe/kp_ab_pairing_per_client is known to be insecure: " + issue
+    config = {"n": 2, "bound_x": 10, "bound_y": 10, "pairing_group_param": GROUP}
+    with pytest.warns(FESecurityWarning) as caught:
+        kg = MCFEKPABPairingPerClientKeyGenerator(config)
+    assert [str(w.message).startswith(message) for w in caught if "known to be insecure" in str(w.message)] == [True]
+    kg.setup()
+    with pytest.warns(FESecurityWarning) as caught:
+        MCFEKPABPairingPerClient({"keys": {"pp": kg.get_public_parameters()}})
+    assert [str(w.message).startswith(message) for w in caught if "known to be insecure" in str(w.message)] == [True]
+    with pytest.warns(FESecurityWarning, match="known to be insecure"):
+        pyfe4ai.create(SCHEME_ID, **config)
+
+
+def test_the_standard_profile_refuses_the_scheme(own_parameter_cache):
+    issue = pyfe4ai.get_scheme(SCHEME_ID).status.issue
+    for build in (lambda: MCFEKPABPairingPerClientKeyGenerator({"n": 2, "security_profile": "standard"}),
+                  lambda: pyfe4ai.create(SCHEME_ID, n=2, security_profile="standard")):
+        with pytest.raises(FEConfigError, match="known to be insecure: " + re.escape(issue[:60])):
+            build()
 
 
 def test_create_and_list():

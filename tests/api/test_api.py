@@ -73,7 +73,7 @@ def test_list_schemes():
     access_control = pyfe4ai.list_schemes(capabilities="access_control")
     assert {"sife/cp_ab_pairing", "sife/kp_ab_pairing", "mcfe/kp_ab_pairing",
             "mcfe/kp_ab_pairing_per_client"} <= set(access_control)
-    assert "mcfe/kp_ab_pairing_per_client" in pyfe4ai.list_schemes(status="experimental")
+    assert "mcfe/kp_ab_pairing_per_client" in pyfe4ai.list_schemes(status="known-insecure")
     assert "sife/ddh" not in access_control
     assert pyfe4ai.list_schemes(kind="lwe_matrix") == ["sife/fullysec_lwe", "mife/fullysec_lwe"]
     for kwargs in ({"family": "tmcfe"}, {"capabilities": "thresold"}, {"status": "ok"}, {"kind": "lattice"}):

@@ -82,11 +82,13 @@ for ``allow_partial=True`` (``ValueError``: the shares of the clients' keys add
 up to 1, so a result opens only with the ciphertexts of every enrolled client,
 also those of weight 0).
 
-``mcfe/kp_ab_pairing_per_client`` (NPP22 Sec. 5.4, experimental), where each
+``mcfe/kp_ab_pairing_per_client`` (NPP22 Sec. 5.4, known-insecure), where each
 client encrypts for a set of attributes of its own, has the capability too, and
-the adapter refuses it (``NotImplementedError``, at the first line of each
-entry point): the clients of one label may hold different sets, which the
-adapter does not aggregate. Use the scheme classes
+the adapter refuses it (``NotImplementedError``, at the first line of the
+aggregation entry points ``encrypt_gradient``, ``precompute_gradient``,
+``prepare_aggregation`` and ``aggregate_gradients``): the clients of one label
+may hold different sets, which the adapter does not aggregate. The scheme
+warns when it is built (``FESecurityWarning``; see :doc:`/security`). Use the scheme classes
 (:mod:`pyfe4ai.schemes.mcfe.kp_ab_pairing_per_client`) directly.
 
 What the checks cannot see. The ``label`` and the attributes of a ciphertext are

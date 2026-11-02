@@ -29,13 +29,15 @@ from tests.pairing_group import GROUP, skip_unless_available
 skip_unless_available()
 
 from tests.mcfe.conftest import ATTRS, EXPECTED, LST, POLICY, X, Y
-from tests.mcfe.conftest import aggregate, combined, creds, encrypt_all, encrypt_arrays, random_arrays
+from tests.mcfe.conftest import aggregate, combined, creds, encrypt_all, encrypt_arrays, key_part
+from tests.mcfe.conftest import masked_plaintext, random_arrays
 from tests.mcfe.conftest import refuse_to_compute
 from pyfe4ai.core.exceptions import FEConfigError, FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.core.formats.pairing import MCKPABCiphertext, MCKPABClientKey, MCKPABFunctionalKey, MCKPABParameters
 from pyfe4ai.policy import attribute_set_digest, canonical_encoding, parse
 from pyfe4ai.primitives.pairing import pairing_backend
-from pyfe4ai.primitives.pairing.pairing_backend import PairingGroup
+from pyfe4ai.primitives.pairing.pairing_backend import PairingGroup, pair
+from pyfe4ai.primitives.pairing.pairing_utils import bounded_discrete_log_gt
 from pyfe4ai.schemes.common.ac_binding import pp_digest
 from pyfe4ai.schemes.common.kp_ab import MAX_LABEL_CHARS, tag_points
 from pyfe4ai.schemes.mcfe import kp_ab_pairing
@@ -776,6 +778,64 @@ def test_two_tag_attack(make_mc):
     for ct, h in zip(cts, (h_1, h_2)):
         omega, omega_prime = tag_points(group, SCHEME_ID, pp["pp_binding"], ct["label"], ct["attributes_digest"])
         assert omega != g1 ** h and omega_prime != g1 ** h
+
+
+def test_two_tags_and_two_keys_of_different_policies_give_no_value(make_mc):
+    # The attack that mcfe/kp_ab_pairing_per_client does not stop (two tags, two keys of one y, each opening neither
+    # round, give the difference of the two rounds' inner products) does not work here. All clients of a round hold one
+    # set, so a key that gives one client a part opens the round by itself; the clients that the attack needs, with
+    # different sets under one tag, hash other points H(tag, S) each, and the masks of the clients no longer cancel.
+    # The parts are computed from the fields of the records, as in the test of that scheme, with a positive control.
+    kg, clients, agg = make_mc(n=2)
+    group = PairingGroup(GROUP)
+    order = int(group.order())
+    nids = kg.lst_nid
+    pp = kg.get_public_parameters()
+    g1, g2 = (group.deserialize(pp[name].encode("utf-8")) for name in ("g1", "g2"))
+    gt = pair(g1, g2)
+    y = {"nid_0": 2, "nid_1": 3}
+    x_1, x_2 = {"nid_0": 5, "nid_1": -3}, {"nid_0": 1, "nid_1": 7}
+    bound = len(nids) * 10 * 10
+
+    def total(cts, keys):
+        """``prod_i V_i``: each client's part from its own key, plus the masked plaintexts."""
+        value = gt ** 0
+        for nid in nids:
+            dk, policy = keys[nid]
+            part = key_part(group, cts[nid], dk, nid, policy)
+            value = value * part * masked_plaintext(group, cts[nid], y[nid], g2)
+        return value
+
+    def inner(x):
+        return sum(x[nid] * y[nid] for nid in nids)
+
+    # the positive control: one set for both clients, one key that they satisfy, one round: the parts add up to <x, y>
+    both = "or(org:p, org:q)"
+    key_both = kg.get_decryption_keys("agg", credentials=creds(both, y))
+    same = {nid: ["org:p", "org:q"] for nid in nids}
+    cts = {nid: clients[nid].encrypt([x_1[nid]], "round-1", attributes=same[nid]) for nid in nids}
+    assert agg.decrypt(cts, key_both) == inner(x_1)
+    assert total(cts, {nid: (key_both, both) for nid in nids}) == gt ** (inner(x_1) % order)
+
+    # the attack: the sets S_0 = {p} and S_1 = {q}, the keys A (p) and B (q), the rounds 1 and 2
+    sets = {"nid_0": ["org:p"], "nid_1": ["org:q"]}
+    key_a = kg.get_decryption_keys("agg", credentials=creds("org:p", y))
+    key_b = kg.get_decryption_keys("agg", credentials=creds("org:q", y))
+    keys = {"nid_0": (key_a, "org:p"), "nid_1": (key_b, "org:q")}
+    rounds = [{nid: clients[nid].encrypt([x[nid]], tag, attributes=sets[nid]) for nid in nids}
+              for x, tag in ((x_1, "round-1"), (x_2, "round-2"))]
+    for cts in rounds:                          # the scheme refuses such ciphertexts: the clients disagree on the set
+        with pytest.raises(FEValidationError, match="differ in their attributes_digest"):
+            agg.decrypt(cts, key_a)
+    values = [total(cts, keys) for cts in rounds]
+    for value, x in zip(values, (x_1, x_2)):    # one tag: no value
+        assert value != gt ** (inner(x) % order)
+        with pytest.raises(ValueError, match="discrete log"):
+            bounded_discrete_log_gt(group, gt, value, bound)
+    quotient = values[0] / values[1]            # two tags: not the difference of the two inner products either
+    assert quotient != gt ** ((inner(x_1) - inner(x_2)) % order)
+    with pytest.raises(ValueError, match="discrete log"):
+        bounded_discrete_log_gt(group, gt, quotient, bound)
 
 
 def test_corrupted_client_cannot_switch_attributes(make_mc):

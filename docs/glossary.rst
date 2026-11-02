@@ -332,16 +332,15 @@ Review status and trust
 
    experimental
       Implemented and checked here, but the construction or its security
-      argument is our own (fidelity *ad-hoc*), or the paper only sketches
-      the proof of the published construction (fidelity *adapted*); no
-      defect known.
+      argument is our own (fidelity *ad-hoc*); no defect known.
 
    unreviewed
       Not yet checked against its paper.
 
    known-insecure
       A concrete privacy defect is known; the key generator and crypto
-      objects emit :class:`~pyfe4ai.core.exceptions.FESecurityWarning`.
+      objects emit :class:`~pyfe4ai.core.exceptions.FESecurityWarning`, and
+      the ``standard`` profile refuses the scheme (``FEConfigError``).
 
    honest-but-curious
       The trust model of the threshold decryption servers: fewer than ``t``

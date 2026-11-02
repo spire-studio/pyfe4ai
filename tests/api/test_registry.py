@@ -18,7 +18,7 @@ from pyfe4ai.core import config as configs
 from pyfe4ai.core import profiles, registry
 from pyfe4ai.core import status as st
 from pyfe4ai.core.base import IPFEAbsCrypto, IPFEAbsKeyGenerator
-from pyfe4ai.core.exceptions import FESecurityWarning, FEValidationError
+from pyfe4ai.core.exceptions import FEConfigError, FESecurityWarning, FEValidationError
 from pyfe4ai.ml import wrapper as ml_wrapper
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -113,7 +113,11 @@ def test_status_and_kinds_are_derived():
 @pytest.mark.parametrize("scheme", SCHEMES, ids=IDS)
 def test_refusals_are_the_profiles(scheme):
     config = scheme.config({"security_profile": "standard"})
-    if scheme.refused:
+    if scheme.status.status == registry.KNOWN_INSECURE:        # refused whatever its parameters: it is not secure
+        with pytest.raises(FEConfigError, match="no 'standard' parameter set for {}: ".format(scheme.id)) as info:
+            configs.resolve(config, scheme.key)
+        assert str(info.value).endswith(scheme.status.issue)
+    elif scheme.refused:
         with pytest.raises(FEValidationError, match="no 'standard' parameter set for {}: ".format(scheme.id)) as info:
             configs.resolve(config, scheme.key)
         assert str(info.value).endswith(scheme.refused)

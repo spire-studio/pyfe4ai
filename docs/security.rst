@@ -18,12 +18,19 @@ experimental, |n_unreviewed| unreviewed and |n_known_insecure|
 known-insecure. The experimental ones are the threshold layers of tMIFE-LWE,
 tMCFE-LWE, tMCFE-Ring-LWE and tMCFE-FH-Multi-IPE and the carry mask of
 dMCFE-DDH: our own constructions on top of published schemes, with no
-published security proof. Query a scheme at runtime with
+published security proof. The known-insecure one is
+``mcfe/kp_ab_pairing_per_client`` (NPP22 Sec. 5.4, an attribute set for each
+client): the fifth coordinate of the paper does not depend on the tag, so two
+keys of one ``y`` that each refuse both of two rounds give the difference of
+the two rounds' inner products, and Theorem 25 of the paper fails as stated.
+It is kept for functionality and performance experiments and as the record of
+the attack. Query a scheme at runtime with
 :func:`pyfe4ai.get_scheme_status(family, variant)
 <pyfe4ai.core.status.get_scheme_status>` (or ``"family/variant"``) or
 :attr:`FESchemeWrapper(...).status <pyfe4ai.ml.FESchemeWrapper.status>`;
 the key generator and crypto objects of a known-insecure scheme emit
-:class:`~pyfe4ai.core.exceptions.FESecurityWarning`. The table is rendered
+:class:`~pyfe4ai.core.exceptions.FESecurityWarning`, and the ``standard``
+security profile refuses it (``FEConfigError``). The table is rendered
 from :data:`~pyfe4ai.core.status.SCHEME_STATUS`, which is derived from the
 scheme registry (:mod:`pyfe4ai.core.registry`); the status and fidelity
 values are defined with :class:`~pyfe4ai.core.registry.SchemeStatus`.
@@ -40,7 +47,8 @@ values below it. Its exceptions: the pairing-based schemes run on
 BLS12-381, about 120-126-bit after the exTNFS attacks (with a
 :class:`~pyfe4ai.core.exceptions.FESecurityWarning`),
 and ``sife/fullysec_lwe``, ``mife/fullysec_lwe`` (ALS16),
-``mife/lwe_threshold`` and ``mcfe/paillier_decentralized`` are refused.
+``mife/lwe_threshold`` and ``mcfe/paillier_decentralized`` are refused, as is
+every known-insecure scheme (``mcfe/kp_ab_pairing_per_client``).
 :mod:`pyfe4ai.core.profiles` below gives the parameters per family,
 including ``matrix_mode`` for the ABDP15 LWE schemes; :doc:`configuration`
 lists every option with its default under each profile, and the option
