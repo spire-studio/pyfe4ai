@@ -502,7 +502,9 @@ def _label_weights(wrapper: FESchemeWrapper, label, fusion_weight: dict, *, tie:
     :func:`_aggregation_key` checks before it asks for a key, and ties once the key is issued: a request that the key
     generator refuses (weights beyond ``bound_y``, a policy it does not take) leaves the label free. Of two calls with
     other weights that pass the check at once, the first to tie keeps the label and the other is refused here, before
-    it returns its key.
+    it returns its key; on the threshold path the losing call has already obtained key shares from the servers by then
+    (its weight key share is added to the wrapper's server objects, in ``_serving``), and these shares never reach the
+    caller.
     """
     if tie:
         previous = wrapper._aggregated.setdefault(label, fusion_weight)

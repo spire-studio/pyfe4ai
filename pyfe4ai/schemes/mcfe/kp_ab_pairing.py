@@ -63,8 +63,10 @@ uses, with their reconstruction coefficients folded in, and ``-k*_i,ipfe``) are 
 (:func:`~pyfe4ai.primitives.pairing.pairing_backend.prepare_g2`; nothing is kept between calls), and each element is
 then one product of pairings over them. The elements of an array are for one set of attributes. All elements are
 checked first; they are then decoded, paired and solved in slices of at most :data:`_SLICE_DECODED_ELEMENTS` decoded
-group elements (and at least one element), so that the memory of the decoded elements grows neither with the size of
-the arrays nor with the clients and their attributes (see :meth:`MCFEKPABPairing.decrypt_lst_ndarray_ct`).
+group elements (and at least one element), so that the memory of the decoded elements does not grow with the size of
+the arrays, nor with the clients and their attributes as long as one element fits the budget. A slice is never smaller
+than one element: once ``n (8 |S| + 5)`` exceeds ``2**16`` (``n`` of 127 or more at 64 attributes) it is one element,
+and the memory grows with ``n |S|`` again (see :meth:`MCFEKPABPairing.decrypt_lst_ndarray_ct`).
 :meth:`MCFEKPABPairing.check_ndarray_ct` makes the checks that need no key and no decoded point, for a caller that
 issues the functional key before it decrypts.
 
@@ -173,7 +175,10 @@ _SCHEME_ID = "mcfe/kp_ab_pairing"
 #: and solves the elements of the arrays in slices of as many elements as this allows, and at least one: an element
 #: holds ``n (8 |S| + 5)`` decoded elements (``n`` clients, ``|S|`` attributes; ``sum_i (8 |S_i| + 6)`` in
 #: ``mcfe/kp_ab_pairing_per_client``), about 1.5 to 3.5 KB each with the rows built from them (measured), so a slice
-#: takes some 100 to 230 MB, whatever the size of the arrays, the number of clients and the attributes they encrypt for.
+#: takes some 100 to 230 MB, whatever the size of the arrays, the number of clients and the attributes they encrypt for
+#: -- as long as one element fits the budget. A slice is never smaller than one element, so once
+#: ``n (8 |S| + 5)`` exceeds the budget (``n`` of 127 or more at 64 attributes) a slice is one element and its memory
+#: grows with ``n |S|`` again.
 _SLICE_DECODED_ELEMENTS = 1 << 16
 
 
@@ -1167,8 +1172,11 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
         points of the key, up to about 20 KB each, ``n (8 rows + 4) + 1`` of them. The decoded group elements of a
         slice and the rows built from them are held for one slice at a time, about 1.5 to 3.5 KB per decoded element
         (measured): some 100 to 230 MB for a slice, whatever the size of the arrays, the number of clients and the
-        attributes. At ``n = 10``, ``|S| = 64`` and 40 elements (one thread) the peak memory of the call grew by
-        214 MB in slices of 12 elements and by 430 MB in one slice of 40, in the same time.
+        attributes, while one element fits the budget. A slice is never smaller than one element: once
+        ``n (8 |S| + 5)`` exceeds ``2**16`` (``n`` of 127 or more at 64 attributes) a slice is one element, and the
+        memory of the decoded elements grows with ``n |S|`` again. At ``n = 10``, ``|S| = 64`` and 40 elements (one
+        thread) the peak memory of the call grew by 214 MB in slices of 12 elements and by 430 MB in one slice of 40,
+        in the same time.
 
         Args:
             dict_ndarray_ct: The ciphertext arrays by client id: for each client a list of arrays (the layers, each of

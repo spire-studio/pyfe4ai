@@ -121,8 +121,11 @@ them:
   from 16 points on. The results do not depend on the number of threads. The
   elements are decoded, paired and solved in slices of at most ``2**16``
   decoded group elements (``n (8 |S| + 5)`` per element, and at least one
-  element per slice), so that the memory of the decoded elements grows neither
-  with the size of the arrays nor with the clients and their attributes. A
+  element per slice), so that the memory of the decoded elements does not grow
+  with the size of the arrays, nor with the clients and their attributes as
+  long as one element fits the budget. A slice is never smaller than one
+  element: once ``n (8 |S| + 5)`` exceeds ``2**16`` (``n`` of 127 or more at 64
+  attributes) it is one element, and the memory grows with ``n |S|`` again. A
   slice of few elements gives the threads few rows: 12 at ``n = 10`` and
   ``|S| = 64``.
   A charm group pairs the rows one after the other in the calling thread.

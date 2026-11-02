@@ -109,7 +109,12 @@ type tag of a group element and is none is found when it is decoded. These
 are found, if at all, after the key is issued; the label is then tied to the
 weights of that call, and a second try under it needs the same weights. A
 request that the key generator refuses (weights beyond ``bound_y``, a policy
-it does not take) issues no key and leaves the label free.
+it does not take) issues no key and leaves the label free. Of two calls that
+pass the check at once with other weights for one label, the first to tie it
+keeps the label and the other is refused (``ValueError``) only after it has
+obtained its key; in the threshold MCFE that the wrapper runs, the losing call
+has already obtained key shares from the servers (its weight key share is added
+to the wrapper's server objects), and these shares never reach the caller.
 
 A :class:`~pyfe4ai.ml.PreparedAggregation` keeps the canonical encoding of its
 policy in ``policy``; the attributes are judged against it when the round is
