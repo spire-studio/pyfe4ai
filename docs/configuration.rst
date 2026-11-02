@@ -17,7 +17,7 @@ JSON writes an integer that keys an object as a string (``1`` becomes ``"1"``). 
 Security profiles
 -----------------
 
-``security_profile = 'toy'`` (the default) uses the config as given. ``'standard'`` sets the minima below where the config has no value and refuses weaker ones (``FEValidationError``); see :mod:`pyfe4ai.core.profiles`.
+``security_profile = 'toy'`` (the default) uses the config as given. ``'standard'`` sets the minima below where the config has no value and refuses weaker ones (``FEValidationError``); see :mod:`pyfe4ai.core.profiles`. A scheme that ``standard`` refuses outright is not in the row of its kind, which holds the schemes that it accepts, but in the list below the table (a kind of which every scheme is refused is shown whole, as ``refused``).
 
 .. list-table::
    :header-rows: 1
@@ -26,7 +26,7 @@ Security profiles
      - schemes
      - under ``standard``
    * - dcr
-     - ``sife/paillier``, ``mife/paillier``, ``mcfe/paillier``, ``mcfe/paillier_decentralized``
+     - ``sife/paillier``, ``mife/paillier``, ``mcfe/paillier``
      - ``bit_length`` >= ``1536``; ``stat_param`` >= ``128``
    * - dl
      - ``sife/ddh``, ``sife/damgard``, ``sife/ddh_dynamic``, ``mife/ddh``, ``mife/damgard``, ``mife/ddh_threshold``, ``mcfe/ddh``, ``mcfe/damgard``, ``mcfe/ddh_threshold``, ``mcfe/ddh_decentralized``
@@ -38,13 +38,13 @@ Security profiles
      - ``mcfe/lwe``, ``mcfe/fullysec_lwe``, ``mcfe/lwe_threshold``, ``mcfe/lwe_decentralized``
      - ``stat_param`` >= ``128``; ``lwe_n = 'auto'``
    * - lwe_abdp15
-     - ``sife/lwe``, ``mife/lwe``, ``mife/lwe_threshold``
+     - ``sife/lwe``, ``mife/lwe``
      - ``stat_param`` >= ``128``; ``lwe_n = 'auto'``
    * - lwe_matrix
      - ``sife/fullysec_lwe``, ``mife/fullysec_lwe``
      - refused
    * - pairing
-     - ``sife/fh_ipe_pairing``, ``sife/part_fh_ipe_pairing``, ``sife/cp_ab_pairing``, ``sife/kp_ab_pairing``, ``mife/fh_ipe_pairing``, ``mife/fh_multi_ipe_pairing``, ``mcfe/fh_multi_ipe_pairing``, ``mcfe/fh_multi_ipe_pairing_threshold``, ``mcfe/fh_multi_ipe_pairing_decentralized``, ``mcfe/kp_ab_pairing``, ``mcfe/kp_ab_pairing_per_client``, ``quadratic/quad``, ``quadratic/sgp``, ``quadratic/miqfe``
+     - ``sife/fh_ipe_pairing``, ``sife/part_fh_ipe_pairing``, ``sife/cp_ab_pairing``, ``sife/kp_ab_pairing``, ``mife/fh_ipe_pairing``, ``mife/fh_multi_ipe_pairing``, ``mcfe/fh_multi_ipe_pairing``, ``mcfe/fh_multi_ipe_pairing_threshold``, ``mcfe/fh_multi_ipe_pairing_decentralized``, ``mcfe/kp_ab_pairing``, ``quadratic/quad``, ``quadratic/sgp``, ``quadratic/miqfe``
      - ``pairing_group_param = 'BLS12-381'`` only, with a ``FESecurityWarning``
    * - ring_lwe
      - ``sife/ring_lwe``, ``sife/fullysec_ring_lwe``, ``mife/ring_lwe``, ``mcfe/ring_lwe``, ``mcfe/ring_lwe_threshold``, ``mcfe/ring_lwe_decentralized``

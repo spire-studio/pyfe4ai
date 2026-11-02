@@ -46,16 +46,21 @@ lets the adversary corrupt clients and ask for functional keys, and says nothing
 or forged.
 
 The ``label`` and the ``attributes_digest`` of a ciphertext are claims of its client. The points ``H(tag, S)`` are
-inside ``t`` and ``c_ipfe``, and checking them against the two fields would need the master key, so a decryption does
-not hash again. It checks that the ciphertexts of all clients agree on both fields, that the digest is the one of the
-listed attributes and, if the caller gives a ``label``, that this is the one the ciphertexts claim. One client that
-hashed other points than it says gives a ``ValueError`` from the discrete log (a ``FESchemeError`` from the array
-helpers; no value, and not a wrong one). All clients that change the ``label`` alike still decrypt to the correct
-value, since the label is not what a ciphertext is made of. The list of attributes is not a claim of that kind: it
+inside ``t`` and ``c_ipfe``. The encryption key of client ``i`` can check the claims of its own ciphertext (``t_i``
+divided by the claimed points taken to the powers ``s_i`` and ``u_i`` is a small power of ``g1`` only if the claims are
+right, and the check recovers ``x_i`` on the way), and the master key can check all of them; a decryption uses neither
+and does not hash again. It checks that the ciphertexts of all clients agree on both fields, that the digest is the one
+of the listed attributes and, if the caller gives a ``label``, that this is the one the ciphertexts claim. One client
+that hashed other points than it says gives a ``ValueError`` from the discrete log (a ``FESchemeError`` from the array
+helpers; no value, and not a wrong one). Whoever holds the ciphertexts of a whole round, an aggregator with no key
+among them, can write another label into all of them, and no client needs to take part: they decrypt, silently, to the
+value of the round in which they were made, since the label is not what a ciphertext is made of and a key opens every
+tag. This is a matter of integrity, not of confidentiality. The list of attributes is not a claim of that kind: it
 says which vector of ``c_attr`` pairs with which row of the key. All clients that change it alike get a ``FEKeyError``
 (the policy is not satisfied) or no value (the ``ValueError`` of the discrete log), never a wrong one; an attribute that
 no row of the policy reads can be renamed without effect if it keeps its place in the sorted list (a list out of order
-is refused). A caller who needs to know that ciphertexts belong to a round authenticates them.
+is refused). A caller who needs to know that ciphertexts belong to a round authenticates them: an aggregator without
+the key of a client cannot check a claim, so each client signs or MACs the label together with the record.
 
 The ndarray helpers encrypt each element under ``element_label(label, layer, index)``, a tag of its own, and decrypt
 all elements of all layers in one batch. The points of the key that every element is paired with (the rows the policy
@@ -83,8 +88,8 @@ Deviations:
 
 * ``g1`` and ``g2`` are random generators drawn at setup, not those of the group description.
 * ``y_i`` and ``x_i`` may be negative within their bounds, not only in ``[0, B]``; the discrete log covers
-  ``|<x, y>| <= n bound_x bound_y``. Each client encrypts one scalar (``eta = 1``), as Remark 10 has it; a vector is
-  sent as several scalars, each under a tag of its own.
+  ``|<x, y>| <= n bound_x bound_y``. Each client encrypts one scalar (``eta = 1``), as Fig. 3 has it (``x_i`` in
+  ``Z_q``); a vector is sent as several scalars, each under a tag of its own.
 * ``[y_i]_2`` (``m_i`` of Fig. 3) is not part of the key: the decryption computes it from ``y``.
 * ``H(tag, S)`` hashes the encoded label, the attribute-set digest, the identifier of the scheme and the
   ``pp_binding`` (:func:`~pyfe4ai.schemes.common.kp_ab.tag_points`), so that two setups and two schemes never share
@@ -270,7 +275,7 @@ class MCFEKPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
         eta = config.get("eta", 1)
         if type(eta) is not int or eta != 1:
             raise FEValidationError(
-                "eta must be 1: each client encrypts one scalar under a tag (NPP22 Remark 10), got {}".format(
+                "eta must be 1: each client encrypts one scalar under a tag (NPP22 Fig. 3), got {}".format(
                     clip(repr(eta))))
         self.eta = 1
         self.lst_nid = list(self.lst_nid)
@@ -1125,16 +1130,19 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
 
         What this does not see. An item with the right type tag that is no element of the group is found when it is
         decoded. The ``label`` and the attributes of a ciphertext are claims of its client: the points ``H(tag, S)`` are
-        inside ``t`` and ``c_ipfe``, and only the master key could check them. Clients that disagree on the label or
-        the digest are refused, and one client whose points differ from its claim gives no value at the discrete log
-        (a ``FESchemeError`` from the array helpers, a ``ValueError`` from :meth:`decrypt`). But if all clients copy
-        the label of a round onto ciphertexts of an earlier round, that relabelled replay passes this check and
-        decrypts, silently, to the sum of the round the ciphertexts were made in: the key covers every tag. Attributes
-        that all clients change alike are different: they give a ``FEKeyError`` or no value, never a wrong one (an
-        attribute that no row of the policy reads can be renamed without effect, and the value is the right one, if
-        it keeps its place in the sorted list; a list out of order is refused). A caller who must know that ciphertexts
-        belong to a round has to authenticate them. A caller that hands the arrays to a service that issues keys calls
-        this first, so that a key is not issued for arrays that a decryption would refuse.
+        inside ``t`` and ``c_ipfe``. The encryption key of a client can check the claims of its own ciphertext (and
+        recovers its plaintext by it), and the master key can check all of them; this check uses neither. Clients that
+        disagree on the label or the digest are refused, and one client whose points differ from its claim gives no
+        value at the discrete log (a ``FESchemeError`` from the array helpers, a ``ValueError`` from :meth:`decrypt`).
+        But whoever holds the ciphertexts of a whole round, with no key and no client taking part, can write another
+        label into all of them: that relabelled replay passes this check and decrypts, silently, to the value of the
+        round in which the ciphertexts were made, since the key covers every tag. This is a matter of integrity, not of
+        confidentiality. Attributes that all clients change alike are different: they give a ``FEKeyError`` or no value,
+        never a wrong one (an attribute that no row of the policy reads can be renamed without effect, and the value is
+        the right one, if it keeps its place in the sorted list; a list out of order is refused). A caller who must know
+        that ciphertexts belong to a round has each client sign or MAC the label together with the record. A caller that
+        hands the arrays to a service that issues keys calls this first, so that a key is not issued for arrays that a
+        decryption would refuse.
 
         Args:
             dict_ndarray_ct: The ciphertext arrays by client id, as for :meth:`decrypt_lst_ndarray_ct`.

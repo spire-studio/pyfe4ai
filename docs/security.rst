@@ -258,9 +258,17 @@ What none of the proofs covers, and what the schemes share:
   record is a digest of the public parameters. It tells the objects of two
   setups apart and is not a signature.
 * **The claims of a ciphertext.** The ``label`` and the ``attributes_digest``
-  of a ciphertext of ``mcfe/kp_ab_pairing`` are claims of its client that only
-  the master key could check; what a decryption does and does not catch is
-  on :doc:`api/ml` and in the module documentation.
+  of a ciphertext of ``mcfe/kp_ab_pairing`` are claims of its client. The
+  encryption key of a client can check the claims of its own ciphertext (the
+  check also recovers its plaintext) and the master key those of all of them;
+  an aggregator that holds neither cannot. A decryption does not check them
+  against the points, and a key opens every tag, so whoever holds the ciphertexts of a whole
+  round, an aggregator with no key among them, can write another label into
+  all of them, with no client taking part, and they decrypt, silently, to the
+  value of the round in which they were made. This is a matter of integrity,
+  not of confidentiality. A deployment that needs the claims checked has each
+  client sign or MAC the label together with the record. What a decryption
+  does and does not catch is on :doc:`api/ml` and in the module documentation.
 * **Unreviewed.** None of the four has had a cryptographic review, and none
   is constant-time (see above).
 

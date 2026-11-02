@@ -149,7 +149,7 @@ ACCESS_CONTROL = "access_control"
 #: ``threshold``, ``decentralized`` and ``pairing`` follow from the id and the
 #: kind; the others are declared per scheme.
 CAPABILITIES = {
-    LABELS: "ciphertexts and functional keys are bound to a label (the MCFE family)",
+    LABELS: "ciphertexts are bound to a label (the MCFE family); the scheme states whether its functional keys are too",
     THRESHOLD: "functional keys are shared among s servers; t partial decryptions decrypt "
     "(share_decrypt, combine_decrypt)",
     DECENTRALIZED: "the clients derive shares of each functional key, which the decryptor combines "
@@ -423,7 +423,8 @@ SCHEMES: tuple[Scheme, ...] = (
     ),
     _scheme(
         "sife/kp_ab_pairing", PAIRING, UNREVIEWED, FAITHFUL, "NPP22 Sec. 4 Fig. 1 (selective version)",
-        note="selective; ciphertexts malleable, not authenticated; attributes hashed to Z_q; "
+        note="selective version (the paper proves the adaptive one, Thm. 7, and gives no proof of this one); "
+        "ciphertexts malleable, not authenticated; attributes hashed to Z_q; "
         "[y]_2 is computed by the decryptor, not sent in the key",
         capabilities=(ACCESS_CONTROL,),
     ),

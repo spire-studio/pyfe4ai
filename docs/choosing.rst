@@ -123,8 +123,8 @@ Capabilities
 Each scheme lists its capabilities
 (:data:`~pyfe4ai.core.registry.CAPABILITIES`):
 
-* ``labels`` -- ciphertexts and functional keys are bound to a label (the
-  MCFE family);
+* ``labels`` -- ciphertexts are bound to a label (the MCFE family); the
+  scheme states whether its functional keys are too;
 * ``threshold`` -- the functional key is shared among ``s`` servers, and
   ``t`` partial decryptions decrypt (``share_decrypt``,
   ``combine_decrypt``);

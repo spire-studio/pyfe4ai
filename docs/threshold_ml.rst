@@ -270,7 +270,11 @@ domain meant for experiments. Its default policy:
 
 These checks are per wrapper object, and they do not stop very unequal
 weights, which separate two clients' gradients in one aggregate: the
-weights are the key holder's choice. A pickled or copied wrapper carries the
+weights are the key holder's choice. Nor do they bind keys that were already
+issued: a key of ``mcfe/kp_ab_pairing``, as of every MCFE scheme whose keys are
+not bound to a label, opens every round, so two rounds with two weight vectors
+that differ in one client's weight isolate that client (see :doc:`api/ml`).
+A pickled or copied wrapper carries the
 master key and every client's key; ship a worker its client's own crypto
 object instead (the scheme class built from ``wrapper.pp`` and
 ``wrapper.kg.get_private_keys(nid)``).

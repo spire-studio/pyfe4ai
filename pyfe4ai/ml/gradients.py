@@ -633,10 +633,12 @@ def aggregate_gradients(
                 the ciphertexts of every enrolled client, so *allow_partial*
                 and a missing client are refused (``ValueError``). The
                 ``label`` and the attributes of a ciphertext are claims of its
-                client that the checks cannot verify: a replay of an earlier
-                round that all clients relabelled alike is aggregated,
-                silently, to the sum of the round it was made in, so
-                authenticate the ciphertexts where that matters.
+                client that the checks cannot verify: ciphertexts of an
+                earlier round whose label was rewritten (by anyone who holds
+                the ciphertexts of that round, with no key) are aggregated,
+                silently, to the value of the round they were made in, so
+                have the clients sign or MAC the label with the record where
+                that matters.
 
         Raises:
             ValueError: If the policy above is violated, SIFE is given more

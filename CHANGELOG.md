@@ -209,10 +209,16 @@ compatibility).
   `bound_x` and `bound_y` (default 16), `max_rows` (64) and `max_attributes`
   (64); `eta` is 1. A client must encrypt once under a tag, which the scheme
   layer does not check, as with the other labelled schemes. The `label` and the
-  `attributes_digest` of a ciphertext are claims that cannot be checked without
-  the master key: the decryption checks that the clients agree and gives a
-  `ValueError` (no discrete log) for one that hashed other points than it
-  says. Ciphertexts are malleable and not authenticated. The scheme has ndarray
+  `attributes_digest` of a ciphertext are claims of its client that the
+  decryption does not check against the points: the encryption key of a client
+  can check its own ciphertext and the master key all of them, an aggregator
+  that holds neither cannot. The decryption checks that the clients agree and
+  gives a `ValueError` (no discrete log) for one that hashed other points than
+  it says; whoever holds the ciphertexts of a whole round can write another
+  label into all of them, and they decrypt to the value of the round in which
+  they were made (integrity, not confidentiality; sign or MAC the label with
+  the record where that matters). Ciphertexts are malleable and not
+  authenticated. The scheme has ndarray
   helpers (`encrypt_lst_ndarray`, `decrypt_lst_ndarray_ct`, `check_ndarray_ct`),
   and the ML adapter serves it (`encrypt_gradient(..., attributes=)`,
   `aggregate_gradients(..., policy=)`). `encrypt` takes `|x|` as the exponent,

@@ -96,18 +96,26 @@ warns when it is built (``FESecurityWarning``; see :doc:`/security`). Use the sc
 
 What the checks cannot see. The ``label`` and the attributes of a ciphertext are
 claims of its client: the points they were hashed to are inside ``t`` and
-``c_ipfe``, and only the master key could check them. A client whose points
-differ from its claim gives no value (a
+``c_ipfe``, and a decryption does not hash them again. The encryption key of a
+client can check the claims of its own ciphertext (``t`` divided by the points
+of the claimed tag and set, taken to the powers ``s_i`` and ``u_i`` of the key,
+is a small power of ``g1`` only if the claims are right; the check also
+recovers the plaintext), and the master key can check all of them. An
+aggregator that holds neither cannot. A client whose points differ from its
+claim gives no value (a
 :class:`~pyfe4ai.core.exceptions.FESchemeError` at the discrete logarithm,
-after the key is issued), and clients that disagree on the label are refused; but if all
-clients copy the label of a round onto ciphertexts of an earlier round, that
-relabelled replay is aggregated, silently, to the sum of the round the
-ciphertexts were made in. Attributes that all clients change alike give
-``FEKeyError`` or no value, never a wrong one (an attribute that no row of the
-policy reads can be renamed without effect, and the value is the right one,
-if it keeps its place in the sorted list; a list out of order is refused). A
-caller who must know that ciphertexts belong to a round has to authenticate
-them. An item that has the
+after the key is issued), and ciphertexts that disagree on the label are
+refused; but whoever holds the ciphertexts of a whole round (an aggregator, a
+store, a relay) can write another label into all of them, with no key and no
+client taking part, and they are aggregated, silently, under that label: what
+decrypts is the value of the round in which the ciphertexts were made. This is
+a matter of integrity, not of confidentiality. Attributes that all clients
+change alike give ``FEKeyError`` or no value, never a wrong one (an attribute
+that no row of the policy reads can be renamed without effect, and the value is
+the right one, if it keeps its place in the sorted list; a list out of order is
+refused). A deployment that must know that ciphertexts belong to a round has
+each client sign or MAC the label together with the record, and checks that. An
+item that has the
 type tag of a group element and is none is found when it is decoded. These
 are found, if at all, after the key is issued; the label is then tied to the
 weights of that call, and a second try under it needs the same weights. A
@@ -119,6 +127,20 @@ obtained its key; in the threshold MCFE that the wrapper runs, the losing call
 has already obtained key shares from the servers (its weight key share is added
 to the wrapper's server objects where they lack it), and these shares never
 reach the caller.
+
+A functional key of ``mcfe/kp_ab_pairing`` is for a weight vector and a policy and
+takes no tag, so a key issued or prepared for any round opens every other round
+(as for every MCFE scheme whose functional keys are not bound to a label). The
+rule that a label is aggregated with one weight vector only therefore
+constrains the adapter's own calls, not the keys already issued. Take round 1
+aggregated with the weights ``(1, 1, 1)`` and
+:func:`~pyfe4ai.ml.prepare_aggregation` for round 2 with ``(1, 2, 1)``: the
+adapter refuses to aggregate round 1 with ``(1, 2, 1)``, but the key of the
+:class:`~pyfe4ai.ml.PreparedAggregation` (its ``dk``), handed to the decryptor,
+opens round 1 too, and the difference of the two values is the gradient of the
+second client in round 1. Two rounds and two weight vectors that differ in one
+client's weight can thus isolate that client; the rule is no defence against
+a holder of the keys, and which keys exist is the key holder's decision.
 
 A :class:`~pyfe4ai.ml.PreparedAggregation` keeps the canonical encoding of its
 policy in ``policy``; the attributes are judged against it when the round is

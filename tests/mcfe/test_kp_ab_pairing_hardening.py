@@ -9,10 +9,11 @@ the discrete log, which is not a ``FEValidationError``. Where test_kp_ab_pairing
 tests are the refusals and the attacks.
 
 The ``label`` and the ``attributes_digest`` of a ciphertext are claims of its client: the points ``H(tag, S)`` are
-inside ``t`` and ``c_ipfe``, and the master key would be needed to check the fields against them. A decryption checks
-that the clients agree, so that one client that lies gives no value; all clients that change the label alike still give
-the right one; the list of attributes is read by the decryption (it says which vector pairs with which row), so
-changing it gives a refusal or no value, never a wrong one
+inside ``t`` and ``c_ipfe``, and the encryption key of the client (for its own ciphertext) or the master key would be
+needed to check the fields against them. A decryption checks that the clients agree, so that one client that lies gives
+no value; whoever holds the ciphertexts of a whole round can change the label of all of them, and they still give the
+value of the round in which they were made; the list of attributes is read by the decryption (it says which vector
+pairs with which row), so changing it gives a refusal or no value, never a wrong one
 (``test_the_label_and_the_digest_of_a_ciphertext_are_claims``).
 """
 
@@ -699,7 +700,8 @@ def test_a_client_that_hashed_another_set_of_attributes_than_it_says_gives_no_va
 
 def test_the_label_and_the_digest_of_a_ciphertext_are_claims(mc_fixed):
     # the points of the tag are inside t and c_ipfe; the fields are checked against each other and cannot be checked
-    # against the points without the master key. Ciphertexts are not authenticated (module docstring).
+    # against the points without the encryption key of the client or the master key. Ciphertexts are not authenticated
+    # (module docstring); whoever holds the ciphertexts of a whole round can change the label of all of them.
     kg, clients, agg, cts, dk = mc_fixed
     for ct in cts.values():
         ct["label"] = encode_label("round-2")

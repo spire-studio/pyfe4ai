@@ -529,12 +529,14 @@ def relabel(encrypted, source):
     return relabelled
 
 
-def test_a_relabelled_replay_by_all_clients_decrypts_to_the_sum_of_the_round_the_ciphertexts_were_made_in(
+def test_a_relabelled_replay_of_a_whole_round_decrypts_to_the_value_of_the_round_the_ciphertexts_were_made_in(
         wrapper, monkeypatch):
     """A stated limit, not a defence. The ``label`` of a ciphertext is a claim of its client: the points it was hashed
-    to are inside ``t`` and ``c_ipfe``, and only the master key could check them. The ciphertexts of round-0 with the
-    label fields of round-1 pass every check of the scheme and are aggregated under round-1 (one key is issued) to the
-    sum of round-0, silently. A caller who must know that ciphertexts belong to a round authenticates them."""
+    to are inside ``t`` and ``c_ipfe``, and only the encryption key of a client (for its own ciphertext) or the master
+    key could check them. Whoever holds the ciphertexts of a whole round, with no key and no client taking part, can
+    write the label fields of round-1 into the ciphertexts of round-0: they pass every check of the scheme and are
+    aggregated under round-1 (one key is issued) to the sum of round-0, silently. A caller who must know that
+    ciphertexts belong to a round has each client sign or MAC the label with the record."""
     old, new = gradients(seed=10), gradients(seed=11)
     replayed = encrypt_all(wrapper, old, label="round-0")
     current = encrypt_all(wrapper, new)

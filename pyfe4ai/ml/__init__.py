@@ -66,10 +66,18 @@ base64).
     ``allow_partial=True`` (``ValueError``: the shares of the clients' keys add
     up to 1, so every enrolled client must take part).
     The ``label`` and the attributes of a ciphertext are claims of its client
-    that the checks cannot verify: clients that disagree are refused, but a
-    relabelled replay by all clients decrypts, silently, to the sum of the
-    round the ciphertexts were made in; authenticate ciphertexts where that
-    matters (:meth:`~pyfe4ai.schemes.mcfe.kp_ab_pairing.MCFEKPABPairing.check_ndarray_ct`
+    that these checks cannot verify: ciphertexts that disagree on them are
+    refused, but whoever holds the ciphertexts of a whole round (an
+    aggregator, a store, a relay) can write another label into all of them,
+    with no key and no client taking part, and they are aggregated, silently,
+    under that label: what decrypts is the value of the round in which the
+    ciphertexts were made. This is a matter of integrity, not of
+    confidentiality. The encryption key of a client can check the claims of
+    its own ciphertext, and the master key those of all of them (the check
+    also recovers the plaintext); an aggregator that holds neither cannot, so
+    a deployment that needs this checked has each client sign or MAC the label
+    and the record
+    (:meth:`~pyfe4ai.schemes.mcfe.kp_ab_pairing.MCFEKPABPairing.check_ndarray_ct`
     says exactly what is checked). It warns
     (:class:`~pyfe4ai.core.exceptions.FEWarning`) of a job of more than 1000
     elements, with the time it takes, and of a discrete-logarithm bound
@@ -88,12 +96,23 @@ key holder would otherwise have to enforce: :func:`aggregate_gradients`
 needs a ciphertext and a non-zero weight for every enrolled client (pass
 ``allow_partial=True`` to relax this), each client encrypts at most once per
 label, and each label is aggregated with one weight vector only. These
-checks stop the obvious ways of isolating one client, not all of them: a
+checks stop some ways of isolating one client, not all of them: a
 single aggregate with very unequal weights (e.g. ``(W, 1)`` with ``W`` above
 twice the largest gradient entry) separates two clients' gradients, as with
 any inner-product FE; choosing the weights is the key holder's
 responsibility, and :meth:`FESchemeWrapper.get_decryption_keys` issues keys
 for any weights.
+
+"One weight vector per label" constrains the adapter's own calls, not the
+keys that were issued. For ``mcfe/kp_ab_pairing``, as for every MCFE scheme
+whose functional keys are not bound to a label, a key issued or prepared for
+any round opens every other round (its key generation takes no tag). Two
+rounds with two weight vectors that differ in one client's weight therefore
+isolate that client's gradient: the adapter refuses to aggregate the first
+round with the second round's weights, but the key of a
+:class:`PreparedAggregation` for the second round, handed to the decryptor,
+opens the first round too, and the two values differ by that client's
+gradient times the change in its weight.
 
 
 The functions and classes are defined in the submodules ``wrapper``,

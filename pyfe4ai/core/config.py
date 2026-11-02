@@ -1347,21 +1347,30 @@ def options_rst() -> str:
     ]
     lines += _heading("Security profiles", "-")
     rows = []
+    refused_ids = {s.key for s in SCHEMES if s.refused}
     for kind in sorted({k for k in SCHEME_KIND.values()}):
-        schemes = ", ".join("``{}/{}``".format(*s) for s, k in SCHEME_KIND.items() if k == kind)
+        members = [s for s, k in SCHEME_KIND.items() if k == kind]
         if all(s.refused for s in SCHEMES if s.kind == kind) or (kind not in STANDARD_MINIMA and kind != "pairing"):
             standard = "refused"
-        elif kind == "pairing":
-            standard = "``pairing_group_param = '{}'`` only, with a ``FESecurityWarning``".format(STANDARD_PAIRING_GROUP)
+            listed = members
         else:
-            standard = "; ".join(["``{}`` >= ``{}``".format(k, v) for k, v in STANDARD_MINIMA[kind].items()]
-                                 + ["``{} = {!r}``".format(k, v) for k, v in STANDARD_PRESETS.get(kind, {}).items()]
-                                 ) or "nothing to set"
-        rows.append((kind, schemes, standard))
+            # a scheme that ``standard`` refuses does not meet the minima of its kind: it is not in the row, but in the
+            # list of refused schemes below the table
+            listed = [s for s in members if s not in refused_ids]
+            if kind == "pairing":
+                standard = "``pairing_group_param = '{}'`` only, with a ``FESecurityWarning``".format(
+                    STANDARD_PAIRING_GROUP)
+            else:
+                standard = "; ".join(["``{}`` >= ``{}``".format(k, v) for k, v in STANDARD_MINIMA[kind].items()]
+                                     + ["``{} = {!r}``".format(k, v)
+                                        for k, v in STANDARD_PRESETS.get(kind, {}).items()]) or "nothing to set"
+        rows.append((kind, ", ".join("``{}/{}``".format(*s) for s in listed), standard))
     lines += [
         "``security_profile = 'toy'`` (the default) uses the config as given. ``'standard'`` sets the minima "
         "below where the config has no value and refuses weaker ones (``FEValidationError``); see "
-        ":mod:`pyfe4ai.core.profiles`.",
+        ":mod:`pyfe4ai.core.profiles`. A scheme that ``standard`` refuses outright is not in the row of its kind, "
+        "which holds the schemes that it accepts, but in the list below the table (a kind of which every scheme "
+        "is refused is shown whole, as ``refused``).",
         "",
     ]
     lines += _table(rows, ("kind", "schemes", "under ``standard``"))
