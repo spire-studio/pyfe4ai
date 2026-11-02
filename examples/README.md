@@ -48,6 +48,20 @@ Schemes* in the top-level README.
 - `mcfe_fh_multi_ipe_threshold_demo.py`: threshold `tMCFE/FHMultiIPE` example (experimental threshold layer)
 - `quadratic_sgp_minimal.py`: minimal `Quadratic/SGP` example for `x^T F y`
 - `quadratic_quad_minimal.py`: minimal `Quadratic/Quad` example for public-key style `x^T F y`
+- `sife_cp_ab_pairing_minimal.py`: ciphertext-policy attribute-based IPFE
+  `sife/cp_ab_pairing` (ACGU20): a ciphertext under a policy, `<x, y>` for a key whose
+  attributes satisfy it, a refusal for one whose attributes do not; also an
+  identity-equality policy (`id:alice`)
+- `sife_kp_ab_pairing_minimal.py`: key-policy attribute-based IPFE `sife/kp_ab_pairing`
+  (NPP22 Sec. 4): attributes in the ciphertext, the policy in the key
+- `mcfe_kp_ab_pairing_minimal.py`: multi-client FE with access control
+  `mcfe/kp_ab_pairing` (NPP22 Sec. 5.2): three clients encrypt under one tag with the
+  round's attributes, and a key whose policy the attributes satisfy gives the
+  weighted sum
+- `ml_fl_aggregation_policy.py`: policy-gated gradient aggregation with
+  `mcfe/kp_ab_pairing` through the ML adapter (`encrypt_gradient(..., attributes=)`,
+  `aggregate_gradients(..., policy=)`); for small vectors and statistics (see
+  `docs/api/ml.rst`), not for large models
 
 Run any example from the repository root after `pip install -e .` (see the
 top-level README), for example:

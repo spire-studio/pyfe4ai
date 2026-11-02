@@ -72,6 +72,7 @@ The tests are grouped by topic, one directory each:
 | `tests/sife/`, `tests/mife/`, `tests/mcfe/`, `tests/quadratic/` | the schemes, one module per scheme |
 | `tests/policy/` | the policy language, its compilers and encodings |
 | `tests/review/` | regression tests of the crypto reviews, one per finding (kept as the review wrote them) |
+| `tests/examples/` | the scripts of `examples/` run as programs (exit code and the lines that show what each is for) |
 
 Helpers shared by several groups stay where they are: `tests/pairing_group.py`
 (the pairing group of the tests), `tests/log_config.py` (logging of the
