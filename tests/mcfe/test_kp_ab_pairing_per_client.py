@@ -1572,10 +1572,14 @@ def spied(monkeypatch, module, name):
 def test_ndarray_pairs_all_elements_in_slices_whatever_the_size_of_each_clients_set(batch, make_pc, monkeypatch):
     # The clients' sets have 2, 3 and 3 labels and use 2, 1 and 2 rows of the policy, so that the ciphertexts and the
     # rows of the key differ in length between clients: every element holds 22 + 30 + 30 decoded G1 elements and is
-    # paired over 21 + 13 + 21 + 1 points of the prepared key.
+    # paired over 21 + 13 + 21 + 1 points of the prepared key. A slice holds as many elements as the budget of decoded
+    # elements allows: all ten by default, batch with the largest budget that holds batch elements of 22 + 30 + 30
+    # decoded elements each (and more elements of any smaller count).
     if batch is not None:
-        monkeypatch.setattr(kp_ab_pairing, "_BATCH_ELEMENTS", batch)
-    sizes = [min(kp_ab_pairing._BATCH_ELEMENTS, 10 - start) for start in range(0, 10, kp_ab_pairing._BATCH_ELEMENTS)]
+        monkeypatch.setattr(kp_ab_pairing, "_SLICE_DECODED_ELEMENTS", (batch + 1) * (22 + 30 + 30) - 1)
+    step = kp_ab_pairing._slice_size(22 + 30 + 30)
+    assert step == (kp_ab_pairing._SLICE_DECODED_ELEMENTS // (22 + 30 + 30) if batch is None else batch)
+    sizes = [min(step, 10 - start) for start in range(0, 10, step)]
     kg, clients, agg = make_pc()
     sets = {"nid_0": ["a:1", "b:1"], "nid_1": ["c:1", "d:1", "e:1"], "nid_2": ["a:1", "b:1", "c:1"]}
     arrays = random_arrays()
@@ -1606,7 +1610,7 @@ def test_ndarray_does_not_depend_on_the_slices(batch, make_pc, monkeypatch):
     sets = {"nid_0": ["org:A", "region:EU"], "nid_1": ["region:US", "org:A"], "nid_2": ["region:EU", "region:US"]}
     cts = encrypt_arrays_each(clients, arrays, sets)        # weights other than 1, other rows for each client
     dk = kg.get_decryption_keys("agg", credentials=creds("2of(region:EU, region:US, org:A)"))
-    monkeypatch.setattr(kp_ab_pairing, "_BATCH_ELEMENTS", batch)
+    monkeypatch.setattr(kp_ab_pairing, "_SLICE_DECODED_ELEMENTS", batch * 3 * (8 * 2 + 6))       # batch elements
     got = aggregate(agg, cts, dk)
     assert [layer.shape for layer in got] == [(2, 3), (4,)]
     assert all((layer == expected).all() for layer, expected in zip(got, combined(arrays)))

@@ -62,8 +62,9 @@ all elements of all layers in one batch. The points of the key that every elemen
 uses, with their reconstruction coefficients folded in, and ``-k*_i,ipfe``) are prepared once per call
 (:func:`~pyfe4ai.primitives.pairing.pairing_backend.prepare_g2`; nothing is kept between calls), and each element is
 then one product of pairings over them. The elements of an array are for one set of attributes. All elements are
-checked first; they are then decoded, paired and solved 256 at a time, so that the memory of the decoded group
-elements does not grow with the size of the arrays (see :meth:`MCFEKPABPairing.decrypt_lst_ndarray_ct`).
+checked first; they are then decoded, paired and solved in slices of at most :data:`_SLICE_DECODED_ELEMENTS` decoded
+group elements (and at least one element), so that the memory of the decoded elements grows neither with the size of
+the arrays nor with the clients and their attributes (see :meth:`MCFEKPABPairing.decrypt_lst_ndarray_ct`).
 :meth:`MCFEKPABPairing.check_ndarray_ct` makes the checks that need no key and no decoded point, for a caller that
 issues the functional key before it decrypts.
 
@@ -168,10 +169,18 @@ logger = logging.getLogger(__name__)
 _PP_DOMAIN = b"pyfe4ai/mcfe/kp-ab/pp-binding/v1|"
 _SCHEME_ID = "mcfe/kp_ab_pairing"
 
-#: The elements of an array that :meth:`MCFEKPABPairing.decrypt_lst_ndarray_ct` decodes, pairs and solves at a time.
-#: An element holds ``n (8 |S| + 5)`` decoded group elements (``n`` clients, ``|S|`` attributes), some hundred bytes
-#: each: this bounds the memory of the decoded elements, whatever the size of the arrays.
-_BATCH_ELEMENTS = 256
+#: The decoded ``G1`` elements that :meth:`MCFEKPABPairing.decrypt_lst_ndarray_ct` holds at a time. It decodes, pairs
+#: and solves the elements of the arrays in slices of as many elements as this allows, and at least one: an element
+#: holds ``n (8 |S| + 5)`` decoded elements (``n`` clients, ``|S|`` attributes; ``sum_i (8 |S_i| + 6)`` in
+#: ``mcfe/kp_ab_pairing_per_client``), about 1.5 to 3.5 KB each with the rows built from them (measured), so a slice
+#: takes some 100 to 230 MB, whatever the size of the arrays, the number of clients and the attributes they encrypt for.
+_SLICE_DECODED_ELEMENTS = 1 << 16
+
+
+def _slice_size(decoded: int) -> int:
+    """The elements of a slice of :meth:`MCFEKPABPairing.decrypt_lst_ndarray_ct`, for elements of *decoded* decoded
+    ``G1`` elements each: as many as :data:`_SLICE_DECODED_ELEMENTS` holds, and at least one."""
+    return max(1, _SLICE_DECODED_ELEMENTS // decoded)
 
 
 def _by_client(entries, what: str) -> dict:
@@ -1144,17 +1153,21 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
         :meth:`check_ndarray_ct` with the key's, and that every vector of ``G1`` is a list of strings with the type tag
         of ``G1``, are made for all elements before anything is decoded, prepared or paired. The key is read once. Its
         points are prepared once, and the elements are then decoded, paired (one product of pairings each, over the
-        prepared points) and solved ``_BATCH_ELEMENTS`` (256) at a time. A string with the right tag that is no element
-        of the group is found when the slice that holds it is decoded, after the slices before it were paired; the call
-        then raises and returns nothing, as for any other malformed input. The type tags are checked with the lengths,
-        before the fusion weight and the satisfaction of the policy: an input both unsatisfied and wrongly tagged gets
-        a ``FEValidationError`` here and a ``FEKeyError`` from :meth:`decrypt`.
+        prepared points) and solved a slice at a time: as many elements as hold :data:`_SLICE_DECODED_ELEMENTS`
+        (``2**16``) decoded group elements, ``n (8 |S| + 5)`` each, and at least one (225 elements at ``n = 10``,
+        ``|S| = 3``; 12 at ``n = 10``, ``|S| = 64``). A string with the right tag that is no element of the group is
+        found when the slice that holds it is decoded, after the slices before it were paired; the call then raises
+        and returns nothing, as for any other malformed input. The type tags are checked with the lengths, before the
+        fusion weight and the satisfaction of the policy: an input both unsatisfied and wrongly tagged gets a
+        ``FEValidationError`` here and a ``FEKeyError`` from :meth:`decrypt`.
 
         Memory: the ciphertexts are the caller's. The call adds about 4 KB for each of them (a record view, a name and
-        the lists of the checks, measured at ``n = 10``, ``|S| = 3``) and the prepared points of the key, up to about
-        20 KB each, ``n (8 rows + 4) + 1`` of them. The decoded group elements, ``n (8 |S| + 5)`` for each element of
-        a slice, and the rows built from them are held for one slice at a time: about 0.5 to 0.8 MB per element of the
-        slice at ``n = 10``, ``|S| = 3`` (measured), some 250 MB for a slice of 256, whatever the size of the arrays.
+        the lists of the checks, measured at ``n = 10``, ``|S| = 3``; more with more attributes) and the prepared
+        points of the key, up to about 20 KB each, ``n (8 rows + 4) + 1`` of them. The decoded group elements of a
+        slice and the rows built from them are held for one slice at a time, about 1.5 to 3.5 KB per decoded element
+        (measured): some 100 to 230 MB for a slice, whatever the size of the arrays, the number of clients and the
+        attributes. At ``n = 10``, ``|S| = 64`` and 40 elements (one thread) the peak memory of the call grew by
+        214 MB in slices of 12 elements and by 430 MB in one slice of 40, in the same time.
 
         Args:
             dict_ndarray_ct: The ciphertext arrays by client id: for each client a list of arrays (the layers, each of
@@ -1189,8 +1202,10 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
             used = {nid: vector_positions(weights[nid], msp.row_labels, attributes[nid]) for nid in self.lst_nid}
             prepared = prepare_g2(self._key_points(key, weights))               # the lines are not kept after the call
             base, bound = self._generator_pair(), self.n * self.bound_x * self.bound_y
-            for start in range(0, len(elements), _BATCH_ELEMENTS):
-                part, part_cts = elements[start:start + _BATCH_ELEMENTS], cts[start:start + _BATCH_ELEMENTS]
+            # the G1 elements of the ciphertexts of one element: c_attr, t and c_ipfe of each client
+            step = _slice_size(sum(F_DIM * len(attributes[nid]) + 1 + self.H_DIM for nid in self.lst_nid))
+            for start in range(0, len(elements), step):
+                part, part_cts = elements[start:start + step], cts[start:start + step]
                 products = multi_pair_prepared(self._element_rows(part, part_cts, used, attributes, y), prepared)
                 for (layer, index), product in zip(part, products):
                     try:

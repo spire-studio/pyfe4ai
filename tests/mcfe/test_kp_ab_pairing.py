@@ -670,11 +670,15 @@ def spied(monkeypatch, module, name):
 ])
 @pytest.mark.parametrize("batch", [None, 4, 1])
 def test_ndarray_pairs_all_elements_in_slices(batch, policy, attributes, rows, unit_rows, make_mc, monkeypatch):
-    # the key is prepared once per call; the 10 elements (6 + 4) are decoded, paired and solved in slices
+    # the key is prepared once per call; the 10 elements (6 + 4) are decoded, paired and solved in slices of as many
+    # elements as the budget of decoded elements holds (all ten by default, batch with the largest budget that holds
+    # batch elements)
+    decoded = 3 * (8 * len(attributes) + 5)                 # the G1 elements of the ciphertexts of one element
     if batch is not None:
-        monkeypatch.setattr(kp_ab_pairing, "_BATCH_ELEMENTS", batch)
-    assert kp_ab_pairing._BATCH_ELEMENTS == (256 if batch is None else batch)
-    sizes = [min(kp_ab_pairing._BATCH_ELEMENTS, 10 - start) for start in range(0, 10, kp_ab_pairing._BATCH_ELEMENTS)]
+        monkeypatch.setattr(kp_ab_pairing, "_SLICE_DECODED_ELEMENTS", (batch + 1) * decoded - 1)
+    step = kp_ab_pairing._slice_size(decoded)
+    assert step == (kp_ab_pairing._SLICE_DECODED_ELEMENTS // decoded if batch is None else batch)
+    sizes = [min(step, 10 - start) for start in range(0, 10, step)]
     kg, clients, agg = make_mc()
     arrays = random_arrays()
     cts = encrypt_arrays(clients, arrays, attributes=attributes)
@@ -702,23 +706,58 @@ def test_ndarray_pairs_all_elements_in_slices(batch, policy, attributes, rows, u
         3 * (8 * rows + 4), *(size * 3 * (8 * len(attributes) + 5) for size in sizes)] * 2
 
 
+def slices_of(monkeypatch, elements, decoded=3 * (8 * len(ATTRS) + 5)):
+    """Make the slices of a decryption *elements* elements long, for elements of *decoded* decoded G1 elements each
+    (by default those of three clients and the attributes ``ATTRS``)."""
+    monkeypatch.setattr(kp_ab_pairing, "_SLICE_DECODED_ELEMENTS", elements * decoded)
+
+
 @pytest.mark.parametrize("batch", [1, 3, 4, 10, 11])
 def test_ndarray_does_not_depend_on_the_slices(batch, make_mc, monkeypatch):
     kg, clients, agg = make_mc()
     arrays = random_arrays()
     cts = encrypt_arrays(clients, arrays)
     dk = kg.get_decryption_keys("agg", credentials=creds(POLICIES[2][0]))
-    monkeypatch.setattr(kp_ab_pairing, "_BATCH_ELEMENTS", batch)
+    slices_of(monkeypatch, batch)
     got = aggregate(agg, cts, dk)
     assert [layer.shape for layer in got] == [(2, 3), (4,)]
     assert all((layer == expected).all() for layer, expected in zip(got, combined(arrays)))
+
+
+def test_the_slices_shrink_as_the_clients_and_their_attributes_grow():
+    # a slice holds as many elements as the budget of decoded G1 elements allows, and at least one
+    budget, sizes = kp_ab_pairing._SLICE_DECODED_ELEMENTS, []
+    for n, attributes in ((3, 1), (3, 3), (10, 3), (10, 64), (50, 64), (200, 64)):
+        decoded = n * (8 * attributes + 5)                  # the G1 elements of the ciphertexts of one element
+        size = kp_ab_pairing._slice_size(decoded)
+        assert size >= 1 and (size * decoded <= budget or size == 1)
+        assert size == 1 or (size + 1) * decoded > budget    # as many as fit
+        sizes.append(size)
+    assert sizes == sorted(sizes, reverse=True) and sizes[0] > sizes[3] > sizes[-1] == 1
+    assert kp_ab_pairing._slice_size(10 * (8 * 64 + 5)) * 10 * (8 * 64 + 5) <= budget       # max_attributes, n = 10
+
+
+def test_more_attributes_give_smaller_slices_and_the_same_values(make_mc, monkeypatch):
+    kg, clients, agg = make_mc()
+    arrays = random_arrays()
+    dk = kg.get_decryption_keys("agg", credentials=creds("region:EU"))
+    monkeypatch.setattr(kp_ab_pairing, "_SLICE_DECODED_ELEMENTS", 300)
+    products = spied(monkeypatch, kp_ab_pairing, "multi_pair_prepared")
+    held = (["region:EU"], ["a:1", "b:1", "region:EU"], ["a:{}".format(i) for i in range(7)] + ["region:EU"])
+    for round_, attributes in enumerate(held):
+        step = max(1, 300 // (3 * (8 * len(attributes) + 5)))      # 7, 3 and 1 elements
+        label = "round-{}".format(round_)
+        del products[:]
+        got = aggregate(agg, encrypt_arrays(clients, arrays, label=label, attributes=attributes), dk, label=label)
+        assert all((layer == expected).all() for layer, expected in zip(got, combined(arrays)))
+        assert [len(args[0]) for args in products] == [min(step, 10 - start) for start in range(0, 10, step)]
 
 
 def test_ndarray_refuses_a_wrong_tag_in_a_late_slice_before_it_pairs_anything(make_mc, monkeypatch):
     kg, clients, agg = make_mc()
     cts = encrypt_arrays(clients, random_arrays())
     dk = kg.get_decryption_keys("agg", credentials=creds())
-    monkeypatch.setattr(kp_ab_pairing, "_BATCH_ELEMENTS", 4)       # the last element is in the third slice
+    slices_of(monkeypatch, 4)                               # the last element is in the third slice
     ct = cts["nid_2"][1][3]
     cts["nid_2"][1][3] = dict(ct, c_ipfe=[*ct["c_ipfe"][:3], dk["k_ipfe"]["nid_0"][0]])         # a G2 element
     refuse_to_compute(monkeypatch)                          # nothing decoded, prepared or paired
@@ -732,7 +771,7 @@ def test_ndarray_finds_an_item_that_is_no_element_when_its_slice_is_decoded(make
     kg, clients, agg = make_mc()
     cts = encrypt_arrays(clients, random_arrays())
     dk = kg.get_decryption_keys("agg", credentials=creds())
-    monkeypatch.setattr(kp_ab_pairing, "_BATCH_ELEMENTS", 4)
+    slices_of(monkeypatch, 4)
     ct = cts["nid_2"][1][3]
     cts["nid_2"][1][3] = dict(ct, c_ipfe=[*ct["c_ipfe"][:3], "1:not an element"])
     products = spied(monkeypatch, kp_ab_pairing, "multi_pair_prepared")

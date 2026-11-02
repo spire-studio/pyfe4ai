@@ -119,8 +119,12 @@ them:
   however few they are (a row costs at least a final exponentiation, far more
   than starting a thread); ``prepare_g2`` takes the points on that many threads
   from 16 points on. The results do not depend on the number of threads. The
-  elements are decoded, paired and solved 256 at a time, so that the memory of
-  the decoded group elements does not grow with the size of the arrays.
+  elements are decoded, paired and solved in slices of at most ``2**16``
+  decoded group elements (``n (8 |S| + 5)`` per element, and at least one
+  element per slice), so that the memory of the decoded elements grows neither
+  with the size of the arrays nor with the clients and their attributes. A
+  slice of few elements gives the threads few rows: 12 at ``n = 10`` and
+  ``|S| = 64``.
   A charm group pairs the rows one after the other in the calling thread.
 * **State.** Nothing is kept between calls: a prepared set lives for one
   decryption and no object holds one, so none is part of the state of a crypto
