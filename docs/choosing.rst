@@ -302,9 +302,9 @@ is refused with :class:`~pyfe4ai.core.exceptions.FEKeyError`. This is the
 general scheme with a policy of one leaf, and the identity is a label like any
 other (one of the ``universe`` in ``sife/cp_ab_pairing``). It is *not* the
 encoding that ACGU20 gives in its App. C.1 (Identity-Based Inner-Product
-Functional Encryption), a function encoding of its own (``EncCt(x, id)``,
-``EncKey(y, id')``) rather than a monotone span program, which the library
-does not implement.
+Functional Encryption), which the library does not implement: that is a
+function encoding of its own (``EncCt(x, id)``, ``EncKey(y, id')``), not a
+monotone span program.
 
 *Small or large universe.* ``sife/cp_ab_pairing`` suits a vocabulary of labels
 that is fixed and small: every label and copy adds a pair of G1 and a pair of
