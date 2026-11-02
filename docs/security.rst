@@ -177,16 +177,18 @@ term in. The precomputation opens the ciphertext without a key, so it is kept
 like a key and used once: a second use of its randomness gives ``x - x'`` to
 anyone.
 
-Like every exponentiation of this library the online phase is not
-constant-time, and the plaintext is all it works on. It raises ``g1`` to
-``|x_i|`` and divides for a negative ``x_i``, so that its time hardly shows the
-signs: at ``eta = 1000`` the share of negative coordinates moved it by less than
-the noise of one measurement. One measurement of it still tells roughly how
-large the ``x_i`` are and how many of them are zero, and its table reads depend
-on ``x``. ``encrypt`` depends on ``x`` as well, but the term of the random ``s``
-takes about nine tenths of its time and adds noise of its own, and a negative
-``x_i`` is a long exponent there. So one timed call shows the sizes and the
-zeros better on the online phase, and the signs better on ``encrypt``.
+Like every exponentiation of this library neither path is constant-time. Both
+take ``|x_i|`` as the exponent, not ``x_i`` modulo the group order: the online
+phase raises ``g1`` to it and divides for a negative ``x_i``, and ``encrypt``
+takes the inverse of ``g1`` as the base of a negative ``x_i``. So the time of
+both hardly shows the signs: at ``eta = 1000`` the share of negative coordinates
+moved either by less than the noise of one measurement. The plaintext is all the
+online phase works on: one measurement of it still tells roughly how large the
+``x_i`` are and how many of them are zero, and its table reads depend on ``x``.
+``encrypt`` depends on ``x`` as well, but the term of the random ``s`` takes
+about nine tenths of its time and adds noise of its own. So one timed call shows
+the sizes and the zeros better on the online phase, and the signs hardly on
+either.
 
 ML adapter
 ----------
