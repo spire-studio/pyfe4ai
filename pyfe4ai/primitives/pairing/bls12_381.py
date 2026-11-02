@@ -131,8 +131,12 @@ class PairingGroup:
     def hash(self, msg, kind=G1, dst=None):
         """H(msg) in G1 or G2; *msg* is bytes or a str (hashed as UTF-8).
 
-        *dst* is the domain separation tag of RFC 9380, at most 255 bytes;
+        *dst* is the domain separation tag of RFC 9380, 1 to 255 bytes;
         ``None`` takes the one of :data:`HASH_DST` for *kind*.
+
+        Raises:
+            ValueError: For a *kind* other than G1 and G2, and a *dst* that is
+                not bytes or has no or more than 255 bytes.
         """
         if kind not in HASH_DST:
             raise ValueError("BLS12-381 hashes into G1 or G2 only")
@@ -142,6 +146,8 @@ class PairingGroup:
             dst = HASH_DST[kind]
         elif not isinstance(dst, (bytes, bytearray)):
             raise ValueError("the dst must be bytes, got {}".format(type(dst).__name__))
+        elif not 1 <= len(dst) <= 255:     # RFC 9380, Sec. 3.1: a DST of nonzero length, at most 255 bytes
+            raise ValueError("the dst must be 1 to 255 bytes, got {} bytes".format(len(dst)))
         return self._k.hash(kind, bytes(msg), bytes(dst))
 
 

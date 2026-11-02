@@ -82,6 +82,15 @@ def test_group_hash_takes_a_dst_and_keeps_its_default(group):
         group.hash(b"abc", B.G1, dst=b"D" * 256)
 
 
+@pytest.mark.parametrize("dst", [b"", bytearray(), b"D" * 256], ids=["empty", "empty-bytearray", "256-bytes"])
+@pytest.mark.parametrize("kind", [B.G1, B.G2], ids=["G1", "G2"])
+def test_group_hash_refuses_a_dst_of_no_or_more_than_255_bytes(group, kind, dst):
+    # RFC 9380 asks for a DST of 1 to 255 bytes, which hash_to_g1 keeps to as well
+    with pytest.raises(ValueError, match="1 to 255 bytes"):
+        group.hash(b"abc", kind, dst=dst)
+    assert group.hash(b"abc", kind, dst=b"D") != group.hash(b"abc", kind, dst=b"D" * 255)     # the bounds are allowed
+
+
 @pytest.mark.parametrize("msg,x,y", G2_VECTORS)
 def test_hash_to_g2_rfc9380(msg, x, y):
     largest = y[1] > (P - 1) // 2 or (y[1] == 0 and y[0] > (P - 1) // 2)
