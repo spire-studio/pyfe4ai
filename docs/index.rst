@@ -4,9 +4,9 @@ pyfe4ai — Python Functional Encryption for AI
 **PyFE4AI** is a research-oriented Python library of functional encryption
 (FE) schemes for AI security and privacy. It covers single-input (SIFE),
 multi-input (MIFE), multi-client (MCFE), decentralized, threshold,
-function-hiding, and quadratic constructions under DDH (3072-bit groups or
-ristretto255), Damgård-DDH, Paillier, LWE, Ring-LWE and pairing-based
-assumptions. Every scheme is built from its id with
+function-hiding, attribute-based and quadratic constructions under DDH
+(3072-bit groups or ristretto255), Damgård-DDH, Paillier, LWE, Ring-LWE and
+pairing-based assumptions. Every scheme is built from its id with
 :func:`pyfe4ai.create("family/variant", config) <pyfe4ai.core.registry.create>`,
 which returns a key generator and a crypto class; the arguments of
 encryption and decryption are family-specific, and

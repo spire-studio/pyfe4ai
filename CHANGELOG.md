@@ -7,6 +7,26 @@ compatibility).
 
 ## [Unreleased]
 
+### Security
+
+- **`mcfe/kp_ab_pairing_per_client` is known-insecure: an attack on NPP22
+  Sec. 5.4.** In the construction of Nguyen, Phan and Pointcheval (ePrint
+  2022/215, revision of 2022-09-18) each client encrypts for an attribute set
+  of its own, and a fifth coordinate of the vectors `c_{i,ipfe}` and
+  `k_{i,ipfe}` is meant to stop the mix-and-match attack on keys of different
+  policies. Its contribution `theta_i d_{K,i}` depends on the client and the
+  key, not on the tag, so two keys of one `y` that open neither of two rounds,
+  where each client's set satisfies one of them in both rounds, give the
+  difference of the two rounds' inner products `<x - x', y>` (a single
+  plaintext only if one round is known). The adversary encrypts under the
+  challenge tag and under a second tag, which Remark 10 and Fig. 2 allow, and
+  is admissible under Def. 9, since neither key opens either round; Thm. 25
+  (App. B.5) as stated fails. `mcfe/kp_ab_pairing` (Sec. 5.2, one attribute
+  set per tag) is not affected. The scheme is registered as *known-insecure*
+  for functionality and performance experiments and as the record of the
+  attack; `test_two_tags_and_two_keys_read_the_difference_of_two_rounds`
+  reproduces it, and `docs/security.rst` and `SECURITY.md` state it.
+
 ### Changed
 
 - **The `standard` profile refuses a known-insecure scheme.** The registry
@@ -30,11 +50,11 @@ compatibility).
   take their config as before.
 - **No warning for a parameter record that holds the configuration only.**
   `sife/fh_ipe_pairing`, `sife/part_fh_ipe_pairing`, `sife/cp_ab_pairing`,
-  `sife/kp_ab_pairing`, `mife/fh_multi_ipe_pairing`, `mcfe/kp_ab_pairing` and
-  `quadratic/sgp` store no group element and no seed, so replacing their
-  record, for another configuration or because it is unreadable, no longer
-  draws a `FEWarning` (a message at INFO is logged); every other scheme warns
-  as before.
+  `sife/kp_ab_pairing`, `mife/fh_multi_ipe_pairing`, `mcfe/kp_ab_pairing`,
+  `mcfe/kp_ab_pairing_per_client` and `quadratic/sgp` store no group element
+  and no seed, so replacing their record, for another configuration or because
+  it is unreadable, no longer draws a `FEWarning` (a message at INFO is
+  logged); every other scheme warns as before.
 - **Labels that are not text are refused.** A label of the labelled
   multi-client schemes (`mcfe/*`) that holds a lone surrogate, such as the two
   halves of the UTF-16 pair of U+1F600 held as two characters, now raises
@@ -68,11 +88,54 @@ compatibility).
   one) now also applies to `PairingGroup.deserialize_many` and to the new
   `PairingGroup.serialize_many`, `bls12_381.msm_many` and, for every pairing
   group, `pairing_backend.multiexp_many` and `pairing_backend.serialize_many`,
-  and to the Miller loops of `multi_pair`. A batch below 16 items stays on one
-  thread, and the result does not depend on the number of threads.
+  and to the Miller loops of `multi_pair` and to `prepare_g2` and
+  `multi_pair_prepared` (below). A batch below 16 items stays on one thread
+  (`multi_pair_prepared` takes its rows on up to the set number of threads
+  however few they are), and the result does not depend on the number of
+  threads.
 - **Faster BLS12-381 kernels.** `serialize_many` inverts once per group instead
   of once per point (the bytes are the same), and one power in G2 uses the
   endomorphism of the curve as four 64-bit terms, about a quarter faster.
+- **Products of pairings over prepared G2 points.** `prepare_g2(points)` stores
+  the lines of the Miller loops of fixed G2 points, and
+  `multi_pair_prepared(rows, prepared)` takes one product of pairings per row of
+  G1 elements over them, one final exponentiation per row, with the results of
+  `multi_pair` for each row, in `bls12_381` and `pairing_backend` (on a charm
+  group `prepare_g2` returns the points and the rows are paired one by one). The
+  lines are scaled to a first coefficient of 1, which the final exponentiation
+  removes, unless a line has 0 there. A prepared set is opaque, with no text
+  form: it comes from a functional key. The native functions are
+  `bls_prepare_g2` and `bls_multi_pair_prepared` (`PreparedG2`). The aggregation
+  of 10 clients, 1000 elements each, a policy of three attributes and a discrete
+  logarithm over 2^24 (`mcfe/kp_ab_pairing`, `decrypt_lst_ndarray_ct`, medians
+  of five rounds) takes 49.5 s on one thread and 8.0 s on eight, of which the
+  pairings are 30.1 s and 4.1 s; with the lines kept as they are computed, not
+  scaled to a first coefficient of 1, it takes 59.4 s and 9.3 s.
+- **Hash to G1 under a domain separation tag.** `PairingGroup.hash(msg, kind,
+  dst=...)` of BLS12-381 takes the tag of RFC 9380 (1 to 255 bytes), and
+  `pairing_backend.hash_to_g1(group, msg, dst)` does the same on every group:
+  the RFC 9380 suite `BLS12381G1_XMD:SHA-256_SSWU_RO_` on BLS12-381, and on a
+  charm group, which has no tag, the tag, a bar and the message as one string
+  (refused if the tag has a bar or a NUL byte, or the message a NUL byte).
+- **`dpvs.encode`** builds the vector `generator ** (sum_i c_i B_i)` from the
+  exponents with one batch of powers, and `dpvs.combine` computes all the
+  coordinates of its vector in one `multiexp_many` call; the vectors are the
+  same.
+- **Policy-gated aggregation in the ML adapter.** For `mcfe/kp_ab_pairing`,
+  `encrypt_gradient(..., attributes=...)` encrypts a client's gradient for a
+  set of attributes and `aggregate_gradients(..., policy=...)` (and
+  `prepare_aggregation`) issues the key for a policy and releases the sum only
+  if the attributes of the round satisfy it (`FEKeyError` otherwise).
+  `FESchemeWrapper.access_control` says whether a scheme takes them, and
+  `PreparedAggregation.policy` holds the canonical encoding of the policy.
+  Before a key is issued and before any pairing the adapter has the scheme
+  check the ciphertexts (`ValueError` naming the layer, the element or the
+  client), and it refuses a missing client and `allow_partial=True`. It warns
+  (`FEWarning`) of more than 1000 elements, with the time it estimates, and of
+  a discrete-logarithm bound `n * bound_x * bound_y` above `2**26`.
+  `mcfe/kp_ab_pairing_per_client` is refused (`NotImplementedError`). See
+  `docs/api/ml.rst` for what the checks cannot see (the `label` and the
+  attributes of a ciphertext are the client's claims).
 - **Offline / online encryption of `sife/cp_ab_pairing`.**
   `precompute(policy)` computes all of a future ciphertext but the plaintext
   term, and `encrypt(x, precomputed=...)` multiplies that term in; with the

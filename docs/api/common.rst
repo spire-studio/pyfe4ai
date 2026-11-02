@@ -39,6 +39,20 @@ Access-Control Record Codec
    :members:
    :undoc-members:
 
+Decoded Group Elements
+----------------------
+
+.. automodule:: pyfe4ai.schemes.common.ac_decoded
+   :members:
+   :undoc-members:
+
+Key-Policy Attribute-Based Components
+-------------------------------------
+
+.. automodule:: pyfe4ai.schemes.common.kp_ab
+   :members:
+   :undoc-members:
+
 Threshold Schemes
 -----------------
 

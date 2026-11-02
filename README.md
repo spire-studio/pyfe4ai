@@ -119,6 +119,8 @@ capabilities="threshold")` the threshold MCFEs) and
 capabilities and review status. The classes are also importable by name,
 named after the id (`from pyfe4ai.schemes.sife import SIFEDDH,
 SIFEDDHKeyGenerator`; `mcfe/ring_lwe_threshold` is `ThresholdMCFERingLWE`).
+`pyfe4ai.list_schemes(capabilities="access_control")` lists the attribute-based
+schemes, whose keys or ciphertexts carry an access policy (`pyfe4ai.policy`).
 The documentation's
 [Quick start](https://spire-studio.github.io/pyfe4ai/docs/quickstart.html)
 continues with several clients, federated learning and real parameters,
@@ -137,6 +139,8 @@ explains the families, and
 | | FullySec-Ring-LWE (adaptive) | BMMS21, Sec. 5 |
 | | FH-IPE *(pairing)* | [KLMMRW](https://eprint.iacr.org/2016/440.pdf) (SCN '18) |
 | | Partial-FH-IPE *(pairing)* | [Gay20](https://eprint.iacr.org/2020/093.pdf) (PKC '20) |
+| | CP-AB-IPFE, attribute-based *(pairing, unreviewed)* | [ACGU20](https://eprint.iacr.org/2020/577.pdf) (ASIACRYPT '20), Sec. 3.1 |
+| | KP-AB-IPFE, attribute-based *(pairing, unreviewed)* | [NPP22](https://eprint.iacr.org/2022/215.pdf) (ASIACRYPT '22), Sec. 4 |
 | **MIFE** (multi-input) | DDH, Damgård-DDH, LWE, FullySec-LWE, Paillier | [ACFGU18](https://eprint.iacr.org/2017/972.pdf) (CRYPTO '18), Fig. 4 + ALS16 / ABDP15 |
 | | DDH over ristretto255 *(unreviewed)* | ACFGU18 Fig. 4 + ABDP15 in ristretto255 |
 | | Ring-LWE | ACFGU18 Fig. 4 as in [BMMS21](https://eprint.iacr.org/2021/046.pdf), Sec. 6 |
@@ -147,6 +151,8 @@ explains the families, and
 | | Damgård-DDH (MDDH), Paillier (DCR), LWE, FullySec-LWE | [ABMPSW20](https://eprint.iacr.org/2020/788.pdf) (SCN '20), Figs. 2–4 |
 | | Ring-LWE | BMMS21, Sec. 6 (identity-based MCFE) |
 | | FH-Multi-IPE *(pairing)* | [AGT21b](https://doi.org/10.1007/978-3-030-90453-1_8) (TCC '21), Sec. 6.2 |
+| | KP-AB, attribute-based *(pairing, unreviewed)* | NPP22, Sec. 5.2 |
+| | KP-AB with an attribute set per client *(pairing, known-insecure)* | NPP22, Sec. 5.4 (see [Known Issues](#known-issues--security-notice)) |
 | **Decentralized** | dMCFE-DDH, dMCFE-LWE, dMCFE-Paillier | ABMPSW20, App. D, Fig. 14 (DMCFE from MCFE) |
 | | dMCFE-Ring-LWE | BMMS21, Sec. 6 ([ABKW19](https://eprint.iacr.org/2019/020.pdf) + GDSum) |
 | | dMCFE-FH-Multi-IPE *(pairing)* | [NPS24](https://doi.org/10.62056/andkp2fgx) (IACR CiC '24), Fig. 1 |
@@ -379,6 +385,12 @@ group, BLS12-381 from the Rust extension by default; their constructions
 assume SXDH or a generic asymmetric bilinear group, so symmetric groups
 (`SS512`, `SS1024`) are rejected with `FEValidationError`. Up to v0.3.0 the
 default was `MNT224`, whose keys and ciphertexts BLS12-381 cannot read.
+The attribute-based schemes (`sife/cp_ab_pairing`, `sife/kp_ab_pairing`,
+`mcfe/kp_ab_pairing`, `mcfe/kp_ab_pairing_per_client`) run over the same groups.
+On BLS12-381 their tag hash is RFC 9380 `hash_to_curve` under a domain
+separation tag; a charm group has no such tag, and there the tag is hashed with
+a prefix as one string. Prefer BLS12-381 for ciphertexts from parties you do not
+trust ([Security & status](https://spire-studio.github.io/pyfe4ai/docs/security.html)).
 
 Other curves (`pairing_group_param`, e.g. `MNT224` or `BN254`) need
 `charm-crypto-framework`, which is built from source and needs GMP, OpenSSL

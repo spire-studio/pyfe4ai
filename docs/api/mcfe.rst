@@ -127,6 +127,20 @@ FH-Multi-IPE Threshold (Pairing)
    :members:
    :undoc-members:
 
+Key-Policy Attribute-Based MCFE (Pairing)
+-----------------------------------------
+
+.. automodule:: pyfe4ai.schemes.mcfe.kp_ab_pairing
+   :members:
+   :undoc-members:
+
+Key-Policy Attribute-Based MCFE with an Attribute Set per Client (Pairing, known-insecure)
+------------------------------------------------------------------------------------------
+
+.. automodule:: pyfe4ai.schemes.mcfe.kp_ab_pairing_per_client
+   :members:
+   :undoc-members:
+
 Building Blocks
 ---------------
 

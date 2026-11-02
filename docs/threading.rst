@@ -24,8 +24,9 @@ Selection: backend, threads, sampler
   threads started inside the block use the process-wide selection.
 * :func:`pyfe4ai.backend.set_threads` and ``PYFE4AI_THREADS`` set how many
   threads *one* native call may use over the chunks of a tensor, the
-  elements of a BLS12-381 batch or the pairs of a product of pairings (Rust
-  threads, with the GIL released), for the whole process. It does not limit
+  elements of a BLS12-381 batch, the pairs of a product of pairings or the rows
+  of a batch of products over prepared G2 points (Rust threads, with the GIL
+  released), for the whole process. It does not limit
   how many Python threads call the library: ``P`` Python threads running
   native calls at once use up to ``P`` times that many threads.
 * :func:`pyfe4ai.primitives.sampling.set_gaussian_sampler` and
@@ -99,6 +100,34 @@ use one object per thread, or a lock of your own.
 The native calls release the GIL; the Python implementation holds it, so
 threads speed up the native path only.
 
+The batched pairing kernel
+--------------------------
+
+``decrypt_lst_ndarray_ct`` of ``mcfe/kp_ab_pairing`` and
+``mcfe/kp_ab_pairing_per_client`` decrypts all elements of an array with one
+functional key. Every element is paired with the same G2 points of the key, so
+a call prepares them once and pairs one row of G1 elements per element over
+them:
+
+* :func:`~pyfe4ai.primitives.pairing.pairing_backend.prepare_g2` stores the
+  lines of the Miller loops of the points (on BLS12-381, in the native
+  extension; on a charm group it returns the points themselves), and
+  :func:`~pyfe4ai.primitives.pairing.pairing_backend.multi_pair_prepared` takes
+  one product of pairings per row over those lines, one final exponentiation
+  per row, with the same results as ``multi_pair`` for each row.
+* **Threads.** One call takes up to ``get_threads()`` threads over the rows,
+  however few they are (a row costs at least a final exponentiation, far more
+  than starting a thread); ``prepare_g2`` takes the points on that many threads
+  from 16 points on. The results do not depend on the number of threads. The
+  elements are decoded, paired and solved 256 at a time, so that the memory of
+  the decoded group elements does not grow with the size of the arrays.
+  A charm group pairs the rows one after the other in the calling thread.
+* **State.** Nothing is kept between calls: a prepared set lives for one
+  decryption and no object holds one, so none is part of the state of a crypto
+  object or of its pickle. It has no text form, and is as sensitive as the key
+  elements it comes from. It is read-only, so threads may pair rows over one
+  set at once, and it is never copied or pickled (``TypeError``).
+
 Copies and pickles
 ------------------
 
@@ -134,8 +163,10 @@ Copies and pickles
 * **Never copied or pickled** (``TypeError``): one-time precomputations (a
   copy would be a second use of the same randomness), a
   :class:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget` (a copy
-  would count separately) and the BLS12-381 pairing group (it holds the
-  extension module). Locks are never part of a pickle.
+  would count separately), the BLS12-381 pairing group (it holds the
+  extension module) and a prepared set of G2 points
+  (:func:`~pyfe4ai.primitives.pairing.pairing_backend.prepare_g2`, see `The
+  batched pairing kernel`_). Locks are never part of a pickle.
 
 Processes and ``fork``
 ----------------------

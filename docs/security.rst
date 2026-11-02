@@ -61,14 +61,20 @@ element it deserializes and is not affected by what follows. For the groups
 that charm provides (MNT224, BN254, ...) two things have been observed: its
 deserializer may hang on a malformed G2 string, and it accepts junk under a
 valid type tag. Keys and public parameters for the charm groups must
-therefore come from a trusted source. Ciphertexts come from outside:
-``sife/cp_ab_pairing`` holds only G1 elements in them, refuses any other type
-tag before charm reads a string, and refuses a string that is not the one its
-element serialises to. charm ignores bytes after an element, and strings cut
-short have decoded to the honest element, which suggests that it reads past
-the end of its buffer; that check runs after the read, and the other pairing
-schemes do not make it. Prefer BLS12-381 for ciphertexts from parties you do
-not trust.
+therefore come from a trusted source. Ciphertexts come from outside: the
+attribute-based schemes (``sife/cp_ab_pairing``, ``sife/kp_ab_pairing``,
+``mcfe/kp_ab_pairing`` and ``mcfe/kp_ab_pairing_per_client``) hold only G1
+elements in them, refuse any other type tag before charm reads a string, and
+refuse a string that is not the one its element serialises to. charm ignores
+bytes after an element, and strings cut short have decoded to the honest
+element, which suggests that it reads past the end of its buffer; that check
+runs after the read, and the other pairing schemes do not make it. Prefer
+BLS12-381 for ciphertexts from parties you do not trust. A charm group has no
+domain separation tag either: there the key-policy MCFE schemes hash a tag to
+G1 by hashing the domain separation tag, a bar and the message as one C string
+(see :func:`~pyfe4ai.primitives.pairing.pairing_backend.hash_to_g1`), and only
+on BLS12-381 is that hash the RFC 9380 one that the schemes' random-oracle
+argument takes.
 
 For the ABDP15 LWE schemes (``sife/lwe``, ``mife/lwe``) the 128 bits are
 those of the LWE problem that their security proof reduces to. The
@@ -167,6 +173,188 @@ Partial decryptions carry no digest of the public parameters, so a
 combiner given those of another deployment of the same format is not warned
 (it holds no secret; under the honest-but-curious model above the servers
 send the partials of its deployment).
+
+Attribute-based schemes
+-----------------------
+
+Four schemes release a result only to a key whose policy and attributes fit.
+In ``sife/cp_ab_pairing`` the policy is in the ciphertext and the attributes
+are in the key (ciphertext-policy); in ``sife/kp_ab_pairing``,
+``mcfe/kp_ab_pairing`` and ``mcfe/kp_ab_pairing_per_client`` the policy is in
+the key and the attributes are in the ciphertext (key-policy). All run over
+pairings, none has had a cryptographic review, and the last one is
+known-insecure (below). The constructions are those of Abdalla, Catalano, Gay
+and Ursu (ACGU20, ASIACRYPT 2020, ePrint 2020/577) and of Nguyen, Phan and
+Pointcheval (NPP22, ASIACRYPT 2022, ePrint 2022/215, revision of 2022-09-18);
+the module documentation of each scheme lists how the library differs from its
+paper, and :doc:`choosing` compares them.
+
+What the papers prove, scheme by scheme:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 78
+
+   * - Scheme
+     - Proof in the paper, and what it does not cover
+   * - ``sife/cp_ab_pairing``
+     - ACGU20 Sec. 3.1 Fig. 1, Thm. 3.2: selective simulation security
+       (SEL-SIM) from DDH in G1 and G2 (here: SXDH) for a secure predicate
+       encoding. Selective means that the policy and the plaintext of the
+       challenge are chosen before the public parameters are seen, and the
+       theorem is for one challenge ciphertext; several ciphertexts give
+       SEL-IND by a hybrid argument. No adaptive security.
+   * - ``sife/kp_ab_pairing``
+     - NPP22 Sec. 4 Fig. 1. The library implements the selective version,
+       without the boxed components of the figure. Thm. 7 proves the version
+       *with* the boxed components adaptively IND-CPA secure from SXDH, for one
+       challenge ciphertext and any number of keys; the paper says that the
+       selective version can be proved with similar techniques and does not
+       prove it. The scheme as implemented has no proof of its own.
+   * - ``mcfe/kp_ab_pairing``
+     - NPP22 Sec. 5.2 Fig. 3, Thm. 14 and Cor. 15: adaptive IND security
+       from SXDH in the random-oracle model, in the game of Def. 12 and
+       Fig. 2. The adversary may corrupt clients (the oracle ``Corrupt`` gives
+       it their encryption keys), ask for functional keys and for ciphertexts
+       under tags other than the challenge tag. The random oracle is the hash
+       of the tag and the set of attributes to G1; the library takes RFC 9380
+       ``hash_to_curve`` under its own domain separation tag for it.
+       Admissibility (Def. 9) and Remark 10 restrict the adversary: no client
+       encrypts twice under one tag, and every honest client has a challenge
+       ciphertext. The notion does not cover a partial set of challenge
+       ciphertexts (an all-or-nothing layer would, the paper says; the library
+       has none), so a decryption needs the ciphertexts of all ``n`` clients,
+       also of one whose weight is 0.
+       Remark 11: all clients of a tag use one set of attributes, which the
+       tag hash enforces.
+   * - ``mcfe/kp_ab_pairing_per_client``
+     - NPP22 Sec. 5.4, Thm. 25 (App. B.5): one-time IND security from SXDH,
+       with a proof that the paper only sketches, as changes to the proof of
+       Thm. 14. **Thm. 25 as stated fails**: see the next part.
+
+What none of the proofs covers, and what every one of these schemes shares:
+
+* **Ciphertexts are malleable and not authenticated.** The games let the
+  adversary look, not change a ciphertext and ask for a decryption. Anyone
+  can multiply one ``t_i`` (or ``c3[i]``) of a ciphertext by ``g1``, which adds
+  ``y_i`` to what every key for ``y`` opens, or multiply two ciphertexts of one
+  policy or attribute set, which adds their inner products. Authenticate
+  ciphertexts where tampering matters.
+* **The policy and the attribute set are public.** A functional key carries
+  its policy (key-policy) or its list of attributes (ciphertext-policy) in the
+  clear, and a ciphertext carries its list of attributes or its policy. None
+  of these schemes hides them. The key-policy schemes hash a label to ``Z_q``
+  with a public hash.
+* **A client encrypts once under a tag.** Two ciphertexts of one client under
+  one tag (and set of attributes) have the same hash points and give away the
+  difference of the two plaintexts. The scheme classes do not check it, as with
+  the other labelled schemes; the ML adapter reserves each ``(client, label)``
+  pair.
+* **Keys are trusted input.** The ``pp_binding`` of a key, a ciphertext or a
+  record is a digest of the public parameters. It tells the objects of two
+  setups apart and is not a signature.
+* **The claims of a ciphertext.** The ``label`` and the ``attributes_digest``
+  of a ciphertext of ``mcfe/kp_ab_pairing`` are claims of its client that only
+  the master key could check; what a decryption does and does not catch is
+  on :doc:`api/ml` and in the module documentation.
+* **Unreviewed.** None of the four has had a cryptographic review, and none
+  is constant-time (see above).
+
+``mcfe/kp_ab_pairing_per_client``: an attack on NPP22 Sec. 5.4
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The attack is stated here because the scheme is registered and the paper's
+theorem is cited for it. The test that reproduces it is
+``test_two_tags_and_two_keys_read_the_difference_of_two_rounds`` in
+``tests/mcfe/test_kp_ab_pairing_per_client.py``.
+
+*The construction.* Sec. 5.2 hashes the tag and the set of attributes, so all
+clients of a round encrypt for one set. Sec. 5.4 hashes the tag alone and lets
+client ``i`` encrypt for a set ``S_i`` of its own. The paper notes (Sec. 5.4,
+Remark 11) that this opens a mix-and-match attack on the keys: for two clients
+and two keys of one ``y`` whose policies ``A`` and ``A'`` satisfy
+``A(S_1) = A'(S_2) = 1`` and ``A'(S_1) = A(S_2) = 0``, the part of client 1
+taken from the first key and that of client 2 taken from the second add up to
+the inner product, which neither key opens. The paper closes it with a fifth
+dimension of the bases ``H_i``, ``H_i*``. It adds two vectors:
+
+* the ciphertext of client ``i`` has ``c_{i,ipfe} = (omega p_i, omega' p_i,
+  psi_i, 0, theta_i)`` in the basis ``H_i``, where ``theta_i`` is drawn at
+  setup and sits in the client's encryption key;
+* the functional key has ``k_{i,ipfe} = (<S, y>, <U, y>, a_{i,0} z, 0,
+  d_{A,i})`` in the basis ``H_i*``, where ``(d_{A,i})_i`` is drawn afresh for
+  each key with ``sum_i theta_i d_{A,i} = 0``.
+
+A decryption with one key is unchanged, since the terms ``theta_i d_{A,i}`` add
+up to zero. The parts of two keys under one tag add up to ``theta_1 d_{A,1} +
+theta_2 d_{A',2}``, which is not zero except with negligible probability, so
+under one tag the splice no longer works.
+
+*Why it does not reach across tags.* The part of client ``i`` in a decryption is
+its attribute vectors paired with the rows of the key, minus ``c_{i,ipfe}``
+paired with ``k_{i,ipfe}``, plus ``e(t_i, [y_i]_2)``. The pairing of the two
+fifth coordinates puts ``-theta_i d_{K,i}`` into the exponent of that part when
+it is made from key ``K``. ``theta_i`` is the same in every ciphertext of client
+``i``, whatever the tag, and ``d_{K,i}`` is fixed when ``K`` is made: the term
+depends on the key and the client, not on the tag. The rest of the part is as in
+Sec. 5.2, and two keys of one ``y`` hold the same ``<S, y>`` and ``<U, y>``. So
+if client ``i`` takes its part from the same key ``K_i`` in two rounds (two
+tags), the product of the parts of one round is ``[<x, y> - sum_i theta_i
+d_{K_i,i}]_T``, and the quotient of the two rounds is ``[<x - x', y>]_T``: the
+term is the same in both and cancels.
+
+*The adversary.* In the game of Fig. 2 it
+
+1. asks for two functional keys ``A`` and ``B`` of one ``y``, such that the set
+   ``S_i`` of every client satisfies one of the policies and, for each of the
+   two, some client's set does not satisfy it;
+2. queries ``LoR`` for every honest client under the challenge tag, with
+   ``(x_i^0, x_i^1)`` and ``S_i``;
+3. queries ``Enc`` for every client under a second tag, with plaintexts
+   ``x'_i`` of its choice and the same sets (Remark 10 and Fig. 2 forbid ``Enc``
+   only under the challenge tag);
+4. takes the part of client ``i`` from the key that ``S_i`` satisfies, in both
+   rounds, and divides the product of the parts of the challenge round by
+   that of the second round. It decodes ``<x^b - x', y>`` with a bounded
+   discrete logarithm, adds ``<x', y>``, and compares the result with
+   ``<x^0, y>`` and ``<x^1, y>``.
+
+It is admissible under Def. 9: no client is queried twice under the challenge
+tag (condition 1), every honest client has a challenge ciphertext (condition 2),
+and neither key opens either round, since ``Rel(ac-k, (ac-ct_i)_i) = 1`` needs
+the set of *every* client to satisfy the policy and for each key one set does
+not, while condition 3 needs a queried key with ``Rel = 1``. It wins whenever
+``<x^0, y>`` differs from ``<x^1, y>``. Thm. 25 states that the scheme is
+one-time IND secure from SXDH, against the adversaries that are admissible, so
+it fails as stated.
+
+*What it reads.* The difference of the inner products of two rounds under one
+``y``, ``<x - x', y>``. It reads no single plaintext, and ``<x, y>`` only when
+the other round is known, as it is in the game. Both rounds may be two labels,
+or two elements of one array, which the array helpers encrypt under a tag each.
+Each key refuses both rounds on its own: its decryption raises
+:class:`~pyfe4ai.core.exceptions.FEKeyError`. The test builds the parts of the
+clients from the fields of the records, for two clients with the sets
+``org:p`` and ``org:q``, keys for the policies ``org:p`` and ``org:q`` with
+``y = (2, 3)``, and the plaintexts ``(5, -3)`` and ``(1, 7)``: the splice of one
+round alone gives no discrete logarithm, and the quotient of the two rounds
+decodes to ``-22``, which is ``<x - x', y>``.
+
+*Sec. 5.2 is not affected.* In ``mcfe/kp_ab_pairing`` the tag hash includes the
+set of attributes and all clients of a tag encrypt for one set. A key whose
+policy that set satisfies gives the part of every client, so it opens the round
+by itself; a key that does not gives no client's part. The attack needs a key
+that gives the parts of some clients and not of others, which cannot happen
+there, and there is no fifth coordinate. This says why the attack does not
+carry over, not that the scheme is secure: Thm. 14 is the paper's, and the
+implementation is unreviewed.
+
+*In the library.* The scheme is kept for functionality and performance
+experiments and as the record of the attack. Its status is *known-insecure*;
+its key generator and crypto objects emit a
+:class:`~pyfe4ai.core.exceptions.FESecurityWarning` that names the issue, the
+``standard`` profile refuses it (``FEValidationError``), and the ML adapter does
+not take it. No repair is implemented.
 
 Offline / online encryption
 ---------------------------

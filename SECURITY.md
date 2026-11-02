@@ -27,7 +27,13 @@ Responsible reporting of security issues is appreciated, especially for:
   (`pyfe4ai.get_scheme_status(family, variant)`, README *Scheme Status*):
   four threshold layers and the dMCFE-DDH carry mask are our own constructions
   (*experimental*, no published proof), and the DDH schemes over ristretto255
-  and `sife/cp_ab_pairing` are not yet reviewed.
+  and the attribute-based `sife/cp_ab_pairing`, `sife/kp_ab_pairing` and
+  `mcfe/kp_ab_pairing` are not yet reviewed. One scheme,
+  `mcfe/kp_ab_pairing_per_client` (the version of `mcfe/kp_ab_pairing` in which
+  each client has an attribute set of its own, NPP22 Sec. 5.4), is
+  *known-insecure*: its key generator and crypto objects emit a
+  `FESecurityWarning`, and `security_profile="standard"` refuses it, as it
+  refuses every known-insecure scheme (see Known Issues).
 - **Network and parties.** The library adds no defence against active network
   attackers and assumes authenticated channels between parties.
 - **Threshold schemes.** Decryption servers are honest-but-curious: partial
@@ -47,10 +53,11 @@ Responsible reporting of security issues is appreciated, especially for:
   the pairing-based schemes (BLS12-381, see below) and refuses the ALS16
   schemes (`sife/fullysec_lwe`, `mife/fullysec_lwe`), `mife/lwe_threshold`
   and `mcfe/paillier_decentralized`, which have no parameter set that is both
-  secure and usable. Parameter records cached in the parameter cache
-  directory (the per-user cache directory, or `PYFE4AI_CACHE_DIR`) are
-  checked or re-derived on load, but a DCR modulus with known factors cannot
-  be detected under `toy`: use a cache directory nobody else can write to.
+  secure and usable, and every known-insecure scheme. Parameter records cached
+  in the parameter cache directory (the per-user cache directory, or
+  `PYFE4AI_CACHE_DIR`) are checked or re-derived on load, but a DCR modulus
+  with known factors cannot be detected under `toy`: use a cache directory
+  nobody else can write to.
 - **Sampling and randomness.** The lattice MIFE / MCFE schemes sample exact
   discrete Gaussians (FACCT) by default; ALS16, the DCR schemes and ABDP15
   under `toy` follow the library-wide sampler, which rounds a continuous
@@ -75,6 +82,25 @@ limitations.
   attacks on its 381-bit field (Barbulescu and Duquesne, J. Cryptol. 2019).
   Under `standard` their key generators emit a `FESecurityWarning` saying so.
   No strict 128-bit pairing curve is offered.
+- **`mcfe/kp_ab_pairing_per_client` is known-insecure.** In the construction of
+  NPP22 Sec. 5.4 (Nguyen, Phan and Pointcheval, ePrint 2022/215, revision of
+  2022-09-18) each client encrypts for an attribute set of its own, and the
+  paper adds a fifth coordinate to the vectors `c_{i,ipfe}` and `k_{i,ipfe}`
+  against a mix-and-match attack on keys of different policies. The product of
+  the two fifth coordinates, `theta_i d_{K,i}`, depends on the client and the
+  key but not on the tag. So two keys of one `y` that open neither of two rounds
+  (two tags: two labels, or two elements of one array), where the attribute set
+  of each client satisfies one of the keys in both rounds, give the difference
+  of the two rounds' inner products, `<x - x', y>`. The adversary encrypts
+  under the challenge tag and under a second tag, which the paper's game
+  allows, and is admissible under its Def. 9 since neither key opens either
+  round, so Thm. 25 (App. B.5) as stated fails. The attack reads the difference
+  of two inner products, and a single plaintext only if one round is known.
+  `mcfe/kp_ab_pairing` (Sec. 5.2, one attribute set per tag) is not affected.
+  The scheme is kept for functionality and performance experiments and as the
+  record of the attack; the test
+  `test_two_tags_and_two_keys_read_the_difference_of_two_rounds` reproduces it,
+  and the security page of the documentation states it in full.
 - **Experimental threshold layers** (tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE,
   tMCFE-FH-Multi-IPE) and the dMCFE-DDH carry mask have no published security
   proof; see their module docstrings.

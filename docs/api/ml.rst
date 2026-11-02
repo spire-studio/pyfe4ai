@@ -119,7 +119,7 @@ per aggregate, released under an access policy. It is not a way to aggregate
 the gradients of a large model: every element is a ciphertext of its own, of
 a few kilobytes, and the aggregator pairs several group elements per client
 and element. With 10 clients, 10^3 elements and ciphertexts for three
-attributes the aggregation takes about 52 s on one thread and about 9 s on eight, and a
+attributes the aggregation takes about 50 s on one thread and about 8 s on eight, and a
 client uploads about 2.4 KB per element as JSON. For comparison, the
 Ring-LWE MCFE of the ``fl_aggregation_10k`` benchmark (10^4 elements,
 ``standard`` profile) takes the client 22.2 ms and the aggregator 10.4 ms, at
