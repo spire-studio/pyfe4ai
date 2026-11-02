@@ -69,8 +69,9 @@ Configuration keys
       exceptions: pairing-based schemes get BLS12-381 (about 120-126-bit, with a
       :class:`~pyfe4ai.core.exceptions.FESecurityWarning`), and
       ``sife/fullysec_lwe``, ``mife/fullysec_lwe``, ``mife/lwe_threshold``
-      and ``mcfe/paillier_decentralized`` are refused. See
-      :mod:`pyfe4ai.core.profiles` and :doc:`security`.
+      and ``mcfe/paillier_decentralized`` are refused, as is the
+      known-insecure ``mcfe/kp_ab_pairing_per_client`` (``standard`` is for
+      security). See :mod:`pyfe4ai.core.profiles` and :doc:`security`.
 
    ``sec_param``
       **Not a security level.** The bit length of the safe prime ``p`` in

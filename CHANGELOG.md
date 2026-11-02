@@ -16,16 +16,21 @@ compatibility).
   `k_{i,ipfe}` is meant to stop the mix-and-match attack on keys of different
   policies. Its contribution `theta_i d_{K,i}` depends on the client and the
   key, not on the tag, so two keys of one `y` that open neither of two rounds,
-  where each client's set satisfies one of them in both rounds, give the
-  difference of the two rounds' inner products `<x - x', y>` (a single
-  plaintext only if one round is known). The adversary encrypts under the
+  where the set of each client satisfies one of the keys in both rounds, give
+  the difference of the two rounds' inner products `<x - x', y>`, one inner
+  product for each such pair of keys: with pairs for several `y` (the unit
+  vectors) the adversary has `x - x'` coordinate by coordinate, and the `x_i`
+  themselves when one round is known. The adversary encrypts under the
   challenge tag and under a second tag, which Remark 10 and Fig. 2 allow, and
   is admissible under Def. 9, since neither key opens either round; Thm. 25
   (App. B.5) as stated fails. `mcfe/kp_ab_pairing` (Sec. 5.2, one attribute
   set per tag) is not affected. The scheme is registered as *known-insecure*
   for functionality and performance experiments and as the record of the
   attack; `test_two_tags_and_two_keys_read_the_difference_of_two_rounds`
-  reproduces it, and `docs/security.rst` and `SECURITY.md` state it.
+  reproduces it, and `docs/security.rst` and `SECURITY.md` state it. The
+  fixed-tag MIFE variant of NPP22 (Remark 16) is not provided: it has one
+  ciphertext per slot, so this attack does not reach it, but its proof rests on
+  the same Thm. 25.
 
 ### Changed
 
@@ -221,7 +226,8 @@ compatibility).
   client, not on the tag, so two keys of one `y`, each given to the clients
   whose set it satisfies and neither opening either of two rounds (two labels,
   or two elements of one array), where the set of each client satisfies one of
-  them in both rounds, give the difference of the two rounds' inner products.
+  the keys in both rounds, give the difference of the two rounds' inner
+  products.
   App. B.5 of the paper states Theorem 25 for the construction and sketches
   its proof; Remark 10 and the game of Fig. 2 let the adversary above encrypt
   under a second tag and Def. 9 calls it admissible, so Theorem 25 as stated

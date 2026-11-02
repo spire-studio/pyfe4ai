@@ -100,9 +100,11 @@ after the key is issued), and clients that disagree on the label are refused; bu
 clients copy the label of a round onto ciphertexts of an earlier round, that
 relabelled replay is aggregated, silently, to the sum of the round the
 ciphertexts were made in. Attributes that all clients change alike give
-``FEKeyError`` or no value, never a wrong one (a label that no row of the
-policy reads can be renamed without effect, and the value is the right one). A caller who must know that
-ciphertexts belong to a round has to authenticate them. An item that has the
+``FEKeyError`` or no value, never a wrong one (an attribute that no row of the
+policy reads can be renamed without effect, and the value is the right one,
+if it keeps its place in the sorted list; a list out of order is refused). A
+caller who must know that ciphertexts belong to a round has to authenticate
+them. An item that has the
 type tag of a group element and is none is found when it is decoded. These
 are found, if at all, after the key is issued; the label is then tied to the
 weights of that call, and a second try under it needs the same weights.

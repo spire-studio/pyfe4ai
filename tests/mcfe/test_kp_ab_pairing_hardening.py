@@ -781,10 +781,11 @@ def test_two_tag_attack(make_mc):
 
 
 def test_two_tags_and_two_keys_of_different_policies_give_no_value(make_mc):
-    # The attack that mcfe/kp_ab_pairing_per_client does not stop (two tags, two keys of one y, each opening neither
-    # round, give the difference of the two rounds' inner products) does not work here. All clients of a round hold one
-    # set, so a key that gives one client a part opens the round by itself; the clients that the attack needs, with
-    # different sets under one tag, hash other points H(tag, S) each, and the masks of the clients no longer cancel.
+    # The attack that mcfe/kp_ab_pairing_per_client does not stop (two keys of one y, each opening neither of two
+    # rounds, where the set of each client satisfies one of the keys in both rounds: they give the difference of the
+    # two rounds' inner products) does not work here. All clients of a round hold one set, so a key that gives one
+    # client a part opens the round by itself; the clients that the attack needs, with different sets under one tag,
+    # hash other points H(tag, S) each, and the masks of the clients no longer cancel.
     # The parts are computed from the fields of the records, as in the test of that scheme, with a positive control.
     kg, clients, agg = make_mc(n=2)
     group = PairingGroup(GROUP)

@@ -22,8 +22,8 @@ published security proof. The known-insecure one is
 ``mcfe/kp_ab_pairing_per_client`` (NPP22 Sec. 5.4, an attribute set for each
 client): the fifth coordinate of the paper does not depend on the tag, so two
 keys of one ``y`` that open neither of two rounds, where the set of each client
-satisfies one of them in both rounds, give the difference of the two rounds'
-inner products, and Theorem 25 of the paper fails as stated.
+satisfies one of the keys in both rounds, give the difference of the two
+rounds' inner products, and Theorem 25 of the paper fails as stated.
 It is kept for functionality and performance experiments and as the record of
 the attack. Query a scheme at runtime with
 :func:`pyfe4ai.get_scheme_status(family, variant)
@@ -31,7 +31,8 @@ the attack. Query a scheme at runtime with
 :attr:`FESchemeWrapper(...).status <pyfe4ai.ml.FESchemeWrapper.status>`;
 the key generator and crypto objects of a known-insecure scheme emit
 :class:`~pyfe4ai.core.exceptions.FESecurityWarning`, and the ``standard``
-security profile refuses it (``FEValidationError``, as it refuses any scheme with a ``refused`` reason). The table is rendered
+security profile refuses it (``FEValidationError``, as it refuses any scheme
+with a ``refused`` reason). The table is rendered
 from :data:`~pyfe4ai.core.status.SCHEME_STATUS`, which is derived from the
 scheme registry (:mod:`pyfe4ai.core.registry`); the status and fidelity
 values are defined with :class:`~pyfe4ai.core.registry.SchemeStatus`.
@@ -232,7 +233,7 @@ What the papers prove, scheme by scheme:
        with a proof that the paper only sketches, as changes to the proof of
        Thm. 14. **Thm. 25 as stated fails**: see the next part.
 
-What none of the proofs covers, and what every one of these schemes shares:
+What none of the proofs covers, and what the schemes share:
 
 * **Ciphertexts are malleable and not authenticated.** The games let the
   adversary look, not change a ciphertext and ask for a decryption. Anyone
@@ -245,11 +246,13 @@ What none of the proofs covers, and what every one of these schemes shares:
   clear, and a ciphertext carries its list of attributes or its policy. None
   of these schemes hides them. The key-policy schemes hash a label to ``Z_q``
   with a public hash.
-* **A client encrypts once under a tag.** Two ciphertexts of one client under
-  one tag (and set of attributes) have the same hash points and give away the
-  difference of the two plaintexts. The scheme classes do not check it, as with
-  the other labelled schemes; the ML adapter reserves each ``(client, label)``
-  pair.
+* **In the two MCFE schemes a client encrypts once under a tag.** Two
+  ciphertexts of one client under one tag have the same hash points, and give
+  away the difference of the two plaintexts: in ``mcfe/kp_ab_pairing`` when
+  they are for one set of attributes (the points hash the tag and the set), in
+  ``mcfe/kp_ab_pairing_per_client`` always (the tag alone is hashed). The scheme
+  classes do not check it, as with the other labelled schemes; the ML adapter
+  reserves each ``(client, label)`` pair.
 * **Keys are trusted input.** The ``pp_binding`` of a key, a ciphertext or a
   record is a digest of the public parameters. It tells the objects of two
   setups apart and is not a signature.
@@ -290,18 +293,18 @@ up to zero. The parts of two keys under one tag add up to ``theta_1 d_{A,1} +
 theta_2 d_{A',2}``, which is not zero except with negligible probability, so
 under one tag the splice no longer works.
 
-*Why it does not reach across tags.* The part of client ``i`` in a decryption is
-its attribute vectors paired with the rows of the key, minus ``c_{i,ipfe}``
-paired with ``k_{i,ipfe}``, plus ``e(t_i, [y_i]_2)``. The pairing of the two
-fifth coordinates puts ``-theta_i d_{K,i}`` into the exponent of that part when
-it is made from key ``K``. ``theta_i`` is the same in every ciphertext of client
-``i``, whatever the tag, and ``d_{K,i}`` is fixed when ``K`` is made: the term
-depends on the key and the client, not on the tag. The rest of the part is as in
-Sec. 5.2, and two keys of one ``y`` hold the same ``<S, y>`` and ``<U, y>``. So
-if client ``i`` takes its part from the same key ``K_i`` in two rounds (two
-tags), the product of the parts of one round is ``[<x, y> - sum_i theta_i
-d_{K_i,i}]_T``, and the quotient of the two rounds is ``[<x - x', y>]_T``: the
-term is the same in both and cancels.
+*Why the fifth coordinate does not help across tags.* The part of client ``i``
+in a decryption is its attribute vectors paired with the rows of the key, minus
+``c_{i,ipfe}`` paired with ``k_{i,ipfe}``, plus ``e(t_i, [y_i]_2)``. The
+pairing of the two fifth coordinates puts ``-theta_i d_{K,i}`` into the
+exponent of that part when it is made from key ``K``. ``theta_i`` is the same
+in every ciphertext of client ``i``, whatever the tag, and ``d_{K,i}`` is fixed
+when ``K`` is made: the term depends on the key and the client, not on the tag.
+The rest of the part is as in Sec. 5.2, and two keys of one ``y`` hold the same
+``<S, y>`` and ``<U, y>``. So if client ``i`` takes its part from the same key
+``K_i`` in two rounds (two tags), the product of the parts of one round is
+``[<x, y> - sum_i theta_i d_{K_i,i}]_T``, and the quotient of the two rounds is
+``[<x - x', y>]_T``: the term is the same in both and cancels.
 
 *The adversary.* In the game of Fig. 2 it
 
@@ -311,8 +314,9 @@ term is the same in both and cancels.
 2. queries ``LoR`` for every honest client under the challenge tag, with
    ``(x_i^0, x_i^1)`` and ``S_i``;
 3. queries ``Enc`` for every client under a second tag, with plaintexts
-   ``x'_i`` of its choice and the same sets (Remark 10 and Fig. 2 forbid ``Enc``
-   only under the challenge tag);
+   ``x'_i`` of its choice and the same sets. Remark 10 and Fig. 2 forbid ``Enc``
+   under the challenge tag and a repeated ``(i, tag, ac-ct_i)``; the adversary
+   makes neither query;
 4. takes the part of client ``i`` from the key that ``S_i`` satisfies, in both
    rounds, and divides the product of the parts of the challenge round by
    that of the second round. It decodes ``<x^b - x', y>`` with a bounded
@@ -323,14 +327,17 @@ It is admissible under Def. 9: no client is queried twice under the challenge
 tag (condition 1), every honest client has a challenge ciphertext (condition 2),
 and neither key opens either round, since ``Rel(ac-k, (ac-ct_i)_i) = 1`` needs
 the set of *every* client to satisfy the policy and for each key one set does
-not, while condition 3 needs a queried key with ``Rel = 1``. It wins whenever
-``<x^0, y>`` differs from ``<x^1, y>``. Thm. 25 states that the scheme is
-one-time IND secure from SXDH, against the adversaries that are admissible, so
-it fails as stated.
+not, and condition 3 applies only to a queried key with ``Rel = 1``. It wins
+whenever ``<x^0, y>`` differs from ``<x^1, y>``. Thm. 25 states that the
+scheme is one-time IND secure from SXDH, against the adversaries that are
+admissible, so it fails as stated.
 
 *What it reads.* The difference of the inner products of two rounds under one
-``y``, ``<x - x', y>``. It reads no single plaintext, and ``<x, y>`` only when
-the other round is known, as it is in the game. Both rounds may be two labels,
+``y``, ``<x - x', y>``, from one pair of keys of that ``y``; it reads ``<x, y>``
+when the other round is known, as it is in the game. This is not a bound on the
+leak: with pairs of keys for several ``y``, the unit vectors say, it is
+``x - x'`` coordinate by coordinate, and the ``x_i`` themselves when one round
+is known. Both rounds may be two labels,
 or two elements of one array, which the array helpers encrypt under a tag each.
 Each key refuses both rounds on its own: its decryption raises
 :class:`~pyfe4ai.core.exceptions.FEKeyError`. The test builds the parts of the
@@ -355,6 +362,10 @@ its key generator and crypto objects emit a
 :class:`~pyfe4ai.core.exceptions.FESecurityWarning` that names the issue, the
 ``standard`` profile refuses it (``FEValidationError``), and the ML adapter does
 not take it. No repair is implemented.
+
+The fixed-tag MIFE variant of NPP22 (Remark 16) is not provided. It has one
+ciphertext per slot, so this attack does not reach it, but its proof rests on
+the same Thm. 25.
 
 Offline / online encryption
 ---------------------------

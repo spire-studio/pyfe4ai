@@ -613,8 +613,8 @@ SCHEMES: tuple[Scheme, ...] = (
         "the theorem fails (see the issue); kept for functionality and performance experiments and as the record "
         "of the attack",
         issue="the fifth coordinate of NPP22 Sec. 5.4 does not depend on the tag, so two keys of one y that open "
-        "neither of two tags (two rounds, or two elements of one array), where each client's set satisfies one of "
-        "them in both, give the difference of the two inner products, and Thm. 25 as stated fails",
+        "neither of two tags (two rounds, or two elements of one array), where the set of each client satisfies one "
+        "of the keys under both tags, give the difference of the two inner products, and Thm. 25 as stated fails",
         capabilities=(ACCESS_CONTROL,),
     ),
     # --- quadratic ----------------------------------------------------------

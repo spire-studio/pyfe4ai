@@ -351,8 +351,8 @@ def _check_ciphertext_arrays(wrapper: FESchemeWrapper, encrypted: dict, label, s
     (:meth:`~pyfe4ai.schemes.mcfe.kp_ab_pairing.MCFEKPABPairing.check_ndarray_ct`, through the decryptor of *sid*): the
     structure of the arrays, the bindings, fields, version markers, clients, tags, digests and lengths of every record,
     each element under its label, one set of attributes for all. Its ``FEValidationError`` (a ``ValueError``) is raised
-    as it is, naming the layer and the element (or the client and the layer for a wrong shape), like the other refusals
-    of the records here. What it cannot see is in
+    as it is, naming the layer and the element (the client and the layer for a wrong shape, the clients and the counts
+    for other numbers of layers), like the other refusals of the records here. What it cannot see is in
     :meth:`~pyfe4ai.schemes.mcfe.kp_ab_pairing.MCFEKPABPairing.check_ndarray_ct`: the ``label`` and the attributes are
     claims of the clients.
 

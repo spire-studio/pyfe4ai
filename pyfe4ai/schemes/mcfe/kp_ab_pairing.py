@@ -53,9 +53,9 @@ hashed other points than it says gives a ``ValueError`` from the discrete log (a
 helpers; no value, and not a wrong one). All clients that change the ``label`` alike still decrypt to the correct
 value, since the label is not what a ciphertext is made of. The list of attributes is not a claim of that kind: it
 says which vector of ``c_attr`` pairs with which row of the key. All clients that change it alike get a ``FEKeyError``
-(the policy is not satisfied) or no value (the ``ValueError`` of the discrete log), never a wrong one; a label that no
-row of the policy reads can be renamed without effect. A caller who needs to know that ciphertexts belong to a round
-authenticates them.
+(the policy is not satisfied) or no value (the ``ValueError`` of the discrete log), never a wrong one; an attribute that
+no row of the policy reads can be renamed without effect if it keeps its place in the sorted list (a list out of order
+is refused). A caller who needs to know that ciphertexts belong to a round authenticates them.
 
 The ndarray helpers encrypt each element under ``element_label(label, layer, index)``, a tag of its own, and decrypt
 all elements of all layers in one batch. The points of the key that every element is paired with (the rows the policy
@@ -1112,11 +1112,11 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
         (a ``FESchemeError`` from the array helpers, a ``ValueError`` from :meth:`decrypt`). But if all clients copy
         the label of a round onto ciphertexts of an earlier round, that relabelled replay passes this check and
         decrypts, silently, to the sum of the round the ciphertexts were made in: the key covers every tag. Attributes
-        that all clients change alike are different: they give a ``FEKeyError`` or no value, never a wrong one (a
-        label that no row of the policy reads can be renamed without effect, and the value is the right one). A
-        caller who must know that ciphertexts belong to a round has to authenticate them. A caller that hands the arrays
-        to a service that issues keys calls this first, so that a key is not issued for arrays that a decryption would
-        refuse.
+        that all clients change alike are different: they give a ``FEKeyError`` or no value, never a wrong one (an
+        attribute that no row of the policy reads can be renamed without effect, and the value is the right one, if
+        it keeps its place in the sorted list; a list out of order is refused). A caller who must know that ciphertexts
+        belong to a round has to authenticate them. A caller that hands the arrays to a service that issues keys calls
+        this first, so that a key is not issued for arrays that a decryption would refuse.
 
         Args:
             dict_ndarray_ct: The ciphertext arrays by client id, as for :meth:`decrypt_lst_ndarray_ct`.

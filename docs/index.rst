@@ -38,9 +38,9 @@ Security & status
   the carry mask of dMCFE-DDH (our own constructions, no published proof).
   The known-insecure one is ``mcfe/kp_ab_pairing_per_client`` (the attribute
   set of each client of NPP22 Sec. 5.4: two keys that open neither of two
-  rounds, but one of which satisfies each client's set in both, give the
-  difference of the rounds' inner products); it warns when built and the
-  ``standard`` profile refuses it.
+  rounds, where the set of each client satisfies one of the keys in both
+  rounds, give the difference of the rounds' inner products); it warns when
+  built and the ``standard`` profile refuses it.
   ``pyfe4ai.get_scheme_status("family/variant")`` returns a scheme's entry.
 * **Security profiles**: ``security_profile="toy"``, the default, is **not
   secure**; ``"standard"`` aims at 128-bit security (3072-bit DL groups
@@ -48,9 +48,10 @@ Security & status
   ``stat_param`` 128), except that pairing-based schemes get BLS12-381
   (about 120-126-bit, with a ``FESecurityWarning``) and ``sife/fullysec_lwe``,
   ``mife/fullysec_lwe``, ``mife/lwe_threshold`` and
-  ``mcfe/paillier_decentralized`` are refused. The ABDP15 LWE schemes
-  take ``matrix_mode`` (``"memory"`` or ``"stream"``) to trade memory for
-  time.
+  ``mcfe/paillier_decentralized`` are refused, as is the known-insecure
+  ``mcfe/kp_ab_pairing_per_client`` (``standard`` is for security). The
+  ABDP15 LWE schemes take ``matrix_mode`` (``"memory"`` or ``"stream"``) to
+  trade memory for time.
 * **Threshold schemes**: decryption servers are honest-but-curious; a
   deviating server can change the result unnoticed.
 * **ML adapter**: ``FESchemeWrapper`` runs the key generator and holds the

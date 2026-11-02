@@ -95,12 +95,16 @@ limitations.
   under the challenge tag and under a second tag, which the paper's game
   allows, and is admissible under its Def. 9 since neither key opens either
   round, so Thm. 25 (App. B.5) as stated fails. The attack reads the difference
-  of two inner products, and a single plaintext only if one round is known.
-  `mcfe/kp_ab_pairing` (Sec. 5.2, one attribute set per tag) is not affected.
-  The scheme is kept for functionality and performance experiments and as the
-  record of the attack; the test
-  `test_two_tags_and_two_keys_read_the_difference_of_two_rounds` reproduces it,
-  and the security page of the documentation states it in full.
+  of two inner products for each pair of keys of one `y`: with pairs for several
+  `y` (the unit vectors) it gives `x - x'` coordinate by coordinate, and the
+  `x_i` themselves when one round is known. `mcfe/kp_ab_pairing` (Sec. 5.2,
+  one attribute set per tag) is not affected. The scheme is kept for
+  functionality and performance experiments and as the record of the attack;
+  the test `test_two_tags_and_two_keys_read_the_difference_of_two_rounds`
+  reproduces it, and the security page of the documentation states it in full.
+  The fixed-tag MIFE variant of NPP22 (Remark 16) is not provided: it has one
+  ciphertext per slot, so this attack does not reach it, but its proof rests on
+  the same Thm. 25.
 - **Experimental threshold layers** (tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE,
   tMCFE-FH-Multi-IPE) and the dMCFE-DDH carry mask have no published security
   proof; see their module docstrings.

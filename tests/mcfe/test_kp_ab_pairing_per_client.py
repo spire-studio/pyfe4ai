@@ -1346,10 +1346,10 @@ def test_status_is_known_insecure():
     assert scheme.status.reference == "NPP22 Sec. 5.4"
     issue, note = scheme.status.issue, scheme.status.note
     # the attack in one sentence: two tags, two keys of one y that open neither (and whose condition is that the set of
-    # each client satisfies one of them in both rounds), the difference of the inner products
+    # each client satisfies one of the keys under both tags), the difference of the inner products
     assert "\n" not in issue and not issue.endswith(".")
     for words in ("fifth coordinate", "does not depend on the tag", "two keys",
-                  "each client's set satisfies one of them", "in both", "difference", "Thm. 25"):
+                  "the set of each client satisfies one of the keys", "under both tags", "difference", "Thm. 25"):
         assert words in issue, words
     assert scheme.refused == "known to be insecure: " + issue      # the standard profile refuses it through `refused`
     assert "h*_{i,5}" in note and "stops" not in note and "splic" not in note       # the note no longer claims it

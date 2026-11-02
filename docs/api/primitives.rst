@@ -102,11 +102,11 @@ group operations. ``prepare_g2`` and ``multi_pair_prepared`` take one product
 of pairings per row of G1 elements over the same G2 points, which the points
 of a functional key are for every element of an array: on BLS12-381 the lines
 of the Miller loops are computed once, scaled to a first coefficient of 1
-where no line has 0 there, and each row is one Miller loop and one final exponentiation, on
-``get_threads()`` threads (see :doc:`/threading`). ``hash_to_g1`` hashes a
-message to G1 under a domain separation tag: RFC 9380 on BLS12-381, so that the
-known answers of the RFC reproduce, and on a charm group, which has no such tag,
-the tag, a bar and the message as one string.
+where no line has 0 there, and each row is one Miller loop and one final
+exponentiation, on ``get_threads()`` threads (see :doc:`/threading`).
+``hash_to_g1`` hashes a message to G1 under a domain separation tag: RFC 9380
+on BLS12-381, so that the known answers of the RFC reproduce, and on a charm
+group, which has no such tag, the tag, a bar and the message as one string.
 :func:`~pyfe4ai.primitives.pairing.dpvs.encode` in the dual pairing vector
 spaces below builds a basis combination from the exponents with one batch of
 powers.
