@@ -31,6 +31,7 @@ from pyfe4ai.ml import aggregate_gradients, encrypt_gradient, precompute_gradien
 from pyfe4ai.ml import gradients as ml_gradients
 from pyfe4ai.policy import attribute_set_digest, canonical_encoding, parse
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP, pairing_available
+from pyfe4ai.schemes.common.kp_ab import MAX_LABEL_CHARS
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -463,6 +464,58 @@ def test_what_the_scheme_cannot_see_before_a_decode_is_found_after_the_key(wrapp
     with pytest.raises(FEValidationError, match=r"t of c1, layer 0, element \(0, 0\)"):
         aggregate_gradients(encrypted, wrapper, WEIGHTS, label=LABEL, policy=POLICY)
     assert len(calls) == 1 and LABEL in wrapper._aggregated
+
+
+# ---------------------------------------------------------------------------
+# the label is tied to the weights once a key is issued, not by a request that the key generator refuses
+
+
+#: A policy that the attributes satisfy and that the key generator refuses: a label one character over the limit.
+REFUSED_POLICY = "or(region:EU, a:{})".format("x" * (MAX_LABEL_CHARS - 1))
+
+
+@pytest.mark.parametrize("refused", [
+    {"weights": {"c0": 100, "c1": 1, "c2": 1}},                     # beyond bound_y = 10
+    {"policy": REFUSED_POLICY},
+], ids=["weights-beyond-bound-y", "refused-policy"])
+def test_a_refused_key_leaves_the_label_free(refused, wrapper, monkeypatch):
+    grads = gradients()
+    encrypted = encrypt_all(wrapper, grads)
+    calls = spy_on_the_key(wrapper, monkeypatch)
+    request = dict({"weights": WEIGHTS, "policy": POLICY}, **refused)
+    with pytest.raises(FEValidationError):
+        aggregate_gradients(encrypted, wrapper, request["weights"], label=LABEL, policy=request["policy"])
+    assert len(calls) == 1 and LABEL not in wrapper._aggregated     # the key generator refused it
+    other = {"c0": 2, "c1": 1, "c2": 1}                              # so the round can be run, with any weights
+    total = aggregate_gradients(encrypted, wrapper, other, label=LABEL, policy=POLICY)
+    np.testing.assert_allclose(total, weighted(grads, other), atol=1e-9)
+
+
+@pytest.mark.parametrize("refused", [
+    {"weights": {"c0": 100, "c1": 1, "c2": 1}},
+    {"policy": REFUSED_POLICY},
+], ids=["weights-beyond-bound-y", "refused-policy"])
+def test_a_refused_prepared_key_leaves_the_label_free(refused, wrapper):
+    grads = gradients()
+    encrypted = encrypt_all(wrapper, grads)
+    request = dict({"weights": WEIGHTS, "policy": POLICY}, **refused)
+    with pytest.raises(FEValidationError):
+        prepare_aggregation(wrapper, request["weights"], shape=SHAPE, label=LABEL, policy=request["policy"])
+    assert LABEL not in wrapper._aggregated
+    prepared = prepare_aggregation(wrapper, WEIGHTS, shape=SHAPE, label=LABEL, policy=POLICY)
+    total = aggregate_gradients(encrypted, wrapper, label=LABEL, prepared=prepared)
+    np.testing.assert_allclose(total, weighted(grads), atol=1e-9)
+
+
+def test_an_issued_key_ties_the_label_before_another_key_is_issued(wrapper, monkeypatch):
+    grads = gradients()
+    encrypted = encrypt_all(wrapper, grads)
+    first = aggregate_gradients(encrypted, wrapper, WEIGHTS, label=LABEL, policy=POLICY)
+    assert LABEL in wrapper._aggregated
+    np.testing.assert_allclose(aggregate_gradients(encrypted, wrapper, WEIGHTS, label=LABEL, policy=POLICY), first)
+    no_key(wrapper, monkeypatch)                                     # other weights: refused before a key is issued
+    with pytest.raises(ValueError, match="already aggregated with other weights"):
+        aggregate_gradients(encrypted, wrapper, {"c0": 2, "c1": 1, "c2": 1}, label=LABEL, policy=POLICY)
 
 
 def relabel(encrypted, source):

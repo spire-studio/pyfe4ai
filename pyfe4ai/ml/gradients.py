@@ -469,11 +469,7 @@ def _aggregation_key(wrapper, weights, label, sid, nids, allow_partial, n_chunks
     if wrapper.has_label:
         if label is None:
             raise ValueError("MCFE schemes require a label for decryption")
-        previous = wrapper._aggregated.setdefault(label, fusion_weight)
-        if previous != fusion_weight:
-            raise ValueError(
-                "label {!r} was already aggregated with other weights".format(label)
-            )
+        _label_weights(wrapper, label, fusion_weight, tie=False)  # other weights: refused before a key is issued
 
     # Build credentials for dk generation
     # SIFE expects fusion_weight as a flat list; MCFE/MIFE expect a dict.
@@ -491,9 +487,31 @@ def _aggregation_key(wrapper, weights, label, sid, nids, allow_partial, n_chunks
         # identity-based schemes issue one key term per packed chunk
         credentials["n_chunks"] = n_chunks
     if servers is not None:
-        return fusion_weight, weight_scale, _server_key_shares(wrapper, credentials, servers)
-    dk = wrapper.kg.get_decryption_keys(sid, credentials=credentials)
+        dk = _server_key_shares(wrapper, credentials, servers)
+    else:
+        dk = wrapper.kg.get_decryption_keys(sid, credentials=credentials)
+    if wrapper.has_label:
+        _label_weights(wrapper, label, fusion_weight, tie=True)
     return fusion_weight, weight_scale, dk
+
+
+def _label_weights(wrapper: FESchemeWrapper, label, fusion_weight: dict, *, tie: bool) -> None:
+    """Refuse *fusion_weight* for *label* (``ValueError``) if the label is tied to other weights; with *tie*, tie it
+    to *fusion_weight* if it is free.
+
+    :func:`_aggregation_key` checks before it asks for a key, and ties once the key is issued: a request that the key
+    generator refuses (weights beyond ``bound_y``, a policy it does not take) leaves the label free. Of two calls with
+    other weights that pass the check at once, the first to tie keeps the label and the other is refused here, before
+    it returns its key.
+    """
+    if tie:
+        previous = wrapper._aggregated.setdefault(label, fusion_weight)
+    else:
+        previous = wrapper._aggregated.get(label, fusion_weight)
+    if previous != fusion_weight:
+        raise ValueError(
+            "label {!r} was already aggregated with other weights".format(label)
+        )
 
 
 def prepare_aggregation(
@@ -579,7 +597,8 @@ def aggregate_gradients(
                 precision and the result is scaled back.
             sid: Session / decryption-key identifier.
             label: Round label (MCFE); each label is aggregated with one
-                weight vector only.
+                weight vector only, the first one a key is issued for (a
+                request the key generator refuses leaves the label free).
             allow_partial: Allow zero weights and a subset of the enrolled
                 clients. Off by default: the wrapper holds the master key,
                 and such weights would decrypt a single client's gradient

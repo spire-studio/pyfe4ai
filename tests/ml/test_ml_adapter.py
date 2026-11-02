@@ -6,6 +6,7 @@ import numpy as np
 import os
 import pytest
 
+from pyfe4ai.core.exceptions import FEValidationError
 from pyfe4ai.ml import (
     EncryptedFeatures,
     EncryptedGradient,
@@ -380,6 +381,44 @@ def test_one_aggregation_per_label():
     np.testing.assert_allclose(first, again)
     with pytest.raises(ValueError, match="already aggregated"):
         aggregate_gradients(enc, wrapper, {"nid_0": 1, "nid_1": 2}, label="r1")
+
+
+def test_a_refused_key_leaves_the_label_free(monkeypatch):
+    """A key that the key generator refuses ties no label: a retry under it may take any weights."""
+    wrapper = _mcfe_wrapper()
+    enc = {nid: encrypt_gradient(np.array([1.0]), wrapper, nid=nid, label="r1") for nid in ("nid_0", "nid_1")}
+    issue = wrapper.kg.get_decryption_keys
+
+    def refuse(*args, **kwargs):
+        raise FEValidationError("refused by the key generator")
+
+    monkeypatch.setattr(wrapper.kg, "get_decryption_keys", refuse)
+    with pytest.raises(FEValidationError, match="refused by the key generator"):
+        aggregate_gradients(enc, wrapper, {"nid_0": 3, "nid_1": 1}, label="r1")
+    assert "r1" not in wrapper._aggregated
+    monkeypatch.setattr(wrapper.kg, "get_decryption_keys", issue)
+    np.testing.assert_allclose(aggregate_gradients(enc, wrapper, {"nid_0": 1, "nid_1": 2}, label="r1"), [3.0])
+    with pytest.raises(ValueError, match="already aggregated"):                 # an issued key ties it
+        aggregate_gradients(enc, wrapper, {"nid_0": 3, "nid_1": 1}, label="r1")
+
+
+def test_a_label_tied_while_a_key_is_issued_refuses_that_key(monkeypatch):
+    """Two calls with other weights pass the check at once: the first to tie the label keeps it, and the other is
+    refused once its key is issued, before it decrypts anything."""
+    wrapper = _mcfe_wrapper()
+    enc = {nid: encrypt_gradient(np.array([1.0]), wrapper, nid=nid, label="r1") for nid in ("nid_0", "nid_1")}
+    issue, decrypted = wrapper.kg.get_decryption_keys, []
+
+    def tied_meanwhile(*args, **kwargs):
+        dk = issue(*args, **kwargs)
+        wrapper._aggregated.setdefault("r1", {"nid_0": [1], "nid_1": [2]})   # what the other call does meanwhile
+        return dk
+
+    monkeypatch.setattr(wrapper.kg, "get_decryption_keys", tied_meanwhile)
+    monkeypatch.setattr(wrapper._crypto_cls, "decrypt_lst_ndarray_ct", lambda *a, **k: decrypted.append(1))
+    with pytest.raises(ValueError, match="already aggregated"):
+        aggregate_gradients(enc, wrapper, {"nid_0": 3, "nid_1": 1}, label="r1")
+    assert decrypted == [] and wrapper._aggregated["r1"] == {"nid_0": [1], "nid_1": [2]}
 
 
 def test_fractional_weights_are_rescaled():

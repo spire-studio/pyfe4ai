@@ -268,6 +268,18 @@ compatibility).
   `sife/cp_ab_pairing`, `sife/kp_ab_pairing`, `mcfe/kp_ab_pairing` and
   `mcfe/kp_ab_pairing_per_client`. There are now 46 registered schemes.
 
+### Fixed
+
+- **A refused key no longer ties the label of a round in the ML adapter.**
+  `aggregate_gradients` and `prepare_aggregation` tied the label to the
+  weights of a call before they asked the key generator for the key, so a
+  request that it refused (weights beyond `bound_y`, or for
+  `mcfe/kp_ab_pairing` a policy it does not take) left the label tied to
+  weights that no key was issued for, and every later call under that label
+  with other weights was refused (`ValueError`, already aggregated with other
+  weights). The label is now tied once the key is issued; other weights are
+  still refused before a key is issued for them.
+
 ## [0.4.0] — 2026-10-26
 
 **Highlights.** An optional Rust extension runs the lattice, threshold,

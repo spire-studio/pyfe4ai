@@ -107,7 +107,9 @@ caller who must know that ciphertexts belong to a round has to authenticate
 them. An item that has the
 type tag of a group element and is none is found when it is decoded. These
 are found, if at all, after the key is issued; the label is then tied to the
-weights of that call, and a second try under it needs the same weights.
+weights of that call, and a second try under it needs the same weights. A
+request that the key generator refuses (weights beyond ``bound_y``, a policy
+it does not take) issues no key and leaves the label free.
 
 A :class:`~pyfe4ai.ml.PreparedAggregation` keeps the canonical encoding of its
 policy in ``policy``; the attributes are judged against it when the round is
