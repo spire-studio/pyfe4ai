@@ -32,7 +32,7 @@ from tests.pairing_group import GROUP, skip_unless_available
 
 skip_unless_available()
 
-from tests.mcfe.conftest import EXPECTED, LST, X, Y
+from tests.mcfe.conftest import EXPECTED, JUNK_G2, LST, X, Y
 from tests.mcfe.conftest import aggregate, combined, creds, key_part, masked_plaintext, random_arrays
 from tests.mcfe.conftest import refuse_to_compute, through_json
 from pyfe4ai.core.constants import CryptoCONST
@@ -830,10 +830,10 @@ def test_each_client_reads_the_rows_its_own_attributes_use(make_pc):
     dk = kg.get_decryption_keys("agg", credentials=creds("or(a:1, b:1)", {"nid_0": 2, "nid_1": 5}))
     assert agg.decrypt(cts, dk) == 3 * 2 + 4 * 5
     # client 0 reads row 0 only and client 1 row 1 only: a row nobody reads is not decoded, one that is read is
-    dk["k_rows"]["nid_0"][1][2] = "2:not an element"
-    dk["k_rows"]["nid_1"][0][2] = "2:not an element"
+    dk["k_rows"]["nid_0"][1][2] = JUNK_G2
+    dk["k_rows"]["nid_1"][0][2] = JUNK_G2
     assert agg.decrypt(cts, dk) == 3 * 2 + 4 * 5
-    dk["k_rows"]["nid_1"][1][2] = "2:not an element"
+    dk["k_rows"]["nid_1"][1][2] = JUNK_G2
     with pytest.raises(FEValidationError, match="k_rows of nid_1"):
         agg.decrypt(cts, dk)
 

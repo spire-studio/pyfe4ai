@@ -28,7 +28,7 @@ from tests.pairing_group import GROUP, skip_unless_available
 
 skip_unless_available()
 
-from tests.mcfe.conftest import ATTRS, EXPECTED, LST, POLICY, X, Y
+from tests.mcfe.conftest import ATTRS, EXPECTED, JUNK_G2, LST, POLICY, X, Y
 from tests.mcfe.conftest import aggregate, combined, creds, encrypt_all, encrypt_arrays, key_part
 from tests.mcfe.conftest import masked_plaintext, random_arrays
 from tests.mcfe.conftest import refuse_to_compute
@@ -620,9 +620,9 @@ def test_a_malformed_element_in_an_unused_key_row_is_not_decoded(make_mc):
     kg, clients, agg = make_mc()
     cts = encrypt_all(clients, attributes=["region:EU"])
     dk = kg.get_decryption_keys("agg", credentials=creds("or(region:EU, org:A)"))      # the first leaf is used
-    dk["k_rows"]["nid_1"][1][2] = "2:not an element"
+    dk["k_rows"]["nid_1"][1][2] = JUNK_G2
     assert agg.decrypt(cts, dk) == EXPECTED
-    dk["k_rows"]["nid_1"][0][2] = "2:not an element"
+    dk["k_rows"]["nid_1"][0][2] = JUNK_G2
     with pytest.raises(FEValidationError, match="k_rows"):
         agg.decrypt(cts, dk)
 
@@ -1095,9 +1095,9 @@ def test_ndarray_decodes_the_used_rows_of_the_key_only(make_mc):
     cts = encrypt_arrays(clients, arrays, attributes=["region:EU"])
     dk = kg.get_decryption_keys("agg", credentials=creds("or(region:EU, org:A)"))      # the first leaf is used
     good = copy.deepcopy(dk)
-    dk["k_rows"]["nid_1"][1][2] = "2:not an element"
+    dk["k_rows"]["nid_1"][1][2] = JUNK_G2
     assert all((layer == expected).all() for layer, expected in zip(aggregate(agg, cts, dk), combined(arrays)))
-    dk["k_rows"]["nid_1"][0][2] = "2:not an element"
+    dk["k_rows"]["nid_1"][0][2] = JUNK_G2
     with pytest.raises(FEValidationError, match="k_rows of nid_1"):
         aggregate(agg, cts, dk)
     dk = copy.deepcopy(good)

@@ -22,6 +22,12 @@ Y = {"nid_0": 2, "nid_1": 1, "nid_2": -4}
 EXPECTED = sum(X[nid] * Y[nid] for nid in LST)
 ATTRS = ["purpose:research", "region:EU"]
 POLICY = "and(purpose:research, region:EU)"
+#: A text in the place of an element of G2 that no element serialises to. On BLS12-381 it carries the type tag of G2, so
+#: that the deserializer refuses it; charm may never return from a G2-tagged string that it cannot read (see
+#: ``docs/security.rst``: keys for the charm groups come from a trusted source), so there the text has no tag and the
+#: check of the type refuses it before charm reads it. The tests that put it in a row of a key check which rows are
+#: decoded, and what they check does not depend on which of the two refuses it.
+JUNK_G2 = "2:not an element" if GROUP == "BLS12-381" else "not an element"
 
 
 def creds(policy=POLICY, y=Y):
