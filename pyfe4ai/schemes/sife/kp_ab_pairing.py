@@ -365,7 +365,10 @@ class SIFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
 
         omega, psi = int(group.random(ZR)), int(group.random(ZR))
         c_attr = [attribute_vector(f, label, int(group.random(ZR)), psi, order, group) for label in labels]
-        t_masked = multiexp_many([[g1, t_i] for t_i in t], [[x_i % order, omega] for x_i in x], group)
+        # |x_i| on the inverse of g1 for x_i < 0: x_i % order would be a long exponent, whose time shows the sign
+        g1_inverse = 1 / g1
+        t_masked = multiexp_many([[g1_inverse if x_i < 0 else g1, t_i] for x_i, t_i in zip(x, t)],
+                                 [[abs(x_i) % order, omega] for x_i in x], group)
         c_ipfe = combine([h_mask, h3], [omega, psi], group)
         return KPABCiphertext.new(
             attributes=labels,

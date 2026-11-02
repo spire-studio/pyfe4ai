@@ -46,7 +46,7 @@ from pyfe4ai.policy import (
 )
 from pyfe4ai.primitives.pairing import pairing_backend
 from pyfe4ai.primitives.pairing.dpvs import vector_pair
-from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, PairingGroup, deserialize_many, pair
+from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, ZR, PairingGroup, deserialize_many, pair
 from pyfe4ai.schemes.common import ac_codec, ac_decoded, kp_ab
 from pyfe4ai.schemes.common.ac_binding import pp_digest
 from pyfe4ai.schemes.common.ac_codec import serialize_vec
@@ -84,13 +84,17 @@ def public(kg):
     }
 
 
-def seal(kg, x, attributes):
-    """A ciphertext of *x* for *attributes*, made by hand as in Enc of Fig. 1, with its randomness."""
+def seal(kg, x, attributes, fixed=None):
+    """A ciphertext of *x* for *attributes*, made by hand as in Enc of Fig. 1, with its randomness, or with *fixed* for
+    every random scalar if it is given. ``g1`` is raised to ``x_i % order``."""
     p = public(kg)
     group, order = p["group"], p["order"]
-    omega, psi = random.randrange(1, order), random.randrange(1, order)
-    c_attr = {label: attribute_vector(p["f"], label, random.randrange(1, order), psi, order, group)
-              for label in sorted(set(attributes))}
+
+    def draw():
+        return fixed if fixed is not None else random.randrange(1, order)
+
+    omega, psi = draw(), draw()
+    c_attr = {label: attribute_vector(p["f"], label, draw(), psi, order, group) for label in sorted(set(attributes))}
     t = [p["g1"] ** (x_i % order) * t_i ** omega for x_i, t_i in zip(x, p["t"])]
     c_ipfe = [m ** omega * h ** psi for m, h in zip(p["h_mask"], p["h3"])]
     return {"attributes": sorted(set(attributes)), "c_attr": c_attr, "t": t, "c_ipfe": c_ipfe}
@@ -885,6 +889,42 @@ def test_kept_public_parameters_give_correct_ciphertexts(kp_fixed):
     _, crypto, _, dk, expected = kp_fixed
     for _ in range(3):
         assert crypto.decrypt(crypto.encrypt(X, attributes=HELD), dk) == expected
+
+
+#: The random scalar of an encryption whose randomness a test pins: ``omega``, ``psi`` and every ``sigma``.
+S = 1234567891011
+
+
+def pin_randomness(crypto, monkeypatch):
+    """Make every scalar that the group of *crypto* draws ``S``."""
+    group = crypto.group
+    monkeypatch.setattr(group, "random", lambda *args, **kwargs: group.init(ZR, S))
+
+
+def test_a_negative_plaintext_is_not_a_long_exponent_of_encrypt(make_kp, monkeypatch):
+    """``x_i % order`` would make it one, and the time of ``encrypt`` would then show how many there are."""
+    _, crypto = make_kp()
+    exponents, real = [], kp_ab_pairing.multiexp_many
+
+    def recorded(rows, exps, group):
+        exponents.extend(exps)
+        return real(rows, exps, group)
+
+    monkeypatch.setattr(kp_ab_pairing, "multiexp_many", recorded)
+    pin_randomness(crypto, monkeypatch)
+    crypto.encrypt([3, -1, 0, 7, -2], attributes=HELD)
+    assert exponents == [[3, S], [1, S], [0, S], [7, S], [2, S]]
+
+
+@pytest.mark.parametrize("x", [
+    [0] * ETA, [1] * ETA, [-1] * ETA, [10] * ETA, [-10] * ETA, [10, -10, 0, 1, -1],
+], ids=["zero", "one", "minus-one", "bound", "minus-bound", "mixed"])
+def test_encrypt_gives_the_ciphertext_of_the_exponent_mod_the_order(make_kp, monkeypatch, x):
+    """``|x_i|`` on the inverse of ``g1`` and ``x_i % order`` on ``g1`` are one element, so the ciphertext keeps its
+    bytes: that of ``seal``, which raises ``g1`` to ``x_i % order``, under the same randomness."""
+    kg, crypto = make_kp()
+    pin_randomness(crypto, monkeypatch)
+    assert crypto.encrypt(x, attributes=HELD) == sealed_record(kg, seal(kg, x, HELD, fixed=S))
 
 
 @pytest.mark.parametrize("threads", [1, 4])

@@ -43,7 +43,7 @@ from pyfe4ai.core.formats.pairing import PCKPABCiphertext, PCKPABClientKey, PCKP
 from pyfe4ai.policy import ATTR_HASH, POLICY_COMPILER
 from pyfe4ai.primitives.pairing import pairing_backend
 from pyfe4ai.primitives.pairing.dpvs import vector_pair
-from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, PairingGroup, deserialize_many, hash_to_g1, pair
+from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, ZR, PairingGroup, deserialize_many, hash_to_g1, pair
 from pyfe4ai.primitives.pairing.pairing_utils import bounded_discrete_log_gt, random_nonzero_zr
 from pyfe4ai.schemes.common import ac_codec
 from pyfe4ai.schemes.common.ac_binding import pp_digest
@@ -1198,6 +1198,60 @@ def test_a_refused_encryption_computes_nothing(make_pc, monkeypatch):
             clients["nid_0"].encrypt(plaintext, "round-1", attributes=["org:A"])
     with pytest.raises(FEValidationError):
         clients["nid_0"].encrypt([1], 5, attributes=["org:A"])
+
+
+#: The random scalar of an encryption whose randomness a test pins: ``psi`` and every ``sigma``.
+S = 1234567891011
+
+
+def pin_randomness(crypto, monkeypatch):
+    """Make every scalar that the group of *crypto* draws ``S``."""
+    group = crypto.group
+    monkeypatch.setattr(group, "random", lambda *args, **kwargs: group.init(ZR, S))
+
+
+def test_a_negative_plaintext_is_not_a_long_exponent_of_encrypt(make_pc, monkeypatch):
+    """The encryption of ``mcfe/kp_ab_pairing``, which this scheme takes: ``x % order`` would be a long exponent."""
+    kg, clients, _ = make_pc()
+    ek = kg.get_private_keys("nid_0")
+    exponents, real = [], kp_ab_pairing.multiexp_many
+
+    def recorded(rows, exps, group):
+        exponents.extend(exps)
+        return real(rows, exps, group)
+
+    monkeypatch.setattr(kp_ab_pairing, "multiexp_many", recorded)
+    pin_randomness(clients["nid_0"], monkeypatch)
+    masks = [[int(a), int(b), S] for a, b in zip(ek["p_h1"], ek["p_h2"])]
+    for x in (3, -3, 0, -10):
+        del exponents[:]
+        clients["nid_0"].encrypt([x], "round-1", attributes=["org:A"])
+        assert exponents == [[int(ek["s"]), int(ek["u"]), abs(x)], *masks]
+
+
+@pytest.mark.parametrize("x", [0, 1, -1, 10, -10], ids=["zero", "one", "minus-one", "bound", "minus-bound"])
+def test_encrypt_gives_the_ciphertext_of_the_exponent_mod_the_order(make_pc, monkeypatch, x):
+    """``|x|`` on the inverse of ``g1`` and ``x % order`` on ``g1`` are one element, so the ciphertext keeps its
+    bytes: that made by hand with ``g1 ** (x % order)``, under the same randomness."""
+    kg, clients, _ = make_pc()
+    pin_randomness(clients["nid_0"], monkeypatch)
+    ct = clients["nid_0"].encrypt([x], "round-1", attributes=["org:A", "region:EU"])
+    group = PairingGroup(GROUP)
+    order = int(group.order())
+    pp, ek = kg.get_public_parameters(), kg.get_private_keys("nid_0")
+    omega, omega_prime = tag_points(group, SCHEME_ID, pp["pp_binding"], encode_label("round-1"), None)
+    g1 = group.deserialize(pp["g1"].encode("utf-8"))
+    f = [deserialize_many(group, row) for row in ek["f"]]
+    t = omega ** int(ek["s"]) * omega_prime ** int(ek["u"]) * g1 ** (x % order)
+    c_ipfe = [omega ** int(a) * omega_prime ** int(b) * h ** S * fifth for a, b, h, fifth in zip(
+        ek["p_h1"], ek["p_h2"], deserialize_many(group, ek["h3"]), deserialize_many(group, ek["theta_h5"]))]
+    assert ct == dict(
+        ct,
+        c_attr=[ac_codec.serialize_vec(group, attribute_vector(f, name, S, S, order, group))
+                for name in ["org:A", "region:EU"]],
+        t=group.serialize(t).decode("utf-8"),
+        c_ipfe=ac_codec.serialize_vec(group, c_ipfe),
+    )
 
 
 def test_the_client_key_must_have_the_fifth_coordinate(make_pc):

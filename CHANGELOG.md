@@ -188,7 +188,11 @@ compatibility).
   parameters, which tells two setups apart and is not a signature. The paper
   proves the version with the boxed components and says the selective one
   follows with similar techniques; ciphertexts are malleable and not
-  authenticated. The scheme has no ndarray helpers.
+  authenticated. The scheme has no ndarray helpers. `encrypt` takes `|x_i|` as
+  the exponent, on the inverse of `g1` for a negative `x_i`, as that of
+  `sife/cp_ab_pairing` does, so its time hardly shows the signs of `x`; it is
+  not constant-time, and the sizes of the `x_i` and the zeros still show
+  (`docs/security.rst`).
 - **`mcfe/kp_ab_pairing`** (`MCFEKPABPairing`, `MCFEKPABPairingKeyGenerator`,
   `MCFEKPABPairingConfig`; status *unreviewed*, it has had no cryptographic
   review): multi-client key-policy attribute-based inner-product functional
@@ -211,7 +215,10 @@ compatibility).
   says. Ciphertexts are malleable and not authenticated. The scheme has ndarray
   helpers (`encrypt_lst_ndarray`, `decrypt_lst_ndarray_ct`, `check_ndarray_ct`),
   and the ML adapter serves it (`encrypt_gradient(..., attributes=)`,
-  `aggregate_gradients(..., policy=)`).
+  `aggregate_gradients(..., policy=)`). `encrypt` takes `|x|` as the exponent,
+  on the inverse of `g1` for a negative `x`, so its time hardly shows the sign;
+  it is not constant-time, and the size of `x` and a zero still show, one call
+  per element.
 - **`mcfe/kp_ab_pairing_per_client`** (`MCFEKPABPairingPerClient`,
   `MCFEKPABPairingPerClientKeyGenerator`, `MCFEKPABPairingPerClientConfig`;
   status *known-insecure*): the version of `mcfe/kp_ab_pairing` in which each

@@ -641,9 +641,12 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
         omega, omega_prime = tag_points(group, self._scheme_id, self.pp["pp_binding"], encoded_label, claim)
         psi = int(group.random(ZR))
         c_attr = [attribute_vector(f, name, int(group.random(ZR)), psi, order, group) for name in labels]
-        # t = omega^s omega'^u g1^x and c_ipfe[k] = omega^(p h1[k]) omega'^(p h2[k]) h3[k]^psi, in one call
-        rows = [[omega, omega_prime, g1]] + [[omega, omega_prime, h3[k]] for k in range(self.H_DIM)]
-        exponents = [[secret["s"], secret["u"], x % order]]
+        # t = omega^s omega'^u g1^x and c_ipfe[k] = omega^(p h1[k]) omega'^(p h2[k]) h3[k]^psi, in one call; g1^x is
+        # (1 / g1)^|x| for x < 0, since x % order would be a long exponent, whose time shows the sign
+        g1_inverse = 1 / g1
+        rows = [[omega, omega_prime, g1_inverse if x < 0 else g1]]
+        rows += [[omega, omega_prime, h3[k]] for k in range(self.H_DIM)]
+        exponents = [[secret["s"], secret["u"], abs(x) % order]]
         exponents += [[secret["p_h1"][k], secret["p_h2"][k], psi] for k in range(self.H_DIM)]
         t, *c_ipfe = multiexp_many(rows, exponents, group)
         claims = {} if claim is None else {"attributes_digest": claim}

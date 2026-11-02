@@ -389,6 +389,15 @@ about nine tenths of its time and adds noise of its own. So one timed call shows
 the sizes and the zeros better on the online phase, and the signs hardly on
 either.
 
+The ``encrypt`` of ``sife/kp_ab_pairing`` and of ``mcfe/kp_ab_pairing`` (which
+``mcfe/kp_ab_pairing_per_client`` takes over) does the same: it takes
+``|x_i|`` as the exponent, with the inverse of ``g1`` as the base of a negative
+``x_i``. In ``sife/kp_ab_pairing`` at ``eta = 1000`` all-negative plaintexts
+took 4.2 sigma of one call longer than all-positive ones with ``x_i`` modulo
+the group order, and 0.1 sigma with ``|x_i|``. Neither is constant-time: the
+sizes of the ``x_i`` and the zeros still show in their time, and in the
+multi-client scheme every element of a vector is a call of its own.
+
 ML adapter
 ----------
 

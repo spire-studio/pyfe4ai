@@ -34,7 +34,7 @@ from pyfe4ai.core.formats.pairing import MCKPABParameters, MCKPABRecord
 from pyfe4ai.policy import ATTR_HASH, POLICY_COMPILER, attribute_set_digest
 from pyfe4ai.primitives.pairing import pairing_backend
 from pyfe4ai.primitives.pairing.dpvs import vector_pair
-from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, PairingGroup, deserialize_many, hash_to_g1, pair
+from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, ZR, PairingGroup, deserialize_many, hash_to_g1, pair
 from pyfe4ai.schemes.common import ac_codec, ac_decoded
 from pyfe4ai.schemes.common.ac_binding import pp_digest
 from pyfe4ai.schemes.common.kp_ab import TAG_DST, TAG_HASH, attribute_vector, tag_points
@@ -470,6 +470,76 @@ def test_encrypt_decodes_the_key_once(make_mc, monkeypatch):
     for _ in range(3):
         clients["nid_0"].encrypt([1], "round-1", attributes=ATTRS)
     assert sorted(calls) == ["f", "f", "f", "g1", "h3"]
+
+
+#: The random scalar of an encryption whose randomness a test pins: ``psi`` and every ``sigma``.
+S = 1234567891011
+
+
+def pin_randomness(crypto, monkeypatch):
+    """Make every scalar that the group of *crypto* draws ``S``."""
+    group = crypto.group
+    monkeypatch.setattr(group, "random", lambda *args, **kwargs: group.init(ZR, S))
+
+
+def sealed(kg, nid, x, label, attributes=ATTRS):
+    """The group fields of the ciphertext of *nid* for *x* under *label* and *attributes*, made by hand as Enc of
+    Fig. 3 with ``S`` for every random scalar; ``g1`` is raised to ``x % order``."""
+    group = PairingGroup(GROUP)
+    order = int(group.order())
+    pp, ek = kg.get_public_parameters(), kg.get_private_keys(nid)
+    labels = sorted(set(attributes))
+    omega, omega_prime = tag_points(group, SCHEME_ID, pp["pp_binding"], encode_label(label),
+                                    attribute_set_digest(labels))
+    g1 = group.deserialize(pp["g1"].encode("utf-8"))
+    f = [deserialize_many(group, row) for row in ek["f"]]
+    t = omega ** int(ek["s"]) * omega_prime ** int(ek["u"]) * g1 ** (x % order)
+    c_ipfe = [omega ** int(a) * omega_prime ** int(b) * h ** S
+              for a, b, h in zip(ek["p_h1"], ek["p_h2"], deserialize_many(group, ek["h3"]))]
+    return {
+        "c_attr": [ac_codec.serialize_vec(group, attribute_vector(f, name, S, S, order, group)) for name in labels],
+        "t": group.serialize(t).decode("utf-8"),
+        "c_ipfe": ac_codec.serialize_vec(group, c_ipfe),
+    }
+
+
+def test_a_negative_plaintext_is_not_a_long_exponent_of_encrypt(make_mc, monkeypatch):
+    """``x % order`` would make it one, and the time of ``encrypt`` would then show its sign."""
+    kg, clients, _ = make_mc()
+    ek = kg.get_private_keys("nid_0")
+    exponents, real = [], kp_ab_pairing.multiexp_many
+
+    def recorded(rows, exps, group):
+        exponents.extend(exps)
+        return real(rows, exps, group)
+
+    monkeypatch.setattr(kp_ab_pairing, "multiexp_many", recorded)
+    pin_randomness(clients["nid_0"], monkeypatch)
+    masks = [[int(a), int(b), S] for a, b in zip(ek["p_h1"], ek["p_h2"])]
+    for x in (3, -3, 0, -10):
+        del exponents[:]
+        clients["nid_0"].encrypt([x], "round-1", attributes=ATTRS)
+        assert exponents == [[int(ek["s"]), int(ek["u"]), abs(x)], *masks]
+
+
+@pytest.mark.parametrize("x", [0, 1, -1, 10, -10], ids=["zero", "one", "minus-one", "bound", "minus-bound"])
+def test_encrypt_gives_the_ciphertext_of_the_exponent_mod_the_order(make_mc, monkeypatch, x):
+    """``|x|`` on the inverse of ``g1`` and ``x % order`` on ``g1`` are one element, so the ciphertext keeps its
+    bytes under the same randomness."""
+    kg, clients, _ = make_mc()
+    pin_randomness(clients["nid_0"], monkeypatch)
+    ct = clients["nid_0"].encrypt([x], "round-1", attributes=ATTRS)
+    assert ct == dict(ct, **sealed(kg, "nid_0", x, "round-1"))
+
+
+def test_the_elements_of_an_array_keep_their_bytes(make_mc, monkeypatch):
+    # mixed signs, each element under a tag of its own
+    kg, clients, _ = make_mc()
+    pin_randomness(clients["nid_0"], monkeypatch)
+    x = [10, -10, 0, 1, -1]
+    cts = clients["nid_0"].encrypt_lst_ndarray([np.array(x)], label="round-1", attributes=ATTRS)[0]
+    for i, value in enumerate(x):
+        assert cts[i] == dict(cts[i], **sealed(kg, "nid_0", value, element_label("round-1", 0, (i,))))
 
 
 # ---------------------------------------------------------------------------
