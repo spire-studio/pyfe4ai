@@ -291,6 +291,19 @@ attributes of its ciphertext (a purpose, a region): a key for
 ``and(purpose:research, region:EU)`` opens only ciphertexts made for both
 labels.
 
+*Identity equality.* A policy of one leaf, such as ``id:alice``, gives the
+functionality of identity-based IPFE: ``<x, y>`` when the identities match and
+nothing otherwise. With ``sife/cp_ab_pairing`` the ciphertext is under the
+policy ``id:alice`` and the key for the attributes ``["id:alice"]`` opens it;
+with ``sife/kp_ab_pairing`` the ciphertext is for the attributes
+``["id:alice"]`` and the key for the policy ``id:alice`` opens it. A key for
+another identity (in the ciphertext-policy scheme also one for no attribute)
+is refused with :class:`~pyfe4ai.core.exceptions.FEKeyError`. This is the
+general scheme with a policy of one leaf, and the identity is a label like any
+other (one of the ``universe`` in ``sife/cp_ab_pairing``). It is *not* the
+encoding that ACGU20 gives for equality in its App. C.1, a predicate encoding
+of its own, which the library does not implement.
+
 *Small or large universe.* ``sife/cp_ab_pairing`` suits a vocabulary of labels
 that is fixed and small: every label and copy adds a pair of G1 and a pair of
 G2 elements to the public parameters, and a pair of G2 elements to each key

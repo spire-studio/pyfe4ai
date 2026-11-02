@@ -48,7 +48,7 @@ PP_DOMAIN = b"pyfe4ai/sife/cp-ab/pp-binding/v1|"
 
 pytestmark = pytest.mark.usefixtures("own_parameter_cache")
 SATISFIED = [
-    ("org:A", ["org:A"]),                                                      # ACGU20 App. C.1 special case
+    ("org:A", ["org:A"]),                                                      # one leaf: identity equality
     ("and(org:A, role:auditor)", ["org:A", "role:auditor"]),
     ("or(org:A, role:auditor)", ["role:auditor"]),
     ("2of(org:A, org:B, role:auditor)", ["org:B", "role:auditor"]),
@@ -169,6 +169,23 @@ def test_unsatisfied_is_refused(policy, held, make):
     dk = kg.get_decryption_keys("s", credentials={"fusion_weight": [1] * 5, "attributes": held})
     with pytest.raises(FEKeyError):
         crypto.decrypt(ct, dk)
+
+
+@pytest.mark.parametrize("held,opens", [(["id:alice"], True), (["id:bob"], False), ([], False)])
+def test_identity_equality_is_a_one_leaf_policy(held, opens, make):
+    """The policy ``id:alice`` gives the functionality of identity-based IPFE: the key of the identity ``id:alice``
+    opens ``<x, y>``, a key of another identity or of no attribute is refused. This is the scheme's general policy with
+    one leaf, not the predicate encoding of ACGU20 App. C.1 for equality (which the library does not implement)."""
+    kg, crypto = make(universe=["id:alice", "id:bob"])
+    x, y = [3, -1, 0, 7, 2], [1, 2, 3, -4, 5]
+    ct = crypto.encrypt(x, policy="id:alice")
+    assert ct["policy"] == canonical_encoding(parse("id:alice")) and len(ct["c2"]) == 1       # one row, one leaf
+    dk = kg.get_decryption_keys("s", credentials={"fusion_weight": y, "attributes": held})
+    if opens:
+        assert crypto.decrypt(ct, dk) == sum(a * b for a, b in zip(x, y))
+    else:
+        with pytest.raises(FEKeyError):
+            crypto.decrypt(ct, dk)
 
 
 def test_public_key_scheme(make):
