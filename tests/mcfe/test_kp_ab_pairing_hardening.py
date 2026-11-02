@@ -724,7 +724,8 @@ def test_the_label_and_the_digest_of_a_ciphertext_are_claims(mc_fixed):
     assert not isinstance(error.value, FEValidationError)
     with pytest.raises(FEValidationError, match="sorted"):              # the order of the list is not a choice either
         agg.decrypt(relabelled(["c:1", "b:1"]), both)
-    assert agg.decrypt(relabelled(["b:1", "d:1"]), only_b) == EXPECTED  # what no row reads can be renamed
+    # what no row reads can be renamed without effect, if it keeps its place in the sorted list (c:1 -> d:1)
+    assert agg.decrypt(relabelled(["b:1", "d:1"]), only_b) == EXPECTED
 
 
 def test_a_ciphertext_of_another_client_with_the_right_nid_gives_no_value(mc_fixed):

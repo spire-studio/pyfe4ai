@@ -31,6 +31,7 @@ _DECIMAL = re.compile(r"0|-?[1-9][0-9]{0,15}")
 
 
 def positive_int(value, name: str) -> int:
+    """*value*, a limit, if it is an ``int`` of at least 1; ``FEValidationError`` naming the field *name* otherwise."""
     # type(value) is int: a bool or a float would be a second spelling of the same limit
     if type(value) is not int or value < 1:
         raise FEValidationError("{} must be a positive int".format(name))
@@ -71,11 +72,13 @@ def scalar(value, name: str, order) -> int:
 
 
 def check_length(items, length: int, name: str) -> None:
+    """``FEValidationError`` naming the field *name* unless *items* is a ``list`` of *length* entries."""
     if type(items) is not list or len(items) != length:
         raise FEValidationError("{} must be a list of {} entries".format(name, length))
 
 
 def serialize_vec(group: PairingGroup, vec) -> list[str]:
+    """The group elements *vec* serialised in one call, as the strings that a record holds."""
     return [item.decode("utf-8") for item in serialize_many(group, vec)]
 
 
@@ -114,6 +117,7 @@ def read_record(cls, data, name: str):
 
 
 def require_fields(record, name: str) -> None:
+    """``FEValidationError`` naming the record *name* and the first field of its class that *record* lacks."""
     for field in record.FIELDS:
         if field not in record:
             raise FEValidationError("the {} has no field {}".format(name, field))

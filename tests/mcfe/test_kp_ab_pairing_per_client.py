@@ -773,7 +773,7 @@ def test_the_label_of_a_ciphertext_is_a_claim(pc_fixed):
 def test_attributes_changed_by_one_client_give_no_value_and_never_a_wrong_one(make_pc):
     # The list of attributes says which vector of c_attr pairs with which row of the key. A client whose list names
     # another label that the policy reads gets a value that does not decrypt; a label that no row reads can be renamed
-    # without effect (as in mcfe/kp_ab_pairing).
+    # without effect if it keeps its place in the sorted list (as in mcfe/kp_ab_pairing).
     kg, clients, agg = make_pc()
     dk = kg.get_decryption_keys("agg", credentials=creds(POLICY))
     cts = encrypt_each(clients, {nid: ["region:EU"] for nid in LST})

@@ -247,12 +247,13 @@ What none of the proofs covers, and what the schemes share:
   of these schemes hides them. The key-policy schemes hash a label to ``Z_q``
   with a public hash.
 * **In the two MCFE schemes a client encrypts once under a tag.** Two
-  ciphertexts of one client under one tag have the same hash points, and give
-  away the difference of the two plaintexts: in ``mcfe/kp_ab_pairing`` when
-  they are for one set of attributes (the points hash the tag and the set), in
-  ``mcfe/kp_ab_pairing_per_client`` always (the tag alone is hashed). The scheme
-  classes do not check it, as with the other labelled schemes; the ML adapter
-  reserves each ``(client, label)`` pair.
+  ciphertexts of one client under one tag (and one set of attributes in
+  ``mcfe/kp_ab_pairing``) have the same hash points, and give away the
+  difference of the two plaintexts: in ``mcfe/kp_ab_pairing`` the points hash
+  the tag and the set, in ``mcfe/kp_ab_pairing_per_client`` the tag alone, so
+  there any two of them do, whatever their sets. The scheme classes do not
+  check it, as with the other labelled schemes; the ML adapter reserves each
+  ``(client, label)`` pair.
 * **Keys are trusted input.** The ``pp_binding`` of a key, a ciphertext or a
   record is a digest of the public parameters. It tells the objects of two
   setups apart and is not a signature.
