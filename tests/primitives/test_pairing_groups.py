@@ -3,7 +3,7 @@
 import pytest
 
 from pyfe4ai.core import registry
-from pyfe4ai.core.exceptions import FEConfigError, FEValidationError
+from pyfe4ai.core.exceptions import FEValidationError
 from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP
 from pyfe4ai.primitives.pairing.pairing_backend import PairingGroup, check_asymmetric, pairing_available
 from tests.scheme_config import of_scheme
@@ -100,8 +100,8 @@ def test_standard_profile_uses_bls12_381(key):
     from pyfe4ai import FESecurityWarning
 
     _need("BLS12-381")
-    if registry.get_scheme(key).status.status == registry.KNOWN_INSECURE:      # standard refuses it: no group to check
-        with pytest.raises(FEConfigError, match="known to be insecure"):
+    if registry.get_scheme(key).refused:                      # standard refuses it (a known-insecure scheme): no group
+        with pytest.raises(FEValidationError, match="no 'standard' parameter set for {}/{}: ".format(*key)):
             _key_generator(key)(_config(key, security_profile="standard"))
         return
     with pytest.warns(FESecurityWarning, match="120 to 126-bit"):

@@ -55,6 +55,7 @@ Refused under ``standard`` (``FEValidationError``):
 * ``sife/fullysec_lwe``, ``mife/fullysec_lwe``: at a 128-bit dimension (lwe_n = 3328 to 4352 for X = Y <= 50, eta <= 10) its public matrix has 1 to 2*10^10 entries and every ciphertext m = 4 n log2 q = 2.9 to 4.5*10^6 coordinates of 219 to 258 bits (80 to 145 MB); use sife/fullysec_ring_lwe for adaptive security, or the Ring-LWE scheme of the same family.
 * ``mife/lwe_threshold``: read at the width sigma / (1 + 4 X sqrt(eta)) of its security reduction, the LWE of its flooding-enlarged q (stat_param 128) needs a dimension at the very end of the 128-bit table (5888 to 6144, a public matrix of 6.5 to 7.8*10^9 entries) for a few small bounds, e.g. X = Y in {1, 2, 3, 8, 10} at eta = 1, and beyond it for most others (X = Y = 4 to 6, X = Y >= 12, most eta >= 2; about 6500 for X = Y = 50); use mife/ddh_threshold, or mcfe/ring_lwe_threshold with labels.
 * ``mcfe/paillier_decentralized``: its key shares would be combined under a DCR modulus of more than 15000 bits; use mcfe/ddh_decentralized.
+* ``mcfe/kp_ab_pairing_per_client``: known to be insecure: the fifth coordinate of NPP22 Sec. 5.4 does not depend on the tag, so two keys of one y that open neither of two tags (two rounds, or two elements of one array), where each client's set satisfies one of them in both, give the difference of the two inner products, and Thm. 25 as stated fails.
 
 Refused and constrained combinations
 ------------------------------------
@@ -156,8 +157,8 @@ Refused and constrained combinations
      - no ``n``; ``eta`` other than 1; ``n * bound_x * bound_y`` above ``2^48``
      - ``FEConfigError`` (no ``n``); ``FEValidationError`` (the others)
    * - a known-insecure scheme (``mcfe/kp_ab_pairing_per_client``)
-     - ``security_profile = 'standard'``
-     - ``FEConfigError``; under ``toy`` a ``FESecurityWarning`` from the key generator and the crypto objects
+     - ``security_profile = 'toy'`` (``standard`` refuses it, see above)
+     - built, with a ``FESecurityWarning`` from the key generator and the crypto objects
    * - the other pairing and quadratic schemes
      - a discrete-log bound above ``2^48`` (e.g. ``eta bound_x bound_y``, ``n m bound^3``)
      - ``ValueError`` at decryption (quadratic schemes: ``None`` and a warning)

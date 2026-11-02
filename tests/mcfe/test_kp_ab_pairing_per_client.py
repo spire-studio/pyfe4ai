@@ -622,12 +622,13 @@ def test_two_tags_and_two_keys_read_the_difference_of_two_rounds(rounds, make_pc
     """THE ATTACK THAT THE FIFTH COORDINATE DOES NOT STOP (why the scheme is known-insecure).
 
     ``theta_i d_{K,i}`` is a function of the key ``K`` and the client, not of the tag. So for two keys A and B of one
-    ``y``, each given to the clients whose set it satisfies, the part ``V_i(tag)`` of a client (its attribute rows,
-    minus ``c_ipfe x k_ipfe``, plus ``e(t_i, [y_i]_2)``) has the same obstacle ``theta_i d_{K,i}`` under every tag, and
-    ``sum_i (V_i(tag) - V_i(tag'))`` is ``[<x_tag - x_tag', y>]_T``. Neither key opens either round (``FEKeyError``):
-    the adversary is admissible under Def. 9 of the paper (encryptions under ``tag' != tag*`` are allowed, and both keys
-    are unrelated to both rounds), so Thm. 25 as stated fails. The two tags are two labels, or two elements of one
-    array, which the helpers encrypt under a tag each. The parts are computed from the fields of the records alone.
+    ``y``, where the set of each client satisfies one of them in both rounds, the part ``V_i(tag)`` of a client (its
+    attribute rows, minus ``c_ipfe x k_ipfe``, plus ``e(t_i, [y_i]_2)``) has the same obstacle ``theta_i d_{K,i}``
+    under every tag, and ``sum_i (V_i(tag) - V_i(tag'))`` is ``[<x_tag - x_tag', y>]_T``. Neither key opens either round
+    (``FEKeyError``). Remark 10 and the game of Fig. 2 let the adversary encrypt under a tag other than the challenge
+    tag, and Def. 9 calls it admissible (``Rel = 0`` for both keys and both rounds, so its condition 3 does not hold),
+    so Thm. 25 as stated fails. The two tags are two labels, or two elements of one array, which the helpers encrypt
+    under a tag each. The parts are computed from the fields of the records alone.
     """
     kg, clients, agg = make_pc(n=2)
     group = PairingGroup(GROUP)
@@ -683,9 +684,10 @@ def test_two_tags_and_two_keys_read_the_difference_of_two_rounds(rounds, make_pc
 
 
 def test_splice_of_keys_of_one_function_fails(pc_fixed):
-    # Not only keys of two policies: the fifth coordinate stops the splice of two keys for the same policy and the same
-    # y as well (in mcfe/kp_ab_pairing that splice gives the value of the function, no more). Client 0 takes both its
-    # parts from the first key, the others theirs from the second.
+    # Not only keys of two policies: under one tag the fifth coordinate stops the splice of two keys for the same policy
+    # and the same y as well (in mcfe/kp_ab_pairing that splice gives the value of the function, no more). Client 0
+    # takes both its parts from the first key, the others theirs from the second. Across tags it stops nothing: see
+    # test_two_tags_and_two_keys_read_the_difference_of_two_rounds.
     kg, _, agg, cts, dk = pc_fixed
     other = kg.get_decryption_keys("agg", credentials=creds(POLICY))
     assert other["k_rows"] != dk["k_rows"] and other["k_ipfe"] != dk["k_ipfe"]
@@ -1343,10 +1345,13 @@ def test_status_is_known_insecure():
     assert (scheme.status.status, scheme.status.fidelity) == ("known-insecure", "adapted")
     assert scheme.status.reference == "NPP22 Sec. 5.4"
     issue, note = scheme.status.issue, scheme.status.note
-    # the attack in one sentence: two tags, two keys of one y that open neither, the difference of the inner products
+    # the attack in one sentence: two tags, two keys of one y that open neither (and whose condition is that the set of
+    # each client satisfies one of them in both rounds), the difference of the inner products
     assert "\n" not in issue and not issue.endswith(".")
-    for words in ("fifth coordinate", "does not depend on the tag", "two keys", "difference", "Thm. 25"):
+    for words in ("fifth coordinate", "does not depend on the tag", "two keys",
+                  "each client's set satisfies one of them", "in both", "difference", "Thm. 25"):
         assert words in issue, words
+    assert scheme.refused == "known to be insecure: " + issue      # the standard profile refuses it through `refused`
     assert "h*_{i,5}" in note and "stops" not in note and "splic" not in note       # the note no longer claims it
     assert scheme.capabilities == {"access_control", "labels", "pairing"}
     for status, listed in (("known-insecure", True), ("experimental", False), ("unreviewed", False)):
@@ -1372,7 +1377,9 @@ def test_the_standard_profile_refuses_the_scheme(own_parameter_cache):
     issue = pyfe4ai.get_scheme(SCHEME_ID).status.issue
     for build in (lambda: MCFEKPABPairingPerClientKeyGenerator({"n": 2, "security_profile": "standard"}),
                   lambda: pyfe4ai.create(SCHEME_ID, n=2, security_profile="standard")):
-        with pytest.raises(FEConfigError, match="known to be insecure: " + re.escape(issue[:60])):
+        expected = "no 'standard' parameter set for {}: known to be insecure: ".format(SCHEME_ID)
+        expected += re.escape(issue[:50])
+        with pytest.raises(FEValidationError, match=expected):
             build()
 
 

@@ -9,11 +9,14 @@ compatibility).
 
 ### Changed
 
-- **The `standard` profile refuses a known-insecure scheme.** A key generator
-  of a scheme whose status is `known-insecure` raises `FEConfigError` under
-  `security_profile="standard"`, naming the issue; under `toy` it still warns
-  (`FESecurityWarning`) and builds. Before, no registered scheme was
-  known-insecure; `mcfe/kp_ab_pairing_per_client` is the first.
+- **The `standard` profile refuses a known-insecure scheme.** The registry
+  derives the `refused` reason of a scheme whose status is `known-insecure`
+  from its issue, so its key generator raises `FEValidationError` under
+  `security_profile="standard"` like any refused scheme, naming the issue (the
+  tables of the documentation and of the project page count it as refused);
+  under `toy` it still warns (`FESecurityWarning`) and builds. Before, no
+  registered scheme was known-insecure; `mcfe/kp_ab_pairing_per_client` is the
+  first.
 - **Key generators check the names of their options.** A key that no scheme
   declares now raises `FEConfigError`: before, a misspelt option was dropped
   without a word, so `security_prfile="standard"` ran the `toy` profile. An
@@ -151,11 +154,13 @@ compatibility).
   policies (and the splice of any two keys, also of one function). It does not
   stop the same attack across tags: `theta_i d_i` depends on the key and the
   client, not on the tag, so two keys of one `y`, each given to the clients
-  whose set it satisfies and each refusing both of two rounds (two labels, or
-  two elements of one array), give the difference of the two rounds' inner
-  products. App. B.5 of the paper states Theorem 25 for the construction and
-  sketches its proof; the adversary above is admissible in the game of that
-  theorem, so Theorem 25 as stated fails
+  whose set it satisfies and neither opening either of two rounds (two labels,
+  or two elements of one array), where the set of each client satisfies one of
+  them in both rounds, give the difference of the two rounds' inner products.
+  App. B.5 of the paper states Theorem 25 for the construction and sketches
+  its proof; Remark 10 and the game of Fig. 2 let the adversary above encrypt
+  under a second tag and Def. 9 calls it admissible, so Theorem 25 as stated
+  fails
   (`test_two_tags_and_two_keys_read_the_difference_of_two_rounds`). The scheme
   is kept for functionality and performance experiments and as the record of the
   attack; its key generator and crypto objects emit a `FESecurityWarning` that

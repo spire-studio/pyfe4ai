@@ -21,8 +21,9 @@ dMCFE-DDH: our own constructions on top of published schemes, with no
 published security proof. The known-insecure one is
 ``mcfe/kp_ab_pairing_per_client`` (NPP22 Sec. 5.4, an attribute set for each
 client): the fifth coordinate of the paper does not depend on the tag, so two
-keys of one ``y`` that each refuse both of two rounds give the difference of
-the two rounds' inner products, and Theorem 25 of the paper fails as stated.
+keys of one ``y`` that open neither of two rounds, where the set of each client
+satisfies one of them in both rounds, give the difference of the two rounds'
+inner products, and Theorem 25 of the paper fails as stated.
 It is kept for functionality and performance experiments and as the record of
 the attack. Query a scheme at runtime with
 :func:`pyfe4ai.get_scheme_status(family, variant)
@@ -30,7 +31,7 @@ the attack. Query a scheme at runtime with
 :attr:`FESchemeWrapper(...).status <pyfe4ai.ml.FESchemeWrapper.status>`;
 the key generator and crypto objects of a known-insecure scheme emit
 :class:`~pyfe4ai.core.exceptions.FESecurityWarning`, and the ``standard``
-security profile refuses it (``FEConfigError``). The table is rendered
+security profile refuses it (``FEValidationError``, as it refuses any scheme with a ``refused`` reason). The table is rendered
 from :data:`~pyfe4ai.core.status.SCHEME_STATUS`, which is derived from the
 scheme registry (:mod:`pyfe4ai.core.registry`); the status and fidelity
 values are defined with :class:`~pyfe4ai.core.registry.SchemeStatus`.

@@ -11,10 +11,11 @@ each client
 * setting:  asymmetric pairing group (default BLS12-381), random oracle (the hash of the tag to ``G1``)
 * status:   **known-insecure**. App. B.5 of the paper states Theorem 25 for this construction and sketches its proof
   as changes to that of Thm. 14. Thm. 25 as stated fails: two tags and two keys of one ``y``, neither of which opens
-  either round, give the difference of the two rounds' inner products (see "The attack that the fifth coordinate does
-  not stop" below). The scheme is kept for functionality and performance experiments and as the record of that attack.
-  Its key generator and crypto objects emit a ``FESecurityWarning`` that names the issue, and the ``standard``
-  security profile refuses it (``FEConfigError``). The implementation has had no review.
+  either round but one of which satisfies the set of each client in both rounds, give the difference of the two rounds'
+  inner products (see "The attack that the fifth coordinate does not stop" below). The scheme is kept for
+  functionality and performance experiments and as the record of that attack. Its key generator and crypto objects
+  emit a ``FESecurityWarning`` that names the issue, and the ``standard`` security profile refuses it
+  (``FEValidationError``, as for any refused scheme). The implementation has had no review.
 
 Sec. 5.2 hashes ``(tag, S)``, so all clients must agree on the set of attributes at the time of encryption. Sec. 5.4
 hashes the tag only (``[omega]_1, [omega']_1 = H(tag)``) and lets each client ``i`` encrypt for a set ``S_i`` of its
@@ -34,13 +35,15 @@ probability. This holds for any two keys, also of one policy and one ``y``: unde
 cannot be spliced either.
 
 The attack that the fifth coordinate does not stop. ``theta_i d_{K,i}`` depends on the key ``K`` and the client, not on
-the tag. Take two keys ``A`` and ``B`` of one ``y``, each given to the clients whose set it satisfies, and two tags. The
-part of a client, ``V_i(tag)`` (its attribute rows, minus ``c_i,ipfe`` against ``k*_i,ipfe``, plus ``e(t_i, [y_i]_2)``),
-carries the same obstacle ``theta_i d_{K,i}`` under both tags, so ``sum_i (V_i(tag) - V_i(tag'))`` is
-``[<x_tag - x_tag', y>]_T``. Neither key opens either round (each refuses both with ``FEKeyError``), yet together they
-give the difference of the two rounds' inner products. The two tags can be two labels or two elements of one array,
-which the helpers encrypt under a tag each. The adversary is admissible under Def. 9 of the paper (encryptions under a tag
-other than the challenge tag are allowed, and the keys are unrelated to both rounds), so Thm. 25 as stated fails.
+the tag. Take two keys ``A`` and ``B`` of one ``y``, and two tags, such that the set of each client satisfies one of
+the keys in both rounds (each key is given to the clients whose set it satisfies). The part of a client, ``V_i(tag)``
+(its attribute rows, minus ``c_i,ipfe`` against ``k*_i,ipfe``, plus ``e(t_i, [y_i]_2)``), carries the same obstacle
+``theta_i d_{K,i}`` under both tags, so ``sum_i (V_i(tag) - V_i(tag'))`` is ``[<x_tag - x_tag', y>]_T``. Neither key
+opens either round (each refuses both with ``FEKeyError``), yet together they give the difference of the two rounds'
+inner products. The two tags can be two labels or two elements of one array,
+which the helpers encrypt under a tag each. Remark 10 and the game of Fig. 2 let the adversary encrypt under a tag other
+than the challenge tag, and Def. 9 calls it admissible (``Rel = 0`` for both keys and both rounds, so its condition 3
+does not hold), so Thm. 25 as stated fails.
 ``test_two_tags_and_two_keys_read_the_difference_of_two_rounds`` reproduces it from the fields of the records.
 ``mcfe/kp_ab_pairing`` is not affected: one attribute set per tag, so a key that gives a part opens the tag.
 

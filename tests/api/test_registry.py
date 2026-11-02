@@ -18,7 +18,7 @@ from pyfe4ai.core import config as configs
 from pyfe4ai.core import profiles, registry
 from pyfe4ai.core import status as st
 from pyfe4ai.core.base import IPFEAbsCrypto, IPFEAbsKeyGenerator
-from pyfe4ai.core.exceptions import FEConfigError, FESecurityWarning, FEValidationError
+from pyfe4ai.core.exceptions import FESecurityWarning, FEValidationError
 from pyfe4ai.ml import wrapper as ml_wrapper
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -113,11 +113,7 @@ def test_status_and_kinds_are_derived():
 @pytest.mark.parametrize("scheme", SCHEMES, ids=IDS)
 def test_refusals_are_the_profiles(scheme):
     config = scheme.config({"security_profile": "standard"})
-    if scheme.status.status == registry.KNOWN_INSECURE:        # refused whatever its parameters: it is not secure
-        with pytest.raises(FEConfigError, match="no 'standard' parameter set for {}: ".format(scheme.id)) as info:
-            configs.resolve(config, scheme.key)
-        assert str(info.value).endswith(scheme.status.issue)
-    elif scheme.refused:
+    if scheme.refused:
         with pytest.raises(FEValidationError, match="no 'standard' parameter set for {}: ".format(scheme.id)) as info:
             configs.resolve(config, scheme.key)
         assert str(info.value).endswith(scheme.refused)
@@ -126,6 +122,34 @@ def test_refusals_are_the_profiles(scheme):
             configs.resolve(config, scheme.key)
     else:
         configs.resolve(config, scheme.key)
+
+
+def test_a_known_insecure_scheme_is_refused_under_standard_from_its_issue():
+    """One mechanism: the registry derives ``refused`` from the issue, so the refusal, the documentation (``refused`` is
+    what the tables of the docs and of the page read) and the status cannot drift."""
+    for scheme in SCHEMES:
+        known_insecure = scheme.status.status == registry.KNOWN_INSECURE
+        assert known_insecure <= bool(scheme.refused), scheme.id
+        if known_insecure:
+            assert scheme.refused == "known to be insecure: " + scheme.status.issue
+    per_client = registry.get_scheme("mcfe/kp_ab_pairing_per_client")
+    assert per_client.refused == "known to be insecure: " + per_client.status.issue
+    assert per_client.refused and not registry.get_scheme("mcfe/kp_ab_pairing").refused
+
+    def entry(**changes):
+        arguments = dict(note="a note", issue="test issue")
+        arguments.update(changes)
+        return registry._scheme("mife/lwe", registry.LWE_ABDP15, registry.KNOWN_INSECURE, registry.ADAPTED, "a paper",
+                                **arguments)
+
+    assert entry().refused == "known to be insecure: test issue"
+    with pytest.raises(ValueError, match="issue"):
+        entry(issue="")                                   # a known-insecure scheme says what is wrong with it
+    with pytest.raises(ValueError, match="refusal"):
+        entry(refused="a reason of its own")              # one reason, derived: not a second one beside it
+    own = registry._scheme("mife/lwe", registry.LWE_ABDP15, registry.UNREVIEWED, registry.ADAPTED, "a paper",
+                           note="a note", refused="a reason of its own")
+    assert own.refused == "a reason of its own"          # the other refusals are as they were
 
 
 @pytest.mark.parametrize("scheme", SCHEMES, ids=IDS)

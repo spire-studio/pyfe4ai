@@ -88,7 +88,9 @@ class SchemeStatus:
         be used for functionality or performance experiments: its key
         generators and crypto objects emit a
         :class:`~pyfe4ai.core.exceptions.FESecurityWarning`, and the
-        ``standard`` security profile refuses it (``FEConfigError``).
+        ``standard`` security profile refuses it (its ``refused`` is derived
+        from the issue, and the refusal is that of the other refused schemes,
+        ``FEValidationError``).
 
     ``fidelity``
         ``"faithful"``: the published construction as written.
@@ -231,7 +233,8 @@ class Scheme:
     status: SchemeStatus
     #: See :data:`CAPABILITIES`.
     capabilities: frozenset
-    #: Why the ``standard`` profile refuses the scheme; empty if it does not.
+    #: Why the ``standard`` profile refuses the scheme; empty if it does not. A known-insecure scheme is refused, and
+    #: its reason is derived from its issue (:func:`_scheme`).
     refused: str = ""
     #: The group of a scheme that instantiates another variant of its family
     #: in a group of its own (the ML adapter's ``group`` option), such as
@@ -296,6 +299,14 @@ def _scheme(scheme_id: str, kind: str, status: str, fidelity: str, reference: st
             issue: str = "", module: str | None = None, capabilities: Iterable[str] = (), refused: str = "",
             group: str | None = None, instance_of: str | None = None) -> Scheme:
     family, variant = scheme_id.split("/")
+    if status == KNOWN_INSECURE:
+        # the standard profile is for security: it refuses a scheme that is known to be insecure, for the reason that
+        # makes it so, which is derived here (one mechanism: the refusal, and the tables that read ``refused``)
+        if not issue:
+            raise ValueError("{}: a known-insecure scheme needs its issue".format(scheme_id))
+        if refused:
+            raise ValueError("{}: the refusal of a known-insecure scheme is derived from its issue".format(scheme_id))
+        refused = "known to be insecure: " + issue
     module = _S + (module or "{}.{}".format(family, variant))
     caps = set(capabilities)
     if family == "mcfe":
@@ -601,9 +612,9 @@ SCHEMES: tuple[Scheme, ...] = (
         "also holds h*_{i,5}, which the paper's list omits; App. B.5 states Thm. 25 and only sketches its proof, and "
         "the theorem fails (see the issue); kept for functionality and performance experiments and as the record "
         "of the attack",
-        issue="the fifth coordinate of NPP22 Sec. 5.4 does not depend on the tag, so two keys of one y that each "
-        "refuse both of two tags (two rounds, or two elements of one array) give the difference of the two inner "
-        "products, and Thm. 25 as stated fails",
+        issue="the fifth coordinate of NPP22 Sec. 5.4 does not depend on the tag, so two keys of one y that open "
+        "neither of two tags (two rounds, or two elements of one array), where each client's set satisfies one of "
+        "them in both, give the difference of the two inner products, and Thm. 25 as stated fails",
         capabilities=(ACCESS_CONTROL,),
     ),
     # --- quadratic ----------------------------------------------------------

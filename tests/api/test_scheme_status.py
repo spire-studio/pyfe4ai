@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 import pyfe4ai
-from pyfe4ai import FEConfigError, FESecurityWarning, get_scheme_status
+from pyfe4ai import FESecurityWarning, FEValidationError, get_scheme_status
 from pyfe4ai.core import registry
 from pyfe4ai.core import status as st
 
@@ -56,14 +56,21 @@ def test_known_insecure_crypto_object_warns(insecure_mife_lwe):
         MIFELWE({"keys": {"pp": {"A": [["1"]]}}})
 
 
-def test_the_standard_profile_refuses_a_known_insecure_scheme(insecure_mife_lwe):
-    """``toy`` warns (see above) and goes on; ``standard`` is for security, so it refuses, whatever the scheme."""
+def test_the_standard_profile_refuses_a_known_insecure_scheme(insecure_mife_lwe, monkeypatch):
+    """``toy`` warns (see above) and goes on; ``standard`` is for security, so it refuses, whatever the scheme, through
+    the ``refused`` of its registry entry like the other refusals (``FEValidationError``)."""
     from pyfe4ai.schemes.mife.lwe import MIFELWEKeyGenerator
 
+    real = registry.get_scheme("mife/lwe")
+    known_insecure = registry._scheme("mife/lwe", real.kind, st.KNOWN_INSECURE, real.status.fidelity,
+                                      real.status.reference, note=real.status.note, issue="test issue",
+                                      capabilities=real.capabilities)
+    monkeypatch.setitem(registry._BY_KEY, ("mife", "lwe"), known_insecure)
     config = {"n": 2, "bound_x": 2, "bound_y": 2}
-    with pytest.raises(FEConfigError, match="mife/lwe.*known to be insecure: test issue"):
+    message = "no 'standard' parameter set for mife/lwe: known to be insecure: test issue"
+    with pytest.raises(FEValidationError, match=message):
         MIFELWEKeyGenerator(dict(config, security_profile="standard"))
-    with pytest.raises(FEConfigError, match="known to be insecure: test issue"):
+    with pytest.raises(FEValidationError, match=message):
         pyfe4ai.create("mife/lwe", dict(config, security_profile="standard"))
     with pytest.warns(FESecurityWarning, match="known to be insecure: test issue"):
         MIFELWEKeyGenerator(dict(config, lwe_n=8))

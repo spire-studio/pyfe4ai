@@ -67,8 +67,8 @@ testpaths = ["tests"]
 # a bare `pytest` from the repository root imports the in-tree package (and can
 # resolve the warning category below) without an install
 pythonpath = ["."]
-# FESecurityWarning marks known-insecure schemes (none at present) and BLS12-381
-# under security_profile="standard"; tests/api/test_scheme_status.py and
+# FESecurityWarning marks known-insecure schemes (mcfe/kp_ab_pairing_per_client at present) and
+# BLS12-381 under security_profile="standard"; tests/api/test_scheme_status.py and
 # tests/params/test_security_profiles.py check the warnings themselves
 filterwarnings = ["ignore::pyfe4ai.core.exceptions.FESecurityWarning"]
 # every mark a test carries must be registered here; tests/conftest.py adds

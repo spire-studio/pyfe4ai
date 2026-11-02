@@ -45,8 +45,7 @@ from pyfe4ai.core.profiles import STANDARD_DCR_PRIME_BITS
 from pyfe4ai.core.profiles import STANDARD_STAT_PARAM
 from pyfe4ai.core.profiles import TOY
 from pyfe4ai.core.exceptions import FEConfigError, FESecurityWarning, FEValidationError, FEWarning, warn_at_caller
-from pyfe4ai.core.registry import KNOWN_INSECURE, SCHEMES, get_scheme
-from pyfe4ai.core.status import SCHEME_STATUS
+from pyfe4ai.core.registry import SCHEMES, get_scheme
 
 # ---------------------------------------------------------------------------
 # option values shared by several schemes
@@ -254,13 +253,12 @@ def resolve(config: dict, scheme: tuple | None) -> dict:
             is not a registered scheme.
 
     Raises:
-        FEConfigError: For a scheme whose status is ``known-insecure``: the
-            ``standard`` profile is for security, so it builds no such scheme
-            (the ``toy`` profile builds it, with a
-            :class:`~pyfe4ai.core.exceptions.FESecurityWarning` from the
-            key generator).
         FEValidationError: For an unknown profile, a scheme the profile does
-            not support, or an explicit value weaker than the profile's.
+            not support or refuses (``refused`` in the registry, which also
+            holds for a known-insecure scheme: the ``toy`` profile builds it,
+            with a :class:`~pyfe4ai.core.exceptions.FESecurityWarning` from
+            the key generator, and ``standard`` does not), or an explicit
+            value weaker than the profile's.
 
     Warns:
         FESecurityWarning: For a pairing scheme under ``standard``
@@ -277,12 +275,6 @@ def resolve(config: dict, scheme: tuple | None) -> dict:
     kind = SCHEME_KIND.get(scheme)
     if kind is None:
         raise FEValidationError("no '{}' parameters for {}".format(profile, scheme))
-    entry = SCHEME_STATUS[scheme]
-    if entry.status == KNOWN_INSECURE:
-        raise FEConfigError(
-            "no '{}' parameter set for {}/{}: the scheme is known to be insecure: {}".format(
-                profile, scheme[0], scheme[1], entry.issue)
-        )
     reason = get_scheme(scheme).refused
     if reason:
         raise FEValidationError(
@@ -1249,9 +1241,9 @@ COMBINATIONS = (
     Combination("``mcfe/kp_ab_pairing`` and ``mcfe/kp_ab_pairing_per_client``",
                 "no ``n``; ``eta`` other than 1; ``n * bound_x * bound_y`` above ``2^48``",
                 "``FEConfigError`` (no ``n``); ``FEValidationError`` (the others)"),
-    Combination("a known-insecure scheme (``mcfe/kp_ab_pairing_per_client``)", "``security_profile = 'standard'``",
-                "``FEConfigError``; under ``toy`` a ``FESecurityWarning`` from the key generator and the crypto "
-                "objects"),
+    Combination("a known-insecure scheme (``mcfe/kp_ab_pairing_per_client``)", "``security_profile = 'toy'`` "
+                "(``standard`` refuses it, see above)", "built, with a ``FESecurityWarning`` from the key generator "
+                "and the crypto objects"),
     Combination("the other pairing and quadratic schemes", "a discrete-log bound above ``2^48`` (e.g. "
                 "``eta bound_x bound_y``, ``n m bound^3``)", "``ValueError`` at decryption (quadratic "
                 "schemes: ``None`` and a warning)"),

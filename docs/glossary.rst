@@ -340,7 +340,7 @@ Review status and trust
    known-insecure
       A concrete privacy defect is known; the key generator and crypto
       objects emit :class:`~pyfe4ai.core.exceptions.FESecurityWarning`, and
-      the ``standard`` profile refuses the scheme (``FEConfigError``).
+      the ``standard`` profile refuses the scheme (``FEValidationError``).
 
    honest-but-curious
       The trust model of the threshold decryption servers: fewer than ``t``
