@@ -11,6 +11,7 @@ import copy
 import hashlib
 import threading
 
+import numpy as np
 import pytest
 
 from tests.pairing_group import skip_unless_available  # noqa: E402
@@ -112,6 +113,20 @@ def test_unknown_compiler(fixed):
     _, crypto, ct, dk, _ = fixed
     with pytest.raises(FEValidationError, match="c2"):
         crypto.decrypt(dict(ct, policy_compiler="c2"), dk)
+
+
+@pytest.mark.parametrize("value", [
+    lambda good: np.array([0, 1]),          # `good != array` is an array, and `if` on it a ValueError
+    lambda good: np.array([good]),          # and this one would compare equal and be accepted
+    lambda good: np.array(good),
+    lambda good: [good], lambda good: 5, lambda good: None,
+], ids=["array", "array-of-it", "0-d-array", "list", "int", "none"])
+@pytest.mark.parametrize("field", ["policy_compiler", "policy_digest"])
+def test_a_text_field_of_the_ciphertext_that_is_no_text_is_refused_and_not_compared(field, value, fixed):
+    _, crypto, ct, dk, _ = fixed
+    with pytest.raises(FEValidationError, match=field) as caught:
+        crypto.decrypt(dict(ct, **{field: value(ct[field])}), dk)
+    assert type(caught.value) is FEValidationError
 
 
 # ---------------------------------------------------------------------------

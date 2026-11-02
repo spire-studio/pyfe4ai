@@ -129,7 +129,7 @@ from pyfe4ai.primitives.pairing.pairing_utils import random_nonzero_zr
 from pyfe4ai.primitives.pairing.pairing_utils import serialize_matrix_g
 from pyfe4ai.primitives.pairing.pairing_utils import transpose_mod
 from pyfe4ai.schemes.common.ac_binding import check_binding, pp_digest
-from pyfe4ai.schemes.common.ac_codec import check_dlog_limit, check_length, decimal, positive_int
+from pyfe4ai.schemes.common.ac_codec import check_dlog_limit, check_length, check_marker, decimal, positive_int
 from pyfe4ai.schemes.common.ac_codec import read_elements, read_record, require_fields, serialize_vec
 
 logger = logging.getLogger(__name__)
@@ -385,16 +385,15 @@ class SIFECPABPairing(IPFEAbsCrypto):
         """
         parameters = read_record(CPABParameters, pp, "public parameters")
         require_fields(parameters, "public parameters")
-        if pp_digest(pp, _PP_DOMAIN) != parameters.pp_binding:
+        # the digest leaves pp_binding out, so it may be an array: one is not compared with a str
+        if type(parameters.pp_binding) is not str or pp_digest(pp, _PP_DOMAIN) != parameters.pp_binding:
             raise FEValidationError("the public parameters do not agree with their pp_binding")
-        if parameters.policy_compiler != POLICY_COMPILER:
-            raise FEValidationError("policy compiler {} is not this version's {!r}".format(
-                clip(repr(parameters.policy_compiler)), POLICY_COMPILER))
+        check_marker(parameters.policy_compiler, POLICY_COMPILER, "the policy_compiler of the public parameters")
         if type(parameters.pairing_group_param) is not str:
             raise FEValidationError("pairing_group_param must be a str, got {}".format(
                 type(parameters.pairing_group_param).__name__))
         universe = Universe.from_encoding(parameters.universe)
-        if parameters.universe_digest != universe.digest():
+        if type(parameters.universe_digest) is not str or parameters.universe_digest != universe.digest():
             raise FEValidationError("the universe_digest of the public parameters is not the digest of their universe")
 
         self.eta = positive_int(parameters.eta, "eta")
@@ -592,15 +591,13 @@ class SIFECPABPairing(IPFEAbsCrypto):
         check_binding(self.pp, key, "functional key")
         require_fields(ct, "ciphertext")
         require_fields(key, "functional key")
-        if ct.policy_compiler != POLICY_COMPILER:
-            raise FEValidationError("policy compiler {} is not this version's {!r}".format(
-                clip(repr(ct.policy_compiler)), POLICY_COMPILER))
+        check_marker(ct.policy_compiler, POLICY_COMPILER, "the policy_compiler of the ciphertext")
 
         if type(ct.policy) is not str:
             raise FEValidationError("the policy of a ciphertext must be a str")
         self._check_policy_length(ct.policy)
         formula = from_canonical(ct.policy)
-        if policy_digest(formula) != ct.policy_digest:
+        if type(ct.policy_digest) is not str or policy_digest(formula) != ct.policy_digest:
             raise FEValidationError("the policy_digest of the ciphertext is not the digest of its policy")
         msp, rows = self._compile(formula)
         check_length(ct.c1, 2, "c1")

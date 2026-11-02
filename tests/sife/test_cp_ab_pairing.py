@@ -8,6 +8,7 @@ import random
 import sys
 import warnings
 
+import numpy as np
 import pytest
 
 import pyfe4ai
@@ -522,6 +523,36 @@ def test_crypto_refuses_an_unknown_compiler(make):
         SIFECPABPairing({"keys": {"pp": tampered(kg.get_public_parameters(), policy_compiler="c2")}})
 
 
+@pytest.mark.parametrize("value", [
+    lambda good: np.array([0, 1]), lambda good: np.array([good]), lambda good: np.array(good),
+    lambda good: [good], lambda good: 5, lambda good: None,
+], ids=["array", "array-of-it", "0-d-array", "list", "int", "none"])
+@pytest.mark.parametrize("field", ["policy_compiler", "universe_digest"])
+def test_crypto_refuses_parameters_whose_text_field_is_no_text(field, value, make):
+    # an array is no JSON data, so the digest of the parameters refuses it before the field is read; the others are
+    # bound again, so that the field itself is what is refused
+    kg, _ = make()
+    pp = kg.get_public_parameters()
+    changed = dict(pp, **{field: value(pp[field])})
+    is_array = isinstance(changed[field], np.ndarray)
+    with pytest.raises(FEValidationError, match="JSON data" if is_array else field) as caught:
+        SIFECPABPairing({"keys": {"pp": changed if is_array else rebound(changed)}})
+    assert type(caught.value) is FEValidationError
+
+
+@pytest.mark.parametrize("value", [
+    lambda good: np.array([0, 1]), lambda good: np.array([good]), lambda good: np.array(good),
+    lambda good: [good], lambda good: 5, lambda good: None,
+], ids=["array", "array-of-it", "0-d-array", "list", "int", "none"])
+def test_crypto_refuses_parameters_whose_pp_binding_is_no_text(value, make):
+    # the digest leaves pp_binding out, so an array there is JSON enough to be compared with it
+    kg, _ = make()
+    pp = kg.get_public_parameters()
+    with pytest.raises(FEValidationError, match="pp_binding") as caught:
+        SIFECPABPairing({"keys": {"pp": dict(pp, pp_binding=value(pp["pp_binding"]))}})
+    assert type(caught.value) is FEValidationError
+
+
 @pytest.mark.parametrize("value", [5, None, ["BLS12-381"], {"name": "BLS12-381"}, True])
 def test_crypto_refuses_a_pairing_group_that_is_no_name(value, make):
     kg, _ = make()
@@ -927,11 +958,11 @@ HUGE = 100000
 
 def test_a_huge_policy_compiler_is_clipped_in_the_message(fixed, make):
     _, crypto, ct, dk, _ = fixed
-    with pytest.raises(FEValidationError, match="policy compiler") as caught:
+    with pytest.raises(FEValidationError, match="policy_compiler") as caught:
         crypto.decrypt(dict(ct, policy_compiler="c" * HUGE), dk)
     assert len(str(caught.value)) < 300
     kg, _ = make()
-    with pytest.raises(FEValidationError, match="policy compiler") as caught:
+    with pytest.raises(FEValidationError, match="policy_compiler") as caught:
         SIFECPABPairing({"keys": {"pp": tampered(kg.get_public_parameters(), policy_compiler="c" * HUGE)}})
     assert len(str(caught.value)) < 300
 

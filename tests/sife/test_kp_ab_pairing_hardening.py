@@ -591,6 +591,19 @@ def test_crypto_refuses_public_parameters_without_a_field(field, make_kp):
         SIFEKPABPairing({"keys": {"pp": pp if field == "pp_binding" else rebound(pp)}})
 
 
+@pytest.mark.parametrize("value", [
+    lambda good: np.array([0, 1]), lambda good: np.array([good]), lambda good: np.array(good),
+    lambda good: [good], lambda good: 5, lambda good: None,
+], ids=["array", "array-of-it", "0-d-array", "list", "int", "none"])
+def test_crypto_refuses_parameters_whose_pp_binding_is_no_text(value, make_kp):
+    # the digest leaves pp_binding out, so an array there is JSON enough to be compared with it
+    kg, _ = make_kp()
+    pp = kg.get_public_parameters()
+    with pytest.raises(FEValidationError, match="pp_binding") as caught:
+        SIFEKPABPairing({"keys": {"pp": dict(pp, pp_binding=value(pp["pp_binding"]))}})
+    assert type(caught.value) is FEValidationError
+
+
 def test_crypto_needs_public_parameters():
     with pytest.raises(FEKeyError):
         SIFEKPABPairing({"keys": {"sk": {}}})

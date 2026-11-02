@@ -547,7 +547,8 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
         """
         parameters = _record(MCKPABParameters, pp, "public parameters")
         _require_fields(parameters, "public parameters")
-        if pp_digest(pp, self._pp_domain) != parameters.pp_binding:
+        # the digest leaves pp_binding out, so it may be an array: one is not compared with a str
+        if type(parameters.pp_binding) is not str or pp_digest(pp, self._pp_domain) != parameters.pp_binding:
             raise FEValidationError("the public parameters do not agree with their pp_binding")
         _check_marker(parameters.policy_compiler, POLICY_COMPILER, "the policy_compiler of the public parameters")
         _check_marker(parameters.attr_hash, ATTR_HASH, "the attr_hash of the public parameters")

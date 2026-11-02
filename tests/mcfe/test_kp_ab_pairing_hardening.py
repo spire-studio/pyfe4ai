@@ -224,6 +224,19 @@ def test_tampered_pp(make_mc):
         MCFEKPABPairing({"keys": {"pp": dict(pp, lst_nid=["nid_0", "nid_2", "nid_1"])}})   # the order fixes p_i
 
 
+@pytest.mark.parametrize("value", [
+    lambda good: np.array([0, 1]), lambda good: np.array([good]), lambda good: np.array(good),
+    lambda good: [good], lambda good: 5, lambda good: None,
+], ids=["array", "array-of-it", "0-d-array", "list", "int", "none"])
+def test_crypto_refuses_parameters_whose_pp_binding_is_no_text(value, make_mc):
+    # the digest leaves pp_binding out, so an array there is JSON enough to be compared with it
+    kg, _, _ = make_mc()
+    pp = kg.get_public_parameters()
+    with pytest.raises(FEValidationError, match="pp_binding") as caught:
+        MCFEKPABPairing({"keys": {"pp": dict(pp, pp_binding=value(pp["pp_binding"]))}})
+    assert type(caught.value) is FEValidationError
+
+
 @pytest.mark.parametrize("field", ["policy_compiler", "attr_hash", "tag_hash"])
 def test_crypto_refuses_an_unknown_version_marker(field, make_mc):
     kg, _, _ = make_mc()
