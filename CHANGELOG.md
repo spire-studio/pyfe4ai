@@ -54,8 +54,12 @@ an experimental research prototype, not recommended for production use.
   value of the round in which they were made (integrity, not confidentiality;
   sign or MAC the label with the record where that matters: a MAC needs a key
   that each client shares with the decryptor and does not protect against the
-  decryptor itself, a signature does). `docs/security.rst` and
-  `docs/api/ml.rst` say what a decryption does and does not catch.
+  decryptor itself, a signature does). A key issued for any round opens every
+  other round, so the rule of the ML adapter that a label is aggregated with
+  one weight vector only does not keep two rounds, with weights that differ in
+  one client, from isolating that client for a holder of the keys.
+  `docs/security.rst` and `docs/api/ml.rst` say what a decryption does and
+  does not catch.
 - **The time of `encrypt` in the attribute-based schemes hardly shows the
   signs of the plaintext, and none of them is constant-time.** `encrypt` of
   `sife/cp_ab_pairing`, `sife/kp_ab_pairing` and `mcfe/kp_ab_pairing` (which
@@ -71,7 +75,8 @@ an experimental research prototype, not recommended for production use.
 - **The three schemes are reviewed against their papers, and what the papers
   prove is stated.** `sife/cp_ab_pairing`, `sife/kp_ab_pairing` and
   `mcfe/kp_ab_pairing` have the status *reviewed* (checked against the cited
-  construction, no security defect known; not a security audit), with the
+  construction, for NPP22 its ePrint revision of 2022-09-18, no security
+  defect known; not a security audit), with the
   fidelity *adapted*, *faithful* and *faithful*. The security of
   `sife/cp_ab_pairing` is selective, for one challenge ciphertext. The paper
   of `sife/kp_ab_pairing` proves the version with the boxed components and
