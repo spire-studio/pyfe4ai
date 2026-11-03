@@ -180,8 +180,8 @@ _SCHEME_ID = "mcfe/kp_ab_pairing"
 #: The decoded ``G1`` elements that :meth:`MCFEKPABPairing.decrypt_lst_ndarray_ct` holds at a time. It decodes, pairs
 #: and solves the elements of the arrays in slices of as many elements as this allows, and at least one: an element
 #: holds ``n (8 |S| + 5)`` decoded elements (``n`` clients, ``|S|`` attributes; ``sum_i (8 |S_i| + 6)`` in
-#: ``mcfe/kp_ab_pairing_per_client``), about 1.5 to 3.5 KB each with the rows built from them (measured), so a slice
-#: takes some 100 to 230 MB, whatever the size of the arrays, the number of clients and the attributes they encrypt for
+#: ``mcfe/kp_ab_pairing_per_client``), about 1.5 to 3 KB each with the rows built from them (measured), so a slice
+#: takes some 100 to 200 MB, whatever the size of the arrays, the number of clients and the attributes they encrypt for
 #: -- as long as one element fits the budget. A slice is never smaller than one element, so once
 #: ``n (8 |S| + 5)`` exceeds the budget (``n`` of 127 or more at 64 attributes) a slice is one element and its memory
 #: grows with ``n |S|`` again.
@@ -1179,8 +1179,8 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
         Memory: the ciphertexts are the caller's. The call adds about 4 KB for each of them (a record view, a name and
         the lists of the checks, measured at ``n = 10``, ``|S| = 3``; more with more attributes) and the prepared
         points of the key, up to about 20 KB each, ``n (8 rows + 4) + 1`` of them. The decoded group elements of a
-        slice and the rows built from them are held for one slice at a time, about 1.5 to 3.5 KB per decoded element
-        (measured): some 100 to 230 MB for a slice, whatever the size of the arrays, the number of clients and the
+        slice and the rows built from them are held for one slice at a time, about 1.5 to 3 KB per decoded element
+        (measured): some 100 to 200 MB for a slice, whatever the size of the arrays, the number of clients and the
         attributes, while one element fits the budget. A slice is never smaller than one element: once
         ``n (8 |S| + 5)`` exceeds ``2**16`` (``n`` of 127 or more at 64 attributes) a slice is one element, and the
         memory of the decoded elements grows with ``n |S|`` again. At ``n = 10``, ``|S| = 64`` and 40 elements (one

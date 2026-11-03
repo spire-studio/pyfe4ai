@@ -127,7 +127,10 @@ them:
   element: once ``n (8 |S| + 5)`` exceeds ``2**16`` (``n`` of 127 or more at 64
   attributes) it is one element, and the memory grows with ``n |S|`` again. A
   slice of few elements gives the threads few rows: 12 at ``n = 10`` and
-  ``|S| = 64``.
+  ``|S| = 64``. Eight threads still pay: on an ARM64 Mac the whole aggregation
+  of 40 elements with ``|S| = 64`` took 2.4, 13.4 and 20.1 s on eight threads
+  against 14.5, 72.7 and 92.0 s on one at ``n = 10``, 50 and 64, where a slice
+  holds 12, 2 and 1 elements.
   A charm group pairs the rows one after the other in the calling thread.
 * **State.** Nothing is kept between calls: a prepared set lives for one
   decryption and no object holds one, so none is part of the state of a crypto
