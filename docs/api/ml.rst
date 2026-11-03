@@ -114,7 +114,10 @@ change alike give ``FEKeyError`` or no value, never a wrong one (an attribute
 that no row of the policy reads can be renamed without effect, and the value is
 the right one, if it keeps its place in the sorted list; a list out of order is
 refused). A deployment that must know that ciphertexts belong to a round has
-each client sign or MAC the label together with the record, and checks that. An
+each client sign or MAC the label together with the record, and the decryptor
+verifies it before it decrypts. A MAC needs a key that each client shares with
+the decryptor and does not protect against the decryptor itself; a signature
+does. An
 item that has the
 type tag of a group element and is none is found when it is decoded. These
 are found, if at all, after the key is issued; the label is then tied to the

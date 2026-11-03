@@ -267,7 +267,10 @@ What none of the proofs covers, and what the schemes share:
   all of them, with no client taking part, and they decrypt, silently, to the
   value of the round in which they were made. This is a matter of integrity,
   not of confidentiality. A deployment that needs the claims checked has each
-  client sign or MAC the label together with the record. What a decryption
+  client sign or MAC the label together with the record, and the decryptor
+  verifies it before it decrypts. A MAC needs a key that each client shares
+  with the decryptor and does not protect against the decryptor itself; a
+  signature does, and anyone can verify it. What a decryption
   does and does not catch is on :doc:`api/ml` and in the module documentation.
 * **Unreviewed.** None of the four has had a cryptographic review, and none
   is constant-time (see above).
