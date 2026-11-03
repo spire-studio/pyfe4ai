@@ -529,7 +529,7 @@ preparation and will be added here once published):
   title   = {{PyFE4AI}: Python-based Functional Encryption
              for {AI} Security and Privacy},
   year    = {2026},
-  version = {0.4.0},
+  version = {0.5.0},
   license = {Apache-2.0},
   url     = {https://github.com/spire-studio/pyfe4ai}
 }
