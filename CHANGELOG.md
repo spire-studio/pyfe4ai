@@ -5,32 +5,256 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/) (pre-1.0: minor bumps may break
 compatibility).
 
-## [Unreleased]
+## [0.5.0] — unreleased
+
+**Highlights.** Attribute-based inner-product functional encryption over
+pairings: `sife/cp_ab_pairing`, `sife/kp_ab_pairing` and `mcfe/kp_ab_pairing`,
+reviewed against their papers, and `mcfe/kp_ab_pairing_per_client`, which is
+known-insecure (an attack on NPP22 Sec. 5.4, see Security); `pyfe4ai.policy`
+for monotone access policies and attribute labels; policy-gated aggregation in
+the ML adapter; BLS12-381 batches on several threads and products of pairings
+over prepared G2 points. There are now 46 registered schemes. PyFE4AI remains
+an experimental research prototype, not recommended for production use.
 
 ### Security
 
-- **`mcfe/kp_ab_pairing_per_client` is known-insecure: an attack on NPP22
-  Sec. 5.4.** In the construction of Nguyen, Phan and Pointcheval (ePrint
-  2022/215, revision of 2022-09-18) each client encrypts for an attribute set
-  of its own, and a fifth coordinate of the vectors `c_{i,ipfe}` and
-  `k_{i,ipfe}` is meant to stop the mix-and-match attack on keys of different
-  policies. Its contribution `theta_i d_{K,i}` depends on the client and the
-  key, not on the tag, so two keys of one `y` that open neither of two rounds,
-  where the set of each client satisfies one of the keys in both rounds, give
-  the difference of the two rounds' inner products `<x - x', y>`, one inner
-  product for each such pair of keys: with pairs for several `y` (the unit
-  vectors) the adversary has `x - x'` coordinate by coordinate, and the `x_i`
-  themselves when one round is known. The adversary encrypts under the
-  challenge tag and under a second tag, which Remark 10 and Fig. 2 allow, and
-  is admissible under Def. 9, since neither key opens either round; Thm. 25
-  (App. B.5) as stated fails. `mcfe/kp_ab_pairing` (Sec. 5.2, one attribute
-  set per tag) is not affected. The scheme is registered as *known-insecure*
-  for functionality and performance experiments and as the record of the
-  attack; `test_two_tags_and_two_keys_read_the_difference_of_two_rounds`
-  reproduces it, and `docs/security.rst` and `SECURITY.md` state it. The
-  fixed-tag MIFE variant of NPP22 (Remark 16) is not provided: it has one
-  ciphertext per slot, so this attack does not reach it, but its proof rests on
-  the same Thm. 25.
+- **`mcfe/kp_ab_pairing_per_client` is known-insecure: an attack on NPP22 Sec.
+  5.4.** In the construction of Nguyen, Phan and Pointcheval (ePrint 2022/215,
+  revision of 2022-09-18) each client encrypts for an attribute set of its
+  own, and a fifth coordinate of the vectors `c_{i,ipfe}` and `k_{i,ipfe}` is
+  meant to stop the mix-and-match attack on keys of different policies. Its
+  contribution `theta_i d_{K,i}` depends on the client and the key, not on the
+  tag, so two keys of one `y` that open neither of two rounds (two labels, or
+  two elements of one array), where the set of each client satisfies one of
+  the keys in both rounds, give the difference of the two rounds' inner
+  products `<x - x', y>`, one inner product for each such pair of keys: with
+  pairs for several `y` (the unit vectors) the adversary has `x - x'`
+  coordinate by coordinate, and the `x_i` themselves when one round is known.
+  The adversary encrypts under the challenge tag and under a second tag, which
+  Remark 10 and Fig. 2 allow, and is admissible under Def. 9, since neither
+  key opens either round; Thm. 25 (App. B.5, which only sketches its proof) as
+  stated fails. `mcfe/kp_ab_pairing` (Sec. 5.2, one attribute set per tag) is
+  not affected. The scheme is registered as *known-insecure* for functionality
+  and performance experiments and as the record of the attack;
+  `test_two_tags_and_two_keys_read_the_difference_of_two_rounds` reproduces
+  it, and `docs/security.rst` (*`mcfe/kp_ab_pairing_per_client`: an attack on
+  NPP22 Sec. 5.4*) and `SECURITY.md` state it. The fixed-tag MIFE variant of
+  NPP22 (Remark 16) is not provided: it has one ciphertext per slot, so this
+  attack does not reach it, but its proof rests on the same Thm. 25.
+- **`mcfe/kp_ab_pairing`: the label and the attributes of a ciphertext are
+  claims of its client, and a key opens every tag.** The `label` and the
+  `attributes_digest` of a ciphertext are claims of its client that the
+  decryption does not check against the points: the encryption key of a client
+  can check its own ciphertext and the master key all of them, an aggregator
+  that holds neither cannot. The decryption checks that the clients agree and
+  gives a `ValueError` (no discrete log) for one that hashed other points than
+  it says; a functional key opens its inner product under any tag, so whoever
+  holds the ciphertexts of a whole round, an aggregator with no key among
+  them, can write another label into all of them, and they decrypt to the
+  value of the round in which they were made (integrity, not confidentiality;
+  sign or MAC the label with the record where that matters: a MAC needs a key
+  that each client shares with the decryptor and does not protect against the
+  decryptor itself, a signature does). `docs/security.rst` and
+  `docs/api/ml.rst` say what a decryption does and does not catch.
+- **The time of `encrypt` in the attribute-based schemes hardly shows the
+  signs of the plaintext, and none of them is constant-time.** `encrypt` of
+  `sife/cp_ab_pairing`, `sife/kp_ab_pairing` and `mcfe/kp_ab_pairing` (which
+  `mcfe/kp_ab_pairing_per_client` takes over), and the online phase of the
+  offline / online encryption of `sife/cp_ab_pairing`, take `|x_i|` as the
+  exponent, on the inverse of `g1` for a negative `x_i`, so their time hardly
+  shows the signs of `x`. They are not constant-time: the sizes of the `x_i`
+  and the zeros still show (the online phase shows roughly how large the
+  coordinates are and how many are zero), one call per element in
+  `mcfe/kp_ab_pairing` (`docs/security.rst`, *Offline / online encryption* and
+  *Timing of `encrypt` in the key-policy schemes*).
+- **The three schemes are reviewed against their papers, and what the papers
+  prove is stated.** `sife/cp_ab_pairing`, `sife/kp_ab_pairing` and
+  `mcfe/kp_ab_pairing` have the status *reviewed* (checked against the cited
+  construction, no security defect known; not a security audit), with the
+  fidelity *adapted*, *faithful* and *faithful*. The security of
+  `sife/cp_ab_pairing` is selective, for one challenge ciphertext. The paper
+  of `sife/kp_ab_pairing` proves the version with the boxed components and
+  says the selective one, which the library implements, follows with similar
+  techniques. Ciphertexts of all three are malleable and not authenticated.
+  `docs/security.rst` lists what each paper proves and what none of the proofs
+  covers.
+
+### Added
+
+- **`pyfe4ai.policy`**, monotone access policies in pure Python (standard
+  library and `pyfe4ai.core.exceptions` only, Python integers). A policy is a
+  formula of attribute labels (`namespace:value`) built from `And`, `Or` and
+  `Threshold` nodes, written in a text syntax (`and(org:A, 2of(org:B, org:C,
+  role:auditor))`, `parse`) with a canonical encoding and a policy digest
+  (`canonical_encoding`, `policy_digest`). `Universe` fixes the labels of a
+  setup and the copies of each, `attribute_to_zq` hashes a label to `Z_q` and
+  `attribute_set_digest` hashes the set of labels of a key or a ciphertext,
+  whatever order and repeats it was written in.
+  `compile_formula` turns a formula into a monotone span program by nested
+  Shamir sharing with the Lewko-Waters rules, with its shares and its
+  reconstruction coefficients (`compile_zero_one` rewrites the formula so
+  that every coefficient is 0 or 1); `read_once_rows` gives each row that
+  carries a repeated label a copy of its own; `qualified_families` lists the
+  minimal qualified and the maximal unqualified sets of a short list of
+  holders and `q2_violation` checks the Q2 condition. A formula is at most
+  `MAX_DEPTH` gates deep and compiles to at most `DEFAULT_MAX_ROWS` rows by
+  default; invalid input raises `FEValidationError`.
+- **`sife/cp_ab_pairing`** (`SIFECPABPairing`, `SIFECPABPairingKeyGenerator`,
+  `SIFECPABPairingConfig`; status *reviewed*, checked against the paper):
+  ciphertext-policy attribute-based inner-product functional encryption over
+  pairings, after Abdalla, Catalano, Gay and Ursu (ASIACRYPT 2020), Sec. 3.1
+  Fig. 1 with the read-once span-program encoding of App. B.2 (`k = 1`).
+  `encrypt(x, policy=...)` encrypts under a policy; a functional key for a
+  vector `y` and a set of attribute labels opens `<x, y>` only if the labels
+  satisfy the policy. Options: `universe` (required), `max_copies` (default
+  4), `max_columns` (16) and `max_rows` (64). Rows of attributes outside the
+  policy are omitted from the ciphertext, a repeated attribute takes copies,
+  and the Decode of App. B.2 is used with the sign corrected (see the module
+  documentation). Ciphertexts and keys carry a digest of their public
+  parameters, which tells two setups apart and is not a signature. Its
+  security is selective (see Security). Like `sife/part_fh_ipe_pairing`, the
+  scheme has no ndarray helpers.
+- **Offline / online encryption of `sife/cp_ab_pairing`.**
+  `precompute(policy)` computes all of a future ciphertext but the plaintext
+  term, and `encrypt(x, precomputed=...)` multiplies that term in; with the
+  same randomness the ciphertext is the one of `encrypt`. The precomputation
+  opens its ciphertext without a key, so it is secret and one-time: a second
+  use, `copy`, `pickle` and use by another object or process are refused, and
+  only copying its attributes by hand gets past that. The time of the two
+  phases is under Security.
+- **`sife/kp_ab_pairing`** (`SIFEKPABPairing`, `SIFEKPABPairingKeyGenerator`,
+  `SIFEKPABPairingConfig`; status *reviewed*, checked against the paper):
+  key-policy attribute-based inner-product functional encryption over
+  pairings, after Nguyen, Phan and Pointcheval (ASIACRYPT 2022), Sec. 4 Fig. 1
+  without the boxed components (the selective version). The policy is in the
+  functional key (`credentials={"fusion_weight": y, "policy": ...}`) and the
+  attributes are in the ciphertext (`encrypt(x, attributes=...)`, any
+  collection of labels): a key opens `<x, y>` only if the labels satisfy its
+  policy. Options: `max_rows` (default 64, the rows of a policy's span
+  program) and `max_attributes` (64, the labels of a ciphertext); there is no
+  universe, a label has at most 1024 characters (`MAX_LABEL_CHARS`) and the
+  key generator refuses a policy with a longer one. A label is hashed to
+  `Z_q`, and `[y]_2` is computed by the decryptor and is not part of the key.
+  Decryption checks the version markers, the digest of the policy, every
+  length and every element of a ciphertext before it pairs anything, and
+  refuses attributes that do not satisfy the policy before any pairing.
+  Ciphertexts, keys and public parameters carry a digest of their public
+  parameters, which tells two setups apart and is not a signature. The scheme
+  has no ndarray helpers. What the paper proves of it, and the time of
+  `encrypt`, are under Security.
+- **`mcfe/kp_ab_pairing`** (`MCFEKPABPairing`, `MCFEKPABPairingKeyGenerator`,
+  `MCFEKPABPairingConfig`; status *reviewed*, checked against the paper):
+  multi-client key-policy attribute-based inner-product functional encryption
+  over pairings, after Nguyen, Phan and Pointcheval (ASIACRYPT 2022), Sec. 5.2
+  Fig. 3. Each client encrypts one scalar under a tag and a set of attribute
+  labels (`encrypt([x], label, attributes=...)`); a functional key for weights
+  `y` (a dict from every client to a list of one integer) and a policy
+  (`credentials={"fusion_weight": y, "policy": ...}`) opens `sum x_i y_i`
+  under any tag, if the attributes satisfy the policy. The tag is hashed to
+  `G1` (the random oracle of the paper; RFC 9380 under the domain separation
+  tag `PYFE4AI-V05-MCFE-KPAB-TAG`), all clients of a decryption use one tag
+  and one set of attributes, and the decryption needs the ciphertext of every
+  client, also of one with weight 0 (Remark 10). Options: `n` (required),
+  `lst_nid`, `bound_x` and `bound_y` (default 16), `max_rows` (64) and
+  `max_attributes` (64); `eta` is 1. A client must encrypt once under a tag,
+  which the scheme layer does not check, as with the other labelled schemes.
+  What a ciphertext claims, the keys that open every tag, and the time of
+  `encrypt` are under Security. The scheme has ndarray helpers
+  (`encrypt_lst_ndarray`, `decrypt_lst_ndarray_ct`, `check_ndarray_ct`), and
+  the ML adapter serves it (`encrypt_gradient(..., attributes=)`,
+  `aggregate_gradients(..., policy=)`).
+- **`mcfe/kp_ab_pairing_per_client`** (`MCFEKPABPairingPerClient`,
+  `MCFEKPABPairingPerClientKeyGenerator`, `MCFEKPABPairingPerClientConfig`;
+  status *known-insecure*): the version of `mcfe/kp_ab_pairing` in which each
+  client encrypts for a set of attributes of its own, after Nguyen, Phan and
+  Pointcheval (ASIACRYPT 2022), Sec. 5.4. The tag alone is hashed, so the
+  clients need not agree on the set; the bases `H_i` have a fifth dimension,
+  with `theta_i h_i,5` in the encryption key and a fifth coordinate `d_i` in
+  the functional key, drawn afresh for each key with `sum theta_i d_i = 0`.
+  Under one tag that stops the mix-and-match attack of two keys of different
+  policies (and the splice of any two keys, also of one function). It does not
+  stop the same attack across tags, and Theorem 25 of the paper, which App.
+  B.5 states for the construction and only sketches a proof of, fails as
+  stated (see Security). The scheme is kept for functionality and performance
+  experiments and as the record of the attack; its key generator and crypto
+  objects emit a `FESecurityWarning` that names the issue, and the `standard`
+  profile refuses it. The master key holds `h*_i,5` as well, which the paper's
+  list leaves out; each client has its own root `a_i,0` and shares in a key,
+  and `z` is shared. A decryption reconstructs with the attributes of each
+  client, and gives a `FEKeyError` that names the first client whose
+  attributes do not satisfy the policy, also one with weight 0. The options
+  and the public parameters are those of `mcfe/kp_ab_pairing`; the ciphertext
+  has no `attributes_digest`, `c_ipfe` and `k_ipfe` have five elements. The
+  ndarray helpers (`encrypt_lst_ndarray`, `decrypt_lst_ndarray_ct`,
+  `check_ndarray_ct`) take one set of attributes for each client for the whole
+  call, and the sets may differ between clients. A client must encrypt once
+  under a tag (two ciphertexts of one client under one tag give away the
+  difference of the plaintexts whatever their sets), which is necessary and,
+  as the attack shows, not enough. The ML adapter refuses the scheme (the
+  clients of one label may hold different sets, which it does not aggregate).
+- **`access_control` capability** (`pyfe4ai.CAPABILITIES`): the ciphertext
+  or the key carries an access policy or an attribute set (from
+  `pyfe4ai.policy`), and decryption succeeds only if the attributes satisfy
+  the policy, within the security proof of the scheme;
+  `pyfe4ai.list_schemes(capabilities="access_control")` lists
+  `sife/cp_ab_pairing`, `sife/kp_ab_pairing`, `mcfe/kp_ab_pairing` and
+  `mcfe/kp_ab_pairing_per_client`. There are now 46 registered schemes.
+- **Policy-gated aggregation in the ML adapter.** For `mcfe/kp_ab_pairing`,
+  `encrypt_gradient(..., attributes=...)` encrypts a client's gradient for a
+  set of attributes and `aggregate_gradients(..., policy=...)` (and
+  `prepare_aggregation`) issues the key for a policy and releases the sum only
+  if the attributes of the round satisfy it (`FEKeyError` otherwise).
+  `FESchemeWrapper.access_control` says whether a scheme takes them, and
+  `PreparedAggregation.policy` holds the canonical encoding of the policy.
+  Before a key is issued and before any pairing the adapter has the scheme
+  check the ciphertexts (`ValueError` naming the layer, the element or the
+  client), and it refuses a missing client and `allow_partial=True`. It warns
+  (`FEWarning`) of more than 1000 elements, with the time it estimates, and of
+  a discrete-logarithm bound `n * bound_x * bound_y` above `2**26`.
+  `mcfe/kp_ab_pairing_per_client` is refused (`NotImplementedError`). See
+  `docs/api/ml.rst` for what the checks cannot see (the `label` and the
+  attributes of a ciphertext are the client's claims).
+- **`pyfe4ai.primitives.pairing.dpvs`**: dual pairing vector spaces over an
+  asymmetric pairing group (dual bases `B`, `B*` with `B B*^T = mu I`, vectors
+  of group elements, scalar combinations and the coordinate-wise pairing),
+  factored out of `mife/fh_multi_ipe_pairing` as a shared module.
+  `dpvs.encode` builds the vector `generator ** (sum_i c_i B_i)` from the
+  exponents with one batch of powers, and `dpvs.combine` computes all the
+  coordinates of its vector in one `multiexp_many` call; the vectors are the
+  same.
+- **Hash to G1 under a domain separation tag.** `PairingGroup.hash(msg, kind,
+  dst=...)` of BLS12-381 takes the tag of RFC 9380 (1 to 255 bytes), and
+  `pairing_backend.hash_to_g1(group, msg, dst)` does the same on every group:
+  the RFC 9380 suite `BLS12381G1_XMD:SHA-256_SSWU_RO_` on BLS12-381, and on a
+  charm group, which has no tag, the tag, a bar and the message as one string
+  (refused if the tag has a bar or a NUL byte, or the message a NUL byte).
+- **Threads over BLS12-381 batches.** `set_threads` (`PYFE4AI_THREADS`, default
+  one) now also applies to `PairingGroup.deserialize_many` and to the new
+  `PairingGroup.serialize_many`, `bls12_381.msm_many` and, for every pairing
+  group, `pairing_backend.multiexp_many` and `pairing_backend.serialize_many`,
+  and to the Miller loops of `multi_pair` and to `prepare_g2` and
+  `multi_pair_prepared` (below). A batch below 16 items stays on one thread
+  (`multi_pair_prepared` takes its rows on up to the set number of threads
+  however few they are), and the result does not depend on the number of
+  threads.
+- **Faster BLS12-381 kernels.** `serialize_many` inverts once per group instead
+  of once per point (the bytes are the same), and one power in G2 uses the
+  endomorphism of the curve as four 64-bit terms, about a quarter faster.
+- **Products of pairings over prepared G2 points.** `prepare_g2(points)` stores
+  the lines of the Miller loops of fixed G2 points, and
+  `multi_pair_prepared(rows, prepared)` takes one product of pairings per row of
+  G1 elements over them, one final exponentiation per row, with the results of
+  `multi_pair` for each row, in `bls12_381` and `pairing_backend` (on a charm
+  group `prepare_g2` returns the points and the rows are paired one by one). The
+  lines are scaled to a first coefficient of 1, which the final exponentiation
+  removes, unless a line has 0 there. A prepared set is opaque, with no text
+  form: it comes from a functional key. The native functions are
+  `bls_prepare_g2` and `bls_multi_pair_prepared` (`PreparedG2`). The aggregation
+  of 10 clients, 1000 elements each, a policy of three attributes and a discrete
+  logarithm over 2^24 (`mcfe/kp_ab_pairing`, `decrypt_lst_ndarray_ct`, medians
+  of five rounds) takes 49.5 s on one thread and 8.0 s on eight, of which the
+  pairings are 30.1 s and 4.1 s; with the lines kept as they are computed, not
+  scaled to a first coefficient of 1, it takes 59.4 s and 9.3 s.
 
 ### Changed
 
@@ -69,211 +293,6 @@ compatibility).
   whose layer or index is not made of integers raises `FEValidationError` too,
   where it raised `ValueError` or `TypeError`.
 
-### Added
-
-- **`pyfe4ai.policy`**, monotone access policies in pure Python (standard
-  library and `pyfe4ai.core.exceptions` only, Python integers). A policy is a
-  formula of attribute labels (`namespace:value`) built from `And`, `Or` and
-  `Threshold` nodes, written in a text syntax (`and(org:A, 2of(org:B, org:C,
-  role:auditor))`, `parse`) with a canonical encoding and a policy digest
-  (`canonical_encoding`, `policy_digest`). `Universe` fixes the labels of a
-  setup and the copies of each, `attribute_to_zq` hashes a label to `Z_q` and
-  `attribute_set_digest` hashes the set of labels of a key or a ciphertext,
-  whatever order and repeats it was written in.
-  `compile_formula` turns a formula into a monotone span program by nested
-  Shamir sharing with the Lewko-Waters rules, with its shares and its
-  reconstruction coefficients (`compile_zero_one` rewrites the formula so
-  that every coefficient is 0 or 1); `read_once_rows` gives each row that
-  carries a repeated label a copy of its own; `qualified_families` lists the
-  minimal qualified and the maximal unqualified sets of a short list of
-  holders and `q2_violation` checks the Q2 condition. A formula is at most
-  `MAX_DEPTH` gates deep and compiles to at most `DEFAULT_MAX_ROWS` rows by
-  default; invalid input raises `FEValidationError`.
-- **Threads over BLS12-381 batches.** `set_threads` (`PYFE4AI_THREADS`, default
-  one) now also applies to `PairingGroup.deserialize_many` and to the new
-  `PairingGroup.serialize_many`, `bls12_381.msm_many` and, for every pairing
-  group, `pairing_backend.multiexp_many` and `pairing_backend.serialize_many`,
-  and to the Miller loops of `multi_pair` and to `prepare_g2` and
-  `multi_pair_prepared` (below). A batch below 16 items stays on one thread
-  (`multi_pair_prepared` takes its rows on up to the set number of threads
-  however few they are), and the result does not depend on the number of
-  threads.
-- **Faster BLS12-381 kernels.** `serialize_many` inverts once per group instead
-  of once per point (the bytes are the same), and one power in G2 uses the
-  endomorphism of the curve as four 64-bit terms, about a quarter faster.
-- **Products of pairings over prepared G2 points.** `prepare_g2(points)` stores
-  the lines of the Miller loops of fixed G2 points, and
-  `multi_pair_prepared(rows, prepared)` takes one product of pairings per row of
-  G1 elements over them, one final exponentiation per row, with the results of
-  `multi_pair` for each row, in `bls12_381` and `pairing_backend` (on a charm
-  group `prepare_g2` returns the points and the rows are paired one by one). The
-  lines are scaled to a first coefficient of 1, which the final exponentiation
-  removes, unless a line has 0 there. A prepared set is opaque, with no text
-  form: it comes from a functional key. The native functions are
-  `bls_prepare_g2` and `bls_multi_pair_prepared` (`PreparedG2`). The aggregation
-  of 10 clients, 1000 elements each, a policy of three attributes and a discrete
-  logarithm over 2^24 (`mcfe/kp_ab_pairing`, `decrypt_lst_ndarray_ct`, medians
-  of five rounds) takes 49.5 s on one thread and 8.0 s on eight, of which the
-  pairings are 30.1 s and 4.1 s; with the lines kept as they are computed, not
-  scaled to a first coefficient of 1, it takes 59.4 s and 9.3 s.
-- **Hash to G1 under a domain separation tag.** `PairingGroup.hash(msg, kind,
-  dst=...)` of BLS12-381 takes the tag of RFC 9380 (1 to 255 bytes), and
-  `pairing_backend.hash_to_g1(group, msg, dst)` does the same on every group:
-  the RFC 9380 suite `BLS12381G1_XMD:SHA-256_SSWU_RO_` on BLS12-381, and on a
-  charm group, which has no tag, the tag, a bar and the message as one string
-  (refused if the tag has a bar or a NUL byte, or the message a NUL byte).
-- **`dpvs.encode`** builds the vector `generator ** (sum_i c_i B_i)` from the
-  exponents with one batch of powers, and `dpvs.combine` computes all the
-  coordinates of its vector in one `multiexp_many` call; the vectors are the
-  same.
-- **Policy-gated aggregation in the ML adapter.** For `mcfe/kp_ab_pairing`,
-  `encrypt_gradient(..., attributes=...)` encrypts a client's gradient for a
-  set of attributes and `aggregate_gradients(..., policy=...)` (and
-  `prepare_aggregation`) issues the key for a policy and releases the sum only
-  if the attributes of the round satisfy it (`FEKeyError` otherwise).
-  `FESchemeWrapper.access_control` says whether a scheme takes them, and
-  `PreparedAggregation.policy` holds the canonical encoding of the policy.
-  Before a key is issued and before any pairing the adapter has the scheme
-  check the ciphertexts (`ValueError` naming the layer, the element or the
-  client), and it refuses a missing client and `allow_partial=True`. It warns
-  (`FEWarning`) of more than 1000 elements, with the time it estimates, and of
-  a discrete-logarithm bound `n * bound_x * bound_y` above `2**26`.
-  `mcfe/kp_ab_pairing_per_client` is refused (`NotImplementedError`). See
-  `docs/api/ml.rst` for what the checks cannot see (the `label` and the
-  attributes of a ciphertext are the client's claims).
-- **Offline / online encryption of `sife/cp_ab_pairing`.**
-  `precompute(policy)` computes all of a future ciphertext but the plaintext
-  term, and `encrypt(x, precomputed=...)` multiplies that term in; with the
-  same randomness the ciphertext is the one of `encrypt`. The precomputation
-  opens its ciphertext without a key, so it is secret and one-time: a second
-  use, `copy`, `pickle` and use by another object or process are refused, and
-  only copying its attributes by hand gets past that. Neither path is
-  constant-time: `encrypt` and the online phase both take `|x_i|` as the
-  exponent, so their time hardly shows the signs of `x`, but the online phase
-  shows roughly how large the coordinates are and how many are zero
-  (`docs/security.rst`).
-- **`sife/cp_ab_pairing`** (`SIFECPABPairing`, `SIFECPABPairingKeyGenerator`,
-  `SIFECPABPairingConfig`; status *unreviewed*, it has had no cryptographic
-  review): ciphertext-policy attribute-based inner-product functional
-  encryption over pairings, after Abdalla, Catalano, Gay and Ursu (ASIACRYPT
-  2020), Sec. 3.1 Fig. 1 with the read-once span-program encoding of App. B.2
-  (`k = 1`). `encrypt(x, policy=...)` encrypts under a policy; a functional
-  key for a vector `y` and a set of attribute labels opens `<x, y>` only if
-  the labels satisfy the policy. Options: `universe` (required),
-  `max_copies` (default 4), `max_columns` (16) and `max_rows` (64). Rows of
-  attributes outside the policy are omitted from the ciphertext, a repeated
-  attribute takes copies, and the Decode of App. B.2 is used with the sign
-  corrected (see the module documentation). Ciphertexts and keys carry a
-  digest of their public parameters, which tells two setups apart and is not
-  a signature. The security is selective, for one challenge ciphertext, and
-  ciphertexts are malleable and not authenticated. Like
-  `sife/part_fh_ipe_pairing`, the scheme has no ndarray helpers.
-- **`sife/kp_ab_pairing`** (`SIFEKPABPairing`, `SIFEKPABPairingKeyGenerator`,
-  `SIFEKPABPairingConfig`; status *unreviewed*, it has had no cryptographic
-  review): key-policy attribute-based inner-product functional encryption
-  over pairings, after Nguyen, Phan and Pointcheval (ASIACRYPT 2022), Sec. 4
-  Fig. 1 without the boxed components (the selective version). The policy is
-  in the functional key (`credentials={"fusion_weight": y, "policy": ...}`)
-  and the attributes are in the ciphertext (`encrypt(x, attributes=...)`, any
-  collection of labels): a key opens `<x, y>` only if the labels satisfy its
-  policy. Options: `max_rows` (default 64, the rows of a policy's span
-  program) and `max_attributes` (64, the labels of a ciphertext); there is no
-  universe, a label has at most 1024 characters (`MAX_LABEL_CHARS`) and
-  the key generator refuses a policy with a longer one. A label is hashed to
-  `Z_q`, and `[y]_2` is computed by the decryptor and is not part of the key.
-  Decryption checks the version markers, the digest of the policy, every
-  length and every element of a ciphertext before it pairs anything, and
-  refuses attributes that do not satisfy the policy before any pairing.
-  Ciphertexts, keys and public parameters carry a digest of their public
-  parameters, which tells two setups apart and is not a signature. The paper
-  proves the version with the boxed components and says the selective one
-  follows with similar techniques; ciphertexts are malleable and not
-  authenticated. The scheme has no ndarray helpers. `encrypt` takes `|x_i|` as
-  the exponent, on the inverse of `g1` for a negative `x_i`, as that of
-  `sife/cp_ab_pairing` does, so its time hardly shows the signs of `x`; it is
-  not constant-time, and the sizes of the `x_i` and the zeros still show
-  (`docs/security.rst`).
-- **`mcfe/kp_ab_pairing`** (`MCFEKPABPairing`, `MCFEKPABPairingKeyGenerator`,
-  `MCFEKPABPairingConfig`; status *unreviewed*, it has had no cryptographic
-  review): multi-client key-policy attribute-based inner-product functional
-  encryption over pairings, after Nguyen, Phan and Pointcheval (ASIACRYPT
-  2022), Sec. 5.2 Fig. 3. Each client encrypts one scalar under a tag and a set
-  of attribute labels (`encrypt([x], label, attributes=...)`); a functional key
-  for weights `y` (a dict from every client to a list of one integer) and a
-  policy (`credentials={"fusion_weight": y, "policy": ...}`) opens `sum x_i y_i`
-  under any tag, if the attributes satisfy the policy. The tag is hashed to `G1`
-  (the random oracle of the paper; RFC 9380 under the domain separation tag
-  `PYFE4AI-V05-MCFE-KPAB-TAG`), all clients of a decryption use one tag and one
-  set of attributes, and the decryption needs the ciphertext of every client,
-  also of one with weight 0 (Remark 10). Options: `n` (required), `lst_nid`,
-  `bound_x` and `bound_y` (default 16), `max_rows` (64) and `max_attributes`
-  (64); `eta` is 1. A client must encrypt once under a tag, which the scheme
-  layer does not check, as with the other labelled schemes. The `label` and the
-  `attributes_digest` of a ciphertext are claims of its client that the
-  decryption does not check against the points: the encryption key of a client
-  can check its own ciphertext and the master key all of them, an aggregator
-  that holds neither cannot. The decryption checks that the clients agree and
-  gives a `ValueError` (no discrete log) for one that hashed other points than
-  it says; whoever holds the ciphertexts of a whole round can write another
-  label into all of them, and they decrypt to the value of the round in which
-  they were made (integrity, not confidentiality; sign or MAC the label with
-  the record where that matters). Ciphertexts are malleable and not
-  authenticated. The scheme has ndarray
-  helpers (`encrypt_lst_ndarray`, `decrypt_lst_ndarray_ct`, `check_ndarray_ct`),
-  and the ML adapter serves it (`encrypt_gradient(..., attributes=)`,
-  `aggregate_gradients(..., policy=)`). `encrypt` takes `|x|` as the exponent,
-  on the inverse of `g1` for a negative `x`, so its time hardly shows the sign;
-  it is not constant-time, and the size of `x` and a zero still show, one call
-  per element.
-- **`mcfe/kp_ab_pairing_per_client`** (`MCFEKPABPairingPerClient`,
-  `MCFEKPABPairingPerClientKeyGenerator`, `MCFEKPABPairingPerClientConfig`;
-  status *known-insecure*): the version of `mcfe/kp_ab_pairing` in which each
-  client encrypts for a set of attributes of its own, after Nguyen, Phan and
-  Pointcheval (ASIACRYPT 2022), Sec. 5.4. The tag alone is hashed, so the
-  clients need not agree on the set; the bases `H_i` have a fifth dimension,
-  with `theta_i h_i,5` in the encryption key and a fifth coordinate `d_i` in
-  the functional key, drawn afresh for each key with `sum theta_i d_i = 0`.
-  Under one tag that stops the mix-and-match attack of two keys of different
-  policies (and the splice of any two keys, also of one function). It does not
-  stop the same attack across tags: `theta_i d_i` depends on the key and the
-  client, not on the tag, so two keys of one `y`, each given to the clients
-  whose set it satisfies and neither opening either of two rounds (two labels,
-  or two elements of one array), where the set of each client satisfies one of
-  the keys in both rounds, give the difference of the two rounds' inner
-  products.
-  App. B.5 of the paper states Theorem 25 for the construction and sketches
-  its proof; Remark 10 and the game of Fig. 2 let the adversary above encrypt
-  under a second tag and Def. 9 calls it admissible, so Theorem 25 as stated
-  fails
-  (`test_two_tags_and_two_keys_read_the_difference_of_two_rounds`). The scheme
-  is kept for functionality and performance experiments and as the record of the
-  attack; its key generator and crypto objects emit a `FESecurityWarning` that
-  names the issue, and the `standard` profile refuses it. The master key holds
-  `h*_i,5` as well, which the paper's list leaves out; each client has its own
-  root `a_i,0` and shares in a key, and `z` is shared. A decryption reconstructs
-  with the attributes of each client, and gives a `FEKeyError` that names the
-  first client whose attributes do not satisfy the policy, also one with weight
-  0. The options and the public parameters are those of `mcfe/kp_ab_pairing`;
-  the ciphertext has no `attributes_digest`, `c_ipfe` and `k_ipfe` have five
-  elements. The ndarray helpers (`encrypt_lst_ndarray`, `decrypt_lst_ndarray_ct`,
-  `check_ndarray_ct`) take one set of attributes for each client for the whole
-  call, and the sets may differ between clients. A client must encrypt once
-  under a tag (two ciphertexts of one client under one tag give away the
-  difference of the plaintexts whatever their sets), which is necessary and, as
-  the attack shows, not enough. The ML adapter refuses the scheme (the clients
-  of one label may hold different sets, which it does not aggregate).
-- **`pyfe4ai.primitives.pairing.dpvs`**: dual pairing vector spaces over an
-  asymmetric pairing group (dual bases `B`, `B*` with `B B*^T = mu I`, vectors
-  of group elements, scalar combinations and the coordinate-wise pairing),
-  factored out of `mife/fh_multi_ipe_pairing` as a shared module.
-- **`access_control` capability** (`pyfe4ai.CAPABILITIES`): the ciphertext
-  or the key carries an access policy or an attribute set (from
-  `pyfe4ai.policy`), and decryption succeeds only if the attributes satisfy
-  the policy, within the security proof of the scheme;
-  `pyfe4ai.list_schemes(capabilities="access_control")` lists
-  `sife/cp_ab_pairing`, `sife/kp_ab_pairing`, `mcfe/kp_ab_pairing` and
-  `mcfe/kp_ab_pairing_per_client`. There are now 46 registered schemes.
-
 ### Fixed
 
 - **A refused key no longer ties the label of a round in the ML adapter.**
@@ -285,6 +304,57 @@ compatibility).
   with other weights was refused (`ValueError`, already aggregated with other
   weights). The label is now tied once the key is issued; other weights are
   still refused before a key is issued for them.
+
+### Known issues
+
+- **`mcfe/kp_ab_pairing_per_client` stays known-insecure.** No repair is
+  implemented, and the fixed-tag MIFE variant of NPP22 (Remark 16) is not
+  provided (see Security). The scheme is for functionality and performance
+  experiments; the `standard` profile refuses it and the ML adapter does not
+  take it.
+- **Charm groups other than BLS12-381.** The keys and public parameters of the
+  groups that charm provides (MNT224, BN254, ...) must come from a trusted
+  source: its deserializer may hang on a malformed G2 string, and it accepts
+  junk under a valid type tag. The attribute-based schemes hold only G1
+  elements in their ciphertexts, refuse any other type tag before charm reads
+  a string, and refuse a string that is not the one its element serialises to.
+  charm ignores bytes after an element, and strings cut short have decoded to
+  the honest element, which suggests that it reads past the end of its buffer;
+  that check runs after the read, and the other pairing schemes do not make
+  it. A charm group has no domain separation tag either: there the key-policy
+  MCFE schemes hash a tag to G1 by hashing the domain separation tag, a bar
+  and the message as one C string, and only on BLS12-381 is that hash the RFC
+  9380 one that the schemes' random-oracle argument takes. Prefer BLS12-381
+  for ciphertexts from parties you do not trust.
+- **No side-channel hardening.** No scheme is hardened against side channels,
+  and the exponentiations of the pairing schemes are not constant-time; for
+  `encrypt` of the attribute-based schemes see Security.
+- **`mcfe/kp_ab_pairing` is for small vectors and statistics.** Every element
+  is a ciphertext of its own, and the aggregator pairs several group elements
+  per client and element, so it suits aggregates of up to about 10^3 elements,
+  not the gradients of a large model (`docs/choosing.rst`). The ML adapter
+  warns (`FEWarning`) of more than 1000 elements and of a discrete-logarithm
+  bound above `2**26`. A decryption needs the ciphertexts of all `n` clients,
+  also of one whose weight is 0 (NPP22 Remark 10; the library has no
+  all-or-nothing layer).
+- **One ciphertext per client and tag.** A client must encrypt once under a
+  tag: two ciphertexts of one client under one tag have the same hash points
+  and give away the difference of the two plaintexts. The scheme classes do
+  not check it, as with the other labelled schemes; the ML adapter reserves
+  each `(client, label)` pair.
+- **Policies, attributes and keys.** A functional key carries its policy
+  (key-policy) or its list of attributes (ciphertext-policy) in the clear, and
+  a ciphertext carries its list of attributes or its policy: none of the
+  attribute-based schemes hides them. Keys are trusted input: the `pp_binding`
+  of a key, a ciphertext or a record is a digest of the public parameters,
+  which tells the objects of two setups apart and is not a signature.
+- **A race between two calls of the ML adapter under one label.** Of two calls
+  that pass the check at once with other weights for one label, the first to
+  tie it keeps the label and the other is refused (`ValueError`) only after it
+  has obtained its key; in the threshold MCFE that the wrapper runs, the
+  losing call has already obtained key shares from the servers (its weight key
+  share is added to the wrapper's server objects), and these shares never
+  reach the caller.
 
 ## [0.4.0] — 2026-10-26
 
@@ -2053,6 +2123,7 @@ before using them.
 
 Initial public release.
 
+[0.5.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.1.0...v0.2.0
