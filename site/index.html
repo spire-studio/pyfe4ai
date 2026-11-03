@@ -1052,7 +1052,8 @@ scheme = pyfe4ai.<span class="fn">get_scheme</span>(<span class="st">"mcfe/ring_
           <p>Aims at 128-bit security: 3072-bit discrete-log groups (RFC 3526) and DCR moduli, lattice-estimator-sized LWE and Ring-LWE dimensions, <code>stat_param</code> 128. Pairings run on BLS12-381, about 120–126-bit (a <code>FESecurityWarning</code> says so).</p>
         </div>
         <p class="refused">Refused under <code>standard</code> — no parameter set both secure and usable:
-          <code>sife/fullysec_lwe</code> <code>mife/fullysec_lwe</code> <code>mife/lwe_threshold</code> <code>mcfe/paillier_decentralized</code></p>
+          <code>sife/fullysec_lwe</code> <code>mife/fullysec_lwe</code> <code>mife/lwe_threshold</code> <code>mcfe/paillier_decentralized</code>;
+          and, as the known-insecure scheme, <code>mcfe/kp_ab_pairing_per_client</code></p>
       </article>
       <article class="card reveal">
         <h3>Trust model</h3>
