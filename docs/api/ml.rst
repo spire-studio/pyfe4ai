@@ -160,7 +160,7 @@ and element. With 10 clients, 10^3 elements and ciphertexts for three
 attributes the aggregation takes about 50 s on one thread and about 8 s on eight, and a
 client uploads about 2.4 KB per element as JSON. For comparison, the
 Ring-LWE MCFE of the ``fl_aggregation_10k`` benchmark (10^4 elements,
-``standard`` profile) takes the client 22.2 ms and the aggregator 10.4 ms, at
+``standard`` profile) takes the client 21.9 ms and the aggregator 10.4 ms, at
 25.9 B per element in the compact encoding (:doc:`/choosing`). The adapter
 warns (:class:`~pyfe4ai.core.exceptions.FEWarning`) of an aggregation of more
 than 1000 elements, with the time it estimates, and of a discrete-logarithm

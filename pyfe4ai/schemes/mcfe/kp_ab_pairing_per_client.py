@@ -9,13 +9,15 @@ each client
   attribute labels (:mod:`pyfe4ai.policy`); a functional key for a weight vector ``y`` and a policy opens ``<x, y>``
   when the set of every client satisfies the policy
 * setting:  asymmetric pairing group (default BLS12-381), random oracle (the hash of the tag to ``G1``)
-* status:   **known-insecure**. App. B.5 of the paper states Theorem 25 for this construction and sketches its proof
-  as changes to that of Thm. 14. Thm. 25 as stated fails: two keys of one ``y`` that open neither of two rounds (two
-  tags), where the set of each client satisfies one of the keys in both rounds, give the difference of the two rounds'
-  inner products (see "The attack that the fifth coordinate does not stop" below). The scheme is kept for
-  functionality and performance experiments and as the record of that attack. Its key generator and crypto objects
-  emit a ``FESecurityWarning`` that names the issue, and the ``standard`` security profile refuses it
-  (``FEValidationError``, as for any refused scheme). The implementation has had no review.
+* status:   **known-insecure**. App. B.5 of the paper states Theorem 25 for this construction and sketches its proof as
+  changes to that of Thm. 14. Thm. 25 as stated fails: two keys of one ``y`` that open neither of two rounds (two tags),
+  where the set of each client satisfies one of the keys in both rounds, give the difference of the two rounds' inner
+  products (see "The attack that the fifth coordinate does not stop" below). The scheme is kept for functionality and
+  performance experiments and as the record of that attack. Its key generator and crypto objects emit a
+  ``FESecurityWarning`` that names the issue, and the ``standard`` security profile refuses it (``FEValidationError``,
+  as for any refused scheme). A crypto review of the 0.5 code confirmed the attack, on the algebra and on this
+  implementation, and that the warning and the refusal take effect at every entry point; the implementation was not
+  reviewed beyond that.
 
 Sec. 5.2 hashes ``(tag, S)``, so all clients must agree on the set of attributes at the time of encryption. Sec. 5.4
 hashes the tag only (``[omega]_1, [omega']_1 = H(tag)``) and lets each client ``i`` encrypt for a set ``S_i`` of its

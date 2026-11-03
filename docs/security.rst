@@ -403,7 +403,7 @@ moved either by less than the noise of one measurement. The plaintext is all the
 online phase works on: one measurement of it still tells roughly how large the
 ``x_i`` are and how many of them are zero, and its table reads depend on ``x``.
 ``encrypt`` depends on ``x`` as well, but the term of the random ``s`` takes
-about nine tenths of its time and adds noise of its own. So one timed call shows
+about 95 percent of its time and adds noise of its own. So one timed call shows
 the sizes and the zeros better on the online phase, and the signs hardly on
 either.
 
