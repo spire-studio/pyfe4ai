@@ -385,6 +385,13 @@ The fixed-tag MIFE variant of NPP22 (Remark 16) is not provided. It has one
 ciphertext per slot, so this attack does not reach it, but its proof rests on
 the same Thm. 25.
 
+*Which version of the paper.* Thm. 25 and App. B.5 are in the full version
+(ePrint 2022/215, revision of 2022-09-18), which the statements above cite. The
+ASIACRYPT 2022 proceedings version prints the same construction in Sec. 5.4,
+with Remark 16, and no theorem: it says that the proof follows from that of
+Thm. 14 with few changes and leaves the sketch to the full version. The attack
+applies to the construction as printed in both.
+
 Offline / online encryption
 ---------------------------
 

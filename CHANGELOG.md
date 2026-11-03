@@ -40,7 +40,9 @@ an experimental research prototype, not recommended for production use.
   it, and `docs/security.rst` (*`mcfe/kp_ab_pairing_per_client`: an attack on
   NPP22 Sec. 5.4*) and `SECURITY.md` state it. The fixed-tag MIFE variant of
   NPP22 (Remark 16) is not provided: it has one ciphertext per slot, so this
-  attack does not reach it, but its proof rests on the same Thm. 25.
+  attack does not reach it, but its proof rests on the same Thm. 25. The
+  ASIACRYPT 2022 proceedings version prints the same construction in Sec. 5.4
+  without a theorem and leaves its proof to the full version.
 - **`mcfe/kp_ab_pairing`: the label and the attributes of a ciphertext are
   claims of its client, and a key opens every tag.** The `label` and the
   `attributes_digest` of a ciphertext are claims of its client that the
