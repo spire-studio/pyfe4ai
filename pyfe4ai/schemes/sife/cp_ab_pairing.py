@@ -60,8 +60,8 @@ The policy of a ciphertext (``ct["policy"]``) and
 the attribute list of a key (``dk["attributes"]``) are public: they travel in
 the clear and hide nothing. Keys are trusted input to ``decrypt``: the
 ``pp_binding`` of a key tells the objects of two setups apart and is not a
-signature. This implementation is unreviewed: it has had no cryptographic
-review yet.
+signature. The registry status is ``reviewed``: the implementation was checked against the cited construction and no
+security defect is known. That is not a security audit, and the limits above stand.
 
 Deviations:
 

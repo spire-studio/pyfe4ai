@@ -157,8 +157,7 @@ Every scheme carries a review status (the full table is on
 its security argument is the project's own (the threshold layers of
 tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE and tMCFE-FH-Multi-IPE, and the carry
 mask of dMCFE-DDH); *unreviewed* -- not yet checked (the three
-``ddh_ristretto255`` schemes and the attribute-based ``sife/cp_ab_pairing``,
-``sife/kp_ab_pairing`` and ``mcfe/kp_ab_pairing``); *known-insecure* -- a
+``ddh_ristretto255`` schemes); *known-insecure* -- a
 concrete privacy defect is known: ``mcfe/kp_ab_pairing_per_client``, the
 version of ``mcfe/kp_ab_pairing`` in which each client has an attribute set of
 its own (NPP22 Sec. 5.4). Its fifth coordinate does not depend on the tag, so
@@ -210,17 +209,17 @@ Which scheme for which task
        not post-quantum)
    * - Decrypt only for keys whose attributes satisfy an access policy
        chosen at encryption
-     - ``sife/cp_ab_pairing`` (unreviewed; selective security for one
+     - ``sife/cp_ab_pairing`` (selective security for one
        challenge ciphertext, and ciphertexts are malleable, so authenticate
        them where tampering matters; policies of ``and``, ``or`` and
        threshold gates over attribute labels, see :doc:`api/policy`)
    * - Give a key a policy that decides which ciphertexts it opens, for one
        encryptor and without a secret encryption key
-     - ``sife/kp_ab_pairing`` (unreviewed; selective version; any label,
+     - ``sife/kp_ab_pairing`` (selective version; any label,
        no universe)
    * - Release the sum of small vectors or statistics only for a key whose
        policy the clients' attributes satisfy
-     - ``mcfe/kp_ab_pairing`` (unreviewed; one set of attributes for all
+     - ``mcfe/kp_ab_pairing`` (one set of attributes for all
        clients of a label; through :mod:`pyfe4ai.ml` with ``attributes=`` and
        ``policy=``, see :doc:`api/ml`)
 
@@ -278,9 +277,9 @@ proofs go (:doc:`security`).
      - adaptive, random-oracle model (NPP22 Thm. 14, Cor. 15)
      - Thm. 25 fails as stated
    * - Status
-     - unreviewed
-     - unreviewed
-     - unreviewed
+     - reviewed
+     - reviewed
+     - reviewed
      - known-insecure
 
 *Ciphertext-policy or key-policy.* Take ``sife/cp_ab_pairing`` when the party
@@ -324,10 +323,10 @@ means no result. The ML adapter aggregates through it with a policy
 different sets, and is *known-insecure*: it is not a choice for protecting
 data.
 
-All four are *unreviewed* (the last one known-insecure), ciphertexts are
-malleable and carry their policy or attributes in the clear, and none is
-constant-time: :doc:`security` lists what each paper proves and what it does
-not.
+The first three are *reviewed* (checked against their papers) and the last one
+is *known-insecure*. Ciphertexts are malleable and carry their policy or
+attributes in the clear, and none is constant-time: :doc:`security` lists what
+each paper proves and what it does not.
 
 The registered schemes
 ----------------------

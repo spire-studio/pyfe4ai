@@ -27,8 +27,9 @@ Responsible reporting of security issues is appreciated, especially for:
   (`pyfe4ai.get_scheme_status(family, variant)`, README *Scheme Status*):
   four threshold layers and the dMCFE-DDH carry mask are our own constructions
   (*experimental*, no published proof), and the DDH schemes over ristretto255
-  and the attribute-based `sife/cp_ab_pairing`, `sife/kp_ab_pairing` and
-  `mcfe/kp_ab_pairing` are not yet reviewed. One scheme,
+  are not yet reviewed. The attribute-based `sife/cp_ab_pairing`,
+  `sife/kp_ab_pairing` and `mcfe/kp_ab_pairing` were checked against their
+  papers (*reviewed*, which is not a security audit). One scheme,
   `mcfe/kp_ab_pairing_per_client` (the version of `mcfe/kp_ab_pairing` in which
   each client has an attribute set of its own, NPP22 Sec. 5.4), is
   *known-insecure*: its key generator and crypto objects emit a

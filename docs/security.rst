@@ -183,8 +183,9 @@ In ``sife/cp_ab_pairing`` the policy is in the ciphertext and the attributes
 are in the key (ciphertext-policy); in ``sife/kp_ab_pairing``,
 ``mcfe/kp_ab_pairing`` and ``mcfe/kp_ab_pairing_per_client`` the policy is in
 the key and the attributes are in the ciphertext (key-policy). All run over
-pairings, none has had a cryptographic review, and the last one is
-known-insecure (below). The constructions are those of Abdalla, Catalano, Gay
+pairings. The first three were checked against their papers (status *reviewed*:
+checked against the cited construction, no security defect known; it is not a
+security audit) and the last one is known-insecure (below). The constructions are those of Abdalla, Catalano, Gay
 and Ursu (ACGU20, ASIACRYPT 2020, ePrint 2020/577) and of Nguyen, Phan and
 Pointcheval (NPP22, ASIACRYPT 2022, ePrint 2022/215, revision of 2022-09-18);
 the module documentation of each scheme lists how the library differs from its
@@ -272,8 +273,12 @@ What none of the proofs covers, and what the schemes share:
   with the decryptor and does not protect against the decryptor itself; a
   signature does, and anyone can verify it. What a decryption
   does and does not catch is on :doc:`api/ml` and in the module documentation.
-* **Unreviewed.** None of the four has had a cryptographic review, and none
-  is constant-time (see above).
+* **Reviewed against the papers, not audited, not constant-time.** The first
+  three were checked against their papers (status *reviewed*, with the limits
+  above and the fidelity of the status table); that is not a security audit.
+  The per-client variant is known-insecure (below). None of the four is
+  constant-time (see above, and the two sections on the timing of ``encrypt``
+  below).
 
 ``mcfe/kp_ab_pairing_per_client``: an attack on NPP22 Sec. 5.4
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -365,8 +370,8 @@ policy that set satisfies gives the part of every client, so it opens the round
 by itself; a key that does not gives no client's part. The attack needs a key
 that gives the parts of some clients and not of others, which cannot happen
 there, and there is no fifth coordinate. This says why the attack does not
-carry over, not that the scheme is secure: Thm. 14 is the paper's, and the
-implementation is unreviewed.
+carry over, not that the scheme is secure: Thm. 14 is the paper's, and checking
+the implementation against the paper is not a proof.
 
 *In the library.* The scheme is kept for functionality and performance
 experiments and as the record of the attack. Its status is *known-insecure*;

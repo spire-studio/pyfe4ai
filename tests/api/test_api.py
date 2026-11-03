@@ -67,9 +67,10 @@ def test_list_schemes():
     assert pyfe4ai.list_schemes(capabilities=["threshold", "ml_servers"]) == ["mcfe/ring_lwe_threshold"]
     # `in`, not `==`: each attribute-based scheme that is added joins these lists
     unreviewed = pyfe4ai.list_schemes(status="unreviewed")
-    assert {"sife/ddh_ristretto255", "sife/cp_ab_pairing", "sife/kp_ab_pairing", "mife/ddh_ristretto255",
-            "mcfe/ddh_ristretto255", "mcfe/kp_ab_pairing"} <= set(unreviewed)
-    assert not {"sife/ddh", "sife/lwe"} & set(unreviewed)
+    assert {"sife/ddh_ristretto255", "mife/ddh_ristretto255", "mcfe/ddh_ristretto255"} <= set(unreviewed)
+    attribute_based = {"sife/cp_ab_pairing", "sife/kp_ab_pairing", "mcfe/kp_ab_pairing"}
+    assert not ({"sife/ddh", "sife/lwe"} | attribute_based) & set(unreviewed)
+    assert attribute_based <= set(pyfe4ai.list_schemes(status="reviewed"))
     access_control = pyfe4ai.list_schemes(capabilities="access_control")
     assert {"sife/cp_ab_pairing", "sife/kp_ab_pairing", "mcfe/kp_ab_pairing",
             "mcfe/kp_ab_pairing_per_client"} <= set(access_control)

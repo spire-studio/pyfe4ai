@@ -98,7 +98,7 @@ class SchemeStatus:
         extensions (see ``note``). ``"ad-hoc"``: a composition with no published
         construction behind it. ``"unknown"``: not assessed (the three
         ``ddh_ristretto255`` schemes); a scheme that is unreviewed can have any
-        other fidelity, such as ``sife/cp_ab_pairing``, which is ``"adapted"``.
+        other fidelity.
 
     ``module`` is the scheme's module, ``reference`` the construction it
     implements. All schemes additionally share the caveats of the README
@@ -415,14 +415,14 @@ SCHEMES: tuple[Scheme, ...] = (
         "t; Enc' is run by the key generator; no QANIZK",
     ),
     _scheme(
-        "sife/cp_ab_pairing", PAIRING, UNREVIEWED, ADAPTED, "ACGU20 Sec. 3.1 Fig. 1 + App. B.2 (read-once MSP)",
+        "sife/cp_ab_pairing", PAIRING, REVIEWED, ADAPTED, "ACGU20 Sec. 3.1 Fig. 1 + App. B.2 (read-once MSP)",
         note="selective (SEL-SIM, one challenge ciphertext); ciphertexts malleable, not authenticated; "
         "a = (1, a2) for the paper's (a, 1); rows of attributes outside the policy are omitted; a repeated "
         "attribute takes copies (max_copies); the Decode of App. B.2 with its sign corrected",
         capabilities=(ACCESS_CONTROL,),
     ),
     _scheme(
-        "sife/kp_ab_pairing", PAIRING, UNREVIEWED, FAITHFUL, "NPP22 Sec. 4 Fig. 1 (selective version)",
+        "sife/kp_ab_pairing", PAIRING, REVIEWED, FAITHFUL, "NPP22 Sec. 4 Fig. 1 (selective version)",
         note="selective version (the paper proves the adaptive one, Thm. 7, and gives no proof of this one); "
         "ciphertexts malleable, not authenticated; attributes hashed to Z_q; "
         "[y]_2 is computed by the decryptor, not sent in the key",
@@ -601,7 +601,7 @@ SCHEMES: tuple[Scheme, ...] = (
         refused=_REFUSED_DMCFE_PAILLIER,
     ),
     _scheme(
-        "mcfe/kp_ab_pairing", PAIRING, UNREVIEWED, FAITHFUL, "NPP22 Sec. 5.2 Fig. 3",
+        "mcfe/kp_ab_pairing", PAIRING, REVIEWED, FAITHFUL, "NPP22 Sec. 5.2 Fig. 3",
         note="random oracle (tags hash to G1); one attribute set per tag, shared by all clients; one ciphertext "
         "per client and tag; every client must encrypt, no all-or-nothing layer (Remark 10); ciphertexts not "
         "authenticated; a key covers every tag",

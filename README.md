@@ -139,8 +139,8 @@ explains the families, and
 | | FullySec-Ring-LWE (adaptive) | BMMS21, Sec. 5 |
 | | FH-IPE *(pairing)* | [KLMMRW](https://eprint.iacr.org/2016/440.pdf) (SCN '18) |
 | | Partial-FH-IPE *(pairing)* | [Gay20](https://eprint.iacr.org/2020/093.pdf) (PKC '20) |
-| | CP-AB-IPFE, attribute-based *(pairing, unreviewed)* | [ACGU20](https://eprint.iacr.org/2020/577.pdf) (ASIACRYPT '20), Sec. 3.1 |
-| | KP-AB-IPFE, attribute-based *(pairing, unreviewed)* | [NPP22](https://eprint.iacr.org/2022/215.pdf) (ASIACRYPT '22), Sec. 4 |
+| | CP-AB-IPFE, attribute-based *(pairing)* | [ACGU20](https://eprint.iacr.org/2020/577.pdf) (ASIACRYPT '20), Sec. 3.1 |
+| | KP-AB-IPFE, attribute-based *(pairing)* | [NPP22](https://eprint.iacr.org/2022/215.pdf) (ASIACRYPT '22), Sec. 4 |
 | **MIFE** (multi-input) | DDH, Damgård-DDH, LWE, FullySec-LWE, Paillier | [ACFGU18](https://eprint.iacr.org/2017/972.pdf) (CRYPTO '18), Fig. 4 + ALS16 / ABDP15 |
 | | DDH over ristretto255 *(unreviewed)* | ACFGU18 Fig. 4 + ABDP15 in ristretto255 |
 | | Ring-LWE | ACFGU18 Fig. 4 as in [BMMS21](https://eprint.iacr.org/2021/046.pdf), Sec. 6 |
@@ -151,7 +151,7 @@ explains the families, and
 | | Damgård-DDH (MDDH), Paillier (DCR), LWE, FullySec-LWE | [ABMPSW20](https://eprint.iacr.org/2020/788.pdf) (SCN '20), Figs. 2–4 |
 | | Ring-LWE | BMMS21, Sec. 6 (identity-based MCFE) |
 | | FH-Multi-IPE *(pairing)* | [AGT21b](https://doi.org/10.1007/978-3-030-90453-1_8) (TCC '21), Sec. 6.2 |
-| | KP-AB, attribute-based *(pairing, unreviewed)* | NPP22, Sec. 5.2 |
+| | KP-AB, attribute-based *(pairing)* | NPP22, Sec. 5.2 |
 | | KP-AB with an attribute set per client *(pairing, known-insecure)* | NPP22, Sec. 5.4 (see [Known Issues](#known-issues--security-notice)) |
 | **Decentralized** | dMCFE-DDH, dMCFE-LWE, dMCFE-Paillier | ABMPSW20, App. D, Fig. 14 (DMCFE from MCFE) |
 | | dMCFE-Ring-LWE | BMMS21, Sec. 6 ([ABKW19](https://eprint.iacr.org/2019/020.pdf) + GDSum) |
@@ -193,13 +193,12 @@ the other refusals of the profile).
   the privacy it claims. Use it only for functionality or performance
   experiments.
 
-Currently 34 reviewed, 5 experimental, 6 unreviewed and 1 known-insecure out
+Currently 37 reviewed, 5 experimental, 3 unreviewed and 1 known-insecure out
 of 46 registered schemes. Experimental: the threshold layers of
 `mife/lwe_threshold`, `mcfe/lwe_threshold`, `mcfe/ring_lwe_threshold` and
 `mcfe/fh_multi_ipe_pairing_threshold`, and the carry mask of
 `mcfe/ddh_decentralized`. Unreviewed: the DDH schemes over ristretto255
-(`*/ddh_ristretto255`, selected with `group="ristretto255"`) and
-`sife/cp_ab_pairing`, `sife/kp_ab_pairing` and `mcfe/kp_ab_pairing`, new code.
+(`*/ddh_ristretto255`, selected with `group="ristretto255"`), new code.
 Known-insecure: `mcfe/kp_ab_pairing_per_client`, the version of
 `mcfe/kp_ab_pairing` in which each client has an attribute set of its own
 (NPP22 Sec. 5.4); see Known Issues.
@@ -220,8 +219,8 @@ Known-insecure: `mcfe/kp_ab_pairing_per_client`, the version of
 | `sife/ddh_dynamic` | reviewed | adapted | ABDP15 Construction 1, variable length | vectors of length <= eta handled as zero padding (prefix keys, truncated ciphertexts) |
 | `sife/fh_ipe_pairing` | reviewed | adapted | KLMMRW18 Sec. 3 | vectors padded to (x, 1, 0) / (y, 0, 1), so eta = 1 and zero vectors are safe; keys in G1, ciphertexts in G2; generic bilinear group model; the encryption key is master-secret equivalent |
 | `sife/part_fh_ipe_pairing` | reviewed | adapted | Gay20 Fig. 8 (CPA, k = 1) | M is a random full-rank public matrix (subspace_dim < eta, default 1), published with V^T M in the clear; keys leak M^T y, which for small eta - subspace_dim often determines a bounded y; public Enc needs bounded t; Enc' is run by the key generator; no QANIZK |
-| `sife/cp_ab_pairing` | unreviewed | adapted | ACGU20 Sec. 3.1 Fig. 1 + App. B.2 (read-once MSP) | selective (SEL-SIM, one challenge ciphertext); ciphertexts malleable, not authenticated; a = (1, a2) for the paper's (a, 1); rows of attributes outside the policy are omitted; a repeated attribute takes copies (max_copies); the Decode of App. B.2 with its sign corrected |
-| `sife/kp_ab_pairing` | unreviewed | faithful | NPP22 Sec. 4 Fig. 1 (selective version) | selective version (the paper proves the adaptive one, Thm. 7, and gives no proof of this one); ciphertexts malleable, not authenticated; attributes hashed to Z_q; [y]_2 is computed by the decryptor, not sent in the key |
+| `sife/cp_ab_pairing` | reviewed | adapted | ACGU20 Sec. 3.1 Fig. 1 + App. B.2 (read-once MSP) | selective (SEL-SIM, one challenge ciphertext); ciphertexts malleable, not authenticated; a = (1, a2) for the paper's (a, 1); rows of attributes outside the policy are omitted; a repeated attribute takes copies (max_copies); the Decode of App. B.2 with its sign corrected |
+| `sife/kp_ab_pairing` | reviewed | faithful | NPP22 Sec. 4 Fig. 1 (selective version) | selective version (the paper proves the adaptive one, Thm. 7, and gives no proof of this one); ciphertexts malleable, not authenticated; attributes hashed to Z_q; [y]_2 is computed by the decryptor, not sent in the key |
 | `mife/ddh` | reviewed | adapted | ACFGU18 Fig. 4 + ABDP15 (DDH) | ACFGU18 instantiates Fig. 4 with ALS16; here the selectively secure ABDP15 IPFE in every slot |
 | `mife/ddh_ristretto255` | unreviewed | unknown | ACFGU18 Fig. 4 + ABDP15 (DDH) in ristretto255 | ristretto255 (RFC 9496, about 126-bit security: Pollard rho in a group of order 2^252) instead of a 3072-bit Z_p^* subgroup; group arithmetic in Rust (curve25519-dalek) with the native extension, else in pure Python and not constant-time; new code, not yet reviewed |
 | `mife/lwe` | reviewed | adapted | ACFGU18 Fig. 4 + ABDP15 (LWE) | ACFGU18 instantiates Fig. 4 with ALS16; here the selectively secure ABDP15 IPFE (same two-step decryption; full-version proof, see sife/lwe), with parameters for dimension n * eta (footnote 14); the slot challenges of the ACFGU18 reduction differ by up to 4X, so standard reads the 128-bit table at sigma / (1 + 4X sqrt(eta)); slots share A, expanded from a public seed (SHAKE-128); pk noise exact (FACCT) under standard |
@@ -250,7 +249,7 @@ Known-insecure: `mcfe/kp_ab_pairing_per_client`, the version of
 | `mcfe/ring_lwe_threshold` | experimental | ad-hoc | BMMS21 identity-based MCFE + replicated / Shamir sharing + smudging | MCFE layer as published; the threshold layer (statistical flooding, derandomised noise, enlarged q, clients' HMAC tags on ciphertexts, replicated key sharing for t < s, where Shamir shares let partials reveal the decryption noise modulo small integers) is our own; the opt-in sharing='replicated-seeded' expands all key pieces but one from secret 256-bit seeds and hides the key shares only computationally (SHAKE-256 keyed by the seeds as a PRF); full replicated sharing stays the default for t < s; by default binary ciphertexts (format 2: ct0 cut to the batch length and every value strictly below q, tags over the parameters' digest and the bytes, binary partials and key shares), an RNS modulus (q a product of at least three NTT primes, each above s) and split key shares (sk_y once per weights, the label terms per round); ct_format='json', ring_modulus='prime' and key_shares='full' select the formats of earlier versions |
 | `mcfe/ring_lwe_decentralized` | reviewed | adapted | BMMS21 Sec. 6 identity-based DMCFE (ABKW19 + GDSum) | GDSum realised as pairwise PRF zero-sum masks (its full specification is only in the ePrint version); pairwise secrets sampled in-process |
 | `mcfe/paillier_decentralized` | reviewed | adapted | ABMPSW20 Fig. 14 (MCFE1 = Fig. 3) | MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) are sampled in-process |
-| `mcfe/kp_ab_pairing` | unreviewed | faithful | NPP22 Sec. 5.2 Fig. 3 | random oracle (tags hash to G1); one attribute set per tag, shared by all clients; one ciphertext per client and tag; every client must encrypt, no all-or-nothing layer (Remark 10); ciphertexts not authenticated; a key covers every tag |
+| `mcfe/kp_ab_pairing` | reviewed | faithful | NPP22 Sec. 5.2 Fig. 3 | random oracle (tags hash to G1); one attribute set per tag, shared by all clients; one ciphertext per client and tag; every client must encrypt, no all-or-nothing layer (Remark 10); ciphertexts not authenticated; a key covers every tag |
 | `mcfe/kp_ab_pairing_per_client` | known-insecure | adapted | NPP22 Sec. 5.4 | see [Known Issues](#known-issues--security-notice) |
 | `quadratic/quad` | reviewed | adapted | Gay20 Fig. 4 over Fig. 8 (CPA) | signed inputs (discrete log in [-n m B^3, n m B^3]); CPA variant (no QANIZK); asymmetric pairing (default BLS12-381) |
 | `quadratic/sgp` | reviewed | adapted | DSGPP18 Fig. 2 | public key pk = (g1^s, g2^t) as in the paper; signed inputs with one bound B for x, y and F (discrete log in [-n^2 B^3, n^2 B^3]); generic bilinear group model |

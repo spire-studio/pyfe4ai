@@ -2,6 +2,7 @@
 
 import re
 import warnings
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -114,3 +115,45 @@ def test_readme_status_table_is_the_rendered_table():
     section = text.split("## Scheme Status", 1)[1].split("\n## ", 1)[0]
     rows = [line for line in section.splitlines() if line.startswith("|")]
     assert "\n".join(rows) == st.markdown_table()
+
+
+def test_the_attribute_based_schemes_have_the_status_of_their_reviews():
+    """The three schemes of 0.5 were checked against their papers, with the fidelity recorded; the per-client scheme
+    stays known-insecure (its construction fails, see its issue)."""
+    expected = {
+        "sife/cp_ab_pairing": (st.REVIEWED, st.ADAPTED),
+        "sife/kp_ab_pairing": (st.REVIEWED, st.FAITHFUL),
+        "mcfe/kp_ab_pairing": (st.REVIEWED, st.FAITHFUL),
+        "mcfe/kp_ab_pairing_per_client": (st.KNOWN_INSECURE, st.ADAPTED),
+    }
+    assert {i: (get_scheme_status(i).status, get_scheme_status(i).fidelity) for i in expected} == expected
+
+
+def test_readme_counts_are_the_registry_counts():
+    """The sentence of the README that counts the schemes by status."""
+    text = README.read_text(encoding="utf-8")
+    found = re.search(r"Currently (\d+) reviewed, (\d+) experimental, (\d+) unreviewed and (\d+) known-insecure out\s+"
+                      r"of (\d+) registered schemes", text)
+    assert found is not None
+    counts = Counter(entry.status for entry in st.SCHEME_STATUS.values())
+    assert [int(g) for g in found.groups()] == [counts[s] for s in registry.STATUSES] + [len(st.SCHEME_STATUS)]
+
+
+def test_no_text_calls_a_reviewed_attribute_based_scheme_unreviewed():
+    """A sentence of the README, SECURITY.md, the documentation, the project page or the module of one of the three
+    attribute-based schemes of 0.5 that names it does not call it unreviewed (the per-client scheme, which several
+    of them name beside, is known-insecure)."""
+    root = README.parent
+    named = ("sife/cp_ab_pairing", "sife/kp_ab_pairing", "mcfe/kp_ab_pairing")
+    paths = [README, root / "SECURITY.md", root / "site" / "index.html", *sorted((root / "docs").glob("*.rst")),
+             *(root / "pyfe4ai" / "schemes" / (name + ".py") for name in named)]
+    for path in paths:
+        if not path.exists():       # a source distribution carries neither the page nor the sources of the docs
+            continue
+        # the matrix of the page is generated from the registry and tested against it (test_site_matrix.py)
+        text = re.sub(r"<!--matrix:start-->.*?<!--matrix:end-->", "", path.read_text(encoding="utf-8"), flags=re.S)
+        text = re.sub(r"\s+", " ", text)
+        for sentence in re.split(r"(?<=[.;])\s|</dd>|</li>|</div>|</p>", text):
+            if "unreviewed" in sentence.lower() or "not yet reviewed" in sentence:
+                bare = sentence.replace("mcfe/kp_ab_pairing_per_client", "")
+                assert not any(name in bare for name in named), (path.name, sentence)

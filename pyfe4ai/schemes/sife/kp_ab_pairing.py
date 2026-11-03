@@ -38,8 +38,9 @@ which adds their inner products. Authenticate ciphertexts where tampering matter
 
 The policy of a key (``dk["policy"]``) and the attributes of a ciphertext (``ct["attributes"]``) are public: they
 travel in the clear and hide nothing. Keys are trusted input to the decryption: the ``pp_binding`` of a key tells
-the objects of two setups apart and is not a signature. This implementation is unreviewed: it has had no
-cryptographic review yet.
+the objects of two setups apart and is not a signature. The registry status is ``reviewed``: the implementation was
+checked against the cited construction and no security defect is known. That is not a security audit, and the limits
+above stand.
 
 Deviations:
 

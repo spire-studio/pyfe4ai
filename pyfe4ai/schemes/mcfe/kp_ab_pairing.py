@@ -34,7 +34,8 @@ the paper has, and the exponents of the bases are dropped at the end of setup. T
 NPP22 Thm. 14 and Cor. 15 prove this construction adaptively IND-secure from SXDH in the random-oracle model, with
 the notion of Def. 12: no client encrypts twice under one tag, and the challenge ciphertexts are those of all honest
 clients. The hash of this module is RFC 9380 ``hash_to_curve`` under a domain separation tag, taken as the random
-oracle. This implementation is unreviewed: it has had no cryptographic review yet.
+oracle. The registry status is ``reviewed``: the implementation was checked against the cited construction and no
+security defect is known. That is not a security audit, and the limits below stand.
 
 A client encrypts once under a tag. Two ciphertexts of one client under one tag have the same ``omega, omega'`` (the
 same ``H(tag, S)``) and their ``t`` values differ by the difference of the plaintexts, in the exponent. The scheme
