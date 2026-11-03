@@ -61,12 +61,13 @@ an experimental research prototype, not recommended for production use.
   `sife/cp_ab_pairing`, `sife/kp_ab_pairing` and `mcfe/kp_ab_pairing` (which
   `mcfe/kp_ab_pairing_per_client` takes over), and the online phase of the
   offline / online encryption of `sife/cp_ab_pairing`, take `|x_i|` as the
-  exponent, on the inverse of `g1` for a negative `x_i`, so their time hardly
-  shows the signs of `x`. They are not constant-time: the sizes of the `x_i`
-  and the zeros still show (the online phase shows roughly how large the
-  coordinates are and how many are zero), one call per element in
-  `mcfe/kp_ab_pairing` (`docs/security.rst`, *Offline / online encryption* and
-  *Timing of `encrypt` in the key-policy schemes*).
+  exponent (`encrypt` on the inverse of `g1` for a negative `x_i`, the online
+  phase by a division), so their time hardly shows the signs of `x`. They are
+  not constant-time: the sizes of the `x_i` and the zeros still show, and the
+  online phase shows roughly how large the coordinates are and how many are
+  zero. In `mcfe/kp_ab_pairing` every element of a vector is a call of its own
+  (`docs/security.rst`, *Offline / online encryption* and *Timing of `encrypt`
+  in the key-policy schemes*).
 - **The three schemes are reviewed against their papers, and what the papers
   prove is stated.** `sife/cp_ab_pairing`, `sife/kp_ab_pairing` and
   `mcfe/kp_ab_pairing` have the status *reviewed* (checked against the cited
@@ -353,8 +354,8 @@ an experimental research prototype, not recommended for production use.
   tie it keeps the label and the other is refused (`ValueError`) only after it
   has obtained its key; in the threshold MCFE that the wrapper runs, the
   losing call has already obtained key shares from the servers (its weight key
-  share is added to the wrapper's server objects), and these shares never
-  reach the caller.
+  share is added to the wrapper's server objects where they lack it), and
+  these shares never reach the caller.
 
 ## [0.4.0] — 2026-10-26
 

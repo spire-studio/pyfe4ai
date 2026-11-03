@@ -270,7 +270,8 @@ class MCFEKPABPairingPerClient(MCFEKPABPairing):
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict | None = None, label=None):
         """Decrypt the ciphertexts of all clients and recover the inner product.
 
-        The order of the checks is that of :meth:`~pyfe4ai.schemes.mcfe.kp_ab_pairing.MCFEKPABPairing.decrypt`: the bindings, the fields and the version
+        The order of the checks is that of
+        :meth:`~pyfe4ai.schemes.mcfe.kp_ab_pairing.MCFEKPABPairing.decrypt`: the bindings, the fields and the version
         markers, then that the ciphertexts are those of all clients under one tag, then the policy of the key and the
         shape of the records, then that the attributes of every client satisfy the policy, before any group element is
         read. The set of attributes of each client is its own, and each client reconstructs with its own set.
@@ -300,18 +301,18 @@ class MCFEKPABPairingPerClient(MCFEKPABPairing):
     def encrypt_lst_ndarray(self, lst_ndarray: list, label: str | None = None, attributes=None) -> list:
         """Encrypt arrays element by element, each element under a tag of its own, all for the client's own set.
 
-        As :meth:`~pyfe4ai.schemes.mcfe.kp_ab_pairing.MCFEKPABPairing.encrypt_lst_ndarray`. A client calls this once under a label; the scheme layer does
-        not check it. *attributes* is the set of this client for every element, and may differ from that of other
-        clients.
+        As :meth:`~pyfe4ai.schemes.mcfe.kp_ab_pairing.MCFEKPABPairing.encrypt_lst_ndarray`. A client calls this
+        once under a label; the scheme layer does not check it. *attributes* is the set of this client for every
+        element, and may differ from that of other clients.
         """
         return super().encrypt_lst_ndarray(lst_ndarray, label=label, attributes=attributes)
 
     def check_ndarray_ct(self, dict_ndarray_ct: dict, label: str | None = None) -> None:
         """Check the ciphertext arrays of all clients as far as :meth:`decrypt_lst_ndarray_ct` can before it has a key.
 
-        As :meth:`~pyfe4ai.schemes.mcfe.kp_ab_pairing.MCFEKPABPairing.check_ndarray_ct`, except that the elements of a client are for one set of attributes
-        and another client may have another: there is no digest to compare, and the error for a client whose elements
-        differ names the client.
+        As :meth:`~pyfe4ai.schemes.mcfe.kp_ab_pairing.MCFEKPABPairing.check_ndarray_ct`, except that the elements
+        of a client are for one set of attributes and another client may have another: there is no digest to compare,
+        and the error for a client whose elements differ names the client.
         """
         super().check_ndarray_ct(dict_ndarray_ct, label=label)
 
@@ -319,9 +320,9 @@ class MCFEKPABPairingPerClient(MCFEKPABPairing):
                                fusion_weight: dict | None = None, label: str | None = None) -> list:
         """Decrypt the ciphertext arrays of all clients, all elements with one preparation of the key.
 
-        As :meth:`~pyfe4ai.schemes.mcfe.kp_ab_pairing.MCFEKPABPairing.decrypt_lst_ndarray_ct`, with a set of attributes for each client: the rows of the key
-        that the decryption uses, and so the points that it prepares and the elements that it decodes, differ between
-        clients. A client whose attributes do not satisfy the policy gives a ``FEKeyError`` that names it, before any
-        point is decoded.
+        As :meth:`~pyfe4ai.schemes.mcfe.kp_ab_pairing.MCFEKPABPairing.decrypt_lst_ndarray_ct`, with a set of
+        attributes for each client: the rows of the key that the decryption uses, and so the points that it prepares
+        and the elements that it decodes, differ between clients. A client whose attributes do not satisfy the policy
+        gives a ``FEKeyError`` that names it, before any point is decoded.
         """
         return super().decrypt_lst_ndarray_ct(dict_ndarray_ct, dk=dk, fusion_weight=fusion_weight, label=label)
