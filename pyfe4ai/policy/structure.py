@@ -31,7 +31,7 @@ from collections.abc import Iterable, Sequence
 from pyfe4ai.core.exceptions import FEValidationError
 from pyfe4ai.policy.formula import Formula, evaluate, held_labels, validate_formula
 
-#: The greatest number of holders: the families are found by trying all ``2**n`` sets of holders.
+#: The greatest number of holders, since the families are found by trying all ``2**n`` sets of holders.
 MAX_HOLDERS = 8
 
 

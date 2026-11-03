@@ -17,8 +17,8 @@ from pyfe4ai.schemes.common.ac_codec import read_elements
 class DecodedElementsMixin:
     """The cached getters of a pairing crypto object.
 
-    The class that mixes this in calls :meth:`_init_decoded` in its constructor. It has ``group`` and ``pp`` (a dict) for
-    the generators and :meth:`_pp_elements`, and ``_client_key`` (a record) for :meth:`_key_elements`. The cache lives
+    The class that mixes this in calls ``_init_decoded`` in its constructor. It has ``group`` and ``pp`` (a dict) for
+    the generators and ``_pp_elements``, and ``_client_key`` (a record) for ``_key_elements``. The cache lives
     as long as the object: the public parameters and the key of an object do not change.
     """
 

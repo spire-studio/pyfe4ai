@@ -210,7 +210,7 @@ class Universe:
 
     @property
     def size(self) -> int:
-        """The number of slots: ``len(labels) * max_copies``."""
+        """The number of slots, ``len(labels) * max_copies``."""
         return len(self.labels) * self.max_copies
 
     def _position(self, label: object) -> int | None:

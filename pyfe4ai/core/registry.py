@@ -234,7 +234,7 @@ class Scheme:
     #: See :data:`CAPABILITIES`.
     capabilities: frozenset
     #: Why the ``standard`` profile refuses the scheme; empty if it does not. A known-insecure scheme is refused, and
-    #: its reason is derived from its issue (:func:`_scheme`).
+    #: its reason is derived from its issue (``_scheme``).
     refused: str = ""
     #: The group of a scheme that instantiates another variant of its family
     #: in a group of its own (the ML adapter's ``group`` option), such as

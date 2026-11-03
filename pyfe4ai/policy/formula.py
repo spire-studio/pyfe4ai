@@ -30,7 +30,7 @@ from pyfe4ai.policy.attributes import clip, validate_label
 #: The default limit on the rows of a compiled policy matrix.
 DEFAULT_MAX_ROWS = 64
 
-#: The greatest depth of a formula: the number of gates on its longest path
+#: The greatest depth of a formula, the number of gates on its longest path
 #: from the root to a leaf (a lone leaf has depth 0).
 MAX_DEPTH = 32
 

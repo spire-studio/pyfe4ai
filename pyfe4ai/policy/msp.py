@@ -167,7 +167,7 @@ class MSP:
 def _lagrange_at_zero(points: Sequence[int], modulus: int) -> list[int]:
     """The coefficients ``prod_{i != j} x_i / (x_i - x_j)`` that give the value
     at 0 of the polynomial through ``(x_j, y_j)`` as ``sum(coef_j * y_j)``.
-    The points are distinct units modulo *modulus* (:func:`_check_gate_size`)."""
+    The points are distinct units modulo *modulus* (``_check_gate_size``)."""
     out = []
     for j, point in enumerate(points):
         numerator = denominator = 1
@@ -266,7 +266,7 @@ def compile_formula(formula: Formula, modulus: int, *, max_rows: int = DEFAULT_M
 
     *modulus* is an int ``>= 2``, normally a prime (the group order); a
     composite modulus is accepted only when every threshold gate can still
-    invert its points (:func:`_check_gate_size`). *max_rows* bounds the
+    invert its points (``_check_gate_size``). *max_rows* bounds the
     number of rows, which is the number of leaves written out. Raises
     ``FEValidationError`` for an invalid argument, a formula that does not
     pass :func:`~pyfe4ai.policy.formula.validate_formula`, more leaves than

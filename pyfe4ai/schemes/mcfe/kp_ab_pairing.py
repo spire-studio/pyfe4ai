@@ -68,7 +68,7 @@ all elements of all layers in one batch. The points of the key that every elemen
 uses, with their reconstruction coefficients folded in, and ``-k*_i,ipfe``) are prepared once per call
 (:func:`~pyfe4ai.primitives.pairing.pairing_backend.prepare_g2`; nothing is kept between calls), and each element is
 then one product of pairings over them. The elements of an array are for one set of attributes. All elements are
-checked first; they are then decoded, paired and solved in slices of at most :data:`_SLICE_DECODED_ELEMENTS` decoded
+checked first; they are then decoded, paired and solved in slices of at most ``_SLICE_DECODED_ELEMENTS`` decoded
 group elements (and at least one element), so that the memory of the decoded elements does not grow with the size of
 the arrays, nor with the clients and their attributes as long as one element fits the budget. A slice is never smaller
 than one element: once ``n (8 |S| + 5)`` exceeds ``2**16`` (``n`` of 127 or more at 64 attributes) it is one element,
@@ -190,7 +190,7 @@ _SLICE_DECODED_ELEMENTS = 1 << 16
 
 def _slice_size(decoded: int) -> int:
     """The elements of a slice of :meth:`MCFEKPABPairing.decrypt_lst_ndarray_ct`, for elements of *decoded* decoded
-    ``G1`` elements each: as many as :data:`_SLICE_DECODED_ELEMENTS` holds, and at least one."""
+    ``G1`` elements each: as many as ``_SLICE_DECODED_ELEMENTS`` holds, and at least one."""
     return max(1, _SLICE_DECODED_ELEMENTS // decoded)
 
 
@@ -234,7 +234,7 @@ class MCFEKPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
     """Key generator for multi-client key-policy attribute-based IPFE over pairings.
 
     The class attributes ``H_DIM``, ``_pp_domain``, ``_H_STAR_ROWS``, ``_ClientKey`` and ``_FunctionalKey`` and the
-    methods :meth:`_client_extras`, :meth:`_roots` and :meth:`_extra_coordinates` are what a variation of this scheme
+    methods ``_client_extras``, ``_roots`` and ``_extra_coordinates`` are what a variation of this scheme
     changes (``mcfe/kp_ab_pairing_per_client`` is one); the key generator of a variation also has a ``_scheme_type``
     of its own.
     """
@@ -500,8 +500,8 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
 
     What a variation of the scheme changes (``mcfe/kp_ab_pairing_per_client`` is one) is in the class attributes
     ``H_DIM``, ``_pp_domain``, ``_scheme_id`` and the record classes ``_ClientKey``, ``_FunctionalKey`` and
-    ``_Ciphertext``, ``_CLAIMS``, and in the methods :meth:`_check_extra_key_fields`, :meth:`_attribute_claim`,
-    :meth:`_complete_ipfe`, :meth:`_unsatisfied` and :meth:`_other_attributes`. The attributes of the ciphertexts and the
+    ``_Ciphertext``, ``_CLAIMS``, and in the methods ``_check_extra_key_fields``, ``_attribute_claim``,
+    ``_complete_ipfe``, ``_unsatisfied`` and ``_other_attributes``. The attributes of the ciphertexts and the
     reconstruction coefficients are kept for each client throughout, as ``{nid: ...}``; here they are the same for all.
     """
 
@@ -815,7 +815,7 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
 
         Raises:
             FEKeyError: If the attributes of a client (the first, in the order of ``lst_nid``) do not satisfy the
-                policy (:meth:`_unsatisfied`).
+                policy (``_unsatisfied``).
         """
         found, weights = {}, {}
         for nid in self.lst_nid:
@@ -1168,7 +1168,7 @@ class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
         :meth:`check_ndarray_ct` with the key's, and that every vector of ``G1`` is a list of strings with the type tag
         of ``G1``, are made for all elements before anything is decoded, prepared or paired. The key is read once. Its
         points are prepared once, and the elements are then decoded, paired (one product of pairings each, over the
-        prepared points) and solved a slice at a time: as many elements as hold :data:`_SLICE_DECODED_ELEMENTS`
+        prepared points) and solved a slice at a time: as many elements as hold ``_SLICE_DECODED_ELEMENTS``
         (``2**16``) decoded group elements, ``n (8 |S| + 5)`` each, and at least one (225 elements at ``n = 10``,
         ``|S| = 3``; 12 at ``n = 10``, ``|S| = 64``). A string with the right tag that is no element of the group is
         found when the slice that holds it is decoded, after the slices before it were paired; the call then raises

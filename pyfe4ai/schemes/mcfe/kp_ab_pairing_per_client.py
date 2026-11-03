@@ -27,7 +27,7 @@ opens the ciphertexts. The scheme closes it with a fifth dimension of the bases 
 * ``ek_i = (s_i, u_i, p_i H_i^(1), p_i H_i^(2), h_i,3, theta_i h_i,5, f1, f2, f3)`` with ``theta_i`` in ``Z_q^*``;
 * ``c_i,ipfe = (omega p_i, omega' p_i, psi_i, 0, theta_i)_H_i``;
 * ``k*_i,ipfe = (<S, y>, <U, y>, a_i,0 z, 0, d_i)_H*_i``, with the ``d_i`` of a key drawn afresh so that
-  ``sum_i theta_i d_i = 0`` (the first ``n - 1`` at random, the last solved: :func:`_zero_sum_coordinates`).
+  ``sum_i theta_i d_i = 0`` (the first ``n - 1`` at random, the last solved: ``_zero_sum_coordinates``).
 
 The terms ``theta_i d_i`` add up to zero in a decryption with one key, so it is as in Fig. 3. With the parts of two
 keys under one tag they add up to ``theta_1 d_A,1 + theta_2 d_B,2``, which is not zero except with negligible
@@ -157,11 +157,11 @@ class MCFEKPABPairingPerClientKeyGenerator(MCFEKPABPairingKeyGenerator):
     """Key generator for multi-client key-policy attribute-based IPFE over pairings with an attribute set for each
     client (NPP22 Sec. 5.4; **known-insecure**, see the module documentation: constructing it emits a
     ``FESecurityWarning`` and the ``standard`` profile refuses it). The options are those of
-    :class:`MCFEKPABPairingKeyGenerator`.
+    :class:`~pyfe4ai.schemes.mcfe.kp_ab_pairing.MCFEKPABPairingKeyGenerator`.
 
     Setup draws a secret ``theta_i`` for each client, whose ``theta_i h_i,5`` goes into the encryption key and which
     the master key keeps with ``h*_i,5``; a functional key gives each client its own root and shares and the fifth
-    coordinates of :func:`_zero_sum_coordinates`.
+    coordinates of ``_zero_sum_coordinates``.
     """
 
     _scheme_type = CryptoCONST.TYPE_MCFE_KP_AB_PC
@@ -268,7 +268,7 @@ class MCFEKPABPairingPerClient(MCFEKPABPairing):
     def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict | None = None, label=None):
         """Decrypt the ciphertexts of all clients and recover the inner product.
 
-        The order of the checks is that of :meth:`MCFEKPABPairing.decrypt`: the bindings, the fields and the version
+        The order of the checks is that of :meth:`~pyfe4ai.schemes.mcfe.kp_ab_pairing.MCFEKPABPairing.decrypt`: the bindings, the fields and the version
         markers, then that the ciphertexts are those of all clients under one tag, then the policy of the key and the
         shape of the records, then that the attributes of every client satisfy the policy, before any group element is
         read. The set of attributes of each client is its own, and each client reconstructs with its own set.
@@ -298,7 +298,7 @@ class MCFEKPABPairingPerClient(MCFEKPABPairing):
     def encrypt_lst_ndarray(self, lst_ndarray: list, label: str | None = None, attributes=None) -> list:
         """Encrypt arrays element by element, each element under a tag of its own, all for the client's own set.
 
-        As :meth:`MCFEKPABPairing.encrypt_lst_ndarray`. A client calls this once under a label; the scheme layer does
+        As :meth:`~pyfe4ai.schemes.mcfe.kp_ab_pairing.MCFEKPABPairing.encrypt_lst_ndarray`. A client calls this once under a label; the scheme layer does
         not check it. *attributes* is the set of this client for every element, and may differ from that of other
         clients.
         """
@@ -307,7 +307,7 @@ class MCFEKPABPairingPerClient(MCFEKPABPairing):
     def check_ndarray_ct(self, dict_ndarray_ct: dict, label: str | None = None) -> None:
         """Check the ciphertext arrays of all clients as far as :meth:`decrypt_lst_ndarray_ct` can before it has a key.
 
-        As :meth:`MCFEKPABPairing.check_ndarray_ct`, except that the elements of a client are for one set of attributes
+        As :meth:`~pyfe4ai.schemes.mcfe.kp_ab_pairing.MCFEKPABPairing.check_ndarray_ct`, except that the elements of a client are for one set of attributes
         and another client may have another: there is no digest to compare, and the error for a client whose elements
         differ names the client.
         """
@@ -317,7 +317,7 @@ class MCFEKPABPairingPerClient(MCFEKPABPairing):
                                fusion_weight: dict | None = None, label: str | None = None) -> list:
         """Decrypt the ciphertext arrays of all clients, all elements with one preparation of the key.
 
-        As :meth:`MCFEKPABPairing.decrypt_lst_ndarray_ct`, with a set of attributes for each client: the rows of the key
+        As :meth:`~pyfe4ai.schemes.mcfe.kp_ab_pairing.MCFEKPABPairing.decrypt_lst_ndarray_ct`, with a set of attributes for each client: the rows of the key
         that the decryption uses, and so the points that it prepares and the elements that it decodes, differ between
         clients. A client whose attributes do not satisfy the policy gives a ``FEKeyError`` that names it, before any
         point is decoded.
