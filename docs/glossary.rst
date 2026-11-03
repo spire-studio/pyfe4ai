@@ -273,10 +273,14 @@ Labels, tags and keys
 
    ``label``
       Encryption label of the multi-client schemes (MCFE, dMCFE, tMCFE),
-      e.g. a training round. Ciphertexts are bound to it and decrypt together
-      only under the same label; a client must encrypt at most once per
-      label. In the identity-based Ring-LWE MCFE variants, functional keys
-      are bound to a label too.
+      e.g. a training round. Ciphertexts are bound to the label they were
+      made under and decrypt together only if they were made under the same
+      one; a client must encrypt at most once per label. In
+      ``mcfe/kp_ab_pairing`` the label field of a ciphertext record is a
+      claim that decryption does not check: ciphertexts of one round
+      relabelled alike decrypt to the value of the round they were made in
+      (see :doc:`security`). In the identity-based Ring-LWE MCFE variants,
+      functional keys are bound to a label too.
 
    ``tag_f``
       Name of the function in the decentralized FH-MCFE
