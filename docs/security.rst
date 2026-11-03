@@ -185,11 +185,12 @@ are in the key (ciphertext-policy); in ``sife/kp_ab_pairing``,
 the key and the attributes are in the ciphertext (key-policy). All run over
 pairings. The first three were checked against their papers (status *reviewed*:
 checked against the cited construction, no security defect known; it is not a
-security audit) and the last one is known-insecure (below). The constructions are those of Abdalla, Catalano, Gay
-and Ursu (ACGU20, ASIACRYPT 2020, ePrint 2020/577) and of Nguyen, Phan and
-Pointcheval (NPP22, ASIACRYPT 2022, ePrint 2022/215, revision of 2022-09-18);
-the module documentation of each scheme lists how the library differs from its
-paper, and :doc:`choosing` compares them.
+security audit) and the last one is known-insecure (below). The constructions
+are those of Abdalla, Catalano, Gay and Ursu (ACGU20, ASIACRYPT 2020, ePrint
+2020/577) and of Nguyen, Phan and Pointcheval (NPP22, ASIACRYPT 2022, ePrint
+2022/215, revision of 2022-09-18); the module documentation of each scheme
+lists how the library differs from its paper, and :doc:`choosing` compares
+them.
 
 What the papers prove, scheme by scheme:
 
