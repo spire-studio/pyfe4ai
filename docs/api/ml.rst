@@ -53,6 +53,14 @@ the adapter.
 Policy-gated aggregation
 ------------------------
 
+.. warning::
+
+   ``mcfe/kp_ab_pairing`` is *known-insecure*: one corrupted client opens every
+   functional key, so a decryptor that colludes with a client reads what a
+   policy withholds (:doc:`../security`). The scheme warns when built and the
+   ``standard`` profile refuses it. Use this section for experiments, not to
+   protect data.
+
 ``mcfe/kp_ab_pairing`` releases an aggregate only for a policy that the
 clients' attributes satisfy. Each client encrypts its gradient for a set of
 attributes (``encrypt_gradient(..., attributes=...)``, the same set for all

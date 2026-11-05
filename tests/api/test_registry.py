@@ -132,9 +132,10 @@ def test_a_known_insecure_scheme_is_refused_under_standard_from_its_issue():
         assert known_insecure <= bool(scheme.refused), scheme.id
         if known_insecure:
             assert scheme.refused == "known to be insecure: " + scheme.status.issue
-    per_client = registry.get_scheme("mcfe/kp_ab_pairing_per_client")
-    assert per_client.refused == "known to be insecure: " + per_client.status.issue
-    assert per_client.refused and not registry.get_scheme("mcfe/kp_ab_pairing").refused
+    for scheme_id in ("mcfe/kp_ab_pairing_per_client", "mcfe/kp_ab_pairing"):     # both since 2026-11
+        scheme = registry.get_scheme(scheme_id)
+        assert scheme.refused and scheme.refused == "known to be insecure: " + scheme.status.issue
+    assert not registry.get_scheme("sife/kp_ab_pairing").refused
 
     def entry(**changes):
         arguments = dict(note="a note", issue="test issue")

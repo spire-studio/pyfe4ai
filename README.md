@@ -193,15 +193,15 @@ the other refusals of the profile).
   the privacy it claims. Use it only for functionality or performance
   experiments.
 
-Currently 37 reviewed, 5 experimental, 3 unreviewed and 1 known-insecure out
+Currently 36 reviewed, 5 experimental, 3 unreviewed and 2 known-insecure out
 of 46 registered schemes. Experimental: the threshold layers of
 `mife/lwe_threshold`, `mcfe/lwe_threshold`, `mcfe/ring_lwe_threshold` and
 `mcfe/fh_multi_ipe_pairing_threshold`, and the carry mask of
 `mcfe/ddh_decentralized`. Unreviewed: the DDH schemes over ristretto255
 (`*/ddh_ristretto255`, selected with `group="ristretto255"`), new code.
-Known-insecure: `mcfe/kp_ab_pairing_per_client`, the version of
-`mcfe/kp_ab_pairing` in which each client has an attribute set of its own
-(NPP22 Sec. 5.4); see Known Issues.
+Known-insecure: `mcfe/kp_ab_pairing` (NPP22 Sec. 5.2) and
+`mcfe/kp_ab_pairing_per_client`, the version in which each client has an
+attribute set of its own (Sec. 5.4); see Known Issues.
 
 <details>
 <summary><strong>Status, construction and deviations of every scheme</strong> (46 rows, rendered by <code>pyfe4ai.core.status.markdown_table()</code>; a test keeps it in sync)</summary>
@@ -249,7 +249,7 @@ Known-insecure: `mcfe/kp_ab_pairing_per_client`, the version of
 | `mcfe/ring_lwe_threshold` | experimental | ad-hoc | BMMS21 identity-based MCFE + replicated / Shamir sharing + smudging | MCFE layer as published; the threshold layer (statistical flooding, derandomised noise, enlarged q, clients' HMAC tags on ciphertexts, replicated key sharing for t < s, where Shamir shares let partials reveal the decryption noise modulo small integers) is our own; the opt-in sharing='replicated-seeded' expands all key pieces but one from secret 256-bit seeds and hides the key shares only computationally (SHAKE-256 keyed by the seeds as a PRF); full replicated sharing stays the default for t < s; by default binary ciphertexts (format 2: ct0 cut to the batch length and every value strictly below q, tags over the parameters' digest and the bytes, binary partials and key shares), an RNS modulus (q a product of at least three NTT primes, each above s) and split key shares (sk_y once per weights, the label terms per round); ct_format='json', ring_modulus='prime' and key_shares='full' select the formats of earlier versions |
 | `mcfe/ring_lwe_decentralized` | reviewed | adapted | BMMS21 Sec. 6 identity-based DMCFE (ABKW19 + GDSum) | GDSum realised as pairwise PRF zero-sum masks (its full specification is only in the ePrint version); pairwise secrets sampled in-process |
 | `mcfe/paillier_decentralized` | reviewed | adapted | ABMPSW20 Fig. 14 (MCFE1 = Fig. 3) | MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) are sampled in-process |
-| `mcfe/kp_ab_pairing` | reviewed | faithful | NPP22 Sec. 5.2 Fig. 3 | random oracle (tags hash to G1); one attribute set per tag, shared by all clients; one ciphertext per client and tag; every client must encrypt, no all-or-nothing layer (Remark 10); ciphertexts not authenticated; a key covers every tag |
+| `mcfe/kp_ab_pairing` | known-insecure | faithful | NPP22 Sec. 5.2 Fig. 3 | see [Known Issues](#known-issues--security-notice) |
 | `mcfe/kp_ab_pairing_per_client` | known-insecure | adapted | NPP22 Sec. 5.4 | see [Known Issues](#known-issues--security-notice) |
 | `quadratic/quad` | reviewed | adapted | Gay20 Fig. 4 over Fig. 8 (CPA) | signed inputs (discrete log in [-n m B^3, n m B^3]); CPA variant (no QANIZK); asymmetric pairing (default BLS12-381) |
 | `quadratic/sgp` | reviewed | adapted | DSGPP18 Fig. 2 | public key pk = (g1^s, g2^t) as in the paper; signed inputs with one bound B for x, y and F (discrete log in [-n^2 B^3, n^2 B^3]); generic bilinear group model |
@@ -286,7 +286,7 @@ an `FEWarning`. Give each configuration its own `cache_dir` to keep both (see
 | Dense LWE (`mcfe/lwe`, `fullysec_lwe`, `lwe_threshold`, `lwe_decentralized`) | `lwe_n = "auto"` from a lattice-estimator table for the LWE of the scheme's proof |
 | LWE with a public matrix (`sife/lwe`, `mife/lwe`) | `lwe_n = "auto"`, read at the error width of the LWE problem the proof reduces to; `matrix_mode` trades memory for time |
 | Pairings: FH-IPE, FH-MCFE family, quadratic FE | BLS12-381: about **120–126-bit** after the exTNFS attacks, below the target; a `FESecurityWarning` says so |
-| Refused (`FEValidationError`) | `sife/fullysec_lwe`, `mife/fullysec_lwe` (ALS16), `mife/lwe_threshold`, `mcfe/paillier_decentralized`: no parameter set that is both secure and usable; and every *known-insecure* scheme (`mcfe/kp_ab_pairing_per_client`): `standard` is for security |
+| Refused (`FEValidationError`) | `sife/fullysec_lwe`, `mife/fullysec_lwe` (ALS16), `mife/lwe_threshold`, `mcfe/paillier_decentralized`: no parameter set that is both secure and usable; and every *known-insecure* scheme (`mcfe/kp_ab_pairing`, `mcfe/kp_ab_pairing_per_client`): `standard` is for security |
 
 The statistical parameter `stat_param` (rounding and leftover-hash slack,
 flooding, masks) is 128 under `standard`; lower explicit values are refused.
@@ -335,14 +335,17 @@ ciphertext formats, several threads and the other families.
 
 ## Known Issues / Security Notice
 
-One registered scheme is known to be insecure, `mcfe/kp_ab_pairing_per_client`
-(first row below; the [Scheme Status](#scheme-status) table marks it
-*known-insecure*, its key generator and crypto objects emit a
-`pyfe4ai.FESecurityWarning`, and `security_profile="standard"` refuses it).
+Two registered schemes are known to be insecure, `mcfe/kp_ab_pairing` and
+`mcfe/kp_ab_pairing_per_client` (first rows below; the
+[Scheme Status](#scheme-status) table marks them *known-insecure*, their key
+generators and crypto objects emit a `pyfe4ai.FESecurityWarning`, and
+`security_profile="standard"` refuses them). The ML adapter's policy-gated
+aggregation runs on `mcfe/kp_ab_pairing`, so it is for experiments only.
 The following limitations remain as well:
 
 | Issue | Affected | In short |
 |---|---|---|
+| A corrupted client opens every functional key | `mcfe/kp_ab_pairing`, `mcfe/kp_ab_pairing_per_client` (*known-insecure*) | one corrupted client opens `k_{i,ipfe}` of every functional key with the rows of `Z_q` of its encryption key, so two keys whose policy the attributes do not satisfy give an inner product, an honest client's input among them, so the policy does not hold against a decryptor that colludes with one client; the proof of NPP22 Thm. 14 misses it; for functionality and performance experiments only |
 | Two rounds and two keys leak the difference of the rounds' inner products | `mcfe/kp_ab_pairing_per_client` (*known-insecure*) | the fifth coordinate of NPP22 Sec. 5.4 does not depend on the tag, so Thm. 25 as stated fails; for functionality and performance experiments only |
 | Toy default parameters | all schemes | not secure; pass `security_profile="standard"` (pairings stay at about 120–126 bits) |
 | No side-channel hardening | all schemes | CPython and big-integer arithmetic are not constant-time, nor is the pure-Python ristretto255 fallback |
@@ -359,6 +362,7 @@ The following limitations remain as well:
 
 | Issue | Affected schemes | Consequence |
 |---|---|---|
+| A corrupted client opens every functional key | `mcfe/kp_ab_pairing`, `mcfe/kp_ab_pairing_per_client` | The encryption key of client `i` in NPP22 Sec. 5.2 Fig. 3 holds the first two rows of its basis `H_i` (times `p_i`) as vectors of `Z_q`, which it needs to raise the hashed points to `c_{i,ipfe}`. Applied to the `G2` coordinates of `k_{i,ipfe}` of any functional key (a multi-exponentiation, no pairing, no policy), the same rows give `[p_i <S, y>]_2` and `[p_i <U, y>]_2`. A key of weight on client `i` alone then gives `[p_i]_2`, and any key `y`, whose policy the round's attributes do not satisfy, gives `[p_i <x, y>]_T` from the ciphertexts and so `<x, y>`: the input of an honest client for `y = e_h`. Both keys are refused by the scheme (`FEKeyError`) and admissible under Def. 9, so the notion of Def. 12 fails with one corrupted client; the proof of Thm. 14 (App. B.4, G4 to G5) changes the corrupted client's rows and checks only the decryptions. `sife/kp_ab_pairing` has no such rows and is not affected. Kept for experiments and as the record of the attack (`test_a_corrupted_client_opens_every_key_and_reads_an_honest_input`). |
 | Two rounds and two keys leak the difference of the rounds' inner products | `mcfe/kp_ab_pairing_per_client` | In NPP22 Sec. 5.4 each client encrypts for an attribute set of its own, which opens a mix-and-match attack on keys of different policies; the paper adds a fifth coordinate `d_i` to `k_i,ipfe` with `sum theta_i d_i = 0`. That obstacle depends on the key and the client, not on the tag. Two keys of one `y` that open neither of two rounds (two tags: two labels, or two elements of one array), where the set of each client satisfies one of the keys in both rounds, therefore give the difference of the two rounds' inner products `<x - x', y>`. Remark 10 and the game of Fig. 2 allow the adversary to encrypt under a second tag, and Def. 9 calls it admissible (neither key opens either round), so Theorem 25 (App. B.5, whose proof is only sketched) fails as stated. `mcfe/kp_ab_pairing`, with one attribute set per tag, is not affected. The scheme is kept for functionality and performance experiments and as the record of the attack (`test_two_tags_and_two_keys_read_the_difference_of_two_rounds`). |
 | No labels in multi-input FE | all MIFE schemes and quadratic `miqfe` | By definition, the holder of a functional key may combine any ciphertext of each slot. Encrypting several inputs per client under one key epoch -- e.g. a gradient element by element -- therefore reveals the differences between that client's values. The ML adapter refuses MIFE for gradient aggregation; use MCFE (labelled ciphertexts) for federated learning. |
 | Constructions of our own | tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE, tMCFE-FH-Multi-IPE; the dMCFE-DDH carry mask | The threshold layers (noise flooding, replicated or Shamir key sharing, sharing in the exponent) and the carry mask of `mcfe/ddh_decentralized` are our own and have no published security proof; see the module docstrings. |

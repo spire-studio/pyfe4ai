@@ -50,7 +50,8 @@ BLS12-381, about 120-126-bit after the exTNFS attacks (with a
 :class:`~pyfe4ai.core.exceptions.FESecurityWarning`),
 and ``sife/fullysec_lwe``, ``mife/fullysec_lwe`` (ALS16),
 ``mife/lwe_threshold`` and ``mcfe/paillier_decentralized`` are refused, as is
-every known-insecure scheme (``mcfe/kp_ab_pairing_per_client``).
+every known-insecure scheme (``mcfe/kp_ab_pairing``,
+``mcfe/kp_ab_pairing_per_client``).
 :mod:`pyfe4ai.core.profiles` below gives the parameters per family,
 including ``matrix_mode`` for the ABDP15 LWE schemes; :doc:`configuration`
 lists every option with its default under each profile, and the option
@@ -229,7 +230,9 @@ What the papers prove, scheme by scheme:
        has none), so a decryption needs the ciphertexts of all ``n`` clients,
        also of one whose weight is 0.
        Remark 11: all clients of a tag use one set of attributes, which the
-       tag hash enforces.
+       tag hash enforces. **The notion fails with one corrupted client**, and
+       the proof misses it: see `mcfe/kp_ab_pairing: a corrupted client opens
+       every functional key`_. The scheme is known-insecure.
    * - ``mcfe/kp_ab_pairing_per_client``
      - NPP22 Sec. 5.4, Thm. 25 (App. B.5): one-time IND security from SXDH,
        with a proof that the paper only sketches, as changes to the proof of
@@ -277,9 +280,61 @@ What none of the proofs covers, and what the schemes share:
 * **Reviewed against the papers, not audited, not constant-time.** The first
   three were checked against their papers (status *reviewed*, with the limits
   above and the fidelity of the status table); that is not a security audit.
-  The per-client variant is known-insecure (below). None of the four is
+  The two multi-client schemes are known-insecure (below). None of the four is
   constant-time (see above, and the two sections on the timing of ``encrypt``
   below).
+
+``mcfe/kp_ab_pairing``: a corrupted client opens every functional key
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The attack is stated here because the scheme is registered and the paper's
+theorem is cited for it. The test that reproduces it is
+``test_a_corrupted_client_opens_every_key_and_reads_an_honest_input`` in
+``tests/mcfe/test_kp_ab_pairing.py``; ``test_a_corrupted_client_opens_every_key_here_too``
+in ``tests/mcfe/test_kp_ab_pairing_per_client.py`` runs it on the per-client
+variation, which has the same rows.
+
+*The rows of the client key.* In NPP22 Sec. 5.2 Fig. 3 the encryption key of
+client ``i`` holds ``p_i H_i^(1)`` and ``p_i H_i^(2)``, the first two vectors
+of its basis ``H_i`` times its share ``p_i``, as vectors of ``Z_q``: the client
+needs them to raise the hashed points ``[omega]_1, [omega']_1`` to
+``c_i,ipfe = (omega p_i, omega' p_i, psi_i, 0)_H_i``. A functional key holds
+``k*_i,ipfe = (<S, y>, <U, y>, a0 z, 0)_H*_i``, four points of ``G2``, and
+``H_i`` and ``H_i*`` are dual. So the client's rows applied to the coordinates
+of ``k*_i,ipfe`` -- a multi-exponentiation in ``G2``, with no pairing and no
+use of the policy -- give ``[p_i <S, y>]_2`` and ``[p_i <U, y>]_2``, for every
+key.
+
+*Reading an inner product.* With a key of weight on client ``i`` alone
+(``y = e_i``, any policy) the client gets ``[p_i s_i]_2``, and with its own
+``s_i``, ``[p_i]_2``. For any other key ``y`` and the ciphertexts of a round,
+``e(prod_j t_j^(y_j), [p_i]_2) / (e([omega]_1, [p_i <S, y>]_2)
+e([omega']_1, [p_i <U, y>]_2)) = [p_i <x, y>]_T``, and a bounded discrete log
+in base ``e(g1, [p_i]_2)`` gives ``<x, y>``. For ``y = e_h`` that is the input
+of an honest client ``h``. Neither key opens the round through the scheme
+(``decrypt`` refuses both with ``FEKeyError`` when the round's attributes do not
+satisfy their policies).
+
+*Why Thm. 14 does not hold.* Def. 9 admits both keys: their policies are not
+satisfied by the challenge attributes, so its condition on the inner products
+does not apply, and corrupting one client is allowed. The adversary reads an
+honest client's challenge input, so the notion of Def. 12 fails. The proof
+(App. B.4) changes the rows given to a corrupted client in the step from G4 to
+G5 and checks that the decryptions agree in the two games, not these
+openings, which differ between them.
+
+*What it means here.* The policy of a key does not hold against a decryptor
+that colludes with one client: with two keys of any policies it reads what the
+policies were to withhold. Without a corrupted client the rows stay secret and
+the attack does not apply, but the scheme's claim is security under
+corruption. ``sife/kp_ab_pairing`` (Sec. 4) is not affected: its public key
+holds the group elements ``h1 + mu h2`` and ``h3``, not rows of ``Z_q``. A
+key-side mask of the first two coordinates (fresh ``d_i``, ``e_i`` per key with
+``sum_i p_i d_i = sum_i p_i e_i = 0``) stops this computation, but no proof of
+the masked construction is known, and the library does not implement it. The
+scheme is kept for functionality and performance experiments, and as the
+record of the attack; the ML adapter's policy-gated aggregation runs on it and
+is for experiments only.
 
 ``mcfe/kp_ab_pairing_per_client``: an attack on NPP22 Sec. 5.4
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -365,14 +420,15 @@ clients from the fields of the records, for two clients with the sets
 round alone gives no discrete logarithm, and the quotient of the two rounds
 decodes to ``-22``, which is ``<x - x', y>``.
 
-*Sec. 5.2 is not affected.* In ``mcfe/kp_ab_pairing`` the tag hash includes the
+*Sec. 5.2 is not affected by this attack* (it has the one above). In
+``mcfe/kp_ab_pairing`` the tag hash includes the
 set of attributes and all clients of a tag encrypt for one set. A key whose
 policy that set satisfies gives the part of every client, so it opens the round
 by itself; a key that does not gives no client's part. The attack needs a key
 that gives the parts of some clients and not of others, which cannot happen
 there, and there is no fifth coordinate. This says why the attack does not
-carry over, not that the scheme is secure: Thm. 14 is the paper's, and checking
-the implementation against the paper is not a proof.
+carry over, not that the scheme is secure: it is not (see `mcfe/kp_ab_pairing:
+a corrupted client opens every functional key`_).
 
 *In the library.* The scheme is kept for functionality and performance
 experiments and as the record of the attack. Its status is *known-insecure*;

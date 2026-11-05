@@ -1241,7 +1241,8 @@ COMBINATIONS = (
     Combination("``mcfe/kp_ab_pairing`` and ``mcfe/kp_ab_pairing_per_client``",
                 "no ``n``; ``eta`` other than 1; ``n * bound_x * bound_y`` above ``2^48``",
                 "``FEConfigError`` (no ``n``); ``FEValidationError`` (the others)"),
-    Combination("a known-insecure scheme (``mcfe/kp_ab_pairing_per_client``)", "``security_profile = 'toy'`` "
+    Combination("a known-insecure scheme (``mcfe/kp_ab_pairing``, ``mcfe/kp_ab_pairing_per_client``)",
+                "``security_profile = 'toy'`` "
                 "(``standard`` refuses it, see above)", "built, with a ``FESecurityWarning`` from the key generator "
                 "and the crypto objects"),
     Combination("the other pairing and quadratic schemes", "a discrete-log bound above ``2^48`` (e.g. "

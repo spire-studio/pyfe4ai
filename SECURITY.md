@@ -27,14 +27,15 @@ Responsible reporting of security issues is appreciated, especially for:
   (`pyfe4ai.get_scheme_status(family, variant)`, README *Scheme Status*):
   four threshold layers and the dMCFE-DDH carry mask are our own constructions
   (*experimental*, no published proof), and the DDH schemes over ristretto255
-  are not yet reviewed. The attribute-based `sife/cp_ab_pairing`,
-  `sife/kp_ab_pairing` and `mcfe/kp_ab_pairing` were checked against their
-  papers (*reviewed*, which is not a security audit). One scheme,
-  `mcfe/kp_ab_pairing_per_client` (the version of `mcfe/kp_ab_pairing` in which
-  each client has an attribute set of its own, NPP22 Sec. 5.4), is
-  *known-insecure*: its key generator and crypto objects emit a
-  `FESecurityWarning`, and `security_profile="standard"` refuses it, as it
-  refuses every known-insecure scheme (see Known Issues).
+  are not yet reviewed. The attribute-based `sife/cp_ab_pairing` and
+  `sife/kp_ab_pairing` were checked against their papers (*reviewed*, which is
+  not a security audit). Two schemes are *known-insecure*:
+  `mcfe/kp_ab_pairing` (NPP22 Sec. 5.2, checked against the paper; the
+  construction fails with one corrupted client) and
+  `mcfe/kp_ab_pairing_per_client` (the version in which each client has an
+  attribute set of its own, Sec. 5.4). Their key generators and crypto objects
+  emit a `FESecurityWarning`, and `security_profile="standard"` refuses them, as
+  it refuses every known-insecure scheme (see Known Issues).
 - **Network and parties.** The library adds no defence against active network
   attackers and assumes authenticated channels between parties.
 - **Threshold schemes.** Decryption servers are honest-but-curious: partial
@@ -83,6 +84,25 @@ limitations.
   attacks on its 381-bit field (Barbulescu and Duquesne, J. Cryptol. 2019).
   Under `standard` their key generators emit a `FESecurityWarning` saying so.
   No strict 128-bit pairing curve is offered.
+- **`mcfe/kp_ab_pairing` is known-insecure: a corrupted client opens every
+  functional key.** In NPP22 Sec. 5.2 Fig. 3 the encryption key of client `i`
+  holds the first two rows of its basis `H_i` (times `p_i`) as vectors of
+  `Z_q`. Applied to the `G2` coordinates of `k_{i,ipfe}` of any functional key,
+  without a pairing and without the policy, they give `[p_i <S, y>]_2` and
+  `[p_i <U, y>]_2`. With a key of weight on that client only, which gives
+  `[p_i]_2`, the client then computes `<x, y>` of any other key from the
+  ciphertexts of a round, also when the round's attributes do not satisfy the
+  key's policy: an honest client's input for `y = e_h`. Both keys are
+  admissible under Def. 9, so the security notion of Def. 12 fails with one
+  corrupted client; the proof of Thm. 14 (App. B.4, step G4 to G5) misses this
+  opening. The policy therefore does not hold against a decryptor that
+  colludes with a client, and the ML adapter's policy-gated aggregation, which
+  runs on this scheme, is for experiments only. `mcfe/kp_ab_pairing_per_client`
+  has the same rows and is affected as well; `sife/kp_ab_pairing` (Sec. 4) is
+  not. The test `test_a_corrupted_client_opens_every_key_and_reads_an_honest_input`
+  reproduces it. A key-side mask of the first two coordinates stops this
+  computation, but no proof of a masked construction is known, and the library
+  does not implement one.
 - **`mcfe/kp_ab_pairing_per_client` is known-insecure.** In the construction of
   NPP22 Sec. 5.4 (Nguyen, Phan and Pointcheval, ePrint 2022/215, revision of
   2022-09-18) each client encrypts for an attribute set of its own, and the
@@ -99,7 +119,8 @@ limitations.
   of two inner products for each pair of keys of one `y`: with pairs for several
   `y` (the unit vectors) it gives `x - x'` coordinate by coordinate, and the
   `x_i` themselves when one round is known. `mcfe/kp_ab_pairing` (Sec. 5.2,
-  one attribute set per tag) is not affected. The scheme is kept for
+  one attribute set per tag) is not affected by this attack (it has the one
+  above). The scheme is kept for
   functionality and performance experiments and as the record of the attack;
   the test `test_two_tags_and_two_keys_read_the_difference_of_two_rounds`
   reproduces it, and the security page of the documentation states it in full.

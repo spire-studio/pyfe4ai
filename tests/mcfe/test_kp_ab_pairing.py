@@ -991,3 +991,58 @@ def test_scalar():
             ac_codec.scalar(bad, "s", order)
 
 
+def corrupted_client_reads(kg, cts, key_self, key_other, corrupted, honest, scheme_id, claim):
+    """What a corrupted client reads with two functional keys: *key_self* with weight on *corrupted* only, and
+    *key_other*, from the fields of the records alone (its own client key, the public parameters, the keys and the
+    ciphertexts of a round). The rows of ``Z_q`` of its key open ``k*_i,ipfe`` of every key in ``G2``: ``[p_i s_i]_2``
+    from the first, so ``[p_i]_2``, and ``[p_i <S, y>]_2``, ``[p_i <U, y>]_2`` from the second; with ``prod_j t_j^y_j``
+    that gives ``[p_i <x, y>]_T``, and a bounded discrete log gives ``<x, y>`` of *key_other* (``None`` if not found).
+    *claim* gives the digest that the tag of a ciphertext hashes (``None`` for the per-client variation)."""
+    from pyfe4ai.primitives.pairing.pairing_backend import multiexp
+    from pyfe4ai.primitives.pairing.pairing_utils import bounded_discrete_log_gt
+
+    group = PairingGroup(GROUP)
+    order = int(group.order())
+    pp = kg.get_public_parameters()
+    g1 = group.deserialize(pp["g1"].encode("utf-8"))
+    sk = kg.get_private_keys(corrupted)
+    rows = [[int(v) for v in sk["p_h1"]], [int(v) for v in sk["p_h2"]]]
+
+    def opened(dk, row):
+        return multiexp([group.deserialize(v.encode("utf-8")) for v in dk["k_ipfe"][corrupted]], row, group)
+
+    p_i = opened(key_self, rows[0]) ** pow(int(sk["s"]), -1, order)
+    ct = cts[honest]
+    omega, omega_prime = tag_points(group, scheme_id, pp["pp_binding"], ct["label"], claim(ct))
+    masked = multiexp([group.deserialize(cts[nid]["t"].encode("utf-8")) for nid in cts],
+                      [int(key_other["y"][nid]) % order for nid in cts], group)
+    target = pair(masked, p_i) / (pair(omega, opened(key_other, rows[0])) * pair(omega_prime, opened(key_other,
+                                                                                                    rows[1])))
+    try:
+        return bounded_discrete_log_gt(group, pair(g1, p_i), target, kg.n * kg.bound_x * kg.bound_y)
+    except ValueError:
+        return None
+
+
+@pytest.mark.parametrize("weights", [{"nid_0": 0, "nid_1": 1, "nid_2": 0}, {"nid_0": 0, "nid_1": 2, "nid_2": -3}])
+def test_a_corrupted_client_opens_every_key_and_reads_an_honest_input(weights, make_mc):
+    """THE ATTACK OF A CORRUPTED CLIENT (why the scheme is known-insecure).
+
+    Client ``nid_0`` is corrupted. Its encryption key holds ``p_0 H_0^(1)``, ``p_0 H_0^(2)`` as vectors of ``Z_q``,
+    which open ``k*_0,ipfe`` of every functional key in ``G2``, without a pairing and without the policy. Two keys
+    whose policy the round's attributes do not satisfy -- both refused by ``decrypt`` with ``FEKeyError`` -- one with
+    weight on ``nid_0`` only, then give ``<x, y>`` of the other: the input of the honest ``nid_1`` alone, or a weighted
+    sum of the honest clients' inputs. Def. 9 calls both keys admissible (their policies are not satisfied), so the
+    notion of Def. 12 fails with one corrupted client, and the proof of Thm. 14 (App. B.4, G4 to G5) misses it."""
+    kg, clients, agg = make_mc()
+    cts = encrypt_all(clients, attributes=["region:US"])           # POLICY needs purpose:research and region:EU
+    key_self = kg.get_decryption_keys("agg", credentials=creds(POLICY, {"nid_0": 1, "nid_1": 0, "nid_2": 0}))
+    key_other = kg.get_decryption_keys("agg", credentials=creds(POLICY, weights))
+    for dk in (key_self, key_other):
+        with pytest.raises(FEKeyError, match="do not satisfy the policy"):
+            agg.decrypt(cts, dk)
+    got = corrupted_client_reads(kg, cts, key_self, key_other, "nid_0", "nid_1", "mcfe/kp_ab_pairing",
+                                 lambda ct: ct["attributes_digest"])
+    assert got == sum(X[nid] * weights[nid] for nid in LST)
+
+

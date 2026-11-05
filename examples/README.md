@@ -55,11 +55,12 @@ Schemes* in the top-level README.
 - `sife_kp_ab_pairing_minimal.py`: key-policy attribute-based IPFE `sife/kp_ab_pairing`
   (NPP22 Sec. 4): attributes in the ciphertext, the policy in the key
 - `mcfe_kp_ab_pairing_minimal.py`: multi-client FE with access control
-  `mcfe/kp_ab_pairing` (NPP22 Sec. 5.2): three clients encrypt under one tag with the
+  `mcfe/kp_ab_pairing` (NPP22 Sec. 5.2; *known-insecure*, it shows the scheme's use and
+  prints its `FESecurityWarning`): three clients encrypt under one tag with the
   round's attributes, and a key whose policy the attributes satisfy gives the
   weighted sum
 - `ml_fl_aggregation_policy.py`: policy-gated gradient aggregation with
-  `mcfe/kp_ab_pairing` through the ML adapter (`encrypt_gradient(..., attributes=)`,
+  `mcfe/kp_ab_pairing` (*known-insecure*) through the ML adapter (`encrypt_gradient(..., attributes=)`,
   `aggregate_gradients(..., policy=)`); for small vectors and statistics (see
   `docs/api/ml.rst`), not for large models
 

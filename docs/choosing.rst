@@ -158,14 +158,19 @@ its security argument is the project's own (the threshold layers of
 tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE and tMCFE-FH-Multi-IPE, and the carry
 mask of dMCFE-DDH); *unreviewed* -- not yet checked (the three
 ``ddh_ristretto255`` schemes); *known-insecure* -- a
-concrete privacy defect is known: ``mcfe/kp_ab_pairing_per_client``, the
-version of ``mcfe/kp_ab_pairing`` in which each client has an attribute set of
-its own (NPP22 Sec. 5.4). Its fifth coordinate does not depend on the tag, so
-two keys of one ``y`` that open neither of two rounds, where the set of each
-client satisfies one of the keys in both rounds, give the difference of the two
-rounds' inner products. It warns when built, the ``standard`` profile refuses
-it, and the ML adapter does not take it; it is for functionality and
-performance experiments and as the record of the attack.
+concrete privacy defect is known. Two schemes are: ``mcfe/kp_ab_pairing``
+(NPP22 Sec. 5.2), where one corrupted client opens every functional key with
+the rows of ``Z_q`` of its encryption key, so two keys whose policy the
+attributes do not satisfy give an inner product, an honest client's input
+among them; and ``mcfe/kp_ab_pairing_per_client``, the version in which each
+client has an attribute set of its own (Sec. 5.4), which has that defect and
+another: its fifth coordinate does not depend on the tag, so two keys of one
+``y`` that open neither of two rounds, where the set of each client satisfies
+one of the keys in both rounds, give the difference of the two rounds' inner
+products. Both warn when built and the ``standard`` profile refuses them; the
+ML adapter takes ``mcfe/kp_ab_pairing`` (for experiments) and not the
+per-client variant. They are for functionality and performance experiments
+and as the record of the attacks.
 
 Which scheme for which task
 ---------------------------
@@ -219,12 +224,14 @@ Which scheme for which task
        no universe)
    * - Release the sum of small vectors or statistics only for a key whose
        policy the clients' attributes satisfy
-     - ``mcfe/kp_ab_pairing`` (one set of attributes for all
+     - no secure choice: ``mcfe/kp_ab_pairing`` (one set of attributes for all
        clients of a label; through :mod:`pyfe4ai.ml` with ``attributes=`` and
-       ``policy=``, see :doc:`api/ml`)
+       ``policy=``, see :doc:`api/ml`) does this, but it is *known-insecure*:
+       a decryptor that colludes with one client reads what the policy
+       withholds (:doc:`security`). For experiments only.
 
-``mcfe/kp_ab_pairing`` is for aggregates of up to about 10^3 elements, not
-for the gradients of a large model. Every element is a ciphertext of its
+``mcfe/kp_ab_pairing`` is known-insecure (above), and is for aggregates of up
+to about 10^3 elements, not for the gradients of a large model. Every element is a ciphertext of its
 own, and the aggregator pairs several group elements per client and element.
 With 10 clients, 10^3 elements and ciphertexts for three attributes the
 aggregation takes about 50 s on one thread and about 8 s on eight, and a
@@ -275,12 +282,13 @@ proofs go (:doc:`security`).
      - selective (ACGU20 Thm. 3.2)
      - adaptive for the version with the boxed components (NPP22 Thm. 7);
        this is the selective one, without a proof of its own
-     - adaptive, random-oracle model (NPP22 Thm. 14, Cor. 15)
-     - Thm. 25 fails as stated
+     - adaptive, random-oracle model (NPP22 Thm. 14, Cor. 15); fails with one
+       corrupted client, which the proof misses
+     - Thm. 25 fails as stated, and the attack of Sec. 5.2 applies
    * - Status
      - reviewed
      - reviewed
-     - reviewed
+     - known-insecure
      - known-insecure
 
 *Ciphertext-policy or key-policy.* Take ``sife/cp_ab_pairing`` when the party
@@ -319,13 +327,15 @@ anyone who holds the public parameters encrypts, so a data owner needs no
 secret. ``mcfe/kp_ab_pairing`` is the multi-client scheme: every client holds a
 secret key, the sum over the clients is released by a key whose policy the
 clients' attributes satisfy, and one client missing, also one of weight 0,
-means no result. The ML adapter aggregates through it with a policy
-(:doc:`api/ml`). ``mcfe/kp_ab_pairing_per_client`` lets the clients hold
-different sets, and is *known-insecure*: it is not a choice for protecting
-data.
+means no result. It is *known-insecure*: one corrupted client opens every key,
+so the policy does not hold against a decryptor that colludes with a client.
+The ML adapter aggregates through it with a policy (:doc:`api/ml`), for
+experiments. ``mcfe/kp_ab_pairing_per_client`` lets the clients hold
+different sets, and is *known-insecure* too. Neither is a choice for
+protecting data.
 
-The first three are *reviewed* (checked against their papers) and the last one
-is *known-insecure*. Ciphertexts are malleable and carry their policy or
+The two single-input schemes are *reviewed* (checked against their papers) and
+the two multi-client ones are *known-insecure*. Ciphertexts are malleable and carry their policy or
 attributes in the clear, and none is constant-time: :doc:`security` lists what
 each paper proves and what it does not.
 

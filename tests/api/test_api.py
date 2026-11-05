@@ -68,13 +68,13 @@ def test_list_schemes():
     # `in`, not `==`: each attribute-based scheme that is added joins these lists
     unreviewed = pyfe4ai.list_schemes(status="unreviewed")
     assert {"sife/ddh_ristretto255", "mife/ddh_ristretto255", "mcfe/ddh_ristretto255"} <= set(unreviewed)
-    attribute_based = {"sife/cp_ab_pairing", "sife/kp_ab_pairing", "mcfe/kp_ab_pairing"}
-    assert not ({"sife/ddh", "sife/lwe"} | attribute_based) & set(unreviewed)
+    attribute_based = {"sife/cp_ab_pairing", "sife/kp_ab_pairing"}
+    assert not ({"sife/ddh", "sife/lwe", "mcfe/kp_ab_pairing"} | attribute_based) & set(unreviewed)
     assert attribute_based <= set(pyfe4ai.list_schemes(status="reviewed"))
     access_control = pyfe4ai.list_schemes(capabilities="access_control")
     assert {"sife/cp_ab_pairing", "sife/kp_ab_pairing", "mcfe/kp_ab_pairing",
             "mcfe/kp_ab_pairing_per_client"} <= set(access_control)
-    assert "mcfe/kp_ab_pairing_per_client" in pyfe4ai.list_schemes(status="known-insecure")
+    assert {"mcfe/kp_ab_pairing", "mcfe/kp_ab_pairing_per_client"} <= set(pyfe4ai.list_schemes(status="known-insecure"))
     assert "sife/ddh" not in access_control
     assert pyfe4ai.list_schemes(kind="lwe_matrix") == ["sife/fullysec_lwe", "mife/fullysec_lwe"]
     for kwargs in ({"family": "tmcfe"}, {"capabilities": "thresold"}, {"status": "ok"}, {"kind": "lattice"}):

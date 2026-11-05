@@ -8,16 +8,42 @@ compatibility).
 ## [0.5.0] — unreleased
 
 **Highlights.** Attribute-based inner-product functional encryption over
-pairings: `sife/cp_ab_pairing`, `sife/kp_ab_pairing` and `mcfe/kp_ab_pairing`,
-reviewed against their papers, and `mcfe/kp_ab_pairing_per_client`, which is
-known-insecure (an attack on NPP22 Sec. 5.4, see Security); `pyfe4ai.policy`
+pairings: `sife/cp_ab_pairing` and `sife/kp_ab_pairing`, reviewed against their
+papers, and the multi-client `mcfe/kp_ab_pairing` and
+`mcfe/kp_ab_pairing_per_client`, which are known-insecure (a corrupted client
+opens every functional key; and, for the per-client one, an attack on NPP22
+Sec. 5.4; see Security); `pyfe4ai.policy`
 for monotone access policies and attribute labels; policy-gated aggregation in
-the ML adapter; BLS12-381 batches on several threads and products of pairings
+the ML adapter, for experiments (it runs on `mcfe/kp_ab_pairing`); BLS12-381 batches on several threads and products of pairings
 over prepared G2 points. There are now 46 registered schemes. PyFE4AI remains
 an experimental research prototype, not recommended for production use.
 
 ### Security
 
+- **`mcfe/kp_ab_pairing` is known-insecure: a corrupted client opens every
+  functional key.** In NPP22 Sec. 5.2 Fig. 3 the encryption key of client `i`
+  holds `p_i H_i^(1)` and `p_i H_i^(2)`, the first two vectors of its basis
+  times its share, as vectors of `Z_q`. Applied to the `G2` coordinates of
+  `k_{i,ipfe}` of any functional key -- a multi-exponentiation, with no pairing
+  and no use of the policy -- they give `[p_i <S, y>]_2` and `[p_i <U, y>]_2`.
+  With a key of weight on that client alone (any policy), which gives
+  `[p_i]_2`, the client computes `<x, y>` of any other key from the ciphertexts
+  of a round, also when the round's attributes do not satisfy its policy; for
+  `y = e_h` that is an honest client's input. Both keys are admissible under
+  Def. 9, so the notion of Def. 12 fails with one corrupted client; the proof
+  of Thm. 14 (App. B.4, the step from G4 to G5) changes the rows of a
+  corrupted client and checks only the decryptions, not these openings. The
+  implementation follows Fig. 3; the defect is in the construction. The
+  scheme is registered as *known-insecure* (it warns when built, and
+  `security_profile="standard"` refuses it), kept for functionality and
+  performance experiments and as the record of the attack;
+  `test_a_corrupted_client_opens_every_key_and_reads_an_honest_input`
+  reproduces it, and `docs/security.rst` and `SECURITY.md` state it.
+  `mcfe/kp_ab_pairing_per_client` has the same rows and is affected too;
+  `sife/kp_ab_pairing` is not. The ML adapter's policy-gated aggregation runs
+  on this scheme and is for experiments only. A key-side mask of the first
+  two coordinates stops the computation, but no proof of a masked
+  construction is known, and the library does not implement one.
 - **`mcfe/kp_ab_pairing_per_client` is known-insecure: an attack on NPP22 Sec.
   5.4.** In the construction of Nguyen, Phan and Pointcheval (ePrint 2022/215,
   revision of 2022-09-18) each client encrypts for an attribute set of its
@@ -34,7 +60,7 @@ an experimental research prototype, not recommended for production use.
   Remark 10 and Fig. 2 allow, and is admissible under Def. 9, since neither
   key opens either round; Thm. 25 (App. B.5, which only sketches its proof) as
   stated fails. `mcfe/kp_ab_pairing` (Sec. 5.2, one attribute set per tag) is
-  not affected. The scheme is registered as *known-insecure* for functionality
+  not affected by this attack (it has the one above). The scheme is registered as *known-insecure* for functionality
   and performance experiments and as the record of the attack;
   `test_two_tags_and_two_keys_read_the_difference_of_two_rounds` reproduces
   it, and `docs/security.rst` (*`mcfe/kp_ab_pairing_per_client`: an attack on
@@ -74,12 +100,12 @@ an experimental research prototype, not recommended for production use.
   zero. In `mcfe/kp_ab_pairing` every element of a vector is a call of its own
   (`docs/security.rst`, *Offline / online encryption* and *Timing of `encrypt`
   in the key-policy schemes*).
-- **The three schemes are reviewed against their papers, and what the papers
-  prove is stated.** `sife/cp_ab_pairing`, `sife/kp_ab_pairing` and
-  `mcfe/kp_ab_pairing` have the status *reviewed* (checked against the cited
-  construction, for NPP22 its ePrint revision of 2022-09-18, no security
-  defect known; not a security audit), with the
-  fidelity *adapted*, *faithful* and *faithful*. The security of
+- **The three schemes are checked against their papers, and what the papers
+  prove is stated.** `sife/cp_ab_pairing` and `sife/kp_ab_pairing` have the
+  status *reviewed* (checked against the cited construction, for NPP22 its
+  ePrint revision of 2022-09-18, no security defect known; not a security
+  audit), with the fidelity *adapted* and *faithful*; `mcfe/kp_ab_pairing` is
+  *faithful* to Fig. 3 and *known-insecure* (above). The security of
   `sife/cp_ab_pairing` is selective, for one challenge ciphertext. The paper
   of `sife/kp_ab_pairing` proves the version with the boxed components and
   says the selective one, which the library implements, follows with similar

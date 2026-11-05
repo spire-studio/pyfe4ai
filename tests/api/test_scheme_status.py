@@ -118,12 +118,13 @@ def test_readme_status_table_is_the_rendered_table():
 
 
 def test_the_attribute_based_schemes_have_the_status_of_their_reviews():
-    """The three schemes of 0.5 were checked against their papers, with the fidelity recorded; the per-client scheme
-    stays known-insecure (its construction fails, see its issue)."""
+    """The three schemes of 0.5 were checked against their papers, with the fidelity recorded. The multi-client
+    scheme is faithful to Fig. 3 and known-insecure: the construction fails with one corrupted client (its issue,
+    2026-11); the per-client scheme stays known-insecure (its construction fails, see its issue)."""
     expected = {
         "sife/cp_ab_pairing": (st.REVIEWED, st.ADAPTED),
         "sife/kp_ab_pairing": (st.REVIEWED, st.FAITHFUL),
-        "mcfe/kp_ab_pairing": (st.REVIEWED, st.FAITHFUL),
+        "mcfe/kp_ab_pairing": (st.KNOWN_INSECURE, st.FAITHFUL),
         "mcfe/kp_ab_pairing_per_client": (st.KNOWN_INSECURE, st.ADAPTED),
     }
     assert {i: (get_scheme_status(i).status, get_scheme_status(i).fidelity) for i in expected} == expected

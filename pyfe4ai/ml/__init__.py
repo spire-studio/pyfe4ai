@@ -41,6 +41,8 @@ base64).
 **Policy-gated aggregation** (``mcfe/kp_ab_pairing``):
     The clients encrypt for a set of attributes, the key is for a policy, and
     the sum is released only if the set satisfies the policy. The scheme is
+    *known-insecure* (one corrupted client opens every functional key, see
+    :doc:`/security`), so this is for experiments, and it warns. It is
     for small vectors and statistics (up to about 10^3 elements), not for the
     gradients of a large model: every element is a ciphertext of its own that
     costs the aggregator several pairings per client (see :doc:`/choosing`).

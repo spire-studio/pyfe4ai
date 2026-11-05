@@ -31,11 +31,34 @@ the paper has, and the exponents of the bases are dropped at the end of setup. T
   ``(1, -j) . (j, 1) = 0``, ``sum_j w_j a_j = a0`` and ``sum_i p_i = 1``, and a bounded discrete log gives the
   result. It takes one ``multi_pair`` of ``n (8 |A| + 4) + 1`` pairs for the ``|A|`` rows that the coefficients use.
 
-NPP22 Thm. 14 and Cor. 15 prove this construction adaptively IND-secure from SXDH in the random-oracle model, with
-the notion of Def. 12: no client encrypts twice under one tag, and the challenge ciphertexts are those of all honest
-clients. The hash of this module is RFC 9380 ``hash_to_curve`` under a domain separation tag, taken as the random
-oracle. The registry status is ``reviewed``: the implementation was checked against the cited construction and no
-security defect is known. That is not a security audit, and the limits below stand.
+* status:   **known-insecure** (2026-11). NPP22 Thm. 14 and Cor. 15 state that this construction is adaptively
+  IND-secure from SXDH in the random-oracle model, with the notion of Def. 12 (no client encrypts twice under one tag,
+  the challenge ciphertexts are those of all honest clients, clients may be corrupted). The attack below breaks that
+  notion with one corrupted client, and the proof misses it. The implementation follows Fig. 3 (it was checked against
+  it); the defect is in the construction. The scheme is kept for functionality and performance experiments and as the
+  record of the attack. Its key generator and crypto objects emit a ``FESecurityWarning`` that names the issue, and
+  the ``standard`` security profile refuses it.
+
+The attack: a corrupted client opens every functional key. The encryption key of client ``i`` holds the first two rows
+of ``H_i`` times ``p_i`` as vectors of ``Z_q`` (``p_h1``, ``p_h2``): the client needs them to raise the hashed points
+``[omega]_1, [omega']_1`` to ``c_i,ipfe``. Since ``H_i`` and ``H_i*`` are dual, the same rows applied to the ``G2``
+coordinates of ``k*_i,ipfe = (<S, y>, <U, y>, a0 z, 0)_H*_i`` of *any* functional key (a multi-exponentiation in
+``G2``, with no pairing and no use of the policy) give ``[p_i <S, y>]_2`` and ``[p_i <U, y>]_2``. With a key of weight
+on client ``i`` alone (``y = e_i``, any policy) the client gets ``[p_i s_i]_2`` and so ``[p_i]_2``. With any other key
+``y``, whose policy the attributes do not satisfy, it computes ``e(sum_j y_j t_j, [p_i]_2) / (e([omega]_1, [p_i <S,
+y>]_2) e([omega']_1, [p_i <U, y>]_2)) = [p_i <x, y>]_T`` from the ciphertexts of a round, and a bounded discrete log in
+base ``e(g1, [p_i]_2)`` gives ``<x, y>``; for ``y = e_h`` that is the input of an honest client ``h``. Neither key
+opens the round through the scheme (``FEKeyError``), and Def. 9 calls both admissible (their policies are not
+satisfied, so its condition 3 does not apply). The proof of Thm. 14 changes the rows of a corrupted client in the step
+from G4 to G5 of App. B.4 and checks only that the decryptions agree, not these openings, which differ between the
+two games. ``test_a_corrupted_client_opens_every_key_and_reads_an_honest_input`` reproduces the attack from the fields
+of the records. ``sife/kp_ab_pairing`` (Sec. 4) is not affected: its public key holds the group elements ``h1 + mu
+h2`` and ``h3``, not rows of ``Z_q``. A key-side mask of the first two coordinates (``d_i``, ``e_i`` with
+``sum_i p_i d_i = sum_i p_i e_i = 0``, fresh for each key) stops this computation, but no proof of the masked
+construction is known, and the library does not implement it.
+
+The hash of this module is RFC 9380 ``hash_to_curve`` under a domain separation tag, taken as the random oracle. The
+limits below stand as well.
 
 A client encrypts once under a tag. Two ciphertexts of one client under one tag have the same ``omega, omega'`` (the
 same ``H(tag, S)``) and their ``t`` values differ by the difference of the plaintexts, in the exponent. The scheme
@@ -231,7 +254,9 @@ def _in_element(layer: int, index: tuple):
 
 
 class MCFEKPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
-    """Key generator for multi-client key-policy attribute-based IPFE over pairings.
+    """Key generator for multi-client key-policy attribute-based IPFE over pairings (NPP22 Sec. 5.2;
+    **known-insecure**, see the module documentation: constructing it emits a ``FESecurityWarning``, and the
+    ``standard`` profile refuses it).
 
     The class attributes ``H_DIM``, ``_pp_domain``, ``_H_STAR_ROWS``, ``_ClientKey`` and ``_FunctionalKey`` and the
     methods ``_client_extras``, ``_roots`` and ``_extra_coordinates`` are what a variation of this scheme
@@ -496,7 +521,8 @@ class MCFEKPABPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
 
 
 class MCFEKPABPairing(DecodedElementsMixin, IPFEAbsCrypto):
-    """Crypto operations for multi-client key-policy attribute-based IPFE over pairings.
+    """Crypto operations for multi-client key-policy attribute-based IPFE over pairings (NPP22 Sec. 5.2;
+    **known-insecure**, see the module documentation).
 
     What a variation of the scheme changes (``mcfe/kp_ab_pairing_per_client`` is one) is in the class attributes
     ``H_DIM``, ``_pp_domain``, ``_scheme_id`` and the record classes ``_ClientKey``, ``_FunctionalKey`` and

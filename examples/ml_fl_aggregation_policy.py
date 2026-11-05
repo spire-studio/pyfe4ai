@@ -12,6 +12,13 @@ vectors and statistics, up to about 10^3 elements per aggregate (see
 ``docs/api/ml.rst``), not for the gradients of a large model: use
 ``ml_fl_aggregation.py`` or the Ring-LWE schemes for those. As in that example,
 one wrapper plays every party, for experiments only.
+
+**Known-insecure** (2026-11): one corrupted client and two keys whose policy
+the attributes do not satisfy read an inner product, an honest client's input
+among them, so the policy does not hold against a decryptor that colludes
+with a client (``docs/security.rst``). The scheme emits a
+``FESecurityWarning``, and the ``standard`` profile refuses it. Run this to see
+how the scheme is used, not to protect data.
 """
 
 import numpy as np

@@ -1692,3 +1692,22 @@ def test_ndarray_with_no_elements(pc_fixed, monkeypatch):
     got = aggregate(agg, cts, dk)
     assert len(got) == 1 and got[0].shape == (0, 3) and got[0].dtype == float
     assert agg.decrypt_lst_ndarray_ct({nid: [] for nid in LST}, dk=dk, label="round-1") == []
+
+
+def test_a_corrupted_client_opens_every_key_here_too(make_pc):
+    """The attack of a corrupted client on ``mcfe/kp_ab_pairing``
+    (``test_a_corrupted_client_opens_every_key_and_reads_an_honest_input``) applies to this variation: the fifth
+    coordinate of ``H_i`` does not touch the first two, so the rows of ``Z_q`` of a client key open ``k*_i,ipfe`` of
+    every key as there. Both keys are for a policy that no client's set satisfies."""
+    from tests.mcfe.test_kp_ab_pairing import corrupted_client_reads
+
+    kg, clients, agg = make_pc()
+    cts = encrypt_each(clients, SETS)
+    key_self = kg.get_decryption_keys("agg", credentials=creds("org:Z", {"nid_0": 1, "nid_1": 0, "nid_2": 0}))
+    key_other = kg.get_decryption_keys("agg", credentials=creds("org:Z", {"nid_0": 0, "nid_1": 1, "nid_2": 0}))
+    for dk in (key_self, key_other):
+        with pytest.raises(FEKeyError, match="do not satisfy the policy"):
+            agg.decrypt(cts, dk)
+    got = corrupted_client_reads(kg, cts, key_self, key_other, "nid_0", "nid_1", "mcfe/kp_ab_pairing_per_client",
+                                 lambda ct: None)
+    assert got == X["nid_1"]

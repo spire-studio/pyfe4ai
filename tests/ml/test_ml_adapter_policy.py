@@ -773,10 +773,11 @@ def test_the_warning_is_attributed_to_the_caller():
 
 
 def test_a_small_aggregation_does_not_warn(wrapper, recwarn):
+    # of its cost; the scheme is known-insecure (2026-11), and its FESecurityWarning is the only one
     warnings.simplefilter("always")
     grads = gradients()
     aggregate_gradients(encrypt_all(wrapper, grads), wrapper, WEIGHTS, label=LABEL, policy=POLICY)
-    assert [str(w.message) for w in recwarn] == []
+    assert [str(w.message) for w in recwarn if "is known to be insecure" not in str(w.message)] == []
 
 
 def test_the_aggregation_passes_the_size_of_the_job(wrapper, monkeypatch):

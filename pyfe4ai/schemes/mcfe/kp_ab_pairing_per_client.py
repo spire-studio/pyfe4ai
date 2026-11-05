@@ -47,7 +47,10 @@ which the helpers encrypt under a tag each. Remark 10 and the game of Fig. 2 let
 than the challenge tag, and Def. 9 calls it admissible (``Rel = 0`` for both keys and both rounds, so its condition 3
 does not hold), so Thm. 25 as stated fails.
 ``test_two_tags_and_two_keys_read_the_difference_of_two_rounds`` reproduces it from the fields of the records.
-``mcfe/kp_ab_pairing`` is not affected: one attribute set per tag, so a key that gives a part opens the tag.
+``mcfe/kp_ab_pairing`` is not affected by this attack: one attribute set per tag, so a key that gives a part opens
+the tag. The attack of :mod:`pyfe4ai.schemes.mcfe.kp_ab_pairing` (a corrupted client opens ``k*_i,ipfe`` of every
+key with the rows of ``Z_q`` of its encryption key) applies here as well: the fifth coordinate does not touch the
+first two, and ``test_a_corrupted_client_opens_every_key_here_too`` reproduces it.
 
 Everything else is as in :mod:`pyfe4ai.schemes.mcfe.kp_ab_pairing`, which this module extends (its documentation
 applies): ``(F, F*)`` are dual bases of ``G1^8`` and ``G2^8`` shared by all clients, the rows of a policy sit in the

@@ -10,6 +10,13 @@ clients' secret keys, so this is a private-key scheme.
 A decryption needs the ciphertexts of every client (the shares of the clients'
 keys add up to 1, so a client of weight 0 is still needed), and a client
 encrypts once per tag.
+
+**Known-insecure** (2026-11): one corrupted client and two keys whose policy
+the attributes do not satisfy read an inner product, an honest client's input
+among them, so the policy does not hold against a decryptor that colludes
+with a client (``docs/security.rst``). The scheme emits a
+``FESecurityWarning``, and the ``standard`` profile refuses it. Run this to see
+how the scheme is used, not to protect data.
 """
 
 import pyfe4ai

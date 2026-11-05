@@ -44,7 +44,7 @@ Security profiles
      - ``sife/fullysec_lwe``, ``mife/fullysec_lwe``
      - refused
    * - pairing
-     - ``sife/fh_ipe_pairing``, ``sife/part_fh_ipe_pairing``, ``sife/cp_ab_pairing``, ``sife/kp_ab_pairing``, ``mife/fh_ipe_pairing``, ``mife/fh_multi_ipe_pairing``, ``mcfe/fh_multi_ipe_pairing``, ``mcfe/fh_multi_ipe_pairing_threshold``, ``mcfe/fh_multi_ipe_pairing_decentralized``, ``mcfe/kp_ab_pairing``, ``quadratic/quad``, ``quadratic/sgp``, ``quadratic/miqfe``
+     - ``sife/fh_ipe_pairing``, ``sife/part_fh_ipe_pairing``, ``sife/cp_ab_pairing``, ``sife/kp_ab_pairing``, ``mife/fh_ipe_pairing``, ``mife/fh_multi_ipe_pairing``, ``mcfe/fh_multi_ipe_pairing``, ``mcfe/fh_multi_ipe_pairing_threshold``, ``mcfe/fh_multi_ipe_pairing_decentralized``, ``quadratic/quad``, ``quadratic/sgp``, ``quadratic/miqfe``
      - ``pairing_group_param = 'BLS12-381'`` only, with a ``FESecurityWarning``
    * - ring_lwe
      - ``sife/ring_lwe``, ``sife/fullysec_ring_lwe``, ``mife/ring_lwe``, ``mcfe/ring_lwe``, ``mcfe/ring_lwe_threshold``, ``mcfe/ring_lwe_decentralized``
@@ -55,7 +55,8 @@ Refused under ``standard`` (``FEValidationError``):
 * ``sife/fullysec_lwe``, ``mife/fullysec_lwe``: at a 128-bit dimension (lwe_n = 3328 to 4352 for X = Y <= 50, eta <= 10) its public matrix has 1 to 2*10^10 entries and every ciphertext m = 4 n log2 q = 2.9 to 4.5*10^6 coordinates of 219 to 258 bits (80 to 145 MB); use sife/fullysec_ring_lwe for adaptive security, or the Ring-LWE scheme of the same family.
 * ``mife/lwe_threshold``: read at the width sigma / (1 + 4 X sqrt(eta)) of its security reduction, the LWE of its flooding-enlarged q (stat_param 128) needs a dimension at the very end of the 128-bit table (5888 to 6144, a public matrix of 6.5 to 7.8*10^9 entries) for a few small bounds, e.g. X = Y in {1, 2, 3, 8, 10} at eta = 1, and beyond it for most others (X = Y = 4 to 6, X = Y >= 12, most eta >= 2; about 6500 for X = Y = 50); use mife/ddh_threshold, or mcfe/ring_lwe_threshold with labels.
 * ``mcfe/paillier_decentralized``: its key shares would be combined under a DCR modulus of more than 15000 bits; use mcfe/ddh_decentralized.
-* ``mcfe/kp_ab_pairing_per_client``: known to be insecure: the fifth coordinate of NPP22 Sec. 5.4 does not depend on the tag, so two keys of one y that open neither of two tags (two rounds, or two elements of one array), where the set of each client satisfies one of the keys under both tags, give the difference of the two inner products, and Thm. 25 as stated fails.
+* ``mcfe/kp_ab_pairing``: known to be insecure: one corrupted client opens the k*_i,ipfe of every functional key with the rows p_i H_i^(1), p_i H_i^(2) of its encryption key, which are vectors of Z_q (a multi-exponentiation in G2: no pairing and no policy), so two keys whose policy the attributes do not satisfy, one of them with weight on that client only, give the inner product of the other, an honest client's input for a weight on that client alone, and the policy no longer controls what a decryptor colluding with one client reads.
+* ``mcfe/kp_ab_pairing_per_client``: known to be insecure: the fifth coordinate of NPP22 Sec. 5.4 does not depend on the tag, so two keys of one y that open neither of two tags (two rounds, or two elements of one array), where the set of each client satisfies one of the keys under both tags, give the difference of the two inner products, and Thm. 25 as stated fails; and, as in mcfe/kp_ab_pairing, one corrupted client opens the k*_i,ipfe of every key with the rows of Z_q of its encryption key, without the policy.
 
 Refused and constrained combinations
 ------------------------------------
@@ -156,7 +157,7 @@ Refused and constrained combinations
    * - ``mcfe/kp_ab_pairing`` and ``mcfe/kp_ab_pairing_per_client``
      - no ``n``; ``eta`` other than 1; ``n * bound_x * bound_y`` above ``2^48``
      - ``FEConfigError`` (no ``n``); ``FEValidationError`` (the others)
-   * - a known-insecure scheme (``mcfe/kp_ab_pairing_per_client``)
+   * - a known-insecure scheme (``mcfe/kp_ab_pairing``, ``mcfe/kp_ab_pairing_per_client``)
      - ``security_profile = 'toy'`` (``standard`` refuses it, see above)
      - built, with a ``FESecurityWarning`` from the key generator and the crypto objects
    * - the other pairing and quadratic schemes

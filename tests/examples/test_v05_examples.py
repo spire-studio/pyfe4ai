@@ -50,6 +50,10 @@ EXAMPLES = {
 }
 
 
+#: The examples of a known-insecure scheme: they print its ``FESecurityWarning`` (2026-11, see the scheme's issue).
+KNOWN_INSECURE = {"mcfe_kp_ab_pairing_minimal.py", "ml_fl_aggregation_policy.py"}
+
+
 @pytest.mark.parametrize("name", sorted(EXAMPLES))
 def test_the_example_runs_and_shows_what_it_is_for(name, tmp_path):
     env = dict(os.environ, PYTHONPATH=str(ROOT) + os.pathsep + os.environ.get("PYTHONPATH", ""),
@@ -57,7 +61,14 @@ def test_the_example_runs_and_shows_what_it_is_for(name, tmp_path):
     res = subprocess.run([sys.executable, str(ROOT / "examples" / name)], capture_output=True, text=True,
                          env=env, cwd=str(tmp_path), timeout=600)
     assert res.returncode == 0, res.stderr
-    assert res.stderr == ""                       # no warning either: an example is what a new user runs first
+    # no warning, an example is what a new user runs first; except the one that a known-insecure scheme must give
+    expected = [line for line in res.stderr.splitlines() if "FESecurityWarning" in line]
+    if name in KNOWN_INSECURE:
+        assert expected and all("mcfe/kp_ab_pairing is known to be insecure" in line for line in expected)
+        assert "FESecurityWarning" in res.stderr and all(
+            line.startswith((" ", str(ROOT))) or "FESecurityWarning" in line for line in res.stderr.splitlines())
+    else:
+        assert res.stderr == ""
     lines = res.stdout.splitlines()
     for line in EXAMPLES[name]:
         assert line in lines

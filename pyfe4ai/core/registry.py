@@ -601,10 +601,16 @@ SCHEMES: tuple[Scheme, ...] = (
         refused=_REFUSED_DMCFE_PAILLIER,
     ),
     _scheme(
-        "mcfe/kp_ab_pairing", PAIRING, REVIEWED, FAITHFUL, "NPP22 Sec. 5.2 Fig. 3",
+        "mcfe/kp_ab_pairing", PAIRING, KNOWN_INSECURE, FAITHFUL, "NPP22 Sec. 5.2 Fig. 3",
         note="random oracle (tags hash to G1); one attribute set per tag, shared by all clients; one ciphertext "
         "per client and tag; every client must encrypt, no all-or-nothing layer (Remark 10); ciphertexts not "
-        "authenticated; a key covers every tag",
+        "authenticated; a key covers every tag; the proof of Thm. 14 misses the attack of the issue (App. B.4, "
+        "G4 to G5); kept for functionality and performance experiments and as the record of the attack",
+        issue="one corrupted client opens the k*_i,ipfe of every functional key with the rows p_i H_i^(1), "
+        "p_i H_i^(2) of its encryption key, which are vectors of Z_q (a multi-exponentiation in G2: no pairing and no "
+        "policy), so two keys whose policy the attributes do not satisfy, one of them with weight on that client "
+        "only, give the inner product of the other, an honest client's input for a weight on that client alone, and "
+        "the policy no longer controls what a decryptor colluding with one client reads",
         capabilities=(ACCESS_CONTROL,),
     ),
     _scheme(
@@ -615,7 +621,9 @@ SCHEMES: tuple[Scheme, ...] = (
         "of the attack",
         issue="the fifth coordinate of NPP22 Sec. 5.4 does not depend on the tag, so two keys of one y that open "
         "neither of two tags (two rounds, or two elements of one array), where the set of each client satisfies one "
-        "of the keys under both tags, give the difference of the two inner products, and Thm. 25 as stated fails",
+        "of the keys under both tags, give the difference of the two inner products, and Thm. 25 as stated fails; "
+        "and, as in mcfe/kp_ab_pairing, one corrupted client opens the k*_i,ipfe of every key with the rows of Z_q "
+        "of its encryption key, without the policy",
         capabilities=(ACCESS_CONTROL,),
     ),
     # --- quadratic ----------------------------------------------------------
