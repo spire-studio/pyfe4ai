@@ -1,4 +1,4 @@
-"""Sizes and times of one slot of ``bcfe/gc_ristretto255`` (0.6 P1), per circuit.
+"""Sizes and times of one slot of ``bcfe/gc_ristretto255``, per circuit.
 
 For each library circuit and data-wire mode: the gate statistics of
 ``guard(C)``, the sizes of a slot's public-key table and of one ciphertext
@@ -29,7 +29,7 @@ import time
 from pyfe4ai import backend
 from pyfe4ai import circuits
 
-#: name -> (builder, keyword arguments); the sizes of 01_schemes_overview section 4.
+#: name -> (builder, keyword arguments): logistic-regression scores at 16 and 8 bits, a small MLP.
 CIRCUITS = {
     "lr16": ("linear_threshold", {"n": 100, "bw": 16, "bx": 16}),
     "lr8": ("linear_threshold", {"n": 100, "bw": 8, "bx": 8}),

@@ -607,7 +607,7 @@ BCFE_VERSION = 1
 #: The label KEM of ``bcfe/gc_ristretto255`` (``kem``): hashed ElGamal over ristretto255, one ``R`` per
 #: (ciphertext, slot).
 BCFE_KEM = "ristretto255-hashed-elgamal-v1"
-#: The garbling scheme (``gc``): half-gates (ZRE15 Fig. 2) with the instance salt of plan 0.6 P1 section 3.5.
+#: The garbling scheme (``gc``): half-gates (ZRE15 Fig. 2) with the instance salt of :func:`pyfe4ai.primitives.garbling.gate_hash`.
 BCFE_GC = "half-gates-v1"
 #: The gate hash (``gc_hash``).
 BCFE_GC_HASH = "shake128"

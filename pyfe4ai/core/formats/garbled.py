@@ -17,7 +17,7 @@ padding) of their bytes. A reader accepts only these canonical forms
 first (bit ``i`` is bit ``i % 8`` of byte ``i // 8``, the unused high bits of
 the last byte zero). Lengths are fixed by the circuit: ``m`` key bits,
 ``n`` data bits, ``n_out`` output bits of ``C``; ``guard(C)`` has ``m + 1``
-key wires (plan 0.6 P1, sections 3.2 and 3.9).
+key wires (:meth:`pyfe4ai.circuits.Circuit.guard`).
 
 **Digests** (``u8``, ``u32``, ``u64``: fixed-length little-endian integers;
 ``||``: concatenation; every field fixed-length or length-prefixed, so each

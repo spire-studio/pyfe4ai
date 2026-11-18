@@ -25,8 +25,10 @@ fresh ``Delta``, fresh labels and a fresh ephemeral key ``R`` for every
 (ciphertext, slot), and encrypts each key-wire label under its public key
 (hashed ElGamal: :mod:`pyfe4ai.primitives.bcfe_kem`). The holder of slot
 ``i``'s key opens the labels of ``w || 0`` and evaluates ``C(w, x)``. The byte
-layout is the 0.6 P1 plan, sections 3.1 to 3.9; the records and their
-digests are in :mod:`pyfe4ai.core.formats.garbled`. The parallel instances
+layouts are documented in :mod:`pyfe4ai.circuits` (the circuit encoding),
+:mod:`pyfe4ai.primitives.garbling` (the garbling) and
+:mod:`pyfe4ai.primitives.bcfe_kem` (the slot keys and labels); the records and
+their digests are in :mod:`pyfe4ai.core.formats.garbled`. The parallel instances
 follow AV19 Thm. 4 (Ananth and Vaikuntanathan, TCC 2019) with a
 deterministic allocation; GVW12 (Gorbunov, Vaikuntanathan and Wee, CRYPTO
 2012) is the bounded-collusion setting this is *not* (see below).
@@ -52,8 +54,8 @@ record kept by the authority. The same requester asking again for the same
 ``w`` gets the same key (h1, byte for byte) or the same grant (h2); another
 requester asking for the same ``w`` gets a slot of its own.
 
-**What is proved, and what is not** (the 0.6 security argument,
-``03_security_argument.md``): IND security against adaptive key, corruption
+**What is proved, and what is not** (the project's security argument for
+this scheme, reviewed internally twice; there is no external review): IND security against adaptive key, corruption
 and registration queries, many challenge ciphertexts, in the random oracle
 model (``H_G``, ``H_K``, ``H_P``) under the strong DH assumption in
 ristretto255 (Lemma A1'), for the half-gates garbling with the instance
@@ -121,7 +123,7 @@ Python reference is not constant time and cannot wipe its copies of
 secrets; the native implementation draws its randomness from the operating
 system and wipes ``Delta``, the seeds, ``r`` and the labels.
 
-**Test randomness** (review R06-03; decided 2026-11-19). The backend's test
+**Test randomness.** The backend's test
 hook ``pyfe4ai.backend._random_override`` hands every operation that draws
 random bytes the bytes of the test: left set outside a test, every (ciphertext,
 slot) of this scheme would garble with attacker-known ``Delta``, labels and
@@ -203,12 +205,12 @@ AUTHORITY_FORMAT = "pyfe4ai-bcfe-authority"
 AUTHORITY_FORMAT_VERSION = 1
 _TEMP_PREFIX = ".bcfe-"
 
-#: The one error of a component that does not decrypt (I10): malformed, or of
-#: another slot, ciphertext or key -- the cause is not told apart.
-#: The error of the calls that draw randomness while the tests' hook is set (review R06-03).
+#: The error of the calls that draw randomness while the tests' hook is set.
 TEST_RANDOMNESS_REFUSED = ("pyfe4ai.backend._random_override is set: bcfe refuses to issue, set up or encrypt with "
                            "test randomness")
 
+#: The one error of a component that does not decrypt (I10): malformed, or of
+#: another slot, ciphertext or key -- the cause is not told apart.
 DECRYPTION_FAILED = ("the ciphertext component of this key's slot does not decrypt with this key (malformed, or "
                      "made for another slot, ciphertext or key)")
 
