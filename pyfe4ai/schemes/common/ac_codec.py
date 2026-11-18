@@ -140,9 +140,13 @@ def load_group(name) -> PairingGroup:
     """The asymmetric pairing group that the parameter ``pairing_group_param`` = *name* names.
 
     Raises:
-        FEValidationError: For a name that is no pairing group, and for a symmetric group.
-        ImportError: If no backend is installed for a group that may exist: the installation, not the parameters.
+        FEValidationError: For a name that is no pairing group (a value that is not text always), and for a symmetric
+            group.
+        ImportError: If no backend is installed for a group that may exist (a text that is not BLS12-381, without
+            charm-crypto): the installation, not the parameters.
     """
+    if type(name) is not str:       # no group has such a name, whatever is installed
+        raise FEValidationError("pairing_group_param {} is not a pairing group".format(clip(repr(name))))
     try:
         group = PairingGroup(name)
     except ImportError:

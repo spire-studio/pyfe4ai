@@ -953,9 +953,17 @@ def test_copy_parameters():
 def test_load_group():
     group = ac_codec.load_group(GROUP)
     assert int(group.order()) == int(PairingGroup(GROUP).order())
-    for name in (5, "nothing", None, ["BLS12-381"]):
+    for name in (5, None, ["BLS12-381"]):
         with pytest.raises(FEValidationError, match="pairing_group_param"):
             ac_codec.load_group(name)
+    # a text that names no group: charm-crypto tells; without it (the CI lanes that build only the extension) the
+    # name may be a charm group that is not installed, and load_group raises the ImportError of the installation
+    if pairing_backend.PAIRING_IMPORT_ERROR is None:
+        with pytest.raises(FEValidationError, match="pairing_group_param"):
+            ac_codec.load_group("nothing")
+    else:
+        with pytest.raises(ImportError, match="charm-crypto"):
+            ac_codec.load_group("nothing")
     if pairing_backend.pairing_available("SS512"):
         with pytest.raises(FEValidationError, match="symmetric"):
             ac_codec.load_group("SS512")

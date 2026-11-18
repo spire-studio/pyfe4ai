@@ -255,8 +255,15 @@ def test_crypto_refuses_an_unknown_version_marker(field, make_mc):
 ])
 def test_crypto_refuses_parameters_that_are_not_these(changes, match, make_mc):
     kg, _, _ = make_mc()
+    pp = rebound(kg.get_public_parameters(), **changes)
+    if changes.get("pairing_group_param") == "nothing" and pairing_backend.PAIRING_IMPORT_ERROR is not None:
+        # without charm-crypto a text that is not BLS12-381 may name a charm group that is not installed
+        # (ac_codec.load_group): the error is the installation's
+        with pytest.raises(ImportError, match="charm-crypto"):
+            MCFEKPABPairing({"keys": {"pp": pp}})
+        return
     with pytest.raises(FEValidationError, match=match):
-        MCFEKPABPairing({"keys": {"pp": rebound(kg.get_public_parameters(), **changes)}})
+        MCFEKPABPairing({"keys": {"pp": pp}})
 
 
 @pytest.mark.parametrize("field", MCKPABParameters.FIELDS)
