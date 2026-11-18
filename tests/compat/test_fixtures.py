@@ -128,3 +128,10 @@ def test_the_tiers_follow_the_registry():
     assert stability.config_tier("sife/fullysec_ring_lwe", {"ndarray_layout": "packed"}) == "experimental"
     assert stability.config_tier("sife/fullysec_ring_lwe", {"ndarray_layout": "elementwise"}) == "stable"
     assert stability.config_tier("mcfe/kp_ab_pairing") == "known-insecure"
+
+
+def test_the_policy_compiler_marker_is_listed_with_the_others():
+    from pyfe4ai.core import versions
+    from pyfe4ai.policy import encoding
+
+    assert versions.POLICY_COMPILER == encoding.POLICY_COMPILER
