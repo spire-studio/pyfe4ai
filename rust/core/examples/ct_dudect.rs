@@ -174,6 +174,8 @@ impl Target for ReduceU128 {
 
 /// S2: forward NTT of a secret polynomial (fixed vs random), n = 1024, a 60-bit NTT prime (u64 words).
 struct NttFwd {
+    /// A/A test: both classes random (any |t| > 4.5 is a false positive of the harness or the machine).
+    null: bool,
     scratch: Vec<u64>,
     ring: AnyRing,
     q: u64,
@@ -186,7 +188,7 @@ impl Target for NttFwd {
         for x in self.scratch.iter_mut() {
             *x = rng.next() % self.q;
         }
-        self.input.copy_from_slice(if class == 0 { &self.fixed } else { &self.scratch });
+        self.input.copy_from_slice(if class == 0 && !self.null { &self.fixed } else { &self.scratch });
     }
     fn run(&mut self) {
         if let AnyRing::W64(r) = &self.ring {
@@ -278,18 +280,17 @@ impl Target for PowSecret {
 /// Control that should not leak: SHAKE-256 of 64 bytes (fixed vs random) into 512 bytes.
 struct Shake {
     fixed: [u8; 64],
+    scratch: [u8; 64],
     msg: [u8; 64],
     out: [u8; 512],
     calls: usize,
 }
 impl Target for Shake {
     fn prepare(&mut self, class: usize, rng: &mut Rng) {
-        for c in self.msg.chunks_mut(8) {
+        for c in self.scratch.chunks_mut(8) {
             c.copy_from_slice(&rng.next().to_le_bytes());
         }
-        if class == 0 {
-            self.msg = self.fixed;
-        }
+        self.msg = if class == 0 { self.fixed } else { self.scratch };
     }
     fn run(&mut self) {
         for _ in 0..self.calls {
@@ -308,6 +309,7 @@ const TARGETS: &[(&str, &str, usize)] = &[
     ("shamir_share", "S4: Shamir sharing of 256 secrets, t = 3", 1),
     ("pow_secret_exp", "control, must leak: square-and-multiply on a secret exponent", 64),
     ("shake256", "control, should not leak: SHAKE-256 of 64 bytes", 16),
+    ("null_ntt", "A/A control: the forward NTT with random inputs in both classes (must not leak)", 1),
 ];
 
 fn make(name: &str, calls: usize, rng: &mut Rng) -> Box<dyn Target> {
@@ -322,14 +324,15 @@ fn make(name: &str, calls: usize, rng: &mut Rng) -> Box<dyn Target> {
             let fixed: Vec<u128> = (0..calls).map(|_| (rng.next() % Q60) as u128).collect();
             Box::new(ReduceU128 { m, v: fixed.clone(), scratch: fixed.clone(), fixed })
         }
-        "ntt_fwd" => {
+        "ntt_fwd" | "null_ntt" => {
             let n = 1024;
             let (q, root) = ntt_prime(60, n);
             let ring = AnyRing::new(q, n, root).expect("ring");
             let q = q.to_u128() as u64;
             assert!(matches!(ring, AnyRing::W64(_)), "a 60-bit q has u64 words");
             let fixed: Vec<u64> = (0..n).map(|_| rng.next() % q).collect();
-            Box::new(NttFwd { ring, q, input: fixed.clone(), scratch: fixed.clone(), fixed, out: vec![0; n] })
+            Box::new(NttFwd { null: name == "null_ntt", ring, q, input: fixed.clone(), scratch: fixed.clone(), fixed,
+                              out: vec![0; n] })
         }
         "rlwe_encrypt" => {
             let n = 1024;
@@ -358,7 +361,7 @@ fn make(name: &str, calls: usize, rng: &mut Rng) -> Box<dyn Target> {
             for c in fixed.chunks_mut(8) {
                 c.copy_from_slice(&rng.next().to_le_bytes());
             }
-            Box::new(Shake { fixed, msg: fixed, out: [0; 512], calls })
+            Box::new(Shake { fixed, scratch: fixed, msg: fixed, out: [0; 512], calls })
         }
         _ => {
             eprintln!("unknown target {} (see `list`)", name);
