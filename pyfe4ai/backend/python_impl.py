@@ -338,3 +338,62 @@ class PythonBackend(Backend):
         from pyfe4ai.primitives import garbling
 
         return garbling.evaluate(circuit, mode, salt, tables, decode, key_active, data_active)
+
+    # -- bounded-key FE: slot public keys and the label KEM (bcfe)
+
+    @staticmethod
+    def _bcfe_random(nbytes: int) -> bytes:
+        """The *nbytes* random bytes of one ``bcfe_*`` call, read at once: the
+        tests' bytes (``pyfe4ai.backend._random_override``), else the
+        operating system (I1)."""
+        import os
+
+        from pyfe4ai import backend as _b
+
+        override = _b._random_override
+        data = os.urandom(nbytes) if override is None else override(nbytes)
+        if not isinstance(data, (bytes, bytearray)) or len(data) != nbytes:
+            raise ValueError("the random bytes of the call must be {} bytes".format(nbytes))
+        return bytes(data)
+
+    @staticmethod
+    def _bcfe_packed(data, what: str) -> bytes:
+        if not isinstance(data, (bytes, bytearray, memoryview)):
+            raise TypeError("{} must be the packed bits (bytes), not {}".format(what, type(data).__name__))
+        return bytes(data)
+
+    def bcfe_new_slot(self, setup_digest: bytes, slot_id: int, w: bytes, *, m: int) -> dict:
+        from pyfe4ai.primitives import bcfe_kem
+
+        m = bcfe_kem.check_key_bits_count(m)  # m first: it sets the number of bytes
+        data = self._bcfe_random(bcfe_kem.SCALAR_DRAW_BYTES * (m + 1) + bcfe_kem.SLOT_KEY_BYTES)
+        return bcfe_kem.new_slot(setup_digest, slot_id, self._bcfe_packed(w, "w"), bcfe_kem.byte_source(data), m=m)
+
+    def bcfe_place_slot(self, setup_digest: bytes, slot_id: int, w: bytes, holder_pks: bytes, *, m: int) -> dict:
+        from pyfe4ai.primitives import bcfe_kem
+
+        data = self._bcfe_random(bcfe_kem.SLOT_KEY_BYTES)  # k, before the inputs are checked
+        return bcfe_kem.place_slot(setup_digest, slot_id, self._bcfe_packed(w, "w"), holder_pks,
+                                   bcfe_kem.byte_source(data), m=m)
+
+    def bcfe_unselected_ok(self, setup_digest: bytes, slot_id: int, w: bytes, k: bytes, pks: bytes, *,
+                           m: int) -> bool:
+        from pyfe4ai.primitives import bcfe_kem
+
+        return bcfe_kem.unselected_ok(setup_digest, slot_id, self._bcfe_packed(w, "w"), k, pks, m=m)
+
+    def bcfe_encrypt_slot(self, circuit: bytes, mode: str, pp_digest: bytes, ct_nonce: bytes, slot_id: int,
+                          x: bytes, pks: bytes) -> dict:
+        from pyfe4ai.primitives import bcfe_kem
+
+        seed = self._bcfe_random(bcfe_kem.SEED_BYTES)  # one fresh seed per (ciphertext, slot), before the checks
+        return bcfe_kem.encrypt_slot(circuit, mode, pp_digest, ct_nonce, slot_id, self._bcfe_packed(x, "x"), pks,
+                                     seed)
+
+    def bcfe_decrypt_slot(self, circuit: bytes, mode: str, pp_digest: bytes, ct_nonce: bytes, slot_id: int,
+                          R: bytes, label_cts: bytes, tables: bytes, decode: bytes, data_active: bytes,
+                          scalars: bytes, w: bytes) -> bytes:
+        from pyfe4ai.primitives import bcfe_kem
+
+        return bcfe_kem.decrypt_slot(circuit, mode, pp_digest, ct_nonce, slot_id, R, label_cts, tables, decode,
+                                     data_active, scalars, self._bcfe_packed(w, "w"))

@@ -550,3 +550,191 @@ class Backend(abc.ABC):
                 circuit has, another number of key or data labels, or
                 decoding bits that are not ``n_out`` packed bits.
         """
+
+    # -- bounded-key FE: slot public keys and the label KEM (bcfe) -------------------------
+
+    @abc.abstractmethod
+    def bcfe_new_slot(self, setup_digest: bytes, slot_id: int, w: bytes, *, m: int) -> dict:
+        """Issue a slot for the key bits *w* (h1 with h', plan 0.6 P1 section
+        3.9): :func:`~pyfe4ai.primitives.bcfe_kem.new_slot`. The center draws
+        the secret keys of the selected positions ``(j, w_j)`` and of the g
+        bit; the unselected positions are ``H_P(setup_digest, slot_id, j,
+        k)`` (:func:`~pyfe4ai.primitives.bcfe_kem.unselected_pk`), whose
+        discrete logarithms nobody knows.
+
+        Args:
+            setup_digest: The 32-byte setup digest
+                (:func:`~pyfe4ai.primitives.bcfe_kem.setup_digest`).
+            slot_id: The slot number, in ``[0, 2^64)``.
+            w: The ``m`` key bits, packed least significant bit first.
+            m: The number of key bits of ``C`` (``guard(C)`` has ``m + 1``
+                key wires), in ``[1, 2^31 - 1)``: the packed *w* does not
+                determine it.
+
+        Returns:
+            ``{"scalars": 32 B x (m + 1), "pks": 32 B x (2m + 1), "k": 16
+            B}``, all bytes: the secret keys of ``(j, w_j)`` for ``j = 0 ..
+            m - 1`` and then of ``(g, 0)``, canonical little-endian below the
+            group order; the table ``P[j, 0] || P[j, 1]`` for ``j = 0 .. m -
+            1`` and then ``P[m, 0]`` (32-byte encodings); the slot secret
+            ``k``.
+
+        Randomness: one read of ``64 (m + 1) + 16`` bytes per call, after
+        *m* is checked and before the other inputs are checked: from the
+        operating system (:func:`os.urandom` in the reference, the
+        extension's OS source natively), or ``override(64 (m + 1) + 16)``
+        when a test set ``pyfe4ai.backend._random_override`` (natively
+        :func:`~pyfe4ai.backend.native_impl.random_input`). In that order:
+        64 bytes per secret key, ``j = 0 .. m - 1`` then the g bit, each read
+        little-endian and reduced mod the group order (a key 0 raises
+        ``ValueError``, there is no redraw: probability 2^-252); then the 16
+        bytes of ``k``. The same bytes give the same output in both
+        implementations.
+
+        Secrets: *w* (the table does not reveal it), the random bytes, the
+        returned ``scalars`` and ``k`` (never published); the extension
+        wipes its copies.
+
+        Raises:
+            TypeError: For inputs that are not bytes.
+            ValueError: For *m* out of range, a setup digest of another
+                length than 32 bytes, *slot_id* out of range, *w* not
+                ``ceil(m / 8)`` bytes or with nonzero padding bits, test
+                bytes of another length, or a secret key 0.
+        """
+
+    @abc.abstractmethod
+    def bcfe_place_slot(self, setup_digest: bytes, slot_id: int, w: bytes, holder_pks: bytes, *, m: int) -> dict:
+        """Issue a slot from the key holder's public keys (h2 with h'):
+        :func:`~pyfe4ai.primitives.bcfe_kem.place_slot`. The holder's keys go
+        to ``(j, w_j)`` and ``(g, 0)``; each must be the canonical encoding
+        of a group element other than the identity (I8, no proof of
+        knowledge asked); the unselected positions are derived from a fresh
+        ``k``.
+
+        Args:
+            setup_digest, slot_id, w, m: As :meth:`~pyfe4ai.backend.interface.Backend.bcfe_new_slot`.
+            holder_pks: ``32 B x (m + 1)``: the holder's keys for ``(j,
+                w_j)``, ``j = 0 .. m - 1``, then for ``(g, 0)``.
+
+        Returns:
+            ``{"pks": 32 B x (2m + 1), "k": 16 B}`` as
+            :meth:`~pyfe4ai.backend.interface.Backend.bcfe_new_slot`; the
+            center hands ``k`` to the holder for
+            :meth:`~pyfe4ai.backend.interface.Backend.bcfe_unselected_ok`.
+
+        Randomness: the 16 bytes of ``k``, one read per call before the
+        inputs are checked (the operating system, or ``override(16)``).
+
+        Secrets: *w*, ``k``; the extension wipes its copies.
+
+        Raises:
+            TypeError: For inputs that are not bytes.
+            ValueError: For malformed fields as
+                :meth:`~pyfe4ai.backend.interface.Backend.bcfe_new_slot`,
+                *holder_pks* of another length than ``32 (m + 1)`` bytes, a
+                holder key that is not a canonical encoding or is the
+                identity, or test bytes of another length.
+        """
+
+    @abc.abstractmethod
+    def bcfe_unselected_ok(self, setup_digest: bytes, slot_id: int, w: bytes, k: bytes, pks: bytes, *,
+                           m: int) -> bool:
+        """The h' part of the key holder's CheckAuth (I13):
+        :func:`~pyfe4ai.primitives.bcfe_kem.unselected_ok`. ``True`` if the
+        table *pks* has exactly ``2m + 1`` entries (``32 (2m + 1)`` bytes)
+        and every unselected position ``(j, 1 - w_j)`` holds
+        ``H_P(setup_digest, slot_id, j, k)``; a table of another length is
+        ``False``. The caller checks the rest: its own keys at ``(j, w_j)``
+        and ``(g, 0)``. Deterministic.
+
+        Secrets: *w* and *k*; the extension wipes its copies.
+
+        Raises:
+            TypeError: For inputs that are not bytes.
+            ValueError: For *m* out of range, a setup digest of another
+                length than 32 bytes, *slot_id* out of range, *k* of another
+                length than 16 bytes, *w* not ``ceil(m / 8)`` bytes or with
+                nonzero padding bits.
+        """
+
+    @abc.abstractmethod
+    def bcfe_encrypt_slot(self, circuit: bytes, mode: str, pp_digest: bytes, ct_nonce: bytes, slot_id: int,
+                          x: bytes, pks: bytes) -> dict:
+        """One slot's component of a ciphertext (garbling and label
+        encryption fused): :func:`~pyfe4ai.primitives.bcfe_kem.encrypt_slot`
+        with a fresh seed. ``guard(C)`` is garbled with the instance salt
+        ``pp_digest || ct_nonce || u64(slot_id)``; the labels of its key
+        wires are encrypted under the table with one ephemeral key ``R``:
+        ``c[j, b] = L_j^b xor H_K(pp_digest, ct_nonce, slot_id, j, b, R, r
+        P[j, b])`` for ``j = 0 .. m - 1``, ``b = 0, 1``, then ``c[m, 0]``
+        alone (``L_g^1`` is never encrypted or sent, I3).
+
+        Args:
+            circuit: The ``CIRC v1`` encoding of ``guard(C)`` (``m + 1`` key
+                wires).
+            mode: ``"hardwired"`` or ``"labels"``.
+            pp_digest: 32 bytes; ct_nonce: 16 bytes; slot_id: in ``[0,
+                2^64)``.
+            x: The ``n`` data bits, packed least significant bit first.
+            pks: The slot's table, ``32 B x (2m + 1)``.
+
+        Returns:
+            ``{"R": 32 B, "label_cts": 16 B x (2m + 1), "tables": 16 B x
+            table entries, "decode": the n_out decoding bits packed,
+            "data_active": 16 B x n (mode ``"labels"``) or b""}``, all bytes.
+
+        Randomness: one 32-byte seed per call, before the inputs are
+        checked (the operating system, or ``override(32)``), the whole
+        randomness of the component: the garbling
+        (:func:`~pyfe4ai.primitives.garbling.expand_seed`) and ``r``
+        (:func:`~pyfe4ai.primitives.bcfe_kem.ephemeral_scalar`). There is no
+        seed parameter: a fixed seed is for the tests only (I16). The same
+        seed gives the same bytes in both implementations.
+
+        Secrets: *x*, the seed, ``Delta``, ``r`` and the zero labels: none of
+        them is returned; the extension wipes them. The returned
+        ``data_active`` (mode ``"labels"``) is part of the ciphertext.
+
+        Raises:
+            TypeError: For inputs that are not bytes.
+            ValueError: For a malformed circuit or one that is not
+                ``guard(C)`` (:func:`~pyfe4ai.primitives.bcfe_kem.guarded_key_bits`),
+                an unknown mode, fields of another length, *slot_id* out of
+                range, *x* not ``ceil(n / 8)`` bytes or with nonzero padding
+                bits, *pks* of another length than ``32 (2m + 1)`` bytes or
+                with an entry that is not a canonical encoding or is the
+                identity, test bytes of another length, or ``r = 0``.
+        """
+
+    @abc.abstractmethod
+    def bcfe_decrypt_slot(self, circuit: bytes, mode: str, pp_digest: bytes, ct_nonce: bytes, slot_id: int,
+                          R: bytes, label_cts: bytes, tables: bytes, decode: bytes, data_active: bytes,
+                          scalars: bytes, w: bytes) -> bytes:
+        """Decrypt one slot's component with the slot's key:
+        :func:`~pyfe4ai.primitives.bcfe_kem.decrypt_slot`. Opens the ``m +
+        1`` active labels of ``w || 0`` (``c[j, w_j] xor H_K(..., s_j R)``,
+        then ``c[m, 0]``) and evaluates the garbling. Returns the ``n_out``
+        output bits, packed least significant bit first: ``C(w, x)`` for a
+        well-formed component, unrelated bits for one of another slot,
+        ciphertext or key. Deterministic.
+
+        Args:
+            circuit, mode, pp_digest, ct_nonce, slot_id: As
+                :meth:`~pyfe4ai.backend.interface.Backend.bcfe_encrypt_slot`.
+            R, label_cts, tables, decode, data_active: The component.
+            scalars: ``32 B x (m + 1)``: the slot's secret keys.
+            w: The ``m`` key bits, packed.
+
+        Secrets: *scalars*, *w* and the opened labels; the extension wipes
+        its copies.
+
+        Raises:
+            TypeError: For inputs that are not bytes.
+            ValueError: For a malformed circuit or one that is not
+                ``guard(C)``, an unknown mode, any field of another length,
+                ``R`` not a canonical encoding or the identity, a scalar not
+                below the group order, another number of table entries or
+                data labels, decoding bits that are not ``n_out`` packed
+                bits, *w* with nonzero padding bits.
+        """
