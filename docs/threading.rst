@@ -182,7 +182,9 @@ one thread, whatever :func:`~pyfe4ai.backend.set_threads` or
   rule holds for every native call (through the backend or
   ``pyfe4ai._rust_native`` directly) and for every fork (``os.fork``,
   ``multiprocessing``, a fork made by a C extension). Calling ``set_threads``
-  in the child does not lift it.
+  in the child does not lift it. As a second guard, a multi-threaded call
+  joins each of its worker threads (also when one of them panics) rather
+  than waiting for them, so the calling thread does not park there either.
 * *Who is not affected:* a child of a process that never ran several
   threads keeps them (and, once it runs them, its own children are
   limited); a process started with ``spawn``, ``forkserver`` or ``exec``
