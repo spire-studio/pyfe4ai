@@ -9,7 +9,8 @@
 //! Run the measurements of record on a quiet machine (roadmap v1.0/04: studio, with the bench lock), one thread.
 //! `pow_secret_exp` is a control that must leak (square-and-multiply on a secret exponent), `shake256` one that
 //! should not.
-use pyfe4ai_core::{keccak, osrand, AnyRing, Modulus, Word, U256};
+use pyfe4ai_core::rlwe::{self, EncKey, Noise, Randomness};
+use pyfe4ai_core::{keccak, osrand, shamir, AnyRing, Modulus, Word, U256};
 use std::hint::black_box;
 use std::time::Instant;
 
@@ -68,7 +69,9 @@ impl TTest {
     }
 }
 
-/// A target: `prepare(class, rng)` makes the input of one batch outside the timed region, `run` is timed.
+/// A target: `prepare(class, rng)` makes the input of one batch outside the timed region, with the same work in
+/// both classes (random values are drawn into a scratch buffer, then the fixed or the random ones are copied into
+/// the input), and `run` is timed.
 trait Target {
     fn prepare(&mut self, class: usize, rng: &mut Rng);
     fn run(&mut self);
@@ -109,7 +112,8 @@ struct MontMul {
 }
 impl Target for MontMul {
     fn prepare(&mut self, class: usize, rng: &mut Rng) {
-        self.a = if class == 0 { self.fixed } else { rng.next() % self.m.q };
+        let r = rng.next() % self.m.q;
+        self.a = if class == 0 { self.fixed } else { r };
     }
     fn run(&mut self) {
         let mut acc = black_box(self.m.rmod);
@@ -123,19 +127,18 @@ impl Target for MontMul {
 
 /// S1 (1): reduce_i128 of noise-sized values, all non-negative (fixed) vs random signs.
 struct ReduceI128 {
+    scratch: Vec<i64>,
     m: Modulus<u64>,
     fixed: Vec<i64>,
     v: Vec<i64>,
 }
 impl Target for ReduceI128 {
     fn prepare(&mut self, class: usize, rng: &mut Rng) {
-        if class == 0 {
-            self.v.copy_from_slice(&self.fixed);
-        } else {
-            for x in self.v.iter_mut() {
-                *x = (rng.next() % (1 << 20)) as i64 - (1 << 19);
-            }
+        // the same work in both classes (random values drawn, then the fixed ones copied over for class 0)
+        for x in self.scratch.iter_mut() {
+            *x = (rng.next() % (1 << 20)) as i64 - (1 << 19);
         }
+        self.v.copy_from_slice(if class == 0 { &self.fixed } else { &self.scratch });
     }
     fn run(&mut self) {
         let mut acc = 0u64;
@@ -148,19 +151,17 @@ impl Target for ReduceI128 {
 
 /// S1 (2): reduce_u128 of values below q (fixed) vs random 100-bit values (mostly the `%` path).
 struct ReduceU128 {
+    scratch: Vec<u128>,
     m: Modulus<u64>,
     fixed: Vec<u128>,
     v: Vec<u128>,
 }
 impl Target for ReduceU128 {
     fn prepare(&mut self, class: usize, rng: &mut Rng) {
-        if class == 0 {
-            self.v.copy_from_slice(&self.fixed);
-        } else {
-            for x in self.v.iter_mut() {
-                *x = ((rng.next() as u128) << 36) ^ rng.next() as u128;
-            }
+        for x in self.scratch.iter_mut() {
+            *x = ((rng.next() as u128) << 36) ^ rng.next() as u128;
         }
+        self.v.copy_from_slice(if class == 0 { &self.fixed } else { &self.scratch });
     }
     fn run(&mut self) {
         let mut acc = 0u64;
@@ -173,6 +174,7 @@ impl Target for ReduceU128 {
 
 /// S2: forward NTT of a secret polynomial (fixed vs random), n = 1024, a 60-bit NTT prime (u64 words).
 struct NttFwd {
+    scratch: Vec<u64>,
     ring: AnyRing,
     q: u64,
     fixed: Vec<u64>,
@@ -181,19 +183,75 @@ struct NttFwd {
 }
 impl Target for NttFwd {
     fn prepare(&mut self, class: usize, rng: &mut Rng) {
-        if class == 0 {
-            self.input.copy_from_slice(&self.fixed);
-        } else {
-            for x in self.input.iter_mut() {
-                *x = rng.next() % self.q;
-            }
+        for x in self.scratch.iter_mut() {
+            *x = rng.next() % self.q;
         }
+        self.input.copy_from_slice(if class == 0 { &self.fixed } else { &self.scratch });
     }
     fn run(&mut self) {
         if let AnyRing::W64(r) = &self.ring {
             r.forward(black_box(&self.input), &mut self.out);
         }
         black_box(&self.out);
+    }
+}
+
+/// S3: MCFE Ring-LWE layer encryption of one chunk (rlwe::encrypt_tensor: n = 1024, 60-bit NTT prime, eta = 1,
+/// one pad material): the plaintext is the secret (fixed vs random values in [-100, 100]); r and the noise are fresh
+/// OS randomness in both classes (rounded sampler).
+struct RlweEncrypt {
+    scratch: Vec<i64>,
+    ring: AnyRing,
+    key: EncKey<u64>,
+    fixed: Vec<i64>,
+    x: Vec<i64>,
+}
+impl Target for RlweEncrypt {
+    fn prepare(&mut self, class: usize, rng: &mut Rng) {
+        for v in self.scratch.iter_mut() {
+            *v = (rng.next() % 201) as i64 - 100;
+        }
+        self.x.copy_from_slice(if class == 0 { &self.fixed } else { &self.scratch });
+    }
+    fn run(&mut self) {
+        if let AnyRing::W64(r) = &self.ring {
+            let material: &[u8] = b"compat label material";
+            let out = rlwe::encrypt_tensor(r, &self.key, black_box(&self.x), Some(&[material]), 4.97e9, 7.03e9,
+                                           &Noise::Rounded, Randomness::Os, 1, |_, a, b| { black_box((a, b)); });
+            assert!(out.is_ok(), "encrypt_tensor: {:?}", out.err());
+        }
+    }
+}
+
+/// S4: Shamir sharing (t = 3, five points) of 256 secrets mod an odd 60-bit q: fixed vs random secrets; the random
+/// coefficients come from a fast generator in both classes.
+struct ShamirShare {
+    scratch: Vec<u64>,
+    m: Modulus<u64>,
+    fixed: Vec<u64>,
+    secrets: Vec<u64>,
+    seed: u64,
+}
+impl Target for ShamirShare {
+    fn prepare(&mut self, class: usize, rng: &mut Rng) {
+        for v in self.scratch.iter_mut() {
+            *v = rng.next() % self.m.q;
+        }
+        self.secrets.copy_from_slice(if class == 0 { &self.fixed } else { &self.scratch });
+        self.seed = rng.next() | 1;
+    }
+    fn run(&mut self) {
+        let mut state = self.seed;
+        let fill = |buf: &mut [u8]| {
+            for b in buf.iter_mut() {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                *b = state as u8;
+            }
+            true
+        };
+        black_box(shamir::share(&self.m, black_box(&self.secrets), 3, &[1, 2, 3, 4, 5], fill));
     }
 }
 
@@ -205,7 +263,8 @@ struct PowSecret {
 }
 impl Target for PowSecret {
     fn prepare(&mut self, class: usize, rng: &mut Rng) {
-        self.e = if class == 0 { 1 << 58 } else { (rng.next() >> 6) | (1 << 58) };
+        let r = (rng.next() >> 6) | (1 << 58);
+        self.e = if class == 0 { 1 << 58 } else { r };
     }
     fn run(&mut self) {
         let mut acc = 0u64;
@@ -225,12 +284,11 @@ struct Shake {
 }
 impl Target for Shake {
     fn prepare(&mut self, class: usize, rng: &mut Rng) {
+        for c in self.msg.chunks_mut(8) {
+            c.copy_from_slice(&rng.next().to_le_bytes());
+        }
         if class == 0 {
             self.msg = self.fixed;
-        } else {
-            for c in self.msg.chunks_mut(8) {
-                c.copy_from_slice(&rng.next().to_le_bytes());
-            }
         }
     }
     fn run(&mut self) {
@@ -246,6 +304,8 @@ const TARGETS: &[(&str, &str, usize)] = &[
     ("reduce_i128", "S1 (1): signed reduction of noise-sized values", 4096),
     ("reduce_u128", "S1 (2): reduction of 128-bit values", 1024),
     ("ntt_fwd", "S2: forward NTT, n = 1024, 60-bit q", 1),
+    ("rlwe_encrypt", "S3: Ring-LWE encryption of one chunk, the plaintext secret", 1),
+    ("shamir_share", "S4: Shamir sharing of 256 secrets, t = 3", 1),
     ("pow_secret_exp", "control, must leak: square-and-multiply on a secret exponent", 64),
     ("shake256", "control, should not leak: SHAKE-256 of 64 bytes", 16),
 ];
@@ -256,11 +316,11 @@ fn make(name: &str, calls: usize, rng: &mut Rng) -> Box<dyn Target> {
         "mont_mul_u64" => Box::new(MontMul { m, fixed: rng.next() % Q60, a: 0, calls }),
         "reduce_i128" => {
             let fixed: Vec<i64> = (0..calls).map(|_| (rng.next() % (1 << 19)) as i64).collect();
-            Box::new(ReduceI128 { m, v: fixed.clone(), fixed })
+            Box::new(ReduceI128 { m, v: fixed.clone(), scratch: fixed.clone(), fixed })
         }
         "reduce_u128" => {
             let fixed: Vec<u128> = (0..calls).map(|_| (rng.next() % Q60) as u128).collect();
-            Box::new(ReduceU128 { m, v: fixed.clone(), fixed })
+            Box::new(ReduceU128 { m, v: fixed.clone(), scratch: fixed.clone(), fixed })
         }
         "ntt_fwd" => {
             let n = 1024;
@@ -269,7 +329,28 @@ fn make(name: &str, calls: usize, rng: &mut Rng) -> Box<dyn Target> {
             let q = q.to_u128() as u64;
             assert!(matches!(ring, AnyRing::W64(_)), "a 60-bit q has u64 words");
             let fixed: Vec<u64> = (0..n).map(|_| rng.next() % q).collect();
-            Box::new(NttFwd { ring, q, input: fixed.clone(), fixed, out: vec![0; n] })
+            Box::new(NttFwd { ring, q, input: fixed.clone(), scratch: fixed.clone(), fixed, out: vec![0; n] })
+        }
+        "rlwe_encrypt" => {
+            let n = 1024;
+            let (q, root) = ntt_prime(60, n);
+            let ring = AnyRing::new(q, n, root).expect("ring");
+            let qw = q.to_u128() as u64;
+            let key = match &ring {
+                AnyRing::W64(r) => {
+                    let a: Vec<u64> = (0..n).map(|_| rng.next() % qw).collect();
+                    let pk: Vec<u64> = (0..n).map(|_| rng.next() % qw).collect();
+                    let u: Vec<u64> = (0..n).map(|_| rng.next() % qw).collect();
+                    EncKey::new(r, &a, &[pk], Some(&[u]), qw >> 10)
+                }
+                _ => unreachable!("a 60-bit q has u64 words"),
+            };
+            let fixed: Vec<i64> = (0..n).map(|_| (rng.next() % 201) as i64 - 100).collect();
+            Box::new(RlweEncrypt { ring, key, x: fixed.clone(), scratch: fixed.clone(), fixed })
+        }
+        "shamir_share" => {
+            let fixed: Vec<u64> = (0..256).map(|_| rng.next() % Q60).collect();
+            Box::new(ShamirShare { m, secrets: fixed.clone(), scratch: fixed.clone(), fixed, seed: 1 })
         }
         "pow_secret_exp" => Box::new(PowSecret { m, e: 0, calls }),
         "shake256" => {
@@ -310,7 +391,6 @@ fn main() {
     let mut raw = TTest::default();
     let mut cropped = [TTest::default(); CROPS.len()];
     let mut second = TTest::default();
-    let mut warm_mean = [0f64; 2];
     let report = (batches / 10).max(1);
     println!("target {} batches {} calls/batch {}", name, batches, calls);
     for i in 0..batches + WARMUP {
@@ -321,15 +401,12 @@ fn main() {
         let dt = t0.elapsed().as_nanos() as f64;
         if i < WARMUP {
             warm.push(dt);
-            warm_mean[class] += dt;
             if i + 1 == WARMUP {
                 let mut s = warm.clone();
                 s.sort_by(|a, b| a.partial_cmp(b).unwrap());
                 for (k, p) in CROPS.iter().enumerate() {
                     crops[k] = s[((s.len() as f64 - 1.0) * p) as usize];
                 }
-                let half = WARMUP as f64 / 2.0;
-                warm_mean = [warm_mean[0] / half, warm_mean[1] / half];
             }
             continue;
         }
@@ -339,7 +416,9 @@ fn main() {
                 cropped[k].push(class, dt);
             }
         }
-        let d = dt - warm_mean[class];
+        // second order: the centred square, about the class's running mean (as dudect), not a fixed one, so
+        // that a slow drift of the machine does not read as a difference of the classes' variances
+        let d = dt - raw.0[class].mean;
         second.push(class, d * d);
         let done = i + 1 - WARMUP;
         if done % report == 0 || done == batches {
