@@ -127,6 +127,8 @@ impl Target for MontMul {
 
 /// S1 (1): reduce_i128 of noise-sized values, all non-negative (fixed) vs random signs.
 struct ReduceI128 {
+    /// Whether the random class draws signed values (else non-negative ones, as the fixed class of `reduce_i128`).
+    signed: bool,
     scratch: Vec<i64>,
     m: Modulus<u64>,
     fixed: Vec<i64>,
@@ -136,7 +138,7 @@ impl Target for ReduceI128 {
     fn prepare(&mut self, class: usize, rng: &mut Rng) {
         // the same work in both classes (random values drawn, then the fixed ones copied over for class 0)
         for x in self.scratch.iter_mut() {
-            *x = (rng.next() % (1 << 20)) as i64 - (1 << 19);
+            *x = if self.signed { (rng.next() % (1 << 20)) as i64 - (1 << 19) } else { (rng.next() % (1 << 19)) as i64 };
         }
         self.v.copy_from_slice(if class == 0 { &self.fixed } else { &self.scratch });
     }
@@ -303,6 +305,8 @@ impl Target for Shake {
 const TARGETS: &[(&str, &str, usize)] = &[
     ("mont_mul_u64", "S1: Montgomery product by a secret factor", 4096),
     ("reduce_i128", "S1 (1): signed reduction of noise-sized values", 4096),
+    ("reduce_i128_signs", "S1 (1), fixed vs random only: a fixed draw of signed values vs random signed ones", 4096),
+    ("reduce_i128_pos", "S1 (1), no signs: fixed vs random non-negative values", 4096),
     ("reduce_u128", "S1 (2): reduction of 128-bit values", 1024),
     ("ntt_fwd", "S2: forward NTT, n = 1024, 60-bit q", 1),
     ("rlwe_encrypt", "S3: Ring-LWE encryption of one chunk, the plaintext secret", 1),
@@ -316,9 +320,14 @@ fn make(name: &str, calls: usize, rng: &mut Rng) -> Box<dyn Target> {
     let m = Modulus::<u64>::new(Q60);
     match name {
         "mont_mul_u64" => Box::new(MontMul { m, fixed: rng.next() % Q60, a: 0, calls }),
-        "reduce_i128" => {
-            let fixed: Vec<i64> = (0..calls).map(|_| (rng.next() % (1 << 19)) as i64).collect();
-            Box::new(ReduceI128 { m, v: fixed.clone(), scratch: fixed.clone(), fixed })
+        // reduce_i128: fixed non-negative vs random signed values; _signs: a fixed draw of signed values vs random
+        // signed ones (the same distribution: fixed vs random only); _pos: fixed vs random non-negative values
+        "reduce_i128" | "reduce_i128_signs" | "reduce_i128_pos" => {
+            let fixed_signed = name == "reduce_i128_signs";
+            let fixed: Vec<i64> = (0..calls)
+                .map(|_| if fixed_signed { (rng.next() % (1 << 20)) as i64 - (1 << 19) } else { (rng.next() % (1 << 19)) as i64 })
+                .collect();
+            Box::new(ReduceI128 { signed: name != "reduce_i128_pos", m, v: fixed.clone(), scratch: fixed.clone(), fixed })
         }
         "reduce_u128" => {
             let fixed: Vec<u128> = (0..calls).map(|_| (rng.next() % Q60) as u128).collect();
