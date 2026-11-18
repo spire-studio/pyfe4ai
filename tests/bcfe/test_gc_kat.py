@@ -577,3 +577,49 @@ def test_only_the_backend_passes_randomness_to_the_bcfe_primitives():
     # the scan sees the uses it must allow: the backend passes the drawn bytes to the reference
     python_impl = (root / "pyfe4ai/backend/python_impl.py").read_text(encoding="utf-8")
     assert "bcfe_kem.encrypt_slot" in python_impl or "encrypt_slot(" in python_impl
+
+
+#: The primitives' functions with caller randomness, by module (for the import check below).
+CALLER_RANDOMNESS_FUNCTIONS = {
+    "pyfe4ai.primitives.garbling": {"garble", "expand_seed"},
+    "pyfe4ai.primitives.bcfe_kem": {"new_slot", "place_slot", "encrypt_slot", "ephemeral_scalar"},
+}
+
+
+def test_no_library_module_imports_the_randomness_taking_primitives():
+    """The name scan above misses ``from pyfe4ai.primitives.bcfe_kem import new_slot`` followed by ``new_slot(...)``
+    (review R-0.6, R2C-2): this check parses every library module outside :data:`CALLER_RANDOMNESS_ALLOWED` and
+    refuses an import of those functions (also renamed with ``as``), an import of the whole module under another
+    name followed by an attribute access to one of them, and ``importlib.import_module`` of the two modules."""
+    import ast
+
+    root = Path(__file__).resolve().parents[2]
+    found = []
+    for path in sorted((root / "pyfe4ai").rglob("*.py")):
+        rel = path.relative_to(root).as_posix()
+        if rel.startswith(CALLER_RANDOMNESS_ALLOWED):
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=rel)
+        aliases = {}  # local name -> primitive module
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                for a in node.names:
+                    full = "{}.{}".format(node.module, a.name)
+                    if node.module in CALLER_RANDOMNESS_FUNCTIONS and a.name in CALLER_RANDOMNESS_FUNCTIONS[node.module]:
+                        found.append("{}: from {} import {}".format(rel, node.module, a.name))
+                    if full in CALLER_RANDOMNESS_FUNCTIONS:
+                        aliases[a.asname or a.name] = full
+            elif isinstance(node, ast.Import):
+                for a in node.names:
+                    if a.name in CALLER_RANDOMNESS_FUNCTIONS:
+                        aliases[a.asname or a.name] = a.name
+            elif isinstance(node, ast.Call) and isinstance(node.func, (ast.Attribute, ast.Name)):
+                name = node.func.attr if isinstance(node.func, ast.Attribute) else node.func.id
+                if name == "import_module" and node.args and isinstance(node.args[0], ast.Constant):
+                    if node.args[0].value in CALLER_RANDOMNESS_FUNCTIONS:
+                        found.append("{}: import_module({!r})".format(rel, node.args[0].value))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id in aliases:
+                if node.attr in CALLER_RANDOMNESS_FUNCTIONS[aliases[node.value.id]]:
+                    found.append("{}: {}.{}".format(rel, node.value.id, node.attr))
+    assert not found, found
