@@ -5,7 +5,8 @@
 
 * read them and compute the same results (R1): the stored ciphertexts decrypt under the stored keys, a fresh
   ciphertext under the stored encryption keys decrypts with the stored functional key, stored partial
-  decryptions combine, stored key shares serve;
+  decryptions combine, stored key shares serve, and the stored gradients (the ML adapter's wire form of the
+  ndarray layers) decrypt;
 * keep their fields (R2): a record written now has every field the fixture's record of the same role has;
 * reuse their parameter records without regenerating them (R5);
 * keep the version markers (R4): every marker of the snapshot, with its value.
@@ -55,21 +56,34 @@ def test_the_records_still_decrypt(path):
 
 
 @pytest.mark.parametrize("path", PARAMS)
+def test_the_ndarray_records_still_decrypt(path):
+    fx = recipes.load(path)
+    if "ndarray" not in fx:
+        pytest.skip("no ndarray step in this recipe")
+    assert recipes.replay_ndarray(fx["scheme"], fx["ndarray"]) == fx["ndarray"]["expected"]
+
+
+@pytest.mark.parametrize("path", PARAMS)
 def test_the_parameter_records_are_reused(path):
     fx = recipes.load(path)
-    before, after, warned = recipes.reuse_param_records(fx)
-    assert after == before, "the parameter record was rewritten"
-    assert not warned
+    for part in [fx] + ([dict(fx["ndarray"], scheme=fx["scheme"])] if "ndarray" in fx else []):
+        before, after, warned = recipes.reuse_param_records(part)
+        assert after == before, "the parameter record was rewritten"
+        assert not warned
 
 
 @pytest.mark.parametrize("path", PARAMS)
 def test_no_field_was_dropped(path):
     fx = recipes.load(path)
     fresh = recipes.generate(fx["scheme"])
-    for role, record in fx["records"].items():
-        missing = recipes.record_keys(record) - recipes.record_keys(fresh["records"].get(role, {}))
-        assert not missing, "{}: fields {} of the {} record are no longer written".format(
-            fx["scheme"], sorted(missing), role)
+    pairs = [(fx["records"], fresh["records"], "")]
+    if "ndarray" in fx:
+        pairs.append((fx["ndarray"]["records"], fresh.get("ndarray", {}).get("records", {}), "ndarray "))
+    for old, new, where in pairs:
+        for role, record in old.items():
+            missing = recipes.record_keys(record) - recipes.record_keys(new.get(role, {}))
+            assert not missing, "{}: fields {} of the {}{} record are no longer written".format(
+                fx["scheme"], sorted(missing), where, role)
 
 
 @pytest.mark.parametrize("release", RELEASES, ids=[d.name for d in RELEASES])

@@ -175,11 +175,109 @@ def generate(scheme: str) -> dict:
             records, inputs, expected = _GENERATE[kind_of(scheme)](scheme, kg, crypto)
         params = _cache_files(cache_dir)
     cfg.pop("cache_dir")
-    return {
+    fx = {
         "fixture_format": FIXTURE_FORMAT, "pyfe4ai_version": pyfe4ai.__version__, "scheme": scheme,
         "recipe": kind_of(scheme), "config": cfg, "inputs": inputs, "records": records, "expected": expected,
         "param_records": params,
     }
+    nd = generate_ndarray(scheme)
+    if nd is not None:
+        fx["ndarray"] = nd
+    return fx
+
+
+# ---------------------------------------------------------------------------
+# the ndarray path (the ML adapter's): layers of per-element or packed ciphertexts, stored in the wire form of
+# pyfe4ai.ml.EncryptedGradient, under a set-up of its own with eta = 1 (one weight per client, as the adapter)
+
+ND_X = {"nid_0": [[1, 2], [3, -1]], "nid_1": [[0, 1], [2, 2]]}
+ND_W = {"nid_0": [1], "nid_1": [2]}
+ND_SIFE_W = [3]
+#: Recipes with an ndarray step (the threshold and decentralised ones derive their keys per chunk: not yet).
+ND_KINDS = ("sife", "mife", "mcfe")
+
+
+def _nd_expected(scheme):
+    import numpy as np
+
+    if kind_of(scheme) == "sife":
+        return (np.array(ND_X["nid_0"]) * ND_SIFE_W[0]).tolist()
+    return sum(np.array(ND_X[n]) * ND_W[n][0] for n in NIDS).tolist()
+
+
+def _wire(cts, nid):
+    from pyfe4ai.ml import EncryptedGradient
+
+    return EncryptedGradient(ciphertexts=cts, shape=(2, 2), precision=0, mode="decimal", nid=nid).to_dict()
+
+
+def _nd_labelled(scheme):
+    return kind_of(scheme) == "mcfe"
+
+
+def generate_ndarray(scheme: str) -> dict | None:
+    """The ndarray sub-fixture of *scheme*, or ``None`` if its recipe has no ndarray step or the scheme does not
+    implement the ndarray methods."""
+    import numpy as np
+
+    if kind_of(scheme) not in ND_KINDS:
+        return None
+    with tempfile.TemporaryDirectory() as cache_dir:
+        cfg = dict(config_of(scheme, cache_dir), eta=1) if "eta" in config_of(scheme, cache_dir) else config_of(
+            scheme, cache_dir)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            kg, C = pyfe4ai.create(scheme, cfg)
+            kg.setup()
+            pp = kg.get_public_parameters()
+            lab = {"label": LABEL} if _nd_labelled(scheme) else {}
+            try:
+                if kind_of(scheme) == "sife":
+                    sk = kg.get_private_keys()
+                    cts = C({"id": "nid_default", "precision": 0, "keys": {"pp": pp, "sk": sk}}).encrypt_lst_ndarray(
+                        [np.array(ND_X["nid_0"])])
+                    wires = {"nid_default": _wire(cts, "nid_default")}
+                    dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": ND_SIFE_W})
+                    sks = sk
+                else:
+                    sks = {nid: kg.get_private_keys(nid) for nid in NIDS}
+                    wires = {}
+                    for nid in NIDS:
+                        enc = C({"id": nid, "precision": 0, "keys": {"pp": pp, "sk": sks[nid]}})
+                        wires[nid] = _wire(enc.encrypt_lst_ndarray([np.array(ND_X[nid])], **lab), nid)
+                    # the identity-based MCFE over Ring-LWE: a key per label, covering the chunks of the packed layers
+                    cred = {"fusion_weight": ND_W, **({"label": LABEL, "n_chunks": 1} if scheme == "mcfe/ring_lwe" else {})}
+                    dk = kg.get_decryption_keys("sid_0", credentials=cred)
+            except NotImplementedError:
+                return None
+        params = _cache_files(cache_dir)
+    cfg.pop("cache_dir")
+    nd = {"config": cfg, "records": {"pp": pp, "sk": sks, "dk": dk, "gradients": wires}, "param_records": params,
+          "expected": _nd_expected(scheme)}
+    got = replay_ndarray(scheme, nd)
+    if got != nd["expected"]:
+        raise AssertionError("{}: ndarray decrypted {!r}, expected {!r}".format(scheme, got, nd["expected"]))
+    return nd
+
+
+def replay_ndarray(scheme: str, nd: dict) -> list:
+    """Decrypt the stored gradients of an ndarray sub-fixture with the code under test (a list of rows)."""
+    import numpy as np
+    from pyfe4ai.ml import EncryptedGradient
+
+    rec = nd["records"]
+    C = pyfe4ai.get_scheme(scheme).crypto
+    dec = C({"id": "sid_0", "precision": 0, "keys": {"pp": rec["pp"]}})
+    grads = {nid: EncryptedGradient.from_dict(w) for nid, w in rec["gradients"].items()}
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        if kind_of(scheme) == "sife":
+            out = dec.decrypt_lst_ndarray_ct(grads["nid_default"].ciphertexts, dk=rec["dk"], fusion_weight=ND_SIFE_W)
+        else:
+            lab = {"label": LABEL} if _nd_labelled(scheme) else {}
+            out = dec.decrypt_lst_ndarray_ct({nid: g.ciphertexts for nid, g in grads.items()}, dk=rec["dk"],
+                                             fusion_weight=ND_W, **lab)
+    return np.rint(np.asarray(out[0], dtype=float)).astype(int).tolist()
 
 
 def _gen_sife(scheme, kg, C):

@@ -1,7 +1,7 @@
 {
  "fixture_format": 1,
  "pyfe4ai_version": "0.5.0",
- "commit": "5b51558",
+ "commit": "507f329",
  "backend": "native",
  "native_build": {
   "compiler": "rustc (pyfe4ai-native 0.5.0, pyo3)",
