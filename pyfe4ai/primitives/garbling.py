@@ -151,6 +151,8 @@ def parse_circuit(data: bytes) -> ParsedCircuit:
             raise ValueError("circuit: gate {} has an unknown op {}".format(i, op))
         if op == OP_INV and b != 0:
             raise ValueError("circuit: gate {} (INV) has b = {}, must be 0".format(i, b))
+        # canonical form, not a security rule: the builder folds XOR(a, a) and AND(a, a); other degenerate gates
+        # (XOR(a, INV(a)), duplicated gates) still decode and are garbled safely (review R06-04)
         if op != OP_INV and a == b:
             raise ValueError("circuit: gate {} ({}) reads wire {} twice".format(i, _OP_NAMES[op], a))
         if a >= out or (op != OP_INV and b >= out):
