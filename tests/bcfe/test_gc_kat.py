@@ -539,3 +539,41 @@ def test_the_schemes_never_call_gc_garble_or_gc_evaluate():
     # the scan would see a use (the bcfe scheme does name the fused operations)
     scheme = (root / "pyfe4ai/schemes/bcfe/gc_ristretto255.py").read_text(encoding="utf-8")
     assert "bcfe_encrypt_slot" in scheme and "bcfe_decrypt_slot" in scheme
+
+
+#: The functions of the primitives and of the extension that take their randomness from the caller (a seed, ``rand``,
+#: ``rnd=`` or ``seed=``): the reference algorithms and the test entry points of the kernels. Only the backend
+#: implementations and the tests may call them; the schemes draw through the backend operations, which take no
+#: randomness (review R-0.6 pass 2, P2-04).
+CALLER_RANDOMNESS = (
+    "garbling.garble", "garbling.expand_seed", "expand_seed(",
+    "bcfe_kem.new_slot", "bcfe_kem.place_slot", "bcfe_kem.encrypt_slot", "bcfe_kem.ephemeral_scalar",
+    "ephemeral_scalar(", "rnd=", "seed=",
+)
+# (imports of the extension itself are refused everywhere outside the backend by
+# tests/backend/test_backend_interface.py)
+#: The modules allowed to call them: the backend implementations (python_impl and native_impl draw the bytes,
+#: through the tests' hook only when it is set) and the primitives themselves.
+CALLER_RANDOMNESS_ALLOWED = ("pyfe4ai/backend/", "pyfe4ai/primitives/garbling.py", "pyfe4ai/primitives/bcfe_kem.py")
+
+
+def test_only_the_backend_passes_randomness_to_the_bcfe_primitives():
+    """The reference functions with explicit randomness (``garbling.garble``, ``bcfe_kem.new_slot`` /
+    ``place_slot`` / ``encrypt_slot``, the seed expansions) and the extension's ``seed=`` / ``rnd=`` arguments are
+    reached from the backend only: no module of the library outside :data:`CALLER_RANDOMNESS_ALLOWED` names them,
+    so a scheme cannot pass fixed randomness by mistake (I1, I16)."""
+    root = Path(__file__).resolve().parents[2]
+    scanned, found = 0, []
+    for path in sorted((root / "pyfe4ai").rglob("*.py")):
+        rel = path.relative_to(root).as_posix()
+        if rel.startswith(CALLER_RANDOMNESS_ALLOWED):
+            continue
+        scanned += 1
+        text = path.read_text(encoding="utf-8")
+        for name in CALLER_RANDOMNESS:
+            if name in text and not (name in ("rnd=", "seed=") and "bcfe" not in rel):
+                found.append("{}: {}".format(rel, name))
+    assert scanned > 50 and not found, found
+    # the scan sees the uses it must allow: the backend passes the drawn bytes to the reference
+    python_impl = (root / "pyfe4ai/backend/python_impl.py").read_text(encoding="utf-8")
+    assert "bcfe_kem.encrypt_slot" in python_impl or "encrypt_slot(" in python_impl
