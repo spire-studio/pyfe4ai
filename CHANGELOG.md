@@ -21,8 +21,21 @@ compatibility).
   `IDENTITY_DIRECTORY_VERSION`. The key centre holds every identity's master
   key, ciphertexts name their identity, and there is no revocation.
 
+- **Threshold key issuance for `sife/cp_ab_pairing` (experimental),
+  capability `distributed_keygen`.** `SIFECPABPairingDealer` shares the
+  master key among `s` key servers and hands each its share once;
+  `SIFECPABPairingKeyServer.issue(request, requester)` answers with a masked
+  partial key after its operator's approval rule, which sees the whole
+  request (weights included) and the authenticated requester;
+  `SIFECPABPairingKeyCombiner` builds requests and checks the product of
+  `t` partial keys with pairings before returning an ordinary key. Public
+  parameters, ciphertexts and decryption are unchanged. Requires
+  authenticated, confidential channels between requester and servers. Records
+  in `pyfe4ai.core.formats.keyissue`.
+
 ### Documentation
 
+- Security: threshold key issuance, its conditions and limits.
 - Security: why DP23 (a collusion of two users and one corrupted authority
   breaks both schemes), AGT21b Sec. 3, ACGU20 Secs. 4 and 5, CT26 and PD21
   are not implemented; the identity directory's guarantees and limits.

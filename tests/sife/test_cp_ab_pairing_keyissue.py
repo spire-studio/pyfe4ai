@@ -1,0 +1,355 @@
+"""Threshold key issuance of sife/cp_ab_pairing (experimental): roadmap/v0.7/03 rev. 2, conditions of its Sec. 7."""
+
+import copy
+import hashlib
+import json
+
+import pytest
+
+import pyfe4ai
+from tests.pairing_group import GROUP, skip_unless_available  # noqa: E402
+
+skip_unless_available()
+
+from pyfe4ai.core.exceptions import FEConfigError, FEKeyError, FEValidationError  # noqa: E402
+from pyfe4ai.core.formats.pairing import CPABFunctionalKey  # noqa: E402
+from pyfe4ai.schemes.sife import cp_ab_pairing_keyissue as ki  # noqa: E402
+from pyfe4ai.schemes.sife.cp_ab_pairing import SIFECPABPairing  # noqa: E402
+from pyfe4ai.schemes.sife.cp_ab_pairing_keyissue import (  # noqa: E402
+    SIFECPABPairingDealer,
+    SIFECPABPairingKeyCombiner,
+    SIFECPABPairingKeyServer,
+)
+
+pytestmark = pytest.mark.usefixtures("own_parameter_cache")
+
+UNIVERSE = ["org:A", "org:B", "org:C", "role:auditor"]
+ETA = 3
+SERVERS = ["ks1", "ks2", "ks3", "ks4", "ks5"]
+X = [3, -1, 7]
+
+
+def _allow(request, requester, history):
+    return True
+
+
+def _system(t=3, servers=SERVERS, approve=_allow, max_copies=2):
+    config = {"eta": ETA, "bound_x": 10, "bound_y": 10, "universe": UNIVERSE, "max_copies": max_copies,
+              "pairing_group_param": GROUP}
+    dealer = SIFECPABPairingDealer(config, list(servers), t)
+    dealer.setup()
+    pp, ks = dealer.get_public_parameters(), dealer.key_servers()
+    key_servers = {s: SIFECPABPairingKeyServer(pp, ks, dealer.server_share(s), approve) for s in servers}
+    return dealer, pp, ks, key_servers, SIFECPABPairingKeyCombiner(pp, ks), SIFECPABPairing({"keys": {"pp": pp}})
+
+
+@pytest.fixture
+def system():
+    return _system()
+
+
+def _issue(key_servers, request, requester=None):
+    return [key_servers[s].issue(request, requester or request["sid"]) for s in request["servers"]]
+
+
+def _resign(request):
+    request = copy.deepcopy(request)
+    request["digest"] = ki.request_digest(request)
+    return request
+
+
+# -- correctness -------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("t, servers, chosen", [
+    (1, ["a"], ["a"]),
+    (2, ["a", "b", "c"], ["a", "c"]),
+    (3, SERVERS, ["ks1", "ks3", "ks5"]),
+    (3, SERVERS, ["ks2", "ks3", "ks4"]),
+    (5, SERVERS, SERVERS),
+])
+def test_t_partial_keys_give_a_key_of_the_scheme(t, servers, chosen):
+    _, pp, ks, key_servers, comb, crypto = _system(t, servers)
+    y = [1, -2, 4]
+    request = comb.new_request("alice", y, ["org:A", "role:auditor"], chosen)
+    dk = comb.combine(request, _issue(key_servers, request))
+    assert list(dk) == list(CPABFunctionalKey.FIELDS)
+    ct = crypto.encrypt(X, policy="and(org:A, role:auditor)")
+    assert crypto.decrypt(ct, dk) == sum(a * b for a, b in zip(X, y))
+    with pytest.raises(FEKeyError):
+        crypto.decrypt(crypto.encrypt(X, policy="and(org:A, org:B)"), dk)
+
+
+@pytest.mark.parametrize("policy, held", [
+    ("or(and(org:A, org:B), and(org:A, org:C))", ["org:A", "org:C"]),  # copies of org:A
+    ("2of(org:A, org:B, role:auditor)", ["org:B", "role:auditor"]),
+    ("org:C", ["org:C"]),
+])
+def test_policies_with_copies(system, policy, held):
+    _, _, _, key_servers, comb, crypto = system
+    request = comb.new_request("bob", [2, 0, -3], held, ["ks1", "ks2", "ks4"])
+    dk = comb.combine(request, _issue(key_servers, request))
+    assert crypto.decrypt(crypto.encrypt(X, policy=policy), dk) == 2 * 3 - 3 * 7
+
+
+def test_json_round_trips(system):
+    _, pp, ks, key_servers, comb, crypto = system
+    j = lambda o: json.loads(json.dumps(o))  # noqa: E731
+    request = j(comb.new_request("alice", [1, 1, 1], ["org:A"], ["ks1", "ks2", "ks3"]))
+    partials = [j(p) for p in _issue(key_servers, request)]
+    dk = j(SIFECPABPairingKeyCombiner(j(pp), j(ks)).combine(request, partials))
+    assert crypto.decrypt(crypto.encrypt(X, policy="org:A"), dk) == sum(X)
+
+
+# -- determinism, digests, PRF -------------------------------------------------------
+
+
+def test_a_repeated_request_gets_the_same_partial_key(system):
+    _, _, _, key_servers, comb, _ = system
+    request = comb.new_request("alice", [1, 2, 3], ["org:A"], ["ks1", "ks2", "ks3"])
+    assert _issue(key_servers, request) == _issue(key_servers, request)
+    other = comb.new_request("alice", [1, 2, 3], ["org:A"], ["ks1", "ks2", "ks3"])  # a new id
+    assert other["digest"] != request["digest"]
+    assert _issue(key_servers, other)[0]["k1"] != _issue(key_servers, request)[0]["k1"]
+
+
+def test_the_digest_covers_every_field(system):
+    _, _, _, _, comb, _ = system
+    request = comb.new_request("alice", [1, 2, 3], ["org:A"], ["ks1", "ks2", "ks3"])
+    assert len(request["digest"]) == 2 * ki.DIGEST_BYTES
+    changes = {"id": "00" * 16, "sid": "mallory", "y": ["1", "2", "4"], "attributes": ["org:B"],
+               "servers": ["ks1", "ks2", "ks4"], "pp_binding": "x", "keyservers": "y", "version": "z"}
+    for field, value in changes.items():
+        assert ki.request_digest(dict(request, **{field: value})) != request["digest"], field
+
+
+def test_prf_and_digest_derivation():
+    key, digest, index = bytes(range(32)), bytes(range(64)), ki._index(3, 7, 1)
+    expected = hashlib.shake_256(len(ki.DST_MASK).to_bytes(2, "big") + ki.DST_MASK + key + digest + index)
+    order = 2 ** 255 - 19
+    assert ki._prf(key, ki.DST_MASK, digest, index, order) == int.from_bytes(expected.digest(64), "big") % order
+    request = {"version": "cp_ab_keyrequest/v1", "id": "00" * 16, "sid": "alice", "y": ["1", "-2"],
+               "attributes": ["org:A"], "servers": ["a", "b"], "pp_binding": "p", "keyservers": "k", "digest": ""}
+    payload = json.dumps(["cp_ab_keyrequest/v1", "00" * 16, "alice", ["1", "-2"], ["org:A"], ["a", "b"], "p", "k"],
+                         sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    dst = ki.DST_REQUEST
+    assert ki.request_digest(request) == hashlib.shake_256(len(dst).to_bytes(2, "big") + dst + payload).hexdigest(64)
+
+
+def test_mask_indices_are_injective_and_carry_the_copy(system):
+    _, _, _, key_servers, comb, _ = system
+    p = key_servers["ks1"]._p
+    slots = p.slots(UNIVERSE)
+    indices = [ki._index(ki._K1, 0, t) for t in (0, 1)] + [ki._index(ki._K0, 0, t) for t in (0, 1)]
+    indices += [ki._index(ki._KATTR, slot, t) for _, slot in slots for t in (0, 1)]
+    assert len(set(indices)) == len(indices)
+    assert {name for name, _ in slots} == {"{}#{}".format(l, c) for l in UNIVERSE for c in (1, 2)}
+
+
+# -- the combiner's checks -----------------------------------------------------------
+
+
+def _fields(partial):
+    out = [("k1", t) for t in (0, 1)] + [("k0", t) for t in (0, 1)]
+    return out + [("k_attr", (name, t)) for name in sorted(partial["k_attr"]) for t in (0, 1)]
+
+
+def test_any_changed_component_fails_the_check(system):
+    _, pp, _, key_servers, comb, _ = system
+    request = comb.new_request("alice", [1, 2, 3], ["org:A", "org:B"], ["ks1", "ks2", "ks3"])
+    partials = _issue(key_servers, request)
+    for i in range(len(partials)):
+        for field, where in _fields(partials[i]):
+            bad = copy.deepcopy(partials)
+            if field == "k_attr":
+                name, t = where
+                bad[i]["k_attr"][name][t] = pp["g2"]
+            else:
+                bad[i][field][where] = pp["g2"]
+            with pytest.raises(FEKeyError, match="fails its check"):
+                comb.combine(request, bad)
+
+
+def test_partial_key_sets_are_checked(system):
+    _, _, _, key_servers, comb, _ = system
+    request = comb.new_request("alice", [1, 2, 3], ["org:A"], ["ks1", "ks2", "ks3"])
+    partials = _issue(key_servers, request)
+    other = comb.new_request("alice", [1, 2, 3], ["org:A"], ["ks1", "ks2", "ks3"])
+    for bad in (partials[:2], partials + partials[:1], [partials[0], partials[0], partials[1]],
+                [partials[0], partials[1], _issue(key_servers, other)[2]]):
+        with pytest.raises(FEKeyError):
+            comb.combine(request, bad)
+    missing = copy.deepcopy(partials)
+    missing[0]["k_attr"].pop("org:A#2")
+    with pytest.raises(FEKeyError, match="every copy"):
+        comb.combine(request, missing)
+
+
+def test_a_partial_key_relabelled_for_another_request_fails_the_check(system):
+    """Masks and r are derived from the digest: an honest partial key of one request does not
+    complete another, even with the request field rewritten."""
+    _, _, _, key_servers, comb, _ = system
+    r1 = comb.new_request("alice", [1, 0, 0], ["org:A"], ["ks1", "ks2", "ks3"])
+    r2 = comb.new_request("alice", [0, 1, 0], ["org:A"], ["ks1", "ks2", "ks3"])
+    p1, p2 = _issue(key_servers, r1), _issue(key_servers, r2)
+    mixed = [dict(p1[0], request=r2["digest"]), p2[1], p2[2]]
+    with pytest.raises(FEKeyError, match="fails its check"):
+        comb.combine(r2, mixed)
+
+
+# -- the servers' checks -------------------------------------------------------------
+
+
+def test_sid_must_be_the_authenticated_requester(system):
+    _, _, _, key_servers, comb, _ = system
+    request = comb.new_request("alice", [1, 2, 3], ["org:A"], ["ks1", "ks2", "ks3"])
+    with pytest.raises(FEKeyError, match="authenticated"):
+        key_servers["ks1"].issue(request, "mallory")
+
+
+def test_the_approval_rule_sees_y_requester_and_history():
+    seen = []
+
+    def approve(request, requester, history):
+        seen.append((request["y"], requester, len(history)))
+        return request["y"][1] == "0"  # only keys that ignore x_2
+
+    _, _, _, key_servers, comb, _ = _system(approve=approve)
+    ok = comb.new_request("alice", [1, 0, 3], ["org:A"], ["ks1", "ks2", "ks3"])
+    comb.combine(ok, _issue(key_servers, ok))
+    unit = comb.new_request("alice", [0, 1, 0], ["org:A"], ["ks1", "ks2", "ks3"])
+    with pytest.raises(FEKeyError, match="approval rule"):
+        key_servers["ks1"].issue(unit, "alice")
+    assert seen[0] == (["1", "0", "3"], "alice", 0) and seen[-1][0] == ["0", "1", "0"]
+    assert key_servers["ks1"]._history[-1][0] == "alice"
+
+
+def test_a_server_needs_an_approval_rule(system):
+    dealer, pp, ks, _, _, _ = _system(t=1, servers=["a"])
+    with pytest.raises(FEConfigError):
+        SIFECPABPairingKeyServer(pp, ks, {}, None)
+
+
+@pytest.mark.parametrize("change", ["duplicate", "short", "unknown", "unsorted", "not_mine"])
+def test_server_sets(system, change):
+    _, _, _, key_servers, comb, _ = system
+    request = comb.new_request("alice", [1, 2, 3], ["org:A"], ["ks1", "ks2", "ks3"])
+    request["servers"] = {"duplicate": ["ks1", "ks1", "ks2"], "short": ["ks1", "ks2"],
+                          "unknown": ["ks1", "ks2", "ks9"], "unsorted": ["ks2", "ks1", "ks3"],
+                          "not_mine": ["ks2", "ks3", "ks4"]}[change]
+    with pytest.raises(FEValidationError):
+        key_servers["ks1"].issue(_resign(request), "alice")
+
+
+@pytest.mark.parametrize("field, value", [
+    ("y", ["1", "2"]), ("y", ["1", "2", "11"]), ("y", ["1", "2", "x"]), ("y", ["1", "2", "03"]),
+    ("attributes", ["org:Z"]), ("attributes", ["org:B", "org:A"]), ("attributes", ["org:A", "org:A"]),
+    ("attributes", []), ("sid", ""), ("id", "00"), ("pp_binding", "00"), ("keyservers", "00"),
+    ("version", "cp_ab_keyrequest/v0"),
+])
+def test_request_inputs(system, field, value):
+    _, _, _, key_servers, comb, _ = system
+    request = comb.new_request("alice", [1, 2, 3], ["org:A"], ["ks1", "ks2", "ks3"])
+    request[field] = value
+    with pytest.raises((FEValidationError, FEKeyError)):
+        key_servers["ks1"].issue(_resign(request), request["sid"] or "x")
+
+
+def test_a_request_must_match_its_digest(system):
+    _, _, _, key_servers, comb, _ = system
+    request = comb.new_request("alice", [1, 2, 3], ["org:A"], ["ks1", "ks2", "ks3"])
+    with pytest.raises(FEValidationError, match="digest"):
+        key_servers["ks1"].issue(dict(request, y=["3", "2", "1"]), "alice")
+
+
+def test_a_digest_used_for_other_content_is_refused(system, monkeypatch):
+    """With a broken digest (here: constant), two requests of one digest and different y would give
+    k1 = 1, k0 = [U (y1 - y2)]_2; the record digest -> content refuses the second."""
+    _, _, _, key_servers, comb, _ = system
+    monkeypatch.setattr(ki, "request_digest", lambda request: "ab" * ki.DIGEST_BYTES)
+    r1 = comb.new_request("alice", [1, 0, 0], ["org:A"], ["ks1", "ks2", "ks3"])
+    r2 = comb.new_request("alice", [0, 1, 0], ["org:A"], ["ks1", "ks2", "ks3"])
+    assert r1["digest"] == r2["digest"]
+    key_servers["ks1"].issue(r1, "alice")
+    with pytest.raises(FEKeyError, match="other content"):
+        key_servers["ks1"].issue(r2, "alice")
+
+
+def test_an_id_used_for_other_content_is_refused(system):
+    _, _, _, key_servers, comb, _ = system
+    r1 = comb.new_request("alice", [1, 0, 0], ["org:A"], ["ks1", "ks2", "ks3"])
+    key_servers["ks1"].issue(r1, "alice")
+    r2 = _resign(dict(r1, y=["0", "1", "0"]))
+    with pytest.raises(FEKeyError, match="id"):
+        key_servers["ks1"].issue(r2, "alice")
+
+
+# -- the dealer ----------------------------------------------------------------------
+
+
+def test_the_dealer_hands_out_each_share_once_and_issues_no_keys(system):
+    dealer = system[0]
+    assert dealer._pending == {}
+    with pytest.raises(FEKeyError):
+        dealer.server_share("ks1")
+    with pytest.raises(FEKeyError):
+        dealer.get_decryption_keys("s", credentials={"fusion_weight": [1, 1, 1], "attributes": ["org:A"]})
+    assert dealer._kg.msk is None
+
+
+def test_each_sharing_has_fresh_prf_keys_and_its_own_id():
+    d1, _, ks1, _, _, _ = _system(t=2, servers=["a", "b"])
+    d2 = SIFECPABPairingDealer({"eta": ETA, "bound_x": 10, "bound_y": 10, "universe": UNIVERSE, "max_copies": 2,
+                                "pairing_group_param": GROUP}, ["a", "b"], 2)
+    d2.setup()
+    assert d2.key_servers()["sharing_id"] != ks1["sharing_id"]
+    s2 = d2.server_share("a")
+    assert s2["keyservers"] == ki.keyservers_digest(d2.key_servers())
+    assert len(s2["r_key"]) == 64 and set(s2["mask_keys"]) == {"b"}
+
+
+def test_shares_and_records_must_fit(system):
+    dealer, pp, ks, _, _, _ = _system(t=2, servers=["a", "b", "c"])
+    d2 = SIFECPABPairingDealer({"eta": ETA, "bound_x": 10, "bound_y": 10, "universe": UNIVERSE, "max_copies": 2,
+                                "pairing_group_param": GROUP}, ["a", "b", "c"], 2)
+    d2.setup()
+    foreign = d2.server_share("a")
+    with pytest.raises(FEValidationError):
+        SIFECPABPairingKeyServer(pp, ks, foreign, _allow)          # another sharing
+    for change in ({"points": [1, 2, 4]}, {"threshold": 4}, {"pp_binding": "00"}, {"sharing": "replicated"},
+                   {"servers": ["a", "a", "c"]}, {"version": "cp_ab_keyservers/v0"}):
+        with pytest.raises(FEValidationError):
+            SIFECPABPairingKeyCombiner(pp, dict(ks, **change))
+
+
+@pytest.mark.parametrize("servers, t", [([], 1), (["a", "a"], 1), (["a", ""], 1), (["a", "b"], 3), (["a"], 0)])
+def test_dealer_arguments(servers, t):
+    with pytest.raises(FEValidationError):
+        SIFECPABPairingDealer({"eta": ETA, "universe": UNIVERSE, "pairing_group_param": GROUP}, servers, t)
+
+
+# -- registry and records ------------------------------------------------------------
+
+
+def test_the_capability_is_registered():
+    assert "distributed_keygen" in pyfe4ai.CAPABILITIES
+    assert "distributed_keygen" in pyfe4ai.get_scheme("sife/cp_ab_pairing").capabilities
+
+
+@pytest.mark.parametrize("name", ["CPABKeyServers", "CPABKeyServerShare", "CPABKeyRequest", "CPABPartialKey"])
+def test_records_document_their_fields(name):
+    from pyfe4ai.core.formats import keyissue
+
+    cls = getattr(keyissue, name)
+    assert cls.FIELDS and "Fields, in wire order" in cls.__doc__
+    assert all(cls._fields[f].doc for f in cls.FIELDS)
+
+
+def test_objects_are_their_records(system):
+    from pyfe4ai.core.formats import keyissue
+
+    _, _, ks, key_servers, comb, _ = system
+    request = comb.new_request("alice", [1, 2, 3], ["org:A"], ["ks1", "ks2", "ks3"])
+    assert list(ks) == list(keyissue.CPABKeyServers.FIELDS)
+    assert list(request) == list(keyissue.CPABKeyRequest.FIELDS)
+    assert list(_issue(key_servers, request)[0]) == list(keyissue.CPABPartialKey.FIELDS)

@@ -147,6 +147,11 @@ Each scheme lists its capabilities
   ``mcfe/kp_ab_pairing_per_client``) the key carries the policy
   (``credentials={"fusion_weight": y, "policy": ...}``) and the ciphertext the
   attributes (``encrypt(..., attributes=...)``).
+* ``distributed_keygen`` -- functional keys are issued jointly by ``t`` of
+  ``s`` key servers, none of which holds the master key after setup
+  (``sife/cp_ab_pairing``, :mod:`pyfe4ai.schemes.sife.cp_ab_pairing_keyissue`;
+  experimental, and secure only with authenticated, confidential channels
+  between the requester and the servers, see :doc:`security`).
 
 Review status
 -------------

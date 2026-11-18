@@ -448,6 +448,47 @@ with Remark 16, and no theorem: it says that the proof follows from that of
 Thm. 14 with few changes and leaves the sketch to the full version. The attack
 applies to the construction as printed in both.
 
+Threshold key issuance (experimental)
+-------------------------------------
+
+:mod:`pyfe4ai.schemes.sife.cp_ab_pairing_keyissue` issues the functional
+keys of ``sife/cp_ab_pairing`` jointly: a trusted dealer runs the setup,
+Shamir-shares the master key ``U`` among ``s`` key servers and hands each
+its share once; any ``t`` of them answer a request with masked partial keys,
+whose product the requester checks against the public parameters and keeps
+as an ordinary key of the scheme. The public parameters, ciphertexts and
+decryption do not change, nor does the scheme's own security (SEL-SIM, one
+challenge ciphertext). The protocol and its security argument are this
+project's own; the argument (static corruption of fewer than ``t`` servers,
+any number of corrupted users, honest users; a reduction to ACGU20 Thm. 3.2
+that uses the key oracle once per request every honest server of the
+request accepted) was reviewed once and revised, not published or
+externally reviewed.
+
+It holds only under conditions the library does not provide:
+
+* **Authenticated, confidential channels** between the requester and each
+  server. A partial key is determined by the request, so anyone who can
+  replay a user's request or read the ``t`` partial keys of one gets that
+  user's key. ``issue(request, requester)`` takes the identity the channel
+  authenticated and refuses a request for another ``sid``.
+* **The approval rule decides on the weights too.** ``approve(request,
+  requester, history)`` sees the whole request. A rule that checks the
+  attributes only lets an approved user take ``eta`` keys of unit vectors and
+  recover every plaintext its attributes open. With ``t - 1`` corrupted
+  servers, keys are as safe as the most permissive honest server's rule.
+* **The dealer is trusted** and deletes ``U``, the shares and the PRF keys
+  after delivering them (the dealer object drops each share it delivers;
+  Python cannot wipe memory, so run it in a process that ends).
+* Fewer than ``t`` servers are corrupted, chosen before setup; there is no
+  share refresh (a new sharing draws new PRF keys).
+
+A corrupted server can make an issuance fail, not hand out a wrong key: the
+combiner checks every component with pairings, and any key that passes
+decrypts correctly. It cannot tell which server cheated; retry with other
+servers. Servers refuse a request digest or request id used before for other
+content. Every server sees the requester, the attributes and the weights.
+
 Attribute-based IPFE not provided
 ---------------------------------
 

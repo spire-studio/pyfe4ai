@@ -57,6 +57,9 @@ Serialized Objects
 .. automodule:: pyfe4ai.core.formats.identity
    :members:
 
+.. automodule:: pyfe4ai.core.formats.keyissue
+   :members:
+
 Server and Client Ids
 ---------------------
 

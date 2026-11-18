@@ -92,6 +92,12 @@ Ciphertext-Policy Attribute-Based IPFE (Pairing)
    :members:
    :undoc-members:
 
+Threshold Key Issuance for CP-AB-IPFE (experimental)
+----------------------------------------------------
+
+.. automodule:: pyfe4ai.schemes.sife.cp_ab_pairing_keyissue
+   :members:
+
 Key-Policy Attribute-Based IPFE (Pairing)
 -----------------------------------------
 
