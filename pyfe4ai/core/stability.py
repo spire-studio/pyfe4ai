@@ -27,6 +27,7 @@ a kind of record found insecure may become known-insecure and be refused by
 from __future__ import annotations
 
 from collections.abc import Mapping
+from types import MappingProxyType
 
 from pyfe4ai.core.exceptions import FEValidationError
 from pyfe4ai.core.registry import EXPERIMENTAL, KNOWN_INSECURE, REVIEWED, UNREVIEWED, get_scheme
@@ -38,22 +39,22 @@ KNOWN_INSECURE_TIER = "known-insecure"
 TIERS = (STABLE, EXPERIMENTAL_TIER, KNOWN_INSECURE_TIER)
 
 #: The tier of each review status.
-TIER_OF_STATUS = {
+TIER_OF_STATUS: Mapping[str, str] = MappingProxyType({
     REVIEWED: STABLE,
     EXPERIMENTAL: EXPERIMENTAL_TIER,
     UNREVIEWED: EXPERIMENTAL_TIER,
     KNOWN_INSECURE: KNOWN_INSECURE_TIER,
-}
+})
 
 #: Option values of stable schemes that are experimental: ``{scheme id: {option: values}}`` (key generator
-#: options; a value outside the set is in the scheme's tier).
-EXPERIMENTAL_OPTIONS: dict[str, dict[str, frozenset]] = {
+#: options; a value outside the set is in the scheme's tier). Read-only: a later version adds its entries here.
+EXPERIMENTAL_OPTIONS: Mapping[str, Mapping[str, frozenset]] = MappingProxyType({
     # the packed layout rests on this project's own leveraging argument (registry note)
-    "sife/fullysec_ring_lwe": {"ndarray_layout": frozenset({"packed"})},
-}
+    "sife/fullysec_ring_lwe": MappingProxyType({"ndarray_layout": frozenset({"packed"})}),
+})
 
 #: Capabilities of stable schemes that are experimental: ``{scheme id: capabilities}``.
-EXPERIMENTAL_CAPABILITIES: dict[str, frozenset] = {}
+EXPERIMENTAL_CAPABILITIES: Mapping[str, frozenset] = MappingProxyType({})
 
 
 def tier(scheme) -> str:
