@@ -97,7 +97,7 @@ from pyfe4ai.core.versions import CP_AB_KEYSERVERS_VERSION
 from pyfe4ai.core.versions import CP_AB_PARTIAL_KEY_VERSION
 from pyfe4ai.primitives.pairing.pairing_backend import G1, G2, multi_pair, multiexp
 from pyfe4ai.schemes.common.ac_codec import check_length, decimal, read_elements, read_record, require_fields
-from pyfe4ai.schemes.common.ac_codec import scalar, serialize_vec
+from pyfe4ai.schemes.common.ac_codec import copy_parameters, scalar, serialize_vec
 from pyfe4ai.schemes.sife.cp_ab_pairing import SIFECPABPairing
 from pyfe4ai.schemes.sife.cp_ab_pairing import SIFECPABPairingKeyGenerator
 from pyfe4ai.schemes.threshold.sharing import lagrange_coefficient_at_zero
@@ -134,7 +134,10 @@ def _hash(dst: bytes, payload: bytes, nbytes: int) -> bytes:
 
 
 def _canonical(value) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    try:
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    except UnicodeEncodeError as exc:  # a lone surrogate in a label, a server id or a sid
+        raise FEValidationError("a key request holds a string that does not encode to UTF-8") from exc
 
 
 def _prf(key: bytes, dst: bytes, digest: bytes, index: bytes, order: int) -> int:
@@ -229,10 +232,11 @@ class _Parameters:
 
     def checked_request(self, request) -> tuple:
         """``(record, y, digest bytes)`` of a request in its one canonical form, or ``FEValidationError``."""
-        r = read_record(CPABKeyRequest, request, "key request")
-        require_fields(r, "key request")
-        if len(request) != len(CPABKeyRequest.FIELDS):  # a field the digest does not bind must not reach the rule
-            raise FEValidationError("a key request has exactly the fields {}".format(", ".join(CPABKeyRequest.FIELDS)))
+        if type(request) is not dict or set(request) != set(CPABKeyRequest.FIELDS):
+            # a field the digest does not bind must not reach the rule
+            raise FEValidationError("a key request is a dict with exactly the fields {}".format(
+                ", ".join(CPABKeyRequest.FIELDS)))
+        r = CPABKeyRequest(request)
         if r.version != CP_AB_KEYREQUEST_VERSION:
             raise FEValidationError("unknown key request version")
         _hex(r.id, _ID_BYTES, "request id")
@@ -439,7 +443,7 @@ class SIFECPABPairingKeyServer:
                 content.
         """
         p = self._p
-        snapshot = copy.deepcopy(request)  # what is checked, approved, recorded and answered: one copy
+        snapshot = copy_parameters(request, "key request")  # what is checked, approved, recorded and answered
         r, y, digest = p.checked_request(snapshot)
         requester = authenticated_requester
         try:

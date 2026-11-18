@@ -299,3 +299,12 @@ def test_unassigned_code_points_are_not_added():
     kc = IdentityKeyCentre(dict(CFG))
     with pytest.raises(FEValidationError, match="unassigned"):
         kc.add_identity("x͸")
+
+
+def test_a_fork_mid_add_leaves_no_half_added_identity(centre):
+    """R-0.7 re-check RC1-2: the child of a fork between the two writes of add_identity drops that identity."""
+    centre._instances["dave"] = centre._instances["alice"]  # the state of a fork between the two writes
+    centre._after_fork_in_child()
+    assert "dave" not in centre._instances and "dave" not in centre._entries
+    assert centre.identities() == ["Alice", "alice", "bob"]
+    centre.add_identity("dave")

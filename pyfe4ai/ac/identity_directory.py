@@ -183,8 +183,14 @@ class IdentityKeyCentre:
         forksafe.track(self)  # a forked child: a new lock (_after_fork_in_child)
 
     def _after_fork_in_child(self) -> None:
-        """In a forked child: a new lock (another thread of the parent may hold the old one)."""
+        """In a forked child: a new lock (another thread of the parent may hold the old one), and no
+        half-added identity: a fork between the two writes of :meth:`add_identity` (whose thread the
+        child does not have) leaves an instance without an entry or the reverse; such an identity is
+        dropped, as if the add had not happened."""
         self._lock = threading.Lock()
+        for identity in set(self._instances) ^ set(self._entries):
+            self._instances.pop(identity, None)
+            self._entries.pop(identity, None)
 
     def add_identity(self, identity: str) -> str:
         """Set up a fresh instance for *identity*; return its entry digest.

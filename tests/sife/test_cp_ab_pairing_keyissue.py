@@ -477,3 +477,28 @@ def test_concurrent_requests_of_one_digest_accept_one_content(system, monkeypatc
     accepted = [y for verdict, y in outcomes if verdict == "ok"]
     assert len(outcomes) == len(requests) and len(accepted) == 1
     assert len(key_servers["ks1"]._contents) == 1 and len(key_servers["ks1"]._history) == 1
+
+
+@pytest.mark.parametrize("attributes, servers", [(["org:\ud800"], ["ks1", "ks2", "ks3"]),
+                                                 (["org:A"], ["ks1", "ks2", "k\ud800"])])
+def test_unencodable_labels_and_server_ids_are_validation_errors(system, attributes, servers):
+    """R-0.7 re-check RC2-1: a lone surrogate in a label or a server id is an FEValidationError."""
+    comb = system[4]
+    with pytest.raises(FEValidationError):
+        comb.new_request("alice", [1, 0, 0], attributes, servers)
+
+
+def test_requests_must_be_plain_dicts_that_copy(system):
+    """R-0.7 re-check RC2-2, RC2-3: a request that is no plain dict, or does not copy, is an FEValidationError."""
+    import threading
+
+    _, _, _, key_servers, comb, _ = system
+    request = comb.new_request("alice", [1, 0, 0], ["org:A"], ["ks1", "ks2", "ks3"])
+
+    class Lying(dict):
+        def __len__(self):
+            return len(request)
+
+    for bad in (Lying(request, purpose="audit"), dict(request, lock=threading.Lock())):
+        with pytest.raises(FEValidationError):
+            key_servers["ks1"].issue(bad, authenticated_requester="alice")

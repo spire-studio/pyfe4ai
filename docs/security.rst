@@ -593,7 +593,8 @@ identity, and only keys of that identity's instance decrypt it.
   its own Python's Unicode database: NFC, no control, format, surrogate or
   unassigned code points, at most 256 characters, case-sensitive, nothing
   normalised silently. Readers only check that an identity is a string of 1 to
-  256 characters, so a directory loads the same under every Python. The rule
+  256 characters that encodes to UTF-8, so a directory loads the same under
+  every Python. The rule
   does not catch confusable identities (a Cyrillic ``а`` for a Latin ``a``) or
   spaces: mapping people to identities is the application's.
 * The directory, its checks and its records are experimental; the scheme
