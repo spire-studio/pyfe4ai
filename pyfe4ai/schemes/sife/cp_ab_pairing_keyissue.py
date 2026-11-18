@@ -30,8 +30,9 @@ multiplied by ``g2^z_{i,c}``, ``z_{i,c} = sum_{j in T, j != i} +-F(k_ij, d, c)``
 (the masks of a pair cancel in the product). The product of the ``t``
 answers is ``KeyPart(U, sum r_i)``: a key of the scheme with uniform ``r``.
 
-Security (the argument is ``roadmap/v0.7/03_keyissue_proof.md`` of the
-project's design notes, rev. 2, reviewed once with fixes): with fewer than
+Security (the argument is in the project's design notes; it was reviewed,
+revised and re-checked by reviewers inside the project, and is neither
+published nor externally reviewed): with fewer than
 ``t`` servers corrupted statically, the view of the corrupted servers and
 users is simulated from the scheme's key oracle alone, one query per request
 that every honest server of its ``T`` accepted. The scheme's own security
@@ -158,6 +159,17 @@ def request_digest(request: dict) -> str:
     return _hash(DST_REQUEST, _canonical(payload), DIGEST_BYTES).hex()
 
 
+def _check_sid(sid) -> str:
+    """*sid* if it is a ``str`` of 1 to 1024 characters that encodes to UTF-8, else ``FEValidationError``."""
+    if type(sid) is not str or not 0 < len(sid) <= _MAX_SID:
+        raise FEValidationError("sid must be a non-empty str of at most {} characters".format(_MAX_SID))
+    try:
+        sid.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise FEValidationError("sid must encode to UTF-8 (no lone surrogates)") from exc
+    return sid
+
+
 def _check_server_ids(servers, name: str) -> list:
     if type(servers) is not list or not servers or not all(type(s) is str and s for s in servers):
         raise FEValidationError("{} must be a non-empty list of non-empty str server ids".format(name))
@@ -219,11 +231,12 @@ class _Parameters:
         """``(record, y, digest bytes)`` of a request in its one canonical form, or ``FEValidationError``."""
         r = read_record(CPABKeyRequest, request, "key request")
         require_fields(r, "key request")
+        if len(request) != len(CPABKeyRequest.FIELDS):  # a field the digest does not bind must not reach the rule
+            raise FEValidationError("a key request has exactly the fields {}".format(", ".join(CPABKeyRequest.FIELDS)))
         if r.version != CP_AB_KEYREQUEST_VERSION:
             raise FEValidationError("unknown key request version")
         _hex(r.id, _ID_BYTES, "request id")
-        if type(r.sid) is not str or not 0 < len(r.sid) <= _MAX_SID:
-            raise FEValidationError("sid must be a non-empty str of at most {} characters".format(_MAX_SID))
+        _check_sid(r.sid)
         check_length(r.y, self.eta, "y")
         y = [decimal(v, "y") for v in r.y]
         if any(abs(v) > self.bound_y for v in y):
@@ -256,7 +269,9 @@ class SIFECPABPairingDealer:
             :class:`~pyfe4ai.schemes.sife.cp_ab_pairing.SIFECPABPairingKeyGenerator`.
         key_servers: The server ids (distinct non-empty ``str``); server
             ``i`` of the list gets the share point ``i + 1``.
-        threshold: ``t``, the servers per request (``1 <= t <= s``).
+        threshold: ``t``, the servers per request (``1 <= t <= s``). With
+            ``t = 1`` there is no threshold: every server's share is ``U``
+            itself, and any one server issues keys alone.
     """
 
     def __init__(self, config: dict, key_servers: list, threshold: int) -> None:
@@ -358,8 +373,9 @@ class SIFECPABPairingKeyServer:
             ``attributes``, ``servers``, ...), *requester* the identity the
             channel authenticated, *history* the tuple of ``(requester,
             request)`` this server accepted before, oldest first (refused
-            requests are not in it; the server's own records: read them, do
-            not modify them). It must decide on ``y`` too (see the module
+            requests are not in it; a copy of the server's records). Only the
+            return value ``True`` approves; anything else, a reason string
+            or ``None`` among it, refuses. It must decide on ``y`` too (see the module
             docstring). It runs under the server's lock, so the requests to
             one server are approved one at a time. A repeat of an accepted
             request (same digest, same content) is answered again without a
@@ -423,14 +439,18 @@ class SIFECPABPairingKeyServer:
                 content.
         """
         p = self._p
-        r, y, digest = p.checked_request(request)
+        snapshot = copy.deepcopy(request)  # what is checked, approved, recorded and answered: one copy
+        r, y, digest = p.checked_request(snapshot)
         requester = authenticated_requester
-        if type(requester) is not str or not hmac.compare_digest(requester.encode(), r.sid.encode()):
+        try:
+            same = type(requester) is str and hmac.compare_digest(requester.encode("utf-8"), r.sid.encode("utf-8"))
+        except UnicodeEncodeError:
+            same = False
+        if not same:
             raise FEKeyError("the request's sid is not the authenticated requester")
         if self.server not in r.servers:
             raise FEValidationError("this server is not among the servers of the request")
         content = _canonical([r.version, r.id, r.sid, r.y, r.attributes, r.servers, r.pp_binding, r.keyservers])
-        snapshot = copy.deepcopy(request)
         with self._lock:
             seen = self._contents.get(r.digest)
             if seen is not None and seen != content:
@@ -439,7 +459,8 @@ class SIFECPABPairingKeyServer:
                 # ids are kept per sid: only the requester itself can block its own id
                 if self._ids.get((r.sid, r.id), r.digest) != r.digest:
                     raise FEKeyError("this sid used the id of this request for other content")
-                if not self._approve(copy.deepcopy(snapshot), requester, tuple(self._history)):
+                verdict = self._approve(copy.deepcopy(snapshot), requester, copy.deepcopy(tuple(self._history)))
+                if verdict is not True:  # fail closed: a reason string, None or any other value refuses
                     raise FEKeyError("the approval rule of server {!r} refuses this request".format(self.server))
                 self._contents[r.digest] = content
                 self._ids[(r.sid, r.id)] = r.digest
@@ -502,6 +523,7 @@ class SIFECPABPairingKeyCombiner:
             servers: ``t`` distinct server ids of the key-server record.
         """
         p = self._p
+        _check_sid(sid)
         y = int_vector(fusion_weight, "fusion weight", length=p.eta, bound=p.bound_y)
         if isinstance(attributes, (str, bytes, bytearray)):
             raise FEValidationError("attributes must be a collection of labels, not a bare string")

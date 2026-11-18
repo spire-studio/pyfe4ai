@@ -462,8 +462,9 @@ challenge ciphertext). The protocol and its security argument are this
 project's own; the argument (static corruption of fewer than ``t`` servers,
 any number of corrupted users, honest users; a reduction to ACGU20 Thm. 3.2
 that uses the key oracle once per request every honest server of the
-request accepted) was reviewed once and revised, not published or
-externally reviewed.
+request accepted) was reviewed, revised and re-checked within the project;
+it is not published and not externally reviewed. With ``t = 1`` there is no
+threshold: every server's share is the master key itself.
 
 It holds only under conditions the library does not provide:
 
@@ -478,7 +479,8 @@ It holds only under conditions the library does not provide:
   key. Send them to the authenticated requester only; do not log or store
   them (the library logs none).
 * **The approval rule decides on the weights too.** ``approve(request,
-  requester, history)`` sees the whole request. A rule that checks the
+  requester, history)`` sees the whole request, and only a return value of
+  ``True`` approves. A rule that checks the
   attributes only lets an approved user take ``eta`` keys of unit vectors and
   recover every plaintext its attributes open. With ``t - 1`` corrupted
   servers, keys are as safe as the most permissive honest server's rule.

@@ -448,3 +448,32 @@ def test_the_success_bit_is_the_homogeneous_check(system):
            "k_attr": {name: [identity, identity] for name, _ in p.slots(request["attributes"])}}
     with pytest.raises(FEKeyError, match="fails its check"):
         comb.combine(request, [_times(group, partials[0], bad)] + partials[1:])
+
+
+def test_concurrent_requests_of_one_digest_accept_one_content(system, monkeypatch):
+    """04 Sec. 3, row 3 (R-0.7 M1b-9): with a broken (constant) digest, threads sending different contents under
+    one digest to one server: exactly one content is accepted, every other thread is refused."""
+    import threading
+
+    _, _, _, key_servers, comb, _ = system
+    monkeypatch.setattr(ki, "request_digest", lambda request: "cd" * ki.DIGEST_BYTES)
+    requests = [comb.new_request("alice", [i, 0, 0], ["org:A"], ["ks1", "ks2", "ks3"]) for i in range(1, 9)]
+    barrier = threading.Barrier(len(requests), timeout=5)
+    outcomes = []
+
+    def send(request):
+        barrier.wait()
+        try:
+            key_servers["ks1"].issue(request, authenticated_requester="alice")
+            outcomes.append(("ok", request["y"][0]))
+        except FEKeyError:
+            outcomes.append(("refused", request["y"][0]))
+
+    threads = [threading.Thread(target=send, args=(r,)) for r in requests]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    accepted = [y for verdict, y in outcomes if verdict == "ok"]
+    assert len(outcomes) == len(requests) and len(accepted) == 1
+    assert len(key_servers["ks1"]._contents) == 1 and len(key_servers["ks1"]._history) == 1
