@@ -25,13 +25,45 @@ def _cache(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("code_point", ["͸", "࢐", "࢑", "\U000E0080"])
 def test_r07_m1_an_identity_accepted_on_one_python_is_accepted_on_every_python(code_point):
-    """R07-M1 (Medium): ``check_identity`` accepts unassigned code points (category Cn). Python 3.10 (Unicode 13.0)
-    has U+0890 and U+0891 unassigned, Python 3.13 (Unicode 15.1) has them as format characters (Cf), which the rule
-    refuses. A key centre on 3.10 adds ``"x\\u0890"``; an encryptor on 3.13 then refuses the whole directory, since
-    ``IdentityDirectory._checked`` checks every entry. Refusing unassigned code points (Cn) makes the rule the same on
-    every Python (an assigned character keeps its category Cc/Cf/Cs and its NFC behaviour in later versions)."""
+    """R07-M1 (Medium), the adding side: ``check_identity`` accepts unassigned code points (category Cn). Python 3.10
+    (Unicode 13.0) has U+0890 and U+0891 unassigned, Python 3.13 (Unicode 15.1) has them as format characters (Cf),
+    which the rule refuses. A key centre on 3.10 adds ``"x\\u0890"``; an encryptor on 3.13 then refuses the whole
+    directory, since ``IdentityDirectory._checked`` checks every entry (``probe_cross_version.py``). A key centre should
+    not add a code point its own Unicode database does not know. This alone does not make the rule the same on every
+    Python: a character assigned in 15.1 is Cn on 3.10, so the reading side needs the second test as well."""
     with pytest.raises(FEValidationError):
         check_identity("x" + code_point)
+
+
+class _Unicode151:
+    """``unicodedata`` as Python 3.13 (Unicode 15.1) answers for U+0890, under any Python."""
+
+    unidata_version = "15.1.0"
+
+    def __getattr__(self, name):
+        import unicodedata
+        return getattr(unicodedata, name)
+
+    @staticmethod
+    def category(c):
+        import unicodedata
+        return "Cf" if c == "࢐" else unicodedata.category(c)
+
+
+def test_r07_m1_a_directory_is_read_alike_whatever_the_unicode_version_of_the_reader(monkeypatch):
+    """R07-M1 (Medium), the reading side: whether a published directory loads must not depend on the Unicode database
+    of the reader's Python. The entries are bound by their digests (and, with ``expected_digest``, by the trusted
+    digest), and ``encrypt`` looks an identity up by exact string, so the reader needs only a ``str`` of 1 to 256
+    characters; the Unicode rule belongs to ``add_identity``. Here a directory with ``"x\\u0890"`` is made under
+    Unicode 13.0 semantics (3.10) and read under 15.1 semantics (emulated)."""
+    if idd.unicodedata.category("࢐") != "Cn":
+        pytest.skip("this Python already knows U+0890; the test emulates the newer version on an older one")
+    kc = IdentityKeyCentre(CONFIG)
+    for who in ("alice", "x࢐"):
+        kc.add_identity(who)
+    record = kc.directory()
+    monkeypatch.setattr(idd, "unicodedata", _Unicode151())
+    IdentityDirectory(record, expected_digest=record["digest"])
 
 
 def test_r07_l1_two_threads_cannot_add_one_identity_twice(monkeypatch):
