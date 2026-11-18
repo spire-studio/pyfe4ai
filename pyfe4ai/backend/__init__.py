@@ -265,6 +265,18 @@ def get_threads() -> int:
     return _threads
 
 
+def effective_threads() -> int:
+    """Threads one native call actually uses in this process: :func:`get_threads`, or 1 in a process
+    forked from one that ran a native call with several threads.
+
+    On macOS such a child was killed at its next multi-threaded native call (SIGTRAP); the native layer
+    now runs it on one thread, whatever :func:`set_threads` says there, on every platform (see
+    :doc:`/threading`, "Processes and fork"). Without the extension, :func:`get_threads`.
+    """
+    limit = getattr(_ext, "fork_thread_limit", None) if _ext is not None else None
+    return _threads if limit is None else int(limit(_threads))
+
+
 def set_threads(threads: int) -> None:
     """Number of threads one native call may use (over the chunks of a tensor),
     at most :data:`MAX_THREADS`."""
@@ -315,8 +327,10 @@ def backend_info() -> dict:
     ``"import_error"``
         why the extension could not be imported, else ``None``;
     ``"threads"``, ``"max_threads"``
-        the threads one native call may use (:func:`set_threads`,
-        ``PYFE4AI_THREADS``) and their maximum :data:`MAX_THREADS`;
+        the threads one native call uses in this process
+        (:func:`effective_threads`: :func:`set_threads` or ``PYFE4AI_THREADS``,
+        but 1 in a forked child of a process that ran several) and their
+        maximum :data:`MAX_THREADS`;
     ``"gaussian_sampler"``
         the library-wide Gaussian sampler in this context
         (:func:`~pyfe4ai.primitives.sampling.get_gaussian_sampler`,
@@ -351,7 +365,7 @@ def backend_info() -> dict:
         "native_build": build,
         "native_path": getattr(_ext, "__file__", None) if _ext is not None else None,
         "import_error": None if _ext is not None else str(_IMPORT_ERROR),
-        "threads": _threads,
+        "threads": effective_threads(),
         "max_threads": MAX_THREADS,
         "gaussian_sampler": get_gaussian_sampler(),
         "scheme_sampler": PROOF_SAMPLER,
