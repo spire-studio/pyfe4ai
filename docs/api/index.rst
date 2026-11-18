@@ -54,8 +54,9 @@ Public and internal modules
 
 * :mod:`pyfe4ai` (above);
 * the family packages :mod:`pyfe4ai.schemes.sife`,
-  :mod:`~pyfe4ai.schemes.mife`, :mod:`~pyfe4ai.schemes.mcfe` and
-  :mod:`~pyfe4ai.schemes.quadratic`: the key generators and crypto classes
+  :mod:`~pyfe4ai.schemes.mife`, :mod:`~pyfe4ai.schemes.mcfe`,
+  :mod:`~pyfe4ai.schemes.quadratic` and :mod:`~pyfe4ai.schemes.bcfe`
+  (experimental): the key generators and crypto classes
   and their documented methods (the scheme modules, e.g.
   :mod:`pyfe4ai.schemes.mcfe.ring_lwe`, document them);
 * :mod:`pyfe4ai.core.registry`, :mod:`pyfe4ai.core.config` (the config
@@ -64,6 +65,7 @@ Public and internal modules
   :mod:`pyfe4ai.core.ids` (the rules for server and client ids, with
   ``is_id`` and ``as_id``);
 * :mod:`pyfe4ai.policy` (policy formulas, attribute universes, span programs);
+* :mod:`pyfe4ai.circuits` (the parameterised circuits of ``bcfe``: builder, layouts, library);
 * :mod:`pyfe4ai.ml` and :mod:`pyfe4ai.ml.quantization`;
 * from :mod:`pyfe4ai.backend`: ``available``, ``get_backend``,
   ``set_backend``, ``backend``, ``active_backend``, ``get_threads``,
@@ -105,7 +107,7 @@ The package is organised in layers:
   security profiles, review status, one-time precomputations, the fork
   handler, exceptions;
 * ``pyfe4ai.schemes`` -- the schemes by family (``sife``, ``mife``,
-  ``mcfe``, ``quadratic``), with the components several families share in
+  ``mcfe``, ``quadratic``, ``bcfe``), with the components several families share in
   :mod:`pyfe4ai.schemes.common` and :mod:`pyfe4ai.schemes.threshold`;
 * :mod:`pyfe4ai.policy` -- monotone access policies and their span programs,
   for the attribute-based schemes (pure Python);

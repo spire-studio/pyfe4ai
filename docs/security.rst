@@ -16,8 +16,9 @@ Scheme status
 |n_schemes| registered schemes: |n_reviewed| reviewed, |n_experimental|
 experimental, |n_unreviewed| unreviewed and |n_known_insecure|
 known-insecure. The experimental ones are the threshold layers of tMIFE-LWE,
-tMCFE-LWE, tMCFE-Ring-LWE and tMCFE-FH-Multi-IPE and the carry mask of
-dMCFE-DDH: our own constructions on top of published schemes, with no
+tMCFE-LWE, tMCFE-Ring-LWE and tMCFE-FH-Multi-IPE, the carry mask of
+dMCFE-DDH and the bounded-key scheme ``bcfe/gc_ristretto255`` (see
+:ref:`bcfe-security`): our own constructions on top of published schemes, with no
 published security proof. The known-insecure one is
 ``mcfe/kp_ab_pairing_per_client`` (NPP22 Sec. 5.4, an attribute set for each
 client): the fifth coordinate of the paper does not depend on the tag, so two
