@@ -17,7 +17,9 @@
 //! encryption (garbling and label encryption in one call: delta, the seed, r
 //! and the 0-labels never leave this module and are wiped). Everything that
 //! depends on w is selected with masks, not branches. The per-position point
-//! work runs on up to `threads` threads (pyfe4ai_core::parallel_for).
+//! work runs on up to `threads` threads (pyfe4ai_core::parallel_for_joined:
+//! the caller joins its workers instead of parking, so that a process forked
+//! after a call can make the call again with several threads, on macOS too).
 
 use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoBasepointTable, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
@@ -26,7 +28,7 @@ use pyfe4ai_core::garble::{self, Mode};
 use pyfe4ai_core::keccak::{shake256, wipe_long};
 use pyfe4ai_core::rlwe::wipe_bytes;
 use pyfe4ai_core::sha512::expand_message_xmd_64;
-use pyfe4ai_core::{osrand, parallel_for};
+use pyfe4ai_core::{osrand, parallel_for_joined};
 use pyo3::exceptions::{PyOSError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
@@ -126,7 +128,7 @@ fn select<const N: usize>(bit: u8, if0: &[u8; N], if1: &[u8; N]) -> [u8; N] {
     out
 }
 
-/// The results of one parallel_for, item by item, and the first failure (by
+/// The results of one parallel_for_joined, item by item, and the first failure (by
 /// index). The items may be secret: wiped on drop.
 struct Cells<const N: usize> {
     cells: Vec<Mutex<[u8; N]>>,
@@ -306,7 +308,7 @@ fn new_slot(setup_digest: &[u8], slot_id: u64, m: usize, w: &[u8], rnd: &[u8], t
     need(rnd, WIDE * mp + K_LEN, "the randomness of a new slot")?;
     let k = &rnd[WIDE * mp..];
     let (scalars, selected, unselected) = (Cells::<PT>::new(mp), Cells::<PT>::new(mp), Cells::<PT>::new(m));
-    parallel_for(mp, threads, |j| {
+    parallel_for_joined(mp, threads, |j| {
         let mut wide: [u8; WIDE] = piece(rnd, j);
         let mut s = Scalar::from_bytes_mod_order_wide(&wide);
         wipe_bytes(&mut wide);
@@ -340,7 +342,7 @@ fn place_slot(setup_digest: &[u8], slot_id: u64, m: usize, w: &[u8], holder_pks:
     need(holder_pks, PT * mp, "the holder's public keys (m + 1 encodings)")?;
     need(k, K_LEN, "k")?;
     let (selected, unselected) = (Cells::<PT>::new(mp), Cells::<PT>::new(m));
-    parallel_for(mp, threads, |j| {
+    parallel_for_joined(mp, threads, |j| {
         let enc: [u8; PT] = piece(holder_pks, j);
         match CompressedRistretto(enc).decompress() {
             None => selected.fail(j, format!("holder public key {j} is not a ristretto255 encoding")),
@@ -370,7 +372,7 @@ fn unselected_ok(setup_digest: &[u8], slot_id: u64, m: usize, w: &[u8], k: &[u8]
         return Ok(false);
     }
     let diffs = Cells::<1>::new(m);
-    parallel_for(m, threads, |j| {
+    parallel_for_joined(m, threads, |j| {
         let want = unselected_point(setup_digest, slot_id, j as u32, k);
         let got = select(wb[j], &piece::<PT>(pks, 2 * j + 1), &piece::<PT>(pks, 2 * j));
         diffs.put(j, &[want.iter().zip(got.iter()).fold(0u8, |d, (a, b)| d | (a ^ b))]);
@@ -413,7 +415,7 @@ fn encrypt_slot(
     let cts = Cells::<LB>::new(2 * m + 1);
     {
         let (r, delta) = (&r, &delta);
-        parallel_for(2 * m + 1, threads, |i| {
+        parallel_for_joined(2 * m + 1, threads, |i| {
             let (j, b) = (i / 2, (i % 2) as u8);
             let p = match CompressedRistretto(piece(pks, i)).decompress() {
                 Some(p) if !bool::from(p.is_identity()) => p,
@@ -466,7 +468,7 @@ fn decrypt_slot(
     let wb = Zeroizing::new(garble::unpack_bits(w, m, "w")?);
     let table = if mp >= TABLE_FROM { Some(RistrettoBasepointTable::create(&rp)) } else { None };
     let keys = Cells::<LB>::new(mp);
-    parallel_for(mp, threads, |j| {
+    parallel_for_joined(mp, threads, |j| {
         let sb = Zeroizing::new(piece::<PT>(scalars, j));
         let mut s = match Scalar::from_canonical_bytes(*sb).into_option() {
             Some(s) => s,
