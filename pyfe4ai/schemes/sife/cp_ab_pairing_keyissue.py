@@ -352,8 +352,10 @@ class SIFECPABPairingKeyServer:
             -> bool``: *request* is the whole request (``sid``, ``y``,
             ``attributes``, ``servers``, ...), *requester* the identity the
             channel authenticated, *history* the tuple of ``(requester,
-            request)`` this server accepted before. It must decide on ``y``
-            too (see the module docstring).
+            request)`` this server accepted before (the server's own records:
+            read them, do not modify them). It must decide on ``y`` too (see
+            the module docstring). It runs under the server's lock, so the
+            requests to one server are approved one at a time.
 
     Raises:
         FEValidationError: For a share or a record that does not fit the
