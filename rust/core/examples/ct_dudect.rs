@@ -134,6 +134,8 @@ struct ReduceI128 {
     signed: bool,
     /// `reduce_i128_mirror`: class 1 is the fixed values negated (fixed vs fixed, the signs only differ).
     mirror: Option<Vec<i64>>,
+    /// `reduce_i128_mixed`: both classes random, class 0 non-negative, class 1 signed (no fixed class).
+    mixed: Option<Vec<i64>>,
     scratch: Vec<i64>,
     m: Modulus<u64>,
     fixed: Vec<i64>,
@@ -144,6 +146,14 @@ impl Target for ReduceI128 {
         // the same work in both classes (random values drawn, then the fixed ones copied over for class 0)
         for x in self.scratch.iter_mut() {
             *x = if self.signed { (rng.next() % (1 << 20)) as i64 - (1 << 19) } else { (rng.next() % (1 << 19)) as i64 };
+        }
+        if let Some(pos) = self.mixed.as_mut() {
+            // both classes random: a non-negative draw as well, every time, for class 0
+            for x in pos.iter_mut() {
+                *x = (rng.next() % (1 << 19)) as i64;
+            }
+            self.v.copy_from_slice(if class == 0 { self.mixed.as_ref().unwrap() } else { &self.scratch });
+            return;
         }
         let other = self.mirror.as_ref().unwrap_or(&self.scratch);
         self.v.copy_from_slice(if class == 0 { &self.fixed } else { other });
@@ -314,6 +324,7 @@ const TARGETS: &[(&str, &str, usize)] = &[
     ("reduce_i128_signs", "S1 (1), fixed vs random only: a fixed draw of signed values vs random signed ones", 4096),
     ("reduce_i128_pos", "S1 (1), no signs: fixed vs random non-negative values", 4096),
     ("reduce_i128_mirror", "S1 (1), signs only: fixed non-negative values vs the same values negated", 4096),
+    ("reduce_i128_mixed", "S1 (1), both random: non-negative values vs signed ones", 4096),
     ("reduce_u128", "S1 (2): reduction of 128-bit values", 1024),
     ("ntt_fwd", "S2: forward NTT, n = 1024, 60-bit q", 1),
     ("rlwe_encrypt", "S3: Ring-LWE encryption of one chunk, the plaintext secret", 1),
@@ -329,14 +340,15 @@ fn make(name: &str, calls: usize, rng: &mut Rng) -> Box<dyn Target> {
         "mont_mul_u64" => Box::new(MontMul { m, fixed: rng.next() % Q60, a: 0, calls }),
         // reduce_i128: fixed non-negative vs random signed values; _signs: a fixed draw of signed values vs random
         // signed ones (the same distribution: fixed vs random only); _pos: fixed vs random non-negative values
-        "reduce_i128" | "reduce_i128_signs" | "reduce_i128_pos" | "reduce_i128_mirror" => {
+        "reduce_i128" | "reduce_i128_signs" | "reduce_i128_pos" | "reduce_i128_mirror" | "reduce_i128_mixed" => {
             let fixed_signed = name == "reduce_i128_signs";
             let fixed: Vec<i64> = (0..calls)
                 .map(|_| if fixed_signed { (rng.next() % (1 << 20)) as i64 - (1 << 19) } else { (rng.next() % (1 << 19)) as i64 })
                 .collect();
             let mirror = (name == "reduce_i128_mirror").then(|| fixed.iter().map(|&x| -x).collect());
-            Box::new(ReduceI128 { signed: name != "reduce_i128_pos", mirror, m, v: fixed.clone(), scratch: fixed.clone(),
-                                  fixed })
+            let mixed = (name == "reduce_i128_mixed").then(|| fixed.clone());
+            Box::new(ReduceI128 { signed: name != "reduce_i128_pos", mirror, mixed, m, v: fixed.clone(),
+                                  scratch: fixed.clone(), fixed })
         }
         "reduce_u128" => {
             let fixed: Vec<u128> = (0..calls).map(|_| (rng.next() % Q60) as u128).collect();
