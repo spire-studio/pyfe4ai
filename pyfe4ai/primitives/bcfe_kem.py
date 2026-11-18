@@ -446,7 +446,8 @@ def place_slot(setup_digest: bytes, slot_id: int, w_bits, holder_pks: bytes, ran
     Every holder key must be a canonical encoding of a group element other
     than the identity (I8); no proof of knowledge of its secret key is asked
     (Lemma A1' allows arbitrary keys). Randomness: the 16 bytes of ``k``
-    from ``rand(16)``, after the inputs are checked.
+    from ``rand(16)``, after the inputs are checked (the backend operation
+    ``bcfe_place_slot`` reads its 16 bytes before checking; see its contract).
 
     Args:
         setup_digest, slot_id, w_bits, m: As :func:`new_slot`.
