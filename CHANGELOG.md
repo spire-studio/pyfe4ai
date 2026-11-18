@@ -349,7 +349,10 @@ an experimental research prototype, not recommended for production use.
     no wait), so the rule covers direct `pyfe4ai._rust_native` calls and forks
     not made through `os.fork`, and a later `set_threads(n)` in the child does
     not lift it. A child of a process that never ran several threads keeps
-    them. `pyfe4ai._rust_native.fork_thread_limit(n)` reports the limit.
+    them. `pyfe4ai._rust_native.fork_thread_limit(n)` reports the limit. As a
+    second guard, `parallel_for` joins every worker it starts (also when a
+    share panics) instead of waiting for them in the scope, so the calling
+    thread does not park there either.
   - *Cost:* native calls in a forked child are single-threaded. Pre-fork
     servers and fork-based pools that want native threads per worker should
     use `spawn` or `forkserver`.
