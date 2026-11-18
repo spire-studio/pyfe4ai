@@ -910,3 +910,44 @@ def test_bls12_381_has_one_implementation():
     g = kernels.generator(1)
     assert kernels.deserialize(1, g.to_bytes()) == g
     assert hashlib.sha256(kernels.hash(1, b"x", b"dst").to_bytes()).hexdigest()  # a G1 element
+
+
+# -- garbled circuits (bcfe)
+
+@native
+@pytest.mark.parametrize("mode", ["hardwired", "labels"])
+def test_gc_garble_and_evaluate(mode, spy):
+    """``gc_garble`` with the same 32 random bytes (``_random_override``) and
+    ``gc_evaluate`` on its output: the same bytes from both implementations,
+    and the output of the circuit in the clear."""
+    from pyfe4ai.circuits import linear_score
+    from pyfe4ai.primitives import garbling
+
+    circuit = linear_score(3, 5, 3, shift=2).circuit.guard()  # 24 key bits (the g bit last), 9 data bits
+    enc = circuit.encode()
+    salt = hashlib.shake_256(b"gc salt").digest(56)
+    rng = random.Random(3)
+    w = [rng.randrange(2) for _ in range(circuit.m - 1)] + [0]
+    x = [rng.randrange(2) for _ in range(circuit.n)]
+
+    def run(impl):
+        drawn = []
+        stream = Bytes(11)
+
+        def take(nbytes):
+            drawn.append(nbytes)
+            return stream.take(nbytes)
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(native_backend, "_random_override", take)
+            g = impl.gc_garble(enc, mode, salt, garbling.pack_bits(x, circuit.n))
+        delta = int.from_bytes(g["delta"], "little")
+        key_active = b"".join((int.from_bytes(g["key0"][16 * j:16 * j + 16], "little") ^ (delta if bit else 0))
+                              .to_bytes(16, "little") for j, bit in enumerate(w))
+        return g, impl.gc_evaluate(enc, mode, salt, g["tables"], g["decode"], key_active, g["data_active"]), drawn
+
+    py, nat = both(run)
+    assert py == nat and nat[2] == [32]
+    assert spy.calls["gc_garble"] == 1 and spy.calls["gc_evaluate"] == 1
+    assert nat[1] == garbling.pack_bits(circuit.evaluate_plain(w, x), circuit.n_out)
+    assert len(nat[0]["data_active"]) == (16 * circuit.n if mode == "labels" else 0)
