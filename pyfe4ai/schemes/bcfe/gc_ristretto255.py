@@ -52,7 +52,12 @@ error whether (3) found a slot or not; (5) the slot (backend operations
 slot list (:class:`~pyfe4ai.schemes.common.slots.SlotStore`), the private
 record kept by the authority. The same requester asking again for the same
 ``w`` gets the same key (h1, byte for byte) or the same grant (h2); another
-requester asking for the same ``w`` gets a slot of its own.
+requester asking for the same ``w`` gets a slot of its own. Under h2 the
+holder's ``m + 1`` public keys must be pairwise distinct (``FEKeyError``
+before anything is reserved): one key at two selected positions, or at a
+selected one and ``(m, 0)``, would show bits of ``w`` in the public slot
+list (alternative not taken: accept them, as only a holder that bypasses
+``request`` sends them and only its own ``w`` shows).
 
 **What is proved, and what is not** (the project's security argument for
 this scheme, reviewed internally twice; there is no external review): IND security against adaptive key, corruption
@@ -108,6 +113,14 @@ Read before use:
   the library): an encryptor that takes a forged slot list encrypts ``x``
   to whoever forged it. Pin the ``pp_digest``, or check ``slot_list_version``
   and the slots you encrypt to (``encrypt(x, slots=...)``).
+* **Slot labels are names, not identities.** The authority labels each slot
+  as it likes, and nothing makes a label unique or ties it to a requester:
+  ``encrypt(x, slots="credit")`` encrypts to every slot labelled
+  ``"credit"``, including slots of other requesters and slots listed after
+  the public parameters you checked. To encrypt to exactly the slots you
+  mean, pin the ``pp_digest`` and select by slot id (alternative not taken:
+  refusing a repeated label, which would let one requester block a name for
+  the others).
 * The issuance policy decides whom the authority builds a slot for; it is
   not a cryptographic access control (the cryptography enforces only that a
   key computes ``C(w, .)``).
@@ -118,10 +131,39 @@ digest, hex>``: ``setup.json`` (the public setup,
 ``0o600``: ``max_keys``, ``key_mode``, ``keep_issued_keys``, the issuance
 policy, the profile) and the slot store's files. The private record of a
 slot holds its ``k`` (16 bytes), the ``max_keys`` of its issue, its
-``key_mode`` and, for h1 with ``keep_issued_keys``, its scalars and ``w``;
-never an unselected secret key (none exists) and never in the public list
-(I14, I16). :meth:`BCFEGCRistretto255KeyGenerator.open` resumes an instance
+``key_mode``, the digest of the requester's attribute set
+(:func:`~pyfe4ai.policy.attribute_set_digest`, for the authority's audit)
+and, for h1 with ``keep_issued_keys``, its scalars and ``w``; never an
+unselected secret key (none exists) and never in the public list (I14,
+I16). The attribute-set digest is unsalted and vocabularies are small: in
+the public slot record it would let every holder of the public parameters
+test guesses of a requester's attributes offline and link the slots of
+requesters with equal attributes (review R06-P2-01), so it is kept private;
+the public record keeps the policy digest, the authority's own policy.
+Alternative not taken: publish it and document the leak; to undo, see
+:mod:`pyfe4ai.core.formats.garbled` (a field of the slot record and of its
+digest). :meth:`BCFEGCRistretto255KeyGenerator.open` resumes an instance
 from its directory.
+
+The two files are read with the slot store's file checks
+(:func:`~pyfe4ai.schemes.common.slots.read_json_file`: not a symbolic link,
+no wait on a FIFO, a regular file of the authority's user that no other user
+can write; ``authority.json`` not readable by others either) and written as
+the store writes its own (:func:`~pyfe4ai.schemes.common.slots.write_json_file`:
+``F_FULLFSYNC`` or ``fsync``, rename, directory flush), and
+:meth:`~BCFEGCRistretto255KeyGenerator.open` checks the directory
+(:meth:`~pyfe4ai.schemes.common.slots.SlotStore.check_directory`) before it
+reads either. Both are parsed fail closed: ``setup.json`` holds exactly the
+setup fields, ``authority.json`` exactly :data:`AUTHORITY_FIELDS`, each of its
+type and range and matching the setup (``FEConfigError`` otherwise).
+Alternative not taken: plain reads with the constructor's defaults for a
+missing option (the first version: an ``authority.json`` without its
+``issuance_policy`` opened an instance that issued to every requester).
+``max_keys`` is an int in ``[1, 2^63)`` wherever it is read or set (the
+config, :meth:`~BCFEGCRistretto255KeyGenerator.set_max_keys`,
+``authority.json``, the public parameters); alternative not taken: any
+positive int (the first version: at ``2^64`` an issuance committed its slot,
+then failed in the pp digest, and its key could never be returned).
 
 **The cap is decided under the slot store's lock.** ``max_keys`` lives in
 ``authority.json``, and another authority object (another process) on the
@@ -156,6 +198,18 @@ slots they list before the key's slot, exactly that when they list it),
 which would refuse keys that are only internally inconsistent -- a key
 moved to another slot, a slot id the public parameters do not list --
 whose components the hashes already turn into unrelated bits.
+
+**Keys are checked against their slot.** Half-gates outputs are not
+authenticated, so a damaged key (a flipped bit of ``w``, the scalars of
+another slot) would decrypt to a wrong value without an error. When the
+decryptor's public parameters list the key's slot,
+:meth:`~BCFEGCRistretto255.decrypt` first checks ``s_j B = P[2j + w_j]`` for
+``j < m`` and ``s_g B = P[2m]`` (``m + 1`` fixed-base multiplications, once
+per key and crypto object: the verdict is cached) and raises the one
+decryption error :data:`DECRYPTION_FAILED` on a mismatch, without telling
+which position failed. A key of a slot the public parameters do not list yet
+is not checked. Alternative not taken: trust the key file (a damaged key then
+gives a wrong result silently).
 
 **Python and native.** Every slot and label operation goes through the
 backend (:func:`pyfe4ai.backend.ops`: ``bcfe_new_slot``, ``bcfe_place_slot``,
@@ -196,16 +250,17 @@ hooks: out of the scope of 0.6).
 from __future__ import annotations
 
 import contextlib
-import json
+import hashlib
+import hmac
 import logging
 import os
-import tempfile
+import threading
 import unicodedata
 from collections.abc import Iterable, Mapping
 
 from pyfe4ai import backend
 from pyfe4ai.circuits import Circuit, DataLayout, KeyLayout, OutputLayout, ParamCircuit
-from pyfe4ai.core import versions
+from pyfe4ai.core import forksafe, profiles, versions
 from pyfe4ai.core.circuit_base import CircuitFEAbsCrypto, CircuitFEAbsKeyGenerator
 from pyfe4ai.core.exceptions import FEConfigError, FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.core.formats import garbled
@@ -222,7 +277,7 @@ from pyfe4ai.policy import Formula, attribute_set_digest, canonical_encoding, ev
 from pyfe4ai.primitives import bcfe_kem
 from pyfe4ai.primitives.garbling import pack_bits, unpack_bits
 from pyfe4ai.primitives.groups import ec_group as eg
-from pyfe4ai.schemes.common.slots import SlotStore
+from pyfe4ai.schemes.common.slots import SlotStore, read_json_file, write_json_file
 
 logger = logging.getLogger(__name__)
 
@@ -237,6 +292,8 @@ LABEL_BITS = (128,)
 DATA_WIRES = ("hardwired", "labels")
 KEY_MODES = ("h1", "h2")
 DEFAULT_MAX_KEYS = 16
+#: ``max_keys`` is below this bound everywhere (config, ``set_max_keys``, ``authority.json``, public parameters).
+MAX_KEYS_BOUND = 1 << 63
 #: The longest slot label (characters).
 MAX_LABEL_CHARS = 256
 
@@ -245,7 +302,11 @@ SETUP_FILE = "setup.json"
 AUTHORITY_FILE = "authority.json"
 AUTHORITY_FORMAT = "pyfe4ai-bcfe-authority"
 AUTHORITY_FORMAT_VERSION = 1
-_TEMP_PREFIX = ".bcfe-"
+#: The fields of ``authority.json``, exactly (a file with another field set is refused).
+AUTHORITY_FIELDS = ("format", "format_version", "setup_digest", "max_keys", "key_mode", "keep_issued_keys",
+                    "issuance_policy", "data_wires", "gc_hash", "label_bits", "security_profile", "sec_param")
+#: Key checks a crypto object remembers (verdicts only, by slot digest and a hash of the key's secrets).
+_KEY_CHECKS_KEPT = 256
 
 #: The error of the calls that draw randomness while the tests' hook is set.
 TEST_RANDOMNESS_REFUSED = ("pyfe4ai.backend._random_override is set: bcfe refuses to issue, set up or encrypt with "
@@ -266,10 +327,26 @@ _IDENTITY = bytes(_POINT)  # the encoding of the identity of ristretto255
 # argument checks
 
 
-def _int_at_least(value, minimum: int, what: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
-        raise FEValidationError("{} must be an int >= {}, got {!r}".format(what, minimum, value))
+def _max_keys(value, error=FEValidationError, what: str = "max_keys") -> int:
+    """*value* if it is an int in ``[1, 2^63)`` (:data:`MAX_KEYS_BOUND`), else *error*."""
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value < MAX_KEYS_BOUND:
+        raise error("{} must be an int in [1, 2^63), got {!r}".format(what, value))
     return value
+
+
+@contextlib.contextmanager
+def _not_too_deep(what: str):
+    """Report a record nested too deeply for Python's recursion limit as :class:`FEValidationError`."""
+    try:
+        yield
+    except RecursionError:
+        raise FEValidationError("{} is nested too deeply".format(what)) from None
+
+
+def _select_bytes(bit: int, a: bytes, b: bytes) -> bytes:
+    """*a* for ``bit = 0`` and *b* for ``bit = 1``, by a mask (equal lengths)."""
+    ia, ib = int.from_bytes(a, "little"), int.from_bytes(b, "little")
+    return (ia ^ ((ia ^ ib) & -bit)).to_bytes(len(a), "little")
 
 
 def _choice(value, allowed: tuple, what: str):
@@ -420,6 +497,8 @@ def _parse_setup(record, error=FEValidationError, what: str = "the public parame
             raise ValueError("setup_digest does not match the setup")
     except (ValueError, TypeError, FEValidationError) as exc:
         raise error("{}: {}".format(what, exc)) from None
+    except RecursionError:
+        raise error("{}: nested too deeply".format(what)) from None
     out = _Setup()
     out.record = {name: record[name] for name in BCFESetup.FIELDS}
     out.circuit, out.guarded, out.setup_digest, out.circuit_digest = param_circuit, guarded, setup_digest, circuit_digest
@@ -449,9 +528,8 @@ def _parse_slot(slot, setup: _Setup, error=FEValidationError, what: str = "the p
         label = _check_label(slot["label"])
         policy = slot["policy_digest"]
         policy = None if policy is None else from_hex(policy, "policy_digest", _DIGEST)
-        attrs = from_hex(slot["attribute_set_digest"], "attribute_set_digest", _DIGEST)
         pks = from_b64(slot["pks"], "pks", _POINT * (2 * setup.m + 1))
-        digest = garbled.slot_digest(setup.setup_digest, slot_id, label, policy, attrs, pks)
+        digest = garbled.slot_digest(setup.setup_digest, slot_id, label, policy, pks)
         if from_hex(slot["slot_digest"], "slot_digest", _DIGEST) != digest:
             raise ValueError("the slot digest of slot {} does not match the slot".format(slot_id))
     except (ValueError, TypeError, FEValidationError) as exc:
@@ -469,17 +547,20 @@ def _parse_pp(pp, cache: dict | None = None) -> _PP:
     slot record and its digest, the slot ids, the pp digest.
 
     Raises:
-        FEValidationError: Otherwise.
+        FEValidationError: Otherwise (also for a record nested too deeply).
     """
+    with _not_too_deep("the public parameters"):
+        return _parse_pp_checked(pp, cache)
+
+
+def _parse_pp_checked(pp, cache: dict | None) -> _PP:
     what = "the public parameters"
     versions.check_bcfe_markers(pp, ("bcfe_version", "kem", "gc", "gc_hash", "slot_list_version"),
                                 FEValidationError, what)
     if set(pp) != set(BCFEPublicParameters.FIELDS):
         raise FEValidationError("{} have exactly the fields {}".format(what, ", ".join(BCFEPublicParameters.FIELDS)))
     setup = _parse_setup(pp, FEValidationError, what, cache)
-    max_keys = pp["max_keys"]
-    if isinstance(max_keys, bool) or not isinstance(max_keys, int) or not 1 <= max_keys < 1 << 64:
-        raise FEValidationError("{}: max_keys must be a positive int".format(what))
+    max_keys = _max_keys(pp["max_keys"], FEValidationError, "{}: max_keys".format(what))
     slots = pp["slots"]
     version = pp["slot_list_version"]
     if not isinstance(slots, list) or len(slots) != version or version > max_keys:
@@ -505,38 +586,60 @@ def _parse_pp(pp, cache: dict | None = None) -> _PP:
 # files of an instance
 
 
-def _write_json(directory: str, name: str, data: dict, mode: int) -> None:
-    """Replace ``directory/name`` with *data*: a temporary file, fsynced and renamed."""
-    payload = json.dumps(data, separators=(",", ":"), allow_nan=False).encode("utf-8")
-    fd, tmp = tempfile.mkstemp(dir=directory, prefix=_TEMP_PREFIX, suffix=".tmp")
-    try:
-        try:
-            os.fchmod(fd, mode)
-            view = memoryview(payload)
-            while view:
-                view = view[os.write(fd, view):]
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-        os.replace(tmp, os.path.join(directory, name))
-    except BaseException:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp)
-        raise
+def _read_instance_file(directory: str, name: str, private: bool) -> dict:
+    """The JSON object of the instance file *name*, read with the slot store's file checks
+    (:func:`~pyfe4ai.schemes.common.slots.read_json_file`: no symbolic link, no FIFO wait, a regular file of this
+    user that no other user can write -- *private*: nor read).
 
-
-def _read_json(directory: str, name: str) -> dict:
-    path = os.path.join(directory, name)
-    try:
-        with open(path, "rb") as f:
-            data = json.loads(f.read().decode("utf-8"))
-    except FileNotFoundError:
-        raise FEConfigError("{} is not a bcfe instance directory (no {})".format(directory, name)) from None
-    except (OSError, UnicodeDecodeError, ValueError):
-        raise FEConfigError("the file {} of the bcfe instance is unreadable or not JSON".format(path)) from None
-    if not isinstance(data, dict):
-        raise FEConfigError("the file {} of the bcfe instance is not a JSON object".format(path))
+    Raises:
+        FEConfigError: For a missing, refused or unreadable file.
+    """
+    data = read_json_file(os.path.join(directory, name), private)
+    if data is None:
+        raise FEConfigError("{} is not a bcfe instance directory (no {})".format(directory, name))
     return data
+
+
+def _parse_authority(data: dict, directory: str, setup: _Setup) -> dict:
+    """Check ``authority.json`` fail closed: exactly :data:`AUTHORITY_FIELDS`, each of its type and range, the
+    setup's digest and the setup's ``data_wires``, ``gc_hash`` and ``label_bits``; returns *data* with
+    ``issuance_policy`` read back as a formula.
+
+    Raises:
+        FEConfigError: Otherwise.
+    """
+    def bad(reason: str) -> FEConfigError:
+        return FEConfigError("{} of {} is not the authority record of this setup: {}".format(
+            AUTHORITY_FILE, directory, reason))
+
+    if set(data) != set(AUTHORITY_FIELDS):
+        raise bad("it must hold exactly the fields {}".format(", ".join(AUTHORITY_FIELDS)))
+    if data["format"] != AUTHORITY_FORMAT or data["format_version"] != AUTHORITY_FORMAT_VERSION \
+            or isinstance(data["format_version"], bool):
+        raise bad("another format")
+    if data["setup_digest"] != setup.setup_digest.hex():
+        raise bad("another setup")
+    _max_keys(data["max_keys"], bad, "max_keys")
+    for name, allowed in (("key_mode", KEY_MODES), ("security_profile", profiles.PROFILES)):
+        if not isinstance(data[name], str) or data[name] not in allowed:
+            raise bad("{} must be one of {}".format(name, ", ".join(allowed)))
+    if type(data["keep_issued_keys"]) is not bool:
+        raise bad("keep_issued_keys must be a bool")
+    if (data["data_wires"], data["gc_hash"], data["label_bits"]) != (
+            setup.data_wires, setup.record["gc_hash"], setup.record["label_bits"]) or type(data["label_bits"]) is not int:
+        raise bad("data_wires, gc_hash or label_bits differ from the setup's")
+    sec_param = data["sec_param"]
+    if isinstance(sec_param, bool) or not isinstance(sec_param, int) or sec_param < 1:
+        raise bad("sec_param must be a positive int")
+    policy = data["issuance_policy"]
+    try:
+        with _not_too_deep("the issuance policy"):
+            formula = None if policy is None else from_canonical(policy) if isinstance(policy, str) else False
+    except FEValidationError as exc:
+        raise bad("issuance_policy: {}".format(exc)) from None
+    if formula is False:
+        raise bad("issuance_policy must be the canonical text of a formula, or null")
+    return dict(data, issuance_policy=formula)
 
 
 # ---------------------------------------------------------------------------
@@ -573,7 +676,9 @@ class BCFEGCRistretto255KeyGenerator(CircuitFEAbsKeyGenerator):
             raise FEValidationError("circuit must be a pyfe4ai.circuits.ParamCircuit, got {}".format(
                 type(circuit).__name__))
         self.circuit = circuit
-        self.max_keys = _int_at_least(config.get("max_keys", DEFAULT_MAX_KEYS), 1, "max_keys")
+        if isinstance(self.sec_param, bool) or not isinstance(self.sec_param, int) or self.sec_param < 1:
+            raise FEValidationError("sec_param must be a positive int (recorded only), got {!r}".format(self.sec_param))
+        self.max_keys = _max_keys(config.get("max_keys", DEFAULT_MAX_KEYS))
         self.data_wires = _choice(config.get("data_wires", DATA_WIRES[0]), DATA_WIRES, "data_wires")
         self.key_mode = _choice(config.get("key_mode", KEY_MODES[0]), KEY_MODES, "key_mode")
         keep = config.get("keep_issued_keys", True)
@@ -630,9 +735,11 @@ class BCFEGCRistretto255KeyGenerator(CircuitFEAbsKeyGenerator):
         os.makedirs(parent, exist_ok=True)
         directory = os.path.join(parent, setup_digest.hex())
         os.mkdir(directory, 0o700)
-        _write_json(directory, SETUP_FILE, record, 0o644)
-        _write_json(directory, AUTHORITY_FILE, self._authority_record(setup_digest, self.max_keys), 0o600)
-        self._dir, self._setup, self._store = directory, setup, SlotStore(directory)
+        store = SlotStore(directory)
+        store.check_directory()
+        write_json_file(directory, SETUP_FILE, record, 0o644)
+        write_json_file(directory, AUTHORITY_FILE, self._authority_record(setup_digest, self.max_keys), 0o600)
+        self._dir, self._setup, self._store = directory, setup, store
         logger.info("bcfe setup %s... in %s", setup_digest[:8].hex(), directory)
 
     def _authority_record(self, setup_digest: bytes, max_keys: int) -> dict:
@@ -645,15 +752,10 @@ class BCFEGCRistretto255KeyGenerator(CircuitFEAbsKeyGenerator):
         }
 
     @staticmethod
-    def _read_authority(directory: str, setup_digest: bytes) -> dict:
-        data = _read_json(directory, AUTHORITY_FILE)
-        if (data.get("format") != AUTHORITY_FORMAT or data.get("format_version") != AUTHORITY_FORMAT_VERSION
-                or data.get("setup_digest") != setup_digest.hex()):
-            raise FEConfigError("{} of {} is not the authority record of this setup".format(AUTHORITY_FILE, directory))
-        max_keys = data.get("max_keys")
-        if isinstance(max_keys, bool) or not isinstance(max_keys, int) or max_keys < 1:
-            raise FEConfigError("{} of {}: max_keys is not a positive int".format(AUTHORITY_FILE, directory))
-        return data
+    def _read_authority(directory: str, setup: _Setup) -> dict:
+        """``authority.json``, read with the store's file checks and parsed fail closed (:func:`_parse_authority`;
+        ``issuance_policy`` as a formula)."""
+        return _parse_authority(_read_instance_file(directory, AUTHORITY_FILE, private=True), directory, setup)
 
     @classmethod
     def open(cls, directory) -> "BCFEGCRistretto255KeyGenerator":
@@ -665,25 +767,27 @@ class BCFEGCRistretto255KeyGenerator(CircuitFEAbsKeyGenerator):
                 unreadable, inconsistent or do not match each other.
         """
         directory = os.path.abspath(os.fspath(directory))
-        setup = _parse_setup(_read_json(directory, SETUP_FILE), FEConfigError, "{} of {}".format(SETUP_FILE, directory))
-        data = cls._read_authority(directory, setup.setup_digest)
+        store = SlotStore(directory)
+        store.check_directory()                                          # before anything in it is read
+        what = "{} of {}".format(SETUP_FILE, directory)
+        record = _read_instance_file(directory, SETUP_FILE, private=False)
+        if set(record) != set(BCFESetup.FIELDS):
+            raise FEConfigError("{} must hold exactly the fields {}".format(what, ", ".join(BCFESetup.FIELDS)))
+        setup = _parse_setup(record, FEConfigError, what)
+        data = cls._read_authority(directory, setup)
+        config = {
+            "circuit": setup.circuit, "max_keys": data["max_keys"], "data_wires": data["data_wires"],
+            "key_mode": data["key_mode"], "keep_issued_keys": data["keep_issued_keys"],
+            "issuance_policy": data["issuance_policy"], "gc_hash": data["gc_hash"], "label_bits": data["label_bits"],
+            "security_profile": data["security_profile"], "sec_param": data["sec_param"],
+            "cache_dir": os.path.dirname(os.path.dirname(os.path.dirname(directory))),
+        }
         try:
-            policy = data.get("issuance_policy")
-            config = {
-                "circuit": setup.circuit, "max_keys": data["max_keys"], "data_wires": setup.data_wires,
-                "key_mode": data.get("key_mode"), "keep_issued_keys": data.get("keep_issued_keys"),
-                "issuance_policy": None if policy is None else from_canonical(policy),
-                "gc_hash": setup.record["gc_hash"], "label_bits": setup.record["label_bits"],
-                "security_profile": data.get("security_profile"), "sec_param": data.get("sec_param"),
-                "cache_dir": os.path.dirname(os.path.dirname(os.path.dirname(directory))),
-            }
-            if data.get("data_wires") != setup.data_wires:
-                raise FEValidationError("data_wires differs from the setup's")
-            kg = cls({name: value for name, value in config.items() if value is not None})
-        except (FEValidationError, FEConfigError, KeyError, TypeError) as exc:
+            kg = cls(config)
+        except (FEValidationError, FEConfigError) as exc:
             raise FEConfigError("{} of {} does not hold the options of a bcfe authority: {}".format(
                 AUTHORITY_FILE, directory, exc)) from None
-        kg._dir, kg._setup, kg._store = directory, setup, SlotStore(directory)
+        kg._dir, kg._setup, kg._store = directory, setup, store
         return kg
 
     def _require_setup(self) -> _Setup:
@@ -694,7 +798,7 @@ class BCFEGCRistretto255KeyGenerator(CircuitFEAbsKeyGenerator):
     def _read_max_keys(self) -> int:
         """``max_keys`` as ``authority.json`` records it now (another authority object on the directory may have
         changed it); called under the slot store's lock."""
-        return self._read_authority(self._dir, self._setup.setup_digest)["max_keys"]
+        return self._read_authority(self._dir, self._setup)["max_keys"]
 
     def _locked_cap(self) -> tuple:
         """``(cap, decided)``: the cap for :meth:`SlotStore.issue` as a callable that reads ``max_keys`` under the
@@ -712,17 +816,18 @@ class BCFEGCRistretto255KeyGenerator(CircuitFEAbsKeyGenerator):
         write run under the slot store's lock, so no issuance runs between them (see the module documentation).
 
         Raises:
-            FEValidationError: For a value that is not a positive int, or below the slots listed.
+            FEValidationError: For a value that is not an int in ``[1, 2^63)``, or below the slots listed.
+            FEConfigError: For an ``authority.json`` that does not check.
         """
         setup = self._require_setup()
-        max_keys = _int_at_least(max_keys, 1, "max_keys")
+        max_keys = _max_keys(max_keys)
 
         def change(slots: list) -> None:
             if max_keys < len(slots):
                 raise FEValidationError("max_keys cannot go below the {} slots listed".format(len(slots)))
-            data = self._read_authority(self._dir, setup.setup_digest)
-            data["max_keys"] = max_keys
-            _write_json(self._dir, AUTHORITY_FILE, data, 0o600)
+            raw = _read_instance_file(self._dir, AUTHORITY_FILE, private=True)
+            _parse_authority(raw, self._dir, setup)                      # the record checks before it is rewritten
+            write_json_file(self._dir, AUTHORITY_FILE, dict(raw, max_keys=max_keys), 0o600)
 
         self._store.run_locked(change)
         self.max_keys = max_keys
@@ -779,12 +884,12 @@ class BCFEGCRistretto255KeyGenerator(CircuitFEAbsKeyGenerator):
         dedup = garbled.dedup_key(SCHEME_ID, setup.circuit_digest, requester, w_packed)  # (3), never published
         return w_packed, label, attrs_digest, dedup
 
-    def _public_record(self, slot_id: int, label, attrs_digest: bytes, pks: bytes) -> dict:
-        digest = garbled.slot_digest(self._setup.setup_digest, slot_id, label, self._policy_digest, attrs_digest, pks)
+    def _public_record(self, slot_id: int, label, pks: bytes) -> dict:
+        digest = garbled.slot_digest(self._setup.setup_digest, slot_id, label, self._policy_digest, pks)
         record = BCFESlot.new(
             slot_id=slot_id, label=label,
             policy_digest=None if self._policy_digest is None else self._policy_digest.hex(),
-            attribute_set_digest=attrs_digest.hex(), pks=b64(pks), slot_digest=digest.hex(),
+            pks=b64(pks), slot_digest=digest.hex(),
         ).to_dict()
         del record["slot_id"]  # the store adds it first
         return record
@@ -844,10 +949,11 @@ class BCFEGCRistretto255KeyGenerator(CircuitFEAbsKeyGenerator):
         def build(slot_id: int):                                         # (5), under the store's lock
             out = backend.ops().bcfe_new_slot(self._setup.setup_digest, slot_id, w_packed, m=m)
             made["scalars"] = out["scalars"]
-            private = {"key_mode": "h1", "max_keys": decided["max_keys"], "k": out["k"]}
+            private = {"key_mode": "h1", "max_keys": decided["max_keys"], "k": out["k"],
+                       "attribute_set_digest": attrs_digest}
             if keep:
                 private.update(w=w_packed, scalars=out["scalars"])
-            return self._public_record(slot_id, label, attrs_digest, out["pks"]), private
+            return self._public_record(slot_id, label, out["pks"]), private
 
         try:
             result = self._store.issue(dedup, cap, build)                # (4): the cap read under the lock
@@ -889,10 +995,13 @@ class BCFEGCRistretto255KeyGenerator(CircuitFEAbsKeyGenerator):
             FEValidationError: For a malformed request, one of another setup,
                 ``w`` outside the key layout, or a holder key that is not a
                 group element or is the identity.
-            FEKeyError: As :meth:`issue_key`; also for a repeated request of
-                the same requester and ``w`` with other public keys (the
-                authority never replaces a slot's keys), or if the setup
-                issues keys with ``key_mode = "h1"``.
+            FEKeyError: As :meth:`issue_key`; also for holder keys that are
+                not pairwise distinct (nothing is reserved; equal keys at two
+                selected positions, or at a selected one and ``(m, 0)``, would
+                show bits of ``w`` in the public slot list); for a repeated
+                request of the same requester and ``w`` with other public
+                keys (the authority never replaces a slot's keys), or if the
+                setup issues keys with ``key_mode = "h1"``.
             FESchemeError: Before :meth:`setup`; while
                 ``pyfe4ai.backend._random_override`` is set
                 (:data:`TEST_RANDOMNESS_REFUSED`).
@@ -902,29 +1011,35 @@ class BCFEGCRistretto255KeyGenerator(CircuitFEAbsKeyGenerator):
         if self.key_mode != "h2":
             raise FEKeyError("this setup issues keys with key_mode='h1' (issue_key): it does not place holders' keys")
         what = "the key request"
-        versions.check_bcfe_markers(request, ("bcfe_version",), FEValidationError, what)
-        if set(request) != set(BCFEKeyRequest.FIELDS) or request.get("scheme") != SCHEME_ID:
-            raise FEValidationError("{} is not a request of {} (fields {})".format(
-                what, SCHEME_ID, ", ".join(BCFEKeyRequest.FIELDS)))
-        try:
-            if (from_hex(request["setup_digest"], "setup_digest", _DIGEST) != setup.setup_digest
-                    or from_hex(request["circuit_digest"], "circuit_digest", _DIGEST) != setup.circuit_digest):
-                raise ValueError("it is for another setup")
-            holder_pks = from_b64(request["pks"], "pks", _POINT * (setup.m + 1))
-        except ValueError as exc:
-            raise FEValidationError("{}: {}".format(what, exc)) from None
-        for i, pk in enumerate(_chunks(holder_pks, _POINT)):          # I8, before anything is reserved
-            if pk == _IDENTITY:
-                raise FEValidationError("{}: holder public key {} is the identity".format(what, i))
-            eg.from_hex(pk.hex(), "holder public key {}".format(i))
-        w_packed, label, attrs_digest, dedup = self._request(request["w"], requester, attributes, label)
+        with _not_too_deep(what):
+            versions.check_bcfe_markers(request, ("bcfe_version",), FEValidationError, what)
+            if set(request) != set(BCFEKeyRequest.FIELDS) or request.get("scheme") != SCHEME_ID:
+                raise FEValidationError("{} is not a request of {} (fields {})".format(
+                    what, SCHEME_ID, ", ".join(BCFEKeyRequest.FIELDS)))
+            try:
+                if (from_hex(request["setup_digest"], "setup_digest", _DIGEST) != setup.setup_digest
+                        or from_hex(request["circuit_digest"], "circuit_digest", _DIGEST) != setup.circuit_digest):
+                    raise ValueError("it is for another setup")
+                holder_pks = from_b64(request["pks"], "pks", _POINT * (setup.m + 1))
+            except ValueError as exc:
+                raise FEValidationError("{}: {}".format(what, exc)) from None
+            holder = _chunks(holder_pks, _POINT)
+            for i, pk in enumerate(holder):                              # I8, before anything is reserved
+                if pk == _IDENTITY:
+                    raise FEValidationError("{}: holder public key {} is the identity".format(what, i))
+                eg.from_hex(pk.hex(), "holder public key {}".format(i))
+            if len(set(holder)) != len(holder):                          # equal keys would show w in the slot list
+                raise FEKeyError("{}: the holder's {} public keys are not pairwise distinct: no slot is issued".format(
+                    what, len(holder)))
+            w_packed, label, attrs_digest, dedup = self._request(request["w"], requester, attributes, label)
         m = setup.m
         cap, decided = self._locked_cap()
 
         def build(slot_id: int):
             out = backend.ops().bcfe_place_slot(setup.setup_digest, slot_id, w_packed, holder_pks, m=m)
-            private = {"key_mode": "h2", "max_keys": decided["max_keys"], "k": out["k"]}
-            return self._public_record(slot_id, label, attrs_digest, out["pks"]), private
+            private = {"key_mode": "h2", "max_keys": decided["max_keys"], "k": out["k"],
+                       "attribute_set_digest": attrs_digest}
+            return self._public_record(slot_id, label, out["pks"]), private
 
         try:
             result = self._store.issue(dedup, cap, build)                # the cap read under the lock
@@ -967,6 +1082,11 @@ class BCFEGCRistretto255KeyHolder:
     and does not replace a slot's keys: a new slot needs another
     function or requester id).
 
+    Threads may share a holder: a lock of the object covers its open
+    requests (renewed in a forked child, :func:`pyfe4ai.core.forksafe.track`),
+    so two :meth:`finish` calls of one grant give one key and one
+    :class:`FEKeyError`.
+
     Args:
         pp: The public parameters (checked, :class:`FEValidationError` otherwise).
     """
@@ -974,6 +1094,11 @@ class BCFEGCRistretto255KeyHolder:
     def __init__(self, pp: dict) -> None:
         self._pp = _parse_pp(pp)
         self._pending: dict = {}  # holder pks -> (w packed, scalars)
+        self._lock = threading.Lock()
+        forksafe.track(self)  # a forked child: a new lock (another thread may hold this one at the fork)
+
+    def _after_fork_in_child(self) -> None:
+        self._lock = threading.Lock()
 
     def __repr__(self) -> str:
         return "{}(setup={}..., open requests={})".format(
@@ -1004,7 +1129,8 @@ class BCFEGCRistretto255KeyHolder:
         values = setup.circuit.key_layout.decode(bits)  # the canonical values (plain ints)
         scalars = [_random_scalar() for _ in range(setup.m + 1)]
         pks = b"".join(bytes.fromhex(eg.to_hex(eg.mul_base(s))) for s in scalars)
-        self._pending[pks] = (pack_bits(bits, setup.m), b"".join(bcfe_kem.encode_scalar(s) for s in scalars))
+        with self._lock:
+            self._pending[pks] = (pack_bits(bits, setup.m), b"".join(bcfe_kem.encode_scalar(s) for s in scalars))
         return BCFEKeyRequest.new(
             scheme=SCHEME_ID, bcfe_version=BCFE_VERSION, setup_digest=setup.setup_digest.hex(),
             circuit_digest=setup.circuit_digest.hex(), w=values, pks=b64(pks),
@@ -1019,6 +1145,15 @@ class BCFEGCRistretto255KeyHolder:
         ``H_P(setup_digest, slot_id, j, k)`` for the grant's ``k``
         (backend ``bcfe_unselected_ok``).
 
+        The grant's ``pp_digest`` (the pp digest of the slot list as of the
+        slot's issue) goes into the key as the authority states it: only its
+        form is checked. The holder cannot recompute it -- its public
+        parameters are, as a rule, older than its slot (the slots issued in
+        between are unknown to it), and the cap ``max_keys`` at the issue,
+        an input of the digest, is not in the grant -- and no reader of the
+        key compares it (:meth:`BCFEGCRistretto255.decrypt` checks the key
+        against its listed slot instead). It is informational, as in h1.
+
         Raises:
             FEKeyError: For a malformed grant (its ``slot_list_version`` too,
                 checked against this holder's public parameters: see *Checks
@@ -1028,37 +1163,39 @@ class BCFEGCRistretto255KeyHolder:
         """
         setup = self._pp.setup
         what = "the grant"
-        versions.check_bcfe_markers(grant, ("bcfe_version", "slot_list_version"), FEKeyError, what)
-        if set(grant) != set(BCFEGrant.FIELDS) or grant.get("scheme") != SCHEME_ID:
-            raise FEKeyError("{} is not a grant of {}".format(what, SCHEME_ID))
-        try:
-            if (from_hex(grant["setup_digest"], "setup_digest", _DIGEST) != setup.setup_digest
-                    or from_hex(grant["circuit_digest"], "circuit_digest", _DIGEST) != setup.circuit_digest):
-                raise ValueError("it is for another setup")
-            k = from_hex(grant["k"], "k", bcfe_kem.SLOT_KEY_BYTES)
-            from_hex(grant["pp_digest"], "pp_digest", _DIGEST)
-        except ValueError as exc:
-            raise FEKeyError("{}: {}".format(what, exc)) from None
-        slot = _parse_slot(grant["slot"], setup, FEKeyError, what)  # exactly 2m + 1 keys, the slot digest
-        try:
-            _check_issue_version(grant["slot_list_version"], slot.slot_id)
-        except ValueError as exc:
-            raise FEKeyError("{}: {}".format(what, exc)) from None
+        with _not_too_deep(what):
+            versions.check_bcfe_markers(grant, ("bcfe_version", "slot_list_version"), FEKeyError, what)
+            if set(grant) != set(BCFEGrant.FIELDS) or grant.get("scheme") != SCHEME_ID:
+                raise FEKeyError("{} is not a grant of {}".format(what, SCHEME_ID))
+            try:
+                if (from_hex(grant["setup_digest"], "setup_digest", _DIGEST) != setup.setup_digest
+                        or from_hex(grant["circuit_digest"], "circuit_digest", _DIGEST) != setup.circuit_digest):
+                    raise ValueError("it is for another setup")
+                k = from_hex(grant["k"], "k", bcfe_kem.SLOT_KEY_BYTES)
+                from_hex(grant["pp_digest"], "pp_digest", _DIGEST)  # informational: its form only (see finish)
+            except ValueError as exc:
+                raise FEKeyError("{}: {}".format(what, exc)) from None
+            slot = _parse_slot(grant["slot"], setup, FEKeyError, what)  # exactly 2m + 1 keys, the slot digest
+            try:
+                _check_issue_version(grant["slot_list_version"], slot.slot_id)
+            except ValueError as exc:
+                raise FEKeyError("{}: {}".format(what, exc)) from None
         m = setup.m
         table = _chunks(slot.pks, _POINT)
-        for own, (w_packed, scalars) in self._pending.items():
-            bits = unpack_bits(w_packed, m)
-            placed = b"".join(table[2 * j + bits[j]] for j in range(m)) + table[2 * m]
-            if placed == own:
-                break
-        else:
-            raise FEKeyError("CheckAuth failed: the slot of the grant does not hold this holder's public keys at the "
-                             "positions of the requested function (a grant of another request or holder, or a slot "
-                             "built for another function)")
-        if not backend.ops().bcfe_unselected_ok(setup.setup_digest, slot.slot_id, w_packed, k, slot.pks, m=m):
-            raise FEKeyError("CheckAuth failed: the unselected positions of the slot are not derived from the "
-                             "grant's k")
-        del self._pending[own]
+        with self._lock:                                                 # one finish per open request
+            for own, (w_packed, scalars) in self._pending.items():
+                bits = unpack_bits(w_packed, m)
+                placed = b"".join(_select_bytes(bits[j], table[2 * j], table[2 * j + 1]) for j in range(m))
+                if hmac.compare_digest(placed + table[2 * m], own):
+                    break
+            else:
+                raise FEKeyError("CheckAuth failed: the slot of the grant does not hold this holder's public keys at "
+                                 "the positions of the requested function (a grant of another request or holder, a "
+                                 "slot built for another function, or a request already finished)")
+            if not backend.ops().bcfe_unselected_ok(setup.setup_digest, slot.slot_id, w_packed, k, slot.pks, m=m):
+                raise FEKeyError("CheckAuth failed: the unselected positions of the slot are not derived from the "
+                                 "grant's k")
+            del self._pending[own]
         return BCFEKey.new(
             scheme=SCHEME_ID, bcfe_version=BCFE_VERSION, setup_digest=setup.setup_digest.hex(),
             circuit_digest=setup.circuit_digest.hex(), slot_id=slot.slot_id, slot_digest=slot.digest.hex(),
@@ -1078,12 +1215,48 @@ class BCFEGCRistretto255(CircuitFEAbsCrypto):
     The public parameters are checked (fail closed) before every use: the
     markers, the setup digest, every slot digest and the pp digest
     (:class:`FEValidationError` otherwise).
+
+    Two caches live on the object and are left out of its copies and pickles
+    (rebuilt on first use): the circuit of the public parameters' encoding,
+    and the verdicts of the key checks of :meth:`decrypt` (by slot digest and
+    a SHAKE-256 hash of the key's scalars and ``w``; at most
+    256 entries, no secret).
     """
 
     def __init__(self, config: dict, **kwargs) -> None:
         super().__init__(config, **kwargs)
         self._circuit_cache: dict = {}  # the circuit of the last encoding read (one entry)
+        self._key_checks: dict = {}     # key check tag -> verdict (bool)
         _parse_pp(self.keys["pp"], self._circuit_cache)
+
+    def __getstate__(self) -> dict:
+        state = dict(self.__dict__)
+        state["_circuit_cache"], state["_key_checks"] = {}, {}
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+        self._circuit_cache, self._key_checks = {}, {}
+
+    def _check_key(self, slot: _Slot, scalars: bytes, w_packed: bytes, m: int) -> bool:
+        """Whether the key's secret keys open its listed slot: ``s_j B = P[2j + w_j]`` for ``j < m`` and ``s_g B
+        = P[2m]`` (cached per key, see the class documentation)."""
+        tag = slot.digest + hashlib.shake_256(b"PYFE4AI-V06-BCFE-KEYCHECK" + scalars + w_packed).digest(32)
+        verdict = self._key_checks.get(tag)
+        if verdict is None:
+            table = _chunks(slot.pks, _POINT)
+            bits = unpack_bits(w_packed, m)
+            expected = b"".join(_select_bytes(bits[j], table[2 * j], table[2 * j + 1]) for j in range(m)) + table[2 * m]
+            try:
+                actual = b"".join(bytes.fromhex(eg.to_hex(eg.mul_base(bcfe_kem.decode_scalar(part))))
+                                  for part in _chunks(scalars, _SCALAR))
+            except ValueError:  # a scalar not below the group order
+                actual = b""
+            verdict = len(actual) == len(expected) and hmac.compare_digest(actual, expected)
+            if len(self._key_checks) >= _KEY_CHECKS_KEPT:
+                self._key_checks.pop(next(iter(self._key_checks)), None)
+            self._key_checks[tag] = verdict
+        return verdict
 
     def _pp(self) -> _PP:
         return _parse_pp(self.keys["pp"], self._circuit_cache)
@@ -1107,7 +1280,11 @@ class BCFEGCRistretto255(CircuitFEAbsCrypto):
             slots: ``None`` for every slot of the list; a slot label
                 (``str``: every slot of that label) or a slot id (``int``,
                 not ``bool``); or an iterable (list, tuple, set, generator)
-                of labels and ids. Anything else is refused, bytes, dicts and
+                of labels and ids. A label is the authority's name for a slot
+                and is not unique: it selects every slot of the list with
+                that label, whoever requested it, also slots listed after
+                the public parameters you checked; to encrypt to exactly the
+                slots you mean, pin the ``pp_digest`` and select by slot id. Anything else is refused, bytes, dicts and
                 floats included (alternative not taken: reading a dict's keys
                 or the bytes of a bytes object as ids, which would hide a
                 caller's mistake).
@@ -1224,9 +1401,16 @@ class BCFEGCRistretto255(CircuitFEAbsCrypto):
                 public parameters' slot of its id; if the ciphertext has no component for the key's slot --
                 older than the key, or not encrypted to it.
             FESchemeError: :data:`DECRYPTION_FAILED`, for every failure inside
-                the component (one error, whatever the cause: I10).
+                the component (one error, whatever the cause: I10), and for a
+                key whose secret keys do not open its slot when the public
+                parameters list the slot (a damaged key or ``w``; see *Keys
+                are checked against their slot* in the module documentation).
         """
         pp = self._pp()
+        with _not_too_deep("the key or the ciphertext"):
+            return self._decrypt(pp, ct, key)
+
+    def _decrypt(self, pp: _PP, ct: dict, key: dict) -> dict:
         setup = pp.setup
         slot_id, slot_digest, issued_version, scalars, w_packed = self._parse_key(key, pp)
         known = next((s for s in pp.slots if s.slot_id == slot_id), None)
@@ -1266,6 +1450,8 @@ class BCFEGCRistretto255(CircuitFEAbsCrypto):
                                  "with version {}".format(ct["slot_list_version"], issued_version))
             raise FEKeyError("the ciphertext has no component for this slot (slot {}): its encryptor did not "
                              "encrypt to it".format(slot_id))
+        if known is not None and not self._check_key(known, scalars, w_packed, setup.m):
+            raise FESchemeError(DECRYPTION_FAILED)                       # which position: not told (I10)
         try:
             out = backend.ops().bcfe_decrypt_slot(
                 setup.guarded, setup.data_wires, ct_pp_digest, ct_nonce, slot_id,

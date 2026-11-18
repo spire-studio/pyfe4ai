@@ -27,7 +27,7 @@ encoding is injective -- requirement I15 of the 0.6 security argument):
 
     SHAKE-256("PYFE4AI-V06-BCFE-SLOT" || setup_digest(32) || u64(slot_id)
               || opt_text(label) || opt_digest(policy_digest)
-              || attribute_set_digest(32) || u32(2m + 1) || pks(32 (2m + 1)))[0:32]
+              || u32(2m + 1) || pks(32 (2m + 1)))[0:32]
 
   with ``opt_text(None) = u8(0)``, ``opt_text(s) = u8(1) || u32(len(b)) ||
   b`` (``b`` the UTF-8 bytes of ``s``), ``opt_digest(None) = u8(0)``,
@@ -35,6 +35,19 @@ encoding is injective -- requirement I15 of the 0.6 security argument):
   (:func:`pyfe4ai.primitives.bcfe_kem.setup_digest`) binds the slot to its
   setup (scheme id, ``bcfe_version``, circuit digest, ``data_wires``,
   ``gc_hash``, ``kem``, ``label_bits``, ``setup_nonce``).
+
+  The requester's attribute set is not in the slot record nor in its digest:
+  the authority keeps its digest (:func:`~pyfe4ai.policy.attribute_set_digest`)
+  in the slot's private record, for its own audit. That digest is unsalted
+  and attribute vocabularies are small, so a public copy would let every
+  holder of the public parameters test guesses of a requester's attributes
+  offline and link the slots of requesters with equal attributes (review
+  R06-P2-01). Alternative not taken: keep it public and document the leak.
+  To publish it again: add the field to :class:`BCFESlot` after
+  ``policy_digest`` and ``|| attribute_set_digest(32)`` to this encoding
+  after ``opt_digest(policy_digest)`` -- a format change (a new
+  ``bcfe_version`` once a version with this format is released). The policy
+  digest stays public: it is the authority's own policy.
 * pp digest (:func:`pp_digest`)::
 
     SHAKE-256("PYFE4AI-V06-BCFE-PP" || setup_digest(32) || u32(len(gc)) || gc
@@ -152,8 +165,7 @@ def _text(value: str, what: str) -> bytes:
 # digests
 
 
-def slot_digest(setup_digest: bytes, slot_id: int, label, policy_digest, attribute_set_digest: bytes,
-                pks: bytes) -> bytes:
+def slot_digest(setup_digest: bytes, slot_id: int, label, policy_digest, pks: bytes) -> bytes:
     """The slot digest (see the module docstring): *label* a ``str`` or
     ``None``, *policy_digest* 32 bytes or ``None``, *pks* ``32 (2m + 1)``
     bytes.
@@ -169,7 +181,6 @@ def slot_digest(setup_digest: bytes, slot_id: int, label, policy_digest, attribu
     out = SLOT_DST + _fixed(setup_digest, DIGEST_BYTES, "setup_digest") + _u64(slot_id)
     out += b"\x00" if label is None else b"\x01" + _text(label, "label")
     out += b"\x00" if policy_digest is None else b"\x01" + _fixed(policy_digest, DIGEST_BYTES, "policy_digest")
-    out += _fixed(attribute_set_digest, DIGEST_BYTES, "attribute_set_digest")
     out += _u32(len(pks) // POINT_BYTES) + pks
     return hashlib.shake_256(out).digest(DIGEST_BYTES)
 
@@ -239,7 +250,6 @@ class BCFESlot(Record):
     slot_id = Field("int, never reused (ids increase and may skip a number)")
     label = Field("str or ``None``, the name the authority gave the slot (encryptors select slots by it)")
     policy_digest = Field("hex or ``None``, :func:`~pyfe4ai.policy.policy_digest` of the issuance policy")
-    attribute_set_digest = Field("hex, :func:`~pyfe4ai.policy.attribute_set_digest` of the requester's attributes")
     pks = Field("base64, ``32 (2m + 1)`` bytes: ``P[j, 0] || P[j, 1]`` for ``j < m``, then ``P[m, 0]`` (the g bit)")
     slot_digest = Field("hex, :func:`slot_digest`")
 
@@ -264,7 +274,8 @@ class BCFEKey(Record):
     circuit_digest = Field("hex, the digest of ``C``")
     slot_id = Field("int")
     slot_digest = Field("hex, the digest of the slot record")
-    pp_digest = Field("hex, the pp digest of the slot list as of this slot's issue")
+    pp_digest = Field("hex, the pp digest of the slot list as of this slot's issue; informational: readers check its "
+                      "form (32 bytes) and never compare it")
     slot_list_version = Field("int, the slot list version as of this slot's issue (ciphertexts of an "
                               "earlier version do not cover the slot)")
     scalars = Field("base64, ``32 (m + 1)`` bytes: the secret keys of ``(j, w_j)``, ``j < m``, then of ``(g, 0)``, "
@@ -318,5 +329,6 @@ class BCFEGrant(Record):
     circuit_digest = Field("hex")
     slot = Field("the :class:`BCFESlot` dict of the slot")
     k = Field("hex, the 16-byte slot secret of the unselected positions; secret (it reveals ``w``)")
-    pp_digest = Field("hex, the pp digest of the slot list as of this slot's issue")
+    pp_digest = Field("hex, the pp digest of the slot list as of this slot's issue; informational: ``finish`` checks "
+                      "its form (32 bytes), never compares it, and copies it into the key")
     slot_list_version = Field("int, the slot list version as of this slot's issue")

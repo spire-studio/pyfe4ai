@@ -916,3 +916,65 @@ def test_run_locked_gives_the_slot_list_and_checks_its_callable(tmp_path):
     with pytest.raises(RuntimeError, match="refused"):
         store.run_locked(lambda slots_now: (_ for _ in ()).throw(RuntimeError("refused")))
     assert files(tmp_path) == before and store.issue(dkey(1), 5, Builder()).slot_id == 1
+
+
+# -- the owner's own files: check_directory, read_json_file, write_json_file (appended)
+
+
+def test_check_directory_refuses_what_the_locked_calls_refuse_and_creates_nothing(tmp_path):
+    with pytest.raises(FEConfigError, match="does not exist"):
+        SlotStore(tmp_path / "missing").check_directory()
+    assert not (tmp_path / "missing").exists()
+    good = tmp_path / "good"
+    good.mkdir(mode=0o700)
+    SlotStore(good).check_directory()
+    os.symlink(good, tmp_path / "link")
+    with pytest.raises(FEConfigError, match="symbolic link"):
+        SlotStore(tmp_path / "link").check_directory()
+    (tmp_path / "file").write_text("x")
+    with pytest.raises(FEConfigError, match="not a directory"):
+        SlotStore(tmp_path / "file").check_directory()
+    loose = tmp_path / "loose"
+    loose.mkdir()
+    os.chmod(loose, 0o777)
+    with pytest.raises(FEConfigError, match="lets other users write"):
+        SlotStore(loose).check_directory()
+
+
+def test_read_json_file_applies_the_store_file_checks(tmp_path):
+    directory = tmp_path / "d"
+    directory.mkdir(mode=0o700)
+    assert slots.read_json_file(directory / "absent.json", private=True) is None
+    slots.write_json_file(directory, "own.json", {"a": 1}, 0o600)
+    assert stat.S_IMODE(os.stat(directory / "own.json").st_mode) == 0o600
+    assert slots.read_json_file(directory / "own.json", private=True) == {"a": 1}
+    slots.write_json_file(directory, "pub.json", {"b": [1, 2]}, 0o644)
+    assert slots.read_json_file(directory / "pub.json", private=False) == {"b": [1, 2]}
+    with pytest.raises(FEConfigError, match="read or write"):
+        slots.read_json_file(directory / "pub.json", private=True)    # a private file readable by others
+    os.chmod(directory / "pub.json", 0o666)
+    with pytest.raises(FEConfigError, match="lets other users write"):
+        slots.read_json_file(directory / "pub.json", private=False)
+    os.symlink(directory / "own.json", directory / "link.json")
+    with pytest.raises(FEConfigError, match="symbolic link"):
+        slots.read_json_file(directory / "link.json", private=True)
+    os.mkfifo(directory / "fifo.json", 0o600)                         # refused at once, no wait for a writer
+    with pytest.raises(FEConfigError, match="not a regular file"):
+        slots.read_json_file(directory / "fifo.json", private=True)
+    for name, content in (("bad.json", b"{not json"), ("list.json", b"[1]"), ("deep.json", b"[" * 100000)):
+        fd = os.open(directory / name, os.O_WRONLY | os.O_CREAT, 0o600)
+        os.write(fd, content)
+        os.close(fd)
+        with pytest.raises(FEConfigError, match="not JSON|not a JSON object"):
+            slots.read_json_file(directory / name, private=True)
+
+
+def test_write_json_file_replaces_atomically_and_leaves_no_temporary_file(tmp_path):
+    directory = tmp_path / "d"
+    store = SlotStore(directory)
+    store.issue(dkey(0), 3, Builder())
+    slots.write_json_file(directory, "own.json", {"v": 1}, 0o600)
+    slots.write_json_file(directory, "own.json", {"v": 2}, 0o600)
+    assert slots.read_json_file(directory / "own.json", private=True) == {"v": 2}
+    assert not [name for name in os.listdir(directory) if name.endswith(".tmp")]
+    check_consistent(directory)

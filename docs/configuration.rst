@@ -2814,7 +2814,7 @@ Crypto objects also take:
      - the cap on the slots (keys of distinct functions or requesters) the setup issues in all
      - ``16``
      - 
-     - a positive int; ``set_max_keys`` may raise it after setup, never below the slots listed
+     - an int in ``[1, 2^63)``; ``set_max_keys`` may raise it after setup, never below the slots listed
    * - data_wires
      - how the data bits enter the garbling: known to the garbler (folded into the tables), or as input labels in the ciphertext (SS10's form, twice the size)
      - ``'hardwired'``

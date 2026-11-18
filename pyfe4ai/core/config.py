@@ -1111,8 +1111,8 @@ class BCFEGCRistretto255Config(SchemeConfig):
                      ":mod:`pyfe4ai.circuits`); the scheme garbles ``guard(C)``", default=None,
                      allowed="required: a ``pyfe4ai.circuits.ParamCircuit`` (``FEConfigError`` without it)")
     max_keys = Option("the cap on the slots (keys of distinct functions or requesters) the setup issues in all",
-                      default=16, allowed="a positive int; ``set_max_keys`` may raise it after setup, never below "
-                      "the slots listed")
+                      default=16, allowed="an int in ``[1, 2^63)``; ``set_max_keys`` may raise it after setup, never "
+                      "below the slots listed")
     data_wires = Option("how the data bits enter the garbling: known to the garbler (folded into the tables), or as "
                         "input labels in the ciphertext (SS10's form, twice the size)", default="hardwired",
                         allowed=("hardwired", "labels"))

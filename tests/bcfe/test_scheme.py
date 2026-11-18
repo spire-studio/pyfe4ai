@@ -173,8 +173,9 @@ def test_the_policy_is_checked_before_any_slot_is_reserved(tmp_path):
     assert key["slot_id"] == 0                                         # the refused request burned no id
     slot = kg.get_public_parameters()["slots"][0]
     assert slot["policy_digest"] == pyfe4ai.policy.policy_digest(parse("and(org:bank, role:scoring)"))
-    assert slot["attribute_set_digest"] == pyfe4ai.policy.attribute_set_digest(
-        ["org:bank", "role:scoring", "org:extra"])
+    assert "attribute_set_digest" not in slot                          # private: the authority's audit (R06-P2-01)
+    assert kg._store.private(0)["attribute_set_digest"] == bytes.fromhex(pyfe4ai.policy.attribute_set_digest(
+        ["org:bank", "role:scoring", "org:extra"]))
 
 
 def test_without_kept_keys_a_repeated_request_is_refused(tmp_path):
@@ -183,7 +184,7 @@ def test_without_kept_keys_a_repeated_request_is_refused(tmp_path):
     with pytest.raises(FEKeyError, match="already issued"):
         kg.issue_key(W_SMALL, requester="alice")
     private = kg._store.private(0)
-    assert set(private) == {"key_mode", "max_keys", "k"}               # no scalars, no w kept
+    assert set(private) == {"key_mode", "max_keys", "k", "attribute_set_digest"}  # no scalars, no w kept
 
 
 def test_issuance_refuses_bad_arguments_before_anything_is_reserved(tmp_path):
@@ -418,9 +419,10 @@ def test_public_records_hold_no_slot_secret_scalar_or_dedup_key(tmp_path, key_mo
     assert os.stat(os.path.join(kg.directory, "slots.private.json")).st_mode & 0o077 == 0
     assert os.stat(os.path.join(kg.directory, scheme.AUTHORITY_FILE)).st_mode & 0o077 == 0
     if key_mode == "h1":                                             # the kept key: m + 1 scalars, no other
-        assert private["scalars"] == scalars and set(private) == {"key_mode", "max_keys", "k", "w", "scalars"}
+        assert private["scalars"] == scalars and set(private) == {"key_mode", "max_keys", "k", "attribute_set_digest",
+                                                                  "w", "scalars"}
     else:                                                            # the authority holds no scalar of an h2 slot
-        assert set(private) == {"key_mode", "max_keys", "k"}
+        assert set(private) == {"key_mode", "max_keys", "k", "attribute_set_digest"}
     authority = open(os.path.join(kg.directory, scheme.AUTHORITY_FILE)).read()
     assert all(text not in authority for secret in secrets for text in _encodings(secret))
 
@@ -448,8 +450,7 @@ def _resealed(grant, setup, pks: bytes) -> dict:
     slot = bad["slot"]
     slot["pks"] = garbled.b64(pks)
     policy = None if slot["policy_digest"] is None else bytes.fromhex(slot["policy_digest"])
-    slot["slot_digest"] = garbled.slot_digest(setup.setup_digest, slot["slot_id"], slot["label"], policy,
-                                              bytes.fromhex(slot["attribute_set_digest"]), pks).hex()
+    slot["slot_digest"] = garbled.slot_digest(setup.setup_digest, slot["slot_id"], slot["label"], policy, pks).hex()
     return bad
 
 
@@ -706,3 +707,200 @@ def test_set_max_keys_and_the_pp_read_the_cap_under_the_store_lock(tmp_path, mon
     with pytest.raises(FEKeyError, match="max_keys = 1"):
         kg.issue_key({"weights": [0, 0], "bias": 0}, requester="b")
     assert kg._store.private(0)["max_keys"] == 2                     # the cap decided at that slot's issue
+
+
+# ---------------------------------------------------------------------------
+# code review 2: the cap's bound, the instance files, open(), the key check, holder keys, concurrency (appended)
+
+
+def _authority(kg) -> str:
+    return os.path.join(kg.directory, scheme.AUTHORITY_FILE)
+
+
+def _rewrite(path: str, change) -> None:
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    change(data)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+
+
+def test_max_keys_is_below_2_to_the_63_everywhere(tmp_path):
+    for bad in (2 ** 63, 2 ** 64, 0, True):
+        with pytest.raises(FEValidationError, match="max_keys"):
+            pyfe4ai.create(SCHEME, circuit=SMALL, max_keys=bad, cache_dir=str(tmp_path))
+    kg, BCFE = make(tmp_path, max_keys=2 ** 63 - 1)
+    key = kg.issue_key(W_SMALL, requester="a")
+    assert kg.get_public_parameters()["max_keys"] == 2 ** 63 - 1
+    with pytest.raises(FEValidationError, match="max_keys"):
+        kg.set_max_keys(2 ** 63)
+    _rewrite(_authority(kg), lambda d: d.update(max_keys=2 ** 63))
+    for call in (kg.get_public_parameters, lambda: kg.issue_key(W_SMALL, requester="b"),
+                 lambda: BCFEGCRistretto255KeyGenerator.open(kg.directory)):
+        with pytest.raises(FEConfigError, match="max_keys"):
+            call()
+    _rewrite(_authority(kg), lambda d: d.update(max_keys=4))
+    assert kg.issue_key(W_SMALL, requester="a") == key
+
+
+@pytest.mark.parametrize("change", [
+    "drop:issuance_policy", "drop:key_mode", "drop:keep_issued_keys", "drop:security_profile", "drop:gc_hash",
+    "drop:label_bits", "drop:sec_param", "drop:max_keys", "extra", "keep_issued_keys=yes", "key_mode=h3",
+    "issuance_policy=5", "issuance_policy=not a policy", "security_profile=strong", "sec_param=True",
+    "label_bits=256", "data_wires=labels", "setup_digest", "format_version=True",
+])
+def test_authority_json_is_parsed_fail_closed(tmp_path, change):
+    kg, _ = make(tmp_path, key_mode="h2", keep_issued_keys=False, issuance_policy=parse("org:bank"),
+                 security_profile="standard")
+    name, _, value = change.partition("=")
+
+    def edit(data):
+        if name.startswith("drop:"):
+            del data[name[5:]]
+        elif name == "extra":
+            data["comment"] = "an unknown field"
+        elif name == "setup_digest":
+            data["setup_digest"] = "00" * 32
+        else:
+            data[name] = {"yes": "yes", "True": True, "5": 5, "256": 256}.get(value, value)
+
+    _rewrite(_authority(kg), edit)
+    with pytest.raises(FEConfigError, match=scheme.AUTHORITY_FILE):
+        BCFEGCRistretto255KeyGenerator.open(kg.directory)
+    with pytest.raises(FEConfigError):
+        kg.get_public_parameters()
+
+
+def test_the_instance_files_get_the_store_file_checks(tmp_path):
+    kg, _ = make(tmp_path)
+    path = _authority(kg)
+    os.chmod(path, 0o666)
+    with pytest.raises(FEConfigError, match="mode 0666"):
+        kg.issue_key(W_SMALL, requester="a")
+    os.chmod(path, 0o600)
+    elsewhere = os.path.join(str(tmp_path), "elsewhere.json")
+    os.replace(path, elsewhere)
+    os.symlink(elsewhere, path)
+    with pytest.raises(FEConfigError, match="symbolic link"):
+        kg.get_public_parameters()
+    os.unlink(path)
+    os.replace(elsewhere, path)
+    setup_path = os.path.join(kg.directory, scheme.SETUP_FILE)
+    _rewrite(setup_path, lambda d: d.update(comment="an unknown field"))
+    with pytest.raises(FEConfigError, match="exactly the fields"):
+        BCFEGCRistretto255KeyGenerator.open(kg.directory)
+
+
+def test_open_checks_the_directory_before_reading_and_never_waits_on_a_fifo(tmp_path):
+    kg, _ = make(tmp_path)
+    os.chmod(kg.directory, 0o777)
+    with pytest.raises(FEConfigError, match="lets other users write"):
+        BCFEGCRistretto255KeyGenerator.open(kg.directory)
+    os.chmod(kg.directory, 0o700)
+    setup_path = os.path.join(kg.directory, scheme.SETUP_FILE)
+    os.unlink(setup_path)
+    os.mkfifo(setup_path, 0o644)
+    with pytest.raises(FEConfigError, match="not a regular file"):
+        BCFEGCRistretto255KeyGenerator.open(kg.directory)
+    with pytest.raises(FEConfigError, match="does not exist"):
+        BCFEGCRistretto255KeyGenerator.open(os.path.join(str(tmp_path), "nowhere"))
+
+
+def test_a_key_that_does_not_open_its_listed_slot_gives_the_one_decryption_error(tmp_path, backend_name):
+    circuit = circuits.linear_score(n=2, bw=3, bx=3)
+    kg, BCFE = make(tmp_path, circuit)
+    w = {"weights": [3, -2], "bias": 5}
+    key = kg.issue_key(w, requester="alice")
+    other = kg.issue_key({"weights": [1, 1], "bias": 0}, requester="bob")
+    crypto = BCFE({"keys": {"pp": kg.get_public_parameters()}})
+    x = {"x": [1, 2]}
+    ct = crypto.encrypt(x)
+    assert crypto.decrypt(ct, key) == circuit.evaluate(w, x)
+    m = circuit.key_layout.n_bits
+    bits = circuit.key_layout.encode(w)
+    for flip in (0, m - 1):
+        flipped = list(bits)
+        flipped[flip] ^= 1
+        damaged = dict(key, w=garbled.b64(scheme.pack_bits(flipped, m)))
+        with pytest.raises(FESchemeError) as info:
+            crypto.decrypt(ct, damaged)
+        assert str(info.value) == scheme.DECRYPTION_FAILED
+    swapped = dict(key, scalars=other["scalars"], w=other["w"])          # another slot's secrets, this slot's id
+    with pytest.raises(FESchemeError) as info:
+        crypto.decrypt(ct, swapped)
+    assert str(info.value) == scheme.DECRYPTION_FAILED
+    scalars = bytearray(garbled.from_b64(key["scalars"], "scalars"))
+    scalars[-32:] = (int.from_bytes(scalars[-32:], "little") ^ 1).to_bytes(32, "little")  # the g bit's key
+    with pytest.raises(FESchemeError):
+        crypto.decrypt(ct, dict(key, scalars=garbled.b64(bytes(scalars))))
+    # the verdicts are cached on the object, and left out of its copies and pickles
+    calls = []
+    real = scheme.eg.mul_base
+    try:
+        scheme.eg.mul_base = lambda k: calls.append(1) or real(k)
+        assert crypto.decrypt(ct, key) == circuit.evaluate(w, x) and calls == []
+        clone = pickle.loads(pickle.dumps(crypto))
+        assert clone._key_checks == {} and clone.decrypt(ct, key) == circuit.evaluate(w, x)
+        assert len(calls) == m + 1
+    finally:
+        scheme.eg.mul_base = real
+
+
+def test_a_key_of_a_slot_the_public_parameters_do_not_list_yet_is_not_checked(tmp_path):
+    kg, BCFE = make(tmp_path)
+    old = BCFE({"keys": {"pp": kg.get_public_parameters()}})
+    key = kg.issue_key(W_SMALL, requester="alice")
+    ct = BCFE({"keys": {"pp": kg.get_public_parameters()}}).encrypt({"x": [1, -1]})
+    assert old.decrypt(ct, key) == {"decision": 1} and old._key_checks == {}
+
+
+def test_holder_keys_must_be_pairwise_distinct(tmp_path):
+    kg, BCFE = make(tmp_path, key_mode="h2")
+    holder = BCFE.key_holder(kg.get_public_parameters())
+    request = holder.request(W_SMALL)
+    pks = garbled.from_b64(request["pks"], "pks")
+    for bad in (pks[:32] * (len(pks) // 32), pks[:-32] + pks[:32]):  # one key everywhere; the g bit's = (0, w_0)'s
+        with pytest.raises(FEKeyError, match="pairwise distinct"):
+            kg.authorize(dict(request, pks=garbled.b64(bad)), requester="alice")
+    assert kg.get_public_parameters()["slot_list_version"] == 0
+    assert holder.finish(kg.authorize(request, requester="alice"))["slot_id"] == 0
+
+
+def test_concurrent_finishes_of_one_grant_give_one_key(tmp_path):
+    import threading
+
+    kg, BCFE = make(tmp_path, key_mode="h2")
+    for _ in range(5):
+        holder = BCFE.key_holder(kg.get_public_parameters())
+        grant = kg.authorize(holder.request(W_SMALL), requester="alice-{}".format(_))
+        results, barrier = [], threading.Barrier(4)
+
+        def finish():
+            barrier.wait()
+            try:
+                results.append(holder.finish(grant)["slot_id"])
+            except FEKeyError:
+                results.append("refused")
+
+        threads = [threading.Thread(target=finish) for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(30)
+        assert sorted(results, key=str) == sorted([grant["slot"]["slot_id"]] + ["refused"] * 3, key=str)
+
+
+def test_records_nested_too_deeply_are_refused(tmp_path):
+    kg, BCFE = make(tmp_path)
+    pp = kg.get_public_parameters()
+    deep = {}
+    node = deep
+    for _ in range(5000):
+        node["a"] = {}
+        node = node["a"]
+    bad = copy.deepcopy(pp)
+    bad["circuit"]["params"] = deep
+    with pytest.raises(FEValidationError, match="nested too deeply|params"):
+        BCFE({"keys": {"pp": bad}})
+    with pytest.raises(FEValidationError):
+        BCFE.key_holder(bad)

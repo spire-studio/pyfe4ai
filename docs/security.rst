@@ -683,8 +683,10 @@ tables; ``label_bits`` takes 128 only.
   requester holds a key for a given ``w``.
 * **The issuance policy is the authority's decision, not cryptographic
   access control.** ``issuance_policy`` is evaluated by the authority on the
-  attributes the caller passes, before any slot is taken, and the slot
-  records the digests of the policy and of the attribute set for audit. It
+  attributes the caller passes, before any slot is taken. The public slot
+  record carries the digest of the policy; the digest of the attribute set
+  stays in the authority's private record for its audit (unsalted, a public
+  copy would let anyone test guesses of a requester's attributes). It
   decides whom the authority builds a slot for; it is as good as the
   authority and the attributes it is given. The cryptography enforces only
   that a key computes ``C(w, .)``; no ciphertext carries a policy.

@@ -106,6 +106,21 @@ code keeps in the directory. Alternative not taken: trust the caller's
 directory (the first version did), which leaves the integrity of the store
 to the permissions of a path the store does not control.
 
+Known limits of these checks: they read the mode bits only -- access
+control lists (macOS ``chmod +a``, POSIX ACLs) are not inspected, so an ACL
+that lets another user add or replace files in the directory is not seen;
+and the files are opened by path after the directory was checked, not
+through a descriptor of it (``dir_fd``), so a directory swapped between
+the check and the open is not caught. Both need a writer the directory's
+mode bits already let in, or the owner's own help.
+
+The owner of a store may keep files of its own in the directory (the
+bounded-key scheme keeps its setup and its options there):
+:func:`read_json_file` and :func:`write_json_file` read and write them with
+the same checks and the same durable writes, and
+:meth:`SlotStore.check_directory` checks the directory before anything in
+it is read.
+
 **A cap the caller keeps.** The cap of :meth:`SlotStore.issue` is the
 caller's (the bounded-key scheme keeps it in a file of its own, and it may
 be changed after setup). Read before the lock, it could be lowered by
@@ -809,3 +824,67 @@ class SlotStore:
             if os.getpid() != pid:
                 raise FESchemeError("fn forked: the child does not hold the slot store's lock")
             return out
+
+    def check_directory(self) -> None:
+        """Refuse the store's directory unless it exists and passes the checks
+        of every locked call (a directory, not a symbolic link, owned by this
+        process's effective user, not writable by other users); creates
+        nothing. For an owner that reads files of its own there before any
+        store call.
+
+        Raises:
+            FEConfigError: If the directory is missing or refused.
+        """
+        path = self._dir
+        try:
+            st = os.lstat(path)
+        except FileNotFoundError:
+            raise FEConfigError("the slot store directory {} does not exist".format(path)) from None
+        if stat.S_ISLNK(st.st_mode):
+            raise _refused(path, "it is a symbolic link")
+        if not stat.S_ISDIR(st.st_mode):
+            raise _refused(path, "it is not a directory")
+        _check_owner_and_mode(st, path, private=False)
+
+
+# -- the owner's own files in a store's directory (appended)
+
+
+def read_json_file(path, private: bool) -> Optional[dict]:
+    """The JSON object in *path*, a file that the owner of a store keeps in
+    the store's directory, read with the checks of the store's own files: not
+    a symbolic link, no wait on a FIFO, a regular file of this process's
+    effective user that no other user can write (*private*: nor read);
+    ``None`` if it does not exist.
+
+    Raises:
+        FEConfigError: For a file that is refused, unreadable, not JSON or not
+            a JSON object (the message names the path, never the content).
+    """
+    path = os.fspath(path)
+    fd = _open_file(path, os.O_RDONLY, private)
+    if fd is None:
+        return None
+    try:
+        with os.fdopen(fd, "rb") as f:
+            raw = f.read()
+    except OSError as exc:
+        raise FEConfigError("the file {} is unreadable ({})".format(path, exc.strerror or type(exc).__name__)) from None
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, RecursionError):  # no excerpt of the file in the message
+        raise FEConfigError("the file {} is not JSON, or truncated".format(path)) from None
+    if not isinstance(data, dict):
+        raise FEConfigError("the file {} is not a JSON object".format(path))
+    return data
+
+
+def write_json_file(directory, name: str, data: dict, mode: int) -> None:
+    """Replace ``directory/name`` with *data* (JSON) as the store writes its
+    own files: a temporary file in the directory, flushed to the device
+    (``F_FULLFSYNC`` where the OS has it), renamed over the old file, then the
+    directory flushed. A crash leaves the old file or the new one; a
+    temporary file left behind is removed by the next locked call of a store
+    on the directory.
+    """
+    _atomic_write(os.fspath(directory), name, data, mode)
