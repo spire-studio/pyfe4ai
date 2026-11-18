@@ -341,6 +341,12 @@ an experimental research prototype, not recommended for production use.
 
 ### Known issues
 
+- **`mcfe/kp_ab_pairing` is known-insecure.** A corrupted client opens every
+  functional key (see Security), so the policy does not hold against a
+  decryptor that colludes with a client, and the ML adapter's policy-gated
+  aggregation is for experiments only. A key-side mask of the first two
+  coordinates stops the attack's computation; no proof of a masked
+  construction is known, and none is implemented.
 - **`mcfe/kp_ab_pairing_per_client` stays known-insecure.** No repair is
   implemented, and the fixed-tag MIFE variant of NPP22 (Remark 16) is not
   provided (see Security). The scheme is for functionality and performance
