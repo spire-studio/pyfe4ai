@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import tempfile
 import warnings
 from pathlib import Path
@@ -575,6 +576,70 @@ def record_keys(value) -> set:
             all(isinstance(k, str) and (k.startswith("nid_") or k.startswith("sid_")) for k in value):
         return record_keys(next(iter(value.values())))
     return set(value) if isinstance(value, dict) else set()
+
+
+_DECIMAL = re.compile(r"-?[0-9]+")
+_HEX0X = re.compile(r"-?0x[0-9a-fA-F]+")
+_HEX = re.compile(r"[0-9a-f]+|[0-9A-F]+")
+_BASE64 = re.compile(r"[A-Za-z0-9+/_-]+={0,2}")
+
+
+def encoding_of(value) -> str:
+    """The encoding of a scalar value, not its content: its type, and for a string the form of what it holds
+    (a decimal number, a 0x-hex number, hex digits, base64, or text)."""
+    if isinstance(value, bool) or value is None:
+        return type(value).__name__
+    if isinstance(value, (int, float, bytes, bytearray)):
+        return type(value).__name__
+    if isinstance(value, str):
+        if _DECIMAL.fullmatch(value):
+            return "str:decimal"
+        if _HEX0X.fullmatch(value):
+            return "str:0x-hex"
+        if _HEX.fullmatch(value):
+            return "str:hex"
+        if _BASE64.fullmatch(value) and len(value) >= 16:
+            return "str:base64"
+        return "str:text"
+    return type(value).__name__
+
+
+def r2_differences(old, new, where: str = "") -> tuple[list, list]:
+    """What breaks R2 between a frozen record *old* and a record the code under test writes for the same role,
+    *new*, at every depth: ``(dropped, re_encoded)``, the paths of the fields of *old* that *new* lacks and of
+    those it holds in another encoding (fields *new* adds are allowed). Dicts are compared key by key; lists of
+    records element by element (the first ones); lists of values by the set of their encodings."""
+    dropped, changed = [], []
+    if isinstance(old, dict):
+        if not isinstance(new, dict):
+            return dropped, [where or "."]
+        for key, value in old.items():
+            path = "{}.{}".format(where, key) if where else str(key)
+            if key not in new:
+                dropped.append(path)
+                continue
+            d, c = r2_differences(value, new[key], path)
+            dropped += d
+            changed += c
+        return dropped, changed
+    if isinstance(old, (list, tuple)):
+        if not isinstance(new, (list, tuple)):
+            return dropped, [where or "."]
+        if not old or not new:
+            return dropped, changed
+        if all(isinstance(v, (dict, list, tuple)) for v in old) and all(isinstance(v, (dict, list, tuple)) for v in new):
+            for i, (a, b) in enumerate(zip(old[:3], new[:3])):
+                d, c = r2_differences(a, b, "{}[{}]".format(where, i))
+                dropped += d
+                changed += c
+            return dropped, changed
+        if {encoding_of(v) for v in old if not isinstance(v, (dict, list, tuple))} != \
+                {encoding_of(v) for v in new if not isinstance(v, (dict, list, tuple))}:
+            changed.append(where + "[]")
+        return dropped, changed
+    if isinstance(new, (dict, list, tuple)) or encoding_of(old) != encoding_of(new):
+        changed.append(where or ".")
+    return dropped, changed
 
 
 def available(scheme: str) -> bool:

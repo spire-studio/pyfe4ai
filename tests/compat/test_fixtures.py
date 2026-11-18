@@ -7,7 +7,8 @@
   ciphertext under the stored encryption keys decrypts with the stored functional key, stored partial
   decryptions combine, stored key shares serve, and the stored gradients (the ML adapter's wire form of the
   ndarray layers) decrypt;
-* keep their fields (R2): a record written now has every field the fixture's record of the same role has;
+* keep their fields and their encodings (R2): a record written now has every field the fixture's record of the
+  same role has, at every depth, in the same encoding;
 * reuse their parameter records without regenerating them (R5);
 * keep the version markers (R4): every marker of the snapshot, with its value.
 
@@ -30,6 +31,23 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 RELEASES = sorted(p for p in FIXTURES.iterdir() if p.is_dir()) if FIXTURES.is_dir() else []
 FILES = [f for d in RELEASES for f in sorted(d.glob("*__*.json"))]
 NO_PAIRING = "needs the native extension (the BLS12-381 backend) for the pairing fixtures"
+
+#: The stable schemes of each fixture set, frozen when the set was written. The registry may change later -- a
+#: scheme may become known-insecure (the security exception), never experimental, and is never removed -- and a
+#: later set adds the schemes that became stable since (roadmap v1.0/02, Sec. 2.4 and 8.4).
+STABLE_AT = {
+    "0.5.0-proto": (
+        "sife/ddh", "sife/lwe", "sife/paillier", "sife/damgard", "sife/ring_lwe", "sife/fullysec_ring_lwe",
+        "sife/fullysec_lwe", "sife/ddh_dynamic", "sife/fh_ipe_pairing", "sife/part_fh_ipe_pairing",
+        "sife/cp_ab_pairing", "sife/kp_ab_pairing", "mife/ddh", "mife/lwe", "mife/paillier", "mife/damgard",
+        "mife/ring_lwe", "mife/fullysec_lwe", "mife/fh_ipe_pairing", "mife/fh_multi_ipe_pairing",
+        "mife/ddh_threshold", "mcfe/ddh", "mcfe/lwe", "mcfe/paillier", "mcfe/damgard", "mcfe/ring_lwe",
+        "mcfe/fullysec_lwe", "mcfe/fh_multi_ipe_pairing", "mcfe/fh_multi_ipe_pairing_decentralized",
+        "mcfe/ddh_threshold", "mcfe/lwe_decentralized", "mcfe/ring_lwe_decentralized",
+        "mcfe/paillier_decentralized", "quadratic/quad", "quadratic/sgp", "quadratic/miqfe",
+    ),
+}
+
 
 
 def _param(path: Path):
@@ -73,17 +91,25 @@ def test_the_parameter_records_are_reused(path):
 
 
 @pytest.mark.parametrize("path", PARAMS)
-def test_no_field_was_dropped(path):
+def test_no_field_was_dropped_or_re_encoded(path):
+    """R2 at every depth: a record written now has every field of the fixture's record of the same role, nested
+    fields included, each in the same encoding (type, and for strings the form of the number or text); fields may
+    be added (review of the freeze line, RF-1 and RF-3)."""
     fx = recipes.load(path)
     fresh = recipes.generate(fx["scheme"])
     pairs = [(fx["records"], fresh["records"], "")]
     if "ndarray" in fx:
         pairs.append((fx["ndarray"]["records"], fresh.get("ndarray", {}).get("records", {}), "ndarray "))
+    problems = []
     for old, new, where in pairs:
         for role, record in old.items():
-            missing = recipes.record_keys(record) - recipes.record_keys(new.get(role, {}))
-            assert not missing, "{}: fields {} of the {}{} record are no longer written".format(
-                fx["scheme"], sorted(missing), where, role)
+            if role not in new:
+                problems.append("{}{}: no longer written".format(where, role))
+                continue
+            dropped, changed = recipes.r2_differences(record, new[role], role)
+            problems += ["{}{}: dropped".format(where, d) for d in dropped]
+            problems += ["{}{}: re-encoded".format(where, c) for c in changed]
+    assert not problems, "{}: {}".format(fx["scheme"], problems[:10])
 
 
 @pytest.mark.parametrize("release", RELEASES, ids=[d.name for d in RELEASES])
@@ -106,15 +132,52 @@ def _extends(old, new) -> bool:
 
 
 @pytest.mark.parametrize("release", RELEASES, ids=[d.name for d in RELEASES])
-def test_every_stable_scheme_of_the_release_has_its_fixture(release):
+def test_the_set_holds_a_fixture_of_every_scheme_stable_at_its_release(release):
+    """The fixtures on disk, the set's manifest and the frozen list of the set (STABLE_AT) name the same schemes,
+    each written as stable (review of the freeze line, RF-2: the check used to compare the manifest with itself)."""
+    assert release.name in STABLE_AT, "fixture set {} has no frozen list in STABLE_AT".format(release.name)
     manifest = recipes.load(release / "manifest.json")
     on_disk = {f.stem.replace("__", "/") for f in release.glob("*__*.json")}
     assert manifest["failed"] == {}
-    assert set(manifest["schemes"]) == on_disk
-    # a scheme stable now and at the release has its fixture (schemes promoted later get theirs in a later set)
-    assert not ({s for s in stability.stable_schemes() if s in set(manifest["schemes"]) | on_disk} - on_disk)
+    assert on_disk == set(manifest["schemes"]) == set(STABLE_AT[release.name])
     for path in release.glob("*__*.json"):
         assert recipes.load(path)["tier"] == stability.STABLE
+
+
+def test_no_scheme_of_a_fixture_set_left_the_stable_tier():
+    """Sec. 2.4 against the live registry: a scheme that was stable when a set was written is still registered and
+    is stable, or known-insecure by the security exception; never experimental (RF-2, RF-4)."""
+    import pyfe4ai
+
+    registered = set(pyfe4ai.list_schemes())
+    for release, schemes in STABLE_AT.items():
+        for scheme in schemes:
+            assert scheme in registered, "{} (stable in {}) is no longer registered".format(scheme, release)
+            assert stability.tier(scheme) in (stability.STABLE, stability.KNOWN_INSECURE_TIER), \
+                "{} (stable in {}) is now {}".format(scheme, release, stability.tier(scheme))
+
+
+def test_every_stable_scheme_has_a_fixture_set():
+    """Every scheme stable now is in the frozen list of some set: a scheme promoted to stable gets its fixtures in
+    the version it is promoted in (Sec. 8.4 item 5)."""
+    frozen = set().union(*STABLE_AT.values())
+    missing = sorted(set(stability.stable_schemes()) - frozen)
+    assert not missing, "stable schemes without a fixture set: {}".format(missing)
+
+
+def test_the_r2_comparison_itself():
+    """recipes.r2_differences on made-up records: nested drops and re-encodings are found, additions are not."""
+    old = {"pp": {"q": "12345", "g": {"x": "0a1b", "y": [1, 2]}}, "ct": [{"c": "17", "tag": "QUJDREVGR0hJSktMTU5PUA=="}]}
+    assert recipes.r2_differences(old, old) == ([], [])
+    added = {"pp": {"q": "12345", "g": {"x": "0a1b", "y": [1, 2], "z": 3}, "new": 1},
+             "ct": [{"c": "17", "tag": "QUJDREVGR0hJSktMTU5PUA==", "more": "x"}]}
+    assert recipes.r2_differences(old, added) == ([], [])
+    nested_drop = {"pp": {"q": "12345", "g": {"y": [1, 2]}}, "ct": [{"c": "17", "tag": "QUJDREVGR0hJSktMTU5PUA=="}]}
+    assert recipes.r2_differences(old, nested_drop) == (["pp.g.x"], [])
+    re_encoded = {"pp": {"q": "0x3039", "g": {"x": "0a1b", "y": ["1", "2"]}},
+                  "ct": [{"c": 17, "tag": "QUJDREVGR0hJSktMTU5PUA=="}]}
+    assert recipes.r2_differences(old, re_encoded) == ([], ["pp.q", "pp.g.y[]", "ct[0].c"])
+    assert recipes.encoding_of("ab12") == "str:hex" and recipes.encoding_of("12") == "str:decimal"
 
 
 def test_the_tiers_follow_the_registry():
