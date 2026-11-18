@@ -204,6 +204,10 @@ def run_child(body) -> int:
     if pid == 0:  # pragma: no cover - the child
         code = FAILED
         try:
+            # one native thread in the child: on macOS a forked child that starts threads (the native kernels do with
+            # PYFE4AI_THREADS > 1) can be killed by the system's fork-safety checks (SIGTRAP), which is not what the
+            # tests are about
+            native_backend.set_threads(1)
             body()
             code = COMPLETED
         except BaseException:
