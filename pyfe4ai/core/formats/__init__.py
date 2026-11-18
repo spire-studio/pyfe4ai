@@ -16,4 +16,5 @@ dicts themselves are what they were: a record is the dict, not a copy.
 * :mod:`~pyfe4ai.core.formats.dl` -- the discrete-log and DCR schemes;
 * :mod:`~pyfe4ai.core.formats.pairing` -- the pairing schemes (function-hiding IPFE, MIFE and MCFE) and the quadratic schemes;
 * :mod:`~pyfe4ai.core.formats.threshold` -- key shares, replicated pieces and partial decryptions of the threshold schemes.
+* :mod:`~pyfe4ai.core.formats.identity` -- the identity directory of :mod:`pyfe4ai.ac` and the ciphertexts and keys bound to it.
 """

@@ -5,6 +5,28 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/) (pre-1.0: minor bumps may break
 compatibility).
 
+## [Unreleased] — 0.7 line (for 1.0.0)
+
+### Added
+
+- **`pyfe4ai.ac`: identity directory (experimental).**
+  `IdentityKeyCentre` runs one `sife/fullysec_ring_lwe` instance per identity
+  (shared parameter record, independent secrets) and publishes a directory of
+  the identities' encryption keys; `IdentityDirectory` checks a directory
+  (and, given `expected_digest`, that it is the expected one), encrypts
+  vectors and ndarrays for an identity and decrypts with that identity's keys.
+  Ciphertexts and keys carry the identity and the digest of its entry, and
+  decryption refuses (`FEKeyError`) a mismatch. Records in
+  `pyfe4ai.core.formats.identity`, format id
+  `IDENTITY_DIRECTORY_VERSION`. The key centre holds every identity's master
+  key, ciphertexts name their identity, and there is no revocation.
+
+### Documentation
+
+- Security: why DP23 (a collusion of two users and one corrupted authority
+  breaks both schemes), AGT21b Sec. 3, ACGU20 Secs. 4 and 5, CT26 and PD21
+  are not implemented; the identity directory's guarantees and limits.
+
 ## [0.5.0] — unreleased
 
 **Highlights.** Attribute-based inner-product functional encryption over

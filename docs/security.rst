@@ -448,6 +448,85 @@ with Remark 16, and no theorem: it says that the proof follows from that of
 Thm. 14 with few changes and leaves the sketch to the full version. The attack
 applies to the construction as printed in both.
 
+Attribute-based IPFE not provided
+---------------------------------
+
+Further attribute-based and identity-based IPFE constructions were read for
+this library and are not implemented, for these reasons:
+
+* **DP23** (Datta and Pal, PKC 2023; ePrint 2023/565, its only version, of
+  2023-04-20): two decentralized multi-authority schemes (Secs. 5 and 6).
+  Both are broken in their own static-corruption model. Two users with
+  different GIDs and one corrupted authority whose attribute appears in the
+  policy decrypt together, although none of them satisfies the policy, also
+  with keys for ``u`` such that ``<v0 - v1, u> != 0``. The corrupted
+  authority divides its own key out of its row of the column-wise ciphertext
+  part ``C4`` and obtains ``[f_j]_1``, the random value of column ``j`` that
+  all rows share; with it each user removes the GID-dependent factor from its
+  row values, and the rows of different users then combine. The smallest
+  example is the policy ``and(a, b, c)`` with the Lewko-Waters matrix,
+  authority ``b`` corrupted, one user holding ``a`` and another holding ``c``.
+  The proofs of Thms. 5.1 and 6.1 replace the challenge matrix by the one of
+  the zero-out lemma (Lemma 3.1, from RW15), which keeps the distribution of
+  the row shares only, while these ciphertexts also expose the columns. The
+  attack was checked on both schemes in an exponent model (it succeeded in
+  all 30 trials of each, and in none without a corrupted authority); it has
+  not been reviewed independently. The size comparison of Tables 1.1 and 1.2
+  counts every group element as 128 bits; a BLS12-381 ``GT`` element is 576
+  bytes.
+* **AGT21b** Sec. 3 (Agrawal, Goyal and Tomida, TCC 2021): multi-authority
+  ABE composed with IPFE over composite-order groups (``N = p1 p2 p3``), for
+  which the library has no backend. The paper mentions a prime-order version
+  in the generic group model without giving it, and its proof is in the full
+  version (ePrint 2020/1266), which was not checked. Its Lewko-Waters
+  row-wise zero shares do not expose the columns as DP23 does (an argument,
+  not checked).
+* **ACGU20** Secs. 4 and 5 (identity-based IPFE from LWE): at 128 bits the
+  parameters their proofs need give, by this project's estimate, a public
+  trapdoor block of 4 to 15 GB that cannot be expanded from a seed, and
+  ciphertexts and keys of 10 to 28 MB each (Sec. 4; Sec. 5 about ten times
+  more). App. A of the paper first requires ``m`` of about ``4.8 n log q`` and
+  then takes ``m = 2 n log q``. Identity-based access control on lattices is
+  offered as a directory of per-identity instances instead (below).
+* **CT26** (Cini and Tairi, ePrint 2026/062, preprint of 2026-01-16) and
+  **PD21** (Pal and Dutta, ePrint 2021/178, preprint): IPFE with attribute
+  policies from LWE. The proof of CT26 floods noise twice with
+  superpolynomial ratios (``q`` about ``V^2 P lambda1^11``), about 1.2 GB per
+  coordinate at ``lambda1 = 2^40``. Its attribute version, like PD21, admits a
+  single key that decrypts the challenge ciphertext; lattice attribute-based
+  IPFE has only such bounded constructions so far.
+
+Identity directory (experimental)
+---------------------------------
+
+:mod:`pyfe4ai.ac.identity_directory` provides identity-based access control
+on lattices without a new scheme. A key centre
+(:class:`~pyfe4ai.ac.identity_directory.IdentityKeyCentre`) runs one instance
+of ``sife/fullysec_ring_lwe`` (reviewed) per identity and publishes a
+directory of the identities' encryption keys; an encryptor
+(:class:`~pyfe4ai.ac.identity_directory.IdentityDirectory`) encrypts for an
+identity, and only keys of that identity's instance decrypt it.
+
+* The instances share the parameter record (``a``, ``q``, the widths) and
+  draw their secrets independently, so an attack on one identity's instance,
+  with any keys of the other identities, reduces to an attack on that
+  instance alone. Encrypting one vector for several identities gives an "or"
+  of identities; there is no "and".
+* The key centre holds every identity's master key (key escrow, as in
+  identity-based encryption), and it authenticates nobody: whoever calls
+  ``get_decryption_keys`` decides who the identity is.
+* Ciphertexts name their identity in the clear (no anonymity).
+* The library checks that a directory is consistent and, given the digest
+  the encryptor obtained over a trusted channel (``expected_digest``), that
+  it is that directory. Without ``expected_digest`` a directory published by
+  an attacker passes.
+* Ciphertexts and keys carry the identity and the digest of its entry;
+  decryption refuses (``FEKeyError``) unless they agree with each other and
+  with the directory. Adding identities keeps earlier ciphertexts and keys
+  valid. There is no revocation.
+* The directory, its checks and its records are experimental; the scheme
+  underneath is unchanged.
+
 Offline / online encryption
 ---------------------------
 

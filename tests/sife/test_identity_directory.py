@@ -248,3 +248,37 @@ def test_weights_are_checked(centre):
         centre.get_decryption_keys("alice", [5, 0, 0])
     with pytest.raises(FEValidationError):
         centre.get_decryption_keys("alice", [1, 0])
+
+
+# -- records -----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("name", ["IdentityDirectoryRecord", "IdentityEntry", "IdentityCiphertext",
+                                  "IdentityLayers", "IdentityFunctionalKey"])
+def test_records_document_their_fields(name):
+    from pyfe4ai.core.formats import identity
+
+    cls = getattr(identity, name)
+    assert cls.FIELDS and len(set(cls.FIELDS)) == len(cls.FIELDS)
+    assert "Fields, in wire order" in cls.__doc__
+    assert all(cls._fields[f].doc for f in cls.FIELDS), name
+
+
+def test_objects_are_their_records_in_wire_order(centre):
+    from pyfe4ai.core.formats import identity
+
+    record = centre.directory()
+    d = IdentityDirectory(record)
+    pairs = [(record, identity.IdentityDirectoryRecord), (record["entries"][0], identity.IdentityEntry),
+             (d.encrypt("alice", [1, 2, 3]), identity.IdentityCiphertext),
+             (centre.get_decryption_keys("alice", [1, 1, 1]), identity.IdentityFunctionalKey)]
+    for obj, cls in pairs:
+        assert list(obj) == list(cls.FIELDS)
+        assert cls.from_dict(obj).to_dict() is obj
+
+
+def test_digests_survive_a_json_round_trip(centre):
+    record = centre.directory()
+    again = _json(record)
+    assert idd.pp_digest(again["pp"]) == record["pp_digest"]
+    assert IdentityDirectory(again, expected_digest=record["digest"]).digest == record["digest"]
