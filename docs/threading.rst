@@ -87,6 +87,13 @@ threads:
   servers are made once.
 * :class:`~pyfe4ai.primitives.sampling.XofRandom`: every draw claims its own
   block (which thread gets which block depends on the scheduling).
+* ``bcfe/gc_ristretto255``: the authority's slot store
+  (:class:`~pyfe4ai.schemes.common.slots.SlotStore`) takes a thread lock and a
+  file lock for every call, so several threads and processes may issue keys
+  for one instance; the key holder of h2 (``BCFEGCRistretto255.key_holder``)
+  keeps its open requests under its own lock, so concurrent ``finish`` calls
+  of one grant give one key; a crypto object's cache of checked keys is
+  guarded by a lock of its own.
 
 Everything else is not synchronised. Crypto objects only read their keys
 when they encrypt or decrypt, and their caches (the key in the form
@@ -201,6 +208,8 @@ The library registers one ``os.register_at_fork`` handler
   list of a ``bcfe`` authority) a new lock for the same reason, and closes
   the child's copy of a file-lock descriptor that the store held at the
   fork: the file lock stays the parent's, which releases it.
+* gives the ``bcfe`` key holder and the ``bcfe`` crypto object's cache of
+  checked keys a new lock, for the same reason.
 
 A :class:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget` counts in
 the process that made it only: in a forked child its

@@ -277,7 +277,7 @@ from pyfe4ai.policy import Formula, attribute_set_digest, canonical_encoding, ev
 from pyfe4ai.primitives import bcfe_kem
 from pyfe4ai.primitives.garbling import pack_bits, unpack_bits
 from pyfe4ai.primitives.groups import ec_group as eg
-from pyfe4ai.schemes.common.slots import SlotStore, read_json_file, write_json_file
+from pyfe4ai.schemes.common.slots import SlotStore, read_json_file, sync_directory, write_json_file
 
 logger = logging.getLogger(__name__)
 
@@ -340,7 +340,7 @@ def _not_too_deep(what: str):
     try:
         yield
     except RecursionError:
-        raise FEValidationError("{} is nested too deeply".format(what)) from None
+        raise FEValidationError("{} is nested too deeply (or the caller's stack is too deep)".format(what)) from None
 
 
 def _select_bytes(bit: int, a: bytes, b: bytes) -> bytes:
@@ -498,7 +498,7 @@ def _parse_setup(record, error=FEValidationError, what: str = "the public parame
     except (ValueError, TypeError, FEValidationError) as exc:
         raise error("{}: {}".format(what, exc)) from None
     except RecursionError:
-        raise error("{}: nested too deeply".format(what)) from None
+        raise error("{}: nested too deeply (or the caller's stack is too deep)".format(what)) from None
     out = _Setup()
     out.record = {name: record[name] for name in BCFESetup.FIELDS}
     out.circuit, out.guarded, out.setup_digest, out.circuit_digest = param_circuit, guarded, setup_digest, circuit_digest
@@ -735,6 +735,7 @@ class BCFEGCRistretto255KeyGenerator(CircuitFEAbsKeyGenerator):
         os.makedirs(parent, exist_ok=True)
         directory = os.path.join(parent, setup_digest.hex())
         os.mkdir(directory, 0o700)
+        sync_directory(parent)                                           # the instance's entry survives a crash
         store = SlotStore(directory)
         store.check_directory()
         write_json_file(directory, SETUP_FILE, record, 0o644)
@@ -1220,29 +1221,41 @@ class BCFEGCRistretto255(CircuitFEAbsCrypto):
     (rebuilt on first use): the circuit of the public parameters' encoding,
     and the verdicts of the key checks of :meth:`decrypt` (by slot digest and
     a SHAKE-256 hash of the key's scalars and ``w``; at most
-    256 entries, no secret).
+    256 entries, no secret). Threads may share the object: a lock of the
+    object covers the lookup, eviction and insertion of a verdict (the check
+    itself runs outside it), and is renewed in a forked child
+    (:func:`pyfe4ai.core.forksafe.track`).
     """
 
     def __init__(self, config: dict, **kwargs) -> None:
         super().__init__(config, **kwargs)
         self._circuit_cache: dict = {}  # the circuit of the last encoding read (one entry)
-        self._key_checks: dict = {}     # key check tag -> verdict (bool)
+        self._key_checks: dict = {}     # key check tag -> verdict (bool), under _key_checks_lock
+        self._key_checks_lock = threading.Lock()
+        forksafe.track(self)  # a forked child: a new lock (another thread may hold this one at the fork)
         _parse_pp(self.keys["pp"], self._circuit_cache)
+
+    def _after_fork_in_child(self) -> None:
+        self._key_checks_lock = threading.Lock()
 
     def __getstate__(self) -> dict:
         state = dict(self.__dict__)
         state["_circuit_cache"], state["_key_checks"] = {}, {}
+        del state["_key_checks_lock"]
         return state
 
     def __setstate__(self, state: dict) -> None:
         self.__dict__.update(state)
         self._circuit_cache, self._key_checks = {}, {}
+        self._key_checks_lock = threading.Lock()
+        forksafe.track(self)
 
     def _check_key(self, slot: _Slot, scalars: bytes, w_packed: bytes, m: int) -> bool:
         """Whether the key's secret keys open its listed slot: ``s_j B = P[2j + w_j]`` for ``j < m`` and ``s_g B
         = P[2m]`` (cached per key, see the class documentation)."""
         tag = slot.digest + hashlib.shake_256(b"PYFE4AI-V06-BCFE-KEYCHECK" + scalars + w_packed).digest(32)
-        verdict = self._key_checks.get(tag)
+        with self._key_checks_lock:
+            verdict = self._key_checks.get(tag)
         if verdict is None:
             table = _chunks(slot.pks, _POINT)
             bits = unpack_bits(w_packed, m)
@@ -1253,9 +1266,10 @@ class BCFEGCRistretto255(CircuitFEAbsCrypto):
             except ValueError:  # a scalar not below the group order
                 actual = b""
             verdict = len(actual) == len(expected) and hmac.compare_digest(actual, expected)
-            if len(self._key_checks) >= _KEY_CHECKS_KEPT:
-                self._key_checks.pop(next(iter(self._key_checks)), None)
-            self._key_checks[tag] = verdict
+            with self._key_checks_lock:                                  # evict the oldest, keep the bound
+                while len(self._key_checks) >= _KEY_CHECKS_KEPT:
+                    del self._key_checks[next(iter(self._key_checks))]
+                self._key_checks[tag] = verdict
         return verdict
 
     def _pp(self) -> _PP:

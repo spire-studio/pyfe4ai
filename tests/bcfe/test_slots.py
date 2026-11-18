@@ -978,3 +978,8 @@ def test_write_json_file_replaces_atomically_and_leaves_no_temporary_file(tmp_pa
     assert slots.read_json_file(directory / "own.json", private=True) == {"v": 2}
     assert not [name for name in os.listdir(directory) if name.endswith(".tmp")]
     check_consistent(directory)
+
+
+def test_sync_directory_flushes_and_is_best_effort(tmp_path):
+    slots.sync_directory(tmp_path)                                   # a directory: flushed
+    slots.sync_directory(tmp_path / "missing")                      # cannot be opened: nothing raised

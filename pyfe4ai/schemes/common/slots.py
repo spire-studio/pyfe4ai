@@ -879,6 +879,14 @@ def read_json_file(path, private: bool) -> Optional[dict]:
     return data
 
 
+def sync_directory(directory) -> None:
+    """Flush *directory* to the device (``F_FULLFSYNC`` where the OS has it),
+    so that an entry just made in it -- a new file, a new subdirectory --
+    survives a crash; best effort where a directory cannot be opened or
+    synced, as for the store's own renames."""
+    _sync_dir(os.fspath(directory))
+
+
 def write_json_file(directory, name: str, data: dict, mode: int) -> None:
     """Replace ``directory/name`` with *data* (JSON) as the store writes its
     own files: a temporary file in the directory, flushed to the device

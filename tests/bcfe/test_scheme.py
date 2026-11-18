@@ -906,3 +906,68 @@ def test_records_nested_too_deeply_are_refused(tmp_path):
         BCFE({"keys": {"pp": bad}})
     with pytest.raises(FEValidationError):
         BCFE.key_holder(bad)
+
+
+# ---------------------------------------------------------------------------
+# code review 3: the key-check cache under threads, the durable instance directory (appended)
+
+
+def test_the_key_check_cache_is_safe_under_threads(tmp_path, monkeypatch):
+    import sys
+    import threading
+
+    kg, BCFE = make(tmp_path)
+    key = kg.issue_key(W_SMALL, requester="alice")
+    crypto = BCFE({"keys": {"pp": kg.get_public_parameters()}})
+    ct = crypto.encrypt({"x": [1, -1]})
+    monkeypatch.setattr(scheme, "_KEY_CHECKS_KEPT", 8)                # evictions at every few calls
+    rng = random.Random(3)
+    damaged = []
+    for _ in range(24):                                              # distinct tags, all refused
+        scalars = bytearray(garbled.from_b64(key["scalars"], "scalars"))
+        scalars[:32] = rng.randrange(1, 2 ** 252).to_bytes(32, "little")
+        damaged.append(dict(key, scalars=garbled.b64(bytes(scalars))))
+    errors, sizes = [], []
+    interval = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+
+    def run(seed):
+        local = random.Random(seed)
+        try:
+            for i in range(40):
+                if i % 4 == 0:
+                    assert crypto.decrypt(ct, key) == {"decision": 1}
+                else:
+                    try:
+                        crypto.decrypt(ct, local.choice(damaged))
+                        errors.append("a damaged key decrypted")
+                    except FESchemeError as exc:
+                        if str(exc) != scheme.DECRYPTION_FAILED:
+                            errors.append(repr(exc))
+                sizes.append(len(crypto._key_checks))
+        except Exception as exc:  # noqa: BLE001 -- anything else is the finding
+            errors.append(repr(exc))
+
+    try:
+        threads = [threading.Thread(target=run, args=(seed,)) for seed in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(120)
+    finally:
+        sys.setswitchinterval(interval)
+    assert errors == [] and max(sizes) <= 8 and len(crypto._key_checks) <= 8
+
+
+def test_setup_flushes_the_new_instance_directory_entry(tmp_path, monkeypatch):
+    flushed = []
+    real = scheme.sync_directory
+    monkeypatch.setattr(scheme, "sync_directory", lambda d: flushed.append(os.fspath(d)) or real(d))
+    kg, _ = make(tmp_path)
+    assert flushed == [os.path.dirname(kg.directory)]
+
+
+def test_too_deep_says_it_may_be_the_callers_stack():
+    with pytest.raises(FEValidationError, match=r"nested too deeply \(or the caller's stack is too deep\)"):
+        with scheme._not_too_deep("a record"):
+            raise RecursionError()
