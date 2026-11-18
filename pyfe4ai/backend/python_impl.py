@@ -318,3 +318,23 @@ class PythonBackend(Backend):
         from pyfe4ai.backend import native_impl
 
         return native_impl.bls12_381_kernels()
+
+    # -- garbled circuits (bcfe)
+
+    def gc_garble(self, circuit: bytes, mode: str, salt: bytes, x: bytes) -> dict:
+        import os
+
+        from pyfe4ai import backend as _b
+        from pyfe4ai.primitives import garbling
+
+        override = _b._random_override  # the tests' bytes, else one fresh seed from the OS (I1)
+        seed = os.urandom(garbling.SEED_BYTES) if override is None else override(garbling.SEED_BYTES)
+        if not isinstance(x, (bytes, bytearray, memoryview)):
+            raise TypeError("x must be the packed data bits (bytes), not {}".format(type(x).__name__))
+        return garbling.garble(circuit, mode, salt, x, seed)
+
+    def gc_evaluate(self, circuit: bytes, mode: str, salt: bytes, tables: bytes, decode: bytes, key_active: bytes,
+                    data_active: bytes) -> bytes:
+        from pyfe4ai.primitives import garbling
+
+        return garbling.evaluate(circuit, mode, salt, tables, decode, key_active, data_active)

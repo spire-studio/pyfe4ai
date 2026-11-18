@@ -482,3 +482,71 @@ class Backend(abc.ABC):
         """The BLS12-381 kernels (:class:`~pyfe4ai.backend.native_impl.Bls12381Kernels`),
         or ``None`` when the extension is not built: the pairing group has no
         Python implementation, so both backends return the extension's."""
+
+    # -- garbled circuits (bcfe) ---------------------------------------------------------
+
+    @abc.abstractmethod
+    def gc_garble(self, circuit: bytes, mode: str, salt: bytes, x: bytes) -> dict:
+        """Half-gates garbling (ZRE15 Fig. 2) of a ``CIRC v1`` circuit for the
+        data bits *x*: :func:`~pyfe4ai.primitives.garbling.garble` with a
+        fresh seed.
+
+        Args:
+            circuit: The ``CIRC v1`` encoding (usually of ``guard(C)``).
+            mode: ``"hardwired"`` (data wires known to the garbler) or ``"labels"``.
+            salt: The 56-byte instance salt ``pp_digest || ct_nonce ||
+                u64(slot_id)`` of the gate hash, opaque here.
+            x: The ``n`` data bits, packed least significant bit first.
+
+        Returns:
+            ``{"delta": 16 B, "key0": 16 B x m (the zero labels of the key
+            wires, in wire order), "data_active": 16 B x n (mode ``"labels"``)
+            or b"", "tables": 16 B x table entries, "decode": the n_out
+            decoding bits packed}``, all bytes.
+
+        Randomness: one 32-byte seed per call, the whole randomness of the
+        garbling (expanded by :func:`~pyfe4ai.primitives.garbling.expand_seed`):
+        from the operating system (:func:`os.urandom` in the reference, the
+        extension's OS source natively), or ``override(32)`` when a test set
+        ``pyfe4ai.backend._random_override`` -- read once, before the inputs
+        are checked, by both implementations (:func:`~pyfe4ai.backend.native_impl.random_input`
+        natively). There is no seed parameter: a fixed seed is for the tests
+        only (``_seed_override`` does not apply). The same seed gives the
+        same bytes in both implementations.
+
+        Secrets: *x*, the seed and the returned ``delta``, ``key0`` and
+        ``data_active``; the extension wipes its copies of the seed, ``Delta``
+        and the labels. ``delta`` is returned for the known-answer tests;
+        the encryption path of the schemes keeps it inside the extension.
+
+        Raises:
+            TypeError: For inputs that are not bytes.
+            ValueError: For a malformed circuit
+                (:func:`~pyfe4ai.primitives.garbling.parse_circuit`), an
+                unknown mode, a salt of another length than 56 bytes, *x*
+                not ``ceil(n / 8)`` bytes or with nonzero padding bits, an
+                output wire that is not a labelled wire in *mode*, or test
+                bytes of another length than 32.
+        """
+
+    @abc.abstractmethod
+    def gc_evaluate(self, circuit: bytes, mode: str, salt: bytes, tables: bytes, decode: bytes, key_active: bytes,
+                    data_active: bytes) -> bytes:
+        """Evaluate a garbling of :meth:`~pyfe4ai.backend.interface.Backend.gc_garble`:
+        :func:`~pyfe4ai.primitives.garbling.evaluate`. *key_active* holds
+        one 16-byte active label per key wire (``m``), *data_active* one per
+        data wire (``n``) in mode ``"labels"`` and is ``b""`` in mode
+        ``"hardwired"``. Returns the ``n_out`` output bits, packed least
+        significant bit first. Deterministic.
+
+        Secrets: the active key labels (they determine ``w``); the extension
+        wipes its copies.
+
+        Raises:
+            TypeError: For inputs that are not bytes.
+            ValueError: For a malformed circuit, an unknown mode, a salt of
+                another length than 56 bytes, an output wire that is not a
+                labelled wire, another number of table entries than the
+                circuit has, another number of key or data labels, or
+                decoding bits that are not ``n_out`` packed bits.
+        """
