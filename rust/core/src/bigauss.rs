@@ -28,7 +28,7 @@
 //!
 //! Not constant-time (neither is the reference).
 
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicPtr, Ordering};
 
 /// Bits per uniform handled: getrandbits(p) for p <= MAX_PREC.
 pub const MAX_PREC: u32 = 64 * IN as u32;
@@ -410,9 +410,36 @@ fn build_tables() -> Tables {
     Tables { ln2: store(&ln2), half_pi: store(&pi.shr(1)), recip, l1, l2, cos, sin, inv, inv_fact }
 }
 
+/// The tables, built on first use without any wait: a thread that finds them missing builds its own
+/// copy (about 2.6 ms) and stores it with one compare-and-swap; a later loser drops its copy and uses
+/// the stored one. A `OnceLock` would make the late thread wait for the builder, and a wait parks the
+/// thread, which a forked child on macOS does not survive once that thread parked in the parent (see
+/// `crate::thread_limit`). The stored tables are never freed (they live as long as the process).
 fn tables() -> &'static Tables {
-    static TABLES: OnceLock<Tables> = OnceLock::new();
-    TABLES.get_or_init(build_tables)
+    static TABLES: AtomicPtr<Tables> = AtomicPtr::new(std::ptr::null_mut());
+    let stored = TABLES.load(Ordering::Acquire);
+    if !stored.is_null() {
+        // SAFETY: a non-null pointer is a leaked Box stored once below and never freed
+        return unsafe { &*stored };
+    }
+    let fresh = Box::into_raw(Box::new(build_tables()));
+    match TABLES.compare_exchange(std::ptr::null_mut(), fresh, Ordering::AcqRel, Ordering::Acquire) {
+        // SAFETY: `fresh` is now the stored pointer, leaked for the life of the process
+        Ok(_) => unsafe { &*fresh },
+        Err(winner) => {
+            // SAFETY: `fresh` was never shared; `winner` is the stored, never freed pointer
+            unsafe {
+                drop(Box::from_raw(fresh));
+                &*winner
+            }
+        }
+    }
+}
+
+/// Build the tables now (once per process), so that no thread builds them later: the native module
+/// calls this at import, before any fork.
+pub fn warm() {
+    let _ = tables();
 }
 
 // ---------------------------------------------------------------- sampler

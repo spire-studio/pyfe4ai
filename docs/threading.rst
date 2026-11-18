@@ -185,6 +185,10 @@ one thread, whatever :func:`~pyfe4ai.backend.set_threads` or
   in the child does not lift it. As a second guard, a multi-threaded call
   joins each of its worker threads (also when one of them panics) rather
   than waiting for them, so the calling thread does not park there either.
+  The tables the native code builds on first use (the Gaussian sampler's,
+  the pairing's generator and hash key) are built when the extension is
+  imported, and the sampler's tables without any wait, so no thread waits
+  for another to build them, in the parent or in a child.
 * *Who is not affected:* a child of a process that never ran several
   threads keeps them (and, once it runs them, its own children are
   limited); a process started with ``spawn``, ``forkserver`` or ``exec``
@@ -193,10 +197,13 @@ one thread, whatever :func:`~pyfe4ai.backend.set_threads` or
   servers and fork-based worker pools that want several native threads per
   worker should start their workers with ``spawn`` or ``forkserver``, or
   fork before the parent runs any multi-threaded native call.
-  ``pyfe4ai._rust_native.fork_thread_limit(n)`` returns the thread count a
-  call asking for ``n`` gets in the current process.
-* Linux waits on a futex and was not seen to crash; the rule applies there
-  too, so the behaviour is the same on every platform.
+  :func:`pyfe4ai.backend.effective_threads` returns the thread count a
+  native call uses in the current process, and
+  :func:`pyfe4ai.backend_info` reports it as ``"threads"``.
+* *Linux:* the rule applies there too, so fork-based workers on Linux also
+  run native calls on one thread. The crash itself is specific to macOS
+  (Linux waits on a futex, not libdispatch); the library has not been run
+  natively on Linux with this test, so that is expected, not verified.
 
 Nothing else changes in the child: it has a copy of every object of the
 parent, keys and caches included, and the public tables. The native code

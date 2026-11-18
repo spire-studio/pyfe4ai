@@ -67,6 +67,10 @@ fn fork_thread_limit(threads: usize) -> usize {
 // comment: #[pymodule] would make it the module's __doc__.)
 #[pymodule]
 fn _rust_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // the lazy statics, built once here (import: one thread, before any fork), so that no thread waits
+    // for another to build one later; see pyfe4ai_core::thread_limit and bigauss::warm
+    pyfe4ai_core::bigauss::warm();
+    pairing::warm_statics(m.py())?;
     m.add_class::<ring::RingCtx>()?;
     m.add_class::<mife::EncKeyObj>()?;
     m.add_class::<mcfe::PrecomputedObj>()?;

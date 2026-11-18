@@ -110,6 +110,23 @@ fn elem(v: Val) -> Elem {
     Elem { v }
 }
 
+/// The per-process key of [`gt_key`].
+fn gt_hash_key() -> &'static RandomState {
+    static KEY: OnceLock<RandomState> = OnceLock::new();
+    KEY.get_or_init(RandomState::new)
+}
+
+/// Build the lazy statics of this module now: the module calls this at import, with the GIL held and
+/// before any fork, so no thread ever waits for another to build one (a wait parks the thread, which
+/// a forked child on macOS does not survive once that thread parked in the parent; see
+/// `pyfe4ai_core::thread_limit`).
+pub(crate) fn warm_statics(py: Python<'_>) -> PyResult<()> {
+    cached_order(py)?;
+    gt_generator();
+    gt_hash_key();
+    Ok(())
+}
+
 /// e(g1, g2) for the fixed generators.
 fn gt_generator() -> Gt {
     static GT_GEN: OnceLock<Gt> = OnceLock::new();
@@ -549,8 +566,7 @@ const GT_ENTRY: usize = std::mem::size_of::<(u128, u64)>();
 /// among the at most 2^49 lookups of a dlog has probability below 2^-79 and
 /// cannot be aimed at, the key being unknown.
 fn gt_key(t: &Gt) -> u128 {
-    static KEY: OnceLock<RandomState> = OnceLock::new();
-    let key = KEY.get_or_init(RandomState::new);
+    let key = gt_hash_key();
     let half = |domain: u8| {
         let mut h = key.build_hasher();
         domain.hash(&mut h);
