@@ -848,3 +848,39 @@ class NativeBackend(PythonBackend):
 
     def bls12_381(self):
         return bls12_381_kernels()
+
+    # -- garbled circuits (bcfe)
+
+    @staticmethod
+    def _gc_mode(mode) -> int:
+        """The extension's code of a garbling mode: 0 ``"hardwired"``, 1 ``"labels"``."""
+        if isinstance(mode, str) and mode in ("hardwired", "labels"):
+            return 0 if mode == "hardwired" else 1
+        raise ValueError("unknown garbling mode {!r}; choose one of hardwired, labels".format(mode))
+
+    @staticmethod
+    def _gc_bytes(data, what: str) -> bytes:
+        """*data* as bytes (the extension takes ``bytes`` only); ``TypeError``
+        for what is not bytes-like, as in the reference."""
+        if isinstance(data, bytes):
+            return data
+        if isinstance(data, (bytearray, memoryview)):
+            return bytes(data)
+        raise TypeError("{} must be bytes, not {}".format(what, type(data).__name__))
+
+    def gc_garble(self, circuit: bytes, mode: str, salt: bytes, x: bytes) -> dict:
+        # the seed first, before the inputs are checked (as the reference reads it): the
+        # tests' 32 bytes, or None and the extension reads the OS source (I1)
+        seed = random_input(32)
+        args = (self._gc_bytes(circuit, "circuit"), self._gc_mode(mode), self._gc_bytes(salt, "salt"),
+                self._gc_bytes(x, "x"))
+        delta, key0, data_active, tables, decode = _b._ext.gc_garble(*args, seed=seed)
+        return {"delta": delta, "key0": key0, "data_active": data_active, "tables": tables, "decode": decode}
+
+    def gc_evaluate(self, circuit: bytes, mode: str, salt: bytes, tables: bytes, decode: bytes, key_active: bytes,
+                    data_active: bytes) -> bytes:
+        return _b._ext.gc_evaluate(
+            self._gc_bytes(circuit, "circuit"), self._gc_mode(mode), self._gc_bytes(salt, "salt"),
+            self._gc_bytes(tables, "tables"), self._gc_bytes(decode, "decode"),
+            self._gc_bytes(key_active, "key_active"), self._gc_bytes(data_active, "data_active"),
+        )

@@ -20,6 +20,7 @@ pub mod shamir;
 pub mod sha256;
 pub mod sha512;
 pub mod threshold;
+pub mod garble;
 
 pub use arith::{Modulus, Word, U256};
 pub use ntt::{AnyRing, Ring};

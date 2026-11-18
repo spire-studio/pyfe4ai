@@ -21,6 +21,8 @@
 //! * shared by the others: `drbg` (the per-call DRBG and OS randomness),
 //!   `values` (Python values to and from words mod q) and `secret` (copies of
 //!   secret inputs and their wipes).
+//! * `bcfe`: the garbled circuits of the bounded-collusion FE schemes
+//!   (half-gates garbling and evaluation of the core's `garble` module).
 
 use pyfe4ai_core::osrand;
 use pyo3::prelude::*;
@@ -41,6 +43,7 @@ mod sampling;
 mod secret;
 mod threshold;
 mod values;
+mod bcfe;
 
 #[pyfunction]
 fn build_info(py: Python<'_>) -> PyResult<Py<PyAny>> {
@@ -100,5 +103,6 @@ fn _rust_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     rns::register(m)?;
     replicated::register(m)?;
     threshold::register(m)?;
+    bcfe::register(m)?;
     Ok(())
 }
