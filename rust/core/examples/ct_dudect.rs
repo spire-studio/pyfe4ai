@@ -1,7 +1,10 @@
 //! Timing-leak tests of the kernels in the style of dudect (Reparaz, Balasch, Verbauwhede, DATE 2017):
 //! two classes of secret inputs, interleaved at random, one timed batch of calls per measurement, and Welch's
 //! t-test on the raw times, on times cropped at several percentiles and on the centred squares (second order).
-//! |t| > 4.5 counts as a leak; a run that stays below says only that this many measurements showed none.
+//! |t| > 4.5 is flagged as a leak; a run that stays below says only that this many measurements showed none. On a
+//! machine that scales its frequency with power, fixed vs random inputs differ by a tiny amount for any code, so
+//! with enough batches every target is flagged: judge a target by its effect (the difference of the means, its
+//! standard error `se`, Cohen's `d`) against that of a constant-time control (`shake256`) at the same batch count.
 //!
 //!     cargo run --release --example ct_dudect -- list
 //!     cargo run --release --example ct_dudect -- <target> <batches> [calls per batch]
@@ -436,9 +439,17 @@ fn main() {
         if done % report == 0 || done == batches {
             let max_crop = cropped.iter().map(|t| t.t().abs()).fold(0.0, f64::max);
             let worst = raw.t().abs().max(max_crop).max(second.t().abs());
+            // effect size: the difference of the means with its standard error, and Cohen's d (difference over
+            // the pooled standard deviation); judge a target by these against the constant-time control's
+            let (a, c) = (raw.0[0], raw.0[1]);
+            let se = (a.var() / a.n + c.var() / c.n).sqrt();
+            let pooled = (((a.n - 1.0) * a.var() + (c.n - 1.0) * c.var()) / (a.n + c.n - 2.0)).sqrt();
+            let diff = a.mean - c.mean;
             println!(
-                "{:>10} batches  mean {:>10.1} / {:>10.1} ns  t_raw {:>8.2}  max|t_crop| {:>8.2}  t_2nd {:>8.2}  {}",
-                done, raw.0[0].mean, raw.0[1].mean, raw.t(), max_crop, second.t(),
+                "{:>10} batches  mean {:>10.1} / {:>10.1} ns  t_raw {:>8.2}  max|t_crop| {:>8.2}  t_2nd {:>8.2}  \
+                 diff {:+.3} ns  se {:.3} ns  d {:+.2e}  {}",
+                done, a.mean, c.mean, raw.t(), max_crop, second.t(), diff, se,
+                if pooled > 0.0 { diff / pooled } else { 0.0 },
                 if worst > 4.5 { "LEAK (|t| > 4.5)" } else { "no leak detected yet" }
             );
         }
