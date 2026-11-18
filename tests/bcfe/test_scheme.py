@@ -900,7 +900,9 @@ def test_records_nested_too_deeply_are_refused(tmp_path):
         node = node["a"]
     bad = copy.deepcopy(pp)
     bad["circuit"]["params"] = deep
-    with pytest.raises(FEValidationError, match="nested too deeply|params"):
+    # refused either way: as too deep where the interpreter's recursion limit is reached while parsing, or (Python
+    # 3.12+, whose limits differ) by the pp digest check
+    with pytest.raises(FEValidationError, match="nested too deeply|params|pp_digest"):
         BCFE({"keys": {"pp": bad}})
     with pytest.raises(FEValidationError):
         BCFE.key_holder(bad)
