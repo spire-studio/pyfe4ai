@@ -52,3 +52,6 @@ COMMANDS = {
     "fullysec-packing": Command("fullysec_packing", "bench_fullysec_packing.py",
                                 "elementwise vs packed layout of sife/fullysec_ring_lwe"),
 }
+
+# added in 0.6 (no former script)
+COMMANDS["bcfe"] = Command("bcfe", "", "sizes and times of one slot of bcfe/gc_ristretto255 per library circuit")

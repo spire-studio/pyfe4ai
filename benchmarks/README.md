@@ -36,6 +36,7 @@ helpers in `benchmarks/_common.py`).
 | `replicated-sharing` | `bench_replicated_sharing.py` | the replicated key sharing of the LWE threshold layers (`replicated`, `replicated-seeded`): dealing, a server's piece sums and its partial decryption with a cold cache, one JSON line per configuration (positional arguments `KIND S T SHARING [REPS]`) |
 | `offline-potential` | `bench_offline_potential.py` | per-element split of the DDH and DCR MCFE into label-dependent offline work and the online rest |
 | `fullysec-packing` | `bench_fullysec_packing.py` | the elementwise and packed layouts of `sife/fullysec_ring_lwe` |
+| `bcfe` | — (0.6) | one slot of `bcfe/gc_ristretto255` per library circuit and data-wire mode: gate statistics of `guard(C)`, public-key table and ciphertext-component sizes, median time of issuing (h1), encrypting and decrypting at the given thread counts; one JSON line each |
 
 The `fh-family` and `quadratic` commands, and `ndarray --group
 fh|quadratic|all`, need a pairing backend: the Rust extension for BLS12-381
