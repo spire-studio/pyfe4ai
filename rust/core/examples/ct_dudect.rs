@@ -167,6 +167,42 @@ impl Target for ReduceI128 {
     }
 }
 
+/// S1 (1), seeded: the input of both classes is drawn by the same code into the same buffer, from a seed that is
+/// the same every time for a fixed class and fresh for a random one; no class reads another buffer (the copies of
+/// the other targets leave class-dependent cache and prefetcher state, which the reduce_i128 runs on studio showed
+/// as effects of either sign). `seeded_fixed_vs_signed`: class 0 fixed non-negative, class 1 random signed (the
+/// reduce_i128 contrast); `seeded_pos_vs_signed`: random non-negative vs random signed; `seeded_null`: random signed
+/// in both (A/A).
+struct ReduceSeeded {
+    m: Modulus<u64>,
+    v: Vec<i64>,
+    fixed_seed: u64,
+    class0_fixed: bool,
+    class0_signed: bool,
+    class1_signed: bool,
+}
+impl Target for ReduceSeeded {
+    fn prepare(&mut self, class: usize, rng: &mut Rng) {
+        let fresh = rng.next() | 1;
+        let mut state = if class == 0 && self.class0_fixed { self.fixed_seed } else { fresh };
+        let signed = if class == 0 { self.class0_signed } else { self.class1_signed };
+        let (range, offset) = if signed { (1u64 << 20, 1i64 << 19) } else { (1u64 << 19, 0) };
+        for x in self.v.iter_mut() {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            *x = (state % range) as i64 - offset;
+        }
+    }
+    fn run(&mut self) {
+        let mut acc = 0u64;
+        for &x in black_box(&self.v).iter() {
+            acc = acc.wrapping_add(self.m.reduce_i128(x as i128));
+        }
+        black_box(acc);
+    }
+}
+
 /// S1 (2): reduce_u128 of values below q (fixed) vs random 100-bit values (mostly the `%` path).
 struct ReduceU128 {
     scratch: Vec<u128>,
@@ -325,6 +361,9 @@ const TARGETS: &[(&str, &str, usize)] = &[
     ("reduce_i128_pos", "S1 (1), no signs: fixed vs random non-negative values", 4096),
     ("reduce_i128_mirror", "S1 (1), signs only: fixed non-negative values vs the same values negated", 4096),
     ("reduce_i128_mixed", "S1 (1), both random: non-negative values vs signed ones", 4096),
+    ("seeded_fixed_vs_signed", "S1 (1), one buffer, seeded: fixed non-negative vs random signed", 4096),
+    ("seeded_pos_vs_signed", "S1 (1), one buffer, seeded: random non-negative vs random signed", 4096),
+    ("seeded_null", "S1 (1), one buffer, seeded: random signed in both classes (A/A)", 4096),
     ("reduce_u128", "S1 (2): reduction of 128-bit values", 1024),
     ("ntt_fwd", "S2: forward NTT, n = 1024, 60-bit q", 1),
     ("rlwe_encrypt", "S3: Ring-LWE encryption of one chunk, the plaintext secret", 1),
@@ -350,6 +389,14 @@ fn make(name: &str, calls: usize, rng: &mut Rng) -> Box<dyn Target> {
             Box::new(ReduceI128 { signed: name != "reduce_i128_pos", mirror, mixed, m, v: fixed.clone(),
                                   scratch: fixed.clone(), fixed })
         }
+        "seeded_fixed_vs_signed" | "seeded_pos_vs_signed" | "seeded_null" => Box::new(ReduceSeeded {
+            m,
+            v: vec![0; calls],
+            fixed_seed: rng.next() | 1,
+            class0_fixed: name == "seeded_fixed_vs_signed",
+            class0_signed: name == "seeded_null",
+            class1_signed: true,
+        }),
         "reduce_u128" => {
             let fixed: Vec<u128> = (0..calls).map(|_| (rng.next() % Q60) as u128).collect();
             Box::new(ReduceU128 { m, v: fixed.clone(), scratch: fixed.clone(), fixed })
