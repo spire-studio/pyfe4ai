@@ -365,7 +365,9 @@ an experimental research prototype, not recommended for production use.
     platform: fork-based workers on Linux lose their native threads too.
     Pre-fork servers and fork-based pools that want native threads per worker
     should use `spawn` or `forkserver`. Importing the extension now builds the
-    tables: the import takes about 3.7 ms in all on an Apple M-series Mac.
+    tables: loading the extension module itself (after the `pyfe4ai` package,
+    which takes far longer) takes about 3.7 ms on an Apple M-series Mac, most
+    of it these tables.
   - *Unchanged:* results; no randomness is cached across calls.
   - The crash is specific to macOS (Linux waits on a futex, not
     libdispatch); this was not run natively on Linux, so that is expected,
