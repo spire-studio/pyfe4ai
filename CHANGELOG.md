@@ -329,6 +329,22 @@ an experimental research prototype, not recommended for production use.
 
 ### Fixed
 
+- **Forked children no longer crash on macOS after multi-threaded native
+  calls (affects 0.4.0).** The native core's `parallel_for` waited for its
+  worker threads in `std::thread::scope`, which parks the calling thread when
+  the workers finish after it. On macOS the Rust standard library parks on a
+  libdispatch semaphore whose Mach port a forked child does not inherit, so in
+  a child forked from a process that had run any kernel with more than one
+  thread (`set_threads`, `PYFE4AI_THREADS`), the next such wait aborted the
+  child (SIGTRAP, "BUG IN CLIENT OF LIBDISPATCH: Use-after-free of
+  dispatch_semaphore_t"). This hits `multiprocessing` with the `fork` start
+  method and any library that forks workers. `parallel_for` now delegates to
+  `parallel_for_joined`: the caller joins every worker it spawned and never
+  parks. Results and the work distribution are unchanged. Linux waits on a
+  futex and was not seen to crash. Regression test:
+  `tests/native/test_native_fork.py`. In 0.4.0, run multi-threaded native
+  kernels only in processes that do not fork afterwards, use the `spawn` or
+  `forkserver` start method, or keep one thread.
 - **A refused key no longer ties the label of a round in the ML adapter.**
   `aggregate_gradients` and `prepare_aggregation` tied the label to the
   weights of a call before they asked the key generator for the key, so a
