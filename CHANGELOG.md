@@ -330,21 +330,38 @@ an experimental research prototype, not recommended for production use.
 ### Fixed
 
 - **Forked children no longer crash on macOS after multi-threaded native
-  calls (affects 0.4.0).** The native core's `parallel_for` waited for its
-  worker threads in `std::thread::scope`, which parks the calling thread when
-  the workers finish after it. On macOS the Rust standard library parks on a
-  libdispatch semaphore whose Mach port a forked child does not inherit, so in
-  a child forked from a process that had run any kernel with more than one
-  thread (`set_threads`, `PYFE4AI_THREADS`), the next such wait aborted the
-  child (SIGTRAP, "BUG IN CLIENT OF LIBDISPATCH: Use-after-free of
-  dispatch_semaphore_t"). This hits `multiprocessing` with the `fork` start
-  method and any library that forks workers. `parallel_for` now delegates to
-  `parallel_for_joined`: the caller joins every worker it spawned and never
-  parks. Results and the work distribution are unchanged. Linux waits on a
-  futex and was not seen to crash. Regression test:
-  `tests/native/test_native_fork.py`. In 0.4.0, run multi-threaded native
-  kernels only in processes that do not fork afterwards, use the `spawn` or
-  `forkserver` start method, or keep one thread.
+  calls (affects 0.4.0).**
+  - *The crash:* the native core's `parallel_for` waited for its worker
+    threads in `std::thread::scope`, which parks the calling thread when the
+    workers finish after it. On macOS the Rust standard library parks on a
+    libdispatch semaphore, and libdispatch refuses to work in the child of a
+    fork from a multi-threaded process. So in a child forked from a process
+    that had run any kernel with more than one thread (`set_threads`,
+    `PYFE4AI_THREADS`), the next multi-threaded native call killed the child
+    (SIGTRAP, "BUG IN CLIENT OF LIBDISPATCH: Use-after-free of
+    dispatch_semaphore_t"). Every kernel was affected (MCFE, MIFE, sampling,
+    Ring-LWE, dense LWE, pairing), timing-dependent. This hits
+    `multiprocessing` with the `fork` start method and any library that forks
+    workers.
+  - *The fix:* in a process forked from one that has run a native kernel with
+    several threads, native calls now run with one thread. The native core
+    records the first process that runs several threads (by process id, with
+    no wait), so the rule covers direct `pyfe4ai._rust_native` calls and forks
+    not made through `os.fork`, and a later `set_threads(n)` in the child does
+    not lift it. A child of a process that never ran several threads keeps
+    them. `pyfe4ai._rust_native.fork_thread_limit(n)` reports the limit.
+  - *Cost:* native calls in a forked child are single-threaded. Pre-fork
+    servers and fork-based pools that want native threads per worker should
+    use `spawn` or `forkserver`.
+  - *Unchanged:* results; no randomness is cached across calls.
+  - Linux waits on a futex and was not seen to crash; the rule applies there
+    too.
+  - Regression test: `tests/native/test_native_fork.py`; it fails with SIGTRAP
+    on macOS when the fix is reverted. See `docs/threading.rst`, "Processes
+    and fork".
+  - In 0.4.0, run multi-threaded native kernels only in processes that do not
+    fork afterwards, use the `spawn` or `forkserver` start method, or keep one
+    thread.
 - **A refused key no longer ties the label of a round in the ML adapter.**
   `aggregate_gradients` and `prepare_aggregation` tied the label to the
   weights of a call before they asked the key generator for the key, so a

@@ -24,30 +24,51 @@ pub mod threshold;
 pub use arith::{Modulus, Word, U256};
 pub use ntt::{AnyRing, Ring};
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
-/// Run f(0) .. f(count - 1) on up to `threads` scoped threads (the caller's included).
+/// The process that first ran [`parallel_for`] with several threads (0 until one did).
+static THREADED_PID: AtomicU32 = AtomicU32::new(0);
+
+/// The number of threads [`parallel_for`] uses for a request of `threads`: `threads`, or 1 in a
+/// process forked (by any means) from a process that had already run it with several threads.
 ///
-/// Delegates to [`parallel_for_joined`]: the caller joins its workers and never parks, so a process
-/// may fork after a multi-threaded call and run kernels with several threads in the child (macOS:
-/// parking there aborted the child, see [`parallel_for_joined`]).
-pub fn parallel_for<F: Fn(usize) + Sync>(count: usize, threads: usize, f: F) {
-    parallel_for_joined(count, threads, f)
+/// On macOS the standard library parks a waiting thread on a libdispatch semaphore, and libdispatch
+/// refuses to work in the child of a fork from a multi-threaded process: the next park in the child
+/// aborts it (SIGTRAP, "BUG IN CLIENT OF LIBDISPATCH: Use-after-free of dispatch_semaphore_t",
+/// "crashed on child side of fork pre-exec"). [`parallel_for`] parks its caller while its workers
+/// finish, and other waits of the standard library (`Once`, `OnceLock` under contention) park too, so
+/// a forked child starts no worker threads at all. The first process to run several threads records
+/// its pid here with one compare-and-swap (no wait); a process whose pid differs is a fork of it (or
+/// of a fork of it), so a later thread setting there cannot re-enable threads, whatever path the call
+/// took (the Python backend or `_rust_native` directly) and whoever forked (`os.fork`, a C extension).
+/// A process that never ran several threads records nothing, and its children may use threads.
+/// No randomness or other state is cached for this: workers exit before [`parallel_for`] returns.
+pub fn thread_limit(threads: usize) -> usize {
+    if threads <= 1 {
+        return threads;
+    }
+    let me = std::process::id();
+    match THREADED_PID.compare_exchange(0, me, Ordering::AcqRel, Ordering::Acquire) {
+        Ok(_) => threads,
+        Err(owner) if owner == me => threads,
+        Err(_) => 1,
+    }
 }
 
-/// [`parallel_for`] with the caller joining every worker it spawned instead
-/// of waiting for them in `std::thread::scope`, which parks it until they are
-/// done. On macOS the standard library parks a thread on a dispatch semaphore
-/// whose Mach port is created at the first slow wait; a forked child inherits
-/// the semaphore but not the port, and the next park of the forking thread in
-/// the child aborts the process (SIGTRAP, "BUG IN CLIENT OF LIBDISPATCH:
-/// Use-after-free of dispatch_semaphore_t"). [`parallel_for`] parks its caller
-/// whenever the workers finish after it does; this function never parks it
-/// (`JoinHandle::join` waits in `pthread_join`), so a process may fork after
-/// it and run it again in the child with several threads. The same work
-/// distribution and spawn-failure fallback as [`parallel_for`].
-pub fn parallel_for_joined<F: Fn(usize) + Sync>(count: usize, threads: usize, f: F) {
-    if threads <= 1 || count <= 1 {
+/// What [`thread_limit`] would return for `threads`, without recording this process.
+pub fn thread_limit_peek(threads: usize) -> usize {
+    let owner = THREADED_PID.load(Ordering::Acquire);
+    if threads > 1 && owner != 0 && owner != std::process::id() {
+        1
+    } else {
+        threads
+    }
+}
+
+/// Run f(0) .. f(count - 1) on up to `threads` scoped threads (the caller's included); with one
+/// thread only in a forked child of a process that ran several (see [`thread_limit`]).
+pub fn parallel_for<F: Fn(usize) + Sync>(count: usize, threads: usize, f: F) {
+    if threads <= 1 || count <= 1 || thread_limit(threads) <= 1 {
         (0..count).for_each(&f);
         return;
     }
@@ -60,24 +81,12 @@ pub fn parallel_for_joined<F: Fn(usize) + Sync>(count: usize, threads: usize, f:
         f(i);
     };
     std::thread::scope(|s| {
-        let mut workers = Vec::with_capacity(threads.min(count) - 1);
         for _ in 1..threads.min(count) {
-            match std::thread::Builder::new().spawn_scoped(s, &work) {
-                Ok(handle) => workers.push(handle),
-                Err(_) => break, // fewer threads; this one finishes the work
+            if std::thread::Builder::new().spawn_scoped(s, &work).is_err() {
+                break; // fewer threads; this one finishes the work
             }
         }
         work();
-        // a joined worker is accounted for here, so the scope has nothing left to park for
-        let mut panic = None;
-        for handle in workers {
-            if let Err(payload) = handle.join() {
-                panic.get_or_insert(payload);
-            }
-        }
-        if let Some(payload) = panic {
-            std::panic::resume_unwind(payload);
-        }
     });
 }
 
@@ -86,10 +95,10 @@ mod parallel_tests {
     use super::*;
 
     #[test]
-    fn joined_parallel_for_runs_every_index_once() {
+    fn parallel_for_runs_every_index_once() {
         for (count, threads) in [(0usize, 4usize), (1, 4), (7, 1), (100, 3), (1000, 8), (5, 64)] {
             let seen: Vec<AtomicUsize> = (0..count).map(|_| AtomicUsize::new(0)).collect();
-            parallel_for_joined(count, threads, |i| {
+            parallel_for(count, threads, |i| {
                 seen[i].fetch_add(1, Ordering::Relaxed);
             });
             assert!(seen.iter().all(|c| c.load(Ordering::Relaxed) == 1), "{count} {threads}");
@@ -97,8 +106,11 @@ mod parallel_tests {
     }
 
     #[test]
-    fn a_worker_panic_reaches_the_caller() {
-        let r = std::panic::catch_unwind(|| parallel_for_joined(64, 4, |i| assert!(i != 40, "index 40")));
-        assert!(r.is_err());
+    fn the_process_that_runs_threads_keeps_them() {
+        parallel_for(64, 4, |_| {});
+        assert_eq!(thread_limit_peek(4), 4);
+        assert_eq!(thread_limit(4), 4);
+        assert_eq!(thread_limit(1), 1);
+        assert_eq!(THREADED_PID.load(Ordering::Acquire), std::process::id());
     }
 }
