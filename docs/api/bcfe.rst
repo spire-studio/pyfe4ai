@@ -198,6 +198,35 @@ bytes; the JSON records carry them in base64, a third more:
      - 52,256
      - 452,017
 
+.. list-table:: Median times of one slot (milliseconds; Apple M4 Max, native backend, ``benchmarks/run.py bcfe --runs 7``)
+   :header-rows: 1
+   :widths: 34 14 14 14 12
+
+   * - Circuit, ``data_wires``
+     - Threads
+     - Issue (h1)
+     - Encrypt
+     - Decrypt
+   * - 16-bit, ``"hardwired"``
+     - 1 / 4
+     - 23.9 / 7.3
+     - 83.4 / 35.9
+     - 21.2 / 12.6
+   * - 16-bit, ``"labels"``
+     - 1 / 4
+     - 24.0 / 7.3
+     - 91.4 / 43.8
+     - 25.0 / 16.5
+   * - 8-bit, ``"hardwired"``
+     - 1 / 4
+     - 12.0 / 3.7
+     - 37.6 / 13.7
+     - 8.7 / 4.4
+
+Encryption is dominated by the label encryption (one variable-base
+multiplication per label), not by the garbling; it scales with the number of
+slots a ciphertext is encrypted to.
+
 A ciphertext to ``k`` slots is ``k`` components and a 16-byte nonce, and a
 key ``32 (m + 1)`` bytes of scalars. ``data_wires = "hardwired"`` (the
 default) folds the data bits into the garbled tables; ``"labels"`` is SS10's
