@@ -288,6 +288,20 @@ class SIFERingLWE(IPFEAbsCrypto):
         return cached[2]
 
     def encrypt(self, matrix_pt: list[list[int]]) -> dict:
+        """Encrypt up to ``ring_n`` vectors at once (BMMS21 Remark 1): a matrix
+        of ``eta`` rows, one per coordinate, whose ``k`` columns are the
+        vectors.
+
+        Returns:
+            The ciphertext (``SIFERingLWECiphertext``: ``ct0``, ``ct1`` and the
+            number of vectors ``k``).
+
+        Raises:
+            FEKeyError: If the public parameters or the encryption key are missing.
+            FEValidationError: If the matrix is not a list of ``eta`` rows of
+                ``k`` integers (``1 <= k <= ring_n``), or an entry exceeds
+                ``bound_x``.
+        """
         if not self._has_public_parameters():
             raise FEKeyError("no public parameters provided for encryption")
         if not self._has_private_keys():

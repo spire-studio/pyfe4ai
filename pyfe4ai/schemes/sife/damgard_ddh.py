@@ -156,6 +156,17 @@ class SIFEDamgard(IPFEAbsCrypto):
         )
 
     def encrypt(self, lst_pt: list) -> dict:
+        """Encrypt a vector of ``eta`` integers (ALS16 DDH) with the encryption
+        key (the public key ``pk``).
+
+        Returns:
+            The ciphertext (``DamgardCiphertext``: ``c``, ``d`` and ``e``).
+
+        Raises:
+            FEKeyError: If the public parameters or the encryption key are missing.
+            FEValidationError: If the vector has another length or an entry
+                exceeds ``bound``.
+        """
         if not self._has_public_parameters():
             raise FEKeyError("no public parameters provided for encryption")
         if not self._has_private_keys():

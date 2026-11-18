@@ -286,6 +286,18 @@ class MIFEFullySecLWE(IPFEAbsCrypto):
             self.sk = self.keys["sk"]
 
     def encrypt(self, lst_pt: list) -> dict:
+        """Encrypt this slot's vector of ``eta`` integers (ALS16 LWE) with its
+        encryption key.
+
+        Returns:
+            The ciphertext (``LWECiphertext``: ``ct0`` and ``ct1`` as decimal
+            strings).
+
+        Raises:
+            FEKeyError: If the public parameters or the encryption key are missing.
+            FEValidationError: If the vector has another length or an entry is
+                not an integer or exceeds ``bound_x``.
+        """
         if not self._has_public_parameters():
             raise FEKeyError("no public parameters provided for encryption")
         if not self._has_private_keys():

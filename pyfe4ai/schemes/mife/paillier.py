@@ -259,6 +259,18 @@ class MIFEPaillier(OfflineRandomMixin, IPFEAbsCrypto):
             self.sk = self.keys["sk"]
 
     def encrypt(self, lst_pt: list) -> dict:
+        """Encrypt this slot's vector of ``eta`` integers (ALS16 DCR) with its
+        encryption key, including its one-time pad ``u``.
+
+        Returns:
+            The ciphertext (``PaillierCiphertext``).
+
+        Raises:
+            FEKeyError: If the public parameters or the encryption key are
+                missing, or the key lacks its pad ``u``.
+            FEValidationError: If the vector has another length or an entry is
+                not an integer or exceeds ``bound_x``.
+        """
         if not self._has_public_parameters():
             raise FEKeyError("no public parameters provided for encryption")
         if not self._has_private_keys():
