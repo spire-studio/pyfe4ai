@@ -298,7 +298,7 @@ def test_every_benchmark_command_has_a_module_and_help(capsys, monkeypatch):
     run = _load(ROOT / "benchmarks" / "run.py")
     modules = {c.module for c in run.COMMANDS.values()}
     files = {p.stem for p in (ROOT / "benchmarks" / "commands").glob("*.py")} - {"__init__"}
-    assert modules == files and len(run.COMMANDS) == 17
+    assert modules == files and len(run.COMMANDS) == 18
     for name in run.COMMANDS:
         with pytest.raises(SystemExit) as stop:
             run.main([name, "--help"])
