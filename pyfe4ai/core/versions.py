@@ -588,3 +588,11 @@ def check_state(obj, state: dict, version: str) -> None:
                 type(obj).__name__)
         )
     obj.__dict__.update(state)
+
+
+# ---------------------------------------------------------------------------
+# identity directory (pyfe4ai.ac)
+
+#: Format id of the identity directory and of the ciphertexts and keys bound to
+#: its entries (:mod:`pyfe4ai.ac.identity_directory`; field ``version``).
+IDENTITY_DIRECTORY_VERSION = "fullysec-ring-lwe-identity-directory/v1"
