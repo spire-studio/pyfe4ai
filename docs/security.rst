@@ -467,11 +467,16 @@ externally reviewed.
 
 It holds only under conditions the library does not provide:
 
-* **Authenticated, confidential channels** between the requester and each
-  server. A partial key is determined by the request, so anyone who can
-  replay a user's request or read the ``t`` partial keys of one gets that
-  user's key. ``issue(request, requester)`` takes the identity the channel
-  authenticated and refuses a request for another ``sid``.
+* **Mutually authenticated, confidential channels** (mTLS or an
+  equivalent) between the requester and each server. A partial key is
+  determined by the request, so anyone who can replay a user's request or read
+  the ``t`` partial keys of one gets that user's key.
+  ``issue(request, authenticated_requester)`` takes the peer identity the
+  transport authenticated, never a value read from the request, and refuses
+  a request for another ``sid``.
+* **Partial keys are secret**: any ``t`` of one request are the requester's
+  key. Send them to the authenticated requester only; do not log or store
+  them (the library logs none).
 * **The approval rule decides on the weights too.** ``approve(request,
   requester, history)`` sees the whole request. A rule that checks the
   attributes only lets an approved user take ``eta`` keys of unit vectors and
@@ -486,8 +491,9 @@ It holds only under conditions the library does not provide:
 A corrupted server can make an issuance fail, not hand out a wrong key: the
 combiner checks every component with pairings, and any key that passes
 decrypts correctly. It cannot tell which server cheated; retry with other
-servers. Servers refuse a request digest or request id used before for other
-content. Every server sees the requester, the attributes and the weights.
+servers. Servers refuse a request digest used before for other content, and a
+request id that the same ``sid`` used before for other content; a repeat of an
+accepted request gets the same partial key without a new approval. Every server sees the requester, the attributes and the weights.
 
 Attribute-based IPFE not provided
 ---------------------------------

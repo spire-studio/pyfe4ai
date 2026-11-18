@@ -204,7 +204,7 @@ def test_sid_must_be_the_authenticated_requester(system):
     _, _, _, key_servers, comb, _ = system
     request = comb.new_request("alice", [1, 2, 3], ["org:A"], ["ks1", "ks2", "ks3"])
     with pytest.raises(FEKeyError, match="authenticated"):
-        key_servers["ks1"].issue(request, "mallory")
+        key_servers["ks1"].issue(request, authenticated_requester="mallory")
 
 
 def test_the_approval_rule_sees_y_requester_and_history():
@@ -353,3 +353,98 @@ def test_objects_are_their_records(system):
     assert list(ks) == list(keyissue.CPABKeyServers.FIELDS)
     assert list(request) == list(keyissue.CPABKeyRequest.FIELDS)
     assert list(_issue(key_servers, request)[0]) == list(keyissue.CPABPartialKey.FIELDS)
+
+
+# -- re-check (03 rev. 2): repeats, ids per sid, refused requests, the success bit (Lemma 6) --------
+
+
+def test_a_repeat_is_answered_without_a_new_approval():
+    calls = []
+
+    def one_key_per_sid_and_y(request, requester, history):  # a stateful rule
+        calls.append(request["id"])
+        return all(not (r["sid"] == request["sid"] and r["y"] == request["y"]) for _, r in history)
+
+    _, _, _, key_servers, comb, _ = _system(approve=one_key_per_sid_and_y)
+    request = comb.new_request("alice", [1, 2, 3], ["org:A"], ["ks1", "ks2", "ks3"])
+    first = key_servers["ks1"].issue(request, authenticated_requester="alice")
+    again = key_servers["ks1"].issue(copy.deepcopy(request), authenticated_requester="alice")
+    assert first == again and calls == [request["id"]] and len(key_servers["ks1"]._history) == 1
+    other = comb.new_request("alice", [1, 2, 3], ["org:A"], ["ks1", "ks2", "ks3"])  # same (sid, y), new id
+    with pytest.raises(FEKeyError, match="approval rule"):
+        key_servers["ks1"].issue(other, authenticated_requester="alice")
+
+
+def test_ids_are_kept_per_sid():
+    """A corrupted party that sees an honest user's request id cannot block it by using the id first."""
+    _, _, _, key_servers, comb, _ = _system()
+    honest = comb.new_request("alice", [1, 2, 3], ["org:A"], ["ks1", "ks2", "ks3"])
+    squat = _resign(dict(comb.new_request("mallory", [0, 0, 1], ["org:B"], ["ks1", "ks2", "ks3"]), id=honest["id"]))
+    key_servers["ks1"].issue(squat, authenticated_requester="mallory")
+    key_servers["ks1"].issue(honest, authenticated_requester="alice")
+
+
+def test_a_refused_request_leaves_no_record():
+    _, _, _, key_servers, comb, _ = _system(approve=lambda request, requester, history: request["y"][0] == "1")
+    refused = comb.new_request("alice", [2, 0, 0], ["org:A"], ["ks1", "ks2", "ks3"])
+    with pytest.raises(FEKeyError):
+        key_servers["ks1"].issue(refused, authenticated_requester="alice")
+    server = key_servers["ks1"]
+    assert refused["digest"] not in server._contents and not server._ids and not server._history
+    reused = _resign(dict(refused, y=["1", "0", "0"]))  # the same id, now accepted
+    server.issue(reused, authenticated_requester="alice")
+
+
+def test_another_requester_is_refused_before_the_rule_runs():
+    calls = []
+    _, _, _, key_servers, comb, _ = _system(approve=lambda request, requester, history: calls.append(1) or True)
+    request = comb.new_request("alice", [1, 2, 3], ["org:A"], ["ks1", "ks2", "ks3"])
+    with pytest.raises(FEKeyError, match="authenticated"):
+        key_servers["ks1"].issue(request, authenticated_requester="mallory")
+    assert calls == [] and not key_servers["ks1"]._contents
+
+
+def _times(group, partial, factors):
+    """*partial* with each component multiplied by the matching group element of *factors*."""
+    from pyfe4ai.primitives.pairing.pairing_backend import G2, multiexp
+    from pyfe4ai.schemes.common.ac_codec import read_elements, serialize_vec
+
+    out = copy.deepcopy(partial)
+    for field in ("k1", "k0"):
+        elems = read_elements(group, out[field], G2, field)
+        out[field] = serialize_vec(group, [multiexp([e, f], [1, 1], group) for e, f in zip(elems, factors[field])])
+    for name in out["k_attr"]:
+        elems = read_elements(group, out["k_attr"][name], G2, "k_attr")
+        out["k_attr"][name] = serialize_vec(group, [multiexp([e, f], [1, 1], group)
+                                                    for e, f in zip(elems, factors["k_attr"][name])])
+    return out
+
+
+def test_the_success_bit_is_the_homogeneous_check(system):
+    """03 Lemma 6.2: a corrupted server's answer times KeyPart(0, rho) passes (V0), so the honest
+    user's combine succeeds, with a key shifted by [b rho]; times a Delta that fails (V0) it fails."""
+    import secrets as _secrets
+
+    from pyfe4ai.primitives.pairing.pairing_backend import multiexp
+
+    _, _, _, key_servers, comb, crypto = system
+    p = key_servers["ks1"]._p
+    group, order = p.group, p.order
+    request = comb.new_request("alice", [1, -2, 3], ["org:A", "role:auditor"], ["ks1", "ks2", "ks3"])
+    partials = _issue(key_servers, request)
+    honest_key = comb.combine(request, partials)
+    rho = _secrets.randbelow(order - 1) + 1
+    shift = {"k1": [multiexp([e], [rho], group) for e in p.b],
+             "k0": [multiexp([e], [rho], group) for e in p.w_b(p.universe.size)],
+             "k_attr": {name: [multiexp([e], [rho], group) for e in p.w_b(slot)] for name, slot in p.slots(request["attributes"])}}
+    shifted = [_times(group, partials[0], shift)] + partials[1:]
+    key = comb.combine(request, shifted)
+    assert key["k1"] != honest_key["k1"]
+    ct = crypto.encrypt(X, policy="and(org:A, role:auditor)")
+    assert crypto.decrypt(ct, key) == crypto.decrypt(ct, honest_key)
+    assert crypto.decrypt(ct, key) == sum(a * b for a, b in zip(X, [1, -2, 3]))
+    identity = p.identity_g2
+    bad = {"k1": [identity, identity], "k0": [p.g2, identity],
+           "k_attr": {name: [identity, identity] for name, _ in p.slots(request["attributes"])}}
+    with pytest.raises(FEKeyError, match="fails its check"):
+        comb.combine(request, [_times(group, partials[0], bad)] + partials[1:])

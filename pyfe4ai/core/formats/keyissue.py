@@ -55,7 +55,10 @@ class CPABKeyRequest(Record):
 
 
 class CPABPartialKey(Record):
-    """One server's masked partial key for one request."""
+    """One server's masked partial key for one request: **secret**. Any ``t``
+    partial keys of one request are the requester's functional key; send
+    them to the authenticated requester only, over a confidential channel,
+    and never log or store them."""
 
     version = Field("format id (:data:`~pyfe4ai.core.versions.CP_AB_PARTIAL_KEY_VERSION`)")
     server = Field("the server id")

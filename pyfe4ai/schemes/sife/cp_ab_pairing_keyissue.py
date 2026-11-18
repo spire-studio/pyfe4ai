@@ -38,11 +38,16 @@ that every honest server of its ``T`` accepted. The scheme's own security
 (SEL-SIM, one challenge ciphertext) is inherited, not improved. This holds
 under these conditions, which the library does not provide:
 
-* **Authenticated, confidential channels** between the requester and each
-  server. A partial key depends on the request only, so whoever can replay a
-  user's request, or read the ``t`` partial keys of one, gets that user's key.
-  :meth:`~SIFECPABPairingKeyServer.issue` takes the authenticated identity
-  (``requester``) and refuses a request whose ``sid`` is another one.
+* **Mutually authenticated, confidential channels** (mTLS or equivalent)
+  between the requester and each server. A partial key depends on the request
+  only, so whoever can replay a user's request, or read the ``t`` partial keys
+  of one, gets that user's key. :meth:`~SIFECPABPairingKeyServer.issue` takes
+  the identity the transport authenticated (``authenticated_requester``: the
+  peer identity of the channel, never a value read from the request) and
+  refuses a request whose ``sid`` is another one.
+* **Partial keys are secret.** Any ``t`` partial keys of one request are that
+  user's key: send them over the confidential channel to the authenticated
+  requester only, and do not log or store them (the library logs none).
 * **The approval rule sees the whole request.** ``approve(request,
   requester, history)`` decides on the attributes *and* the weights ``y``. A
   rule that looks at the attributes only lets an approved user take ``eta``
@@ -352,10 +357,14 @@ class SIFECPABPairingKeyServer:
             -> bool``: *request* is the whole request (``sid``, ``y``,
             ``attributes``, ``servers``, ...), *requester* the identity the
             channel authenticated, *history* the tuple of ``(requester,
-            request)`` this server accepted before (the server's own records:
-            read them, do not modify them). It must decide on ``y`` too (see
-            the module docstring). It runs under the server's lock, so the
-            requests to one server are approved one at a time.
+            request)`` this server accepted before, oldest first (refused
+            requests are not in it; the server's own records: read them, do
+            not modify them). It must decide on ``y`` too (see the module
+            docstring). It runs under the server's lock, so the requests to
+            one server are approved one at a time. A repeat of an accepted
+            request (same digest, same content) is answered again without a
+            new approval: it gets the same partial key and reveals nothing
+            new.
 
     Raises:
         FEValidationError: For a share or a record that does not fit the
@@ -387,29 +396,35 @@ class SIFECPABPairingKeyServer:
         self.server = sh.server
         self._approve = approve
         self._lock = threading.Lock()
-        self._contents = {}   # digest -> canonical content
-        self._ids = {}        # request id -> digest (audit; an id reused for other content is refused)
-        self._history = []    # (requester, request) accepted
+        self._contents = {}   # digest -> canonical content, of accepted requests
+        self._ids = {}        # (sid, request id) -> digest: one sid reusing its id for other content is refused
+        self._history = []    # (requester, request) accepted, oldest first
 
-    def issue(self, request: dict, requester: str) -> dict:
+    def issue(self, request: dict, authenticated_requester: str) -> dict:
         """This server's masked partial key for *request*
         (:class:`~pyfe4ai.core.formats.keyissue.CPABPartialKey`).
 
         Args:
             request: The request (:meth:`SIFECPABPairingKeyCombiner.new_request`).
-            requester: The identity the channel authenticated; it must be the
-                request's ``sid``.
+            authenticated_requester: The identity that the transport
+                authenticated for this request (e.g. the peer of a mutually
+                authenticated TLS channel), never a value taken from the
+                request; it must be the request's ``sid``.
+
+        The returned partial key is secret (see the module docstring).
 
         Raises:
             FEValidationError: For a malformed request, one for other
                 parameters or another sharing, or one whose servers are not
                 ``t`` distinct ids of the record including this one.
-            FEKeyError: If *requester* is not the request's ``sid``, the
-                approval rule refuses, or the digest or id was used for other
+            FEKeyError: If *authenticated_requester* is not the request's
+                ``sid``, the approval rule refuses, the digest was used for
+                other content, or this ``sid`` used the request's id for other
                 content.
         """
         p = self._p
         r, y, digest = p.checked_request(request)
+        requester = authenticated_requester
         if type(requester) is not str or not hmac.compare_digest(requester.encode(), r.sid.encode()):
             raise FEKeyError("the request's sid is not the authenticated requester")
         if self.server not in r.servers:
@@ -420,13 +435,15 @@ class SIFECPABPairingKeyServer:
             seen = self._contents.get(r.digest)
             if seen is not None and seen != content:
                 raise FEKeyError("the digest of this request was used for other content")
-            if self._ids.get(r.id, r.digest) != r.digest:
-                raise FEKeyError("the id of this request was used for other content")
-            if not self._approve(copy.deepcopy(snapshot), requester, tuple(self._history)):
-                raise FEKeyError("the approval rule of server {!r} refuses this request".format(self.server))
-            self._contents[r.digest] = content
-            self._ids[r.id] = r.digest
-            self._history.append((requester, snapshot))
+            if seen is None:  # a repeat of an accepted request is answered again, without a new approval
+                # ids are kept per sid: only the requester itself can block its own id
+                if self._ids.get((r.sid, r.id), r.digest) != r.digest:
+                    raise FEKeyError("this sid used the id of this request for other content")
+                if not self._approve(copy.deepcopy(snapshot), requester, tuple(self._history)):
+                    raise FEKeyError("the approval rule of server {!r} refuses this request".format(self.server))
+                self._contents[r.digest] = content
+                self._ids[(r.sid, r.id)] = r.digest
+                self._history.append((requester, snapshot))
         return self._partial(r, y, digest)
 
     def _partial(self, r, y: list, digest: bytes) -> dict:
