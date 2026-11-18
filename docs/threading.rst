@@ -197,6 +197,10 @@ The library registers one ``os.register_at_fork`` handler
   (:class:`~pyfe4ai.ml.FESchemeWrapper`,
   :class:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget`): another
   thread of the parent may have held the old one.
+* gives every :class:`~pyfe4ai.schemes.common.slots.SlotStore` (the slot
+  list of a ``bcfe`` authority) a new lock for the same reason, and closes
+  the child's copy of a file-lock descriptor that the store held at the
+  fork: the file lock stays the parent's, which releases it.
 
 A :class:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget` counts in
 the process that made it only: in a forked child its

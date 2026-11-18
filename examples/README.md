@@ -31,6 +31,23 @@ parameters (see *Security Profiles* in the top-level README).
 - `ml_fl_aggregation.py`: federated gradient aggregation with `MCFE/DDH`
   through the ML adapter (one wrapper plays every party: for experiments only)
 
+## Bounded-Key FE (experimental)
+
+`bcfe/gc_ristretto255`: a key for the secret parameter `w` of a public circuit
+`C(w, x)` (`pyfe4ai.circuits`) decrypts `C(w, x)` from a ciphertext of `x`; at
+most `max_keys` keys in all, and a key opens only ciphertexts made after it
+was issued. The key holder learns its own `w`. Read *Bounded-key FE* in
+`docs/security.rst` before use. Both run on the Python backend too (about a
+second).
+
+- `bcfe_credit_scoring.py`: a logistic-regression credit decision; the
+  authority issues the key (issuance policy, authenticated requester id), an
+  applicant encrypts its features, the scoring service decrypts the decision
+  only; a key issued later does not open the earlier ciphertexts
+- `bcfe_holder_generated_keys.py`: keys made by their holder (`key_mode="h2"`):
+  `key_holder` / `request`, the authority's `authorize`, and `finish` with
+  SS10's CheckAuth, which refuses a forged grant; then a linear score
+
 ## Pairing-Based Examples (need a pairing backend)
 
 These run on BLS12-381, the default pairing group, which the Rust extension

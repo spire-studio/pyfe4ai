@@ -5,6 +5,45 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/) (pre-1.0: minor bumps may break
 compatibility).
 
+## [1.0.0] — unreleased
+
+### Added — bounded-key FE (0.6)
+
+- **`bcfe/gc_ristretto255`** (`BCFEGCRistretto255`,
+  `BCFEGCRistretto255KeyGenerator`, `BCFEGCRistretto255Config`; new family
+  `bcfe`, capability `bounded_keys`; status *experimental*, fidelity
+  *adapted*): FE for a public boolean circuit `C(w, x)`, one slot per issued
+  function (SS10 Sec. 3.3 with the guard bit of Sec. 3.2), half-gates garbling
+  (ZRE15) and hashed-ElGamal labels over ristretto255; keys issued by the
+  authority (`issue_key`) or made by their holder (`key_holder(pp).request`,
+  `authorize`, `finish` with SS10's CheckAuth), an issuance policy,
+  deduplication per requester, the cap `max_keys`, `encrypt(x, slots=...)`;
+  records in `pyfe4ai.core.formats.garbled`, the append-only slot store in
+  `pyfe4ai.schemes.common.slots`; examples `bcfe_credit_scoring.py` and
+  `bcfe_holder_generated_keys.py`.
+- **`pyfe4ai.circuits`** (imported by `import pyfe4ai`): `Circuit` (canonical
+  encoding, digest, `guard()`, `stats()`, plain evaluation), `Builder`
+  (constant folding, word arithmetic, Booth multiplication, comparisons, ReLU,
+  argmax), key, data and output layouts, and the library circuits
+  `linear_threshold`, `linear_score`, `mlp` and `argmax_scores`.
+- **Backend operations** `gc_garble`, `gc_evaluate`, `bcfe_new_slot`,
+  `bcfe_place_slot`, `bcfe_unselected_ok`, `bcfe_encrypt_slot` and
+  `bcfe_decrypt_slot`: the Python reference (`pyfe4ai.primitives.garbling`,
+  `pyfe4ai.primitives.bcfe_kem`) and the native implementation give the same
+  bytes (known-answer tests); the native one draws its randomness from the
+  operating system and wipes `Delta`, the seeds, `r` and the labels.
+- **Benchmark** `python benchmarks/run.py bcfe`: gate statistics, slot and
+  ciphertext-component sizes and the median times of issuing, encrypting and
+  decrypting one slot, per library circuit and data-wire mode.
+- **Security caveats** (`docs/security.rst`, "Bounded-key FE"): IND security in
+  the random-oracle model under strong DH, by the project's own argument
+  (reviewed internally twice; no external review); total issuance bounded by
+  `max_keys`, not the collusion bound of GVW12 / AV19; keys decrypt only
+  ciphertexts made after their slot; the key holder learns its `w`; classical
+  security only; honest encryptor assumed; requester ids must be authenticated
+  by the caller; the issuance policy is not cryptographic access control;
+  public parameters trusted as distributed; not constant-time.
+
 ## [0.5.0] — unreleased
 
 **Highlights.** Attribute-based inner-product functional encryption over

@@ -62,6 +62,16 @@ Families
      - the key holder learns ``x^T F y`` (``sgp``, ``quad``), or the
        cross-user quadratic terms of several clients (``miqfe``)
      - quadratic scores, e.g. a bilinear model
+   * - ``bcfe`` -- bounded keys (*experimental*)
+     - one encryptor; a key holder learns ``C(w, x)`` for a public boolean
+       circuit ``C`` (:mod:`pyfe4ai.circuits`) and the ``w`` of its key. At
+       most ``max_keys`` keys in all, and a key opens only ciphertexts made
+       after it was issued; a ciphertext grows with the keys it is
+       encrypted to (:doc:`api/bcfe`)
+     - a non-linear function of one party's data -- a linear decision or
+       score, a small network -- for small models and few keys (a few to a
+       few dozen), issued before the data is encrypted. The key holder
+       learns its own ``w``, and the encryptor is trusted (:doc:`security`)
 
 Assumptions
 -----------
@@ -147,6 +157,10 @@ Each scheme lists its capabilities
   ``mcfe/kp_ab_pairing_per_client``) the key carries the policy
   (``credentials={"fusion_weight": y, "policy": ...}``) and the ciphertext the
   attributes (``encrypt(..., attributes=...)``).
+* ``bounded_keys`` -- the key generator is stateful: every distinct function
+  it issues gets a slot of its own, up to ``max_keys`` slots in all, and a
+  ciphertext is encrypted to the slots that exist when it is made, so a key
+  decrypts only ciphertexts made after its slot (``bcfe/gc_ristretto255``).
 
 Review status
 -------------

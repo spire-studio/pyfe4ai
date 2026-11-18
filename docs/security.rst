@@ -594,6 +594,125 @@ rounded Gaussian -- in the standard configurations about 2^-47 (elementwise
 4``, ``X = Y = 4``) -- and about 2^-12 at ``eta = 1`` with the
 double-precision path's artifacts, terms its adaptive proof does not budget.
 
+.. _bcfe-security:
+
+Bounded-key FE
+--------------
+
+``bcfe/gc_ristretto255`` (:doc:`api/bcfe`) is **experimental** and
+**adapted**. It follows the single-key scheme of Sahai and Seyalioglu (SS10,
+ACM CCS 2010, Sec. 3.2 and 3.3) with the half-gates garbling of Zahur,
+Rosulek and Evans (ZRE15, EUROCRYPT 2015, Fig. 2), with changes of its own:
+one instance (*slot*) per issued function, the data bits folded into the
+garbling by default (``data_wires = "hardwired"``), the public keys of the
+unselected positions hashed to the group, and an instance salt in the gate
+hash. Its security argument is the project's own: the 0.6 security argument,
+reviewed internally twice; no external review.
+
+*What is claimed.* IND security in the random-oracle model -- for the gate
+hash, the hash that masks the labels and the hash to the group -- under the
+strong Diffie-Hellman assumption in ristretto255 (Abdalla, Bellare and
+Rogaway, CT-RSA 2001). The adversary chooses the functions of the keys
+adaptively, corrupts key holders, registers public keys of its own as a key
+holder of ``key_mode = "h2"`` and sees any number of challenge ciphertexts;
+it cannot tell which of two inputs ``x0``, ``x1`` was encrypted as long as
+every key it holds gives the same result on both, ``C(w, x0) = C(w, x1)``,
+for every challenge encrypted to that key's slot. A slot made after a
+ciphertext has no component in it, so its key puts no condition on that
+ciphertext. Both data-wire modes are covered: ``"labels"`` is SS10's form,
+to which the half-gates argument of ZRE15 applies directly; the default
+``"hardwired"`` rests on a lemma of the argument of our own, for gates with
+one input the garbler knows.
+
+*The concrete bound.* The advantage is at most ``(1 + max_keys)`` times that
+of strong DH, plus about ``q / 2^127`` for an adversary of ``q`` hash
+queries (the chance that one of them hits a label offset of the garbling),
+plus negligible terms (an ephemeral key guessed in advance, two ciphertexts
+with one nonce). The main term grows with neither the circuit nor the
+number of ciphertexts. Under the usual estimates
+-- strong DH as hard as in the generic group of order about ``2^252``, and
+running time equal to the number of hash queries -- a 16-bit linear model
+with ``2^30`` ciphertexts and 64 slots comes to a bound of about ``2^-61``
+for an adversary of ``2^64`` operations and about ``2^-45`` for one of
+``2^80``. The limit is the 128-bit label itself (127 random bits of the
+offset), whatever the circuit and the ciphertexts. These are estimates in
+the models above, not a theorem, and the scheme is not called "128-bit
+secure". Longer labels would tighten the bound, at the cost of larger
+tables; ``label_bits`` takes 128 only.
+
+*Read before use:*
+
+* **Total issuance bounded by** ``max_keys``. Every distinct (requester,
+  function) takes a slot, up to ``max_keys`` slots, and a ciphertext holds
+  one component per slot it is encrypted to. This is a bound on the keys
+  issued in all, *not* the collusion-bounded notion of Gorbunov,
+  Vaikuntanathan and Wee (GVW12, CRYPTO 2012) or of Ananth and
+  Vaikuntanathan (AV19, TCC 2019): any number of the issued keys may collude.
+* **Keys decrypt only ciphertexts made after their slot existed.** A key
+  issued later has no component in an earlier ciphertext
+  (:class:`~pyfe4ai.core.exceptions.FEKeyError`, saying so); the data must be
+  encrypted again under the new public parameters.
+* **The key holder learns its own** ``w``: no function privacy. The key
+  carries ``w``, and the authority sees it at issuance. The scheme hides
+  ``x`` from the key holders (they learn ``C(w, x)``) and ``w`` from the
+  encryptors (the slot list does not show it).
+* **Classical security only: harvest now, decrypt later.** The labels are
+  encrypted with hashed ElGamal over ristretto255: a ciphertext recorded
+  today gives ``x`` up to a future quantum computer.
+* **Honest encryptor assumed.** A malicious encryptor can (1) garble another
+  circuit, so that a key holder's result is any function of ``w`` it likes,
+  which leaks ``w`` once the result is published or returned to it; (2)
+  cause a selective failure, a bad label at one position, and learn a bit of
+  ``w`` from whether the decryption works; (3) use a different ``x`` for each
+  slot, so that the results of the key holders disagree. The library
+  reports every failure inside a component as one error
+  (:class:`~pyfe4ai.core.exceptions.FESchemeError` with
+  :data:`~pyfe4ai.schemes.bcfe.gc_ristretto255.DECRYPTION_FAILED`, whatever
+  the cause). Do not send results, or whether a decryption worked, back to
+  an encryptor, and do not publish raw results; take ciphertexts from
+  encryptors you trust. Nothing detects (3).
+* **The library cannot authenticate requester ids.** The deduplication is
+  per ``requester``: the same requester asking again for the same ``w`` gets
+  the same key (h1, with ``keep_issued_keys``) or the same grant (h2),
+  another requester a slot of its own, and once ``max_keys`` slots exist
+  every request gets the same error, so that the deduplication tells nothing
+  about the functions of others. This holds only if callers pass an id that
+  they have authenticated: with an id anyone can claim, a requester takes
+  another's key (h1, with ``keep_issued_keys``) or tests whether another
+  requester holds a key for a given ``w``.
+* **The issuance policy is the authority's decision, not cryptographic
+  access control.** ``issuance_policy`` is evaluated by the authority on the
+  attributes the caller passes, before any slot is taken, and the slot
+  records the digests of the policy and of the attribute set for audit. It
+  decides whom the authority builds a slot for; it is as good as the
+  authority and the attributes it is given. The cryptography enforces only
+  that a key computes ``C(w, .)``; no ciphertext carries a policy.
+* **The public parameters are trusted as distributed.** An encryptor
+  encrypts to every slot of the slot list it holds (or to those it selects,
+  ``encrypt(x, slots=...)``), so a forged slot list, with a slot whose
+  secret keys the forger knows, gives ``x`` to the forger. The
+  ``pp_digest`` covers the slot list but is not a signature, and the slot
+  list is not signed. Get the public parameters over an authenticated
+  channel, pin the ``pp_digest`` you trust, and check
+  ``slot_list_version`` and the slots you encrypt to.
+* **The authority.** With h1 it keeps every key it issued by default
+  (``keep_issued_keys``) and can decrypt those slots; its directory holds
+  them and the slot secrets: keep it as a master key. With h2 it never sees
+  the holder's secret keys and cannot decrypt the holder's slot on its own.
+  No secret key of an unselected position exists in either mode, so the
+  authority and a key holder together cannot open a second set of labels;
+  the authority can still make slots for any ``w`` it likes, up to
+  ``max_keys`` and to the slots the encryptors select.
+* **Not constant-time.** The Python backend makes no constant-time claim and
+  cannot wipe its copies of secrets. The native implementation selects by
+  the bits of ``w`` and ``x`` with masks, draws its randomness from the
+  operating system and wipes ``Delta``, the seeds, ``r`` and the labels, but
+  its timing has not been tested.
+
+Not covered by the argument: simulation security, the secrecy of ``w`` from
+its key holder, a malicious encryptor, a forged slot list, side channels and
+quantum adversaries.
+
 Status API
 ----------
 

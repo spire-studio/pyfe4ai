@@ -134,3 +134,35 @@ BLS12-381
 
 .. automodule:: pyfe4ai.primitives.pairing.bls12_381
    :members:
+
+Bounded-Key FE
+--------------
+
+The building blocks of the bounded-key schemes (:doc:`bcfe`), as reference
+algorithms. The backend operations (:mod:`pyfe4ai.backend.interface`) give
+the same bytes in both implementations; the schemes call the slot operations
+of the second module, which garble and encrypt in one call.
+
+Garbled Circuits
+^^^^^^^^^^^^^^^^
+
+The half-gates garbling and its evaluation, on the canonical circuit
+encoding of :mod:`pyfe4ai.circuits` (backend operations ``gc_garble`` and
+``gc_evaluate``).
+
+.. automodule:: pyfe4ai.primitives.garbling
+   :members:
+
+Slot Keys and the Label KEM
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The public keys of a slot, their hash-derived unselected positions and the
+hashed ElGamal encryption of the wire labels (backend operations
+``bcfe_new_slot``, ``bcfe_place_slot``, ``bcfe_unselected_ok``,
+``bcfe_encrypt_slot`` and ``bcfe_decrypt_slot``). The operations that need
+randomness take it from the operating system on every call, and the native
+implementation wipes ``Delta``, the seeds, ``r`` and the labels; this Python
+reference makes no constant-time claim and cannot wipe its copies.
+
+.. automodule:: pyfe4ai.primitives.bcfe_kem
+   :members:
