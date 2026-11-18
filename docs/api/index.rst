@@ -35,8 +35,10 @@ Top-level package
   ``ValueError``), :class:`~pyfe4ai.core.exceptions.FESchemeError` (also a
   ``RuntimeError``) and :class:`~pyfe4ai.core.versions.MixedSharingsError`
   (an ``FESchemeError``);
-* the warnings :class:`~pyfe4ai.core.exceptions.FESecurityWarning` and
-  :class:`~pyfe4ai.core.exceptions.FEWarning`;
+* the warnings :class:`~pyfe4ai.core.exceptions.FESecurityWarning`,
+  :class:`~pyfe4ai.core.exceptions.FEWarning` and its subclass
+  :class:`~pyfe4ai.core.exceptions.FEDeprecationWarning` (a deprecated name,
+  option or option value; see :func:`~pyfe4ai.core.exceptions.warn_deprecated`);
 * ``__version__``.
 
 The scheme classes are exported by the family packages

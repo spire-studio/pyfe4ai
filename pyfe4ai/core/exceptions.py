@@ -58,6 +58,18 @@ class FEWarning(UserWarning):
     """
 
 
+class FEDeprecationWarning(FEWarning):
+    """A name, an option or an option value of the stable tier is deprecated.
+
+    It keeps working for the rest of 1.x and goes in 2.0 at the earliest (the
+    compatibility policy). A subclass of :class:`FEWarning`, hence of
+    ``UserWarning``: unlike ``DeprecationWarning``, Python shows it by default,
+    once per call site of the application (:func:`warn_at_caller`); filter it
+    by this class to silence deprecations only. Issued by
+    :func:`warn_deprecated`.
+    """
+
+
 _PACKAGE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -74,3 +86,12 @@ def warn_at_caller(message: str, category: type = FEWarning) -> None:
     while frame is not None and _in_package(frame.f_code.co_filename):
         frame, level = frame.f_back, level + 1
     warnings.warn(message, category, stacklevel=level if frame is not None else 2)
+
+
+def warn_deprecated(what: str, since: str, use: str | None = None) -> None:
+    """Issue the :class:`FEDeprecationWarning` of *what* (a name, an option,
+    an option value), deprecated since version *since*, with its replacement
+    *use* if there is one: ``"<what> is deprecated since pyfe4ai <since> and
+    will be removed in 2.0; use <use>."``"""
+    message = "{} is deprecated since pyfe4ai {} and will be removed in 2.0".format(what, since)
+    warn_at_caller(message + ("; use {}.".format(use) if use else "."), FEDeprecationWarning)
