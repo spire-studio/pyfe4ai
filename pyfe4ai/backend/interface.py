@@ -738,3 +738,20 @@ class Backend(abc.ABC):
                 data labels, decoding bits that are not ``n_out`` packed
                 bits, *w* with nonzero padding bits.
         """
+
+    # -- the tests' hooks (appended, 0.6 review R06-03) ------------------------------------
+
+    def random_override_active(self) -> bool:
+        """Whether a test has set ``pyfe4ai.backend._random_override``: the
+        operations that read it (``gc_garble``, the ``bcfe_*`` operations and
+        every native draw of :func:`~pyfe4ai.backend.native_impl.random_input`,
+        in both implementations) then take their random bytes from the test,
+        not from the operating system. A scheme that must never run on such
+        bytes asks before it draws (``bcfe/gc_ristretto255`` refuses). The
+        other hook, ``_seed_override`` (the DRBG seed of other native kernels,
+        which the ``bcfe_*`` operations do not read), is not reported. The
+        scheme and primitive layers read it through
+        :func:`pyfe4ai.backend.ops`, as every operation."""
+        from pyfe4ai import backend
+
+        return backend._random_override is not None

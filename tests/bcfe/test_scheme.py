@@ -555,3 +555,98 @@ def test_the_markers_are_the_versions_module(tmp_path):
     assert (pp["bcfe_version"], pp["kem"], pp["gc"], pp["gc_hash"]) == (
         versions.BCFE_VERSION, versions.BCFE_KEM, versions.BCFE_GC, versions.BCFE_GC_HASH)
     assert list(pp) == list(garbled.BCFEPublicParameters.FIELDS)
+
+
+# ---------------------------------------------------------------------------
+# review R06-03: no issuance, setup or encryption on the tests' randomness (appended)
+
+
+def _instances(tmp_path) -> list:
+    return sorted(os.listdir(os.path.join(str(tmp_path), "authority", "bcfe")))
+
+
+def test_the_tests_randomness_hook_stops_every_call_that_draws(tmp_path, backend_name, monkeypatch):
+    kg, BCFE = make(tmp_path / "h1")
+    kg2, _ = make(tmp_path / "h2", key_mode="h2")
+    key = kg.issue_key(W_SMALL, requester="alice")
+    crypto = BCFE({"keys": {"pp": kg.get_public_parameters()}})
+    ct = crypto.encrypt({"x": [1, -1]})
+    holder = BCFE.key_holder(kg2.get_public_parameters())
+    request = holder.request(W_SMALL)
+    grant = kg2.authorize(request, requester="alice")
+    pending = holder.request({"weights": [0, 1], "bias": 0})
+    before = (_instances(tmp_path / "h1"), kg.get_public_parameters(), kg2.get_public_parameters())
+
+    monkeypatch.setattr(native_backend, "_random_override", lambda nbytes: b"\x01" * nbytes)
+    assert native_backend.ops().random_override_active()
+    calls = {
+        "setup": kg.setup,
+        "issue_key": lambda: kg.issue_key({"weights": [1, 1], "bias": 0}, requester="bob"),
+        "issue_key (a repeat)": lambda: kg.issue_key(W_SMALL, requester="alice"),
+        "authorize": lambda: kg2.authorize(pending, requester="bob"),
+        "request": lambda: holder.request(W_SMALL),
+        "encrypt": lambda: crypto.encrypt({"x": [1, 1]}),
+    }
+    for name, call in calls.items():
+        with pytest.raises(FESchemeError) as info:
+            call()
+        assert str(info.value) == scheme.TEST_RANDOMNESS_REFUSED, name
+    assert "pyfe4ai.backend._random_override is set: bcfe refuses to issue, set up or encrypt with test " \
+           "randomness" == scheme.TEST_RANDOMNESS_REFUSED
+    # what draws nothing still runs; nothing changed
+    assert crypto.decrypt(ct, key) == {"decision": 1}
+    assert holder.finish(grant)["slot_id"] == grant["slot"]["slot_id"]
+    assert (_instances(tmp_path / "h1"), kg.get_public_parameters(), kg2.get_public_parameters()) == before
+
+    monkeypatch.setattr(native_backend, "_random_override", None)  # cleared: every call works again
+    assert not native_backend.ops().random_override_active()
+    kg.setup()
+    assert len(_instances(tmp_path / "h1")) == 2
+    key = kg.issue_key(W_SMALL, requester="alice")
+    assert kg2.authorize(pending, requester="bob")["slot"]["slot_id"] == 1
+    holder.request(W_SMALL)
+    crypto = BCFE({"keys": {"pp": kg.get_public_parameters()}})
+    assert crypto.decrypt(crypto.encrypt({"x": [1, -1]}), key) == {"decision": 1}
+
+
+# ---------------------------------------------------------------------------
+# review R06-06: CheckAuth at the scheme layer finds the holder's keys out of place (appended)
+
+
+def test_checkauth_refuses_a_slot_without_the_holders_keys_at_their_positions(tmp_path, backend_name):
+    """The h' part of CheckAuth (``bcfe_unselected_ok``) passes when the authority puts another point at a
+    selected position and leaves the unselected ones derived from ``k``; finish() checks the holder's own keys at
+    ``(j, w_j)`` and ``(m, 0)`` and refuses. So does it for a slot whose holder keys sit where another function puts
+    them."""
+    from pyfe4ai.primitives.groups import ec_group as eg
+
+    kg, BCFE = make(tmp_path, key_mode="h2")
+    pp = kg.get_public_parameters()
+    setup = scheme._parse_pp(pp).setup
+    holder = BCFE.key_holder(pp)
+    request = holder.request(W_SMALL)
+    grant = kg.authorize(request, requester="alice")
+    slot_id, k = grant["slot"]["slot_id"], bytes.fromhex(grant["k"])
+    pks = garbled.from_b64(grant["slot"]["pks"], "pks")
+    bits = SMALL.key_layout.encode(W_SMALL)
+    w_packed = scheme.pack_bits(bits, setup.m)
+    ops = native_backend.ops()
+    other = bytes.fromhex(eg.to_hex(eg.mul_base(12345)))
+
+    def at(table: bytes, index: int, point: bytes) -> bytes:
+        return table[:32 * index] + point + table[32 * (index + 1):]
+
+    for index in (2 * 3 + bits[3], 2 * setup.m):                       # a selected position, then (m, 0)
+        forged = at(pks, index, other)
+        assert ops.bcfe_unselected_ok(setup.setup_digest, slot_id, w_packed, k, forged, m=setup.m)
+        with pytest.raises(FEKeyError, match="CheckAuth failed: the slot of the grant does not hold this holder's"):
+            holder.finish(_resealed(grant, setup, forged))
+    # the holder's keys placed for another function w' (bit 3 flipped), unselected positions derived from k
+    flipped = list(bits)
+    flipped[3] ^= 1
+    placed = ops.bcfe_place_slot(setup.setup_digest, slot_id, scheme.pack_bits(flipped, setup.m),
+                                 garbled.from_b64(request["pks"], "pks"), m=setup.m)
+    forged = dict(_resealed(grant, setup, placed["pks"]), k=placed["k"].hex())
+    with pytest.raises(FEKeyError, match="CheckAuth failed: the slot of the grant does not hold this holder's"):
+        holder.finish(forged)
+    assert holder.finish(grant)["slot_id"] == slot_id                  # the genuine grant still finishes

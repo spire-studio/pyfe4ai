@@ -120,6 +120,34 @@ backend (:func:`pyfe4ai.backend.ops`: ``bcfe_new_slot``, ``bcfe_place_slot``,
 Python reference is not constant time and cannot wipe its copies of
 secrets; the native implementation draws its randomness from the operating
 system and wipes ``Delta``, the seeds, ``r`` and the labels.
+
+**Test randomness** (review R06-03; decided 2026-11-19). The backend's test
+hook ``pyfe4ai.backend._random_override`` hands every operation that draws
+random bytes the bytes of the test: left set outside a test, every (ciphertext,
+slot) of this scheme would garble with attacker-known ``Delta``, labels and
+``r``, and every slot would be issued from known scalars and ``k`` -- a total
+break. So the scheme refuses to draw while the hook is set, under every
+profile: :meth:`~BCFEGCRistretto255KeyGenerator.setup`,
+:meth:`~BCFEGCRistretto255KeyGenerator.issue_key`,
+:meth:`~BCFEGCRistretto255KeyGenerator.authorize`,
+:meth:`~BCFEGCRistretto255.encrypt` and the key holder's ``request`` raise
+:class:`~pyfe4ai.core.exceptions.FESchemeError`
+(:data:`TEST_RANDOMNESS_REFUSED`) before they draw or change anything (the
+backend's ``random_override_active()``, read once at the start of the call: a
+thread that sets the hook while the call runs is not detected). Decryption,
+``finish``, :meth:`~BCFEGCRistretto255KeyGenerator.get_public_parameters`
+and :meth:`~BCFEGCRistretto255KeyGenerator.open` draw nothing and run. The
+scheme's own draws (``setup_nonce``, ``ct_nonce``, the key holder's
+scalars) come from :func:`os.urandom` and never read the hook; the hook
+reaches only the backend operations (``bcfe_new_slot``, ``bcfe_place_slot``,
+``bcfe_encrypt_slot``). Tests of fixed randomness call those operations
+directly. Alternatives not taken: refusing only under
+``security_profile="standard"`` (tests could still drive the scheme through
+the hook, but a hook left set in a ``toy`` application would break it
+silently: weaker); an :class:`~pyfe4ai.core.exceptions.FESecurityWarning`
+only (the break happens all the same); honouring the hook only when an
+environment variable is set (it would change every scheme and the backend's
+hooks: out of the scope of 0.6).
 """
 
 from __future__ import annotations
@@ -177,6 +205,10 @@ _TEMP_PREFIX = ".bcfe-"
 
 #: The one error of a component that does not decrypt (I10): malformed, or of
 #: another slot, ciphertext or key -- the cause is not told apart.
+#: The error of the calls that draw randomness while the tests' hook is set (review R06-03).
+TEST_RANDOMNESS_REFUSED = ("pyfe4ai.backend._random_override is set: bcfe refuses to issue, set up or encrypt with "
+                           "test randomness")
+
 DECRYPTION_FAILED = ("the ciphertext component of this key's slot does not decrypt with this key (malformed, or "
                      "made for another slot, ciphertext or key)")
 
@@ -242,6 +274,16 @@ def _random_scalar() -> int:
         s = int.from_bytes(os.urandom(bcfe_kem.SCALAR_DRAW_BYTES), "little") % bcfe_kem.ORDER
         if s:
             return s
+
+
+def _refuse_test_randomness() -> None:
+    """Raise while the backend's test hook for random bytes is set (see the module documentation).
+
+    Raises:
+        FESchemeError: :data:`TEST_RANDOMNESS_REFUSED`.
+    """
+    if backend.ops().random_override_active():
+        raise FESchemeError(TEST_RANDOMNESS_REFUSED)
 
 
 def _chunks(data: bytes, size: int) -> list:
@@ -498,7 +540,13 @@ class BCFEGCRistretto255KeyGenerator(CircuitFEAbsKeyGenerator):
     def setup(self) -> None:
         """Set up a new instance: a fresh 32-byte ``setup_nonce``, the setup
         digest, the instance directory ``<cache_dir>/authority/bcfe/<setup
-        digest>`` with ``setup.json``, ``authority.json`` and an empty slot list."""
+        digest>`` with ``setup.json``, ``authority.json`` and an empty slot list.
+
+        Raises:
+            FESchemeError: While ``pyfe4ai.backend._random_override`` is set
+                (:data:`TEST_RANDOMNESS_REFUSED`).
+        """
+        _refuse_test_randomness()
         circuit = self.circuit.circuit
         nonce = os.urandom(_DIGEST)
         setup_digest = bcfe_kem.setup_digest(SCHEME_ID, BCFE_VERSION, circuit.digest(), self.data_wires,
@@ -696,8 +744,11 @@ class BCFEGCRistretto255KeyGenerator(CircuitFEAbsKeyGenerator):
                 same error whether this request was issued before or not);
                 for a repeated request when the authority keeps no keys; if
                 the setup issues keys with ``key_mode = "h2"``.
-            FESchemeError: Before :meth:`setup`.
+            FESchemeError: Before :meth:`setup`; while
+                ``pyfe4ai.backend._random_override`` is set
+                (:data:`TEST_RANDOMNESS_REFUSED`).
         """
+        _refuse_test_randomness()
         self._require_setup()
         if self.key_mode != "h1":
             raise FEKeyError("this setup issues keys with key_mode='h2': the key holder requests a slot "
@@ -756,7 +807,11 @@ class BCFEGCRistretto255KeyGenerator(CircuitFEAbsKeyGenerator):
                 the same requester and ``w`` with other public keys (the
                 authority never replaces a slot's keys), or if the setup
                 issues keys with ``key_mode = "h1"``.
+            FESchemeError: Before :meth:`setup`; while
+                ``pyfe4ai.backend._random_override`` is set
+                (:data:`TEST_RANDOMNESS_REFUSED`).
         """
+        _refuse_test_randomness()
         setup = self._require_setup()
         if self.key_mode != "h2":
             raise FEKeyError("this setup issues keys with key_mode='h1' (issue_key): it does not place holders' keys")
@@ -849,7 +904,12 @@ class BCFEGCRistretto255KeyHolder:
 
         Raises:
             FEValidationError: For ``w`` outside the key layout.
+            FESchemeError: While ``pyfe4ai.backend._random_override`` is set
+                (:data:`TEST_RANDOMNESS_REFUSED`). The scalars come from
+                :func:`os.urandom`, which the hook does not reach; the
+                request is refused like the authority's side of the issuance.
         """
+        _refuse_test_randomness()
         setup = self._pp.setup
         bits = _key_bits(setup.circuit.key_layout, w)
         values = setup.circuit.key_layout.decode(bits)  # the canonical values (plain ints)
@@ -961,7 +1021,10 @@ class BCFEGCRistretto255(CircuitFEAbsCrypto):
             FEValidationError: For public parameters that do not check, *x*
                 outside the data layout, an empty slot list or selection, or
                 a label or id that names no slot.
+            FESchemeError: While ``pyfe4ai.backend._random_override`` is set
+                (:data:`TEST_RANDOMNESS_REFUSED`).
         """
+        _refuse_test_randomness()
         pp = self._pp()
         setup = pp.setup
         x_packed = pack_bits(setup.circuit.data_layout.encode(x), setup.n)
