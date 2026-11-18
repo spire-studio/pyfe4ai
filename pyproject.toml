@@ -99,4 +99,5 @@ markers = [
   "policy: tests/policy -- the policy language, its compilers and encodings",
   "review: tests/review -- regression tests of the crypto reviews",
   "examples: tests/examples -- the scripts of examples/ run as programs",
+  "compat: tests/compat -- the 1.x compatibility policy: frozen record fixtures, version markers, stability tiers",
 ]

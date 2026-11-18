@@ -1,0 +1,132 @@
+{
+ "LABEL_HASH_CODES": {
+  "shake256-wide": 0,
+  "shake256-rejection": 1,
+  "shake128-rejection": 2
+ },
+ "LEGACY_LABEL_HASH": "shake256-wide",
+ "FLOODING_SAMPLER": "rounded",
+ "SIFE_LWE_RECORD": "abdp15-lwe-seeded-a/v1",
+ "MIFE_LWE_RECORD": "acfgu18-abdp15-lwe-seeded-a/v2",
+ "SIFE_FULLYSEC_LWE_RECORD": "als16-lwe/v5",
+ "MIFE_FULLYSEC_LWE_RECORD": "acfgu18-als16-lwe/v4",
+ "SIFE_RING_LWE_RECORD": "bmms21-sec4.2/v3",
+ "SIFE_FULLYSEC_RING_LWE_RECORD": "bmms21-sec5/v2",
+ "SIFE_FULLYSEC_RING_LWE_PACKED_RECORD": "bmms21-sec5-packed/v2",
+ "RING_LWE_RECORD": "acfgu18-bmms21/v5",
+ "PAILLIER_RECORD": "modulus-only/v1+g-seed",
+ "MCFE_PAILLIER_RECORD": "abmpsw20-dcr/v2",
+ "MCFE_DAMGARD_RECORD": "abmpsw20-mddh/v1",
+ "TMCFE_DDH_RECORD": "cdgpp18-shamir/v1",
+ "DMCFE_DDH_RECORD": "abmpsw20-fig14-cdgpp18-dcr-carry-mask/v2",
+ "DMCFE_LWE_RECORD": "abmpsw20-fig14-lwe-dcr/v2",
+ "DMCFE_PAILLIER_RECORD": "abmpsw20-fig14-dcr-dcr/v1",
+ "MIFE_DDH_CONSTRUCTION": "acfgu18-abdp15/v2",
+ "MIFE_DDH_RISTRETTO255_CONSTRUCTION": "acfgu18-abdp15-ristretto255/v1",
+ "RECORD_ABSENT": {
+  "ring_modulus": "prime",
+  "ndarray_layout": "elementwise"
+ },
+ "LEGACY_SHARING": "shamir",
+ "TMIFE_LWE_CONSTRUCTION": "acfgu18-abdp15-shamir-smudging-seeded-a/v4",
+ "TMIFE_LWE_CONSTRUCTION_KL": "acfgu18-abdp15-shamir-smudging-kl/v2",
+ "TMIFE_LWE_CONSTRUCTION_REPLICATED": "acfgu18-abdp15-replicated-smudging-seeded-a/v1",
+ "TMIFE_LWE_CONSTRUCTION_REPLICATED_SEEDED": "acfgu18-abdp15-replicated-seeded-smudging-seeded-a/v1",
+ "TMIFE_LWE_CONSTRUCTIONS": {
+  "acfgu18-abdp15-shamir-smudging-seeded-a/v4": "shamir",
+  "acfgu18-abdp15-shamir-smudging-kl/v2": "shamir",
+  "acfgu18-abdp15-replicated-smudging-seeded-a/v1": "replicated",
+  "acfgu18-abdp15-replicated-seeded-smudging-seeded-a/v1": "replicated-seeded"
+ },
+ "TMCFE_LWE_CONSTRUCTION": "abmpsw20-shamir-flooding/v1",
+ "TMCFE_LWE_CONSTRUCTION_REPLICATED": "abmpsw20-replicated-flooding/v1",
+ "TMCFE_LWE_CONSTRUCTION_REPLICATED_SEEDED": "abmpsw20-replicated-seeded-flooding/v1",
+ "TMCFE_LWE_CONSTRUCTIONS": {
+  "abmpsw20-shamir-flooding/v1": "shamir",
+  "abmpsw20-replicated-flooding/v1": "replicated",
+  "abmpsw20-replicated-seeded-flooding/v1": "replicated-seeded"
+ },
+ "TMCFE_RING_LWE_CONSTRUCTION_IDS": {
+  "$dict": [
+   [
+    {
+     "$tuple": [
+      "shamir",
+      "gaussian"
+     ]
+    },
+    "bmms21-ibmcfe-shamir-smudging/v2"
+   ],
+   [
+    {
+     "$tuple": [
+      "shamir",
+      "uniform"
+     ]
+    },
+    "bmms21-ibmcfe-shamir-smudging-uniform/v1"
+   ],
+   [
+    {
+     "$tuple": [
+      "replicated",
+      "gaussian"
+     ]
+    },
+    "bmms21-ibmcfe-replicated-smudging/v1"
+   ],
+   [
+    {
+     "$tuple": [
+      "replicated",
+      "uniform"
+     ]
+    },
+    "bmms21-ibmcfe-replicated-smudging-uniform/v1"
+   ],
+   [
+    {
+     "$tuple": [
+      "replicated-seeded",
+      "gaussian"
+     ]
+    },
+    "bmms21-ibmcfe-replicated-seeded-smudging/v1"
+   ],
+   [
+    {
+     "$tuple": [
+      "replicated-seeded",
+      "uniform"
+     ]
+    },
+    "bmms21-ibmcfe-replicated-seeded-smudging-uniform/v1"
+   ]
+  ]
+ },
+ "TMCFE_RING_LWE_CONSTRUCTION_KL": "bmms21-ibmcfe-shamir-smudging-kl/v2",
+ "TMCFE_RING_LWE_CONSTRUCTIONS": {
+  "bmms21-ibmcfe-shamir-smudging/v2": "shamir",
+  "bmms21-ibmcfe-shamir-smudging-uniform/v1": "shamir",
+  "bmms21-ibmcfe-replicated-smudging/v1": "replicated",
+  "bmms21-ibmcfe-replicated-smudging-uniform/v1": "replicated",
+  "bmms21-ibmcfe-replicated-seeded-smudging/v1": "replicated-seeded",
+  "bmms21-ibmcfe-replicated-seeded-smudging-uniform/v1": "replicated-seeded",
+  "bmms21-ibmcfe-shamir-smudging-kl/v2": "shamir"
+ },
+ "LEGACY_SHAMIR_POLICIES": {
+  "$tuple": [
+   "refuse",
+   "warn"
+  ]
+ },
+ "FLOODING_NOISE_VERSION": 2,
+ "LEGACY_FLOODING": "gaussian",
+ "CT_FORMATS": {
+  "$tuple": [
+   "json",
+   "binary"
+  ]
+ },
+ "policy.encoding.POLICY_COMPILER": "c1"
+}
