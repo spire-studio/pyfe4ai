@@ -218,6 +218,13 @@ Which scheme for which task
        challenge ciphertext, and ciphertexts are malleable, so authenticate
        them where tampering matters; policies of ``and``, ``or`` and
        threshold gates over attribute labels, see :doc:`api/policy`)
+   * - Decrypt only for one named identity (or one of several), with
+       post-quantum assumptions
+     - the identity directory :mod:`pyfe4ai.ac.identity_directory`
+       (experimental): one ``sife/fullysec_ring_lwe`` instance per identity,
+       the key centre holds every identity's master key, ciphertexts name
+       their identity; no "and" of identities, no attribute policies on
+       lattices (:doc:`security`)
    * - Give a key a policy that decides which ciphertexts it opens, for one
        encryptor and without a secret encryption key
      - ``sife/kp_ab_pairing`` (selective version; any label,
