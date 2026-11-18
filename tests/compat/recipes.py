@@ -316,8 +316,12 @@ def _gen_sife(scheme, kg, C):
     ct = C({"id": "nid_default", "keys": {"pp": pp, "sk": sk}}).encrypt(_pt(scheme, SIFE_X))
     result = _scalar(C({"id": "sid_0", "keys": {"pp": pp}}).decrypt(ct, dk, SIFE_Y))
     _check(result, ip(SIFE_X, SIFE_Y), scheme)
-    return ({"pp": pp, "sk": sk, "dk": dk, "ct": ct}, {"x": SIFE_X, "y": SIFE_Y, "x2": SIFE_X2},
-            {"decrypt": result, "decrypt_fresh": ip(SIFE_X2, SIFE_Y)})
+    from pyfe4ai.ml import EncryptedFeatures
+
+    # the ciphertext also in the wire form of the ML adapter's encrypted inference (pyfe4ai.ml.encrypt_features)
+    features = EncryptedFeatures(ciphertext=ct, dim=len(SIFE_X), precision=0, mode="decimal").to_dict()
+    return ({"pp": pp, "sk": sk, "dk": dk, "ct": ct, "features": features}, {"x": SIFE_X, "y": SIFE_Y, "x2": SIFE_X2},
+            {"decrypt": result, "decrypt_fresh": ip(SIFE_X2, SIFE_Y), "decrypt_features": result})
 
 
 def _gen_ab(scheme, kg, C):
@@ -484,6 +488,11 @@ def replay(fx: dict) -> dict:
     if kind == "sife":
         dec = C({"id": "sid_0", "keys": {"pp": pp}})
         out["decrypt"] = _scalar(dec.decrypt(rec["ct"], rec["dk"], inp["y"]))
+        if "features" in rec:
+            from pyfe4ai.ml import EncryptedFeatures
+
+            features = EncryptedFeatures.from_dict(rec["features"])
+            out["decrypt_features"] = _scalar(dec.decrypt(features.ciphertext, rec["dk"], inp["y"]))
         ct2 = C({"id": "nid_default", "keys": {"pp": pp, "sk": rec["sk"]}}).encrypt(_pt(scheme, inp["x2"]))
         out["decrypt_fresh"] = _scalar(dec.decrypt(ct2, rec["dk"], inp["y"]))
     elif kind in ("cp_ab_pairing", "kp_ab_pairing"):
