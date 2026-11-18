@@ -650,3 +650,59 @@ def test_checkauth_refuses_a_slot_without_the_holders_keys_at_their_positions(tm
     with pytest.raises(FEKeyError, match="CheckAuth failed: the slot of the grant does not hold this holder's"):
         holder.finish(forged)
     assert holder.finish(grant)["slot_id"] == slot_id                  # the genuine grant still finishes
+
+
+# ---------------------------------------------------------------------------
+# selections, requester ids and versions refused before use (appended)
+
+
+def test_a_slot_selection_is_a_label_an_id_or_an_iterable_of_them(tmp_path):
+    kg, BCFE = make(tmp_path)
+    key = kg.issue_key(W_SMALL, requester="a", label="one")
+    crypto = BCFE({"keys": {"pp": kg.get_public_parameters()}})
+    for good in ("one", 0, ["one"], (0,), {0, "one"}, (i for i in [0])):
+        assert crypto.decrypt(crypto.encrypt({"x": [1, -1]}, slots=good), key) == {"decision": 1}
+    for bad in (b"one", bytearray(b"\x00"), {"one": 1}, 1.0, True, object(), [b"one"], [None], [], memoryview(b"")):
+        with pytest.raises(FEValidationError):
+            crypto.encrypt({"x": [1, 1]}, slots=bad)
+
+
+def test_a_requester_id_is_its_utf8_bytes(tmp_path):
+    kg, _ = make(tmp_path)
+    with pytest.raises(FEValidationError, match="UTF-8"):
+        kg.issue_key(W_SMALL, requester="a\udc80")
+    nfc, nfd = "é", "é"                                    # one name, two spellings: two requesters
+    assert kg.issue_key(W_SMALL, requester=nfc)["slot_id"] != kg.issue_key(W_SMALL, requester=nfd)["slot_id"]
+
+
+def test_recorded_versions_are_bounded(tmp_path):
+    kg, BCFE = make(tmp_path, key_mode="h2")
+    holder = BCFE.key_holder(kg.get_public_parameters())
+    grant = kg.authorize(holder.request(W_SMALL), requester="a")
+    for version in (2 ** 70, 2 ** 63, 2, 0):                          # slot 0: version 1 only
+        with pytest.raises(FEKeyError, match="slot_list_version"):
+            holder.finish(dict(grant, slot_list_version=version))
+    key = holder.finish(grant)
+    crypto = BCFE({"keys": {"pp": kg.get_public_parameters()}})
+    ct = crypto.encrypt({"x": [1, -1]})
+    for version in (2 ** 70, 2):
+        with pytest.raises(FEKeyError, match="slot_list_version"):
+            crypto.decrypt(ct, dict(key, slot_list_version=version))
+    for version in (2 ** 63, 0):                                      # one component: version >= 1
+        with pytest.raises(FEValidationError, match="slot_list_version"):
+            crypto.decrypt(dict(ct, slot_list_version=version), key)
+    assert crypto.decrypt(ct, key) == {"decision": 1}
+
+
+def test_set_max_keys_and_the_pp_read_the_cap_under_the_store_lock(tmp_path, monkeypatch):
+    kg, _ = make(tmp_path, max_keys=2)
+    kg.issue_key(W_SMALL, requester="a")
+    seen = []
+    real = kg._store.run_locked
+    monkeypatch.setattr(kg._store, "run_locked", lambda fn: seen.append(fn) or real(fn))
+    kg.set_max_keys(1)
+    pp = kg.get_public_parameters()
+    assert len(seen) == 2 and pp["max_keys"] == 1 and pp["slot_list_version"] == 1
+    with pytest.raises(FEKeyError, match="max_keys = 1"):
+        kg.issue_key({"weights": [0, 0], "bias": 0}, requester="b")
+    assert kg._store.private(0)["max_keys"] == 2                     # the cap decided at that slot's issue

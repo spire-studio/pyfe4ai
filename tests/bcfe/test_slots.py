@@ -830,3 +830,89 @@ def test_a_store_file_of_another_user_is_refused(tmp_path, name):  # pragma: no 
     SlotStore(directory).issue(dkey(0), 3, Builder())
     os.chown(directory / name, 65534, -1)
     _refused(SlotStore(directory), "owned by uid 65534", directory / name)
+
+
+# -- a cap the caller keeps: a callable cap, run_locked (appended)
+
+
+def test_a_callable_cap_is_read_once_under_the_lock(tmp_path):
+    store = SlotStore(tmp_path)
+    reads = []
+
+    def cap():
+        reads.append(store._lock_fd is not None)                       # inside the store's file lock
+        return 2
+
+    assert store.issue(dkey(0), cap, Builder()).slot_id == 0 and reads == [True]
+    assert store.issue(dkey(0), cap, never).status == "hit" and reads == [True, True]
+    store.issue(dkey(1), cap, Builder())
+    for key in (dkey(0), dkey(2)):                                     # at the cap: hit and miss alike
+        with pytest.raises(FEKeyError, match="max_keys = 2"):
+            store.issue(key, cap, never)
+    assert store.issue(dkey(2), lambda: 3, Builder()).slot_id == 2     # a raised cap
+
+
+@pytest.mark.parametrize("value", [0, -1, True, 2.0, "3", None])
+def test_a_callable_cap_must_return_a_positive_integer(tmp_path, value):
+    store = SlotStore(tmp_path)
+    store.issue(dkey(0), 3, Builder())
+    before = files(tmp_path)
+    with pytest.raises(FEValidationError, match="max_keys"):
+        store.issue(dkey(1), lambda: value, never)
+    assert files(tmp_path) == before                                   # nothing written, no id burned
+    assert store.issue(dkey(1), 3, Builder()).slot_id == 1
+
+
+def test_a_callable_cap_that_raises_or_uses_the_store_writes_nothing(tmp_path):
+    store = SlotStore(tmp_path)
+    store.issue(dkey(0), 3, Builder())
+    before = files(tmp_path)
+
+    def failing():
+        raise RuntimeError("cap unreadable")
+
+    with pytest.raises(RuntimeError, match="cap unreadable"):
+        store.issue(dkey(1), failing, never)
+    with pytest.raises(FESchemeError, match="must not call it"):
+        store.issue(dkey(1), store.version, never)
+    assert files(tmp_path) == before and store.issue(dkey(1), 3, Builder()).slot_id == 1
+
+
+def test_run_locked_runs_under_the_lock_of_issue(tmp_path):
+    store = SlotStore(tmp_path)
+    store.issue(dkey(0), 5, Builder())
+    issued, started = [], threading.Event()
+
+    def other_issue():
+        started.set()
+        issued.append(SlotStore(tmp_path).issue(dkey(1), 5, Builder()).slot_id)
+
+    def fn(listed):
+        assert [slot["slot_id"] for slot in listed] == [0]
+        thread = threading.Thread(target=other_issue)
+        thread.start()
+        started.wait(5)
+        thread.join(0.3)
+        assert thread.is_alive() and issued == []                      # the issue waits for the lock
+        return thread, "result"
+
+    thread, result = store.run_locked(fn)
+    thread.join(10)
+    assert result == "result" and issued == [1] and store.version() == 2
+
+
+def test_run_locked_gives_the_slot_list_and_checks_its_callable(tmp_path):
+    store = SlotStore(tmp_path)
+    store.issue(dkey(0), 5, Builder())
+    listed = store.run_locked(lambda slots_now: slots_now)
+    assert listed == store.public_slots()
+    listed[0]["label"] = "changed"                                     # new objects
+    assert store.public_slots()[0]["label"] == "slot-0"
+    before = files(tmp_path)
+    with pytest.raises(FEValidationError, match="callable"):
+        store.run_locked(None)
+    with pytest.raises(FESchemeError, match="must not call it"):
+        store.run_locked(lambda slots_now: store.version())
+    with pytest.raises(RuntimeError, match="refused"):
+        store.run_locked(lambda slots_now: (_ for _ in ()).throw(RuntimeError("refused")))
+    assert files(tmp_path) == before and store.issue(dkey(1), 5, Builder()).slot_id == 1

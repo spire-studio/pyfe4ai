@@ -462,10 +462,6 @@ def test_two_processes_issuing_at_once(tmp_path, key_mode):
         assert decryptor.decrypt(ct, key) == SMALL.evaluate(w, x)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "set_max_keys checks the listed slots and writes authority.json outside the slot store's lock, and "
-    "issue_key / authorize read max_keys before taking it: an issuance in flight in another process completes "
-    "under the old cap, leaving more slots than max_keys and public parameters that their own parser refuses"))
 def test_lowering_the_cap_during_an_issuance_never_leaves_more_slots_than_max_keys(tmp_path):
     """Another authority object (another process) lowers the cap to the slots listed while an issuance is
     between its read of ``max_keys`` and the store's lock: either the issuance is refused or the lowering is,
@@ -786,9 +782,6 @@ def test_records_that_are_not_dicts_are_refused(tmp_path, value):
         decryptor.decrypt(value, key0)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "encrypt(slots=...) iterates any value that is not a str, bytes or int: a float or another non-iterable "
-    "raises a bare TypeError from BCFEGCRistretto255._select instead of the documented FEValidationError"))
 @pytest.mark.parametrize("slots", [1.0, object()], ids=["float", "object"])
 def test_a_slot_selection_of_another_type_is_refused(tmp_path, slots):
     _, _, _, decryptor, _, _, _ = _two_slots(tmp_path)
@@ -796,9 +789,6 @@ def test_a_slot_selection_of_another_type_is_refused(tmp_path, slots):
         decryptor.encrypt({"x": [1, 1]}, slots=slots)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "a requester id with a lone surrogate passes _check_requester and fails in garbled.dedup_key with a bare "
-    "UnicodeEncodeError instead of the documented FEValidationError (nothing is reserved)"))
 @pytest.mark.parametrize("key_mode", ["h1", "h2"])
 def test_a_requester_id_that_is_not_utf8_is_refused(tmp_path, key_mode):
     kg, crypto = make(tmp_path, mode=key_mode)
@@ -1012,7 +1002,7 @@ def test_a_refused_request_reserves_no_slot_id(tmp_path, key_mode):
         ]
     before, next_id = snapshot(kg.directory), next_slot_id(kg.directory)
     for name, call in refusals:
-        with pytest.raises((FEError, ValueError)):                       # ValueError: the surrogate (xfail above)
+        with pytest.raises(FEError):
             call()
         assert snapshot(kg.directory) == before, "{} changed a file".format(name)
     assert next_slot_id(kg.directory) == next_id == 1

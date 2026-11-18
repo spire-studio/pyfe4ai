@@ -106,6 +106,18 @@ code keeps in the directory. Alternative not taken: trust the caller's
 directory (the first version did), which leaves the integrity of the store
 to the permissions of a path the store does not control.
 
+**A cap the caller keeps.** The cap of :meth:`SlotStore.issue` is the
+caller's (the bounded-key scheme keeps it in a file of its own, and it may
+be changed after setup). Read before the lock, it could be lowered by
+another process between the read and the issue, which would then list more
+slots than the cap. So :meth:`SlotStore.issue` also takes the cap as a
+callable that it evaluates under its lock, and :meth:`SlotStore.run_locked`
+runs a caller's check-and-write (lowering the cap not below the slots
+listed) under the same lock: no issuance runs between that check and that
+write. Alternative not taken: keep the cap in the store's private file
+(one file and one lock as now, but the store would then own an option of
+the scheme and its changes).
+
 Locks and processes: the store object's lock is renewed in a forked child
 (:func:`pyfe4ai.core.forksafe.track`), which also drops its copy of a held
 file-lock descriptor; the file lock itself belongs to the parent's open
@@ -125,7 +137,7 @@ import os
 import stat
 import tempfile
 import threading
-from typing import Any, Callable, Dict, Iterator, List, NamedTuple, Optional, Tuple
+from typing import Any, Callable, Dict, Iterator, List, NamedTuple, Optional, Tuple, Union
 
 from pyfe4ai.core import forksafe
 from pyfe4ai.core.exceptions import FEConfigError, FEKeyError, FESchemeError, FEValidationError
@@ -390,6 +402,12 @@ def _dedup_key(value: Any) -> bytes:
     return bytes(value)
 
 
+def _check_cap(value: Any) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise FEValidationError("max_keys is an integer >= 1, got {!r}".format(value))
+    return value
+
+
 def _slot_id(value: Any) -> int:
     if not _is_id(value):
         raise FEValidationError("a slot id is an integer >= 0, got {!r}".format(value))
@@ -456,7 +474,8 @@ class SlotStore:
         """Hold the store object's lock and the directory's exclusive file
         lock; remove temporary files a crashed writer left."""
         if self._holder == threading.get_ident():
-            raise FESchemeError("the slot store was used from inside its own issue(): build() must not call it")
+            raise FESchemeError("the slot store was used from inside its own issue() or run_locked(): build() and "
+                                "the callables they run must not call it")
         try:
             import fcntl
         except ImportError:  # pragma: no cover - Windows
@@ -636,7 +655,7 @@ class SlotStore:
 
     # -- issuing
 
-    def issue(self, dedup_key: bytes, max_keys: int,
+    def issue(self, dedup_key: bytes, max_keys: Union[int, Callable[[], int]],
               build: Callable[[int], Tuple[dict, Any]]) -> IssueResult:
         """The slot of *dedup_key*: the stored one, or a new one made by
         *build*, under one exclusive lock.
@@ -662,8 +681,11 @@ class SlotStore:
 
         Args:
             dedup_key: 32 bytes; private (never written to the public file).
-            max_keys: The cap on the number of slots (an integer >= 1; it may
-                grow between calls).
+            max_keys: The cap on the number of slots: an integer >= 1, or
+                a callable without arguments that returns it, called once
+                under the lock before step 1 (where the caller keeps the cap
+                elsewhere and another process may change it; it must not
+                call the store). It may change between calls.
             build: Makes the slot's records from its id: the public record a
                 dict (its ``slot_id``, if present, must be the one given), the
                 private record a dict or ``bytes``; JSON values and bytes.
@@ -675,17 +697,20 @@ class SlotStore:
 
         Raises:
             FEKeyError: If the cap is reached.
-            FEValidationError: For a malformed argument or record.
+            FEValidationError: For a malformed argument or record (also a cap
+                the callable returns).
             FEConfigError: If the files are unusable (nothing is written).
-            FESchemeError: If *build* uses the store.
+            FESchemeError: If *build* (or the cap's callable) uses the store.
         """
         key = _dedup_key(dedup_key)
-        if not isinstance(max_keys, int) or isinstance(max_keys, bool) or max_keys < 1:
-            raise FEValidationError("max_keys is an integer >= 1, got {!r}".format(max_keys))
+        if not callable(max_keys):
+            _check_cap(max_keys)
         if not callable(build):
             raise FEValidationError("build must be callable, got {}".format(type(build).__name__))
         with self._locked():
             public, side = self._load()
+            if callable(max_keys):  # decided under the lock: no change of the cap between this and the issue
+                max_keys = _check_cap(max_keys())
             hit = side.dedup.get(key)
             if len(public) >= max_keys:  # the same error, hit or miss
                 raise FEKeyError(
@@ -757,3 +782,30 @@ class SlotStore:
         key = _dedup_key(dedup_key)
         _, side = self._snapshot()
         return side.dedup.get(key)
+
+    # -- the caller's own state, under the lock
+
+    def run_locked(self, fn: Callable[[List[dict]], Any]) -> Any:
+        """``fn(slots)`` under the store's exclusive lock -- the one every
+        :meth:`issue` holds -- with ``slots`` the slot list at that moment
+        (as :meth:`public_slots` returns it: new objects, after the recovery
+        of an interrupted issue); returns what *fn* returns. A caller keeps
+        state that :meth:`issue` depends on (a cap it passes as a callable)
+        consistent with the slot list by changing it here: no issuance runs
+        while *fn* does. *fn* must not call the store.
+
+        Raises:
+            FEValidationError: If *fn* is not callable.
+            FEConfigError: If the files are unusable.
+            FESchemeError: If *fn* uses the store or forks.
+            Exception: Whatever *fn* raises (the store writes nothing).
+        """
+        if not callable(fn):
+            raise FEValidationError("fn must be callable, got {}".format(type(fn).__name__))
+        with self._locked():
+            public, _ = self._load()
+            pid = os.getpid()
+            out = fn(_decode(public, self._public_path))
+            if os.getpid() != pid:
+                raise FESchemeError("fn forked: the child does not hold the slot store's lock")
+            return out
