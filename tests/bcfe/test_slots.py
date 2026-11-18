@@ -3,8 +3,10 @@
 The public slot list only grows and counts its slots; a repeated dedup key
 returns the stored private record without building; at the cap a hit and a
 miss get the same error and nothing is written; a failed build or a crash at
-any step burns at most its slot id and never hands an id out twice; two
-processes (and several threads and store objects) issuing at once get
+any step burns at most its slot id and never hands an id out twice; a slot
+whose private record was written is issued (the next call lists it from its
+write-ahead record, a retry is a hit), so one request never gets two slots;
+two processes (and several threads and store objects) issuing at once get
 distinct ids; the private side is owner-only and never reaches the public
 file; damaged files fail closed; a forked child issues even when another
 thread of the parent held the store at the fork.
@@ -38,23 +40,27 @@ def dkey(i) -> bytes:
     return hashlib.sha3_256("dedup key {}".format(i).encode()).digest()
 
 
-def records(slot_id: int):
-    """A public and a private record of slot *slot_id* (fresh private bytes)."""
-    return ({"label": "slot-{}".format(slot_id), "pks": [b"\x01" * 32, b"\x02" * 32]},
-            {"k_i": os.urandom(16), "key": {"scalars": [os.urandom(32)], "bits": [0, 1, 1]}})
+def records(slot_id: int, request=None):
+    """A public and a private record of slot *slot_id* (fresh private bytes);
+    the public record names its *request* if given (for counting slots per
+    request)."""
+    public = {"label": "slot-{}".format(slot_id), "pks": [b"\x01" * 32, b"\x02" * 32]}
+    if request is not None:
+        public["request"] = request
+    return public, {"k_i": os.urandom(16), "key": {"scalars": [os.urandom(32)], "bits": [0, 1, 1]}}
 
 
 class Builder:
     """A ``build`` that records every slot id handed to it."""
 
-    def __init__(self, fail=None):
-        self.ids, self.fail = [], fail
+    def __init__(self, request=None, fail=None):
+        self.ids, self.request, self.fail = [], request, fail
 
     def __call__(self, slot_id):
         self.ids.append(slot_id)
         if self.fail is not None:
             raise self.fail
-        return records(slot_id)
+        return records(slot_id, self.request)
 
 
 def never(slot_id):  # pragma: no cover - a hit must not build
@@ -70,22 +76,43 @@ def files(directory) -> dict:
     return out
 
 
+def on_disk(directory, name):
+    """The JSON of file *name* as it is now (no store call: no recovery)."""
+    path = os.path.join(directory, name)
+    if not os.path.exists(path):
+        return None
+    with open(path) as f:
+        return json.load(f)
+
+
+def listed_on_disk(directory):
+    public = on_disk(directory, slots.PUBLIC_FILE)
+    return [] if public is None else [slot["slot_id"] for slot in public["slots"]]
+
+
 def check_consistent(directory, handed=()):
-    """The files load; every slot id handed to a build is handed once and
-    lies below next_slot_id; a listed slot was handed out; a private record
-    or dedup entry is of a listed slot."""
+    """As found on disk: the public file lists no slot whose private record
+    is absent. After the recovery (the first store call): the files load;
+    every listed slot has its private record and one dedup entry, and no
+    other slot has one; no request (a record's ``request``) has two slots;
+    every slot id handed to a build is handed once and lies below
+    next_slot_id; a listed slot was handed out."""
+    private = on_disk(directory, slots.PRIVATE_FILE)
+    found = listed_on_disk(directory)
+    assert not found or set(found) <= {int(i) for i in private["private"]}, "listed without its private record"
     store = SlotStore(directory)
     public = store.public_slots()
     ids = [slot["slot_id"] for slot in public]
-    assert ids == sorted(set(ids))
-    assert store.version() == len(ids)
+    assert ids == sorted(set(ids)) and ids[:len(found)] == found, "the recovery only appends"
+    assert store.version() == len(ids) and listed_on_disk(directory) == ids
     assert len(handed) == len(set(handed)), "a slot id was handed out twice: {}".format(handed)
     assert set(ids) <= set(handed) or not handed
-    with open(os.path.join(directory, slots.PRIVATE_FILE)) as f:
-        private = json.load(f)
+    private = on_disk(directory, slots.PRIVATE_FILE)
     assert all(i < private["next_slot_id"] for i in list(handed) + ids)
-    assert {int(i) for i in private["private"]} <= set(ids)
-    assert set(private["dedup"].values()) <= {int(i) for i in private["private"]}
+    assert sorted(int(i) for i in private["private"]) == ids, "a private record of an unlisted slot"
+    assert sorted(private["dedup"].values()) == ids, "not one dedup entry per listed slot"
+    requests = [slot["request"] for slot in public if "request" in slot]
+    assert len(requests) == len(set(requests)), "one request, two slots: {}".format(requests)
     return store
 
 
@@ -237,11 +264,12 @@ def test_a_build_using_the_store_is_refused(tmp_path):
 
 @pytest.mark.parametrize("failing_write", [1, 2, 3])
 def test_an_error_at_each_write(tmp_path, monkeypatch, failing_write):
-    """The writes of a new slot: 1 the reservation, 2 the public record, 3 the
-    private record. An error at write 3 is the crash "between the two
-    writes": the slot is listed, never delivered, and a retry makes a new one."""
-    store, build = SlotStore(tmp_path), Builder()
-    store.issue(dkey(0), 5, build)
+    """The writes of a new slot: 1 the reservation, 2 the private record with
+    its dedup entry and the pending copy of its public record (the commit
+    point), 3 the public record. An error at write 3, between the two writes,
+    leaves an issued slot: the next call lists it and a retry is a hit."""
+    store, first, build = SlotStore(tmp_path), Builder("r0"), Builder("r1")
+    store.issue(dkey(0), 5, first)
     count, real = [0], slots._atomic_write
 
     def write(*args):
@@ -255,12 +283,70 @@ def test_an_error_at_each_write(tmp_path, monkeypatch, failing_write):
         store.issue(dkey(1), 5, build)
     monkeypatch.setattr(slots, "_atomic_write", real)
     assert [n for n in os.listdir(tmp_path) if n.startswith(".slots-")] == []
-    assert store.version() == (2 if failing_write == 3 else 1)
-    assert store.lookup(dkey(1)) is None and store.private(1) is None
+    assert listed_on_disk(tmp_path) == [0]
+    issued = failing_write == 3
+    check_consistent(tmp_path, first.ids + build.ids)
+    assert store.version() == (2 if issued else 1)
+    assert store.lookup(dkey(1)) == (1 if issued else None) and (store.private(1) is not None) == issued
     retry = store.issue(dkey(1), 5, build)
-    assert retry.status == "new" and retry.slot_id == (1 if failing_write == 1 else 2)
+    if issued:
+        assert retry.status == "hit" and retry.slot_id == 1 and build.ids == [1]
+    else:
+        assert retry.status == "new" and retry.slot_id == (1 if failing_write == 1 else 2)
     assert store.issue(dkey(1), 5, never) == ("hit", retry.slot_id, retry.private)
-    check_consistent(tmp_path, build.ids)
+    check_consistent(tmp_path, first.ids + build.ids)
+
+
+def _interrupted(directory, monkeypatch):
+    """A store whose issue of ``dkey(1)`` failed at the public write (after
+    its commit point); the private record returned by nothing so far."""
+    store = SlotStore(directory)
+    store.issue(dkey(0), 5, Builder("r0"))
+    real = slots._atomic_write
+
+    def write(directory, name, data, mode):
+        if name == slots.PUBLIC_FILE:
+            raise OSError("disk full")
+        real(directory, name, data, mode)
+
+    monkeypatch.setattr(slots, "_atomic_write", write)
+    with pytest.raises(OSError):
+        store.issue(dkey(1), 5, Builder("r1"))
+    monkeypatch.setattr(slots, "_atomic_write", real)
+    assert listed_on_disk(directory) == [0]
+    return store
+
+
+CALLS = {
+    "issue another": lambda store: store.issue(dkey(2), 5, Builder("r2")),
+    "issue at the cap": lambda store: pytest.raises(FEKeyError, store.issue, dkey(2), 2, never),
+    "public_slots": lambda store: store.public_slots(),
+    "version": lambda store: store.version(),
+    "private": lambda store: store.private(0),
+    "lookup": lambda store: store.lookup(dkey(0)),
+}
+
+
+@pytest.mark.parametrize("call", sorted(CALLS))
+def test_every_call_first_lists_an_interrupted_slot(tmp_path, monkeypatch, call):
+    store = _interrupted(tmp_path, monkeypatch)
+    CALLS[call](SlotStore(tmp_path))
+    assert listed_on_disk(tmp_path)[:2] == [0, 1], "the interrupted slot was not listed first"
+    before = files(tmp_path)
+    assert store.public_slots()[1] == dict(records(1, "r1")[0], slot_id=1)
+    assert files(tmp_path) == before, "the recovery runs once"
+    assert store.issue(dkey(1), 5, never)[:2] == ("hit", 1)
+    check_consistent(tmp_path)
+
+
+def test_the_pending_copy_is_dropped_by_the_next_private_write(tmp_path, monkeypatch):
+    store = _interrupted(tmp_path, monkeypatch)
+    assert list(on_disk(tmp_path, slots.PRIVATE_FILE)["pending"]) == ["1"]
+    store.version()  # lists slot 1; the private file is not rewritten by a read
+    assert list(on_disk(tmp_path, slots.PRIVATE_FILE)["pending"]) == ["1"]
+    store.issue(dkey(2), 5, Builder("r2"))  # its reservation drops slot 1's copy
+    assert list(on_disk(tmp_path, slots.PRIVATE_FILE)["pending"]) == ["2"]
+    check_consistent(tmp_path)
 
 
 #: Where the forked child dies: before / after (the rename of) write n, in
@@ -271,7 +357,9 @@ CRASHES = ["before-1", "after-1", "in-build", "before-2", "after-2", "before-3",
 @needs_fork
 @pytest.mark.parametrize("where", CRASHES)
 def test_a_crash_at_each_step_never_reuses_a_slot_id(tmp_path, where):
-    store, build = SlotStore(tmp_path), Builder()
+    """Writes as in test_an_error_at_each_write; from the commit point on
+    (after-2, before-3, after-3) the slot is issued and a retry is a hit."""
+    store, build = SlotStore(tmp_path), Builder("r0")
     store.issue(dkey(0), 5, build)
     read, write = os.pipe()
     pid = os.fork()
@@ -296,7 +384,7 @@ def test_a_crash_at_each_step_never_reuses_a_slot_id(tmp_path, where):
                 os.write(write, b"%d\n" % slot_id)
                 if where == "in-build":
                     os._exit(0)
-                return records(slot_id)
+                return records(slot_id, "r1")
 
             slots._atomic_write = dying_write
             store.issue(dkey(1), 5, dying_build)
@@ -310,17 +398,17 @@ def test_a_crash_at_each_step_never_reuses_a_slot_id(tmp_path, where):
     store = check_consistent(tmp_path, handed)
     assert [n for n in os.listdir(tmp_path) if n.startswith(".slots-")] == [], "a crashed writer's temporary file"
     kept = {slot["slot_id"]: store.private(slot["slot_id"]) for slot in store.public_slots()}
-    after = SlotStore(tmp_path).issue(dkey(1), 5, build)
-    if where == "after-3":  # delivered before the crash
-        assert after.status == "hit" and after.slot_id == 1
+    assert all(private is not None for private in kept.values()), "a listed slot without its private record"
+    retry = Builder("r1")
+    after = SlotStore(tmp_path).issue(dkey(1), 5, retry)
+    if where in ("after-2", "before-3", "after-3"):  # issued before the crash
+        assert after.status == "hit" and after.slot_id == 1 and after.private == kept[1] and retry.ids == []
     else:
-        assert after.status == "new" and after.slot_id not in handed[1:]
-        assert after.slot_id == (1 if where == "before-1" else 2)
-    check_consistent(tmp_path, handed + build.ids[1:])
-    for slot_id, private in kept.items():  # a slot's private record, or its absence, never changes
+        assert after.status == "new" and after.slot_id not in handed
+        assert after.slot_id == (1 if where in ("before-1",) else 2)
+    check_consistent(tmp_path, handed + retry.ids)
+    for slot_id, private in kept.items():  # a slot's private record never changes
         assert store.private(slot_id) == private
-    assert [slot_id for slot_id, private in kept.items() if private is None] == (
-        [1] if where in ("after-2", "before-3") else []), "a listed slot never delivered"
 
 
 # -- concurrency
@@ -491,7 +579,7 @@ def test_the_public_file_holds_no_dedup_key_and_no_private_field(tmp_path, caplo
         for form in _encodings(secret):
             assert len(form) >= 8
             assert not any(form in text for text in exposed), "a private value in a public place"
-    for field in (b"k_i", b"stored_key", b"dedup", b"next_slot_id"):
+    for field in (b"k_i", b"stored_key", b"dedup", b"next_slot_id", b"pending"):
         assert field not in public
 
 
@@ -530,26 +618,42 @@ DAMAGES = {
     "public other version": (slots.PUBLIC_FILE, _set("format_version", 2)),
     "public version mismatch": (slots.PUBLIC_FILE, _set("slot_list_version", 1)),
     "public ids not increasing": (slots.PUBLIC_FILE, lambda d: d["slots"].reverse()),
-    "public slot dropped": (slots.PUBLIC_FILE, lambda d: (d["slots"].pop(), d.__setitem__("slot_list_version", 1))),
+    "public first slot dropped": (slots.PUBLIC_FILE,
+                                  lambda d: (d["slots"].pop(0), d.__setitem__("slot_list_version", 1))),
     "public bad bytes": (slots.PUBLIC_FILE, lambda d: d["slots"][0]["pks"][0].__setitem__("__bytes__", "!!")),
     "private truncated": (slots.PRIVATE_FILE, "truncated"),
     "private garbage": (slots.PRIVATE_FILE, "garbage"),
     "private other format": (slots.PRIVATE_FILE, _set("format", slots.PUBLIC_FORMAT)),
-    "private next id reused": (slots.PRIVATE_FILE, _set("next_slot_id", 1)),
+    "private next id reused": (slots.PRIVATE_FILE, _set("next_slot_id", 2)),
     "private next id missing": (slots.PRIVATE_FILE, lambda d: d.pop("next_slot_id")),
     "private record of no slot": (slots.PRIVATE_FILE, lambda d: d["private"].__setitem__("7", {})),
     "private record id not canonical": (slots.PRIVATE_FILE, lambda d: d["private"].__setitem__("01", {})),
     "dedup key short": (slots.PRIVATE_FILE, lambda d: d["dedup"].__setitem__("ab", 0)),
     "dedup to no record": (slots.PRIVATE_FILE, lambda d: d["dedup"].__setitem__("cd" * 32, 9)),
     "two dedup keys of one slot": (slots.PRIVATE_FILE, lambda d: d["dedup"].__setitem__("ef" * 32, 0)),
+    "listed slot without private record": (slots.PRIVATE_FILE, lambda d: (
+        d["private"].pop("0"), d.__setitem__("dedup", {k: v for k, v in d["dedup"].items() if v != 0}))),
+    "private record without dedup entry": (slots.PRIVATE_FILE, lambda d: d.__setitem__(
+        "dedup", {k: v for k, v in d["dedup"].items() if v != 0})),
+    "pending missing": (slots.PRIVATE_FILE, lambda d: d.pop("pending")),
+    "pending differs from the listed record": (slots.PRIVATE_FILE,
+                                               lambda d: d["pending"]["2"].__setitem__("label", "other")),
+    "pending names another slot": (slots.PRIVATE_FILE, lambda d: d["pending"]["2"].__setitem__("slot_id", 0)),
+    "pending without private record": (slots.PRIVATE_FILE, lambda d: d["pending"].__setitem__("5", {"slot_id": 5})),
+    "pending below a listed id": (slots.PRIVATE_FILE, lambda d: (  # the burned id 1, as if issued
+        d["private"].__setitem__("1", {}), d["dedup"].__setitem__("ab" * 32, 1),
+        d["pending"].__setitem__("1", {"slot_id": 1}))),
 }
 
 
 @pytest.mark.parametrize("name", sorted(DAMAGES))
 def test_damaged_files_fail_closed(tmp_path, name):
-    store = SlotStore(tmp_path)
+    store = SlotStore(tmp_path)  # slots 0 and 2 listed (1 burned), slot 2's pending copy kept
     store.issue(dkey(0), 5, Builder())
+    with pytest.raises(RuntimeError):
+        store.issue(dkey(1), 5, Builder(fail=RuntimeError("x")))
     store.issue(dkey(1), 5, Builder())
+    assert listed_on_disk(tmp_path) == [0, 2] and list(on_disk(tmp_path, slots.PRIVATE_FILE)["pending"]) == ["2"]
     target, how = DAMAGES[name]
     _damage(tmp_path / target, how)
     before = files(tmp_path)
@@ -559,6 +663,19 @@ def test_damaged_files_fail_closed(tmp_path, name):
             call()
         assert dkey(0).hex() not in str(err.value)
     assert files(tmp_path) == before, "a damaged store was rewritten"
+
+
+def test_a_slot_list_without_its_last_slot_is_completed_from_the_pending_copy(tmp_path):
+    """The last slot's public record is still pending in the private file: a
+    slot list that lost it (the state after a failed public write) gets it
+    back; the slots before it have no pending copy and are not."""
+    store = SlotStore(tmp_path)
+    for i in range(3):
+        store.issue(dkey(i), 5, Builder("r{}".format(i)))
+    complete = files(tmp_path)
+    _damage(tmp_path / slots.PUBLIC_FILE, lambda d: (d["slots"].pop(), d.__setitem__("slot_list_version", 2)))
+    assert store.lookup(dkey(2)) == 2 and files(tmp_path) == complete
+    check_consistent(tmp_path)
 
 
 def test_a_missing_private_file_fails_closed_but_a_missing_slot_list_does_not(tmp_path):
@@ -583,3 +700,133 @@ def test_an_unreadable_file_fails_closed(tmp_path):
             store.lookup(dkey(0))
     finally:
         os.chmod(tmp_path / slots.PRIVATE_FILE, 0o600)
+
+
+# -- the store trusts only a directory and files of its own user
+
+
+def _every_call(store):
+    return (lambda: store.issue(dkey(0), 3, never), lambda: store.issue(dkey(9), 3, never), store.public_slots,
+            store.version, lambda: store.private(0), lambda: store.lookup(dkey(0)))
+
+
+def _refused(store, match, path):
+    for call in _every_call(store):
+        with pytest.raises(FEConfigError, match=match) as err:
+            call()
+        assert str(path) in str(err.value) and dkey(0).hex() not in str(err.value)
+
+
+@pytest.mark.parametrize("umask", [0o000, 0o022, 0o077, 0o277])
+def test_a_new_directory_is_made_owner_only_whatever_the_umask(tmp_path, umask):
+    (tmp_path / "parent").mkdir()
+    old = os.umask(umask)
+    try:
+        store = SlotStore(tmp_path / "parent" / "store")
+        store.issue(dkey(0), 3, Builder())
+        store.issue(dkey(1), 3, Builder())  # reopens the files made under that umask
+    finally:
+        os.umask(old)
+    assert stat.S_IMODE(os.stat(store.directory).st_mode) == 0o700
+    assert stat.S_IMODE(os.stat(os.path.join(store.directory, slots.LOCK_FILE)).st_mode) == 0o600
+    assert SlotStore(store.directory).version() == 2
+
+
+@pytest.mark.parametrize("mode", [0o777, 0o770, 0o730, 0o703])
+def test_a_directory_other_users_can_write_is_refused(tmp_path, mode):
+    directory = tmp_path / "store"
+    directory.mkdir()
+    os.chmod(directory, mode)
+    _refused(SlotStore(directory), "mode {:04o} lets other users write".format(mode), directory)
+    assert os.listdir(directory) == [] and stat.S_IMODE(os.stat(directory).st_mode) == mode, "changed"
+
+
+def test_a_store_whose_directory_became_writable_by_others_is_refused(tmp_path):
+    store = SlotStore(tmp_path / "s")
+    store.issue(dkey(0), 3, Builder())
+    before = files(tmp_path / "s")
+    os.chmod(tmp_path / "s", 0o777)
+    _refused(store, "mode 0777", tmp_path / "s")
+    assert files(tmp_path / "s") == before
+
+
+@pytest.mark.parametrize("mode", [0o755, 0o750, 0o711, 0o701])
+def test_a_directory_others_may_only_read_is_used(tmp_path, mode):
+    directory = tmp_path / "store"
+    directory.mkdir()
+    os.chmod(directory, mode)
+    store = SlotStore(directory)
+    assert store.issue(dkey(0), 3, Builder())[:2] == ("new", 0) and store.lookup(dkey(0)) == 0
+
+
+def test_a_symlinked_directory_is_refused(tmp_path):
+    real = tmp_path / "real"
+    SlotStore(real).issue(dkey(0), 3, Builder())
+    (tmp_path / "link").symlink_to(real, target_is_directory=True)
+    _refused(SlotStore(tmp_path / "link"), "symbolic link", tmp_path / "link")
+    (tmp_path / "dangling").symlink_to(tmp_path / "nowhere", target_is_directory=True)
+    _refused(SlotStore(tmp_path / "dangling"), "symbolic link", tmp_path / "dangling")
+    assert not (tmp_path / "nowhere").exists(), "a dangling link was followed"
+
+
+def test_a_symbolic_link_above_the_directory_is_followed(tmp_path):
+    (tmp_path / "real").mkdir()
+    (tmp_path / "up").symlink_to(tmp_path / "real", target_is_directory=True)
+    SlotStore(tmp_path / "up" / "store").issue(dkey(0), 3, Builder())
+    assert SlotStore(tmp_path / "real" / "store").lookup(dkey(0)) == 0
+
+
+def test_a_file_in_place_of_the_directory_is_refused(tmp_path):
+    (tmp_path / "store").write_bytes(b"")
+    _refused(SlotStore(tmp_path / "store"), "not a directory", tmp_path / "store")
+
+
+@pytest.mark.parametrize("name", [slots.PUBLIC_FILE, slots.PRIVATE_FILE, slots.LOCK_FILE])
+def test_a_symlinked_store_file_is_refused(tmp_path, name):
+    directory = tmp_path / "s"
+    SlotStore(directory).issue(dkey(0), 3, Builder())
+    os.replace(directory / name, tmp_path / name)  # a valid file, now outside the directory
+    os.symlink(tmp_path / name, directory / name)
+    target = (tmp_path / name).read_bytes()
+    _refused(SlotStore(directory), "symbolic link", directory / name)
+    assert os.path.islink(directory / name) and (tmp_path / name).read_bytes() == target, "written through the link"
+
+
+@pytest.mark.parametrize("kind", ["fifo", "directory"])
+@pytest.mark.parametrize("name", [slots.PUBLIC_FILE, slots.PRIVATE_FILE, slots.LOCK_FILE])
+def test_a_store_file_that_is_not_a_regular_file_is_refused(tmp_path, name, kind):
+    directory = tmp_path / "s"
+    SlotStore(directory).issue(dkey(0), 3, Builder())
+    os.unlink(directory / name)
+    if kind == "fifo":
+        os.mkfifo(directory / name, 0o600)  # opening it for reading would block without O_NONBLOCK
+    else:
+        (directory / name).mkdir(mode=0o700)
+    _refused(SlotStore(directory), "not a regular file", directory / name)
+
+
+@pytest.mark.parametrize("name,mode", [(slots.PRIVATE_FILE, 0o640), (slots.PRIVATE_FILE, 0o604),
+                                       (slots.LOCK_FILE, 0o644), (slots.PUBLIC_FILE, 0o664),
+                                       (slots.PUBLIC_FILE, 0o646)])
+def test_store_files_other_users_can_write_or_read_privately_are_refused(tmp_path, name, mode):
+    directory = tmp_path / "s"
+    SlotStore(directory).issue(dkey(0), 3, Builder())
+    os.chmod(directory / name, mode)
+    _refused(SlotStore(directory), "mode {:04o} lets other users".format(mode), directory / name)
+
+
+def test_a_directory_of_another_user_is_refused(tmp_path, monkeypatch):
+    store = SlotStore(tmp_path / "s")
+    store.issue(dkey(0), 3, Builder())
+    uid = os.geteuid()
+    monkeypatch.setattr(os, "geteuid", lambda: uid + 1)  # as if another user ran the store
+    _refused(store, "owned by uid {}, not by this process's uid {}".format(uid, uid + 1), tmp_path / "s")
+
+
+@pytest.mark.skipif(not hasattr(os, "geteuid") or os.geteuid() != 0, reason="chown to another uid needs root")
+@pytest.mark.parametrize("name", [slots.PUBLIC_FILE, slots.PRIVATE_FILE, slots.LOCK_FILE])
+def test_a_store_file_of_another_user_is_refused(tmp_path, name):  # pragma: no cover - root only
+    directory = tmp_path / "s"
+    SlotStore(directory).issue(dkey(0), 3, Builder())
+    os.chown(directory / name, 65534, -1)
+    _refused(SlotStore(directory), "owned by uid 65534", directory / name)

@@ -25,8 +25,10 @@ Files of the directory:
     may skip a number (an id burned by a failed or crashed issue).
 ``slots.private.json`` (private, mode ``0o600``)
     ``next_slot_id`` (no id below it is ever handed out again), the private
-    record of each delivered slot and the deduplication index (dedup key ->
-    slot id). Neither the dedup keys (hashes of the requested functions) nor
+    record of each slot, the deduplication index (dedup key -> slot id) and
+    the *pending* public records: a write-ahead copy of the public record of
+    the slot being issued, until a later write of this file finds it
+    listed. Neither the dedup keys (hashes of the requested functions) nor
     the private records ever reach the public file, a ``repr``, an
     exception message or a log line: a public dedup key is an offline test
     of guesses of a function.
@@ -38,27 +40,71 @@ lock for its threads, the file lock for every other process and store
 object): look the dedup key up; refuse with the same :class:`FEKeyError`
 and the same text, hit or miss, once the list holds ``max_keys`` slots (so
 that a requester cannot test functions through the deduplication once the
-cap is reached); return a hit without building; otherwise reserve the next
-slot id (persisted before ``build`` runs), call ``build(slot_id)``, append
-the public record, then store the private record with its dedup key. Every
-write goes to a temporary file in the directory that is fsynced, renamed
-over the old file and followed by an fsync of the directory.
+cap is reached); return a hit without building; otherwise
 
-A crash (or an exception) anywhere leaves a consistent store:
+1. reserve the next slot id (the private file, before ``build`` runs);
+2. call ``build(slot_id)``;
+3. write the private file with the slot's private record, its dedup entry
+   and the pending copy of its public record (the commit point);
+4. append the public record to the slot list.
 
-* before the reservation: nothing changed;
-* after the reservation, before the public record (``build`` raised, or a
-  crash): the id is burned, no slot appears, a retry gets a new id;
-* after the public record, before the private one: the slot is listed but
-  was never delivered (no private record, no dedup entry); it counts
-  against ``max_keys`` and a retry makes a new slot. The public record goes
-  first so that the dedup index never points to a slot missing from the
-  list, and a slot's records are written by the one call that reserved its
-  id: no slot can end up with two keys.
+Every write goes to a temporary file in the directory that is fsynced,
+renamed over the old file and followed by an fsync of the directory.
+
+**Recovery (roll forward).** Every locked call, reads included, first lists
+the pending public records whose slots the slot list lacks (in slot-id
+order, with the same write discipline) and only then does its work. A crash
+(or an exception) anywhere therefore leaves one of two states:
+
+* before step 3 (before the reservation, in ``build``, or in a write of
+  step 1 or 3 that did not reach the rename): nothing is visible, except a
+  burned id when step 1 completed; a retry gets a new id;
+* from step 3 on: the slot is issued. It is listed (by step 4 or by the
+  recovery), its dedup entry and private record exist, and a retry of the
+  same request is a hit that returns the stored private record (the key
+  under central issuance, the grant when the holder made its own keys).
+
+The order matters when the holder made its own keys: it can use its slot as
+soon as the slot is listed, so a listed slot must always be reachable
+through its dedup key, or a retry would give the same requester a second
+slot that the dedup index does not know. The public file is therefore never
+written ahead of the private one. Rejected alternatives: (a) persist the
+dedup key with the reservation (a retry would hit a slot whose private
+record, e.g. its secret ``k``, was never stored); (b) count slots by the
+public list only (bounds the slots, but a retry still makes a second one);
+(c) the private file first without rolling forward (a dedup entry of an
+unlisted slot, refused as inconsistent). With central issuance and
+``keep_issued_keys`` off, a crash after step 3 leaves an issued slot whose
+key no one holds: its retry is a hit the scheme refuses (a lost key is not
+issued again).
 
 Temporary files of a crashed writer are removed by the next locked call.
 Unreadable, truncated or inconsistent files raise :class:`FEConfigError`
-(fail closed): the store never starts empty while its files exist.
+(fail closed): the store never starts empty while its files exist. The two
+files are consistent when every listed slot has its private record and its
+one dedup entry, a pending copy of a listed slot equals the listed record,
+``next_slot_id`` exceeds every slot id, and a private record of a slot that
+is not listed carries a pending public record with a slot id above every
+listed one (the one state the recovery completes); anything else is
+refused.
+
+**Trust in the directory.** Whoever can write the directory can reset the
+store (slot ids handed out again) or replace a listed slot's public keys by
+keys whose secrets they know, which the authority would then publish. So
+every locked call, reads included, first checks the directory: not a
+symbolic link (``lstat``), a directory, owned by this process's effective
+user and not writable by group or others (``mode & 0o022 == 0``; a missing
+directory is created with mode ``0o700``, set again after the creation as
+the umask may clear bits). Each store file is opened with ``O_NOFOLLOW``
+(and ``O_NONBLOCK``, so that a FIFO cannot block the call) and must be a
+regular file of that user that no other user can write; the private file
+and the lock file must not be readable by others either. Anything else
+raises :class:`FEConfigError` naming the path and the reason (never the
+content). The directories above the store are not checked (a cache
+directory reached through a symbolic link works), nor are the files other
+code keeps in the directory. Alternative not taken: trust the caller's
+directory (the first version did), which leaves the integrity of the store
+to the permissions of a path the store does not control.
 
 Locks and processes: the store object's lock is renewed in a forked child
 (:func:`pyfe4ai.core.forksafe.track`), which also drops its copy of a held
@@ -76,6 +122,7 @@ import json
 import logging
 import math
 import os
+import stat
 import tempfile
 import threading
 from typing import Any, Callable, Dict, Iterator, List, NamedTuple, Optional, Tuple
@@ -122,12 +169,14 @@ class IssueResult(NamedTuple):
 
 class _PrivateSide:
     """The private file, loaded: ``next_slot_id``, the private records
-    (slot id -> record as stored) and the dedup index (key -> slot id)."""
+    (slot id -> record as stored), the dedup index (key -> slot id) and the
+    pending public records (slot id -> record as stored)."""
 
-    __slots__ = ("next_slot_id", "records", "dedup")
+    __slots__ = ("next_slot_id", "records", "dedup", "pending")
 
-    def __init__(self, next_slot_id: int, records: Dict[int, Any], dedup: Dict[bytes, int]) -> None:
-        self.next_slot_id, self.records, self.dedup = next_slot_id, records, dedup
+    def __init__(self, next_slot_id: int, records: Dict[int, Any], dedup: Dict[bytes, int],
+                 pending: Dict[int, dict]) -> None:
+        self.next_slot_id, self.records, self.dedup, self.pending = next_slot_id, records, dedup, pending
 
     def __repr__(self) -> str:
         return "<private slot side: next id {}, {} records>".format(self.next_slot_id, len(self.records))
@@ -189,13 +238,65 @@ def _corrupt(path: str, what: str) -> FEConfigError:
         "(a new store issues keys from slot 0 again)".format(path, what))
 
 
-def _read_json(path: str) -> Optional[dict]:
-    """The JSON object in *path*, ``None`` if the file does not exist."""
+def _refused(path: str, reason: str) -> FEConfigError:
+    return FEConfigError(
+        "the slot store refuses {}: {} (it trusts only a directory and files of its own user that no other user "
+        "can write)".format(path, reason))
+
+
+def _check_owner_and_mode(st: os.stat_result, path: str, private: bool) -> None:
+    """Refuse *path* (its ``stat`` *st*) unless this process's effective user
+    owns it and no other user can write it (*private*: nor read it)."""
+    euid = os.geteuid()
+    if st.st_uid != euid:
+        raise _refused(path, "it is owned by uid {}, not by this process's uid {}".format(st.st_uid, euid))
+    mode = stat.S_IMODE(st.st_mode)
+    if mode & (0o077 if private else 0o022):
+        raise _refused(path, "its mode {:04o} lets other users {} it".format(
+            mode, "read or write" if private else "write"))
+
+
+def _open_file(path: str, flags: int, private: bool) -> Optional[int]:
+    """A descriptor of the store file *path*, opened without following a
+    symbolic link and without blocking on a FIFO, once it is checked to be a
+    regular file of this user (:func:`_check_owner_and_mode`); ``None`` if it
+    does not exist (and *flags* do not create it, with mode ``0o600``)."""
     try:
-        with open(path, "rb") as f:
-            raw = f.read()
+        fd = os.open(path, flags | os.O_NOFOLLOW | os.O_NONBLOCK, PRIVATE_MODE)
     except FileNotFoundError:
         return None
+    except OSError as exc:  # ELOOP for a symbolic link, EISDIR for a directory opened for writing, ...
+        try:
+            st = os.lstat(path)
+        except OSError:
+            st = None
+        if st is not None and stat.S_ISLNK(st.st_mode):
+            raise _refused(path, "it is a symbolic link") from None
+        if st is not None and not stat.S_ISREG(st.st_mode):
+            raise _refused(path, "it is not a regular file") from None
+        raise FEConfigError("the slot store file {} is unreadable ({})".format(
+            path, exc.strerror or type(exc).__name__)) from None
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise _refused(path, "it is not a regular file")
+        _check_owner_and_mode(st, path, private)
+        os.set_blocking(fd, True)
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _read_json(path: str, private: bool) -> Optional[dict]:
+    """The JSON object in the store file *path* (checked by
+    :func:`_open_file`), ``None`` if the file does not exist."""
+    fd = _open_file(path, os.O_RDONLY, private)
+    if fd is None:
+        return None
+    try:
+        with os.fdopen(fd, "rb") as f:
+            raw = f.read()
     except OSError as exc:
         raise FEConfigError("the slot store file {} is unreadable ({})".format(
             path, exc.strerror or type(exc).__name__)) from None
@@ -217,6 +318,13 @@ def _check_header(data: dict, path: str, fmt: str) -> None:
 
 def _is_id(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _parse_id(name: str) -> Optional[int]:
+    """The slot id written as *name* (canonical decimal), ``None`` otherwise."""
+    if name.isascii() and name.isdigit() and str(int(name)) == name:
+        return int(name)
+    return None
 
 
 def _sync(fd: int) -> None:
@@ -356,11 +464,13 @@ class SlotStore:
         with self._lock:
             self._holder = threading.get_ident()
             try:
-                os.makedirs(self._dir, mode=0o700, exist_ok=True)
-                fd = os.open(os.path.join(self._dir, LOCK_FILE), os.O_RDWR | os.O_CREAT, PRIVATE_MODE)
+                self._check_directory()
+                fd = _open_file(os.path.join(self._dir, LOCK_FILE), os.O_RDWR | os.O_CREAT, private=True)
                 pid = os.getpid()
                 self._lock_fd = fd
                 try:
+                    if stat.S_IMODE(os.fstat(fd).st_mode) != PRIVATE_MODE:  # created under a umask that took 0o600 bits
+                        os.fchmod(fd, PRIVATE_MODE)
                     fcntl.flock(fd, fcntl.LOCK_EX)
                     try:
                         self._remove_temporary_files()
@@ -375,6 +485,34 @@ class SlotStore:
             finally:
                 self._holder = None
 
+    def _check_directory(self) -> None:
+        """Create the store directory (mode ``0o700``) if it is missing, then
+        refuse it unless it is a directory, not a symbolic link, owned by this
+        process's user and not writable by other users."""
+        path = self._dir
+        try:
+            st = os.lstat(path)
+        except FileNotFoundError:
+            st = self._make_directory()
+        if stat.S_ISLNK(st.st_mode):
+            raise _refused(path, "it is a symbolic link")
+        if not stat.S_ISDIR(st.st_mode):
+            raise _refused(path, "it is not a directory")
+        _check_owner_and_mode(st, path, private=False)
+
+    def _make_directory(self) -> os.stat_result:
+        os.makedirs(os.path.dirname(self._dir), exist_ok=True)
+        try:
+            os.mkdir(self._dir, 0o700)
+        except FileExistsError:  # made by another process meanwhile: checked as found
+            return os.lstat(self._dir)
+        fd = os.open(self._dir, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | os.O_NOFOLLOW)
+        try:
+            os.fchmod(fd, 0o700)  # the umask may have cleared bits of 0o700
+        finally:
+            os.close(fd)
+        return os.lstat(self._dir)
+
     def _remove_temporary_files(self) -> None:
         for name in os.listdir(self._dir):
             if name.startswith(_TEMP_PREFIX) and name.endswith(_TEMP_SUFFIX):
@@ -382,19 +520,27 @@ class SlotStore:
                     os.unlink(os.path.join(self._dir, name))
 
     def _load(self) -> Tuple[List[dict], _PrivateSide]:
-        """Both files, checked against each other (under the lock).
+        """Both files, checked against each other, after the recovery: the
+        pending public records of slots the slot list lacks are appended to
+        it first, in slot-id order (under the lock).
 
         Raises:
             FEConfigError: If a file is unreadable, truncated, of another
                 format or version, or the two do not fit together.
         """
         public = self._load_public()
-        ids = [slot["slot_id"] for slot in public]
-        return public, self._load_private(set(ids), ids[-1] if ids else -1)
+        side = self._load_private(public)
+        listed = {slot["slot_id"] for slot in public}
+        missing = sorted(slot_id for slot_id in side.pending if slot_id not in listed)
+        if missing:  # an issue stopped after its commit point: roll it forward
+            public = public + [side.pending[slot_id] for slot_id in missing]
+            self._write_public(public)
+            logger.info("slot ids %s listed from their write-ahead records (an interrupted issue)", missing)
+        return public, side
 
     def _load_public(self) -> List[dict]:
         path = self._public_path
-        data = _read_json(path)
+        data = _read_json(path, private=False)
         if data is None:
             return []
         _check_header(data, path, PUBLIC_FORMAT)
@@ -409,25 +555,47 @@ class SlotStore:
         _decode(slots, path)  # every bytes value well formed
         return slots
 
-    def _load_private(self, public_ids: set, last_id: int) -> _PrivateSide:
+    def _load_private(self, public: List[dict]) -> _PrivateSide:
         path = self._private_path
-        data = _read_json(path)
+        listed = {slot["slot_id"]: slot for slot in public}
+        last_id = public[-1]["slot_id"] if public else -1
+        data = _read_json(path, private=True)
         if data is None:
-            if public_ids:  # written before the first public record: missing means lost
+            if public:  # written before the first public record: missing means lost
                 raise _corrupt(path, "missing while the slot list exists")
-            return _PrivateSide(0, {}, {})
+            return _PrivateSide(0, {}, {}, {})
         _check_header(data, path, PRIVATE_FORMAT)
-        next_id, records, dedup = data.get("next_slot_id"), data.get("private"), data.get("dedup")
-        if not _is_id(next_id) or next_id <= last_id:
-            raise _corrupt(path, "next_slot_id does not exceed the listed slot ids: an id would be reused")
-        if not isinstance(records, dict) or not isinstance(dedup, dict):
-            raise _corrupt(path, "no private records or dedup index")
+        next_id = data.get("next_slot_id")
+        records, dedup, pending = data.get("private"), data.get("dedup"), data.get("pending")
+        if not all(isinstance(part, dict) for part in (records, dedup, pending)):
+            raise _corrupt(path, "no private records, dedup index or pending records")
         loaded: Dict[int, Any] = {}
         for name, record in records.items():
-            if not name.isdigit() or str(int(name)) != name or int(name) not in public_ids:
-                raise _corrupt(path, "a private record of a slot that is not listed")
+            slot_id = _parse_id(name)
+            if slot_id is None:
+                raise _corrupt(path, "a malformed slot id")
             _decode(record, path)  # every bytes value well formed
-            loaded[int(name)] = record
+            loaded[slot_id] = record
+        waiting: Dict[int, dict] = {}
+        for name, record in pending.items():
+            slot_id = _parse_id(name)
+            if slot_id is None or slot_id not in loaded:
+                raise _corrupt(path, "a pending public record of a slot without a private record")
+            if not isinstance(record, dict) or not _is_id(record.get("slot_id")) or record["slot_id"] != slot_id:
+                raise _corrupt(path, "a malformed pending public record")
+            if slot_id in listed:
+                if listed[slot_id] != record:
+                    raise _corrupt(path, "a pending public record differs from the listed one")
+            elif slot_id <= last_id:  # the recovery appends: never below a listed id
+                raise _corrupt(path, "a pending public record below a listed slot id")
+            _decode(record, path)
+            waiting[slot_id] = record
+        if any(slot_id not in listed and slot_id not in waiting for slot_id in loaded):
+            raise _corrupt(path, "a private record of a slot that is neither listed nor pending")
+        if any(slot_id not in loaded for slot_id in listed):
+            raise _corrupt(path, "a listed slot without its private record")
+        if not _is_id(next_id) or next_id <= max([last_id, *loaded]):
+            raise _corrupt(path, "next_slot_id does not exceed the slot ids: an id would be reused")
         index: Dict[bytes, int] = {}
         for name, slot_id in dedup.items():
             try:
@@ -437,25 +605,32 @@ class SlotStore:
             if len(key) != DEDUP_KEY_BYTES or name != key.hex() or not _is_id(slot_id) or slot_id not in loaded:
                 raise _corrupt(path, "a malformed dedup entry")
             index[key] = slot_id
-        if len(set(index.values())) != len(index):
-            raise _corrupt(path, "two dedup keys of one slot")
-        return _PrivateSide(next_id, loaded, index)
+        if len(set(index.values())) != len(index) or set(index.values()) != set(loaded):
+            raise _corrupt(path, "not exactly one dedup entry per slot")
+        return _PrivateSide(next_id, loaded, index, waiting)
 
     def _write_public(self, public: List[dict]) -> None:
         _atomic_write(self._dir, PUBLIC_FILE, {
             "format": PUBLIC_FORMAT, "format_version": FORMAT_VERSION,
             "slot_list_version": len(public), "slots": public}, PUBLIC_MODE)
 
-    def _write_private(self, side: _PrivateSide) -> None:
+    def _write_private(self, side: _PrivateSide, public: List[dict]) -> None:
+        """Write *side*; the pending public records of slots *public* lists
+        are dropped (the slot list holds them)."""
+        listed = {slot["slot_id"] for slot in public}
         _atomic_write(self._dir, PRIVATE_FILE, {
             "format": PRIVATE_FORMAT, "format_version": FORMAT_VERSION,
             "next_slot_id": side.next_slot_id,
             "private": {str(slot_id): record for slot_id, record in sorted(side.records.items())},
-            "dedup": {key.hex(): slot_id for key, slot_id in side.dedup.items()}}, PRIVATE_MODE)
+            "dedup": {key.hex(): slot_id for key, slot_id in side.dedup.items()},
+            "pending": {str(slot_id): record for slot_id, record in sorted(side.pending.items())
+                        if slot_id not in listed}}, PRIVATE_MODE)
 
     def _snapshot(self) -> Tuple[List[dict], _PrivateSide]:
-        if not os.path.isdir(self._dir):  # nothing issued yet: no directory made by a read
-            return [], _PrivateSide(0, {}, {})
+        try:
+            os.lstat(self._dir)  # a symbolic link or a file is refused by _locked
+        except FileNotFoundError:  # nothing issued yet: no directory made by a read
+            return [], _PrivateSide(0, {}, {}, {})
         with self._locked():
             return self._load()
 
@@ -474,13 +649,16 @@ class SlotStore:
            calling *build*.
         4. Otherwise reserve the next slot id (persisted: never handed out
            again), call ``build(slot_id)`` -> ``(public_record,
-           private_record)``, append the public record (``slot_id`` added),
-           store the private record with *dedup_key* and return
-           ``IssueResult("new", slot_id, private)``.
+           private_record)``, store the private record with *dedup_key* and
+           a pending copy of the public record (``slot_id`` added), append
+           the public record and return ``IssueResult("new", slot_id,
+           private)``.
 
         If *build* raises, or returns records that cannot be stored, the
-        exception propagates and only the reserved id is burned. *build* must
-        not call the store.
+        exception propagates and only the reserved id is burned. An error
+        after the private record is stored (the public write) propagates
+        too, but the slot is issued: the next call of any method lists it,
+        and a retry of *dedup_key* is a hit. *build* must not call the store.
 
         Args:
             dedup_key: 32 bytes; private (never written to the public file).
@@ -517,7 +695,7 @@ class SlotStore:
                 return IssueResult("hit", hit, _decode(side.records[hit], self._private_path))
             slot_id = side.next_slot_id
             side.next_slot_id = slot_id + 1
-            self._write_private(side)  # the reservation: slot_id is burned from here on
+            self._write_private(side, public)  # 1. the reservation: slot_id is burned from here on
             pid = os.getpid()
             try:
                 public_record, private_record = self._build(build, slot_id)
@@ -526,11 +704,12 @@ class SlotStore:
                 raise
             if os.getpid() != pid:
                 raise FESchemeError("build() forked: the child does not hold the slot store's lock")
-            public.append(public_record)
-            self._write_public(public)  # listed (not delivered yet)
             side.records[slot_id] = private_record
             side.dedup[key] = slot_id
-            self._write_private(side)  # delivered
+            side.pending[slot_id] = public_record
+            self._write_private(side, public)  # 3. the commit point: the slot is issued from here on
+            public.append(public_record)
+            self._write_public(public)  # 4. listed (after a failure here: by the next call's recovery)
             logger.debug("slot %d issued (slot list version %d)", slot_id, len(public))
             return IssueResult("new", slot_id, _decode(private_record, self._private_path))
 
