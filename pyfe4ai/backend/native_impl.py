@@ -884,3 +884,73 @@ class NativeBackend(PythonBackend):
             self._gc_bytes(tables, "tables"), self._gc_bytes(decode, "decode"),
             self._gc_bytes(key_active, "key_active"), self._gc_bytes(data_active, "data_active"),
         )
+
+    # -- bounded-key FE: slot public keys and the label KEM (bcfe)
+
+    @staticmethod
+    def _bcfe_m(m) -> int:
+        if isinstance(m, bool) or not isinstance(m, int) or not 1 <= m < 2 ** 31 - 1:
+            raise ValueError("m must be an integer in [1, 2^31 - 1), the key bits of the circuit")
+        return m
+
+    @staticmethod
+    def _bcfe_slot_id(slot_id) -> int:
+        if isinstance(slot_id, bool) or not isinstance(slot_id, int) or not 0 <= slot_id < 2 ** 64:
+            raise ValueError("slot_id must be an integer in [0, 2^64)")
+        return slot_id
+
+    @staticmethod
+    def _bcfe_draw(nbytes: int):
+        """The tests' *nbytes* random bytes (:func:`random_input`), or ``None``:
+        the extension reads the OS source itself (I1)."""
+        data = random_input(nbytes)
+        if data is None:
+            return None
+        if not isinstance(data, (bytes, bytearray)) or len(data) != nbytes:
+            raise ValueError("the random bytes of the call must be {} bytes".format(nbytes))
+        return bytes(data)
+
+    def bcfe_new_slot(self, setup_digest: bytes, slot_id: int, w: bytes, *, m: int) -> dict:
+        m = self._bcfe_m(m)  # m first: it sets the number of random bytes
+        rnd = self._bcfe_draw(64 * (m + 1) + 16)
+        scalars, pks, k = _b._ext.bcfe_new_slot(
+            self._gc_bytes(setup_digest, "setup_digest"), self._bcfe_slot_id(slot_id), m, self._gc_bytes(w, "w"),
+            rnd=rnd, threads=_b._threads,
+        )
+        return {"scalars": scalars, "pks": pks, "k": k}
+
+    def bcfe_place_slot(self, setup_digest: bytes, slot_id: int, w: bytes, holder_pks: bytes, *, m: int) -> dict:
+        rnd = self._bcfe_draw(16)  # k, before the inputs are checked
+        pks, k = _b._ext.bcfe_place_slot(
+            self._gc_bytes(setup_digest, "setup_digest"), self._bcfe_slot_id(slot_id), self._bcfe_m(m),
+            self._gc_bytes(w, "w"), self._gc_bytes(holder_pks, "holder_pks"), rnd=rnd, threads=_b._threads,
+        )
+        return {"pks": pks, "k": k}
+
+    def bcfe_unselected_ok(self, setup_digest: bytes, slot_id: int, w: bytes, k: bytes, pks: bytes, *,
+                           m: int) -> bool:
+        return _b._ext.bcfe_unselected_ok(
+            self._gc_bytes(setup_digest, "setup_digest"), self._bcfe_slot_id(slot_id), self._bcfe_m(m),
+            self._gc_bytes(w, "w"), self._gc_bytes(k, "k"), self._gc_bytes(pks, "pks"), threads=_b._threads,
+        )
+
+    def bcfe_encrypt_slot(self, circuit: bytes, mode: str, pp_digest: bytes, ct_nonce: bytes, slot_id: int,
+                          x: bytes, pks: bytes) -> dict:
+        seed = self._bcfe_draw(32)  # one fresh seed per (ciphertext, slot), before the checks
+        big_r, label_cts, tables, decode, data_active = _b._ext.bcfe_encrypt_slot(
+            self._gc_bytes(circuit, "circuit"), self._gc_mode(mode), self._gc_bytes(pp_digest, "pp_digest"),
+            self._gc_bytes(ct_nonce, "ct_nonce"), self._bcfe_slot_id(slot_id), self._gc_bytes(x, "x"),
+            self._gc_bytes(pks, "pks"), seed=seed, threads=_b._threads,
+        )
+        return {"R": big_r, "label_cts": label_cts, "tables": tables, "decode": decode, "data_active": data_active}
+
+    def bcfe_decrypt_slot(self, circuit: bytes, mode: str, pp_digest: bytes, ct_nonce: bytes, slot_id: int,
+                          R: bytes, label_cts: bytes, tables: bytes, decode: bytes, data_active: bytes,
+                          scalars: bytes, w: bytes) -> bytes:
+        return _b._ext.bcfe_decrypt_slot(
+            self._gc_bytes(circuit, "circuit"), self._gc_mode(mode), self._gc_bytes(pp_digest, "pp_digest"),
+            self._gc_bytes(ct_nonce, "ct_nonce"), self._bcfe_slot_id(slot_id), self._gc_bytes(R, "R"),
+            self._gc_bytes(label_cts, "label_cts"), self._gc_bytes(tables, "tables"),
+            self._gc_bytes(decode, "decode"), self._gc_bytes(data_active, "data_active"),
+            self._gc_bytes(scalars, "scalars"), self._gc_bytes(w, "w"), threads=_b._threads,
+        )
