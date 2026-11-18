@@ -1099,6 +1099,36 @@ class QuadraticMIQFEConfig(SchemeConfig):
 
 
 # ---------------------------------------------------------------------------
+# bounded-key FE (0.6)
+
+
+class BCFEGCRistretto255Config(SchemeConfig):
+    """Config of :class:`~pyfe4ai.schemes.bcfe.gc_ristretto255.BCFEGCRistretto255KeyGenerator`."""
+
+    SCHEME = ("bcfe", "gc_ristretto255")
+    sec_param = SchemeConfig.sec_param(doc="recorded only (the group and the 128-bit labels are fixed)")
+    circuit = Option("the public circuit ``C(w, x)`` with its layouts (a library circuit of "
+                     ":mod:`pyfe4ai.circuits`); the scheme garbles ``guard(C)``", default=None,
+                     allowed="required: a ``pyfe4ai.circuits.ParamCircuit`` (``FEConfigError`` without it)")
+    max_keys = Option("the cap on the slots (keys of distinct functions or requesters) the setup issues in all",
+                      default=16, allowed="a positive int; ``set_max_keys`` may raise it after setup, never below "
+                      "the slots listed")
+    data_wires = Option("how the data bits enter the garbling: known to the garbler (folded into the tables), or as "
+                        "input labels in the ciphertext (SS10's form, twice the size)", default="hardwired",
+                        allowed=("hardwired", "labels"))
+    key_mode = Option("who makes a slot's selected key pairs: the authority, which keeps or hands out the key "
+                      "(``issue_key``, h1), or the key holder, which sends its public keys (``authorize``, h2)",
+                      default="h1", allowed=("h1", "h2"))
+    keep_issued_keys = Option("h1: the authority keeps each key it issues and hands it out again on a repeated "
+                              "request of the same requester and function", default=True, allowed="a bool")
+    issuance_policy = Option("who may get a key: a policy over the requester's attributes, checked before any slot "
+                             "is taken (not a cryptographic access control)", default=None,
+                             allowed="a ``pyfe4ai.policy`` formula, or ``None`` (every requester)")
+    gc_hash = Option("the gate hash of the garbling", default="shake128", allowed=("shake128",))
+    label_bits = Option("the length of the wire labels in bits", default=128, allowed=(128,))
+
+
+# ---------------------------------------------------------------------------
 # option names
 
 
@@ -1248,6 +1278,13 @@ COMBINATIONS = (
     Combination("the other pairing and quadratic schemes", "a discrete-log bound above ``2^48`` (e.g. "
                 "``eta bound_x bound_y``, ``n m bound^3``)", "``ValueError`` at decryption (quadratic "
                 "schemes: ``None`` and a warning)"),
+)
+# 0.6: the bounded-key scheme
+COMBINATIONS = COMBINATIONS + (
+    Combination("``bcfe/gc_ristretto255``", "no ``circuit``; a ``circuit`` that is not a ``ParamCircuit``, "
+                "``max_keys`` not a positive int, ``keep_issued_keys`` not a bool, an ``issuance_policy`` that is "
+                "not a formula, or a value of ``data_wires``, ``key_mode``, ``gc_hash``, ``label_bits`` not listed",
+                "``FEConfigError`` (no ``circuit``); ``FEValidationError`` (the others)"),
 )
 
 

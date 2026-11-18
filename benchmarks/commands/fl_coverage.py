@@ -151,6 +151,9 @@ CONFIGS: dict[tuple[str, str], dict] = {
         "bound_x": 5, "bound_c": 3, "pairing_group_param": DEFAULT_PAIRING_GROUP,
     },
 }
+# 0.6: the bounded-key family has no FL path (the ML adapter refuses it, NotImplementedError; its adapter is P2):
+# listed so that every registry entry has a row, which reads "unusable" with that reason
+CONFIGS[("bcfe", "gc_ristretto255")] = {}
 
 
 #: The attribute-based multi-client scheme: every client encrypts for the same attributes (``encrypt_gradient(...,

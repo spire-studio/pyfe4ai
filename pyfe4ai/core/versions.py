@@ -36,6 +36,14 @@ key shares)
 (pickled state)
 record ids (``construction``,  regenerated                   :func:`record_matches`, :func:`caches_record`
 ``param_version``, ...)
+``bcfe_version`` (bcfe pp,     refused (no earlier version)  :func:`check_bcfe_markers`
+keys, ciphertexts, requests,
+grants)
+``kem``, ``gc``, ``gc_hash``   refused (no earlier version)  :func:`check_bcfe_markers`
+(bcfe pp)
+``slot_list_version`` (bcfe    refused (no earlier version)  :func:`check_bcfe_markers`
+pp, keys, ciphertexts,
+grants)
 =============================  ============================  ===============================================
 
 Shamir key shares with ``t < s`` (the sharing of versions <= 0.3.0) are
@@ -588,3 +596,59 @@ def check_state(obj, state: dict, version: str) -> None:
                 type(obj).__name__)
         )
     obj.__dict__.update(state)
+
+
+# ---------------------------------------------------------------------------
+# bounded-key FE (bcfe, 0.6): the markers of its records. The family has no
+# earlier version, so a missing marker is refused like an unknown one.
+
+#: The format version of the ``bcfe`` records (``bcfe_version``).
+BCFE_VERSION = 1
+#: The label KEM of ``bcfe/gc_ristretto255`` (``kem``): hashed ElGamal over ristretto255, one ``R`` per
+#: (ciphertext, slot).
+BCFE_KEM = "ristretto255-hashed-elgamal-v1"
+#: The garbling scheme (``gc``): half-gates (ZRE15 Fig. 2) with the instance salt of plan 0.6 P1 section 3.5.
+BCFE_GC = "half-gates-v1"
+#: The gate hash (``gc_hash``).
+BCFE_GC_HASH = "shake128"
+#: The accepted values of each ``bcfe`` marker.
+BCFE_MARKERS = {
+    "bcfe_version": (BCFE_VERSION,),
+    "kem": (BCFE_KEM,),
+    "gc": (BCFE_GC,),
+    "gc_hash": (BCFE_GC_HASH,),
+}
+
+
+def check_bcfe_markers(record, markers, error=FEValidationError, what: str = "the record") -> None:
+    """Refuse a ``bcfe`` record (public parameters, key, ciphertext, request,
+    grant) whose *markers* are missing or unknown: ``bcfe_version``, ``kem``,
+    ``gc`` and ``gc_hash`` must hold a value of :data:`BCFE_MARKERS` (an int
+    for ``bcfe_version``, not a ``bool``), ``slot_list_version`` a
+    non-negative int (not a ``bool``).
+
+    Args:
+        record: The record's dict.
+        markers: The names of the markers the record carries.
+        error: The exception to raise: ``FEValidationError`` for public
+            parameters, ciphertexts and requests, ``FEKeyError`` for keys and
+            grants.
+        what: The record, for the message.
+
+    Raises:
+        error: For a record that is not a dict, or a missing or unknown marker.
+    """
+    if not isinstance(record, dict):
+        raise error("{} is not a dict".format(what))
+    for name in markers:
+        if name not in record:
+            raise error("{} has no {} (a record of another scheme or version?)".format(what, name))
+        value = record[name]
+        if name == "slot_list_version":
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise error("{}: slot_list_version must be a non-negative int".format(what))
+            continue
+        accepted = BCFE_MARKERS[name]
+        if isinstance(value, bool) or type(value) is not type(accepted[0]) or value not in accepted:
+            raise error("{}: unknown {} {!r}; this version reads {}".format(
+                what, name, value, ", ".join(repr(a) for a in accepted)))

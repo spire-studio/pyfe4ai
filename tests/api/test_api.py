@@ -60,7 +60,7 @@ def test_unknown_schemes(bad):
 
 def test_list_schemes():
     ids = pyfe4ai.list_schemes()
-    assert ids == [s.id for s in registry.SCHEMES] and len(ids) == 46
+    assert ids == [s.id for s in registry.SCHEMES] and len(ids) == 47
     assert pyfe4ai.list_schemes("quadratic") == ["quadratic/quad", "quadratic/sgp", "quadratic/miqfe"]
     assert pyfe4ai.list_schemes("mcfe", capabilities="threshold") == [
         "mcfe/fh_multi_ipe_pairing_threshold", "mcfe/ddh_threshold", "mcfe/lwe_threshold", "mcfe/ring_lwe_threshold"]
@@ -81,7 +81,7 @@ def test_list_schemes():
         with pytest.raises(exceptions.FEValidationError, match="unknown"):
             pyfe4ai.list_schemes(**kwargs)
     assert set(pyfe4ai.CAPABILITIES) == {"labels", "threshold", "decentralized", "pairing", "ml_servers",
-                                          "binary_ct", "rns", "access_control"}
+                                          "binary_ct", "rns", "access_control", "bounded_keys"}
 
 
 def test_get_scheme():

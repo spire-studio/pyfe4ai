@@ -289,6 +289,12 @@ class FESchemeWrapper:
                 f"Supported: {supported}"
             )
         scheme = registry.get_scheme(key)
+        # 0.6: the bounded-key family (bcfe) computes circuits C(w, x), not the inner products of the FL helpers;
+        # its ML adapter is planned for 0.6 P2
+        if scheme.has(registry.BOUNDED_KEYS):
+            raise NotImplementedError(
+                "the ML adapter has no path for {}/{} yet (bcfe: circuits, not inner products); use the "
+                "scheme's classes directly".format(*key))
 
         self.scheme_type, self.variant = key
         self.keygen_config = dict(keygen_config)

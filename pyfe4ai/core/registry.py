@@ -163,6 +163,12 @@ CAPABILITIES = {
     "pyfe4ai.policy); decryption succeeds only if the attributes satisfy the policy, within the security "
     "proof of the scheme (see its note)",
 }
+BOUNDED_KEYS = "bounded_keys"
+CAPABILITIES[BOUNDED_KEYS] = (
+    "the key generator is stateful: every distinct function issued gets a slot of its own, up to max_keys slots in "
+    "all; a ciphertext is encrypted to the slots that exist when it is made, so a key decrypts only ciphertexts made "
+    "after its slot"
+)
 
 _REFUSED_TMIFE_LWE = (
     "read at the width sigma / (1 + 4 X sqrt(eta)) of its security "
@@ -195,6 +201,9 @@ _WORDS = {
     "paillier": "Paillier", "damgard": "Damgard", "quad": "Quad", "sgp": "SGP", "miqfe": "MIQFE",
     "cp": "CP", "kp": "KP", "ab": "AB", "per": "Per", "client": "Client",
 }
+# 0.6: the bounded-key family (circuit FE with a cap on the keys issued) and the word of its variant
+FAMILIES["bcfe"] = "BCFE"
+_WORDS["gc"] = "GC"
 _MODIFIERS = ("threshold", "decentralized")
 
 
@@ -643,6 +652,19 @@ SCHEMES: tuple[Scheme, ...] = (
         note="cross-user terms only (Def. 2.9); per-user encryption keys made of master "
         "ciphertexts; building blocks TAO20 FH-IPFE, Fig. 9 and Fig. 1 as in the paper; "
         "PRF = HMAC-SHA512; pos-security (every user contributes); k = mddh_k >= 2",
+    ),
+    # --- bounded keys (0.6) ---------------------------------------------------
+    _scheme(
+        "bcfe/gc_ristretto255", EC, EXPERIMENTAL, ADAPTED,
+        "SS10 §3.3 (one single-key instance per issued function) + ZRE15 half-gates",
+        note="total issuance bounded by max_keys (one slot per issued function), not the collusion bound of "
+        "GVW12 / AV19; keys decrypt only ciphertexts made after their slot existed; IND security (not SIM), "
+        "classical only (ristretto255 hashed-ElGamal labels); the key holder learns w (the slot list does not "
+        "show it to encryptors); data bits hardwired into the garbling by default (data_wires = \"labels\" gives SS10's "
+        "input labels); unselected slot public keys hashed to the group (h'), so no unselected secret key exists; "
+        "half-gates with a per-(ciphertext, slot) instance salt; honest encryptor assumed; our own security "
+        "argument, not externally reviewed",
+        capabilities=(BOUNDED_KEYS,),
     ),
 )
 

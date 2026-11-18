@@ -47,6 +47,8 @@ MINIMAL = {
     ("mcfe", "ring_lwe_decentralized"): {"n": 2}, ("mcfe", "paillier_decentralized"): {"n": 2},
     ("quadratic", "quad"): {}, ("quadratic", "sgp"): {}, ("quadratic", "miqfe"): {"n": 2},
 }
+# 0.6: the bounded-key scheme needs its circuit (appended, so that the tests over every scheme below cover it)
+MINIMAL[("bcfe", "gc_ristretto255")] = {"circuit": pyfe4ai.circuits.linear_threshold(n=1, bw=1, bx=1)}
 
 
 def generator(scheme):

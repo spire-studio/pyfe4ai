@@ -18,6 +18,7 @@ from pyfe4ai.core import config as configs
 from pyfe4ai.core import profiles, registry
 from pyfe4ai.core import status as st
 from pyfe4ai.core.base import IPFEAbsCrypto, IPFEAbsKeyGenerator
+from pyfe4ai.core.circuit_base import CircuitFEAbsCrypto, CircuitFEAbsKeyGenerator
 from pyfe4ai.core.exceptions import FESecurityWarning, FEValidationError
 from pyfe4ai.ml import wrapper as ml_wrapper
 
@@ -35,8 +36,13 @@ def _cache(tmp_path, monkeypatch):
     monkeypatch.setenv("PYFE4AI_CACHE_DIR", os.path.join(str(tmp_path), "config"))
 
 
+#: The abstract bases of a registered key generator and crypto class: inner-product FE, or circuit FE (bcfe).
+KEY_GENERATOR_BASES = (IPFEAbsKeyGenerator, CircuitFEAbsKeyGenerator)
+CRYPTO_BASES = (IPFEAbsCrypto, CircuitFEAbsCrypto)
+
+
 def test_entries_are_unique_and_complete():
-    assert len(SCHEMES) == len(set(IDS)) == 46
+    assert len(SCHEMES) == len(set(IDS)) == 47
     assert {s.family for s in SCHEMES} == set(registry.FAMILIES)
     for s in SCHEMES:
         assert s.kind in registry.KINDS
@@ -53,7 +59,9 @@ def test_classes_are_named_after_the_id(scheme):
     assert (kg.__name__, crypto.__name__) == (registry.class_name(scheme.id, "KeyGenerator"),
                                               registry.class_name(scheme.id))
     assert kg.__module__ == crypto.__module__ == module.__name__
-    assert issubclass(kg, IPFEAbsKeyGenerator) and issubclass(crypto, IPFEAbsCrypto)
+    assert issubclass(kg, KEY_GENERATOR_BASES) and issubclass(crypto, CRYPTO_BASES)
+    circuit_fe = issubclass(kg, CircuitFEAbsKeyGenerator)
+    assert circuit_fe == issubclass(crypto, CircuitFEAbsCrypto) == (scheme.family == "bcfe")
     assert scheme.config.__name__ == registry.class_name(scheme.id, "Config") and scheme.config.SCHEME == scheme.key
 
 
@@ -74,7 +82,7 @@ def test_every_scheme_class_is_registered():
         module = importlib.import_module(info.name)
         for name, obj in vars(module).items():
             if (inspect.isclass(obj) and obj.__module__ == module.__name__ and not name.startswith("_")
-                    and issubclass(obj, (IPFEAbsKeyGenerator, IPFEAbsCrypto)) and name not in SHARED_BASES):
+                    and issubclass(obj, KEY_GENERATOR_BASES + CRYPTO_BASES) and name not in SHARED_BASES):
                 found.add(obj)
     assert found == registered
 
@@ -307,3 +315,36 @@ def test_every_benchmark_command_has_a_module_and_help(capsys, monkeypatch):
     with pytest.raises(SystemExit) as stop:
         run.main(["nope"])
     assert stop.value.code == 2
+
+
+# ---------------------------------------------------------------------------
+# 0.6: the bounded-key family bcfe
+
+
+def test_the_bounded_key_entry():
+    scheme = registry.get_scheme("bcfe/gc_ristretto255")
+    assert registry.FAMILIES["bcfe"] == "BCFE" and registry.class_name(scheme.id) == "BCFEGCRistretto255"
+    assert (scheme.key_generator_name, scheme.config_name) == ("BCFEGCRistretto255KeyGenerator",
+                                                               "BCFEGCRistretto255Config")
+    assert scheme.kind == registry.EC and scheme.refused == ""
+    assert (scheme.status.status, scheme.status.fidelity) == (registry.EXPERIMENTAL, registry.ADAPTED)
+    assert scheme.status.reference == "SS10 §3.3 (one single-key instance per issued function) + ZRE15 half-gates"
+    for text in ("max_keys", "GVW12 / AV19", "after their slot existed", "IND", "the key holder learns w",
+                 "hardwired", "(h')"):
+        assert text in scheme.status.note, text
+    assert scheme.capabilities == {registry.BOUNDED_KEYS}
+    assert registry.BOUNDED_KEYS == "bounded_keys" and "max_keys" in registry.CAPABILITIES[registry.BOUNDED_KEYS]
+    assert registry.list_schemes("bcfe") == registry.list_schemes(capabilities="bounded_keys") == [scheme.id]
+    assert registry.list_schemes(kind=registry.EC)[-1] == scheme.id
+    # the bounded-key scheme is built through the profile like the others: standard sets nothing for its kind
+    config = scheme.config({"security_profile": "standard"})
+    assert configs.resolve(config, scheme.key) == config
+    assert not scheme.has(registry.LABELS, registry.THRESHOLD) and not ml_wrapper._serves_threshold(
+        types.SimpleNamespace(scheme_type="bcfe", variant="gc_ristretto255"))
+
+
+def test_the_ml_adapter_refuses_the_bounded_key_family():
+    from pyfe4ai import circuits
+
+    with pytest.raises(NotImplementedError, match="bcfe"):
+        ml_wrapper.FESchemeWrapper("bcfe", "gc_ristretto255", {"circuit": circuits.linear_threshold(1, 1, 1)})

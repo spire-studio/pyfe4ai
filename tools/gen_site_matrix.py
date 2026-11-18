@@ -35,6 +35,8 @@ ROWS = (
     ("tmcfe", "tMCFE", "threshold"),
     ("quadratic", "Quadratic", "SGP · Quad · MIQFE"),
 )
+# 0.6: the bounded-key family (circuits; its ristretto255 labels sit in the DDH column, by the kind "ec")
+ROWS = ROWS + (("bcfe", "BCFE", "bounded keys · circuits"),)
 #: The columns: (key, label); the instantiations, by the registry's kinds.
 COLS = (("ddh", "DDH"), ("damgard", "Damgård"), ("paillier", "Paillier"), ("lwe", "LWE"),
         ("ring_lwe", "Ring-LWE"), ("pairing", "Pairing"))

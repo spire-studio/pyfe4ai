@@ -128,7 +128,7 @@ Finding a scheme
 
    import pyfe4ai
 
-   pyfe4ai.list_schemes()                                  # all 46 ids
+   pyfe4ai.list_schemes()                                  # all 47 ids
    pyfe4ai.list_schemes("mcfe", capabilities="threshold")  # the threshold MCFEs
    scheme = pyfe4ai.get_scheme("mcfe/ring_lwe")
    print(scheme.kind, sorted(scheme.capabilities), scheme.status.status)

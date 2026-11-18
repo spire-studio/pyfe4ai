@@ -32,7 +32,7 @@ Security profiles
      - ``sife/ddh``, ``sife/damgard``, ``sife/ddh_dynamic``, ``mife/ddh``, ``mife/damgard``, ``mife/ddh_threshold``, ``mcfe/ddh``, ``mcfe/damgard``, ``mcfe/ddh_threshold``, ``mcfe/ddh_decentralized``
      - ``sec_param`` >= ``3072``; ``modulus_length`` >= ``3072``; ``stat_param`` >= ``128``
    * - ec
-     - ``sife/ddh_ristretto255``, ``mife/ddh_ristretto255``, ``mcfe/ddh_ristretto255``
+     - ``sife/ddh_ristretto255``, ``mife/ddh_ristretto255``, ``mcfe/ddh_ristretto255``, ``bcfe/gc_ristretto255``
      - nothing to set
    * - lwe
      - ``mcfe/lwe``, ``mcfe/fullysec_lwe``, ``mcfe/lwe_threshold``, ``mcfe/lwe_decentralized``
@@ -163,6 +163,9 @@ Refused and constrained combinations
    * - the other pairing and quadratic schemes
      - a discrete-log bound above ``2^48`` (e.g. ``eta bound_x bound_y``, ``n m bound^3``)
      - ``ValueError`` at decryption (quadratic schemes: ``None`` and a warning)
+   * - ``bcfe/gc_ristretto255``
+     - no ``circuit``; a ``circuit`` that is not a ``ParamCircuit``, ``max_keys`` not a positive int, ``keep_issued_keys`` not a bool, an ``issuance_policy`` that is not a formula, or a value of ``data_wires``, ``key_mode``, ``gc_hash``, ``label_bits`` not listed
+     - ``FEConfigError`` (no ``circuit``); ``FEValidationError`` (the others)
 
 Options of every key generator
 ------------------------------
@@ -2783,3 +2786,62 @@ Crypto objects also take:
      - ``2``
      - 
      - an int >= 2
+
+``bcfe/gc_ristretto255``
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+:class:`~pyfe4ai.core.config.BCFEGCRistretto255Config`; kind ``ec``.
+
+.. list-table::
+   :header-rows: 1
+
+   * - option
+     - meaning
+     - default
+     - ``standard``
+     - accepted
+   * - sec_param
+     - recorded only (the group and the 128-bit labels are fixed)
+     - ``128``
+     - 
+     - 
+   * - circuit
+     - the public circuit ``C(w, x)`` with its layouts (a library circuit of :mod:`pyfe4ai.circuits`); the scheme garbles ``guard(C)``
+     - --
+     - 
+     - required: a ``pyfe4ai.circuits.ParamCircuit`` (``FEConfigError`` without it)
+   * - max_keys
+     - the cap on the slots (keys of distinct functions or requesters) the setup issues in all
+     - ``16``
+     - 
+     - a positive int; ``set_max_keys`` may raise it after setup, never below the slots listed
+   * - data_wires
+     - how the data bits enter the garbling: known to the garbler (folded into the tables), or as input labels in the ciphertext (SS10's form, twice the size)
+     - ``'hardwired'``
+     - 
+     - ``hardwired``, ``labels``
+   * - key_mode
+     - who makes a slot's selected key pairs: the authority, which keeps or hands out the key (``issue_key``, h1), or the key holder, which sends its public keys (``authorize``, h2)
+     - ``'h1'``
+     - 
+     - ``h1``, ``h2``
+   * - keep_issued_keys
+     - h1: the authority keeps each key it issues and hands it out again on a repeated request of the same requester and function
+     - ``True``
+     - 
+     - a bool
+   * - issuance_policy
+     - who may get a key: a policy over the requester's attributes, checked before any slot is taken (not a cryptographic access control)
+     - --
+     - 
+     - a ``pyfe4ai.policy`` formula, or ``None`` (every requester)
+   * - gc_hash
+     - the gate hash of the garbling
+     - ``'shake128'``
+     - 
+     - ``shake128``
+   * - label_bits
+     - the length of the wire labels in bits
+     - ``128``
+     - 
+     - ``128``

@@ -67,6 +67,10 @@ __all__ = [
     "FEWarning",
 ]
 
+# 0.6: the boolean circuits C(w, x) of the bounded-key family bcfe, as pyfe4ai.circuits (a module: not in
+# __all__, which lists the names the package defines, as for pyfe4ai.backend)
+from pyfe4ai import circuits  # noqa: E402,F401
+
 
 def backend_info() -> dict:
     """The backend the calling thread uses and how it was chosen: whether the

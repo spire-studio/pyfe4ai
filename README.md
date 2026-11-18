@@ -193,18 +193,19 @@ the other refusals of the profile).
   the privacy it claims. Use it only for functionality or performance
   experiments.
 
-Currently 36 reviewed, 5 experimental, 3 unreviewed and 2 known-insecure out
-of 46 registered schemes. Experimental: the threshold layers of
+Currently 36 reviewed, 6 experimental, 3 unreviewed and 2 known-insecure out
+of 47 registered schemes. Experimental: the threshold layers of
 `mife/lwe_threshold`, `mcfe/lwe_threshold`, `mcfe/ring_lwe_threshold` and
-`mcfe/fh_multi_ipe_pairing_threshold`, and the carry mask of
-`mcfe/ddh_decentralized`. Unreviewed: the DDH schemes over ristretto255
+`mcfe/fh_multi_ipe_pairing_threshold`, the carry mask of
+`mcfe/ddh_decentralized`, and the bounded-key garbled-circuit scheme
+`bcfe/gc_ristretto255` (one SS10 slot per issued function). Unreviewed: the DDH schemes over ristretto255
 (`*/ddh_ristretto255`, selected with `group="ristretto255"`), new code.
 Known-insecure: `mcfe/kp_ab_pairing` (NPP22 Sec. 5.2) and
 `mcfe/kp_ab_pairing_per_client`, the version in which each client has an
 attribute set of its own (Sec. 5.4); see Known Issues.
 
 <details>
-<summary><strong>Status, construction and deviations of every scheme</strong> (46 rows, rendered by <code>pyfe4ai.core.status.markdown_table()</code>; a test keeps it in sync)</summary>
+<summary><strong>Status, construction and deviations of every scheme</strong> (47 rows, rendered by <code>pyfe4ai.core.status.markdown_table()</code>; a test keeps it in sync)</summary>
 
 | Scheme | Status | Fidelity | Construction | Notes |
 |---|---|---|---|---|
@@ -254,6 +255,7 @@ attribute set of its own (Sec. 5.4); see Known Issues.
 | `quadratic/quad` | reviewed | adapted | Gay20 Fig. 4 over Fig. 8 (CPA) | signed inputs (discrete log in [-n m B^3, n m B^3]); CPA variant (no QANIZK); asymmetric pairing (default BLS12-381) |
 | `quadratic/sgp` | reviewed | adapted | DSGPP18 Fig. 2 | public key pk = (g1^s, g2^t) as in the paper; signed inputs with one bound B for x, y and F (discrete log in [-n^2 B^3, n^2 B^3]); generic bilinear group model |
 | `quadratic/miqfe` | reviewed | adapted | AGT22 Sec. 5 (MIFE for quadratic functions) | cross-user terms only (Def. 2.9); per-user encryption keys made of master ciphertexts; building blocks TAO20 FH-IPFE, Fig. 9 and Fig. 1 as in the paper; PRF = HMAC-SHA512; pos-security (every user contributes); k = mddh_k >= 2 |
+| `bcfe/gc_ristretto255` | experimental | adapted | SS10 §3.3 (one single-key instance per issued function) + ZRE15 half-gates | total issuance bounded by max_keys (one slot per issued function), not the collusion bound of GVW12 / AV19; keys decrypt only ciphertexts made after their slot existed; IND security (not SIM), classical only (ristretto255 hashed-ElGamal labels); the key holder learns w (the slot list does not show it to encryptors); data bits hardwired into the garbling by default (data_wires = "labels" gives SS10's input labels); unselected slot public keys hashed to the group (h'), so no unselected secret key exists; half-gates with a per-(ciphertext, slot) instance salt; honest encryptor assumed; our own security argument, not externally reviewed |
 
 </details>
 
