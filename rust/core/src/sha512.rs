@@ -1,5 +1,7 @@
 //! SHA-512 (FIPS 180-4) and RFC 9380 expand_message_xmd with it, for the
-//! hash_to_ristretto255 of the elliptic-curve DDH schemes.
+//! hash_to_ristretto255 of the elliptic-curve DDH schemes. The message may be
+//! secret (the bcfe unselected points hash a slot secret): the block buffer,
+//! the message schedule, the chaining state and b0 are wiped before return.
 
 const K: [u64; 80] = [
     0x428a2f98d728ae22, 0x7137449123ef65cd, 0xb5c0fbcfec4d3b2f, 0xe9b5dba58189dbbc, 0x3956c25bf348b538,
@@ -24,6 +26,14 @@ const H0: [u64; 8] = [
     0x6a09e667f3bcc908, 0xbb67ae8584caa73b, 0x3c6ef372fe94f82b, 0xa54ff53a5f1d36f1,
     0x510e527fade682d1, 0x9b05688c2b3e6c1f, 0x1f83d9abfb41bd6b, 0x5be0cd19137e2179,
 ];
+
+/// Overwrite words that may derive from a secret message before they are freed.
+fn wipe_words(v: &mut [u64]) {
+    for x in v.iter_mut() {
+        unsafe { std::ptr::write_volatile(x, 0) };
+    }
+    std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
+}
 
 fn compress(h: &mut [u64; 8], block: &[u8]) {
     let mut w = [0u64; 80];
@@ -55,6 +65,7 @@ fn compress(h: &mut [u64; 8], block: &[u8]) {
     for (x, v) in h.iter_mut().zip([a, b, c, d, e, f, g, hh]) {
         *x = x.wrapping_add(v);
     }
+    wipe_words(&mut w);
 }
 
 /// SHA-512 of the concatenation of `parts`.
@@ -90,6 +101,8 @@ pub fn sha512(parts: &[&[u8]]) -> [u8; 64] {
     for (i, v) in h.iter().enumerate() {
         out[8 * i..8 * i + 8].copy_from_slice(&v.to_be_bytes());
     }
+    crate::rlwe::wipe_bytes(&mut buf);
+    wipe_words(&mut h);
     out
 }
 
@@ -97,8 +110,10 @@ pub fn sha512(parts: &[&[u8]]) -> [u8; 64] {
 pub fn expand_message_xmd_64(msg: &[u8], dst: &[u8]) -> [u8; 64] {
     assert!(dst.len() <= 255);
     let dst_len = [dst.len() as u8];
-    let b0 = sha512(&[&[0u8; 128], msg, &64u16.to_be_bytes(), &[0u8], dst, &dst_len]);
-    sha512(&[&b0, &[1u8], dst, &dst_len])
+    let mut b0 = sha512(&[&[0u8; 128], msg, &64u16.to_be_bytes(), &[0u8], dst, &dst_len]);
+    let out = sha512(&[&b0, &[1u8], dst, &dst_len]);
+    crate::rlwe::wipe_bytes(&mut b0);
+    out
 }
 
 #[cfg(test)]

@@ -29,7 +29,10 @@ endian)::
 length that does not match the counts, an unknown op, an INV with ``b != 0``,
 an XOR or AND whose two inputs are the same wire (the builder folds those),
 a gate input not below the gate's own output wire, an output wire out of
-range, ``m = 0``, ``n_out = 0`` and ``m + n + n_gates >= 2^31``. Every field
+range, ``m = 0``, ``n_out = 0`` and ``m + n + n_gates >= 2^26``
+(:data:`MAX_CIRCUIT_WIRES`, checked before anything is sized by the counts;
+the constructor, :meth:`Circuit.guard` and the builder refuse the same).
+Every field
 is fixed, so a circuit has exactly one encoding: ``decode(c.encode()) == c``
 and ``decode(data).encode() == data``. The digest (:meth:`Circuit.digest`)
 is ``SHAKE-256("PYFE4AI-V06-BCFE-CIRCUIT" || encoding)[0:32]``.
@@ -80,8 +83,15 @@ OP_NAMES = {XOR: "XOR", AND: "AND", INV: "INV"}
 WIRE_L, WIRE_K = "L", "K"
 #: The two modes of the data wires (the record field ``data_wires``).
 MODES = ("hardwired", "labels")
-#: ``m + n + n_gates`` stays below this bound.
-MAX_WIRES = 1 << 31
+#: ``m + n + n_gates`` stays below this bound: 2^26 wires (64 Mi wires,
+#: about 1 GiB of native labels; the largest circuit the schemes target, an
+#: MLP 784-128-10, is far below), so that a short header cannot make a
+#: decoder's caller allocate without bound. Design choice; the alternative was
+#: the earlier 2^31 (wire numbers in 31 bits) with the per-wire state sized by
+#: the labelled wires only.
+MAX_CIRCUIT_WIRES = 1 << 26
+#: The same bound (the name the builder imports).
+MAX_WIRES = MAX_CIRCUIT_WIRES
 
 _HEADER = struct.Struct("<8sBIIII")
 _GATE = struct.Struct("<BII")
@@ -108,7 +118,7 @@ def _validate(m: int, n: int, gates: Sequence[tuple], outputs: Sequence[int]) ->
     if len(outputs) == 0:
         raise ValueError("a circuit needs at least one output (n_out >= 1)")
     if m + n + len(gates) >= MAX_WIRES:
-        raise ValueError("m + n + n_gates must be below 2^31")
+        raise ValueError("m + n + n_gates must be below 2^26")
     base = m + n
     for i, (op, a, b) in enumerate(gates):
         out = base + i
@@ -272,7 +282,7 @@ class Circuit:
         if n_out == 0:
             raise ValueError("a circuit needs at least one output (n_out >= 1)")
         if m + n + n_gates >= MAX_WIRES:
-            raise ValueError("m + n + n_gates must be below 2^31")
+            raise ValueError("m + n + n_gates must be below 2^26")
         gates = tuple(_GATE.iter_unpack(data[_HEADER.size:_HEADER.size + _GATE.size * n_gates]))
         outputs = struct.unpack_from("<{}I".format(n_out), data, _HEADER.size + _GATE.size * n_gates)
         _validate(m, n, gates, outputs)
@@ -321,7 +331,7 @@ class Circuit:
             outputs.append(m + 1 + self._n + len(gates))
             gates.append((AND, new(o), ng))
         if m + 1 + self._n + len(gates) >= MAX_WIRES:
-            raise ValueError("m + n + n_gates must be below 2^31")
+            raise ValueError("m + n + n_gates must be below 2^26")
         return Circuit._trusted(m + 1, self._n, tuple(gates), tuple(outputs))
 
     # -- kinds and costs

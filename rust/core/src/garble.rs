@@ -1,4 +1,4 @@
-//! Garbled boolean circuits of the bounded-collusion FE schemes (bcfe/*, 0.6):
+//! Garbled boolean circuits of the bounded-key FE schemes (bcfe/*):
 //! the canonical circuit encoding CIRC v1 with all its rejection rules, and the
 //! half-gates garbling scheme of Zahur, Rosulek and Evans (ZRE15, Eurocrypt
 //! 2015, Fig. 2) with free XOR and point-and-permute, plus the generator
@@ -7,10 +7,12 @@
 //! (pyfe4ai.primitives.garbling): labels are 16-byte strings, held here as
 //! u128 read little-endian, so that lsb(X) = X[0] & 1 is the low bit.
 //!
-//! * Randomness: delta and every 0-label from one 32-byte seed,
-//!   SHAKE-256("PYFE4AI-V06-BCFE-GBPRG" || seed), read in the order delta
-//!   (then delta[0] |= 1), the 0-labels of the key wires, those of the data
-//!   wires (mode "labels" only).
+//! * Randomness: delta and every 0-label from one 32-byte seed and the
+//!   instance salt, SHAKE-256("PYFE4AI-V06-BCFE-GBPRG" || salt(56) || seed),
+//!   read in the order delta (then delta[0] |= 1), the 0-labels of the key
+//!   wires, those of the data wires (mode "labels" only). The salt is bound in
+//!   so that a seed used twice under two salts still gives unrelated labels
+//!   (defence in depth; the alternative was the seed alone).
 //! * Gate hash: H_G(salt, idx, X) = SHAKE128("PFE6GC02" || salt(56) ||
 //!   u64(idx) || X)[0:16], 88 input bytes in one block, one Keccak-f; the
 //!   index idx is taken in gate order (NextIndex): two for an AND of two
@@ -21,10 +23,10 @@
 //!   Everything that depends on the values of x or on label bits is computed
 //!   with masks, not branches.
 //!
-//! Deviations from the prototype of the 0.6 design study: no constant wires,
-//! the instance salt in the gate hash, consecutive indices for the half-gate,
-//! the domain tag "PFE6GC02". Delta, the seed, the 0-labels, the values of the
-//! garbler's wires and the PRG state are wiped when a call ends.
+//! A circuit has no constant wires (the builder folds constants) and at most
+//! 2^26 wires (m + n + n_gates, checked before anything is sized by the
+//! counts). Delta, the seed, the 0-labels, the values of the garbler's wires
+//! and the PRG state are wiped when a call ends.
 
 use crate::keccak::{keccak_f, wipe_long, Sponge};
 
@@ -46,8 +48,11 @@ pub const LABEL_LEN: usize = 16;
 pub const PRG_DST: &[u8] = b"PYFE4AI-V06-BCFE-GBPRG";
 /// Domain separation of the gate hash.
 pub const GATE_DST: &[u8; 8] = b"PFE6GC02";
-/// The wires (m + n + n_gates) must stay below this bound.
-pub const MAX_WIRES: u64 = 1 << 31;
+/// The wires (m + n + n_gates) must stay below this bound: 2^26 (64 Mi wires,
+/// about 1 GiB of labels here), so that a short header cannot make a call
+/// allocate without bound; the alternative was 2^31 with the per-wire state
+/// sized by the labelled wires only.
+pub const MAX_WIRES: u64 = 1 << 26;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Op {
@@ -139,7 +144,7 @@ impl Circuit {
         }
         let wires = m as u64 + n as u64 + n_gates as u64;
         if wires >= MAX_WIRES {
-            return Err("circuit encoding: m + n + n_gates must be below 2^31".into());
+            return Err("circuit encoding: m + n + n_gates must be below 2^26".into());
         }
         let want = HEADER_LEN as u64 + GATE_LEN as u64 * n_gates as u64 + 4 * n_out as u64;
         if enc.len() as u64 != want {
@@ -400,14 +405,14 @@ pub fn garble(circuit: &[u8], mode: Mode, salt: &[u8], x: &[u8], seed: &[u8]) ->
     let kinds = c.kinds(mode)?;
     c.check_outputs(&kinds)?;
     let mut xb = unpack_bits(x, c.n, "x")?;
-    let res = garble_parsed(&c, &kinds, mode, &mut hg, &xb, seed);
+    let res = garble_parsed(&c, &kinds, mode, &mut hg, &xb, salt, seed);
     wipe_long(&mut xb);
     res
 }
 
-fn garble_parsed(c: &Circuit, kinds: &[bool], mode: Mode, hg: &mut GateHash, xb: &[u8], seed: &[u8])
-    -> Result<Garbling, String>
-{
+fn garble_parsed(
+    c: &Circuit, kinds: &[bool], mode: Mode, hg: &mut GateHash, xb: &[u8], salt: &[u8], seed: &[u8],
+) -> Result<Garbling, String> {
     let (m, n) = (c.m, c.n);
     let mut lab: Vec<u128> = zeroed(c.wires())?; // 0-labels of the L wires
     let mut val: Vec<u8> = zeroed(c.wires())?; // values of the K wires (0 / 1)
@@ -430,8 +435,9 @@ fn garble_parsed(c: &Circuit, kinds: &[bool], mode: Mode, hg: &mut GateHash, xb:
     }
 
     // delta, the key wires' 0-labels, the data wires' 0-labels (mode "labels")
-    let mut msg = Vec::with_capacity(PRG_DST.len() + SEED_LEN);
+    let mut msg = Vec::with_capacity(PRG_DST.len() + SALT_LEN + SEED_LEN);
     msg.extend_from_slice(PRG_DST);
+    msg.extend_from_slice(salt);
     msg.extend_from_slice(seed);
     let mut prg = Sponge::new(&msg, 136);
     wipe_long(&mut msg);
@@ -675,6 +681,7 @@ mod tests {
         let (salt, seed) = (rng.bytes(SALT_LEN), rng.bytes(SEED_LEN));
         let x = rng.bits(9);
         let mut msg = PRG_DST.to_vec();
+        msg.extend_from_slice(&salt);
         msg.extend_from_slice(&seed);
         let mut stream = vec![0u8; 16 * (1 + 5 + 9)];
         crate::keccak::shake256(&msg, &mut stream);
@@ -707,7 +714,8 @@ mod tests {
                 let (salt, seed) = (rng.bytes(SALT_LEN), rng.bytes(SEED_LEN));
                 for _ in 0..4 {
                     let (w, x) = (rng.bits(m), rng.bits(n));
-                    assert_eq!(roundtrip(&c, mode, &salt, &seed, &w, &x), c.eval_plain(&w, &x), "{mode:?} trial {trial}");
+                    let want = c.eval_plain(&w, &x);
+                    assert_eq!(roundtrip(&c, mode, &salt, &seed, &w, &x), want, "{mode:?} trial {trial}");
                 }
             }
         }
@@ -852,15 +860,20 @@ mod tests {
         assert!(bad(&|v| v[9] = 0).contains("m = 0"));
         // n_out = 0 (and the length then off by 4: the count rule comes first)
         assert!(bad(&|v| v[21] = 0).contains("no outputs"));
-        // m + n + n_gates >= 2^31
-        let mut big = header(1 << 30, 1 << 30, 0, 1);
+        // m + n + n_gates >= 2^26, refused from the header alone (nothing sized by the counts)
+        let mut big = header(1 << 25, 1 << 25, 0, 1);
         big.extend_from_slice(&0u32.to_le_bytes());
-        assert!(Circuit::parse(&big).unwrap_err().contains("2^31"));
-        let mut big = header((1 << 31) - 2, 1, 1, 1); // exactly 2^31 wires
+        assert!(Circuit::parse(&big).unwrap_err().contains("2^26"));
+        let mut big = header((1 << 26) - 2, 1, 1, 1); // exactly 2^26 wires
         gate(&mut big, 3, 0, 0);
         big.extend_from_slice(&0u32.to_le_bytes());
-        assert!(Circuit::parse(&big).unwrap_err().contains("2^31"));
-        let mut fits = header((1 << 31) - 3, 1, 1, 1); // 2^31 - 1 wires
+        assert!(Circuit::parse(&big).unwrap_err().contains("2^26"));
+        for (m, n) in [(u32::MAX, 0), (1, u32::MAX), (1 << 31, 1 << 31)] {
+            let mut huge = header(m, n, 0, 1);
+            huge.extend_from_slice(&0u32.to_le_bytes());
+            assert!(Circuit::parse(&huge).unwrap_err().contains("2^26"));
+        }
+        let mut fits = header((1 << 26) - 3, 1, 1, 1); // 2^26 - 1 wires
         gate(&mut fits, 3, 0, 0);
         fits.extend_from_slice(&0u32.to_le_bytes());
         assert!(Circuit::parse(&fits).is_ok());
@@ -936,7 +949,8 @@ mod tests {
         let mut salt2 = salt.clone();
         salt2[55] ^= 1;
         let other = garble(&enc, Mode::Hardwired, &salt2, &[5], &seed).unwrap();
-        assert_eq!(other.key0, g.key0); // the labels depend on the seed only
+        assert_ne!(other.delta, g.delta); // the salt is in the seed expansion too
+        assert_ne!(other.key0, g.key0);
         assert_ne!(other.tables, g.tables);
         let mut seed2 = seed.clone();
         seed2[0] ^= 1;

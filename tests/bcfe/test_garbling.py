@@ -139,6 +139,8 @@ GOOD = encode(2, 1, [(XOR, 0, 2), (AND, 1, 3), (INV, 4, 0)], [5])
     (encode(2, 1, [(XOR, 0, 2)], []), "n_out = 0"),
     (encode(2 ** 31 - 2, 1, [], [0], counts=(2 ** 31 - 2, 1, 1, 1)), "not below 2"),
     (encode(1, 2 ** 31 - 1, [], [0]), "not below 2"),
+    (encode(2 ** 26 - 1, 1, [], [0]), "not below 2\\^26"),
+    (encode(1, 2 ** 26, [], [0]), "not below 2\\^26"),
     (encode(2, 1, [(0, 0, 1)], [3]), "unknown op 0"),
     (encode(2, 1, [(4, 0, 1)], [3]), "unknown op 4"),
     (encode(2, 1, [(INV, 0, 1)], [3]), r"\(INV\) has b = 1"),
@@ -190,16 +192,22 @@ def test_gate_hash():
 
 
 def test_expand_seed():
-    delta, key0, data0 = gc.expand_seed(SEED, 3, 2)
-    stream = hashlib.shake_256(b"PYFE4AI-V06-BCFE-GBPRG" + SEED).digest(16 * 6)
+    delta, key0, data0 = gc.expand_seed(SALT, SEED, 3, 2)
+    stream = hashlib.shake_256(b"PYFE4AI-V06-BCFE-GBPRG" + SALT + SEED).digest(16 * 6)
     assert delta == bytes([stream[0] | 1]) + stream[1:16] and delta[0] & 1
     assert key0 == split(stream[16:64]) and data0 == split(stream[64:96])
-    assert gc.expand_seed(SEED, 3, 0) == (delta, key0, [])
+    assert gc.expand_seed(SALT, SEED, 3, 0) == (delta, key0, [])
+    # the salt is in the expansion: another instance, unrelated Delta and labels from the same seed
+    other = gc.expand_seed(SALT[:-1] + bytes([SALT[-1] ^ 1]), SEED, 3, 2)
+    assert other[0] != delta and set(other[1]).isdisjoint(key0) and set(other[2]).isdisjoint(data0)
     for seed in (SEED[:-1], SEED + b"\x00"):
         with pytest.raises(ValueError, match="seed must be 32 bytes"):
-            gc.expand_seed(seed, 1, 0)
+            gc.expand_seed(SALT, seed, 1, 0)
+    for salt in (SALT[:-1], SALT + b"\x00"):
+        with pytest.raises(ValueError, match="salt must be 56 bytes"):
+            gc.expand_seed(salt, SEED, 1, 0)
     with pytest.raises(ValueError, match="non-negative"):
-        gc.expand_seed(SEED, -1, 0)
+        gc.expand_seed(SALT, SEED, -1, 0)
 
 
 def test_pack_and_unpack_bits():
@@ -275,7 +283,7 @@ def test_hash_indices_follow_next_index():
     circuit = encode(2, 1, [(XOR, 0, 1), (AND, 0, 1), (INV, 4, 0), (AND, 2, 5)], [6])
     for x0 in (0, 1):
         res = gc.garble(circuit, "hardwired", SALT, [x0], SEED)
-        delta_b, key0, _ = gc.expand_seed(SEED, 2, 0)
+        delta_b, key0, _ = gc.expand_seed(SALT, SEED, 2, 0)
         assert res["delta"] == delta_b and res["key0"] == b"".join(key0) and res["data_active"] == b""
         delta = as_int(delta_b)
         a0, b0 = as_int(key0[0]), as_int(key0[1])
@@ -295,7 +303,7 @@ def test_hash_indices_follow_next_index():
     # a half-gate first: AND(0, 2) takes 0, the AND(L, L) after it 1 and 2
     circuit = encode(2, 1, [(AND, 0, 2), (AND, 1, 3)], [4])
     res = gc.garble(circuit, "hardwired", SALT, [1], SEED)
-    delta_b, key0, _ = gc.expand_seed(SEED, 2, 0)
+    delta_b, key0, _ = gc.expand_seed(SALT, SEED, 2, 0)
     delta, a0, b0 = as_int(delta_b), as_int(key0[0]), as_int(key0[1])
 
     def h(label, idx):
@@ -324,7 +332,7 @@ def test_labels_mode_hands_out_the_active_data_labels():
     circuit = encode(m, n, gates, outputs)
     x = [1, 0, 1, 1, 0]
     res = gc.garble(circuit, "labels", SALT, x, SEED)
-    delta_b, key0, data0 = gc.expand_seed(SEED, m, n)
+    delta_b, key0, data0 = gc.expand_seed(SALT, SEED, m, n)
     delta = as_int(delta_b)
     assert res["delta"] == delta_b and res["key0"] == b"".join(key0)
     assert split(res["data_active"]) == [as_bytes(as_int(w0) ^ (delta if b else 0)) for w0, b in zip(data0, x)]
@@ -343,7 +351,9 @@ def test_seed_and_salt():
     assert other_seed["tables"] != first["tables"]
     salt2 = SALT[:48] + bytes([SALT[48] ^ 1]) + SALT[49:]  # another slot id (the low byte of u64(slot_id))
     other_salt = gc.garble(circuit, "hardwired", salt2, x, SEED)
-    assert other_salt["delta"] == first["delta"] and other_salt["key0"] == first["key0"]
+    # the salt is in the seed expansion too: a seed reused for another slot shares no label
+    assert other_salt["delta"] != first["delta"]
+    assert set(split(other_salt["key0"])).isdisjoint(split(first["key0"]))
     entries = list(zip(split(first["tables"]), split(other_salt["tables"])))
     assert len(entries) == gc.table_entries(gc.parse_circuit(circuit), "hardwired") > 4
     assert all(e1 != e2 for e1, e2 in entries)

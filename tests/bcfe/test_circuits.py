@@ -231,9 +231,10 @@ def test_raw_encoder_of_the_tests_matches():
     (_encode_raw(0, 1, [], [0]), "m = 0"),
     (_encode_raw(0, 2, [(XOR, 0, 1)], [2]), "m = 0"),
     (_encode_raw(2, 1, [(XOR, 0, 2)], []), "n_out = 0"),
+    (_encode_raw((1 << 26) - 1, 1, [], [0]), "2^26 wires"),
+    (_encode_raw(1 << 25, 1 << 25, [], [0]), "2^26 wires"),
     (_encode_raw((1 << 31) - 1, 1, [], [0]), "2^31 wires"),
-    (_encode_raw(1 << 30, 1 << 30, [], [0]), "2^31 wires"),
-    (_encode_raw(0xFFFFFFFF, 0xFFFFFFFF, [], [0]), "2^31 wires"),
+    (_encode_raw(0xFFFFFFFF, 0xFFFFFFFF, [], [0]), "2^33 wires"),
 ])
 def test_decode_rejects(data, what):
     with pytest.raises(ValueError):
@@ -247,9 +248,11 @@ def test_decode_rejects_non_bytes():
 
 
 def test_the_largest_valid_wire_count_is_accepted():
-    # m + n + n_gates = 2^31 - 1 decodes (only the header counts, no gate)
-    c = Circuit.decode(_encode_raw((1 << 31) - 2, 1, [], [5]))
-    assert c.n_wires == (1 << 31) - 1
+    # m + n + n_gates = 2^26 - 1 decodes (only the header counts, no gate); 2^26 does not
+    c = Circuit.decode(_encode_raw((1 << 26) - 2, 1, [], [5]))
+    assert c.n_wires == (1 << 26) - 1
+    with pytest.raises(ValueError, match="2\\^26"):
+        Circuit.decode(_encode_raw((1 << 26) - 1, 1, [], [5]))
 
 
 @pytest.mark.parametrize("args", [

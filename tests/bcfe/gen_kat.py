@@ -43,7 +43,7 @@ from pyfe4ai.primitives import garbling as gc  # noqa: E402
 #: The KAT file this script writes by default (relative to the repository).
 DEFAULT_OUT = Path(__file__).resolve().parent / "kat" / "gc_v1.json"
 #: The specification the answers follow.
-SPEC = "04_p1_plan section 3, 2026-11-19"
+SPEC = "04_p1_plan section 3, 2026-11-19 rev. 2 (salted seed expansion)"
 
 #: Domain-separation strings of the KAT's own derivations (not of the scheme).
 KAT_SEED_DST = b"PYFE4AI-V06-BCFE-KAT-SEED"
@@ -334,6 +334,8 @@ def build_kat() -> dict:
             "packed": "x_packed and decode: bits packed LSB first (spec 3.7)",
             "labels": "16-byte strings; key_active[j] = key0[j] xor w_j * delta; in mode labels data_active "
                       "is returned by the garbling, in mode hardwired it is empty",
+            "seed expansion": "SHAKE-256(dst.garbling_prg || salt(56) || seed(32)) read as delta (then "
+                              "delta[0] |= 1), key0 per key wire, the data wires' zero labels (mode labels)",
             "sha256": "SHA-256 of the raw bytes of key0, data_active, tables",
             "output": "evaluation of the garbling with the labels of w, decoded; plain_output: guard(C)(w, x) "
                       "in the clear; output_by_w[v]: the output for the key bits of the integer v (LSB = "

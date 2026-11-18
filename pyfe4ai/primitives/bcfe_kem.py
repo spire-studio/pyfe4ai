@@ -9,16 +9,17 @@ bit ``g`` (SS10 Sec. 3.2, the guarded circuit ``C'(w || g, x) = C(w, x) AND
 NOT g``) with the single position ``(g, 0)``. An encryption garbles
 ``guard(C)`` for every slot (:mod:`pyfe4ai.primitives.garbling`) and
 encrypts each key-wire label ``L_j^b`` under ``P[j, b]``; the holder opens
-the labels of ``w || 0`` and evaluates ``C(w, x)``. Byte layout: plan 0.6
-P1, sections 3.8 and 3.9.
+the labels of ``w || 0`` and evaluates ``C(w, x)``. The byte layouts are
+those of the functions below: :func:`kem_mask`, :func:`unselected_pk`,
+:func:`setup_digest`, :func:`ephemeral_scalar`, :func:`table_index`.
 
 * **Label KEM** -- hashed ElGamal over ristretto255 with one ephemeral key
   ``R = r B`` per (ciphertext, slot), shared by the ``2m + 1`` labels of the
   slot: ``c[j, b] = L_j^b xor H_K(pp_digest, ct_nonce, slot_id, j, b, R,
   r P[j, b])`` (:func:`kem_mask`). Sharing ``r`` across recipients is the
   multi-recipient setting of Bellare, Boldyreva and Staddon (PKC 2003);
-  the security argument of 0.6 proves it directly (Lemma A1', strong DH of
-  Abdalla, Bellare and Rogaway, CT-RSA 2001): every ``H_K`` input carries
+  a direct proof under the strong Diffie-Hellman assumption (Abdalla,
+  Bellare and Rogaway, CT-RSA 2001) covers it: every ``H_K`` input carries
   distinct metadata ``(pp_digest, ct_nonce, slot_id, j, b)``, and the
   public keys may be arbitrary group elements.
 * **Unselected positions (h')** -- ``P[j, 1 - w_j] = H_P(setup_digest,
@@ -33,13 +34,14 @@ P1, sections 3.8 and 3.9.
   ``m + 1`` public keys, which must decode and not be the identity (I8), and
   the center places them at ``(j, w_j)`` and ``(g, 0)``.
 * **Randomness** -- explicit: ``rand(n)`` (issuance) and the 32-byte
-  ``seed`` of a (ciphertext, slot) (:func:`encrypt_slot`), which yields both
-  the garbling (:func:`~pyfe4ai.primitives.garbling.expand_seed`) and ``r``
+  ``seed`` of a (ciphertext, slot) (:func:`encrypt_slot`), which yields,
+  expanded together with the instance salt, both the garbling
+  (:func:`~pyfe4ai.primitives.garbling.expand_seed`) and ``r``
   (:func:`ephemeral_scalar`). The backend operations ``bcfe_*`` draw them
   from the operating system for every call (I1); a fixed seed is for the
   tests only (I16).
 
-Requirements of the security argument (0.6, section 6) implemented here:
+Requirements of the security argument implemented here:
 I1 (fresh ``Delta``, labels and ``r`` per (ciphertext, slot) from the
 caller's seed), I2 and I15 (``H_K``, ``H_P`` and the setup digest are
 domain-separated and read fixed-length or length-prefixed fields; ``H_P``
@@ -81,7 +83,7 @@ DATA_WIRES_CODES = {"hardwired": DATA_WIRES_HARDWIRED, "labels": DATA_WIRES_LABE
 GC_HASH_CODES = {"shake128": GC_HASH_SHAKE128}
 KEM_CODES = {"ristretto255-hashed-elgamal-v1": KEM_RISTRETTO255_HASHED_ELGAMAL_V1}
 
-#: Domain-separation strings (plan 0.6 P1, sections 3.8 and 3.9).
+#: Domain-separation strings.
 KEM_DST = b"PYFE4AI-V06-BCFE-KEM"
 UNSELECTED_PREFIX = b"PFE6-UNSEL"
 UNSELECTED_DST = b"PYFE4AI-V06-BCFE-UNSEL-V01-CS02-with-ristretto255_XMD:SHA-512_R255MAP_RO_"
@@ -130,13 +132,14 @@ def _u64(value: int) -> bytes:
 
 def check_key_bits_count(m) -> int:
     """*m*, the number of key bits of ``C`` (``guard(C)`` has ``m + 1`` key
-    wires), checked to be an integer in ``[1, 2^31 - 1)``.
+    wires), checked to be an integer in ``[1, 2^26 - 1)`` (``guard(C)`` stays
+    below :data:`~pyfe4ai.primitives.garbling.MAX_CIRCUIT_WIRES`).
 
     Raises:
         ValueError: Otherwise.
     """
     if isinstance(m, bool) or not isinstance(m, int) or not 1 <= m < garbling.MAX_WIRES - 1:
-        raise ValueError("m must be an integer in [1, 2^31 - 1), the key bits of the circuit")
+        raise ValueError("m must be an integer in [1, 2^26 - 1), the key bits of the circuit")
     return m
 
 
@@ -267,7 +270,7 @@ def _points(data, count: int, what: str) -> list:
     return _chunks(data, POINT_BYTES)
 
 
-# ------------------------------------------------------------------ the hashes (section 3.8)
+# ------------------------------------------------------------------ the hashes
 
 def _mask_prefix(pp_digest, ct_nonce, slot_id) -> bytes:
     return (KEM_DST + _fixed(pp_digest, DIGEST_BYTES, "pp_digest") + _fixed(ct_nonce, NONCE_BYTES, "ct_nonce")
@@ -334,7 +337,7 @@ def setup_digest(scheme_id, bcfe_version: int, circuit_digest: bytes, data_wires
     ``"shake128"``, ``"ristretto255-hashed-elgamal-v1"``) or their codes
     (:data:`DATA_WIRES_CODES`, :data:`GC_HASH_CODES`, :data:`KEM_CODES`).
     ``max_keys`` and the slot table are not in it (the bound may be raised;
-    the input of ``H_P`` must not change, V6-R02).
+    the input of ``H_P`` must stay fixed for the life of the setup).
 
     Raises:
         TypeError: For a scheme id that is neither str nor bytes, or byte
@@ -356,19 +359,27 @@ def setup_digest(scheme_id, bcfe_version: int, circuit_digest: bytes, data_wires
     ).digest(DIGEST_BYTES)
 
 
-def ephemeral_scalar(seed: bytes) -> int:
+def ephemeral_scalar(salt: bytes, seed: bytes) -> int:
     """The ephemeral key ``r`` of a (ciphertext, slot):
-    ``SHAKE-256("PYFE4AI-V06-BCFE-EPHEM" || seed)[0:64]`` little-endian mod
-    ``l`` (the seed also yields the garbling, through its own domain).
-    Secret.
+    ``SHAKE-256("PYFE4AI-V06-BCFE-EPHEM" || salt(56) || seed(32))[0:64]``
+    little-endian mod ``l``, *salt* the instance salt (:func:`instance_salt`).
+    The seed also yields the garbling, through its own domain
+    (:func:`~pyfe4ai.primitives.garbling.expand_seed`). Secret.
+
+    The salt is bound in so that one seed used for two (ciphertext, slot)
+    instances still gives unrelated ``r``: defence in depth against a
+    repeated seed. Design choice; the alternative was the seed alone,
+    relying only on a fresh seed per instance from the operating system
+    (I1).
 
     Raises:
-        TypeError: If *seed* is not bytes.
-        ValueError: If *seed* is not 32 bytes, or ``r = 0`` (probability
-            2^-252).
+        TypeError: If *salt* or *seed* is not bytes.
+        ValueError: If *salt* is not 56 bytes, *seed* not 32 bytes, or ``r =
+            0`` (probability 2^-252).
     """
+    salt = _fixed(salt, garbling.SALT_BYTES, "the instance salt")
     seed = _fixed(seed, SEED_BYTES, "the seed")
-    r = int.from_bytes(hashlib.shake_256(EPHEMERAL_DST + seed).digest(SCALAR_DRAW_BYTES), "little") % ORDER
+    r = int.from_bytes(hashlib.shake_256(EPHEMERAL_DST + salt + seed).digest(SCALAR_DRAW_BYTES), "little") % ORDER
     if r == 0:
         raise ValueError("the ephemeral scalar is 0 (probability 2^-252): draw a new seed")
     return r
@@ -376,7 +387,8 @@ def ephemeral_scalar(seed: bytes) -> int:
 
 def instance_salt(pp_digest: bytes, ct_nonce: bytes, slot_id: int) -> bytes:
     """The 56-byte instance salt of the gate hash, ``pp_digest || ct_nonce ||
-    u64(slot_id)`` (section 3.5, I11).
+    u64(slot_id)``: it binds the gate hash, the seed expansion and ``r``
+    to the instance (I11, the gate hash takes the instance salt).
 
     Raises:
         TypeError, ValueError: For fields of another type or length.
@@ -385,7 +397,7 @@ def instance_salt(pp_digest: bytes, ct_nonce: bytes, slot_id: int) -> bytes:
             + _u64(_uint(slot_id, 64, "slot_id")))
 
 
-# ------------------------------------------------------------------ issuance (section 3.9)
+# ------------------------------------------------------------------ issuance
 
 def _table(setup_digest_: bytes, slot_id: int, w: list, k: bytes, selected: list) -> bytes:
     """The ``2m + 1`` public keys: ``selected[j]`` at ``(j, w_j)``, ``H_P`` at
@@ -445,9 +457,10 @@ def place_slot(setup_digest: bytes, slot_id: int, w_bits, holder_pks: bytes, ran
 
     Every holder key must be a canonical encoding of a group element other
     than the identity (I8); no proof of knowledge of its secret key is asked
-    (Lemma A1' allows arbitrary keys). Randomness: the 16 bytes of ``k``
-    from ``rand(16)``, after the inputs are checked (the backend operation
-    ``bcfe_place_slot`` reads its 16 bytes before checking; see its contract).
+    (the label KEM is secure for arbitrary public keys). Randomness: the 16
+    bytes of ``k`` from ``rand(16)``, after the inputs are checked (the
+    backend operation ``bcfe_place_slot`` reads its 16 bytes after checking
+    *m* and *w* and before the other inputs; see its contract).
 
     Args:
         setup_digest, slot_id, w_bits, m: As :func:`new_slot`.
@@ -502,11 +515,11 @@ def unselected_ok(setup_digest: bytes, slot_id: int, w_bits, k: bytes, pks: byte
     return ok
 
 
-# ------------------------------------------------------------------ encryption and decryption (section 3.9)
+# ------------------------------------------------------------------ encryption and decryption
 
 def guarded_key_bits(parsed: garbling.ParsedCircuit) -> int:
-    """``m`` of a parsed ``guard(C)`` (section 3.2): its ``m' = m + 1`` key
-    wires minus the g bit.
+    """``m`` of a parsed ``guard(C)`` (:meth:`pyfe4ai.circuits.Circuit.guard`):
+    its ``m' = m + 1`` key wires minus the g bit.
 
     Raises:
         ValueError: If the circuit is not ``guard(C)`` of a circuit with at
@@ -540,13 +553,14 @@ def encrypt_slot(circuit: bytes, mode: str, pp_digest: bytes, ct_nonce: bytes, s
     """The component of one slot in a ciphertext: garble ``guard(C)`` for
     *x_bits* and encrypt the labels of its key wires under the slot's table.
 
-    From the 32-byte *seed*: the garbling (``Delta`` and the zero labels,
-    :func:`~pyfe4ai.primitives.garbling.garble` with the instance salt
-    :func:`instance_salt`) and ``r`` (:func:`ephemeral_scalar`), ``R = r
-    B``. The label ciphertexts follow the table: ``c[j, b] = L_j^b xor
-    H_K(pp_digest, ct_nonce, slot_id, j, b, R, r P[j, b])`` with ``L_j^1 =
-    L_j^0 xor Delta`` for ``j = 0 .. m - 1``, then ``c[m, 0]`` alone:
-    ``L_g^1`` is never encrypted or sent, nor formed here (I3).
+    From the 32-byte *seed* and the instance salt (:func:`instance_salt`):
+    the garbling (``Delta`` and the zero labels,
+    :func:`~pyfe4ai.primitives.garbling.garble` with that salt) and ``r``
+    (:func:`ephemeral_scalar`), ``R = r B``. The label ciphertexts follow
+    the table: ``c[j, b] = L_j^b xor H_K(pp_digest, ct_nonce, slot_id, j,
+    b, R, r P[j, b])`` with ``L_j^1 = L_j^0 xor Delta`` for ``j = 0 .. m -
+    1``, then ``c[m, 0]`` alone: ``L_g^1`` is never encrypted or sent, nor
+    formed here (I3).
 
     Args:
         circuit: The ``CIRC v1`` encoding of ``guard(C)`` (``m + 1`` key wires).
@@ -578,7 +592,7 @@ def encrypt_slot(circuit: bytes, mode: str, pp_digest: bytes, ct_nonce: bytes, s
     prefix = _mask_prefix(pp_digest, ct_nonce, slot_id)
     table = [_decode_point(p, "public key {} of the slot".format(i))
              for i, p in enumerate(_points(pks, 2 * m + 1, "pks"))]
-    r = ephemeral_scalar(seed)
+    r = ephemeral_scalar(salt, seed)
     big_r = r255.encode(r255.mul_base(r))
     garbled = garbling.garble(circuit, mode, salt, x_bits, seed)
     delta = garbled["delta"]

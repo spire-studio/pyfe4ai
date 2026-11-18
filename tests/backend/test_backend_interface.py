@@ -951,3 +951,62 @@ def test_gc_garble_and_evaluate(mode, spy):
     assert spy.calls["gc_garble"] == 1 and spy.calls["gc_evaluate"] == 1
     assert nat[1] == garbling.pack_bits(circuit.evaluate_plain(w, x), circuit.n_out)
     assert len(nat[0]["data_active"]) == (16 * circuit.n if mode == "labels" else 0)
+
+
+@native
+@pytest.mark.parametrize("mode", ["hardwired", "labels"])
+def test_bcfe_slot_operations(mode, spy):
+    """The five ``bcfe_*`` operations with the same random bytes
+    (``_random_override``: ``64 (m + 1) + 16`` for a new slot, 16 for a
+    placed one, 32 per encryption) through both implementations: the same
+    slots, CheckAuth answers, ciphertext components and decryptions, the
+    circuit's output for the right key, and the native kernels ran."""
+    from pyfe4ai.circuits import linear_threshold
+    from pyfe4ai.primitives import garbling
+
+    c = linear_threshold(2, 3, 3).circuit  # 9 key bits, 6 data bits, one output bit
+    m, enc = c.m, c.guard().encode()
+    setup = hashlib.shake_256(b"bcfe setup").digest(32)
+    pp, nonce, slot_id = hashlib.shake_256(b"bcfe pp").digest(32), hashlib.shake_256(b"bcfe nonce").digest(16), 3
+    rng = random.Random(4)
+    w = [rng.randrange(2) for _ in range(m)]
+    x = [rng.randrange(2) for _ in range(c.n)]
+    w_packed, x_packed = garbling.pack_bits(w, m), garbling.pack_bits(x, c.n)
+    holder_scalars = [rng.randrange(1, 2 ** 252) for _ in range(m + 1)]
+    holder_pks = b"".join(native_backend.ext().r255_mul_base(s.to_bytes(32, "little")) for s in holder_scalars)
+
+    def run(impl):
+        drawn = []
+        stream = Bytes(12)
+
+        def take(nbytes):
+            drawn.append(nbytes)
+            return stream.take(nbytes)
+
+        out = {}
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(native_backend, "_random_override", take)
+            out["h1"] = impl.bcfe_new_slot(setup, slot_id, w_packed, m=m)
+            out["h2"] = impl.bcfe_place_slot(setup, slot_id + 1, w_packed, holder_pks, m=m)
+            out["ct1"] = impl.bcfe_encrypt_slot(enc, mode, pp, nonce, slot_id, x_packed, out["h1"]["pks"])
+            out["ct2"] = impl.bcfe_encrypt_slot(enc, mode, pp, nonce, slot_id + 1, x_packed, out["h2"]["pks"])
+        out["ok"] = (impl.bcfe_unselected_ok(setup, slot_id, w_packed, out["h1"]["k"], out["h1"]["pks"], m=m),
+                     impl.bcfe_unselected_ok(setup, slot_id + 1, w_packed, out["h2"]["k"], out["h2"]["pks"], m=m),
+                     impl.bcfe_unselected_ok(setup, slot_id, w_packed, out["h2"]["k"], out["h1"]["pks"], m=m))
+        h2_scalars = b"".join(s.to_bytes(32, "little") for s in holder_scalars)
+        for name, sid, scalars in (("y1", slot_id, out["h1"]["scalars"]), ("y2", slot_id + 1, h2_scalars)):
+            ct = out["ct" + name[1]]
+            out[name] = impl.bcfe_decrypt_slot(enc, mode, pp, nonce, sid, ct["R"], ct["label_cts"], ct["tables"],
+                                               ct["decode"], ct["data_active"], scalars, w_packed)
+        return out, drawn
+
+    py, nat = both(run)
+    assert py == nat
+    assert nat[1] == [64 * (m + 1) + 16, 16, 32, 32]
+    out = nat[0]
+    assert out["ok"] == (True, True, False)
+    want = garbling.pack_bits(c.evaluate_plain(w, x), c.n_out)
+    assert out["y1"] == out["y2"] == want
+    assert spy.calls["bcfe_new_slot"] == spy.calls["bcfe_place_slot"] == 1
+    assert spy.calls["bcfe_encrypt_slot"] == spy.calls["bcfe_decrypt_slot"] == 2
+    assert spy.calls["bcfe_unselected_ok"] == 3

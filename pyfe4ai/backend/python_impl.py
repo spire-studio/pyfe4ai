@@ -362,19 +362,34 @@ class PythonBackend(Backend):
             raise TypeError("{} must be the packed bits (bytes), not {}".format(what, type(data).__name__))
         return bytes(data)
 
+    @classmethod
+    def _bcfe_key_bits(cls, w, m) -> tuple:
+        """``(m, w)`` checked before any random byte is drawn: *m* in range
+        and the packed *w* exactly ``ceil(m / 8)`` bytes with zero padding,
+        so that the bytes drawn for *m* are backed by input bytes. Design
+        choice; the alternative was to draw after checking *m* alone, which
+        lets a one-byte *w* ask for gigabytes of random bytes."""
+        from pyfe4ai.primitives import bcfe_kem
+        from pyfe4ai.primitives import garbling
+
+        m = bcfe_kem.check_key_bits_count(m)
+        w = cls._bcfe_packed(w, "w")
+        garbling.unpack_bits(w, m)
+        return m, w
+
     def bcfe_new_slot(self, setup_digest: bytes, slot_id: int, w: bytes, *, m: int) -> dict:
         from pyfe4ai.primitives import bcfe_kem
 
-        m = bcfe_kem.check_key_bits_count(m)  # m first: it sets the number of bytes
+        m, w = self._bcfe_key_bits(w, m)  # m and w first: m sets the number of bytes
         data = self._bcfe_random(bcfe_kem.SCALAR_DRAW_BYTES * (m + 1) + bcfe_kem.SLOT_KEY_BYTES)
-        return bcfe_kem.new_slot(setup_digest, slot_id, self._bcfe_packed(w, "w"), bcfe_kem.byte_source(data), m=m)
+        return bcfe_kem.new_slot(setup_digest, slot_id, w, bcfe_kem.byte_source(data), m=m)
 
     def bcfe_place_slot(self, setup_digest: bytes, slot_id: int, w: bytes, holder_pks: bytes, *, m: int) -> dict:
         from pyfe4ai.primitives import bcfe_kem
 
-        data = self._bcfe_random(bcfe_kem.SLOT_KEY_BYTES)  # k, before the inputs are checked
-        return bcfe_kem.place_slot(setup_digest, slot_id, self._bcfe_packed(w, "w"), holder_pks,
-                                   bcfe_kem.byte_source(data), m=m)
+        m, w = self._bcfe_key_bits(w, m)
+        data = self._bcfe_random(bcfe_kem.SLOT_KEY_BYTES)  # k, after m and w, before the other inputs are checked
+        return bcfe_kem.place_slot(setup_digest, slot_id, w, holder_pks, bcfe_kem.byte_source(data), m=m)
 
     def bcfe_unselected_ok(self, setup_digest: bytes, slot_id: int, w: bytes, k: bytes, pks: bytes, *,
                            m: int) -> bool:

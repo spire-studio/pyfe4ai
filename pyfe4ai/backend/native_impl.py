@@ -889,9 +889,20 @@ class NativeBackend(PythonBackend):
 
     @staticmethod
     def _bcfe_m(m) -> int:
-        if isinstance(m, bool) or not isinstance(m, int) or not 1 <= m < 2 ** 31 - 1:
-            raise ValueError("m must be an integer in [1, 2^31 - 1), the key bits of the circuit")
+        if isinstance(m, bool) or not isinstance(m, int) or not 1 <= m < 2 ** 26 - 1:
+            raise ValueError("m must be an integer in [1, 2^26 - 1), the key bits of the circuit")
         return m
+
+    @classmethod
+    def _bcfe_m_and_w(cls, m, w) -> tuple:
+        """``(m, w)`` checked before any random byte is drawn: *w* must be the
+        ``ceil(m / 8)`` packed bytes with zero padding, so that the bytes
+        drawn for *m* are backed by input bytes."""
+        m = cls._bcfe_m(m)
+        w = cls._gc_bytes(w, "w")
+        if len(w) != (m + 7) // 8 or (m % 8 and w[-1] >> (m % 8)):
+            raise ValueError("w: {} packed bits take {} bytes, with zero padding bits".format(m, (m + 7) // 8))
+        return m, w
 
     @staticmethod
     def _bcfe_slot_id(slot_id) -> int:
@@ -911,19 +922,20 @@ class NativeBackend(PythonBackend):
         return bytes(data)
 
     def bcfe_new_slot(self, setup_digest: bytes, slot_id: int, w: bytes, *, m: int) -> dict:
-        m = self._bcfe_m(m)  # m first: it sets the number of random bytes
+        m, w = self._bcfe_m_and_w(m, w)  # m and w first: m sets the number of random bytes
         rnd = self._bcfe_draw(64 * (m + 1) + 16)
         scalars, pks, k = _b._ext.bcfe_new_slot(
-            self._gc_bytes(setup_digest, "setup_digest"), self._bcfe_slot_id(slot_id), m, self._gc_bytes(w, "w"),
-            rnd=rnd, threads=_b._threads,
+            self._gc_bytes(setup_digest, "setup_digest"), self._bcfe_slot_id(slot_id), m, w, rnd=rnd,
+            threads=_b._threads,
         )
         return {"scalars": scalars, "pks": pks, "k": k}
 
     def bcfe_place_slot(self, setup_digest: bytes, slot_id: int, w: bytes, holder_pks: bytes, *, m: int) -> dict:
-        rnd = self._bcfe_draw(16)  # k, before the inputs are checked
+        m, w = self._bcfe_m_and_w(m, w)
+        rnd = self._bcfe_draw(16)  # k, after m and w, before the other inputs are checked
         pks, k = _b._ext.bcfe_place_slot(
-            self._gc_bytes(setup_digest, "setup_digest"), self._bcfe_slot_id(slot_id), self._bcfe_m(m),
-            self._gc_bytes(w, "w"), self._gc_bytes(holder_pks, "holder_pks"), rnd=rnd, threads=_b._threads,
+            self._gc_bytes(setup_digest, "setup_digest"), self._bcfe_slot_id(slot_id), m, w,
+            self._gc_bytes(holder_pks, "holder_pks"), rnd=rnd, threads=_b._threads,
         )
         return {"pks": pks, "k": k}
 

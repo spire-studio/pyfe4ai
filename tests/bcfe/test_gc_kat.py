@@ -22,6 +22,8 @@
   lanes run both), so an environment variable selects it instead.
 * The two decoders of ``CIRC v1`` (:func:`pyfe4ai.primitives.garbling.parse_circuit`
   and :meth:`pyfe4ai.circuits.Circuit.decode`) agree on the library circuits.
+* ``gc_garble`` (it returns ``Delta``) and ``gc_evaluate`` are for tests and
+  known answers only: no source of the schemes or the ML adapter names them.
 
 The native tests are skipped without the extension.
 """
@@ -164,7 +166,7 @@ def seeded(seed: bytes, drawn: list = None):
 
 def test_header():
     assert KAT["version"] == 1
-    assert KAT["spec"] == "04_p1_plan section 3, 2026-11-19"
+    assert KAT["spec"] == "04_p1_plan section 3, 2026-11-19 rev. 2 (salted seed expansion)"
     dst = KAT["dst"]
     # the specification's strings, not only the code's constants
     assert dst["gate_hash"] == "PFE6GC02" and gc.GATE_HASH_DST == b"PFE6GC02"
@@ -199,13 +201,14 @@ def test_seed_salt_and_inputs_are_derived_from_the_name(case):
 
 @pytest.mark.parametrize("case", CASES, ids=IDS)
 def test_delta_and_labels_are_the_seed_expansion(case):
-    """Section 3.4 with hashlib alone: ``SHAKE-256("PYFE4AI-V06-BCFE-GBPRG" || seed)``
-    read as ``Delta`` (then ``Delta[0] |= 1``), the zero labels of the key
-    wires, then (mode ``"labels"``) of the data wires, whose active labels
-    are ``W0 xor x_i Delta``."""
+    """The seed expansion with hashlib alone: ``SHAKE-256("PYFE4AI-V06-BCFE-GBPRG"
+    || salt || seed)`` read as ``Delta`` (then ``Delta[0] |= 1``), the zero
+    labels of the key wires, then (mode ``"labels"``) of the data wires,
+    whose active labels are ``W0 xor x_i Delta``."""
     info, exp = case["circuit"], case["expected"]
     m, n = info["m"], info["n"] if case["mode"] == "labels" else 0
-    stream = hashlib.shake_256(b"PYFE4AI-V06-BCFE-GBPRG" + bytes.fromhex(case["seed"])).digest(16 * (1 + m + n))
+    salt, seed = bytes.fromhex(case["salt"]), bytes.fromhex(case["seed"])
+    stream = hashlib.shake_256(b"PYFE4AI-V06-BCFE-GBPRG" + salt + seed).digest(16 * (1 + m + n))
     delta = bytes([stream[0] | 1]) + stream[1:16]
     assert exp["delta"] == delta.hex()
     assert exp["key0_sha256"] == hashlib.sha256(stream[16:16 + 16 * m]).hexdigest()
@@ -508,3 +511,31 @@ def test_the_two_decoders_agree_on_library_circuits(function, params):
     c = library_circuit(function, params)
     for circuit in (c, c.guard()):
         _check_decoders(circuit)
+
+
+# ------------------------------------------------------------------ gc_garble is for tests only
+
+#: Where the library's schemes live: none of their sources may name the operations that hand out Delta.
+SCHEME_SOURCES = ("pyfe4ai/schemes", "pyfe4ai/ml")
+
+
+def test_the_schemes_never_call_gc_garble_or_gc_evaluate():
+    """``gc_garble`` returns ``Delta`` and the zero labels: tests and
+    known-answer vectors only. The schemes encrypt with
+    ``bcfe_encrypt_slot`` (``Delta`` never leaves the implementation) and
+    decrypt with ``bcfe_decrypt_slot``; no source under
+    :data:`SCHEME_SOURCES` names ``gc_garble`` or ``gc_evaluate``, not even in a
+    string or comment."""
+    root = Path(__file__).resolve().parents[2]
+    scanned, found = 0, []
+    for top in SCHEME_SOURCES:
+        for path in sorted((root / top).rglob("*.py")):
+            text = path.read_text(encoding="utf-8")
+            scanned += 1
+            for name in ("gc_garble", "gc_evaluate"):
+                if name in text:
+                    found.append("{}: {}".format(path.relative_to(root), name))
+    assert scanned > 10 and not found, found
+    # the scan would see a use (the bcfe scheme does name the fused operations)
+    scheme = (root / "pyfe4ai/schemes/bcfe/gc_ristretto255.py").read_text(encoding="utf-8")
+    assert "bcfe_encrypt_slot" in scheme and "bcfe_decrypt_slot" in scheme

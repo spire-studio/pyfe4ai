@@ -74,7 +74,7 @@ class Builder:
         self._m = _check_count(m, "m", 1)
         self._n = _check_count(n, "n", 0)
         if m + n >= MAX_WIRES:
-            raise FEValidationError("m + n must be below 2^31")
+            raise FEValidationError("m + n must be below 2^26 (the wire bound of CIRC v1)")
         self._base = m + n
         self._gates = []
         self._outputs = []
@@ -244,11 +244,13 @@ class Builder:
     def build(self, prune: bool = True) -> Circuit:
         """The circuit with the outputs so far. With *prune* (the default)
         the gates no output depends on are dropped and the rest renumbered,
-        in their order."""
+        in their order. ``FEValidationError`` if it has no output or
+        ``m + n + n_gates >= 2^26`` (the wire bound of ``CIRC v1``)."""
         if not self._outputs:
             raise FEValidationError("a circuit needs at least one output")
         base, gates = self._base, self._gates
         if not prune:
+            self._check_wires(len(gates))
             return Circuit._trusted(self._m, self._n, tuple(gates), tuple(self._outputs))
         live = bytearray(base + len(gates))
         for o in self._outputs:
@@ -265,7 +267,15 @@ class Builder:
             if live[base + i]:
                 new[base + i] = base + len(kept)
                 kept.append((op, new[a], 0 if op == INV else new[b]))
+        self._check_wires(len(kept))
         return Circuit._trusted(self._m, self._n, tuple(kept), tuple(new[o] for o in self._outputs))
+
+    def _check_wires(self, n_gates: int) -> None:
+        """``m + n + n_gates`` below :data:`~pyfe4ai.circuits.circuit.MAX_CIRCUIT_WIRES`
+        (2^26), as every decoder of ``CIRC v1`` requires, else ``FEValidationError``."""
+        if self._base + n_gates >= MAX_WIRES:
+            raise FEValidationError("the circuit has {} wires; CIRC v1 allows fewer than 2^26".format(
+                self._base + n_gates))
 
     # -- words
 

@@ -536,18 +536,23 @@ def test_holder_and_center_together_cannot_open_an_unselected_label(issuance):
 
 @pytest.mark.parametrize("mode", MODES)
 def test_a_seed_shared_by_two_slots_lets_their_holders_open_x(mode):
-    """I1: if the components of two slots came from one seed (only through
-    the internal interface: the tests' seed hook, I16), the slots share
-    ``Delta`` and every zero label -- the instance salt changes the tables
-    only. Then two honest holders with their own h' slots and ``w_A !=
-    w_B``, and no extra key, XOR their labels where ``w_A`` and ``w_B``
-    differ: ``Delta``; their labels coincide where they agree; ``x`` falls
-    out of the tables: the "one slot, two keys" attack across slots, by a
-    coalition of holders the scheme otherwise allows without limit. Also the
-    holder of slot A alone evaluates slot B's tables with its own labels (to
-    ``C(w_A, x)``): the components are no longer bound to their slots. On
+    """I1, with the instance salt in the seed expansion. If the components
+    of two slots came from one seed (only through the internal interface:
+    the tests' seed hook, I16), they still have unrelated ``Delta`` and zero
+    labels and tables with no entry in common: the expansion reads the
+    instance salt (pp digest, nonce, slot id) as well as the seed, so the
+    two holders' labels share nothing.
+
+    The attack now needs the same seed *and* the same salt: slot B's
+    component made with slot A's instance fields (slot id 1, B's table) from
+    A's seed -- an encryptor that reuses both -- shares ``Delta`` and every
+    zero label with A's. Then two honest holders with their own h' slots
+    and ``w_A != w_B``, and no extra key, XOR their labels where ``w_A`` and
+    ``w_B`` differ: ``Delta``; their labels coincide where they agree; ``x``
+    falls out of the tables: the "one slot, two keys" attack across slots,
+    by a coalition of holders the scheme otherwise allows without limit. On
     the library path (a fresh seed per call) the same two holders' labels
-    share nothing: no two XORs agree and no label coincides."""
+    share nothing either: no two XORs agree and no label coincides."""
     pc = model("threshold", "shift_add")
     circuit = pc.circuit.guard().encode()
     m = pc.circuit.m
@@ -560,20 +565,28 @@ def test_a_seed_shared_by_two_slots_lets_their_holders_open_x(mode):
     slot_b = ops.bcfe_new_slot(SETUP, 2, pack(w_b), m=m)
 
     seed = rng.randbytes(32)
+    # one seed, two slots: two salts, unrelated garblings
     ct_a = encrypt(circuit, mode, 1, x, slot_a["pks"], seed=seed)
     ct_b = encrypt(circuit, mode, 2, x, slot_b["pks"], seed=seed)
     key0, delta = truth(circuit, mode, 1, x, seed)
-    assert truth(circuit, mode, 2, x, seed) == (key0, delta)
+    key0_b, delta_b = truth(circuit, mode, 2, x, seed)
+    assert delta_b != delta and set(key0_b).isdisjoint(key0)
     assert set(split(ct_a["tables"])).isdisjoint(split(ct_b["tables"]))
     labels_a = holder_labels(ct_a, 1, slot_a["scalars"], w_a)
     labels_b = holder_labels(ct_b, 2, slot_b["scalars"], w_b)
+    assert len({xor(labels_a[j], labels_b[j]) for j in diff}) == len(diff)
+    assert set(labels_a).isdisjoint(labels_b)
+
+    # one seed and one salt: B's component under A's instance fields shares A's garbling
+    ct_b = encrypt(circuit, mode, 1, x, slot_b["pks"], seed=seed)
+    assert (ct_b["tables"], ct_b["decode"], ct_b["data_active"]) == (ct_a["tables"], ct_a["decode"],
+                                                                     ct_a["data_active"])
+    labels_b = holder_labels(ct_b, 1, slot_b["scalars"], w_b)
     assert {xor(labels_a[j], labels_b[j]) for j in diff} == {delta}
     assert all(labels_a[j] == labels_b[j] for j in range(m + 1) if j not in diff)
-    salt_a, salt_b = kem.instance_salt(PP, NONCE, 1), kem.instance_salt(PP, NONCE, 2)
+    salt_a = kem.instance_salt(PP, NONCE, 1)
     parsed, lab, ands = attacker_view(circuit, mode, salt_a, ct_a["tables"], labels_a, ct_a["data_active"])
     assert data_bits_from_tables(mode, parsed, lab, what_delta_opens(salt_a, lab, ands, delta), delta) == x
-    y = gc.evaluate(circuit, mode, salt_b, ct_b["tables"], ct_b["decode"], b"".join(labels_a), ct_b["data_active"])
-    assert gc.unpack_bits(y, 1) == pc.circuit.evaluate_plain(w_a, x)
 
     fresh_a = encrypt(circuit, mode, 1, x, slot_a["pks"])
     fresh_b = encrypt(circuit, mode, 2, x, slot_b["pks"])
@@ -732,12 +745,13 @@ def test_the_g_bit_has_one_position_and_forces_zero(mode):
 
 @pytest.mark.parametrize("mode", MODES)
 def test_the_instance_salt_separates_garblings_of_one_seed(mode):
-    """I11, review finding V6-F04: the gate hash takes the instance salt
-    (pp digest, ciphertext nonce, slot id). One seed under four salts (each
-    field changed in turn) gives the same ``Delta`` and zero labels but
-    tables with no entry in common, and the tables of one instance evaluated
-    with the right labels under another instance's salt give output labels
-    of neither value. Each instance has its own gate hash, so a test of a
+    """I11: the gate hash takes the instance salt (pp digest, ciphertext
+    nonce, slot id), and so does the seed expansion. One seed under four
+    salts (each field changed in turn) gives four different ``Delta``, zero
+    labels with none in common (a seed reused across slots no longer shares
+    ``Delta``) and tables with no entry in common, and the tables of one
+    instance evaluated with the right labels under another instance's salt
+    give output labels of neither value. Each instance has its own gate hash, so a test of a
     guess of ``Delta`` against the tables concerns one instance at a time."""
     pc = model("threshold", "booth")
     circuit = pc.circuit.guard().encode()
@@ -750,9 +764,10 @@ def test_the_instance_salt_separates_garblings_of_one_seed(mode):
     garbled = {name: gc.garble(circuit, mode, salt, x, seed) for name, salt in salts.items()}
     base = garbled["base"]
     assert gc.garble(circuit, mode, salts["base"], x, seed) == base
-    for g in garbled.values():
-        assert (g["delta"], g["key0"], g["data_active"]) == (base["delta"], base["key0"], base["data_active"])
+    assert len({g["delta"] for g in garbled.values()}) == 4
     for a, b in itertools.combinations(garbled.values(), 2):
+        assert set(split(a["key0"])).isdisjoint(split(b["key0"]))
+        assert set(split(a["data_active"])).isdisjoint(split(b["data_active"]))
         assert set(split(a["tables"])).isdisjoint(split(b["tables"]))
 
     delta = base["delta"]

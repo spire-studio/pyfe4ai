@@ -22,14 +22,17 @@ wires values the garbler knows. Key wires are always ``L``; data wires are
 ``K`` in mode ``"hardwired"`` (the garbler folds ``x`` into the tables) and
 ``L`` in mode ``"labels"`` (the evaluator receives their active labels). All
 randomness -- ``Delta`` and the zero labels -- comes from one 32-byte seed
-expanded with SHAKE-256 (:func:`expand_seed`); :func:`garble` takes the
-seed, which the backend operation ``gc_garble`` draws fresh for every call.
+expanded with SHAKE-256 together with the instance salt
+(:func:`expand_seed`); :func:`garble` takes the seed, which the backend
+operation ``gc_garble`` draws fresh for every call.
 
-Requirements of the security argument (0.6, section 6) implemented here:
+Requirements of the security argument implemented here:
 
 * I1 -- every label and ``Delta`` is derived from the per-call seed, nothing
   is reused between calls (the caller supplies a fresh seed: the backend
-  operation from the operating system);
+  operation from the operating system); the instance salt is expanded with
+  the seed, so a repeated seed under another salt still gives unrelated
+  labels;
 * I7 -- the hash index follows ZRE15's NextIndex: a fresh index per hash
   group, two for an AND gate of two labelled inputs, one for a generator
   half-gate, none for the other gates, in gate order;
@@ -58,8 +61,14 @@ CIRCUIT_MAGIC = b"PFE6CIRC"
 CIRCUIT_VERSION = 1
 #: Gate operations of ``CIRC v1``.
 OP_XOR, OP_AND, OP_INV = 1, 2, 3
-#: Bound on ``m + n + n_gates`` (wire numbers fit in 31 bits).
-MAX_WIRES = 2 ** 31
+#: Bound on ``m + n + n_gates``: 2^26 wires (64 Mi wires, about 1 GiB of native
+#: labels; the largest circuit the schemes target, an MLP 784-128-10, is far
+#: below), so that a short header cannot make a decoder's caller allocate
+#: without bound. Design choice; the alternative was the earlier 2^31 (wire
+#: numbers in 31 bits) with the per-wire state sized by the labelled wires only.
+MAX_CIRCUIT_WIRES = 2 ** 26
+#: The same bound (the name the other modules use).
+MAX_WIRES = MAX_CIRCUIT_WIRES
 
 #: The garbling modes (record field ``data_wires``).
 MODE_HARDWIRED = "hardwired"
@@ -121,7 +130,8 @@ def parse_circuit(data: bytes) -> ParsedCircuit:
         TypeError: If *data* is not bytes.
         ValueError: For a wrong magic or version; a length that does not
             match the counts (missing or extra bytes); ``m = 0``, ``n_out =
-            0`` or ``m + n + n_gates >= 2^31``; an unknown op, an INV gate
+            0`` or ``m + n + n_gates >= 2^26`` (:data:`MAX_CIRCUIT_WIRES`,
+            checked before anything is sized by the counts); an unknown op, an INV gate
             with ``b != 0``, a XOR or AND gate with two equal inputs (the
             builder folds ``XOR(a, a)`` and ``AND(a, a)``), a gate input not
             below the gate's output wire; an output wire out of range.
@@ -138,8 +148,8 @@ def parse_circuit(data: bytes) -> ParsedCircuit:
         raise ValueError("circuit: m = 0 (a circuit needs at least one key bit)")
     if n_out == 0:
         raise ValueError("circuit: n_out = 0 (a circuit needs at least one output)")
-    if m + n + n_gates >= MAX_WIRES:
-        raise ValueError("circuit: m + n + n_gates = {} is not below 2^31".format(m + n + n_gates))
+    if m + n + n_gates >= MAX_CIRCUIT_WIRES:
+        raise ValueError("circuit: m + n + n_gates = {} is not below 2^26".format(m + n + n_gates))
     expected = _HEADER.size + _GATE.size * n_gates + 4 * n_out
     if len(data) != expected:
         raise ValueError("circuit: {} bytes, the counts give {}".format(len(data), expected))
@@ -152,7 +162,7 @@ def parse_circuit(data: bytes) -> ParsedCircuit:
         if op == OP_INV and b != 0:
             raise ValueError("circuit: gate {} (INV) has b = {}, must be 0".format(i, b))
         # canonical form, not a security rule: the builder folds XOR(a, a) and AND(a, a); other degenerate gates
-        # (XOR(a, INV(a)), duplicated gates) still decode and are garbled safely (review R06-04)
+        # (XOR(a, INV(a)), duplicated gates) still decode and are garbled safely
         if op != OP_INV and a == b:
             raise ValueError("circuit: gate {} ({}) reads wire {} twice".format(i, _OP_NAMES[op], a))
         if a >= out or (op != OP_INV and b >= out):
@@ -244,25 +254,35 @@ def _label_hash(salt: bytes):
     return h
 
 
-def expand_seed(seed: bytes, m_prime: int, n_data_labels: int) -> tuple:
-    """``Delta`` and the zero labels of a garbling, from its 32-byte seed.
+def expand_seed(salt: bytes, seed: bytes, m_prime: int, n_data_labels: int) -> tuple:
+    """``Delta`` and the zero labels of a garbling, from its instance salt and 32-byte seed.
 
-    ``SHAKE-256("PYFE4AI-V06-BCFE-GBPRG" || seed)`` read in order: ``Delta``
-    (16 bytes, then ``Delta[0] |= 1``), the zero label of every key wire
-    ``0 .. m_prime - 1``, then of every data wire (``n_data_labels``: ``n``
-    in mode ``"labels"``, 0 otherwise). Returns ``(delta, key0, data0)``:
-    16 bytes and two lists of 16-byte labels.
+    ``SHAKE-256("PYFE4AI-V06-BCFE-GBPRG" || salt(56) || seed(32))`` read in
+    order: ``Delta`` (16 bytes, then ``Delta[0] |= 1``), the zero label of
+    every key wire ``0 .. m_prime - 1``, then of every data wire
+    (``n_data_labels``: ``n`` in mode ``"labels"``, 0 otherwise). Returns
+    ``(delta, key0, data0)``: 16 bytes and two lists of 16-byte labels.
+
+    The salt (that of the gate hash, :func:`gate_hash`: ``pp_digest ||
+    ct_nonce || u64(slot_id)``) is bound in so that one seed used for two
+    (ciphertext, slot) instances still gives unrelated ``Delta`` and labels:
+    defence in depth against a repeated seed. Design choice; the alternative
+    was the seed alone, relying only on a fresh seed per instance from the
+    operating system (I1).
 
     Raises:
-        ValueError: If *seed* is not 32 bytes or a count is negative.
+        TypeError: If *salt* or *seed* is not bytes.
+        ValueError: If *salt* is not 56 bytes, *seed* not 32 bytes or a
+            count is negative.
     """
+    salt = _check_salt(salt)
     seed = _as_bytes(seed, "seed")
     if len(seed) != SEED_BYTES:
         raise ValueError("the garbling seed must be {} bytes, got {}".format(SEED_BYTES, len(seed)))
     for name, count in (("m_prime", m_prime), ("n_data_labels", n_data_labels)):
         if isinstance(count, bool) or not isinstance(count, int) or count < 0:
             raise ValueError("{} must be a non-negative integer".format(name))
-    stream = hashlib.shake_256(PRG_DST + seed).digest(LABEL_BYTES * (1 + m_prime + n_data_labels))
+    stream = hashlib.shake_256(PRG_DST + salt + seed).digest(LABEL_BYTES * (1 + m_prime + n_data_labels))
     delta = bytes([stream[0] | 1]) + stream[1:LABEL_BYTES]
     labels = [stream[i:i + LABEL_BYTES] for i in range(LABEL_BYTES, len(stream), LABEL_BYTES)]
     return delta, labels[:m_prime], labels[m_prime:]
@@ -353,7 +373,7 @@ def garble(circuit: bytes, mode: str, salt: bytes, x_bits, seed: bytes) -> dict:
     x = _data_bits(x_bits, n)
     _require_label_outputs(parsed, kinds, mode)
     labels_mode = mode == MODE_LABELS
-    delta_bytes, key0, data0 = expand_seed(seed, m, n if labels_mode else 0)
+    delta_bytes, key0, data0 = expand_seed(salt, seed, m, n if labels_mode else 0)
     delta = int.from_bytes(delta_bytes, "little")
 
     lab = [0] * parsed.n_wires  # W0 of the L wires

@@ -124,7 +124,7 @@ def test_the_tables_are_those_of_the_specification():
     ext = native_backend.ext()
     for x in (0, 1):
         g = dict(zip(KEYS, ext.gc_garble(enc, 0, salt, bytes([x]), seed=seed)))
-        stream = hashlib.shake_256(b"PYFE4AI-V06-BCFE-GBPRG" + seed).digest(48)
+        stream = hashlib.shake_256(b"PYFE4AI-V06-BCFE-GBPRG" + salt + seed).digest(48)
         assert g["delta"] == bytes([stream[0] | 1]) + stream[1:16] and g["key0"] == stream[16:48]
         assert g["data_active"] == b""
         d = int.from_bytes(g["delta"], "little")

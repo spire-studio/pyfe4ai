@@ -491,6 +491,14 @@ class Backend(abc.ABC):
         data bits *x*: :func:`~pyfe4ai.primitives.garbling.garble` with a
         fresh seed.
 
+        For tests and known-answer vectors only: it returns ``Delta`` and the
+        zero labels. The schemes never call it (``tests/bcfe/test_gc_kat.py``
+        checks their sources); they use
+        :meth:`~pyfe4ai.backend.interface.Backend.bcfe_encrypt_slot`, where
+        ``Delta`` never leaves the implementation. Design choice; the
+        alternative was to drop ``Delta`` from the outputs, which would cost
+        the known-answer tests their direct check of it.
+
         Args:
             circuit: The ``CIRC v1`` encoding (usually of ``guard(C)``).
             mode: ``"hardwired"`` (data wires known to the garbler) or ``"labels"``.
@@ -505,7 +513,7 @@ class Backend(abc.ABC):
             decoding bits packed}``, all bytes.
 
         Randomness: one 32-byte seed per call, the whole randomness of the
-        garbling (expanded by :func:`~pyfe4ai.primitives.garbling.expand_seed`):
+        garbling (expanded with the salt by :func:`~pyfe4ai.primitives.garbling.expand_seed`):
         from the operating system (:func:`os.urandom` in the reference, the
         extension's OS source natively), or ``override(32)`` when a test set
         ``pyfe4ai.backend._random_override`` -- read once, before the inputs
@@ -517,7 +525,8 @@ class Backend(abc.ABC):
         Secrets: *x*, the seed and the returned ``delta``, ``key0`` and
         ``data_active``; the extension wipes its copies of the seed, ``Delta``
         and the labels. ``delta`` is returned for the known-answer tests;
-        the encryption path of the schemes keeps it inside the extension.
+        the encryption path of the schemes keeps it inside the
+        implementation.
 
         Raises:
             TypeError: For inputs that are not bytes.
@@ -555,8 +564,9 @@ class Backend(abc.ABC):
 
     @abc.abstractmethod
     def bcfe_new_slot(self, setup_digest: bytes, slot_id: int, w: bytes, *, m: int) -> dict:
-        """Issue a slot for the key bits *w* (h1 with h', plan 0.6 P1 section
-        3.9): :func:`~pyfe4ai.primitives.bcfe_kem.new_slot`. The center draws
+        """Issue a slot for the key bits *w* (h1, the center draws the selected
+        keys, with h', the unselected positions derived from ``k``):
+        :func:`~pyfe4ai.primitives.bcfe_kem.new_slot`. The center draws
         the secret keys of the selected positions ``(j, w_j)`` and of the g
         bit; the unselected positions are ``H_P(setup_digest, slot_id, j,
         k)`` (:func:`~pyfe4ai.primitives.bcfe_kem.unselected_pk`), whose
@@ -568,8 +578,9 @@ class Backend(abc.ABC):
             slot_id: The slot number, in ``[0, 2^64)``.
             w: The ``m`` key bits, packed least significant bit first.
             m: The number of key bits of ``C`` (``guard(C)`` has ``m + 1``
-                key wires), in ``[1, 2^31 - 1)``: the packed *w* does not
-                determine it.
+                key wires), in ``[1, 2^26 - 1)`` (``guard(C)`` stays below
+                :data:`~pyfe4ai.primitives.garbling.MAX_CIRCUIT_WIRES`): the
+                packed *w* does not determine it.
 
         Returns:
             ``{"scalars": 32 B x (m + 1), "pks": 32 B x (2m + 1), "k": 16
@@ -580,7 +591,9 @@ class Backend(abc.ABC):
             ``k``.
 
         Randomness: one read of ``64 (m + 1) + 16`` bytes per call, after
-        *m* is checked and before the other inputs are checked: from the
+        *m* and *w* are checked (*w* must be ``ceil(m / 8)`` bytes with zero
+        padding, so that the bytes drawn are backed by input bytes) and
+        before the other inputs are checked: from the
         operating system (:func:`os.urandom` in the reference, the
         extension's OS source natively), or ``override(64 (m + 1) + 16)``
         when a test set ``pyfe4ai.backend._random_override`` (natively
@@ -623,8 +636,9 @@ class Backend(abc.ABC):
             center hands ``k`` to the holder for
             :meth:`~pyfe4ai.backend.interface.Backend.bcfe_unselected_ok`.
 
-        Randomness: the 16 bytes of ``k``, one read per call before the
-        inputs are checked (the operating system, or ``override(16)``).
+        Randomness: the 16 bytes of ``k``, one read per call after *m* and
+        *w* are checked and before the other inputs are (the operating
+        system, or ``override(16)``).
 
         Secrets: *w*, ``k``; the extension wipes its copies.
 
@@ -686,7 +700,8 @@ class Backend(abc.ABC):
 
         Randomness: one 32-byte seed per call, before the inputs are
         checked (the operating system, or ``override(32)``), the whole
-        randomness of the component: the garbling
+        randomness of the component, expanded together with the instance
+        salt ``pp_digest || ct_nonce || u64(slot_id)``: the garbling
         (:func:`~pyfe4ai.primitives.garbling.expand_seed`) and ``r``
         (:func:`~pyfe4ai.primitives.bcfe_kem.ephemeral_scalar`). There is no
         seed parameter: a fixed seed is for the tests only (I16). The same
@@ -739,7 +754,7 @@ class Backend(abc.ABC):
                 bits, *w* with nonzero padding bits.
         """
 
-    # -- the tests' hooks (appended, 0.6 review R06-03) ------------------------------------
+    # -- the tests' hooks ----------------------------------------------------------------
 
     def random_override_active(self) -> bool:
         """Whether a test has set ``pyfe4ai.backend._random_override``: the

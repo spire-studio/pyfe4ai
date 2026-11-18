@@ -258,14 +258,20 @@ def test_setup_digest_errors(index, value, error, match):
 
 
 def test_ephemeral_scalar(monkeypatch):
-    r = kem.ephemeral_scalar(SEED)
-    assert r == int.from_bytes(hashlib.shake_256(b"PYFE4AI-V06-BCFE-EPHEM" + SEED).digest(64), "little") % L
-    # KAT: ephemeral_scalar(bytes(range(100, 132)))
-    assert r == 0xd03ea23b1c7692e221c15d404f6f9087fad0fe71ce10e550aae69eaf43e295b
-    assert 0 < r < L and kem.ephemeral_scalar(SEED[::-1]) != r
+    salt = kem.instance_salt(PP, NONCE, 7)
+    r = kem.ephemeral_scalar(salt, SEED)
+    assert r == int.from_bytes(hashlib.shake_256(b"PYFE4AI-V06-BCFE-EPHEM" + salt + SEED).digest(64), "little") % L
+    # KAT: ephemeral_scalar(instance_salt(bytes(range(32)), bytes(range(32, 48)), 7), bytes(range(100, 132)))
+    assert r == EPHEMERAL_KAT
+    assert 0 < r < L and kem.ephemeral_scalar(salt, SEED[::-1]) != r
+    # the salt is in the expansion: one seed, another instance, another r
+    assert kem.ephemeral_scalar(kem.instance_salt(PP, NONCE, 8), SEED) != r
     for seed in (SEED[:-1], SEED + b"\x00"):
         with pytest.raises(ValueError, match="seed must be 32 bytes"):
-            kem.ephemeral_scalar(seed)
+            kem.ephemeral_scalar(salt, seed)
+    for bad in (salt[:-1], salt + b"\x00"):
+        with pytest.raises(ValueError, match="salt must be 56 bytes"):
+            kem.ephemeral_scalar(bad, SEED)
 
     class Zero:
         def __init__(self, data) -> None:
@@ -276,7 +282,7 @@ def test_ephemeral_scalar(monkeypatch):
 
     monkeypatch.setattr(kem.hashlib, "shake_256", Zero)
     with pytest.raises(ValueError, match="ephemeral scalar is 0"):
-        kem.ephemeral_scalar(SEED)
+        kem.ephemeral_scalar(salt, SEED)
 
 
 def test_scalar_encoding():
@@ -473,7 +479,7 @@ def test_encrypt_slot_output(mode):
     slot = kem.new_slot(SETUP, 7, w, source(3))
     ct = kem.encrypt_slot(SMALL.guarded, mode, PP, NONCE, 7, x, slot["pks"], SEED)
     assert set(ct) == {"R", "label_cts", "tables", "decode", "data_active"}
-    assert ct["R"] == point(kem.ephemeral_scalar(SEED))
+    assert ct["R"] == point(kem.ephemeral_scalar(kem.instance_salt(PP, NONCE, 7), SEED))
     garbled = gc.garble(SMALL.guarded, mode, kem.instance_salt(PP, NONCE, 7), x, SEED)
     for name in ("tables", "decode", "data_active"):
         assert ct[name] == garbled[name]
@@ -544,18 +550,20 @@ def test_domain_separation_of_the_label_ciphertexts():
     swapped = list(cts)
     swapped[kem.table_index(m, 1, w[1])] = cts[2 * m]
     assert opened(b"".join(swapped))[1] not in every_label
-    # another slot id, pp digest or nonce under the same seed: the same labels and R, other metadata
+    # another slot id, pp digest or nonce under the same seed: the instance salt is in the seed
+    # expansion, so other labels and another R; opened with the wrong metadata, labels of neither
     for change in ({"slot_id": 8}, {"pp": PP[::-1]}, {"nonce": NONCE[::-1]}):
         args = {"slot_id": 7, "pp": PP, "nonce": NONCE}
         args.update(change)
         other = kem.encrypt_slot(SMALL.guarded, mode, args["pp"], args["nonce"], args["slot_id"], x, slot["pks"],
                                  SEED)
-        assert other["R"] == ct["R"]
-        same0, same_delta = true_labels(SMALL.guarded, mode, args["slot_id"], x, SEED, args["pp"], args["nonce"])
-        assert (same0, same_delta) == (key0, delta)
-        assert opened(other["label_cts"], **args) == honest  # opened with its own metadata
-        moved = opened(other["label_cts"])  # opened as the component of (pp, nonce, slot 7)
-        assert all(label not in every_label for label in moved)
+        assert other["R"] != ct["R"]
+        other0, other_delta = true_labels(SMALL.guarded, mode, args["slot_id"], x, SEED, args["pp"], args["nonce"])
+        assert other_delta != delta and set(other0).isdisjoint(key0)
+        assert opened(other["label_cts"], big_r=other["R"], **args) == active(other0, other_delta, w)
+        every_other = set(other0) | {xor(k, other_delta) for k in other0}
+        moved = opened(other["label_cts"], big_r=other["R"])  # opened as the component of (pp, nonce, slot 7)
+        assert all(label not in every_label and label not in every_other for label in moved)
         y = kem.decrypt_slot(SMALL.guarded, mode, PP, NONCE, 7, other["R"], other["label_cts"], ct["tables"],
                              ct["decode"], ct["data_active"], slot["scalars"], w)
         assert len(y) == 1  # garbage bits, no error (one error class at the scheme layer, I10)
@@ -674,8 +682,10 @@ def test_known_answers_of_a_slot():
 
 
 KAT_SLOT = "1c49af533a862464123d2ec973b9a569a3136c587b86848e477826164a42d8cc"
-KAT_CT = {"hardwired": "c71e4733181af291bde1a203815793b9855581ba99960240d5e7aaf73a59c8ab",
-          "labels": "378c9bb8f5ddaa9cff7c3bbf1800c2968e7478e47e2ea77f98d94a0d3407c3c8"}
+#: ephemeral_scalar(instance_salt(PP, NONCE, 7), SEED), with the salt in the expansion.
+EPHEMERAL_KAT = 0x6ca4ccabd42488c268450ba692eae8dad4b622a2465d7a9a8073c94eeb5665c
+KAT_CT = {"hardwired": "731fc0e3917a35d9557c9ee546ef30afbba16c4911ee6fc1f47afaaf358365d3",
+          "labels": "a8a89f1d0a82df91d55b5f2e9ca98eb95fa4a913abec96d4d0058c37607d7d55"}
 
 
 # ------------------------------------------------------------------ the backend operations

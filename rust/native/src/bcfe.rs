@@ -1,4 +1,4 @@
-//! Garbled circuits of the bounded-collusion FE schemes (bcfe/*): the
+//! Garbled circuits of the bounded-key FE schemes (bcfe/*): the
 //! half-gates garbler and evaluator of the core's `garble` module (ZRE15
 //! Fig. 2, the CIRC v1 encoding, the salted gate hash), on bytes: circuits as
 //! their canonical encoding, labels and table entries as 16-byte strings,
@@ -7,9 +7,10 @@
 //! and the labels are wiped in the core, the seed copy here. The GIL is
 //! released around the garbling and the evaluation.
 //!
-//! The label KEM of a slot (0.6 plan, sections 3.8 and 3.9; SS10 Sec. 3.3 with
-//! hashed ElGamal over ristretto255): the slot's public-key table (2m + 1
-//! points: P[j,0] || P[j,1] for j < m, then P[m,0] for the g bit), the
+//! The label KEM of a slot (SS10 Sec. 3.3 with hashed ElGamal over
+//! ristretto255; byte for byte pyfe4ai.primitives.bcfe_kem): the slot's
+//! public-key table (2m + 1 points: P[j,0] || P[j,1] for j < m, then P[m,0]
+//! for the g bit), the
 //! unselected points H_P = hash_to_ristretto255 (RFC 9380, the expand_message_xmd
 //! of ec.rs), the label ciphertexts c[j,b] = L_j^b xor H_K(.., j, b, R, r P[j,b])
 //! with H_K = SHAKE-256("PYFE4AI-V06-BCFE-KEM" || ..)[0:16], and the fused
@@ -231,15 +232,26 @@ fn unselected_point(setup_digest: &[u8], slot_id: u64, j: u32, k: &[u8]) -> [u8;
     p.compress().to_bytes()
 }
 
-/// m, the key bits of C (guard(C) has m + 1 key wires): in [1, 2^31 - 1).
+/// m, the key bits of C (guard(C) has m + 1 key wires): in [1, 2^26 - 1), so
+/// that guard(C) stays below the wire bound of CIRC v1.
 fn key_bits(m: usize) -> Result<usize, String> {
     if m == 0 || m as u64 + 1 >= garble::MAX_WIRES {
-        return Err("m must be an integer in [1, 2^31 - 1), the key bits of the circuit".into());
+        return Err("m must be an integer in [1, 2^26 - 1), the key bits of the circuit".into());
     }
     Ok(m)
 }
 
-/// m of guard(C) (section 3.2): its m' = m + 1 key wires minus the g bit, after
+/// m and the packed w checked before any random byte is drawn: w must be
+/// ceil(m / 8) bytes with zero padding, so that the bytes drawn for m are
+/// backed by input bytes.
+fn key_bits_and_w(m: usize, w: &[u8]) -> Result<usize, String> {
+    let m = key_bits(m)?;
+    let mut wb = garble::unpack_bits(w, m, "w")?;
+    wipe_bytes(&mut wb);
+    Ok(m)
+}
+
+/// m of guard(C) (the guard bit g is key wire m): its m' = m + 1 key wires minus the g bit, after
 /// checking the shape guard() gives: m' >= 2; the gates end in INV(g) and then
 /// AND(o_k, INV(g)) for the outputs in order, which are the outputs; no other
 /// gate reads g.
@@ -367,8 +379,11 @@ fn unselected_ok(setup_digest: &[u8], slot_id: u64, m: usize, w: &[u8], k: &[u8]
 }
 
 /// The fused encryption of one (ciphertext, slot): garble guard(C) with the
-/// seed's GBPRG stream and salt (pp_digest, ct_nonce, slot_id), r from the
-/// seed's EPHEM stream, R = r B and the 2m + 1 label ciphertexts. Returns (R,
+/// seed's GBPRG stream and salt (pp_digest, ct_nonce, slot_id), r =
+/// SHAKE-256("PYFE4AI-V06-BCFE-EPHEM" || salt || seed)[0:64] LE mod l (the salt
+/// bound in: a seed used twice under two salts gives unrelated r; the
+/// alternative was the seed alone), R = r B and the 2m + 1 label ciphertexts.
+/// Returns (R,
 /// label ciphertexts, the garbling); its delta and key0 are wiped on drop.
 fn encrypt_slot(
     circuit: &[u8], mode: Mode, inst: &Instance, x: &[u8], pks: &[u8], seed: &[u8], threads: usize,
@@ -378,7 +393,7 @@ fn encrypt_slot(
         return Err(format!("the slot's table has {} public keys of 32 bytes for m = {m}", 2 * m + 1));
     }
     need(seed, garble::SEED_LEN, "the seed")?;
-    let mut msg = Zeroizing::new([EPHEM_DST, seed].concat());
+    let mut msg = Zeroizing::new([EPHEM_DST, inst.salt(), seed].concat());
     let mut wide = Zeroizing::new([0u8; WIDE]);
     shake256(&msg, &mut wide[..]);
     msg.zeroize();
@@ -409,7 +424,8 @@ fn encrypt_slot(
             let mut z = zp.compress().to_bytes();
             let mut h = inst.hk(j as u32, b, &big_r, &z);
             // L_j^b = L_j^0 xor b delta (b is the position, public)
-            let mut l = u128::from_le_bytes(piece(&g.key0, j)) ^ if b == 1 { *delta } else { 0 };
+            let l0 = Zeroizing::new(piece::<LB>(&g.key0, j));
+            let mut l = u128::from_le_bytes(*l0) ^ if b == 1 { *delta } else { 0 };
             let mut c = (l ^ u128::from_le_bytes(h)).to_le_bytes();
             cts.put(i, &c);
             zp.zeroize();
@@ -451,7 +467,8 @@ fn decrypt_slot(
     let table = if mp >= TABLE_FROM { Some(RistrettoBasepointTable::create(&rp)) } else { None };
     let keys = Cells::<LB>::new(mp);
     parallel_for(mp, threads, |j| {
-        let mut s = match Scalar::from_canonical_bytes(piece(scalars, j)).into_option() {
+        let sb = Zeroizing::new(piece::<PT>(scalars, j));
+        let mut s = match Scalar::from_canonical_bytes(*sb).into_option() {
             Some(s) => s,
             None => return keys.fail(j, format!("scalar {j} is not canonical (below the group order)")),
         };
@@ -500,7 +517,7 @@ fn draw(given: Option<&[u8]>, n: usize) -> PyResult<Zeroizing<Vec<u8>>> {
 fn bcfe_new_slot(
     py: Python<'_>, setup_digest: &[u8], slot_id: u64, m: usize, w: &[u8], rnd: Option<&[u8]>, threads: usize,
 ) -> PyResult<(Py<PyBytes>, Py<PyBytes>, Py<PyBytes>)> {
-    let m = key_bits(m).map_err(PyValueError::new_err)?;
+    let m = key_bits_and_w(m, w).map_err(PyValueError::new_err)?; // m and w before the draw
     let bytes = draw(rnd, WIDE * (m + 1) + K_LEN)?;
     let (scalars, pks) =
         py.detach(|| new_slot(setup_digest, slot_id, m, w, &bytes, threads)).map_err(PyValueError::new_err)?;
@@ -516,6 +533,7 @@ fn bcfe_place_slot(
     py: Python<'_>, setup_digest: &[u8], slot_id: u64, m: usize, w: &[u8], holder_pks: &[u8], rnd: Option<&[u8]>,
     threads: usize,
 ) -> PyResult<(Py<PyBytes>, Py<PyBytes>)> {
+    key_bits_and_w(m, w).map_err(PyValueError::new_err)?; // m and w before the draw
     let k = draw(rnd, K_LEN)?;
     let pks = py
         .detach(|| place_slot(setup_digest, slot_id, m, w, holder_pks, &k, threads))

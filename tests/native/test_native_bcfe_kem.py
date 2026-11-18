@@ -253,10 +253,10 @@ def test_encrypt_slot_follows_the_specification(mode):
     _, pks, _ = ext.bcfe_new_slot(rng.randbytes(32), slot, m, pack([0, 1, 1, 0]), rnd=rng.randbytes(64 * 5 + 16))
     big_r, cts, tables, decode, data_active = ext.bcfe_encrypt_slot(circuit, CODES[mode], pp, nonce, slot, x, pks,
                                                                      seed=seed)
-    r = int.from_bytes(hashlib.shake_256(b"PYFE4AI-V06-BCFE-EPHEM" + seed).digest(64), "little") % L
+    salt = pp + nonce + slot.to_bytes(8, "little")  # the instance salt, also in both seed expansions
+    r = int.from_bytes(hashlib.shake_256(b"PYFE4AI-V06-BCFE-EPHEM" + salt + seed).digest(64), "little") % L
     r_enc = r.to_bytes(32, "little")
     assert big_r == ext.r255_mul_base(r_enc)
-    salt = pp + nonce + slot.to_bytes(8, "little")
     delta, key0, g_data, g_tables, g_decode = ext.gc_garble(circuit, CODES[mode], salt, x, seed=seed)
     assert (tables, decode, data_active) == (g_tables, g_decode, g_data)
     labels = chunks(key0, 16)
@@ -447,3 +447,34 @@ def test_refusals():
         ext.bcfe_encrypt_slot(circuit, 0, pp, nonce, 0, b"\x00", pks, seed=bytes(31))
     with pytest.raises(ValueError):
         ext.bcfe_encrypt_slot(circuit, 2, pp, nonce, 0, b"\x00", pks)
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_decryption_with_the_table_for_r_is_the_reference(mode):
+    """m + 1 >= 64 key wires: the native decryption multiplies R by a
+    precomputed table instead of variable-base (from 64 scalars on). Its
+    output, with the right key and with another one, is the reference's,
+    and the right key gives the circuit's value."""
+    _reference()
+    from pyfe4ai.primitives import bcfe_kem
+
+    rng = random.Random(30 + CODES[mode])
+    ext = native_backend.ext()
+    m, n = 70, 4
+    gates, outputs = random_c(rng, m, n, 60, 6)
+    circuit = guard(m, n, gates, outputs)
+    setup, pp, nonce, slot = rng.randbytes(32), rng.randbytes(32), rng.randbytes(16), 9
+    w = [rng.randrange(2) for _ in range(m)]
+    x = [rng.randrange(2) for _ in range(n)]
+    scalars, pks, _ = ext.bcfe_new_slot(setup, slot, m, pack(w), rnd=rng.randbytes(64 * (m + 1) + 16))
+    seed = rng.randbytes(32)
+    comp = ext.bcfe_encrypt_slot(circuit, CODES[mode], pp, nonce, slot, pack(x), pks, seed=seed)
+    assert comp == tuple(bcfe_kem.encrypt_slot(circuit, mode, pp, nonce, slot, pack(x), pks, seed)[k]
+                         for k in ("R", "label_cts", "tables", "decode", "data_active"))
+    other = b"".join(rng.randrange(1, L).to_bytes(32, "little") for _ in range(m + 1))
+    for key, right in ((scalars, True), (other, False)):
+        for threads in (1, 4):
+            nat = ext.bcfe_decrypt_slot(circuit, CODES[mode], pp, nonce, slot, *comp, key, pack(w), threads=threads)
+            assert nat == bcfe_kem.decrypt_slot(circuit, mode, pp, nonce, slot, *comp, key, pack(w))
+            if right:
+                assert unpack(nat, len(outputs)) == plain(m, gates, outputs, w, x)

@@ -21,7 +21,7 @@
 //! * shared by the others: `drbg` (the per-call DRBG and OS randomness),
 //!   `values` (Python values to and from words mod q) and `secret` (copies of
 //!   secret inputs and their wipes).
-//! * `bcfe`: the garbled circuits of the bounded-collusion FE schemes
+//! * `bcfe`: the garbled circuits of the bounded-key FE schemes
 //!   (half-gates garbling and evaluation of the core's `garble` module).
 
 use pyfe4ai_core::osrand;
