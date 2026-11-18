@@ -59,8 +59,13 @@ def test_r07_m1_a_directory_is_read_alike_whatever_the_unicode_version_of_the_re
     if idd.unicodedata.category("࢐") != "Cn":
         pytest.skip("this Python already knows U+0890; the test emulates the newer version on an older one")
     kc = IdentityKeyCentre(CONFIG)
-    for who in ("alice", "x࢐"):
-        kc.add_identity(who)
+    # once the adding side refuses unassigned code points (the first test), no key centre on this Python adds
+    # "x\u0890"; one whose Unicode database classed it as an allowed character would (a newer one, for a newly
+    # assigned letter), which the rule replaced here stands for
+    with monkeypatch.context() as m:
+        m.setattr(idd, "check_identity", lambda identity: identity)
+        for who in ("alice", "x࢐"):
+            kc.add_identity(who)
     record = kc.directory()
     monkeypatch.setattr(idd, "unicodedata", _Unicode151())
     IdentityDirectory(record, expected_digest=record["digest"])

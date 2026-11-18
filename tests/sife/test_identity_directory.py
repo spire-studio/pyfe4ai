@@ -282,3 +282,20 @@ def test_digests_survive_a_json_round_trip(centre):
     again = _json(record)
     assert idd.pp_digest(again["pp"]) == record["pp_digest"]
     assert IdentityDirectory(again, expected_digest=record["digest"]).digest == record["digest"]
+
+
+def test_malformed_fields_are_refused_with_the_library_errors(centre):
+    """R-0.7 I-4: a lone surrogate in a digest field is a mismatch (FEKeyError), not a UnicodeEncodeError."""
+    d = IdentityDirectory(centre.directory())
+    ct = d.encrypt("alice", [1, 2, 3])
+    dk = centre.get_decryption_keys("alice", [1, 0, 0])
+    with pytest.raises(FEKeyError):
+        d.decrypt(dict(ct, entry="\ud800"), dk, [1, 0, 0])
+    with pytest.raises(FEValidationError):
+        d.decrypt(dict(ct, identity="\ud800"), dict(dk, identity="\ud800"), [1, 0, 0])
+
+
+def test_unassigned_code_points_are_not_added():
+    kc = IdentityKeyCentre(dict(CFG))
+    with pytest.raises(FEValidationError, match="unassigned"):
+        kc.add_identity("x͸")

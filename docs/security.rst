@@ -501,9 +501,10 @@ Attribute-based IPFE not provided
 Further attribute-based and identity-based IPFE constructions were read for
 this library and are not implemented, for these reasons:
 
-* **DP23** (Datta and Pal, PKC 2023; ePrint 2023/565, its only version, of
-  2023-04-20): two decentralized multi-authority schemes (Secs. 5 and 6).
-  Both are broken in their own static-corruption model. Two users with
+* **DP23** (Datta and Pal, PKC 2023; ePrint 2023/565, its only version as of
+  2026-11, of 2023-04-20): two decentralized multi-authority schemes (Secs. 5
+  and 6). Both are broken in their own static-corruption model by the attack
+  below, which has not been reviewed independently. Two users with
   different GIDs and one corrupted authority whose attribute appears in the
   policy decrypt together, although none of them satisfies the policy, also
   with keys for ``u`` such that ``<v0 - v1, u> != 0``. The corrupted
@@ -513,12 +514,17 @@ this library and are not implemented, for these reasons:
   row values, and the rows of different users then combine. The smallest
   example is the policy ``and(a, b, c)`` with the Lewko-Waters matrix,
   authority ``b`` corrupted, one user holding ``a`` and another holding ``c``.
+  With honestly compiled matrices the attack needs the corrupted authority's
+  rows to reach the columns of the users' rows (it succeeded on 14 of 99
+  colluding configurations of random AND/OR policies, a lower bound); for
+  every policy, the static model lets the adversary choose the matrix (a
+  column change whose first row is ``e1``), and then it succeeded on all 99.
   The proofs of Thms. 5.1 and 6.1 replace the challenge matrix by the one of
   the zero-out lemma (Lemma 3.1, from RW15), which keeps the distribution of
   the row shares only, while these ciphertexts also expose the columns. The
   attack was checked on both schemes in an exponent model (it succeeded in
-  all 30 trials of each, and in none without a corrupted authority); it has
-  not been reviewed independently. The size comparison of Tables 1.1 and 1.2
+  all 30 trials of each, and in none without a corrupted authority). The size
+  comparison of Tables 1.1 and 1.2
   counts every group element as 128 bits; a BLS12-381 ``GT`` element is 576
   bytes.
 * **AGT21b** Sec. 3 (Agrawal, Goyal and Tomida, TCC 2021): multi-authority
@@ -530,9 +536,10 @@ this library and are not implemented, for these reasons:
   not checked).
 * **ACGU20** Secs. 4 and 5 (identity-based IPFE from LWE): at 128 bits the
   parameters their proofs need give, by this project's estimate, a public
-  trapdoor block of 4 to 15 GB that cannot be expanded from a seed, and
-  ciphertexts and keys of 10 to 28 MB each (Sec. 4; Sec. 5 about ten times
-  more). App. A of the paper first requires ``m`` of about ``4.8 n log q`` and
+  trapdoor block of 4 to 15 GB that cannot be expanded from a seed,
+  ciphertexts of 12 to 28 MB and keys of 3 to 28 MB depending on their
+  encoding (Sec. 4; Sec. 5, estimated at one point, ``n = 4096``, gives
+  ciphertexts of about 180 MB). App. A of the paper first requires ``m`` of about ``4.8 n log q`` and
   then takes ``m = 2 n log q``. Identity-based access control on lattices is
   offered as a directory of per-identity instances instead (below).
 * **CT26** (Cini and Tairi, ePrint 2026/062, preprint of 2026-01-16) and
@@ -540,8 +547,9 @@ this library and are not implemented, for these reasons:
   policies from LWE. The proof of CT26 floods noise twice with
   superpolynomial ratios (``q`` about ``V^2 P lambda1^11``), about 1.2 GB per
   coordinate at ``lambda1 = 2^40``. Its attribute version, like PD21, admits a
-  single key that decrypts the challenge ciphertext; lattice attribute-based
-  IPFE has only such bounded constructions so far.
+  single key that decrypts the challenge ciphertext; the lattice
+  attribute-based IPFE constructions read for this library are all bounded in
+  this way.
 
 Identity directory (experimental)
 ---------------------------------
@@ -549,16 +557,19 @@ Identity directory (experimental)
 :mod:`pyfe4ai.ac.identity_directory` provides identity-based access control
 on lattices without a new scheme. A key centre
 (:class:`~pyfe4ai.ac.identity_directory.IdentityKeyCentre`) runs one instance
-of ``sife/fullysec_ring_lwe`` (reviewed) per identity and publishes a
-directory of the identities' encryption keys; an encryptor
+of ``sife/fullysec_ring_lwe`` per identity (reviewed in its default
+element-wise layout; with ``ndarray_layout="packed"`` the directory runs the
+packed layout, which is experimental) and publishes a directory of the
+identities' encryption keys; an encryptor
 (:class:`~pyfe4ai.ac.identity_directory.IdentityDirectory`) encrypts for an
 identity, and only keys of that identity's instance decrypt it.
 
 * The instances share the parameter record (``a``, ``q``, the widths) and
   draw their secrets independently, so an attack on one identity's instance,
   with any keys of the other identities, reduces to an attack on that
-  instance alone. Encrypting one vector for several identities gives an "or"
-  of identities; there is no "and".
+  instance alone; several challenge ciphertexts cost a hybrid over the
+  ciphertexts. Encrypting one vector for several identities gives an "or" of
+  identities; there is no "and".
 * The key centre holds every identity's master key (key escrow, as in
   identity-based encryption), and it authenticates nobody: whoever calls
   ``get_decryption_keys`` decides who the identity is.
@@ -569,8 +580,20 @@ identity, and only keys of that identity's instance decrypt it.
   an attacker passes.
 * Ciphertexts and keys carry the identity and the digest of its entry;
   decryption refuses (``FEKeyError``) unless they agree with each other and
-  with the directory. Adding identities keeps earlier ciphertexts and keys
-  valid. There is no revocation.
+  with the directory. These fields are claims, not authenticated: they catch
+  a wrong key or a wrong directory, not tampering. A ciphertext whose fields
+  are rewritten to another identity's is decrypted by that identity's key to
+  a wrong value without an error: like the scheme underneath, the directory
+  has no ciphertext integrity and no CCA security. Sign or MAC ciphertexts
+  where integrity matters. Adding identities keeps earlier ciphertexts and
+  keys valid. There is no revocation.
+* The key centre applies the identity rule when it adds an identity, under
+  its own Python's Unicode database: NFC, no control, format, surrogate or
+  unassigned code points, at most 256 characters, case-sensitive, nothing
+  normalised silently. Readers only check that an identity is a string of 1 to
+  256 characters, so a directory loads the same under every Python. The rule
+  does not catch confusable identities (a Cyrillic ``а`` for a Latin ``a``) or
+  spaces: mapping people to identities is the application's.
 * The directory, its checks and its records are experimental; the scheme
   underneath is unchanged.
 

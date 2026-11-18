@@ -1,8 +1,10 @@
 """
 Identity directory: one ``sife/fullysec_ring_lwe`` instance per identity.
 
-**Experimental** (the directory, its checks and its records; the scheme
-underneath, BMMS21 Sec. 5, is reviewed and unchanged). A key centre
+**Experimental** (the directory, its checks and its records). The scheme
+underneath, BMMS21 Sec. 5, is unchanged: reviewed in its default element-wise
+layout; a key centre configured with ``ndarray_layout="packed"`` runs its
+packed layout, which is experimental. A key centre
 (:class:`IdentityKeyCentre`) runs an instance of the adaptively secure
 Ring-LWE IPFE for every identity it adds and publishes a directory: the
 public parameters the instances share, each identity's encryption key, and
@@ -15,7 +17,8 @@ with functional keys of its own instance only.
   identity B's instance while holding any keys of the other identities is
   simulated from B's instance alone (the reduction draws the other secrets
   itself, ``pk = <a, s>``), so the directory is as secure as one instance;
-  challenges for several identities cost a hybrid over the identities.
+  several challenge ciphertexts (for one identity or several) cost a hybrid
+  over the challenge ciphertexts.
   Encrypting the same vector for several identities is an "or" of
   identities; there is no "and".
 * **Not provided.** The key centre holds every identity's master key (key
@@ -32,12 +35,23 @@ with functional keys of its own instance only.
   and the sorted identities with their entry digests. Ciphertexts and keys
   carry the identity and the entry digest, and decryption refuses
   (``FEKeyError``) unless they agree with each other and with the directory.
-  An entry's digest does not depend on the other entries: adding identities
-  changes the directory's digest only, and earlier ciphertexts and keys stay
-  valid.
-* **Identities** are case-sensitive ``str`` of 1 to 256 characters in
-  Unicode NFC, without control or format characters; nothing is normalised
-  silently.
+  These two fields are **claims, not authentication**: they catch a wrong key
+  or a wrong directory, not tampering. A ciphertext whose fields are rewritten
+  to another identity's is decrypted by that identity's key to a wrong value,
+  without an error, as the scheme has no ciphertext integrity (and no CCA
+  security); sign or MAC ciphertexts where integrity matters. An entry's
+  digest does not depend on the other entries: adding identities changes the
+  directory's digest only, and earlier ciphertexts and keys stay valid.
+* **Identities** are case-sensitive ``str`` of 1 to 256 characters; nothing
+  is normalised silently. The key centre applies the rule of
+  :func:`check_identity` when it adds one, under its own Python's Unicode
+  database (``unicodedata.unidata_version``): NFC, and no control, format,
+  surrogate or unassigned code point. Readers (:class:`IdentityDirectory`)
+  check only that an identity is such a ``str`` that encodes to UTF-8: the
+  entries are bound by their digests, so whether a directory loads does not
+  depend on the reader's Unicode version. Confusable identities (a Cyrillic
+  ``а`` for a Latin ``a``) and spaces are not caught: mapping people to
+  identities is the application's.
 """
 
 from __future__ import annotations
@@ -46,8 +60,10 @@ import copy
 import hashlib
 import hmac
 import json
+import threading
 import unicodedata
 
+from pyfe4ai.core import forksafe
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.core.formats.identity import IdentityCiphertext
 from pyfe4ai.core.formats.identity import IdentityDirectoryRecord
@@ -66,8 +82,8 @@ MAX_IDENTITY_LENGTH = 256
 _DOMAIN_PP = b"pyfe4ai/identity-directory/pp/v1|"
 _DOMAIN_ENTRY = b"pyfe4ai/identity-directory/entry/v1|"
 _DOMAIN_DIRECTORY = b"pyfe4ai/identity-directory/directory/v1|"
-# Unicode categories an identity may not contain: control, format, surrogate
-_REFUSED_CATEGORIES = frozenset(("Cc", "Cf", "Cs"))
+# Unicode categories a new identity may not contain: control, format, surrogate, unassigned
+_REFUSED_CATEGORIES = frozenset(("Cc", "Cf", "Cs", "Cn"))
 
 
 def _canonical(value) -> bytes:
@@ -84,20 +100,37 @@ def _sha256(domain: bytes, value) -> str:
     return hashlib.sha256(domain + _canonical(value)).hexdigest()
 
 
-def check_identity(identity) -> str:
-    """Return *identity* if it is a valid identity, else raise.
-
-    Raises:
-        FEValidationError: Unless *identity* is a ``str`` of 1 to
-            :data:`MAX_IDENTITY_LENGTH` characters in NFC without control,
-            format or surrogate characters.
-    """
+def _identity_text(identity) -> str:
+    """*identity* if it is a ``str`` of 1 to :data:`MAX_IDENTITY_LENGTH`
+    characters that encodes to UTF-8, else ``FEValidationError``: what a
+    reader checks, the same under every Unicode version."""
     if not isinstance(identity, str) or not identity:
         raise FEValidationError("an identity is a non-empty str, got {!r}".format(identity))
     if len(identity) > MAX_IDENTITY_LENGTH:
         raise FEValidationError("an identity has at most {} characters".format(MAX_IDENTITY_LENGTH))
+    try:
+        identity.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise FEValidationError("an identity must encode to UTF-8 (no lone surrogates)") from exc
+    return identity
+
+
+def check_identity(identity) -> str:
+    """Return *identity* if a key centre may add it, else raise.
+
+    The rule depends on the Unicode database of the running Python
+    (``unicodedata.unidata_version``), so it is applied once, when the key
+    centre adds the identity; readers check only :func:`_identity_text`.
+
+    Raises:
+        FEValidationError: Unless *identity* is a ``str`` of 1 to
+            :data:`MAX_IDENTITY_LENGTH` characters in NFC without control,
+            format, surrogate or unassigned code points.
+    """
+    _identity_text(identity)
     if any(unicodedata.category(c) in _REFUSED_CATEGORIES for c in identity):
-        raise FEValidationError("an identity may not contain control or format characters")
+        raise FEValidationError("an identity may not contain control, format or unassigned code points "
+                                "(Unicode {})".format(unicodedata.unidata_version))
     if unicodedata.normalize("NFC", identity) != identity:
         raise FEValidationError("an identity must be in Unicode NFC (normalise it before use)")
     return identity
@@ -122,14 +155,17 @@ def directory_digest(digest_of_pp: str, entries: list) -> str:
 
 
 def _same(a, b) -> bool:
-    return isinstance(a, str) and isinstance(b, str) and hmac.compare_digest(a.encode(), b.encode())
+    """Whether *a* and *b* are the same hex digest (``False`` for anything else, never an exception)."""
+    return (isinstance(a, str) and isinstance(b, str) and a.isascii() and b.isascii()
+            and hmac.compare_digest(a.encode("ascii"), b.encode("ascii")))
 
 
 class IdentityKeyCentre:
     """The key centre: one ``sife/fullysec_ring_lwe`` instance per identity.
 
     Holds the master key of every identity it adds. Its state is in memory;
-    the library defines no format for it.
+    the library defines no format for it. Safe to share between threads:
+    adding an identity and building the directory hold the key centre's lock.
 
     Args:
         config: The configuration of ``sife/fullysec_ring_lwe``
@@ -143,6 +179,12 @@ class IdentityKeyCentre:
         self._pp_digest = pp_digest(self._pp)
         self._instances = {}
         self._entries = {}
+        self._lock = threading.Lock()
+        forksafe.track(self)  # a forked child: a new lock (_after_fork_in_child)
+
+    def _after_fork_in_child(self) -> None:
+        """In a forked child: a new lock (another thread of the parent may hold the old one)."""
+        self._lock = threading.Lock()
 
     def add_identity(self, identity: str) -> str:
         """Set up a fresh instance for *identity*; return its entry digest.
@@ -152,23 +194,26 @@ class IdentityKeyCentre:
             FESchemeError: If the identity is already in the directory.
         """
         check_identity(identity)
-        if identity in self._instances:
-            raise FESchemeError("identity {!r} is already in the directory".format(identity))
-        instance = copy.copy(self._template)  # shares the parameter record (a, q, widths)
-        instance.setup()  # its own secrets s_i and pk_i
-        pk = instance.get_private_keys()
-        entry = entry_digest(self._pp_digest, identity, pk)
-        self._instances[identity] = instance
-        self._entries[identity] = IdentityEntry.new(identity=identity, pk=pk, entry=entry).to_dict()
+        with self._lock:  # the check, the setup and both writes at once: one instance per identity
+            if identity in self._instances:
+                raise FESchemeError("identity {!r} is already in the directory".format(identity))
+            instance = copy.copy(self._template)  # shares the parameter record (a, q, widths)
+            instance.setup()  # its own secrets s_i and pk_i
+            pk = instance.get_private_keys()
+            entry = entry_digest(self._pp_digest, identity, pk)
+            self._instances[identity] = instance
+            self._entries[identity] = IdentityEntry.new(identity=identity, pk=pk, entry=entry).to_dict()
         return entry
 
     def identities(self) -> list:
         """The identities, sorted."""
-        return sorted(self._instances)
+        with self._lock:
+            return sorted(self._instances)
 
     def directory(self) -> dict:
         """The directory to publish (:class:`~pyfe4ai.core.formats.identity.IdentityDirectoryRecord`)."""
-        entries = [copy.deepcopy(self._entries[i]) for i in sorted(self._entries)]
+        with self._lock:
+            entries = [copy.deepcopy(self._entries[i]) for i in sorted(self._entries)]
         return IdentityDirectoryRecord.new(
             version=IDENTITY_DIRECTORY_VERSION,
             scheme=SCHEME_ID,
@@ -188,13 +233,15 @@ class IdentityKeyCentre:
             FEKeyError: For an identity not in the directory.
             FEValidationError: For invalid weights.
         """
-        check_identity(identity)
-        instance = self._instances.get(identity)
+        _identity_text(identity)
+        with self._lock:
+            instance = self._instances.get(identity)
+            entry = self._entries[identity]["entry"] if instance is not None else None
         if instance is None:
             raise FEKeyError("identity {!r} is not in the directory".format(identity))
         dk = instance.get_decryption_keys("identity", credentials={"fusion_weight": fusion_weight})
         return IdentityFunctionalKey.new(
-            version=IDENTITY_DIRECTORY_VERSION, identity=identity, entry=self._entries[identity]["entry"], dk=dk,
+            version=IDENTITY_DIRECTORY_VERSION, identity=identity, entry=entry, dk=dk,
         ).to_dict()
 
 
@@ -250,7 +297,7 @@ class IdentityDirectory:
                 identity, pk, entry = e["identity"], e["pk"], e["entry"]
             except KeyError as exc:
                 raise FEValidationError("a directory entry lacks {}".format(exc)) from exc
-            check_identity(identity)
+            _identity_text(identity)
             if identity in by_identity:
                 raise FEValidationError("identity {!r} appears twice".format(identity))
             if not _same(entry_digest(digest_of_pp, identity, pk), entry):
@@ -281,7 +328,7 @@ class IdentityDirectory:
         return self._entry(identity)["entry"]
 
     def _entry(self, identity) -> dict:
-        check_identity(identity)
+        _identity_text(identity)
         entry = self._entries.get(identity)
         if entry is None:
             raise FEKeyError("identity {!r} is not in the directory".format(identity))
