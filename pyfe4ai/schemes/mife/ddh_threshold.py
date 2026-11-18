@@ -154,6 +154,26 @@ class ThresholdMIFEDDH(MIFEDDH):
         """Encrypt ``eta`` values, quantised with ``10^precision``."""
         return super().encrypt(self._quantise(pt))
 
+    def decrypt(self, dct_ct: dict, dk: dict, fusion_weight: dict):
+        """Decrypt with a whole functional key, as :meth:`MIFEDDH.decrypt
+        <pyfe4ai.schemes.mife.ddh.MIFEDDH.decrypt>` does.
+
+        A threshold deployment holds no whole key: each server holds a key
+        share, and a result needs :meth:`share_decrypt` on ``t`` servers and
+        :meth:`combine_decrypt`. A key share given here is refused, rather
+        than read as a whole key (which gave ``None``, versions <= 0.5.0).
+
+        Raises:
+            FEKeyError: If *dk* is a key share (it names a server: ``sid``,
+                ``lst_sid``), or is missing.
+        """
+        if isinstance(dk, dict) and ("sid" in TMIFEDDHKeyShare(dk) or "lst_sid" in TMIFEDDHKeyShare(dk)):
+            raise FEKeyError(
+                "decrypt needs a whole functional key, and this is the key share of server {!r}: a threshold key "
+                "decrypts with share_decrypt on t servers and combine_decrypt".format(dk.get("sid"))
+            )
+        return super().decrypt(dct_ct, dk, fusion_weight)
+
     def share_decrypt(
         self, dict_ct: dict, credentials: dict, dk: dict, lst_sid_enrolled: list
     ) -> dict:
