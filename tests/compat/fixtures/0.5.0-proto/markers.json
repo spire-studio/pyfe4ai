@@ -23,6 +23,7 @@
  "DMCFE_PAILLIER_RECORD": "abmpsw20-fig14-dcr-dcr/v1",
  "MIFE_DDH_CONSTRUCTION": "acfgu18-abdp15/v2",
  "MIFE_DDH_RISTRETTO255_CONSTRUCTION": "acfgu18-abdp15-ristretto255/v1",
+ "POLICY_COMPILER": "c1",
  "RECORD_ABSENT": {
   "ring_modulus": "prime",
   "ndarray_layout": "elementwise"

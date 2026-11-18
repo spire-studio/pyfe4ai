@@ -193,8 +193,8 @@ def generate(scheme: str) -> dict:
 ND_X = {"nid_0": [[1, 2], [3, -1]], "nid_1": [[0, 1], [2, 2]]}
 ND_W = {"nid_0": [1], "nid_1": [2]}
 ND_SIFE_W = [3]
-#: Recipes with an ndarray step (the threshold and decentralised ones derive their keys per chunk: not yet).
-ND_KINDS = ("sife", "mife", "mcfe")
+#: Recipes with an ndarray step.
+ND_KINDS = ("sife", "mife", "mcfe", "threshold", "decentralized")
 
 
 def _nd_expected(scheme):
@@ -212,7 +212,16 @@ def _wire(cts, nid):
 
 
 def _nd_labelled(scheme):
-    return kind_of(scheme) == "mcfe"
+    return scheme.startswith("mcfe/")
+
+
+def _nd_share(scheme, enc, nid):
+    """A client's share of the decentralised functional key for ND_W."""
+    if scheme.endswith("fh_multi_ipe_pairing_decentralized"):
+        return enc.derive_function_decryption_key_share(ND_W[nid], "compat-nd-weights")
+    if scheme.endswith("ring_lwe_decentralized"):
+        return enc.derive_function_decryption_key_share(ND_W, LABEL, n_chunks=1)
+    return enc.derive_function_decryption_key_share(ND_W)
 
 
 def generate_ndarray(scheme: str) -> dict | None:
@@ -245,9 +254,18 @@ def generate_ndarray(scheme: str) -> dict | None:
                     for nid in NIDS:
                         enc = C({"id": nid, "precision": 0, "keys": {"pp": pp, "sk": sks[nid]}})
                         wires[nid] = _wire(enc.encrypt_lst_ndarray([np.array(ND_X[nid])], **lab), nid)
-                    # the identity-based MCFE over Ring-LWE: a key per label, covering the chunks of the packed layers
-                    cred = {"fusion_weight": ND_W, **({"label": LABEL, "n_chunks": 1} if scheme == "mcfe/ring_lwe" else {})}
-                    dk = kg.get_decryption_keys("sid_0", credentials=cred)
+                    if kind_of(scheme) == "threshold":
+                        # the key shares of the servers that will decrypt together
+                        cred = {"fusion_weight": ND_W, **lab}
+                        dk = {sid: kg.get_decryption_keys(sid, credentials=cred) for sid in SIDS[1:]}
+                    elif kind_of(scheme) == "decentralized":
+                        dk = {nid: _nd_share(scheme, C({"id": nid, "precision": 0, "keys": {"pp": pp, "sk": sks[nid]}}),
+                                             nid) for nid in NIDS}
+                    else:
+                        # the identity-based MCFE over Ring-LWE: a key per label, covering the chunks of the layers
+                        cred = {"fusion_weight": ND_W,
+                                **({"label": LABEL, "n_chunks": 1} if scheme == "mcfe/ring_lwe" else {})}
+                        dk = kg.get_decryption_keys("sid_0", credentials=cred)
             except NotImplementedError:
                 return None
         params = _cache_files(cache_dir)
@@ -271,12 +289,24 @@ def replay_ndarray(scheme: str, nd: dict) -> list:
     grads = {nid: EncryptedGradient.from_dict(w) for nid, w in rec["gradients"].items()}
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
+        cts = {nid: g.ciphertexts for nid, g in grads.items()}
+        lab = (LABEL,) if _nd_labelled(scheme) else ()
         if kind_of(scheme) == "sife":
             out = dec.decrypt_lst_ndarray_ct(grads["nid_default"].ciphertexts, dk=rec["dk"], fusion_weight=ND_SIFE_W)
+        elif kind_of(scheme) == "threshold":
+            # every server partially decrypts with its stored key share; a client combines
+            servers = sorted(rec["dk"])
+            partials = {sid: C({"id": sid, "precision": 0, "keys": {"pp": rec["pp"], "dk": rec["dk"][sid]}})
+                        .compute_lst_ndarray_ct(cts, ND_W, rec["dk"][sid], servers, *lab) for sid in servers}
+            client = C({"id": NIDS[0], "precision": 0, "keys": {"pp": rec["pp"], "sk": rec["sk"][NIDS[0]]}})
+            out = client.decrypt_lst_ndarray_ct(partials, *lab)
+        elif kind_of(scheme) == "decentralized":
+            # the decryptor combines the stored key shares of the clients
+            dk = dec.combine_function_decryption_key_share(rec["dk"])
+            out = dec.decrypt_lst_ndarray_ct(cts, dk=dk, fusion_weight=ND_W, label=LABEL)
         else:
-            lab = {"label": LABEL} if _nd_labelled(scheme) else {}
-            out = dec.decrypt_lst_ndarray_ct({nid: g.ciphertexts for nid, g in grads.items()}, dk=rec["dk"],
-                                             fusion_weight=ND_W, **lab)
+            out = dec.decrypt_lst_ndarray_ct(cts, dk=rec["dk"], fusion_weight=ND_W,
+                                             **({"label": LABEL} if lab else {}))
     return np.rint(np.asarray(out[0], dtype=float)).astype(int).tolist()
 
 
