@@ -67,7 +67,8 @@ Public and internal modules
 * :mod:`pyfe4ai.ml` and :mod:`pyfe4ai.ml.quantization`;
 * from :mod:`pyfe4ai.backend`: ``available``, ``get_backend``,
   ``set_backend``, ``backend``, ``active_backend``, ``get_threads``,
-  ``set_threads``, ``implementation``, ``describe``, ``backend_info`` and
+  ``effective_threads``, ``set_threads``, ``implementation``, ``describe``,
+  ``backend_info`` and
   ``MISSING_EXTENSION_NOTICE``;
 * the few entry points in otherwise internal modules that the
   documentation names: ``get_gaussian_sampler``, ``set_gaussian_sampler``

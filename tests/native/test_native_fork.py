@@ -11,7 +11,8 @@ process (a fork of it) the kernels run with one thread, whatever thread count is
 Each case runs in a fresh interpreter, so that a crash cannot take the test run with it. The parent runs the kernels
 with 4 threads and enough work that its caller waits for the workers; then it forks four times. Each child asks for
 4 threads again (``set_threads(4)``), runs the kernels with 4 requested threads for three rounds, compares their
-results with the parent's and checks that it is limited to one thread; one child also forks a grandchild that does
+results with the parent's and checks that it is limited to one thread (``backend.effective_threads()``,
+``backend_info()["threads"]``); one child also forks a grandchild that does
 the same. The parent goes on with 4 threads after each fork and must exit normally with status 0. The kernels are
 ``dense_dots`` (dense-LWE label dots), ``r255_mcfe_encrypt`` (ristretto255 MCFE) and a BLS12-381 batch
 deserialisation, none of them bcfe. A control case forks from a parent that never ran several threads: its children
@@ -40,6 +41,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 SCRIPT = textwrap.dedent("""
     import os, sys
+    import pyfe4ai
     from pyfe4ai import backend
     from pyfe4ai.primitives.pairing import pairing_backend as pb
     from pyfe4ai.primitives.pairing.pairing_backend import G2, PairingGroup
@@ -69,7 +71,8 @@ SCRIPT = textwrap.dedent("""
     def child(limit, grandchild):
         for _ in range(3):
             assert run(4) == want                       # 4 threads asked for, again after the fork
-        assert ext.fork_thread_limit(4) == limit, ext.fork_thread_limit(4)
+        got = (backend.effective_threads(), pyfe4ai.backend_info()["threads"], ext.fork_thread_limit(4))
+        assert got == (limit, limit, limit), got
         if grandchild:
             pid = os.fork()
             if pid == 0:
@@ -97,7 +100,7 @@ SCRIPT = textwrap.dedent("""
         results.append("exit %d" % os.WEXITSTATUS(status) if os.WIFEXITED(status)
                        else "signal %d" % os.WTERMSIG(status))
         if mode == "threads":
-            assert run(4) == want and ext.fork_thread_limit(4) == 4   # the parent keeps its threads
+            assert run(4) == want and backend.effective_threads() == 4   # the parent keeps its threads
     print(" ".join(results))
 """)
 

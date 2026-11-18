@@ -349,17 +349,29 @@ an experimental research prototype, not recommended for production use.
     no wait), so the rule covers direct `pyfe4ai._rust_native` calls and forks
     not made through `os.fork`, and a later `set_threads(n)` in the child does
     not lift it. A child of a process that never ran several threads keeps
-    them. `pyfe4ai._rust_native.fork_thread_limit(n)` reports the limit. As a
-    second guard, `parallel_for` joins every worker it starts (also when a
+    them. New `pyfe4ai.backend.effective_threads()` returns the thread count
+    a native call uses in this process, and `backend_info()["threads"]` now
+    reports it (1 in a limited child).
+  - *Second guard:* `parallel_for` joins every worker it starts (also when a
     share panics) instead of waiting for them in the scope, so the calling
     thread does not park there either.
-  - *Cost:* native calls in a forked child are single-threaded. Pre-fork
-    servers and fork-based pools that want native threads per worker should
-    use `spawn` or `forkserver`.
+  - *Lazy tables:* the native tables built on first use (the Gaussian
+    sampler's tables, the BLS12-381 pairing generator, the order and the
+    hash key of its dlog tables) are now built when the extension is
+    imported. The sampler's tables are also built without any wait. A
+    contended first build made a thread wait, which the pid rule could not
+    see.
+  - *Cost:* native calls in a forked child are single-threaded, on every
+    platform: fork-based workers on Linux lose their native threads too.
+    Pre-fork servers and fork-based pools that want native threads per worker
+    should use `spawn` or `forkserver`. Importing the extension now builds the
+    tables: the import takes about 3.7 ms in all on an Apple M-series Mac.
   - *Unchanged:* results; no randomness is cached across calls.
-  - Linux waits on a futex and was not seen to crash; the rule applies there
-    too.
-  - Regression test: `tests/native/test_native_fork.py`; it fails with SIGTRAP
+  - The crash is specific to macOS (Linux waits on a futex, not
+    libdispatch); this was not run natively on Linux, so that is expected,
+    not verified.
+  - Regression tests: `tests/native/test_native_fork.py`, and
+    `rust/core/tests/fork_*.rs` for the lazy tables. They fail with SIGTRAP
     on macOS when the fix is reverted. See `docs/threading.rst`, "Processes
     and fork".
   - In 0.4.0, run multi-threaded native kernels only in processes that do not
