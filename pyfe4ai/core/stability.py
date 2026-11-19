@@ -54,7 +54,11 @@ EXPERIMENTAL_OPTIONS: Mapping[str, Mapping[str, frozenset]] = MappingProxyType({
 })
 
 #: Capabilities of stable schemes that are experimental: ``{scheme id: capabilities}``.
-EXPERIMENTAL_CAPABILITIES: Mapping[str, frozenset] = MappingProxyType({})
+EXPERIMENTAL_CAPABILITIES: Mapping[str, frozenset] = MappingProxyType({
+    # the threshold key issuance of 0.7 (Dealer / KeyServer / KeyCombiner): the protocol is experimental, the scheme
+    # stays reviewed (1.0 plan Sec. 1)
+    "sife/cp_ab_pairing": frozenset({"distributed_keygen"}),
+})
 
 
 def tier(scheme) -> str:
