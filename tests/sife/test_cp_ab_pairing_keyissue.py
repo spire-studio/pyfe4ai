@@ -560,14 +560,16 @@ def test_the_rule_cannot_change_the_stored_history():
         [(r["sid"], r) for r in requests]
 
 
-@pytest.mark.parametrize("error", [ValueError("no"), KeyError("y"), RuntimeError, TypeError])
+@pytest.mark.parametrize("error", [ValueError, KeyError, RuntimeError, TypeError])
 def test_an_exception_of_the_rule_refuses_and_leaves_no_record(error):
     calls = []
 
     def approve(request, requester, history):
         calls.append(request["sid"])
         if request["sid"] == "mallory":
-            raise error
+            # a fresh instance: one kept in the parametrize list would keep its traceback, the frames and the
+            # key servers alive for the rest of the run (tests/state/test_forksafe.py counts tracked objects)
+            raise error("refused by the test rule")
         return True
 
     _, _, _, key_servers, comb, _ = _system(approve=approve)
