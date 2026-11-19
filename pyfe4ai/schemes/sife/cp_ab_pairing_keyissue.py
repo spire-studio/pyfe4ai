@@ -77,6 +77,7 @@ import copy
 import hashlib
 import hmac
 import json
+import os
 import re
 import secrets
 import threading
@@ -84,7 +85,8 @@ import threading
 import gmpy2 as gp
 
 from pyfe4ai._validation import int_vector
-from pyfe4ai.core.exceptions import FEConfigError, FEKeyError, FEValidationError
+from pyfe4ai.core import forksafe
+from pyfe4ai.core.exceptions import FEConfigError, FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.core.formats.keyissue import CPABKeyRequest
 from pyfe4ai.core.formats.keyissue import CPABKeyServerShare
 from pyfe4ai.core.formats.keyissue import CPABKeyServers
@@ -487,9 +489,29 @@ class SIFECPABPairingKeyServer:
         self.server = sh.server
         self._approve = approve
         self._lock = threading.Lock()
+        self._pid = os.getpid()  # issue() refuses other processes (a forked child's copy)
+        forksafe.track(self)  # a forked child: a new lock, and the copy marked foreign (_after_fork_in_child)
         self._contents = {}   # digest -> canonical content, of accepted requests
         self._ids = {}        # (sid, request id) -> digest: one sid reusing its id for other content is refused
         self._history = []    # (requester, frozen request) accepted, oldest first
+
+    def _after_fork_in_child(self) -> None:
+        """In a forked child: a new lock (another thread of the parent may hold the old one, inside the
+        approval rule), and the copy is marked foreign (``_pid = None``): it refuses to issue, also in a process
+        that later gets the pid of the one that made the server. A copy that issued would keep its own records
+        (digest -> content, ids, history) apart from the parent's, so the two could accept the same digest for
+        two contents, the same (sid, id) twice, or what a stateful rule allows only once."""
+        self._lock = threading.Lock()
+        self._pid = None
+
+    def __copy__(self):
+        raise TypeError("a key server cannot be copied: the copy would keep its records apart")
+
+    def __deepcopy__(self, memo):
+        raise TypeError("a key server cannot be copied: the copy would keep its records apart")
+
+    def __reduce__(self):
+        raise TypeError("a key server cannot be pickled: the copy would keep its records apart")
 
     def issue(self, request: dict, authenticated_requester: str) -> dict:
         """This server's masked partial key for *request*
@@ -512,7 +534,16 @@ class SIFECPABPairingKeyServer:
                 ``sid``, the approval rule refuses (or raises), the digest was
                 used for other content, or this ``sid`` used the request's id
                 for other content.
+            FESchemeError: In another process than the one that made the
+                server (a forked child's copy): its records would diverge from
+                the parent's. Make a key server in the one process that serves
+                its requests.
         """
+        if self._pid is None or os.getpid() != self._pid:
+            raise FESchemeError(
+                "a key server issues in the process that made it only: a copy in a forked child would keep "
+                "its own records of digests, ids and history, apart from the parent's"
+            )
         p = self._p
         snapshot = copy_parameters(request, "key request")  # what is checked, approved, recorded and answered
         r, y, digest = p.checked_request(snapshot)

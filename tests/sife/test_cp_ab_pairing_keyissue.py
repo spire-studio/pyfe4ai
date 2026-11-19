@@ -3,6 +3,8 @@
 import copy
 import hashlib
 import json
+import os
+import sys
 
 import pytest
 
@@ -11,7 +13,7 @@ from tests.pairing_group import GROUP, skip_unless_available  # noqa: E402
 
 skip_unless_available()
 
-from pyfe4ai.core.exceptions import FEConfigError, FEKeyError, FEValidationError  # noqa: E402
+from pyfe4ai.core.exceptions import FEConfigError, FEKeyError, FESchemeError, FEValidationError  # noqa: E402
 from pyfe4ai.core.formats.pairing import CPABFunctionalKey  # noqa: E402
 from pyfe4ai.schemes.sife import cp_ab_pairing_keyissue as ki  # noqa: E402
 from pyfe4ai.schemes.sife.cp_ab_pairing import SIFECPABPairing  # noqa: E402
@@ -632,3 +634,61 @@ def test_frozen_entries_pickle_to_plain_data():
     assert again == {"a": [1, {"b": ["c"]}], "d": "e"}
     assert type(again) is dict and type(again["a"]) is list and type(again["a"][1]) is dict
     assert copy.copy(frozen) == frozen and type(copy.copy(frozen)) is dict
+
+
+# -- fork (integrate/1.0 review INT-2, test from review/integrate-1.0 b43d2b6, adapted to the rule chosen) --------
+
+
+@pytest.mark.skipif(not hasattr(os, "fork") or sys.platform == "win32", reason="needs fork")
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_int2_a_key_server_copied_into_a_forked_child_refuses_without_hanging():
+    """A child forked while another thread of the parent is inside issue() (the approval rule runs under the
+    server's lock) must not hang on the copied lock, and its copy refuses to issue (FESchemeError): its records
+    would diverge from the parent's. The reviewer's probe asserted that the child issues; the fix chosen refuses
+    instead (see roadmap/v0.7/09). A hang ends as SIGALRM."""
+    import signal
+    import threading
+
+    inside, release = threading.Event(), threading.Event()
+
+    def approve(request, requester, history):
+        if request["sid"] == "slow":
+            inside.set()
+            release.wait(10)
+        return True
+
+    _, _, _, key_servers, comb, _ = _system(t=2, servers=["a", "b"], approve=approve)
+    server = key_servers["a"]
+    slow = threading.Thread(target=lambda: server.issue(comb.new_request("slow", [1, 0, 0], ["org:A"], ["a", "b"]),
+                                                        "slow"))
+    slow.start()
+    try:
+        assert inside.wait(5)
+        pid = os.fork()
+        if pid == 0:
+            signal.alarm(5)
+            try:
+                server.issue(comb.new_request("bob", [1, 2, 3], ["org:A"], ["a", "b"]), "bob")
+                os._exit(4)                      # issued: the copy's records would diverge
+            except FESchemeError:
+                os._exit(0)                      # refused at once
+            except BaseException:
+                os._exit(3)
+        _, status = os.waitpid(pid, 0)
+    finally:
+        release.set()
+        slow.join()
+    assert os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0, (
+        status, os.WTERMSIG(status) if os.WIFSIGNALED(status) else None)
+    # the parent's server is unaffected
+    r = comb.new_request("carol", [1, 0, 0], ["org:A"], ["a", "b"])
+    comb.combine(r, [key_servers[s].issue(r, "carol") for s in ("a", "b")])
+
+
+def test_a_key_server_cannot_be_copied_or_pickled(system):
+    import pickle
+
+    server = system[3]["ks1"]
+    for attempt in (lambda: copy.copy(server), lambda: copy.deepcopy(server), lambda: pickle.dumps(server)):
+        with pytest.raises(TypeError, match="records apart"):
+            attempt()

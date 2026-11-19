@@ -195,7 +195,9 @@ The library registers one ``os.register_at_fork`` handler
   them);
 * gives the copies of the objects that have a lock of their own a new one
   (:class:`~pyfe4ai.ml.FESchemeWrapper`,
-  :class:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget`): another
+  :class:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget`,
+  :class:`~pyfe4ai.schemes.sife.cp_ab_pairing_keyissue.SIFECPABPairingKeyServer`,
+  :class:`~pyfe4ai.ac.identity_directory.IdentityKeyCentre`): another
   thread of the parent may have held the old one.
 
 A :class:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget` counts in
@@ -208,6 +210,19 @@ would each count from the copied ``used``, together produce more partial
 decryptions than ``max_partial_decryptions``, and the KL flooding guarantee
 would no longer hold. Make a server's budget in the one process that
 answers for it (a subclass may share and persist the count, see the class).
+
+A :class:`~pyfe4ai.schemes.sife.cp_ab_pairing_keyissue.SIFECPABPairingKeyServer`
+(threshold key issuance) issues in the process that made it only: in a forked
+child :meth:`~pyfe4ai.schemes.sife.cp_ab_pairing_keyissue.SIFECPABPairingKeyServer.issue`
+raises :class:`~pyfe4ai.core.exceptions.FESchemeError`, and the server cannot
+be copied or pickled. A copy that issued would keep its own records of request
+digests, request ids and the approval history, apart from the parent's: the two
+could accept one digest for two contents, one ``(sid, id)`` twice, or twice
+what a stateful approval rule allows once. Make a key server in the one process
+that serves its requests. An
+:class:`~pyfe4ai.ac.identity_directory.IdentityKeyCentre` keeps working in a
+child (with a new lock); an identity whose ``add_identity`` was halfway in
+another thread of the parent at the fork is dropped from the child's copy.
 
 Nothing else changes in the child: it has a copy of every object of the
 parent, keys and caches included, and the public tables. The native code
