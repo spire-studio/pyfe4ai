@@ -490,6 +490,14 @@ It holds only under conditions the library does not provide:
   Python cannot wipe memory, so run it in a process that ends).
 * Fewer than ``t`` servers are corrupted, chosen before setup; there is no
   share refresh (a new sharing draws new PRF keys).
+* **One object per server and per dealer.** A key server keeps its records
+  (request digests and contents, request ids, the approval history) in memory
+  only, and the library defines no format to persist them: a restarted server
+  starts with none, approves earlier requests afresh, and gives a stateful
+  rule an empty history (keep such state, e.g. counters, in the rule). A
+  server issues in the process that made it only and cannot be copied or
+  pickled. A copy of a dealer holds the same undelivered shares, so keep one
+  dealer object.
 
 A corrupted server can make an issuance fail, not hand out a wrong key: the
 combiner checks every component with pairings, and any key that passes
@@ -598,6 +606,9 @@ identity, and only keys of that identity's instance decrypt it.
   every Python. The rule
   does not catch confusable identities (a Cyrillic ``а`` for a Latin ``a``) or
   spaces: mapping people to identities is the application's.
+* Keep one key centre object: a copy (``copy``, pickle, a forked child)
+  adds identities of its own, so two copies can publish two directories with
+  different instances under one identity.
 * The directory, its checks and its records are experimental; the scheme
   underneath is unchanged.
 
