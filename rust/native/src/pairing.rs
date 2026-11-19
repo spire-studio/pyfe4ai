@@ -145,7 +145,7 @@ fn gt_hash_key() -> &'static RandomState {
 /// `pyfe4ai_core::thread_limit`).
 pub(crate) fn warm_statics(py: Python<'_>) -> PyResult<()> {
     cached_order(py)?;
-    gt_generator();
+    let _ = gt_generator();
     gt_hash_key();
     Ok(())
 }
