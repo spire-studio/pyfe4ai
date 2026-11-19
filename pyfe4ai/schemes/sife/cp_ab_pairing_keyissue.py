@@ -162,6 +162,70 @@ def request_digest(request: dict) -> str:
     return _hash(DST_REQUEST, _canonical(payload), DIGEST_BYTES).hex()
 
 
+class _FrozenDict(dict):
+    """A read-only dict: what the approval rule and its history hold (a request, frozen once when it is
+    accepted). It reads, iterates and serialises (``json.dumps``) like a dict; every method that would change it
+    raises ``TypeError``. ``copy.copy``, ``copy.deepcopy`` and pickling give a plain, mutable dict, so a rule
+    that wants to change its own copy can."""
+
+    __slots__ = ()
+
+    def _refuse(self, *args, **kwargs):
+        raise TypeError("the requests given to the approval rule are read-only")
+
+    __setitem__ = __delitem__ = __ior__ = _refuse
+    clear = pop = popitem = setdefault = update = _refuse
+
+    def __copy__(self):
+        return _thaw(self)
+
+    def __deepcopy__(self, memo):
+        return _thaw(self)
+
+    def __reduce__(self):
+        return (_thaw, (dict(self),))
+
+
+class _FrozenList(list):
+    """A read-only list (see :class:`_FrozenDict`): equal to the list it was made from, refuses changes."""
+
+    __slots__ = ()
+
+    def _refuse(self, *args, **kwargs):
+        raise TypeError("the requests given to the approval rule are read-only")
+
+    __setitem__ = __delitem__ = __iadd__ = __imul__ = _refuse
+    append = extend = insert = pop = remove = clear = sort = reverse = _refuse
+
+    def __copy__(self):
+        return _thaw(self)
+
+    def __deepcopy__(self, memo):
+        return _thaw(self)
+
+    def __reduce__(self):
+        return (_thaw, (list(self),))
+
+
+def _freeze(value):
+    """*value* (JSON data) with every dict a :class:`_FrozenDict` and every list a :class:`_FrozenList`,
+    built once (equal to *value*, and serialised alike)."""
+    if isinstance(value, dict):
+        return _FrozenDict((k, _freeze(v)) for k, v in value.items())
+    if isinstance(value, (list, tuple)):
+        return _FrozenList(_freeze(v) for v in value)
+    return value
+
+
+def _thaw(value):
+    """A plain, mutable copy of frozen (or any JSON) *value*: dicts as dicts, lists as lists."""
+    if isinstance(value, dict):
+        return {k: _thaw(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_thaw(v) for v in value]
+    return value
+
+
 def _check_sid(sid) -> str:
     """*sid* if it is a ``str`` of 1 to 1024 characters that encodes to UTF-8, else ``FEValidationError``."""
     if type(sid) is not str or not 0 < len(sid) <= _MAX_SID:
@@ -377,11 +441,18 @@ class SIFECPABPairingKeyServer:
             ``attributes``, ``servers``, ...), *requester* the identity the
             channel authenticated, *history* the tuple of ``(requester,
             request)`` this server accepted before, oldest first (refused
-            requests are not in it; a copy of the server's records). Only the
-            return value ``True`` approves; anything else, a reason string
-            or ``None`` among it, refuses. It must decide on ``y`` too (see the module
-            docstring). It runs under the server's lock, so the requests to
-            one server are approved one at a time. A repeat of an accepted
+            requests are not in it). The request and the history are
+            read-only views, frozen once when a request is accepted: dicts
+            and lists that refuse changes (``TypeError``) and otherwise
+            compare, read and serialise (``json.dumps``) as the request does;
+            ``copy.deepcopy`` gives a mutable copy. Only the return value ``True`` approves; anything
+            else, a reason string or ``None`` among it, refuses, and so does
+            any exception the rule raises (the request is then refused with
+            ``FEKeyError`` and leaves no record). It must decide on ``y`` too
+            (see the module docstring). It runs under the server's lock, so the
+            requests to one server are approved one at a time; it should keep
+            its own state (e.g. counters) rather than scan a long history on
+            every call. A repeat of an accepted
             request (same digest, same content) is answered again without a
             new approval: it gets the same partial key and reveals nothing
             new.
@@ -418,7 +489,7 @@ class SIFECPABPairingKeyServer:
         self._lock = threading.Lock()
         self._contents = {}   # digest -> canonical content, of accepted requests
         self._ids = {}        # (sid, request id) -> digest: one sid reusing its id for other content is refused
-        self._history = []    # (requester, request) accepted, oldest first
+        self._history = []    # (requester, frozen request) accepted, oldest first
 
     def issue(self, request: dict, authenticated_requester: str) -> dict:
         """This server's masked partial key for *request*
@@ -438,9 +509,9 @@ class SIFECPABPairingKeyServer:
                 parameters or another sharing, or one whose servers are not
                 ``t`` distinct ids of the record including this one.
             FEKeyError: If *authenticated_requester* is not the request's
-                ``sid``, the approval rule refuses, the digest was used for
-                other content, or this ``sid`` used the request's id for other
-                content.
+                ``sid``, the approval rule refuses (or raises), the digest was
+                used for other content, or this ``sid`` used the request's id
+                for other content.
         """
         p = self._p
         snapshot = copy_parameters(request, "key request")  # what is checked, approved, recorded and answered
@@ -463,12 +534,17 @@ class SIFECPABPairingKeyServer:
                 # ids are kept per sid: only the requester itself can block its own id
                 if self._ids.get((r.sid, r.id), r.digest) != r.digest:
                     raise FEKeyError("this sid used the id of this request for other content")
-                verdict = self._approve(copy.deepcopy(snapshot), requester, copy.deepcopy(tuple(self._history)))
+                frozen = _freeze(snapshot)  # built once: the rule's view now, the history entry once accepted
+                try:
+                    verdict = self._approve(frozen, requester, tuple(self._history))
+                except Exception as exc:  # fail closed: a rule that raises refuses, and nothing is recorded
+                    raise FEKeyError("the approval rule of server {!r} raised {}: the request is refused".format(
+                        self.server, type(exc).__name__)) from exc
                 if verdict is not True:  # fail closed: a reason string, None or any other value refuses
                     raise FEKeyError("the approval rule of server {!r} refuses this request".format(self.server))
                 self._contents[r.digest] = content
                 self._ids[(r.sid, r.id)] = r.digest
-                self._history.append((requester, snapshot))
+                self._history.append((requester, frozen))
         return self._partial(r, y, digest)
 
     def _partial(self, r, y: list, digest: bytes) -> dict:

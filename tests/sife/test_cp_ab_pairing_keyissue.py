@@ -502,3 +502,133 @@ def test_requests_must_be_plain_dicts_that_copy(system):
     for bad in (Lying(request, purpose="audit"), dict(request, lock=threading.Lock())):
         with pytest.raises(FEValidationError):
             key_servers["ks1"].issue(bad, authenticated_requester="alice")
+
+
+# -- the history as read-only views (08_history_copy_followup, recommendation B) ---------------------
+
+
+def test_the_rule_gets_read_only_views_that_read_like_the_request():
+    seen = {}
+
+    def approve(request, requester, history):
+        seen["json"] = json.dumps(request, sort_keys=True)
+        seen["y_is_list"] = isinstance(request["y"], list) and request["y"] == list(request["y"])
+        seen["copy"] = copy.deepcopy(request)
+        for attempt in (lambda: request.__setitem__("y", []), lambda: request["y"].append("1"),
+                        lambda: request.update(sid="x"), lambda: request["attributes"].sort(),
+                        lambda: request.pop("id"), lambda: request["servers"].__setitem__(0, "x")):
+            try:
+                attempt()
+                seen["mutated"] = True
+            except TypeError:
+                pass
+        return True
+
+    _, _, _, key_servers, comb, _ = _system(approve=approve)
+    request = comb.new_request("alice", [1, 2, 3], ["org:A"], ["ks1", "ks2", "ks3"])
+    key_servers["ks1"].issue(request, authenticated_requester="alice")
+    assert seen["json"] == json.dumps(request, sort_keys=True) and seen["y_is_list"]
+    assert "mutated" not in seen
+    mutable = seen["copy"]
+    mutable["y"].append("4")
+    assert type(mutable) is dict and type(mutable["y"]) is list
+    stored = key_servers["ks1"]._history[0][1]
+    assert stored == request and stored["y"] == ["1", "2", "3"]
+
+
+def test_the_rule_cannot_change_the_stored_history():
+    def careless(request, requester, history):
+        for _, earlier in history:
+            try:
+                earlier["sid"] = "mallory"
+            except TypeError:
+                pass
+            try:
+                earlier["y"][0] = "9"
+            except TypeError:
+                pass
+        return True
+
+    _, _, _, key_servers, comb, _ = _system(approve=careless)
+    requests = [comb.new_request(sid, [i, 0, 0], ["org:A"], ["ks1", "ks2", "ks3"])
+                for i, sid in enumerate(("alice", "bob", "carol"), 1)]
+    for r in requests:
+        key_servers["ks1"].issue(r, authenticated_requester=r["sid"])
+    assert [(who, dict(entry)) for who, entry in key_servers["ks1"]._history] == \
+        [(r["sid"], r) for r in requests]
+
+
+@pytest.mark.parametrize("error", [ValueError("no"), KeyError("y"), RuntimeError, TypeError])
+def test_an_exception_of_the_rule_refuses_and_leaves_no_record(error):
+    calls = []
+
+    def approve(request, requester, history):
+        calls.append(request["sid"])
+        if request["sid"] == "mallory":
+            raise error
+        return True
+
+    _, _, _, key_servers, comb, _ = _system(approve=approve)
+    bad = comb.new_request("mallory", [1, 0, 0], ["org:A"], ["ks1", "ks2", "ks3"])
+    with pytest.raises(FEKeyError, match="raised"):
+        key_servers["ks1"].issue(bad, authenticated_requester="mallory")
+    server = key_servers["ks1"]
+    assert not server._contents and not server._ids and not server._history
+    good = comb.new_request("alice", [1, 0, 0], ["org:A"], ["ks1", "ks2", "ks3"])
+    server.issue(good, authenticated_requester="alice")
+    assert len(server._history) == 1 and calls == ["mallory", "alice"]
+
+
+def test_a_history_kept_by_the_rule_does_not_grow():
+    kept = []
+
+    def approve(request, requester, history):
+        kept.append(history)
+        return True
+
+    _, _, _, key_servers, comb, _ = _system(approve=approve)
+    for sid in ("alice", "bob", "carol"):
+        r = comb.new_request(sid, [1, 0, 0], ["org:A"], ["ks1", "ks2", "ks3"])
+        key_servers["ks1"].issue(r, authenticated_requester=sid)
+    assert [len(h) for h in kept] == [0, 1, 2] and type(kept[0]) is tuple
+
+
+def test_concurrent_distinct_requests_are_all_accepted_once():
+    import threading
+
+    lengths = []
+
+    def approve(request, requester, history):
+        lengths.append(len(history))
+        return True
+
+    _, _, _, key_servers, comb, _ = _system(approve=approve)
+    requests = [comb.new_request("user{}".format(i), [1, 0, 0], ["org:A"], ["ks1", "ks2", "ks3"]) for i in range(12)]
+    barrier = threading.Barrier(len(requests), timeout=5)
+    errors = []
+
+    def send(r):
+        barrier.wait()
+        try:
+            key_servers["ks1"].issue(r, authenticated_requester=r["sid"])
+        except Exception as exc:  # noqa: BLE001 - collected for the assertion
+            errors.append(exc)
+
+    threads = [threading.Thread(target=send, args=(r,)) for r in requests]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    history = key_servers["ks1"]._history
+    assert not errors and len(history) == len(requests) and sorted(lengths) == list(range(len(requests)))
+    assert sorted(entry["sid"] for _, entry in history) == sorted(r["sid"] for r in requests)
+
+
+def test_frozen_entries_pickle_to_plain_data():
+    import pickle
+
+    frozen = ki._freeze({"a": [1, {"b": ["c"]}], "d": "e"})
+    again = pickle.loads(pickle.dumps(frozen))
+    assert again == {"a": [1, {"b": ["c"]}], "d": "e"}
+    assert type(again) is dict and type(again["a"]) is list and type(again["a"][1]) is dict
+    assert copy.copy(frozen) == frozen and type(copy.copy(frozen)) is dict
