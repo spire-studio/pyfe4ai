@@ -59,6 +59,15 @@ under these conditions, which the library does not provide:
 * Fewer than ``t`` corrupted servers, chosen before setup; no share refresh
   (a new sharing needs new PRF keys, which :meth:`SIFECPABPairingDealer.setup`
   draws).
+* **One object per server and per dealer, for their lifetime.** A key server
+  keeps its records (digest -> content, ``(sid, id)``, the approval history)
+  in memory only; the library defines no format to persist them, and a
+  restarted server starts with none: requests answered before the restart are
+  approved afresh, and a stateful rule sees an empty history. Persist what the
+  rule needs (e.g. its counters) in the rule itself. A server works in the
+  process that made it only and refuses to be copied or pickled. A copy of a
+  dealer holds the same undelivered shares, so delivering from two copies
+  hands a share out twice: keep one dealer object.
 
 A corrupted server can make an issuance fail but not hand the user a wrong
 key: :meth:`~SIFECPABPairingKeyCombiner.combine` checks every component of
