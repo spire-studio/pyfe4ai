@@ -85,7 +85,8 @@ def test_no_other_row_carries_a_status_marker():
 
 
 def test_the_status_paragraph_names_exactly_the_known_insecure_schemes():
-    paragraph = flat(SECURITY).split("|n_known_insecure|", 1)[1].split("Query a scheme at runtime", 1)[0]
+    # from the sentence that names them, so the experimental list before it (which names ids too) is left out
+    paragraph = flat(SECURITY).split("The known-insecure ones are", 1)[1].split("Query a scheme at runtime", 1)[0]
     named = set(re.findall(r"``([a-z0-9_]+/[a-z0-9_]+)``", paragraph))
     assert named == {i for i, st in STATUS.items() if st == registry.KNOWN_INSECURE}, sorted(named)
 
