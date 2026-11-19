@@ -13,7 +13,12 @@
 //! `pow_secret_exp` is a control that must leak (square-and-multiply on a secret exponent), `shake256` one that
 //! should not.
 use pyfe4ai_core::rlwe::{self, EncKey, Noise, Randomness};
-use pyfe4ai_core::{keccak, osrand, shamir, AnyRing, Modulus, Word, U256};
+use pyfe4ai_core::{facct, garble, keccak, osrand, shamir, AnyRing, Modulus, Word, U256};
+
+#[allow(dead_code)]
+mod data {
+    include!("ct_dudect_data.rs");
+}
 use std::hint::black_box;
 use std::time::Instant;
 
@@ -354,6 +359,148 @@ impl Target for Shake {
     }
 }
 
+/// xorshift64 from a seed: the input generator of the seeded targets (the same code for both classes; a fixed class
+/// reuses one seed, a random class draws a fresh one).
+fn fill_seeded(mut state: u64, out: &mut [u8]) {
+    for b in out.iter_mut() {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        *b = (state >> 24) as u8;
+    }
+}
+
+fn seed_of(class: usize, fixed: u64, rng: &mut Rng) -> u64 {
+    let fresh = rng.next() | 1;
+    if class == 0 { fixed } else { fresh }
+}
+
+fn u256_dec(s: &str) -> U256 {
+    s.bytes().fold(U256::ZERO, |acc, d| acc.mul_small_add(10, (d - b'0') as u64).0)
+}
+
+/// S5: the whole FACCT sample of 1024 noise values (sigma = 1000: the base CDT, y below k, the acceptance test),
+/// the bit source a SHAKE stream from a 32-byte seed that is the secret (fixed vs random seed; one buffer).
+struct FacctSample {
+    table: facct::Table,
+    fixed: u64,
+    /// `facct_equal_trials`: two fixed seeds whose samples take the same number of draws (a rejection sampler's
+    /// time follows its number of trials, which is independent of the values it returns): class 1 uses this one.
+    other: Option<u64>,
+    seed: [u8; 32],
+    out: Vec<i64>,
+    deferred: std::rc::Rc<std::cell::Cell<u64>>,
+}
+impl Target for FacctSample {
+    fn prepare(&mut self, class: usize, rng: &mut Rng) {
+        let s = match self.other {
+            Some(o) => {
+                let _ = rng.next();
+                if class == 0 { self.fixed } else { o }
+            }
+            None => seed_of(class, self.fixed, rng),
+        };
+        fill_seeded(s, &mut self.seed);
+    }
+    fn run(&mut self) {
+        let mut bits = facct::XofBits::new(black_box(&self.seed));
+        let deferred = self.deferred.clone();
+        // the exact threshold is asked for in a 2^-100 band only: counted, never expected
+        let exact = move |_x: u64, _y: u64| {
+            deferred.set(deferred.get() + 1);
+            U256::ZERO
+        };
+        facct::sample(&self.table, &mut self.out, &mut bits, &exact);
+        black_box(&self.out);
+    }
+}
+
+/// S13 (0.6): half-gates garbling of a CIRC v1 circuit (linear_threshold(4, 4, 4), mode hardwired). `garble_x`:
+/// the garbler's data bits x are the secret (fixed vs random), the garbling seed fresh in both classes;
+/// `garble_seed`: the 32-byte garbling seed is the secret (delta, every 0-label), x the same in both.
+struct Garble {
+    secret_is_x: bool,
+    fixed: u64,
+    fixed_x: u64,
+    salt: [u8; 56],
+    x: Vec<u8>,
+    seed: [u8; 32],
+}
+impl Target for Garble {
+    fn prepare(&mut self, class: usize, rng: &mut Rng) {
+        let secret = seed_of(class, self.fixed, rng);
+        let other = rng.next() | 1;
+        let (xs, ss) = if self.secret_is_x { (secret, other) } else { (self.fixed_x, secret) };
+        fill_seeded(xs, &mut self.x);
+        fill_seeded(ss, &mut self.seed);
+    }
+    fn run(&mut self) {
+        let g = garble::garble(data::CIRCUIT, garble::Mode::Hardwired, &self.salt, black_box(&self.x), black_box(&self.seed));
+        black_box(g.map(|g| g.tables.len()).ok());
+    }
+}
+
+/// S3: the whole MCFE Ring-LWE layer encryption of 4096 elements (four chunks, n = 1024, 60-bit NTT prime), the
+/// plaintext the secret, drawn from a seed into one buffer (fixed vs random); r and the noise from the OS.
+struct RlweTensor {
+    ring: AnyRing,
+    key: pyfe4ai_core::rlwe::EncKey<u64>,
+    fixed: u64,
+    raw: Vec<u8>,
+    x: Vec<i64>,
+}
+impl Target for RlweTensor {
+    fn prepare(&mut self, class: usize, rng: &mut Rng) {
+        let s = seed_of(class, self.fixed, rng);
+        fill_seeded(s, &mut self.raw);
+        for (v, b) in self.x.iter_mut().zip(self.raw.iter()) {
+            *v = (*b % 201) as i64 - 100;
+        }
+    }
+    fn run(&mut self) {
+        if let AnyRing::W64(r) = &self.ring {
+            let mats: Vec<Vec<u8>> = (0..4).map(|c| format!("material {}", c).into_bytes()).collect();
+            let refs: Vec<&[u8]> = mats.iter().map(|m| m.as_slice()).collect();
+            let out = rlwe::encrypt_tensor(r, &self.key, black_box(&self.x), Some(&refs), 4.97e9, 7.03e9,
+                                           &Noise::Rounded, Randomness::Os, 1, |_, a, b| { black_box((a, b)); });
+            assert!(out.is_ok(), "encrypt_tensor: {:?}", out.err());
+        }
+    }
+}
+
+/// S4, seeded: Shamir sharing (t = 3, five points) of 256 secrets mod an odd 60-bit q, the secrets drawn from a
+/// seed into one buffer (fixed vs random); the coefficients from a fresh seed in both classes.
+struct ShamirSeeded {
+    m: Modulus<u64>,
+    fixed: u64,
+    raw: Vec<u8>,
+    secrets: Vec<u64>,
+    coeff_seed: u64,
+}
+impl Target for ShamirSeeded {
+    fn prepare(&mut self, class: usize, rng: &mut Rng) {
+        let s = seed_of(class, self.fixed, rng);
+        self.coeff_seed = rng.next() | 1;
+        fill_seeded(s, &mut self.raw);
+        for (v, c) in self.secrets.iter_mut().zip(self.raw.chunks(8)) {
+            *v = u64::from_le_bytes(c.try_into().unwrap()) % self.m.q;
+        }
+    }
+    fn run(&mut self) {
+        let mut state = self.coeff_seed;
+        let fill = |buf: &mut [u8]| {
+            for b in buf.iter_mut() {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                *b = state as u8;
+            }
+            true
+        };
+        black_box(shamir::share(&self.m, black_box(&self.secrets), 3, &[1, 2, 3, 4, 5], fill));
+    }
+}
+
 const TARGETS: &[(&str, &str, usize)] = &[
     ("mont_mul_u64", "S1: Montgomery product by a secret factor", 4096),
     ("reduce_i128", "S1 (1): signed reduction of noise-sized values", 4096),
@@ -364,6 +511,12 @@ const TARGETS: &[(&str, &str, usize)] = &[
     ("seeded_fixed_vs_signed", "S1 (1), one buffer, seeded: fixed non-negative vs random signed", 4096),
     ("seeded_pos_vs_signed", "S1 (1), one buffer, seeded: random non-negative vs random signed", 4096),
     ("seeded_null", "S1 (1), one buffer, seeded: random signed in both classes (A/A)", 4096),
+    ("facct_sample", "S5, seeded: the whole FACCT sample of 1024 values (sigma = 1000), the bit stream secret", 1),
+    ("facct_equal_trials", "S5: FACCT, two fixed seeds whose samples take as many draws (values only differ)", 1),
+    ("garble_x", "S13, seeded: half-gates garbling (mode hardwired), the garbler's data bits secret", 1),
+    ("garble_seed", "S13, seeded: half-gates garbling, the garbling seed (delta, labels) secret", 1),
+    ("rlwe_tensor", "S3, seeded: MCFE Ring-LWE encryption of 4096 elements (4 chunks), the plaintext secret", 1),
+    ("shamir_seeded", "S4, seeded: Shamir sharing of 256 secrets, t = 3", 1),
     ("reduce_u128", "S1 (2): reduction of 128-bit values", 1024),
     ("ntt_fwd", "S2: forward NTT, n = 1024, 60-bit q", 1),
     ("rlwe_encrypt", "S3: Ring-LWE encryption of one chunk, the plaintext secret", 1),
@@ -397,6 +550,59 @@ fn make(name: &str, calls: usize, rng: &mut Rng) -> Box<dyn Target> {
             class0_signed: name == "seeded_null",
             class1_signed: true,
         }),
+        "facct_sample" | "facct_equal_trials" => {
+            let mut cdt = [U256::ZERO; facct::CDT_SIZE];
+            for (c, t) in cdt.iter_mut().zip(data::FACCT_CDT.iter()) {
+                *c = u256_dec(t);
+            }
+            let table = facct::Table { k: data::FACCT_K, y_bits: data::FACCT_Y_BITS, cdt, c_mant: data::FACCT_C_MANT,
+                                       c_exp: data::FACCT_C_EXP };
+            let fixed = rng.next() | 1;
+            let other = (name == "facct_equal_trials").then(|| {
+                // two seeds whose 1024 samples take as many getrandbits calls, with different samples
+                let calls = |seed: u64, out: &mut Vec<i64>| {
+                    let mut raw = [0u8; 32];
+                    fill_seeded(seed, &mut raw);
+                    let mut bits = facct::XofBits::new(&raw);
+                    facct::sample(&table, out, &mut bits, &|_, _| U256::ZERO);
+                    bits.next_call()
+                };
+                let (mut out_a, mut out_b) = (vec![0i64; 1024], vec![0i64; 1024]);
+                let target = calls(fixed, &mut out_a);
+                loop {
+                    let cand = rng.next() | 1;
+                    if calls(cand, &mut out_b) == target && out_b != out_a {
+                        eprintln!("facct_equal_trials: two seeds with {} draws each", target);
+                        break cand;
+                    }
+                }
+            });
+            Box::new(FacctSample { table, fixed, other, seed: [0; 32], out: vec![0; 1024], deferred: Default::default() })
+        }
+        "garble_x" | "garble_seed" => {
+            let mut salt = [0u8; 56];
+            fill_seeded(rng.next() | 1, &mut salt);
+            Box::new(Garble { secret_is_x: name == "garble_x", fixed: rng.next() | 1, fixed_x: rng.next() | 1, salt,
+                              x: vec![0; data::CIRCUIT_N.div_ceil(8)], seed: [0; 32] })
+        }
+        "rlwe_tensor" => {
+            let n = 1024;
+            let (q, root) = ntt_prime(60, n);
+            let ring = AnyRing::new(q, n, root).expect("ring");
+            let qw = q.to_u128() as u64;
+            let key = match &ring {
+                AnyRing::W64(r) => {
+                    let a: Vec<u64> = (0..n).map(|_| rng.next() % qw).collect();
+                    let pk: Vec<u64> = (0..n).map(|_| rng.next() % qw).collect();
+                    let u: Vec<u64> = (0..n).map(|_| rng.next() % qw).collect();
+                    pyfe4ai_core::rlwe::EncKey::new(r, &a, &[pk], Some(&[u]), qw >> 10)
+                }
+                _ => unreachable!("a 60-bit q has u64 words"),
+            };
+            Box::new(RlweTensor { ring, key, fixed: rng.next() | 1, raw: vec![0; 4096], x: vec![0; 4096] })
+        }
+        "shamir_seeded" => Box::new(ShamirSeeded { m, fixed: rng.next() | 1, raw: vec![0; 256 * 8], secrets: vec![0; 256],
+                                                     coeff_seed: 1 }),
         "reduce_u128" => {
             let fixed: Vec<u128> = (0..calls).map(|_| (rng.next() % Q60) as u128).collect();
             Box::new(ReduceU128 { m, v: fixed.clone(), scratch: fixed.clone(), fixed })
