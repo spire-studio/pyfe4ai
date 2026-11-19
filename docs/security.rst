@@ -703,45 +703,86 @@ and the pure-Python ristretto255 fallback. Nor is the BLS12-381 group of the
 native extension (arkworks), whose scalar multiplications are variable-time,
 also for secret scalars.
 
-For the lattice kernels of the native core (``rust/core``), the paths below
-were checked before 1.0 in two ways:
+For the lattice kernels of the native core (``rust/core``) and the garbling
+of ``bcfe/gc_ristretto255``, the paths below were checked before 1.0 in two
+ways:
 
 * by reading the release build's code for branches on secret values,
   secret-indexed memory accesses and instructions whose latency depends on
-  their operands;
+  their operands (for the signed reduction also its inlined assembly after
+  link-time optimisation);
 * by statistical timing tests in the style of dudect (Reparaz, Balasch and
-  Verbauwhede, DATE 2017): fixed against random secret inputs, both drawn by
-  the same code into the same buffer, Welch's t-test, judged by the effect
-  size against a constant-time control (SHAKE-256), on an Apple M4 Max with
-  nothing else timed.
+  Verbauwhede, DATE 2017; the targets of ``rust/core/examples/ct_dudect.rs``):
+  fixed against random secret inputs, Welch's t-test, judged by the effect
+  size against a constant-time control (SHAKE-256, whose two classes differ
+  by -0.0012 % [-0.0037, +0.0014] at 8·10^7 batches), on an Apple M4 Max
+  with nothing else timed. In the *seeded* design both classes run the same
+  code, which draws the secret from a seed into the same buffer, the fixed
+  class reusing one seed; in the *scalar* design the secret is one value.
+  An earlier design, which copied the inputs of the two classes from two
+  buffers, gave a false signal for the signed reduction; no row below rests
+  on it.
 
-Within the measured sample sizes no timing difference beyond the control's
-was found. That is evidence for these paths on this machine and compiler, not
-a guarantee.
+Except for the exact Gaussian sampler, no timing difference beyond the
+control's was found within the measured sample sizes. That is evidence for
+these paths on this machine and compiler, not a guarantee.
 
 .. list-table::
    :header-rows: 1
-   :widths: 40 60
+   :widths: 34 22 44
 
    * - Path
-     - Checked
+     - Design, batches
+     - Result
    * - reduction of signed values (noise, randomness, plaintext) mod ``q``
-     - no branch on the sign in the code; a division only for values of at
-       least ``q``, which noise never reaches; no difference at 8·10^7 batches
-       of 4096 reductions
-   * - Montgomery products (64-bit words)
-     - no difference at 4·10^7 batches
-   * - forward NTT (``n = 1024``)
-     - no difference at 6·10^7 batches
-   * - the MCFE Ring-LWE encryption of a chunk, the plaintext secret
-     - within the control at 2·10^6 batches
-   * - Shamir sharing of a key
-     - no difference at 5·10^7 batches
+     - seeded, 8·10^7 batches of 4096 reductions
+     - within the control; no branch on the sign in the assembly; a division
+       only for values of at least ``q``, which noise never reaches
+   * - Montgomery products (64-bit words), by a secret factor
+     - scalar, 4·10^7 batches of 4096
+     - no difference
+   * - forward NTT (``n = 1024``, 60-bit ``q``)
+     - seeded, 3·10^7
+     - within the control
+   * - the MCFE Ring-LWE encryption of 4096 elements (four chunks), the
+       plaintext secret
+     - seeded, 8·10^5
+     - within the control
+   * - Shamir sharing of 256 secrets, ``t = 3``
+     - seeded, 5·10^7
+     - within the control
+   * - the half-gates garbling of ``bcfe/gc_ristretto255`` (data bits
+       hardwired), the garbler's data bits secret; the same with the garbling
+       seed (offset and labels) secret
+     - seeded, 8·10^6 each
+     - within the control
+   * - the exact Gaussian sampler (FACCT, ``sigma = 1000``), 1024 values, the
+       random bits secret; the default sampler of the noise of the lattice
+       MIFE and MCFE schemes
+     - seeded, 2·10^5; two fixed seeds whose samples take the same
+       number of draws, 3·10^5
+     - **differences found.** The time follows the number of draws: a fixed
+       seed differs from random ones by -2.65 % [-2.67, -2.64] (a rejection sampler;
+       the number of draws does not depend on the values returned). Two seeds
+       whose samples take as many draws differ by -0.067 % [-0.079, -0.055]
+       (t = -10.8), so the time also depends on the drawn bits themselves.
+       With two seeds the test cannot tell whether through the values
+       returned or the candidates rejected. In the code, the fixed-point
+       exponential of the acceptance test has correction loops and
+       conversions to and from floating point whose time may depend on its
+       argument, and ``y = 0`` skips the test.
 
-Not checked yet: the exact Gaussian sampler (FACCT), decryption, the
-threshold partial decryptions, the dense-LWE key terms, the arithmetic of
-256-bit words (moduli of 125 bits or more), and the garbled circuits of
-``bcfe/gc_ristretto255``.
+Not checked yet, in the native core: the RNS products and the CRT
+(``rns.rs``, used by default by the lattice MIFE, MCFE, dMCFE and tMCFE
+schemes), the dealing of replicated key shares (``replicated.rs``), the
+dense-LWE encryption and key terms, the arithmetic of 256-bit words (moduli
+of 125 bits or more), decryption, and the threshold partial decryptions.
+Outside it, nothing was measured: the label selection by ``w`` and the label
+encryption of ``bcfe/gc_ristretto255`` were read but not timed, and in the
+native ristretto255 code the scalar multiplications are curve25519-dalek's,
+which is designed to be constant-time (not checked here), the encoding of a
+plaintext branches on its sign, and decryption's bounded discrete logarithm
+(baby-step giant-step) takes a time that depends on the result.
 
 Gaussian sampling
 -----------------

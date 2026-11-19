@@ -107,7 +107,8 @@ Responsible reporting of security issues is appreciated, especially for:
   native extension (arkworks) multiplies by scalars in variable time, also by
   secret scalars. In the native lattice core only the paths listed in the
   documentation's *Side channels* section were checked, which is not a
-  guarantee.
+  guarantee; among them, the time of the exact Gaussian sampler (FACCT)
+  was found to depend on its random bits beyond their number.
 - **ML adapter.** `FESchemeWrapper` runs the key generator and holds the
   master key (for `mcfe/ring_lwe_threshold` it also runs the decryption
   servers): one trust domain, meant for experiments, not for deployments.
