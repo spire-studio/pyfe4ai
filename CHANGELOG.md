@@ -119,7 +119,15 @@ compatibility).
   guaranteed constant-time) and the stability promise of the stable tier.
 - New pages `docs/compatibility.rst` and `docs/deprecations.rst`;
   `docs/security.rst` gains "Trust assumptions in brief" and "Side channels"
-  (the native paths checked, how, and what was not checked).
+  (the native paths checked, how, and what was not checked). The timing test
+  found that the native exact Gaussian sampler (FACCT) takes a time that
+  depends on its random bits beyond their number; no other checked path
+  differed beyond the control.
+- README Known Issues and `SECURITY.md` state the conditions of the 0.6 and
+  0.7 experimental parts: `bcfe/gc_ristretto255` assumes an honest
+  encryptor, the threshold key issuance needs mutually authenticated,
+  confidential channels, and the identity directory is key escrow; the README
+  counts and lists of schemes are tested against the registry.
 - The README status table, the documentation's table and the site matrix show
   each scheme's tier; the configuration page names each scheme's tier and its
   experimental option values.
@@ -137,8 +145,9 @@ compatibility).
   and no scheme of a fixture set leaves the stable tier (except to
   known-insecure).
 - `rust/core/examples/ct_dudect.rs`: the timing-leak harness of the
-  constant-time check (dudect-style, one buffer per measurement, judged by
-  effect size against a constant-time control).
+  constant-time check (dudect-style; the secret drawn from a seed into one
+  buffer for both classes, or a single secret value; judged by effect size
+  against a constant-time control).
 
 ## [0.5.0] — unreleased
 
