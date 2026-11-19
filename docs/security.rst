@@ -706,6 +706,14 @@ tables; ``label_bits`` takes 128 only.
   authority and a key holder together cannot open a second set of labels;
   the authority can still make slots for any ``w`` it likes, up to
   ``max_keys`` and to the slots the encryptors select.
+* **One copy of the authority's directory in use.** The bound on the keys
+  issued holds per directory: two copies of it (a second host, a backup
+  restored while the original goes on) each issue up to ``max_keys`` slots
+  and hand out the same slot ids again. Each slot list still holds at most
+  ``max_keys`` slots and each slot one key, so what a ciphertext reveals is
+  bounded as before, but the count of keys issued in all is not. Issue from
+  one copy only, and keep the directory free of macOS ACLs (the library reads
+  the mode bits only; see :doc:`api/bcfe`, "Issuance").
 * **Not constant-time.** The Python backend makes no constant-time claim and
   cannot wipe its copies of secrets. The native implementation selects by
   the bits of ``w`` and ``x`` with masks, draws its randomness from the

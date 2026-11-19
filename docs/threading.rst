@@ -24,9 +24,12 @@ Selection: backend, threads, sampler
   threads started inside the block use the process-wide selection.
 * :func:`pyfe4ai.backend.set_threads` and ``PYFE4AI_THREADS`` set how many
   threads *one* native call may use over the chunks of a tensor, the
-  elements of a BLS12-381 batch, the pairs of a product of pairings or the rows
-  of a batch of products over prepared G2 points (Rust threads, with the GIL
-  released), for the whole process. It does not limit
+  elements of a BLS12-381 batch, the pairs of a product of pairings, the rows
+  of a batch of products over prepared G2 points or the key positions of a
+  ``bcfe`` slot (Rust threads, with the GIL released), for the whole
+  process. For a ``bcfe`` slot that is making and checking its key pairs and
+  encrypting and decrypting its labels; the garbling runs on one thread
+  (times on 1 and 4 threads: "Sizes" in :doc:`api/bcfe`). It does not limit
   how many Python threads call the library: ``P`` Python threads running
   native calls at once use up to ``P`` times that many threads.
 * :func:`pyfe4ai.primitives.sampling.set_gaussian_sampler` and

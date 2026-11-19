@@ -17,7 +17,7 @@ padding) of their bytes. A reader accepts only these canonical forms
 first (bit ``i`` is bit ``i % 8`` of byte ``i // 8``, the unused high bits of
 the last byte zero). Lengths are fixed by the circuit: ``m`` key bits,
 ``n`` data bits, ``n_out`` output bits of ``C``; ``guard(C)`` has ``m + 1``
-key wires (:meth:`pyfe4ai.circuits.Circuit.guard`).
+key wires (:meth:`pyfe4ai.circuits.circuit.Circuit.guard`).
 
 **Digests** (``u8``, ``u32``, ``u64``: fixed-length little-endian integers;
 ``||``: concatenation; every field fixed-length or length-prefixed, so each
@@ -37,7 +37,7 @@ encoding is injective -- requirement I15 of the 0.6 security argument):
   ``gc_hash``, ``kem``, ``label_bits``, ``setup_nonce``).
 
   The requester's attribute set is not in the slot record nor in its digest:
-  the authority keeps its digest (:func:`~pyfe4ai.policy.attribute_set_digest`)
+  the authority keeps its digest (:func:`~pyfe4ai.policy.attributes.attribute_set_digest`)
   in the slot's private record, for its own audit. That digest is unsalted
   and attribute vocabularies are small, so a public copy would let every
   holder of the public parameters test guesses of a requester's attributes
@@ -56,7 +56,7 @@ encoding is injective -- requirement I15 of the 0.6 security argument):
 
   with ``gc`` the ASCII bytes of the ``gc`` marker, ``desc`` the UTF-8 bytes
   of the circuit description as canonical JSON
-  (:meth:`pyfe4ai.circuits.ParamCircuit.describe_json`: sorted keys, no
+  (:meth:`pyfe4ai.circuits.library.ParamCircuit.describe_json`: sorted keys, no
   spaces) and ``v = slot_list_version`` slot digests in list order. With the
   setup digest it covers every field of the public parameters: the scheme
   id, the markers, ``label_bits``, ``data_wires``, the circuit (its encoding
@@ -236,7 +236,7 @@ class BCFESetup(Record):
     gc_hash = Field("the gate hash, ``\"shake128\"``")
     label_bits = Field("int, the label length in bits (128)")
     data_wires = Field("``\"hardwired\"`` (data bits known to the garbler) or ``\"labels\"`` (SS10's input labels)")
-    circuit = Field("the circuit description (:meth:`~pyfe4ai.circuits.ParamCircuit.describe`: name, params, "
+    circuit = Field("the circuit description (:meth:`~pyfe4ai.circuits.library.ParamCircuit.describe`: name, params, "
                     "sizes, digest, the three layouts)")
     circuit_encoding = Field("base64, the ``CIRC v1`` encoding of ``C`` (without the guard bit)")
     circuit_digest = Field("hex, ``SHAKE-256(\"PYFE4AI-V06-BCFE-CIRCUIT\" || encoding)[0:32]``")
@@ -249,7 +249,7 @@ class BCFESlot(Record):
 
     slot_id = Field("int, never reused (ids increase and may skip a number)")
     label = Field("str or ``None``, the name the authority gave the slot (encryptors select slots by it)")
-    policy_digest = Field("hex or ``None``, :func:`~pyfe4ai.policy.policy_digest` of the issuance policy")
+    policy_digest = Field("hex or ``None``, :func:`~pyfe4ai.policy.encoding.policy_digest` of the issuance policy")
     pks = Field("base64, ``32 (2m + 1)`` bytes: ``P[j, 0] || P[j, 1]`` for ``j < m``, then ``P[m, 0]`` (the g bit)")
     slot_digest = Field("hex, :func:`slot_digest`")
 

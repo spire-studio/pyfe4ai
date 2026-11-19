@@ -4,20 +4,20 @@ The key holder's secret parameter ``w`` and the encryptor's data ``x`` are
 bit strings; a public circuit computes ``C(w, x)``, and a key for ``w`` lets
 its holder learn ``C(w, x)`` from a ciphertext of ``x``. The submodules are
 
-* :mod:`~pyfe4ai.circuits.circuit` -- :class:`Circuit`: the gate list (XOR,
+* :mod:`~pyfe4ai.circuits.circuit` -- :class:`~pyfe4ai.circuits.circuit.Circuit`: the gate list (XOR,
   AND, INV), the canonical encoding ``CIRC v1`` and its digest, the guard bit
-  of SS10 (Sahai and Seyalioglu, CCS 2010) as :meth:`Circuit.guard`, the wire
-  kinds and garbling costs (:meth:`Circuit.kinds`, :meth:`Circuit.stats`)
+  of SS10 (Sahai and Seyalioglu, CCS 2010) as :meth:`~pyfe4ai.circuits.circuit.Circuit.guard`, the wire
+  kinds and garbling costs (:meth:`~pyfe4ai.circuits.circuit.Circuit.kinds`, :meth:`~pyfe4ai.circuits.circuit.Circuit.stats`)
   and the plain evaluation;
-* :mod:`~pyfe4ai.circuits.builder` -- :class:`Builder`: gates with constant
+* :mod:`~pyfe4ai.circuits.builder` -- :class:`~pyfe4ai.circuits.builder.Builder`: gates with constant
   folding and structural hashing, word arithmetic (adders, shift-and-add and
   radix-4 Booth multiplication, comparisons, ReLU, argmax);
-* :mod:`~pyfe4ai.circuits.layout` -- :class:`Field` and the
-  :class:`KeyLayout`, :class:`DataLayout` and :class:`OutputLayout` that map
+* :mod:`~pyfe4ai.circuits.layout` -- :class:`~pyfe4ai.circuits.layout.Field` and the
+  :class:`~pyfe4ai.circuits.layout.KeyLayout`, :class:`~pyfe4ai.circuits.layout.DataLayout` and :class:`~pyfe4ai.circuits.layout.OutputLayout` that map
   values to bits and back;
 * :mod:`~pyfe4ai.circuits.library` -- ready circuits
-  (:func:`linear_threshold`, :func:`linear_score`, :func:`mlp`,
-  :func:`argmax_scores`) as :class:`ParamCircuit` objects bundling the
+  (:func:`~pyfe4ai.circuits.library.linear_threshold`, :func:`~pyfe4ai.circuits.library.linear_score`, :func:`~pyfe4ai.circuits.library.mlp`,
+  :func:`~pyfe4ai.circuits.library.argmax_scores`) as :class:`~pyfe4ai.circuits.library.ParamCircuit` objects bundling the
   circuit and its layouts.
 
 Garbling costs follow the half-gates scheme of Zahur, Rosulek and Evans
