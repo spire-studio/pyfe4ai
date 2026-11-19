@@ -38,7 +38,7 @@ def kg_config():
 def test_key_generator(kg_config):
     kg = ThresholdMIFEDDHKeyGenerator(kg_config)
 
-    assert kg.lambd == kg_config["sec_param"]
+    assert kg.sec_param == kg_config["sec_param"]
     assert kg.eta == kg_config["eta"]
     assert kg.n == kg_config["n"]
     assert kg.t == kg_config["t"]
@@ -328,3 +328,13 @@ def test_decrypt_refuses_a_key_share():
     whole = MIFEDDHKeyGenerator.get_decryption_keys(kg, "sid_0", credentials={"fusion_weight": dct_y})
     assert "sid" not in whole
     assert server.decrypt(dct_ct, whole, dct_y) == expected
+
+
+def test_lambd_is_deprecated(kg_config):
+    """lambd, the alias of sec_param of versions <= 0.2.0, is deprecated in 1.0.0 (freeze spec P-2, U-F3): it still
+    gives sec_param, with an FEDeprecationWarning that names the replacement."""
+    from pyfe4ai import FEDeprecationWarning
+
+    kg = ThresholdMIFEDDHKeyGenerator(kg_config)
+    with pytest.warns(FEDeprecationWarning, match=r"lambd is deprecated since pyfe4ai 1\.0\.0 .*; use sec_param\."):
+        assert kg.lambd == kg_config["sec_param"]

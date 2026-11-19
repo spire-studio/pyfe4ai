@@ -54,6 +54,7 @@ from pyfe4ai.core.formats.dl import MIFEDDHParameters
 from pyfe4ai.core.formats.threshold import TMIFEDDHKeyShare
 from pyfe4ai.core.formats.threshold import TMIFEDDHPartial
 from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError, warn_at_caller
+from pyfe4ai.core.exceptions import warn_deprecated
 from pyfe4ai.core.ids import as_id, check_id_list, is_id
 from pyfe4ai._validation import int_vector
 from pyfe4ai._validation import scale_to_int
@@ -87,7 +88,9 @@ class ThresholdMIFEDDHKeyGenerator(MIFEDDHKeyGenerator):
 
     @property
     def lambd(self) -> int:
-        """Alias of ``sec_param`` (name used by versions <= 0.2.0)."""
+        """Alias of ``sec_param`` (name used by versions <= 0.2.0). Deprecated since 1.0.0: it issues
+        :class:`~pyfe4ai.core.exceptions.FEDeprecationWarning` and goes in 2.0; use ``sec_param``."""
+        warn_deprecated("ThresholdMIFEDDHKeyGenerator.lambd", "1.0.0", "sec_param")
         return self.sec_param
 
     def setup(self) -> None:
