@@ -501,6 +501,33 @@ impl Target for ShamirSeeded {
     }
 }
 
+/// S2, seeded: the forward NTT (n = 1024, 60-bit NTT prime) of a polynomial drawn from a seed into the input buffer
+/// itself (fixed vs random seed), no copy from another buffer.
+struct NttSeeded {
+    ring: AnyRing,
+    q: u64,
+    fixed: u64,
+    input: Vec<u64>,
+    out: Vec<u64>,
+}
+impl Target for NttSeeded {
+    fn prepare(&mut self, class: usize, rng: &mut Rng) {
+        let mut state = seed_of(class, self.fixed, rng);
+        for x in self.input.iter_mut() {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            *x = state % self.q;
+        }
+    }
+    fn run(&mut self) {
+        if let AnyRing::W64(r) = &self.ring {
+            r.forward(black_box(&self.input), &mut self.out);
+        }
+        black_box(&self.out);
+    }
+}
+
 const TARGETS: &[(&str, &str, usize)] = &[
     ("mont_mul_u64", "S1: Montgomery product by a secret factor", 4096),
     ("reduce_i128", "S1 (1): signed reduction of noise-sized values", 4096),
@@ -517,6 +544,7 @@ const TARGETS: &[(&str, &str, usize)] = &[
     ("garble_seed", "S13, seeded: half-gates garbling, the garbling seed (delta, labels) secret", 1),
     ("rlwe_tensor", "S3, seeded: MCFE Ring-LWE encryption of 4096 elements (4 chunks), the plaintext secret", 1),
     ("shamir_seeded", "S4, seeded: Shamir sharing of 256 secrets, t = 3", 1),
+    ("ntt_seeded", "S2, seeded: forward NTT, n = 1024, the polynomial drawn into the input buffer", 1),
     ("reduce_u128", "S1 (2): reduction of 128-bit values", 1024),
     ("ntt_fwd", "S2: forward NTT, n = 1024, 60-bit q", 1),
     ("rlwe_encrypt", "S3: Ring-LWE encryption of one chunk, the plaintext secret", 1),
@@ -600,6 +628,13 @@ fn make(name: &str, calls: usize, rng: &mut Rng) -> Box<dyn Target> {
                 _ => unreachable!("a 60-bit q has u64 words"),
             };
             Box::new(RlweTensor { ring, key, fixed: rng.next() | 1, raw: vec![0; 4096], x: vec![0; 4096] })
+        }
+        "ntt_seeded" => {
+            let n = 1024;
+            let (q, root) = ntt_prime(60, n);
+            let ring = AnyRing::new(q, n, root).expect("ring");
+            let q = q.to_u128() as u64;
+            Box::new(NttSeeded { ring, q, fixed: rng.next() | 1, input: vec![0; n], out: vec![0; n] })
         }
         "shamir_seeded" => Box::new(ShamirSeeded { m, fixed: rng.next() | 1, raw: vec![0; 256 * 8], secrets: vec![0; 256],
                                                      coeff_seed: 1 }),
