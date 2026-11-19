@@ -120,10 +120,10 @@ limitations.
 ## Supported Versions
 
 Security fixes go into `main` and the next release; only the latest release
-(currently v0.4.0) is supported. v0.3.0 and earlier are affected by the
+(currently v0.4.1) is supported. v0.3.0 and earlier are affected by the
 Lagrange-multiplier leak of the threshold LWE layers described above, and
 v0.2.0 and earlier contain schemes that were found insecure; upgrade to
-v0.4.0 and re-key as the upgrade notes in `CHANGELOG.md` describe.
+v0.4.1 and re-key as the upgrade notes in `CHANGELOG.md` describe.
 
 ## Reporting a Vulnerability
 
