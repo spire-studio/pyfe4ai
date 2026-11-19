@@ -5,7 +5,7 @@
 PyFE4AI is a **research library**. Its schemes are reviewed internally
 against their papers (each has a review status), but it has **not undergone
 an external security audit** and is **not recommended for production use**;
-an audit package ships with the release. The default `toy` parameters are not
+an audit package is planned for the release. The default `toy` parameters are not
 secure, and nothing is guaranteed to be constant-time (the documentation's
 *Side channels* section lists what was checked).
 
@@ -16,6 +16,7 @@ compatible within 1.x, with a deprecation before any removal in 2.0. The one
 exception is a security fix: any release may refuse a scheme, an option or a
 kind of record found insecure, with a security advisory and an upgrade note.
 Experimental, unreviewed and known-insecure schemes, experimental options and
+capabilities (such as the threshold key issuance `distributed_keygen`) and
 pickles are not covered (see `docs/compatibility.rst`).
 
 ## Scope

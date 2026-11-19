@@ -36,9 +36,14 @@ whose construction or argument is this project's own (the packed layout of
 ``sife/fullysec_ring_lwe``; the threshold key issuance ``distributed_keygen``
 of ``sife/cp_ab_pairing``)
 (:data:`~pyfe4ai.core.stability.EXPERIMENTAL_OPTIONS`,
-:data:`~pyfe4ai.core.stability.EXPERIMENTAL_CAPABILITIES`). The records a
-scheme writes with them are experimental too
-(:func:`~pyfe4ai.core.stability.config_tier`). Records written under the
+:data:`~pyfe4ai.core.stability.EXPERIMENTAL_CAPABILITIES`). The records written
+with them are experimental too: those of an experimental option value
+(:func:`~pyfe4ai.core.stability.config_tier` tells them from a scheme's
+configuration), and those of an experimental capability, whatever the
+configuration (for ``distributed_keygen``: the key servers' public record, a
+server's share, a key request and a partial key, the records of
+:mod:`pyfe4ai.core.formats.keyissue`; the combined key is the scheme's own
+functional key, which is stable). Records written under the
 ``toy`` and the ``standard`` profiles have the same formats, so both are
 covered.
 
@@ -142,11 +147,16 @@ changelog, announced in a security advisory, and :doc:`upgrading` says how to
 move on. Reading records under ``toy`` stays possible where it can, so that
 old data can still be decrypted before re-keying.
 
+A security fix only refuses. It never renames a name or a field, and never
+changes the meaning or the encoding of anything that is still accepted.
+
 Not covered
 -----------
 
 * Pickles: objects pickled by one version do not load in another.
-* The experimental and known-insecure tiers, and experimental options.
+* The experimental and known-insecure tiers, experimental option values, and
+  experimental capabilities: ``distributed_keygen`` of ``sife/cp_ab_pairing``,
+  its classes and its four kinds of record.
 * The parameter sizes of the ``toy`` profile.
 * Internal modules: :mod:`pyfe4ai.primitives`, :mod:`pyfe4ai.backend` (except
   the keys of :func:`~pyfe4ai.backend.backend_info`), ``pyfe4ai.schemes.common``,

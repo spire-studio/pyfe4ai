@@ -79,12 +79,16 @@ def cells() -> dict:
 def _cell(rname: str, cname: str, schemes: list) -> str:
     if not schemes:
         return '<td class="none"><span aria-hidden="true">—</span><span class="sr-only">none</span></td>'
-    from pyfe4ai.core import stability
 
-    data = ";".join("{}|{}|{}|{}".format(s.id, s.status.status, "refused" if s.refused else "", stability.tier(s.id))
+    from pyfe4ai.core import status
+
+    def tier(s) -> str:  # "stable, experimental: distributed_keygen" (no ";": it separates the schemes)
+        return status.tier_text(s.family, s.variant).replace("; ", ", ")
+
+    data = ";".join("{}|{}|{}|{}".format(s.id, s.status.status, "refused" if s.refused else "", tier(s))
                     for s in schemes)
     marks = "".join('<i class="dot {}"></i>'.format(MARK[s.status.status]) for s in schemes)
-    spoken = ", ".join("{} {} ({} tier){}".format(s.id, s.status.status, stability.tier(s.id),
+    spoken = ", ".join("{} {} ({} tier){}".format(s.id, s.status.status, tier(s),
                                                   ", refused under standard" if s.refused else "")
                        for s in schemes)
     n = len(schemes)

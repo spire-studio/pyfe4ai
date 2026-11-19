@@ -115,7 +115,7 @@ compatibility).
 ### Documentation — 1.0 freeze
 
 - README and `SECURITY.md`: the security notice rewritten (not externally
-  audited, an audit package with the release; `toy` not secure; nothing
+  audited, an audit package planned for the release; `toy` not secure; nothing
   guaranteed constant-time) and the stability promise of the stable tier.
 - New pages `docs/compatibility.rst` and `docs/deprecations.rst`;
   `docs/security.rst` gains "Trust assumptions in brief" and "Side channels"

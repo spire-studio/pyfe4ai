@@ -37,7 +37,7 @@ encrypted linear inference, and an optional Rust core.
 > [Scheme Status](#scheme-status)): most were checked internally against
 > their papers, some are our own constructions or not yet reviewed, and two
 > are known to be insecure. No external audit has taken place; an audit
-> package ships with the release. The default `toy` security profile is
+> package is planned for the release. The default `toy` security profile is
 > **not secure**: pass `security_profile="standard"` (see
 > [Security Profiles](#security-profiles)). Nothing is guaranteed to be
 > constant-time: the Python layer is not, and in the native code only the
@@ -54,7 +54,8 @@ encrypted linear inference, and an optional Rust core.
 > that 1.0 wrote, and changes go through a deprecation
 > (`FEDeprecationWarning`) before removal in 2.0 — except for security fixes,
 > which may refuse insecure schemes, options or records in any release.
-> *Experimental* and *unreviewed* schemes, options marked experimental, and
+> *Experimental* and *unreviewed* schemes, options and capabilities marked
+> experimental (such as the threshold key issuance `distributed_keygen`), and
 > *known-insecure* schemes can change in any release without a deprecation
 > period, and pickles are never compatible across versions (see the
 > [compatibility policy](https://spire-studio.github.io/pyfe4ai/docs/compatibility.html)).

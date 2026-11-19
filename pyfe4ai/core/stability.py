@@ -18,7 +18,10 @@ Tier                  Review status                   Promise within 1.x
 A stable scheme can still have experimental parts -- option values
 (:data:`EXPERIMENTAL_OPTIONS`) or capabilities (:data:`EXPERIMENTAL_CAPABILITIES`)
 whose construction or argument is this project's own -- and the records
-written with them are experimental too (:func:`config_tier`). Security fixes
+written with them are experimental too: those of an experimental option value
+(:func:`config_tier` tells them from a configuration) and those of an
+experimental capability whatever the configuration (the key-issuance records
+of :mod:`pyfe4ai.core.formats.keyissue` for ``distributed_keygen``). Security fixes
 are the one exception to the promise: in any release a scheme, an option or
 a kind of record found insecure may become known-insecure and be refused by
 ``standard``.
