@@ -120,7 +120,7 @@ def check_identity(identity) -> str:
 
     The rule depends on the Unicode database of the running Python
     (``unicodedata.unidata_version``), so it is applied once, when the key
-    centre adds the identity; readers check only :func:`_identity_text`.
+    centre adds the identity; readers check only ``_identity_text``.
 
     Raises:
         FEValidationError: Unless *identity* is a ``str`` of 1 to

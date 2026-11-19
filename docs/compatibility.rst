@@ -9,7 +9,7 @@ Tiers
 -----
 
 Every registered scheme is in one tier, derived from its review status
-(:func:`pyfe4ai.get_scheme_status`) and nothing else
+(:func:`~pyfe4ai.core.status.get_scheme_status`) and nothing else
 (:mod:`pyfe4ai.core.stability`). Of the |n_schemes| registered schemes,
 |n_reviewed| are *reviewed*, hence stable:
 
@@ -36,9 +36,14 @@ whose construction or argument is this project's own (the packed layout of
 ``sife/fullysec_ring_lwe``; the threshold key issuance ``distributed_keygen``
 of ``sife/cp_ab_pairing``)
 (:data:`~pyfe4ai.core.stability.EXPERIMENTAL_OPTIONS`,
-:data:`~pyfe4ai.core.stability.EXPERIMENTAL_CAPABILITIES`). The records a
-scheme writes with them are experimental too
-(:func:`~pyfe4ai.core.stability.config_tier`). Records written under the
+:data:`~pyfe4ai.core.stability.EXPERIMENTAL_CAPABILITIES`). The records written
+with them are experimental too: those of an experimental option value
+(:func:`~pyfe4ai.core.stability.config_tier` tells them from a scheme's
+configuration), and those of an experimental capability, whatever the
+configuration (for ``distributed_keygen``: the key servers' public record, a
+server's share, a key request and a partial key, the records of
+:mod:`pyfe4ai.core.formats.keyissue`; the combined key is the scheme's own
+functional key, which is stable). Records written under the
 ``toy`` and the ``standard`` profiles have the same formats, so both are
 covered.
 
@@ -57,7 +62,7 @@ Python API
   :mod:`~pyfe4ai.schemes.mcfe` and :mod:`~pyfe4ai.schemes.quadratic` (the
   classes of stable schemes), of :mod:`pyfe4ai.ml`, :mod:`pyfe4ai.policy`
   and :mod:`pyfe4ai.core.status`.
-* :func:`pyfe4ai.create` and the registry queries, with the fields of
+* :func:`pyfe4ai.create <pyfe4ai.core.registry.create>` and the registry queries, with the fields of
   :class:`~pyfe4ai.core.registry.Scheme` and :class:`~pyfe4ai.core.registry.SchemeStatus` (fields may be
   added).
 * The public methods and properties of the classes of stable schemes. Pass
@@ -142,14 +147,23 @@ changelog, announced in a security advisory, and :doc:`upgrading` says how to
 move on. Reading records under ``toy`` stays possible where it can, so that
 old data can still be decrypted before re-keying.
 
+A security fix only refuses. It never renames a name or a field, and never
+changes the meaning or the encoding of anything that is still accepted.
+
 Not covered
 -----------
 
 * Pickles: objects pickled by one version do not load in another.
-* The experimental and known-insecure tiers, and experimental options.
+* The experimental and known-insecure tiers, experimental option values, and
+  experimental capabilities: ``distributed_keygen`` of ``sife/cp_ab_pairing``,
+  its classes and its four kinds of record.
+* The identity directory: ``pyfe4ai.ac``, its classes, its checks and the
+  records of ``pyfe4ai.core.formats.identity``, including what they add around
+  the keys and ciphertexts of ``sife/fullysec_ring_lwe`` (the records of the
+  scheme itself stay covered).
 * The parameter sizes of the ``toy`` profile.
 * Internal modules: :mod:`pyfe4ai.primitives`, :mod:`pyfe4ai.backend` (except
-  the keys of :func:`pyfe4ai.backend_info`), ``pyfe4ai.schemes.common``,
+  the keys of :func:`~pyfe4ai.backend.backend_info`), ``pyfe4ai.schemes.common``,
   ``pyfe4ai.schemes.threshold``, the :class:`~pyfe4ai.core.formats.record.Record`
   classes of :mod:`pyfe4ai.core.formats` (the fields of the records are
   covered, the classes are not), the native extension, every name that

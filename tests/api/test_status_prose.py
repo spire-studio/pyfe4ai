@@ -25,6 +25,9 @@ INDEX = (ROOT / "docs" / "index.rst").read_text(encoding="utf-8")
 STATUS = {"{}/{}".format(s.family, s.variant): s.status.status for s in registry.SCHEMES}
 AB = sorted("{}/{}".format(s.family, s.variant) for s in registry.SCHEMES if registry.ACCESS_CONTROL in s.capabilities)
 MARKED = (registry.UNREVIEWED, registry.KNOWN_INSECURE)  # the statuses the README marks by hand
+#: The statuses a row of one scheme states: the two above and *experimental*, which a row of one experimental scheme
+#: carries too (the bundled rows of the experimental threshold layers say it in a footnote instead).
+ROW_STATUSES = MARKED + (registry.EXPERIMENTAL,)
 
 #: Rows of the README's "Implemented Schemes" list that stand for one scheme each: (family, instantiation) -> id.
 #: A row that bundles several schemes ("DDH, Damgård-DDH, LWE") carries no marker and is not listed.
@@ -36,6 +39,13 @@ ROWS = {
     ("MCFE", "DDH over ristretto255"): "mcfe/ddh_ristretto255",
     ("MCFE", "KP-AB, attribute-based"): "mcfe/kp_ab_pairing",
     ("MCFE", "KP-AB with an attribute set per client"): "mcfe/kp_ab_pairing_per_client",
+    ("BCFE", "Garbled circuits over ristretto255, one slot per issued function"): "bcfe/gc_ristretto255",
+}
+
+#: Schemes named inside a bundled row with a marker of their own, which names the part that has the status
+#: ("dMCFE-DDH *(experimental carry mask)*"): (family, item) -> id.
+ITEMS = {
+    ("Decentralized", "dMCFE-DDH"): "mcfe/ddh_decentralized",
 }
 
 NUMBERS = {1: "One", 2: "Two", 3: "Three", 4: "Four", 5: "Five", 6: "Six"}
@@ -61,8 +71,36 @@ def implemented_rows() -> dict:
         marker = re.search(r"\*\(([^)]*)\)\*", cells[1])
         name = re.sub(r"\s*\*\([^)]*\)\*", "", cells[1]).strip()
         words = {w.strip() for w in marker.group(1).split(",")} if marker else set()
-        rows[(family, name)] = words & set(MARKED)
+        rows[(family, name)] = words & set(ROW_STATUSES)
     return rows
+
+
+def marked_items() -> list:
+    """(family, row without its markers, item, words of the item's marker) for every item of the list that carries
+    a marker of its own (the items of a row are separated by ", ")."""
+    section = README.split("## Implemented Schemes", 1)[1].split("\n## ", 1)[0]
+    found, family = [], None
+    for line in section.splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 3:
+            continue
+        head = re.match(r"\*\*(\w[\w-]*)\*\*", cells[0])
+        if head:
+            family = head.group(1)
+        if family is None:
+            continue
+        row = re.sub(r"\s*\*\([^)]*\)\*", "", cells[1]).strip()
+        for item in cells[1].split(", "):
+            marker = re.fullmatch(r"(.+?)\s*\*\(([^)]*)\)\*", item.strip())
+            if marker:
+                words = [w.strip() for w in marker.group(2).split(",")]
+                found.append((family, row, marker.group(1), words))
+    return found
+
+
+def implemented_items() -> dict:
+    """(family, item of a row) -> the first word of the item's own marker, for the items that carry one."""
+    return {(family, item): words[0].split()[0] for family, _, item, words in marked_items()}
 
 
 def test_every_marked_status_has_its_row():
@@ -74,7 +112,7 @@ def test_every_marked_status_has_its_row():
 def test_the_readme_marks_each_row_with_the_status_of_its_scheme(row):
     rows = implemented_rows()
     assert row in rows, "no README row {!r} under {}".format(row[1], row[0])
-    want = {STATUS[ROWS[row]]} & set(MARKED)
+    want = {STATUS[ROWS[row]]} & set(ROW_STATUSES)
     assert rows[row] == want, "{}: README says {}, the registry {}".format(ROWS[row], rows[row] or "nothing",
                                                                        STATUS[ROWS[row]])
 
@@ -82,6 +120,33 @@ def test_the_readme_marks_each_row_with_the_status_of_its_scheme(row):
 def test_no_other_row_carries_a_status_marker():
     stray = {row: words for row, words in implemented_rows().items() if words and row not in ROWS}
     assert not stray, stray
+
+
+@pytest.mark.parametrize("item", sorted(ITEMS), ids=lambda r: ITEMS[r])
+def test_a_scheme_marked_inside_a_bundled_row_has_that_status(item):
+    items = implemented_items()
+    assert item in items, "no README item {!r} with a marker under {}".format(item[1], item[0])
+    assert items[item] == STATUS[ITEMS[item]], "{}: README says {}, the registry {}".format(
+        ITEMS[item], items[item], STATUS[ITEMS[item]])
+
+
+def test_no_bundled_row_hides_a_status_marker():
+    """A status word in the marker of an item of a row that stands for several schemes belongs to an ITEMS entry."""
+    for family, row, item, words in marked_items():
+        if (family, row) in ROWS:
+            continue
+        if {w.split()[0] for w in words} & set(ROW_STATUSES):
+            assert (family, item) in ITEMS, "{} / {}: marker {} not in ITEMS".format(family, item, words)
+
+
+def test_every_experimental_scheme_is_marked_in_its_row_or_a_footnote():
+    """A row or an item of its own (ROWS, ITEMS), or one of the threshold layers that footnote 1 names."""
+    footnote = flat(README.split("> ¹", 1)[1].split("\n\n", 1)[0])
+    covered = set(ROWS.values()) | set(ITEMS.values())
+    for scheme in sorted(i for i, st in STATUS.items() if st == registry.EXPERIMENTAL and i not in covered):
+        assert scheme.endswith("_threshold"), scheme
+        assert "(*experimental*)" in footnote
+    assert all(STATUS[i] == registry.EXPERIMENTAL for i in ITEMS.values())
 
 
 def test_the_status_paragraph_names_exactly_the_known_insecure_schemes():

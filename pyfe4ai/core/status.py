@@ -99,7 +99,7 @@ def tier_text(family: str, variant: str) -> str:
 
 def markdown_table() -> str:
     """Render :data:`SCHEME_STATUS` as the README *Scheme Status* table, with the tier of each scheme in the 1.x
-    compatibility policy (:func:`tier_text`)."""
+    compatibility policy (``tier_text``)."""
     lines = [
         "| Scheme | Status | Fidelity | Tier | Construction | Notes |",
         "|---|---|---|---|---|---|",
