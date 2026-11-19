@@ -180,6 +180,30 @@ def test_the_r2_comparison_itself():
     assert recipes.encoding_of("ab12") == "str:hex" and recipes.encoding_of("12") == "str:decimal"
 
 
+def test_every_experimental_part_the_registry_names_is_in_the_stability_tables():
+    """What the registry's text marks experimental on a stable scheme is in pyfe4ai.core.stability (freeze spec
+    Sec. 2.2; review INT-1): a capability whose description says "experimental" is in EXPERIMENTAL_CAPABILITIES of
+    every stable scheme that has it, and an option value a stable scheme's note calls experimental ('Experimental:
+    option = "value"') is in EXPERIMENTAL_OPTIONS. Experimental schemes need no entry (bcfe's bounded_keys)."""
+    import re
+
+    from pyfe4ai.core import registry
+
+    marked_caps = {cap for cap, text in registry.CAPABILITIES.items() if "experimental" in text.lower()}
+    assert "distributed_keygen" in marked_caps
+    for scheme in registry.SCHEMES:
+        if stability.tier(scheme.id) != stability.STABLE:
+            continue
+        for cap in scheme.capabilities & marked_caps:
+            assert cap in stability.EXPERIMENTAL_CAPABILITIES.get(scheme.id, frozenset()), (scheme.id, cap)
+        for option, value in re.findall(r'Experimental: (\w+) = "([^"]+)"', scheme.status.note):
+            assert value in stability.EXPERIMENTAL_OPTIONS.get(scheme.id, {}).get(option, frozenset()), \
+                (scheme.id, option, value)
+    # and nothing is listed that the registry does not mark
+    for scheme_id, caps in stability.EXPERIMENTAL_CAPABILITIES.items():
+        assert set(caps) <= marked_caps, (scheme_id, caps)
+
+
 def test_the_tiers_follow_the_registry():
     import pyfe4ai
 
