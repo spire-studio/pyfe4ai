@@ -24,12 +24,13 @@ PyFE4AI is a research-oriented Python library of functional encryption (FE)
 for trustworthy AI. In functional encryption, a functional key reveals one
 chosen function of encrypted data and nothing else about it: here an inner
 product `<x, y>` with the key's weights `y`, a weighted sum over several
-clients' vectors, or a quadratic form. PyFE4AI implements 46 inner-product
-and quadratic FE schemes built on published constructions -- single-input,
-multi-input, multi-client, decentralized, threshold and function-hiding,
-under DDH, DCR, LWE, Ring-LWE and pairings -- behind one entry point,
-`pyfe4ai.create()`, with an adapter for federated gradient aggregation and
-encrypted linear inference, and an optional Rust core.
+clients' vectors, a quadratic form, or a circuit. PyFE4AI implements 47 FE
+schemes: 46 inner-product and quadratic schemes built on published
+constructions -- single-input, multi-input, multi-client, decentralized,
+threshold and function-hiding, under DDH, DCR, LWE, Ring-LWE and pairings --
+and one bounded-key scheme for circuits (*experimental*). They sit behind one
+entry point, `pyfe4ai.create()`, with an adapter for federated gradient
+aggregation and encrypted linear inference, and an optional Rust core.
 
 > [!WARNING]
 > **Research library, not externally audited — not recommended for
@@ -55,8 +56,9 @@ encrypted linear inference, and an optional Rust core.
 > (`FEDeprecationWarning`) before removal in 2.0 — except for security fixes,
 > which may refuse insecure schemes, options or records in any release.
 > *Experimental* and *unreviewed* schemes, options and capabilities marked
-> experimental (such as the threshold key issuance `distributed_keygen`), and
-> *known-insecure* schemes can change in any release without a deprecation
+> experimental (such as the threshold key issuance `distributed_keygen`), the
+> identity directory `pyfe4ai.ac` and its records, and *known-insecure*
+> schemes can change in any release without a deprecation
 > period, and pickles are never compatible across versions (see the
 > [compatibility policy](https://spire-studio.github.io/pyfe4ai/docs/compatibility.html)).
 > Versions up to 0.5 gave no such promise: when upgrading from them,
@@ -171,13 +173,14 @@ explains the families, and
 | | FH-Multi-IPE *(pairing)* | [AGT21b](https://doi.org/10.1007/978-3-030-90453-1_8) (TCC '21), Sec. 6.2 |
 | | KP-AB, attribute-based *(pairing)* | NPP22, Sec. 5.2 |
 | | KP-AB with an attribute set per client *(pairing, known-insecure)* | NPP22, Sec. 5.4 (see [Known Issues](#known-issues--security-notice)) |
-| **Decentralized** | dMCFE-DDH, dMCFE-LWE, dMCFE-Paillier | ABMPSW20, App. D, Fig. 14 (DMCFE from MCFE) |
+| **Decentralized** | dMCFE-DDH *(experimental carry mask)*, dMCFE-LWE, dMCFE-Paillier | ABMPSW20, App. D, Fig. 14 (DMCFE from MCFE) |
 | | dMCFE-Ring-LWE | BMMS21, Sec. 6 ([ABKW19](https://eprint.iacr.org/2019/020.pdf) + GDSum) |
 | | dMCFE-FH-Multi-IPE *(pairing)* | [NPS24](https://doi.org/10.62056/andkp2fgx) (IACR CiC '24), Fig. 1 |
 | **Threshold** | tMIFE (DDH, LWE), tMCFE (DDH, LWE, Ring-LWE, FH-Multi-IPE) | [Xu+24](https://doi.org/10.1109/TDSC.2024.3350206) (IEEE TDSC '24) ¹ |
 | **Quadratic** | SGP | [DSGPP18](https://eprint.iacr.org/2018/206.pdf) (ePrint), Fig. 2 |
 | | Multi-input quadratic FE (cross-user terms) | [AGT22](https://eprint.iacr.org/2022/1168.pdf) (TCC '22), Sec. 5 |
 | | Quad (public-key) | [Gay20](https://eprint.iacr.org/2020/093.pdf) (PKC '20), Fig. 4 |
+| **BCFE** (bounded keys, circuits) | Garbled circuits over ristretto255, one slot per issued function *(experimental)* | [SS10](https://doi.org/10.1145/1866307.1866359) (CCS '10), Sec. 3.3 + half-gates [ZRE15](https://eprint.iacr.org/2014/756.pdf) (EUROCRYPT '15) ² |
 
 > ¹ The threshold variants add a secret-sharing layer on top of the MIFE or
 > MCFE scheme; there is no separate paper for each combination. tMIFE-DDH and
@@ -187,6 +190,21 @@ explains the families, and
 > own (*experimental*). All of them assume honest-but-curious decryption
 > servers; see
 > [Threshold decryption and the ML adapter](https://spire-studio.github.io/pyfe4ai/docs/threshold_ml.html).
+>
+> ² `bcfe/gc_ristretto255` issues keys for circuits `C(w, x)` up to a total
+> of `max_keys` (a bound on the keys issued in all, not a collusion bound)
+> and assumes an honest encryptor; its changes to SS10 and its security
+> argument are our own (*experimental*, reviewed internally only; see
+> [Bounded-key FE](https://spire-studio.github.io/pyfe4ai/docs/security.html#bcfe-security)).
+
+Two experimental features build on the schemes without new ones: the
+**threshold key issuance** of `sife/cp_ab_pairing` (the capability
+`distributed_keygen`: a dealer Shamir-shares the master key among `s` key
+servers once, and any `t` of them issue a functional key jointly), and the **identity
+directory** `pyfe4ai.ac` (identity-based access control on lattices, one
+`sife/fullysec_ring_lwe` instance per identity). Both protocols and their
+arguments are our own; their conditions are in
+[Known Issues](#known-issues--security-notice).
 
 ## Scheme Status
 
@@ -370,9 +388,12 @@ The following limitations remain as well:
 | A corrupted client opens every functional key | `mcfe/kp_ab_pairing`, `mcfe/kp_ab_pairing_per_client` (*known-insecure*) | one corrupted client opens `k_{i,ipfe}` of every functional key with the rows of `Z_q` of its encryption key, so two keys whose policy the attributes do not satisfy give an inner product, an honest client's input among them, so the policy does not hold against a decryptor that colludes with one client; the proof of NPP22 Thm. 14 misses it; for functionality and performance experiments only |
 | Two rounds and two keys leak the difference of the rounds' inner products | `mcfe/kp_ab_pairing_per_client` (*known-insecure*) | the fifth coordinate of NPP22 Sec. 5.4 does not depend on the tag, so Thm. 25 as stated fails; for functionality and performance experiments only |
 | Toy default parameters | all schemes | not secure; pass `security_profile="standard"` (pairings stay at about 120–126 bits) |
-| No side-channel hardening | all schemes | CPython and big-integer arithmetic are not constant-time, nor is the pure-Python ristretto255 fallback |
+| No side-channel hardening | all schemes | CPython and big-integer arithmetic are not constant-time, nor are the pure-Python ristretto255 fallback and the BLS12-381 group of the native extension (variable-time scalar multiplication, also for secret scalars); in the native code only the paths listed under [Side channels](https://spire-studio.github.io/pyfe4ai/docs/security.html#side-channels) were checked |
 | No labels in multi-input FE | all MIFE schemes, quadratic `miqfe` | several inputs per client under one key reveal their differences; use MCFE for federated learning |
-| Constructions of our own | tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE, tMCFE-FH-Multi-IPE, the dMCFE-DDH carry mask | no published security proof (*experimental*) |
+| Constructions of our own | tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE, tMCFE-FH-Multi-IPE, the dMCFE-DDH carry mask, `bcfe/gc_ristretto255`, the threshold key issuance, the identity directory | no published security proof (*experimental*); the arguments of the last three are our own, reviewed internally only |
+| Honest encryptor assumed | `bcfe/gc_ristretto255` (*experimental*) | a malicious encryptor can learn bits of a key holder's `w` (another circuit, a selective failure); take ciphertexts from trusted encryptors and send neither results nor decryption failures back; `max_keys` bounds the keys issued in all, not a collusion; key holders learn their own `w` |
+| Authenticated, confidential channels | threshold key issuance (`distributed_keygen` of `sife/cp_ab_pairing`, *experimental*) | the requester and each key server need mutually authenticated, confidential channels (mTLS or an equivalent): whoever reads the `t` partial keys of a request, or replays it, gets the key; the approval rule must decide on the weights `y` too |
+| Key escrow | identity directory `pyfe4ai.ac` (*experimental*) | the key centre holds every identity's master key and authenticates nobody; without `expected_digest` (obtained over a trusted channel) a directory published by an attacker passes |
 | Honest-but-curious decryption servers | all threshold schemes | partial decryptions carry no proof of correctness; store and transmit the `sharing_id` of tMCFE-Ring-LWE key shares and partials |
 | One ciphertext per client and label | all MCFE / DMCFE schemes | a client must not encrypt two inputs under one label; the scheme classes do not enforce it |
 | Rounded Gaussian sampler by default | ALS16, the DCR schemes, ABDP15 LWE under `toy` | select the exact sampler with `"facct"` |
@@ -387,7 +408,10 @@ The following limitations remain as well:
 | A corrupted client opens every functional key | `mcfe/kp_ab_pairing`, `mcfe/kp_ab_pairing_per_client` | The encryption key of client `i` in NPP22 Sec. 5.2 Fig. 3 holds the first two rows of its basis `H_i` (times `p_i`) as vectors of `Z_q`, which it needs to raise the hashed points to `c_{i,ipfe}`. Applied to the `G2` coordinates of `k_{i,ipfe}` of any functional key (a multi-exponentiation, no pairing, no policy), the same rows give `[p_i <S, y>]_2` and `[p_i <U, y>]_2`. A key of weight on client `i` alone then gives `[p_i]_2`, and any key `y`, whose policy the round's attributes do not satisfy, gives `[p_i <x, y>]_T` from the ciphertexts and so `<x, y>`: the input of an honest client for `y = e_h`. Both keys are refused by the scheme (`FEKeyError`) and admissible under Def. 9, so the notion of Def. 12 fails with one corrupted client; the proof of Thm. 14 (App. B.4, G4 to G5) changes the corrupted client's rows and checks only the decryptions. `sife/kp_ab_pairing` has no such rows and is not affected. Kept for experiments and as the record of the attack (`test_a_corrupted_client_opens_every_key_and_reads_an_honest_input`). |
 | Two rounds and two keys leak the difference of the rounds' inner products | `mcfe/kp_ab_pairing_per_client` | In NPP22 Sec. 5.4 each client encrypts for an attribute set of its own, which opens a mix-and-match attack on keys of different policies; the paper adds a fifth coordinate `d_i` to `k_i,ipfe` with `sum theta_i d_i = 0`. That obstacle depends on the key and the client, not on the tag. Two keys of one `y` that open neither of two rounds (two tags: two labels, or two elements of one array), where the set of each client satisfies one of the keys in both rounds, therefore give the difference of the two rounds' inner products `<x - x', y>`. Remark 10 and the game of Fig. 2 allow the adversary to encrypt under a second tag, and Def. 9 calls it admissible (neither key opens either round), so Theorem 25 (App. B.5, whose proof is only sketched) fails as stated. `mcfe/kp_ab_pairing`, with one attribute set per tag, is not affected. The scheme is kept for functionality and performance experiments and as the record of the attack (`test_two_tags_and_two_keys_read_the_difference_of_two_rounds`). |
 | No labels in multi-input FE | all MIFE schemes and quadratic `miqfe` | By definition, the holder of a functional key may combine any ciphertext of each slot. Encrypting several inputs per client under one key epoch -- e.g. a gradient element by element -- therefore reveals the differences between that client's values. The ML adapter refuses MIFE for gradient aggregation; use MCFE (labelled ciphertexts) for federated learning. |
-| Constructions of our own | tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE, tMCFE-FH-Multi-IPE; the dMCFE-DDH carry mask | The threshold layers (noise flooding, replicated or Shamir key sharing, sharing in the exponent) and the carry mask of `mcfe/ddh_decentralized` are our own and have no published security proof; see the module docstrings. |
+| Constructions of our own | tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE, tMCFE-FH-Multi-IPE; the dMCFE-DDH carry mask; `bcfe/gc_ristretto255`; the threshold key issuance; the identity directory | The threshold layers (noise flooding, replicated or Shamir key sharing, sharing in the exponent) and the carry mask of `mcfe/ddh_decentralized` are our own and have no published security proof; see the module docstrings. The changes of `bcfe/gc_ristretto255` to SS10 and ZRE15, the key issuance protocol and the multi-instance directory have security arguments of our own, reviewed and re-checked within the project, neither published nor externally reviewed ([Bounded-key FE](https://spire-studio.github.io/pyfe4ai/docs/security.html#bcfe-security), [Threshold key issuance](https://spire-studio.github.io/pyfe4ai/docs/security.html#threshold-key-issuance-experimental), [Identity directory](https://spire-studio.github.io/pyfe4ai/docs/security.html#identity-directory-experimental)). |
+| Honest encryptor assumed | `bcfe/gc_ristretto255` | The claim is IND security in the random-oracle model under strong Diffie-Hellman in ristretto255, for an honest encryptor. A malicious encryptor can garble another circuit (the key holder's result becomes a function of `w` of its choice), cause a selective failure (a bad label at one position leaks a bit of `w` through whether decryption works) or use a different `x` per slot; the library reports every failure inside a component as one error, and nothing detects the third. Do not send results, or whether a decryption worked, back to an encryptor. `max_keys` bounds the keys issued in all (any number of them may collude; not the collusion bound of GVW12 / AV19), a key decrypts only ciphertexts made after its slot existed, the key holder learns its own `w`, and the labels are classical (hashed ElGamal over ristretto255: harvest now, decrypt later). |
+| Authenticated, confidential channels | threshold key issuance of `sife/cp_ab_pairing` (`distributed_keygen`) | A trusted dealer Shamir-shares the master key once; any `t` of `s` servers issue a key. The argument assumes static corruption of fewer than `t` servers and holds only with mutually authenticated, confidential channels (mTLS or an equivalent) between the requester and each server: a partial key is determined by the request, so anyone who reads the `t` partial keys of a request, or replays it, gets that user's key. `issue()` takes the peer identity the transport authenticated. Partial keys are secret (the library logs none), and the approval rule must decide on the weights too: a rule that checks only the attributes lets an approved user take `eta` keys of unit vectors. With `t = 1` there is no threshold. |
+| Key escrow | identity directory (`pyfe4ai.ac.identity_directory`) | The key centre runs one `sife/fullysec_ring_lwe` instance per identity and holds every identity's master key (key escrow, as in identity-based encryption); it authenticates nobody: whoever calls `get_decryption_keys` decides who the identity is. Ciphertexts name their identity in the clear. The library checks a directory against the digest the encryptor obtained over a trusted channel (`expected_digest`); without it, a directory published by an attacker passes. |
 | Honest-but-curious decryption servers | all threshold schemes (tMIFE, tMCFE) | Fewer than `t` servers learn nothing beyond the result, but partial decryptions carry no proof of correctness: one server that deviates changes the result without notice. `combine_decrypt` accepts partial decryptions for several enrolled sets (a list of `{sid: partial}` mappings) and raises `FESchemeError` if they disagree; this detects one faulty server (not which one) if every server is left out of some set, e.g. the `t + 1` subsets of size `t` of `t + 1` servers. tMCFE-DDH and tMCFE-FH-Multi-IPE servers decrypt only ciphertexts under the label they are asked for (`share_decrypt(..., label)`). tMCFE-Ring-LWE key shares and partial decryptions carry a `sharing_id`: store and transmit it with them. A combiner refuses partials of two sharings of one key (`MixedSharingsError`), which would otherwise decode to a wrong value inside the decoding bound; partials without an id combine only with each other, so a storage or transport layer that drops the id everywhere would let two sharings be mixed unnoticed. |
 | One ciphertext per client and label | all MCFE / DMCFE schemes | As in the papers, a client must not encrypt two different inputs under one label (or tag); the scheme classes do not enforce it (the ML adapter refuses a second encryption per client and label within one wrapper, and FH-DMCFE client objects a second key per `tag_f`). |
 | Rounded Gaussian by default outside the exact-default schemes | ALS16 (`fullysec_lwe`), the DCR schemes, and under `toy` ABDP15 SIFE / MIFE LWE (and the keys of tMIFE-LWE) | The proofs sample `D_{Z,sigma}`; these schemes follow the library-wide sampler, which by default rounds a continuous Gaussian: in double precision up to `2^40` (shared Box-Muller radii, ties to even, nothing beyond 8.57 sigma: 2^-25..2^-4 from i.i.d. `D_{Z,sigma}` per key or ciphertext per the October 2026 crypto review) and with MPFR at `bits(sigma) + 320` bits beyond. `sampler="facct"`, `gaussian_sampler("facct")`, `set_gaussian_sampler("facct")` or `PYFE4AI_GAUSSIAN_SAMPLER=facct` select the exact sampler for them (about 2^-185 per sample). The Ring-LWE MIFE / MCFE family, the dense-LWE MCFE keys `t` and SIFE FullySec Ring-LWE sample exactly by default and record it in their public parameters; for them the process-wide choice and the environment variable do not apply, and `standard` refuses `"rounded"`. ABDP15 (`sife/lwe`, `mife/lwe`; `mife/lwe_threshold` is refused under `standard`) does the same for its public keys' noise under `standard`, and under `toy` (also the keys of `mife/lwe_threshold`) follows its config's `gaussian_sampler`, else the library-wide choice; its public parameters record the sampler either way. The threshold flooding always uses the MPFR rounded sampler. Neither sampler is constant-time. |

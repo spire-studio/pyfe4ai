@@ -157,6 +157,10 @@ Not covered
 * The experimental and known-insecure tiers, experimental option values, and
   experimental capabilities: ``distributed_keygen`` of ``sife/cp_ab_pairing``,
   its classes and its four kinds of record.
+* The identity directory: ``pyfe4ai.ac``, its classes, its checks and the
+  records of ``pyfe4ai.core.formats.identity``, including what they add around
+  the keys and ciphertexts of ``sife/fullysec_ring_lwe`` (the records of the
+  scheme itself stay covered).
 * The parameter sizes of the ``toy`` profile.
 * Internal modules: :mod:`pyfe4ai.primitives`, :mod:`pyfe4ai.backend` (except
   the keys of :func:`~pyfe4ai.backend.backend_info`), ``pyfe4ai.schemes.common``,

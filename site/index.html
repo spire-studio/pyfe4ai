@@ -1031,7 +1031,8 @@ scheme = pyfe4ai.<span class="fn">get_scheme</span>(<span class="st">"mcfe/ring_
     <div class="sec-head">
       <span class="eyebrow">Security &amp; status</span>
       <h2 id="sec-title">Honest about what is reviewed — and what is not</h2>
-      <p>Every registered scheme carries a review status in the registry, reported at runtime by
+      <p>A research library, <strong>not externally audited</strong>: the review status below is the
+        project's own internal review, not an audit. Every registered scheme carries it in the registry, reported at runtime by
         <code>pyfe4ai.get_scheme_status("family/variant")</code>.</p>
     </div>
     <div class="grid grid-3 sec-cards">
@@ -1067,6 +1068,8 @@ scheme = pyfe4ai.<span class="fn">get_scheme</span>(<span class="st">"mcfe/ring_
           <li>Threshold servers are honest-but-curious: partial decryptions carry no proof of correctness; redundant enrolled sets can detect a deviating server.</li>
           <li>Decentralized MCFE needs no authority for functional keys, but its setup is trusted.</li>
           <li>The ML adapter holds the master key and plays every party: one trust domain, for experiments.</li>
+          <li>Bounded-key FE (BCFE-GC) assumes an honest encryptor; its security argument is the project's own.</li>
+          <li>Threshold key issuance needs mutually authenticated, confidential channels (mTLS or an equivalent); the identity directory is key escrow.</li>
           <li>No side-channel hardening; authenticated channels between parties are assumed.</li>
         </ul>
       </article>

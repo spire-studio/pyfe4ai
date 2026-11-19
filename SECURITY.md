@@ -16,8 +16,9 @@ compatible within 1.x, with a deprecation before any removal in 2.0. The one
 exception is a security fix: any release may refuse a scheme, an option or a
 kind of record found insecure, with a security advisory and an upgrade note.
 Experimental, unreviewed and known-insecure schemes, experimental options and
-capabilities (such as the threshold key issuance `distributed_keygen`) and
-pickles are not covered (see `docs/compatibility.rst`).
+capabilities (such as the threshold key issuance `distributed_keygen`), the
+identity directory `pyfe4ai.ac` and its records, and pickles are not covered
+(see `docs/compatibility.rst`).
 
 ## Scope
 
@@ -34,10 +35,13 @@ Responsible reporting of security issues is appreciated, especially for:
 
 - **What is protected.** The schemes protect inputs against the parties named
   in their papers. Every registered scheme carries a review status
-  (`pyfe4ai.get_scheme_status(family, variant)`, README *Scheme Status*):
-  four threshold layers and the dMCFE-DDH carry mask are our own constructions
-  (*experimental*, no published proof), and the DDH schemes over ristretto255
-  are not yet reviewed. The attribute-based `sife/cp_ab_pairing` and
+  (`pyfe4ai.get_scheme_status(family, variant)`, README *Scheme Status*).
+  Six are *experimental*, our own constructions with no published proof:
+  the threshold layers of `mife/lwe_threshold`, `mcfe/lwe_threshold`,
+  `mcfe/ring_lwe_threshold` and `mcfe/fh_multi_ipe_pairing_threshold`, the
+  carry mask of `mcfe/ddh_decentralized`, and the bounded-key scheme
+  `bcfe/gc_ristretto255`. The DDH schemes over ristretto255 are not yet
+  reviewed. The attribute-based `sife/cp_ab_pairing` and
   `sife/kp_ab_pairing` were checked against their papers (*reviewed*, which is
   not a security audit). Two schemes are *known-insecure*:
   `mcfe/kp_ab_pairing` (NPP22 Sec. 5.2, checked against the paper; the
@@ -47,7 +51,27 @@ Responsible reporting of security issues is appreciated, especially for:
   emit a `FESecurityWarning`, and `security_profile="standard"` refuses them, as
   it refuses every known-insecure scheme (see Known Issues).
 - **Network and parties.** The library adds no defence against active network
-  attackers and assumes authenticated channels between parties.
+  attackers and assumes authenticated channels between parties; the threshold
+  key issuance also needs them to be confidential (below).
+- **Experimental features of 0.6 and 0.7.** Their security arguments are the
+  project's own, reviewed and re-checked within the project, neither published
+  nor externally reviewed, and they hold only under these conditions:
+  - `bcfe/gc_ristretto255` assumes an **honest encryptor**: a malicious one can
+    garble another circuit or cause a selective failure and learn bits of a key
+    holder's `w`, so do not send results, or whether a decryption worked, back
+    to encryptors. `max_keys` bounds the keys issued in all, not a collusion
+    (any number of issued keys may collude); key holders learn their own `w`;
+    the labels are classical (harvest now, decrypt later).
+  - The **threshold key issuance** of `sife/cp_ab_pairing`
+    (`distributed_keygen`) needs mutually **authenticated, confidential
+    channels** (mTLS or an equivalent) between the requester and each key
+    server: whoever reads the `t` partial keys of a request, or replays it,
+    gets the key. It assumes static corruption of fewer than `t` servers, and
+    the approval rule must decide on the weights `y`, not only the attributes.
+  - The **identity directory** (`pyfe4ai.ac`) is **key escrow**: the key centre
+    holds every identity's master key and authenticates nobody. Ciphertexts
+    name their identity in the clear, and a directory is checked only against
+    an `expected_digest` the encryptor obtained over a trusted channel.
 - **Threshold schemes.** Decryption servers are honest-but-curious: partial
   decryptions carry no proof of correctness (redundant enrolled sets can
   detect a deviating server). In the LWE threshold layers
@@ -78,8 +102,12 @@ Responsible reporting of security issues is appreciated, especially for:
   call with ChaCha20 (not an SP 800-90A DRBG, which matters only for FIPS
   validation).
 - **Side channels.** Nothing is hardened against timing, cache or power
-  analysis: CPython and big-integer arithmetic are not constant-time, and
-  neither is the pure-Python ristretto255 fallback.
+  analysis: CPython and big-integer arithmetic are not constant-time, neither
+  is the pure-Python ristretto255 fallback, and the BLS12-381 group of the
+  native extension (arkworks) multiplies by scalars in variable time, also by
+  secret scalars. In the native lattice core only the paths listed in the
+  documentation's *Side channels* section were checked, which is not a
+  guarantee.
 - **ML adapter.** `FESchemeWrapper` runs the key generator and holds the
   master key (for `mcfe/ring_lwe_threshold` it also runs the decryption
   servers): one trust domain, meant for experiments, not for deployments.
@@ -138,8 +166,10 @@ limitations.
   ciphertext per slot, so this attack does not reach it, but its proof rests on
   the same Thm. 25.
 - **Experimental threshold layers** (tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE,
-  tMCFE-FH-Multi-IPE) and the dMCFE-DDH carry mask have no published security
-  proof; see their module docstrings.
+  tMCFE-FH-Multi-IPE), the dMCFE-DDH carry mask and `bcfe/gc_ristretto255`
+  have no published security proof; see their module docstrings, and the
+  Security Model above for the conditions of the bounded-key scheme, the
+  threshold key issuance and the identity directory.
 - The remaining limitations (no labels in multi-input FE, one ciphertext per
   client and label in MCFE, the parameter cache, the ML adapter's trust
   domain) are listed in the README.

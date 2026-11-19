@@ -75,3 +75,8 @@ def test_the_page_review_status_is_the_registry_status(page):
                       r"(\d+) known-insecure", page)
     assert label is not None
     assert [int(g) for g in label.groups()] == [sum(expected.values())] + [expected[s] for s in registry.STATUSES]
+
+
+def test_the_page_says_the_library_is_not_externally_audited(page):
+    """As the README and SECURITY.md do; the review status is internal."""
+    assert "not externally audited" in re.sub(r"<[^>]+>", "", page)

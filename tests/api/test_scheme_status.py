@@ -158,3 +158,79 @@ def test_no_text_calls_a_reviewed_attribute_based_scheme_unreviewed():
             if "unreviewed" in sentence.lower() or "not yet reviewed" in sentence:
                 bare = sentence.replace("mcfe/kp_ab_pairing_per_client", "")
                 assert not any(name in bare for name in named), (path.name, sentence)
+
+
+_NUMBERS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9}
+
+
+def _section(text, start, end):
+    """The text from the heading ``start`` to the next heading ``end``."""
+    begin = text.index(start)
+    return text[begin:text.index(end, begin + len(start))]
+
+
+def _ids(text):
+    return set(re.findall(r"`((?:sife|mife|mcfe|quadratic|bcfe)/\w+)`", text))
+
+
+def _with_status(status):
+    return {"/".join(key) for key, entry in st.SCHEME_STATUS.items() if entry.status == status}
+
+
+def test_the_readme_introduction_counts_the_registered_schemes():
+    """The opening paragraph counts every scheme, and the bounded-key ones apart."""
+    text = re.sub(r"\s+", " ", README.read_text(encoding="utf-8"))
+    found = re.search(r"PyFE4AI implements (\d+) FE schemes: (\d+) inner-product and quadratic schemes .*? and (\w+) "
+                      r"bounded-key scheme", text)
+    assert found is not None
+    families = Counter(family for family, _ in st.SCHEME_STATUS)
+    assert int(found.group(1)) == len(st.SCHEME_STATUS)
+    assert int(found.group(2)) == len(st.SCHEME_STATUS) - families["bcfe"]
+    assert _NUMBERS[found.group(3)] == families["bcfe"]
+
+
+def test_every_family_has_a_row_in_the_implemented_schemes_table():
+    table = _section(README.read_text(encoding="utf-8"), "## Implemented Schemes", "\n## ")
+    for family in {family for family, _ in st.SCHEME_STATUS}:
+        assert re.search(rf"^\| \*\*{registry.FAMILIES[family]}\*\*", table, flags=re.M), family
+    # every unreviewed scheme is marked in its row
+    assert table.count("*(unreviewed)*") == len(_with_status("unreviewed"))
+
+
+def test_the_readme_status_lists_are_the_registry_lists():
+    """The sentences after the counts name the experimental and the known-insecure schemes."""
+    text = re.sub(r"\s+", " ", README.read_text(encoding="utf-8"))
+    experimental = re.search(r"Experimental: (.*?)\. Unreviewed:", text).group(1)
+    insecure = re.search(r"Known-insecure: (.*?); see Known Issues", text).group(1)
+    assert _ids(experimental) == _with_status("experimental")
+    assert _ids(insecure) == _with_status("known-insecure")
+
+
+def test_security_md_names_the_experimental_and_known_insecure_schemes():
+    text = re.sub(r"\s+", " ", (README.parent / "SECURITY.md").read_text(encoding="utf-8"))
+    model = _section(text, "## Security Model", "## Known Issues")
+    found = re.search(r"(\w+) are \*experimental\*, our own constructions with no published proof: (.*?)\. The DDH", model)
+    assert found is not None
+    assert _NUMBERS[found.group(1).lower()] == len(_with_status("experimental"))
+    assert _ids(found.group(2)) == _with_status("experimental")
+    found = re.search(r"(\w+) schemes are \*known-insecure\*: (.*?)\. Their key generators", model)
+    assert found is not None
+    assert _NUMBERS[found.group(1).lower()] == len(_with_status("known-insecure"))
+    assert _ids(found.group(2)) == _with_status("known-insecure")
+
+
+def test_the_conditions_of_the_experimental_capabilities_are_stated():
+    """Every experimental capability, and the experimental schemes of a family of their own, appear in the README's
+    Known Issues and in SECURITY.md's security model."""
+    from pyfe4ai.core import stability
+
+    readme = _section(README.read_text(encoding="utf-8"), "## Known Issues", "\n## ")
+    model = _section((README.parent / "SECURITY.md").read_text(encoding="utf-8"), "## Security Model", "## Known Issues")
+    names = {cap for caps in stability.EXPERIMENTAL_CAPABILITIES.values() for cap in caps}
+    names |= {key for key in _with_status("experimental") if key.startswith("bcfe/")}
+    assert names
+    for name in names:
+        assert f"`{name}`" in readme, name
+        assert f"`{name}`" in model, name
+    for page in (readme, model):
+        assert "confidential" in page and "honest encryptor" in page.lower() and "escrow" in page.lower()
