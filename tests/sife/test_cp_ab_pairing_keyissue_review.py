@@ -61,7 +61,10 @@ def test_m1b_3_a_sid_that_is_not_encodable_is_a_validation_error():
 
 def test_m1b_4_the_history_given_to_the_rule_is_a_copy():
     """M1b-4 (Info): the rule gets the server's records; a rule that changes them must not change what later
-    calls see (the docstring asks it not to; the server should not depend on that)."""
+    calls see (the docstring asks it not to; the server should not depend on that).
+
+    Since the history is given as read-only views (08_history_copy_followup recommendation B), the careless
+    rule's write raises inside the rule, which refuses that request; the stored history stays as it was."""
     calls = []
 
     def approve(request, requester, history):
@@ -73,8 +76,9 @@ def test_m1b_4_the_history_given_to_the_rule_is_a_copy():
     _, _, _, servers, comb, _ = _system(approve=approve)
     first = comb.new_request("alice", [1, 0, 0], ["org:A"], ["ks1", "ks2", "ks3"])
     second = comb.new_request("bob", [0, 2, 0], ["org:B"], ["ks1", "ks2", "ks3"])
-    third = comb.new_request("carol", [0, 0, 3], ["org:C"], ["ks1", "ks2", "ks3"])
-    for request in (first, second, third):
-        servers["ks1"].issue(request, request["sid"])
-    assert calls[2] == [first["y"], second["y"]]
+    servers["ks1"].issue(first, first["sid"])                  # empty history: nothing to write
+    with pytest.raises(FEKeyError, match="raised TypeError"):
+        servers["ks1"].issue(second, second["sid"])
+    assert calls == [[], [first["y"]]]
+    assert [entry["y"] for _, entry in servers["ks1"]._history] == [first["y"]]
     assert ki.request_digest(first) == first["digest"]

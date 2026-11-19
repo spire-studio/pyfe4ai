@@ -480,8 +480,9 @@ It holds only under conditions the library does not provide:
   key. Send them to the authenticated requester only; do not log or store
   them (the library logs none).
 * **The approval rule decides on the weights too.** ``approve(request,
-  requester, history)`` sees the whole request, and only a return value of
-  ``True`` approves. A rule that checks the
+  requester, history)`` sees the whole request and the requests this server
+  accepted before, as read-only views; only a return value of ``True``
+  approves, and a rule that raises refuses. A rule that checks the
   attributes only lets an approved user take ``eta`` keys of unit vectors and
   recover every plaintext its attributes open. With ``t - 1`` corrupted
   servers, keys are as safe as the most permissive honest server's rule.
