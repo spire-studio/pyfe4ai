@@ -481,7 +481,10 @@ It holds only under conditions the library does not provide:
 * **The approval rule decides on the weights too.** ``approve(request,
   requester, history)`` sees the whole request and the requests this server
   accepted before, as read-only views; only a return value of ``True``
-  approves, and a rule that raises refuses. A rule that checks the
+  approves, and a rule that raises refuses. The refusal chains the rule's
+  exception, whose traceback reaches the server and its secret share: do not
+  keep these exceptions or pass them to error reporters that capture local
+  variables. A rule that checks the
   attributes only lets an approved user take ``eta`` keys of unit vectors and
   recover every plaintext its attributes open. With ``t - 1`` corrupted
   servers, keys are as safe as the most permissive honest server's rule.
