@@ -18,14 +18,19 @@ experimental, |n_unreviewed| unreviewed and |n_known_insecure|
 known-insecure. The experimental ones are the threshold layers of tMIFE-LWE,
 tMCFE-LWE, tMCFE-Ring-LWE and tMCFE-FH-Multi-IPE and the carry mask of
 dMCFE-DDH: our own constructions on top of published schemes, with no
-published security proof. The known-insecure one is
-``mcfe/kp_ab_pairing_per_client`` (NPP22 Sec. 5.4, an attribute set for each
-client): the fifth coordinate of the paper does not depend on the tag, so two
-keys of one ``y`` that open neither of two rounds, where the set of each client
-satisfies one of the keys in both rounds, give the difference of the two
-rounds' inner products, and Theorem 25 of the paper fails as stated.
-It is kept for functionality and performance experiments and as the record of
-the attack. Query a scheme at runtime with
+published security proof. The known-insecure ones are
+``mcfe/kp_ab_pairing`` (NPP22 Sec. 5.2: one corrupted client opens every
+functional key with the rows of ``Z_q`` of its encryption key, so two keys
+whose policy the attributes do not satisfy give an inner product, an honest
+client's input among them; the proof of Theorem 14 misses this) and
+``mcfe/kp_ab_pairing_per_client`` (Sec. 5.4, an attribute set for each
+client), which has that defect too and another: the fifth coordinate of the
+paper does not depend on the tag, so two keys of one ``y`` that open neither
+of two rounds, where the set of each client satisfies one of the keys in both
+rounds, give the difference of the two rounds' inner products, and Theorem 25
+of the paper fails as stated. They are kept for functionality and
+performance experiments and as the record of the attacks. Query a scheme at
+runtime with
 :func:`pyfe4ai.get_scheme_status(family, variant)
 <pyfe4ai.core.status.get_scheme_status>` (or ``"family/variant"``) or
 :attr:`FESchemeWrapper(...).status <pyfe4ai.ml.FESchemeWrapper.status>`;
@@ -184,9 +189,11 @@ In ``sife/cp_ab_pairing`` the policy is in the ciphertext and the attributes
 are in the key (ciphertext-policy); in ``sife/kp_ab_pairing``,
 ``mcfe/kp_ab_pairing`` and ``mcfe/kp_ab_pairing_per_client`` the policy is in
 the key and the attributes are in the ciphertext (key-policy). All run over
-pairings. The first three were checked against their papers (status *reviewed*:
-checked against the cited construction, no security defect known; it is not a
-security audit) and the last one is known-insecure (below). The constructions
+pairings. ``sife/cp_ab_pairing`` and ``sife/kp_ab_pairing`` were checked
+against their papers (status *reviewed*: checked against the cited
+construction, no security defect known, not a security audit);
+``mcfe/kp_ab_pairing`` and ``mcfe/kp_ab_pairing_per_client`` are
+known-insecure (below). The constructions
 are those of Abdalla, Catalano, Gay and Ursu (ACGU20, ASIACRYPT 2020, ePrint
 2020/577) and of Nguyen, Phan and Pointcheval (NPP22, ASIACRYPT 2022, ePrint
 2022/215, revision of 2022-09-18); the module documentation of each scheme
@@ -277,12 +284,13 @@ What none of the proofs covers, and what the schemes share:
   with the decryptor and does not protect against the decryptor itself; a
   signature does, and anyone can verify it. What a decryption
   does and does not catch is on :doc:`api/ml` and in the module documentation.
-* **Reviewed against the papers, not audited, not constant-time.** The first
-  three were checked against their papers (status *reviewed*, with the limits
-  above and the fidelity of the status table); that is not a security audit.
-  The two multi-client schemes are known-insecure (below). None of the four is
-  constant-time (see above, and the two sections on the timing of ``encrypt``
-  below).
+* **Reviewed against the papers, not audited, not constant-time.**
+  ``sife/cp_ab_pairing`` and ``sife/kp_ab_pairing`` were checked against
+  their papers (status *reviewed*, with the limits above and the fidelity of
+  the status table); that is not a security audit. ``mcfe/kp_ab_pairing`` and
+  ``mcfe/kp_ab_pairing_per_client`` are known-insecure (below). None of the
+  four is constant-time (see above, and the two sections on the timing of
+  ``encrypt`` below).
 
 ``mcfe/kp_ab_pairing``: a corrupted client opens every functional key
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
