@@ -1103,3 +1103,29 @@ def test_no_descriptor_is_left_open(tmp_path):
     with pytest.raises(FEConfigError):
         slots.read_json_file(tmp_path / "missing" / "x.json", private=True)
     assert len(os.listdir("/dev/fd")) == before
+
+
+def test_threads_that_create_the_lock_file_at_once_all_get_it(tmp_path):
+    """The first calls on a new directory create the lock file together. On
+    macOS, of two threads that ``openat`` one new name with ``O_CREAT`` at
+    once, one can fail with ``ENOENT``; the store creates it with ``O_EXCL``
+    and opens an existing one without ``O_CREAT``, so every call gets it."""
+    for trial in range(30):
+        directory = tmp_path / "d{}".format(trial)
+        os.mkdir(directory, 0o700)
+        stores = [SlotStore(directory) for _ in range(4)]
+        barrier, errors, ids = threading.Barrier(4), [], []
+
+        def run(t):
+            try:
+                barrier.wait()
+                ids.append(stores[t].issue(dkey((trial, t)), 100, Builder()).slot_id)
+            except Exception as exc:  # pragma: no cover - reported below
+                errors.append(exc)
+
+        threads = [threading.Thread(target=run, args=(t,)) for t in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(30)
+        assert not errors and sorted(ids) == [0, 1, 2, 3]

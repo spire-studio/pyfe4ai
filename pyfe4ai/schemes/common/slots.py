@@ -37,7 +37,7 @@ Files of the directory:
 
 :meth:`SlotStore.issue` runs under one exclusive lock (the store object's
 lock for its threads, the file lock for every other process and store
-object): look the dedup key up; refuse with the same :class:`FEKeyError`
+object): look the dedup key up; refuse with the same :class:`~pyfe4ai.core.exceptions.FEKeyError`
 and the same text, hit or miss, once the list holds ``max_keys`` slots (so
 that a requester cannot test functions through the deduplication once the
 cap is reached); return a hit without building; otherwise
@@ -79,7 +79,7 @@ key no one holds: its retry is a hit the scheme refuses (a lost key is not
 issued again).
 
 Temporary files of a crashed writer are removed by the next locked call.
-Unreadable, truncated or inconsistent files raise :class:`FEConfigError`
+Unreadable, truncated or inconsistent files raise :class:`~pyfe4ai.core.exceptions.FEConfigError`
 (fail closed): the store never starts empty while its files exist. The two
 files are consistent when every listed slot has its private record and its
 one dedup entry, a pending copy of a listed slot equals the listed record,
@@ -99,7 +99,7 @@ the umask may clear bits). Each store file is opened with ``O_NOFOLLOW``
 (and ``O_NONBLOCK``, so that a FIFO cannot block the call) and must be a
 regular file of that user that no other user can write; the private file
 and the lock file must not be readable by others either. Anything else
-raises :class:`FEConfigError` naming the path and the reason (never the
+raises :class:`~pyfe4ai.core.exceptions.FEConfigError` naming the path and the reason (never the
 content). The directories above the store are not checked (a cache
 directory reached through a symbolic link works), nor are the files other
 code keeps in the directory. Alternative not taken: trust the caller's
@@ -177,7 +177,7 @@ logger = logging.getLogger(__name__)
 
 #: The public slot list.
 PUBLIC_FILE = "slots.json"
-#: The private side: reservations, private records, the dedup index.
+#: The private side (reservations, private records, the dedup index).
 PRIVATE_FILE = "slots.private.json"
 #: The file lock.
 LOCK_FILE = "slots.lock"
@@ -340,6 +340,26 @@ def _open_directory(path: str) -> int:
     return fd
 
 
+def _os_open(path: str, target: str, flags: int, rel: dict) -> int:
+    """``os.open(target, flags, 0o600, **rel)``. Relative to a directory
+    descriptor and with ``O_CREAT``, the file is created with ``O_EXCL`` and,
+    if it exists, opened without ``O_CREAT``: on macOS, of two threads that
+    ``openat`` one new name with ``O_CREAT`` at once, one can fail with
+    ``ENOENT`` (an open by path retries in the kernel)."""
+    if not (rel and flags & os.O_CREAT):
+        return os.open(target, flags, PRIVATE_MODE, **rel)
+    for _ in range(100):
+        try:
+            return os.open(target, flags | os.O_EXCL, PRIVATE_MODE, **rel)
+        except FileExistsError:  # also a symbolic link or another kind of file: refused by the open below
+            pass
+        try:
+            return os.open(target, flags & ~os.O_CREAT, PRIVATE_MODE, **rel)
+        except FileNotFoundError:  # removed in between: create it again
+            continue
+    raise FEConfigError("the slot store file {} keeps disappearing while it is opened".format(path))
+
+
 def _open_file(path: str, flags: int, private: bool, dir_fd: Optional[int] = None) -> Optional[int]:
     """A descriptor of the store file *path*, opened without following a
     symbolic link and without blocking on a FIFO, once it is checked to be a
@@ -350,7 +370,7 @@ def _open_file(path: str, flags: int, private: bool, dir_fd: Optional[int] = Non
     messages."""
     target, rel = (os.path.basename(path), {"dir_fd": dir_fd}) if dir_fd is not None else (path, {})
     try:
-        fd = os.open(target, flags | os.O_NOFOLLOW | os.O_NONBLOCK, PRIVATE_MODE, **rel)
+        fd = _os_open(path, target, flags | os.O_NOFOLLOW | os.O_NONBLOCK, rel)
     except FileNotFoundError:
         return None
     except OSError as exc:  # ELOOP for a symbolic link, EISDIR for a directory opened for writing, ...
@@ -611,6 +631,9 @@ class SlotStore:
                 try:
                     fd = _open_file(os.path.join(self._dir, LOCK_FILE), os.O_RDWR | os.O_CREAT, private=True,
                                     dir_fd=self._rel())
+                    if fd is None:  # O_CREAT: only if the directory went away meanwhile
+                        raise FEConfigError("the slot store's lock file {} cannot be created".format(
+                            os.path.join(self._dir, LOCK_FILE)))
                     self._lock_fd = fd
                     try:
                         if stat.S_IMODE(os.fstat(fd).st_mode) != PRIVATE_MODE:  # a umask took 0o600 bits
@@ -794,7 +817,7 @@ class SlotStore:
 
         1. Look *dedup_key* up.
         2. If the list holds ``max_keys`` slots or more: raise
-           :class:`FEKeyError`, with the same text whether step 1 found a slot
+           :class:`~pyfe4ai.core.exceptions.FEKeyError`, with the same text whether step 1 found a slot
            or not; nothing is written.
         3. Found: return ``IssueResult("hit", slot_id, private)`` without
            calling *build*.
