@@ -286,6 +286,7 @@
         var items = c.getAttribute("data-schemes").split(";").map(function (t) {
           var f = t.split("|");
           return '<li><code>' + esc(f[0]) + '</code><span class="badge ' + (STATUS_CLASS[f[1]] || "unr") + '">' + esc(f[1]) + "</span>" +
+            (f[3] ? '<span class="badge tier">' + esc(f[3]) + " tier</span>" : "") +
             (f[2] ? '<span class="badge ref">refused under standard</span>' : "") + "</li>";
         });
         detail.innerHTML = "<h4>" + esc(c.getAttribute("data-cell")) + "</h4><ul>" + items.join("") + "</ul>";

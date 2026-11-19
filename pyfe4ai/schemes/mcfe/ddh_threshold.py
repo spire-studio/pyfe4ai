@@ -569,7 +569,7 @@ class ThresholdMCFEDDH(IPFEAbsCrypto):
         )
 
     @staticmethod
-    def L(sid, sid_v: dict, lst_sid_enrolled: list, modulus) -> gp.mpz:
+    def _lagrange_at_zero(sid, sid_v: dict, lst_sid_enrolled: list, modulus) -> gp.mpz:
         """Compute the Lagrange coefficient of *sid* at 0 modulo the group order.
 
         Args:

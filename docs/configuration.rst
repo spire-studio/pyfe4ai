@@ -244,7 +244,7 @@ The options of every key generator above, where a scheme changes them, and the s
 ``sife/ddh``
 ~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.SIFEDDHConfig`; kind ``dl``.
+:class:`~pyfe4ai.core.config.SIFEDDHConfig`; kind ``dl``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -292,7 +292,7 @@ Crypto objects also take:
 ``sife/ddh_ristretto255``
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.SIFEDDHRistretto255Config`; kind ``ec``.
+:class:`~pyfe4ai.core.config.SIFEDDHRistretto255Config`; kind ``ec``; tier ``experimental`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -335,7 +335,7 @@ Crypto objects also take:
 ``sife/lwe``
 ~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.SIFELWEConfig`; kind ``lwe_abdp15``.
+:class:`~pyfe4ai.core.config.SIFELWEConfig`; kind ``lwe_abdp15``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -403,7 +403,7 @@ Crypto objects also take:
 ``sife/paillier``
 ~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.SIFEPaillierConfig`; kind ``dcr``.
+:class:`~pyfe4ai.core.config.SIFEPaillierConfig`; kind ``dcr``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -447,7 +447,7 @@ Crypto objects also take:
 ``sife/damgard``
 ~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.SIFEDamgardConfig`; kind ``dl``.
+:class:`~pyfe4ai.core.config.SIFEDamgardConfig`; kind ``dl``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -486,7 +486,7 @@ Crypto objects also take:
 ``sife/ring_lwe``
 ~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.SIFERingLWEConfig`; kind ``ring_lwe``.
+:class:`~pyfe4ai.core.config.SIFERingLWEConfig`; kind ``ring_lwe``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -554,7 +554,7 @@ Crypto objects also take:
 ``sife/fullysec_ring_lwe``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.SIFEFullySecRingLWEConfig`; kind ``ring_lwe``.
+:class:`~pyfe4ai.core.config.SIFEFullySecRingLWEConfig`; kind ``ring_lwe``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -610,7 +610,7 @@ Crypto objects also take:
      - 
      - ``auto`` (the smallest admitting a modulus) or an int >= 5
    * - ndarray_layout
-     - ndarray ciphertexts: one per element, or packed (one per ``ring_n`` elements)
+     - ndarray ciphertexts: one per element, or packed (one per ``ring_n`` elements); **experimental** value: ``packed`` (not covered by the compatibility policy)
      - ``'elementwise'``
      - 
      - ``elementwise``, ``packed``
@@ -632,7 +632,7 @@ Crypto objects also take:
 ``sife/fullysec_lwe``
 ~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.SIFEFullySecLWEConfig`; kind ``lwe_matrix``.
+:class:`~pyfe4ai.core.config.SIFEFullySecLWEConfig`; kind ``lwe_matrix``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -671,7 +671,7 @@ Crypto objects also take:
 ``sife/ddh_dynamic``
 ~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.SIFEDDHDynamicConfig`; kind ``dl``.
+:class:`~pyfe4ai.core.config.SIFEDDHDynamicConfig`; kind ``dl``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -719,7 +719,7 @@ Crypto objects also take:
 ``sife/fh_ipe_pairing``
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.SIFEFHIPEPairingConfig`; kind ``pairing``.
+:class:`~pyfe4ai.core.config.SIFEFHIPEPairingConfig`; kind ``pairing``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -758,7 +758,7 @@ Crypto objects also take:
 ``sife/part_fh_ipe_pairing``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.SIFEPartFHIPEPairingConfig`; kind ``pairing``.
+:class:`~pyfe4ai.core.config.SIFEPartFHIPEPairingConfig`; kind ``pairing``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -807,7 +807,7 @@ Crypto objects also take:
 ``sife/cp_ab_pairing``
 ~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.SIFECPABPairingConfig`; kind ``pairing``.
+:class:`~pyfe4ai.core.config.SIFECPABPairingConfig`; kind ``pairing``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -866,7 +866,7 @@ Crypto objects also take:
 ``sife/kp_ab_pairing``
 ~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.SIFEKPABPairingConfig`; kind ``pairing``.
+:class:`~pyfe4ai.core.config.SIFEKPABPairingConfig`; kind ``pairing``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -915,7 +915,7 @@ Crypto objects also take:
 ``mife/ddh``
 ~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.MIFEDDHConfig`; kind ``dl``.
+:class:`~pyfe4ai.core.config.MIFEDDHConfig`; kind ``dl``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -963,7 +963,7 @@ Crypto objects also take:
 ``mife/ddh_ristretto255``
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.MIFEDDHRistretto255Config`; kind ``ec``.
+:class:`~pyfe4ai.core.config.MIFEDDHRistretto255Config`; kind ``ec``; tier ``experimental`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -1006,7 +1006,7 @@ Crypto objects also take:
 ``mife/lwe``
 ~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.MIFELWEConfig`; kind ``lwe_abdp15``.
+:class:`~pyfe4ai.core.config.MIFELWEConfig`; kind ``lwe_abdp15``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -1074,7 +1074,7 @@ Crypto objects also take:
 ``mife/paillier``
 ~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.MIFEPaillierConfig`; kind ``dcr``.
+:class:`~pyfe4ai.core.config.MIFEPaillierConfig`; kind ``dcr``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -1118,7 +1118,7 @@ Crypto objects also take:
 ``mife/damgard``
 ~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.MIFEDamgardConfig`; kind ``dl``.
+:class:`~pyfe4ai.core.config.MIFEDamgardConfig`; kind ``dl``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -1157,7 +1157,7 @@ Crypto objects also take:
 ``mife/ring_lwe``
 ~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.MIFERingLWEConfig`; kind ``ring_lwe``.
+:class:`~pyfe4ai.core.config.MIFERingLWEConfig`; kind ``ring_lwe``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -1229,7 +1229,7 @@ Crypto objects also take:
 ``mife/fullysec_lwe``
 ~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.MIFEFullySecLWEConfig`; kind ``lwe_matrix``.
+:class:`~pyfe4ai.core.config.MIFEFullySecLWEConfig`; kind ``lwe_matrix``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -1268,7 +1268,7 @@ Crypto objects also take:
 ``mife/fh_ipe_pairing``
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.MIFEFHIPEPairingConfig`; kind ``pairing``.
+:class:`~pyfe4ai.core.config.MIFEFHIPEPairingConfig`; kind ``pairing``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -1307,7 +1307,7 @@ Crypto objects also take:
 ``mife/fh_multi_ipe_pairing``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.MIFEFHMultiIPEPairingConfig`; kind ``pairing``.
+:class:`~pyfe4ai.core.config.MIFEFHMultiIPEPairingConfig`; kind ``pairing``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -1356,7 +1356,7 @@ Crypto objects also take:
 ``mife/ddh_threshold``
 ~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.ThresholdMIFEDDHConfig`; kind ``dl``.
+:class:`~pyfe4ai.core.config.ThresholdMIFEDDHConfig`; kind ``dl``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -1419,7 +1419,7 @@ Crypto objects also take:
 ``mife/lwe_threshold``
 ~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.ThresholdMIFELWEConfig`; kind ``lwe_abdp15``.
+:class:`~pyfe4ai.core.config.ThresholdMIFELWEConfig`; kind ``lwe_abdp15``; tier ``experimental`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -1525,7 +1525,7 @@ Crypto objects also take:
 ``mcfe/ddh``
 ~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.MCFEDDHConfig`; kind ``dl``.
+:class:`~pyfe4ai.core.config.MCFEDDHConfig`; kind ``dl``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -1573,7 +1573,7 @@ Crypto objects also take:
 ``mcfe/ddh_ristretto255``
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.MCFEDDHRistretto255Config`; kind ``ec``.
+:class:`~pyfe4ai.core.config.MCFEDDHRistretto255Config`; kind ``ec``; tier ``experimental`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -1616,7 +1616,7 @@ Crypto objects also take:
 ``mcfe/lwe``
 ~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.MCFELWEConfig`; kind ``lwe``.
+:class:`~pyfe4ai.core.config.MCFELWEConfig`; kind ``lwe``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -1670,7 +1670,7 @@ Crypto objects also take:
 ``mcfe/paillier``
 ~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.MCFEPaillierConfig`; kind ``dcr``.
+:class:`~pyfe4ai.core.config.MCFEPaillierConfig`; kind ``dcr``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -1714,7 +1714,7 @@ Crypto objects also take:
 ``mcfe/damgard``
 ~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.MCFEDamgardConfig`; kind ``dl``.
+:class:`~pyfe4ai.core.config.MCFEDamgardConfig`; kind ``dl``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -1758,7 +1758,7 @@ Crypto objects also take:
 ``mcfe/ring_lwe``
 ~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.MCFERingLWEConfig`; kind ``ring_lwe``.
+:class:`~pyfe4ai.core.config.MCFERingLWEConfig`; kind ``ring_lwe``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -1835,7 +1835,7 @@ Crypto objects also take:
 ``mcfe/fullysec_lwe``
 ~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.MCFEFullySecLWEConfig`; kind ``lwe``.
+:class:`~pyfe4ai.core.config.MCFEFullySecLWEConfig`; kind ``lwe``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -1889,7 +1889,7 @@ Crypto objects also take:
 ``mcfe/fh_multi_ipe_pairing``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.MCFEFHMultiIPEPairingConfig`; kind ``pairing``.
+:class:`~pyfe4ai.core.config.MCFEFHMultiIPEPairingConfig`; kind ``pairing``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -1928,7 +1928,7 @@ Crypto objects also take:
 ``mcfe/fh_multi_ipe_pairing_threshold``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.ThresholdMCFEFHMultiIPEPairingConfig`; kind ``pairing``.
+:class:`~pyfe4ai.core.config.ThresholdMCFEFHMultiIPEPairingConfig`; kind ``pairing``; tier ``experimental`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -1982,7 +1982,7 @@ Crypto objects also take:
 ``mcfe/fh_multi_ipe_pairing_decentralized``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.DecentralizedMCFEFHMultiIPEPairingConfig`; kind ``pairing``.
+:class:`~pyfe4ai.core.config.DecentralizedMCFEFHMultiIPEPairingConfig`; kind ``pairing``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -2026,7 +2026,7 @@ Crypto objects also take:
 ``mcfe/ddh_threshold``
 ~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.ThresholdMCFEDDHConfig`; kind ``dl``.
+:class:`~pyfe4ai.core.config.ThresholdMCFEDDHConfig`; kind ``dl``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -2089,7 +2089,7 @@ Crypto objects also take:
 ``mcfe/ddh_decentralized``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.DecentralizedMCFEDDHConfig`; kind ``dl``.
+:class:`~pyfe4ai.core.config.DecentralizedMCFEDDHConfig`; kind ``dl``; tier ``experimental`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -2142,7 +2142,7 @@ Crypto objects also take:
 ``mcfe/lwe_threshold``
 ~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.ThresholdMCFELWEConfig`; kind ``lwe``.
+:class:`~pyfe4ai.core.config.ThresholdMCFELWEConfig`; kind ``lwe``; tier ``experimental`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -2240,7 +2240,7 @@ Crypto objects also take:
 ``mcfe/lwe_decentralized``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.DecentralizedMCFELWEConfig`; kind ``lwe``.
+:class:`~pyfe4ai.core.config.DecentralizedMCFELWEConfig`; kind ``lwe``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -2294,7 +2294,7 @@ Crypto objects also take:
 ``mcfe/ring_lwe_threshold``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.ThresholdMCFERingLWEConfig`; kind ``ring_lwe``.
+:class:`~pyfe4ai.core.config.ThresholdMCFERingLWEConfig`; kind ``ring_lwe``; tier ``experimental`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -2424,7 +2424,7 @@ Crypto objects also take:
 ``mcfe/ring_lwe_decentralized``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.DecentralizedMCFERingLWEConfig`; kind ``ring_lwe``.
+:class:`~pyfe4ai.core.config.DecentralizedMCFERingLWEConfig`; kind ``ring_lwe``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -2506,7 +2506,7 @@ Crypto objects also take:
 ``mcfe/paillier_decentralized``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.DecentralizedMCFEPaillierConfig`; kind ``dcr``.
+:class:`~pyfe4ai.core.config.DecentralizedMCFEPaillierConfig`; kind ``dcr``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -2555,7 +2555,7 @@ Crypto objects also take:
 ``mcfe/kp_ab_pairing``
 ~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.MCFEKPABPairingConfig`; kind ``pairing``.
+:class:`~pyfe4ai.core.config.MCFEKPABPairingConfig`; kind ``pairing``; tier ``known-insecure`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -2609,7 +2609,7 @@ Crypto objects also take:
 ``mcfe/kp_ab_pairing_per_client``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.MCFEKPABPairingPerClientConfig`; kind ``pairing``.
+:class:`~pyfe4ai.core.config.MCFEKPABPairingPerClientConfig`; kind ``pairing``; tier ``known-insecure`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -2663,7 +2663,7 @@ Crypto objects also take:
 ``quadratic/quad``
 ~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.QuadraticQuadConfig`; kind ``pairing``.
+:class:`~pyfe4ai.core.config.QuadraticQuadConfig`; kind ``pairing``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -2702,7 +2702,7 @@ Crypto objects also take:
 ``quadratic/sgp``
 ~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.QuadraticSGPConfig`; kind ``pairing``.
+:class:`~pyfe4ai.core.config.QuadraticSGPConfig`; kind ``pairing``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -2741,7 +2741,7 @@ Crypto objects also take:
 ``quadratic/miqfe``
 ~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.QuadraticMIQFEConfig`; kind ``pairing``.
+:class:`~pyfe4ai.core.config.QuadraticMIQFEConfig`; kind ``pairing``; tier ``stable`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1
@@ -2790,7 +2790,7 @@ Crypto objects also take:
 ``bcfe/gc_ristretto255``
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-:class:`~pyfe4ai.core.config.BCFEGCRistretto255Config`; kind ``ec``.
+:class:`~pyfe4ai.core.config.BCFEGCRistretto255Config`; kind ``ec``; tier ``experimental`` (:doc:`compatibility`).
 
 .. list-table::
    :header-rows: 1

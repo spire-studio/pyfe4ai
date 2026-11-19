@@ -118,11 +118,12 @@ class SchemeStatusTable(SphinxDirective):
         lines = [
             ".. list-table::",
             "   :header-rows: 1",
-            "   :widths: 14 9 8 22 47",
+            "   :widths: 14 9 8 10 20 39",
             "",
             "   * - Scheme",
             "     - Status",
             "     - Fidelity",
+            "     - Tier (:doc:`/compatibility`)",
             "     - Construction",
             "     - Notes",
         ]
@@ -132,6 +133,7 @@ class SchemeStatusTable(SphinxDirective):
                 f"   * - :mod:`{family}/{variant} <{entry.module}>`",
                 f"     - {entry.status}",
                 f"     - {entry.fidelity}",
+                f"     - {_rst_text(_status.tier_text(family, variant))}",
                 f"     - {_rst_text(entry.reference)}",
                 f"     - {_rst_text(note)}" if note else "     -",
             ]

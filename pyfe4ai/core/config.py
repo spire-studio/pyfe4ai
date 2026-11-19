@@ -1430,14 +1430,24 @@ def options_rst() -> str:
                     ("option", "meaning", "default", "accepted"))
     lines += _heading("Options of each scheme", "-")
     lines += ["The options of every key generator above, where a scheme changes them, and the scheme's own.", ""]
+    from pyfe4ai.core import stability
+
     for scheme, cls in _CONFIGS.items():
-        lines += _heading("``{}/{}``".format(*scheme), "~")
-        lines += [":class:`~pyfe4ai.core.config.{}`; kind ``{}``.".format(cls.__name__, SCHEME_KIND.get(scheme)), ""]
+        scheme_id = "{}/{}".format(*scheme)
+        experimental = stability.EXPERIMENTAL_OPTIONS.get(scheme_id, {})
+        lines += _heading("``{}``".format(scheme_id), "~")
+        lines += [":class:`~pyfe4ai.core.config.{}`; kind ``{}``; tier ``{}`` (:doc:`compatibility`).".format(
+            cls.__name__, SCHEME_KIND.get(scheme), stability.tier(scheme_id)), ""]
         rows = []
         for name, option in cls.OPTIONS.items():
             if option is SchemeConfig.OPTIONS.get(name) and not _standard(cls, name, option):
                 continue
-            rows.append((name, option.doc, _value(option.default), _standard(cls, name, option),
+            doc = option.doc
+            if name in experimental:
+                doc += "; **experimental** value{}: {} (not covered by the compatibility policy)".format(
+                    "s" if len(experimental[name]) > 1 else "",
+                    ", ".join("``{}``".format(v) for v in sorted(experimental[name])))
+            rows.append((name, doc, _value(option.default), _standard(cls, name, option),
                          _allowed(option.allowed)))
         lines += _table(rows, ("option", "meaning", "default", "``standard``", "accepted"))
         if cls.CRYPTO:

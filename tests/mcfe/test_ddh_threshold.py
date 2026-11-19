@@ -500,3 +500,14 @@ def test_dlog_bound_is_configurable():
     assert ThresholdMCFEDDH({"id": "c", "keys": {"pp": pp}}).combine_decrypt(shares) is None
     combiner = ThresholdMCFEDDH({"id": "c", "dlog_bound": 500, "keys": {"pp": pp}})
     assert combiner.combine_decrypt(shares) == -486
+
+
+def test_the_lagrange_helper_is_private():
+    """ThresholdMCFEDDH.L, a public static method no caller used, is private in 1.0 (freeze spec P-2, U-F3)."""
+    from pyfe4ai.schemes.mcfe.ddh_threshold import ThresholdMCFEDDH
+    from pyfe4ai.schemes.threshold.sharing import lagrange_coefficient_at_zero
+
+    assert not hasattr(ThresholdMCFEDDH, "L")
+    sid_v = {"sid_0": 1, "sid_1": 2, "sid_2": 3}
+    assert ThresholdMCFEDDH._lagrange_at_zero("sid_1", sid_v, ["sid_0", "sid_1"], 101) == \
+        lagrange_coefficient_at_zero(2, [1, 2], 101)
