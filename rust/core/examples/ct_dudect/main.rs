@@ -17,7 +17,7 @@ use pyfe4ai_core::{facct, garble, keccak, osrand, shamir, AnyRing, Modulus, Word
 
 #[allow(dead_code)]
 mod data {
-    include!("ct_dudect_data.rs");
+    include!("data.rs");
 }
 use std::hint::black_box;
 use std::time::Instant;
