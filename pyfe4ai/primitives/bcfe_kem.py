@@ -80,12 +80,15 @@ GC_HASH_SHAKE128 = 0
 KEM_RISTRETTO255_HASHED_ELGAMAL_V1 = 0
 #: The record values of those fields and their codes.
 DATA_WIRES_CODES = {"hardwired": DATA_WIRES_HARDWIRED, "labels": DATA_WIRES_LABELS}
+#: The code of each gate hash.
 GC_HASH_CODES = {"shake128": GC_HASH_SHAKE128}
+#: The code of each label encryption.
 KEM_CODES = {"ristretto255-hashed-elgamal-v1": KEM_RISTRETTO255_HASHED_ELGAMAL_V1}
 
 #: Domain-separation strings.
 KEM_DST = b"PYFE4AI-V06-BCFE-KEM"
 UNSELECTED_PREFIX = b"PFE6-UNSEL"
+#: The DST of :func:`unselected_pk` (RFC 9380).
 UNSELECTED_DST = b"PYFE4AI-V06-BCFE-UNSEL-V01-CS02-with-ristretto255_XMD:SHA-512_R255MAP_RO_"
 SETUP_DST = b"PYFE4AI-V06-BCFE-SETUP"
 EPHEMERAL_DST = b"PYFE4AI-V06-BCFE-EPHEM"

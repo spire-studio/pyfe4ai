@@ -24,9 +24,12 @@ Selection: backend, threads, sampler
   threads started inside the block use the process-wide selection.
 * :func:`pyfe4ai.backend.set_threads` and ``PYFE4AI_THREADS`` set how many
   threads *one* native call may use over the chunks of a tensor, the
-  elements of a BLS12-381 batch, the pairs of a product of pairings or the rows
-  of a batch of products over prepared G2 points (Rust threads, with the GIL
-  released), for the whole process. It does not limit
+  elements of a BLS12-381 batch, the pairs of a product of pairings, the rows
+  of a batch of products over prepared G2 points or the key positions of a
+  ``bcfe`` slot (Rust threads, with the GIL released), for the whole
+  process. For a ``bcfe`` slot that is making and checking its key pairs and
+  encrypting and decrypting its labels; the garbling runs on one thread
+  (times on 1 and 4 threads: "Sizes" in :doc:`api/bcfe`). It does not limit
   how many Python threads call the library: ``P`` Python threads running
   native calls at once use up to ``P`` times that many threads.
 * :func:`pyfe4ai.primitives.sampling.set_gaussian_sampler` and
@@ -202,7 +205,9 @@ The library registers one ``os.register_at_fork`` handler
   them);
 * gives the copies of the objects that have a lock of their own a new one
   (:class:`~pyfe4ai.ml.FESchemeWrapper`,
-  :class:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget`): another
+  :class:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget`,
+  :class:`~pyfe4ai.schemes.sife.cp_ab_pairing_keyissue.SIFECPABPairingKeyServer`,
+  :class:`~pyfe4ai.ac.identity_directory.IdentityKeyCentre`): another
   thread of the parent may have held the old one.
 * gives every :class:`~pyfe4ai.schemes.common.slots.SlotStore` (the slot
   list of a ``bcfe`` authority) a new lock for the same reason, and closes
@@ -221,6 +226,19 @@ would each count from the copied ``used``, together produce more partial
 decryptions than ``max_partial_decryptions``, and the KL flooding guarantee
 would no longer hold. Make a server's budget in the one process that
 answers for it (a subclass may share and persist the count, see the class).
+
+A :class:`~pyfe4ai.schemes.sife.cp_ab_pairing_keyissue.SIFECPABPairingKeyServer`
+(threshold key issuance) issues in the process that made it only: in a forked
+child :meth:`~pyfe4ai.schemes.sife.cp_ab_pairing_keyissue.SIFECPABPairingKeyServer.issue`
+raises :class:`~pyfe4ai.core.exceptions.FESchemeError`, and the server cannot
+be copied or pickled. A copy that issued would keep its own records of request
+digests, request ids and the approval history, apart from the parent's: the two
+could accept one digest for two contents, one ``(sid, id)`` twice, or twice
+what a stateful approval rule allows once. Make a key server in the one process
+that serves its requests. An
+:class:`~pyfe4ai.ac.identity_directory.IdentityKeyCentre` keeps working in a
+child (with a new lock); an identity whose ``add_identity`` was halfway in
+another thread of the parent at the fork is dropped from the child's copy.
 
 **Native threads in a forked child.** In a process forked from one that has
 run a native kernel with more than one thread, every native call runs with
@@ -242,9 +260,9 @@ one thread, whatever :func:`~pyfe4ai.backend.set_threads` or
   joins each of its worker threads (also when one of them panics) rather
   than waiting for them, so the calling thread does not park there either.
   The tables the native code builds on first use (the Gaussian sampler's,
-  the pairing's generator and hash key) are built when the extension is
-  imported, and the sampler's tables without any wait, so no thread waits
-  for another to build them, in the parent or in a child.
+  the pairing's generator, group order and hash key) are built when the
+  extension is imported, and the sampler's tables without any wait, so no
+  thread waits for another to build them, in the parent or in a child.
 * *Who is not affected:* a child of a process that never ran several
   threads keeps them (and, once it runs them, its own children are
   limited); a process started with ``spawn``, ``forkserver`` or ``exec``

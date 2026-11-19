@@ -53,13 +53,15 @@ SCRIPT = textwrap.dedent("""
     MATERIALS = [b"x%d" % i for i in range(4096)]
     MSGS = [b"label-%d" % i for i in range(512)]
     VALUES = [(-1) ** i * (i % 17) for i in range(512)]
-    G2S = pb.serialize_many(group, [group.random(G2) for _ in range(64)])
+    # pairing_backend.serialize_many (threaded on BLS12-381) is new in 0.5; 0.4 serialises one element at a time
+    serialize_many = getattr(pb, "serialize_many", None) or (lambda g, items: [g.serialize(x) for x in items])
+    G2S = serialize_many(group, [group.random(G2) for _ in range(64)])
 
     def run(threads):
         backend.set_threads(threads)
         return (ext.dense_dots(MATERIALS, 24, 16, bytes(8 * 16), 1, threads),
                 ops.r255_mcfe_encrypt(MSGS, b"pyfe4ai-fork-test", VALUES, 12345, 67890),
-                pb.serialize_many(group, pb.deserialize_many(group, G2S)))
+                serialize_many(group, pb.deserialize_many(group, G2S)))
 
     want = run(4 if mode == "threads" else 1)
     for _ in range(2):

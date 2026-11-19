@@ -44,7 +44,7 @@ w_j)`` and ``(m, 0)``, exactly ``2m + 1`` entries, the unselected positions
 recomputed from ``k``); the authority alone then cannot decrypt the slot.
 Both follow one order, and a step that fails changes nothing: (1) ``w``
 through the key layout to its canonical bits; (2) the issuance policy
-(:func:`pyfe4ai.policy.formula.evaluate` of ``issuance_policy`` on the requester's
+(:func:`~pyfe4ai.policy.formula.evaluate` of ``issuance_policy`` on the requester's
 attributes) before anything is reserved; (3) the private dedup key of
 (scheme, circuit, requester, ``w``); (4) the cap ``max_keys``, with the same
 error whether (3) found a slot or not; (5) the slot (backend operations
@@ -312,8 +312,8 @@ _KEY_CHECKS_KEPT = 256
 TEST_RANDOMNESS_REFUSED = ("pyfe4ai.backend._random_override is set: bcfe refuses to issue, set up or encrypt with "
                            "test randomness")
 
-#: The one error of a component that does not decrypt (I10), whether it is
-#: malformed or of another slot, ciphertext or key; the cause is not told apart.
+#: The one error of a component that does not decrypt (malformed, or of
+#: another slot, ciphertext or key); the cause is not told apart.
 DECRYPTION_FAILED = ("the ciphertext component of this key's slot does not decrypt with this key (malformed, or "
                      "made for another slot, ciphertext or key)")
 

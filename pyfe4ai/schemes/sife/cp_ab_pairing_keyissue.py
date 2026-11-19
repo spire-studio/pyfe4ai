@@ -59,6 +59,15 @@ under these conditions, which the library does not provide:
 * Fewer than ``t`` corrupted servers, chosen before setup; no share refresh
   (a new sharing needs new PRF keys, which :meth:`SIFECPABPairingDealer.setup`
   draws).
+* **One object per server and per dealer, for their lifetime.** A key server
+  keeps its records (digest -> content, ``(sid, id)``, the approval history)
+  in memory only; the library defines no format to persist them, and a
+  restarted server starts with none: requests answered before the restart are
+  approved afresh, and a stateful rule sees an empty history. Persist what the
+  rule needs (e.g. its counters) in the rule itself. A server works in the
+  process that made it only and refuses to be copied or pickled. A copy of a
+  dealer holds the same undelivered shares, so delivering from two copies
+  hands a share out twice: keep one dealer object.
 
 A corrupted server can make an issuance fail but not hand the user a wrong
 key: :meth:`~SIFECPABPairingKeyCombiner.combine` checks every component of
@@ -77,6 +86,7 @@ import copy
 import hashlib
 import hmac
 import json
+import os
 import re
 import secrets
 import threading
@@ -84,7 +94,8 @@ import threading
 import gmpy2 as gp
 
 from pyfe4ai._validation import int_vector
-from pyfe4ai.core.exceptions import FEConfigError, FEKeyError, FEValidationError
+from pyfe4ai.core import forksafe
+from pyfe4ai.core.exceptions import FEConfigError, FEKeyError, FESchemeError, FEValidationError
 from pyfe4ai.core.formats.keyissue import CPABKeyRequest
 from pyfe4ai.core.formats.keyissue import CPABKeyServerShare
 from pyfe4ai.core.formats.keyissue import CPABKeyServers
@@ -160,6 +171,70 @@ def request_digest(request: dict) -> str:
     r = CPABKeyRequest(request)
     payload = [r.version, r.id, r.sid, r.y, r.attributes, r.servers, r.pp_binding, r.keyservers]
     return _hash(DST_REQUEST, _canonical(payload), DIGEST_BYTES).hex()
+
+
+class _FrozenDict(dict):
+    """A read-only dict: what the approval rule and its history hold (a request, frozen once when it is
+    accepted). It reads, iterates and serialises (``json.dumps``) like a dict; every method that would change it
+    raises ``TypeError``. ``copy.copy``, ``copy.deepcopy`` and pickling give a plain, mutable dict, so a rule
+    that wants to change its own copy can."""
+
+    __slots__ = ()
+
+    def _refuse(self, *args, **kwargs):
+        raise TypeError("the requests given to the approval rule are read-only")
+
+    __setitem__ = __delitem__ = __ior__ = _refuse
+    clear = pop = popitem = setdefault = update = _refuse
+
+    def __copy__(self):
+        return _thaw(self)
+
+    def __deepcopy__(self, memo):
+        return _thaw(self)
+
+    def __reduce__(self):
+        return (_thaw, (dict(self),))
+
+
+class _FrozenList(list):
+    """A read-only list (see :class:`_FrozenDict`): equal to the list it was made from, refuses changes."""
+
+    __slots__ = ()
+
+    def _refuse(self, *args, **kwargs):
+        raise TypeError("the requests given to the approval rule are read-only")
+
+    __setitem__ = __delitem__ = __iadd__ = __imul__ = _refuse
+    append = extend = insert = pop = remove = clear = sort = reverse = _refuse
+
+    def __copy__(self):
+        return _thaw(self)
+
+    def __deepcopy__(self, memo):
+        return _thaw(self)
+
+    def __reduce__(self):
+        return (_thaw, (list(self),))
+
+
+def _freeze(value):
+    """*value* (JSON data) with every dict a :class:`_FrozenDict` and every list a :class:`_FrozenList`,
+    built once (equal to *value*, and serialised alike)."""
+    if isinstance(value, dict):
+        return _FrozenDict((k, _freeze(v)) for k, v in value.items())
+    if isinstance(value, (list, tuple)):
+        return _FrozenList(_freeze(v) for v in value)
+    return value
+
+
+def _thaw(value):
+    """A plain, mutable copy of frozen (or any JSON) *value*: dicts as dicts, lists as lists."""
+    if isinstance(value, dict):
+        return {k: _thaw(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_thaw(v) for v in value]
+    return value
 
 
 def _check_sid(sid) -> str:
@@ -377,11 +452,22 @@ class SIFECPABPairingKeyServer:
             ``attributes``, ``servers``, ...), *requester* the identity the
             channel authenticated, *history* the tuple of ``(requester,
             request)`` this server accepted before, oldest first (refused
-            requests are not in it; a copy of the server's records). Only the
-            return value ``True`` approves; anything else, a reason string
-            or ``None`` among it, refuses. It must decide on ``y`` too (see the module
-            docstring). It runs under the server's lock, so the requests to
-            one server are approved one at a time. A repeat of an accepted
+            requests are not in it). The request and the history are
+            read-only views, frozen once when a request is accepted: dicts
+            and lists that refuse changes (``TypeError``) and otherwise
+            compare, read and serialise (``json.dumps``) as the request does;
+            ``copy.deepcopy`` gives a mutable copy. Only the return value ``True`` approves; anything
+            else, a reason string or ``None`` among it, refuses, and so does
+            any exception the rule raises (the request is then refused with
+            ``FEKeyError`` and leaves no record). That ``FEKeyError`` chains
+            the rule's exception, whose traceback references the frames of
+            :meth:`issue` and so this server and its secret share: do not keep
+            these exceptions, and do not hand them to error reporters that
+            capture local variables. It must decide on ``y`` too
+            (see the module docstring). It runs under the server's lock, so the
+            requests to one server are approved one at a time; it should keep
+            its own state (e.g. counters) rather than scan a long history on
+            every call. A repeat of an accepted
             request (same digest, same content) is answered again without a
             new approval: it gets the same partial key and reveals nothing
             new.
@@ -416,9 +502,29 @@ class SIFECPABPairingKeyServer:
         self.server = sh.server
         self._approve = approve
         self._lock = threading.Lock()
+        self._pid = os.getpid()  # issue() refuses other processes (a forked child's copy)
+        forksafe.track(self)  # a forked child: a new lock, and the copy marked foreign (_after_fork_in_child)
         self._contents = {}   # digest -> canonical content, of accepted requests
         self._ids = {}        # (sid, request id) -> digest: one sid reusing its id for other content is refused
-        self._history = []    # (requester, request) accepted, oldest first
+        self._history = []    # (requester, frozen request) accepted, oldest first
+
+    def _after_fork_in_child(self) -> None:
+        """In a forked child: a new lock (another thread of the parent may hold the old one, inside the
+        approval rule), and the copy is marked foreign (``_pid = None``): it refuses to issue, also in a process
+        that later gets the pid of the one that made the server. A copy that issued would keep its own records
+        (digest -> content, ids, history) apart from the parent's, so the two could accept the same digest for
+        two contents, the same (sid, id) twice, or what a stateful rule allows only once."""
+        self._lock = threading.Lock()
+        self._pid = None
+
+    def __copy__(self):
+        raise TypeError("a key server cannot be copied: the copy would keep its records apart")
+
+    def __deepcopy__(self, memo):
+        raise TypeError("a key server cannot be copied: the copy would keep its records apart")
+
+    def __reduce__(self):
+        raise TypeError("a key server cannot be pickled: the copy would keep its records apart")
 
     def issue(self, request: dict, authenticated_requester: str) -> dict:
         """This server's masked partial key for *request*
@@ -438,10 +544,19 @@ class SIFECPABPairingKeyServer:
                 parameters or another sharing, or one whose servers are not
                 ``t`` distinct ids of the record including this one.
             FEKeyError: If *authenticated_requester* is not the request's
-                ``sid``, the approval rule refuses, the digest was used for
-                other content, or this ``sid`` used the request's id for other
-                content.
+                ``sid``, the approval rule refuses (or raises), the digest was
+                used for other content, or this ``sid`` used the request's id
+                for other content.
+            FESchemeError: In another process than the one that made the
+                server (a forked child's copy): its records would diverge from
+                the parent's. Make a key server in the one process that serves
+                its requests.
         """
+        if self._pid is None or os.getpid() != self._pid:
+            raise FESchemeError(
+                "a key server issues in the process that made it only: a copy in a forked child would keep "
+                "its own records of digests, ids and history, apart from the parent's"
+            )
         p = self._p
         snapshot = copy_parameters(request, "key request")  # what is checked, approved, recorded and answered
         r, y, digest = p.checked_request(snapshot)
@@ -463,12 +578,17 @@ class SIFECPABPairingKeyServer:
                 # ids are kept per sid: only the requester itself can block its own id
                 if self._ids.get((r.sid, r.id), r.digest) != r.digest:
                     raise FEKeyError("this sid used the id of this request for other content")
-                verdict = self._approve(copy.deepcopy(snapshot), requester, copy.deepcopy(tuple(self._history)))
+                frozen = _freeze(snapshot)  # built once: the rule's view now, the history entry once accepted
+                try:
+                    verdict = self._approve(frozen, requester, tuple(self._history))
+                except Exception as exc:  # fail closed: a rule that raises refuses, and nothing is recorded
+                    raise FEKeyError("the approval rule of server {!r} raised {}: the request is refused".format(
+                        self.server, type(exc).__name__)) from exc
                 if verdict is not True:  # fail closed: a reason string, None or any other value refuses
                     raise FEKeyError("the approval rule of server {!r} refuses this request".format(self.server))
                 self._contents[r.digest] = content
                 self._ids[(r.sid, r.id)] = r.digest
-                self._history.append((requester, snapshot))
+                self._history.append((requester, frozen))
         return self._partial(r, y, digest)
 
     def _partial(self, r, y: list, digest: bytes) -> dict:

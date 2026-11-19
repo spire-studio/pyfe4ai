@@ -166,6 +166,9 @@ class IdentityKeyCentre:
     Holds the master key of every identity it adds. Its state is in memory;
     the library defines no format for it. Safe to share between threads:
     adding an identity and building the directory hold the key centre's lock.
+    Keep one key centre object: a copy (``copy``, pickle, a forked child)
+    adds identities of its own, so two copies can publish two directories
+    with different instances under one identity.
 
     Args:
         config: The configuration of ``sife/fullysec_ring_lwe``

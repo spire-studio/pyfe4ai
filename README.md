@@ -171,7 +171,7 @@ explains the families, and
 | | Damgård-DDH (MDDH), Paillier (DCR), LWE, FullySec-LWE | [ABMPSW20](https://eprint.iacr.org/2020/788.pdf) (SCN '20), Figs. 2–4 |
 | | Ring-LWE | BMMS21, Sec. 6 (identity-based MCFE) |
 | | FH-Multi-IPE *(pairing)* | [AGT21b](https://doi.org/10.1007/978-3-030-90453-1_8) (TCC '21), Sec. 6.2 |
-| | KP-AB, attribute-based *(pairing)* | NPP22, Sec. 5.2 |
+| | KP-AB, attribute-based *(pairing, known-insecure)* | NPP22, Sec. 5.2 (see [Known Issues](#known-issues--security-notice)) |
 | | KP-AB with an attribute set per client *(pairing, known-insecure)* | NPP22, Sec. 5.4 (see [Known Issues](#known-issues--security-notice)) |
 | **Decentralized** | dMCFE-DDH *(experimental carry mask)*, dMCFE-LWE, dMCFE-Paillier | ABMPSW20, App. D, Fig. 14 (DMCFE from MCFE) |
 | | dMCFE-Ring-LWE | BMMS21, Sec. 6 ([ABKW19](https://eprint.iacr.org/2019/020.pdf) + GDSum) |

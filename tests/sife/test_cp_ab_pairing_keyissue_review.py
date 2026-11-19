@@ -61,7 +61,10 @@ def test_m1b_3_a_sid_that_is_not_encodable_is_a_validation_error():
 
 def test_m1b_4_the_history_given_to_the_rule_is_a_copy():
     """M1b-4 (Info): the rule gets the server's records; a rule that changes them must not change what later
-    calls see (the docstring asks it not to; the server should not depend on that)."""
+    calls see (the docstring asks it not to; the server should not depend on that).
+
+    Since the history is given as read-only views (08_history_copy_followup recommendation B), the careless
+    rule's write raises inside the rule, which refuses that request; the stored history stays as it was."""
     calls = []
 
     def approve(request, requester, history):
@@ -73,8 +76,58 @@ def test_m1b_4_the_history_given_to_the_rule_is_a_copy():
     _, _, _, servers, comb, _ = _system(approve=approve)
     first = comb.new_request("alice", [1, 0, 0], ["org:A"], ["ks1", "ks2", "ks3"])
     second = comb.new_request("bob", [0, 2, 0], ["org:B"], ["ks1", "ks2", "ks3"])
-    third = comb.new_request("carol", [0, 0, 3], ["org:C"], ["ks1", "ks2", "ks3"])
-    for request in (first, second, third):
-        servers["ks1"].issue(request, request["sid"])
-    assert calls[2] == [first["y"], second["y"]]
+    servers["ks1"].issue(first, first["sid"])                  # empty history: nothing to write
+    with pytest.raises(FEKeyError, match="raised TypeError"):
+        servers["ks1"].issue(second, second["sid"])
+    assert calls == [[], [first["y"]]]
+    assert [entry["y"] for _, entry in servers["ks1"]._history] == [first["y"]]
     assert ki.request_digest(first) == first["digest"]
+
+
+# -- R-0.7 round 3 (3120d70, read-only history views): checks the new tests do not make --------------------------
+
+
+def test_r3_a_request_the_rule_keeps_stays_equal_and_is_the_stored_entry():
+    kept = []
+
+    def approve(request, requester, history):
+        kept.append(request)
+        return True
+
+    _, _, _, servers, comb, _ = _system(approve=approve)
+    first = comb.new_request("alice", [1, 0, 0], ["org:A"], ["ks1", "ks2", "ks3"])
+    servers["ks1"].issue(first, first["sid"])
+    for sid in ("bob", "carol"):
+        r = comb.new_request(sid, [0, 1, 0], ["org:B"], ["ks1", "ks2", "ks3"])
+        servers["ks1"].issue(r, sid)
+    assert kept[0] == first and kept[0] is servers["ks1"]._history[0][1]
+
+
+def test_r3_a_base_exception_of_the_rule_propagates_and_leaves_no_record():
+    def approve(request, requester, history):
+        raise KeyboardInterrupt
+
+    _, _, _, servers, comb, _ = _system(approve=approve)
+    server = servers["ks1"]
+    with pytest.raises(KeyboardInterrupt):
+        server.issue(comb.new_request("alice", [1, 0, 0], ["org:A"], ["ks1", "ks2", "ks3"]), "alice")
+    assert not server._contents and not server._ids and not server._history and not server._lock.locked()
+
+
+def test_r3_a_request_refused_by_a_raising_rule_is_asked_again_and_a_repeat_is_not():
+    calls, mode = [], {"raise": True}
+
+    def approve(request, requester, history):
+        calls.append(request["sid"])
+        if mode["raise"]:
+            raise ValueError("operator bug")
+        return True
+
+    _, _, _, servers, comb, _ = _system(approve=approve)
+    r = comb.new_request("alice", [1, 0, 0], ["org:A"], ["ks1", "ks2", "ks3"])
+    with pytest.raises(FEKeyError, match="raised ValueError"):
+        servers["ks1"].issue(r, "alice")
+    mode["raise"] = False
+    first = servers["ks1"].issue(r, "alice")
+    mode["raise"] = True                       # a repeat of the accepted request does not ask the rule
+    assert servers["ks1"].issue(r, "alice") == first and calls == ["alice", "alice"]
