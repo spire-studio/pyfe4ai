@@ -53,6 +53,14 @@ fn build_info(py: Python<'_>) -> PyResult<Py<PyAny>> {
     Ok(d.into_any().unbind())
 }
 
+/// The number of threads the kernels use in this process for a request of `threads`: `threads`, or
+/// 1 in a process forked from one that already ran a kernel with several threads (macOS aborts such a
+/// child at its next wait; see `pyfe4ai_core::thread_limit`). Records nothing.
+#[pyfunction]
+fn fork_thread_limit(threads: usize) -> usize {
+    pyfe4ai_core::thread_limit_peek(threads)
+}
+
 // The classes and functions of the domain modules in one list (this order is
 // the order of the module's namespace), then the ones `ec`, `pairing`, `rns`,
 // `replicated` and `threshold` add with their register functions. (Not a doc
@@ -75,6 +83,7 @@ fn _rust_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(mcfe::pad_terms, m)?, wrap_pyfunction!(mcfe::precompute_tensor, m)?,
         wrap_pyfunction!(mcfe::encrypt_precomputed, m)?, wrap_pyfunction!(mcfe::precomputed_info, m)?,
         wrap_pyfunction!(dense::dense_dots, m)?, wrap_pyfunction!(build_info, m)?, wrap_pyfunction!(drbg::drbg_bytes, m)?,
+        wrap_pyfunction!(fork_thread_limit, m)?,
         wrap_pyfunction!(threshold::share_inputs, m)?, wrap_pyfunction!(threshold::share_partial, m)?,
         wrap_pyfunction!(threshold::share_combine, m)?, wrap_pyfunction!(threshold::shamir_share, m)?,
         wrap_pyfunction!(sampling::gauss_bigint, m)?, wrap_pyfunction!(sampling::gauss_bigint_approx, m)?,
