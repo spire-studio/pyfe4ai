@@ -264,6 +264,16 @@ class MIFEFHMultiIPEPairing(IPFEAbsCrypto):
             self.sk = self.keys["sk"]
 
     def encrypt(self, lst_pt: list) -> dict:
+        """Encrypt this slot's vector of ``eta`` integers with its encryption key.
+
+        Returns:
+            The ciphertext (``FHCiphertext``: the group elements, serialised).
+
+        Raises:
+            FEKeyError: If the encryption key is missing.
+            FEValidationError: If the vector has another length or an entry
+                exceeds ``bound_x``.
+        """
         if not self._has_private_keys():
             raise FEKeyError("no encryption key provided")
         x = [

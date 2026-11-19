@@ -168,3 +168,37 @@ def test_the_warnings_point_at_the_application_call():
     fe = [w for w in caught if issubclass(w.category, FEWarning)]
     assert [w.filename for w in fe] == [__file__] * 4, [(w.filename, str(w.message)[:40]) for w in fe]
     assert len({w.lineno for w in fe if "out of bound" in str(w.message)}) == 2
+
+
+def test_the_deprecation_warning_is_an_fe_warning_that_python_shows_by_default():
+    import subprocess
+    import sys
+
+    from pyfe4ai import FEDeprecationWarning, FEWarning
+
+    assert issubclass(FEDeprecationWarning, FEWarning) and issubclass(FEDeprecationWarning, UserWarning)
+    assert not issubclass(FEDeprecationWarning, DeprecationWarning)  # which Python ignores outside __main__
+    # the action of Python's own filters (a fresh interpreter, no test-runner filters) for a library module
+    probe = ("import warnings, pyfe4ai\n"
+             "text = 'x is deprecated since pyfe4ai 1.1 and will be removed in 2.0.'\n"
+             "for action, msg, cat, mod, lineno in warnings.filters:\n"
+             "    if (issubclass(pyfe4ai.FEDeprecationWarning, cat) and (msg is None or msg.match(text))\n"
+             "            and (mod is None or mod.match('app.module'))):\n"
+             "        print(action); break\n"
+             "else:\n"
+             "    print('default')\n")
+    out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, check=True,
+                         env={**__import__("os").environ, "PYTHONWARNINGS": ""})
+    assert out.stdout.strip() == "default"
+
+
+def test_warn_deprecated_names_the_version_and_the_replacement():
+    from pyfe4ai import FEDeprecationWarning
+    from pyfe4ai.core.exceptions import warn_deprecated
+
+    with pytest.warns(FEDeprecationWarning) as caught:
+        warn_deprecated("x", "1.1", "y")
+    assert str(caught[0].message) == "x is deprecated since pyfe4ai 1.1 and will be removed in 2.0; use y."
+    assert caught[0].filename == __file__  # attributed to the caller outside the package
+    with pytest.warns(FEDeprecationWarning, match=r"will be removed in 2\.0\.$"):
+        warn_deprecated("x", "1.1")

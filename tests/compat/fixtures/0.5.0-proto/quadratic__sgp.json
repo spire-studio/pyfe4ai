@@ -1,0 +1,97 @@
+{
+ "fixture_format": 1,
+ "pyfe4ai_version": "0.5.0",
+ "scheme": "quadratic/sgp",
+ "recipe": "quadratic",
+ "config": {
+  "eta": 2,
+  "n": 2,
+  "s": 1,
+  "lst_nid": [
+   "nid_0",
+   "nid_1"
+  ],
+  "bound": 5
+ },
+ "inputs": {
+  "x": [
+   1,
+   2
+  ],
+  "y": [
+   2,
+   1
+  ],
+  "f": [
+   [
+    1,
+    0
+   ],
+   [
+    2,
+    1
+   ]
+  ]
+ },
+ "records": {
+  "pp": {
+   "n": 2,
+   "bound": "5",
+   "pairing_group_param": "BLS12-381",
+   "g1": "1:sUumjawfog8svU5dI2b+5kwjkCvMmhvEfR7uH2TLduFCiEEzP7OU4R5DHhdbFJbO",
+   "g2": "2:kxQ99C45eIEfd+HPMcgW7tQ65ytEU/IAtg3+STPfEHNJ0htMnru65z9cNlExqMKEDA46So49tW2vKaLlTyXDp6quQs2WQwWdLFz/8IDq7a1hrdvO/BLYfAmXoAD7qtTB",
+   "g1_s": [
+    "1:o52Due8+Ght4feei8OJLTJFlUpqERxwp1r4ylqETwgAKHTmbCZq6mFu1aBUMtwiP",
+    "1:mFusGcmJAn3v7V7X9X7mLzN674CGydG60qZpzT7/25cZhwacTHJr6XgZykUR92i5"
+   ],
+   "g2_t": [
+    "2:tykxfmMW427gQ0+b519us3sEBdW66pDLlVnUXzDEs7B6iWI7NdiwG5qjZwJzDomtDZlJRAbj3f7KmESAPE6klg5sWJ+VnBk6hN78Wx6ApplyN3b/AEIEaYuhgG5vrafY",
+    "2:gh1S7aMgee9TE86HHx7ebgooNOg1bOnUK08ybzDygELdVfFrn/PQu2TCr1sypR7PEkHwsn3ekgvos7E6ZPu+aZXDWKUUxPa2OrVIaACAnmqtTolV6FdzE4INNoe7H54V"
+   ]
+  },
+  "dk": {
+   "key": "2:rvYweOJG/Q4hJ/pXasdOIeC0CXy+f6UnNCgBir08yBnOewDi3zIz8hDodZGfciWPDp6N49CJqHaChmZA/KU3Ho6JUbPPu/3M6RFaeYbVUyqCzzUTk6q7xaXgaCZTcZUb",
+   "f": [
+    [
+     "1",
+     "0"
+    ],
+    [
+     "2",
+     "1"
+    ]
+   ]
+  },
+  "ct": {
+   "c0": "1:rs9KeAQNVLefy6TcMcspAoT6fKE2BLBXlXoIBflJ12rZLb8OPv0nBIL0i35QcKkk",
+   "a": [
+    [
+     "1:rflRucYc5+0xnEGSqX7xG4Q30Yly6W5p10j01nzgbdOw3u63+VhGUPC//+qs1QxR",
+     "1:uB8ZaKrwrMBc6pZZUTKiRT1iCv/+SyEPdpENkL5i+v9E8NuuU+BNwTdWRz6ZxJui"
+    ],
+    [
+     "1:uKhnFW1KR2TqOC2apXTekyac02mWzHlP2zKHSvQwPsGtrEnb7JzWqwfZVpgcEt70",
+     "1:kRMJ5cFmHOp7PvJOYu+vZcYQ43wFqXzzmfjz/ftl0rMkZ3mCBuiuMALvDk3X2jX0"
+    ]
+   ],
+   "b": [
+    [
+     "2:rqhBZlE47UJA1DoZXuiSGsH2krtuiDGIdFM2gc/kBXw8QZyEBkVwwKUVcicoQi6cA16VoItWvMzMvK/QYGLKAjy5uur/+IHLCcmSf4U8BJ5DmOI1PTeMnZissr3akZoY",
+     "2:qCUi8UoATd2a/MbZ/6YcPh9dsYyrSirQ++vbZVt2fUje7V0HhVM/NXeRzJ6pxaGDBubUb1id2x3cnj2k/P3CauQ97e7AWFL7enitWMbLxXrJ+FydIqTyFQA5enHUP3Xi"
+    ],
+    [
+     "2:oKHgwhprkVpej5KFoMF1P96iZb7CBc2yyBTc2mrmzfKx2LZFV3kvVYpVzR82ftPtCMbkQ8PcnVw8yDoUHVEWWmxPkyrwSDTOJt1CExeOZHTNLmISqs1IfDM/yCeW8whX",
+     "2:mMoM/X9yTUn4KNV+CXIDcKAh6dW3DB8TlLPARYXICVKw4/TGrn+tt8dZuG6iyx7/EZRNPcwvo8V6gi9vcFhjAteU2Xyp49caK8NsoYh9MQ0I2p4wS5eVQ+upaNAd5erH"
+    ]
+   ]
+  }
+ },
+ "expected": {
+  "decrypt": 12
+ },
+ "param_records": {
+  "authority/QUADRATIC_SGP/param.json": "{\"sec_param\": 128, \"n\": 2, \"bound\": \"5\", \"pairing_group_param\": \"BLS12-381\"}"
+ },
+ "commit": "c23dfbb",
+ "tier": "stable"
+}

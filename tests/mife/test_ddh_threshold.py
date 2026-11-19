@@ -9,7 +9,8 @@ import gmpy2 as gp
 from pyfe4ai.schemes.mife.ddh_threshold import ThresholdMIFEDDH
 from pyfe4ai.schemes.mife.ddh_threshold import ThresholdMIFEDDHKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST
-from pyfe4ai.core.exceptions import FESchemeError, FEValidationError
+from pyfe4ai.core.exceptions import FEKeyError, FESchemeError, FEValidationError
+from pyfe4ai.schemes.mife.ddh import MIFEDDHKeyGenerator
 from pyfe4ai.core.base import cache_dir
 from tests.log_config import init_logging_config
 
@@ -311,3 +312,19 @@ def test_pp_only_combiner_decrypts():
     shares = _share_decrypt(kg, pp, dct_ct, dct_y, ["sid_0", "sid_2"])
     combiner = ThresholdMIFEDDH({"id": "c", "precision": 0, "keys": {"pp": pp}})
     assert combiner.combine_decrypt(shares) == expected
+
+
+def test_decrypt_refuses_a_key_share():
+    """The decrypt inherited from MIFE-DDH read a server's key share as a whole
+    functional key and returned None (1.0 freeze, finding P-10); it refuses it now."""
+    kg, pp, _, dct_ct, dct_y, expected = _setup_round(3, 3, 2, 1)
+    dk = kg.get_decryption_keys("sid_0", credentials={"fusion_weight": dct_y})
+    server = ThresholdMIFEDDH({"id": "sid_0", "precision": 0, "keys": {"pp": pp, "dk": dk}})
+    with pytest.raises(FEKeyError, match="share_decrypt"):
+        server.decrypt(dct_ct, dk, dct_y)
+    with pytest.raises(FEKeyError):
+        server.decrypt(dct_ct, None, dct_y)
+    # a whole functional key (the one the key generator shares) decrypts as before
+    whole = MIFEDDHKeyGenerator.get_decryption_keys(kg, "sid_0", credentials={"fusion_weight": dct_y})
+    assert "sid" not in whole
+    assert server.decrypt(dct_ct, whole, dct_y) == expected

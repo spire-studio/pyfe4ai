@@ -106,6 +106,10 @@ DMCFE_PAILLIER_RECORD = "abmpsw20-fig14-dcr-dcr/v1"
 MIFE_DDH_CONSTRUCTION = "acfgu18-abdp15/v2"
 #: Public-parameter ``construction`` of MIFE DDH over ristretto255 (published, not checked).
 MIFE_DDH_RISTRETTO255_CONSTRUCTION = "acfgu18-abdp15-ristretto255/v1"
+#: The policy compiler of the attribute-based records (record field ``policy_compiler``), listed here with the
+#: other markers; it is defined with the compiler, :data:`pyfe4ai.policy.encoding.POLICY_COMPILER` (this module
+#: does not import :mod:`pyfe4ai.policy`, so the value is repeated, and ``tests/compat`` checks the two agree).
+POLICY_COMPILER = "c1"
 
 #: The meaning of an absent field of a parameter record (a record of an
 #: earlier version) -- the prime modulus of the Ring-LWE family, the

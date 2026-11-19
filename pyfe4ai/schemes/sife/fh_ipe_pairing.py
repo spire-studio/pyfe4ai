@@ -216,6 +216,17 @@ class SIFEFHIPEPairing(IPFEAbsCrypto):
             self.sk = self.keys["sk"]
 
     def encrypt(self, lst_pt: list) -> dict:
+        """Encrypt a vector of ``eta`` integers with the encryption key, which
+        is equivalent to the master secret key (a secret-key scheme).
+
+        Returns:
+            The ciphertext (``SIFEFHIPECiphertext``: group elements, serialised).
+
+        Raises:
+            FEKeyError: If the encryption key is missing.
+            FEValidationError: If the vector has another length or an entry
+                exceeds ``bound_x``.
+        """
         if not self._has_private_keys():
             raise FEKeyError("no encryption key provided")
         x = int_vector(lst_pt, "plaintext", length=self.pp["eta"], bound=int(self.pp["bound_x"]))

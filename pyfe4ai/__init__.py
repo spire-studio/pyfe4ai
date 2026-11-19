@@ -27,6 +27,7 @@ import logging
 __version__ = "0.5.0"
 
 from pyfe4ai.core.exceptions import FEConfigError  # noqa: E402
+from pyfe4ai.core.exceptions import FEDeprecationWarning  # noqa: E402
 from pyfe4ai.core.exceptions import FEError  # noqa: E402
 from pyfe4ai.core.exceptions import FEKeyError  # noqa: E402
 from pyfe4ai.core.exceptions import FESchemeError  # noqa: E402
@@ -65,6 +66,7 @@ __all__ = [
     "MixedSharingsError",
     "FESecurityWarning",
     "FEWarning",
+    "FEDeprecationWarning",
 ]
 
 # 0.6: the boolean circuits C(w, x) of the bounded-key family bcfe, as pyfe4ai.circuits (a module: not in

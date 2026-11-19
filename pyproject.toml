@@ -100,4 +100,5 @@ markers = [
   "review: tests/review -- regression tests of the crypto reviews",
   "examples: tests/examples -- the scripts of examples/ run as programs",
   "bcfe: tests/bcfe -- bounded-key FE from garbled circuits: circuits, garbling, slots, the scheme",
+  "compat: tests/compat -- the 1.x compatibility policy: frozen record fixtures, version markers, stability tiers",
 ]
