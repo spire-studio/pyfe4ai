@@ -79,7 +79,7 @@ CIRCUIT_DIGEST_DOMAIN = b"PYFE4AI-V06-BCFE-CIRCUIT"
 XOR, AND, INV = 1, 2, 3
 #: Names of the gate operations (for ``repr`` and the constructor).
 OP_NAMES = {XOR: "XOR", AND: "AND", INV: "INV"}
-#: Wire kinds: labelled, known to the garbler.
+#: The two wire kinds, labelled (``L``) and known to the garbler (``K``).
 WIRE_L, WIRE_K = "L", "K"
 #: The two modes of the data wires (the record field ``data_wires``).
 MODES = ("hardwired", "labels")

@@ -37,16 +37,7 @@ MAX_WIDTH = 64
 
 
 class ParamCircuit:
-    """A library circuit with its layouts.
-
-    Attributes:
-        name: The library function's name (``"linear_threshold"``, ...).
-        params: The public parameters (a copy on every access).
-        circuit: The :class:`~pyfe4ai.circuits.circuit.Circuit` (without the guard bit).
-        key_layout: The :class:`~pyfe4ai.circuits.layout.KeyLayout` of ``w`` (``m`` bits).
-        data_layout: The :class:`~pyfe4ai.circuits.layout.DataLayout` of ``x`` (``n`` bits).
-        output_layout: The :class:`~pyfe4ai.circuits.layout.OutputLayout` (``n_out`` bits).
-    """
+    """A library circuit with its layouts (read-only properties below)."""
 
     __slots__ = ("_name", "_params", "_circuit", "_key_layout", "_data_layout", "_output_layout")
 
@@ -78,26 +69,32 @@ class ParamCircuit:
 
     @property
     def name(self) -> str:
+        """The library function's name (``"linear_threshold"``, ...)."""
         return self._name
 
     @property
     def params(self) -> dict:
+        """The public parameters (a copy on every access)."""
         return dict(self._params)
 
     @property
     def circuit(self) -> Circuit:
+        """The :class:`~pyfe4ai.circuits.circuit.Circuit` (without the guard bit)."""
         return self._circuit
 
     @property
     def key_layout(self) -> KeyLayout:
+        """The :class:`~pyfe4ai.circuits.layout.KeyLayout` of ``w`` (``m`` bits)."""
         return self._key_layout
 
     @property
     def data_layout(self) -> DataLayout:
+        """The :class:`~pyfe4ai.circuits.layout.DataLayout` of ``x`` (``n`` bits)."""
         return self._data_layout
 
     @property
     def output_layout(self) -> OutputLayout:
+        """The :class:`~pyfe4ai.circuits.layout.OutputLayout` (``n_out`` bits)."""
         return self._output_layout
 
     def describe(self) -> dict:

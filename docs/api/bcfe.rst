@@ -157,6 +157,27 @@ slot id or a slot. Threads, other authority objects and other processes may
 issue on one directory at once (a lock per store object and a file lock,
 ``fcntl``, so POSIX only); a forked child renews the store's lock
 (:doc:`../threading`).
+
+Two rules for the directory, which the library cannot check:
+
+* **One copy in use.** The locks order the calls on one directory, not on
+  its copies. Two copies (a second host, or a backup restored while the
+  original goes on issuing) each hand out the same slot ids again, to
+  different slots, and each counts its own ``max_keys``. Every slot still
+  has one key, and the slot list of one copy still holds at most its
+  ``max_keys`` slots, but a key of one copy fails the key check against a
+  slot of the same id in the other. Issue from one copy only. After
+  restoring a backup, issue from the restored directory alone, publish its
+  public parameters again, and treat the slots issued after the backup as
+  lost: their holders decrypt the ciphertexts made before the restore, not
+  those made under the restored slot list.
+* **No ACL.** The store trusts a directory and files of its own user that
+  no other user can write, checked through one descriptor of the directory
+  per call (a directory renamed or swapped during a call is not used). It
+  reads the mode bits only: a Linux ACL entry that lets another user write
+  shows in the group bits and is refused, a macOS ACL (``chmod +a``, shown by
+  ``ls -led``) does not, so do not put one on the directory.
+
 The key holder of h2
 (:class:`~pyfe4ai.schemes.bcfe.gc_ristretto255.BCFEGCRistretto255KeyHolder`)
 keeps the secret keys of its open requests and is never copied or pickled
@@ -165,63 +186,134 @@ keeps the secret keys of its open requests and is never copied or pickled
 Sizes
 -----
 
-One slot of a linear model of 100 features (``linear_threshold``), in raw
-bytes; the JSON records carry them in base64, a third more:
+One slot of each library circuit below, in raw bytes; the JSON records carry
+them in base64, a third more. The linear circuits have 100 features:
+:func:`~pyfe4ai.circuits.library.linear_threshold` (the decision
+``[sum_i w_i x_i + bias >= 0]``) and
+:func:`~pyfe4ai.circuits.library.linear_score` (the score itself); the MLP
+is :func:`~pyfe4ai.circuits.library.mlp` with 64 features, 16 hidden ReLU
+units and one output decision, all values 8-bit (``shift = 8``).
 
 .. list-table::
    :header-rows: 1
-   :widths: 30 14 14 20 22
+   :widths: 34 12 10 12 14 18
 
-   * - Circuit, ``data_wires``
+   * - Circuit
+     - ``data_wires``
      - Key bits ``m``
      - Table entries
      - Slot public keys (in ``pp``)
      - Ciphertext component
-   * - 16-bit weights and features, ``"hardwired"``
+   * - Linear decision, 16-bit weights and features
+     - ``"hardwired"``
      - 1632
      - 64,459
      - 104,480
      - 1,083,617
-   * - the same, ``"labels"``
+   * - the same
+     - ``"labels"``
      - 1632
      - 96,248
      - 104,480
      - 1,617,841
-   * - 8-bit weights and features, ``"hardwired"``
+   * - Linear decision, 8-bit weights and features
+     - ``"hardwired"``
      - 816
      - 16,427
      - 52,256
      - 288,993
-   * - the same, ``"labels"``
+   * - the same
+     - ``"labels"``
      - 816
      - 25,816
      - 52,256
      - 452,017
+   * - Linear decision, 16-bit weights, 8-bit features
+     - ``"hardwired"``
+     - 1624
+     - 29,243
+     - 103,968
+     - 519,905
+   * - the same
+     - ``"labels"``
+     - 1624
+     - 45,032
+     - 103,968
+     - 785,329
+   * - Linear score, 16-bit weights and features
+     - ``"hardwired"``
+     - 1632
+     - 64,535
+     - 104,480
+     - 1,084,837
+   * - the same
+     - ``"labels"``
+     - 1632
+     - 96,324
+     - 104,480
+     - 1,619,061
+   * - MLP 64-16-1, 8-bit
+     - ``"hardwired"``
+     - 8593
+     - 174,054
+     - 549,984
+     - 3,059,889
+   * - the same
+     - ``"labels"``
+     - 8593
+     - 241,510
+     - 549,984
+     - 4,147,377
 
-.. list-table:: Median times of one slot (milliseconds; Apple M4 Max, native backend, ``benchmarks/run.py bcfe --runs 7``)
+.. list-table:: Median times of one slot, 1 / 4 threads (milliseconds; Apple M4 Max, native backend, ``benchmarks/run.py bcfe --runs 7``)
    :header-rows: 1
-   :widths: 34 14 14 14 12
+   :widths: 34 14 16 18 18
 
-   * - Circuit, ``data_wires``
-     - Threads
+   * - Circuit
+     - ``data_wires``
      - Issue (h1)
      - Encrypt
      - Decrypt
-   * - 16-bit, ``"hardwired"``
-     - 1 / 4
+   * - Linear decision, 16-bit
+     - ``"hardwired"``
      - 23.9 / 7.3
-     - 83.4 / 35.9
-     - 21.2 / 12.6
-   * - 16-bit, ``"labels"``
-     - 1 / 4
-     - 24.0 / 7.3
-     - 91.4 / 43.8
+     - 83.2 / 35.8
+     - 21.1 / 12.6
+   * - Linear decision, 16-bit
+     - ``"labels"``
+     - 23.9 / 7.3
+     - 90.9 / 43.6
      - 25.0 / 16.5
-   * - 8-bit, ``"hardwired"``
-     - 1 / 4
+   * - Linear decision, 8-bit
+     - ``"hardwired"``
      - 12.0 / 3.7
-     - 37.6 / 13.7
-     - 8.7 / 4.4
+     - 37.4 / 13.7
+     - 8.7 / 4.5
+   * - Linear decision, 8-bit
+     - ``"labels"``
+     - 12.0 / 3.7
+     - 39.7 / 16.0
+     - 9.8 / 5.5
+   * - Linear decision, 16-bit weights, 8-bit features
+     - ``"hardwired"``
+     - 23.8 / 7.3
+     - 73.6 / 26.4
+     - 16.3 / 7.8
+   * - Linear score, 16-bit
+     - ``"hardwired"``
+     - 24.0 / 7.3
+     - 83.1 / 35.7
+     - 21.1 / 12.7
+   * - MLP 64-16-1, 8-bit
+     - ``"hardwired"``
+     - 126.2 / 38.2
+     - 395.0 / 146.2
+     - 87.4 / 42.7
+   * - MLP 64-16-1, 8-bit
+     - ``"labels"``
+     - 126.2 / 38.3
+     - 411.4 / 163.0
+     - 95.6 / 50.7
 
 Encryption is dominated by the label encryption (one variable-base
 multiplication per label), not by the garbling; it scales with the number of

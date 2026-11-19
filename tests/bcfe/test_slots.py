@@ -304,10 +304,10 @@ def _interrupted(directory, monkeypatch):
     store.issue(dkey(0), 5, Builder("r0"))
     real = slots._atomic_write
 
-    def write(directory, name, data, mode):
+    def write(directory, name, data, mode, *rest):
         if name == slots.PUBLIC_FILE:
             raise OSError("disk full")
-        real(directory, name, data, mode)
+        real(directory, name, data, mode, *rest)
 
     monkeypatch.setattr(slots, "_atomic_write", write)
     with pytest.raises(OSError):
@@ -368,7 +368,7 @@ def test_a_crash_at_each_step_never_reuses_a_slot_id(tmp_path, where):
             os.close(read)
             count, real = [0], slots._atomic_write
 
-            def dying_write(directory, name, data, mode):
+            def dying_write(directory, name, data, mode, *rest):
                 count[0] += 1
                 if where == "before-{}".format(count[0]):
                     os._exit(0)
@@ -376,7 +376,7 @@ def test_a_crash_at_each_step_never_reuses_a_slot_id(tmp_path, where):
                     with open(os.path.join(directory, ".slots-torn.tmp"), "wb") as f:
                         f.write(json.dumps(data).encode()[:20])
                     os._exit(0)
-                real(directory, name, data, mode)
+                real(directory, name, data, mode, *rest)
                 if where == "after-{}".format(count[0]):
                     os._exit(0)
 
@@ -983,3 +983,149 @@ def test_write_json_file_replaces_atomically_and_leaves_no_temporary_file(tmp_pa
 def test_sync_directory_flushes_and_is_best_effort(tmp_path):
     slots.sync_directory(tmp_path)                                   # a directory: flushed
     slots.sync_directory(tmp_path / "missing")                      # cannot be opened: nothing raised
+
+
+# -- one checked directory per call (dir_fd; appended 2026-11-20)
+
+
+needs_at_calls = pytest.mark.skipif(not slots._DIR_FD, reason="the platform lacks the *at calls (os.supports_dir_fd)")
+
+
+def _swap(directory, away):
+    """Rename *directory* to *away* and put an empty directory of this user,
+    mode 0o700, in its place: one the store's checks accept."""
+    os.rename(directory, away)
+    os.mkdir(directory, 0o700)
+    os.chmod(directory, 0o700)
+
+
+@needs_at_calls
+def test_a_directory_swapped_during_a_call_gets_none_of_its_reads_or_writes(tmp_path, monkeypatch):
+    """The files of one locked call are those of the directory it opened and
+    checked: swapped after the check (here, before the first read), the old
+    directory still gets the call's reads and writes, the new one nothing --
+    not the slot, not a lock file, not a temporary file. Opened by path, the
+    call would read an empty store there and issue slot 0 again into it."""
+    directory, away = tmp_path / "store", tmp_path / "away"
+    store = SlotStore(directory)
+    store.issue(dkey(0), 5, Builder("r0"))
+    real, swapped = slots._read_json, []
+
+    def read(path, private, dir_fd=None):
+        if not swapped:
+            _swap(directory, away)
+            swapped.append(True)
+        return real(path, private, dir_fd)
+
+    monkeypatch.setattr(slots, "_read_json", read)
+    result = store.issue(dkey(1), 5, Builder("r1"))
+    monkeypatch.setattr(slots, "_read_json", real)
+    assert swapped and (result.status, result.slot_id) == ("new", 1)
+    assert os.listdir(directory) == []
+    assert listed_on_disk(away) == [0, 1]
+    check_consistent(away)
+    # the next call opens the path again: the directory now there, checked, an empty store
+    assert store.version() == 0 and store.lookup(dkey(0)) is None
+
+
+@needs_at_calls
+def test_the_owner_files_are_read_and_written_in_the_directory_they_checked(tmp_path, monkeypatch):
+    directory = tmp_path / "inst"
+    os.mkdir(directory, 0o700)
+    slots.write_json_file(directory, "own.json", {"v": 1}, 0o600)
+    real = slots._open_directory
+
+    def open_then_swap(away, plant):
+        def opened(path):
+            fd = real(path)
+            _swap(directory, tmp_path / away)
+            if plant is not None:
+                fd2 = os.open(directory / "own.json", os.O_WRONLY | os.O_CREAT, 0o600)
+                os.write(fd2, json.dumps(plant).encode())
+                os.close(fd2)
+            return fd
+        return opened
+
+    monkeypatch.setattr(slots, "_open_directory", open_then_swap("away1", {"v": "planted"}))
+    assert slots.read_json_file(directory / "own.json", private=True) == {"v": 1}   # the checked directory's file
+    monkeypatch.setattr(slots, "_open_directory", open_then_swap("away2", None))
+    slots.write_json_file(directory, "own.json", {"v": 3}, 0o600)                  # into the checked directory
+    monkeypatch.setattr(slots, "_open_directory", real)
+    assert slots.read_json_file(tmp_path / "away2" / "own.json", private=True) == {"v": 3}
+    assert os.listdir(directory) == []
+    assert slots.read_json_file(tmp_path / "away1" / "own.json", private=True) == {"v": 1}
+
+
+def test_the_owner_files_check_their_directory(tmp_path):
+    loose = tmp_path / "loose"
+    os.mkdir(loose)
+    os.chmod(loose, 0o777)
+    with pytest.raises(FEConfigError, match="lets other users write"):
+        slots.write_json_file(loose, "own.json", {"v": 1}, 0o600)
+    with pytest.raises(FEConfigError, match="lets other users write"):
+        slots.read_json_file(loose / "own.json", private=True)
+    with pytest.raises(FEConfigError, match="does not exist"):
+        slots.read_json_file(tmp_path / "missing" / "own.json", private=True)
+    good = tmp_path / "good"
+    os.mkdir(good, 0o700)
+    os.symlink(good, tmp_path / "link")
+    with pytest.raises(FEConfigError, match="symbolic link"):
+        slots.write_json_file(tmp_path / "link", "own.json", {"v": 1}, 0o600)
+    for name in ("", ".", "..", "a/b", os.path.join("..", "own.json")):
+        with pytest.raises(FEValidationError, match="one file"):
+            slots.write_json_file(good, name, {"v": 1}, 0o600)
+    assert os.listdir(good) == []
+
+
+def test_without_the_at_calls_the_store_works_by_path(tmp_path, monkeypatch):
+    monkeypatch.setattr(slots, "_DIR_FD", False)
+    store = SlotStore(tmp_path / "store")
+    first = store.issue(dkey(0), 3, Builder("r0"))
+    assert store.issue(dkey(0), 3, never) == ("hit", first.slot_id, first.private)
+    assert store.issue(dkey(1), 3, Builder("r1")).slot_id == 1
+    slots.write_json_file(tmp_path / "store", "own.json", {"v": 1}, 0o600)
+    assert slots.read_json_file(tmp_path / "store" / "own.json", private=True) == {"v": 1}
+    check_consistent(tmp_path / "store")
+
+
+@pytest.mark.skipif(not os.path.isdir("/dev/fd"), reason="needs /dev/fd")
+def test_no_descriptor_is_left_open(tmp_path):
+    store = SlotStore(tmp_path / "store")
+    store.issue(dkey(0), 5, Builder())
+    before = len(os.listdir("/dev/fd"))
+    for i in range(1, 4):
+        store.issue(dkey(i), 5, Builder())
+        store.public_slots()
+        store.run_locked(lambda listed: None)
+        slots.write_json_file(tmp_path / "store", "own.json", {"v": i}, 0o600)
+        slots.read_json_file(tmp_path / "store" / "own.json", private=True)
+        store.check_directory()
+    with pytest.raises(FEConfigError):
+        slots.read_json_file(tmp_path / "missing" / "x.json", private=True)
+    assert len(os.listdir("/dev/fd")) == before
+
+
+def test_threads_that_create_the_lock_file_at_once_all_get_it(tmp_path):
+    """The first calls on a new directory create the lock file together. On
+    macOS, of two threads that ``openat`` one new name with ``O_CREAT`` at
+    once, one can fail with ``ENOENT``; the store creates it with ``O_EXCL``
+    and opens an existing one without ``O_CREAT``, so every call gets it."""
+    for trial in range(30):
+        directory = tmp_path / "d{}".format(trial)
+        os.mkdir(directory, 0o700)
+        stores = [SlotStore(directory) for _ in range(4)]
+        barrier, errors, ids = threading.Barrier(4), [], []
+
+        def run(t):
+            try:
+                barrier.wait()
+                ids.append(stores[t].issue(dkey((trial, t)), 100, Builder()).slot_id)
+            except Exception as exc:  # pragma: no cover - reported below
+                errors.append(exc)
+
+        threads = [threading.Thread(target=run, args=(t,)) for t in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(30)
+        assert not errors and sorted(ids) == [0, 1, 2, 3]

@@ -44,7 +44,7 @@ w_j)`` and ``(m, 0)``, exactly ``2m + 1`` entries, the unselected positions
 recomputed from ``k``); the authority alone then cannot decrypt the slot.
 Both follow one order, and a step that fails changes nothing: (1) ``w``
 through the key layout to its canonical bits; (2) the issuance policy
-(:func:`pyfe4ai.policy.evaluate` of ``issuance_policy`` on the requester's
+(:func:`~pyfe4ai.policy.formula.evaluate` of ``issuance_policy`` on the requester's
 attributes) before anything is reserved; (3) the private dedup key of
 (scheme, circuit, requester, ``w``); (4) the cap ``max_keys``, with the same
 error whether (3) found a slot or not; (5) the slot (backend operations
@@ -132,7 +132,7 @@ digest, hex>``: ``setup.json`` (the public setup,
 policy, the profile) and the slot store's files. The private record of a
 slot holds its ``k`` (16 bytes), the ``max_keys`` of its issue, its
 ``key_mode``, the digest of the requester's attribute set
-(:func:`~pyfe4ai.policy.attribute_set_digest`, for the authority's audit)
+(:func:`~pyfe4ai.policy.attributes.attribute_set_digest`, for the authority's audit)
 and, for h1 with ``keep_issued_keys``, its scalars and ``w``; never an
 unselected secret key (none exists) and never in the public list (I14,
 I16). The attribute-set digest is unsalted and vocabularies are small: in
@@ -312,8 +312,8 @@ _KEY_CHECKS_KEPT = 256
 TEST_RANDOMNESS_REFUSED = ("pyfe4ai.backend._random_override is set: bcfe refuses to issue, set up or encrypt with "
                            "test randomness")
 
-#: The one error of a component that does not decrypt (I10): malformed, or of
-#: another slot, ciphertext or key -- the cause is not told apart.
+#: The one error of a component that does not decrypt (malformed, or of
+#: another slot, ciphertext or key); the cause is not told apart.
 DECRYPTION_FAILED = ("the ciphertext component of this key's slot does not decrypt with this key (malformed, or "
                      "made for another slot, ciphertext or key)")
 
@@ -336,7 +336,7 @@ def _max_keys(value, error=FEValidationError, what: str = "max_keys") -> int:
 
 @contextlib.contextmanager
 def _not_too_deep(what: str):
-    """Report a record nested too deeply for Python's recursion limit as :class:`FEValidationError`."""
+    """Report a record nested too deeply for Python's recursion limit as :class:`~pyfe4ai.core.exceptions.FEValidationError`."""
     try:
         yield
     except RecursionError:
@@ -653,7 +653,7 @@ class BCFEGCRistretto255KeyGenerator(CircuitFEAbsKeyGenerator):
     does not protect).
 
     Args:
-        config: ``circuit`` (required, a :class:`~pyfe4ai.circuits.ParamCircuit`),
+        config: ``circuit`` (required, a :class:`~pyfe4ai.circuits.library.ParamCircuit`),
             ``max_keys`` (default 16), ``data_wires`` (``"hardwired"`` or
             ``"labels"``), ``key_mode`` (``"h1"`` or ``"h2"``),
             ``keep_issued_keys`` (default ``True``), ``issuance_policy`` (a
@@ -1086,10 +1086,10 @@ class BCFEGCRistretto255KeyHolder:
     Threads may share a holder: a lock of the object covers its open
     requests (renewed in a forked child, :func:`pyfe4ai.core.forksafe.track`),
     so two :meth:`finish` calls of one grant give one key and one
-    :class:`FEKeyError`.
+    :class:`~pyfe4ai.core.exceptions.FEKeyError`.
 
     Args:
-        pp: The public parameters (checked, :class:`FEValidationError` otherwise).
+        pp: The public parameters (checked, :class:`~pyfe4ai.core.exceptions.FEValidationError` otherwise).
     """
 
     def __init__(self, pp: dict) -> None:
@@ -1215,7 +1215,7 @@ class BCFEGCRistretto255(CircuitFEAbsCrypto):
 
     The public parameters are checked (fail closed) before every use: the
     markers, the setup digest, every slot digest and the pp digest
-    (:class:`FEValidationError` otherwise).
+    (:class:`~pyfe4ai.core.exceptions.FEValidationError` otherwise).
 
     Two caches live on the object and are left out of its copies and pickles
     (rebuilt on first use): the circuit of the public parameters' encoding,

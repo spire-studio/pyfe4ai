@@ -37,7 +37,7 @@ Files of the directory:
 
 :meth:`SlotStore.issue` runs under one exclusive lock (the store object's
 lock for its threads, the file lock for every other process and store
-object): look the dedup key up; refuse with the same :class:`FEKeyError`
+object): look the dedup key up; refuse with the same :class:`~pyfe4ai.core.exceptions.FEKeyError`
 and the same text, hit or miss, once the list holds ``max_keys`` slots (so
 that a requester cannot test functions through the deduplication once the
 cap is reached); return a hit without building; otherwise
@@ -79,7 +79,7 @@ key no one holds: its retry is a hit the scheme refuses (a lost key is not
 issued again).
 
 Temporary files of a crashed writer are removed by the next locked call.
-Unreadable, truncated or inconsistent files raise :class:`FEConfigError`
+Unreadable, truncated or inconsistent files raise :class:`~pyfe4ai.core.exceptions.FEConfigError`
 (fail closed): the store never starts empty while its files exist. The two
 files are consistent when every listed slot has its private record and its
 one dedup entry, a pending copy of a listed slot equals the listed record,
@@ -99,20 +99,35 @@ the umask may clear bits). Each store file is opened with ``O_NOFOLLOW``
 (and ``O_NONBLOCK``, so that a FIFO cannot block the call) and must be a
 regular file of that user that no other user can write; the private file
 and the lock file must not be readable by others either. Anything else
-raises :class:`FEConfigError` naming the path and the reason (never the
+raises :class:`~pyfe4ai.core.exceptions.FEConfigError` naming the path and the reason (never the
 content). The directories above the store are not checked (a cache
 directory reached through a symbolic link works), nor are the files other
 code keeps in the directory. Alternative not taken: trust the caller's
 directory (the first version did), which leaves the integrity of the store
 to the permissions of a path the store does not control.
 
-Known limits of these checks: they read the mode bits only -- access
-control lists (macOS ``chmod +a``, POSIX ACLs) are not inspected, so an ACL
-that lets another user add or replace files in the directory is not seen;
-and the files are opened by path after the directory was checked, not
-through a descriptor of it (``dir_fd``), so a directory swapped between
-the check and the open is not caught. Both need a writer the directory's
-mode bits already let in, or the owner's own help.
+Every locked call opens the directory once (``O_DIRECTORY | O_NOFOLLOW``),
+checks it through that descriptor (``fstat``), and opens, writes, renames and
+removes the store files relative to it (``dir_fd``), so all the files of one
+call are those of the directory it checked: a directory renamed away during
+the call keeps receiving its writes, and one put in its place is not touched.
+:func:`read_json_file` and :func:`write_json_file` do the same for one file
+each. Where the platform lacks the ``*at`` calls (``os.supports_dir_fd``) the
+files are opened by path after the check, as before. Alternative not taken:
+check by path and open by path (the first version), which leaves a window in
+which a directory swapped in after the check is used.
+
+Known limits of these checks: they read the mode bits only. On Linux a POSIX
+ACL entry that lets another user write shows in the group bits (the ACL
+mask), so it is refused; a macOS ACL (``chmod +a``) does not change the mode
+bits and is not seen: do not put ACLs on the directory (``ls -led`` shows
+them). Alternative not taken: refuse a directory with an extended macOS ACL
+(``acl_get_fd_np`` through ``ctypes``), platform-specific code for a
+directory that only its owner can give an ACL. Two calls are two opens: a
+directory swapped between two calls is checked again by the second, and
+passes only if it is a directory of the same user that no other user can
+write -- for instance a copy of the store (see :class:`SlotStore`: never
+issue from two copies of one directory).
 
 The owner of a store may keep files of its own in the directory (the
 bounded-key scheme keeps its setup and its options there):
@@ -149,6 +164,7 @@ import json
 import logging
 import math
 import os
+import secrets
 import stat
 import tempfile
 import threading
@@ -161,7 +177,7 @@ logger = logging.getLogger(__name__)
 
 #: The public slot list.
 PUBLIC_FILE = "slots.json"
-#: The private side: reservations, private records, the dedup index.
+#: The private side (reservations, private records, the dedup index).
 PRIVATE_FILE = "slots.private.json"
 #: The file lock.
 LOCK_FILE = "slots.lock"
@@ -180,6 +196,11 @@ _TEMP_PREFIX = ".slots-"
 _TEMP_SUFFIX = ".tmp"
 #: How ``bytes`` sit in a record on disk: ``{"__bytes__": "<base64>"}``.
 _BYTES_TAG = "__bytes__"
+#: The files of a checked directory are opened relative to its descriptor (``dir_fd``) where the platform can;
+#: ``os.replace`` takes ``src_dir_fd`` / ``dst_dir_fd`` where ``os.rename`` does.
+_DIR_FD = (all(f in os.supports_dir_fd for f in (os.open, os.stat, os.unlink, os.rename))
+           and os.listdir in os.supports_fd)
+_O_DIRECTORY = getattr(os, "O_DIRECTORY", 0)
 
 
 class IssueResult(NamedTuple):
@@ -283,18 +304,78 @@ def _check_owner_and_mode(st: os.stat_result, path: str, private: bool) -> None:
             mode, "read or write" if private else "write"))
 
 
-def _open_file(path: str, flags: int, private: bool) -> Optional[int]:
+def _open_directory(path: str) -> int:
+    """A descriptor of the directory *path*, opened without following a
+    symbolic link (``O_DIRECTORY | O_NOFOLLOW``) and checked through it
+    (``fstat``): a directory of this process's effective user that no other
+    user can write.
+
+    Raises:
+        FileNotFoundError: If *path* does not exist.
+        FEConfigError: If it is refused or cannot be opened.
+    """
+    try:
+        fd = os.open(path, os.O_RDONLY | _O_DIRECTORY | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        raise
+    except OSError as exc:  # ELOOP / ENOTDIR for a symbolic link or a file, EACCES, ...
+        try:
+            st = os.lstat(path)
+        except OSError:
+            st = None
+        if st is not None and stat.S_ISLNK(st.st_mode):
+            raise _refused(path, "it is a symbolic link") from None
+        if st is not None and not stat.S_ISDIR(st.st_mode):
+            raise _refused(path, "it is not a directory") from None
+        raise FEConfigError("the slot store directory {} cannot be opened ({})".format(
+            path, exc.strerror or type(exc).__name__)) from None
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISDIR(st.st_mode):  # O_DIRECTORY missing on this platform
+            raise _refused(path, "it is not a directory")
+        _check_owner_and_mode(st, path, private=False)
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _os_open(path: str, target: str, flags: int, rel: dict) -> int:
+    """``os.open(target, flags, 0o600, **rel)``. Relative to a directory
+    descriptor and with ``O_CREAT``, the file is created with ``O_EXCL`` and,
+    if it exists, opened without ``O_CREAT``: on macOS, of two threads that
+    ``openat`` one new name with ``O_CREAT`` at once, one can fail with
+    ``ENOENT`` (an open by path retries in the kernel)."""
+    if not (rel and flags & os.O_CREAT):
+        return os.open(target, flags, PRIVATE_MODE, **rel)
+    for _ in range(100):
+        try:
+            return os.open(target, flags | os.O_EXCL, PRIVATE_MODE, **rel)
+        except FileExistsError:  # also a symbolic link or another kind of file: refused by the open below
+            pass
+        try:
+            return os.open(target, flags & ~os.O_CREAT, PRIVATE_MODE, **rel)
+        except FileNotFoundError:  # removed in between: create it again
+            continue
+    raise FEConfigError("the slot store file {} keeps disappearing while it is opened".format(path))
+
+
+def _open_file(path: str, flags: int, private: bool, dir_fd: Optional[int] = None) -> Optional[int]:
     """A descriptor of the store file *path*, opened without following a
     symbolic link and without blocking on a FIFO, once it is checked to be a
     regular file of this user (:func:`_check_owner_and_mode`); ``None`` if it
-    does not exist (and *flags* do not create it, with mode ``0o600``)."""
+    does not exist (and *flags* do not create it, with mode ``0o600``). With
+    *dir_fd* (a checked directory, :func:`_open_directory`), the file named
+    by the last component of *path* in that directory; *path* names it in
+    messages."""
+    target, rel = (os.path.basename(path), {"dir_fd": dir_fd}) if dir_fd is not None else (path, {})
     try:
-        fd = os.open(path, flags | os.O_NOFOLLOW | os.O_NONBLOCK, PRIVATE_MODE)
+        fd = _os_open(path, target, flags | os.O_NOFOLLOW | os.O_NONBLOCK, rel)
     except FileNotFoundError:
         return None
     except OSError as exc:  # ELOOP for a symbolic link, EISDIR for a directory opened for writing, ...
         try:
-            st = os.lstat(path)
+            st = os.lstat(target, **rel)
         except OSError:
             st = None
         if st is not None and stat.S_ISLNK(st.st_mode):
@@ -315,10 +396,11 @@ def _open_file(path: str, flags: int, private: bool) -> Optional[int]:
     return fd
 
 
-def _read_json(path: str, private: bool) -> Optional[dict]:
+def _read_json(path: str, private: bool, dir_fd: Optional[int] = None) -> Optional[dict]:
     """The JSON object in the store file *path* (checked by
-    :func:`_open_file`), ``None`` if the file does not exist."""
-    fd = _open_file(path, os.O_RDONLY, private)
+    :func:`_open_file`; in the directory *dir_fd* if given), ``None`` if the
+    file does not exist."""
+    fd = _open_file(path, os.O_RDONLY, private, dir_fd)
     if fd is None:
         return None
     try:
@@ -383,12 +465,32 @@ def _sync_dir(directory: str) -> None:
         os.close(fd)
 
 
-def _atomic_write(directory: str, name: str, data: dict, mode: int) -> None:
+def _make_temp(dir_fd: int) -> Tuple[int, str]:
+    """A new temporary file (mode ``0o600``, ``O_EXCL``, no symbolic link
+    followed) in the directory *dir_fd*: its descriptor and its name."""
+    for _ in range(100):
+        name = "{}{}{}".format(_TEMP_PREFIX, secrets.token_hex(8), _TEMP_SUFFIX)
+        try:
+            fd = os.open(name, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, PRIVATE_MODE, dir_fd=dir_fd)
+        except FileExistsError:
+            continue
+        return fd, name
+    raise FileExistsError("no free temporary file name in the slot store directory")  # pragma: no cover
+
+
+def _atomic_write(directory: str, name: str, data: dict, mode: int, dir_fd: Optional[int] = None) -> None:
     """Replace ``directory/name`` with *data* (JSON): a temporary file in the
     same directory, fsynced, renamed over the old file, then the directory
-    fsynced. A crash leaves the old file or the new one, never a mix."""
+    fsynced. A crash leaves the old file or the new one, never a mix. With
+    *dir_fd* (the checked descriptor of *directory*), every step runs
+    relative to it."""
     payload = json.dumps(data, separators=(",", ":"), allow_nan=False).encode("utf-8")
-    fd, tmp = tempfile.mkstemp(dir=directory, prefix=_TEMP_PREFIX, suffix=_TEMP_SUFFIX)  # mode 0o600
+    if dir_fd is not None:
+        fd, tmp = _make_temp(dir_fd)
+        rel: dict = {"dir_fd": dir_fd}
+    else:
+        fd, tmp = tempfile.mkstemp(dir=directory, prefix=_TEMP_PREFIX, suffix=_TEMP_SUFFIX)  # mode 0o600
+        rel = {}
     try:
         try:
             os.fchmod(fd, mode)
@@ -398,12 +500,19 @@ def _atomic_write(directory: str, name: str, data: dict, mode: int) -> None:
             _sync(fd)
         finally:
             os.close(fd)
-        os.replace(tmp, os.path.join(directory, name))
+        if dir_fd is not None:
+            os.replace(tmp, name, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+        else:
+            os.replace(tmp, os.path.join(directory, name))
     except BaseException:
         with contextlib.suppress(OSError):
-            os.unlink(tmp)
+            os.unlink(tmp, **rel)
         raise
-    _sync_dir(directory)
+    if dir_fd is not None:
+        with contextlib.suppress(OSError):  # best effort, as for a directory opened by path
+            _sync(dir_fd)
+    else:
+        _sync_dir(directory)
 
 
 # -- arguments
@@ -440,6 +549,16 @@ class SlotStore:
     (``fcntl.flock``; POSIX only). Every call reads the files again, so a
     store object holds no state of the slots.
 
+    One directory, one store: the locks order the calls on one directory,
+    not on its copies. Two copies of a directory (a second host, a backup
+    restored while the original goes on) each hand out the same slot ids
+    again, to different slots, and each counts its own cap. Issue from one
+    copy only; after restoring a backup, issue from the restored directory
+    alone and treat the slots issued after the backup as lost. Alternative
+    not taken: record the directory's device and inode in the private file
+    and refuse a store that has moved, which would also refuse every restore,
+    move or file-system migration until an operator confirmed it.
+
     Args:
         directory: The directory of this authority instance (path-like).
 
@@ -457,19 +576,27 @@ class SlotStore:
         self._lock = threading.Lock()
         self._holder: Optional[int] = None  # the thread inside _locked() (refuses re-entry from build)
         self._lock_fd: Optional[int] = None  # the file-lock descriptor while held
-        forksafe.track(self)  # a forked child: a new lock, the inherited descriptor dropped
+        self._dir_fd: Optional[int] = None  # the checked directory's descriptor while held
+        forksafe.track(self)  # a forked child: a new lock, the inherited descriptors dropped
 
     def _after_fork_in_child(self) -> None:
         """In a forked child: a new lock (another thread of the parent may hold
-        the old one), and the child's copy of a held file-lock descriptor
-        closed (closing a copy does not release the parent's lock; keeping it
-        would keep the lock alive after the parent let go of it)."""
+        the old one), and the child's copies of a held file-lock descriptor and
+        directory descriptor closed (closing a copy does not release the
+        parent's lock; keeping it would keep the lock alive after the parent
+        let go of it)."""
         self._lock = threading.Lock()
         self._holder = None
-        if self._lock_fd is not None:
-            with contextlib.suppress(OSError):
-                os.close(self._lock_fd)
-            self._lock_fd = None
+        for fd in (self._lock_fd, self._dir_fd):
+            if fd is not None:
+                with contextlib.suppress(OSError):
+                    os.close(fd)
+        self._lock_fd = self._dir_fd = None
+
+    def _rel(self) -> Optional[int]:
+        """The descriptor the store files are opened relative to, under the
+        lock; ``None`` where the platform lacks the ``*at`` calls (by path)."""
+        return self._dir_fd if _DIR_FD else None
 
     def __reduce__(self):
         return (type(self), (self._dir,))  # copies and pickles: a new store object, its own lock
@@ -498,41 +625,50 @@ class SlotStore:
         with self._lock:
             self._holder = threading.get_ident()
             try:
-                self._check_directory()
-                fd = _open_file(os.path.join(self._dir, LOCK_FILE), os.O_RDWR | os.O_CREAT, private=True)
+                dfd = self._open_checked_directory()
                 pid = os.getpid()
-                self._lock_fd = fd
+                self._dir_fd = dfd
                 try:
-                    if stat.S_IMODE(os.fstat(fd).st_mode) != PRIVATE_MODE:  # created under a umask that took 0o600 bits
-                        os.fchmod(fd, PRIVATE_MODE)
-                    fcntl.flock(fd, fcntl.LOCK_EX)
+                    fd = _open_file(os.path.join(self._dir, LOCK_FILE), os.O_RDWR | os.O_CREAT, private=True,
+                                    dir_fd=self._rel())
+                    if fd is None:  # O_CREAT: only if the directory went away meanwhile
+                        raise FEConfigError("the slot store's lock file {} cannot be created".format(
+                            os.path.join(self._dir, LOCK_FILE)))
+                    self._lock_fd = fd
                     try:
-                        self._remove_temporary_files()
-                        yield
+                        if stat.S_IMODE(os.fstat(fd).st_mode) != PRIVATE_MODE:  # a umask took 0o600 bits
+                            os.fchmod(fd, PRIVATE_MODE)
+                        fcntl.flock(fd, fcntl.LOCK_EX)
+                        try:
+                            self._remove_temporary_files()
+                            yield
+                        finally:
+                            if os.getpid() == pid:  # a child forked meanwhile must not release the parent's lock
+                                fcntl.flock(fd, fcntl.LOCK_UN)
                     finally:
-                        if os.getpid() == pid:  # a child forked meanwhile must not release the parent's lock
-                            fcntl.flock(fd, fcntl.LOCK_UN)
+                        if os.getpid() == pid:
+                            self._lock_fd = None
+                            os.close(fd)
                 finally:
                     if os.getpid() == pid:
-                        self._lock_fd = None
-                        os.close(fd)
+                        self._dir_fd = None
+                        os.close(dfd)
             finally:
                 self._holder = None
 
-    def _check_directory(self) -> None:
+    def _open_checked_directory(self) -> int:
         """Create the store directory (mode ``0o700``) if it is missing, then
-        refuse it unless it is a directory, not a symbolic link, owned by this
-        process's user and not writable by other users."""
-        path = self._dir
+        open it and check it through its descriptor (:func:`_open_directory`):
+        a directory, not a symbolic link, owned by this process's user and not
+        writable by other users."""
         try:
-            st = os.lstat(path)
+            return _open_directory(self._dir)
         except FileNotFoundError:
-            st = self._make_directory()
-        if stat.S_ISLNK(st.st_mode):
-            raise _refused(path, "it is a symbolic link")
-        if not stat.S_ISDIR(st.st_mode):
-            raise _refused(path, "it is not a directory")
-        _check_owner_and_mode(st, path, private=False)
+            self._make_directory()
+        try:
+            return _open_directory(self._dir)
+        except FileNotFoundError:
+            raise FEConfigError("the slot store directory {} was removed while it was made".format(self._dir)) from None
 
     def _make_directory(self) -> os.stat_result:
         os.makedirs(os.path.dirname(self._dir), exist_ok=True)
@@ -548,10 +684,14 @@ class SlotStore:
         return os.lstat(self._dir)
 
     def _remove_temporary_files(self) -> None:
-        for name in os.listdir(self._dir):
+        rel = self._rel()
+        for name in os.listdir(self._dir if rel is None else rel):
             if name.startswith(_TEMP_PREFIX) and name.endswith(_TEMP_SUFFIX):
                 with contextlib.suppress(OSError):
-                    os.unlink(os.path.join(self._dir, name))
+                    if rel is None:
+                        os.unlink(os.path.join(self._dir, name))
+                    else:
+                        os.unlink(name, dir_fd=rel)
 
     def _load(self) -> Tuple[List[dict], _PrivateSide]:
         """Both files, checked against each other, after the recovery: the
@@ -574,7 +714,7 @@ class SlotStore:
 
     def _load_public(self) -> List[dict]:
         path = self._public_path
-        data = _read_json(path, private=False)
+        data = _read_json(path, private=False, dir_fd=self._rel())
         if data is None:
             return []
         _check_header(data, path, PUBLIC_FORMAT)
@@ -593,7 +733,7 @@ class SlotStore:
         path = self._private_path
         listed = {slot["slot_id"]: slot for slot in public}
         last_id = public[-1]["slot_id"] if public else -1
-        data = _read_json(path, private=True)
+        data = _read_json(path, private=True, dir_fd=self._rel())
         if data is None:
             if public:  # written before the first public record: missing means lost
                 raise _corrupt(path, "missing while the slot list exists")
@@ -646,7 +786,7 @@ class SlotStore:
     def _write_public(self, public: List[dict]) -> None:
         _atomic_write(self._dir, PUBLIC_FILE, {
             "format": PUBLIC_FORMAT, "format_version": FORMAT_VERSION,
-            "slot_list_version": len(public), "slots": public}, PUBLIC_MODE)
+            "slot_list_version": len(public), "slots": public}, PUBLIC_MODE, self._rel())
 
     def _write_private(self, side: _PrivateSide, public: List[dict]) -> None:
         """Write *side*; the pending public records of slots *public* lists
@@ -658,7 +798,7 @@ class SlotStore:
             "private": {str(slot_id): record for slot_id, record in sorted(side.records.items())},
             "dedup": {key.hex(): slot_id for key, slot_id in side.dedup.items()},
             "pending": {str(slot_id): record for slot_id, record in sorted(side.pending.items())
-                        if slot_id not in listed}}, PRIVATE_MODE)
+                        if slot_id not in listed}}, PRIVATE_MODE, self._rel())
 
     def _snapshot(self) -> Tuple[List[dict], _PrivateSide]:
         try:
@@ -677,7 +817,7 @@ class SlotStore:
 
         1. Look *dedup_key* up.
         2. If the list holds ``max_keys`` slots or more: raise
-           :class:`FEKeyError`, with the same text whether step 1 found a slot
+           :class:`~pyfe4ai.core.exceptions.FEKeyError`, with the same text whether step 1 found a slot
            or not; nothing is written.
         3. Found: return ``IssueResult("hit", slot_id, private)`` without
            calling *build*.
@@ -835,34 +975,49 @@ class SlotStore:
         Raises:
             FEConfigError: If the directory is missing or refused.
         """
-        path = self._dir
         try:
-            st = os.lstat(path)
+            fd = _open_directory(self._dir)
         except FileNotFoundError:
-            raise FEConfigError("the slot store directory {} does not exist".format(path)) from None
-        if stat.S_ISLNK(st.st_mode):
-            raise _refused(path, "it is a symbolic link")
-        if not stat.S_ISDIR(st.st_mode):
-            raise _refused(path, "it is not a directory")
-        _check_owner_and_mode(st, path, private=False)
+            raise FEConfigError("the slot store directory {} does not exist".format(self._dir)) from None
+        os.close(fd)
 
 
 # -- the owner's own files in a store's directory (appended)
 
 
+@contextlib.contextmanager
+def _checked_directory(directory: str) -> Iterator[Optional[int]]:
+    """The descriptor of *directory*, opened and checked as a store's
+    (:func:`_open_directory`), for the files of one call to be opened
+    relative to it; ``None`` (files by path, after the check) where the
+    platform lacks the ``*at`` calls."""
+    try:
+        fd = _open_directory(directory)
+    except FileNotFoundError:
+        raise FEConfigError("the directory {} does not exist".format(directory)) from None
+    try:
+        yield fd if _DIR_FD else None
+    finally:
+        os.close(fd)
+
+
 def read_json_file(path, private: bool) -> Optional[dict]:
     """The JSON object in *path*, a file that the owner of a store keeps in
-    the store's directory, read with the checks of the store's own files: not
-    a symbolic link, no wait on a FIFO, a regular file of this process's
-    effective user that no other user can write (*private*: nor read);
-    ``None`` if it does not exist.
+    the store's directory, read with the checks of the store's own files: the
+    directory of *path* opened once and checked through its descriptor (a
+    directory of this process's effective user, not a symbolic link, that no
+    other user can write), the file opened relative to it, not a symbolic
+    link, no wait on a FIFO, a regular file of this user that no other user
+    can write (*private*: nor read); ``None`` if it does not exist.
 
     Raises:
-        FEConfigError: For a file that is refused, unreadable, not JSON or not
-            a JSON object (the message names the path, never the content).
+        FEConfigError: For a directory or a file that is refused or missing (the
+            directory), unreadable, not JSON or not a JSON object (the message
+            names the path, never the content).
     """
     path = os.fspath(path)
-    fd = _open_file(path, os.O_RDONLY, private)
+    with _checked_directory(os.path.dirname(os.path.abspath(path))) as dir_fd:
+        fd = _open_file(path, os.O_RDONLY, private, dir_fd)
     if fd is None:
         return None
     try:
@@ -889,10 +1044,19 @@ def sync_directory(directory) -> None:
 
 def write_json_file(directory, name: str, data: dict, mode: int) -> None:
     """Replace ``directory/name`` with *data* (JSON) as the store writes its
-    own files: a temporary file in the directory, flushed to the device
-    (``F_FULLFSYNC`` where the OS has it), renamed over the old file, then the
-    directory flushed. A crash leaves the old file or the new one; a
-    temporary file left behind is removed by the next locked call of a store
-    on the directory.
+    own files: the directory opened once and checked through its descriptor
+    (as :func:`read_json_file`), a temporary file in it, flushed to the
+    device (``F_FULLFSYNC`` where the OS has it), renamed over the old file,
+    then the directory flushed, each step relative to that descriptor. A
+    crash leaves the old file or the new one; a temporary file left behind is
+    removed by the next locked call of a store on the directory.
+
+    Raises:
+        FEConfigError: For a directory that is missing or refused.
+        FEValidationError: For a *name* that is not one file name.
     """
-    _atomic_write(os.fspath(directory), name, data, mode)
+    directory = os.fspath(directory)
+    if not isinstance(name, str) or not name or os.path.basename(name) != name or name in (".", ".."):
+        raise FEValidationError("write_json_file takes the name of one file in the directory, got {!r}".format(name))
+    with _checked_directory(directory) as dir_fd:
+        _atomic_write(directory, name, data, mode, dir_fd)

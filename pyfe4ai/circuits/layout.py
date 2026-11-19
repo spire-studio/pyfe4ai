@@ -34,7 +34,7 @@ import numpy as np
 
 from pyfe4ai.core.exceptions import FEValidationError
 
-#: Field names: an identifier of at most 64 ASCII characters.
+#: A field name is an identifier of at most 64 ASCII characters.
 FIELD_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,63}\Z")
 _FIELD_KEYS = ("name", "count", "bits", "signed")
 
@@ -128,7 +128,7 @@ class Layout:
 
     #: ``"key"``, ``"data"`` or ``"output"``: set by the subclasses.
     KIND = None
-    #: Whether the layout may have no bits (only the data: ``n = 0``).
+    #: Whether the layout may have no bits (only the data layout may, ``n = 0``).
     ALLOW_EMPTY = False
 
     __slots__ = ("_fields",)
