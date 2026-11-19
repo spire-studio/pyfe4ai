@@ -229,9 +229,9 @@ one thread, whatever :func:`~pyfe4ai.backend.set_threads` or
   joins each of its worker threads (also when one of them panics) rather
   than waiting for them, so the calling thread does not park there either.
   The tables the native code builds on first use (the Gaussian sampler's,
-  the pairing's generator and hash key) are built when the extension is
-  imported, and the sampler's tables without any wait, so no thread waits
-  for another to build them, in the parent or in a child.
+  the pairing's generator, group order and hash key) are built when the
+  extension is imported, and the sampler's tables without any wait, so no
+  thread waits for another to build them, in the parent or in a child.
 * *Who is not affected:* a child of a process that never ran several
   threads keeps them (and, once it runs them, its own children are
   limited); a process started with ``spawn``, ``forkserver`` or ``exec``
