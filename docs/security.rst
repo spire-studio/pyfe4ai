@@ -11,6 +11,43 @@ and `Known Issues / Security Notice
 <https://github.com/spire-studio/pyfe4ai#known-issues--security-notice>`__
 add measured costs and the remaining limitations.
 
+Trust assumptions in brief
+--------------------------
+
+What every scheme of the library assumes, whatever its family; the sections
+below add what each family assumes on top.
+
+* **The key authority is trusted.** The key generator holds the master secret
+  key and, in the multi-input and multi-client schemes, every client's
+  encryption key. This holds for the decentralized schemes too, whose setup
+  one key generator runs in one process, for the dealer of the threshold key
+  issuance (once, before it discards everything), and for the authority of
+  ``bcfe/gc_ristretto255``.
+* **Functional keys reveal function values by design.** A key for ``y`` gives
+  ``<x, y>`` (or ``x^T F y``, or ``C(w, x)``); several keys for one ``x`` give
+  everything those values determine. Which keys to issue is the deployment's
+  decision.
+* **Records are not authenticated.** Ciphertexts are malleable, and
+  ``pp_binding`` and ``pp_digest`` are digests, not signatures: the integrity
+  and the authenticity of keys, ciphertexts and public parameters are the
+  application's to ensure, as are authenticated, confidential channels between
+  parties.
+* **Servers are honest-but-curious, or corrupted below their threshold.**
+  Fewer than ``t`` decryption servers, or (statically) fewer than ``t`` key
+  servers, are corrupted, and a partial decryption carries no proof of
+  correctness (`Threshold trust model`_).
+* **Callers keep the one-time rules.** A client encrypts one input per label;
+  a precomputation is used once; ``bcfe`` assumes an honest encryptor.
+* **One copy of a stateful authority.** An authority that keeps state (the
+  slot list of ``bcfe``, the records of the key servers) is run from one copy
+  of it at a time.
+* **Parameters.** ``toy`` is not secure; ``standard`` aims at 128 bits (the
+  pairing schemes on BLS12-381 at about 120 to 126).
+* **Not covered:** chosen-ciphertext attacks and tampering, malicious
+  authorities, side channels beyond `Side channels`_, pickles from untrusted
+  sources, and quantum adversaries for every scheme that is not built on LWE
+  or Ring-LWE.
+
 Scheme status
 -------------
 
