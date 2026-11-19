@@ -157,6 +157,10 @@ Not covered
 * The experimental and known-insecure tiers, experimental option values, and
   experimental capabilities: ``distributed_keygen`` of ``sife/cp_ab_pairing``,
   its classes and its four kinds of record.
+* Bounded-key FE: ``pyfe4ai.schemes.bcfe`` (``bcfe/gc_ristretto255`` is
+  experimental), the circuits of ``pyfe4ai.circuits`` (which ``import
+  pyfe4ai`` loads, though none of its names is public) and the records of
+  ``pyfe4ai.core.formats.garbled``.
 * The identity directory: ``pyfe4ai.ac``, its classes, its checks and the
   records of ``pyfe4ai.core.formats.identity``, including what they add around
   the keys and ciphertexts of ``sife/fullysec_ring_lwe`` (the records of the
@@ -172,4 +176,7 @@ Not covered
 * Performance, the bytes of randomised outputs, and the text of errors,
   warnings and log messages.
 * The layout of the parameter cache directory (the records in it are
-  covered).
+  covered), and sharing it between versions: later versions read the
+  records of earlier ones, but an earlier version regenerates a record it
+  does not know and overwrites it, so give each version its own cache
+  directory.

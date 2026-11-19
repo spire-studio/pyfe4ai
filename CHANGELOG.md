@@ -122,8 +122,8 @@ compatibility).
   (the native paths checked, how, and what was not checked). The native
   exact Gaussian sampler (FACCT) is not constant-time: its time follows its
   number of candidates, which does not depend on the values it returns, and
-  the values themselves move it by a few hundred nanoseconds per 1024
-  samples (outputs that are multiples of `k` skip the acceptance test; the
+  the values of the candidates (returned or rejected) move it by a few
+  hundred nanoseconds per 1024 samples (outputs that are multiples of `k` skip the acceptance test; the
   exponential starts from a floating-point estimate). No other checked path
   differed beyond the control.
 - README Known Issues and `SECURITY.md` state the conditions of the 0.6 and
