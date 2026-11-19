@@ -2,12 +2,21 @@
 
 ## Status
 
-PyFE4AI is an **experimental research prototype under active development**.
-It has not undergone a security audit and is **not recommended for production
-use**. Interfaces, defaults and serialized formats (keys, threshold key
-shares, ciphertexts, partial decryptions, parameter records, pickles) can
-change substantially between versions; regenerate keys and key shares when
-upgrading, as the upgrade notes in `CHANGELOG.md` describe.
+PyFE4AI is a **research library**. Its schemes are reviewed internally
+against their papers (each has a review status), but it has **not undergone
+an external security audit** and is **not recommended for production use**;
+an audit package ships with the release. The default `toy` parameters are not
+secure, and nothing is guaranteed to be constant-time (the documentation's
+*Side channels* section lists what was checked).
+
+From 1.0 on, the schemes with status *reviewed* form the **stable** tier:
+their public API, configuration options and serialized records (keys, key
+shares, ciphertexts, partial decryptions, parameter records) stay backward
+compatible within 1.x, with a deprecation before any removal in 2.0. The one
+exception is a security fix: any release may refuse a scheme, an option or a
+kind of record found insecure, with a security advisory and an upgrade note.
+Experimental, unreviewed and known-insecure schemes, experimental options and
+pickles are not covered (see `docs/compatibility.rst`).
 
 ## Scope
 

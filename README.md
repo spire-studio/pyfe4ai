@@ -32,19 +32,36 @@ under DDH, DCR, LWE, Ring-LWE and pairings -- behind one entry point,
 encrypted linear inference, and an optional Rust core.
 
 > [!WARNING]
-> **Experimental research prototype, not audited — not recommended for
-> production use.** The default parameters are toy-sized and not secure
-> (see [Security Profiles](#security-profiles)), nothing is hardened against
-> side channels, and interfaces, configuration options, defaults and
-> serialized formats (keys, threshold key shares, ciphertexts, partial
-> decryptions, parameter records, pickles) can change substantially between
-> versions, without a deprecation period. When upgrading, regenerate keys and
-> key shares rather than reusing them: this version refuses the threshold key
-> shares of v0.3.0 (see the
-> [upgrade guide](https://spire-studio.github.io/pyfe4ai/docs/upgrading.html)).
-> Read the [Scheme Status](#scheme-status) and
+> **Research library, not externally audited — not recommended for
+> production use.** Every scheme carries a review status (see
+> [Scheme Status](#scheme-status)): most were checked internally against
+> their papers, some are our own constructions or not yet reviewed, and two
+> are known to be insecure. No external audit has taken place; an audit
+> package ships with the release. The default `toy` security profile is
+> **not secure**: pass `security_profile="standard"` (see
+> [Security Profiles](#security-profiles)). Nothing is guaranteed to be
+> constant-time: the Python layer is not, and in the native code only the
+> paths listed under
+> [Side channels](https://spire-studio.github.io/pyfe4ai/docs/security.html#side-channels)
+> were checked, which is not a guarantee. Read the
+> [Scheme Status](#scheme-status) and
 > [Known Issues](#known-issues--security-notice) before relying on any
 > privacy property.
+>
+> **Stability.** Schemes with status *reviewed* form the **stable** tier:
+> from 1.0 on, their public API, configuration options and serialized records
+> stay backward compatible within 1.x, every 1.x release reads the records
+> that 1.0 wrote, and changes go through a deprecation
+> (`FEDeprecationWarning`) before removal in 2.0 — except for security fixes,
+> which may refuse insecure schemes, options or records in any release.
+> *Experimental* and *unreviewed* schemes, options marked experimental, and
+> *known-insecure* schemes can change in any release without a deprecation
+> period, and pickles are never compatible across versions (see the
+> [compatibility policy](https://spire-studio.github.io/pyfe4ai/docs/compatibility.html)).
+> Versions up to 0.5 gave no such promise: when upgrading from them,
+> regenerate keys and key shares (this version refuses the threshold key
+> shares of v0.3.0; see the
+> [upgrade guide](https://spire-studio.github.io/pyfe4ai/docs/upgrading.html)).
 
 **Contents:** [Quick Start](#quick-start) · [Usage](#usage) ·
 [Implemented Schemes](#implemented-schemes) · [Scheme Status](#scheme-status) ·

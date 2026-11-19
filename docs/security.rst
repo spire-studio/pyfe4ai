@@ -1,8 +1,9 @@
 Security & Status
 =================
 
-PyFE4AI is a research prototype: no scheme is hardened against side
-channels, and the default parameters are toy values. This page lists the
+PyFE4AI is a research library, not externally audited: nothing is
+guaranteed to be constant-time (`Side channels`_ lists what was checked), and
+the default parameters are toy values. This page lists the
 review status of every scheme and the parameter presets; the README sections
 `Scheme Status <https://github.com/spire-studio/pyfe4ai#scheme-status>`__,
 `Security Profiles <https://github.com/spire-studio/pyfe4ai#security-profiles>`__
@@ -649,6 +650,56 @@ threshold adds no protection there; the separate steps
 (:func:`~pyfe4ai.ml.partial_decrypt_gradients`,
 :func:`~pyfe4ai.ml.combine_partial_decryptions`) show the
 messages of a deployment, whose servers run in their own trust domains.
+
+Side channels
+-------------
+
+Nothing in PyFE4AI is guaranteed to be constant-time. The Python layer is
+not: CPython and gmpy2 integers, the modular exponentiations of the DDH,
+Damgård and Paillier schemes, the decimal encoding of keys in their records,
+and the pure-Python ristretto255 fallback. Nor is the BLS12-381 group of the
+native extension (arkworks), whose scalar multiplications are variable-time,
+also for secret scalars.
+
+For the lattice kernels of the native core (``rust/core``), the paths below
+were checked before 1.0 in two ways:
+
+* by reading the release build's code for branches on secret values,
+  secret-indexed memory accesses and instructions whose latency depends on
+  their operands;
+* by statistical timing tests in the style of dudect (Reparaz, Balasch and
+  Verbauwhede, DATE 2017): fixed against random secret inputs, both drawn by
+  the same code into the same buffer, Welch's t-test, judged by the effect
+  size against a constant-time control (SHAKE-256), on an Apple M4 Max with
+  nothing else timed.
+
+Within the measured sample sizes no timing difference beyond the control's
+was found. That is evidence for these paths on this machine and compiler, not
+a guarantee.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 60
+
+   * - Path
+     - Checked
+   * - reduction of signed values (noise, randomness, plaintext) mod ``q``
+     - no branch on the sign in the code; a division only for values of at
+       least ``q``, which noise never reaches; no difference at 8·10^7 batches
+       of 4096 reductions
+   * - Montgomery products (64-bit words)
+     - no difference at 4·10^7 batches
+   * - forward NTT (``n = 1024``)
+     - no difference at 6·10^7 batches
+   * - the MCFE Ring-LWE encryption of a chunk, the plaintext secret
+     - within the control at 2·10^6 batches
+   * - Shamir sharing of a key
+     - no difference at 5·10^7 batches
+
+Not checked yet: the exact Gaussian sampler (FACCT), decryption, the
+threshold partial decryptions, the dense-LWE key terms, the arithmetic of
+256-bit words (moduli of 125 bits or more), and the garbled circuits of
+``bcfe/gc_ristretto255``.
 
 Gaussian sampling
 -----------------

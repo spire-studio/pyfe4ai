@@ -78,12 +78,14 @@ Contents
    quickstart
    choosing
    security
+   compatibility
    configuration
    environment
    threshold_ml
    threading
    glossary
    upgrading
+   deprecations
    api/index
 
 Indices and tables

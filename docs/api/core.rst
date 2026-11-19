@@ -18,6 +18,12 @@ gives the scheme parameters; see :doc:`../security`):
 
 .. scheme-registry-table::
 
+Stability Tiers
+---------------
+
+.. automodule:: pyfe4ai.core.stability
+   :members:
+
 Base Classes and the Parameter Cache
 ------------------------------------
 
