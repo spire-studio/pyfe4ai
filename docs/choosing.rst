@@ -161,6 +161,11 @@ Each scheme lists its capabilities
   it issues gets a slot of its own, up to ``max_keys`` slots in all, and a
   ciphertext is encrypted to the slots that exist when it is made, so a key
   decrypts only ciphertexts made after its slot (``bcfe/gc_ristretto255``).
+* ``distributed_keygen`` -- functional keys are issued jointly by ``t`` of
+  ``s`` key servers, none of which holds the master key after setup
+  (``sife/cp_ab_pairing``, :mod:`pyfe4ai.schemes.sife.cp_ab_pairing_keyissue`;
+  experimental, and secure only with authenticated, confidential channels
+  between the requester and the servers, see :doc:`security`).
 
 Review status
 -------------
@@ -232,6 +237,13 @@ Which scheme for which task
        challenge ciphertext, and ciphertexts are malleable, so authenticate
        them where tampering matters; policies of ``and``, ``or`` and
        threshold gates over attribute labels, see :doc:`api/policy`)
+   * - Decrypt only for one named identity (or one of several), with
+       post-quantum assumptions
+     - the identity directory :mod:`pyfe4ai.ac.identity_directory`
+       (experimental): one ``sife/fullysec_ring_lwe`` instance per identity,
+       the key centre holds every identity's master key, ciphertexts name
+       their identity; no "and" of identities, no attribute policies on
+       lattices (:doc:`security`)
    * - Give a key a policy that decides which ciphertexts it opens, for one
        encryptor and without a secret encryption key
      - ``sife/kp_ab_pairing`` (selective version; any label,

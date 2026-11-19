@@ -145,6 +145,7 @@ ML_SERVERS = "ml_servers"
 BINARY_CT = "binary_ct"
 RNS = "rns"
 ACCESS_CONTROL = "access_control"
+DISTRIBUTED_KEYGEN = "distributed_keygen"
 #: The capabilities a scheme may have, with what they mean. ``labels``,
 #: ``threshold``, ``decentralized`` and ``pairing`` follow from the id and the
 #: kind; the others are declared per scheme.
@@ -162,6 +163,8 @@ CAPABILITIES = {
     ACCESS_CONTROL: "the ciphertext or the key carries an access policy or an attribute set (from "
     "pyfe4ai.policy); decryption succeeds only if the attributes satisfy the policy, within the security "
     "proof of the scheme (see its note)",
+    DISTRIBUTED_KEYGEN: "functional keys are issued jointly by t of s key servers, none of which holds the master "
+    "key after setup (pyfe4ai.schemes.sife.cp_ab_pairing_keyissue: Dealer, KeyServer, KeyCombiner; experimental)",
 }
 BOUNDED_KEYS = "bounded_keys"
 CAPABILITIES[BOUNDED_KEYS] = (
@@ -428,7 +431,7 @@ SCHEMES: tuple[Scheme, ...] = (
         note="selective (SEL-SIM, one challenge ciphertext); ciphertexts malleable, not authenticated; "
         "a = (1, a2) for the paper's (a, 1); rows of attributes outside the policy are omitted; a repeated "
         "attribute takes copies (max_copies); the Decode of App. B.2 with its sign corrected",
-        capabilities=(ACCESS_CONTROL,),
+        capabilities=(ACCESS_CONTROL, DISTRIBUTED_KEYGEN),
     ),
     _scheme(
         "sife/kp_ab_pairing", PAIRING, REVIEWED, FAITHFUL, "NPP22 Sec. 4 Fig. 1 (selective version)",

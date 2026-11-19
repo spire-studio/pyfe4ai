@@ -44,6 +44,39 @@ compatibility).
   by the caller; the issuance policy is not cryptographic access control;
   public parameters trusted as distributed; not constant-time.
 
+### Added — threshold key issuance and identity directory (0.7)
+
+- **`pyfe4ai.ac`: identity directory (experimental).**
+  `IdentityKeyCentre` runs one `sife/fullysec_ring_lwe` instance per identity
+  (shared parameter record, independent secrets) and publishes a directory of
+  the identities' encryption keys; `IdentityDirectory` checks a directory
+  (and, given `expected_digest`, that it is the expected one), encrypts
+  vectors and ndarrays for an identity and decrypts with that identity's keys.
+  Ciphertexts and keys carry the identity and the digest of its entry, and
+  decryption refuses (`FEKeyError`) a mismatch. Records in
+  `pyfe4ai.core.formats.identity`, format id
+  `IDENTITY_DIRECTORY_VERSION`. The key centre holds every identity's master
+  key, ciphertexts name their identity, and there is no revocation.
+
+- **Threshold key issuance for `sife/cp_ab_pairing` (experimental),
+  capability `distributed_keygen`.** `SIFECPABPairingDealer` shares the
+  master key among `s` key servers and hands each its share once;
+  `SIFECPABPairingKeyServer.issue(request, requester)` answers with a masked
+  partial key after its operator's approval rule, which sees the whole
+  request (weights included) and the authenticated requester;
+  `SIFECPABPairingKeyCombiner` builds requests and checks the product of
+  `t` partial keys with pairings before returning an ordinary key. Public
+  parameters, ciphertexts and decryption are unchanged. Requires
+  authenticated, confidential channels between requester and servers. Records
+  in `pyfe4ai.core.formats.keyissue`.
+
+### Documentation — 0.7
+
+- Security: threshold key issuance, its conditions and limits.
+- Security: why DP23 (a collusion of two users and one corrupted authority
+  breaks both schemes), AGT21b Sec. 3, ACGU20 Secs. 4 and 5, CT26 and PD21
+  are not implemented; the identity directory's guarantees and limits.
+
 ## [0.5.0] — unreleased
 
 **Highlights.** Attribute-based inner-product functional encryption over

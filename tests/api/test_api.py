@@ -81,7 +81,7 @@ def test_list_schemes():
         with pytest.raises(exceptions.FEValidationError, match="unknown"):
             pyfe4ai.list_schemes(**kwargs)
     assert set(pyfe4ai.CAPABILITIES) == {"labels", "threshold", "decentralized", "pairing", "ml_servers",
-                                          "binary_ct", "rns", "access_control", "bounded_keys"}
+                                          "binary_ct", "rns", "access_control", "bounded_keys", "distributed_keygen"}
 
 
 def test_get_scheme():

@@ -652,3 +652,28 @@ def check_bcfe_markers(record, markers, error=FEValidationError, what: str = "th
         if isinstance(value, bool) or type(value) is not type(accepted[0]) or value not in accepted:
             raise error("{}: unknown {} {!r}; this version reads {}".format(
                 what, name, value, ", ".join(repr(a) for a in accepted)))
+
+
+# ---------------------------------------------------------------------------
+# identity directory (pyfe4ai.ac)
+
+#: Format id of the identity directory and of the ciphertexts and keys bound to
+#: its entries (:mod:`pyfe4ai.ac.identity_directory`; field ``version``).
+IDENTITY_DIRECTORY_VERSION = "fullysec-ring-lwe-identity-directory/v1"
+
+
+# ---------------------------------------------------------------------------
+# threshold key issuance of sife/cp_ab_pairing
+
+#: Protocol id of the threshold key issuance of ``sife/cp_ab_pairing``
+#: (:mod:`pyfe4ai.schemes.sife.cp_ab_pairing_keyissue`; field ``protocol`` of
+#: the key-server record, and through its digest bound into every request).
+CP_AB_KEYISSUE_PROTOCOL = "acgu20-cp-ab-threshold-issue/v1"
+#: Format id of the public key-server record (field ``version``).
+CP_AB_KEYSERVERS_VERSION = "cp_ab_keyservers/v1"
+#: Format id of a key server's secret share (field ``version``).
+CP_AB_KEYSERVER_SHARE_VERSION = "cp_ab_keyserver_share/v1"
+#: Format id of a key request (field ``version``).
+CP_AB_KEYREQUEST_VERSION = "cp_ab_keyrequest/v1"
+#: Format id of a partial key (field ``version``).
+CP_AB_PARTIAL_KEY_VERSION = "cp_ab_partial_key/v1"
