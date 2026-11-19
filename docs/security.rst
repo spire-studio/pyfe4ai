@@ -39,6 +39,11 @@ from :data:`~pyfe4ai.core.status.SCHEME_STATUS`, which is derived from the
 scheme registry (:mod:`pyfe4ai.core.registry`); the status and fidelity
 values are defined with :class:`~pyfe4ai.core.registry.SchemeStatus`.
 
+The *Tier* column is each scheme's tier in the 1.x compatibility policy
+(:doc:`compatibility`, :mod:`pyfe4ai.core.stability`): it follows from the
+status, and a stable scheme's experimental options or capabilities are named
+next to it.
+
 .. scheme-status-table::
 
 Security profiles

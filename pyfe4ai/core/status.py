@@ -84,11 +84,25 @@ def warn_if_known_insecure(module: str, stacklevel: int | None = None) -> None:
             warnings.warn(message, FESecurityWarning, stacklevel=stacklevel)
 
 
+def tier_text(family: str, variant: str) -> str:
+    """The tier of a scheme in the 1.x compatibility policy (:mod:`pyfe4ai.core.stability`), with its experimental
+    parts: ``"stable"``, ``"stable; experimental: distributed_keygen"``, ``"experimental"``, ``"known-insecure"``."""
+    from pyfe4ai.core import stability
+
+    scheme = "{}/{}".format(family, variant)
+    tier = stability.tier(scheme)
+    parts = ['{}="{}"'.format(option, value) for option, values in stability.EXPERIMENTAL_OPTIONS.get(scheme, {}).items()
+             for value in sorted(values)]
+    parts += sorted(stability.EXPERIMENTAL_CAPABILITIES.get(scheme, ()))
+    return tier + ("; experimental: " + ", ".join(parts) if parts else "")
+
+
 def markdown_table() -> str:
-    """Render :data:`SCHEME_STATUS` as the README *Scheme Status* table."""
+    """Render :data:`SCHEME_STATUS` as the README *Scheme Status* table, with the tier of each scheme in the 1.x
+    compatibility policy (:func:`tier_text`)."""
     lines = [
-        "| Scheme | Status | Fidelity | Construction | Notes |",
-        "|---|---|---|---|---|",
+        "| Scheme | Status | Fidelity | Tier | Construction | Notes |",
+        "|---|---|---|---|---|---|",
     ]
     for (family, variant), entry in SCHEME_STATUS.items():
         note = (
@@ -97,8 +111,9 @@ def markdown_table() -> str:
             else entry.note
         )
         lines.append(
-            "| `{}/{}` | {} | {} | {} | {} |".format(
-                family, variant, entry.status, entry.fidelity, entry.reference, note
+            "| `{}/{}` | {} | {} | {} | {} | {} |".format(
+                family, variant, entry.status, entry.fidelity, tier_text(family, variant).replace('"', "`"),
+                entry.reference, note
             )
         )
     return "\n".join(lines)

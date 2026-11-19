@@ -1,7 +1,7 @@
 """Render the scheme matrix of the project page (``site/index.html``) from the registry.
 
 The page shows the registered schemes as families (rows) by instantiations
-(columns), one mark per scheme with its review status; a cell lists its
+(columns), one mark per scheme with its review status and its 1.x tier; a cell lists its
 schemes and whether ``standard`` refuses them. The table sits between the
 markers ``<!--matrix:start-->`` and ``<!--matrix:end-->`` of the page and is
 generated, not edited by hand: ``tests/api/test_site_matrix.py`` fails when
@@ -79,9 +79,13 @@ def cells() -> dict:
 def _cell(rname: str, cname: str, schemes: list) -> str:
     if not schemes:
         return '<td class="none"><span aria-hidden="true">—</span><span class="sr-only">none</span></td>'
-    data = ";".join("{}|{}|{}".format(s.id, s.status.status, "refused" if s.refused else "") for s in schemes)
+    from pyfe4ai.core import stability
+
+    data = ";".join("{}|{}|{}|{}".format(s.id, s.status.status, "refused" if s.refused else "", stability.tier(s.id))
+                    for s in schemes)
     marks = "".join('<i class="dot {}"></i>'.format(MARK[s.status.status]) for s in schemes)
-    spoken = ", ".join("{} {}{}".format(s.id, s.status.status, ", refused under standard" if s.refused else "")
+    spoken = ", ".join("{} {} ({} tier){}".format(s.id, s.status.status, stability.tier(s.id),
+                                                  ", refused under standard" if s.refused else "")
                        for s in schemes)
     n = len(schemes)
     return ('<td><button type="button" class="cell" data-cell="{} × {}" data-schemes="{}">'
@@ -96,7 +100,7 @@ def render() -> str:
     lines = [
         '<table class="matrix">',
         "  <caption class=\"sr-only\">Registered schemes by family (rows) and instantiation (columns), "
-        "with each scheme's review status</caption>",
+        "with each scheme's review status and its tier in the 1.x compatibility policy</caption>",
         '  <thead><tr><th scope="col">Family</th>'
         + "".join('<th scope="col">{}</th>'.format(html.escape(label)) for _, label in COLS) + "</tr></thead>",
         "  <tbody>",
