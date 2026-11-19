@@ -9,7 +9,7 @@ Tier                  Review status                   Promise within 1.x
 ``stable``            ``reviewed``                    public API, config options and serialized records
                                                       stay backward compatible; every 1.x release reads
                                                       the records 1.0 wrote; changes are deprecated
-                                                      (a planned ``FEDeprecationWarning``) before 2.0 
+                                                      (``FEDeprecationWarning``) before 2.0           
 ``experimental``      ``experimental``,               none: may change in any release
                       ``unreviewed``
 ``known-insecure``    ``known-insecure``              none; refused by the ``standard`` profile

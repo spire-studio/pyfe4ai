@@ -793,15 +793,16 @@ these paths on this machine and compiler, not a guarantee.
        measurement noise. In a rejection sampler the number of candidates
        does not depend on the values returned. With the whole shape held
        equal, seven seeds of one shape still differ by +0.031 % [+0.021,
-       +0.041] (about 480 ns, t = 6.1): the values of the candidates move
-       the time by a few hundred nanoseconds per 1024 samples. Two paths
+       +0.041] (about 480 ns, t = 6.1): the values of the candidates
+       (returned or rejected) move the time by a few hundred nanoseconds per
+       1024 samples. Two paths
        depend on the values: an output with ``y = 0`` (a multiple of ``k``,
        about one in 1024) skips the acceptance test (a seed with seven such
        outputs ran 395 ns faster than one with none, t = 5.4: the direction
        of the skip, but no more than seeds of one shape differ by), and the
        fixed-point exponential of the test starts from a floating-point
        estimate with correction loops and early returns, a few nanoseconds
-       per candidate. (An earlier test held only the number of random-bit
+       per candidate by the code (not measured on its own). (An earlier test held only the number of random-bit
        calls equal, which lets candidates trade against redraws of ``y``;
        its -0.067 % is about 9 to 14 candidates.)
 

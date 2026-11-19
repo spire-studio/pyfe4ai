@@ -38,3 +38,10 @@ Versions up to 0.5 promised no compatibility, so 1.0 changes these directly:
 
 * ``ThresholdMCFEDDH.L`` (``mcfe/ddh_threshold``), a static method computing a
   Lagrange coefficient that no caller used, is private.
+
+The option names of versions before 0.2.0 (``bound_u``, ``label_modulus``,
+``u_bound``; :data:`~pyfe4ai.core.config.LEGACY_OPTIONS`) are not
+deprecated: they have done nothing since 0.2.0, and a key generator that
+gets one ignores it with an :class:`~pyfe4ai.core.exceptions.FEWarning`,
+not an :class:`~pyfe4ai.core.exceptions.FEDeprecationWarning`. A filter that
+turns deprecations into errors does not catch them.

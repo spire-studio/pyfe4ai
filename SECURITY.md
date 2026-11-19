@@ -109,8 +109,8 @@ Responsible reporting of security issues is appreciated, especially for:
   documentation's *Side channels* section were checked, which is not a
   guarantee. Among them, the exact Gaussian sampler (FACCT) is not
   constant-time: its time follows its number of candidates, which does not
-  depend on the values it returns; the values themselves move the time by a
-  few hundred nanoseconds per 1024 samples (outputs that are multiples of `k`
+  depend on the values it returns; the values of the candidates (returned
+  or rejected) move the time by a few hundred nanoseconds per 1024 samples (outputs that are multiples of `k`
   skip the acceptance test, and the exponential starts from a
   floating-point estimate).
 - **ML adapter.** `FESchemeWrapper` runs the key generator and holds the
