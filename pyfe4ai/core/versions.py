@@ -640,7 +640,8 @@ def check_bcfe_markers(record, markers, error=FEValidationError, what: str = "th
         what: The record, for the message.
 
     Raises:
-        error: For a record that is not a dict, or a missing or unknown marker.
+        FEValidationError: For a record that is not a dict, or a missing or unknown marker (the class given as
+            *error*: ``FEKeyError`` for keys).
     """
     if not isinstance(record, dict):
         raise error("{} is not a dict".format(what))

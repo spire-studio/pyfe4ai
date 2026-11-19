@@ -9,7 +9,7 @@ Tiers
 -----
 
 Every registered scheme is in one tier, derived from its review status
-(:func:`pyfe4ai.get_scheme_status`) and nothing else
+(:func:`~pyfe4ai.core.status.get_scheme_status`) and nothing else
 (:mod:`pyfe4ai.core.stability`). Of the |n_schemes| registered schemes,
 |n_reviewed| are *reviewed*, hence stable:
 
@@ -57,7 +57,7 @@ Python API
   :mod:`~pyfe4ai.schemes.mcfe` and :mod:`~pyfe4ai.schemes.quadratic` (the
   classes of stable schemes), of :mod:`pyfe4ai.ml`, :mod:`pyfe4ai.policy`
   and :mod:`pyfe4ai.core.status`.
-* :func:`pyfe4ai.create` and the registry queries, with the fields of
+* :func:`pyfe4ai.create <pyfe4ai.core.registry.create>` and the registry queries, with the fields of
   :class:`~pyfe4ai.core.registry.Scheme` and :class:`~pyfe4ai.core.registry.SchemeStatus` (fields may be
   added).
 * The public methods and properties of the classes of stable schemes. Pass
@@ -149,7 +149,7 @@ Not covered
 * The experimental and known-insecure tiers, and experimental options.
 * The parameter sizes of the ``toy`` profile.
 * Internal modules: :mod:`pyfe4ai.primitives`, :mod:`pyfe4ai.backend` (except
-  the keys of :func:`pyfe4ai.backend_info`), ``pyfe4ai.schemes.common``,
+  the keys of :func:`~pyfe4ai.backend.backend_info`), ``pyfe4ai.schemes.common``,
   ``pyfe4ai.schemes.threshold``, the :class:`~pyfe4ai.core.formats.record.Record`
   classes of :mod:`pyfe4ai.core.formats` (the fields of the records are
   covered, the classes are not), the native extension, every name that

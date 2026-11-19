@@ -46,14 +46,14 @@ TIER_OF_STATUS: Mapping[str, str] = MappingProxyType({
     KNOWN_INSECURE: KNOWN_INSECURE_TIER,
 })
 
-#: Option values of stable schemes that are experimental: ``{scheme id: {option: values}}`` (key generator
+#: The experimental option values of stable schemes, as ``{scheme id: {option: values}}`` (key generator
 #: options; a value outside the set is in the scheme's tier). Read-only: a later version adds its entries here.
 EXPERIMENTAL_OPTIONS: Mapping[str, Mapping[str, frozenset]] = MappingProxyType({
     # the packed layout rests on this project's own leveraging argument (registry note)
     "sife/fullysec_ring_lwe": MappingProxyType({"ndarray_layout": frozenset({"packed"})}),
 })
 
-#: Capabilities of stable schemes that are experimental: ``{scheme id: capabilities}``.
+#: The experimental capabilities of stable schemes, as ``{scheme id: capabilities}``.
 EXPERIMENTAL_CAPABILITIES: Mapping[str, frozenset] = MappingProxyType({
     # the threshold key issuance of 0.7 (Dealer / KeyServer / KeyCombiner): the protocol is experimental, the scheme
     # stays reviewed (1.0 plan Sec. 1)

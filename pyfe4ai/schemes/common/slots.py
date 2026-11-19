@@ -37,7 +37,7 @@ Files of the directory:
 
 :meth:`SlotStore.issue` runs under one exclusive lock (the store object's
 lock for its threads, the file lock for every other process and store
-object): look the dedup key up; refuse with the same :class:`FEKeyError`
+object): look the dedup key up; refuse with the same :class:`~pyfe4ai.core.exceptions.FEKeyError`
 and the same text, hit or miss, once the list holds ``max_keys`` slots (so
 that a requester cannot test functions through the deduplication once the
 cap is reached); return a hit without building; otherwise
@@ -79,7 +79,7 @@ key no one holds: its retry is a hit the scheme refuses (a lost key is not
 issued again).
 
 Temporary files of a crashed writer are removed by the next locked call.
-Unreadable, truncated or inconsistent files raise :class:`FEConfigError`
+Unreadable, truncated or inconsistent files raise :class:`~pyfe4ai.core.exceptions.FEConfigError`
 (fail closed): the store never starts empty while its files exist. The two
 files are consistent when every listed slot has its private record and its
 one dedup entry, a pending copy of a listed slot equals the listed record,
@@ -99,7 +99,7 @@ the umask may clear bits). Each store file is opened with ``O_NOFOLLOW``
 (and ``O_NONBLOCK``, so that a FIFO cannot block the call) and must be a
 regular file of that user that no other user can write; the private file
 and the lock file must not be readable by others either. Anything else
-raises :class:`FEConfigError` naming the path and the reason (never the
+raises :class:`~pyfe4ai.core.exceptions.FEConfigError` naming the path and the reason (never the
 content). The directories above the store are not checked (a cache
 directory reached through a symbolic link works), nor are the files other
 code keeps in the directory. Alternative not taken: trust the caller's
@@ -161,7 +161,7 @@ logger = logging.getLogger(__name__)
 
 #: The public slot list.
 PUBLIC_FILE = "slots.json"
-#: The private side: reservations, private records, the dedup index.
+#: The private side, with the reservations, the private records and the dedup index.
 PRIVATE_FILE = "slots.private.json"
 #: The file lock.
 LOCK_FILE = "slots.lock"
@@ -677,7 +677,7 @@ class SlotStore:
 
         1. Look *dedup_key* up.
         2. If the list holds ``max_keys`` slots or more: raise
-           :class:`FEKeyError`, with the same text whether step 1 found a slot
+           :class:`~pyfe4ai.core.exceptions.FEKeyError`, with the same text whether step 1 found a slot
            or not; nothing is written.
         3. Found: return ``IssueResult("hit", slot_id, private)`` without
            calling *build*.

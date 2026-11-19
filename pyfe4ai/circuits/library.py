@@ -37,15 +37,14 @@ MAX_WIDTH = 64
 
 
 class ParamCircuit:
-    """A library circuit with its layouts.
+    """A library circuit with its layouts, read through its properties:
 
-    Attributes:
-        name: The library function's name (``"linear_threshold"``, ...).
-        params: The public parameters (a copy on every access).
-        circuit: The :class:`~pyfe4ai.circuits.circuit.Circuit` (without the guard bit).
-        key_layout: The :class:`~pyfe4ai.circuits.layout.KeyLayout` of ``w`` (``m`` bits).
-        data_layout: The :class:`~pyfe4ai.circuits.layout.DataLayout` of ``x`` (``n`` bits).
-        output_layout: The :class:`~pyfe4ai.circuits.layout.OutputLayout` (``n_out`` bits).
+    * ``name`` -- the library function's name (``"linear_threshold"``, ...);
+    * ``params`` -- the public parameters (a copy on every access);
+    * ``circuit`` -- the :class:`~pyfe4ai.circuits.circuit.Circuit` (without the guard bit);
+    * ``key_layout`` -- the :class:`~pyfe4ai.circuits.layout.KeyLayout` of ``w`` (``m`` bits);
+    * ``data_layout`` -- the :class:`~pyfe4ai.circuits.layout.DataLayout` of ``x`` (``n`` bits);
+    * ``output_layout`` -- the :class:`~pyfe4ai.circuits.layout.OutputLayout` (``n_out`` bits).
     """
 
     __slots__ = ("_name", "_params", "_circuit", "_key_layout", "_data_layout", "_output_layout")

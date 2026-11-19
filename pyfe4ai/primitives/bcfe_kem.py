@@ -305,7 +305,7 @@ def unselected_pk(setup_digest: bytes, slot_id: int, j: int, k: bytes) -> bytes:
     (h'), ``hash_to_ristretto255(msg, DST)`` of RFC 9380 (suite
     ``ristretto255_XMD:SHA-512_R255MAP_RO_``) with ``msg = "PFE6-UNSEL" ||
     setup_digest(32) || u64(slot_id) || u32(j) || k(16)`` and the DST
-    :data:`UNSELECTED_DST`, as its 32-byte encoding. *k* is secret.
+    ``UNSELECTED_DST``, as its 32-byte encoding. *k* is secret.
 
     Raises:
         TypeError: For byte fields that are not bytes.
@@ -335,7 +335,7 @@ def setup_digest(scheme_id, bcfe_version: int, circuit_digest: bytes, data_wires
     ``id`` is the scheme id (UTF-8 for a string). *data_wires*, *gc_hash*
     and *kem* are the record values (``"hardwired"`` / ``"labels"``,
     ``"shake128"``, ``"ristretto255-hashed-elgamal-v1"``) or their codes
-    (:data:`DATA_WIRES_CODES`, :data:`GC_HASH_CODES`, :data:`KEM_CODES`).
+    (:data:`DATA_WIRES_CODES`, ``GC_HASH_CODES``, ``KEM_CODES``).
     ``max_keys`` and the slot table are not in it (the bound may be raised;
     the input of ``H_P`` must stay fixed for the life of the setup).
 
@@ -518,7 +518,7 @@ def unselected_ok(setup_digest: bytes, slot_id: int, w_bits, k: bytes, pks: byte
 # ------------------------------------------------------------------ encryption and decryption
 
 def guarded_key_bits(parsed: garbling.ParsedCircuit) -> int:
-    """``m`` of a parsed ``guard(C)`` (:meth:`pyfe4ai.circuits.Circuit.guard`):
+    """``m`` of a parsed ``guard(C)`` (:meth:`pyfe4ai.circuits.circuit.Circuit.guard`):
     its ``m' = m + 1`` key wires minus the g bit.
 
     Raises:
