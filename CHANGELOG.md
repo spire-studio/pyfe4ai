@@ -77,6 +77,69 @@ compatibility).
   breaks both schemes), AGT21b Sec. 3, ACGU20 Secs. 4 and 5, CT26 and PD21
   are not implemented; the identity directory's guarantees and limits.
 
+### Compatibility policy (1.0 freeze)
+
+- **Stability tiers** (`pyfe4ai.core.stability`), derived from the review
+  status: *reviewed* schemes are **stable**, *experimental* and *unreviewed*
+  ones **experimental**, *known-insecure* ones stay outside any promise.
+  `tier()`, `config_tier()`, `stable_schemes()`; `EXPERIMENTAL_OPTIONS`
+  (`sife/fullysec_ring_lwe` `ndarray_layout="packed"`) and
+  `EXPERIMENTAL_CAPABILITIES` (`sife/cp_ab_pairing` `distributed_keygen`)
+  name the experimental parts of stable schemes.
+- Within 1.x the stable tier keeps its public API, configuration options and
+  serialized records backward compatible: every 1.x release reads the records
+  1.0 wrote; records only gain optional fields; version markers never change
+  or get reused; changes are deprecated before removal in 2.0; security fixes
+  may refuse insecure schemes, options or records in any release, and never
+  rename or re-encode. See `docs/compatibility.rst`.
+- `pyfe4ai.core.versions` lists `POLICY_COMPILER`, the marker of the
+  attribute-based records, with the other markers.
+
+### Deprecated
+
+- `FEDeprecationWarning` (a subclass of `FEWarning`, shown by default) and
+  `pyfe4ai.core.exceptions.warn_deprecated` for the deprecations of the
+  stable tier; `docs/deprecations.rst` lists them.
+- `ThresholdMIFEDDHKeyGenerator.lambd` (`mife/ddh_threshold`, the alias of
+  `sec_param` of versions <= 0.2.0): deprecated, removed in 2.0; use
+  `sec_param`.
+
+### Changed
+
+- `ThresholdMCFEDDH.L` (`mcfe/ddh_threshold`), a static method no caller used,
+  is private (`_lagrange_at_zero`), without a deprecation (0.x to 1.0).
+- `mife/ddh_threshold`: `decrypt` refuses a server's key share with
+  `FEKeyError`, pointing to `share_decrypt` and `combine_decrypt`, instead of
+  returning `None`; a whole functional key decrypts as before.
+
+### Documentation — 1.0 freeze
+
+- README and `SECURITY.md`: the security notice rewritten (not externally
+  audited, an audit package with the release; `toy` not secure; nothing
+  guaranteed constant-time) and the stability promise of the stable tier.
+- New pages `docs/compatibility.rst` and `docs/deprecations.rst`;
+  `docs/security.rst` gains "Trust assumptions in brief" and "Side channels"
+  (the native paths checked, how, and what was not checked).
+- The README status table, the documentation's table and the site matrix show
+  each scheme's tier; the configuration page names each scheme's tier and its
+  experimental option values.
+- Docstrings: the seven `encrypt` methods that had none; the references and
+  fields that the nitpicky Sphinx build reported (now clean with `-n`).
+
+### Tests — 1.0 freeze
+
+- `tests/compat`: record fixtures of every stable scheme (a 0.5.0 sample set;
+  the 1.0.0 set is written by the release) and the compatibility test that
+  later versions must pass: the records decrypt to the same values, fresh
+  ciphertexts under the stored keys decrypt with the stored keys, stored
+  partials combine, parameter records are reused, no field of a record is
+  dropped or re-encoded at any depth, the version markers keep their values,
+  and no scheme of a fixture set leaves the stable tier (except to
+  known-insecure).
+- `rust/core/examples/ct_dudect.rs`: the timing-leak harness of the
+  constant-time check (dudect-style, one buffer per measurement, judged by
+  effect size against a constant-time control).
+
 ## [0.5.0] — unreleased
 
 **Highlights.** Attribute-based inner-product functional encryption over
