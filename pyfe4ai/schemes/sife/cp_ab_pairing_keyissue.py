@@ -459,7 +459,11 @@ class SIFECPABPairingKeyServer:
             ``copy.deepcopy`` gives a mutable copy. Only the return value ``True`` approves; anything
             else, a reason string or ``None`` among it, refuses, and so does
             any exception the rule raises (the request is then refused with
-            ``FEKeyError`` and leaves no record). It must decide on ``y`` too
+            ``FEKeyError`` and leaves no record). That ``FEKeyError`` chains
+            the rule's exception, whose traceback references the frames of
+            :meth:`issue` and so this server and its secret share: do not keep
+            these exceptions, and do not hand them to error reporters that
+            capture local variables. It must decide on ``y`` too
             (see the module docstring). It runs under the server's lock, so the
             requests to one server are approved one at a time; it should keep
             its own state (e.g. counters) rather than scan a long history on
