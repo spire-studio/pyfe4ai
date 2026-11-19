@@ -17,7 +17,7 @@ use pyfe4ai_core::{facct, garble, keccak, osrand, shamir, AnyRing, Modulus, Word
 
 #[allow(dead_code)]
 mod data {
-    include!("ct_dudect_data.rs");
+    include!("data.rs");
 }
 use std::hint::black_box;
 use std::time::Instant;
@@ -379,24 +379,77 @@ fn u256_dec(s: &str) -> U256 {
     s.bytes().fold(U256::ZERO, |acc, d| acc.mul_small_add(10, (d - b'0') as u64).0)
 }
 
+/// Counts a FACCT sample's getrandbits calls by kind: u and v (PRECISION bits each), y (y_bits), the sign (1 bit).
+struct Counted<'a> {
+    inner: &'a mut facct::XofBits,
+    wide: u64,
+    y: u64,
+    sign: u64,
+}
+impl Counted<'_> {
+    fn count(&mut self, k: u32) {
+        match k {
+            facct::PRECISION => self.wide += 1,
+            1 => self.sign += 1,
+            _ => self.y += 1,
+        }
+    }
+}
+impl facct::RandBits for Counted<'_> {
+    fn getrandbits(&mut self, k: u32) -> U256 {
+        self.count(k);
+        self.inner.getrandbits(k)
+    }
+    fn getrandbits_into(&mut self, k: u32, out: &mut [u64]) {
+        self.count(k);
+        self.inner.getrandbits_into(k, out)
+    }
+}
+
+/// The shape of the FACCT sample of a seed: (candidates, y draws, sign draws, outputs with y = 0, that is,
+/// multiples of k). A rejection sampler's time follows the first three, which do not depend on the values returned.
+fn facct_shape(table: &facct::Table, seed: u64, out: &mut [i64]) -> (u64, u64, u64, u64) {
+    let mut raw = [0u8; 32];
+    fill_seeded(seed, &mut raw);
+    let mut xof = facct::XofBits::new(&raw);
+    let mut bits = Counted { inner: &mut xof, wide: 0, y: 0, sign: 0 };
+    facct::sample(table, out, &mut bits, &|_, _| U256::ZERO);
+    let y0 = out.iter().filter(|&&z| z % table.k as i64 == 0).count() as u64;
+    (bits.wide / 2, bits.y, bits.sign, y0)
+}
+
+/// Seeds bucketed by their FACCT shape (FACCT_SHAPE_SEEDS seeds, 40 000 by default).
+fn facct_buckets(table: &facct::Table, rng: &mut Rng) -> std::collections::BTreeMap<(u64, u64, u64, u64), Vec<u64>> {
+    let n: usize = std::env::var("FACCT_SHAPE_SEEDS").ok().and_then(|v| v.parse().ok()).unwrap_or(40_000);
+    let mut out = vec![0i64; 1024];
+    let mut buckets = std::collections::BTreeMap::new();
+    for _ in 0..n {
+        let seed = rng.next() | 1;
+        buckets.entry(facct_shape(table, seed, &mut out)).or_insert_with(Vec::new).push(seed);
+    }
+    buckets
+}
+
 /// S5: the whole FACCT sample of 1024 noise values (sigma = 1000: the base CDT, y below k, the acceptance test),
 /// the bit source a SHAKE stream from a 32-byte seed that is the secret (fixed vs random seed; one buffer).
 struct FacctSample {
     table: facct::Table,
     fixed: u64,
-    /// `facct_equal_trials`: two fixed seeds whose samples take the same number of draws (a rejection sampler's
-    /// time follows its number of trials, which is independent of the values it returns): class 1 uses this one.
-    other: Option<u64>,
+    /// The seeds of class 1 when it is not a fresh seed: `facct_equal_trials`, one seed whose sample takes as many
+    /// getrandbits calls as the fixed one; `facct_equal_shape`, the other seeds of the fixed seed's shape (as many
+    /// candidates, y draws, sign draws and y = 0 outputs); `facct_y0_contrast`, seeds of the fixed seed's
+    /// candidates, y draws and sign draws whose outputs have more y = 0 values. Class 1 picks one at random.
+    pool: Option<Vec<u64>>,
     seed: [u8; 32],
     out: Vec<i64>,
     deferred: std::rc::Rc<std::cell::Cell<u64>>,
 }
 impl Target for FacctSample {
     fn prepare(&mut self, class: usize, rng: &mut Rng) {
-        let s = match self.other {
-            Some(o) => {
-                let _ = rng.next();
-                if class == 0 { self.fixed } else { o }
+        let s = match &self.pool {
+            Some(pool) => {
+                let i = (rng.next() % pool.len() as u64) as usize;
+                if class == 0 { self.fixed } else { pool[i] }
             }
             None => seed_of(class, self.fixed, rng),
         };
@@ -539,7 +592,9 @@ const TARGETS: &[(&str, &str, usize)] = &[
     ("seeded_pos_vs_signed", "S1 (1), one buffer, seeded: random non-negative vs random signed", 4096),
     ("seeded_null", "S1 (1), one buffer, seeded: random signed in both classes (A/A)", 4096),
     ("facct_sample", "S5, seeded: the whole FACCT sample of 1024 values (sigma = 1000), the bit stream secret", 1),
-    ("facct_equal_trials", "S5: FACCT, two fixed seeds whose samples take as many draws (values only differ)", 1),
+    ("facct_equal_trials", "S5: FACCT, two fixed seeds whose samples take as many getrandbits calls", 1),
+    ("facct_equal_shape", "S5: FACCT, seeds of one shape (candidates, y draws, signs, y = 0 outputs): values only", 1),
+    ("facct_y0_contrast", "S5: FACCT, one time shape; no y = 0 output vs the most found (the skipped test)", 1),
     ("garble_x", "S13, seeded: half-gates garbling (mode hardwired), the garbler's data bits secret", 1),
     ("garble_seed", "S13, seeded: half-gates garbling, the garbling seed (delta, labels) secret", 1),
     ("rlwe_tensor", "S3, seeded: MCFE Ring-LWE encryption of 4096 elements (4 chunks), the plaintext secret", 1),
@@ -578,34 +633,68 @@ fn make(name: &str, calls: usize, rng: &mut Rng) -> Box<dyn Target> {
             class0_signed: name == "seeded_null",
             class1_signed: true,
         }),
-        "facct_sample" | "facct_equal_trials" => {
+        "facct_sample" | "facct_equal_trials" | "facct_equal_shape" | "facct_y0_contrast" => {
             let mut cdt = [U256::ZERO; facct::CDT_SIZE];
             for (c, t) in cdt.iter_mut().zip(data::FACCT_CDT.iter()) {
                 *c = u256_dec(t);
             }
             let table = facct::Table { k: data::FACCT_K, y_bits: data::FACCT_Y_BITS, cdt, c_mant: data::FACCT_C_MANT,
                                        c_exp: data::FACCT_C_EXP };
-            let fixed = rng.next() | 1;
-            let other = (name == "facct_equal_trials").then(|| {
-                // two seeds whose 1024 samples take as many getrandbits calls, with different samples
-                let calls = |seed: u64, out: &mut Vec<i64>| {
-                    let mut raw = [0u8; 32];
-                    fill_seeded(seed, &mut raw);
-                    let mut bits = facct::XofBits::new(&raw);
-                    facct::sample(&table, out, &mut bits, &|_, _| U256::ZERO);
-                    bits.next_call()
-                };
-                let (mut out_a, mut out_b) = (vec![0i64; 1024], vec![0i64; 1024]);
-                let target = calls(fixed, &mut out_a);
-                loop {
-                    let cand = rng.next() | 1;
-                    if calls(cand, &mut out_b) == target && out_b != out_a {
-                        eprintln!("facct_equal_trials: two seeds with {} draws each", target);
-                        break cand;
-                    }
+            let mut fixed = rng.next() | 1;
+            let pool = match name {
+                "facct_sample" => None,
+                "facct_equal_trials" => {
+                    // two seeds whose 1024 samples take as many getrandbits calls, with different samples
+                    let calls = |seed: u64, out: &mut Vec<i64>| {
+                        let mut raw = [0u8; 32];
+                        fill_seeded(seed, &mut raw);
+                        let mut bits = facct::XofBits::new(&raw);
+                        facct::sample(&table, out, &mut bits, &|_, _| U256::ZERO);
+                        bits.next_call()
+                    };
+                    let (mut out_a, mut out_b) = (vec![0i64; 1024], vec![0i64; 1024]);
+                    let target = calls(fixed, &mut out_a);
+                    Some(vec![loop {
+                        let cand = rng.next() | 1;
+                        if calls(cand, &mut out_b) == target && out_b != out_a {
+                            eprintln!("facct_equal_trials: two seeds with {} draws each", target);
+                            break cand;
+                        }
+                    }])
                 }
-            });
-            Box::new(FacctSample { table, fixed, other, seed: [0; 32], out: vec![0; 1024], deferred: Default::default() })
+                "facct_equal_shape" => {
+                    // the largest bucket of one shape: its first seed is the fixed one, class 1 picks among the rest
+                    let buckets = facct_buckets(&table, rng);
+                    let (shape, seeds) = buckets.iter().max_by_key(|(_, s)| s.len()).expect("seeds");
+                    assert!(seeds.len() >= 2, "no two seeds of one shape: raise FACCT_SHAPE_SEEDS");
+                    eprintln!("facct_equal_shape: {} seeds of shape (candidates, y draws, signs, y = 0) = {:?} \
+                               out of {} shapes", seeds.len(), shape, buckets.len());
+                    fixed = seeds[0];
+                    Some(seeds[1..].to_vec())
+                }
+                _ => {
+                    // facct_y0_contrast: one shape of the time (candidates, y draws, signs); the fixed seed has
+                    // no y = 0 output, class 1 the most found among the seeds of that shape
+                    let buckets = facct_buckets(&table, rng);
+                    let mut by_time = std::collections::BTreeMap::<(u64, u64, u64), Vec<(u64, u64)>>::new();
+                    for (&(c, y, s, y0), seeds) in &buckets {
+                        by_time.entry((c, y, s)).or_default().extend(seeds.iter().map(|&seed| (y0, seed)));
+                    }
+                    let best = by_time.iter().filter_map(|(key, v)| {
+                        let zero = v.iter().find(|(y0, _)| *y0 == 0)?;
+                        let top = v.iter().map(|(y0, _)| *y0).max()?;
+                        let n_top = v.iter().filter(|(y0, _)| *y0 == top).count();
+                        Some(((top, n_top), key, zero.1, v.iter().filter(|(y0, _)| *y0 == top).map(|&(_, s)| s).collect::<Vec<_>>()))
+                    }).max_by_key(|(rank, ..)| *rank).expect("seeds");
+                    let ((top, n_top), key, zero_seed, tops) = best;
+                    assert!(top > 0, "no shape with outputs of y = 0: raise FACCT_SHAPE_SEEDS");
+                    eprintln!("facct_y0_contrast: shape (candidates, y draws, signs) = {:?}: fixed seed 0 outputs \
+                               of y = 0, class 1 {} seeds with {} each", key, n_top, top);
+                    fixed = zero_seed;
+                    Some(tops)
+                }
+            };
+            Box::new(FacctSample { table, fixed, pool, seed: [0; 32], out: vec![0; 1024], deferred: Default::default() })
         }
         "garble_x" | "garble_seed" => {
             let mut salt = [0u8; 56];

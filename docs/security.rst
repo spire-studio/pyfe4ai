@@ -735,7 +735,7 @@ ways:
   their operands (for the signed reduction also its inlined assembly after
   link-time optimisation);
 * by statistical timing tests in the style of dudect (Reparaz, Balasch and
-  Verbauwhede, DATE 2017; the targets of ``rust/core/examples/ct_dudect.rs``):
+  Verbauwhede, DATE 2017; the targets of ``rust/core/examples/ct_dudect/main.rs``):
   fixed against random secret inputs, Welch's t-test, judged by the effect
   size against a constant-time control (SHAKE-256, whose two classes differ
   by -0.0012 % [-0.0037, +0.0014] at 8·10^7 batches), on an Apple M4 Max
@@ -746,8 +746,9 @@ ways:
   buffers, gave a false signal for the signed reduction; no row below rests
   on it.
 
-Except for the exact Gaussian sampler, no timing difference beyond the
-control's was found within the measured sample sizes. That is evidence for
+Except for the exact Gaussian sampler, which is not constant-time (below),
+no timing difference beyond the control's was found within the measured
+sample sizes. That is evidence for
 these paths on this machine and compiler, not a guarantee.
 
 .. list-table::
@@ -782,24 +783,34 @@ these paths on this machine and compiler, not a guarantee.
    * - the exact Gaussian sampler (FACCT, ``sigma = 1000``), 1024 values, the
        random bits secret; the default sampler of the noise of the lattice
        MIFE and MCFE schemes
-     - seeded, 2·10^5; two fixed seeds whose samples take the same
-       number of draws, 3·10^5
-     - **differences found.** The time follows the number of draws: a fixed
-       seed differs from random ones by -2.65 % [-2.67, -2.64] (a rejection sampler;
-       the number of draws does not depend on the values returned). Two seeds
-       whose samples take as many draws differ by -0.067 % [-0.079, -0.055]
-       (t = -10.8), so the time also depends on the drawn bits themselves.
-       With two seeds the test cannot tell whether through the values
-       returned or the candidates rejected. In the code, the fixed-point
-       exponential of the acceptance test has correction loops and
-       conversions to and from floating point whose time may depend on its
-       argument, and ``y = 0`` skips the test.
+     - seeded, 2·10^5; seeds of one shape (as many candidates, draws of
+       ``y``, signs and outputs of ``y = 0``), 4·10^5; one shape with and
+       without outputs of ``y = 0``, 6·10^5
+     - **not constant-time.** The time follows the number of candidates: a
+       fixed seed differs from random ones by -2.65 % [-2.67, -2.64], and a
+       regression over 300 seeds on a second machine gives about 345 ns per
+       call of the bit source and 117 ns per candidate, with residuals at the
+       measurement noise. In a rejection sampler the number of candidates
+       does not depend on the values returned. With the whole shape held
+       equal, seven seeds of one shape still differ by +0.031 % [+0.021,
+       +0.041] (about 480 ns, t = 6.1): the values of the candidates move
+       the time by a few hundred nanoseconds per 1024 samples. Two paths
+       depend on the values: an output with ``y = 0`` (a multiple of ``k``,
+       about one in 1024) skips the acceptance test (a seed with seven such
+       outputs ran 395 ns faster than one with none, t = 5.4: the direction
+       of the skip, but no more than seeds of one shape differ by), and the
+       fixed-point exponential of the test starts from a floating-point
+       estimate with correction loops and early returns, a few nanoseconds
+       per candidate. (An earlier test held only the number of random-bit
+       calls equal, which lets candidates trade against redraws of ``y``;
+       its -0.067 % is about 9 to 14 candidates.)
 
 Not checked yet, in the native core: the RNS products and the CRT
 (``rns.rs``, used by default by the lattice MIFE, MCFE, dMCFE and tMCFE
 schemes), the dealing of replicated key shares (``replicated.rs``), the
-dense-LWE encryption and key terms, the arithmetic of 256-bit words (moduli
-of 125 bits or more), decryption, and the threshold partial decryptions.
+dense-LWE encryption and key terms, the exact Gaussian sampler of wide
+widths (``facct_wide.rs``), the arithmetic of 256-bit words (moduli of 125
+bits or more), decryption, and the threshold partial decryptions.
 Outside it, nothing was measured: the label selection by ``w`` and the label
 encryption of ``bcfe/gc_ristretto255`` were read but not timed, and in the
 native ristretto255 code the scalar multiplications are curve25519-dalek's,
