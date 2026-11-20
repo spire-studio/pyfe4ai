@@ -885,12 +885,15 @@ in the shape of the distributions. Some runs flagged them while their means
 stayed within the control. The wide sampler's seeds of one shape flag in both
 runs (16.6 and 28, growing with the number of batches): that comes from the
 method, which compares one seed's order of decisions with other seeds' (see
-its row). A first run of the forward NTT (28) and a run of the garbling with
-the seed secret (11) flagged, and their other runs did not (0.55 for the NTT
-on the same code, 0.45 for the garbling on earlier code); but each run drew
-new fixed inputs from the operating system (the seed of the fixed class was
-not recorded), so a dependence on the fixed input is not excluded. The verdict
-above is the mean's effect size.
+its row). A first run of the forward NTT flagged (28); its rerun on the same
+code gave 0.55, and six more runs with three fixed seeds, two runs each, were
+all clean (at most 2.6), so that flag did not come from the fixed input. The
+garbling with the seed secret flagged in a run on the release code (11), and
+in four of six more runs with three fixed seeds, two runs each: one seed in
+one of its runs and not the other, another in both (18.5 and 14.9); every mean
+stayed within the control (at most 0.006 %). The cause was not found. Its
+verdict rests on the mean, which does not exclude a leak through the shape of
+its time distribution.
 
 Not checked yet, in the native core: the RNS products and the CRT
 (``rns.rs``, used by default by the lattice MIFE, MCFE, dMCFE and tMCFE
@@ -1127,10 +1130,11 @@ tables; ``label_bits`` takes 128 only.
   operating system and wipes ``Delta``, the seeds, ``r`` and the labels. Its
   timing was measured on one machine (`Side channels`_): the garbling with
   ``x`` or the seed secret, by the core's harness, and the slot tables chosen
-  by ``w``, the label encryption and the decryption, from Python; none
-  differed beyond the control or the A/A twin. That is evidence for these
-  paths, not a guarantee; the scalar multiplications of curve25519-dalek were
-  not checked here.
+  by ``w``, the label encryption and the decryption, from Python; no mean
+  differed beyond the control or the A/A twin, but the cropped tests of the
+  garbling with the seed secret flagged in most runs (see `Side channels`_).
+  That is evidence for these paths, not a guarantee; the scalar
+  multiplications of curve25519-dalek were not checked here.
 
 Not covered by the argument: simulation security, the secrecy of ``w`` from
 its key holder, a malicious encryptor, a forged slot list, side channels and
