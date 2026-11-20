@@ -189,7 +189,7 @@ attributes the aggregation takes about 50 s on one thread and about 8 s on eight
 client uploads about 2.4 KB per element as JSON. For comparison, the
 Ring-LWE MCFE (``mcfe/ring_lwe``, 10^4 elements, three clients, ``standard``
 profile, native backend, one thread, binary ciphertexts) takes the client
-17.95 ms and the aggregator 6.24 ms, at 24.6 B per element (:doc:`/choosing`). The adapter
+19.3 ms and the aggregator 6.24 ms, at 24.6 B per element (:doc:`/choosing`). The adapter
 warns (:class:`~pyfe4ai.core.exceptions.FEWarning`) of an aggregation of more
 than 1000 elements, with the time it estimates, and of a discrete-logarithm
 bound ``n * bound_x * bound_y`` above ``2**26``: ``bound_x`` bounds the

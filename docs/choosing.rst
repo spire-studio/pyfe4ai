@@ -269,7 +269,7 @@ With 10 clients, 10^3 elements and ciphertexts for three attributes the
 aggregation takes about 50 s on one thread and about 8 s on eight, and a
 client uploads about 2.4 KB per element as JSON. The Ring-LWE MCFE
 (``mcfe/ring_lwe``, 10^4 elements, three clients, ``standard`` profile, native
-backend, one thread, binary ciphertexts) takes the client 17.95 ms and the
+backend, one thread, binary ciphertexts) takes the client 19.3 ms and the
 aggregator 6.24 ms, at 24.6 B per element (``benchmarks/PERFORMANCE.md``):
 use ``mcfe/ring_lwe`` when there is no policy to enforce.
 

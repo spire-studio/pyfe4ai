@@ -173,7 +173,7 @@ def test_the_policy_is_checked_before_any_slot_is_reserved(tmp_path):
     assert key["slot_id"] == 0                                         # the refused request burned no id
     slot = kg.get_public_parameters()["slots"][0]
     assert slot["policy_digest"] == pyfe4ai.policy.policy_digest(parse("and(org:bank, role:scoring)"))
-    assert "attribute_set_digest" not in slot                          # private: the authority's audit (R06-P2-01)
+    assert "attribute_set_digest" not in slot                          # private: the authority's audit
     assert kg._store.private(0)["attribute_set_digest"] == bytes.fromhex(pyfe4ai.policy.attribute_set_digest(
         ["org:bank", "role:scoring", "org:extra"]))
 
@@ -559,7 +559,7 @@ def test_the_markers_are_the_versions_module(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# review R06-03: no issuance, setup or encryption on the tests' randomness (appended)
+# review: no issuance, setup or encryption on the tests' randomness (appended)
 
 
 def _instances(tmp_path) -> list:
@@ -611,7 +611,7 @@ def test_the_tests_randomness_hook_stops_every_call_that_draws(tmp_path, backend
 
 
 # ---------------------------------------------------------------------------
-# review R06-06: CheckAuth at the scheme layer finds the holder's keys out of place (appended)
+# review: CheckAuth at the scheme layer finds the holder's keys out of place (appended)
 
 
 def test_checkauth_refuses_a_slot_without_the_holders_keys_at_their_positions(tmp_path, backend_name):

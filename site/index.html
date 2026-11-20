@@ -270,7 +270,7 @@
         <p>An optional Rust extension, built by <code>pip install</code> when <code>cargo</code> is
           available, runs the lattice hot paths, ristretto255 and BLS12-381 pairings with the outputs
           of the Python reference: an MCFE Ring-LWE round of 10 000 gradient elements under
-          <code>standard</code> takes about 18 ms per client and 7.5 ms to aggregate, against 345 / 157 ms on the
+          <code>standard</code> takes about 21 ms per client and 7.5 ms to aggregate, against 345 / 157 ms on the
           Python backend (JSON ciphertexts, one thread).</p>
       </article>
       <article class="card reveal">
@@ -790,7 +790,7 @@
         <h3>Secure aggregation in federated learning</h3>
         <p>Clients encrypt local gradients with MCFE-DDH (CDGPP18), the DCR, LWE and MDDH constructions of ABMPSW20,
           or MCFE-Ring-LWE (BMMS21), which under <code>standard</code> encrypts 10 000 gradient elements in about
-          18 ms per client with the Rust extension (0.35 s in pure Python); the aggregator's functional key decrypts
+          21 ms per client with the Rust extension (0.35 s in pure Python); the aggregator's functional key decrypts
           only the weighted sum. dMCFE variants need no authority for functional keys (their setup, which samples every
           client's keys in-process, is still trusted).</p>
         <p class="uc-links"><a href="https://github.com/spire-studio/pyfe4ai/blob/main/examples/ml_fl_aggregation.py">examples/ml_fl_aggregation.py</a></p>
@@ -830,7 +830,7 @@
     </div>
 
     <div class="grid grid-4 kpis">
-      <div class="kpi reveal"><b class="grad-text">18.2 ms</b><span>per client to encrypt</span><small>MCFE Ring-LWE, 10<sup>4</sup> elements · JSON (default) · Python backend: 345 ms</small></div>
+      <div class="kpi reveal"><b class="grad-text">20.8 ms</b><span>per client to encrypt</span><small>MCFE Ring-LWE, 10<sup>4</sup> elements · JSON (default) · Python backend: 345 ms</small></div>
       <div class="kpi reveal"><b class="grad-text">7.5 ms</b><span>to aggregate</span><small>JSON (default) · Python backend: 157 ms</small></div>
       <div class="kpi reveal"><b class="grad-text">0.25 ms</b><span>per client online</span><small>after an offline phase · binary ciphertexts</small></div>
       <div class="kpi reveal"><b class="grad-text">24.6 B</b><span>per element</span><small>binary ciphertexts · 68.4 B as JSON</small></div>
@@ -841,16 +841,16 @@
       <figure class="card pg reveal">
         <figcaption><b>MCFE Ring-LWE</b> · <code>mcfe/ring_lwe</code>, 10<sup>4</sup> elements <small>by ciphertext format</small></figcaption>
         <div class="bars">
-          <div class="bar-row"><span class="bl">client · JSON (default)</span><span class="b before" style="--w:95.83%"><em>345 ms</em></span><span class="b after" style="--w:5.06%"><em>18.2 ms</em></span></div>
+          <div class="bar-row"><span class="bl">client · JSON (default)</span><span class="b before" style="--w:95.83%"><em>345 ms</em></span><span class="b after" style="--w:5.78%"><em>20.8 ms</em></span></div>
           <div class="bar-row"><span class="bl">aggregator · JSON (default)</span><span class="b before" style="--w:43.61%"><em>157 ms</em></span><span class="b after" style="--w:2.08%"><em>7.5 ms</em></span></div>
-          <div class="bar-row"><span class="bl">client · binary</span><span class="b before" style="--w:100%"><em>360 ms</em></span><span class="b after" style="--w:4.99%"><em>17.95 ms</em></span></div>
+          <div class="bar-row"><span class="bl">client · binary</span><span class="b before" style="--w:100%"><em>360 ms</em></span><span class="b after" style="--w:5.36%"><em>19.3 ms</em></span></div>
           <div class="bar-row"><span class="bl">aggregator · binary</span><span class="b before" style="--w:45.56%"><em>164 ms</em></span><span class="b after" style="--w:1.73%"><em>6.24 ms</em></span></div>
         </div>
       </figure>
       <figure class="card pg reveal">
         <figcaption><b>Threshold MCFE</b> · 10<sup>4</sup> elements, s = 3, t = 2 <small>defaults: binary ciphertexts, RNS modulus, split key shares; aggregation = every party of the round on one machine</small></figcaption>
         <div class="bars">
-          <div class="bar-row"><span class="bl">client</span><span class="b before" style="--w:71.96%"><em>493 ms</em></span><span class="b after" style="--w:3.85%"><em>26.4 ms</em></span></div>
+          <div class="bar-row"><span class="bl">client</span><span class="b before" style="--w:71.96%"><em>493 ms</em></span><span class="b after" style="--w:4.36%"><em>29.9 ms</em></span></div>
           <div class="bar-row"><span class="bl">partial decryption, per server</span><span class="b before" style="--w:40.02%"><em>274 ms</em></span><span class="b after" style="--w:1.17%"><em>8.0 ms</em></span></div>
           <div class="bar-row"><span class="bl">aggregation: key shares, t partial decryptions, combine</span><span class="b before" style="--w:100%"><em>686 ms</em></span><span class="b after" style="--w:4.06%"><em>27.8 ms</em></span></div>
         </div>
@@ -877,13 +877,13 @@
           <caption class="sr-only">Timings of the Rust and Python backends, from benchmarks/PERFORMANCE.md</caption>
           <thead><tr><th scope="col">Workload</th><th scope="col">Measure</th><th scope="col">Python backend</th><th scope="col">Rust backend</th></tr></thead>
           <tbody>
-            <tr><th scope="row" rowspan="6">MCFE Ring-LWE, 10<sup>4</sup> elements</th><td>client, JSON (default)</td><td>345 ms</td><td>18.2 ms</td></tr>
+            <tr><th scope="row" rowspan="6">MCFE Ring-LWE, 10<sup>4</sup> elements</th><td>client, JSON (default)</td><td>345 ms</td><td>20.8 ms</td></tr>
             <tr><td>aggregator, JSON (default)</td><td>157 ms</td><td>7.5 ms</td></tr>
-            <tr><td>client, binary</td><td>360 ms</td><td>17.95 ms</td></tr>
+            <tr><td>client, binary</td><td>360 ms</td><td>19.3 ms</td></tr>
             <tr><td>aggregator, binary</td><td>164 ms</td><td>6.24 ms</td></tr>
             <tr><td>online, after the offline phase (binary)</td><td>—</td><td>0.25 ms client · 3.16 ms aggregator</td></tr>
-            <tr><td>4 threads (binary)</td><td>—</td><td>6.21 ms client · 3.62 ms aggregator</td></tr>
-            <tr><th scope="row" rowspan="3">Threshold MCFE, 10<sup>4</sup> elements, s = 3, t = 2, defaults (binary)</th><td>client</td><td>493 ms</td><td>26.4 ms</td></tr>
+            <tr><td>4 threads (binary)</td><td>—</td><td>6.69 ms client · 3.62 ms aggregator</td></tr>
+            <tr><th scope="row" rowspan="3">Threshold MCFE, 10<sup>4</sup> elements, s = 3, t = 2, defaults (binary)</th><td>client</td><td>493 ms</td><td>29.9 ms</td></tr>
             <tr><td>partial decryption, per server</td><td>274 ms</td><td>8.0 ms</td></tr>
             <tr><td>aggregation (key shares, t partial decryptions, combine)</td><td>686 ms</td><td>27.8 ms</td></tr>
             <tr><th scope="row" rowspan="2">Dense-LWE MCFE, 200 elements (JSON)</th><td>client</td><td>543 ms</td><td>92.6 ms</td></tr>

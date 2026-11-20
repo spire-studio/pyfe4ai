@@ -286,7 +286,7 @@ def test_digests_survive_a_json_round_trip(centre):
 
 
 def test_malformed_fields_are_refused_with_the_library_errors(centre):
-    """R-0.7 I-4: a lone surrogate in a digest field is a mismatch (FEKeyError), not a UnicodeEncodeError."""
+    """A review: a lone surrogate in a digest field is a mismatch (FEKeyError), not a UnicodeEncodeError."""
     d = IdentityDirectory(centre.directory())
     ct = d.encrypt("alice", [1, 2, 3])
     dk = centre.get_decryption_keys("alice", [1, 0, 0])
@@ -303,7 +303,7 @@ def test_unassigned_code_points_are_not_added():
 
 
 def test_a_fork_mid_add_leaves_no_half_added_identity(centre):
-    """R-0.7 re-check RC1-2: the child of a fork between the two writes of add_identity drops that identity."""
+    """A review: the child of a fork between the two writes of add_identity drops that identity."""
     centre._instances["dave"] = centre._instances["alice"]  # the state of a fork between the two writes
     centre._after_fork_in_child()
     assert "dave" not in centre._instances and "dave" not in centre._entries

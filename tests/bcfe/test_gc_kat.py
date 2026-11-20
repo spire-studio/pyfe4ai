@@ -544,7 +544,7 @@ def test_the_schemes_never_call_gc_garble_or_gc_evaluate():
 #: The functions of the primitives and of the extension that take their randomness from the caller (a seed, ``rand``,
 #: ``rnd=`` or ``seed=``): the reference algorithms and the test entry points of the kernels. Only the backend
 #: implementations and the tests may call them; the schemes draw through the backend operations, which take no
-#: randomness (review R-0.6 pass 2, P2-04).
+#: randomness (found in a review).
 CALLER_RANDOMNESS = (
     "garbling.garble", "garbling.expand_seed", "expand_seed(",
     "bcfe_kem.new_slot", "bcfe_kem.place_slot", "bcfe_kem.encrypt_slot", "bcfe_kem.ephemeral_scalar",
@@ -588,7 +588,7 @@ CALLER_RANDOMNESS_FUNCTIONS = {
 
 def test_no_library_module_imports_the_randomness_taking_primitives():
     """The name scan above misses ``from pyfe4ai.primitives.bcfe_kem import new_slot`` followed by ``new_slot(...)``
-    (review R-0.6, R2C-2): this check parses every library module outside :data:`CALLER_RANDOMNESS_ALLOWED` and
+    (found in a review): this check parses every library module outside :data:`CALLER_RANDOMNESS_ALLOWED` and
     refuses an import of those functions (also renamed with ``as``), an import of the whole module under another
     name followed by an attribute access to one of them, and ``importlib.import_module`` of the two modules."""
     import ast

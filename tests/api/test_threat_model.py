@@ -1,5 +1,5 @@
 """docs/threat_model.rst names every registered scheme, with its status where it is not reviewed, and the README and
-SECURITY.md link to it (R-1.0, T-4)."""
+SECURITY.md link to it."""
 
 from __future__ import annotations
 

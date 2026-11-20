@@ -4,7 +4,7 @@ The status table of the README and the counts of the documentation are generated
 hand: the markers of the README's "Implemented Schemes" list (``*(unreviewed)*``, ``*(pairing, known-insecure)*``)
 and the sentences of ``docs/security.rst`` that say which schemes are reviewed or known-insecure. When
 ``mcfe/kp_ab_pairing`` became known-insecure (5b51558) three such sentences and one marker kept the old status
-(R-1.0 part A, M-1 and M-2). These tests read the statuses from the registry, so a status change fails here until
+(found in a review). These tests read the statuses from the registry, so a status change fails here until
 the prose follows.
 """
 

@@ -1,7 +1,6 @@
-"""R-0.7 round 2 review of the threshold key issuance (feat/0.7 6724816): failing tests for the findings.
+"""A review of the threshold key issuance (6724816): failing tests for the findings.
 
-Each test states what the code should do; on 6724816 they fail. See
-records/2026-11-perf/sessions/r-0.7/report_m1b.md of the project's records.
+Each test states what the code should do; on 6724816 they failed.
 """
 
 import copy
@@ -84,7 +83,7 @@ def test_m1b_4_the_history_given_to_the_rule_is_a_copy():
     assert ki.request_digest(first) == first["digest"]
 
 
-# -- R-0.7 round 3 (3120d70, read-only history views): checks the new tests do not make --------------------------
+# -- a later review (3120d70, read-only history views): checks the new tests do not make --------------------------
 
 
 def test_r3_a_request_the_rule_keeps_stays_equal_and_is_the_stored_entry():

@@ -123,9 +123,20 @@ def test_no_field_was_dropped_or_re_encoded(path):
     assert not problems, "{}: {}".format(fx["scheme"], problems[:10])
 
 
+#: Markers of experimental parts (bcfe, the threshold key issuance, the identity directory): the snapshot lists them,
+#: but the promise covers the records of stable schemes only (docs/compatibility.rst, *Serialized records*), so they
+#: may change; a change updates this list, not the fixture.
+EXPERIMENTAL_MARKERS = frozenset({
+    "BCFE_GC", "BCFE_GC_HASH", "BCFE_KEM", "BCFE_MARKERS", "BCFE_VERSION",
+    "CP_AB_KEYISSUE_PROTOCOL", "CP_AB_KEYREQUEST_VERSION", "CP_AB_KEYSERVERS_VERSION", "CP_AB_KEYSERVER_SHARE_VERSION",
+    "CP_AB_PARTIAL_KEY_VERSION", "IDENTITY_DIRECTORY_VERSION",
+})
+
+
 @pytest.mark.parametrize("release", RELEASES, ids=[d.name for d in RELEASES])
 def test_the_version_markers_are_kept(release):
-    frozen = recipes.load(release / "markers.json")
+    frozen = {name: value for name, value in recipes.load(release / "markers.json").items()
+              if name not in EXPERIMENTAL_MARKERS}
     now = marker_snapshot()
     gone = sorted(set(frozen) - set(now))
     changed = sorted(name for name in set(frozen) & set(now) if recipes.encode(now[name]) != recipes.encode(frozen[name])

@@ -425,7 +425,7 @@ mod tests {
         assert!((e - (-1.5f64).exp()).abs() < 1e-15);
     }
 
-    /// R-1.0 review of FACCT A: y = 0 (no acceptance test in the reference) and -0 (drawn again)
+    /// From the review of the constant-time change: y = 0 (no acceptance test in the reference) and -0 (drawn again)
     /// in the wide kernel. The seeded comparison above never reaches them: with k >= 2^50 one
     /// candidate in k has y = 0. Here every y draw reads its bits from the stream and then
     /// returns 0, so z = k x, the y = 0 test is skipped, and x = 0 with the sign set is -0.

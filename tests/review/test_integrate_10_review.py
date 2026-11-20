@@ -1,11 +1,11 @@
 """Review of the local 1.0 integration (integrate/1.0 f1b21a1): semantic interactions of the merged lines.
 
-INT-1: the freeze spec (roadmap/v1.0/02 Sec. 2.2) marks the 0.7 capability ``distributed_keygen`` of the stable
+INT-1: the freeze spec marks the 0.7 capability ``distributed_keygen`` of the stable
 scheme ``sife/cp_ab_pairing`` experimental, in ``stability.EXPERIMENTAL_CAPABILITIES``; the merge left the table
 empty, so the capability (and the key-issuance records) read as stable.
 
-This is the INT-1 test of the review (local review/integrate-1.0 b43d2b6); its INT-2 test (a key server forked
-while another thread is inside ``issue``) is for the 0.7 line and stays on the review branch.
+This is the INT-1 test of the review; its INT-2 test (a key server forked while another thread is inside
+``issue``) went to the 0.7 line.
 """
 
 from pyfe4ai.core import registry, stability

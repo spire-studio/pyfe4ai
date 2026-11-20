@@ -1,6 +1,6 @@
 """Review of the 1.0 freeze line (feat/1.0-freeze d29a918): the checks of the freeze spec the compat tests miss.
 
-See records/2026-11-perf/sessions/v10-freeze/review_report.md of the project's records. These tests pass on
+These tests pass on
 d29a918 and fail under the mutations the report describes (M2: a functional-key value written in another encoding
 that the reader still accepts; M3: a stable scheme's fixture dropped together with its manifest entry; M4: a
 reviewed scheme moved to experimental).

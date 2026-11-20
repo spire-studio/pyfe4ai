@@ -1,7 +1,4 @@
-"""R-0.6 pass 1 review (481450d): failing tests for the findings that can be tests.
-
-See records/2026-11-perf/sessions/r-0.6/report.md of the project's records.
-"""
+"""First review of the bounded-key FE (481450d): failing tests for the findings that can be tests."""
 
 from __future__ import annotations
 
@@ -26,7 +23,7 @@ def _h2_build(slot_id):
 
 
 def test_r06_01_a_listed_h2_slot_is_returned_to_a_retry_not_duplicated(tmp_path, monkeypatch):
-    """R06-01: an error (or crash) between the public write and the private write leaves the slot listed without a
+    """An error (or crash) between the public write and the private write leaves the slot listed without a
     dedup entry. For h2 the holder already holds that slot's key (its own scalars, its keys in the listed record),
     so the slot is delivered in effect. A retry of the same request then gets a second slot: the same requester
     holds two slots, and the store's dedup index (and an issuance policy built on it) knows of one. A listed slot

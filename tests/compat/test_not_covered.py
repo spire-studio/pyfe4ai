@@ -3,8 +3,8 @@
 Every subpackage of ``pyfe4ai`` and of ``pyfe4ai.schemes`` has a place here: covered by the promise, internal, or
 experimental. A new subpackage fails until it is placed; an internal or experimental one must be named under "Not
 covered", and so must the package of a scheme family whose schemes are all experimental (from the registry). The
-packages that ``import pyfe4ai`` loads are checked too, since a reader sees them without importing them (R-1.0 part B,
-B-1: ``pyfe4ai.circuits``).
+packages that ``import pyfe4ai`` loads are checked too, since a reader sees them without importing them (as
+``pyfe4ai.circuits``).
 """
 
 from __future__ import annotations
