@@ -79,6 +79,7 @@ Contents
    choosing
    security
    threat_model
+   audit
    compatibility
    configuration
    environment

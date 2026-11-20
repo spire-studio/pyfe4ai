@@ -37,8 +37,8 @@ aggregation and encrypted linear inference, and an optional Rust core.
 > production use.** Every scheme carries a review status (see
 > [Scheme Status](#scheme-status)): most were checked internally against
 > their papers, some are our own constructions or not yet reviewed, and two
-> are known to be insecure. No external audit has taken place; an audit
-> package is planned for the release. The default `toy` security profile is
+> are known to be insecure. No external audit has taken place; the
+> [audit package](https://spire-studio.github.io/pyfe4ai/docs/audit.html) is the entry point for one. The default `toy` security profile is
 > **not secure**: pass `security_profile="standard"` (see
 > [Security Profiles](#security-profiles)). Nothing is guaranteed to be
 > constant-time: the Python layer is not, and in the native code only the
