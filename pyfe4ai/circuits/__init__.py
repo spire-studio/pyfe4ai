@@ -24,8 +24,10 @@ Garbling costs follow the half-gates scheme of Zahur, Rosulek and Evans
 (EUROCRYPT 2015, ZRE15): XOR and INV free, two table entries for an AND of
 two labelled wires, one for an AND with a garbler-known input. The kind of
 every wire -- labelled or garbler-known -- depends on the circuit and the
-mode of the data wires only, never on the values of ``w`` or ``x``
-(requirement I12 of the 0.6 security argument).
+mode of the data wires only, never on the values of ``w`` or ``x``, so
+the layout and the number of a ciphertext's gate tables do not depend on
+``w`` or ``x`` (their contents do; the garbling hides them, as the scheme's
+security claim states).
 
 Pure Python: the standard library, NumPy (layouts accept NumPy integer
 arrays) and :mod:`pyfe4ai.core.exceptions`.

@@ -26,23 +26,26 @@ expanded with SHAKE-256 together with the instance salt
 (:func:`expand_seed`); :func:`garble` takes the seed, which the backend
 operation ``gc_garble`` draws fresh for every call.
 
-Requirements of the security argument implemented here:
+What the security argument requires of this module, and how it is met:
 
-* I1 -- every label and ``Delta`` is derived from the per-call seed, nothing
-  is reused between calls (the caller supplies a fresh seed: the backend
-  operation from the operating system); the instance salt is expanded with
-  the seed, so a repeated seed under another salt still gives unrelated
-  labels;
-* I7 -- the hash index follows ZRE15's NextIndex: a fresh index per hash
-  group, two for an AND gate of two labelled inputs, one for a generator
-  half-gate, none for the other gates, in gate order;
-* I11 -- the gate hash takes the instance salt (pp digest, ciphertext nonce,
-  slot id) as a fixed 56-byte string;
-* I12 -- the kinds of the wires, the gate tables and their number depend on
-  the circuit and the mode only, never on ``x``; no gate is folded or skipped
-  because of ``x``; the garbler's selections by ``x`` (values of ``K``
-  wires, ``val * Delta``) are written as masks, not branches;
-* I15 -- the inputs of ``H_G`` have fixed lengths (8 + 56 + 8 + 16 bytes).
+* fresh labels -- every label and ``Delta`` is derived from the per-call
+  seed, nothing is reused between calls (the caller supplies a fresh seed:
+  the backend operation from the operating system); the instance salt is
+  expanded with the seed, so a repeated seed under another salt still gives
+  unrelated labels;
+* hash indices -- the hash index follows ZRE15's NextIndex: a fresh index
+  per hash group, two for an AND gate of two labelled inputs, one for a
+  generator half-gate, none for the other gates, in gate order;
+* instance salt -- the gate hash takes the instance salt (pp digest,
+  ciphertext nonce, slot id) as a fixed 56-byte string;
+* a structure independent of ``x`` -- the kinds of the wires, which gates
+  have tables and their number depend on the circuit and the mode only,
+  never on ``x`` (the table contents do); no gate is folded or skipped
+  because of ``x``; the garbler's selections by
+  ``x`` (values of ``K`` wires, ``val * Delta``) are written as masks, not
+  branches;
+* injective hash inputs -- the inputs of ``H_G`` have fixed lengths (8 +
+  56 + 8 + 16 bytes).
 
 This Python reference makes no constant-time claim (Python integers and
 ``hashlib`` are not constant time) and cannot wipe its copies of ``Delta``,
@@ -268,7 +271,7 @@ def expand_seed(salt: bytes, seed: bytes, m_prime: int, n_data_labels: int) -> t
     (ciphertext, slot) instances still gives unrelated ``Delta`` and labels:
     defence in depth against a repeated seed. Design choice; the alternative
     was the seed alone, relying only on a fresh seed per instance from the
-    operating system (I1).
+    operating system.
 
     Raises:
         TypeError: If *salt* or *seed* is not bytes.

@@ -21,7 +21,7 @@ key wires (:meth:`pyfe4ai.circuits.circuit.Circuit.guard`).
 
 **Digests** (``u8``, ``u32``, ``u64``: fixed-length little-endian integers;
 ``||``: concatenation; every field fixed-length or length-prefixed, so each
-encoding is injective -- requirement I15 of the 0.6 security argument):
+encoding is injective: two different records never hash the same input):
 
 * slot digest (:func:`slot_digest`)::
 
@@ -41,8 +41,8 @@ encoding is injective -- requirement I15 of the 0.6 security argument):
   in the slot's private record, for its own audit. That digest is unsalted
   and attribute vocabularies are small, so a public copy would let every
   holder of the public parameters test guesses of a requester's attributes
-  offline and link the slots of requesters with equal attributes (review
-  R06-P2-01). Alternative not taken: keep it public and document the leak.
+  offline and link the slots of requesters with equal attributes.
+  Alternative not taken: keep it public and document the leak.
   To publish it again: add the field to :class:`BCFESlot` after
   ``policy_digest`` and ``|| attribute_set_digest(32)`` to this encoding
   after ``opt_digest(policy_digest)`` -- a format change (a new
@@ -63,7 +63,8 @@ encoding is injective -- requirement I15 of the 0.6 security argument):
   through the circuit digest, its description and layouts directly), the
   setup nonce, ``max_keys``, the version and every slot record.
 * dedup key (:func:`dedup_key`; the authority's private index, never
-  published, I16)::
+  published: it is unsalted, so anyone who knows the requester id could
+  test guesses of ``w`` offline)::
 
     SHAKE-256("PYFE4AI-V06-BCFE-DEDUP" || u32(len(id)) || id || circuit_digest(32)
               || u32(len(r)) || r || w)[0:32]
@@ -205,7 +206,7 @@ def pp_digest(setup_digest: bytes, gc: str, description_json: str, max_keys: int
 
 def dedup_key(scheme_id: str, circuit_digest: bytes, requester: str, w_packed: bytes) -> bytes:
     """The authority's dedup key of a request (see the module docstring);
-    secret: never published, logged or put in an exception (I16).
+    secret: never published, logged or put in an exception.
 
     Raises:
         ValueError: For a requester that is not a non-empty ``str``, or fields

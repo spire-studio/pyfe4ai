@@ -102,10 +102,17 @@ decrypt that slot:
 
 .. code-block:: python
 
-   holder = BCFE.key_holder(pp)
-   request = holder.request(w)                  # w and m + 1 public keys: to the authority only
-   grant = kg.authorize(request, requester=authenticated_id, attributes=..., label=...)
+   kg, BCFE = pyfe4ai.create("bcfe/gc_ristretto255", circuit=model, max_keys=4, key_mode="h2",
+                             issuance_policy=parse("and(org:bank, role:scoring)"))
+   kg.setup()
+
+   holder = BCFE.key_holder(kg.get_public_parameters())    # the key holder
+   # the request holds w and m + 1 public keys: it goes to the authority only
+   request = holder.request({"weights": [3, -2, 1, -4], "bias": 10})
+   grant = kg.authorize(request, requester=authenticated_id,
+                        attributes={"org:bank", "role:scoring"}, label="credit-v3")
    key = holder.finish(grant)                   # CheckAuth, then the key
+   pp = kg.get_public_parameters()              # the slot list, with the new slot
 
 The examples ``examples/bcfe_credit_scoring.py`` and
 ``examples/bcfe_holder_generated_keys.py`` run both flows.
@@ -126,8 +133,10 @@ nothing:
    (:class:`~pyfe4ai.core.exceptions.FEKeyError`);
 3. deduplication per requester: the same ``requester`` asking again for the
    same ``w`` gets the same key, byte for byte (h1, with
-   ``keep_issued_keys``, the default), or the same grant (h2); another
-   requester with the same ``w`` gets a slot of its own. The library cannot
+   ``keep_issued_keys``, the default), or, for the same request, the same
+   grant (h2; a new request with other public keys is refused, since the
+   authority does not replace a slot's keys); another requester with the
+   same ``w`` gets a slot of its own. The library cannot
    authenticate ``requester``: pass the id that your application has
    authenticated;
 4. the cap: once ``max_keys`` slots exist, every request gets the same

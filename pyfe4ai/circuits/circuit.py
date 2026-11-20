@@ -56,10 +56,10 @@ each); AND(L, K) or AND(K, L) one entry (the generator half-gate); a gate
 on ``K`` wires only is computed by the garbler in the clear and leaves
 nothing in the ciphertext.
 
-The kinds, the tables and their number depend on the circuit and the mode
-only, never on the values of ``w`` or ``x`` (requirement I12 of the 0.6
-security argument): :meth:`Circuit.kinds` takes no input values, and
-nothing here folds or skips a gate because of a value.
+The kinds, which gates have tables and how many entries they have depend
+on the circuit and the mode only, never on the values of ``w`` or ``x``:
+:meth:`Circuit.kinds` takes no input values, and nothing here folds or
+skips a gate because of a value.
 """
 
 from __future__ import annotations

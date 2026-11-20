@@ -158,7 +158,8 @@ def test_registered_functions_and_tracked_objects_run_in_the_child_only(registry
     del gone
     gc.collect()
     assert gone_ref() is None, "tracking kept an object alive"
-    assert len(registry) == 1
+    # this test's objects only: objects of earlier tests may still be tracked (e.g. kept by sys.last_traceback)
+    assert [obj for obj in registry if isinstance(obj, Tracked)] == [kept]
 
     def child():
         assert cache == {}, "the cache was not emptied"

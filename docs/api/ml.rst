@@ -33,8 +33,24 @@ objects:
 
 .. code-block:: python
 
+   import numpy as np
+   from pyfe4ai.ml import (EncryptedGradient, FESchemeWrapper, ThresholdPartial, combine_partial_decryptions,
+                           encrypt_gradient, partial_decrypt_gradients, prepare_aggregation)
+
+   nids, sids = ["nid_0", "nid_1", "nid_2"], ["sid_0", "sid_1", "sid_2"]
+   wrapper = FESchemeWrapper("mcfe", "ring_lwe_threshold",
+                             {"n": 3, "lst_nid": nids, "s": 3, "t": 2, "lst_sid": sids,
+                              "bound_x": 50, "bound_y": 2, "security_profile": "standard"},
+                             precision=1)
+   weights = {"nid_0": 1, "nid_1": 2, "nid_2": 1}
+   grad = {nid: np.round(np.random.default_rng(i).uniform(-2, 2, (3, 7)), 1) for i, nid in enumerate(nids)}
+
+   # the key shares of the round, before the gradients exist
    prepared = prepare_aggregation(wrapper, weights, shape=(3, 7), label="round-a",
                                   servers=["sid_1", "sid_2"])
+   # what each client sends: its encrypted gradient as a dict (JSON-serialisable)
+   client_messages = {nid: encrypt_gradient(grad[nid], wrapper, nid=nid, label="round-a").to_dict()
+                      for nid in nids}
    received = {nid: EncryptedGradient.from_dict(d) for nid, d in client_messages.items()}
    wire = {sid: partial_decrypt_gradients(received, wrapper, prepared, server=sid).to_dict()
            for sid in prepared.servers}
@@ -71,7 +87,11 @@ that :func:`~pyfe4ai.ml.aggregate_gradients` (or
 
 .. code-block:: python
 
+   import numpy as np
+   from pyfe4ai.ml import FESchemeWrapper, aggregate_gradients, encrypt_gradient
+
    nids = ["c0", "c1", "c2"]
+   grad = {"c0": np.array([0.5, -1.2]), "c1": np.array([1.0, 0.3]), "c2": np.array([-0.4, 2.1])}
    wrapper = FESchemeWrapper("mcfe", "kp_ab_pairing",
                              {"n": 3, "lst_nid": nids, "bound_x": 1000, "bound_y": 10}, precision=1)
    attributes = {"purpose:research", "region:EU"}

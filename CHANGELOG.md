@@ -56,19 +56,23 @@ compatibility).
   decryption refuses (`FEKeyError`) a mismatch. Records in
   `pyfe4ai.core.formats.identity`, format id
   `IDENTITY_DIRECTORY_VERSION`. The key centre holds every identity's master
-  key, ciphertexts name their identity, and there is no revocation.
+  key, ciphertexts name their identity, and there is no revocation. Keep one
+  key centre object: it cannot be copied or pickled.
 
 - **Threshold key issuance for `sife/cp_ab_pairing` (experimental),
   capability `distributed_keygen`.** `SIFECPABPairingDealer` shares the
   master key among `s` key servers and hands each its share once;
-  `SIFECPABPairingKeyServer.issue(request, requester)` answers with a masked
+  `SIFECPABPairingKeyServer.issue(request, authenticated_requester)` answers with a masked
   partial key after its operator's approval rule, which sees the whole
   request (weights included) and the authenticated requester;
   `SIFECPABPairingKeyCombiner` builds requests and checks the product of
   `t` partial keys with pairings before returning an ordinary key. Public
   parameters, ciphertexts and decryption are unchanged. Requires
   authenticated, confidential channels between requester and servers. Records
-  in `pyfe4ai.core.formats.keyissue`.
+  in `pyfe4ai.core.formats.keyissue`. Dealers and key servers cannot be copied
+  or pickled.
+- **Examples** `sife_cp_ab_pairing_keyissue_demo.py` and
+  `ac_identity_directory_minimal.py`.
 
 ### Documentation — 0.7
 
@@ -601,6 +605,68 @@ an experimental research prototype, not recommended for production use.
   losing call has already obtained key shares from the servers (its weight key
   share is added to the wrapper's server objects where they lack it), and
   these shares never reach the caller.
+
+## [0.4.1] — unreleased
+
+A patch release with one fix: native code no longer kills forked children on
+macOS. Nothing else changes; formats, keys and parameters are those of 0.4.0.
+
+### Fixed
+
+- **Forked children no longer crash on macOS after multi-threaded native
+  calls (0.4.0 is affected).**
+  - *The crash:* the native core's `parallel_for` waited for its worker
+    threads in `std::thread::scope`, which parks the calling thread when the
+    workers finish after it. On macOS the Rust standard library parks on a
+    libdispatch semaphore, and libdispatch refuses to work in the child of a
+    fork from a multi-threaded process. So in a child forked from a process
+    that had run any kernel with more than one thread (`set_threads`,
+    `PYFE4AI_THREADS`), the next multi-threaded native call killed the child
+    (SIGTRAP, "BUG IN CLIENT OF LIBDISPATCH: Use-after-free of
+    dispatch_semaphore_t"). Every multi-threaded kernel was affected (MCFE,
+    MIFE, sampling, Ring-LWE, dense LWE, ristretto255 MCFE), timing-dependent.
+    This hits `multiprocessing` with the `fork` start method and any library
+    that forks workers.
+  - *The fix:* in a process forked from one that has run a native kernel with
+    several threads, native calls now run with one thread. The native core
+    records the first process that runs several threads (by process id, with
+    no wait), so the rule covers direct `pyfe4ai._rust_native` calls and forks
+    not made through `os.fork`, and a later `set_threads(n)` in the child does
+    not lift it. A child of a process that never ran several threads keeps
+    them.
+  - *Second guard:* `parallel_for` joins every worker it starts (also when a
+    share panics) instead of waiting for them in the scope, so the calling
+    thread does not park there either.
+  - *Lazy tables:* the native tables built on first use (the Gaussian
+    sampler's tables, the BLS12-381 pairing generator, the group order and
+    the hash key of its dlog tables) are now built when the extension is
+    imported, and the sampler's tables without any wait. A contended first
+    build made a thread wait, which the pid rule could not see.
+  - *Cost:* native calls in a forked child are single-threaded, on every
+    platform: fork-based workers on Linux lose their native threads too.
+    Pre-fork servers and fork-based pools that want native threads per worker
+    should use `spawn` or `forkserver`. Importing the extension now builds the
+    tables: loading the extension module itself (after the `pyfe4ai` package,
+    which takes far longer) takes about 3.7 ms on an Apple M-series Mac, most
+    of it these tables.
+  - *Unchanged:* results; no randomness is cached across calls.
+  - The crash is specific to macOS (Linux waits on a futex, not
+    libdispatch); this was not run natively on Linux, so that is expected,
+    not verified.
+  - Regression tests: `tests/native/test_native_fork.py`, and
+    `rust/core/tests/fork_*.rs` for the lazy tables and the joined form. They
+    fail with SIGTRAP on macOS when the fix is reverted. See
+    `docs/threading.rst`, "Processes and fork".
+  - With 0.4.0, run multi-threaded native kernels only in processes that do
+    not fork afterwards, use the `spawn` or `forkserver` start method, or keep
+    one thread (`PYFE4AI_THREADS=1`).
+
+### Added
+
+- `pyfe4ai.backend.effective_threads()`: the thread count one native call
+  uses in this process (1 in a forked child of a process that ran several).
+  `backend_info()["threads"]` now reports it instead of the configured
+  count; the two differ only in such a child.
 
 ## [0.4.0] — 2026-10-26
 
@@ -2370,6 +2436,7 @@ before using them.
 Initial public release.
 
 [0.5.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.4.0...v0.5.0
+[0.4.1]: https://github.com/spire-studio/pyfe4ai/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.1.0...v0.2.0

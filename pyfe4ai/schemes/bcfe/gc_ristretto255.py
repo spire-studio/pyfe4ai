@@ -60,14 +60,30 @@ list (alternative not taken: accept them, as only a holder that bypasses
 ``request`` sends them and only its own ``w`` shows).
 
 **What is proved, and what is not** (the project's security argument for
-this scheme, reviewed internally twice; there is no external review): IND security against adaptive key, corruption
-and registration queries, many challenge ciphertexts, in the random oracle
-model (``H_G``, ``H_K``, ``H_P``) under the strong DH assumption in
-ristretto255 (Lemma A1'), for the half-gates garbling with the instance
-salt and, in the default mode, the garbler-known data wires (Lemma 2); the
-implementation requirements I1 to I16 are its section 6. Not proved: SIM
-security, the secrecy of ``w`` from its key holder, a malicious encryptor,
-a forged slot list, side channels, quantum adversaries. Status
+this scheme, reviewed internally twice; there is no external review): IND
+security against adaptive key, corruption and registration queries, many
+challenge ciphertexts, in the random oracle model (``H_G``, ``H_K``,
+``H_P``) under the strong DH assumption in ristretto255 (for the label
+encryption, with arbitrary public keys), for the half-gates garbling with
+the instance salt and, in the default mode, the garbler-known data wires
+(a lemma of the argument's own). The argument also lists what the
+implementation and its use must do for it to apply: fresh randomness for
+every (ciphertext, slot); hash inputs that are domain-separated and of
+fixed or prefixed length, the gate hash with the instance salt and ZRE15's
+hash indices; one key position for the guard bit, whose second label is
+never sent; wire kinds and gate tables whose layout and number do not
+depend on ``x``; no secret key at an unselected position, and a slot
+secret ``k`` that is never published; a slot's function fixed when the
+slot is made, ciphertexts only for the slots listed then, and a slot list
+that only grows; one key per slot; checks of the holder's public keys and
+of the grant; the true slot list at the encryptor and one error for every
+decryption failure (see *Read before use*); a private dedup key and no
+fixed seed outside the tests. This module, the slot store
+(:mod:`pyfe4ai.schemes.common.slots`), :mod:`pyfe4ai.primitives.bcfe_kem`
+and :mod:`pyfe4ai.primitives.garbling` say where each is done. Not
+proved: SIM security, the secrecy of ``w`` from its key holder, a
+malicious encryptor, a forged slot list, side channels, quantum
+adversaries. Status
 *experimental*: our own security argument, reviewed internally, not by
 outside reviewers.
 
@@ -96,7 +112,7 @@ Read before use:
   position, and learn a bit of ``w`` from whether decryption "worked"; (3)
   use different ``x`` in different slots, so that the holders' results
   disagree. Decryption reports every failure inside a component as one
-  error (:data:`DECRYPTION_FAILED`, I10); do not send results or failures
+  error (:data:`DECRYPTION_FAILED`); do not send results or failures
   back to encryptors.
 * **The library cannot authenticate requester ids: pass an authenticated
   id.** The dedup scope is the ``requester`` string; an application that
@@ -134,15 +150,16 @@ slot holds its ``k`` (16 bytes), the ``max_keys`` of its issue, its
 ``key_mode``, the digest of the requester's attribute set
 (:func:`~pyfe4ai.policy.attributes.attribute_set_digest`, for the authority's audit)
 and, for h1 with ``keep_issued_keys``, its scalars and ``w``; never an
-unselected secret key (none exists) and never in the public list (I14,
-I16). The attribute-set digest is unsalted and vocabularies are small: in
-the public slot record it would let every holder of the public parameters
-test guesses of a requester's attributes offline and link the slots of
-requesters with equal attributes (review R06-P2-01), so it is kept private;
-the public record keeps the policy digest, the authority's own policy.
-Alternative not taken: publish it and document the leak; to undo, see
-:mod:`pyfe4ai.core.formats.garbled` (a field of the slot record and of its
-digest). :meth:`BCFEGCRistretto255KeyGenerator.open` resumes an instance
+unselected secret key (none exists) and never in the public list (with
+``k`` anyone could tell the unselected positions of the slot from the
+selected ones, and so read ``w``). The attribute-set digest is unsalted
+and vocabularies are small: in the public slot record it would let every
+holder of the public parameters test guesses of a requester's attributes
+offline and link the slots of requesters with equal attributes, so it is
+kept private; the public record keeps the policy digest, the authority's
+own policy. Alternative not taken: publish it and document the leak; to
+undo, see :mod:`pyfe4ai.core.formats.garbled` (a field of the slot record
+and of its digest). :meth:`BCFEGCRistretto255KeyGenerator.open` resumes an instance
 from its directory.
 
 The two files are read with the slot store's file checks
@@ -976,7 +993,7 @@ class BCFEGCRistretto255KeyGenerator(CircuitFEAbsKeyGenerator):
         """Answer a key holder's request (h2, SS10's Auth): steps (1) to (5)
         of the module documentation, with the holder's ``m + 1`` public keys
         at the selected positions (backend ``bcfe_place_slot``; each must be a
-        group element other than the identity, I8) and the unselected ones
+        group element other than the identity) and the unselected ones
         derived from a fresh slot secret ``k``.
 
         Args:
@@ -1025,7 +1042,7 @@ class BCFEGCRistretto255KeyGenerator(CircuitFEAbsKeyGenerator):
             except ValueError as exc:
                 raise FEValidationError("{}: {}".format(what, exc)) from None
             holder = _chunks(holder_pks, _POINT)
-            for i, pk in enumerate(holder):                              # I8, before anything is reserved
+            for i, pk in enumerate(holder):                              # no identity, checked before reserving
                 if pk == _IDENTITY:
                     raise FEValidationError("{}: holder public key {} is the identity".format(what, i))
                 eg.from_hex(pk.hex(), "holder public key {}".format(i))
@@ -1138,7 +1155,7 @@ class BCFEGCRistretto255KeyHolder:
         ).to_dict()
 
     def finish(self, grant: dict) -> dict:
-        """Check the authority's grant (SS10's CheckAuth, I13) and return the key.
+        """Check the authority's grant (SS10's CheckAuth) and return the key.
 
         The slot record must match its digest under this setup, have exactly
         ``2m + 1`` public keys, hold this holder's keys at ``(j, w_j)`` and
@@ -1415,7 +1432,8 @@ class BCFEGCRistretto255(CircuitFEAbsCrypto):
                 public parameters' slot of its id; if the ciphertext has no component for the key's slot --
                 older than the key, or not encrypted to it.
             FESchemeError: :data:`DECRYPTION_FAILED`, for every failure inside
-                the component (one error, whatever the cause: I10), and for a
+                the component (one error, whatever the cause: which position
+                failed is not told), and for a
                 key whose secret keys do not open its slot when the public
                 parameters list the slot (a damaged key or ``w``; see *Keys
                 are checked against their slot* in the module documentation).
@@ -1465,7 +1483,7 @@ class BCFEGCRistretto255(CircuitFEAbsCrypto):
             raise FEKeyError("the ciphertext has no component for this slot (slot {}): its encryptor did not "
                              "encrypt to it".format(slot_id))
         if known is not None and not self._check_key(known, scalars, w_packed, setup.m):
-            raise FESchemeError(DECRYPTION_FAILED)                       # which position: not told (I10)
+            raise FESchemeError(DECRYPTION_FAILED)                       # which position failed: not told
         try:
             out = backend.ops().bcfe_decrypt_slot(
                 setup.guarded, setup.data_wires, ct_pp_digest, ct_nonce, slot_id,
