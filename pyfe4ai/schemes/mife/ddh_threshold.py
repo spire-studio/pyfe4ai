@@ -20,6 +20,11 @@ threshold layer of :mod:`pyfe4ai.schemes.mcfe.ddh_threshold`:
 
 Fewer than ``t`` servers learn nothing about the key, and a set of partial
 decryptions reveals no more than the MIFE key holder learns (the sum).
+The argument for the threshold layer is the standard simulation of partial
+decryptions from the combined value and the corrupted shares (static
+corruption of fewer than ``t`` servers, honest-but-curious); there is no
+proof of correctness or robustness, and the theorem of TAPFed (Thm. 1) is
+about another construction.
 Versions <= 0.2.0 used an own IPFE replicated over ``eta`` rows and did not
 bind key shares to their weights.
 """

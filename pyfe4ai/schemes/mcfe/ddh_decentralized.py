@@ -3,10 +3,12 @@ Decentralised multi-client inner-product FE over DDH.
 
 | Abdalla, Bourse, Marival, Pointcheval, Soleimanian, Waldner:
 | "Multi-Client Inner-Product Functional Encryption in the Random-Oracle Model"
-| SCN 2020, https://eprint.iacr.org/2020/788 -- Appendix D.1, Fig. 14
+| SCN 2020, https://inria.hal.science/hal-02948657 -- Appendix D.1, Fig. 14
 | (DMCFE from MCFE), instantiated with
 | MCFE1 = CDGPP18 (ASIACRYPT 2018, :mod:`pyfe4ai.schemes.mcfe.ddh`) and
 | MCFE2 = the DCR MCFE of ABMPSW20 Fig. 3 (:mod:`pyfe4ai.schemes.mcfe.decentralize`).
+| (Figure, theorem and appendix numbers: the HAL version, hal-02948657; ePrint
+| 2020/788 numbers them differently.)
 
 * type:     decentralised multi-client encryption (DMCFE, DDH + DCR, random oracle)
 * setting:  Integer based (order-q subgroup of Z_p^*; Z_{N2^2}^* for key shares)
@@ -31,8 +33,11 @@ Here ``rho_i`` is uniform below ``2^(stat_param + bits(n))`` and derived
 from a per-client key and ``H(y)`` (repeating a derivation repeats the share,
 so masks cannot be averaged out), and ``carry + sum_i rho_i`` is within
 statistical distance ``2^-stat_param`` of a carry-independent distribution.
-The argument is ours, hence the scheme's *experimental* status; Theorem 38
-covers the MCFE2 layer only.
+The argument is ours, hence the scheme's *experimental* status. Theorem 38
+is a statement about the whole compiler, but its step from G0 to G1 (new
+``sk_{1,i}`` with the same ``sum_i y_i sk_{1,i}``) takes that sum over the
+integers, while CDGPP18 keys are reduced mod ``q``: the carry mask covers
+that step. Static corruption only, as in Theorem 38.
 """
 
 from __future__ import annotations

@@ -4,8 +4,10 @@ Shamir-shared functional key and noise-flooded partial decryptions.
 
 | MCFE layer: Abdalla, Bourse, Marival, Pointcheval, Soleimanian, Waldner,
 | "Multi-Client Inner-Product Functional Encryption in the Random-Oracle
-| Model", SCN 2020, https://eprint.iacr.org/2020/788, Fig. 4 (see
+| Model", SCN 2020, https://inria.hal.science/hal-02948657, Fig. 4 (see
 | :mod:`pyfe4ai.schemes.mcfe.lwe`).
+| (Figure, theorem and appendix numbers: the HAL version, hal-02948657; ePrint
+| 2020/788 numbers them differently.)
 | Threshold layer in the setting of R. Xu et al., "TAPFed: Threshold Secure
 | Aggregation for Privacy-Preserving Federated Learning", IEEE TDSC 2024:
 | the aggregated key is Shamir-shared among ``s`` servers, any ``t`` decrypt.

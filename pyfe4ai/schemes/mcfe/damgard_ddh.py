@@ -3,8 +3,10 @@ MDDH-based multi-client inner-product FE (Damgard-style DDH family).
 
 | Abdalla, Bourse, Marival, Pointcheval, Soleimanian, Waldner:
 | "Multi-Client Inner-Product Functional Encryption in the Random-Oracle Model"
-| SCN 2020, https://eprint.iacr.org/2020/788 -- Fig. 2 (MCFE based on the
+| SCN 2020, https://inria.hal.science/hal-02948657 -- Fig. 2 (MCFE based on the
 | D_k-MDDH assumption), proof in Appendix A (one-IND secure in the ROM).
+| (Figure, theorem and appendix numbers: the HAL version, hal-02948657; ePrint
+| 2020/788 numbers them differently.)
 
 * type:     secret-key multi-client encryption (MCFE, MDDH, random oracle)
 * setting:  Integer based (order-q subgroup of Z_p^*, p = 2q + 1)

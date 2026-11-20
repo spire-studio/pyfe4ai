@@ -30,7 +30,12 @@ Construction (one coordinate j of client i's vector is one CDGPP18 slot):
 
 The functional key is a single aggregated value, so neither a server nor the
 combiner can decrypt any individual client; fewer than ``t`` shares of ``d``
-are independent of ``d``. Each client must encrypt at most once per label:
+are independent of ``d``. The argument for the threshold layer is the standard simulation of partial
+decryptions from the combined value and the corrupted shares (static
+corruption of fewer than ``t`` servers, honest-but-curious); there is no
+proof of correctness or robustness, and the theorem of TAPFed (Thm. 1) is
+about another construction.
+Each client must encrypt at most once per label:
 two ciphertexts of the same client slot under the same label reveal the
 difference of the plaintexts. The ciphertext carries its (public) label so
 that the servers can evaluate ``H(l)``.

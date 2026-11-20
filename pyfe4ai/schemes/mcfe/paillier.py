@@ -3,8 +3,10 @@ DCR (Paillier) based multi-client inner-product FE.
 
 | Abdalla, Bourse, Marival, Pointcheval, Soleimanian, Waldner:
 | "Multi-Client Inner-Product Functional Encryption in the Random-Oracle Model"
-| SCN 2020, https://eprint.iacr.org/2020/788 -- Fig. 3 (MCFE based on DCR),
+| SCN 2020, https://inria.hal.science/hal-02948657 -- Fig. 3 (MCFE based on DCR),
 | correctness and security in Appendix B.2 (one-IND secure in the ROM).
+| (Figure, theorem and appendix numbers: the HAL version, hal-02948657; ePrint
+| 2020/788 numbers them differently.)
 
 * type:     secret-key multi-client encryption (MCFE, DCR, random oracle)
 * setting:  Integer based (Z_{N^2}^*, N = p * q with safe primes p, q)

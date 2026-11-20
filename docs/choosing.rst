@@ -209,7 +209,10 @@ Which scheme for which task
      - ``mcfe/ring_lwe_decentralized`` or ``mcfe/lwe_decentralized``
        (reviewed); ``mcfe/ddh_decentralized`` (experimental)
    * - The same without a single decryptor
-     - ``mcfe/ddh_threshold`` (reviewed); ``mcfe/ring_lwe_threshold``
+     - ``mcfe/ddh_threshold`` (reviewed; its threshold layer rests on the
+       standard simulation of partial decryptions, with honest-but-curious
+       servers, fewer than ``t`` statically corrupted, and no proof of
+       correctness); ``mcfe/ring_lwe_threshold``
        (experimental; the ML adapter runs its servers); see
        :doc:`threshold_ml`
    * - Score one party's features with another party's linear model
@@ -219,7 +222,9 @@ Which scheme for which task
        :func:`~pyfe4ai.ml.compute_linear`
    * - Adaptive (not only selective) security
      - ``sife/fullysec_ring_lwe``; ``sife/damgard`` and ``sife/paillier``
-       (ALS16)
+       (ALS16); ``mife/damgard`` and ``mife/paillier`` (ACFGU18 Thm. 3 with
+       ALS16); ``mcfe/damgard``, ``mcfe/paillier`` and ``mcfe/fullysec_lwe``
+       (ABMPSW20, one-IND in the random-oracle model)
    * - Hide the model weights too
      - ``sife/fh_ipe_pairing``, ``mife/fh_ipe_pairing``,
        ``mcfe/fh_multi_ipe_pairing`` and its threshold and decentralized

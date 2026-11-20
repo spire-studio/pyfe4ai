@@ -3,10 +3,12 @@ LWE-based multi-client inner-product FE, adaptive-security parameters.
 
 | Abdalla, Bourse, Marival, Pointcheval, Soleimanian, Waldner:
 | "Multi-Client Inner-Product Functional Encryption in the Random-Oracle Model"
-| SCN 2020, https://eprint.iacr.org/2020/788 -- Fig. 4 with the adaptive
+| SCN 2020, https://inria.hal.science/hal-02948657 -- Fig. 4 with the adaptive
 | parameter setting of Appendix C.3 (Lemma 33).
 | The construction is the MCFE counterpart of the fully secure LWE IPFE of
 | Agrawal, Libert, Stehle (CRYPTO 2016).
+| (Figure, theorem and appendix numbers: the HAL version, hal-02948657; ePrint
+| 2020/788 numbers them differently.)
 
 The adaptive setting requires
 ``m0 * log2(4/3) >= log2(q) + 2 * kappa + 4 * n * log2(P)``.

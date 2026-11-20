@@ -3,11 +3,13 @@ Decentralised multi-client inner-product FE over DCR.
 
 | Abdalla, Bourse, Marival, Pointcheval, Soleimanian, Waldner:
 | "Multi-Client Inner-Product Functional Encryption in the Random-Oracle Model"
-| SCN 2020, https://eprint.iacr.org/2020/788 -- Appendix D.1, Fig. 14
+| SCN 2020, https://inria.hal.science/hal-02948657 -- Appendix D.1, Fig. 14
 | (DMCFE from MCFE) with MCFE1 = their DCR MCFE (Fig. 3,
 | :mod:`pyfe4ai.schemes.mcfe.paillier`) and MCFE2 = the same construction
 | over a larger modulus ``N2`` (:mod:`pyfe4ai.schemes.mcfe.decentralize`) --
 | the instantiation Appendix D.1 discusses.
+| (Figure, theorem and appendix numbers: the HAL version, hal-02948657; ePrint
+| 2020/788 numbers them differently.)
 
 * type:     decentralised multi-client encryption (DMCFE, DCR, random oracle)
 * setting:  Integer based (Z_{N^2}^* for data, Z_{N2^2}^* for key shares)

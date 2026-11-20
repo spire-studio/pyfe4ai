@@ -3,9 +3,11 @@ Decentralised key derivation for MCFE schemes with a linear functional key.
 
 | Abdalla, Bourse, Marival, Pointcheval, Soleimanian, Waldner:
 | "Multi-Client Inner-Product Functional Encryption in the Random-Oracle Model"
-| SCN 2020, https://eprint.iacr.org/2020/788 -- Appendix D.1, Fig. 14
+| SCN 2020, https://inria.hal.science/hal-02948657 -- Appendix D.1, Fig. 14
 | ("DMCFE from MCFE"), secure against static corruptions (Theorem 38) if
 | MCFE1 is and MCFE2 is sel1-sta-pos+-IND secure.
+| (Figure, theorem and appendix numbers: the HAL version, hal-02948657; ePrint
+| 2020/788 numbers them differently.)
 
 Fig. 14 turns an MCFE (MCFE1) whose functional key is
 ``sk_y = sum_i y_i sk_{1,i}`` into a decentralised one:

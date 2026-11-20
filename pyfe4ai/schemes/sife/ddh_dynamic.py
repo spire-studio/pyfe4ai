@@ -14,6 +14,8 @@ length up to ``eta``: a key for ``y`` of length ``k <= eta`` is the key of
 prefix of ``(x, 0, ..., 0)`` (the omitted components are a function of a full
 ciphertext). The key decrypts any ciphertext with at least ``k`` components.
 Security reduces to ABDP15 by this zero padding; there is no separate paper.
+The length of ``x`` is not hidden: a ciphertext has one component per
+coordinate, and the reduction is for two challenge plaintexts of one length.
 """
 
 from __future__ import annotations
