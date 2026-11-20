@@ -299,17 +299,26 @@ def test_tmcfe_ring_lwe_residue_attack_reads_nothing(sharing, flooding):
 @pytest.mark.parametrize("flooding", ["gaussian", "uniform"])
 @pytest.mark.parametrize("sharing", SHARINGS)
 def test_tmcfe_ring_lwe_honest_partials_are_simulatable(sharing, flooding):
+    """As the tMIFE test, per coefficient: rounds are drawn until two have a
+    coefficient of ``nu`` that is not a multiple of ``NU_PERIOD`` (``y = 0``
+    makes ``nu = 0``), and every round drawn is checked."""
     cfg, kg, pp = _tmcfe_ring(sharing, flooding)
     flood, slack = _flood_bounds(pp)
+    assert gp.mpz(pp["q"]) > 4 * (2 * flood + 2 * slack)  # a fractional M nu is about q/4 from 0
     configs = list(_configs())
     sets = sorted({tuple(e) for _, e, _ in configs})
-    for trial in range(2):
+    informative = 0
+    for trial in range(20):
         dks, parts, key_part, f0, nu, q = _tmcfe_ring_round(cfg, kg, pp, [list(e) for e in sets], "S%d" % trial)
         for corrupted, enrolled, k in configs:
             sim = _sim(dks, corrupted, enrolled, k, f0, key_part, q, 2)
             diffs = [_center(gp.mpz(w) - s_, q) for w, s_ in zip(parts[tuple(enrolled)][k]["w"], sim)]
             assert max(abs(d) for d in diffs) <= flood + slack, (corrupted, enrolled, k)
             assert any(all(abs(d + m * n_) <= flood for d, n_ in zip(diffs, nu)) for m in (0, 1))
+        informative += any(n_ % NU_PERIOD != 0 for n_ in nu)
+        if informative == 2:
+            break
+    assert informative == 2, "{} rounds with a coefficient of nu not a multiple of {}".format(informative, NU_PERIOD)
 
 
 # ------------------------------------------------------------------ tMCFE-LWE
@@ -320,7 +329,11 @@ def test_tmcfe_lwe_honest_answers_carry_the_key_term_once(sharing):
     an honest answer is ``known + M <sk_y, H(l)> + e_k``. The argument needs
     ``M`` 0 or 1 and one answer with ``M = 1`` per enrolled set; on Shamir
     ``M`` takes the values 3/4, 1/4, ... and the answers of one enrolled set
-    fix ``sum_E e_k`` modulo their common denominator."""
+    fix ``sum_E e_k`` modulo their common denominator.
+
+    ``M`` can be read only where the key term is more than ``24 sigma_f`` from 0
+    (else ``M = 0`` and ``M = 1`` look alike): ``y`` is redrawn while it is 0,
+    and labels are drawn until three have such a key term."""
     cfg = {"sec_param": 64, "eta": 1, "n": 3, "s": 3, "t": 2, "lst_nid": ["c0", "c1", "c2"],
            "lst_sid": SIDS, "lwe_n": 16, "bound_x": 6, "bound_y": 6, "bound_u": 2,
            "label_modulus": 8}
@@ -330,14 +343,13 @@ def test_tmcfe_lwe_honest_answers_carry_the_key_term_once(sharing):
     q = gp.mpz(pp["q"])
     sigma_f = int(pp["sigma_f"])
     y = {nid: [random.randint(-6, 6)] for nid in cfg["lst_nid"]}
+    while not any(v[0] for v in y.values()):          # y = 0: the key term is 0
+        y = {nid: [random.randint(-6, 6)] for nid in cfg["lst_nid"]}
     x = {nid: [random.randint(-6, 6)] for nid in cfg["lst_nid"]}
     configs = list(_configs())
-    for trial in range(3):
+    judged = 0
+    for trial in range(20):                            # P(key term within 24 sigma_f of 0) is about 1e-3
         label = "T%d" % trial
-        cts = {nid: ThresholdMCFELWE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(x[nid], label)
-               for nid in cfg["lst_nid"]}
-        cred = {"fusion_weight": y, "label": label}
-        dks = {sid: kg.get_decryption_keys(sid, credentials=cred) for sid in SIDS}
         server = ThresholdMCFELWE({"id": "c", "keys": {"pp": pp}})
         h = server._hash_label(label)
 
@@ -345,6 +357,12 @@ def test_tmcfe_lwe_honest_answers_carry_the_key_term_once(sharing):
             return [sum(gp.mpz(a) * gp.mpz(b) for a, b in zip(material["sk_y"], h)) % q]
 
         key_term = key_part({"sk_y": kg._aggregate_key(y)})[0]
+        if abs(_center(key_term, q)) <= 24 * sigma_f:
+            continue
+        cts = {nid: ThresholdMCFELWE({"id": nid, "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}).encrypt(x[nid], label)
+               for nid in cfg["lst_nid"]}
+        cred = {"fusion_weight": y, "label": label}
+        dks = {sid: kg.get_decryption_keys(sid, credentials=cred) for sid in SIDS}
         for enrolled in sorted({tuple(e) for _, e, _ in configs}):
             group = {sid: ThresholdMCFELWE({"id": sid, **SERVER, "keys": {"pp": pp, "dk": dks[sid]}}).share_decrypt(
                 cts, cred, dks[sid], list(enrolled)) for sid in enrolled}
@@ -359,3 +377,7 @@ def test_tmcfe_lwe_honest_answers_carry_the_key_term_once(sharing):
                     assert m, (corrupted, enrolled, k)
                     ones += m[0]
                 assert ones == 1, (corrupted, enrolled)
+        judged += 1
+        if judged == 3:
+            break
+    assert judged == 3, "{} labels with the key term more than 24 sigma_f from 0".format(judged)
