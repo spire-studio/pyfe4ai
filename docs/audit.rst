@@ -204,7 +204,9 @@ Questions for the auditors
        from a seed, and a result is judged by its effect size against a
        SHAKE-256 control. Is it adequate, can it stand in for a formal
        check, and how should cropped tests that flag with the means within
-       the control be read (the garbling with the seed secret)?
+       the control be read? For the garbling with the seed secret (Q7), an
+       A/A test with fresh seeds and two fixed seeds against each other
+       separated the method from the secret.
      - native core
    * - Q14
      - FACCT is a rejection sampler, whose time follows the number of

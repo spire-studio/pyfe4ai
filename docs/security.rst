@@ -815,8 +815,9 @@ and other ARMv8.4 processors).
        hardwired), the garbler's data bits secret; the same with the garbling
        seed (offset and labels) secret
      - seeded, 8·10^6 each
-     - within the control (data bits -0.0005 % [-0.0080, +0.0070]; seed
-       -0.0048 % [-0.0123, +0.0028], with a cropped t of 11, see below)
+     - means within the control (data bits -0.0005 % [-0.0080, +0.0070];
+       seed -0.0048 % [-0.0123, +0.0028]); with the seed secret, the shape of
+       the time distribution depends on the seed (see *Cropped tests* below)
    * - the label KEM of ``bcfe/gc_ristretto255`` in the native extension
        (``rust/native``), timed from Python by ``tools/ct_bcfe.py``: the table
        of a new slot chosen by ``w`` (with the authority's keys, and with the
