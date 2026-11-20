@@ -166,9 +166,10 @@ class IdentityKeyCentre:
     Holds the master key of every identity it adds. Its state is in memory;
     the library defines no format for it. Safe to share between threads:
     adding an identity and building the directory hold the key centre's lock.
-    Keep one key centre object: a copy (``copy``, pickle, a forked child)
-    adds identities of its own, so two copies can publish two directories
-    with different instances under one identity.
+    Keep one key centre object. It cannot be copied or pickled
+    (``TypeError``); a forked child's copy keeps working (with a new lock) and
+    adds identities of its own, so parent and child can publish two
+    directories with different instances under one identity.
 
     Args:
         config: The configuration of ``sife/fullysec_ring_lwe``
@@ -194,6 +195,17 @@ class IdentityKeyCentre:
         for identity in set(self._instances) ^ set(self._entries):
             self._instances.pop(identity, None)
             self._entries.pop(identity, None)
+
+    # copy.copy would share the identities and the lock with the original, outside the fork handler;
+    # deepcopy and pickle would fail on the lock. All three are refused with one message.
+    def __copy__(self):
+        raise TypeError("a key centre cannot be copied: keep one key centre object")
+
+    def __deepcopy__(self, memo):
+        raise TypeError("a key centre cannot be copied: keep one key centre object")
+
+    def __reduce__(self):
+        raise TypeError("a key centre cannot be pickled: keep one key centre object")
 
     def add_identity(self, identity: str) -> str:
         """Set up a fresh instance for *identity*; return its entry digest.
