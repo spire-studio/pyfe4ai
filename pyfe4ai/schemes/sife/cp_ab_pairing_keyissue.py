@@ -69,6 +69,20 @@ under these conditions, which the library does not provide:
   refuses to be copied or pickled too; a forked child's copy of it holds the
   same undelivered shares, so delivering from parent and child hands a share
   out twice: keep one dealer object, in one process.
+* **Exceptions reach the secrets.** Every exception that a key server's or
+  the dealer's methods raise, an ordinary refusal included, references through
+  its traceback the frames of that method and so the object, with its share
+  (the dealer: every undelivered share) and PRF keys; a refusal by the
+  approval rule also chains the rule's own exception. An exception in the
+  middle of computing a partial key or of :meth:`SIFECPABPairingDealer.setup`
+  (a backend failure, ``MemoryError``, ``KeyboardInterrupt``) has the mask
+  keys shared with the other servers, or ``U`` and every share, in the local
+  variables of its frames. Do not keep these exceptions, and do not run error
+  reporters that capture local variables (such as
+  ``traceback.TracebackException(capture_locals=True)``) in the processes of
+  the dealer and the key servers. The same holds for the requester: an
+  exception of :meth:`SIFECPABPairingKeyCombiner.combine` references the
+  partial keys it was given.
 
 A corrupted server can make an issuance fail but not hand the user a wrong
 key: :meth:`~SIFECPABPairingKeyCombiner.combine` checks every component of
@@ -355,7 +369,9 @@ class SIFECPABPairingDealer:
 
     A dealer cannot be copied or pickled (``TypeError``); keep one dealer
     object, in one process (a forked child's copy holds the same
-    undelivered shares).
+    undelivered shares). Its exceptions reference it and its undelivered
+    shares, and one in the middle of :meth:`setup` has ``U`` in a local
+    variable: see "Exceptions reach the secrets" in the module docstring.
     """
 
     def __init__(self, config: dict, key_servers: list, threshold: int) -> None:
@@ -476,10 +492,10 @@ class SIFECPABPairingKeyServer:
             else, a reason string or ``None`` among it, refuses, and so does
             any exception the rule raises (the request is then refused with
             ``FEKeyError`` and leaves no record). That ``FEKeyError`` chains
-            the rule's exception, whose traceback references the frames of
-            :meth:`issue` and so this server and its secret share: do not keep
-            these exceptions, and do not hand them to error reporters that
-            capture local variables. It must decide on ``y`` too
+            the rule's exception; like every exception of :meth:`issue`, its
+            traceback references this server and its secret share (see
+            "Exceptions reach the secrets" in the module docstring). It must
+            decide on ``y`` too
             (see the module docstring). It runs under the server's lock, so the
             requests to one server are approved one at a time; it should keep
             its own state (e.g. counters) rather than scan a long history on

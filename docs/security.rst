@@ -481,16 +481,26 @@ It holds only under conditions the library does not provide:
 * **The approval rule decides on the weights too.** ``approve(request,
   requester, history)`` sees the whole request and the requests this server
   accepted before, as read-only views; only a return value of ``True``
-  approves, and a rule that raises refuses. The refusal chains the rule's
-  exception, whose traceback reaches the server and its secret share: do not
-  keep these exceptions or pass them to error reporters that capture local
-  variables. A rule that checks the
+  approves, and a rule that raises refuses. A rule that checks the
   attributes only lets an approved user take ``eta`` keys of unit vectors and
   recover every plaintext its attributes open. With ``t - 1`` corrupted
   servers, keys are as safe as the most permissive honest server's rule.
 * **The dealer is trusted** and deletes ``U``, the shares and the PRF keys
   after delivering them (the dealer object drops each share it delivers;
   Python cannot wipe memory, so run it in a process that ends).
+* **Exceptions reach the secrets.** Every exception that a key server's or
+  the dealer's methods raise, an ordinary refusal included, references
+  through its traceback that object, with its share (the dealer: every
+  undelivered share) and PRF keys; a refusal by the approval rule also chains
+  the rule's own exception. An exception in the middle of computing a partial
+  key or of the dealer's ``setup()`` (a backend failure, ``MemoryError``,
+  ``KeyboardInterrupt``) has the mask keys shared with the other servers, or
+  ``U`` and every share, in the local variables of its frames. Do not keep
+  these exceptions, and do not run error reporters that capture local
+  variables (such as ``traceback.TracebackException(capture_locals=True)``)
+  in the processes of the dealer and the key servers. The same holds for the
+  requester: an exception of ``combine`` references the partial keys it was
+  given.
 * Fewer than ``t`` servers are corrupted, chosen before setup; there is no
   share refresh (a new sharing draws new PRF keys).
 * **One object per server and per dealer.** A key server keeps its records
