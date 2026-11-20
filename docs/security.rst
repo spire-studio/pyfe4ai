@@ -897,16 +897,25 @@ inputs (that run's own was not recorded), so it more likely came from that
 run. The garbling with the seed secret flagged in a run on the release code
 (11), and in four of six more runs with three fixed seeds, two runs each: two
 seeds in one of their two runs each (7.8 and 13.0), the third in both (18.5
-and 14.9). Two more designs, three runs each, separate the secret from the
-method: with fresh seeds in both classes (an A/A test) the cropped tests were
-clean (0.14, 1.78 and 1.21); with two different fixed seeds against each
-other (both classes repeat a fixed input, so only the seeds differ) they
-flagged every time (11.2, 18.1 and 19.5). So the shape of the garbling's time
-distribution depends on the seed, which is the secret. Every mean stayed
-within the control (at most about 3.8 ns of about 49 µs). The mechanism was
-not found: read in the code, the mask selections and SHAKE neither branch nor
-index memory on secret data; the processor's data-dependent behaviour was not
-checked. Whether the dependence can be exploited was not evaluated.
+and 14.9). Two more designs separate the secret from the method: with fresh
+seeds in both classes (an A/A test) the cropped tests were clean in three runs
+(0.14, 1.78 and 1.21); with two different fixed seeds against each other
+(both classes repeat a fixed input, so only the seeds differ) they flagged in
+three runs (11.2, 18.1 and 19.5), and a rerun of the same three pairs on the
+same machine gave 2.5, 15.0 and 17.7: five of six runs flagged. So the shape
+of the garbling's time distribution depends on the seed, which is the secret.
+Every mean stayed within the control (at most about 5.2 ns of about 49 µs).
+Read in the code, the mask selections and SHAKE neither branch nor index
+memory on secret data. On the same machine (Apple M4 Max) with the
+processor's data-independent-timing mode (DIT) set, the same three pairs were
+clean (0.89, 1.51 and 1.12; one of these runs was noisier and says less), and
+the garbling took about 8 % longer. The flags did not follow the labels'
+Hamming weight: of three pairs far apart in weight one flagged, of three pairs
+of equal weight two did. This points to data-dependent behaviour of the
+processor that DIT turns off, not to a secret-dependent branch or memory
+access in the code; which behaviour it is was not identified. Three runs per
+setting on one machine is little, and other processors may differ. Whether
+the dependence can be exploited was not evaluated.
 
 Not checked yet, in the native core: the RNS products and the CRT
 (``rns.rs``, used by default by the lattice MIFE, MCFE, dMCFE and tMCFE

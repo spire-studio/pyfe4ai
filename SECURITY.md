@@ -125,7 +125,8 @@ and what is out of scope; the points below are its summary.
   was not evaluated (see
   [Side channels](https://spire-studio.github.io/pyfe4ai/docs/security.html#side-channels)).
   The library does not set the processor's data-independent-timing mode
-  (DIT).
+  (DIT); with DIT set, the garbling's dependence did not recur in three runs
+  on one machine.
 - **ML adapter.** `FESchemeWrapper` runs the key generator and holds the
   master key (for `mcfe/ring_lwe_threshold` it also runs the decryption
   servers): one trust domain, meant for experiments, not for deployments.
