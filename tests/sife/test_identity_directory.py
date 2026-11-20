@@ -3,6 +3,7 @@
 import copy
 import json
 import os
+import pickle
 
 import numpy as np
 import pytest
@@ -308,3 +309,14 @@ def test_a_fork_mid_add_leaves_no_half_added_identity(centre):
     assert "dave" not in centre._instances and "dave" not in centre._entries
     assert centre.identities() == ["Alice", "alice", "bob"]
     centre.add_identity("dave")
+
+
+@pytest.mark.parametrize("make_copy", [copy.copy, copy.deepcopy, lambda kc: pickle.loads(pickle.dumps(kc))],
+                         ids=["copy", "deepcopy", "pickle"])
+def test_a_key_centre_cannot_be_copied_or_pickled(centre, make_copy):
+    """The docs said a copy adds identities of its own; copy.copy shared them (and the lock, outside the fork
+    handler) and deepcopy / pickle failed on the lock. All three are refused, and the original keeps working."""
+    with pytest.raises(TypeError, match="key centre cannot be"):
+        make_copy(centre)
+    centre.add_identity("carol")
+    assert centre.identities() == ["Alice", "alice", "bob", "carol"]

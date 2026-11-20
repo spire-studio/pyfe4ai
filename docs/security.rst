@@ -609,9 +609,10 @@ identity, and only keys of that identity's instance decrypt it.
   every Python. The rule
   does not catch confusable identities (a Cyrillic ``а`` for a Latin ``a``) or
   spaces: mapping people to identities is the application's.
-* Keep one key centre object: a copy (``copy``, pickle, a forked child)
-  adds identities of its own, so two copies can publish two directories with
-  different instances under one identity.
+* Keep one key centre object. It cannot be copied or pickled; a forked
+  child's copy keeps working and adds identities of its own, so parent and
+  child can publish two directories with different instances under one
+  identity.
 * The directory, its checks and its records are experimental; the scheme
   underneath is unchanged.
 
