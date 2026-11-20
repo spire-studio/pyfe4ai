@@ -173,7 +173,9 @@ Questions for the auditors
      - A2
    * - Q7
      - The constant-time results: the paths measured, the method, the
-       thresholds and the list of exceptions.
+       thresholds and the list of exceptions; in particular the cropped tests
+       of the garbling with the seed secret, which flagged in most runs while
+       every mean stayed within the control (cause not found).
      - native core
    * - Q8
      - The compatibility rules and their security exception: can a record
@@ -197,8 +199,9 @@ Questions for the auditors
    * - Q13
      - The timing method: both classes run the same code on one buffer drawn
        from a seed, and a result is judged by its effect size against a
-       SHAKE-256 control. Is it adequate, and can it stand in for a formal
-       check?
+       SHAKE-256 control. Is it adequate, can it stand in for a formal
+       check, and how should cropped tests that flag with the means within
+       the control be read (the garbling with the seed secret)?
      - native core
    * - Q14
      - FACCT is a rejection sampler, whose time follows the number of

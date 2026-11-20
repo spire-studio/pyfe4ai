@@ -770,9 +770,12 @@ before 1.0 in two ways:
   of the replay test of the exact Gaussian sampler did the same; no number
   below for the current code rests on either (the old sampler's is marked).
 
-No timing difference that depends on the secret values beyond the control's
-was found within the measured sample sizes. That is evidence for these paths
-on this machine and compiler, not a guarantee. The assembly was read on
+No difference in mean time that depends on the secret values beyond the
+control's was found within the measured sample sizes; the cropped tests of
+the garbling with the seed secret did flag, with the cause not found (see
+*Cropped tests* below), so for it a leak through the shape of the time
+distribution is not excluded. That is evidence for these paths on this
+machine and compiler, not a guarantee. The assembly was read on
 aarch64. The masks of the exact Gaussian sampler rest on an optimisation
 barrier that holds on x86-64 and aarch64 (elsewhere a weaker one); its x86-64
 code was read only as generated from the same LLVM IR by another compiler
@@ -886,12 +889,13 @@ stayed within the control. The wide sampler's seeds of one shape flag in both
 runs (16.6 and 28, growing with the number of batches): that comes from the
 method, which compares one seed's order of decisions with other seeds' (see
 its row). A first run of the forward NTT flagged (28); its rerun on the same
-code gave 0.55, and six more runs with three fixed seeds, two runs each, were
-all clean (at most 2.6), so that flag did not come from the fixed input. The
-garbling with the seed secret flagged in a run on the release code (11), and
-in four of six more runs with three fixed seeds, two runs each: one seed in
-one of its runs and not the other, another in both (18.5 and 14.9); every mean
-stayed within the control (at most 0.006 %). The cause was not found. Its
+code gave 0.55, and six more runs with three other fixed seeds, two runs each,
+were all clean (at most 2.6): the flag did not recur with three other fixed
+inputs (that run's own was not recorded), so it more likely came from that
+run. The garbling with the seed secret flagged in a run on the release code
+(11), and in four of six more runs with three fixed seeds, two runs each: two
+seeds in one of their two runs each (7.8 and 13.0), the third in both (18.5
+and 14.9); every mean stayed within the control (at most 0.006 %). The cause was not found. Its
 verdict rests on the mean, which does not exclude a leak through the shape of
 its time distribution.
 
@@ -1132,7 +1136,9 @@ tables; ``label_bits`` takes 128 only.
   ``x`` or the seed secret, by the core's harness, and the slot tables chosen
   by ``w``, the label encryption and the decryption, from Python; no mean
   differed beyond the control or the A/A twin, but the cropped tests of the
-  garbling with the seed secret flagged in most runs (see `Side channels`_).
+  garbling with the seed secret flagged in most runs, with the cause not
+  found, so a leak through the shape of its time distribution is not
+  excluded (see `Side channels`_).
   That is evidence for these paths, not a guarantee; the scalar
   multiplications of curve25519-dalek were not checked here.
 
