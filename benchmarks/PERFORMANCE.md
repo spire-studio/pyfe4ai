@@ -83,16 +83,18 @@ three interleaved runs of each:
 - "Every party of the round on one machine" is what `fl-compare` reports as
   the threshold aggregator: the key shares of the round for the `t` enrolled
   servers, their partial decryptions and the combination.
-- **1.0.0:** the exact sampler no longer branches on the values it draws
-  (`docs/security.rst`, *Side channels*), which costs the clients of the
-  Ring-LWE family 5 to 15 % (a paired run of the 0.5 and 1.0 code on another
-  machine: clients +6 to +10 %, aggregators, partial decryptions, the online
-  phase and the dense-LWE MCFE unchanged within their noise). So the native
-  client times above (and the client's offline phase, the packed encryption
-  of SIFE FullySec) were measured again on the same Apple M2 Max with the
-  same commands, three interleaved passes, on 2026-11-21 (Python 3.13.16);
-  the other numbers are those of 0.4.0, which the paired run found
-  unchanged.
+- **1.0.0:** the exact sampler branches on the values it draws only at its
+  decisions, not on the values it returns (`docs/security.rst`, *Side
+  channels*), which costs the clients of the Ring-LWE family about 6 to 10 %
+  (a paired run of the 0.5 and 1.0 code on one machine; aggregators, partial
+  decryptions, the online phase and the dense-LWE MCFE unchanged within
+  their noise). The native client times above (and the client's offline
+  phase, the packed encryption of SIFE FullySec) are 1.0.0 measurements on
+  the same Apple M2 Max with the same commands, three interleaved passes, on
+  2026-11-21 (Python 3.13.16); their difference from the earlier values is
+  not all the code's. The other numbers are the 0.4.0 and October 2026
+  measurements: within about 5 % on the M2 rerun, and unchanged from 0.5 to
+  1.0 in the paired run.
 - The MCFE Ring-LWE row is the JSON rows of the first table. The binary rows
   of the first table and the "current" column of the second come from the
   October 2026 integration measurements, but for the client times measured

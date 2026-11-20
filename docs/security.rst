@@ -866,7 +866,8 @@ and other ARMv8.4 processors).
        the order of the decisions with the values and cannot tell them apart:
        the mean no longer differs, the cropped tests still do (16.6), as
        between narrow seeds of one shape. The rest rests on the assembly (the
-       branches left are the public parameters and the redraws)
+       branches left are the public parameters, the redraws and the deferral
+       to the exact threshold)
 
 Not checked yet, in the native core: the RNS products and the CRT
 (``rns.rs``, used by default by the lattice MIFE, MCFE, dMCFE and tMCFE
