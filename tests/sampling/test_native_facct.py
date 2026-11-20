@@ -137,7 +137,7 @@ def _reference_tests(sigma, count, seed):
 @pytest.mark.parametrize("sigma", [3.2, 4030.5])
 def test_deferred_tests_are_the_tests_of_the_reference(sigma):
     """A table whose fixed point always defers: the native sampler asks for the exact
-    threshold at exactly the reference's acceptance tests, none for y = 0 (1.0, R-1.0)."""
+    threshold at exactly the reference's acceptance tests, none for y = 0 (1.0)."""
     calls = []
     seed = b"deferred/" + str(sigma).encode()
     native_backend.ext().facct_sample(_table(sigma, calls, c_exp_shift=200), 300, xof_seed=seed)

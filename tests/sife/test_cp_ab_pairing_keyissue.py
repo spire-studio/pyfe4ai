@@ -1,4 +1,4 @@
-"""Threshold key issuance of sife/cp_ab_pairing (experimental): roadmap/v0.7/03 rev. 2, conditions of its Sec. 7."""
+"""Threshold key issuance of sife/cp_ab_pairing (experimental): the conditions of its security argument."""
 
 import copy
 import hashlib
@@ -453,7 +453,7 @@ def test_the_success_bit_is_the_homogeneous_check(system):
 
 
 def test_concurrent_requests_of_one_digest_accept_one_content(system, monkeypatch):
-    """04 Sec. 3, row 3 (R-0.7 M1b-9): with a broken (constant) digest, threads sending different contents under
+    """04 Sec. 3, row 3 (a review): with a broken (constant) digest, threads sending different contents under
     one digest to one server: exactly one content is accepted, every other thread is refused."""
     import threading
 
@@ -484,14 +484,14 @@ def test_concurrent_requests_of_one_digest_accept_one_content(system, monkeypatc
 @pytest.mark.parametrize("attributes, servers", [(["org:\ud800"], ["ks1", "ks2", "ks3"]),
                                                  (["org:A"], ["ks1", "ks2", "k\ud800"])])
 def test_unencodable_labels_and_server_ids_are_validation_errors(system, attributes, servers):
-    """R-0.7 re-check RC2-1: a lone surrogate in a label or a server id is an FEValidationError."""
+    """A review: a lone surrogate in a label or a server id is an FEValidationError."""
     comb = system[4]
     with pytest.raises(FEValidationError):
         comb.new_request("alice", [1, 0, 0], attributes, servers)
 
 
 def test_requests_must_be_plain_dicts_that_copy(system):
-    """R-0.7 re-check RC2-2, RC2-3: a request that is no plain dict, or does not copy, is an FEValidationError."""
+    """A review: a request that is no plain dict, or does not copy, is an FEValidationError."""
     import threading
 
     _, _, _, key_servers, comb, _ = system
@@ -638,7 +638,7 @@ def test_frozen_entries_pickle_to_plain_data():
     assert copy.copy(frozen) == frozen and type(copy.copy(frozen)) is dict
 
 
-# -- fork (integrate/1.0 review INT-2, test from review/integrate-1.0 b43d2b6, adapted to the rule chosen) --------
+# -- fork (from a review of the 1.0 integration, adapted to the rule chosen) --------------------------------------
 
 
 @pytest.mark.skipif(not hasattr(os, "fork") or sys.platform == "win32", reason="needs fork")
@@ -647,7 +647,7 @@ def test_int2_a_key_server_copied_into_a_forked_child_refuses_without_hanging():
     """A child forked while another thread of the parent is inside issue() (the approval rule runs under the
     server's lock) must not hang on the copied lock, and its copy refuses to issue (FESchemeError): its records
     would diverge from the parent's. The reviewer's probe asserted that the child issues; the fix chosen refuses
-    instead (see roadmap/v0.7/09). A hang ends as SIGALRM."""
+    instead. A hang ends as SIGALRM."""
     import signal
     import threading
 

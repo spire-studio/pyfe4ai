@@ -344,7 +344,7 @@ _FIG14_NOTE = (
     "are sampled in-process; static corruption only (the model of Thm. 38 of the HAL "
     "version of ABMPSW20)"
 )
-#: ACFGU18 Thm. 3 composes a many-AD-IND IPFE; with a selectively secure one in the slots (R-1.0 T-1, I-2).
+#: ACFGU18 Thm. 3 composes a many-AD-IND IPFE; with a selectively secure one in the slots.
 _SEL_ANALOGUE = (
     "so the guarantee is the selective analogue of ACFGU18 Thm. 3 (which assumes a many-AD-IND IPFE; the paper does not state this analogue)"
 )

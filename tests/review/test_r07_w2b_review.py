@@ -1,7 +1,6 @@
 """R-0.7 round 1: failing tests of the review of the identity directory (feat/0.7 5b51558..97dfd02).
 
-Each test fails on 97dfd02 for the reason its finding states. The ids are those of
-``records/2026-11-perf/sessions/r-0.7/report.md``.
+Each test fails on 97dfd02 for the reason its finding states; the ids are those of the review.
 """
 
 import threading

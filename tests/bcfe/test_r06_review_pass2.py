@@ -1,16 +1,9 @@
-"""R-0.6 pass 2 review (feat/0.6-p1 481450d..0173603): tests of the scheme class ``bcfe/gc_ristretto255``.
+"""Second review of the bounded-key FE (481450d..0173603): tests of the scheme class ``bcfe/gc_ristretto255``.
 
-See records/2026-11-perf/sessions/r-0.6/report.md of the project's records, section "Pass 2".
+On 0173603 the first test failed (the attribute-set digest in public slot records); the others pass and record
+checks of the review.
 
-These tests need the scheme class (c035b42 and later); this branch sits on 481450d, where they are skipped.
-Run them on 0173603:
-
-    git show review/0.6-p1-security:tests/bcfe/test_r06_review_pass2.py > tests/bcfe/test_r06_review_pass2.py
-    PYFE4AI_CACHE_DIR=<scratch> python -m pytest -q tests/bcfe/test_r06_review_pass2.py
-
-On 0173603 the first test fails (finding R06-P2-01); the others pass and record checks of the review.
-
-Copied from bc48e34 with two adaptations to the fix of R06-P2-01 (the slot record and its digest no longer carry
+Copied from the review with two adaptations to the fix of that finding (the slot record and its digest no longer carry
 the attribute-set digest), each marked "adapted": the first test reads the field with ``get`` (absent: nothing to
 test a guess against), the second reseals a slot with the new ``garbled.slot_digest`` signature.
 """
@@ -43,7 +36,7 @@ def make(tmp_path, circuit=SMALL, **options):
 
 
 def test_r06_p2_01_the_slot_list_does_not_let_anyone_test_a_guess_of_a_requesters_attributes(tmp_path):
-    """R06-P2-01 (Low): every public slot record carries ``attribute_set_digest``, an unsalted hash of the
+    """Every public slot record carries ``attribute_set_digest``, an unsalted hash of the
     requester's attribute set. Anyone who holds the public parameters -- every encryptor -- can test guesses
     offline; attribute vocabularies are small, so the set is in effect public, and slots of requesters with the
     same attributes link. The module documentation says what the slot list hides (``w``) but not that it shows
@@ -51,7 +44,7 @@ def test_r06_p2_01_the_slot_list_does_not_let_anyone_test_a_guess_of_a_requester
     kg, _ = make(tmp_path)
     kg.issue_key(W_SMALL, requester="alice", attributes=["role:doctor", "dept:oncology"])
     pp = kg.get_public_parameters()  # what every encryptor holds
-    published = pp["slots"][0].get("attribute_set_digest")  # adapted: absent since the fix of R06-P2-01
+    published = pp["slots"][0].get("attribute_set_digest")  # adapted: absent since the fix
     vocabulary = ["role:doctor", "role:nurse", "role:admin", "dept:oncology", "dept:cardiology", "dept:icu"]
     found = [guess for r in range(len(vocabulary) + 1) for guess in itertools.combinations(vocabulary, r)
              if attribute_set_digest(guess) == published]
@@ -77,7 +70,7 @@ def test_r06_p2_checkauth_refuses_the_holders_key_also_at_the_unselected_positio
     slot["pks"] = garbled.b64(b"".join(table))
     policy = None if slot["policy_digest"] is None else bytes.fromhex(slot["policy_digest"])
     slot["slot_digest"] = garbled.slot_digest(setup.setup_digest, slot["slot_id"], slot["label"], policy,
-                                              b"".join(table)).hex()  # adapted: no attribute-set digest (R06-P2-01)
+                                              b"".join(table)).hex()  # adapted: no attribute-set digest
     with pytest.raises(FEKeyError, match="CheckAuth failed: the unselected positions"):
         holder.finish(bad)
     holder.finish(grant)                                                  # the honest grant still checks
