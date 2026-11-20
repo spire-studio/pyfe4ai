@@ -14,6 +14,14 @@
 //! `check_table` compares a few thresholds with `exact` (the binding runs it
 //! when a table is built), so a grossly imprecise c (off by more than about
 //! 2^-102, such as a 53-bit one) is refused, not used.
+//!
+//! Since 1.0 the sampler is constant time in the values it draws (see the note
+//! above `opaque`): every candidate takes the acceptance test (y = 0 included,
+//! where the reference has none and the result is set to "accept" by a mask),
+//! and the exponential has no branch and reads its whole table. Its time
+//! follows the number of candidates and of y draws, which do not depend on the
+//! values returned. The samples are those of 0.4.0 to 0.5.0, bit for bit (the
+//! tests keep that version as a reference).
 
 use crate::arith::{Word, U256};
 use crate::keccak::shake256;
@@ -275,79 +283,171 @@ const INV_FACT: [u128; 31] = [
     0x1393,
 ];
 
+/// floor(2^176 / LN2): ((a >> 64) INV_LN2) >> 112 is floor(a / LN2) or one less
+/// for a < 2^127 (it is at most a / LN2 and above a / LN2 - 2^-48).
+const INV_LN2: u128 = 0x171547652b82fe1;
+/// The largest j = r >> (F - 6) for r < LN2: floor(64 ln 2) = 44.
+const J_MAX: usize = 44;
+
+// Constant time. The candidate's values (x, y, v) and the sample's sign reach
+// no branch and no address below: comparisons are borrow chains turned into
+// 0/1 words, choices are masks, the table of exp(-j / 64) is read whole, and
+// shifts by a secret amount are word shifts (constant-time on the targets) and
+// masks. `opaque` keeps the compiler from turning masks back into branches.
+// What still branches: the table's public data (k, y_bits, c), the decision to
+// draw again (y >= k, a rejected candidate, z = 0 with the sign set), whose
+// count does not depend on the values returned, and the deferral to `exact`,
+// about once in 2^99 tests.
+
+/// x, hidden from the optimiser (an empty asm block that takes and returns it).
+#[inline(always)]
+pub(crate) fn opaque(x: u64) -> u64 {
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    {
+        let mut x = x;
+        // SAFETY: the block is empty; it only claims to read and write x's register.
+        unsafe { core::arch::asm!("/* {0} */", inout(reg) x, options(pure, nomem, nostack, preserves_flags)) };
+        x
+    }
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    {
+        core::hint::black_box(x)
+    }
+}
+
+/// 1 if x != 0, else 0.
+#[inline(always)]
+pub(crate) fn nonzero(x: u64) -> u64 {
+    opaque((x | x.wrapping_neg()) >> 63)
+}
+
+/// All ones if bit (0 or 1) is 1, else 0.
+#[inline(always)]
+pub(crate) fn mask64(bit: u64) -> u64 {
+    0u64.wrapping_sub(bit)
+}
+
+/// All ones if bit (0 or 1) is 1, else 0.
+#[inline(always)]
+pub(crate) fn mask128(bit: u64) -> u128 {
+    0u128.wrapping_sub(bit as u128)
+}
+
+/// a >= b (1 or 0) for numbers of equal length in little-endian words: no borrow out of a - b.
+#[inline(always)]
+pub(crate) fn ge_words(a: &[u64], b: &[u64]) -> u64 {
+    let mut borrow = 0u64;
+    for (&x, &y) in a.iter().zip(b) {
+        borrow = ((x as u128).wrapping_sub(y as u128 + borrow as u128) >> 127) as u64;
+    }
+    opaque(borrow ^ 1)
+}
+
+/// a >= b (1 or 0).
+#[inline(always)]
+pub(crate) fn ge256(a: &U256, b: &U256) -> u64 {
+    ge_words(&a.0, &b.0)
+}
+
+/// a >= b (1 or 0).
+#[inline(always)]
+fn ge128(a: u128, b: u128) -> u64 {
+    opaque(a.overflowing_sub(b).1 as u64 ^ 1)
+}
+
+/// e >> m for m < 256 (0 for m >= 128): 64-bit shifts by m mod 64, then masks for m / 64.
+#[inline(always)]
+fn shr_masked(e: u128, m: u64) -> u128 {
+    let (lo, hi) = (e as u64, (e >> 64) as u64);
+    let s = (m & 63) as u32;
+    let lo_s = (lo >> s) | ((hi << 1) << (63 - s)); // hi << (64 - s), 0 for s = 0
+    let hi_s = hi >> s;
+    let w = m >> 6;
+    let (w0, w1) = (mask64(nonzero(w) ^ 1), mask64(nonzero(w ^ 1) ^ 1));
+    (((hi_s & w0) as u128) << 64) | ((lo_s & w0) | (hi_s & w1)) as u128
+}
+
 #[inline]
 fn mul_f(a: u128, b: u128) -> u128 {
     let (hi, lo) = a.full(b);
     (hi << (128 - F)) | (lo >> F)
 }
 
-/// (P >> s) for a 256-bit P given as (hi, lo).
-fn shr_pair(hi: u128, lo: u128, s: u32) -> Option<u128> {
+/// (P >> s) for a 256-bit P given as (hi, lo) and a public s, and whether it
+/// fits 128 bits (1 or 0).
+fn shr_pair(hi: u128, lo: u128, s: u32) -> (u128, u64) {
+    let fits = |x: u128| nonzero(x as u64 | (x >> 64) as u64) ^ 1;
     match s {
-        0 => (hi == 0).then_some(lo),
-        1..=127 => (hi >> s == 0).then_some((hi << (128 - s)) | (lo >> s)),
-        128..=255 => Some(hi >> (s - 128)),
-        _ => Some(0),
+        0 => (lo, fits(hi)),
+        1..=127 => ((hi << (128 - s)) | (lo >> s), fits(hi >> s)),
+        128..=255 => (hi >> (s - 128), 1),
+        _ => (0, 1),
     }
 }
 
-/// exp(-a) in fixed point (F fractional bits) for a = c t; error below 2^-110
-/// when c_mant 2^c_exp is c rounded down to 128 bits (check_table checks it).
-/// None if a is beyond the range this handles (the caller then uses `exact`).
-fn exp_neg(table: &Table, t: u128) -> Option<u128> {
+/// exp(-a) in fixed point (F fractional bits) for a = c t, and 1; error below
+/// 2^-110 when c_mant 2^c_exp is c rounded down to 128 bits (check_table checks
+/// it). (0, 0) if a is beyond the range this handles (the caller then uses `exact`).
+fn exp_neg(table: &Table, t: u128) -> (u128, u64) {
     // a = c_mant t 2^c_exp with F fractional bits: (c_mant t) >> (-(c_exp + F))
-    let (hi, lo) = table.c_mant.full(t);
     let s = -(table.c_exp + F as i32);
     if s < 0 {
-        return None;
+        return (0, 0); // the table's c (public): never in this fixed point
     }
-    let a = shr_pair(hi, lo, s as u32)?;
-    Some(exp_neg_a(a))
+    let (hi, lo) = table.c_mant.full(t);
+    let (a, ok) = shr_pair(hi, lo, s as u32);
+    (exp_neg_a(a) & mask128(ok), ok)
 }
 
 /// exp(-a) in fixed point (F fractional bits) for a with F fractional bits;
-/// error below 2^-110 (0 for a >= 120).
+/// error below 2^-110 (0 for a >= 120). Constant time (see above).
 pub(crate) fn exp_neg_a(a: u128) -> u128 {
-    if a >= 120 * ONE {
-        return 0; // exp(-a) < 2^-173: far below every threshold the tests can meet
-    }
-    // a = m ln 2 + r, r in [0, ln 2): m from a float estimate, corrected exactly
-    let mut m = ((a as f64) / (LN2 as f64)) as u128;
-    while m > 0 && m * LN2 > a {
-        m -= 1;
-    }
-    while (m + 1) * LN2 <= a {
-        m += 1;
-    }
+    // a >= 120: exp(-a) < 2^-173, far below every threshold the tests can meet:
+    // 0 (a is taken as 0 below, and the result masked)
+    let small = ge128(120 * ONE - 1, a);
+    let a = a & mask128(small);
+    // a = m ln 2 + r, r in [0, ln 2): m = floor(a / LN2) <= 173, from the
+    // fixed-point 1 / ln 2 (m or m - 1) and one masked step
+    let est = ((a >> 64) * INV_LN2) >> 112;
+    let m = est + ge128(a, (est + 1) * LN2) as u128;
     let r = a - m * LN2;
     // r = j / 64 + r2 (r2 < 1 / 64): exp(-r) = exp(-j / 64) exp(-r2), the latter
     // as sum_{i <= 15} (-r2)^i / i! (the rest is below 2^-130) by Horner's rule,
     // every partial value in (0, 1] since r2 < 1 and i! / (i + 1)! < 1
-    let j = (r >> (F - 6)) as usize;
+    let j = (r >> (F - 6)) as u64; // <= 44, as r < LN2
     let r2 = r - ((j as u128) << (F - 6));
     let mut p = INV_FACT[15];
     for i in (0..15).rev() {
         p = INV_FACT[i] - mul_f(p, r2);
     }
-    let e = mul_f(EXP_J64[j], p);
-    if m >= 128 { 0 } else { e >> m }
+    // EXP_J64[j], every entry j can take read (i ^ j - 1 has its top bit set only for i = j)
+    let j = opaque(j);
+    let mut ej = 0u128;
+    for (i, &t) in EXP_J64[..=J_MAX].iter().enumerate() {
+        ej |= t & mask128(((i as u64 ^ j).wrapping_sub(1) >> 63) & 1);
+    }
+    shr_masked(mul_f(ej, p), m as u64) & mask128(small)
 }
 
-/// The acceptance decision `v < floor(2^192 exp(-c t))` of the Python sampler.
+/// The acceptance decision `v < floor(2^192 exp(-c t))` of the Python sampler,
+/// or true for y = 0, where the reference has no test (its threshold, 2^192, is
+/// above every v). The fixed-point test runs for every candidate, y = 0 included,
+/// and the outcomes are combined with masks; only the deferral to `exact`
+/// branches (about once in 2^99 tests with y != 0; every such test of a table
+/// whose c the fixed point cannot hold).
 fn accept(table: &Table, x: u64, y: u64, v: U256, exact: &dyn Fn(u64, u64) -> U256) -> bool {
     let t = y as u128 * (y as u128 + 2 * table.k as u128 * x as u128);
-    if let Some(e) = exp_neg(table, t) {
-        let approx = U256::from_u128(e).shl(PRECISION - F);
-        let margin = U256::ONE.shl(PRECISION - 100);
-        // v + 1 + margin <= approx: v < threshold; v >= approx + margin: v >= threshold
-        if v.wadd(U256::ONE).wadd(margin) <= approx {
-            return true;
-        }
-        if v >= approx.wadd(margin) {
-            return false;
-        }
+    let (e, ok) = exp_neg(table, t);
+    let approx = U256::from_u128(e).shl(PRECISION - F);
+    let margin = U256::ONE.shl(PRECISION - 100);
+    // v + 1 + margin <= approx: v < threshold; v >= approx + margin: v >= threshold
+    let below = ge256(&approx, &v.wadd(U256::ONE).wadd(margin)) & ok;
+    let above = ge256(&v, &approx.wadd(margin)) & ok;
+    let no_test = nonzero(y) ^ 1;
+    if opaque(no_test | below | above) == 0 {
+        return v < exact(x, y);
     }
-    v < exact(x, y)
+    (no_test | below) == 1
 }
 
 /// Whether the fixed-point thresholds agree with `exact` to 2^-102 (relative to
@@ -363,7 +463,7 @@ pub fn check_table(table: &Table, exact: &dyn Fn(u64, u64) -> U256) -> bool {
     let (xm, ym) = (CDT_SIZE as u64, table.k - 1);
     for (x, y) in [(0, 1), (0, ym), (xm, 1), (xm, ym), (xm / 2, ym.div_ceil(2))] {
         let t = y as u128 * (y as u128 + 2 * table.k as u128 * x as u128);
-        if let Some(e) = exp_neg(table, t) {
+        if let (e, 1) = exp_neg(table, t) {
             let (a, b) = (U256::from_u128(e).shl(PRECISION - F), exact(x, y));
             let d = if a >= b { a.wsub(b) } else { b.wsub(a) };
             if d >= U256::ONE.shl(PRECISION - 102) {
@@ -383,7 +483,7 @@ pub fn sample(table: &Table, out: &mut [i64], bits: &mut dyn RandBits, exact: &d
         let u = bits.getrandbits(PRECISION);
         let mut x = 0u64;
         for th in table.cdt.iter() {
-            x += (u >= *th) as u64; // the whole table, as the reference
+            x += ge256(&u, th); // the whole table, as the reference
         }
         let mut y = 0u64;
         if table.y_bits > 0 {
@@ -393,15 +493,16 @@ pub fn sample(table: &Table, out: &mut [i64], bits: &mut dyn RandBits, exact: &d
             }
         }
         let v = bits.getrandbits(PRECISION);
-        if y != 0 && !accept(table, x, y, v, exact) {
+        if !accept(table, x, y, v, exact) {
             continue;
         }
         let z = (k * x + y) as i64;
-        let negative = bits.getrandbits(1).0[0] == 1;
-        if z == 0 && negative {
-            continue;
+        let negative = bits.getrandbits(1).0[0] & 1;
+        if opaque((nonzero(z as u64) ^ 1) & negative) == 1 {
+            continue; // -0: drawn again, as the reference
         }
-        out[filled] = if negative { -z } else { z };
+        let n = (negative as i64).wrapping_neg(); // 0 or -1
+        out[filled] = (z ^ n).wrapping_sub(n);
         filled += 1;
     }
 }
@@ -409,13 +510,251 @@ pub fn sample(table: &Table, out: &mut [i64], bits: &mut dyn RandBits, exact: &d
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
+
+    /// The sampler before it was made constant-time (pyfe4ai 0.4.0 to 0.5.0), kept
+    /// as the reference that the constant-time one must match bit for bit.
+    mod branching {
+        use super::super::*;
+
+        fn shr_pair(hi: u128, lo: u128, s: u32) -> Option<u128> {
+            match s {
+                0 => (hi == 0).then_some(lo),
+                1..=127 => (hi >> s == 0).then_some((hi << (128 - s)) | (lo >> s)),
+                128..=255 => Some(hi >> (s - 128)),
+                _ => Some(0),
+            }
+        }
+
+        fn exp_neg(table: &Table, t: u128) -> Option<u128> {
+            let (hi, lo) = table.c_mant.full(t);
+            let s = -(table.c_exp + F as i32);
+            if s < 0 {
+                return None;
+            }
+            let a = shr_pair(hi, lo, s as u32)?;
+            Some(exp_neg_a(a))
+        }
+
+        pub fn exp_neg_a(a: u128) -> u128 {
+            if a >= 120 * ONE {
+                return 0;
+            }
+            let mut m = ((a as f64) / (LN2 as f64)) as u128;
+            while m > 0 && m * LN2 > a {
+                m -= 1;
+            }
+            while (m + 1) * LN2 <= a {
+                m += 1;
+            }
+            let r = a - m * LN2;
+            let j = (r >> (F - 6)) as usize;
+            let r2 = r - ((j as u128) << (F - 6));
+            let mut p = INV_FACT[15];
+            for i in (0..15).rev() {
+                p = INV_FACT[i] - mul_f(p, r2);
+            }
+            let e = mul_f(EXP_J64[j], p);
+            if m >= 128 { 0 } else { e >> m }
+        }
+
+        fn accept(table: &Table, x: u64, y: u64, v: U256, exact: &dyn Fn(u64, u64) -> U256) -> bool {
+            let t = y as u128 * (y as u128 + 2 * table.k as u128 * x as u128);
+            if let Some(e) = exp_neg(table, t) {
+                let approx = U256::from_u128(e).shl(PRECISION - F);
+                let margin = U256::ONE.shl(PRECISION - 100);
+                if v.wadd(U256::ONE).wadd(margin) <= approx {
+                    return true;
+                }
+                if v >= approx.wadd(margin) {
+                    return false;
+                }
+            }
+            v < exact(x, y)
+        }
+
+        pub fn sample(table: &Table, out: &mut [i64], bits: &mut dyn RandBits, exact: &dyn Fn(u64, u64) -> U256) {
+            let k = table.k;
+            let mut filled = 0;
+            while filled < out.len() {
+                let u = bits.getrandbits(PRECISION);
+                let mut x = 0u64;
+                for th in table.cdt.iter() {
+                    x += (u >= *th) as u64;
+                }
+                let mut y = 0u64;
+                if table.y_bits > 0 {
+                    y = bits.getrandbits(table.y_bits).0[0];
+                    while y >= k {
+                        y = bits.getrandbits(table.y_bits).0[0];
+                    }
+                }
+                let v = bits.getrandbits(PRECISION);
+                if y != 0 && !accept(table, x, y, v, exact) {
+                    continue;
+                }
+                let z = (k * x + y) as i64;
+                let negative = bits.getrandbits(1).0[0] == 1;
+                if z == 0 && negative {
+                    continue;
+                }
+                out[filled] = if negative { -z } else { z };
+                filled += 1;
+            }
+        }
+    }
+
+    fn splitmix(state: &mut u64) -> u64 {
+        *state = state.wrapping_add(0x9e3779b97f4a7c15);
+        let mut z = *state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d049bb133111eb);
+        z ^ (z >> 31)
+    }
+
+    /// A table of the reference's form for sigma, from f64 (not the MPFR values:
+    /// both samplers are given the same table, which is all these tests need).
+    fn table_for(sigma: f64) -> Table {
+        let k = ((sigma * (2.0 * 2f64.ln()).sqrt()).ceil() as u64).max(1);
+        let c = 1.0 / (2.0 * sigma * sigma);
+        let bits = c.to_bits();
+        let (mant, exp) = ((bits & ((1 << 52) - 1)) | (1 << 52), ((bits >> 52) & 0x7ff) as i32 - 1075);
+        let weights: Vec<f64> = (0..40).map(|x| (-c * ((x as f64) * k as f64).powi(2)).exp()).collect();
+        let total: f64 = weights.iter().sum();
+        let mut cdt = [U256::ZERO; CDT_SIZE];
+        let mut acc = 0.0;
+        for (i, th) in cdt.iter_mut().enumerate() {
+            acc += weights[i];
+            let f = (acc / total).min(1.0 - 1e-16) * 18446744073709551616.0;
+            let top = f.floor();
+            *th = U256([0, ((f - top) * 18446744073709551616.0) as u64, top as u64, 0]);
+        }
+        Table { k, y_bits: 64 - (k - 1).leading_zeros(), cdt, c_mant: (mant as u128) << 75, c_exp: exp - 75 }
+    }
+
+    /// The tables of both comparisons: widths from k = 1 to k near 2^50, and tables
+    /// whose c is moved so that the fixed point defers often or always.
+    fn tables() -> Vec<Table> {
+        let mut out: Vec<Table> = [0.3, 1.0, 1.7, 3.2, 17.25, 1000.0, 4030.5, 4.97e9, 2f64.powi(40), 2f64.powi(49)]
+            .iter()
+            .map(|&s| table_for(s))
+            .collect();
+        for (sigma, shift) in [(3.2, 8), (1000.0, 60), (1000.0, 100), (4030.5, 200)] {
+            let mut t = table_for(sigma);
+            t.c_exp += shift;
+            out.push(t);
+        }
+        out
+    }
+
+    #[test]
+    fn exp_neg_a_matches_the_branching_version() {
+        let mut points: Vec<u128> = vec![0, 1, 2, 120 * ONE - 2, 120 * ONE - 1, 120 * ONE, 120 * ONE + 1, u128::MAX];
+        for m in 0..=176u128 {
+            for j in 0..64u128 {
+                let base = m * LN2 + (j << (F - 6));
+                for d in [0u128, 1, 2] {
+                    points.push(base.wrapping_add(d));
+                    points.push(base.wrapping_sub(d));
+                }
+            }
+        }
+        let mut s = 7u64;
+        let n = if cfg!(debug_assertions) { 200_000 } else { 4_000_000 };
+        for i in 0..n {
+            let a = ((splitmix(&mut s) as u128) << 64) | splitmix(&mut s) as u128;
+            points.push(if i % 8 == 0 { a } else { a % (121 * ONE) });
+        }
+        for a in points {
+            assert_eq!(exp_neg_a(a), branching::exp_neg_a(a), "a = {a:#x}");
+        }
+    }
+
+    #[test]
+    fn samples_and_deferrals_match_the_branching_version() {
+        let seeds = if cfg!(debug_assertions) { 60 } else { 3000 };
+        for (n, table) in tables().iter().enumerate() {
+            for seed in 0..seeds {
+                let raw = [&(n as u64).to_be_bytes()[..], &(seed as u64).to_be_bytes()[..]].concat();
+                let mut runs = Vec::new();
+                for variant in 0..2 {
+                    let calls = RefCell::new(Vec::new());
+                    let exact = |x: u64, y: u64| {
+                        calls.borrow_mut().push((x, y));
+                        let mut h = x.wrapping_mul(0x9e3779b97f4a7c15) ^ y;
+                        U256([splitmix(&mut h), splitmix(&mut h), splitmix(&mut h), 0])
+                    };
+                    let mut out = vec![0i64; 64];
+                    let mut bits = XofBits::new(&raw);
+                    if variant == 0 {
+                        sample(table, &mut out, &mut bits, &exact);
+                    } else {
+                        branching::sample(table, &mut out, &mut bits, &exact);
+                    }
+                    runs.push((out, bits.next_call(), calls.into_inner()));
+                }
+                assert_eq!(runs[0], runs[1], "table {n}, seed {seed}");
+            }
+        }
+    }
+
+    #[test]
+    fn some_tables_defer_and_some_samples_are_multiples_of_k() {
+        // the comparison above exercises the deferral and the y = 0 outputs
+        let (mut deferred, mut y0) = (0, 0);
+        for table in tables() {
+            let calls = RefCell::new(0u64);
+            let exact = |_x: u64, _y: u64| {
+                *calls.borrow_mut() += 1;
+                U256::ONE.shl(191)
+            };
+            let mut out = vec![0i64; 256];
+            sample(&table, &mut out, &mut XofBits::new(b"cover"), &exact);
+            deferred += calls.into_inner();
+            y0 += out.iter().filter(|&&z| table.k > 1 && z % table.k as i64 == 0).count();
+        }
+        assert!(deferred > 100 && y0 > 10, "{deferred} {y0}");
+    }
+
+    #[test]
+    fn shr_masked_is_a_shift() {
+        let mut s = 3u64;
+        for _ in 0..10000 {
+            let e = ((splitmix(&mut s) as u128) << 64) | splitmix(&mut s) as u128;
+            for m in 0..256u64 {
+                assert_eq!(shr_masked(e, m), if m >= 128 { 0 } else { e >> m });
+            }
+        }
+    }
+
+    #[test]
+    fn comparisons_are_the_orderings() {
+        let mut s = 5u64;
+        for i in 0..100000 {
+            let mut a = U256([splitmix(&mut s), splitmix(&mut s), splitmix(&mut s), splitmix(&mut s)]);
+            let b = U256([splitmix(&mut s), splitmix(&mut s), splitmix(&mut s), splitmix(&mut s)]);
+            if i % 3 == 0 {
+                a.0[3] = b.0[3]; // equal top words: the lower ones decide
+                a.0[2] = if i % 2 == 0 { b.0[2] } else { a.0[2] };
+            }
+            if i % 7 == 0 {
+                a = b;
+            }
+            assert_eq!(ge256(&a, &b) == 1, a >= b);
+            let (x, y) = (a.0[0] as u128 | (a.0[1] as u128) << 64, b.0[0] as u128 | (b.0[1] as u128) << 64);
+            assert_eq!(ge128(x, y) == 1, x >= y);
+            assert_eq!(nonzero(a.0[0] & (i as u64 % 2).wrapping_neg()), (a.0[0] != 0 && i % 2 == 1) as u64);
+        }
+    }
 
     #[test]
     fn exp_is_accurate() {
         // c = 2^-10 (c_mant = 2^127, c_exp = -137): a = t / 1024
         let table = Table { k: 1, y_bits: 0, cdt: [U256::ZERO; CDT_SIZE], c_mant: 1 << 127, c_exp: -137 };
         for t in [0u128, 1, 7, 1000, 1024, 5000, 40000, 80000] {
-            let e = exp_neg(&table, t).unwrap() as f64 / ONE as f64;
+            let (e, ok) = exp_neg(&table, t);
+            assert_eq!(ok, 1);
+            let e = e as f64 / ONE as f64;
             let want = (-(t as f64) / 1024.0).exp();
             assert!((e - want).abs() < 1e-15 * want.max(1e-300) + 1e-30, "t = {t}: {e} vs {want}");
         }

@@ -27,9 +27,14 @@
 //!   `exact(x, y)` (the Python threshold) decides, about once in 2^99 tests.
 //!
 //! So for a given bit source the samples are the reference's.
+//!
+//! Constant time in the values drawn, as `facct` (since 1.0): the comparisons
+//! with k, the tests for zero and the 128-bit check of a read every word, and
+//! only the redraws (y >= k, a rejected candidate, -0) and the deferral to
+//! `exact` branch. The samples are those of 0.4.0 to 0.5.0, bit for bit.
 
 use crate::arith::{Word, U256};
-use crate::facct::{exp_neg_a, RandBits, CDT_SIZE, F, PRECISION};
+use crate::facct::{exp_neg_a, ge256, ge_words, mask128, nonzero, opaque, RandBits, CDT_SIZE, F, PRECISION};
 
 /// Words of k, y and z = k x + y (k < 2^448, z < 15 k < 2^452).
 pub const W: usize = 8;
@@ -48,20 +53,12 @@ pub struct WideTable {
     pub c_exp: i32,
 }
 
-fn is_zero(a: &[u64]) -> bool {
-    a.iter().all(|&w| w == 0)
+/// 1 if some word of a is not 0, else 0 (every word read).
+fn nonzero_words(a: &[u64]) -> u64 {
+    nonzero(a.iter().fold(0, |acc, &w| acc | w))
 }
 
-/// a < b for equal lengths.
-fn lt(a: &[u64], b: &[u64]) -> bool {
-    for i in (0..a.len()).rev() {
-        if a[i] != b[i] {
-            return a[i] < b[i];
-        }
-    }
-    false
-}
-
+/// The bit length of a (for the table's k only: it stops at the top nonzero word).
 fn bit_len(a: &[u64]) -> u32 {
     for i in (0..a.len()).rev() {
         if a[i] != 0 {
@@ -106,42 +103,48 @@ fn t_of(table: &WideTable, x: u64, y: &[u64; W]) -> [u64; TW + 1] {
     t
 }
 
-/// exp(-c t) with F fraction bits, or None when the fixed point cannot hold a
-/// (the caller then uses `exact`).
-fn exp_neg_wide(table: &WideTable, t: &[u64]) -> Option<u128> {
+/// exp(-c t) with F fraction bits and 1, or (0, 0) when the fixed point cannot
+/// hold a (the caller then uses `exact`). Constant time as `facct` (the shift s
+/// is the table's; the words read do not depend on t).
+fn exp_neg_wide(table: &WideTable, t: &[u64]) -> (u128, u64) {
     let s = -(table.c_exp + F as i32);
     if s < 0 {
-        return None;
+        return (0, 0);
     }
     let c = [table.c_mant as u64, (table.c_mant >> 64) as u64];
     let mut p = [0u64; TW + 3];
     mul_into(&c, t, &mut p[..t.len() + 2]);
-    // a = p >> s, which must fit 128 bits
+    // a = p >> s, which must fit 128 bits: no bit of p at s + 128 or above
     let s = s as u32;
-    if bit_len(&p) > s + 128 {
-        return None;
+    let (tw, tb) = (((s + 128) / 64) as usize, (s + 128) % 64);
+    let mut high = 0u64;
+    for (i, &w) in p.iter().enumerate() {
+        high |= if i > tw { w } else if i == tw { w >> tb } else { 0 };
     }
+    let ok = nonzero(high) ^ 1;
     let (w, b) = ((s / 64) as usize, s % 64);
     let word = |i: usize| if i < p.len() { p[i] } else { 0 };
     let lo = if b == 0 { word(w) } else { (word(w) >> b) | (word(w + 1) << (64 - b)) };
     let hi = if b == 0 { word(w + 1) } else { (word(w + 1) >> b) | (word(w + 2) << (64 - b)) };
-    Some(exp_neg_a(((hi as u128) << 64) | lo as u128))
+    (exp_neg_a(((hi as u128) << 64) | lo as u128) & mask128(ok), ok)
 }
 
-/// The acceptance decision `v < floor(2^192 exp(-c t))` of the Python sampler.
+/// The acceptance decision `v < floor(2^192 exp(-c t))` of the Python sampler,
+/// or true for y = 0 (no test in the reference), as `facct::accept`: the
+/// fixed-point test for every candidate, the outcomes combined with masks, and
+/// a branch only to defer to `exact`.
 fn accept(table: &WideTable, x: u64, y: &[u64; W], v: U256, exact: &dyn Fn(u64, &[u64]) -> U256) -> bool {
     let t = t_of(table, x, y);
-    if let Some(e) = exp_neg_wide(table, &t) {
-        let approx = U256::from_u128(e).shl(PRECISION - F);
-        let margin = U256::ONE.shl(PRECISION - 100);
-        if v.wadd(U256::ONE).wadd(margin) <= approx {
-            return true;
-        }
-        if v >= approx.wadd(margin) {
-            return false;
-        }
+    let (e, ok) = exp_neg_wide(table, &t);
+    let approx = U256::from_u128(e).shl(PRECISION - F);
+    let margin = U256::ONE.shl(PRECISION - 100);
+    let below = ge256(&approx, &v.wadd(U256::ONE).wadd(margin)) & ok;
+    let above = ge256(&v, &approx.wadd(margin)) & ok;
+    let no_test = nonzero_words(y) ^ 1;
+    if opaque(no_test | below | above) == 0 {
+        return v < exact(x, y);
     }
-    v < exact(x, y)
+    (no_test | below) == 1
 }
 
 /// k - 1 and ceil((k - 1) / 2).
@@ -171,11 +174,11 @@ pub fn check_table(table: &WideTable, exact: &dyn Fn(u64, &[u64]) -> U256) -> bo
     one[0] = 1;
     let xm = CDT_SIZE as u64;
     for (x, y) in [(0, &one), (0, &km), (xm, &one), (xm, &km), (xm / 2, &half)] {
-        if is_zero(y) {
+        if nonzero_words(y) == 0 {
             continue;
         }
         let t = t_of(table, x, y);
-        if let Some(e) = exp_neg_wide(table, &t) {
+        if let (e, 1) = exp_neg_wide(table, &t) {
             let (a, b) = (U256::from_u128(e).shl(PRECISION - F), exact(x, y));
             let d = if a >= b { a.wsub(b) } else { b.wsub(a) };
             if d >= U256::ONE.shl(PRECISION - 102) {
@@ -206,20 +209,20 @@ pub fn sample(table: &WideTable, mags: &mut [u64], negative: &mut [u8], bits: &m
         let u = bits.getrandbits(PRECISION);
         let mut x = 0u64;
         for th in table.cdt.iter() {
-            x += (u >= *th) as u64; // the whole table, as the reference
+            x += ge256(&u, th); // the whole table, as the reference
         }
         bits.getrandbits_into(table.y_bits, &mut y);
-        while !lt(&y, &table.k) {
+        while ge_words(&y, &table.k) == 1 {
             bits.getrandbits_into(table.y_bits, &mut y);
         }
         let v = bits.getrandbits(PRECISION);
-        if !is_zero(&y) && !accept(table, x, &y, v, exact) {
+        if !accept(table, x, &y, v, exact) {
             continue;
         }
         let z = mul_add_small(&table.k, x, &y);
-        let neg = bits.getrandbits(1).0[0] == 1;
-        if is_zero(&z) && neg {
-            continue;
+        let neg = bits.getrandbits(1).0[0] & 1;
+        if opaque((nonzero_words(&z) ^ 1) & neg) == 1 {
+            continue; // -0: drawn again, as the reference
         }
         debug_assert!(z[W] == 0);
         mags[W * filled..W * (filled + 1)].copy_from_slice(&z[..W]);
@@ -234,6 +237,165 @@ pub fn sample(table: &WideTable, mags: &mut [u64], negative: &mut [u8], bits: &m
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::facct::XofBits;
+    use std::cell::RefCell;
+
+    /// The wide sampler before it was made constant-time (pyfe4ai 0.4.0 to 0.5.0),
+    /// the reference that the constant-time one must match bit for bit.
+    mod branching {
+        use super::super::*;
+
+        fn is_zero(a: &[u64]) -> bool {
+            a.iter().all(|&w| w == 0)
+        }
+
+        fn lt(a: &[u64], b: &[u64]) -> bool {
+            for i in (0..a.len()).rev() {
+                if a[i] != b[i] {
+                    return a[i] < b[i];
+                }
+            }
+            false
+        }
+
+        fn exp_neg_wide(table: &WideTable, t: &[u64]) -> Option<u128> {
+            let s = -(table.c_exp + F as i32);
+            if s < 0 {
+                return None;
+            }
+            let c = [table.c_mant as u64, (table.c_mant >> 64) as u64];
+            let mut p = [0u64; TW + 3];
+            mul_into(&c, t, &mut p[..t.len() + 2]);
+            let s = s as u32;
+            if bit_len(&p) > s + 128 {
+                return None;
+            }
+            let (w, b) = ((s / 64) as usize, s % 64);
+            let word = |i: usize| if i < p.len() { p[i] } else { 0 };
+            let lo = if b == 0 { word(w) } else { (word(w) >> b) | (word(w + 1) << (64 - b)) };
+            let hi = if b == 0 { word(w + 1) } else { (word(w + 1) >> b) | (word(w + 2) << (64 - b)) };
+            Some(crate::facct::exp_neg_a(((hi as u128) << 64) | lo as u128))
+        }
+
+        fn accept(table: &WideTable, x: u64, y: &[u64; W], v: U256, exact: &dyn Fn(u64, &[u64]) -> U256) -> bool {
+            let t = t_of(table, x, y);
+            if let Some(e) = exp_neg_wide(table, &t) {
+                let approx = U256::from_u128(e).shl(PRECISION - F);
+                let margin = U256::ONE.shl(PRECISION - 100);
+                if v.wadd(U256::ONE).wadd(margin) <= approx {
+                    return true;
+                }
+                if v >= approx.wadd(margin) {
+                    return false;
+                }
+            }
+            v < exact(x, y)
+        }
+
+        pub fn sample(table: &WideTable, mags: &mut [u64], negative: &mut [u8], bits: &mut dyn RandBits,
+                      exact: &dyn Fn(u64, &[u64]) -> U256) {
+            let count = negative.len();
+            let mut filled = 0;
+            let mut y = [0u64; W];
+            while filled < count {
+                let u = bits.getrandbits(PRECISION);
+                let mut x = 0u64;
+                for th in table.cdt.iter() {
+                    x += (u >= *th) as u64;
+                }
+                bits.getrandbits_into(table.y_bits, &mut y);
+                while !lt(&y, &table.k) {
+                    bits.getrandbits_into(table.y_bits, &mut y);
+                }
+                let v = bits.getrandbits(PRECISION);
+                if !is_zero(&y) && !accept(table, x, &y, v, exact) {
+                    continue;
+                }
+                let z = mul_add_small(&table.k, x, &y);
+                let neg = bits.getrandbits(1).0[0] == 1;
+                if is_zero(&z) && neg {
+                    continue;
+                }
+                mags[W * filled..W * (filled + 1)].copy_from_slice(&z[..W]);
+                negative[filled] = neg as u8;
+                filled += 1;
+            }
+        }
+    }
+
+    /// A wide table of the reference's form for sigma = m 2^e (m < 2^53), from f64
+    /// (both samplers get the same table, which is all the comparison needs).
+    fn wide_table(m: f64, e: i32) -> WideTable {
+        // k = ceil(sigma sqrt(2 ln 2)): the top 64 bits from f64, then shifted
+        let kf = m * (2.0 * 2f64.ln()).sqrt(); // < 2^54
+        let mut k = [0u64; W];
+        let top = kf.ceil() as u64;
+        let (w, b) = ((e / 64) as usize, (e % 64) as u32);
+        k[w] = top << b;
+        if b > 0 && w + 1 < W {
+            k[w + 1] = top >> (64 - b);
+        }
+        k[0] |= 1; // not a power of two
+        let c = 1.0 / (2.0 * m * m); // times 2^(-2 e)
+        let cb = c.to_bits();
+        let (mant, cexp) = ((cb & ((1 << 52) - 1)) | (1 << 52), ((cb >> 52) & 0x7ff) as i32 - 1075);
+        let kc2 = (kf.ceil() * kf.ceil()) * c; // k^2 c, about ln 2
+        let weights: Vec<f64> = (0..40).map(|x| (-kc2 * (x * x) as f64).exp()).collect();
+        let total: f64 = weights.iter().sum();
+        let mut cdt = [U256::ZERO; CDT_SIZE];
+        let mut acc = 0.0;
+        for (i, th) in cdt.iter_mut().enumerate() {
+            acc += weights[i];
+            let f = (acc / total).min(1.0 - 1e-16) * 18446744073709551616.0;
+            let t = f.floor();
+            *th = U256([0, ((f - t) * 18446744073709551616.0) as u64, t as u64, 0]);
+        }
+        let y_bits = bit_len(&corners(&k).0);
+        WideTable { k, y_bits, cdt, c_mant: (mant as u128) << 75, c_exp: cexp - 75 - 2 * e }
+    }
+
+    #[test]
+    fn samples_and_deferrals_match_the_branching_version() {
+        let mut tables: Vec<WideTable> = [(1.5, 50), (1.0e6, 60), (3.0, 100), (7.0e9, 200), (2.0, 445)]
+            .iter()
+            .map(|&(m, e)| wide_table(m, e))
+            .collect();
+        for shift in [8, 60, 200] {
+            let mut t = wide_table(1.0e6, 60);
+            t.c_exp += shift;
+            tables.push(t);
+        }
+        for t in &tables {
+            assert!(valid(&t.k, t.y_bits));
+        }
+        let seeds = if cfg!(debug_assertions) { 20 } else { 600 };
+        let mut deferred = 0;
+        for (n, table) in tables.iter().enumerate() {
+            for seed in 0..seeds {
+                let raw = [&(n as u64).to_be_bytes()[..], &(seed as u64).to_be_bytes()[..]].concat();
+                let mut runs = Vec::new();
+                for variant in 0..2 {
+                    let calls = RefCell::new(Vec::new());
+                    let exact = |x: u64, y: &[u64]| {
+                        calls.borrow_mut().push((x, y.to_vec()));
+                        let h = y.iter().fold(x, |a, &w| a.rotate_left(17) ^ w.wrapping_mul(0x9e3779b97f4a7c15));
+                        U256([h, h.rotate_left(21), h.rotate_left(42) >> 1, 0])
+                    };
+                    let (mut mags, mut neg) = (vec![0u64; W * 32], vec![0u8; 32]);
+                    let mut bits = XofBits::new(&raw);
+                    if variant == 0 {
+                        sample(table, &mut mags, &mut neg, &mut bits, &exact);
+                    } else {
+                        branching::sample(table, &mut mags, &mut neg, &mut bits, &exact);
+                    }
+                    runs.push((mags, neg, bits.next_call(), calls.into_inner()));
+                }
+                deferred += runs[0].3.len();
+                assert_eq!(runs[0], runs[1], "table {n}, seed {seed}");
+            }
+        }
+        assert!(deferred > 50, "{deferred}");
+    }
 
     #[test]
     fn t_and_corners() {
@@ -257,7 +419,9 @@ mod tests {
         let table = WideTable { k: [0; W], y_bits: 1, cdt: [U256::ZERO; CDT_SIZE], c_mant: 1 << 127, c_exp: -267 };
         let mut t = [0u64; TW + 1];
         t[2] = 3 << 11; // 3 2^139
-        let e = exp_neg_wide(&table, &t).unwrap() as f64 / (1u128 << F) as f64;
+        let (e, ok) = exp_neg_wide(&table, &t);
+        assert_eq!(ok, 1);
+        let e = e as f64 / (1u128 << F) as f64;
         assert!((e - (-1.5f64).exp()).abs() < 1e-15);
     }
 }

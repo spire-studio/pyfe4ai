@@ -50,6 +50,26 @@ def test_same_samples_as_python(sigma):
     assert native_backend.ext().facct_sample(native_impl.facct_table(sigma), 4000, xof_seed=seed) == py
 
 
+@pytest.mark.parametrize("sigma", [1.0, 3.2, 17.25, 4030.5, 4.97e9])
+def test_many_seeds_same_samples_and_stream_as_python(sigma):
+    """The constant-time native sampler (1.0) against the reference, seed by seed:
+    the samples and where the bit stream stops (so the getrandbits calls agree too).
+    For the small widths, multiples of k (y = 0: no acceptance test in the
+    reference) are among them."""
+    table = native_impl.facct_table(sigma)
+    k = su._facct_params(su._exact(sigma)).k
+    multiples = 0
+    for i in range(400):
+        seed = b"ct-facct/%d/" % i + str(sigma).encode()
+        nat_rng, ref_rng = su.XofRandom(seed), su.XofRandom(seed)
+        nat = [int(v) for v in su.discrete_gaussian_facct(sigma, 32, rng=nat_rng)]
+        ref = [int(v) for v in su._gaussian_facct_reference(sigma, 32, ref_rng)]
+        assert nat == ref and nat_rng._counter == ref_rng._counter, i
+        assert native_backend.ext().facct_sample(table, 32, xof_seed=seed) == ref, i
+        multiples += sum(1 for v in ref if v % k == 0)
+    assert multiples > 0 or k > 10 ** 4  # one in about k candidates has y = 0
+
+
 def _table(sigma, counter, c_exp_shift=0):
     """facct_table with a counting exact threshold (and optionally a useless c);
     the counter is cleared after the table's own check at construction."""
