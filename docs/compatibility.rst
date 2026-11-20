@@ -107,7 +107,7 @@ How a record is stored or transmitted -- JSON, base64 for bytes, or anything
 else -- is the application's choice.
 
 The test suite keeps a set of records for every stable scheme
-(``tests/compat/fixtures/``, the set of 1.0.0 written by the release) and
+(``tests/compat/fixtures/1.0.0/``, written by 1.0.0) and
 every later release must read them and compute the same results; each set
 also freezes the list of the schemes that were stable when it was written.
 
