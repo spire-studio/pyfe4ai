@@ -4,7 +4,9 @@ Paillier-Based Single-Input Inner-Product Functional Encryption
 |       from Standard Assumptions"
 | By Shweta Agrawal, Benoit Libert, and Damien Stehle
 | Published in: CRYPTO 2016 (DCR instantiation; recalled as Fig. 9 of
-| ABMPSW20, https://eprint.iacr.org/2020/788, Appendix B.1)
+| ABMPSW20, https://inria.hal.science/hal-02948657, Appendix B.1)
+| (Figure, theorem and appendix numbers: the HAL version, hal-02948657; ePrint
+| 2020/788 numbers them differently.)
 
 * type:     public-key encryption
 * setting:  Integer based (Z_{N^2}^*, N = p q with safe primes)

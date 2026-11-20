@@ -424,4 +424,58 @@ mod tests {
         let e = e as f64 / (1u128 << F) as f64;
         assert!((e - (-1.5f64).exp()).abs() < 1e-15);
     }
+
+    /// R-1.0 review of FACCT A: y = 0 (no acceptance test in the reference) and -0 (drawn again)
+    /// in the wide kernel. The seeded comparison above never reaches them: with k >= 2^50 one
+    /// candidate in k has y = 0. Here every y draw reads its bits from the stream and then
+    /// returns 0, so z = k x, the y = 0 test is skipped, and x = 0 with the sign set is -0.
+    struct ZeroY(XofBits);
+
+    impl RandBits for ZeroY {
+        fn getrandbits(&mut self, k: u32) -> U256 {
+            self.0.getrandbits(k)
+        }
+        fn getrandbits_into(&mut self, k: u32, out: &mut [u64]) {
+            self.0.getrandbits_into(k, out);
+            out.iter_mut().for_each(|w| *w = 0);
+        }
+    }
+
+    #[test]
+    fn review_y_zero_and_minus_zero_match_the_branching_version() {
+        let mut tables: Vec<WideTable> = [(1.5, 50), (1.0e6, 60), (2.0, 445)].iter().map(|&(m, e)| wide_table(m, e)).collect();
+        let mut shifted = wide_table(1.0e6, 60);
+        shifted.c_exp += 8;
+        tables.push(shifted);
+        let (mut zeros, mut redraws) = (0, 0u128);
+        for (n, table) in tables.iter().enumerate() {
+            for seed in 0..100u64 {
+                let raw = [&(n as u64).to_be_bytes()[..], &seed.to_be_bytes()[..], &b"y0"[..]].concat();
+                let mut runs = Vec::new();
+                for variant in 0..2 {
+                    let calls = RefCell::new(0u32);
+                    let exact = |_x: u64, _y: &[u64]| {
+                        *calls.borrow_mut() += 1;
+                        U256::ONE.shl(191)
+                    };
+                    let (mut mags, mut neg) = (vec![0u64; W * 16], vec![0u8; 16]);
+                    let mut bits = ZeroY(XofBits::new(&raw));
+                    if variant == 0 {
+                        sample(table, &mut mags, &mut neg, &mut bits, &exact);
+                    } else {
+                        branching::sample(table, &mut mags, &mut neg, &mut bits, &exact);
+                    }
+                    runs.push((mags, neg, bits.0.next_call(), calls.into_inner()));
+                }
+                assert_eq!(runs[0], runs[1], "table {n}, seed {seed}");
+                let (mags, neg, calls, exact_calls) = &runs[0];
+                assert_eq!(*exact_calls, 0, "y = 0 never asks exact");
+                zeros += (0..16).filter(|&i| mags[W * i..W * (i + 1)].iter().all(|&w| w == 0)).count();
+                assert!(neg.iter().zip(mags.chunks(W)).all(|(&s, m)| s == 0 || m.iter().any(|&w| w != 0)), "no -0 out");
+                // 4 calls per candidate (u, y, v, sign): more calls than 4 x 16 are redraws (-0 here)
+                redraws += calls - 4 * 16;
+            }
+        }
+        assert!(zeros > 100 && redraws > 100, "{zeros} {redraws}");
+    }
 }

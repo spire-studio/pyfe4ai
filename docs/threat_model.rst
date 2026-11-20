@@ -205,9 +205,12 @@ schemes above; ``mife/ddh_ristretto255`` (*unreviewed*); the quadratic
   one key epoch any ciphertext of a slot combines with any ciphertexts of
   the other slots, so a client that encrypts several inputs leaks their
   differences.
-* **Security notion:** ``mife/ddh`` and ``mife/lwe`` put the selectively
-  secure ABDP15 scheme in every slot, so what holds is the selective
-  analogue of ACFGU18 Thm. 3.
+* **Security notion:** ``mife/ddh``, ``mife/lwe``, ``mife/ddh_threshold`` and
+  ``mife/ddh_ristretto255`` put the selectively secure ABDP15 scheme in every
+  slot, and ``mife/ring_lwe`` the selectively secure IPFE of BMMS21 Sec. 4,
+  so what holds is the selective analogue of ACFGU18 Thm. 3, which no paper
+  states. ``mife/damgard`` and ``mife/paillier`` are adaptive (ACFGU18 Thm. 3
+  with ALS16).
 * **Out of scope:** repeated rounds (gradient aggregation, for instance):
   use MCFE.
 
@@ -245,6 +248,11 @@ without a published proof.
 * **Trusted:** the key authority, which as the dealer sees the whole
   functional key; the servers are honest-but-curious, fewer than ``t`` of
   them corrupted at once (A-7).
+* **Security notion:** the threshold layer of ``mife/ddh_threshold`` and
+  ``mcfe/ddh_threshold`` rests on the standard simulation of partial
+  decryptions from the combined value and the corrupted shares (static
+  corruption of fewer than ``t`` servers, honest-but-curious); the theorem of
+  TAPFed, whose setting they follow, is about another construction.
 * **Leaks by design:** the result. The flooding noise in partial
   decryptions protects the shares, accounted one sample per partial
   decryption; ``flooding_accounting="kl"`` needs
@@ -282,6 +290,9 @@ them. Schemes: ``mcfe/lwe_decentralized``, ``mcfe/ring_lwe_decentralized``,
   setup, functional keys need no authority.
 * **Leaks by design:** as multi-client FE; a combined functional key is an
   ordinary functional key.
+* **Security notion:** static corruption only (ABMPSW20 Thm. 38 of the HAL
+  version for the schemes of its Fig. 14; ``mcfe/lwe_decentralized`` with the
+  selective parameters of ``mcfe/lwe``).
 * **Out of scope:** a distributed setup; clients that deviate in their key
   shares. ``mcfe/paillier_decentralized`` is refused by ``standard`` (its key
   shares are combined under a DCR modulus of more than 15000 bits).
@@ -467,7 +478,7 @@ agreed with its theorem:
      - DOT18 Thm. 3.1
    * - ``mcfe/lwe``, ``mcfe/fullysec_lwe``
      - selective and adaptive parameters
-     - ABMPSW20 Thm. 3.8
+     - ABMPSW20 Thm. 12 (HAL version; Thm. 3.8 of ePrint 2020/788)
    * - ``mcfe/fh_multi_ipe_pairing_decentralized``
      - selective FH-DMCFE
      - NPS24 Fig. 1
@@ -485,13 +496,11 @@ agreed with its theorem:
        Sec. 5 per identity
      - the project's own argument; BMMS21 Thm. 4
 
-Not compared this way: ``sife/ddh_dynamic``; ``mife/paillier``,
-``mife/damgard``, ``mife/ring_lwe``, ``mife/fullysec_lwe``,
-``mife/fh_ipe_pairing``; ``mcfe/damgard``, ``mcfe/paillier``;
-``mcfe/lwe_decentralized``, ``mcfe/paillier_decentralized``;
-``mife/ddh_threshold``, ``mcfe/ddh_threshold``; the three ristretto255
-schemes; the project's own threshold layers and carry mask, which have no
-published proof. The notions of ``sife/ddh``, ``mcfe/ddh``,
-``mcfe/fh_multi_ipe_pairing``, ``mcfe/ring_lwe`` and
-``mcfe/ring_lwe_decentralized`` were read in their papers but are not named
-in the documentation.
+A second pass compared the remaining schemes: none of their documentation
+names a stronger notion than the papers prove, and most name only a
+construction. Where the cited theorem is about another construction (the
+threshold layer of ``mife/ddh_threshold`` and ``mcfe/ddh_threshold``) or
+needs a stronger component (the selective IPFE in the slots of the MIFE
+schemes above), the registry notes say so; the figure and theorem numbers of
+ABMPSW20 are those of its HAL version. The project's own threshold layers
+and carry mask have no published proof to compare with.

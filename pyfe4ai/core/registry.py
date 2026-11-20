@@ -340,8 +340,13 @@ _FH_IPE_NOTE = (
     "pairing (default BLS12-381); keys carry a random id, never a digest of y"
 )
 _FIG14_NOTE = (
-    "MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) "
-    "are sampled in-process"
+    "MCFE2 = ABMPSW20 (HAL) Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) "
+    "are sampled in-process; static corruption only (the model of Thm. 38 of the HAL "
+    "version of ABMPSW20)"
+)
+#: ACFGU18 Thm. 3 composes a many-AD-IND IPFE; with a selectively secure one in the slots (R-1.0 T-1, I-2).
+_SEL_ANALOGUE = (
+    "so the guarantee is the selective analogue of ACFGU18 Thm. 3 (which assumes a many-AD-IND IPFE; the paper does not state this analogue)"
 )
 
 _R255_NOTE = (
@@ -450,7 +455,7 @@ SCHEMES: tuple[Scheme, ...] = (
     ),
     _scheme(
         "mife/ddh_ristretto255", EC, UNREVIEWED, UNKNOWN, "ACFGU18 Fig. 4 + ABDP15 (DDH) in ristretto255",
-        note=_R255_NOTE.format(""),
+        note=_R255_NOTE.format("") + "; the ABDP15 IPFE of every slot is selectively secure, " + _SEL_ANALOGUE,
         group="ristretto255", instance_of="ddh",
     ),
     _scheme(
@@ -476,7 +481,8 @@ SCHEMES: tuple[Scheme, ...] = (
     _scheme(
         "mife/ring_lwe", RING_LWE, REVIEWED, ADAPTED, "BMMS21 Sec. 6 MIFE-compiler (ACFGU18)",
         note="slots share a; parameters sized for dimension n * eta, with the Sec. 4.2 "
-        "widths for bound 3X (ACFGU18 Fig. 4, footnote 12)",
+        "widths for bound 3X (ACFGU18 Fig. 4, footnote 12); the IPFE of every slot (BMMS21 "
+        "Sec. 4) is selectively secure, " + _SEL_ANALOGUE,
         capabilities=(BINARY_CT, RNS,),
     ),
     _scheme(
@@ -501,7 +507,8 @@ SCHEMES: tuple[Scheme, ...] = (
     _scheme(
         "mife/ddh_threshold", DL, REVIEWED, ADAPTED, "ACFGU18 Fig. 4 + ABDP15 + Shamir (TAPFed setting)",
         note="the functional key (d_i, z) is Shamir-shared mod q; any t servers "
-        "interpolate in the exponent (threshold-ElGamal style), as mcfe/ddh_threshold",
+        "interpolate in the exponent (threshold-ElGamal style), as mcfe/ddh_threshold; the "
+        "ABDP15 IPFE of every slot is selectively secure, " + _SEL_ANALOGUE + "; the threshold layer rests on the standard simulation of partial decryptions (static corruption of fewer than t servers, honest-but-curious) and has no proof of correctness or robustness; the theorem of TAPFed (Thm. 1) is about another construction",
     ),
     _scheme(
         "mife/lwe_threshold", LWE_ABDP15, EXPERIMENTAL, AD_HOC, "MIFE-LWE + replicated / Shamir sharing + smudging",
@@ -527,16 +534,16 @@ SCHEMES: tuple[Scheme, ...] = (
         group="ristretto255", instance_of="ddh",
     ),
     _scheme(
-        "mcfe/lwe", LWE, REVIEWED, ADAPTED, "ABMPSW20 Fig. 4, selective parameters",
+        "mcfe/lwe", LWE, REVIEWED, ADAPTED, "ABMPSW20 (HAL) Fig. 4, selective parameters",
         note="signed messages and weights (K = 2nXY + 1, centred decoding); "
         "t <- D_{Z,sigma_t} exactly (FACCT) by default, rounded selectable under toy",
     ),
     _scheme(
-        "mcfe/paillier", DCR, REVIEWED, FAITHFUL, "ABMPSW20 Fig. 3",
+        "mcfe/paillier", DCR, REVIEWED, FAITHFUL, "ABMPSW20 (HAL) Fig. 3",
         note="D_{Z,sigma} realised as a high-precision rounded Gaussian",
     ),
     _scheme(
-        "mcfe/damgard", DL, REVIEWED, FAITHFUL, "ABMPSW20 Fig. 2 (D_k-MDDH)",
+        "mcfe/damgard", DL, REVIEWED, FAITHFUL, "ABMPSW20 (HAL) Fig. 2 (D_k-MDDH)",
         note="k = mddh_k (default 1, where it equals CDGPP18)",
         module="mcfe.damgard_ddh",
     ),
@@ -548,7 +555,7 @@ SCHEMES: tuple[Scheme, ...] = (
         capabilities=(BINARY_CT, RNS,),
     ),
     _scheme(
-        "mcfe/fullysec_lwe", LWE, REVIEWED, ADAPTED, "ABMPSW20 Fig. 4, adaptive parameters",
+        "mcfe/fullysec_lwe", LWE, REVIEWED, ADAPTED, "ABMPSW20 (HAL) Fig. 4, adaptive parameters",
         note="signed messages and weights (K = 2nXY + 1, centred decoding); "
         "t <- D_{Z,sigma_t} exactly (FACCT) by default, rounded selectable under toy; m0 grows with n log2(2X + 1)",
     ),
@@ -571,17 +578,17 @@ SCHEMES: tuple[Scheme, ...] = (
     _scheme(
         "mcfe/ddh_threshold", DL, REVIEWED, ADAPTED, "CDGPP18 + Shamir (TAPFed setting)",
         note="the aggregated key is Shamir-shared; any t servers interpolate in the "
-        "exponent (threshold-ElGamal style)",
+        "exponent (threshold-ElGamal style); the threshold layer rests on the standard simulation of partial decryptions (static corruption of fewer than t servers, honest-but-curious) and has no proof of correctness or robustness; the theorem of TAPFed (Thm. 1) is about another construction",
     ),
     _scheme(
-        "mcfe/ddh_decentralized", DL, EXPERIMENTAL, AD_HOC, "ABMPSW20 Fig. 14 (MCFE1 = CDGPP18) + carry mask",
+        "mcfe/ddh_decentralized", DL, EXPERIMENTAL, AD_HOC, "ABMPSW20 (HAL) Fig. 14 (MCFE1 = CDGPP18) + carry mask",
         note="Fig. 14 is stated for MCFEs without a discrete log in decryption; "
         "contributions are reduced mod q and masked by q rho_i (rho_i from a per-client "
         "key and H(y)) so that the carry of their sum stays hidden -- our own argument; "
         + _FIG14_NOTE,
     ),
     _scheme(
-        "mcfe/lwe_threshold", LWE, EXPERIMENTAL, AD_HOC, "ABMPSW20 Fig. 4 + replicated / Shamir sharing + flooding",
+        "mcfe/lwe_threshold", LWE, EXPERIMENTAL, AD_HOC, "ABMPSW20 (HAL) Fig. 4 + replicated / Shamir sharing + flooding",
         note="MCFE layer as published; the threshold layer (replicated key sharing "
         "for t < s, Shamir for t = s) and its LWE-based flooding argument are our "
         "own (see the module docstring)"
@@ -590,8 +597,8 @@ SCHEMES: tuple[Scheme, ...] = (
         "keyed by the seeds as a PRF); full replicated sharing stays the default for t < s",
     ),
     _scheme(
-        "mcfe/lwe_decentralized", LWE, REVIEWED, ADAPTED, "ABMPSW20 Fig. 14 (MCFE1 = Fig. 4)",
-        note=_FIG14_NOTE,
+        "mcfe/lwe_decentralized", LWE, REVIEWED, ADAPTED, "ABMPSW20 (HAL) Fig. 14 (MCFE1 = Fig. 4)",
+        note="selective parameters, as mcfe/lwe; " + _FIG14_NOTE,
     ),
     _scheme(
         "mcfe/ring_lwe_threshold", RING_LWE, EXPERIMENTAL, AD_HOC, "BMMS21 identity-based MCFE + replicated / Shamir sharing + smudging",
@@ -612,7 +619,7 @@ SCHEMES: tuple[Scheme, ...] = (
         capabilities=(BINARY_CT, RNS,),
     ),
     _scheme(
-        "mcfe/paillier_decentralized", DCR, REVIEWED, ADAPTED, "ABMPSW20 Fig. 14 (MCFE1 = Fig. 3)",
+        "mcfe/paillier_decentralized", DCR, REVIEWED, ADAPTED, "ABMPSW20 (HAL) Fig. 14 (MCFE1 = Fig. 3)",
         note=_FIG14_NOTE,
         refused=_REFUSED_DMCFE_PAILLIER,
     ),

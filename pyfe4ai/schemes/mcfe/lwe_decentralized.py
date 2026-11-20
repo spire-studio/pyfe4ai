@@ -3,10 +3,12 @@ Decentralised multi-client inner-product FE over LWE.
 
 | Abdalla, Bourse, Marival, Pointcheval, Soleimanian, Waldner:
 | "Multi-Client Inner-Product Functional Encryption in the Random-Oracle Model"
-| SCN 2020, https://eprint.iacr.org/2020/788 -- Appendix D.1, Fig. 14
+| SCN 2020, https://inria.hal.science/hal-02948657 -- Appendix D.1, Fig. 14
 | (DMCFE from MCFE), instantiated with MCFE1 = their LWE MCFE (Fig. 4,
 | :mod:`pyfe4ai.schemes.mcfe.lwe`) and MCFE2 = their DCR MCFE (Fig. 3,
 | :mod:`pyfe4ai.schemes.mcfe.decentralize`).
+| (Figure, theorem and appendix numbers: the HAL version, hal-02948657; ePrint
+| 2020/788 numbers them differently.)
 
 * type:     decentralised multi-client encryption (DMCFE, LWE + DCR, random oracle)
 * setting:  Integer based (Z_q with a rounding map to Z_q0; Z_{N2^2}^* for key shares)
@@ -19,7 +21,8 @@ clients' shares decrypt to ``sk_y = sum_{i,j} y_{i,j} Z_{i,j}`` in
 ``Z^(n0 + m0)``, the functional key of Fig. 4. Versions before this one
 reduced each contribution mod ``q``, so the decrypted integer sum also told
 how many ``y_i t_i`` were negative in every coordinate. Every client
-must publish a share. Secure against static corruptions (Theorem 38).
+must publish a share. Secure against static corruptions (Theorem 38), with
+the selective parameters of :mod:`pyfe4ai.schemes.mcfe.lwe` for MCFE1.
 Versions <= 0.2.0 used an ad-hoc label scalar with per-client key
 components instead. A key share costs ``n0 + m0`` DCR encryptions of one
 label hash (computed with a fixed-base method).

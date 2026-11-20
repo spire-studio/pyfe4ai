@@ -3,10 +3,12 @@ LWE-based multi-client inner-product FE.
 
 | Abdalla, Bourse, Marival, Pointcheval, Soleimanian, Waldner:
 | "Multi-Client Inner-Product Functional Encryption in the Random-Oracle Model"
-| SCN 2020, https://eprint.iacr.org/2020/788 -- Fig. 4 (MCFE based on LWE),
+| SCN 2020, https://inria.hal.science/hal-02948657 -- Fig. 4 (MCFE based on LWE),
 | correctness and security in Appendix C.2, parameters in Appendix C.3
 | (one-IND secure in the ROM under LWE). The construction is the MCFE
 | counterpart of the LWE IPFE of Agrawal, Libert, Stehle (CRYPTO 2016).
+| (Figure, theorem and appendix numbers: the HAL version, hal-02948657; ePrint
+| 2020/788 numbers them differently.)
 
 * type:     secret-key multi-client encryption (MCFE, LWE, random oracle)
 * setting:  Integer based (Z_q with a rounding map to Z_q0)
