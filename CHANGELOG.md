@@ -593,6 +593,68 @@ an experimental research prototype, not recommended for production use.
   share is added to the wrapper's server objects where they lack it), and
   these shares never reach the caller.
 
+## [0.4.1] — unreleased
+
+A patch release with one fix: native code no longer kills forked children on
+macOS. Nothing else changes; formats, keys and parameters are those of 0.4.0.
+
+### Fixed
+
+- **Forked children no longer crash on macOS after multi-threaded native
+  calls (0.4.0 is affected).**
+  - *The crash:* the native core's `parallel_for` waited for its worker
+    threads in `std::thread::scope`, which parks the calling thread when the
+    workers finish after it. On macOS the Rust standard library parks on a
+    libdispatch semaphore, and libdispatch refuses to work in the child of a
+    fork from a multi-threaded process. So in a child forked from a process
+    that had run any kernel with more than one thread (`set_threads`,
+    `PYFE4AI_THREADS`), the next multi-threaded native call killed the child
+    (SIGTRAP, "BUG IN CLIENT OF LIBDISPATCH: Use-after-free of
+    dispatch_semaphore_t"). Every multi-threaded kernel was affected (MCFE,
+    MIFE, sampling, Ring-LWE, dense LWE, ristretto255 MCFE), timing-dependent.
+    This hits `multiprocessing` with the `fork` start method and any library
+    that forks workers.
+  - *The fix:* in a process forked from one that has run a native kernel with
+    several threads, native calls now run with one thread. The native core
+    records the first process that runs several threads (by process id, with
+    no wait), so the rule covers direct `pyfe4ai._rust_native` calls and forks
+    not made through `os.fork`, and a later `set_threads(n)` in the child does
+    not lift it. A child of a process that never ran several threads keeps
+    them.
+  - *Second guard:* `parallel_for` joins every worker it starts (also when a
+    share panics) instead of waiting for them in the scope, so the calling
+    thread does not park there either.
+  - *Lazy tables:* the native tables built on first use (the Gaussian
+    sampler's tables, the BLS12-381 pairing generator, the group order and
+    the hash key of its dlog tables) are now built when the extension is
+    imported, and the sampler's tables without any wait. A contended first
+    build made a thread wait, which the pid rule could not see.
+  - *Cost:* native calls in a forked child are single-threaded, on every
+    platform: fork-based workers on Linux lose their native threads too.
+    Pre-fork servers and fork-based pools that want native threads per worker
+    should use `spawn` or `forkserver`. Importing the extension now builds the
+    tables: loading the extension module itself (after the `pyfe4ai` package,
+    which takes far longer) takes about 3.7 ms on an Apple M-series Mac, most
+    of it these tables.
+  - *Unchanged:* results; no randomness is cached across calls.
+  - The crash is specific to macOS (Linux waits on a futex, not
+    libdispatch); this was not run natively on Linux, so that is expected,
+    not verified.
+  - Regression tests: `tests/native/test_native_fork.py`, and
+    `rust/core/tests/fork_*.rs` for the lazy tables and the joined form. They
+    fail with SIGTRAP on macOS when the fix is reverted. See
+    `docs/threading.rst`, "Processes and fork".
+  - With 0.4.0, run multi-threaded native kernels only in processes that do
+    not fork afterwards, use the `spawn` or `forkserver` start method, or keep
+    one thread (`PYFE4AI_THREADS=1`).
+
+### Added
+
+- `pyfe4ai.backend.effective_threads()`: the thread count one native call
+  uses in this process (1 in a forked child of a process that ran several).
+  `backend_info()["threads"]` now reports it instead of the configured
+  count; the two differ only in such a child.
+
 ## [0.4.0] — 2026-10-26
 
 **Highlights.** An optional Rust extension runs the lattice, threshold,
@@ -2361,6 +2423,7 @@ before using them.
 Initial public release.
 
 [0.5.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.4.0...v0.5.0
+[0.4.1]: https://github.com/spire-studio/pyfe4ai/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.1.0...v0.2.0
