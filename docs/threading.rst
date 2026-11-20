@@ -214,8 +214,8 @@ answers for it (a subclass may share and persist the count, see the class).
 A :class:`~pyfe4ai.schemes.sife.cp_ab_pairing_keyissue.SIFECPABPairingKeyServer`
 (threshold key issuance) issues in the process that made it only: in a forked
 child :meth:`~pyfe4ai.schemes.sife.cp_ab_pairing_keyissue.SIFECPABPairingKeyServer.issue`
-raises :class:`~pyfe4ai.core.exceptions.FESchemeError`, and the server cannot
-be copied or pickled. A copy that issued would keep its own records of request
+raises :class:`~pyfe4ai.core.exceptions.FESchemeError`, and the server refuses
+``copy.copy``, ``copy.deepcopy`` and pickle (``TypeError``). A copy that issued would keep its own records of request
 digests, request ids and the approval history, apart from the parent's: the two
 could accept one digest for two contents, one ``(sid, id)`` twice, or twice
 what a stateful approval rule allows once. Make a key server in the one process

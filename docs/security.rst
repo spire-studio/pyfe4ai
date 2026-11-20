@@ -508,9 +508,10 @@ It holds only under conditions the library does not provide:
   only, and the library defines no format to persist them: a restarted server
   starts with none, approves earlier requests afresh, and gives a stateful
   rule an empty history (keep such state, e.g. counters, in the rule). A
-  server issues in the process that made it only and cannot be copied or
-  pickled. Neither can a dealer; a forked child's copy of a dealer holds the
-  same undelivered shares, so keep one dealer object, in one process.
+  server issues in the process that made it only, and refuses the usual ways
+  of copying it (``copy.copy``, ``copy.deepcopy`` and pickle raise
+  ``TypeError``); so does a dealer. A forked child's copy of a dealer holds
+  the same undelivered shares, so keep one dealer object, in one process.
 
 A corrupted server can make an issuance fail, not hand out a wrong key: the
 combiner checks every component with pairings, and any key that passes
@@ -619,8 +620,8 @@ identity, and only keys of that identity's instance decrypt it.
   every Python. The rule
   does not catch confusable identities (a Cyrillic ``а`` for a Latin ``a``) or
   spaces: mapping people to identities is the application's.
-* Keep one key centre object. It cannot be copied or pickled; a forked
-  child's copy keeps working and adds identities of its own, so parent and
+* Keep one key centre object. It refuses ``copy.copy``, ``copy.deepcopy``
+  and pickle (``TypeError``); a forked child's copy keeps working and adds identities of its own, so parent and
   child can publish two directories with different instances under one
   identity.
 * The directory, its checks and its records are experimental; the scheme

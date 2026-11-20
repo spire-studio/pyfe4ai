@@ -65,10 +65,11 @@ under these conditions, which the library does not provide:
   restarted server starts with none: requests answered before the restart are
   approved afresh, and a stateful rule sees an empty history. Persist what the
   rule needs (e.g. its counters) in the rule itself. A server works in the
-  process that made it only and refuses to be copied or pickled. A dealer
-  refuses to be copied or pickled too; a forked child's copy of it holds the
-  same undelivered shares, so delivering from parent and child hands a share
-  out twice: keep one dealer object, in one process.
+  process that made it only, and refuses the usual ways of copying it
+  (``copy.copy``, ``copy.deepcopy`` and pickle raise ``TypeError``); so does a
+  dealer. A forked child's copy of a dealer holds the same undelivered
+  shares, so delivering from parent and child hands a share out twice: keep
+  one dealer object, in one process.
 * **Exceptions reach the secrets.** Every exception that a key server's or
   the dealer's methods raise, an ordinary refusal included, references through
   its traceback the frames of that method and so the object, with its share
@@ -367,8 +368,8 @@ class SIFECPABPairingDealer:
             ``t = 1`` there is no threshold: every server's share is ``U``
             itself, and any one server issues keys alone.
 
-    A dealer cannot be copied or pickled (``TypeError``); keep one dealer
-    object, in one process (a forked child's copy holds the same
+    A dealer refuses ``copy.copy``, ``copy.deepcopy`` and pickle
+    (``TypeError``); keep one dealer object, in one process (a forked child's copy holds the same
     undelivered shares). Its exceptions reference it and its undelivered
     shares, and one in the middle of :meth:`setup` has ``U`` in a local
     variable: see "Exceptions reach the secrets" in the module docstring.

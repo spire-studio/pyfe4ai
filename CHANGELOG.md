@@ -20,7 +20,7 @@ compatibility).
   `pyfe4ai.core.formats.identity`, format id
   `IDENTITY_DIRECTORY_VERSION`. The key centre holds every identity's master
   key, ciphertexts name their identity, and there is no revocation. Keep one
-  key centre object: it cannot be copied or pickled.
+  key centre object: it refuses `copy`, `deepcopy` and pickle.
 
 - **Threshold key issuance for `sife/cp_ab_pairing` (experimental),
   capability `distributed_keygen`.** `SIFECPABPairingDealer` shares the
@@ -32,8 +32,8 @@ compatibility).
   `t` partial keys with pairings before returning an ordinary key. Public
   parameters, ciphertexts and decryption are unchanged. Requires
   authenticated, confidential channels between requester and servers. Records
-  in `pyfe4ai.core.formats.keyissue`. Dealers and key servers cannot be copied
-  or pickled.
+  in `pyfe4ai.core.formats.keyissue`. Dealers and key servers refuse `copy`,
+  `deepcopy` and pickle.
 - **Examples** `sife_cp_ab_pairing_keyissue_demo.py` and
   `ac_identity_directory_minimal.py`.
 
