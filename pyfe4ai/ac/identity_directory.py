@@ -166,8 +166,8 @@ class IdentityKeyCentre:
     Holds the master key of every identity it adds. Its state is in memory;
     the library defines no format for it. Safe to share between threads:
     adding an identity and building the directory hold the key centre's lock.
-    Keep one key centre object. It cannot be copied or pickled
-    (``TypeError``); a forked child's copy keeps working (with a new lock) and
+    Keep one key centre object. It refuses ``copy.copy``, ``copy.deepcopy``
+    and pickle (``TypeError``); a forked child's copy keeps working (with a new lock) and
     adds identities of its own, so parent and child can publish two
     directories with different instances under one identity.
 
