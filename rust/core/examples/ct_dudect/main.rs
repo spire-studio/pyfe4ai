@@ -807,9 +807,12 @@ impl Target for FacctWideSample {
 struct Garble {
     secret_is_x: bool,
     /// Diagnostics of the cropped tests: `garble_seed_null`, both classes fresh (A/A); `garble_seed_two`, class 1
-    /// a second fixed seed (two fixed secrets against each other).
+    /// a second fixed seed (two fixed secrets against each other); `garble_seed_hw_far` / `_near`, two fixed seeds
+    /// whose labels' Hamming weights are far apart / equal.
     null: bool,
     second: Option<u64>,
+    /// GARBLE_DIT=1: the timed call runs with PSTATE.DIT set (as FACCT_DIT for facct_values)
+    dit: bool,
     fixed: u64,
     fixed_x: u64,
     salt: [u8; 56],
@@ -830,9 +833,48 @@ impl Target for Garble {
         fill_seeded(ss, &mut self.seed);
     }
     fn run(&mut self) {
+        let dit = self.dit;
+        if dit {
+            set_dit(true);
+        }
         let g = garble::garble(data::CIRCUIT, garble::Mode::Hardwired, &self.salt, black_box(&self.x), black_box(&self.seed));
         black_box(g.map(|g| g.tables.len()).ok());
+        if dit {
+            set_dit(false);
+        }
     }
+}
+
+fn hamming(b: &[u8]) -> u32 {
+    b.iter().map(|v| v.count_ones()).sum()
+}
+
+/// `garble_seed_hw_*`: garbles GARBLE_HW_SEEDS candidate seeds (default 4096) with the fixed x and ranks them by the
+/// Hamming weight of their labels (delta, the key wires' 0-labels, the active data labels). `far`: the lightest
+/// against the heaviest; otherwise two neighbours at the median (equal or next weights). Prints both pairs' weights
+/// of the labels and of the tables.
+fn garble_hw_pair(far: bool, salt: &[u8], x: &[u8], rng: &mut Rng) -> (u64, u64) {
+    let n: usize = std::env::var("GARBLE_HW_SEEDS").ok().and_then(|v| v.parse().ok()).unwrap_or(4096);
+    assert!(n >= 2, "GARBLE_HW_SEEDS must be at least 2");
+    let mut seed = [0u8; 32];
+    let (mut label_bits, mut table_bits) = (0, 0);
+    let mut cands: Vec<(u32, u32, u64)> = Vec::with_capacity(n);
+    for _ in 0..n {
+        let s = rng.next() | 1;
+        fill_seeded(s, &mut seed);
+        let g = garble::garble(data::CIRCUIT, garble::Mode::Hardwired, salt, x, &seed).expect("garble");
+        label_bits = 8 * (g.delta.len() + g.key0.len() + g.data_active.len());
+        table_bits = 8 * g.tables.len();
+        cands.push((hamming(&g.delta) + hamming(&g.key0) + hamming(&g.data_active), hamming(&g.tables), s));
+    }
+    cands.sort_unstable();
+    let m = n / 2; // at least 1
+    let (a, b) = if far { (cands[0], cands[n - 1]) } else { (cands[m - 1], cands[m]) };
+    eprintln!("garble_seed_hw_{}: {} candidates; label bits {}, table bits {}; label weights min {} median {} max {}; \
+               class 0 seed {:#x} labels {} tables {}; class 1 seed {:#x} labels {} tables {}",
+              if far { "far" } else { "near" }, n, label_bits, table_bits, cands[0].0, cands[m].0, cands[n - 1].0,
+              a.2, a.0, a.1, b.2, b.0, b.1);
+    (a.2, b.2)
 }
 
 /// S3: the whole MCFE Ring-LWE layer encryption of 4096 elements (four chunks, n = 1024, 60-bit NTT prime), the
@@ -946,6 +988,8 @@ const TARGETS: &[(&str, &str, usize)] = &[
     ("garble_seed", "S13, seeded: half-gates garbling, the garbling seed (delta, labels) secret", 1),
     ("garble_seed_null", "A/A of garble_seed: a fresh seed in both classes", 1),
     ("garble_seed_two", "garble_seed with two fixed seeds, one per class", 1),
+    ("garble_seed_hw_far", "garble_seed_two with the lightest and the heaviest labels of GARBLE_HW_SEEDS seeds", 1),
+    ("garble_seed_hw_near", "garble_seed_two with two seeds of the median label weight", 1),
     ("rlwe_tensor", "S3, seeded: MCFE Ring-LWE encryption of 4096 elements (4 chunks), the plaintext secret", 1),
     ("shamir_seeded", "S4, seeded: Shamir sharing of 256 secrets, t = 3", 1),
     ("ntt_seeded", "S2, seeded: forward NTT, n = 1024, the polynomial drawn into the input buffer", 1),
@@ -1102,13 +1146,23 @@ fn make(name: &str, calls: usize, rng: &mut Rng) -> Box<dyn Target> {
                       seeds.len(), shape, buckets.len());
             Box::new(FacctWideSample { table, fixed: seeds[0], pool: seeds[1..].to_vec(), seed: [0; 32], mags, neg })
         }
-        "garble_x" | "garble_seed" | "garble_seed_null" | "garble_seed_two" => {
+        "garble_x" | "garble_seed" | "garble_seed_null" | "garble_seed_two" | "garble_seed_hw_far"
+        | "garble_seed_hw_near" => {
             let mut salt = [0u8; 56];
             fill_seeded(rng.next() | 1, &mut salt);
-            let (fixed, fixed_x) = (rng.next() | 1, rng.next() | 1);
-            let second = (name == "garble_seed_two").then(|| rng.next() | 1);
-            Box::new(Garble { secret_is_x: name == "garble_x", null: name == "garble_seed_null", second, fixed, fixed_x,
-                              salt, x: vec![0; data::CIRCUIT_N.div_ceil(8)], seed: [0; 32] })
+            let (mut fixed, fixed_x) = (rng.next() | 1, rng.next() | 1);
+            let mut second = (name == "garble_seed_two").then(|| rng.next() | 1);
+            let mut x = vec![0; data::CIRCUIT_N.div_ceil(8)];
+            if name.starts_with("garble_seed_hw_") {
+                fill_seeded(fixed_x, &mut x); // the x that prepare() fills for garble_seed
+                let (a, b) = garble_hw_pair(name == "garble_seed_hw_far", &salt, &x, rng);
+                fixed = a;
+                second = Some(b);
+            }
+            let dit = std::env::var("GARBLE_DIT").map(|v| v == "1").unwrap_or(false);
+            eprintln!("GARBLE_DIT={}", dit as u8);
+            Box::new(Garble { secret_is_x: name == "garble_x", null: name == "garble_seed_null", second, dit, fixed,
+                              fixed_x, salt, x, seed: [0; 32] })
         }
         "rlwe_tensor" => {
             let n = 1024;
