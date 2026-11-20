@@ -13,7 +13,7 @@
 //! `pow_secret_exp` is a control that must leak (square-and-multiply on a secret exponent), `shake256` one that
 //! should not.
 use pyfe4ai_core::rlwe::{self, EncKey, Noise, Randomness};
-use pyfe4ai_core::{facct, garble, keccak, osrand, shamir, AnyRing, Modulus, Word, U256};
+use pyfe4ai_core::{facct, facct_wide, garble, keccak, osrand, shamir, AnyRing, Modulus, Word, U256};
 
 #[allow(dead_code)]
 mod data {
@@ -468,6 +468,51 @@ impl Target for FacctSample {
     }
 }
 
+/// The wide FACCT table of data.rs (sigma of the tMCFE standard profile, k of 199 bits).
+fn facct_wide_table() -> facct_wide::WideTable {
+    let mut cdt = [U256::ZERO; facct::CDT_SIZE];
+    for (c, t) in cdt.iter_mut().zip(data::FACCT_WIDE_CDT.iter()) {
+        *c = u256_dec(t);
+    }
+    facct_wide::WideTable { k: data::FACCT_WIDE_K, y_bits: data::FACCT_WIDE_Y_BITS, cdt, c_mant: data::FACCT_WIDE_C_MANT,
+                            c_exp: data::FACCT_WIDE_C_EXP }
+}
+
+/// Values per wide sample (each is 8 words).
+const WIDE_COUNT: usize = 256;
+
+/// The shape of the wide FACCT sample of a seed: (candidates, y draws, sign draws); y = 0 has probability 2^-198.
+fn facct_wide_shape(table: &facct_wide::WideTable, seed: u64, mags: &mut [u64], neg: &mut [u8]) -> (u64, u64, u64) {
+    let mut raw = [0u8; 32];
+    fill_seeded(seed, &mut raw);
+    let mut xof = facct::XofBits::new(&raw);
+    let mut bits = Counted { inner: &mut xof, wide: 0, y: 0, sign: 0 };
+    facct_wide::sample(table, mags, neg, &mut bits, &|_, _| U256::ZERO);
+    (bits.wide / 2, bits.y, bits.sign)
+}
+
+/// S5, wide kernel: seeds of one shape (FACCT_SHAPE_SEEDS seeds, 40 000 by default, bucketed by shape; the largest
+/// bucket's first seed is the fixed one, class 1 picks among the rest): the values only.
+struct FacctWideSample {
+    table: facct_wide::WideTable,
+    fixed: u64,
+    pool: Vec<u64>,
+    seed: [u8; 32],
+    mags: Vec<u64>,
+    neg: Vec<u8>,
+}
+impl Target for FacctWideSample {
+    fn prepare(&mut self, class: usize, rng: &mut Rng) {
+        let i = (rng.next() % self.pool.len() as u64) as usize;
+        fill_seeded(if class == 0 { self.fixed } else { self.pool[i] }, &mut self.seed);
+    }
+    fn run(&mut self) {
+        let mut bits = facct::XofBits::new(black_box(&self.seed));
+        facct_wide::sample(&self.table, &mut self.mags, &mut self.neg, &mut bits, &|_, _| U256::ZERO);
+        black_box((&self.mags, &self.neg));
+    }
+}
+
 /// S13 (0.6): half-gates garbling of a CIRC v1 circuit (linear_threshold(4, 4, 4), mode hardwired). `garble_x`:
 /// the garbler's data bits x are the secret (fixed vs random), the garbling seed fresh in both classes;
 /// `garble_seed`: the 32-byte garbling seed is the secret (delta, every 0-label), x the same in both.
@@ -595,6 +640,7 @@ const TARGETS: &[(&str, &str, usize)] = &[
     ("facct_equal_trials", "S5: FACCT, two fixed seeds whose samples take as many getrandbits calls", 1),
     ("facct_equal_shape", "S5: FACCT, seeds of one shape (candidates, y draws, signs, y = 0 outputs): values only", 1),
     ("facct_y0_contrast", "S5: FACCT, one time shape; no y = 0 output vs the most found (the skipped test)", 1),
+    ("facct_wide_equal_shape", "S5: wide FACCT (k of 199 bits), 256 values, seeds of one shape: values only", 1),
     ("garble_x", "S13, seeded: half-gates garbling (mode hardwired), the garbler's data bits secret", 1),
     ("garble_seed", "S13, seeded: half-gates garbling, the garbling seed (delta, labels) secret", 1),
     ("rlwe_tensor", "S3, seeded: MCFE Ring-LWE encryption of 4096 elements (4 chunks), the plaintext secret", 1),
@@ -695,6 +741,21 @@ fn make(name: &str, calls: usize, rng: &mut Rng) -> Box<dyn Target> {
                 }
             };
             Box::new(FacctSample { table, fixed, pool, seed: [0; 32], out: vec![0; 1024], deferred: Default::default() })
+        }
+        "facct_wide_equal_shape" => {
+            let table = facct_wide_table();
+            let n: usize = std::env::var("FACCT_SHAPE_SEEDS").ok().and_then(|v| v.parse().ok()).unwrap_or(40_000);
+            let (mut mags, mut neg) = (vec![0u64; facct_wide::W * WIDE_COUNT], vec![0u8; WIDE_COUNT]);
+            let mut buckets = std::collections::BTreeMap::<(u64, u64, u64), Vec<u64>>::new();
+            for _ in 0..n {
+                let seed = rng.next() | 1;
+                buckets.entry(facct_wide_shape(&table, seed, &mut mags, &mut neg)).or_default().push(seed);
+            }
+            let (shape, seeds) = buckets.iter().max_by_key(|(_, s)| s.len()).expect("seeds");
+            assert!(seeds.len() >= 2, "no two seeds of one shape: raise FACCT_SHAPE_SEEDS");
+            eprintln!("facct_wide_equal_shape: {} seeds of shape (candidates, y draws, signs) = {:?} out of {} shapes",
+                      seeds.len(), shape, buckets.len());
+            Box::new(FacctWideSample { table, fixed: seeds[0], pool: seeds[1..].to_vec(), seed: [0; 32], mags, neg })
         }
         "garble_x" | "garble_seed" => {
             let mut salt = [0u8; 56];
