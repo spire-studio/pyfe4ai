@@ -499,8 +499,8 @@ It holds only under conditions the library does not provide:
   starts with none, approves earlier requests afresh, and gives a stateful
   rule an empty history (keep such state, e.g. counters, in the rule). A
   server issues in the process that made it only and cannot be copied or
-  pickled. A copy of a dealer holds the same undelivered shares, so keep one
-  dealer object.
+  pickled. Neither can a dealer; a forked child's copy of a dealer holds the
+  same undelivered shares, so keep one dealer object, in one process.
 
 A corrupted server can make an issuance fail, not hand out a wrong key: the
 combiner checks every component with pairings, and any key that passes

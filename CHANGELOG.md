@@ -32,7 +32,8 @@ compatibility).
   `t` partial keys with pairings before returning an ordinary key. Public
   parameters, ciphertexts and decryption are unchanged. Requires
   authenticated, confidential channels between requester and servers. Records
-  in `pyfe4ai.core.formats.keyissue`.
+  in `pyfe4ai.core.formats.keyissue`. Dealers and key servers cannot be copied
+  or pickled.
 - **Examples** `sife_cp_ab_pairing_keyissue_demo.py` and
   `ac_identity_directory_minimal.py`.
 

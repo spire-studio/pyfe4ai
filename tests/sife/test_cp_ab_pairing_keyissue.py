@@ -687,6 +687,23 @@ def test_int2_a_key_server_copied_into_a_forked_child_refuses_without_hanging():
     comb.combine(r, [key_servers[s].issue(r, "carol") for s in ("a", "b")])
 
 
+def test_a_dealer_cannot_be_copied_or_pickled():
+    """The docs said a copy of a dealer hands its undelivered shares out again; copy.copy shared them (each was
+    delivered once, from either object) and deepcopy / pickle failed on the key generator. All three are refused,
+    and the original still delivers every share once."""
+    import pickle
+
+    config = {"eta": ETA, "bound_x": 10, "bound_y": 10, "universe": UNIVERSE, "pairing_group_param": GROUP}
+    dealer = SIFECPABPairingDealer(config, ["a", "b"], 2)
+    dealer.setup()
+    for attempt in (lambda: copy.copy(dealer), lambda: copy.deepcopy(dealer), lambda: pickle.dumps(dealer)):
+        with pytest.raises(TypeError, match="keep one dealer object"):
+            attempt()
+    assert dealer.server_share("a")["server"] == "a" and dealer.server_share("b")["server"] == "b"
+    with pytest.raises(FEKeyError, match="delivered already"):
+        dealer.server_share("a")
+
+
 def test_a_key_server_cannot_be_copied_or_pickled(system):
     import pickle
 

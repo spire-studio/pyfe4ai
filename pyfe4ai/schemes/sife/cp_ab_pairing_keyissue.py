@@ -65,9 +65,10 @@ under these conditions, which the library does not provide:
   restarted server starts with none: requests answered before the restart are
   approved afresh, and a stateful rule sees an empty history. Persist what the
   rule needs (e.g. its counters) in the rule itself. A server works in the
-  process that made it only and refuses to be copied or pickled. A copy of a
-  dealer holds the same undelivered shares, so delivering from two copies
-  hands a share out twice: keep one dealer object.
+  process that made it only and refuses to be copied or pickled. A dealer
+  refuses to be copied or pickled too; a forked child's copy of it holds the
+  same undelivered shares, so delivering from parent and child hands a share
+  out twice: keep one dealer object, in one process.
 
 A corrupted server can make an issuance fail but not hand the user a wrong
 key: :meth:`~SIFECPABPairingKeyCombiner.combine` checks every component of
@@ -351,6 +352,10 @@ class SIFECPABPairingDealer:
         threshold: ``t``, the servers per request (``1 <= t <= s``). With
             ``t = 1`` there is no threshold: every server's share is ``U``
             itself, and any one server issues keys alone.
+
+    A dealer cannot be copied or pickled (``TypeError``); keep one dealer
+    object, in one process (a forked child's copy holds the same
+    undelivered shares).
     """
 
     def __init__(self, config: dict, key_servers: list, threshold: int) -> None:
@@ -437,6 +442,17 @@ class SIFECPABPairingDealer:
     def get_decryption_keys(self, *args, **kwargs):
         """Refused: the master key is shared among the key servers."""
         raise FEKeyError("the master key is shared among key servers: request keys from them")
+
+    # copy.copy would share the undelivered shares with the original (each delivered once, from either);
+    # deepcopy and pickle failed on the key generator. All three are refused with one message.
+    def __copy__(self):
+        raise TypeError("a dealer cannot be copied: keep one dealer object")
+
+    def __deepcopy__(self, memo):
+        raise TypeError("a dealer cannot be copied: keep one dealer object")
+
+    def __reduce__(self):
+        raise TypeError("a dealer cannot be pickled: keep one dealer object")
 
 
 class SIFECPABPairingKeyServer:
