@@ -34,6 +34,10 @@ extensions = [
 
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
+# references the nitpicky build (-n) cannot resolve and that are not ours: the typing alias that
+# sphinx-autodoc-typehints writes for Optional / Union annotations
+nitpick_ignore = [("py:data", "typing.Union")]
+
 # -- Options for autodoc -----------------------------------------------------
 autodoc_member_order = "bysource"
 autodoc_typehints = "description"

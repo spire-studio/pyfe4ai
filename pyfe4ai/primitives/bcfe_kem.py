@@ -25,32 +25,34 @@ those of the functions below: :func:`kem_mask`, :func:`unselected_pk`,
 * **Unselected positions (h')** -- ``P[j, 1 - w_j] = H_P(setup_digest,
   slot_id, j, k)`` (:func:`unselected_pk`, RFC 9380 ``hash_to_ristretto255``
   with a DST of its own), ``k`` a 128-bit secret per slot: nobody knows
-  their discrete logarithms, so there is no unselected secret key to erase
-  (I4). The center keeps ``k`` private and hands it to the key holder,
-  who recomputes the unselected positions (:func:`unselected_ok`, the h'
-  part of SS10's CheckAuth, I13); ``k`` is never published (I14).
+  their discrete logarithms, so there is no unselected secret key to erase.
+  The center keeps ``k`` private and hands it to the key holder, who
+  recomputes the unselected positions (:func:`unselected_ok`, the h' part
+  of SS10's CheckAuth); ``k`` is never published (with it anyone could tell
+  the unselected positions from the selected ones, and so read ``w``).
 * **Issuance** -- h1 (:func:`new_slot`): the center draws the ``m + 1``
   selected secret keys; h2 (:func:`place_slot`): the holder hands in its
-  ``m + 1`` public keys, which must decode and not be the identity (I8), and
+  ``m + 1`` public keys, which must decode and not be the identity, and
   the center places them at ``(j, w_j)`` and ``(g, 0)``.
 * **Randomness** -- explicit: ``rand(n)`` (issuance) and the 32-byte
   ``seed`` of a (ciphertext, slot) (:func:`encrypt_slot`), which yields,
   expanded together with the instance salt, both the garbling
   (:func:`~pyfe4ai.primitives.garbling.expand_seed`) and ``r``
   (:func:`ephemeral_scalar`). The backend operations ``bcfe_*`` draw them
-  from the operating system for every call (I1); a fixed seed is for the
-  tests only (I16).
+  from the operating system for every call; a fixed seed is for the tests
+  only.
 
-Requirements of the security argument implemented here:
-I1 (fresh ``Delta``, labels and ``r`` per (ciphertext, slot) from the
-caller's seed), I2 and I15 (``H_K``, ``H_P`` and the setup digest are
-domain-separated and read fixed-length or length-prefixed fields; ``H_P``
-takes the fixed setup digest, not the pp digest), I3 (the g bit has the one
-position ``(g, 0)``; ``L_g^1`` is never encrypted or sent, and this module
-never forms it -- inside the garbling it is only the zero label of the
-output of ``INV(g)``, by the free INV gate), I4 / h' (no unselected secret
-key exists), I8 (h2 public keys decode and are not the identity), I13 (the
-h' part of CheckAuth, with the length of the table).
+What the security argument requires of this module: fresh ``Delta``,
+labels and ``r`` for every (ciphertext, slot), from the caller's seed;
+``H_K``, ``H_P`` and the setup digest domain-separated, each reading
+fixed-length or length-prefixed fields (``H_P`` takes the fixed setup
+digest, not the pp digest); the g bit has the one position ``(g, 0)``:
+``L_g^1`` is never encrypted or sent, and this module never forms it
+(inside the garbling it is only the zero label of the output of
+``INV(g)``, by the free INV gate); no unselected secret key exists (h');
+h2 public keys decode and are not the identity; the key holder's check of
+the unselected positions (the h' part of CheckAuth) also checks the length
+of the table.
 
 Scalars cross this module as 32 little-endian bytes below the group order
 ``l``; points as their 32-byte canonical encodings (RFC 9496). The selected
@@ -372,8 +374,7 @@ def ephemeral_scalar(salt: bytes, seed: bytes) -> int:
     The salt is bound in so that one seed used for two (ciphertext, slot)
     instances still gives unrelated ``r``: defence in depth against a
     repeated seed. Design choice; the alternative was the seed alone,
-    relying only on a fresh seed per instance from the operating system
-    (I1).
+    relying only on a fresh seed per instance from the operating system.
 
     Raises:
         TypeError: If *salt* or *seed* is not bytes.
@@ -391,7 +392,7 @@ def ephemeral_scalar(salt: bytes, seed: bytes) -> int:
 def instance_salt(pp_digest: bytes, ct_nonce: bytes, slot_id: int) -> bytes:
     """The 56-byte instance salt of the gate hash, ``pp_digest || ct_nonce ||
     u64(slot_id)``: it binds the gate hash, the seed expansion and ``r``
-    to the instance (I11, the gate hash takes the instance salt).
+    to the instance.
 
     Raises:
         TypeError, ValueError: For fields of another type or length.
@@ -459,7 +460,7 @@ def place_slot(setup_digest: bytes, slot_id: int, w_bits, holder_pks: bytes, ran
     unselected positions are derived from a fresh ``k``.
 
     Every holder key must be a canonical encoding of a group element other
-    than the identity (I8); no proof of knowledge of its secret key is asked
+    than the identity; no proof of knowledge of its secret key is asked
     (the label KEM is secure for arbitrary public keys). Randomness: the 16
     bytes of ``k`` from ``rand(16)``, after the inputs are checked (the
     backend operation ``bcfe_place_slot`` reads its 16 bytes after checking
@@ -492,7 +493,7 @@ def place_slot(setup_digest: bytes, slot_id: int, w_bits, holder_pks: bytes, ran
 
 
 def unselected_ok(setup_digest: bytes, slot_id: int, w_bits, k: bytes, pks: bytes, m: int | None = None) -> bool:
-    """The h' part of CheckAuth (I13): whether the table *pks* has exactly
+    """The h' part of CheckAuth: whether the table *pks* has exactly
     ``2m + 1`` entries and every unselected position ``(j, 1 - w_j)`` holds
     ``H_P(setup_digest, slot_id, j, k)``. The scheme checks the rest: the
     holder's own keys at ``(j, w_j)`` and ``(g, 0)``. *w_bits* and *k* are
@@ -563,7 +564,7 @@ def encrypt_slot(circuit: bytes, mode: str, pp_digest: bytes, ct_nonce: bytes, s
     the table: ``c[j, b] = L_j^b xor H_K(pp_digest, ct_nonce, slot_id, j,
     b, R, r P[j, b])`` with ``L_j^1 = L_j^0 xor Delta`` for ``j = 0 .. m -
     1``, then ``c[m, 0]`` alone: ``L_g^1`` is never encrypted or sent, nor
-    formed here (I3).
+    formed here.
 
     Args:
         circuit: The ``CIRC v1`` encoding of ``guard(C)`` (``m + 1`` key wires).
@@ -571,8 +572,8 @@ def encrypt_slot(circuit: bytes, mode: str, pp_digest: bytes, ct_nonce: bytes, s
         pp_digest: 32 bytes; ct_nonce: 16 bytes; slot_id: in ``[0, 2^64)``.
         x_bits: The ``n`` data bits, a list of 0 / 1 or packed (secret).
         pks: The slot's table, ``32 B x (2m + 1)``.
-        seed: 32 bytes, fresh from a CSPRNG for every (ciphertext, slot)
-            (I1); fixed only in tests (I16). Secret.
+        seed: 32 bytes, fresh from a CSPRNG for every (ciphertext, slot);
+            fixed only in tests. Secret.
 
     Returns:
         ``{"R": 32 B, "label_cts": 16 B x (2m + 1), "tables": 16 B x table
