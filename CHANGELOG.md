@@ -160,10 +160,12 @@ compatibility).
   (`tests/api/test_threat_model.py`).
 - New pages `docs/compatibility.rst` and `docs/deprecations.rst`;
   `docs/security.rst` gains "Trust assumptions in brief" and "Side channels"
-  (the native paths checked, how, and what was not checked): no checked path
-  differed by its secret values beyond the control (the exact Gaussian
-  sampler after the change under *Security*), and the label KEM of
-  `bcfe/gc_ristretto255` was timed from Python (`tools/ct_bcfe.py`).
+  (the native paths checked, how, and what was not checked): no checked
+  path's mean time differed by its secret values beyond the control (the
+  exact Gaussian sampler after the change under *Security*), but the cropped
+  tests of the garbling with the seed secret flagged in most runs, so a leak
+  through the shape of its time distribution is not excluded; the label KEM
+  of `bcfe/gc_ristretto255` was timed from Python (`tools/ct_bcfe.py`).
 - README Known Issues and `SECURITY.md` state the conditions of the 0.6 and
   0.7 experimental parts: `bcfe/gc_ristretto255` assumes an honest
   encryptor, the threshold key issuance needs mutually authenticated,
