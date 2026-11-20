@@ -118,8 +118,14 @@ and what is out of scope; the points below are its summary.
   exact threshold), so its time follows the number of candidates and the
   order of its decisions, which do not depend on the values it returns, and
   replaying one sample's decisions with other values did not change it
-  measurably (the code of 0.4.0 to 0.5.0 differed by about 4 %). The library
-  does not set the processor's data-independent-timing mode (DIT).
+  measurably (the code of 0.4.0 to 0.5.0 differed by about 4 %). In the
+  native garbling of `bcfe/gc_ristretto255`, the shape of the time
+  distribution depends on the secret seed, while the means stay within the
+  control; the mechanism was not found, and whether this can be exploited
+  was not evaluated (see
+  [Side channels](https://spire-studio.github.io/pyfe4ai/docs/security.html#side-channels)).
+  The library does not set the processor's data-independent-timing mode
+  (DIT).
 - **ML adapter.** `FESchemeWrapper` runs the key generator and holds the
   master key (for `mcfe/ring_lwe_threshold` it also runs the decryption
   servers): one trust domain, meant for experiments, not for deployments.
