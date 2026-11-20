@@ -127,10 +127,11 @@ compatibility).
   exact threshold), and 5 widths x 400 seeds match the Python reference.
   Measured (`docs/security.rst`, *Side channels*): replaying one sample's
   decisions with other values, the old sampler differs by about -4 %, the new
-  one by -0.0054 % to +0.0038 % for four fixed scripts (each interval
-  containing 0); in the wide kernel seeds of one shape differ by +0.044 %
-  before and -0.0005 % [-0.0089, +0.0079] after (a test that cannot separate
-  the values from the order of the decisions). The time still follows the
+  one by +0.0040 % [-0.0013, +0.0093] on the release code and by -0.0054 % to
+  +0.0038 % for four more fixed scripts (each interval containing 0); in the
+  wide kernel seeds of one shape differ by +0.044 % before and by -0.0104 %
+  and -0.0005 % in two runs after (a test that cannot separate the values
+  from the order of the decisions). The time still follows the
   number of candidates and the order of the decisions, neither of which
   depends on the values returned. Cost: 1 to 15 % per sample (the most at
   small widths, where one candidate in four had `y = 0`).
