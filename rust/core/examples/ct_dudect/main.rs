@@ -806,6 +806,10 @@ impl Target for FacctWideSample {
 /// `garble_seed`: the 32-byte garbling seed is the secret (delta, every 0-label), x the same in both.
 struct Garble {
     secret_is_x: bool,
+    /// Diagnostics of the cropped tests: `garble_seed_null`, both classes fresh (A/A); `garble_seed_two`, class 1
+    /// a second fixed seed (two fixed secrets against each other).
+    null: bool,
+    second: Option<u64>,
     fixed: u64,
     fixed_x: u64,
     salt: [u8; 56],
@@ -814,7 +818,12 @@ struct Garble {
 }
 impl Target for Garble {
     fn prepare(&mut self, class: usize, rng: &mut Rng) {
-        let secret = seed_of(class, self.fixed, rng);
+        let fresh = seed_of(class, self.fixed, rng); // the fixed seed for class 0, a fresh one for class 1
+        let secret = match (self.null, self.second, class) {
+            (true, _, _) => rng.next() | 1,
+            (false, Some(b), 1) => b,
+            _ => fresh,
+        };
         let other = rng.next() | 1;
         let (xs, ss) = if self.secret_is_x { (secret, other) } else { (self.fixed_x, secret) };
         fill_seeded(xs, &mut self.x);
@@ -935,6 +944,8 @@ const TARGETS: &[(&str, &str, usize)] = &[
     ("facct_wide_equal_shape", "S5: wide FACCT (k of 199 bits), 256 values, seeds of one shape: values only", 1),
     ("garble_x", "S13, seeded: half-gates garbling (mode hardwired), the garbler's data bits secret", 1),
     ("garble_seed", "S13, seeded: half-gates garbling, the garbling seed (delta, labels) secret", 1),
+    ("garble_seed_null", "A/A of garble_seed: a fresh seed in both classes", 1),
+    ("garble_seed_two", "garble_seed with two fixed seeds, one per class", 1),
     ("rlwe_tensor", "S3, seeded: MCFE Ring-LWE encryption of 4096 elements (4 chunks), the plaintext secret", 1),
     ("shamir_seeded", "S4, seeded: Shamir sharing of 256 secrets, t = 3", 1),
     ("ntt_seeded", "S2, seeded: forward NTT, n = 1024, the polynomial drawn into the input buffer", 1),
@@ -1091,11 +1102,13 @@ fn make(name: &str, calls: usize, rng: &mut Rng) -> Box<dyn Target> {
                       seeds.len(), shape, buckets.len());
             Box::new(FacctWideSample { table, fixed: seeds[0], pool: seeds[1..].to_vec(), seed: [0; 32], mags, neg })
         }
-        "garble_x" | "garble_seed" => {
+        "garble_x" | "garble_seed" | "garble_seed_null" | "garble_seed_two" => {
             let mut salt = [0u8; 56];
             fill_seeded(rng.next() | 1, &mut salt);
-            Box::new(Garble { secret_is_x: name == "garble_x", fixed: rng.next() | 1, fixed_x: rng.next() | 1, salt,
-                              x: vec![0; data::CIRCUIT_N.div_ceil(8)], seed: [0; 32] })
+            let (fixed, fixed_x) = (rng.next() | 1, rng.next() | 1);
+            let second = (name == "garble_seed_two").then(|| rng.next() | 1);
+            Box::new(Garble { secret_is_x: name == "garble_x", null: name == "garble_seed_null", second, fixed, fixed_x,
+                              salt, x: vec![0; data::CIRCUIT_N.div_ceil(8)], seed: [0; 32] })
         }
         "rlwe_tensor" => {
             let n = 1024;
