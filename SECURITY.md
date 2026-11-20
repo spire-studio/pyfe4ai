@@ -5,7 +5,7 @@
 PyFE4AI is a **research library**. Its schemes are reviewed internally
 against their papers (each has a review status), but it has **not undergone
 an external security audit** and is **not recommended for production use**;
-an audit package is planned for the release. The default `toy` parameters are not
+the [audit package](https://spire-studio.github.io/pyfe4ai/docs/audit.html) is the entry point for one. The default `toy` parameters are not
 secure, and nothing is guaranteed to be constant-time (the documentation's
 *Side channels* section lists what was checked).
 
@@ -32,6 +32,10 @@ Responsible reporting of security issues is appreciated, especially for:
 - dependency-related vulnerabilities
 
 ## Security Model
+
+The [threat model](https://spire-studio.github.io/pyfe4ai/docs/threat_model.html)
+gathers, family by family, who is trusted, what each scheme reveals by design
+and what is out of scope; the points below are its summary.
 
 - **What is protected.** The schemes protect inputs against the parties named
   in their papers. Every registered scheme carries a review status

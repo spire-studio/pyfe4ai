@@ -37,8 +37,8 @@ aggregation and encrypted linear inference, and an optional Rust core.
 > production use.** Every scheme carries a review status (see
 > [Scheme Status](#scheme-status)): most were checked internally against
 > their papers, some are our own constructions or not yet reviewed, and two
-> are known to be insecure. No external audit has taken place; an audit
-> package is planned for the release. The default `toy` security profile is
+> are known to be insecure. No external audit has taken place; the
+> [audit package](https://spire-studio.github.io/pyfe4ai/docs/audit.html) is the entry point for one. The default `toy` security profile is
 > **not secure**: pass `security_profile="standard"` (see
 > [Security Profiles](#security-profiles)). Nothing is guaranteed to be
 > constant-time: the Python layer is not, and in the native code only the
@@ -381,7 +381,9 @@ Two registered schemes are known to be insecure, `mcfe/kp_ab_pairing` and
 generators and crypto objects emit a `pyfe4ai.FESecurityWarning`, and
 `security_profile="standard"` refuses them). The ML adapter's policy-gated
 aggregation runs on `mcfe/kp_ab_pairing`, so it is for experiments only.
-The following limitations remain as well:
+The [threat model](https://spire-studio.github.io/pyfe4ai/docs/threat_model.html)
+says, family by family, who is trusted, what each scheme reveals by design and
+what is out of scope. The following limitations remain as well:
 
 | Issue | Affected | In short |
 |---|---|---|

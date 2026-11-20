@@ -119,8 +119,17 @@ compatibility).
 ### Documentation — 1.0 freeze
 
 - README and `SECURITY.md`: the security notice rewritten (not externally
-  audited, an audit package planned for the release; `toy` not secure; nothing
+  audited, with a link to the audit package; `toy` not secure; nothing
   guaranteed constant-time) and the stability promise of the stable tier.
+- New page `docs/audit.rst`, the audit package: the scope by priority (the
+  stable tier first, every registered scheme placed, checked against the
+  registry by `tests/api/test_audit_package.py`), the material, the questions
+  for auditors, and the conclusions and fixes of the internal reviews. The
+  results of an external audit will be published there and in `SECURITY.md`.
+- New page `docs/threat_model.rst`: who is trusted, what each family reveals
+  by design and what is out of scope, family by family, and the security
+  notions checked against the papers; README and `SECURITY.md` link to it
+  (`tests/api/test_threat_model.py`).
 - New pages `docs/compatibility.rst` and `docs/deprecations.rst`;
   `docs/security.rst` gains "Trust assumptions in brief" and "Side channels"
   (the native paths checked, how, and what was not checked). The native
