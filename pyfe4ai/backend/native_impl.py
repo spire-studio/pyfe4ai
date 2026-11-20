@@ -870,7 +870,7 @@ class NativeBackend(PythonBackend):
 
     def gc_garble(self, circuit: bytes, mode: str, salt: bytes, x: bytes) -> dict:
         # the seed first, before the inputs are checked (as the reference reads it): the
-        # tests' 32 bytes, or None and the extension reads the OS source (I1)
+        # tests' 32 bytes, or None and the extension reads the OS source
         seed = random_input(32)
         args = (self._gc_bytes(circuit, "circuit"), self._gc_mode(mode), self._gc_bytes(salt, "salt"),
                 self._gc_bytes(x, "x"))
@@ -913,7 +913,7 @@ class NativeBackend(PythonBackend):
     @staticmethod
     def _bcfe_draw(nbytes: int):
         """The tests' *nbytes* random bytes (:func:`random_input`), or ``None``:
-        the extension reads the OS source itself (I1)."""
+        the extension reads the OS source itself."""
         data = random_input(nbytes)
         if data is None:
             return None

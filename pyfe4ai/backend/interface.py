@@ -621,7 +621,7 @@ class Backend(abc.ABC):
         """Issue a slot from the key holder's public keys (h2 with h'):
         :func:`~pyfe4ai.primitives.bcfe_kem.place_slot`. The holder's keys go
         to ``(j, w_j)`` and ``(g, 0)``; each must be the canonical encoding
-        of a group element other than the identity (I8, no proof of
+        of a group element other than the identity (no proof of
         knowledge asked); the unselected positions are derived from a fresh
         ``k``.
 
@@ -654,7 +654,7 @@ class Backend(abc.ABC):
     @abc.abstractmethod
     def bcfe_unselected_ok(self, setup_digest: bytes, slot_id: int, w: bytes, k: bytes, pks: bytes, *,
                            m: int) -> bool:
-        """The h' part of the key holder's CheckAuth (I13):
+        """The h' part of the key holder's CheckAuth:
         :func:`~pyfe4ai.primitives.bcfe_kem.unselected_ok`. ``True`` if the
         table *pks* has exactly ``2m + 1`` entries (``32 (2m + 1)`` bytes)
         and every unselected position ``(j, 1 - w_j)`` holds
@@ -682,7 +682,7 @@ class Backend(abc.ABC):
         wires are encrypted under the table with one ephemeral key ``R``:
         ``c[j, b] = L_j^b xor H_K(pp_digest, ct_nonce, slot_id, j, b, R, r
         P[j, b])`` for ``j = 0 .. m - 1``, ``b = 0, 1``, then ``c[m, 0]``
-        alone (``L_g^1`` is never encrypted or sent, I3).
+        alone (``L_g^1`` is never encrypted or sent).
 
         Args:
             circuit: The ``CIRC v1`` encoding of ``guard(C)`` (``m + 1`` key
@@ -704,7 +704,7 @@ class Backend(abc.ABC):
         salt ``pp_digest || ct_nonce || u64(slot_id)``: the garbling
         (:func:`~pyfe4ai.primitives.garbling.expand_seed`) and ``r``
         (:func:`~pyfe4ai.primitives.bcfe_kem.ephemeral_scalar`). There is no
-        seed parameter: a fixed seed is for the tests only (I16). The same
+        seed parameter: a fixed seed is for the tests only. The same
         seed gives the same bytes in both implementations.
 
         Secrets: *x*, the seed, ``Delta``, ``r`` and the zero labels: none of

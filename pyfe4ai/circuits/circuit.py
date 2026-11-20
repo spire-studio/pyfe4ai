@@ -57,9 +57,9 @@ on ``K`` wires only is computed by the garbler in the clear and leaves
 nothing in the ciphertext.
 
 The kinds, the tables and their number depend on the circuit and the mode
-only, never on the values of ``w`` or ``x`` (requirement I12 of the 0.6
-security argument): :meth:`Circuit.kinds` takes no input values, and
-nothing here folds or skips a gate because of a value.
+only, never on the values of ``w`` or ``x``, so the tables of a
+ciphertext show nothing about them: :meth:`Circuit.kinds` takes no input
+values, and nothing here folds or skips a gate because of a value.
 """
 
 from __future__ import annotations

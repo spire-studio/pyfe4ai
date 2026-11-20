@@ -12,7 +12,7 @@ gives the same values). In mode ``"hardwired"`` the data wires are known to
 the garbler, so the Booth digits cost nothing and every partial-product
 selection is a generator half-gate of ZRE15 (Zahur, Rosulek and Evans,
 EUROCRYPT 2015): one table entry instead of two. The wire kinds, and so the
-table layout, depend on the circuit only (requirement I12).
+table layout, depend on the circuit only, never on ``x``.
 
 Arithmetic is exact: accumulators are wide enough that no sum overflows
 (``acc_bits = bw + bx + ceil(log2(n + 1))`` for a sum of ``n`` products of a

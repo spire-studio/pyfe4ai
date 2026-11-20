@@ -928,8 +928,8 @@ Rosulek and Evans (ZRE15, EUROCRYPT 2015, Fig. 2), with changes of its own:
 one instance (*slot*) per issued function, the data bits folded into the
 garbling by default (``data_wires = "hardwired"``), the public keys of the
 unselected positions hashed to the group, and an instance salt in the gate
-hash. Its security argument is the project's own: the 0.6 security argument,
-reviewed internally twice; no external review.
+hash. Its security argument is the project's own, written for this scheme
+and reviewed internally twice; no external review.
 
 *What is claimed.* IND security in the random-oracle model -- for the gate
 hash, the hash that masks the labels and the hash to the group -- under the

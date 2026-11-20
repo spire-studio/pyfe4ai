@@ -327,7 +327,7 @@ class PythonBackend(Backend):
         from pyfe4ai import backend as _b
         from pyfe4ai.primitives import garbling
 
-        override = _b._random_override  # the tests' bytes, else one fresh seed from the OS (I1)
+        override = _b._random_override  # the tests' bytes, else one fresh seed from the OS
         seed = os.urandom(garbling.SEED_BYTES) if override is None else override(garbling.SEED_BYTES)
         if not isinstance(x, (bytes, bytearray, memoryview)):
             raise TypeError("x must be the packed data bits (bytes), not {}".format(type(x).__name__))
@@ -345,7 +345,7 @@ class PythonBackend(Backend):
     def _bcfe_random(nbytes: int) -> bytes:
         """The *nbytes* random bytes of one ``bcfe_*`` call, read at once: the
         tests' bytes (``pyfe4ai.backend._random_override``), else the
-        operating system (I1)."""
+        operating system."""
         import os
 
         from pyfe4ai import backend as _b
