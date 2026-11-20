@@ -911,8 +911,8 @@ processor's data-independent-timing mode (DIT) set, the same three pairs were
 clean (0.89, 1.51 and 1.12; one of these runs was noisier and says less), and
 the garbling took about 8 % longer. The flags did not follow the labels'
 Hamming weight: of three pairs far apart in weight one flagged, of three pairs
-of equal weight two did. This points to data-dependent behaviour of the
-processor that DIT turns off, not to a secret-dependent branch or memory
+of equal weight two did. This suggests data-dependent behaviour of the
+processor that DIT turns off rather than a secret-dependent branch or memory
 access in the code; which behaviour it is was not identified. Three runs per
 setting on one machine is little, and other processors may differ. Whether
 the dependence can be exploited was not evaluated.

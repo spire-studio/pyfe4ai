@@ -176,7 +176,9 @@ Questions for the auditors
        thresholds and the list of exceptions. Please look first at the
        garbling with the seed secret: the shape of its time distribution
        depends on the seed (fresh seeds in both classes were clean in three
-       runs, two fixed seeds against each other flagged in all three) while
+       runs, two fixed seeds against each other flagged in five of six runs
+       (three pairs, two runs each), and with DIT set the same pairs were
+       clean in three runs) while
        every mean stayed within the control; the mechanism was not found, and
        whether this can be exploited was not evaluated.
      - native core
