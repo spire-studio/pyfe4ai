@@ -568,8 +568,10 @@ def discrete_gaussian_facct(sigma, count: int, rng=None) -> list[gp.mpz]:
     branches on secret data except through the comparisons above. CPython
     and big-integer arithmetic still take data-dependent time, so this
     function is *not* constant-time; it is the reference for the native
-    implementation (``rust/core/src/facct.rs``), which since 1.0 does not
-    branch on the values it draws (the documentation's *Side channels*). It
+    implementation (``rust/core/src/facct.rs``), which since 1.0 branches on
+    the values it draws only at its decisions (redraws, rejections, -0 and the
+    rare deferral to the exact threshold), not on the values it returns (the
+    documentation's *Side channels*). It
     is also several times slower than the
     rounded sampler in Python.
 

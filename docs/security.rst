@@ -44,9 +44,9 @@ below add what each family assumes on top.
   the key centre of the identity directory) and the dealer of the threshold
   key issuance (its undelivered shares) are run from one copy at a time. The
   key servers, the dealer and the key centre refuse the ordinary ways of
-  copying (``copy``, ``deepcopy``, pickle), but a child forked from their
-  process holds a second copy that goes on by itself: keep one object, in
-  one process.
+  copying (``copy``, ``deepcopy``, pickle); a child forked from the dealer's
+  or the key centre's process holds a second copy that goes on by itself (a
+  key server's copy refuses to issue): keep one object, in one process.
 * **Parameters.** ``toy`` is not secure; ``standard`` aims at 128 bits (the
   pairing schemes on BLS12-381 at about 120 to 126).
 * **Not covered:** chosen-ciphertext attacks and tampering, malicious
@@ -763,16 +763,18 @@ before 1.0 in two ways:
   code, which draws the secret from a seed into the same buffer, the fixed
   class reusing one seed; in the *scalar* design the secret is one value.
   An earlier design, which copied the inputs of the two classes from two
-  buffers, gave a false signal for the signed reduction; no row below rests
-  on it.
+  buffers, gave a false signal for the signed reduction, and a first version
+  of the replay test of the exact Gaussian sampler did the same; no number
+  below for the current code rests on either (the old sampler's is marked).
 
 No timing difference that depends on the secret values beyond the control's
 was found within the measured sample sizes. That is evidence for these paths
-on this machine and compiler, not a guarantee. The masks that replace
-branches rest on an optimisation barrier that holds on x86-64 and aarch64
-(elsewhere a weaker one); the assembly was read on aarch64, and the x86-64
-code of the exact Gaussian sampler only as generated from the same LLVM IR by
-another compiler (clang), not by rustc's own backend. The library does not
+on this machine and compiler, not a guarantee. The assembly was read on
+aarch64. The masks of the exact Gaussian sampler rest on an optimisation
+barrier that holds on x86-64 and aarch64 (elsewhere a weaker one); its x86-64
+code was read only as generated from the same LLVM IR by another compiler
+(clang), without link-time optimisation, not by rustc's own backend. The
+library does not
 set the processor's data-independent-timing mode (``DIT`` on Apple silicon
 and other ARMv8.4 processors).
 
@@ -822,18 +824,24 @@ and other ARMv8.4 processors).
        MIFE and MCFE schemes. Since 1.0 its acceptance test and exponential
        have no branch on the values drawn and read their table whole (the
        samples are those of 0.4.0 to 0.5.0, bit for bit)
-     - replayed, 6·10^5 to 10^6 batches: one seed's decisions held (which
+     - replayed, 5·10^5 to 10^6 batches: one seed's decisions held (which
        draws of ``y`` are repeated, which candidates rejected, which ``-0``
-       drawn again), the values drawn anew within them; seeded, 2·10^5 to
-       6·10^5
-     - **no difference by the values**: a fixed set of values and fresh ones
-       with the same decisions differ by +0.0013 % [-0.0044, +0.0070] (A/A
-       -0.0030 % [-0.0086, +0.0026]), where the code of 0.4.0 to 0.5.0 differs
-       by -4.05 % [-4.06, -4.04] (an output with ``y = 0`` skipped the
-       acceptance test, and the exponential started from a floating-point
-       estimate with correction loops). The time follows the number of
+       drawn again), the values drawn anew within them (the sampler run on a
+       scripted bit source; the library's instances share its code); seeded,
+       2·10^5 to 6·10^5
+     - **no difference by the values**: four fixed sets of values against
+       fresh ones with the same decisions differ by -0.0054 % to +0.0038 %,
+       every interval containing 0 (about ±0.008 %, 6·10^5 batches each; A/A
+       -0.0027 % and -0.0017 %); a first run of one of these scripts gave
+       +0.0068 % [-0.0014, +0.0151] with a cropped t of 8.05, which its rerun
+       did not reproduce (3.55). The code of 0.4.0 to 0.5.0 differs by about
+       -4 % (an output with ``y = 0`` skipped the acceptance test, and the
+       exponential started from a floating-point estimate with correction
+       loops; measured with the first version of the test below, whose
+       artefact was at most about 0.5 %). The time follows the number of
        candidates and of draws of ``y`` (a fixed seed differs from random ones
-       by -2.65 %), which do not depend on the values returned, and the order
+       by -2.65 %, measured on the code of 0.4.0 to 0.5.0), which do not
+       depend on the values returned, and the order
        of the decisions: seeds with the same counts still differ by a few
        hundred nanoseconds per 1024 samples (+0.011 %, +0.014 % and -0.027 %
        for three sets of seeds of one shape, t = 2.8 to 4.9; -0.039 % between
@@ -842,18 +850,23 @@ and other ARMv8.4 processors).
        apart; the order does not depend on the values returned either. A
        real sample's own values against values drawn from the sampler's
        conditional distributions within its decisions: +0.0034 % [-0.0055,
-       +0.0124] and -0.0005 % [-0.0087, +0.0076] (two seeds). (A first
-       version of this test let the two classes copy their values from
-       different buffers, which left different lines in the cache and gave up
-       to 0.5 %, also between identical values; both classes now prepare the
-       same cache state.)
+       +0.0124] and -0.0005 % [-0.0087, +0.0076] (two seeds), its A/A
+       -0.0052 %. (A first version of this test let the two classes copy
+       their values from different buffers, which left different lines in the
+       cache and gave up to 0.5 %, also between identical values; the numbers
+       above for the current code come from the corrected version, in which
+       both classes prepare the same cache state.)
    * - the exact Gaussian sampler of wide widths (``facct_wide.rs``, ``k``
        of 199 bits as for the ``standard`` tMCFE, 256 values), since 1.0 as
        above (comparisons with ``k`` and tests for zero read every word)
      - seeds of one shape (as many candidates, draws of ``y`` and signs),
        1.2·10^6
      - -0.0005 % [-0.0089, +0.0079]; the code of 0.4.0 to 0.5.0: +0.044 %
-       [+0.037, +0.052]
+       [+0.037, +0.052]. Like the narrow seeds of one shape, this test changes
+       the order of the decisions with the values and cannot tell them apart:
+       the mean no longer differs, the cropped tests still do (16.6), as
+       between narrow seeds of one shape. The rest rests on the assembly (the
+       branches left are the public parameters and the redraws)
 
 Not checked yet, in the native core: the RNS products and the CRT
 (``rns.rs``, used by default by the lattice MIFE, MCFE, dMCFE and tMCFE

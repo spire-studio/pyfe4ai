@@ -276,7 +276,8 @@ of the fixes). These are not external audits. Their conclusions and fixes:
    * - Native FACCT timing (1.0)
      - The acceptance test and the exponential depended on the values drawn:
        replaying one sample's decisions with other values moved the time by
-       4 %. Fixed in 1.0: both are branch-free, with the same samples bit for
-       bit, and the same replay shows no difference (:ref:`side-channels`).
+       about 4 %. Fixed in 1.0: both are branch-free, with the same samples
+       bit for bit, and the same replay (corrected for a cache artefact of its
+       first version) shows no difference (:ref:`side-channels`).
        Tests of whole seeds with the same counts could not separate the
        values from the order of the decisions.
