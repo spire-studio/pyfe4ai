@@ -202,9 +202,12 @@ Questions for the auditors
      - native core
    * - Q14
      - FACCT is a rejection sampler, whose time follows the number of
-       candidates, which does not depend on the values returned. Is comparing
-       seeds of one shape (as many candidates, draws of ``y`` and signs) the
-       right test that the time does not depend on the values?
+       candidates and the order of its decisions, neither of which depends on
+       the values returned. Is replaying one sample's decisions with other
+       values (``facct_values``, ``facct_values_cond``) the right test that
+       the time does not depend on the values, and is preparing the same cache
+       state for both classes enough (a first version, which did not, showed
+       differences between identical values)?
      - A2
    * - Q15
      - The garbling of ``bcfe/gc_ristretto255`` selects by the bits of ``x``
@@ -271,7 +274,9 @@ of the fixes). These are not external audits. Their conclusions and fixes:
        promise against the record formats; the wording was corrected where
        it said too much or too little.
    * - Native FACCT timing (1.0)
-     - Seeds of one shape differed by a few hundred nanoseconds per 1024
-       samples: the acceptance test and the exponential depended on the
-       values drawn. Fixed in 1.0: both are branch-free, with the same
-       samples bit for bit (:ref:`side-channels`).
+     - The acceptance test and the exponential depended on the values drawn:
+       replaying one sample's decisions with other values moved the time by
+       4 %. Fixed in 1.0: both are branch-free, with the same samples bit for
+       bit, and the same replay shows no difference (:ref:`side-channels`).
+       Tests of whole seeds with the same counts could not separate the
+       values from the order of the decisions.

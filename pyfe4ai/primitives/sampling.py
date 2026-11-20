@@ -567,8 +567,10 @@ def discrete_gaussian_facct(sigma, count: int, rng=None) -> list[gp.mpz]:
     The number of trials does not depend on the returned value, and no step
     branches on secret data except through the comparisons above. CPython
     and big-integer arithmetic still take data-dependent time, so this
-    function is *not* constant-time; it is the reference for a native
-    implementation that can be. It is also several times slower than the
+    function is *not* constant-time; it is the reference for the native
+    implementation (``rust/core/src/facct.rs``), which since 1.0 does not
+    branch on the values it draws (the documentation's *Side channels*). It
+    is also several times slower than the
     rounded sampler in Python.
 
     With the native backend (:mod:`pyfe4ai.backend`) the

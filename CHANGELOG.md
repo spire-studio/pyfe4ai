@@ -108,6 +108,30 @@ compatibility).
   `sec_param` of versions <= 0.2.0): deprecated, removed in 2.0; use
   `sec_param`.
 
+### Security
+
+- **The native exact Gaussian sampler (FACCT) no longer branches on the values
+  it draws** (`rust/core/src/facct.rs`, `facct_wide.rs`). The time of 0.4.0 to
+  0.5.0 depended on them: an output with `y = 0` skipped the acceptance test,
+  and the fixed-point exponential started from a floating-point estimate with
+  correction loops (the wide kernel also compared `y` with `k`, and measured
+  its product, word by word up to the first difference). Now every candidate
+  takes the test (`y = 0` accepted by a mask), the exponential has no branch
+  and reads its whole table, and the comparisons read every word; only the
+  redraws (`y >= k`, a rejected candidate, `-0`) and the deferral to the exact
+  threshold (about one test in 2^99) branch. The samples are the same bit for
+  bit: the tests keep the 0.4.0-0.5.0 sampler as a reference (every boundary
+  of the exponential and 4·10^6 inputs; 14 narrow and 8 wide tables over
+  thousands of seeds, with the same samples, stream positions and calls of the
+  exact threshold), and 5 widths x 400 seeds match the Python reference.
+  Measured (`docs/security.rst`, *Side channels*): replaying one sample's
+  decisions with other values, the old sampler differs by -4.05 %, the new one
+  by +0.0013 % [-0.0044, +0.0070]; in the wide kernel seeds of one shape differ
+  by +0.044 % before and -0.0005 % [-0.0089, +0.0079] after. The time still
+  follows the number of candidates and the order of the decisions, neither of
+  which depends on the values returned. Cost: 3 to 15 % per sample (the most
+  at small widths, where one candidate in four had `y = 0`).
+
 ### Changed
 
 - `ThresholdMCFEDDH.L` (`mcfe/ddh_threshold`), a static method no caller used,
@@ -132,13 +156,10 @@ compatibility).
   (`tests/api/test_threat_model.py`).
 - New pages `docs/compatibility.rst` and `docs/deprecations.rst`;
   `docs/security.rst` gains "Trust assumptions in brief" and "Side channels"
-  (the native paths checked, how, and what was not checked). The native
-  exact Gaussian sampler (FACCT) is not constant-time: its time follows its
-  number of candidates, which does not depend on the values it returns, and
-  the values of the candidates (returned or rejected) move it by a few
-  hundred nanoseconds per 1024 samples (outputs that are multiples of `k` skip the acceptance test; the
-  exponential starts from a floating-point estimate). No other checked path
-  differed beyond the control.
+  (the native paths checked, how, and what was not checked): no checked path
+  differed by its secret values beyond the control (the exact Gaussian
+  sampler after the change under *Security*), and the label KEM of
+  `bcfe/gc_ristretto255` was timed from Python (`tools/ct_bcfe.py`).
 - README Known Issues and `SECURITY.md` state the conditions of the 0.6 and
   0.7 experimental parts: `bcfe/gc_ristretto255` assumes an honest
   encryptor, the threshold key issuance needs mutually authenticated,
