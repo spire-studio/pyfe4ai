@@ -674,7 +674,8 @@ tables; ``label_bits`` takes 128 only.
   encryptors you trust. Nothing detects (3).
 * **The library cannot authenticate requester ids.** The deduplication is
   per ``requester``: the same requester asking again for the same ``w`` gets
-  the same key (h1, with ``keep_issued_keys``) or the same grant (h2),
+  the same key (h1, with ``keep_issued_keys``) or, for the same request, the
+  same grant (h2),
   another requester a slot of its own, and once ``max_keys`` slots exist
   every request gets the same error, so that the deduplication tells nothing
   about the functions of others. This holds only if callers pass an id that
