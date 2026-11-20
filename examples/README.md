@@ -23,6 +23,11 @@ parameters (see *Security Profiles* in the top-level README).
   server once, a label key share per round), then the same through the ML
   adapter with ciphertexts and partial decryptions sent as JSON
 - `mife_lwe_threshold_demo.py`: threshold `tMIFE/LWE` (experimental threshold layer)
+- `ac_identity_directory_minimal.py`: the identity directory `pyfe4ai.ac`
+  (experimental): a key centre runs one `sife/fullysec_ring_lwe` instance per
+  identity and publishes a directory; an encryptor checks it against its
+  digest and encrypts for `alice`; alice's key decrypts, bob's is refused;
+  adding an identity changes the digest but not earlier ciphertexts and keys
 
 ## ML / Privacy-Preserving AI
 
@@ -52,6 +57,11 @@ Schemes* in the top-level README.
   `sife/cp_ab_pairing` (ACGU20): a ciphertext under a policy, `<x, y>` for a key whose
   attributes satisfy it, a refusal for one whose attributes do not; also an
   identity-equality policy (`id:alice`)
+- `sife_cp_ab_pairing_keyissue_demo.py`: threshold key issuance for
+  `sife/cp_ab_pairing` (experimental): a dealer shares the master key among
+  three key servers, two of them issue a key after their approval rule (which
+  decides on the attributes and the weights), the requester checks and
+  combines the partial keys; a refused request and an altered partial key
 - `sife_kp_ab_pairing_minimal.py`: key-policy attribute-based IPFE `sife/kp_ab_pairing`
   (NPP22 Sec. 4): attributes in the ciphertext, the policy in the key
 - `mcfe_kp_ab_pairing_minimal.py`: multi-client FE with access control

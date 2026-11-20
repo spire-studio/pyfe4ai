@@ -148,7 +148,8 @@ Each scheme lists its capabilities
   (``credentials={"fusion_weight": y, "policy": ...}``) and the ciphertext the
   attributes (``encrypt(..., attributes=...)``).
 * ``distributed_keygen`` -- functional keys are issued jointly by ``t`` of
-  ``s`` key servers, none of which holds the master key after setup
+  ``s`` key servers, none of which holds the master key after setup when
+  ``t >= 2`` (with ``t = 1`` every server's share is the master key)
   (``sife/cp_ab_pairing``, :mod:`pyfe4ai.schemes.sife.cp_ab_pairing_keyissue`;
   experimental, and secure only with authenticated, confidential channels
   between the requester and the servers, see :doc:`security`).
