@@ -71,7 +71,11 @@ that :func:`~pyfe4ai.ml.aggregate_gradients` (or
 
 .. code-block:: python
 
+   import numpy as np
+   from pyfe4ai.ml import FESchemeWrapper, aggregate_gradients, encrypt_gradient
+
    nids = ["c0", "c1", "c2"]
+   grad = {"c0": np.array([0.5, -1.2]), "c1": np.array([1.0, 0.3]), "c2": np.array([-0.4, 2.1])}
    wrapper = FESchemeWrapper("mcfe", "kp_ab_pairing",
                              {"n": 3, "lst_nid": nids, "bound_x": 1000, "bound_y": 10}, precision=1)
    attributes = {"purpose:research", "region:EU"}
