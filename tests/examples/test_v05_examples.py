@@ -74,6 +74,31 @@ def test_the_example_runs_and_shows_what_it_is_for(name, tmp_path):
         assert line in lines
 
 
+def ml_page_policy_block() -> str:
+    """The code block of the "Policy-gated aggregation" section of ``docs/api/ml.rst``, dedented."""
+    page = (ROOT / "docs" / "api" / "ml.rst").read_text("utf-8")
+    lines = page.split("Policy-gated aggregation\n------------------------\n", 1)[1].splitlines()
+    start = lines.index(".. code-block:: python") + 2
+    block = []
+    for line in lines[start:]:
+        if line and not line.startswith("   "):
+            break
+        block.append(line[3:])
+    return "\n".join(block).strip() + "\n"
+
+
+def test_the_policy_gated_block_of_the_ml_page_runs_as_written(tmp_path):
+    # a reader copies the block alone, so it brings its imports and data; it runs and gives the weighted sum
+    block = ml_page_policy_block()
+    assert '"kp_ab_pairing"' in block and '{"c0": 1, "c1": 2, "c2": 3}' in block
+    check = "\nimport numpy\nassert numpy.allclose(total, grad['c0'] + 2 * grad['c1'] + 3 * grad['c2']), total\n"
+    env = dict(os.environ, PYTHONPATH=str(ROOT) + os.pathsep + os.environ.get("PYTHONPATH", ""),
+               PYFE4AI_CACHE_DIR=str(tmp_path / "cache"))
+    res = subprocess.run([sys.executable, "-c", block + check], capture_output=True, text=True, env=env,
+                         cwd=str(tmp_path), timeout=600)
+    assert res.returncode == 0, res.stderr
+
+
 def test_the_examples_are_listed_in_the_readme():
     readme = (ROOT / "examples" / "README.md").read_text("utf-8")
     pairing = readme.split("## Pairing-Based Examples", 1)[1]
