@@ -379,7 +379,10 @@ the project's own, reviewed internally, not externally).
 * **Out of scope:** malicious encryptors (another circuit, selective
   failures, a different ``x`` per slot); forged slot lists; function privacy;
   quantum adversaries (the labels are encrypted with hashed ElGamal);
-  revocation and key rotation.
+  revocation and key rotation; timing attacks on the native garbling, whose
+  time distribution changes shape with the seed secret (means within the
+  control, mechanism not found, exploitability not evaluated; see
+  :ref:`side-channels`).
 
 Threshold key issuance and identity directory
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

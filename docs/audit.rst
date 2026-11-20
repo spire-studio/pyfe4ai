@@ -173,9 +173,12 @@ Questions for the auditors
      - A2
    * - Q7
      - The constant-time results: the paths measured, the method, the
-       thresholds and the list of exceptions; in particular the cropped tests
-       of the garbling with the seed secret, which flagged in most runs while
-       every mean stayed within the control (cause not found).
+       thresholds and the list of exceptions. Please look first at the
+       garbling with the seed secret: the shape of its time distribution
+       depends on the seed (fresh seeds in both classes were clean in three
+       runs, two fixed seeds against each other flagged in all three) while
+       every mean stayed within the control; the mechanism was not found, and
+       whether this can be exploited was not evaluated.
      - native core
    * - Q8
      - The compatibility rules and their security exception: can a record

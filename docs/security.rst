@@ -771,11 +771,12 @@ before 1.0 in two ways:
   below for the current code rests on either (the old sampler's is marked).
 
 No difference in mean time that depends on the secret values beyond the
-control's was found within the measured sample sizes; the cropped tests of
-the garbling with the seed secret did flag, with the cause not found (see
-*Cropped tests* below), so for it a leak through the shape of the time
-distribution is not excluded. That is evidence for these paths on this
-machine and compiler, not a guarantee. The assembly was read on
+control's was found within the measured sample sizes, which is evidence for
+these paths on this machine and compiler, not a guarantee. The shape of the
+time distribution of the garbling (``bcfe/gc_ristretto255``) does depend on
+its seed, which is the secret, while its means stay within the control: the
+mechanism was not found, and whether this can be exploited was not evaluated
+(see *Cropped tests* below). The assembly was read on
 aarch64. The masks of the exact Gaussian sampler rest on an optimisation
 barrier that holds on x86-64 and aarch64 (elsewhere a weaker one); its x86-64
 code was read only as generated from the same LLVM IR by another compiler
@@ -895,9 +896,16 @@ inputs (that run's own was not recorded), so it more likely came from that
 run. The garbling with the seed secret flagged in a run on the release code
 (11), and in four of six more runs with three fixed seeds, two runs each: two
 seeds in one of their two runs each (7.8 and 13.0), the third in both (18.5
-and 14.9); every mean stayed within the control (at most 0.006 %). The cause was not found. Its
-verdict rests on the mean, which does not exclude a leak through the shape of
-its time distribution.
+and 14.9). Two more designs, three runs each, separate the secret from the
+method: with fresh seeds in both classes (an A/A test) the cropped tests were
+clean (0.14, 1.78 and 1.21); with two different fixed seeds against each
+other (both classes repeat a fixed input, so only the seeds differ) they
+flagged every time (11.2, 18.1 and 19.5). So the shape of the garbling's time
+distribution depends on the seed, which is the secret. Every mean stayed
+within the control (at most about 3.8 ns of about 49 µs). The mechanism was
+not found: read in the code, the mask selections and SHAKE neither branch nor
+index memory on secret data; the processor's data-dependent behaviour was not
+checked. Whether the dependence can be exploited was not evaluated.
 
 Not checked yet, in the native core: the RNS products and the CRT
 (``rns.rs``, used by default by the lattice MIFE, MCFE, dMCFE and tMCFE
@@ -1135,10 +1143,10 @@ tables; ``label_bits`` takes 128 only.
   timing was measured on one machine (`Side channels`_): the garbling with
   ``x`` or the seed secret, by the core's harness, and the slot tables chosen
   by ``w``, the label encryption and the decryption, from Python; no mean
-  differed beyond the control or the A/A twin, but the cropped tests of the
-  garbling with the seed secret flagged in most runs, with the cause not
-  found, so a leak through the shape of its time distribution is not
-  excluded (see `Side channels`_).
+  differed beyond the control or the A/A twin, but the shape of the
+  garbling's time distribution depends on the seed secret (its means within
+  the control); the mechanism was not found, and whether this can be
+  exploited was not evaluated (see `Side channels`_).
   That is evidence for these paths, not a guarantee; the scalar
   multiplications of curve25519-dalek were not checked here.
 
