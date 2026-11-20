@@ -649,20 +649,23 @@ fn facct_conditional(table: &facct::Table, script: &[(u32, U256)], rng: &mut Rng
 /// Diagnostics of facct_values_cond: the seed's own script with, for `mix` = "low", the low 128 bits of every u and
 /// v drawn again (x and the decisions stay, but for a tie in the top word, about 2^-64); "vtop", the top word of v
 /// drawn again on the same side of the candidate's threshold (an f64 estimate, 2^20 away from it).
-fn facct_mix(table: &facct::Table, script: &[(u32, U256)], rng: &mut Rng, out: &mut Vec<U256>, mix: &str) {
+fn facct_mix(table: &facct::Table, script: &[(u32, U256)], base: &[U256], rng: &mut Rng, out: &mut Vec<U256>,
+             mix: &str) {
+    // `base`: class 0's values (the seed's own or drawn ones), with the calls and decisions of `script`; "none"
+    // copies it unchanged (an A/A of that script)
     let (k, yb) = (table.k, table.y_bits);
     let c = table.c_mant as f64 * 2f64.powi(table.c_exp);
     let x_of = |u: &U256| table.cdt.iter().filter(|t| u >= t).count() as u64;
     out.clear();
-    out.extend(script.iter().map(|&(_, v)| v));
+    out.extend_from_slice(base);
     let mut i = 0;
     while i < script.len() {
-        let x = x_of(&script[i].1);
+        let x = x_of(&base[i]);
         let mut j = i + 1;
         while script[j].0 == yb {
             j += 1;
         }
-        let y = script[j - 1].1.0[0];
+        let y = base[j - 1].0[0];
         let accepted = j + 1 < script.len() && script[j + 1].0 == 1;
         match mix {
             "low" => {
@@ -723,7 +726,7 @@ impl Target for FacctValues {
         // buffer the run reads (the fixed one for class 0)
         if let Ok(mix) = std::env::var("FACCT_MIX") {
             // diagnostics: the seed's own script with some parts drawn again, every decision kept
-            facct_mix(&self.table, &self.script, rng, &mut self.fresh, &mix);
+            facct_mix(&self.table, &self.script, &self.fixed, rng, &mut self.fresh, &mix);
         } else if self.conditional {
             facct_conditional(&self.table, &self.script, rng, &mut self.fresh);
         } else {
