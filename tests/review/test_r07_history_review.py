@@ -13,7 +13,14 @@ import sys
 
 import pytest
 
+from pyfe4ai.primitives.pairing.pairing_backend import pairing_available
+from tests.pairing_group import GROUP, needs_group
 
+
+# The key-issuance module skips itself without a backend for GROUP (e.g. the core lane, PYFE4AI_NO_NATIVE=1): the
+# subprocess would then find no test of that node id and exit 4, so this test needs the group too.
+@needs_group
+@pytest.mark.skipif(not pairing_available(GROUP), reason="no backend for pairing group {}".format(GROUP))
 @pytest.mark.skipif(not hasattr(os, "fork") or sys.platform == "win32", reason="needs fork")
 def test_h1_the_forksafe_test_passes_after_the_key_issuance_tests(tmp_path):
     env = dict(os.environ, PYFE4AI_CACHE_DIR=str(tmp_path))
