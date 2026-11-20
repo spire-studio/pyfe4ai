@@ -40,8 +40,13 @@ below add what each family assumes on top.
 * **Callers keep the one-time rules.** A client encrypts one input per label;
   a precomputation is used once; ``bcfe`` assumes an honest encryptor.
 * **One copy of a stateful authority.** An authority that keeps state (the
-  slot list of ``bcfe``, the records of the key servers) is run from one copy
-  of it at a time.
+  slot list of ``bcfe``, the records of the key servers, the identities of
+  the key centre of the identity directory) and the dealer of the threshold
+  key issuance (its undelivered shares) are run from one copy at a time. The
+  key servers, the dealer and the key centre refuse the ordinary ways of
+  copying (``copy``, ``deepcopy``, pickle), but a child forked from their
+  process holds a second copy that goes on by itself: keep one object, in
+  one process.
 * **Parameters.** ``toy`` is not secure; ``standard`` aims at 128 bits (the
   pairing schemes on BLS12-381 at about 120 to 126).
 * **Not covered:** chosen-ciphertext attacks and tampering, malicious
