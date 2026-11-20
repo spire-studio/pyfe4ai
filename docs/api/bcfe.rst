@@ -88,8 +88,8 @@ encrypts, a key holder decrypts:
                              issuance_policy=parse("and(org:bank, role:scoring)"))
    kg.setup()                         # its state: <cache_dir>/authority/bcfe/<setup digest>
 
-   key = kg.issue_key({"weights": [3, -2, 1, -4], "bias": 10},
-                      requester=authenticated_id,          # the id your application authenticated
+   authenticated_id = "svc-scoring-01"  # the requester id your application authenticated
+   key = kg.issue_key({"weights": [3, -2, 1, -4], "bias": 10}, requester=authenticated_id,
                       attributes={"org:bank", "role:scoring"}, label="credit-v3")
    pp = kg.get_public_parameters()    # the slot list, with the new slot: hand it to the data owners
 
