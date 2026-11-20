@@ -20,6 +20,7 @@ these tests fail on the leak itself (``sharing`` is then an ignored config
 entry).
 """
 
+import math
 import random
 from fractions import Fraction
 from itertools import combinations
@@ -111,6 +112,25 @@ def _configs():
                         yield [c], list(enrolled), k
 
 
+def _shamir_multiplier(corrupted, enrolled, k) -> Fraction:
+    """``M = lambda_k^E L_{k,0}``: the multiple of ``nu`` by which server *k*'s
+    Shamir partial for *enrolled* differs from its simulation (one corrupted server)."""
+    pts = {sid: i + 1 for i, sid in enumerate(SIDS)}
+    xk, xc = pts[k], pts[corrupted[0]]
+    lam = Fraction(1)
+    for x in (pts[sid] for sid in enrolled):
+        if x != xk:
+            lam *= Fraction(x, x - xk)
+    return lam * Fraction(xc - xk, xc)
+
+
+# The flooding hides every whole multiple of nu (|nu| is far below sigma_f), so a
+# round shows a fractional M only if nu is not a multiple of M's denominator: then
+# M nu mod q is about q/4 or more from 0. A round whose nu is a multiple of every
+# denominator (12 for s = 3, t = 2; nu = 0 when y = 0) cannot tell Shamir apart.
+NU_PERIOD = math.lcm(*(_shamir_multiplier(c, e, k).denominator for c, e, k in _configs()))
+
+
 # ------------------------------------------------------------------ tMIFE-LWE
 
 def _tmife(sharing):
@@ -175,18 +195,29 @@ def test_tmife_lwe_residue_attack_reads_nothing(sharing):
 @pytest.mark.parametrize("sharing", SHARINGS)
 def test_tmife_lwe_honest_partials_are_simulatable(sharing):
     """For every corrupted server, enrolled set and honest member, the honest
-    partial is its simulation plus ``e_k - M nu``, ``M`` 0 or 1."""
+    partial is its simulation plus ``e_k - M nu``, ``M`` 0 or 1.
+
+    Rounds are drawn until four have ``nu`` not a multiple of ``NU_PERIOD``
+    (about one round in six has a multiple), and every round drawn is checked:
+    four rounds with ``nu`` a multiple of 12 hid Shamir's ``M = 3/4, 1/4, ...``."""
     cfg, kg, pp = _tmife(sharing)
     sigma_f = int(pp["sigma_f"])
+    # in such a round a fractional M nu is decisive: about q/4 from 0, beyond e_k + 13 sigma_f
+    assert gp.mpz(pp["q"]) > 4 * 26 * sigma_f
     configs = list(_configs())
     sets = sorted({tuple(e) for _, e, _ in configs})
-    for _ in range(4):
+    informative = 0
+    for _ in range(40):                                # fewer than four of 40: P < 1e-20
         dks, parts, key_part, f0, nu, q = _tmife_round(cfg, kg, pp, [list(e) for e in sets])
         for corrupted, enrolled, k in configs:
             diff = _center(gp.mpz(parts[tuple(enrolled)][k]["w"]) - _sim(dks, corrupted, enrolled, k, f0, key_part, q, 2)[0], q)
             assert abs(diff) <= 13 * sigma_f, (corrupted, enrolled, k)
             # and the shift is nu or nothing: no fraction of nu
             assert any(abs(diff + m * nu) <= 12 * sigma_f for m in (0, 1))
+        informative += nu % NU_PERIOD != 0
+        if informative == 4:
+            break
+    assert informative == 4, "{} rounds with nu not a multiple of {}".format(informative, NU_PERIOD)
 
 
 # ------------------------------------------------------------- tMCFE-Ring-LWE
