@@ -5,12 +5,17 @@ Provides two high-level APIs that hide FE complexity from ML engineers:
 **FL aggregation** (``eta=1``, ndarray helpers):
     Encrypt per-element gradients from *n* clients, aggregate with weights.
 
+    >>> import numpy as np
+    >>> from pyfe4ai.ml import FESchemeWrapper, aggregate_gradients, encrypt_gradient
+    >>> grad0, grad1 = np.array([0.25, -1.5, 3.0]), np.array([1.0, 0.5, -2.25])
     >>> keygen_cfg = {"eta": 1, "n": 2, "lst_nid": ["c0", "c1"], "bound_x": 1000, "bound_y": 10}
     >>> wrapper = FESchemeWrapper("mcfe", "lwe", keygen_cfg, precision=2)
     >>> enc0 = encrypt_gradient(grad0, wrapper, nid="c0", label="round-1")
     >>> enc1 = encrypt_gradient(grad1, wrapper, nid="c1", label="round-1")
     >>> result = aggregate_gradients(
     ...     {"c0": enc0, "c1": enc1}, wrapper, {"c0": 1, "c1": 2}, label="round-1")
+    >>> bool(np.allclose(result, grad0 + 2 * grad1))
+    True
 
     Extra entries of the crypto objects' config go to ``crypto_options``,
     e.g. ``FESchemeWrapper("mcfe", "ring_lwe", keygen_cfg,
@@ -19,9 +24,14 @@ Provides two high-level APIs that hide FE complexity from ML engineers:
 **Encrypted inference** (``eta=feature_dim``, vector mode):
     Encrypt a feature vector, compute ``⟨x, w⟩`` without revealing *x*.
 
+    >>> import numpy as np
+    >>> from pyfe4ai.ml import FESchemeWrapper, compute_linear, encrypt_features
+    >>> feature_vec, model_weights = np.array([3, -1, 2]), np.array([1, 4, -2])
     >>> wrapper = FESchemeWrapper("sife", "lwe", {"eta": 3, "bound_x": 10, "bound_y": 10})
     >>> enc = encrypt_features(feature_vec, wrapper)
     >>> score = compute_linear(enc, wrapper, model_weights)
+    >>> float(score)
+    -5.0
 
 PyTorch is optional — functions accept both :class:`numpy.ndarray` and
 ``torch.Tensor`` inputs.
@@ -47,6 +57,9 @@ base64).
     gradients of a large model: every element is a ciphertext of its own that
     costs the aggregator several pairings per client (see :doc:`/choosing`).
 
+    >>> import numpy as np
+    >>> from pyfe4ai.ml import FESchemeWrapper, aggregate_gradients, encrypt_gradient
+    >>> grad0, grad1 = np.array([0.5, -1.2]), np.array([1.0, 0.3])
     >>> keygen_cfg = {"n": 2, "lst_nid": ["c0", "c1"], "bound_x": 1000, "bound_y": 10}
     >>> wrapper = FESchemeWrapper("mcfe", "kp_ab_pairing", keygen_cfg, precision=1)
     >>> attributes = {"purpose:research", "region:EU"}
@@ -55,6 +68,8 @@ base64).
     >>> result = aggregate_gradients(
     ...     {"c0": enc0, "c1": enc1}, wrapper, {"c0": 1, "c1": 2}, label="round-1",
     ...     policy="and(purpose:research, region:EU)")
+    >>> bool(np.allclose(result, grad0 + 2 * grad1))
+    True
 
     ``aggregate_gradients`` refuses, before a key is issued and before any
     pairing, ciphertexts that the scheme's own checks refuse (``ValueError``,
