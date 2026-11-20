@@ -2816,7 +2816,7 @@ Crypto objects also take:
      - 
      - an int in ``[1, 2^63)``; ``set_max_keys`` may raise it after setup, never below the slots listed
    * - data_wires
-     - how the data bits enter the garbling: known to the garbler (folded into the tables), or as input labels in the ciphertext (SS10's form, twice the size)
+     - how the data bits enter the garbling: known to the garbler (folded into the tables), or as input labels in the ciphertext (SS10's form; 1.3 to 1.6 times the size for the library circuits)
      - ``'hardwired'``
      - 
      - ``hardwired``, ``labels``

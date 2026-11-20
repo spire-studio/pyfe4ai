@@ -25,8 +25,9 @@ Garbling costs follow the half-gates scheme of Zahur, Rosulek and Evans
 two labelled wires, one for an AND with a garbler-known input. The kind of
 every wire -- labelled or garbler-known -- depends on the circuit and the
 mode of the data wires only, never on the values of ``w`` or ``x``, so
-the gate tables of a ciphertext, their layout and their number, show
-nothing about the inputs.
+the layout and the number of a ciphertext's gate tables do not depend on
+``w`` or ``x`` (their contents do; the garbling hides them, as the scheme's
+security claim states).
 
 Pure Python: the standard library, NumPy (layouts accept NumPy integer
 arrays) and :mod:`pyfe4ai.core.exceptions`.

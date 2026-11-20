@@ -1114,7 +1114,8 @@ class BCFEGCRistretto255Config(SchemeConfig):
                       default=16, allowed="an int in ``[1, 2^63)``; ``set_max_keys`` may raise it after setup, never "
                       "below the slots listed")
     data_wires = Option("how the data bits enter the garbling: known to the garbler (folded into the tables), or as "
-                        "input labels in the ciphertext (SS10's form, twice the size)", default="hardwired",
+                        "input labels in the ciphertext (SS10's form; 1.3 to 1.6 times the size for the library "
+                        "circuits)", default="hardwired",
                         allowed=("hardwired", "labels"))
     key_mode = Option("who makes a slot's selected key pairs: the authority, which keeps or hands out the key "
                       "(``issue_key``, h1), or the key holder, which sends its public keys (``authorize``, h2)",

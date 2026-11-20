@@ -11,8 +11,8 @@ operation folds them away (``x XOR 0 = x``, ``x XOR 1 = NOT x``, ``x AND 0 =
 ``NOT NOT x = x``. A gate already made with the same inputs is reused
 (structural hashing), and :meth:`Builder.build` drops the gates no output
 depends on. All of this looks at the structure only, never at a value of
-``w`` or ``x``, so the wire kinds of the result depend on the circuit alone
-and the gate tables of a ciphertext show nothing about the inputs. A
+``w`` or ``x``, so the wire kinds of the result depend on the circuit alone,
+and so do the layout and the number of a ciphertext's gate tables. A
 constant output is refused
 (:class:`~pyfe4ai.core.exceptions.FEValidationError`): the encoding has no
 constant wires.
