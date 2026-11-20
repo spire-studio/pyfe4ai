@@ -107,6 +107,44 @@ def test_exact_fallback_gives_the_same_samples(sigma):
     assert nat == [int(v) for v in su.discrete_gaussian_facct(sigma, 500, rng=su.XofRandom(seed))]
 
 
+def _reference_tests(sigma, count, seed):
+    """The (x, y) of every acceptance test the Python reference makes (y != 0), in order: its
+    loop with the bit source of *seed*."""
+    p = su._facct_params(su._exact(sigma))
+    rng, scale, tests, out = su.XofRandom(seed), 1 << su.FACCT_PRECISION, [], 0
+    with gp.context(precision=su.FACCT_PRECISION + 64, round=gp.RoundToNearest):
+        while out < count:
+            u = rng.getrandbits(su.FACCT_PRECISION)
+            x = sum(1 for t in p.cdt if u >= t)
+            y = 0
+            if p.y_bits:
+                y = rng.getrandbits(p.y_bits)
+                while y >= p.k:
+                    y = rng.getrandbits(p.y_bits)
+            v = rng.getrandbits(su.FACCT_PRECISION)
+            if y:
+                tests.append((x, y))
+                if v >= int(gp.floor(gp.exp(p.neg_c * (y * (y + 2 * p.k * x))) * scale)):
+                    continue
+            if p.k * x + y == 0 and rng.getrandbits(1):
+                continue
+            if p.k * x + y:
+                rng.getrandbits(1)
+            out += 1
+    return tests
+
+
+@pytest.mark.parametrize("sigma", [3.2, 4030.5])
+def test_deferred_tests_are_the_tests_of_the_reference(sigma):
+    """A table whose fixed point always defers: the native sampler asks for the exact
+    threshold at exactly the reference's acceptance tests, none for y = 0 (1.0, R-1.0)."""
+    calls = []
+    seed = b"deferred/" + str(sigma).encode()
+    native_backend.ext().facct_sample(_table(sigma, calls, c_exp_shift=200), 300, xof_seed=seed)
+    assert calls == _reference_tests(sigma, 300, seed)
+    assert all(y != 0 for _, y in calls)
+
+
 def test_python_errors_of_the_exact_threshold_propagate():
     p = su._facct_params(su._exact(3.2))
 
