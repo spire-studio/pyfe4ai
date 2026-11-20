@@ -747,8 +747,8 @@ native extension (arkworks), whose scalar multiplications are variable-time,
 also for secret scalars.
 
 For the lattice kernels of the native core (``rust/core``) and the garbling
-of ``bcfe/gc_ristretto255``, the paths below were checked before 1.0 in two
-ways:
+and label KEM of ``bcfe/gc_ristretto255``, the paths below were checked
+before 1.0 in two ways:
 
 * by reading the release build's code for branches on secret values,
   secret-indexed memory accesses and instructions whose latency depends on
@@ -800,6 +800,18 @@ these paths on this machine and compiler, not a guarantee.
        seed (offset and labels) secret
      - seeded, 8·10^6 each
      - within the control
+   * - the label KEM of ``bcfe/gc_ristretto255`` in the native extension
+       (``rust/native``), timed from Python by ``tools/ct_bcfe.py``: the table
+       of a new slot chosen by ``w`` (with the authority's keys, and with the
+       holder's), the fused encryption (garbling and label encryption) with
+       ``x`` secret, and the decryption with the holder's slot (``w`` and its
+       scalars) secret
+     - one call per measurement, fixed against random, each with an A/A twin;
+       1.5 to 2·10^5 calls (the encryption 10^5)
+     - within the twins: the largest difference +0.011 % [-0.008, +0.030]
+       (the encryption), the twins up to -0.030 %; a call takes 0.23 to
+       1.06 ms, so the resolution is coarser than the core's harness (about
+       25 to 110 ns)
    * - the exact Gaussian sampler (FACCT, ``sigma = 1000``), 1024 values, the
        random bits secret; the default sampler of the noise of the lattice
        MIFE and MCFE schemes
@@ -832,9 +844,9 @@ schemes), the dealing of replicated key shares (``replicated.rs``), the
 dense-LWE encryption and key terms, the exact Gaussian sampler of wide
 widths (``facct_wide.rs``), the arithmetic of 256-bit words (moduli of 125
 bits or more), decryption, and the threshold partial decryptions.
-Outside it, nothing was measured: the label selection by ``w`` and the label
-encryption of ``bcfe/gc_ristretto255`` were read but not timed, and in the
-native ristretto255 code the scalar multiplications are curve25519-dalek's,
+Outside it, only the label KEM of ``bcfe/gc_ristretto255`` was measured
+(above, from Python); in the native ristretto255 code the scalar
+multiplications are curve25519-dalek's,
 which is designed to be constant-time (not checked here), the encoding of a
 plaintext branches on its sign, and decryption's bounded discrete logarithm
 (baby-step giant-step) takes a time that depends on the result.
@@ -1059,8 +1071,13 @@ tables; ``label_bits`` takes 128 only.
 * **Not constant-time.** The Python backend makes no constant-time claim and
   cannot wipe its copies of secrets. The native implementation selects by
   the bits of ``w`` and ``x`` with masks, draws its randomness from the
-  operating system and wipes ``Delta``, the seeds, ``r`` and the labels, but
-  its timing has not been tested.
+  operating system and wipes ``Delta``, the seeds, ``r`` and the labels. Its
+  timing was measured on one machine (`Side channels`_): the garbling with
+  ``x`` or the seed secret, by the core's harness, and the slot tables chosen
+  by ``w``, the label encryption and the decryption, from Python; none
+  differed beyond the control or the A/A twin. That is evidence for these
+  paths, not a guarantee; the scalar multiplications of curve25519-dalek were
+  not checked here.
 
 Not covered by the argument: simulation security, the secrecy of ``w`` from
 its key holder, a malicious encryptor, a forged slot list, side channels and

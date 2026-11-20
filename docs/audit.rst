@@ -208,8 +208,10 @@ Questions for the auditors
      - A2
    * - Q15
      - The garbling of ``bcfe/gc_ristretto255`` selects by the bits of ``x``
-       with masks; the selection by ``w`` at issuance and the encryption of
-       the labels are not measured.
+       with masks, and its label KEM by the bits of ``w``. The garbling was
+       timed by the core's harness, the KEM only from Python (a resolution of
+       25 to 110 ns per call): is that enough, and what would a finer
+       measurement of the KEM need?
      - B
    * - Q16
      - The threshold key issuance leaves mutually authenticated, confidential
