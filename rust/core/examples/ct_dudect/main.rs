@@ -26,13 +26,17 @@ use std::time::Instant;
 struct Rng(u64, u64);
 impl Rng {
     fn new() -> Self {
+        // CT_SEED=n: a reproducible run (the same fixed inputs, e.g. to compare one script with and without DIT);
+        // without it a seed from the OS. Either way the run prints the seed, so its fixed inputs can be drawn again.
+        let n = std::env::var("CT_SEED").ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or_else(|| {
+            let mut r = [0u8; 8];
+            osrand::fill(&mut r).expect("OS randomness");
+            u64::from_le_bytes(r)
+        });
+        eprintln!("CT_SEED={n}");
         let mut b = [0u8; 16];
-        osrand::fill(&mut b).expect("OS randomness");
-        // CT_SEED=n: a reproducible run (the same fixed inputs, e.g. to compare one script with and without DIT)
-        if let Some(n) = std::env::var("CT_SEED").ok().and_then(|v| v.parse::<u64>().ok()) {
-            b[..8].copy_from_slice(&n.to_le_bytes());
-            b[8..].copy_from_slice(&n.wrapping_mul(0x9e3779b97f4a7c15).to_le_bytes());
-        }
+        b[..8].copy_from_slice(&n.to_le_bytes());
+        b[8..].copy_from_slice(&n.wrapping_mul(0x9e3779b97f4a7c15).to_le_bytes());
         let a = u64::from_le_bytes(b[..8].try_into().unwrap()) | 1;
         let c = u64::from_le_bytes(b[8..].try_into().unwrap()) | 2;
         Rng(a, c)

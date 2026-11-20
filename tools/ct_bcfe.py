@@ -142,12 +142,14 @@ def main():
     ap.add_argument("measurements", nargs="?", type=int, default=100_000)
     ap.add_argument("--seed", type=int, default=None)
     args = ap.parse_args()
-    rng = random.Random(args.seed if args.seed is not None else int.from_bytes(os.urandom(8), "big"))
+    seed = args.seed if args.seed is not None else int.from_bytes(os.urandom(8), "big")
+    rng = random.Random(seed)
     call, c0, c1 = prepare(args.target, rng)
     for inputs in (c0, c1):  # warm both
         for a in inputs[:20]:
             call(a)
-    print(f"target {args.target} measurements {args.measurements} (m = {M}, n = {N}, pool {POOL} per class)")
+    print(f"target {args.target} measurements {args.measurements} (m = {M}, n = {N}, pool {POOL} per class) "
+          f"--seed {seed}")
     times = ([], [])
     clock = time.perf_counter_ns
     step = max(1, args.measurements // 10)
