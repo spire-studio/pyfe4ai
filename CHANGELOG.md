@@ -173,8 +173,9 @@ compatibility).
 
 ### Tests — 1.0 freeze
 
-- `tests/compat`: record fixtures of every stable scheme (a 0.5.0 sample set;
-  the 1.0.0 set is written by the release) and the compatibility test that
+- `tests/compat`: record fixtures of every stable scheme (the frozen set of
+  1.0.0, `tests/compat/fixtures/1.0.0/`, 36 schemes written on the native
+  backend, and a 0.5.0 sample set) and the compatibility test that
   later versions must pass: the records decrypt to the same values, fresh
   ciphertexts under the stored keys decrypt with the stored keys, stored
   partials combine, parameter records are reused, no field of a record is
@@ -183,8 +184,11 @@ compatibility).
   known-insecure).
 - `rust/core/examples/ct_dudect/`: the timing-leak harness of the
   constant-time check (dudect-style; the secret drawn from a seed into one
-  buffer for both classes, or a single secret value; judged by effect size
-  against a constant-time control).
+  buffer for both classes, or a single secret value; both classes prepared
+  alike and leaving the same cache state; judged by effect size against a
+  constant-time control), with the FACCT replay targets (`facct_values`:
+  one sample's decisions, other values); `tools/ct_bcfe.py` times the bcfe
+  label KEM of the native extension from Python.
 
 ## [0.5.0] — unreleased
 
