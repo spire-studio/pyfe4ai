@@ -113,9 +113,10 @@ The guarantees below hold only while all of these hold.
        and fewer than ``t`` of them are corrupted.
    * - A-8
      - A stateful authority (the slot list of ``bcfe/gc_ristretto255``, the
-       key servers of the threshold key issuance) runs from one copy of its
-       state at a time: never two copies issuing at once, and after a backup
-       is restored only that copy goes on.
+       key servers and the dealer of the threshold key issuance, the key
+       centre of the identity directory) runs from one copy of its state at a
+       time: never two copies issuing at once (a forked child is a second
+       copy), and after a backup is restored only that copy goes on.
 
 Out of scope for the whole library
 ----------------------------------
