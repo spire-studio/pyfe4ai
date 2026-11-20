@@ -444,7 +444,9 @@ SCHEMES: tuple[Scheme, ...] = (
     _scheme(
         "mife/ddh", DL, REVIEWED, ADAPTED, "ACFGU18 Fig. 4 + ABDP15 (DDH)",
         note="ACFGU18 instantiates Fig. 4 with ALS16; here the selectively secure "
-        "ABDP15 IPFE in every slot",
+        "ABDP15 IPFE in every slot, so the guarantee is the selective analogue of "
+        "ACFGU18 Thm. 3 (which assumes a many-AD-IND IPFE; the paper does not state "
+        "this analogue)",
     ),
     _scheme(
         "mife/ddh_ristretto255", EC, UNREVIEWED, UNKNOWN, "ACFGU18 Fig. 4 + ABDP15 (DDH) in ristretto255",
@@ -454,7 +456,9 @@ SCHEMES: tuple[Scheme, ...] = (
     _scheme(
         "mife/lwe", LWE_ABDP15, REVIEWED, ADAPTED, "ACFGU18 Fig. 4 + ABDP15 (LWE)",
         note="ACFGU18 instantiates Fig. 4 with ALS16; here the selectively secure "
-        "ABDP15 IPFE (same two-step decryption; full-version proof, see sife/lwe), with "
+        "ABDP15 IPFE (same two-step decryption; full-version proof, see sife/lwe), so the "
+        "guarantee is the selective analogue of ACFGU18 Thm. 3 (which assumes a many-AD-IND "
+        "IPFE; the paper does not state this analogue), with "
         "parameters for dimension n * eta (footnote 14); the slot challenges of the "
         "ACFGU18 reduction differ by up to 4X, so standard reads the 128-bit table at "
         "sigma / (1 + 4X sqrt(eta)); slots share A, expanded from a public seed (SHAKE-128); "
