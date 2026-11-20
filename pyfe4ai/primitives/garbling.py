@@ -38,9 +38,10 @@ What the security argument requires of this module, and how it is met:
   generator half-gate, none for the other gates, in gate order;
 * instance salt -- the gate hash takes the instance salt (pp digest,
   ciphertext nonce, slot id) as a fixed 56-byte string;
-* nothing depends on ``x`` -- the kinds of the wires, the gate tables and
-  their number depend on the circuit and the mode only, never on ``x``; no
-  gate is folded or skipped because of ``x``; the garbler's selections by
+* a structure independent of ``x`` -- the kinds of the wires, which gates
+  have tables and their number depend on the circuit and the mode only,
+  never on ``x`` (the table contents do); no gate is folded or skipped
+  because of ``x``; the garbler's selections by
   ``x`` (values of ``K`` wires, ``val * Delta``) are written as masks, not
   branches;
 * injective hash inputs -- the inputs of ``H_G`` have fixed lengths (8 +

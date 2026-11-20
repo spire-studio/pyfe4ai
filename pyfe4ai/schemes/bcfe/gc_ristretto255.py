@@ -66,15 +66,24 @@ challenge ciphertexts, in the random oracle model (``H_G``, ``H_K``,
 ``H_P``) under the strong DH assumption in ristretto255 (for the label
 encryption, with arbitrary public keys), for the half-gates garbling with
 the instance salt and, in the default mode, the garbler-known data wires
-(a lemma of the argument's own). The argument also states what the code
-must do for it to apply: fresh randomness for every (ciphertext, slot),
-hash inputs that are domain-separated and of fixed or prefixed length, no
-secret key at an unselected position, one key per slot, checks of the
-holder's public keys and of the grant, a private dedup key and no fixed
-seed outside the tests; :mod:`pyfe4ai.primitives.bcfe_kem` and
-:mod:`pyfe4ai.primitives.garbling` say where each is done. Not proved: SIM
-security, the secrecy of ``w`` from its key holder, a malicious encryptor,
-a forged slot list, side channels, quantum adversaries. Status
+(a lemma of the argument's own). The argument also lists what the
+implementation and its use must do for it to apply: fresh randomness for
+every (ciphertext, slot); hash inputs that are domain-separated and of
+fixed or prefixed length, the gate hash with the instance salt and ZRE15's
+hash indices; one key position for the guard bit, whose second label is
+never sent; wire kinds and gate tables whose layout and number do not
+depend on ``x``; no secret key at an unselected position, and a slot
+secret ``k`` that is never published; a slot's function fixed when the
+slot is made, ciphertexts only for the slots listed then, and a slot list
+that only grows; one key per slot; checks of the holder's public keys and
+of the grant; the true slot list at the encryptor and one error for every
+decryption failure (see *Read before use*); a private dedup key and no
+fixed seed outside the tests. This module, the slot store
+(:mod:`pyfe4ai.schemes.common.slots`), :mod:`pyfe4ai.primitives.bcfe_kem`
+and :mod:`pyfe4ai.primitives.garbling` say where each is done. Not
+proved: SIM security, the secrecy of ``w`` from its key holder, a
+malicious encryptor, a forged slot list, side channels, quantum
+adversaries. Status
 *experimental*: our own security argument, reviewed internally, not by
 outside reviewers.
 
