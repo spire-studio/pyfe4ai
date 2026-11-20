@@ -110,8 +110,9 @@ compatibility).
 
 ### Security
 
-- **The native exact Gaussian sampler (FACCT) no longer branches on the values
-  it draws** (`rust/core/src/facct.rs`, `facct_wide.rs`). The time of 0.4.0 to
+- **The native exact Gaussian sampler (FACCT) branches on the values it draws
+  only at its decisions** (`rust/core/src/facct.rs`, `facct_wide.rs`), not on
+  the values it returns. The time of 0.4.0 to
   0.5.0 depended on them: an output with `y = 0` skipped the acceptance test,
   and the fixed-point exponential started from a floating-point estimate with
   correction loops (the wide kernel also compared `y` with `k`, and measured
@@ -125,12 +126,14 @@ compatibility).
   thousands of seeds, with the same samples, stream positions and calls of the
   exact threshold), and 5 widths x 400 seeds match the Python reference.
   Measured (`docs/security.rst`, *Side channels*): replaying one sample's
-  decisions with other values, the old sampler differs by -4.05 %, the new one
-  by +0.0013 % [-0.0044, +0.0070]; in the wide kernel seeds of one shape differ
-  by +0.044 % before and -0.0005 % [-0.0089, +0.0079] after. The time still
-  follows the number of candidates and the order of the decisions, neither of
-  which depends on the values returned. Cost: 3 to 15 % per sample (the most
-  at small widths, where one candidate in four had `y = 0`).
+  decisions with other values, the old sampler differs by about -4 %, the new
+  one by -0.0054 % to +0.0038 % for four fixed scripts (each interval
+  containing 0); in the wide kernel seeds of one shape differ by +0.044 %
+  before and -0.0005 % [-0.0089, +0.0079] after (a test that cannot separate
+  the values from the order of the decisions). The time still follows the
+  number of candidates and the order of the decisions, neither of which
+  depends on the values returned. Cost: 1 to 15 % per sample (the most at
+  small widths, where one candidate in four had `y = 0`).
 
 ### Changed
 
