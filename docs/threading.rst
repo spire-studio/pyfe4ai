@@ -146,7 +146,8 @@ them:
   decryption and no object holds one, so none is part of the state of a crypto
   object or of its pickle. It has no text form, and is as sensitive as the key
   elements it comes from. It is read-only, so threads may pair rows over one
-  set at once, and it is never copied or pickled (``TypeError``).
+  set at once, and it refuses ``copy.copy``, ``copy.deepcopy`` and pickle
+  (``TypeError``).
 
 Copies and pickles
 ------------------
@@ -180,7 +181,9 @@ Copies and pickles
   own.
 * The threshold MCFE over Ring-LWE objects carry the version of their
   state; a state of another version is refused when loaded.
-* **Never copied or pickled** (``TypeError``): one-time precomputations (a
+* **Refuse** ``copy.copy``, ``copy.deepcopy`` **and pickle** (``TypeError``),
+  which stops accidental copies (calling the internals of the ``copy`` module
+  directly still makes a shallow copy): one-time precomputations (a
   copy would be a second use of the same randomness), a
   :class:`~pyfe4ai.schemes.threshold.kl.PartialDecryptionBudget` (a copy
   would count separately), the BLS12-381 pairing group (it holds the

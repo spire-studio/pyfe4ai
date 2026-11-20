@@ -245,8 +245,9 @@ deployment creates and passes in the server's config:
 The guarantee holds only if a server's count covers all its partial
 decryptions under the setup: a server that runs as several processes or
 restarts must share or persist its count (for instance a subclass with an
-atomic, durable ``consume``). A budget cannot be copied or pickled, and it
-refuses to count in another process than the one that made it (after
+atomic, durable ``consume``). A budget refuses ``copy.copy``,
+``copy.deepcopy`` and pickle (``TypeError``), and it refuses to count in
+another process than the one that made it (after
 ``os.fork()`` parent and child would each count from the copied value).
 ``standard`` refuses ``mife/lwe_threshold`` with either accounting.
 

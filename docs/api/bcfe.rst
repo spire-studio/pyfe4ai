@@ -189,8 +189,8 @@ Two rules for the directory, which the library cannot check:
 
 The key holder of h2
 (:class:`~pyfe4ai.schemes.bcfe.gc_ristretto255.BCFEGCRistretto255KeyHolder`)
-keeps the secret keys of its open requests and is never copied or pickled
-(``TypeError``).
+keeps the secret keys of its open requests and refuses ``copy.copy``,
+``copy.deepcopy`` and pickle (``TypeError``).
 
 Sizes
 -----
