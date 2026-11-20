@@ -733,6 +733,10 @@ impl Target for FacctValues {
             facct_same_decisions(&self.table, &self.script, rng, &mut self.fresh);
         }
         self.buf.copy_from_slice(if class == 0 || self.null { &self.fixed } else { &self.fresh });
+        // the same cache state for both classes: read the two sources, then the buffer, in one order (copying from
+        // one source or the other leaves different lines behind; an A/A of identical values showed 159 ns)
+        let touch = |v: &[U256]| v.iter().fold(0u64, |a, x| a ^ x.0[0] ^ x.0[2]);
+        black_box(touch(&self.fixed) ^ touch(&self.fresh) ^ touch(&self.buf));
     }
     fn run(&mut self) {
         let dit = self.dit;
