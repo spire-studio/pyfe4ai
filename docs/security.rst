@@ -747,8 +747,8 @@ native extension (arkworks), whose scalar multiplications are variable-time,
 also for secret scalars.
 
 For the lattice kernels of the native core (``rust/core``) and the garbling
-of ``bcfe/gc_ristretto255``, the paths below were checked before 1.0 in two
-ways:
+and label KEM of ``bcfe/gc_ristretto255``, the paths below were checked
+before 1.0 in two ways:
 
 * by reading the release build's code for branches on secret values,
   secret-indexed memory accesses and instructions whose latency depends on
@@ -766,10 +766,15 @@ ways:
   buffers, gave a false signal for the signed reduction; no row below rests
   on it.
 
-Except for the exact Gaussian sampler, which is not constant-time (below),
-no timing difference beyond the control's was found within the measured
-sample sizes. That is evidence for
-these paths on this machine and compiler, not a guarantee.
+No timing difference that depends on the secret values beyond the control's
+was found within the measured sample sizes. That is evidence for these paths
+on this machine and compiler, not a guarantee. The masks that replace
+branches rest on an optimisation barrier that holds on x86-64 and aarch64
+(elsewhere a weaker one); the assembly was read on aarch64, and the x86-64
+code of the exact Gaussian sampler only as generated from the same LLVM IR by
+another compiler (clang), not by rustc's own backend. The library does not
+set the processor's data-independent-timing mode (``DIT`` on Apple silicon
+and other ARMv8.4 processors).
 
 .. list-table::
    :header-rows: 1
@@ -800,41 +805,64 @@ these paths on this machine and compiler, not a guarantee.
        seed (offset and labels) secret
      - seeded, 8·10^6 each
      - within the control
+   * - the label KEM of ``bcfe/gc_ristretto255`` in the native extension
+       (``rust/native``), timed from Python by ``tools/ct_bcfe.py``: the table
+       of a new slot chosen by ``w`` (with the authority's keys, and with the
+       holder's), the fused encryption (garbling and label encryption) with
+       ``x`` secret, and the decryption with the holder's slot (``w`` and its
+       scalars) secret
+     - one call per measurement, fixed against random, each with an A/A twin;
+       1.5 to 2·10^5 calls (the encryption 10^5)
+     - within the twins: the largest difference +0.011 % [-0.008, +0.030]
+       (the encryption), the twins up to -0.030 %; a call takes 0.23 to
+       1.06 ms, so the resolution is coarser than the core's harness (about
+       25 to 110 ns)
    * - the exact Gaussian sampler (FACCT, ``sigma = 1000``), 1024 values, the
        random bits secret; the default sampler of the noise of the lattice
-       MIFE and MCFE schemes
-     - seeded, 2·10^5; seeds of one shape (as many candidates, draws of
-       ``y``, signs and outputs of ``y = 0``), 4·10^5; one shape with and
-       without outputs of ``y = 0``, 6·10^5
-     - **not constant-time.** The time follows the number of candidates: a
-       fixed seed differs from random ones by -2.65 % [-2.67, -2.64], and a
-       regression over 300 seeds on a second machine gives about 345 ns per
-       call of the bit source and 117 ns per candidate, with residuals at the
-       measurement noise. In a rejection sampler the number of candidates
-       does not depend on the values returned. With the whole shape held
-       equal, seven seeds of one shape still differ by +0.031 % [+0.021,
-       +0.041] (about 480 ns, t = 6.1): the values of the candidates
-       (returned or rejected) move the time by a few hundred nanoseconds per
-       1024 samples. Two paths
-       depend on the values: an output with ``y = 0`` (a multiple of ``k``,
-       about one in 1024) skips the acceptance test (a seed with seven such
-       outputs ran 395 ns faster than one with none, t = 5.4: the direction
-       of the skip, but no more than seeds of one shape differ by), and the
-       fixed-point exponential of the test starts from a floating-point
-       estimate with correction loops and early returns, a few nanoseconds
-       per candidate by the code (not measured on its own). (An earlier test held only the number of random-bit
-       calls equal, which lets candidates trade against redraws of ``y``;
-       its -0.067 % is about 9 to 14 candidates.)
+       MIFE and MCFE schemes. Since 1.0 its acceptance test and exponential
+       have no branch on the values drawn and read their table whole (the
+       samples are those of 0.4.0 to 0.5.0, bit for bit)
+     - replayed, 6·10^5 to 10^6 batches: one seed's decisions held (which
+       draws of ``y`` are repeated, which candidates rejected, which ``-0``
+       drawn again), the values drawn anew within them; seeded, 2·10^5 to
+       6·10^5
+     - **no difference by the values**: a fixed set of values and fresh ones
+       with the same decisions differ by +0.0013 % [-0.0044, +0.0070] (A/A
+       -0.0030 % [-0.0086, +0.0026]), where the code of 0.4.0 to 0.5.0 differs
+       by -4.05 % [-4.06, -4.04] (an output with ``y = 0`` skipped the
+       acceptance test, and the exponential started from a floating-point
+       estimate with correction loops). The time follows the number of
+       candidates and of draws of ``y`` (a fixed seed differs from random ones
+       by -2.65 %), which do not depend on the values returned, and the order
+       of the decisions: seeds with the same counts still differ by a few
+       hundred nanoseconds per 1024 samples (+0.011 %, +0.014 % and -0.027 %
+       for three sets of seeds of one shape, t = 2.8 to 4.9; -0.039 % between
+       two single seeds), as before 1.0. Those tests change the
+       order of the decisions with the values and cannot tell the two
+       apart; the order does not depend on the values returned either. A
+       real sample's own values against values drawn from the sampler's
+       conditional distributions within its decisions: +0.0034 % [-0.0055,
+       +0.0124] and -0.0005 % [-0.0087, +0.0076] (two seeds). (A first
+       version of this test let the two classes copy their values from
+       different buffers, which left different lines in the cache and gave up
+       to 0.5 %, also between identical values; both classes now prepare the
+       same cache state.)
+   * - the exact Gaussian sampler of wide widths (``facct_wide.rs``, ``k``
+       of 199 bits as for the ``standard`` tMCFE, 256 values), since 1.0 as
+       above (comparisons with ``k`` and tests for zero read every word)
+     - seeds of one shape (as many candidates, draws of ``y`` and signs),
+       1.2·10^6
+     - -0.0005 % [-0.0089, +0.0079]; the code of 0.4.0 to 0.5.0: +0.044 %
+       [+0.037, +0.052]
 
 Not checked yet, in the native core: the RNS products and the CRT
 (``rns.rs``, used by default by the lattice MIFE, MCFE, dMCFE and tMCFE
 schemes), the dealing of replicated key shares (``replicated.rs``), the
-dense-LWE encryption and key terms, the exact Gaussian sampler of wide
-widths (``facct_wide.rs``), the arithmetic of 256-bit words (moduli of 125
-bits or more), decryption, and the threshold partial decryptions.
-Outside it, nothing was measured: the label selection by ``w`` and the label
-encryption of ``bcfe/gc_ristretto255`` were read but not timed, and in the
-native ristretto255 code the scalar multiplications are curve25519-dalek's,
+dense-LWE encryption and key terms, the arithmetic of 256-bit words (moduli
+of 125 bits or more), decryption, and the threshold partial decryptions.
+Outside it, only the label KEM of ``bcfe/gc_ristretto255`` was measured
+(above, from Python); in the native ristretto255 code the scalar
+multiplications are curve25519-dalek's,
 which is designed to be constant-time (not checked here), the encoding of a
 plaintext branches on its sign, and decryption's bounded discrete logarithm
 (baby-step giant-step) takes a time that depends on the result.
@@ -1059,8 +1087,13 @@ tables; ``label_bits`` takes 128 only.
 * **Not constant-time.** The Python backend makes no constant-time claim and
   cannot wipe its copies of secrets. The native implementation selects by
   the bits of ``w`` and ``x`` with masks, draws its randomness from the
-  operating system and wipes ``Delta``, the seeds, ``r`` and the labels, but
-  its timing has not been tested.
+  operating system and wipes ``Delta``, the seeds, ``r`` and the labels. Its
+  timing was measured on one machine (`Side channels`_): the garbling with
+  ``x`` or the seed secret, by the core's harness, and the slot tables chosen
+  by ``w``, the label encryption and the decryption, from Python; none
+  differed beyond the control or the A/A twin. That is evidence for these
+  paths, not a guarantee; the scalar multiplications of curve25519-dalek were
+  not checked here.
 
 Not covered by the argument: simulation security, the secrecy of ``w`` from
 its key holder, a malicious encryptor, a forged slot list, side channels and

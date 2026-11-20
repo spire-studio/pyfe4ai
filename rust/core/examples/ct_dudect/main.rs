@@ -28,6 +28,11 @@ impl Rng {
     fn new() -> Self {
         let mut b = [0u8; 16];
         osrand::fill(&mut b).expect("OS randomness");
+        // CT_SEED=n: a reproducible run (the same fixed inputs, e.g. to compare one script with and without DIT)
+        if let Some(n) = std::env::var("CT_SEED").ok().and_then(|v| v.parse::<u64>().ok()) {
+            b[..8].copy_from_slice(&n.to_le_bytes());
+            b[8..].copy_from_slice(&n.wrapping_mul(0x9e3779b97f4a7c15).to_le_bytes());
+        }
         let a = u64::from_le_bytes(b[..8].try_into().unwrap()) | 1;
         let c = u64::from_le_bytes(b[8..].try_into().unwrap()) | 2;
         Rng(a, c)
@@ -594,6 +599,95 @@ fn facct_same_decisions(table: &facct::Table, script: &[(u32, U256)], rng: &mut 
     assert_eq!(out.len(), script.len());
 }
 
+/// Another script with the same decisions whose values follow the sampler's own conditional distributions: every
+/// candidate is drawn afresh from the proposal (u, y uniform below k, v, the sign) until its decision -- accepted
+/// or rejected by the acceptance test (an f64 threshold, wrong only within 2^-50 of it), and -0 or not -- is the
+/// old one. Real scripts and these have the same distribution, so a fixed real script can be compared with them.
+fn facct_conditional(table: &facct::Table, script: &[(u32, U256)], rng: &mut Rng, out: &mut Vec<U256>) {
+    let (k, yb) = (table.k, table.y_bits);
+    let c = table.c_mant as f64 * 2f64.powi(table.c_exp);
+    let x_of = |u: &U256| table.cdt.iter().filter(|t| u >= t).count() as u64;
+    out.clear();
+    let mut i = 0;
+    while i < script.len() {
+        let x0 = x_of(&script[i].1);
+        let mut j = i + 1;
+        let mut ydraws = 0;
+        while script[j].0 == yb {
+            ydraws += 1;
+            j += 1;
+        }
+        let y0 = script[j - 1].1.0[0];
+        let accepted = j + 1 < script.len() && script[j + 1].0 == 1;
+        let minus_zero = accepted && x0 == 0 && y0 == 0 && script[j + 1].1.0[0] == 1;
+        let (u, y, v, sign) = loop {
+            let (u, y, v, sign) = (rand_bits(rng, facct::PRECISION), rng.next() % k, rand_bits(rng, facct::PRECISION),
+                                   rng.next() & 1);
+            let x = x_of(&u);
+            let p = (-c * (y as f64) * (y as f64 + 2.0 * k as f64 * x as f64)).exp();
+            let acc = y == 0 || (v.0[2] as f64) < p * 18446744073709551616.0;
+            let mz = acc && x == 0 && y == 0 && sign == 1;
+            if acc == accepted && mz == minus_zero {
+                break (u, y, v, sign);
+            }
+        };
+        out.push(u);
+        for _ in 1..ydraws {
+            out.push(U256([k + rng.next() % ((1u64 << yb) - k), 0, 0, 0]));
+        }
+        out.push(U256([y, 0, 0, 0]));
+        out.push(v);
+        i = j + 1;
+        if accepted {
+            out.push(U256([sign, 0, 0, 0]));
+            i += 1;
+        }
+    }
+    assert_eq!(out.len(), script.len());
+}
+
+/// Diagnostics of facct_values_cond: the seed's own script with, for `mix` = "low", the low 128 bits of every u and
+/// v drawn again (x and the decisions stay, but for a tie in the top word, about 2^-64); "vtop", the top word of v
+/// drawn again on the same side of the candidate's threshold (an f64 estimate, 2^20 away from it).
+fn facct_mix(table: &facct::Table, script: &[(u32, U256)], base: &[U256], rng: &mut Rng, out: &mut Vec<U256>,
+             mix: &str) {
+    // `base`: class 0's values (the seed's own or drawn ones), with the calls and decisions of `script`; "none"
+    // copies it unchanged (an A/A of that script)
+    let (k, yb) = (table.k, table.y_bits);
+    let c = table.c_mant as f64 * 2f64.powi(table.c_exp);
+    let x_of = |u: &U256| table.cdt.iter().filter(|t| u >= t).count() as u64;
+    out.clear();
+    out.extend_from_slice(base);
+    let mut i = 0;
+    while i < script.len() {
+        let x = x_of(&base[i]);
+        let mut j = i + 1;
+        while script[j].0 == yb {
+            j += 1;
+        }
+        let y = base[j - 1].0[0];
+        let accepted = j + 1 < script.len() && script[j + 1].0 == 1;
+        match mix {
+            "low" => {
+                for at in [i, j] {
+                    out[at].0[0] = rng.next();
+                    out[at].0[1] = rng.next();
+                }
+            }
+            "vtop" if y != 0 => {
+                let p = (-c * (y as f64) * (y as f64 + 2.0 * k as f64 * x as f64)).exp();
+                let t = p * 18446744073709551616.0;
+                let (lo, hi) = if accepted { (0.0, t.floor() - 1048576.0) } else { (t.ceil() + 1048576.0, 18446744073709551615.0) };
+                if hi > lo {
+                    out[j].0[2] = lo as u64 + rng.next() % ((hi - lo) as u64);
+                }
+            }
+            _ => {}
+        }
+        i = j + 1 + accepted as usize;
+    }
+}
+
 /// S5, FACCT values only: the decisions of one seed's sample (which candidates are rejected, which draws of y
 /// redrawn, which -0), and values drawn within them (`facct_same_decisions`): one such script fixed for class 0,
 /// a fresh one per batch for class 1, replayed from one buffer, no hashing in the timed part.
@@ -608,6 +702,9 @@ struct FacctValues {
     null: bool,
     /// FACCT_DIT=1: the timed call runs with the data-independent-timing bit (PSTATE.DIT) set
     dit: bool,
+    /// `facct_values_cond`: class 1 draws from the conditional distributions (`facct_conditional`), class 0 replays
+    /// the seed's own script
+    conditional: bool,
 }
 
 /// Sets or clears PSTATE.DIT (ARMv8.4 data-independent timing; Apple silicon), a no-op elsewhere.
@@ -627,8 +724,19 @@ impl Target for FacctValues {
     fn prepare(&mut self, class: usize, rng: &mut Rng) {
         // the same work for both classes: draw a script with the same decisions, then copy one script into the
         // buffer the run reads (the fixed one for class 0)
-        facct_same_decisions(&self.table, &self.script, rng, &mut self.fresh);
+        if let Ok(mix) = std::env::var("FACCT_MIX") {
+            // diagnostics: the seed's own script with some parts drawn again, every decision kept
+            facct_mix(&self.table, &self.script, &self.fixed, rng, &mut self.fresh, &mix);
+        } else if self.conditional {
+            facct_conditional(&self.table, &self.script, rng, &mut self.fresh);
+        } else {
+            facct_same_decisions(&self.table, &self.script, rng, &mut self.fresh);
+        }
         self.buf.copy_from_slice(if class == 0 || self.null { &self.fixed } else { &self.fresh });
+        // the same cache state for both classes: read the two sources, then the buffer, in one order (copying from
+        // one source or the other leaves different lines behind; an A/A of identical values showed 159 ns)
+        let touch = |v: &[U256]| v.iter().fold(0u64, |a, x| a ^ x.0[0] ^ x.0[2]);
+        black_box(touch(&self.fixed) ^ touch(&self.fresh) ^ touch(&self.buf));
     }
     fn run(&mut self) {
         let dit = self.dit;
@@ -818,6 +926,7 @@ const TARGETS: &[(&str, &str, usize)] = &[
     ("facct_y0_contrast", "S5: FACCT, one time shape; no y = 0 output vs the most found (the skipped test)", 1),
     ("facct_values", "S5: FACCT, 1024 values replayed: one seed's bits vs new values with the same decisions", 1),
     ("facct_values_null", "A/A of facct_values: the fixed script in both classes, the same preparation", 1),
+    ("facct_values_cond", "facct_values with the seed's own script fixed and class 1 from the same conditional distributions", 1),
     ("facct_values_real", "facct_values with the seed's own script fixed: drawn and real values differ in distribution", 1),
     ("facct_wide_equal_shape", "S5: wide FACCT (k of 199 bits), 256 values, seeds of one shape: values only", 1),
     ("garble_x", "S13, seeded: half-gates garbling (mode hardwired), the garbler's data bits secret", 1),
@@ -921,7 +1030,7 @@ fn make(name: &str, calls: usize, rng: &mut Rng) -> Box<dyn Target> {
             };
             Box::new(FacctSample { table, fixed, pool, seed: [0; 32], out: vec![0; 1024], deferred: Default::default() })
         }
-        "facct_values" | "facct_values_null" | "facct_values_real" => {
+        "facct_values" | "facct_values_null" | "facct_values_real" | "facct_values_cond" => {
             let mut cdt = [U256::ZERO; facct::CDT_SIZE];
             for (c, t) in cdt.iter_mut().zip(data::FACCT_CDT.iter()) {
                 *c = u256_dec(t);
@@ -931,8 +1040,12 @@ fn make(name: &str, calls: usize, rng: &mut Rng) -> Box<dyn Target> {
             let script = facct_script(&table, rng.next() | 1, 1024);
             // check: a script with the same decisions makes the same calls and 1024 values, its y = 0 differ
             let (mut buf, mut out, mut y0) = (Vec::new(), vec![0i64; 1024], Vec::new());
-            for _ in 0..20 {
-                facct_same_decisions(&table, &script, rng, &mut buf);
+            for n in 0..20 {
+                if n % 2 == 0 {
+                    facct_same_decisions(&table, &script, rng, &mut buf);
+                } else {
+                    facct_conditional(&table, &script, rng, &mut buf);
+                }
                 let mut bits = Scripted { vals: &buf, pos: 0 };
                 facct::sample(&table, &mut out, &mut bits, &|_, _| U256::ZERO);
                 assert_eq!(bits.pos, buf.len(), "a script with the same decisions makes as many calls");
@@ -944,7 +1057,7 @@ fn make(name: &str, calls: usize, rng: &mut Rng) -> Box<dyn Target> {
             // (facct_values_real: class 0 replays the real script, to show what the difference of the
             // distributions does)
             let mut base = Vec::new();
-            if name == "facct_values_real" {
+            if name == "facct_values_real" || name == "facct_values_cond" {
                 base.extend(script.iter().map(|&(_, v)| v));
             } else {
                 facct_same_decisions(&table, &script, rng, &mut base);
@@ -956,7 +1069,8 @@ fn make(name: &str, calls: usize, rng: &mut Rng) -> Box<dyn Target> {
             let n = base.len();
             Box::new(FacctValues { table, script, fixed: base, fresh: Vec::new(), buf: vec![U256::ZERO; n], out: vec![0; 1024],
                                    null: name == "facct_values_null",
-                                   dit: std::env::var("FACCT_DIT").map(|v| v == "1").unwrap_or(false) })
+                                   dit: std::env::var("FACCT_DIT").map(|v| v == "1").unwrap_or(false),
+                                   conditional: name == "facct_values_cond" })
         }
         "facct_wide_equal_shape" => {
             let table = facct_wide_table();

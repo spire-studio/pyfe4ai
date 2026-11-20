@@ -28,9 +28,12 @@ import random
 import statistics
 import sys
 import time
+from pathlib import Path
 
-from pyfe4ai import backend
-from pyfe4ai.circuits import library
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # the tree, as tools/gen_site_matrix.py
+
+from pyfe4ai import backend  # noqa: E402
+from pyfe4ai.circuits import library  # noqa: E402
 
 M, N = 24, 16
 CIRCUIT = library.linear_threshold(4, 4, 4).circuit.guard().encode()
