@@ -46,6 +46,17 @@ STABLE_AT = {
         "mcfe/ddh_threshold", "mcfe/lwe_decentralized", "mcfe/ring_lwe_decentralized",
         "mcfe/paillier_decentralized", "quadratic/quad", "quadratic/sgp", "quadratic/miqfe",
     ),
+    # the frozen set of the release (written by 80aae14, the 1.0.0 RC, on the native backend): the same 36 schemes
+    "1.0.0": (
+        "sife/ddh", "sife/lwe", "sife/paillier", "sife/damgard", "sife/ring_lwe", "sife/fullysec_ring_lwe",
+        "sife/fullysec_lwe", "sife/ddh_dynamic", "sife/fh_ipe_pairing", "sife/part_fh_ipe_pairing",
+        "sife/cp_ab_pairing", "sife/kp_ab_pairing", "mife/ddh", "mife/lwe", "mife/paillier", "mife/damgard",
+        "mife/ring_lwe", "mife/fullysec_lwe", "mife/fh_ipe_pairing", "mife/fh_multi_ipe_pairing",
+        "mife/ddh_threshold", "mcfe/ddh", "mcfe/lwe", "mcfe/paillier", "mcfe/damgard", "mcfe/ring_lwe",
+        "mcfe/fullysec_lwe", "mcfe/fh_multi_ipe_pairing", "mcfe/fh_multi_ipe_pairing_decentralized",
+        "mcfe/ddh_threshold", "mcfe/lwe_decentralized", "mcfe/ring_lwe_decentralized",
+        "mcfe/paillier_decentralized", "quadratic/quad", "quadratic/sgp", "quadratic/miqfe",
+    ),
 }
 
 

@@ -369,11 +369,11 @@ dependencies = [
 
 [[package]]
 name = "pyfe4ai-core"
-version = "0.5.0"
+version = "1.0.0"
 
 [[package]]
 name = "pyfe4ai-native"
-version = "0.5.0"
+version = "1.0.0"
 dependencies = [
  "ark-bls12-381",
  "ark-ec",
