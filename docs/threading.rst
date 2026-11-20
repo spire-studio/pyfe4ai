@@ -199,7 +199,7 @@ one thread, whatever :func:`~pyfe4ai.backend.set_threads` or
   fork before the parent runs any multi-threaded native call.
   :func:`pyfe4ai.backend.effective_threads` returns the thread count a
   native call uses in the current process, and
-  :func:`pyfe4ai.backend_info` reports it as ``"threads"``.
+  :func:`pyfe4ai.backend_info() <pyfe4ai.backend.backend_info>` reports it as ``"threads"``.
 * *Linux:* the rule applies there too, so fork-based workers on Linux also
   run native calls on one thread. The crash itself is specific to macOS
   (Linux waits on a futex, not libdispatch); the library has not been run
