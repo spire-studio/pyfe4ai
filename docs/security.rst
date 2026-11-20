@@ -9,7 +9,8 @@ review status of every scheme and the parameter presets; the README sections
 `Security Profiles <https://github.com/spire-studio/pyfe4ai#security-profiles>`__
 and `Known Issues / Security Notice
 <https://github.com/spire-studio/pyfe4ai#known-issues--security-notice>`__
-add measured costs and the remaining limitations.
+add measured costs and the remaining limitations, and :doc:`threat_model`
+gathers who is trusted and what each family reveals by design.
 
 Trust assumptions in brief
 --------------------------
@@ -715,6 +716,8 @@ threshold adds no protection there; the separate steps
 (:func:`~pyfe4ai.ml.partial_decrypt_gradients`,
 :func:`~pyfe4ai.ml.combine_partial_decryptions`) show the
 messages of a deployment, whose servers run in their own trust domains.
+
+.. _side-channels:
 
 Side channels
 -------------

@@ -78,6 +78,7 @@ Contents
    quickstart
    choosing
    security
+   threat_model
    compatibility
    configuration
    environment

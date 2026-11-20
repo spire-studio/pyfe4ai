@@ -33,6 +33,10 @@ Responsible reporting of security issues is appreciated, especially for:
 
 ## Security Model
 
+The [threat model](https://spire-studio.github.io/pyfe4ai/docs/threat_model.html)
+gathers, family by family, who is trusted, what each scheme reveals by design
+and what is out of scope; the points below are its summary.
+
 - **What is protected.** The schemes protect inputs against the parties named
   in their papers. Every registered scheme carries a review status
   (`pyfe4ai.get_scheme_status(family, variant)`, README *Scheme Status*).

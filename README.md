@@ -381,7 +381,9 @@ Two registered schemes are known to be insecure, `mcfe/kp_ab_pairing` and
 generators and crypto objects emit a `pyfe4ai.FESecurityWarning`, and
 `security_profile="standard"` refuses them). The ML adapter's policy-gated
 aggregation runs on `mcfe/kp_ab_pairing`, so it is for experiments only.
-The following limitations remain as well:
+The [threat model](https://spire-studio.github.io/pyfe4ai/docs/threat_model.html)
+says, family by family, who is trusted, what each scheme reveals by design and
+what is out of scope. The following limitations remain as well:
 
 | Issue | Affected | In short |
 |---|---|---|
