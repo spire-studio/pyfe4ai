@@ -821,8 +821,8 @@ and other ARMv8.4 processors).
        scalars) secret
      - one call per measurement, fixed against random, each with an A/A twin;
        1.5 to 2·10^5 calls (the encryption 10^5)
-     - within the twins: the largest difference +0.013 % [-0.004, +0.030]
-       (the encryption), the twins up to -0.015 %; a call takes 0.23 to
+     - within the twins: the largest difference -0.015 % [-0.036, +0.007]
+       (the decryption, whose A/A twin gave -0.015 % too); a call takes 0.23 to
        1.06 ms, so the resolution is coarser than the core's harness (about
        25 to 110 ns)
    * - the exact Gaussian sampler (FACCT, ``sigma = 1000``), 1024 values, the
@@ -881,12 +881,16 @@ and other ARMv8.4 processors).
 
 *Cropped tests.* Besides the means, the harness compares the two classes'
 times below several percentiles (as dudect does), which catches a difference
-in the shape of the distributions. A few runs flagged them while their means
-stayed within the control: a first run of the forward NTT (28; its rerun on
-the same code gave 0.55), the garbling with the seed secret (11; 0.45 in an
-earlier run) and the wide sampler's seeds of one shape (16.6 and 28). The flags
-came and went between runs of the same code; the verdict above is the mean's
-effect size.
+in the shape of the distributions. Some runs flagged them while their means
+stayed within the control. The wide sampler's seeds of one shape flag in both
+runs (16.6 and 28, growing with the number of batches): that comes from the
+method, which compares one seed's order of decisions with other seeds' (see
+its row). A first run of the forward NTT (28) and a run of the garbling with
+the seed secret (11) flagged, and their other runs did not (0.55 for the NTT
+on the same code, 0.45 for the garbling on earlier code); but each run drew
+new fixed inputs from the operating system (the seed of the fixed class was
+not recorded), so a dependence on the fixed input is not excluded. The verdict
+above is the mean's effect size.
 
 Not checked yet, in the native core: the RNS products and the CRT
 (``rns.rs``, used by default by the lattice MIFE, MCFE, dMCFE and tMCFE
