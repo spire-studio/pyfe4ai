@@ -758,8 +758,11 @@ before 1.0 in two ways:
   Verbauwhede, DATE 2017; the targets of ``rust/core/examples/ct_dudect/main.rs``):
   fixed against random secret inputs, Welch's t-test, judged by the effect
   size against a constant-time control (SHAKE-256, whose two classes differ
-  by -0.0012 % [-0.0037, +0.0014] at 8·10^7 batches), on an Apple M4 Max
-  with nothing else timed. In the *seeded* design both classes run the same
+  by +0.0034 % [+0.0005, +0.0063] at 8·10^7 batches on the code of the
+  release, -0.0012 % [-0.0037, +0.0014] in an earlier run), on an Apple M4
+  Max with nothing else timed. The numbers below were measured on the code of
+  the 1.0.0 release candidate (the earlier runs of the 1.0 checks gave the
+  same verdicts). In the *seeded* design both classes run the same
   code, which draws the secret from a seed into the same buffer, the fixed
   class reusing one seed; in the *scalar* design the secret is one value.
   An earlier design, which copied the inputs of the two classes from two
@@ -787,26 +790,29 @@ and other ARMv8.4 processors).
      - Result
    * - reduction of signed values (noise, randomness, plaintext) mod ``q``
      - seeded, 8·10^7 batches of 4096 reductions
-     - within the control; no branch on the sign in the assembly; a division
+     - within the control (+0.0003 % [-0.0033, +0.0039]); no branch on the
+       sign in the assembly; a division
        only for values of at least ``q``, which noise never reaches
    * - Montgomery products (64-bit words), by a secret factor
      - scalar, 4·10^7 batches of 4096
-     - no difference
+     - within the control (+0.0022 % [-0.0003, +0.0048])
    * - forward NTT (``n = 1024``, 60-bit ``q``)
      - seeded, 3·10^7
-     - within the control
+     - within the control (+0.0023 % [-0.0027, +0.0073]; a first run gave
+       +0.0034 % with a cropped t of 28, see below)
    * - the MCFE Ring-LWE encryption of 4096 elements (four chunks), the
        plaintext secret
      - seeded, 8·10^5
-     - within the control
+     - within the control (+0.0026 % [-0.0022, +0.0074])
    * - Shamir sharing of 256 secrets, ``t = 3``
      - seeded, 5·10^7
-     - within the control
+     - within the control (+0.0012 % [-0.0013, +0.0037])
    * - the half-gates garbling of ``bcfe/gc_ristretto255`` (data bits
        hardwired), the garbler's data bits secret; the same with the garbling
        seed (offset and labels) secret
      - seeded, 8·10^6 each
-     - within the control
+     - within the control (data bits -0.0005 % [-0.0080, +0.0070]; seed
+       -0.0048 % [-0.0123, +0.0028], with a cropped t of 11, see below)
    * - the label KEM of ``bcfe/gc_ristretto255`` in the native extension
        (``rust/native``), timed from Python by ``tools/ct_bcfe.py``: the table
        of a new slot chosen by ``w`` (with the authority's keys, and with the
@@ -815,8 +821,8 @@ and other ARMv8.4 processors).
        scalars) secret
      - one call per measurement, fixed against random, each with an A/A twin;
        1.5 to 2·10^5 calls (the encryption 10^5)
-     - within the twins: the largest difference +0.011 % [-0.008, +0.030]
-       (the encryption), the twins up to -0.030 %; a call takes 0.23 to
+     - within the twins: the largest difference +0.013 % [-0.004, +0.030]
+       (the encryption), the twins up to -0.015 %; a call takes 0.23 to
        1.06 ms, so the resolution is coarser than the core's harness (about
        25 to 110 ns)
    * - the exact Gaussian sampler (FACCT, ``sigma = 1000``), 1024 values, the
@@ -829,29 +835,32 @@ and other ARMv8.4 processors).
        drawn again), the values drawn anew within them (the sampler run on a
        scripted bit source; the library's instances share its code); seeded,
        2·10^5 to 6·10^5
-     - **no difference by the values**: four fixed sets of values against
-       fresh ones with the same decisions differ by -0.0054 % to +0.0038 %,
-       every interval containing 0 (about ±0.008 %, 6·10^5 batches each; A/A
-       -0.0027 % and -0.0017 %); a first run of one of these scripts gave
-       +0.0068 % [-0.0014, +0.0151] with a cropped t of 8.05, which its rerun
-       did not reproduce (3.55). The code of 0.4.0 to 0.5.0 differs by about
+     - **no difference by the values**: a fixed set of values against fresh
+       ones with the same decisions differs by +0.0040 % [-0.0013, +0.0093]
+       (10^6 batches; A/A -0.0031 % [-0.0084, +0.0021]), four more fixed sets
+       by -0.0054 % to +0.0038 %, every interval containing 0 (6·10^5 batches
+       each, on the same code before the version change); a first run of one
+       of those gave +0.0068 % [-0.0014, +0.0151] with a cropped t of 8.05,
+       which its rerun did not reproduce (3.55). The code of 0.4.0 to 0.5.0 differs by about
        -4 % (an output with ``y = 0`` skipped the acceptance test, and the
        exponential started from a floating-point estimate with correction
        loops; measured with the first version of the test below, whose
        artefact was at most about 0.5 %). The time follows the number of
        candidates and of draws of ``y`` (a fixed seed differs from random ones
-       by -2.65 %, measured on the code of 0.4.0 to 0.5.0), which do not
-       depend on the values returned, and the order
+       by +1.39 %, by its own number of candidates; -2.65 % for another seed
+       on the code of 0.4.0 to 0.5.0), which do not depend on the values
+       returned, and the order
        of the decisions: seeds with the same counts still differ by a few
-       hundred nanoseconds per 1024 samples (+0.011 %, +0.014 % and -0.027 %
-       for three sets of seeds of one shape, t = 2.8 to 4.9; -0.039 % between
-       two single seeds), as before 1.0. Those tests change the
+       hundred nanoseconds per 1024 samples (-0.013 %, +0.011 %, +0.014 % and
+       -0.027 % for four sets of seeds of one shape, t = 2.6 to 4.9; +0.022 %
+       and -0.039 % between two single seeds), as before 1.0. Those tests
+       change the
        order of the decisions with the values and cannot tell the two
        apart; the order does not depend on the values returned either. A
        real sample's own values against values drawn from the sampler's
-       conditional distributions within its decisions: +0.0034 % [-0.0055,
-       +0.0124] and -0.0005 % [-0.0087, +0.0076] (two seeds), its A/A
-       -0.0052 %. (A first version of this test let the two classes copy
+       conditional distributions within its decisions: +0.0033 % [-0.0046,
+       +0.0113] and +0.0011 % [-0.0064, +0.0086] (two seeds; -0.0052 % for its
+       A/A in an earlier run). (A first version of this test let the two classes copy
        their values from different buffers, which left different lines in the
        cache and gave up to 0.5 %, also between identical values; the numbers
        above for the current code come from the corrected version, in which
@@ -861,13 +870,23 @@ and other ARMv8.4 processors).
        above (comparisons with ``k`` and tests for zero read every word)
      - seeds of one shape (as many candidates, draws of ``y`` and signs),
        1.2·10^6
-     - -0.0005 % [-0.0089, +0.0079]; the code of 0.4.0 to 0.5.0: +0.044 %
-       [+0.037, +0.052]. Like the narrow seeds of one shape, this test changes
-       the order of the decisions with the values and cannot tell them apart:
-       the mean no longer differs, the cropped tests still do (16.6), as
+     - -0.0104 % [-0.0183, -0.0026] (t -2.6, within the control by effect
+       size) and -0.0005 % [-0.0089, +0.0079] in an earlier run; the code of
+       0.4.0 to 0.5.0: +0.044 % [+0.037, +0.052]. Like the narrow seeds of one
+       shape, this test changes the order of the decisions with the values and
+       cannot tell them apart; its cropped tests differ (16.6 and 28), as
        between narrow seeds of one shape. The rest rests on the assembly (the
        branches left are the public parameters, the redraws and the deferral
        to the exact threshold)
+
+*Cropped tests.* Besides the means, the harness compares the two classes'
+times below several percentiles (as dudect does), which catches a difference
+in the shape of the distributions. A few runs flagged them while their means
+stayed within the control: a first run of the forward NTT (28; its rerun on
+the same code gave 0.55), the garbling with the seed secret (11; 0.45 in an
+earlier run) and the wide sampler's seeds of one shape (16.6 and 28). The flags
+came and went between runs of the same code; the verdict above is the mean's
+effect size.
 
 Not checked yet, in the native core: the RNS products and the CRT
 (``rns.rs``, used by default by the lattice MIFE, MCFE, dMCFE and tMCFE
