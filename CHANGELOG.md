@@ -19,12 +19,13 @@ compatibility).
   decryption refuses (`FEKeyError`) a mismatch. Records in
   `pyfe4ai.core.formats.identity`, format id
   `IDENTITY_DIRECTORY_VERSION`. The key centre holds every identity's master
-  key, ciphertexts name their identity, and there is no revocation.
+  key, ciphertexts name their identity, and there is no revocation. Keep one
+  key centre object: it cannot be copied or pickled.
 
 - **Threshold key issuance for `sife/cp_ab_pairing` (experimental),
   capability `distributed_keygen`.** `SIFECPABPairingDealer` shares the
   master key among `s` key servers and hands each its share once;
-  `SIFECPABPairingKeyServer.issue(request, requester)` answers with a masked
+  `SIFECPABPairingKeyServer.issue(request, authenticated_requester)` answers with a masked
   partial key after its operator's approval rule, which sees the whole
   request (weights included) and the authenticated requester;
   `SIFECPABPairingKeyCombiner` builds requests and checks the product of
@@ -32,6 +33,8 @@ compatibility).
   parameters, ciphertexts and decryption are unchanged. Requires
   authenticated, confidential channels between requester and servers. Records
   in `pyfe4ai.core.formats.keyissue`.
+- **Examples** `sife_cp_ab_pairing_keyissue_demo.py` and
+  `ac_identity_directory_minimal.py`.
 
 ### Documentation
 
