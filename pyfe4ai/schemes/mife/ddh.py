@@ -24,7 +24,9 @@ Each slot's partial result is ``g^{<x_i + u_i, y_i>}``: the pad hides
 there are no labels -- a key holder may combine any ciphertexts of each
 slot, so clients must not reuse a key epoch across independent inputs
 (use MCFE for repeated aggregation). Deviation from ACFGU18, which uses the
-adaptively secure ALS16 IPFE: ABDP15 is selectively secure. Versions <= 0.2.0
+adaptively secure ALS16 IPFE: ABDP15 is selectively secure, so what holds is
+the selective analogue of ACFGU18 Thm. 3 (the theorem assumes a many-AD-IND
+IPFE; the paper does not state the analogue). Versions <= 0.2.0
 did not reduce ciphertexts modulo ``p`` (their factors revealed ``x + u``)
 nor keys modulo ``q`` (a key with a large weight revealed the pads).
 """

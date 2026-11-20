@@ -28,7 +28,9 @@ The pad hides each slot's partial result; versions <= 0.2.0 had no pad and
 encoded ``floor(x q / p)``, so the key holder decoded every ``<x_i, y_i>``.
 Deviations: ACFGU18 instantiates Fig. 4 with the adaptively secure ALS16 LWE
 IPFE (that is :mod:`pyfe4ai.schemes.mife.fullysec_lwe`); this module uses
-the selectively secure ABDP15 IPFE, whose two-step decryption is the same.
+the selectively secure ABDP15 IPFE, whose two-step decryption is the same,
+so what holds is the selective analogue of ACFGU18 Thm. 3 (the theorem
+assumes a many-AD-IND IPFE; the paper does not state the analogue).
 All slots share ``A`` (secrets and pads are independent per slot). A
 decryption needs ciphertexts of every slot named in the key.
 
