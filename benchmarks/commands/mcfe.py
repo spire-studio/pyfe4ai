@@ -7,6 +7,9 @@ import time
 
 from _common import BENCHMARK_HEADER
 from _common import emit_results
+from _common import keygen_config
+from _common import parse_args
+from _common import run_cases
 from _common import prepare_benchmark
 from _common import profile_value
 from _common import size_bytes
@@ -15,6 +18,8 @@ from pyfe4ai.schemes.mcfe.damgard_ddh import MCFEDamgard
 from pyfe4ai.schemes.mcfe.damgard_ddh import MCFEDamgardKeyGenerator
 from pyfe4ai.schemes.mcfe.ddh import MCFEDDH
 from pyfe4ai.schemes.mcfe.ddh import MCFEDDHKeyGenerator
+from pyfe4ai.schemes.mcfe.ddh_ristretto255 import MCFEDDHRistretto255
+from pyfe4ai.schemes.mcfe.ddh_ristretto255 import MCFEDDHRistretto255KeyGenerator
 from pyfe4ai.schemes.mcfe.fullysec_lwe import MCFEFullySecLWE
 from pyfe4ai.schemes.mcfe.fullysec_lwe import MCFEFullySecLWEKeyGenerator
 from pyfe4ai.schemes.mcfe.lwe import MCFELWE
@@ -40,7 +45,7 @@ def _run_case(case: dict, rounds: int) -> dict:
     ct_totals = []
 
     for _ in range(rounds):
-        kg = case["kg_cls"](case["config"])
+        kg = case["kg_cls"](keygen_config(case["config"]))
         t0 = time.perf_counter()
         kg.setup()
         setup_times.append(time.perf_counter() - t0)
@@ -125,7 +130,7 @@ def main(argv=None, prog=None) -> None:
     parser.add_argument("--output", choices=["csv", "json"], default="csv")
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--seed", type=int, default=7)
-    args = parser.parse_args(argv)
+    args = parse_args(parser, argv)
     prepare_benchmark(args.seed)
 
     lst_nid = ["nid_0", "nid_1", "nid_2"]
@@ -146,6 +151,18 @@ def main(argv=None, prog=None) -> None:
             "crypto_cls": MCFEDDH,
             "config": {"sec_param": 256, "eta": eta, "n": 3, "s": 1, "lst_nid": lst_nid},
             "label": "bench-mcfe-ddh",
+            "precision": 3,
+            "lst_nid": lst_nid,
+            "x": core_x,
+            "y": core_y,
+            "expected": sum(core_x[nid][i] * core_y[nid][i] for nid in lst_nid for i in range(eta)),
+        },
+        {
+            "name": "MCFE/DDHRistretto255",
+            "kg_cls": MCFEDDHRistretto255KeyGenerator,
+            "crypto_cls": MCFEDDHRistretto255,
+            "config": {"eta": eta, "n": 3, "s": 1, "lst_nid": lst_nid},
+            "label": "bench-mcfe-ddh-ristretto255",
             "precision": 3,
             "lst_nid": lst_nid,
             "x": core_x,
@@ -209,12 +226,13 @@ def main(argv=None, prog=None) -> None:
         },
     ]
 
-    results = []
-    for case in cases:
+    def bench(case: dict) -> dict:
         for _ in range(args.warmup):
             _run_case(case, rounds=1)
         result = _run_case(case, rounds=args.rounds)
         result["profile"] = args.profile
-        results.append(result)
+        return result
+
+    results = run_cases([lambda case=case: bench(case) for case in cases])
     emit_results(results, output=args.output, header=BENCHMARK_HEADER)
 

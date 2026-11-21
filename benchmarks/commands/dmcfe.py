@@ -8,6 +8,9 @@ import time
 
 from _common import BENCHMARK_HEADER
 from _common import emit_results
+from _common import keygen_config
+from _common import parse_args
+from _common import run_cases
 from _common import prepare_benchmark
 from _common import profile_value
 from _common import size_bytes
@@ -16,6 +19,8 @@ from pyfe4ai.schemes.mcfe.ddh_decentralized import DecentralizedMCFEDDH
 from pyfe4ai.schemes.mcfe.ddh_decentralized import DecentralizedMCFEDDHKeyGenerator
 from pyfe4ai.schemes.mcfe.lwe_decentralized import DecentralizedMCFELWE
 from pyfe4ai.schemes.mcfe.lwe_decentralized import DecentralizedMCFELWEKeyGenerator
+from pyfe4ai.schemes.mcfe.paillier_decentralized import DecentralizedMCFEPaillier
+from pyfe4ai.schemes.mcfe.paillier_decentralized import DecentralizedMCFEPaillierKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe_decentralized import DecentralizedMCFERingLWE
 from pyfe4ai.schemes.mcfe.ring_lwe_decentralized import DecentralizedMCFERingLWEKeyGenerator
 
@@ -43,7 +48,7 @@ def _run_case(case: dict, rounds: int) -> dict:
     ct_totals = []
 
     for _ in range(rounds):
-        kg = case["kg_cls"](case["config"])
+        kg = case["kg_cls"](keygen_config(case["config"]))
         t0 = time.perf_counter()
         kg.setup()
         setup_times.append(time.perf_counter() - t0)
@@ -116,13 +121,14 @@ def main(argv=None, prog=None) -> None:
     parser.add_argument("--output", choices=["csv", "json"], default="csv")
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--seed", type=int, default=7)
-    args = parser.parse_args(argv)
+    args = parse_args(parser, argv)
     prepare_benchmark(args.seed)
 
     lst_nid = ["nid_0", "nid_1", "nid_2"]
     lwe_n = profile_value(args.profile, {"small": 16, "medium": 24, "large": 32})
     ring_n = profile_value(args.profile, {"small": 16, "medium": 16, "large": 32})
     bound = profile_value(args.profile, {"small": 4, "medium": 8, "large": 12})
+    bit_length = profile_value(args.profile, {"small": 64, "medium": 96, "large": 128})
     core_x = {nid: [1] for nid in lst_nid}
     core_y = {nid: [1] for nid in lst_nid}
     ring_x = {nid: [[1]] for nid in lst_nid}
@@ -162,14 +168,27 @@ def main(argv=None, prog=None) -> None:
             "y": ring_y,
             "expected": [3],
         },
+        {
+            "name": "dMCFE/Paillier",
+            "kg_cls": DecentralizedMCFEPaillierKeyGenerator,
+            "crypto_cls": DecentralizedMCFEPaillier,
+            "config": {"sec_param": 64, "eta": 1, "n": 3, "s": 1, "lst_nid": lst_nid, "bit_length": bit_length,
+                       "bound_x": bound, "bound_y": bound},
+            "label": "bench-dmcfe-paillier",
+            "lst_nid": lst_nid,
+            "x": core_x,
+            "y": core_y,
+            "expected": 3,
+        },
     ]
 
-    results = []
-    for case in cases:
+    def bench(case: dict) -> dict:
         for _ in range(args.warmup):
             _run_case(case, rounds=1)
         result = _run_case(case, rounds=args.rounds)
         result["profile"] = args.profile
-        results.append(result)
+        return result
+
+    results = run_cases([lambda case=case: bench(case) for case in cases])
     emit_results(results, output=args.output, header=BENCHMARK_HEADER)
 
