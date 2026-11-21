@@ -3,9 +3,10 @@
 Every client encrypts a gradient of ``--elements`` values in ``[-1, 1]`` with
 ``--precision`` decimal digits through :func:`~pyfe4ai.ml.encrypt_gradient`;
 the aggregator derives the functional key for the round label and decrypts the
-sum (weight 1) with :func:`~pyfe4ai.ml.aggregate_gradients`. Each
+weighted sum (``--weights``, one integer per client, default all 1; ``bound_y``
+is the largest absolute weight) with :func:`~pyfe4ai.ml.aggregate_gradients`. Each
 round uses a fresh label; round 0 warms the caches and is not counted. The
-result is checked against the plaintext sum.
+result is checked against the plaintext weighted sum.
 
 Reported per family (medians over the counted rounds):
 
@@ -40,6 +41,7 @@ temporary directory) so a cache can be reused across runs. Usage::
 
     python benchmarks/run.py fl-compare --families ring_lwe --elements 10000 --json out.json
     python benchmarks/run.py fl-compare --families ring_lwe --backend native --threads 4
+    python benchmarks/run.py fl-compare --families ring_lwe --ct-format binary --weights 1,2,3
     python benchmarks/run.py fl-compare --families ring_lwe lwe --label-hash shake128-rejection
     python benchmarks/run.py fl-compare --families ring_lwe_threshold  # binary, RNS, split key shares
     python benchmarks/run.py fl-compare --families ring_lwe_threshold --ct-format json --ring-modulus prime \
@@ -80,10 +82,10 @@ FAMILIES = {
 OFFLINE_FAMILIES = ("ring_lwe", "ddh", "damgard", "paillier")
 
 
-def _bounds(family: str, bound_x: int) -> dict:
+def _bounds(family: str, bound_x: int, bound_y: int = 1) -> dict:
     if family in ("damgard",):
-        return {"bound": bound_x}
-    return {"bound_x": bound_x, "bound_y": 1}
+        return {"bound": max(bound_x, bound_y)}
+    return {"bound_x": bound_x, "bound_y": bound_y}
 
 
 def _env() -> dict:
@@ -183,7 +185,8 @@ def _scheme_params(pp: dict) -> dict:
 
 
 def measure(family: str, elements: int, clients: int, rounds: int, precision: int, bound_x: int,
-            profile: str, ct_format: str = "json", offline: bool = False, extra: dict | None = None) -> dict:
+            profile: str, ct_format: str = "json", offline: bool = False, extra: dict | None = None,
+            weights: list | None = None) -> dict:
     from pyfe4ai.ml import FESchemeWrapper, aggregate_gradients, encrypt_gradient
 
     if offline:  # not in versions before the native backend
@@ -191,10 +194,12 @@ def measure(family: str, elements: int, clients: int, rounds: int, precision: in
 
     key, base_cfg, _ = FAMILIES[family]
     nids = ["c{}".format(i) for i in range(clients)]
-    cfg = dict(base_cfg, n=clients, lst_nid=nids, security_profile=profile, **_bounds(family, bound_x), **(extra or {}))
+    weights = list(weights or [1] * clients)
+    bounds = _bounds(family, bound_x, max(abs(w) for w in weights))
+    cfg = dict(base_cfg, n=clients, lst_nid=nids, security_profile=profile, **bounds, **(extra or {}))
     row = {"family": family, "scheme": "/".join(key), "profile": profile, "elements": elements,
            "clients": clients, "rounds": rounds, "precision": precision, "bound_x": bound_x,
-           "ct_format": ct_format, **(extra or {})}
+           "weights": weights, "ct_format": ct_format, **(extra or {})}
     t0 = time.perf_counter()
     options = {"crypto_options": {"ct_format": ct_format}} if ct_format != "json" else {}
     wrapper = FESchemeWrapper(*key, cfg, precision=precision, **options)
@@ -215,7 +220,7 @@ def measure(family: str, elements: int, clients: int, rounds: int, precision: in
     lim = bound_x / 10 ** precision
     enc_t, agg_t, dk_t, enc_off, agg_off = [], [], [], [], []
     ct_size = None
-    weights = {nid: 1 for nid in nids}
+    fusion = dict(zip(nids, weights))
     for r in range(rounds + 1):
         label = "round-{}".format(r)
         grads = {nid: rng.uniform(-lim, lim, elements).round(precision) for nid in nids}
@@ -224,7 +229,7 @@ def measure(family: str, elements: int, clients: int, rounds: int, precision: in
             t0 = time.perf_counter()
             pre = {nid: precompute_gradient((elements,), wrapper, nid=nid, label=label) for nid in nids}
             t1 = time.perf_counter()
-            prepared = prepare_aggregation(wrapper, weights, shape=(elements,), label=label)
+            prepared = prepare_aggregation(wrapper, fusion, shape=(elements,), label=label)
             t2 = time.perf_counter()
             if r:
                 enc_off.append((t1 - t0) / clients)
@@ -237,9 +242,10 @@ def measure(family: str, elements: int, clients: int, rounds: int, precision: in
         if offline:
             total = aggregate_gradients(enc, wrapper, label=label, prepared=prepared)
         else:
-            total = aggregate_gradients(enc, wrapper, weights, label=label)
+            total = aggregate_gradients(enc, wrapper, fusion, label=label)
         t2 = time.perf_counter()
-        if not np.allclose(np.asarray(total, dtype=float), sum(grads.values()), atol=10 ** -precision / 2):
+        expected = sum(w * grads[nid] for nid, w in zip(nids, weights))
+        if not np.allclose(np.asarray(total, dtype=float), expected, atol=10 ** -precision / 2):
             raise AssertionError("{}: wrong aggregate".format(family))
         if r == 0:
             ct_size = _ct_bytes(next(iter(enc.values())).ciphertexts) / elements
@@ -266,7 +272,8 @@ def measure(family: str, elements: int, clients: int, rounds: int, precision: in
 
 
 def measure_threshold(family: str, elements: int, clients: int, rounds: int, precision: int, bound_x: int,
-                      profile: str, servers: int, threshold: int, extra: dict | None = None) -> dict:
+                      profile: str, servers: int, threshold: int, extra: dict | None = None,
+                      weights: list | None = None) -> dict:
     """:func:`measure` for a threshold scheme, on its classes (see the module docstring)."""
     from pyfe4ai.core.registry import get_scheme
 
@@ -275,11 +282,13 @@ def measure_threshold(family: str, elements: int, clients: int, rounds: int, pre
     crypto_cls = scheme.crypto
     nids = ["c{}".format(i) for i in range(clients)]
     sids = ["s{}".format(i) for i in range(servers)]
+    weights = list(weights or [1] * clients)
+    bounds = _bounds(family, bound_x, max(abs(w) for w in weights))
     cfg = dict(base_cfg, n=clients, lst_nid=nids, s=servers, t=threshold, lst_sid=sids,
-               security_profile=profile, **_bounds(family, bound_x), **(extra or {}))
+               security_profile=profile, **bounds, **(extra or {}))
     row = {"family": family, "scheme": "/".join(key), "profile": profile, "elements": elements,
            "clients": clients, "servers": servers, "threshold": threshold, "rounds": rounds,
-           "precision": precision, "bound_x": bound_x, **(extra or {})}
+           "precision": precision, "bound_x": bound_x, "weights": weights, **(extra or {})}
     t0 = time.perf_counter()
     kg = scheme.key_generator(cfg)
     kg.setup()
@@ -300,11 +309,11 @@ def measure_threshold(family: str, elements: int, clients: int, rounds: int, pre
     srv = {sid: crypto_cls({"id": sid, "precision": precision, "keys": {"pp": pp}, **budget.get(sid, {})})
            for sid in enrolled}
     combiner = crypto_cls({"id": "combiner", "precision": precision, "keys": {"pp": pp}})
-    weights = {nid: [1] for nid in nids}
+    fusion = {nid: [w] for nid, w in zip(nids, weights)}
     if split:  # the label-independent part of the key shares, once
         t0 = time.perf_counter()
         for sid in enrolled:
-            srv[sid].add_weight_key_share(kg.get_weight_key_share(sid, credentials={"fusion_weight": weights}))
+            srv[sid].add_weight_key_share(kg.get_weight_key_share(sid, credentials={"fusion_weight": fusion}))
         row["weight_shares_ms"] = (time.perf_counter() - t0) * 1e3
     rng = np.random.default_rng(7)
     lim = bound_x / 10 ** precision
@@ -316,7 +325,7 @@ def measure_threshold(family: str, elements: int, clients: int, rounds: int, pre
         t0 = time.perf_counter()
         enc = {nid: cls[nid].encrypt_lst_ndarray([g], label=label) for nid, g in grads.items()}
         t1 = time.perf_counter()
-        creds = {"fusion_weight": weights, "label": label, "n_chunks": cls[nids[0]].key_chunks(enc[nids[0]])}
+        creds = {"fusion_weight": fusion, "label": label, "n_chunks": cls[nids[0]].key_chunks(enc[nids[0]])}
         if split:  # the label part (the default key_part): chunk keys only
             creds.update(label_term=False)
         dks = {sid: kg.get_decryption_keys(sid, credentials=creds) for sid in enrolled}
@@ -329,7 +338,8 @@ def measure_threshold(family: str, elements: int, clients: int, rounds: int, pre
         t3 = time.perf_counter()
         total = combiner.decrypt_lst_ndarray_ct(parts)[0]
         t4 = time.perf_counter()
-        if not np.allclose(np.asarray(total, dtype=float), sum(grads.values()), atol=10 ** -precision / 2):
+        expected = sum(w * grads[nid] for nid, w in zip(nids, weights))
+        if not np.allclose(np.asarray(total, dtype=float), expected, atol=10 ** -precision / 2):
             raise AssertionError("{}: wrong aggregate".format(family))
         if r == 0:
             ct_size = _ct_bytes(enc[nids[0]]) / elements
@@ -358,7 +368,8 @@ def measure_threshold(family: str, elements: int, clients: int, rounds: int, pre
 
 
 def measure_decentralized(family: str, elements: int, clients: int, rounds: int, precision: int, bound_x: int,
-                          profile: str, ct_format: str = "json", extra: dict | None = None) -> dict:
+                          profile: str, ct_format: str = "json", extra: dict | None = None,
+                          weights: list | None = None) -> dict:
     """:func:`measure` for a decentralized scheme: every client derives a key
     share for the round, the aggregator combines them and decrypts the sum."""
     from pyfe4ai.core.registry import get_scheme
@@ -367,10 +378,12 @@ def measure_decentralized(family: str, elements: int, clients: int, rounds: int,
     scheme = get_scheme(key)
     crypto_cls = scheme.crypto
     nids = ["c{}".format(i) for i in range(clients)]
-    cfg = dict(base_cfg, n=clients, lst_nid=nids, security_profile=profile, **_bounds(family, bound_x), **(extra or {}))
+    weights = list(weights or [1] * clients)
+    bounds = _bounds(family, bound_x, max(abs(w) for w in weights))
+    cfg = dict(base_cfg, n=clients, lst_nid=nids, security_profile=profile, **bounds, **(extra or {}))
     row = {"family": family, "scheme": "/".join(key), "profile": profile, "elements": elements,
-           "clients": clients, "rounds": rounds, "precision": precision, "bound_x": bound_x, "ct_format": ct_format,
-           **(extra or {})}
+           "clients": clients, "rounds": rounds, "precision": precision, "bound_x": bound_x, "weights": weights,
+           "ct_format": ct_format, **(extra or {})}
     t0 = time.perf_counter()
     kg = scheme.key_generator(cfg)
     kg.setup()
@@ -380,7 +393,7 @@ def measure_decentralized(family: str, elements: int, clients: int, rounds: int,
     cls = {nid: crypto_cls({"id": nid, "precision": precision, "ct_format": ct_format,
                             "keys": {"pp": pp, "sk": kg.get_private_keys(nid)}}) for nid in nids}
     agg = crypto_cls({"id": "agg", "precision": precision, "ct_format": ct_format, "keys": {"pp": pp}})
-    weights = {nid: [1] for nid in nids}
+    fusion = {nid: [w] for nid, w in zip(nids, weights)}
     rng = np.random.default_rng(7)
     lim = bound_x / 10 ** precision
     enc_t, share_t, comb_t, dec_t = [], [], [], []
@@ -392,13 +405,14 @@ def measure_decentralized(family: str, elements: int, clients: int, rounds: int,
         enc = {nid: cls[nid].encrypt_lst_ndarray([g], label=label) for nid, g in grads.items()}
         t1 = time.perf_counter()
         n_chunks = crypto_cls.key_chunks(enc[nids[0]])
-        shares = {nid: cls[nid].derive_function_decryption_key_share(weights, label, n_chunks) for nid in nids}
+        shares = {nid: cls[nid].derive_function_decryption_key_share(fusion, label, n_chunks) for nid in nids}
         t2 = time.perf_counter()
         dk = agg.combine_function_decryption_key_share(shares)
         t3 = time.perf_counter()
-        total = agg.compute_lst_ndarray_ct(enc, dk=dk, fusion_weight=weights, label=label)[0]
+        total = agg.compute_lst_ndarray_ct(enc, dk=dk, fusion_weight=fusion, label=label)[0]
         t4 = time.perf_counter()
-        if not np.allclose(np.asarray(total, dtype=float), sum(grads.values()), atol=10 ** -precision / 2):
+        expected = sum(w * grads[nid] for nid, w in zip(nids, weights))
+        if not np.allclose(np.asarray(total, dtype=float), expected, atol=10 ** -precision / 2):
             raise AssertionError("{}: wrong aggregate".format(family))
         if r == 0:
             ct_size = _ct_bytes(enc[nids[0]]) / elements
@@ -435,6 +449,8 @@ def main(argv=None, prog=None) -> None:
     parser.add_argument("--max-partial-decryptions", type=int, default=None,
                         help="threshold family: partial decryptions per server under --flooding-accounting kl")
     parser.add_argument("--rounds", type=int, default=5)
+    parser.add_argument("--weights", default=None,
+                        help="comma-separated integer weights, one per client (default: all 1)")
     parser.add_argument("--precision", type=int, default=2)
     parser.add_argument("--bound-x", type=int, default=None, help="default 10^precision (values in [-1, 1])")
     parser.add_argument("--profile", default="standard", choices=["standard", "toy"])
@@ -464,6 +480,9 @@ def main(argv=None, prog=None) -> None:
     logging.disable(logging.CRITICAL)
     warnings.simplefilter("ignore")
     bound_x = args.bound_x or 10 ** args.precision
+    weights = [int(w) for w in args.weights.split(",")] if args.weights else None
+    if weights is not None and len(weights) != args.clients:
+        parser.error("--weights needs one weight per client ({} clients)".format(args.clients))
 
     backend = _set_backend(args.backend, args.threads)
     env = _env()
@@ -502,13 +521,13 @@ def main(argv=None, prog=None) -> None:
             fmt = (args.ct_format or "json") if family in ("ring_lwe", "ring_lwe_decentralized") else "json"
             if family.endswith("_decentralized"):
                 row = measure_decentralized(family, elements, args.clients, args.rounds, args.precision, bound_x,
-                                            args.profile, fmt, extra)
+                                            args.profile, fmt, extra, weights)
             elif family.endswith("_threshold"):
                 row = measure_threshold(family, elements, args.clients, args.rounds, args.precision, bound_x,
-                                        args.profile, args.servers, args.threshold, extra)
+                                        args.profile, args.servers, args.threshold, extra, weights)
             else:
                 row = measure(family, elements, args.clients, args.rounds, args.precision, bound_x, args.profile,
-                              fmt, args.offline and family in OFFLINE_FAMILIES, extra)
+                              fmt, args.offline and family in OFFLINE_FAMILIES, extra, weights)
             row.update(backend=backend, threads=args.threads, tag=args.tag)
             rows.append(row)
             print("{family:9s} {backend:6s} t={threads} {elements:6d} el  client {client_ms:9.2f} ms  "

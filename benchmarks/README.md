@@ -32,6 +32,9 @@ helpers in `benchmarks/_common.py`).
 | `ntt` | `benchmark_ntt.py` | schoolbook (`O(n^2)`) and NTT (`O(n log n)`) negacyclic polynomial multiplication, as used by the Ring-LWE schemes |
 | `sampling` | `benchmark_sampling.py` | the default rounded Gaussian sampler and the exact `"facct"` sampler per width (`--e2e`: one MCFE Ring-LWE round, `security_profile="standard"`, with each) |
 | `fl-compare` | `bench_fl_compare.py` | the FL aggregation round (`encrypt_gradient` + `aggregate_gradients`) per scheme family, with backend, threads, ciphertext format and offline phase as options; appends JSON records for before / after comparisons. Headline results are in [`PERFORMANCE.md`](PERFORMANCE.md) |
+| `fl-aggregation` | | gradient aggregation through the ML adapter (`encrypt_gradient` + `aggregate_gradients`) for every registry entry it supports, each in a fresh parameter cache: wrapper construction, client encryption, functional-key derivation and decryption, ciphertext bytes per element (JSON and compact); `--elements`, `--clients`, `--schemes` |
+| `fl-multiparty` | | the same for the threshold and decentralized MCFE schemes, on their classes: client encryption, the servers' or clients' key shares, one server's partial decryption and the combination (`s = 3` servers, `t = 2`) |
+| `setup-costs` | | key generator construction (parameter generation) and `setup()` of every registry entry in a fresh parameter cache, with the parameters chosen (from the public parameters) and the size of the public parameters |
 | `fl-coverage` | `fl_path_coverage.py` | not a timing benchmark: runs the ML-adapter FL path for every registry entry with that variant's own test configuration and reports `usable` / `unusable` (with the reason) / `unverified` (pairing entries without a backend for the default group); `--output json` for machine-readable output |
 | `replicated-sharing` | `bench_replicated_sharing.py` | the replicated key sharing of the LWE threshold layers (`replicated`, `replicated-seeded`): dealing, a server's piece sums and its partial decryption with a cold cache, one JSON line per configuration (positional arguments `KIND S T SHARING [REPS]`) |
 | `offline-potential` | `bench_offline_potential.py` | per-element split of the DDH and DCR MCFE into label-dependent offline work and the online rest |
@@ -42,7 +45,11 @@ fh|quadratic|all`, need a pairing backend: the Rust extension for BLS12-381
 (the default), or `charm-crypto-framework` for the curves chosen with
 `--pairing-group` (e.g. `MNT224`; see *Pairing-Based Schemes* in the top-level
 README, or the Docker image); everything else runs without either. All commands use
-the toy default parameters unless stated otherwise. Without the Rust
+the toy default parameters unless stated otherwise; the scheme-family
+commands (`sife` to `quadratic`, `ndarray`), `fl-aggregation`,
+`fl-multiparty` and `setup-costs` take `--security-profile standard`, which
+leaves the sizes to the profile and reports the schemes it refuses (they are
+skipped, with the reason on stderr or in the `note` column). Without the Rust
 extension the schemes run their Python implementation (about 5 to 35 times
 slower on the lattice schemes) and say so once with an `FEWarning`;
 `pyfe4ai.backend_info()` reports what is in use, and `fl-compare` stores
