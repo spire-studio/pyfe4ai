@@ -28,11 +28,14 @@ See CONTRIBUTING.md, "Tests".
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
 import tempfile
 from pathlib import Path
+
+import pytest
 
 #: PYFE4AI_CACHE_DIR before the run, and the run's parameter cache.
 _CACHE = {}
@@ -111,6 +114,17 @@ def pytest_unconfigure(config):
         os.environ.pop("PYFE4AI_CACHE_DIR", None)
     else:
         os.environ["PYFE4AI_CACHE_DIR"] = before
+
+
+@pytest.fixture(autouse=True)
+def _restore_logging_disable():
+    """The main() of several benchmark commands (setup-costs, fl-coverage, fl-compare, ...) calls
+    ``logging.disable(logging.CRITICAL)``, as a command-line program may; a test that calls one in the suite's
+    process would leave logging off for the tests after it (``caplog`` among them), in whatever order they run.
+    The level before each test is restored after it."""
+    level = logging.root.manager.disable
+    yield
+    logging.disable(level)
 
 
 def pytest_collection_modifyitems(config, items):

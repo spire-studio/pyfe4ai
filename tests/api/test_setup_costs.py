@@ -4,7 +4,10 @@ exits with status 1."""
 
 import importlib
 import json
-import logging
+import os
+import subprocess
+import sys
+import textwrap
 
 import pytest
 
@@ -17,8 +20,7 @@ def setup_costs(monkeypatch):
     common = importlib.import_module("_common")
     module = importlib.import_module("commands.setup_costs")
     yield module
-    common.set_security_profile("toy")
-    logging.disable(logging.NOTSET)  # main() disables logging for the whole process
+    common.set_security_profile("toy")  # main() also disables logging: tests/conftest.py restores it
 
 
 def test_a_config_error_is_an_unusable_row_and_the_command_exits_non_zero(setup_costs, monkeypatch, capsys):
@@ -85,3 +87,32 @@ def test_bcfe_is_set_up_with_the_library_circuit(setup_costs):
     row = setup_costs.measure(setup_costs.BCFE, 1, "toy")
     assert row["status"] == "ok" and row["note"] == "circuit {}, no slots yet".format(setup_costs.BCFE_CIRCUIT)
     assert row["params"]["scheme"] == "bcfe/gc_ristretto255"
+
+
+def test_logging_is_on_again_in_the_next_test_after_main(tmp_path):
+    """main() disables logging for the process; tests/conftest.py restores the level after every test. Checked in a
+    pytest run of its own (the suite's conftest loaded as a plugin), where the two tests run in this order whatever
+    order or worker the suite itself uses."""
+    (tmp_path / "pytest.ini").write_text("[pytest]\n")
+    (tmp_path / "test_order.py").write_text(textwrap.dedent("""
+        import logging
+        import sys
+
+        sys.path.insert(0, {benchmarks!r})
+        from commands import setup_costs
+
+
+        def test_1_main_disables_logging():
+            setup_costs.main(["--rounds", "1", "--schemes", "sife/ddh"])
+            assert logging.root.manager.disable == logging.CRITICAL
+
+
+        def test_2_logging_is_on_again():
+            assert logging.root.manager.disable == logging.NOTSET
+    """).format(benchmarks=str(ROOT / "benchmarks")))
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, [str(ROOT), os.environ.get("PYTHONPATH")])))
+    run = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-p", "tests.conftest",
+         "-c", str(tmp_path / "pytest.ini"), str(tmp_path / "test_order.py")],
+        cwd=str(tmp_path), env=env, capture_output=True, text=True, timeout=300)
+    assert run.returncode == 0 and "2 passed" in run.stdout, run.stdout + run.stderr
