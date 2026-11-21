@@ -9,7 +9,8 @@ configuration, is set up for the ``lr16`` circuit of ``run.py bcfe`` (built
 once, outside the timed steps). Under ``--security-profile standard`` the
 profile chooses the sizes; refused schemes are reported with the reason. An
 entry whose configuration the key generator does not accept is reported as
-``unusable`` with the reason, and the other rows are still printed.
+``unusable`` with the reason; the other rows are still printed, then one line
+per unusable entry goes to stderr and the command exits with status 1.
 Pairing-based entries need a backend for their group (they are reported as
 ``unverified`` without one).
 
@@ -24,6 +25,7 @@ import argparse
 import functools
 import json
 import logging
+import sys
 import time
 import warnings
 
@@ -94,8 +96,9 @@ def measure(key, rounds: int, profile: str) -> dict:
     for _ in range(rounds):
         with fresh_cache():
             try:
+                config = keygen_config(_config(key))  # before the timed steps (the bcfe circuit is built here)
                 t0 = time.perf_counter()
-                kg = kg_cls(keygen_config(_config(key)))
+                kg = kg_cls(config)
                 t1 = time.perf_counter()
                 kg.setup()
                 t2 = time.perf_counter()
@@ -112,7 +115,7 @@ def measure(key, rounds: int, profile: str) -> dict:
         construct.append(t1 - t0)
         setup.append(t2 - t1)
         total.append(t2 - t0)
-    note = "circuit {}".format(BCFE_CIRCUIT) if key == BCFE else ""
+    note = "circuit {}, no slots yet".format(BCFE_CIRCUIT) if key == BCFE else ""  # pp_bytes: after setup()
     return dict(
         row, status="ok", construct_mean_sec=stats(construct)[0], setup_mean_sec=stats(setup)[0],
         total_std_sec=stats(total)[2], pp_bytes=pp_bytes, params=params, note=note,
@@ -131,12 +134,17 @@ def main(argv=None, prog=None) -> None:
     rows = [measure(k, args.rounds, args.security_profile) for k in keys]
     if args.output == "json":
         print(json.dumps(rows, indent=2))
-        return
-    print(",".join(HEADER))
-    for r in rows:
-        print(",".join(
-            "{:.4f}".format(r[h]) if isinstance(r.get(h), float)
-            else (json.dumps(r[h]) if isinstance(r.get(h), dict) else str(r.get(h, ""))).replace(",", ";")
-            for h in HEADER
-        ))
+    else:
+        print(",".join(HEADER))
+        for r in rows:
+            print(",".join(
+                "{:.4f}".format(r[h]) if isinstance(r.get(h), float)
+                else (json.dumps(r[h]) if isinstance(r.get(h), dict) else str(r.get(h, ""))).replace(",", ";")
+                for h in HEADER
+            ))
+    unusable = [r for r in rows if r["status"] == "unusable"]
+    for r in unusable:
+        print("setup-costs: {}: unusable ({})".format(r["scheme"], r["note"]), file=sys.stderr)
+    if unusable:
+        raise SystemExit(1)
 
