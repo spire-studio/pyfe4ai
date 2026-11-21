@@ -523,55 +523,14 @@ an experimental research prototype, not recommended for production use.
 ### Fixed
 
 - **Forked children no longer crash on macOS after multi-threaded native
-  calls (affects 0.4.0).**
-  - *The crash:* the native core's `parallel_for` waited for its worker
-    threads in `std::thread::scope`, which parks the calling thread when the
-    workers finish after it. On macOS the Rust standard library parks on a
-    libdispatch semaphore, and libdispatch refuses to work in the child of a
-    fork from a multi-threaded process. So in a child forked from a process
-    that had run any kernel with more than one thread (`set_threads`,
-    `PYFE4AI_THREADS`), the next multi-threaded native call killed the child
-    (SIGTRAP, "BUG IN CLIENT OF LIBDISPATCH: Use-after-free of
-    dispatch_semaphore_t"). Every kernel was affected (MCFE, MIFE, sampling,
-    Ring-LWE, dense LWE, pairing), timing-dependent. This hits
-    `multiprocessing` with the `fork` start method and any library that forks
-    workers.
-  - *The fix:* in a process forked from one that has run a native kernel with
-    several threads, native calls now run with one thread. The native core
-    records the first process that runs several threads (by process id, with
-    no wait), so the rule covers direct `pyfe4ai._rust_native` calls and forks
-    not made through `os.fork`, and a later `set_threads(n)` in the child does
-    not lift it. A child of a process that never ran several threads keeps
-    them. New `pyfe4ai.backend.effective_threads()` returns the thread count
-    a native call uses in this process, and `backend_info()["threads"]` now
-    reports it (1 in a limited child).
-  - *Second guard:* `parallel_for` joins every worker it starts (also when a
-    share panics) instead of waiting for them in the scope, so the calling
-    thread does not park there either.
-  - *Lazy tables:* the native tables built on first use (the Gaussian
-    sampler's tables, the BLS12-381 pairing generator, the order and the
-    hash key of its dlog tables) are now built when the extension is
-    imported. The sampler's tables are also built without any wait. A
-    contended first build made a thread wait, which the pid rule could not
-    see.
-  - *Cost:* native calls in a forked child are single-threaded, on every
-    platform: fork-based workers on Linux lose their native threads too.
-    Pre-fork servers and fork-based pools that want native threads per worker
-    should use `spawn` or `forkserver`. Importing the extension now builds the
-    tables: loading the extension module itself (after the `pyfe4ai` package,
-    which takes far longer) takes about 3.7 ms on an Apple M-series Mac, most
-    of it these tables.
-  - *Unchanged:* results; no randomness is cached across calls.
-  - The crash is specific to macOS (Linux waits on a futex, not
-    libdispatch); this was not run natively on Linux, so that is expected,
-    not verified.
-  - Regression tests: `tests/native/test_native_fork.py`, and
-    `rust/core/tests/fork_*.rs` for the lazy tables. They fail with SIGTRAP
-    on macOS when the fix is reverted. See `docs/threading.rst`, "Processes
-    and fork".
-  - In 0.4.0, run multi-threaded native kernels only in processes that do not
-    fork afterwards, use the `spawn` or `forkserver` start method, or keep one
-    thread.
+  calls**: the fix of 0.4.1 (see its section below: forked children of a
+  multi-threaded process run native calls on one thread; `parallel_for`
+  joins its workers; the lazy native tables are built at import), also in
+  0.5.0. It covers the kernels new in 0.5.0 as well: the BLS12-381 batches
+  on several threads (`serialize_many`, `deserialize_many`, multi-scalar
+  multiplication, multi-pairings, also over prepared points, and the
+  preparation of G2 points) run on one thread in such a child.
+  `pyfe4ai.backend.effective_threads()` is in both releases.
 - **A refused key no longer ties the label of a round in the ML adapter.**
   `aggregate_gradients` and `prepare_aggregation` tied the label to the
   weights of a call before they asked the key generator for the key, so a
@@ -639,10 +598,12 @@ an experimental research prototype, not recommended for production use.
   share is added to the wrapper's server objects where they lack it), and
   these shares never reach the caller.
 
-## [0.4.1] — unreleased
+## [0.4.1] — 2026-11-22
 
 A patch release with one fix: native code no longer kills forked children on
-macOS. Nothing else changes; formats, keys and parameters are those of 0.4.0.
+macOS. Nothing else in the library changes; formats, keys and parameters are
+those of 0.4.0. The benchmark scripts of the repository (not part of the
+package) gain commands and options (see Added).
 
 ### Fixed
 
@@ -700,6 +661,14 @@ macOS. Nothing else changes; formats, keys and parameters are those of 0.4.0.
   uses in this process (1 in a forked child of a process that ran several).
   `backend_info()["threads"]` now reports it instead of the configured
   count; the two differ only in such a child.
+- Benchmarks: `--security-profile` for the scheme-family commands of
+  `benchmarks/run.py` (`sife` to `quadratic`, `ndarray`), and the commands
+  `fl-aggregation`, `fl-multiparty` and `setup-costs` (gradient aggregation
+  through the ML adapter, the threshold and decentralized flows, and
+  parameter generation of every registry entry); the family commands also
+  cover the SIFE, MIFE and quadratic schemes they left out.
+- Benchmarks: `fl-compare --weights`, one integer weight per client (default
+  all 1), for the weighted FL aggregation.
 
 ## [0.4.0] — 2026-10-26
 
@@ -2468,7 +2437,7 @@ before using them.
 
 Initial public release.
 
-[0.5.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.4.0...v0.5.0
+[0.5.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/spire-studio/pyfe4ai/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.2.0...v0.3.0

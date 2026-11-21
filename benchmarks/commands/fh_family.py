@@ -7,6 +7,8 @@ import time
 
 from _common import BENCHMARK_HEADER
 from _common import emit_results
+from _common import keygen_config
+from _common import parse_args
 from _common import prepare_benchmark
 from _common import profile_value
 from _common import size_bytes
@@ -34,7 +36,7 @@ def _bench_mife(cfg: dict, x: dict[str, list[int]], y: dict[str, list[int]], rou
     clients = len(x)
 
     for _ in range(rounds):
-        kg = MIFEFHMultiIPEPairingKeyGenerator(cfg)
+        kg = MIFEFHMultiIPEPairingKeyGenerator(keygen_config(cfg))
         t0 = time.perf_counter()
         kg.setup()
         setup_times.append(time.perf_counter() - t0)
@@ -83,7 +85,7 @@ def _bench_mcfe(cfg: dict, x: dict[str, list[int]], y: dict[str, list[int]], lab
     clients = len(x)
 
     for _ in range(rounds):
-        kg = MCFEFHMultiIPEPairingKeyGenerator(cfg)
+        kg = MCFEFHMultiIPEPairingKeyGenerator(keygen_config(cfg))
         t0 = time.perf_counter()
         kg.setup()
         setup_times.append(time.perf_counter() - t0)
@@ -133,7 +135,7 @@ def _bench_dmcfe(cfg: dict, x: dict[str, list[int]], y: dict[str, list[int]], la
     clients = len(x)
 
     for _ in range(rounds):
-        kg = DecentralizedMCFEFHMultiIPEPairingKeyGenerator(cfg)
+        kg = DecentralizedMCFEFHMultiIPEPairingKeyGenerator(keygen_config(cfg))
         t0 = time.perf_counter()
         kg.setup()
         setup_times.append(time.perf_counter() - t0)
@@ -188,7 +190,7 @@ def _bench_tmcfe(cfg: dict, x: dict[str, list[int]], y: dict[str, list[int]], la
     threshold = cfg["t"]
 
     for _ in range(rounds):
-        kg = ThresholdMCFEFHMultiIPEPairingKeyGenerator(cfg)
+        kg = ThresholdMCFEFHMultiIPEPairingKeyGenerator(keygen_config(cfg))
         t0 = time.perf_counter()
         kg.setup()
         setup_times.append(time.perf_counter() - t0)
@@ -244,7 +246,7 @@ def main(argv=None, prog=None) -> None:
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--pairing-group", default=DEFAULT_PAIRING_GROUP,
                         help="BLS12-381 (Rust extension) or a charm-crypto group such as MNT224")
-    args = parser.parse_args(argv)
+    args = parse_args(parser, argv)
     prepare_benchmark(args.seed)
 
     eta = 1

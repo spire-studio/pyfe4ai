@@ -7,6 +7,8 @@ import time
 
 from _common import BENCHMARK_HEADER
 from _common import emit_results
+from _common import keygen_config
+from _common import parse_args
 from _common import prepare_benchmark
 from _common import profile_value
 from _common import size_bytes
@@ -34,7 +36,7 @@ def _bench_sife(cfg: dict, x: list[int], y: list[int], rounds: int) -> dict:
     ct_sizes = []
 
     for _ in range(rounds):
-        kg = SIFELWEKeyGenerator(cfg)
+        kg = SIFELWEKeyGenerator(keygen_config(cfg))
         t0 = time.perf_counter()
         kg.setup()
         setup_times.append(time.perf_counter() - t0)
@@ -79,7 +81,7 @@ def _bench_mife(cfg: dict, x: dict[str, list[int]], y: dict[str, list[int]], rou
     clients = len(x)
 
     for _ in range(rounds):
-        kg = MIFELWEKeyGenerator(cfg)
+        kg = MIFELWEKeyGenerator(keygen_config(cfg))
         t0 = time.perf_counter()
         kg.setup()
         setup_times.append(time.perf_counter() - t0)
@@ -128,7 +130,7 @@ def _bench_mcfe(cfg: dict, x: dict[str, list[int]], y: dict[str, list[int]], lab
     clients = len(x)
 
     for _ in range(rounds):
-        kg = MCFELWEKeyGenerator(cfg)
+        kg = MCFELWEKeyGenerator(keygen_config(cfg))
         t0 = time.perf_counter()
         kg.setup()
         setup_times.append(time.perf_counter() - t0)
@@ -178,7 +180,7 @@ def _bench_dmcfe(cfg: dict, x: dict[str, list[int]], y: dict[str, list[int]], la
     clients = len(x)
 
     for _ in range(rounds):
-        kg = DecentralizedMCFELWEKeyGenerator(cfg)
+        kg = DecentralizedMCFELWEKeyGenerator(keygen_config(cfg))
         t0 = time.perf_counter()
         kg.setup()
         setup_times.append(time.perf_counter() - t0)
@@ -233,7 +235,7 @@ def _bench_tmcfe(cfg: dict, x: dict[str, list[int]], y: dict[str, list[int]], la
     threshold = cfg["t"]
 
     for _ in range(rounds):
-        kg = ThresholdMCFELWEKeyGenerator(cfg)
+        kg = ThresholdMCFELWEKeyGenerator(keygen_config(cfg))
         t0 = time.perf_counter()
         kg.setup()
         setup_times.append(time.perf_counter() - t0)
@@ -287,7 +289,7 @@ def main(argv=None, prog=None) -> None:
     parser.add_argument("--output", choices=["csv", "json"], default="csv")
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--seed", type=int, default=7)
-    args = parser.parse_args(argv)
+    args = parse_args(parser, argv)
     prepare_benchmark(args.seed)
 
     eta = profile_value(args.profile, {"small": 2, "medium": 4, "large": 8})

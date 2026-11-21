@@ -13,12 +13,25 @@ import time
 
 from _common import BENCHMARK_HEADER
 from _common import emit_results
+from _common import keygen_config
+from _common import parse_args
+from _common import run_cases
 from _common import prepare_benchmark
 from _common import profile_value
 from pyfe4ai.schemes.sife.damgard_ddh import SIFEDamgard
 from pyfe4ai.schemes.sife.damgard_ddh import SIFEDamgardKeyGenerator
 from pyfe4ai.schemes.sife.ddh import SIFEDDH
 from pyfe4ai.schemes.sife.ddh import SIFEDDHKeyGenerator
+from pyfe4ai.schemes.sife.ddh_ristretto255 import SIFEDDHRistretto255
+from pyfe4ai.schemes.sife.ddh_ristretto255 import SIFEDDHRistretto255KeyGenerator
+from pyfe4ai.schemes.sife.ddh_dynamic import SIFEDDHDynamic
+from pyfe4ai.schemes.sife.ddh_dynamic import SIFEDDHDynamicKeyGenerator
+from pyfe4ai.schemes.sife.fh_ipe_pairing import SIFEFHIPEPairing
+from pyfe4ai.schemes.sife.fh_ipe_pairing import SIFEFHIPEPairingKeyGenerator
+from pyfe4ai.schemes.sife.fullysec_ring_lwe import SIFEFullySecRingLWE
+from pyfe4ai.schemes.sife.fullysec_ring_lwe import SIFEFullySecRingLWEKeyGenerator
+from pyfe4ai.schemes.sife.part_fh_ipe_pairing import SIFEPartFHIPEPairing
+from pyfe4ai.schemes.sife.part_fh_ipe_pairing import SIFEPartFHIPEPairingKeyGenerator
 from pyfe4ai.schemes.sife.fullysec_lwe import SIFEFullySecLWE
 from pyfe4ai.schemes.sife.fullysec_lwe import SIFEFullySecLWEKeyGenerator
 from pyfe4ai.schemes.sife.lwe import SIFELWE
@@ -29,6 +42,7 @@ from pyfe4ai.schemes.sife.ring_lwe import SIFERingLWE
 from pyfe4ai.schemes.sife.ring_lwe import SIFERingLWEKeyGenerator
 from _common import size_bytes
 from _common import stats
+from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP
 
 ROUNDS = 3
 
@@ -46,7 +60,7 @@ def _run_case(case: dict, rounds: int = ROUNDS) -> dict:
     ct_sizes = []
 
     for _ in range(rounds):
-        kg = case["kg_cls"](case["config"])
+        kg = case["kg_cls"](keygen_config(case["config"]))
 
         t0 = time.perf_counter()
         kg.setup()
@@ -58,7 +72,9 @@ def _run_case(case: dict, rounds: int = ROUNDS) -> dict:
         sk = kg.get_private_keys()
         keygen_times.append(time.perf_counter() - t0)
 
-        encryptor = case["crypto_cls"]({"id": "nid_default", "keys": {"pp": pp, "sk": sk}})
+        # public-key encryption (partial FH-IPE) has no encryption key
+        enc_keys = {"pp": pp} if sk is None else {"pp": pp, "sk": sk}
+        encryptor = case["crypto_cls"]({"id": "nid_default", "keys": enc_keys})
         decryptor = case["crypto_cls"]({"id": "sid_0", "keys": {"pp": pp}})
 
         t0 = time.perf_counter()
@@ -73,8 +89,9 @@ def _run_case(case: dict, rounds: int = ROUNDS) -> dict:
         computed = decryptor.decrypt(ct, dk, case["y"])
         decrypt_times.append(time.perf_counter() - t0)
 
-        if computed != case["expected"]:
-            raise AssertionError(f"{case['name']} produced {computed}, expected {case['expected']}")
+        expected = case["expected"](pp) if callable(case["expected"]) else case["expected"]
+        if computed != expected:
+            raise AssertionError(f"{case['name']} produced {computed}, expected {expected}")
 
         pp_sizes.append(size_bytes(pp))
         sk_sizes.append(size_bytes(sk))
@@ -119,7 +136,7 @@ def main(argv=None, prog=None) -> None:
     parser.add_argument("--output", choices=["csv", "json"], default="csv")
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--seed", type=int, default=7)
-    args = parser.parse_args(argv)
+    args = parse_args(parser, argv)
     prepare_benchmark(args.seed)
 
     eta = profile_value(args.profile, {"small": 4, "medium": 8, "large": 16})
@@ -140,6 +157,15 @@ def main(argv=None, prog=None) -> None:
             "kg_cls": SIFEDDHKeyGenerator,
             "crypto_cls": SIFEDDH,
             "config": {"sec_param": sec_param_ddh, "eta": eta},
+            "x": vector_x,
+            "y": vector_y,
+            "expected": sum(a * b for a, b in zip(vector_x, vector_y)),
+        },
+        {
+            "name": "SIFE/DDHRistretto255",
+            "kg_cls": SIFEDDHRistretto255KeyGenerator,
+            "crypto_cls": SIFEDDHRistretto255,
+            "config": {"eta": eta},
             "x": vector_x,
             "y": vector_y,
             "expected": sum(a * b for a, b in zip(vector_x, vector_y)),
@@ -189,14 +215,53 @@ def main(argv=None, prog=None) -> None:
             "y": vector_y,
             "expected": sum(a * b for a, b in zip(vector_x, vector_y)),
         },
+        {
+            "name": "SIFE/DDHDynamic",
+            "kg_cls": SIFEDDHDynamicKeyGenerator,
+            "crypto_cls": SIFEDDHDynamic,
+            "config": {"sec_param": sec_param_ddh, "eta": eta},
+            "x": vector_x,
+            "y": vector_y,
+            "expected": sum(a * b for a, b in zip(vector_x, vector_y)),
+        },
+        {
+            "name": "SIFE/FullySecRingLWE",
+            "kg_cls": SIFEFullySecRingLWEKeyGenerator,
+            "crypto_cls": SIFEFullySecRingLWE,
+            "config": {"sec_param": 64, "eta": eta, "bound_x": bound, "bound_y": bound},
+            "x": vector_x,
+            "y": vector_y,
+            "expected": sum(a * b for a, b in zip(vector_x, vector_y)),
+        },
+        {
+            "name": "SIFE/FHIPE",
+            "kg_cls": SIFEFHIPEPairingKeyGenerator,
+            "crypto_cls": SIFEFHIPEPairing,
+            "config": {"sec_param": 64, "eta": eta, "bound_x": bound, "bound_y": bound, "pairing_group_param": DEFAULT_PAIRING_GROUP},
+            "x": vector_x,
+            "y": vector_y,
+            "expected": sum(a * b for a, b in zip(vector_x, vector_y)),
+        },
+        {
+            # public encryption of t in the subspace: x = M t, <x, y> depends on the public M
+            "name": "SIFE/PartFHIPE",
+            "kg_cls": SIFEPartFHIPEPairingKeyGenerator,
+            "crypto_cls": SIFEPartFHIPEPairing,
+            "config": {"sec_param": 64, "eta": eta, "bound": bound, "subspace_dim": 1, "coeff_bound": 1,
+                       "pairing_group_param": DEFAULT_PAIRING_GROUP},
+            "x": [1],
+            "y": vector_y,
+            "expected": lambda pp: sum(int(row[0]) * y_i for row, y_i in zip(pp["m"], vector_y)),
+        },
     ]
 
-    results = []
-    for case in cases:
+    def bench(case: dict) -> dict:
         for _ in range(args.warmup):
             _run_case(case, rounds=1)
         result = _run_case(case, rounds=args.rounds)
         result["profile"] = args.profile
-        results.append(result)
+        return result
+
+    results = run_cases([lambda case=case: bench(case) for case in cases])
     emit_results(results, output=args.output, header=BENCHMARK_HEADER)
 
