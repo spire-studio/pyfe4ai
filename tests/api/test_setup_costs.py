@@ -46,6 +46,29 @@ def test_every_entry_sets_up_under_toy(setup_costs):
     assert not wrong, "entries that did not set up under toy:\n" + "\n".join(wrong)
 
 
+def test_the_configuration_is_made_outside_the_timed_steps(setup_costs, monkeypatch):
+    """The bcfe circuit is built when the configuration is made (once, on a cold cache): before t0. A fake clock
+    ticks 1 ms per reading, and making the configuration advances it by 100 s, which must reach no timing."""
+    clock = [0.0]
+
+    def tick():
+        clock[0] += 0.001
+        return clock[0]
+
+    real = setup_costs._config
+
+    def slow_config(key):
+        clock[0] += 100.0
+        return real(key)
+
+    setup_costs._bcfe_circuit.cache_clear()
+    monkeypatch.setattr(setup_costs.time, "perf_counter", tick)
+    monkeypatch.setattr(setup_costs, "_config", slow_config)
+    row = setup_costs.measure(setup_costs.BCFE, 2, "toy")
+    assert row["status"] == "ok"
+    assert row["construct_mean_sec"] < 1 and row["setup_mean_sec"] < 1 and row["total_std_sec"] < 1, row
+
+
 def test_bcfe_is_set_up_with_the_library_circuit(setup_costs):
     row = setup_costs.measure(setup_costs.BCFE, 1, "toy")
     assert row["status"] == "ok" and row["note"] == "circuit {}".format(setup_costs.BCFE_CIRCUIT)

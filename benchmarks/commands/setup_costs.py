@@ -94,8 +94,9 @@ def measure(key, rounds: int, profile: str) -> dict:
     for _ in range(rounds):
         with fresh_cache():
             try:
+                config = keygen_config(_config(key))  # before the timed steps (the bcfe circuit is built here)
                 t0 = time.perf_counter()
-                kg = kg_cls(keygen_config(_config(key)))
+                kg = kg_cls(config)
                 t1 = time.perf_counter()
                 kg.setup()
                 t2 = time.perf_counter()
