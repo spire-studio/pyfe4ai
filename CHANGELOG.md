@@ -446,10 +446,12 @@ an experimental research prototype, not recommended for production use.
   share is added to the wrapper's server objects where they lack it), and
   these shares never reach the caller.
 
-## [0.4.1] — unreleased
+## [0.4.1] — 2026-11-22
 
 A patch release with one fix: native code no longer kills forked children on
-macOS. Nothing else changes; formats, keys and parameters are those of 0.4.0.
+macOS. Nothing else in the library changes; formats, keys and parameters are
+those of 0.4.0. The benchmark scripts of the repository (not part of the
+package) gain commands and options (see Added).
 
 ### Fixed
 
@@ -507,6 +509,14 @@ macOS. Nothing else changes; formats, keys and parameters are those of 0.4.0.
   uses in this process (1 in a forked child of a process that ran several).
   `backend_info()["threads"]` now reports it instead of the configured
   count; the two differ only in such a child.
+- Benchmarks: `--security-profile` for the scheme-family commands of
+  `benchmarks/run.py` (`sife` to `quadratic`, `ndarray`), and the commands
+  `fl-aggregation`, `fl-multiparty` and `setup-costs` (gradient aggregation
+  through the ML adapter, the threshold and decentralized flows, and
+  parameter generation of every registry entry); the family commands also
+  cover the SIFE, MIFE and quadratic schemes they left out.
+- Benchmarks: `fl-compare --weights`, one integer weight per client (default
+  all 1), for the weighted FL aggregation.
 
 ## [0.4.0] — 2026-10-26
 

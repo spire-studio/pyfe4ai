@@ -7,14 +7,22 @@ import time
 
 from _common import BENCHMARK_HEADER
 from _common import emit_results
+from _common import keygen_config
+from _common import parse_args
+from _common import run_cases
 from _common import prepare_benchmark
 from _common import profile_value
 from _common import size_bytes
 from _common import stats
+from pyfe4ai.primitives.pairing.pairing_backend import DEFAULT_PAIRING_GROUP
 from pyfe4ai.schemes.mife.damgard_ddh import MIFEDamgard
 from pyfe4ai.schemes.mife.damgard_ddh import MIFEDamgardKeyGenerator
 from pyfe4ai.schemes.mife.ddh import MIFEDDH
 from pyfe4ai.schemes.mife.ddh import MIFEDDHKeyGenerator
+from pyfe4ai.schemes.mife.ddh_ristretto255 import MIFEDDHRistretto255
+from pyfe4ai.schemes.mife.ddh_ristretto255 import MIFEDDHRistretto255KeyGenerator
+from pyfe4ai.schemes.mife.fh_ipe_pairing import MIFEFHIPEPairing
+from pyfe4ai.schemes.mife.fh_ipe_pairing import MIFEFHIPEPairingKeyGenerator
 from pyfe4ai.schemes.mife.fullysec_lwe import MIFEFullySecLWE
 from pyfe4ai.schemes.mife.fullysec_lwe import MIFEFullySecLWEKeyGenerator
 from pyfe4ai.schemes.mife.lwe import MIFELWE
@@ -40,7 +48,7 @@ def _run_case(case: dict, rounds: int) -> dict:
     ct_totals = []
 
     for _ in range(rounds):
-        kg = case["kg_cls"](case["config"])
+        kg = case["kg_cls"](keygen_config(case["config"]))
         t0 = time.perf_counter()
         kg.setup()
         setup_times.append(time.perf_counter() - t0)
@@ -122,7 +130,7 @@ def main(argv=None, prog=None) -> None:
     parser.add_argument("--output", choices=["csv", "json"], default="csv")
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--seed", type=int, default=7)
-    args = parser.parse_args(argv)
+    args = parse_args(parser, argv)
     prepare_benchmark(args.seed)
 
     lst_nid = ["nid_0", "nid_1", "nid_2"]
@@ -143,6 +151,17 @@ def main(argv=None, prog=None) -> None:
             "kg_cls": MIFEDDHKeyGenerator,
             "crypto_cls": MIFEDDH,
             "config": {"sec_param": 256, "eta": eta, "n": 3, "s": 1, "lst_nid": lst_nid},
+            "precision": 3,
+            "lst_nid": lst_nid,
+            "x": core_x,
+            "y": core_y,
+            "expected": sum(core_x[nid][i] * core_y[nid][i] for nid in lst_nid for i in range(eta)),
+        },
+        {
+            "name": "MIFE/DDHRistretto255",
+            "kg_cls": MIFEDDHRistretto255KeyGenerator,
+            "crypto_cls": MIFEDDHRistretto255,
+            "config": {"eta": eta, "n": 3, "s": 1, "lst_nid": lst_nid},
             "precision": 3,
             "lst_nid": lst_nid,
             "x": core_x,
@@ -199,14 +218,26 @@ def main(argv=None, prog=None) -> None:
             "y": core_y,
             "expected": sum(core_x[nid][i] * core_y[nid][i] for nid in lst_nid for i in range(eta)),
         },
+        {
+            "name": "MIFE/FHIPE",
+            "kg_cls": MIFEFHIPEPairingKeyGenerator,
+            "crypto_cls": MIFEFHIPEPairing,
+            "config": {"sec_param": 64, "eta": eta, "n": 3, "s": 1, "lst_nid": lst_nid, "bound_x": bound, "bound_y": bound,
+                       "pairing_group_param": DEFAULT_PAIRING_GROUP},
+            "lst_nid": lst_nid,
+            "x": core_x,
+            "y": core_y,
+            "expected": sum(core_x[nid][i] * core_y[nid][i] for nid in lst_nid for i in range(eta)),
+        },
     ]
 
-    results = []
-    for case in cases:
+    def bench(case: dict) -> dict:
         for _ in range(args.warmup):
             _run_case(case, rounds=1)
         result = _run_case(case, rounds=args.rounds)
         result["profile"] = args.profile
-        results.append(result)
+        return result
+
+    results = run_cases([lambda case=case: bench(case) for case in cases])
     emit_results(results, output=args.output, header=BENCHMARK_HEADER)
 
