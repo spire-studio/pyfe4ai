@@ -115,7 +115,7 @@ def measure(key, rounds: int, profile: str) -> dict:
         construct.append(t1 - t0)
         setup.append(t2 - t1)
         total.append(t2 - t0)
-    note = "circuit {}".format(BCFE_CIRCUIT) if key == BCFE else ""
+    note = "circuit {}, no slots yet".format(BCFE_CIRCUIT) if key == BCFE else ""  # pp_bytes: after setup()
     return dict(
         row, status="ok", construct_mean_sec=stats(construct)[0], setup_mean_sec=stats(setup)[0],
         total_std_sec=stats(total)[2], pp_bytes=pp_bytes, params=params, note=note,

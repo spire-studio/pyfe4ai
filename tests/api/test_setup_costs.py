@@ -83,5 +83,5 @@ def test_the_configuration_is_made_outside_the_timed_steps(setup_costs, monkeypa
 
 def test_bcfe_is_set_up_with_the_library_circuit(setup_costs):
     row = setup_costs.measure(setup_costs.BCFE, 1, "toy")
-    assert row["status"] == "ok" and row["note"] == "circuit {}".format(setup_costs.BCFE_CIRCUIT)
+    assert row["status"] == "ok" and row["note"] == "circuit {}, no slots yet".format(setup_costs.BCFE_CIRCUIT)
     assert row["params"]["scheme"] == "bcfe/gc_ristretto255"

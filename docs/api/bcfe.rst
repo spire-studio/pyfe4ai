@@ -201,7 +201,11 @@ them in base64, a third more. The linear circuits have 100 features:
 ``[sum_i w_i x_i + bias >= 0]``) and
 :func:`~pyfe4ai.circuits.library.linear_score` (the score itself); the MLP
 is :func:`~pyfe4ai.circuits.library.mlp` with 64 features, 16 hidden ReLU
-units and one output decision, all values 8-bit (``shift = 8``).
+units and one output decision, all values 8-bit (``shift = 8``). Besides the
+slot public keys, the public parameters carry the encoding of the whole
+circuit once (``circuit.encode()``: 1,412,795 bytes for the 16-bit linear
+decision); the slot public keys are added as slots are issued, so right after
+``setup()`` the public parameters hold the circuit and no slot.
 
 .. list-table::
    :header-rows: 1
