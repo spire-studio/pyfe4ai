@@ -166,13 +166,52 @@ decryptions than ``max_partial_decryptions``, and the KL flooding guarantee
 would no longer hold. Make a server's budget in the one process that
 answers for it (a subclass may share and persist the count, see the class).
 
+**Native threads in a forked child.** In a process forked from one that has
+run a native kernel with more than one thread, every native call runs with
+one thread, whatever :func:`~pyfe4ai.backend.set_threads` or
+``PYFE4AI_THREADS`` says, in the child and in its own children.
+
+* *Why:* on macOS the Rust standard library waits for threads on a
+  libdispatch semaphore, and libdispatch refuses to work in the child of a
+  fork from a multi-threaded process. A native call that waited for its
+  worker threads in such a child killed it (SIGTRAP, "BUG IN CLIENT OF
+  LIBDISPATCH: Use-after-free of dispatch_semaphore_t"). This was the case in
+  0.4.0 for any kernel run with several threads before the fork.
+* *How:* the native core records the process that first runs several
+  threads and compares the process id at each multi-threaded call, so the
+  rule holds for every native call (through the backend or
+  ``pyfe4ai._rust_native`` directly) and for every fork (``os.fork``,
+  ``multiprocessing``, a fork made by a C extension). Calling ``set_threads``
+  in the child does not lift it. As a second guard, a multi-threaded call
+  joins each of its worker threads (also when one of them panics) rather
+  than waiting for them, so the calling thread does not park there either.
+  The tables the native code builds on first use (the Gaussian sampler's,
+  the pairing's generator, group order and hash key) are built when the
+  extension is imported, and the sampler's tables without any wait, so no
+  thread waits for another to build them, in the parent or in a child.
+* *Who is not affected:* a child of a process that never ran several
+  threads keeps them (and, once it runs them, its own children are
+  limited); a process started with ``spawn``, ``forkserver`` or ``exec``
+  starts afresh.
+* *Cost:* native calls in a forked child are single-threaded. Pre-fork
+  servers and fork-based worker pools that want several native threads per
+  worker should start their workers with ``spawn`` or ``forkserver``, or
+  fork before the parent runs any multi-threaded native call.
+  :func:`pyfe4ai.backend.effective_threads` returns the thread count a
+  native call uses in the current process, and
+  :func:`pyfe4ai.backend_info() <pyfe4ai.backend.backend_info>` reports it as ``"threads"``.
+* *Linux:* the rule applies there too, so fork-based workers on Linux also
+  run native calls on one thread. The crash itself is specific to macOS
+  (Linux waits on a futex, not libdispatch); the library has not been run
+  natively on Linux with this test, so that is expected, not verified.
+
 Nothing else changes in the child: it has a copy of every object of the
 parent, keys and caches included, and the public tables. The native code
-keeps no random generator state between calls (one DRBG per call), so a
-fork duplicates none. Python warns about ``fork()`` in a process with
-threads; the ``spawn`` and ``forkserver`` start methods of
-``multiprocessing`` avoid all of the above, and their workers rebuild every
-cache.
+keeps no random generator state between calls (one DRBG per call), and its
+worker threads end before a call returns, so a fork duplicates none. Python
+warns about ``fork()`` in a process with threads; the ``spawn`` and
+``forkserver`` start methods of ``multiprocessing`` avoid all of the above,
+and their workers rebuild every cache.
 
 Process-wide state
 ------------------
