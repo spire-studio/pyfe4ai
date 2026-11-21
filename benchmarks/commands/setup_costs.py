@@ -9,7 +9,8 @@ configuration, is set up for the ``lr16`` circuit of ``run.py bcfe`` (built
 once, outside the timed steps). Under ``--security-profile standard`` the
 profile chooses the sizes; refused schemes are reported with the reason. An
 entry whose configuration the key generator does not accept is reported as
-``unusable`` with the reason, and the other rows are still printed.
+``unusable`` with the reason; the other rows are still printed, then one line
+per unusable entry goes to stderr and the command exits with status 1.
 Pairing-based entries need a backend for their group (they are reported as
 ``unverified`` without one).
 
@@ -24,6 +25,7 @@ import argparse
 import functools
 import json
 import logging
+import sys
 import time
 import warnings
 
@@ -132,12 +134,17 @@ def main(argv=None, prog=None) -> None:
     rows = [measure(k, args.rounds, args.security_profile) for k in keys]
     if args.output == "json":
         print(json.dumps(rows, indent=2))
-        return
-    print(",".join(HEADER))
-    for r in rows:
-        print(",".join(
-            "{:.4f}".format(r[h]) if isinstance(r.get(h), float)
-            else (json.dumps(r[h]) if isinstance(r.get(h), dict) else str(r.get(h, ""))).replace(",", ";")
-            for h in HEADER
-        ))
+    else:
+        print(",".join(HEADER))
+        for r in rows:
+            print(",".join(
+                "{:.4f}".format(r[h]) if isinstance(r.get(h), float)
+                else (json.dumps(r[h]) if isinstance(r.get(h), dict) else str(r.get(h, ""))).replace(",", ";")
+                for h in HEADER
+            ))
+    unusable = [r for r in rows if r["status"] == "unusable"]
+    for r in unusable:
+        print("setup-costs: {}: unusable ({})".format(r["scheme"], r["note"]), file=sys.stderr)
+    if unusable:
+        raise SystemExit(1)
 
