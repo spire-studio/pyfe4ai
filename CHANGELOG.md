@@ -5,7 +5,7 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/) (pre-1.0: minor bumps may break
 compatibility).
 
-## [0.4.1] — 2026-11-21
+## [0.4.1] — 2026-11-22
 
 A patch release with one fix: native code no longer kills forked children on
 macOS. Nothing else in the library changes; formats, keys and parameters are
