@@ -4,10 +4,14 @@ The instantiation benchmarks time ``setup()`` only: parameters are generated
 when the key generator is constructed, and cached in ``./config`` after the
 first round. This script times both steps for every registry entry, each in a
 fresh temporary directory (no cached parameters), with the configuration of
-``run.py fl-coverage``. Under ``--security-profile standard`` the profile
-chooses the sizes; refused schemes are reported with the reason. Pairing-based
-entries need a backend for their group (they are reported as ``unverified``
-without one).
+``run.py fl-coverage``; ``bcfe/gc_ristretto255``, which has no FL
+configuration, is set up for the ``lr16`` circuit of ``run.py bcfe`` (built
+once, outside the timed steps). Under ``--security-profile standard`` the
+profile chooses the sizes; refused schemes are reported with the reason. An
+entry whose configuration the key generator does not accept is reported as
+``unusable`` with the reason, and the other rows are still printed.
+Pairing-based entries need a backend for their group (they are reported as
+``unverified`` without one).
 
 Usage::
 
@@ -17,6 +21,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import logging
 import time
@@ -27,8 +32,11 @@ from _common import keygen_config
 from _common import parse_args
 from _common import size_bytes
 from _common import stats
+from commands.bcfe import CIRCUITS as BCFE_CIRCUITS
 from commands.fl_coverage import CONFIGS
 from commands.fl_coverage import _needs_pairing
+from pyfe4ai import circuits
+from pyfe4ai.core.exceptions import FEConfigError
 from pyfe4ai.core.exceptions import FEValidationError
 from pyfe4ai.core.registry import SCHEMES
 from pyfe4ai.core.registry import get_scheme
@@ -37,6 +45,23 @@ from pyfe4ai.primitives.pairing.pairing_backend import pairing_available
 
 HEADER = ["scheme", "security_profile", "status", "rounds", "construct_mean_sec",
           "setup_mean_sec", "total_std_sec", "pp_bytes", "params", "note"]
+
+#: The circuit of ``bcfe/gc_ristretto255`` here: a name of ``run.py bcfe``'s ``CIRCUITS``.
+BCFE = ("bcfe", "gc_ristretto255")
+BCFE_CIRCUIT = "lr16"
+
+
+@functools.lru_cache(maxsize=None)
+def _bcfe_circuit():
+    builder, kwargs = BCFE_CIRCUITS[BCFE_CIRCUIT]
+    return getattr(circuits, builder)(**kwargs)
+
+
+def _config(key) -> dict:
+    """The key generator configuration of an entry (before the profile's changes)."""
+    if key == BCFE:
+        return {"circuit": _bcfe_circuit()}
+    return dict(CONFIGS[key])
 
 
 def _params(pp: dict) -> dict:
@@ -70,7 +95,7 @@ def measure(key, rounds: int, profile: str) -> dict:
         with fresh_cache():
             try:
                 t0 = time.perf_counter()
-                kg = kg_cls(keygen_config(dict(CONFIGS[key])))
+                kg = kg_cls(keygen_config(_config(key)))
                 t1 = time.perf_counter()
                 kg.setup()
                 t2 = time.perf_counter()
@@ -78,15 +103,19 @@ def measure(key, rounds: int, profile: str) -> dict:
                 pp_bytes = size_bytes(pp)
                 params = _params(pp) if isinstance(pp, dict) else {}
             except FEValidationError as exc:
-                if profile == "toy" or "parameter set" not in str(exc):
-                    raise
-                return dict(row, status="refused", note=str(exc).splitlines()[0][:200])
+                reason = str(exc).splitlines()[0][:200]
+                if profile != "toy" and "parameter set" in str(exc):
+                    return dict(row, status="refused", note=reason)
+                return dict(row, status="unusable", note=reason)
+            except FEConfigError as exc:
+                return dict(row, status="unusable", note=str(exc).splitlines()[0][:200])
         construct.append(t1 - t0)
         setup.append(t2 - t1)
         total.append(t2 - t0)
+    note = "circuit {}".format(BCFE_CIRCUIT) if key == BCFE else ""
     return dict(
         row, status="ok", construct_mean_sec=stats(construct)[0], setup_mean_sec=stats(setup)[0],
-        total_std_sec=stats(total)[2], pp_bytes=pp_bytes, params=params, note="",
+        total_std_sec=stats(total)[2], pp_bytes=pp_bytes, params=params, note=note,
     )
 
 
