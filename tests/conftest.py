@@ -69,6 +69,7 @@ SLOW = frozenset({
     "config/test_config.py::test_key_generators_read_no_option_as_an_attribute[mife/fullysec_lwe]",
     "config/test_config.py::test_key_generators_read_declared_options_only[sife/fullysec_lwe]",
     "config/test_config.py::test_key_generators_read_declared_options_only[mife/fullysec_lwe]",
+    "api/test_setup_costs.py::test_every_entry_sets_up_under_toy",
 })
 
 #: The tests of tests/review that skip themselves (in their body) without the
