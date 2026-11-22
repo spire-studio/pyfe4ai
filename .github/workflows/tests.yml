@@ -1,10 +1,20 @@
 name: Tests
 
+# push only for main and release tags: a commit on a pull request's branch is
+# tested once, through pull_request (on the merge with the base branch)
 on:
   push:
+    branches: [main]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
+# The suites of core-release and rust-native run under pytest-xdist: -n auto
+# starts one worker per vCPU (4 on ubuntu-latest), and --dist worksteal hands
+# the queued tests of a busy worker to idle ones (the longest test alone takes
+# about a minute). The outcome of every test is that of a serial run; xdist
+# only leaves out of its summary the modules skipped at collection and the
+# tests deselected by -m. full-research stays serial.
 jobs:
   core-release:
     runs-on: ubuntu-latest
@@ -27,23 +37,27 @@ jobs:
         env:
           PYFE4AI_NO_NATIVE: "1"
         run: |
-          python -m pip install -e ".[test]"
+          python -m pip install -e ".[test]" "pytest-xdist>=3.8"
 
       - name: Run core release test suite
         shell: bash -l {0}
         run: |
-          python -m pytest -m core -q
+          python -m pytest -m core -q -n auto --dist worksteal
 
-  # Native backend lane: builds the Rust extension pyfe4ai._rust_native
-  # (pip install runs tools/build_rust.py through setup.py when cargo is on
-  # the PATH) and the C ABI of rust/core, runs `cargo test` in rust/core, and
-  # the full suite on the native backend. The Python 3.10 entry (the minimum
-  # of requires-python) also runs the full suite with PYFE4AI_BACKEND=python,
-  # the reference implementation the native code must match bit for bit; the
-  # Python 3.13 entry runs the native suite with 4 threads per native call.
+  # Native backend lane: every entry builds the Rust extension
+  # pyfe4ai._rust_native (pip install runs tools/build_rust.py through
+  # setup.py when cargo is on the PATH) and the C ABI of rust/core. The two
+  # native entries run `cargo test` in rust/core and the full suite on the
+  # native backend: Python 3.10 (the minimum of requires-python) with one
+  # thread, Python 3.13 with 4 threads per native call. The Python-backend
+  # entry runs the full suite with PYFE4AI_BACKEND=python, the reference
+  # implementation the native code must match bit for bit, on Python 3.10 on
+  # a runner of its own, in parallel with the native suites; it needs the
+  # extension and the C ABI too, since some of its tests run the native code
+  # and compare it with the Python one.
   # The pairing tests run on BLS12-381 from the extension (no charm needed).
   rust-native:
-    name: rust-native (Python ${{ matrix.python-version }})
+    name: rust-native (Python ${{ matrix.python-version }}${{ matrix.backend == 'python' && ', Python backend' || '' }})
     runs-on: ubuntu-latest
     timeout-minutes: 75
     strategy:
@@ -51,13 +65,22 @@ jobs:
       matrix:
         include:
           - python-version: "3.10"
+            backend: native
             threads: "1"
-            python-backend-suite: true
           - python-version: "3.13"
+            backend: native
             threads: "4"
-            python-backend-suite: false
+          - python-version: "3.10"
+            backend: python
     env:
       CARGO_TERM_COLOR: always
+      # every cargo build of this job (pip install through tools/build_rust.py,
+      # cargo test, the C ABI) uses thin LTO and 16 codegen units: about half
+      # the build time of the release profiles in the Cargo.toml files
+      # (rust/native: fat LTO, 1 codegen unit). The results must be the same.
+      # Release builds and the constant-time measurements use those profiles.
+      CARGO_PROFILE_RELEASE_LTO: thin
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
 
     steps:
       - name: Checkout repository
@@ -78,6 +101,9 @@ jobs:
         with:
           # the two crates are separate workspaces; the extension's build
           # depends on the interpreter, hence the Python version in the key
+          # (the two Python 3.10 entries build the same and share one cache).
+          # It keeps only the dependencies: the two crates of this repository
+          # are compiled in every job, which is most of the build time
           workspaces: |
             rust/core -> target
             rust/native -> target
@@ -86,7 +112,7 @@ jobs:
       - name: Install the package with test extras (builds the extension)
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[test]"
+          python -m pip install -e ".[test]" "pytest-xdist>=3.8"
 
       - name: Check that the native extension was built
         # setup.py treats the extension as optional and only warns when the
@@ -95,6 +121,7 @@ jobs:
           python -c "from pyfe4ai import backend as nb; assert nb.available(), 'pyfe4ai._rust_native was not built'; print(nb.describe())"
 
       - name: cargo test (rust/core)
+        if: ${{ matrix.backend == 'native' }}
         working-directory: rust/core
         run: cargo test --release --locked
 
@@ -103,16 +130,17 @@ jobs:
         run: cargo build --release --locked
 
       - name: Full test suite, native backend
+        if: ${{ matrix.backend == 'native' }}
         env:
           PYFE4AI_BACKEND: native
           PYFE4AI_THREADS: ${{ matrix.threads }}
-        run: python -m pytest -q -rs
+        run: python -m pytest -q -rs -n auto --dist worksteal
 
       - name: Full test suite, Python backend
-        if: ${{ matrix.python-backend-suite }}
+        if: ${{ matrix.backend == 'python' }}
         env:
           PYFE4AI_BACKEND: python
-        run: python -m pytest -q
+        run: python -m pytest -q -n auto --dist worksteal
 
   # Pairing-enabled full suite compiles PBC + charm-crypto from source and is
   # slower/more fragile than the core lane, so it only runs on manual dispatch

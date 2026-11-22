@@ -198,7 +198,7 @@ compatibility).
   one sample's decisions, other values); `tools/ct_bcfe.py` times the bcfe
   label KEM of the native extension from Python.
 
-## [0.5.0] — unreleased
+## [0.5.0] — 2026-11-22
 
 **Highlights.** Attribute-based inner-product functional encryption over
 pairings: `sife/cp_ab_pairing` and `sife/kp_ab_pairing`, reviewed against their
@@ -2437,6 +2437,7 @@ before using them.
 
 Initial public release.
 
+[1.0.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.5.0...v1.0.0
 [0.5.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/spire-studio/pyfe4ai/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/spire-studio/pyfe4ai/compare/v0.3.0...v0.4.0
