@@ -6,7 +6,7 @@ key shares, ciphertexts, partial decryptions) together with the parameter record
 results. :func:`generate` makes such a fixture; :func:`replay` reads one with the code under test, as a later
 version would, and returns what that code computes from it. ``tests/compat/test_fixtures.py`` compares the two.
 
-The fixtures are frozen once written (``docs/compatibility``, roadmap ``v1.0/02`` Sec. 8): the structure of a
+The fixtures are frozen once written (``docs/compatibility``): the structure of a
 fixture is fixed by the recipe (scheme set, inputs, record roles), its random bytes are those of the run that wrote
 it. Only the public API is used, so that a later version reads the records exactly as an application would.
 """

@@ -123,8 +123,8 @@ and what is out of scope; the points below are its summary.
   data-independent-timing mode (DIT) the shape of the time distribution
   depended on the secret seed, while the means stayed within the control.
   Since 1.0 the garbling sets DIT where the processor has it (aarch64, such
-  as Apple silicon), and with it the same tests on that machine were clean;
-  on x86-64 it runs without such a mode. The mechanism was not found, and
+  as Apple silicon), and with it the same tests on an Apple M4 Max were
+  clean; on x86-64 it runs without such a mode. The mechanism was not found, and
   whether this could be exploited was not evaluated (see
   [Side channels](https://spire-studio.github.io/pyfe4ai/docs/security.html#side-channels)).
 - **ML adapter.** `FESchemeWrapper` runs the key generator and holds the
