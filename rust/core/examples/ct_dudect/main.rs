@@ -13,7 +13,7 @@
 //! `pow_secret_exp` is a control that must leak (square-and-multiply on a secret exponent), `shake256` one that
 //! should not.
 use pyfe4ai_core::rlwe::{self, EncKey, Noise, Randomness};
-use pyfe4ai_core::{facct, facct_wide, garble, keccak, osrand, shamir, AnyRing, Modulus, Word, U256};
+use pyfe4ai_core::{dit, facct, facct_wide, garble, keccak, osrand, shamir, AnyRing, Modulus, Word, U256};
 
 #[allow(dead_code)]
 mod data {
@@ -711,8 +711,12 @@ struct FacctValues {
     conditional: bool,
 }
 
-/// Sets or clears PSTATE.DIT (ARMv8.4 data-independent timing; Apple silicon), a no-op elsewhere.
+/// Sets or clears PSTATE.DIT (ARMv8.4 data-independent timing; Apple silicon), a no-op where the processor has no
+/// FEAT_DIT or the target is not aarch64.
 fn set_dit(on: bool) {
+    if !dit::supported() {
+        return;
+    }
     #[cfg(target_arch = "aarch64")]
     unsafe {
         if on {
@@ -811,8 +815,11 @@ struct Garble {
     /// whose labels' Hamming weights are far apart / equal.
     null: bool,
     second: Option<u64>,
-    /// GARBLE_DIT=1: the timed call runs with PSTATE.DIT set (as FACCT_DIT for facct_values)
+    /// GARBLE_DIT=1: the harness sets PSTATE.DIT around the timed call (as FACCT_DIT for facct_values); since
+    /// `garble()` sets DIT itself (1.0), this times the same as leaving GARBLE_DIT unset
     dit: bool,
+    /// GARBLE_DIT=0: the timed call is `garble_unguarded`, the garbling without the library's DIT guard
+    unguarded: bool,
     fixed: u64,
     fixed_x: u64,
     salt: [u8; 56],
@@ -837,7 +844,8 @@ impl Target for Garble {
         if dit {
             set_dit(true);
         }
-        let g = garble::garble(data::CIRCUIT, garble::Mode::Hardwired, &self.salt, black_box(&self.x), black_box(&self.seed));
+        let f = if self.unguarded { garble::garble_unguarded } else { garble::garble };
+        let g = f(data::CIRCUIT, garble::Mode::Hardwired, &self.salt, black_box(&self.x), black_box(&self.seed));
         black_box(g.map(|g| g.tables.len()).ok());
         if dit {
             set_dit(false);
@@ -1159,10 +1167,21 @@ fn make(name: &str, calls: usize, rng: &mut Rng) -> Box<dyn Target> {
                 fixed = a;
                 second = Some(b);
             }
-            let dit = std::env::var("GARBLE_DIT").map(|v| v == "1").unwrap_or(false);
-            eprintln!("GARBLE_DIT={}", dit as u8);
-            Box::new(Garble { secret_is_x: name == "garble_x", null: name == "garble_seed_null", second, dit, fixed,
-                              fixed_x, salt, x, seed: [0; 32] })
+            // GARBLE_DIT unset: the library's garble(), which sets DIT where the processor has it (before 1.0, unset
+            // meant without DIT; that is GARBLE_DIT=0 now)
+            let mode = std::env::var("GARBLE_DIT").ok();
+            let (dit, unguarded, what) = match mode.as_deref() {
+                None => (false, false, "unset: garble(), DIT set by the library"),
+                Some("0") => (false, true, "0: garble_unguarded, without DIT"),
+                Some("1") => (true, false, "1: garble() with DIT set by the harness too"),
+                Some(v) => panic!("GARBLE_DIT must be unset, 0 or 1, not {v:?}"),
+            };
+            if unguarded {
+                assert!(!dit::is_set(), "GARBLE_DIT=0 needs DIT clear on this thread");
+            }
+            eprintln!("GARBLE_DIT={what} (DIT supported: {})", dit::supported());
+            Box::new(Garble { secret_is_x: name == "garble_x", null: name == "garble_seed_null", second, dit, unguarded,
+                              fixed, fixed_x, salt, x, seed: [0; 32] })
         }
         "rlwe_tensor" => {
             let n = 1024;

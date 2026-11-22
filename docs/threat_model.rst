@@ -380,9 +380,10 @@ the project's own, reviewed internally, not externally).
   failures, a different ``x`` per slot); forged slot lists; function privacy;
   quantum adversaries (the labels are encrypted with hashed ElGamal);
   revocation and key rotation; timing attacks on the native garbling, whose
-  time distribution changes shape with the seed secret (means within the
-  control, mechanism not found, exploitability not evaluated; see
-  :ref:`side-channels`).
+  time distribution changed shape with the seed secret without the
+  processor's data-independent-timing mode (means within the control,
+  mechanism not found, exploitability not evaluated); it sets that mode
+  where the processor has it (DIT, on aarch64; see :ref:`side-channels`).
 
 Threshold key issuance and identity directory
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

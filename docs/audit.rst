@@ -174,13 +174,16 @@ Questions for the auditors
    * - Q7
      - The constant-time results: the paths measured, the method, the
        thresholds and the list of exceptions. Please look first at the
-       garbling with the seed secret: the shape of its time distribution
+       garbling with the seed secret: without the processor's
+       data-independent-timing mode (DIT) the shape of its time distribution
        depends on the seed (fresh seeds in both classes were clean in three
-       runs, two fixed seeds against each other flagged in five of six runs
-       (three pairs, two runs each), and with DIT set the same pairs were
-       clean in three runs) while
+       runs, two fixed seeds against each other flagged in eight of nine runs
+       (three pairs, three runs each)), and with DIT set, as the garbling does
+       since 1.0, the same pairs were clean in nine runs (three each), while
        every mean stayed within the control; the mechanism was not found, and
-       whether this can be exploited was not evaluated.
+       whether this could be exploited was not evaluated. Is setting DIT
+       around the garbling alone (not the label encryption) the right
+       remedy?
      - native core
    * - Q8
      - The compatibility rules and their security exception: can a record

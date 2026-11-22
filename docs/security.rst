@@ -772,18 +772,21 @@ before 1.0 in two ways:
 
 No difference in mean time that depends on the secret values beyond the
 control's was found within the measured sample sizes, which is evidence for
-these paths on this machine and compiler, not a guarantee. The shape of the
-time distribution of the garbling (``bcfe/gc_ristretto255``) does depend on
-its seed, which is the secret, while its means stay within the control: the
-mechanism was not found, and whether this can be exploited was not evaluated
-(see *Cropped tests* below). The assembly was read on
-aarch64. The masks of the exact Gaussian sampler rest on an optimisation
+these paths on this machine and compiler, not a guarantee. Without the
+processor's data-independent-timing mode, the shape of the time distribution
+of the garbling (``bcfe/gc_ristretto255``) depended on its seed, which is the
+secret, while its means stayed within the control; the mechanism was not
+found. Since 1.0 the native garbling sets that mode for its thread and puts
+the previous value back afterwards (``DIT``, on aarch64 processors that have
+it: Apple silicon and other ARMv8.4 processors), and with it the same tests
+were clean (see *Cropped tests* below). Only the garbling runs with it: not
+the label encryption of a slot (on the worker threads), not the evaluation
+and not the Python backend. DIT does not make branches or memory accesses
+constant-time, and on other processors, x86-64 among them, the garbling runs
+without such a mode. The assembly was read on aarch64. The masks of the exact Gaussian sampler rest on an optimisation
 barrier that holds on x86-64 and aarch64 (elsewhere a weaker one); its x86-64
 code was read only as generated from the same LLVM IR by another compiler
-(clang), without link-time optimisation, not by rustc's own backend. The
-library does not
-set the processor's data-independent-timing mode (``DIT`` on Apple silicon
-and other ARMv8.4 processors).
+(clang), without link-time optimisation, not by rustc's own backend.
 
 .. list-table::
    :header-rows: 1
@@ -815,9 +818,12 @@ and other ARMv8.4 processors).
        hardwired), the garbler's data bits secret; the same with the garbling
        seed (offset and labels) secret
      - seeded, 8·10^6 each
-     - means within the control (data bits -0.0005 % [-0.0080, +0.0070];
-       seed -0.0048 % [-0.0123, +0.0028]); with the seed secret, the shape of
-       the time distribution depends on the seed (see *Cropped tests* below)
+     - with DIT, which the garbling sets since 1.0: within the control (data
+       bits -0.0018 % [-0.0082, +0.0046]; seed -0.0046 % [-0.0117, +0.0026]),
+       the cropped tests clean (at most 1.64). Without DIT the means were
+       within the control too (-0.0005 % and -0.0048 %), but with the seed
+       secret the shape of the time distribution depended on the seed (see
+       *Cropped tests* below)
    * - the label KEM of ``bcfe/gc_ristretto255`` in the native extension
        (``rust/native``), timed from Python by ``tools/ct_bcfe.py``: the table
        of a new slot chosen by ``w`` (with the authority's keys, and with the
@@ -827,7 +833,9 @@ and other ARMv8.4 processors).
      - one call per measurement, fixed against random, each with an A/A twin;
        1.5 to 2·10^5 calls (the encryption 10^5)
      - within the twins: the largest difference -0.015 % [-0.036, +0.007]
-       (the decryption, whose A/A twin gave -0.015 % too); a call takes 0.23 to
+       (the decryption, whose A/A twin gave -0.015 % too); the encryption,
+       measured again with the garbling's DIT, -0.0093 % [-0.0290, +0.0103]
+       (its twin +0.0162 % [-0.0049, +0.0374]); a call takes 0.23 to
        1.06 ms, so the resolution is coarser than the core's harness (about
        25 to 110 ns)
    * - the exact Gaussian sampler (FACCT, ``sigma = 1000``), 1024 values, the
@@ -894,28 +902,39 @@ its row). A first run of the forward NTT flagged (28); its rerun on the same
 code gave 0.55, and six more runs with three other fixed seeds, two runs each,
 were all clean (at most 2.6): the flag did not recur with three other fixed
 inputs (that run's own was not recorded), so it more likely came from that
-run. The garbling with the seed secret flagged in a run on the release code
-(11), and in four of six more runs with three fixed seeds, two runs each: two
-seeds in one of their two runs each (7.8 and 13.0), the third in both (18.5
-and 14.9). Two more designs separate the secret from the method: with fresh
-seeds in both classes (an A/A test) the cropped tests were clean in three runs
-(0.14, 1.78 and 1.21); with two different fixed seeds against each other
-(both classes repeat a fixed input, so only the seeds differ) they flagged in
-three runs (11.2, 18.1 and 19.5), and a rerun of the same three pairs on the
-same machine gave 2.5, 15.0 and 17.7: five of six runs flagged. So the shape
-of the garbling's time distribution depends on the seed, which is the secret.
+run. The garbling with the seed secret, without DIT (as before 1.0), flagged
+in a run on the code of the release candidate (11), and in four of six more
+runs with three fixed seeds, two runs each: two seeds in one of their two runs
+each (7.8 and 13.0), the third in both (18.5 and 14.9). Two more designs
+separate the secret from the method: with fresh seeds in both classes (an A/A
+test) the cropped tests were clean in three runs (0.14, 1.78 and 1.21); with
+two different fixed seeds against each other (both classes repeat a fixed
+input, so only the seeds differ) they flagged in three runs (11.2, 18.1 and
+19.5), in a rerun of the same three pairs on the same machine 2.5, 15.0 and
+17.7, and on the release code without the garbling's DIT (``GARBLE_DIT=0``)
+13.6, 19.8 and 18.5: eight of nine runs flagged. So without DIT the shape of
+the garbling's time distribution depends on the seed, which is the secret.
 Every mean stayed within the control (at most about 5.2 ns of about 49 µs).
 Read in the code, the mask selections and SHAKE neither branch nor index
 memory on secret data. On the same machine (Apple M4 Max) with the
 processor's data-independent-timing mode (DIT) set, the same three pairs were
-clean (0.89, 1.51 and 1.12; one of these runs was noisier and says less), and
-the garbling took about 8 % longer. The flags did not follow the labels'
-Hamming weight: of three pairs far apart in weight one flagged, of three pairs
-of equal weight two did. This suggests data-dependent behaviour of the
-processor that DIT turns off rather than a secret-dependent branch or memory
-access in the code; which behaviour it is was not identified. Three runs per
-setting on one machine is little, and other processors may differ. Whether
-the dependence can be exploited was not evaluated.
+clean in three runs: with DIT set by the timing harness (0.89, 1.51 and 1.12;
+one of these runs was noisier and says less) and twice with DIT set by the
+garbling itself, as since 1.0 (1.58, 0.82 and 0.92; and on the release code,
+taking turns with the runs without it, 1.67, 2.19 and 1.69); the A/A test
+with DIT was clean too (0.54 and 1.64). With DIT the garbling takes about 8 to
+9 % longer there (53.4 µs against 49.4 µs on the release code), the
+encryption of a ``bcfe`` slot 1.6 to 2.5 % longer. The flags did not follow
+the labels' Hamming weight: of three pairs far apart in weight one flagged, of
+three pairs of equal weight two did. This suggests data-dependent behaviour of
+the processor that DIT turns off rather than a secret-dependent branch or
+memory access in the code; which behaviour it is was not identified. On an
+Apple M2 Max the same three pairs were clean without DIT (1.86, 1.11 and
+0.63), and DIT did not change the garbling's time there; with DIT one pair
+gave 4.97, just above the harness's limit of 4.5, in a run while other work
+ran on that machine. Three runs per setting on one machine and one run on
+another are little, and other processors may differ. Whether the dependence
+could be exploited was not evaluated.
 
 Not checked yet, in the native core: the RNS products and the CRT
 (``rns.rs``, used by default by the lattice MIFE, MCFE, dMCFE and tMCFE
@@ -1153,10 +1172,13 @@ tables; ``label_bits`` takes 128 only.
   timing was measured on one machine (`Side channels`_): the garbling with
   ``x`` or the seed secret, by the core's harness, and the slot tables chosen
   by ``w``, the label encryption and the decryption, from Python; no mean
-  differed beyond the control or the A/A twin, but the shape of the
-  garbling's time distribution depends on the seed secret (its means within
-  the control); the mechanism was not found, and whether this can be
-  exploited was not evaluated (see `Side channels`_).
+  differed beyond the control or the A/A twin. Without the processor's
+  data-independent-timing mode, the shape of the garbling's time
+  distribution depended on the seed secret (its means within the control);
+  the native garbling sets that mode where the processor has it (DIT, on
+  aarch64), and with it the same tests were clean. The mechanism was not
+  found, and whether the dependence could be exploited was not evaluated
+  (see `Side channels`_).
   That is evidence for these paths, not a guarantee; the scalar
   multiplications of curve25519-dalek were not checked here.
 
