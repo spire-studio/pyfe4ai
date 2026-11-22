@@ -174,14 +174,16 @@ Questions for the auditors
    * - Q7
      - The constant-time results: the paths measured, the method, the
        thresholds and the list of exceptions. Please look first at the
-       garbling with the seed secret: without the processor's
-       data-independent-timing mode (DIT) the shape of its time distribution
-       depends on the seed (fresh seeds in both classes were clean in three
-       runs, two fixed seeds against each other flagged in eight of nine runs
-       (three pairs, three runs each)), and with DIT set, as the garbling does
-       since 1.0, the same pairs were clean in nine runs (three each), while
-       every mean stayed within the control; the mechanism was not found, and
-       whether this could be exploited was not evaluated. Is setting DIT
+       garbling with the seed secret: on an Apple M4 Max, without the
+       processor's data-independent-timing mode (DIT) the shape of its time
+       distribution depends on the seed (fresh seeds in both classes were
+       clean in three runs, two fixed seeds against each other flagged in
+       eight of nine runs (three pairs, three runs each)), and with DIT set, as
+       the garbling does since 1.0, the same pairs were clean in nine runs
+       (three each), while every mean stayed within the control; on an Apple
+       M2 Max the pairs were clean without DIT (see *Cropped tests* in
+       :doc:`security`). The mechanism was not found, and whether this could
+       be exploited was not evaluated. Is setting DIT
        around the garbling alone (not the label encryption) the right
        remedy?
      - native core

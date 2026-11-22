@@ -9,7 +9,7 @@
 //!     cargo run --release --example ct_dudect -- list
 //!     cargo run --release --example ct_dudect -- <target> <batches> [calls per batch]
 //!
-//! Run the measurements of record on a quiet machine (roadmap v1.0/04: studio, with the bench lock), one thread.
+//! Run the measurements of record on a quiet machine, with nothing else timed, one thread.
 //! `pow_secret_exp` is a control that must leak (square-and-multiply on a secret exponent), `shake256` one that
 //! should not.
 use pyfe4ai_core::rlwe::{self, EncKey, Noise, Randomness};

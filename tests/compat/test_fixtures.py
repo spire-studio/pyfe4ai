@@ -1,4 +1,4 @@
-"""The 1.x compatibility promise, checked against frozen record fixtures (roadmap v1.0/02, Sec. 3 and 8).
+"""The 1.x compatibility promise, checked against frozen record fixtures (``docs/compatibility.rst``).
 
 ``tests/compat/fixtures/<version>/`` holds the records one release wrote for every stable scheme
 (:mod:`tests.compat.gen_fixtures`). Every later version must
@@ -34,7 +34,7 @@ NO_PAIRING = "needs the native extension (the BLS12-381 backend) for the pairing
 
 #: The stable schemes of each fixture set, frozen when the set was written. The registry may change later -- a
 #: scheme may become known-insecure (the security exception), never experimental, and is never removed -- and a
-#: later set adds the schemes that became stable since (roadmap v1.0/02, Sec. 2.4 and 8.4).
+#: later set adds the schemes that became stable since.
 STABLE_AT = {
     "0.5.0-proto": (
         "sife/ddh", "sife/lwe", "sife/paillier", "sife/damgard", "sife/ring_lwe", "sife/fullysec_ring_lwe",

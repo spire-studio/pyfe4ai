@@ -778,7 +778,8 @@ of the garbling (``bcfe/gc_ristretto255``) depended on its seed, which is the
 secret, while its means stayed within the control; the mechanism was not
 found. Since 1.0 the native garbling sets that mode for its thread and puts
 the previous value back afterwards (``DIT``, on aarch64 processors that have
-it: Apple silicon and other ARMv8.4 processors), and with it the same tests
+it, as the Rust standard library detects it on macOS and Linux: Apple silicon
+and other ARMv8.4 processors), and with it the same tests on the Apple M4 Max
 were clean (see *Cropped tests* below). Only the garbling runs with it: not
 the label encryption of a slot (on the worker threads), not the evaluation
 and not the Python backend. DIT does not make branches or memory accesses
@@ -917,8 +918,8 @@ the garbling's time distribution depends on the seed, which is the secret.
 Every mean stayed within the control (at most about 5.2 ns of about 49 µs).
 Read in the code, the mask selections and SHAKE neither branch nor index
 memory on secret data. On the same machine (Apple M4 Max) with the
-processor's data-independent-timing mode (DIT) set, the same three pairs were
-clean in three runs: with DIT set by the timing harness (0.89, 1.51 and 1.12;
+processor's data-independent-timing mode (DIT) set, each of the same three
+pairs was clean in three runs (nine in all): with DIT set by the timing harness (0.89, 1.51 and 1.12;
 one of these runs was noisier and says less) and twice with DIT set by the
 garbling itself, as since 1.0 (1.58, 0.82 and 0.92; and on the release code,
 taking turns with the runs without it, 1.67, 2.19 and 1.69); the A/A test
@@ -1169,14 +1170,15 @@ tables; ``label_bits`` takes 128 only.
   cannot wipe its copies of secrets. The native implementation selects by
   the bits of ``w`` and ``x`` with masks, draws its randomness from the
   operating system and wipes ``Delta``, the seeds, ``r`` and the labels. Its
-  timing was measured on one machine (`Side channels`_): the garbling with
+  timing was measured on an Apple M4 Max (`Side channels`_): the garbling with
   ``x`` or the seed secret, by the core's harness, and the slot tables chosen
   by ``w``, the label encryption and the decryption, from Python; no mean
   differed beyond the control or the A/A twin. Without the processor's
   data-independent-timing mode, the shape of the garbling's time
   distribution depended on the seed secret (its means within the control);
   the native garbling sets that mode where the processor has it (DIT, on
-  aarch64), and with it the same tests were clean. The mechanism was not
+  aarch64), and with it the same tests on that machine were clean (an Apple
+  M2 Max was clean without it). The mechanism was not
   found, and whether the dependence could be exploited was not evaluated
   (see `Side channels`_).
   That is evidence for these paths, not a guarantee; the scalar
