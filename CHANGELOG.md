@@ -5,7 +5,7 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/) (pre-1.0: minor bumps may break
 compatibility).
 
-## [1.0.0] — unreleased
+## [1.0.0] — 2026-11-22
 
 ### Added — bounded-key FE (0.6)
 
