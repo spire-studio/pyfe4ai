@@ -409,6 +409,8 @@ pub fn garble(circuit: &[u8], mode: Mode, salt: &[u8], x: &[u8], seed: &[u8]) ->
 /// which compares the garbling with and without DIT; the library calls [`garble`].
 #[doc(hidden)]
 pub fn garble_unguarded(circuit: &[u8], mode: Mode, salt: &[u8], x: &[u8], seed: &[u8]) -> Result<Garbling, String> {
+    #[cfg(test)]
+    tests::DIT_DURING_GARBLING.with(|c| c.set(Some(crate::dit::is_set())));
     let c = Circuit::parse(circuit)?;
     let mut hg = GateHash::new(salt)?;
     if seed.len() != SEED_LEN {
@@ -666,6 +668,38 @@ mod tests {
         let enc = c.encode();
         let g = garble(&enc, mode, salt, &pack_bits(x), seed).unwrap();
         evaluate(&enc, mode, salt, &g.tables, &g.decode, &key_active(&g, w), &g.data_active).unwrap()
+    }
+
+    thread_local! {
+        /// Whether DIT was set when `garble_unguarded` started on this thread (test builds only).
+        pub(super) static DIT_DURING_GARBLING: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+    }
+
+    fn dit_during(f: impl FnOnce()) -> bool {
+        DIT_DURING_GARBLING.with(|c| c.set(None));
+        f();
+        DIT_DURING_GARBLING.with(|c| c.get()).expect("the garbling ran")
+    }
+
+    #[test]
+    fn garble_runs_with_dit_where_supported() {
+        let mut rng = Rng(29);
+        let c = random_circuit(&mut rng, 6, 10, 80, 4, Mode::Hardwired);
+        let enc = c.encode();
+        let (salt, seed, x) = (rng.bytes(SALT_LEN), rng.bytes(SEED_LEN), pack_bits(&rng.bits(10)));
+        assert!(!crate::dit::is_set());
+        let guarded = dit_during(|| {
+            garble(&enc, Mode::Hardwired, &salt, &x, &seed).unwrap();
+        });
+        assert_eq!(guarded, crate::dit::supported(), "garble() sets DIT where the processor has it");
+        assert!(!crate::dit::is_set(), "and puts the previous value back");
+        let unguarded = dit_during(|| {
+            garble_unguarded(&enc, Mode::Hardwired, &salt, &x, &seed).unwrap();
+        });
+        assert!(!unguarded, "garble_unguarded leaves DIT as it was");
+        // an error return restores DIT too
+        assert!(garble(&enc, Mode::Hardwired, &salt, &x, &seed[..31]).is_err());
+        assert!(!crate::dit::is_set());
     }
 
     #[test]

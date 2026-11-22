@@ -10,11 +10,13 @@
 //! had set it keeps it. Where the processor has no FEAT_DIT, or the target is
 //! not aarch64, a `Guard` does nothing.
 
-/// Sets PSTATE.DIT for the current thread while it lives.
+/// Sets PSTATE.DIT for the current thread while it lives. Not `Send`: it must
+/// be dropped on the thread that made it.
 pub struct Guard {
     /// Whether DIT was clear before and has to be cleared again on drop.
     #[cfg(target_arch = "aarch64")]
     clear_on_drop: bool,
+    _this_thread: core::marker::PhantomData<*const ()>,
 }
 
 /// Whether this processor has FEAT_DIT (always false off aarch64).
@@ -61,11 +63,11 @@ impl Guard {
             if clear_on_drop {
                 unsafe { core::arch::asm!(".arch_extension dit", "msr DIT, #1", options(nostack, preserves_flags)) };
             }
-            Guard { clear_on_drop }
+            Guard { clear_on_drop, _this_thread: core::marker::PhantomData }
         }
         #[cfg(not(target_arch = "aarch64"))]
         {
-            Guard {}
+            Guard { _this_thread: core::marker::PhantomData }
         }
     }
 }
@@ -106,10 +108,19 @@ mod tests {
         assert!(supported());
     }
 
+    /// A guard on another thread leaves this one alone. (Whether a new thread
+    /// starts with its parent's DIT depends on the OS: Linux copies PSTATE into
+    /// a thread made while DIT is set.)
     #[test]
     fn dit_is_per_thread() {
-        let _g = Guard::new();
-        let other = std::thread::spawn(is_set).join().unwrap();
-        assert!(!other, "a new thread starts with DIT clear");
+        let before = is_set();
+        let other = std::thread::spawn(|| {
+            let _g = Guard::new();
+            is_set()
+        })
+        .join()
+        .unwrap();
+        assert_eq!(other, supported());
+        assert_eq!(is_set(), before);
     }
 }

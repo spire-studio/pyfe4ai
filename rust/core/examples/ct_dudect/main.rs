@@ -711,8 +711,12 @@ struct FacctValues {
     conditional: bool,
 }
 
-/// Sets or clears PSTATE.DIT (ARMv8.4 data-independent timing; Apple silicon), a no-op elsewhere.
+/// Sets or clears PSTATE.DIT (ARMv8.4 data-independent timing; Apple silicon), a no-op where the processor has no
+/// FEAT_DIT or the target is not aarch64.
 fn set_dit(on: bool) {
+    if !dit::supported() {
+        return;
+    }
     #[cfg(target_arch = "aarch64")]
     unsafe {
         if on {
@@ -1163,10 +1167,19 @@ fn make(name: &str, calls: usize, rng: &mut Rng) -> Box<dyn Target> {
                 fixed = a;
                 second = Some(b);
             }
-            // GARBLE_DIT unset: the library's garble(), which sets DIT where the processor has it
-            let mode = std::env::var("GARBLE_DIT").unwrap_or_default();
-            let (dit, unguarded) = (mode == "1", mode == "0");
-            eprintln!("GARBLE_DIT={} (DIT supported: {})", if mode.is_empty() { "unset" } else { &mode }, dit::supported());
+            // GARBLE_DIT unset: the library's garble(), which sets DIT where the processor has it (before 1.0, unset
+            // meant without DIT; that is GARBLE_DIT=0 now)
+            let mode = std::env::var("GARBLE_DIT").ok();
+            let (dit, unguarded, what) = match mode.as_deref() {
+                None => (false, false, "unset: garble(), DIT set by the library"),
+                Some("0") => (false, true, "0: garble_unguarded, without DIT"),
+                Some("1") => (true, false, "1: garble() with DIT set by the harness too"),
+                Some(v) => panic!("GARBLE_DIT must be unset, 0 or 1, not {v:?}"),
+            };
+            if unguarded {
+                assert!(!dit::is_set(), "GARBLE_DIT=0 needs DIT clear on this thread");
+            }
+            eprintln!("GARBLE_DIT={what} (DIT supported: {})", dit::supported());
             Box::new(Garble { secret_is_x: name == "garble_x", null: name == "garble_seed_null", second, dit, unguarded,
                               fixed, fixed_x, salt, x, seed: [0; 32] })
         }
