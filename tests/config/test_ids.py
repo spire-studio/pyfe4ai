@@ -19,6 +19,7 @@ import pyfe4ai
 from pyfe4ai import backend as native_backend
 from pyfe4ai.core.exceptions import FEValidationError
 from pyfe4ai.core.ids import DUPLICATE_IDS, ID_LISTS, MIXED_IDS, id_list, is_id
+from tests.scheme_config import of_scheme
 
 needs_bls = pytest.mark.skipif(not native_backend.available(), reason="BLS12-381 needs the native extension")
 
@@ -40,10 +41,9 @@ def _cwd(tmp_path, monkeypatch):
 def _config(scheme, **ids):
     group = any(token in scheme for token in ("ddh", "damgard", "paillier"))
     config = {"eta": 1, "n": 2, "lst_nid": ["c0", "c1"], "s": 2, "t": 2, "lst_sid": ["s0", "s1"], "ring_n": 16,
-              "lwe_n": 16, "sec_param": 128 if group else 64, "bound_x": 4, "bound_y": 4, "bound_u": 2,
-              "label_modulus": 8}
+              "lwe_n": 16, "sec_param": 128 if group else 64, "bound_x": 4, "bound_y": 4}
     config.update(ids)
-    return config
+    return of_scheme(scheme, config)
 
 
 def test_ids_are_str_or_int():

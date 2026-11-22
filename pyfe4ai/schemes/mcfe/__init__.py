@@ -18,6 +18,8 @@ from pyfe4ai.schemes.mcfe.lwe_decentralized import DecentralizedMCFELWE, Decentr
 from pyfe4ai.schemes.mcfe.ring_lwe_threshold import ThresholdMCFERingLWE, ThresholdMCFERingLWEKeyGenerator
 from pyfe4ai.schemes.mcfe.ring_lwe_decentralized import DecentralizedMCFERingLWE, DecentralizedMCFERingLWEKeyGenerator
 from pyfe4ai.schemes.mcfe.paillier_decentralized import DecentralizedMCFEPaillier, DecentralizedMCFEPaillierKeyGenerator
+from pyfe4ai.schemes.mcfe.kp_ab_pairing import MCFEKPABPairing, MCFEKPABPairingKeyGenerator
+from pyfe4ai.schemes.mcfe.kp_ab_pairing_per_client import MCFEKPABPairingPerClient, MCFEKPABPairingPerClientKeyGenerator
 
 __all__ = [
     "MCFEDDH",
@@ -54,4 +56,8 @@ __all__ = [
     "DecentralizedMCFERingLWEKeyGenerator",
     "DecentralizedMCFEPaillier",
     "DecentralizedMCFEPaillierKeyGenerator",
+    "MCFEKPABPairing",
+    "MCFEKPABPairingKeyGenerator",
+    "MCFEKPABPairingPerClient",
+    "MCFEKPABPairingPerClientKeyGenerator",
 ]

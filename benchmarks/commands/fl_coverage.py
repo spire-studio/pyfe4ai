@@ -64,6 +64,13 @@ CONFIGS: dict[tuple[str, str], dict] = {
         "sec_param": 64, "bound": 10, "subspace_dim": 3, "coeff_bound": 1,
         "pairing_group_param": DEFAULT_PAIRING_GROUP,
     },
+    ("sife", "cp_ab_pairing"): {
+        "sec_param": 64, "bound_x": 8, "bound_y": 8, "universe": ["org:A", "org:B", "role:auditor"],
+        "pairing_group_param": DEFAULT_PAIRING_GROUP,
+    },
+    ("sife", "kp_ab_pairing"): {
+        "sec_param": 64, "bound_x": 8, "bound_y": 8, "pairing_group_param": DEFAULT_PAIRING_GROUP,
+    },
     ("mife", "ddh"): {"sec_param": 256, **_MULTI},
     ("mife", "ddh_ristretto255"): {**_MULTI},
     ("mife", "lwe"): {"sec_param": 64, "lwe_n": 16, "bound_x": 6, "bound_y": 6, **_MULTI},
@@ -129,6 +136,14 @@ CONFIGS: dict[tuple[str, str], dict] = {
     ("mcfe", "paillier_decentralized"): {
         "sec_param": 64, "bit_length": 64, "bound_x": 10, "bound_y": 10, **_MULTI,
     },
+    ("mcfe", "kp_ab_pairing"): {
+        "sec_param": 64, "bound_x": 4, "bound_y": 4, "pairing_group_param": DEFAULT_PAIRING_GROUP, **_MULTI,
+    },
+    # the per-client version: the ML adapter refuses it (the clients of one label may hold different sets of
+    # attributes), so the entry is recorded as unusable there; the scheme classes are used directly
+    ("mcfe", "kp_ab_pairing_per_client"): {
+        "sec_param": 64, "bound_x": 4, "bound_y": 4, "pairing_group_param": DEFAULT_PAIRING_GROUP, **_MULTI,
+    },
     ("quadratic", "quad"): {"sec_param": 64, "n": 4, "m": 3, "bound": 5, "pairing_group_param": DEFAULT_PAIRING_GROUP},
     ("quadratic", "sgp"): {"sec_param": 64, "n": 5, "bound": 6, "pairing_group_param": DEFAULT_PAIRING_GROUP},
     ("quadratic", "miqfe"): {
@@ -136,6 +151,15 @@ CONFIGS: dict[tuple[str, str], dict] = {
         "bound_x": 5, "bound_c": 3, "pairing_group_param": DEFAULT_PAIRING_GROUP,
     },
 }
+
+
+#: The attribute-based multi-client scheme: every client encrypts for the same attributes (``encrypt_gradient(...,
+#: attributes=)``) and the key is for a policy that they satisfy (``aggregate_gradients(..., policy=)``). No other
+#: scheme takes either argument.
+ATTRIBUTES = ["org:A", "role:auditor"]
+POLICY = "and(org:A, role:auditor)"
+ENCRYPT_ARGS: dict[tuple[str, str], dict] = {("mcfe", "kp_ab_pairing"): {"attributes": ATTRIBUTES}}
+AGGREGATE_ARGS: dict[tuple[str, str], dict] = {("mcfe", "kp_ab_pairing"): {"policy": POLICY}}
 
 
 def _needs_pairing(scheme_type: str, variant: str) -> bool:
@@ -179,12 +203,13 @@ def check_entry(scheme_type: str, variant: str) -> tuple[str, str]:
     try:
         wrapper = FESchemeWrapper(scheme_type, variant, config)
         grads = _gradients(scheme_type, config)
+        key = (scheme_type, variant)
         encrypted = {
-            nid: encrypt_gradient(g, wrapper, nid=nid, label=label)
+            nid: encrypt_gradient(g, wrapper, nid=nid, label=label, **ENCRYPT_ARGS.get(key, {}))
             for nid, g in grads.items()
         }
         result = aggregate_gradients(
-            encrypted, wrapper, {nid: 1 for nid in grads}, label=label
+            encrypted, wrapper, {nid: 1 for nid in grads}, label=label, **AGGREGATE_ARGS.get(key, {})
         )
     except Exception as exc:  # noqa: BLE001 - every failure is a data point
         return "unusable", _describe(exc)

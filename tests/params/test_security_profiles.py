@@ -34,6 +34,7 @@ from pyfe4ai.primitives.lattice.lwe_utils import (
     wide_lwe_n,
 )
 from pyfe4ai.ml import FESchemeWrapper, aggregate_gradients, encrypt_gradient
+from tests.scheme_config import of_scheme
 from pyfe4ai.primitives.lattice.ring_lwe_utils import (
     RING_LWE_128_LOG_Q,
     bmms21_selective_parameters,
@@ -212,10 +213,10 @@ def test_standard_sife_ring_lwe_round_trip():
 
 @pytest.mark.parametrize("variant", ["ddh", "damgard", "ring_lwe", "lwe", "fullysec_lwe"])
 def test_standard_mcfe_aggregation(variant):
-    config = {
+    config = of_scheme(("mcfe", variant), {
         "eta": 1, "n": 2, "lst_nid": ["nid_0", "nid_1"], "bound": 50, "bound_x": 50, "bound_y": 50,
         **STANDARD,
-    }
+    })
     wrapper = FESchemeWrapper("mcfe", variant, config, precision=1)
     enc = {
         nid: encrypt_gradient(np.array(g), wrapper, nid=nid, label="round-1")

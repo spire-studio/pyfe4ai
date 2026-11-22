@@ -17,7 +17,7 @@ from pyfe4ai.schemes.sife.ddh import SIFEDDHKeyGenerator
 from pyfe4ai.schemes.sife.paillier import SIFEPaillierKeyGenerator
 from pyfe4ai.core.constants import CryptoCONST
 from pyfe4ai.core.base import cache_dir
-from pyfe4ai.core.exceptions import FEValidationError
+from pyfe4ai.core.exceptions import FEValidationError, FEWarning
 
 
 @pytest.fixture(autouse=True)
@@ -273,6 +273,36 @@ def test_standard_never_loads_or_stores_dcr_moduli(monkeypatch):
     assert SIFEPaillierKeyGenerator(dict(std)).n != first.n
     toy = {"sec_param": 64, "eta": 2, "bit_length": 64, "bound_x": 10, "bound_y": 10}
     assert SIFEPaillierKeyGenerator(dict(toy)).n == SIFEPaillierKeyGenerator(dict(toy)).n
+
+
+# -- a record replaced because it does not match ---------------------------------
+
+
+def test_a_record_with_more_than_the_configuration_is_replaced_with_a_warning():
+    """The default: the old record may hold a group or a seed that keys and ciphertexts depend on."""
+    SIFEDDHKeyGenerator(dict(DDH))
+    with pytest.warns(FEWarning, match="does not match this configuration"):
+        SIFEDDHKeyGenerator(dict(DDH, eta=3))
+    with open(_param_file(CryptoCONST.TYPE_SIFE), "w") as f:
+        f.write('{"sec_param": 128, "group": ')
+    with pytest.warns(FEWarning, match="is unreadable"):
+        SIFEDDHKeyGenerator(dict(DDH, eta=3))
+
+
+def test_the_key_generators_of_configuration_only_records_say_so():
+    """Their record holds the configuration and no group element or seed (``pyfe4ai.core.formats.pairing``)."""
+    from pyfe4ai.core.base import ParameterCacheMixin
+    from pyfe4ai.schemes.mife.fh_multi_ipe_pairing import MIFEFHMultiIPEPairingKeyGenerator
+    from pyfe4ai.schemes.quadratic.sgp import QuadraticSGPKeyGenerator
+    from pyfe4ai.schemes.sife.cp_ab_pairing import SIFECPABPairingKeyGenerator
+    from pyfe4ai.schemes.sife.fh_ipe_pairing import SIFEFHIPEPairingKeyGenerator
+    from pyfe4ai.schemes.sife.part_fh_ipe_pairing import SIFEPartFHIPEPairingKeyGenerator
+
+    assert ParameterCacheMixin._config_only_record is False
+    assert SIFEDDHKeyGenerator._config_only_record is False
+    for cls in (MIFEFHMultiIPEPairingKeyGenerator, QuadraticSGPKeyGenerator, SIFECPABPairingKeyGenerator,
+                SIFEFHIPEPairingKeyGenerator, SIFEPartFHIPEPairingKeyGenerator):
+        assert cls._config_only_record is True, cls.__name__
 
 
 # -- location of the cache --------------------------------------------------------

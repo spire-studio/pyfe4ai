@@ -126,7 +126,8 @@ hooks ``_random_override`` (the native calls' random bytes) and
 ``_seed_override`` (a fixed DRBG seed) of this module.
 
 ``set_threads(k)`` (or ``PYFE4AI_THREADS``) lets one call use ``k`` threads
-over the chunks of a tensor; the default is one, the most
+over the chunks of a tensor or the elements of a BLS12-381 batch; the
+default is one, the most
 :data:`MAX_THREADS` (``set_threads`` refuses more, the environment variable
 is clamped to it, and a value that is not an integer raises ``ValueError``
 at import).
@@ -278,7 +279,7 @@ def effective_threads() -> int:
 
 
 def set_threads(threads: int) -> None:
-    """Number of threads one native call may use (over the chunks of a tensor),
+    """Number of threads one native call may use (over the chunks of a tensor or a BLS12-381 batch),
     at most :data:`MAX_THREADS`."""
     global _threads
     if isinstance(threads, bool) or not isinstance(threads, int) or not 1 <= threads <= MAX_THREADS:

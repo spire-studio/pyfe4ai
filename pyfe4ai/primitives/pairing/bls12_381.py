@@ -10,17 +10,20 @@ only the canonical string -- a type tag ``0`` to ``3``, canonical base64 of
 exactly the element's encoding -- and checks the encoding and subgroup
 membership), ``hash(msg, G1 | G2)`` (RFC 9380 hash_to_curve, suites
 ``BLS12381G1_XMD:SHA-256_SSWU_RO_`` and ``BLS12381G2_XMD:SHA-256_SSWU_RO_``,
-with the domain separation tags of :data:`HASH_DST`), ``ismember``,
-``groupType``; elements
+with the domain separation tags of :data:`HASH_DST` unless a ``dst`` is
+given), ``ismember``, ``groupType``; elements
 written multiplicatively (``*``, ``/``, ``**``), ZR elements with ``+ - * /
 **`` and ``int()``. Products of pairings (:func:`multi_pair`) take one final
-exponentiation; :func:`gt_dlog` is a bounded discrete logarithm in GT
+exponentiation, and :func:`multi_pair_prepared` takes one such product per row
+over the lines :func:`prepare_g2` stores for fixed G2 points;
+:func:`gt_dlog` is a bounded discrete logarithm in GT
 (bounds up to :data:`MAX_DLOG_BOUND`) with a baby-step table cached per base
 and bound (a few tables at most, least recently used evicted), or built for
 one call for a base used once. Products of powers
-(:func:`msm`) are one multi-scalar multiplication, powers of one base
-(:func:`pow_many`) share one table, and :meth:`PairingGroup.deserialize_many`
-decodes a list in one call.
+(:func:`msm`) are one multi-scalar multiplication and powers of one base
+(:func:`pow_many`) share one table. :meth:`PairingGroup.deserialize_many`,
+:meth:`PairingGroup.serialize_many` and :func:`msm_many` handle a list in
+one call, on :func:`pyfe4ai.backend.get_threads` threads.
 
 BLS12-381 gives about 120-126 bits of security after the exTNFS attacks on
 its 381-bit field (Barbulescu and Duquesne, J. Cryptol. 2019), below the
@@ -116,16 +119,36 @@ class PairingGroup:
         except (ValueError, TypeError, OverflowError) as exc:
             raise ValueError("invalid serialised BLS12-381 element") from exc
 
+    def serialize_many(self, elements) -> list:
+        """``[serialize(x) for x in elements]`` in one call."""
+        elements = list(elements)
+        return ["{}:".format(element.type).encode("ascii") + base64.b64encode(raw)
+                for element, raw in zip(elements, self._k.serialize_many(elements))]
+
     def ismember(self, element) -> bool:
         return getattr(element, "type", None) in (ZR, G1, G2, GT)
 
-    def hash(self, msg, kind=G1):
-        """H(msg) in G1 or G2; *msg* is bytes or a str (hashed as UTF-8)."""
+    def hash(self, msg, kind=G1, dst=None):
+        """H(msg) in G1 or G2; *msg* is bytes or a str (hashed as UTF-8).
+
+        *dst* is the domain separation tag of RFC 9380, 1 to 255 bytes;
+        ``None`` takes the one of :data:`HASH_DST` for *kind*.
+
+        Raises:
+            ValueError: For a *kind* other than G1 and G2, and a *dst* that is
+                not bytes or has no or more than 255 bytes.
+        """
         if kind not in HASH_DST:
             raise ValueError("BLS12-381 hashes into G1 or G2 only")
         if isinstance(msg, str):
             msg = msg.encode("utf-8")
-        return self._k.hash(kind, bytes(msg), HASH_DST[kind])
+        if dst is None:
+            dst = HASH_DST[kind]
+        elif not isinstance(dst, (bytes, bytearray)):
+            raise ValueError("the dst must be bytes, got {}".format(type(dst).__name__))
+        elif not 1 <= len(dst) <= 255:     # RFC 9380, Sec. 3.1: a DST of nonzero length, at most 255 bytes
+            raise ValueError("the dst must be 1 to 255 bytes, got {} bytes".format(len(dst)))
+        return self._k.hash(kind, bytes(msg), bytes(dst))
 
 
 def _split(data) -> tuple:
@@ -149,14 +172,44 @@ def pair(a, b):
 
 
 def multi_pair(lhs: list, rhs: list):
-    """prod_i e(lhs[i], rhs[i]) with one final exponentiation."""
+    """prod_i e(lhs[i], rhs[i]) with one final exponentiation; the Miller loops
+    take :func:`~pyfe4ai.backend.get_threads` threads from 16 pairs on."""
     return _require().multi_pair(list(lhs), list(rhs))
+
+
+def prepare_g2(points: list):
+    """The lines of the Miller loops of the G2 *points*, for
+    :func:`multi_pair_prepared`, on :func:`~pyfe4ai.backend.get_threads` threads
+    from 16 points on. Opaque, with no text form: the points may come from a
+    functional key.
+
+    Raises:
+        ValueError: Without points, or for an element that is not in G2.
+    """
+    return _require().prepare_g2(list(points))
+
+
+def multi_pair_prepared(rows: list, prepared) -> list:
+    """``[multi_pair(row, points) for row in rows]`` for the points of
+    *prepared* (:func:`prepare_g2`), with the rows on
+    :func:`~pyfe4ai.backend.get_threads` threads.
+
+    Raises:
+        ValueError: For a row without one G1 element per point.
+    """
+    return _require().multi_pair_prepared([list(row) for row in rows], prepared)
 
 
 def msm(bases: list, scalars: list):
     """prod_i bases[i] ** scalars[i] for elements of one group (G1, G2 or GT)
     and int or ZR scalars, as one multi-scalar multiplication."""
     return _require().msm(list(bases), list(scalars))
+
+
+def msm_many(bases: list, scalars: list) -> list:
+    """``[msm(b, k) for b, k in zip(bases, scalars)]`` in one call; ``ValueError``
+    without as many rows of scalars as rows of bases."""
+    return _require().msm_many([list(row) for row in bases], [list(row) for row in scalars])
 
 
 def pow_many(base, scalars: list) -> list:

@@ -83,6 +83,8 @@ OFFLINE_FAMILIES = ("ring_lwe", "ddh", "damgard", "paillier")
 
 
 def _bounds(family: str, bound_x: int, bound_y: int = 1) -> dict:
+    if family in ("ddh", "ddh_r255"):       # their options hold no bound: the discrete log takes dlog_bound
+        return {}
     if family in ("damgard",):
         return {"bound": max(bound_x, bound_y)}
     return {"bound_x": bound_x, "bound_y": bound_y}

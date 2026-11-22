@@ -5,12 +5,17 @@ Provides two high-level APIs that hide FE complexity from ML engineers:
 **FL aggregation** (``eta=1``, ndarray helpers):
     Encrypt per-element gradients from *n* clients, aggregate with weights.
 
+    >>> import numpy as np
+    >>> from pyfe4ai.ml import FESchemeWrapper, aggregate_gradients, encrypt_gradient
+    >>> grad0, grad1 = np.array([0.25, -1.5, 3.0]), np.array([1.0, 0.5, -2.25])
     >>> keygen_cfg = {"eta": 1, "n": 2, "lst_nid": ["c0", "c1"], "bound_x": 1000, "bound_y": 10}
     >>> wrapper = FESchemeWrapper("mcfe", "lwe", keygen_cfg, precision=2)
     >>> enc0 = encrypt_gradient(grad0, wrapper, nid="c0", label="round-1")
     >>> enc1 = encrypt_gradient(grad1, wrapper, nid="c1", label="round-1")
     >>> result = aggregate_gradients(
     ...     {"c0": enc0, "c1": enc1}, wrapper, {"c0": 1, "c1": 2}, label="round-1")
+    >>> bool(np.allclose(result, grad0 + 2 * grad1))
+    True
 
     Extra entries of the crypto objects' config go to ``crypto_options``,
     e.g. ``FESchemeWrapper("mcfe", "ring_lwe", keygen_cfg,
@@ -19,9 +24,14 @@ Provides two high-level APIs that hide FE complexity from ML engineers:
 **Encrypted inference** (``eta=feature_dim``, vector mode):
     Encrypt a feature vector, compute ``⟨x, w⟩`` without revealing *x*.
 
+    >>> import numpy as np
+    >>> from pyfe4ai.ml import FESchemeWrapper, compute_linear, encrypt_features
+    >>> feature_vec, model_weights = np.array([3, -1, 2]), np.array([1, 4, -2])
     >>> wrapper = FESchemeWrapper("sife", "lwe", {"eta": 3, "bound_x": 10, "bound_y": 10})
     >>> enc = encrypt_features(feature_vec, wrapper)
     >>> score = compute_linear(enc, wrapper, model_weights)
+    >>> float(score)
+    -5.0
 
 PyTorch is optional — functions accept both :class:`numpy.ndarray` and
 ``torch.Tensor`` inputs.
@@ -38,6 +48,62 @@ server, :func:`combine_partial_decryptions` at the combiner -- whose
 (binary ciphertexts and partial decryptions, the scheme's default format, as
 base64).
 
+**Policy-gated aggregation** (``mcfe/kp_ab_pairing``):
+    The clients encrypt for a set of attributes, the key is for a policy, and
+    the sum is released only if the set satisfies the policy. The scheme is
+    *known-insecure* (one corrupted client opens every functional key, see
+    :doc:`/security`), so this is for experiments, and it warns. It is
+    for small vectors and statistics (up to about 10^3 elements), not for the
+    gradients of a large model: every element is a ciphertext of its own that
+    costs the aggregator several pairings per client (see :doc:`/choosing`).
+
+    >>> import numpy as np
+    >>> from pyfe4ai.ml import FESchemeWrapper, aggregate_gradients, encrypt_gradient
+    >>> grad0, grad1 = np.array([0.5, -1.2]), np.array([1.0, 0.3])
+    >>> keygen_cfg = {"n": 2, "lst_nid": ["c0", "c1"], "bound_x": 1000, "bound_y": 10}
+    >>> wrapper = FESchemeWrapper("mcfe", "kp_ab_pairing", keygen_cfg, precision=1)
+    >>> attributes = {"purpose:research", "region:EU"}
+    >>> enc0 = encrypt_gradient(grad0, wrapper, nid="c0", label="round-1", attributes=attributes)
+    >>> enc1 = encrypt_gradient(grad1, wrapper, nid="c1", label="round-1", attributes=attributes)
+    >>> result = aggregate_gradients(
+    ...     {"c0": enc0, "c1": enc1}, wrapper, {"c0": 1, "c1": 2}, label="round-1",
+    ...     policy="and(purpose:research, region:EU)")
+    >>> bool(np.allclose(result, grad0 + 2 * grad1))
+    True
+
+    ``aggregate_gradients`` refuses, before a key is issued and before any
+    pairing, ciphertexts that the scheme's own checks refuse (``ValueError``,
+    naming the layer and the element, the client and the layer for the shape
+    of an array, or the clients and the counts for other numbers of layers:
+    malformed records, records of other parameters or that claim another
+    label, arrays of different shapes or with other numbers of layers, clients
+    that did not all encrypt for one set of attributes), a set of attributes
+    that does not satisfy the policy
+    (:class:`~pyfe4ai.core.exceptions.FEKeyError`), a missing client and
+    ``allow_partial=True`` (``ValueError``: the shares of the clients' keys add
+    up to 1, so every enrolled client must take part).
+    The ``label`` and the attributes of a ciphertext are claims of its client
+    that these checks cannot verify: ciphertexts that disagree on them are
+    refused, but whoever holds the ciphertexts of a whole round (an
+    aggregator, a store, a relay) can write another label into all of them,
+    with no key and no client taking part, and they are aggregated, silently,
+    under that label: what decrypts is the value of the round in which the
+    ciphertexts were made. This is a matter of integrity, not of
+    confidentiality. The encryption key of a client can check the claims of
+    its own ciphertext, and the master key those of all of them (the check
+    also recovers the plaintext); an aggregator that holds neither cannot, so
+    a deployment that needs this checked has each client sign or MAC the label
+    and the record
+    (:meth:`~pyfe4ai.schemes.mcfe.kp_ab_pairing.MCFEKPABPairing.check_ndarray_ct`
+    says exactly what is checked). It warns
+    (:class:`~pyfe4ai.core.exceptions.FEWarning`) of a job of more than 1000
+    elements, with the time it takes, and of a discrete-logarithm bound
+    ``n * bound_x * bound_y`` above ``2**26``. ``prepare_aggregation`` sees no
+    ciphertexts: it takes the policy, refuses ``allow_partial=True`` and
+    weights that leave a client out, and the attributes are judged against
+    the policy when the round is aggregated. Other schemes take neither
+    ``attributes`` nor ``policy``.
+
 **Single trust domain.** A :class:`FESchemeWrapper` runs the key generator
 itself, so it holds the master secret key and plays every party (clients,
 key authority, decryptor). It is meant for experiments and for code that
@@ -47,12 +113,23 @@ key holder would otherwise have to enforce: :func:`aggregate_gradients`
 needs a ciphertext and a non-zero weight for every enrolled client (pass
 ``allow_partial=True`` to relax this), each client encrypts at most once per
 label, and each label is aggregated with one weight vector only. These
-checks stop the obvious ways of isolating one client, not all of them: a
+checks stop some ways of isolating one client, not all of them: a
 single aggregate with very unequal weights (e.g. ``(W, 1)`` with ``W`` above
 twice the largest gradient entry) separates two clients' gradients, as with
 any inner-product FE; choosing the weights is the key holder's
 responsibility, and :meth:`FESchemeWrapper.get_decryption_keys` issues keys
 for any weights.
+
+"One weight vector per label" constrains the adapter's own calls, not the
+keys that were issued. For ``mcfe/kp_ab_pairing``, as for every MCFE scheme
+whose functional keys are not bound to a label, a key issued or prepared for
+any round opens every other round (its key generation takes no tag). Two
+rounds with two weight vectors that differ in one client's weight therefore
+isolate that client's gradient: the adapter refuses to aggregate the first
+round with the second round's weights, but the key of a
+:class:`PreparedAggregation` for the second round, handed to the decryptor,
+opens the first round too, and the two values differ by that client's
+gradient times the change in its weight.
 
 
 The functions and classes are defined in the submodules ``wrapper``,

@@ -39,11 +39,10 @@ from pyfe4ai.core.base import IPFEAbsCrypto
 from pyfe4ai.core.base import decoded_layer
 from pyfe4ai.core.base import IPFEAbsKeyGenerator
 from pyfe4ai.core.base import ParameterCacheMixin
+from pyfe4ai.primitives.pairing.dpvs import random_dual_bases
 from pyfe4ai.primitives.pairing.pairing_utils import bounded_discrete_log_gt
-from pyfe4ai.primitives.pairing.pairing_utils import matrix_inverse_mod
 from pyfe4ai.primitives.pairing.pairing_utils import random_nonzero_zr
 from pyfe4ai.primitives.pairing.pairing_utils import to_zr
-from pyfe4ai.primitives.pairing.pairing_utils import transpose_mod
 from pyfe4ai.primitives.pairing.pairing_utils import vector_add_mod
 from pyfe4ai.primitives.pairing.pairing_utils import vector_scalar_mod
 from pyfe4ai.primitives.pairing.pairing_utils import serialize_matrix_g
@@ -66,36 +65,11 @@ from pyfe4ai._validation import scale_to_int
 logger = logging.getLogger(__name__)
 
 
-def _random_ob_matrix(
-    group: PairingGroup, dim: int, mu: gp.mpz, order: gp.mpz
-) -> tuple[list[list[gp.mpz]], list[list[gp.mpz]]]:
-    """Perform the _random_ob_matrix operation.
-
-        Args:
-            group: Pairing group instance.
-            dim: Vector dimension.
-            mu: Scalar of the dual bases (``B B*^T = mu I``).
-            order: Group order (or exponent order for dequantization).
-    """
-    while True:
-        b = [
-            [gp.mpz(int(group.random(ZR))) for _ in range(dim)]
-            for _ in range(dim)
-        ]
-        try:
-            b_inv, _ = matrix_inverse_mod(b, order)
-            break
-        except ValueError:
-            continue
-    b_star = transpose_mod(b_inv)
-    b_star = [[(mu * entry) % order for entry in row] for row in b_star]
-    return b, b_star
-
-
 class MIFEFHMultiIPEPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin):
     """Key generator for function-hiding multi-slot multi-input IPE over pairings."""
 
     _scheme_type = CryptoCONST.TYPE_MIFE_FH_MULTI_IPE
+    _config_only_record = True  # the record holds the configuration only (see ParameterCacheMixin)
     def __init__(self, config: dict, **kwargs) -> None:
         """Initialise the MIFE FH-Multi-IPE key generator.
 
@@ -165,7 +139,7 @@ class MIFEFHMultiIPEPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin
         bhat = {}
         bstar_hat = {}
         for nid in self.lst_nid:
-            b, b_star = _random_ob_matrix(self.group, self.dim, mu, self.order)
+            b, b_star = random_dual_bases(self.group, self.dim, mu, self.order)
             b_hat_rows = []
             b_star_hat_rows = []
             for j in range(self.eta + self.sec_level + 1):

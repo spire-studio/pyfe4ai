@@ -36,7 +36,7 @@ def _cache(tmp_path, monkeypatch):
 
 
 def test_entries_are_unique_and_complete():
-    assert len(SCHEMES) == len(set(IDS)) == 42
+    assert len(SCHEMES) == len(set(IDS)) == 46
     assert {s.family for s in SCHEMES} == set(registry.FAMILIES)
     for s in SCHEMES:
         assert s.kind in registry.KINDS
@@ -122,6 +122,35 @@ def test_refusals_are_the_profiles(scheme):
             configs.resolve(config, scheme.key)
     else:
         configs.resolve(config, scheme.key)
+
+
+def test_a_known_insecure_scheme_is_refused_under_standard_from_its_issue():
+    """One mechanism: the registry derives ``refused`` from the issue, so the refusal, the documentation (``refused`` is
+    what the tables of the docs and of the page read) and the status cannot drift."""
+    for scheme in SCHEMES:
+        known_insecure = scheme.status.status == registry.KNOWN_INSECURE
+        assert known_insecure <= bool(scheme.refused), scheme.id
+        if known_insecure:
+            assert scheme.refused == "known to be insecure: " + scheme.status.issue
+    for scheme_id in ("mcfe/kp_ab_pairing_per_client", "mcfe/kp_ab_pairing"):     # both since 2026-11
+        scheme = registry.get_scheme(scheme_id)
+        assert scheme.refused and scheme.refused == "known to be insecure: " + scheme.status.issue
+    assert not registry.get_scheme("sife/kp_ab_pairing").refused
+
+    def entry(**changes):
+        arguments = dict(note="a note", issue="test issue")
+        arguments.update(changes)
+        return registry._scheme("mife/lwe", registry.LWE_ABDP15, registry.KNOWN_INSECURE, registry.ADAPTED, "a paper",
+                                **arguments)
+
+    assert entry().refused == "known to be insecure: test issue"
+    with pytest.raises(ValueError, match="issue"):
+        entry(issue="")                                   # a known-insecure scheme says what is wrong with it
+    with pytest.raises(ValueError, match="refusal"):
+        entry(refused="a reason of its own")              # one reason, derived: not a second one beside it
+    own = registry._scheme("mife/lwe", registry.LWE_ABDP15, registry.UNREVIEWED, registry.ADAPTED, "a paper",
+                           note="a note", refused="a reason of its own")
+    assert own.refused == "a reason of its own"          # the other refusals are as they were
 
 
 @pytest.mark.parametrize("scheme", SCHEMES, ids=IDS)
@@ -230,6 +259,37 @@ def test_the_benchmark_scripts_cover_the_registry():
     for key, _, _ in compare.FAMILIES.values():
         registry.get_scheme(key)
     assert set(compare.OFFLINE_FAMILIES) <= set(compare.FAMILIES)
+
+
+def test_fl_coverage_gives_mcfe_kp_ab_pairing_its_attributes_and_its_policy(monkeypatch):
+    """The FL path of the attribute-based multi-client scheme takes the attributes of a ciphertext and the policy of
+    the key, and the entry is the one that passes them (no other scheme gets them). That the scheme is then found
+    usable is checked in tests/ml/test_ml_adapter_policy.py."""
+    from pyfe4ai import policy
+
+    coverage = _load(ROOT / "benchmarks" / "commands" / "fl_coverage.py")
+    seen = {"encrypt": [], "aggregate": []}
+    monkeypatch.setattr(coverage, "pairing_available", lambda *args: True)
+    monkeypatch.setattr(coverage, "FESchemeWrapper", lambda *args: None)
+    monkeypatch.setattr(coverage, "encrypt_gradient",
+                        lambda gradient, wrapper, **kwargs: seen["encrypt"].append(kwargs) or gradient)
+    monkeypatch.setattr(coverage, "aggregate_gradients",
+                        lambda encrypted, wrapper, weights, **kwargs: seen["aggregate"].append(kwargs)
+                        or sum(encrypted.values()))
+    assert coverage.check_entry("mcfe", "kp_ab_pairing") == ("usable", "")
+    n = coverage.CONFIGS[("mcfe", "kp_ab_pairing")]["n"]
+    assert len(seen["encrypt"]) == n
+    assert all(set(kwargs) == {"label", "nid", "attributes"} for kwargs in seen["encrypt"])
+    assert [set(kwargs) for kwargs in seen["aggregate"]] == [{"label", "policy"}]
+    attributes, text = seen["encrypt"][0]["attributes"], seen["aggregate"][0]["policy"]
+    assert all(kwargs["attributes"] == attributes for kwargs in seen["encrypt"])
+    assert policy.evaluate(policy.parse(text), attributes)          # the policy is one that the attributes satisfy
+
+    seen["encrypt"].clear()
+    seen["aggregate"].clear()
+    assert coverage.check_entry("mcfe", "ddh") == ("usable", "")
+    assert all(set(kwargs) == {"label", "nid"} for kwargs in seen["encrypt"])
+    assert [set(kwargs) for kwargs in seen["aggregate"]] == [{"label"}]
 
 
 def test_every_benchmark_command_has_a_module_and_help(capsys, monkeypatch):

@@ -4,9 +4,9 @@ pyfe4ai — Python Functional Encryption for AI
 **PyFE4AI** is a research-oriented Python library of functional encryption
 (FE) schemes for AI security and privacy. It covers single-input (SIFE),
 multi-input (MIFE), multi-client (MCFE), decentralized, threshold,
-function-hiding, and quadratic constructions under DDH (3072-bit groups or
-ristretto255), Damgård-DDH, Paillier, LWE, Ring-LWE and pairing-based
-assumptions. Every scheme is built from its id with
+function-hiding, attribute-based and quadratic constructions under DDH
+(3072-bit groups or ristretto255), Damgård-DDH, Paillier, LWE, Ring-LWE and
+pairing-based assumptions. Every scheme is built from its id with
 :func:`pyfe4ai.create("family/variant", config) <pyfe4ai.core.registry.create>`,
 which returns a key generator and a crypto class; the arguments of
 encryption and decryption are family-specific, and
@@ -36,6 +36,15 @@ Security & status
   |n_known_insecure| known-insecure. The experimental ones are the threshold
   layers of tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE and tMCFE-FH-Multi-IPE and
   the carry mask of dMCFE-DDH (our own constructions, no published proof).
+  The known-insecure ones are ``mcfe/kp_ab_pairing`` (NPP22 Sec. 5.2: one
+  corrupted client opens every functional key with the rows of ``Z_q`` of its
+  encryption key, so two keys whose policy the attributes do not satisfy give
+  an inner product, an honest client's input among them) and
+  ``mcfe/kp_ab_pairing_per_client`` (the attribute set of each client of
+  Sec. 5.4, which has that defect too, and where two keys that open neither of
+  two rounds, where the set of each client satisfies one of the keys in both
+  rounds, give the difference of the rounds' inner products); they warn when
+  built and the ``standard`` profile refuses them.
   ``pyfe4ai.get_scheme_status("family/variant")`` returns a scheme's entry.
 * **Security profiles**: ``security_profile="toy"``, the default, is **not
   secure**; ``"standard"`` aims at 128-bit security (3072-bit DL groups
@@ -43,9 +52,11 @@ Security & status
   ``stat_param`` 128), except that pairing-based schemes get BLS12-381
   (about 120-126-bit, with a ``FESecurityWarning``) and ``sife/fullysec_lwe``,
   ``mife/fullysec_lwe``, ``mife/lwe_threshold`` and
-  ``mcfe/paillier_decentralized`` are refused. The ABDP15 LWE schemes
-  take ``matrix_mode`` (``"memory"`` or ``"stream"``) to trade memory for
-  time.
+  ``mcfe/paillier_decentralized`` are refused, as are the known-insecure
+  ``mcfe/kp_ab_pairing`` and ``mcfe/kp_ab_pairing_per_client`` (``standard``
+  is for security). The
+  ABDP15 LWE schemes take ``matrix_mode`` (``"memory"`` or ``"stream"``) to
+  trade memory for time.
 * **Threshold schemes**: decryption servers are honest-but-curious; a
   deviating server can change the result unnoticed.
 * **ML adapter**: ``FESchemeWrapper`` runs the key generator and holds the

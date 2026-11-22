@@ -46,6 +46,12 @@ Scheme taxonomy
      - Function-hiding
      - as the family
      - Functional keys also hide the weights *y*
+   * - CP-AB / KP-AB
+     - Ciphertext-policy / key-policy attribute-based IPFE
+     - as the family (SIFE, MCFE)
+     - Decryption succeeds only if the attributes satisfy the policy: the
+       policy sits in the ciphertext (CP) or in the functional key (KP), the
+       attributes in the other (see :doc:`choosing`)
    * - Quadratic
      - Quadratic FE
      - 1 or *n* encryptors, 1 decryptor
@@ -63,8 +69,9 @@ Configuration keys
       exceptions: pairing-based schemes get BLS12-381 (about 120-126-bit, with a
       :class:`~pyfe4ai.core.exceptions.FESecurityWarning`), and
       ``sife/fullysec_lwe``, ``mife/fullysec_lwe``, ``mife/lwe_threshold``
-      and ``mcfe/paillier_decentralized`` are refused. See
-      :mod:`pyfe4ai.core.profiles` and :doc:`security`.
+      and ``mcfe/paillier_decentralized`` are refused, as is the
+      known-insecure ``mcfe/kp_ab_pairing_per_client`` (``standard`` is for
+      security). See :mod:`pyfe4ai.core.profiles` and :doc:`security`.
 
    ``sec_param``
       **Not a security level.** The bit length of the safe prime ``p`` in
@@ -266,10 +273,14 @@ Labels, tags and keys
 
    ``label``
       Encryption label of the multi-client schemes (MCFE, dMCFE, tMCFE),
-      e.g. a training round. Ciphertexts are bound to it and decrypt together
-      only under the same label; a client must encrypt at most once per
-      label. In the identity-based Ring-LWE MCFE variants, functional keys
-      are bound to a label too.
+      e.g. a training round. Ciphertexts are bound to the label they were
+      made under and decrypt together only if they were made under the same
+      one; a client must encrypt at most once per label. In
+      ``mcfe/kp_ab_pairing`` the label field of a ciphertext record is a
+      claim that decryption does not check: ciphertexts of one round
+      relabelled alike decrypt to the value of the round they were made in
+      (see :doc:`security`). In the identity-based Ring-LWE MCFE variants,
+      functional keys are bound to a label too.
 
    ``tag_f``
       Name of the function in the decentralized FH-MCFE
@@ -320,6 +331,60 @@ Labels, tags and keys
      - A list for SIFE, ``{nid: list}`` for multi-input and multi-client
        schemes
 
+Policies and attributes
+-----------------------
+
+For the schemes with the capability ``access_control`` (:doc:`choosing`).
+
+.. glossary::
+
+   attribute label
+      A string ``namespace:value`` (``org:A``, ``role:auditor``) that names an
+      attribute (:func:`~pyfe4ai.policy.attributes.validate_label`). The
+      key-policy schemes hash it to ``Z_q``
+      (:func:`~pyfe4ai.policy.attributes.attribute_to_zq`); ``sife/cp_ab_pairing``
+      takes its labels from a fixed ``universe``.
+
+   attribute set
+      The labels of a ciphertext (key-policy: ``encrypt(..., attributes=...)``,
+      any collection, written in any order and with repeats) or of a key
+      (``sife/cp_ab_pairing``: ``credentials={"attributes": [...]}``). It is
+      public. :func:`~pyfe4ai.policy.attributes.attribute_set_digest` hashes
+      the sorted distinct labels, so every spelling of a set has one digest.
+
+   policy
+      A monotone formula over labels (``and``, ``or`` and threshold gates), as
+      a :class:`~pyfe4ai.policy.formula.Formula` or its text
+      (``and(org:A, 2of(org:B, org:C))``, :func:`~pyfe4ai.policy.encoding.parse`).
+      The ciphertext holds it in ``sife/cp_ab_pairing``
+      (``encrypt(x, policy=...)``) and the key in the key-policy schemes
+      (``credentials={"fusion_weight": y, "policy": ...}``). It is public, and
+      :func:`~pyfe4ai.policy.encoding.policy_digest` hashes its canonical
+      encoding.
+
+   span program
+      The matrix that a policy is compiled to
+      (:func:`~pyfe4ai.policy.msp.compile_formula`): one row per leaf, labelled
+      with that leaf's attribute. A set of labels satisfies the policy if the
+      rows of its labels span the target vector, and the reconstruction
+      coefficients are what a decryption weights the rows with.
+
+   ``max_rows`` / ``max_attributes``
+      Limits of the key-policy schemes, both 64 by default: the rows of a
+      policy's span program and the labels of a ciphertext. Keys and
+      ciphertexts come from outside, and no universe bounds them.
+
+   ``universe`` / ``max_copies`` / ``max_columns``
+      Options of ``sife/cp_ab_pairing`` (:class:`~pyfe4ai.policy.attributes.Universe`):
+      the labels that its public parameters cover, the copies of each (a label
+      on several rows of a policy takes one copy per row, default 4), and the
+      columns of the span programs it accepts (default 16).
+
+   tag
+      The label of an MCFE round as the scheme sees it: ``mcfe/kp_ab_pairing``
+      hashes it to ``G1`` with the set of attributes (the random oracle of the
+      proof), and ``mcfe/kp_ab_pairing_per_client`` hashes the tag alone.
+
 Review status and trust
 -----------------------
 
@@ -339,7 +404,8 @@ Review status and trust
 
    known-insecure
       A concrete privacy defect is known; the key generator and crypto
-      objects emit :class:`~pyfe4ai.core.exceptions.FESecurityWarning`.
+      objects emit :class:`~pyfe4ai.core.exceptions.FESecurityWarning`, and
+      the ``standard`` profile refuses the scheme (``FEValidationError``).
 
    honest-but-curious
       The trust model of the threshold decryption servers: fewer than ``t``

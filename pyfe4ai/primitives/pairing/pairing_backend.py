@@ -5,9 +5,9 @@
 default, and charm-crypto's group of that name otherwise (MNT224, BN254, ...).
 charm is optional when the Rust extension is built; it is the fallback for
 BLS12-381 only in the sense that every other curve still comes from charm.
-``pair``, ``multi_pair``, ``multiexp`` and ``pow_many`` dispatch on their
-arguments, and ``ZR``, ``G1``, ``G2``, ``GT`` are charm's type codes, which
-both backends share.
+``pair``, ``multi_pair``, ``multi_pair_prepared``, ``multiexp`` and
+``pow_many`` dispatch on their arguments, and ``ZR``, ``G1``, ``G2``, ``GT``
+are charm's type codes, which both backends share.
 """
 
 from pyfe4ai.primitives.pairing import bls12_381 as _bls
@@ -110,6 +110,37 @@ def multi_pair(lhs, rhs):
     return out
 
 
+def prepare_g2(points):
+    """The G2 *points* in the form :func:`multi_pair_prepared` takes: their stored
+    lines on BLS12-381, the list of the points on charm groups.
+
+    Raises:
+        ValueError: Without points, or, on BLS12-381, for an element that is
+            not in G2.
+    """
+    points = list(points)
+    if not points:
+        raise ValueError("prepare_g2 needs at least one point")
+    if _bls.is_element(points[0]):
+        return _bls.prepare_g2(points)
+    return points
+
+
+def multi_pair_prepared(rows, prepared) -> list:
+    """``[multi_pair(row, points) for row in rows]`` for the points given to
+    :func:`prepare_g2`, one final exponentiation per row. BLS12-381 keeps the
+    lines of the points from row to row, and takes the rows on
+    :func:`~pyfe4ai.backend.get_threads` threads.
+
+    Raises:
+        ValueError: For a row without one G1 element per point.
+    """
+    rows = [list(row) for row in rows]
+    if isinstance(prepared, list):
+        return [multi_pair(row, prepared) for row in rows]
+    return _bls.multi_pair_prepared(rows, prepared)
+
+
 def multiexp(bases, exps, group=None):
     """prod_i bases[i] ** exps[i] for elements of one group (G1, G2 or GT).
 
@@ -132,6 +163,21 @@ def multiexp(bases, exps, group=None):
         if e is not None:
             acc = acc * (b ** e)
     return acc
+
+
+def multiexp_many(rows, exps, group=None) -> list:
+    """``[multiexp(b, e, group) for b, e in zip(rows, exps)]``, in one call on BLS12-381.
+
+    Raises:
+        ValueError: Without as many rows of exponents as rows of bases, or for
+            a row :func:`multiexp` refuses.
+    """
+    rows, exps = list(rows), list(exps)
+    if len(rows) != len(exps):
+        raise ValueError("multiexp_many needs as many rows of exponents as rows of bases")
+    if rows and rows[0] and _bls.is_element(rows[0][0]):
+        return _bls.msm_many(rows, exps)
+    return [multiexp(row, row_exps, group) for row, row_exps in zip(rows, exps)]
 
 
 def pow_many(base, exps, group=None) -> list:
@@ -165,6 +211,45 @@ def deserialize_many(group, items) -> list:
     if isinstance(group, _bls.PairingGroup):
         return group.deserialize_many(items)
     return [group.deserialize(x.encode("utf-8") if isinstance(x, str) else x) for x in items]
+
+
+def serialize_many(group, items) -> list:
+    """``[group.serialize(x) for x in items]``, in one call on BLS12-381."""
+    if isinstance(group, _bls.PairingGroup):
+        return group.serialize_many(items)
+    return [group.serialize(x) for x in items]
+
+
+def hash_to_g1(group, msg: bytes, dst: bytes):
+    """``H(msg)`` in G1 under the domain separation tag *dst*.
+
+    On BLS12-381 this is RFC 9380 ``hash_to_curve`` of the suite
+    ``BLS12381G1_XMD:SHA-256_SSWU_RO_`` with *dst* as its DST, so that a known
+    answer of the RFC can be reproduced. A charm group has no DST: it hashes
+    ``dst || "|" || msg`` as a C string. The same *msg* under two tags gives
+    unrelated points on either backend.
+
+    Raises:
+        FEValidationError: If *msg* or *dst* is not ``bytes``, or *dst* is
+            empty or longer than 255 bytes (the DST of RFC 9380 has 1 to 255
+            bytes; the limit is the same on every group). On a charm group
+            also if *dst* contains ``|`` (the tag would blur into the message)
+            or *dst* or *msg* contains a NUL byte (charm reads a C string and
+            ignores what follows the first NUL, so two messages would collide).
+    """
+    if type(msg) is not bytes:
+        raise FEValidationError("msg must be bytes, got {}".format(type(msg).__name__))
+    if type(dst) is not bytes:
+        raise FEValidationError("dst must be bytes, got {}".format(type(dst).__name__))
+    if not 1 <= len(dst) <= 255:
+        raise FEValidationError("dst must be 1 to 255 bytes, got {} bytes".format(len(dst)))
+    if isinstance(group, _bls.PairingGroup):
+        return group.hash(msg, G1, dst=dst)
+    if b"|" in dst or b"\x00" in dst or b"\x00" in msg:
+        raise FEValidationError(
+            "on a charm group dst must not contain | or a NUL byte and msg must not contain a NUL byte"
+        )
+    return group.hash(dst + b"|" + msg, G1)
 
 
 def require_pairing_backend(name=None) -> None:

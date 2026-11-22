@@ -70,7 +70,9 @@ The tests are grouped by topic, one directory each:
 | `tests/ml/` | the ML adapter and quantization |
 | `tests/hardening/` | input validation and decryption hardening across schemes, review fixes outside `tests/review/` |
 | `tests/sife/`, `tests/mife/`, `tests/mcfe/`, `tests/quadratic/` | the schemes, one module per scheme |
+| `tests/policy/` | the policy language, its compilers and encodings |
 | `tests/review/` | regression tests of the crypto reviews, one per finding (kept as the review wrote them) |
+| `tests/examples/` | the scripts of `examples/` run as programs (exit code and the lines that show what each is for) |
 
 Helpers shared by several groups stay where they are: `tests/pairing_group.py`
 (the pairing group of the tests), `tests/log_config.py` (logging of the
@@ -83,7 +85,9 @@ tests), and the byte streams and fixtures of
 - its group, the directory's name: `-m threshold`, `-m "api or config"`,
   `-m "not review"` (except `tests/native/`, see `native`);
 - `core` or `extended`: `extended` marks the tests of the pairing schemes,
-  the pairing-group checks and quadratic FE, which need a pairing backend
+  the pairing-group checks, quadratic FE, the ML adapter with the
+  attribute-based scheme and the examples of the pairing schemes
+  (`tests/examples/`), which need a pairing backend
   (BLS12-381 from the extension, or charm-crypto for other curves; they skip
   without one), `core` the rest, which needs none -- the CI lane without the
   extension runs `-m core`;

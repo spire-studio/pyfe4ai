@@ -24,7 +24,7 @@ adapter by :mod:`pyfe4ai.ml`.
 
 import logging
 
-__version__ = "0.4.1"
+__version__ = "0.5.0"
 
 from pyfe4ai.core.exceptions import FEConfigError  # noqa: E402
 from pyfe4ai.core.exceptions import FEError  # noqa: E402

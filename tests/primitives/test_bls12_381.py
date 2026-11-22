@@ -4,7 +4,16 @@ import base64
 
 import pytest
 
+from pyfe4ai import backend as native_backend
 from pyfe4ai.primitives.pairing import bls12_381 as B
+from pyfe4ai.primitives.pairing.pairing_backend import (
+    PairingGroup,
+    hash_to_g1,
+    multi_pair,
+    multi_pair_prepared,
+    pairing_available,
+    prepare_g2,
+)
 
 pytestmark = pytest.mark.skipif(not B.available(), reason="Rust extension not built")
 
@@ -50,6 +59,36 @@ def group():
 @pytest.mark.parametrize("msg,x,y", G1_VECTORS)
 def test_hash_to_g1_rfc9380(msg, x, y):
     assert B._kernels.hash(B.G1, msg, G1_DST).to_bytes() == _compressed([x], y > (P - 1) // 2)
+
+
+@pytest.mark.parametrize("msg,x,y", G1_VECTORS)
+def test_hash_to_g1_rfc9380_vectors(group, msg, x, y):
+    # hash_to_g1 with the DST of the RFC gives the point of the RFC's test vector
+    assert hash_to_g1(group, msg, G1_DST).to_bytes() == _compressed([x], y > (P - 1) // 2)
+
+
+def test_group_hash_takes_a_dst_and_keeps_its_default(group):
+    for msg in (b"", b"abc", b"pyfe4ai/fh-mcfe/H1(tag)|label"):
+        by_dst = group.hash(msg, B.G1, dst=G1_DST)
+        assert by_dst.to_bytes() == B._kernels.hash(B.G1, msg, G1_DST).to_bytes()
+        # no dst, or the default dst itself: the output the group always gave
+        assert group.hash(msg, B.G1, dst=None) == group.hash(msg, B.G1) == group.hash(msg, B.G1, dst=B.HASH_DST[B.G1])
+        assert group.hash(msg, B.G1) == hash_to_g1(group, msg, B.HASH_DST[B.G1])
+        assert by_dst != group.hash(msg, B.G1)
+    g2_dst = b"QUUX-V01-CS02-with-BLS12381G2_XMD:SHA-256_SSWU_RO_"
+    assert group.hash(b"abc", B.G2, dst=g2_dst) != group.hash(b"abc", B.G2)
+    assert group.hash("abc", B.G1, dst=G1_DST) == group.hash(b"abc", B.G1, dst=G1_DST)
+    with pytest.raises(ValueError):
+        group.hash(b"abc", B.G1, dst=b"D" * 256)
+
+
+@pytest.mark.parametrize("dst", [b"", bytearray(), b"D" * 256], ids=["empty", "empty-bytearray", "256-bytes"])
+@pytest.mark.parametrize("kind", [B.G1, B.G2], ids=["G1", "G2"])
+def test_group_hash_refuses_a_dst_of_no_or_more_than_255_bytes(group, kind, dst):
+    # RFC 9380 asks for a DST of 1 to 255 bytes, which hash_to_g1 keeps to as well
+    with pytest.raises(ValueError, match="1 to 255 bytes"):
+        group.hash(b"abc", kind, dst=dst)
+    assert group.hash(b"abc", kind, dst=b"D") != group.hash(b"abc", kind, dst=b"D" * 255)     # the bounds are allowed
 
 
 @pytest.mark.parametrize("msg,x,y", G2_VECTORS)
@@ -317,3 +356,319 @@ def test_gt_membership_check():
             B._kernels.deserialize(B.GT, _f12_to_bytes(bad))
     with pytest.raises(ValueError):
         B._kernels.deserialize(B.GT, P.to_bytes(48, "little") + s.to_bytes()[48:])  # non-canonical
+
+
+# ------------------------------------------------------- batches, on one thread and on several
+
+@pytest.fixture(params=[1, 4])
+def threads(request):
+    native_backend.set_threads(request.param)
+    yield request.param
+    native_backend.set_threads(1)
+
+
+def _mixed(group, each=12):
+    return [group.random(kind) for kind in (B.ZR, B.G1, B.G2, B.GT) for _ in range(each)]
+
+
+def test_deserialize_many_matches_one_by_one(group, threads):
+    texts = [group.serialize(x) for x in _mixed(group)]
+    texts += texts[:5]      # equal encodings, decoded once
+    assert group.deserialize_many(texts) == [group.deserialize(text) for text in texts]
+
+
+@pytest.mark.parametrize("at", [0, 17, 39])
+def test_deserialize_many_refuses_an_invalid_element_anywhere(group, threads, at):
+    texts = [group.serialize(group.random(B.G1)) for _ in range(40)]
+    texts[at] = b"1:" + base64.b64encode(b"\xff" * 48)
+    with pytest.raises(ValueError, match="invalid serialised"):
+        group.deserialize_many(texts)
+
+
+def test_deserialize_many_refuses_a_repeated_invalid_element(group, threads):
+    good = [group.serialize(group.random(B.G1)) for _ in range(30)]
+    bad = b"1:" + base64.b64encode(b"\xff" * 48)
+    with pytest.raises(ValueError, match="invalid serialised"):
+        group.deserialize_many(good[:10] + [bad] + good[10:] + [bad])
+
+
+@pytest.mark.parametrize("kind", [B.G1, B.G2, B.GT])
+def test_msm_many_matches_msm(group, kind, threads):
+    gs = [group.random(kind) for _ in range(6)]
+    rows = [gs[:1 + i % len(gs)] for i in range(40)]
+    ks = [[EXPONENTS[(i + j) % len(EXPONENTS)] for j in range(len(row))] for i, row in enumerate(rows)]
+    assert B.msm_many(rows, ks) == [B.msm(row, k) for row, k in zip(rows, ks)]
+
+
+def test_msm_many_refuses_what_msm_refuses(group, threads):
+    g1, g2 = group.random(B.G1), group.random(B.G2)
+    assert B.msm_many([], []) == []
+    with pytest.raises(ValueError, match="rows"):
+        B.msm_many([[g1]], [[1], [2]])
+    with pytest.raises(ValueError, match="as many scalars"):
+        B.msm_many([[g1, g1]], [[1]])
+    with pytest.raises(ValueError, match="at least one base"):
+        B.msm_many([[g1], []], [[1], []])
+    with pytest.raises(TypeError, match="of one group"):
+        B.msm_many([[g1, g2]], [[1, 2]])
+
+
+def test_serialize_many_matches_serialize(group, threads):
+    items = _mixed(group) + [group.init(B.G1), group.init(B.G2), group.init(B.GT)]
+    assert group.serialize_many(items) == [group.serialize(x) for x in items]
+    assert group.serialize_many([]) == []
+
+
+@pytest.mark.parametrize("size", [1, 2, 15, 16, 17, 64])
+def test_serialize_many_keeps_the_order_of_points_and_identities(group, threads, size):
+    g1, g2 = group.generator(B.G1), group.generator(B.G2)
+    pool = [g1 ** 3, group.init(B.G1), g2 ** 5, group.init(B.G2), g1 * g1 * g1, group.init(B.ZR, 7), group.init(B.GT)]
+    picks = [pool[i * 5 % len(pool)] for i in range(size)]
+    items = [x if x.type == B.ZR else x ** (i + 2) for i, x in enumerate(picks)]
+    assert group.serialize_many(items) == [group.serialize(x) for x in items]
+
+
+@pytest.mark.parametrize("size", [0, 1, 2, 15, 16, 17, 40])
+def test_multi_pair_on_threads_matches_one_thread(group, threads, size):
+    lhs = [group.random(B.G1) for _ in range(size)]
+    rhs = [group.random(B.G2) for _ in range(size)]
+    expected = group.init(B.GT)
+    for a, b in zip(lhs, rhs):
+        expected = expected * B.pair(a, b)
+    assert B.multi_pair(lhs, rhs) == expected
+
+
+def test_multi_pair_on_threads_takes_identities_and_either_order(group, threads):
+    g1, g2 = group.random(B.G1), group.random(B.G2)
+    lhs = [g1 ** (i + 1) for i in range(20)] + [group.init(B.G1)]
+    rhs = [g2 for _ in range(20)] + [g2]
+    expected = B.pair(g1, g2) ** sum(range(1, 21))
+    assert B.multi_pair(lhs, rhs) == expected
+    assert B.multi_pair(rhs, lhs) == expected
+    assert B.multi_pair(lhs[:10] + rhs[10:], rhs[:10] + lhs[10:]) == expected
+
+
+def test_multi_pair_gives_the_same_on_any_number_of_threads(group):
+    lhs = [group.random(B.G1) for _ in range(33)]
+    rhs = [group.random(B.G2) for _ in range(33)]
+    results = []
+    try:
+        for count in (1, 2, 3, 4, 8, 32, 64):
+            native_backend.set_threads(count)
+            results.append(B.multi_pair(lhs, rhs))
+    finally:
+        native_backend.set_threads(1)
+    assert all(result == results[0] for result in results)
+
+
+def test_multi_pair_on_threads_refuses_what_it_refused(group, threads):
+    g1, g2 = group.random(B.G1), group.random(B.G2)
+    with pytest.raises(ValueError, match="as many"):
+        B.multi_pair([g1] * 20, [g2] * 19)
+    with pytest.raises(ValueError, match="pairs of a G1 and a G2"):
+        B.multi_pair([g1] * 20, [g1] * 20)
+
+
+U = 0xd201000000010000
+
+
+@pytest.mark.parametrize("k", [0, 1, 2, U - 1, U, U + 1, U ** 2, U ** 3, U ** 3 + 1, R - U, R - 1, R, R + 1,
+                               (R - 1) // 2, 2 ** 192, 2 ** 254])
+def test_g2_power_matches_square_and_multiply_at_the_digit_edges(group, k):
+    g = group.random(B.G2)
+    assert g ** k == _ref_pow(group, g, k)
+    assert B.msm([g], [k]) == _ref_pow(group, g, k)
+    assert g ** k == B.msm([g, g ** 0], [k, 0])         # two terms stay on the GLV path
+
+
+DIGIT = 0xc800000000000000      # below U, and its wNAF ends at bit 64
+
+
+@pytest.mark.parametrize("k", [DIGIT * U ** i for i in range(4)] + [DIGIT * (1 + U + U ** 2 + U ** 3)])
+def test_g2_power_where_the_wnaf_of_a_digit_ends_past_the_digit(group, k):
+    g = group.random(B.G2)
+    assert g ** k == _ref_pow(group, g, k)
+
+
+def test_g2_power_of_the_identity_and_the_generator(group):
+    assert group.init(B.G2) ** (R - 1) == group.init(B.G2)
+    g = group.generator(B.G2)
+    assert (g ** U) ** (R - 1) * (g ** U) == group.init(B.G2)
+    assert g ** R == group.init(B.G2)
+
+
+def test_g2_powers_match_on_random_exponents(group):
+    for _ in range(200):
+        g, k = group.random(B.G2), int(group.random(B.ZR))
+        assert g ** k == B.msm([g, group.generator(B.G2)], [k, 0])
+
+
+# ---------------------------------------------- products of pairings over prepared G2 points
+
+@pytest.fixture
+def restored_threads():
+    count = native_backend.get_threads()
+    yield
+    native_backend.set_threads(count)
+
+
+def _g1_rows(group, rows, k):
+    return [[group.random(B.G1) for _ in range(k)] for _ in range(rows)]
+
+
+def _g2_points(group, k):
+    return [group.random(B.G2) for _ in range(k)]
+
+
+@pytest.mark.parametrize("k", [1, 15, 16, 17, 281])
+@pytest.mark.parametrize("count", [1, 2, 8])
+def test_prepared_matches_multi_pair(group, restored_threads, k, count):
+    g2s, rows = _g2_points(group, k), _g1_rows(group, 3, k)
+    native_backend.set_threads(count)
+    got = multi_pair_prepared(rows, prepare_g2(g2s))
+    assert got == [multi_pair(row, g2s) for row in rows]
+
+
+@pytest.mark.parametrize("count", [1, 2, 8])
+def test_prepared_keeps_the_order_of_many_rows(group, restored_threads, count):
+    g2s, rows = _g2_points(group, 3), _g1_rows(group, 40, 3)
+    native_backend.set_threads(count)
+    assert multi_pair_prepared(rows, prepare_g2(g2s)) == [multi_pair(row, g2s) for row in rows]
+
+
+def test_prepared_serves_any_number_of_calls(group):
+    g2s = _g2_points(group, 5)
+    prepared = prepare_g2(g2s)
+    for _ in range(2):
+        rows = _g1_rows(group, 2, 5)
+        assert multi_pair_prepared(rows, prepared) == [multi_pair(row, g2s) for row in rows]
+
+
+def test_prepared_takes_points_that_were_decoded_and_points_that_were_computed(group):
+    # a decoded point has z = 1, a computed one does not
+    g2s = _g2_points(group, 4)
+    g2s[1:3] = [group.deserialize(group.serialize(q)) for q in g2s[1:3]]
+    row = [p * group.random(B.G1) for p in _g1_rows(group, 1, 4)[0]]
+    row[0] = group.deserialize(group.serialize(row[0]))
+    assert multi_pair_prepared([row], prepare_g2(g2s)) == [multi_pair(row, g2s)]
+
+
+@pytest.mark.parametrize("normalise", [[True] * 8, [False] * 8, [True, False] * 4])
+def test_prepared_lines_with_and_without_normalisation(group, normalise):
+    g2s, rows = _g2_points(group, 8), _g1_rows(group, 3, 8)
+    kernels = B._kernels._ext
+    prepared = kernels.bls_prepare_g2(g2s, 1, normalise)
+    assert kernels.bls_multi_pair_prepared(rows, prepared) == [multi_pair(row, g2s) for row in rows]
+
+
+@pytest.mark.parametrize("normalise", [None, [False] * 6, [True, False] * 3])
+def test_prepared_with_identities(group, threads, normalise):
+    id1, id2, one = group.init(B.G1), group.init(B.G2), group.init(B.GT)
+    g2s = _g2_points(group, 6)
+    g2s[2] = id2
+    g2s[5] = g2s[5] / g2s[5]                    # an identity of G2 that was computed (z = 0)
+    rows = _g1_rows(group, 6, 6)
+    rows[0][0] = id1                            # at position 0 of a row
+    rows[1][3], rows[1][5] = id1, id1           # further on, the last point among them
+    rows[2] = [id1] * 6                         # identities only
+    rows[3] = [id1, id1, rows[3][2], id1, id1, id1]     # its one point meets the identity of G2
+    rows[4][4] = rows[4][4] / rows[4][4]        # an identity that was computed
+    prepared = B._kernels._ext.bls_prepare_g2(g2s, threads, normalise)
+    got = B._kernels._ext.bls_multi_pair_prepared(rows, prepared, threads)
+    assert got == [multi_pair(row, g2s) for row in rows]
+    assert got[2] == got[3] == one
+
+
+@pytest.mark.parametrize("normalise", [None, [False] * 3])
+def test_prepared_of_a_computed_identity_of_g2(group, normalise):
+    # the identity of G2 that came out of a computation has z = 0 and coordinates that are no point; decoded or made
+    # by init, it is the same element, and gives the same lines (none)
+    g1s, g2, id1 = group.random(B.G1), group.random(B.G2), group.init(B.G1)
+    computed, made = g2 / g2, group.init(B.G2)
+    assert computed == made
+    g2s = [g2, computed, g2]
+    rows = [[g1s, g1s, g1s], [g1s, id1, g1s], [id1, g1s, id1]]
+    kernels = B._kernels._ext
+    got = kernels.bls_multi_pair_prepared(rows, kernels.bls_prepare_g2(g2s, 1, normalise))
+    assert got == kernels.bls_multi_pair_prepared(rows, kernels.bls_prepare_g2([g2, made, g2], 1, normalise))
+    assert got == [multi_pair(row, g2s) for row in rows]
+    assert got[2] == group.init(B.GT)           # every pair of this row has an identity in it
+
+
+def test_prepared_of_identities_only(group, threads):
+    id2, one = group.init(B.G2), group.init(B.GT)
+    rows = _g1_rows(group, 2, 3)
+    assert multi_pair_prepared(rows, prepare_g2([id2] * 3)) == [one, one]
+
+
+def test_prepared_needs_one_g1_per_point(group, threads):
+    g1, g2 = group.random(B.G1), group.random(B.G2)
+    prepared = prepare_g2([g2] * 3)
+    for short in ([g1] * 2, [g1] * 4, []):
+        with pytest.raises(ValueError, match="row 1 has {} elements, expected 3".format(len(short))):
+            multi_pair_prepared([[g1] * 3, short], prepared)
+
+
+def test_prepared_checks_the_length_of_every_row_before_it_reads_any_element(group):
+    # the lengths first: the room for the elements is reserved from them, so a malformed input of many rows must not
+    # get as far as that
+    g1, g2 = group.random(B.G1), group.random(B.G2)
+    prepared = prepare_g2([g2, g2])
+    with pytest.raises(ValueError, match="row 1 has 3 elements, expected 2"):
+        multi_pair_prepared([[g2, g2], [g1, g1, g1]], prepared)         # row 0 holds the wrong group, row 1 is long
+    with pytest.raises(ValueError, match="row 2 has 0 elements, expected 2"):
+        multi_pair_prepared([[g1, g1], [g2, g1], []], prepared)
+
+
+def test_prepared_of_no_points():
+    with pytest.raises(ValueError, match="at least one point"):
+        prepare_g2([])
+
+
+def test_prepared_of_no_rows(group):
+    assert multi_pair_prepared([], prepare_g2([group.random(B.G2)])) == []
+
+
+def test_prepared_type_checks(group, threads):
+    g1, g2 = group.random(B.G1), group.random(B.G2)
+    prepared = prepare_g2([g2, g2])
+    for bad in (g2, group.random(B.GT), group.init(B.ZR, 1)):
+        with pytest.raises(ValueError, match="row 1, position 1: expected a G1 element"):
+            multi_pair_prepared([[g1, g1], [g1, bad]], prepared)
+    for bad in (g1, group.random(B.GT), group.init(B.ZR, 1)):
+        with pytest.raises(ValueError, match="position 1: expected a G2 element"):
+            prepare_g2([g2, bad])
+    with pytest.raises(TypeError):
+        B._kernels._ext.bls_multi_pair_prepared([[g1]], [g2])
+
+
+def test_prepared_takes_one_normalise_flag_per_point(group):
+    g2s = _g2_points(group, 3)
+    for flags in ([], [True] * 2, [False] * 4):
+        with pytest.raises(ValueError, match="normalise has {} flags for 3 points".format(len(flags))):
+            B._kernels._ext.bls_prepare_g2(g2s, 1, flags)
+
+
+def test_prepared_does_not_print_its_lines(group):
+    prepared = prepare_g2([group.random(B.G2)])
+    assert type(prepared).__repr__ is object.__repr__
+    assert type(prepared).__str__ is object.__str__
+
+
+def test_prepared_on_a_list_of_points(group):
+    # what prepare_g2 gives on charm: multi_pair_prepared pairs row by row
+    g2s, rows = _g2_points(group, 3), _g1_rows(group, 2, 3)
+    assert multi_pair_prepared(rows, g2s) == [multi_pair(row, g2s) for row in rows]
+
+
+@pytest.mark.skipif(not pairing_available("MNT224"), reason="no charm-crypto")
+def test_prepared_on_a_charm_group():
+    group = PairingGroup("MNT224")
+    g2s, rows = _g2_points(group, 3), _g1_rows(group, 2, 3)
+    prepared = prepare_g2(g2s)
+    assert isinstance(prepared, list)
+    assert multi_pair_prepared(rows, prepared) == [multi_pair(row, g2s) for row in rows]
+    with pytest.raises(ValueError):
+        multi_pair_prepared([rows[0][:2]], prepared)
+    with pytest.raises(ValueError, match="at least one point"):
+        prepare_g2([])

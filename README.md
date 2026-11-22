@@ -24,7 +24,7 @@ PyFE4AI is a research-oriented Python library of functional encryption (FE)
 for trustworthy AI. In functional encryption, a functional key reveals one
 chosen function of encrypted data and nothing else about it: here an inner
 product `<x, y>` with the key's weights `y`, a weighted sum over several
-clients' vectors, or a quadratic form. PyFE4AI implements 42 inner-product
+clients' vectors, or a quadratic form. PyFE4AI implements 46 inner-product
 and quadratic FE schemes built on published constructions -- single-input,
 multi-input, multi-client, decentralized, threshold and function-hiding,
 under DDH, DCR, LWE, Ring-LWE and pairings -- behind one entry point,
@@ -119,6 +119,8 @@ capabilities="threshold")` the threshold MCFEs) and
 capabilities and review status. The classes are also importable by name,
 named after the id (`from pyfe4ai.schemes.sife import SIFEDDH,
 SIFEDDHKeyGenerator`; `mcfe/ring_lwe_threshold` is `ThresholdMCFERingLWE`).
+`pyfe4ai.list_schemes(capabilities="access_control")` lists the attribute-based
+schemes, whose keys or ciphertexts carry an access policy (`pyfe4ai.policy`).
 The documentation's
 [Quick start](https://spire-studio.github.io/pyfe4ai/docs/quickstart.html)
 continues with several clients, federated learning and real parameters,
@@ -137,6 +139,8 @@ explains the families, and
 | | FullySec-Ring-LWE (adaptive) | BMMS21, Sec. 5 |
 | | FH-IPE *(pairing)* | [KLMMRW](https://eprint.iacr.org/2016/440.pdf) (SCN '18) |
 | | Partial-FH-IPE *(pairing)* | [Gay20](https://eprint.iacr.org/2020/093.pdf) (PKC '20) |
+| | CP-AB-IPFE, attribute-based *(pairing)* | [ACGU20](https://eprint.iacr.org/2020/577.pdf) (ASIACRYPT '20), Sec. 3.1 |
+| | KP-AB-IPFE, attribute-based *(pairing)* | [NPP22](https://eprint.iacr.org/2022/215.pdf) (ASIACRYPT '22), Sec. 4 |
 | **MIFE** (multi-input) | DDH, Damgård-DDH, LWE, FullySec-LWE, Paillier | [ACFGU18](https://eprint.iacr.org/2017/972.pdf) (CRYPTO '18), Fig. 4 + ALS16 / ABDP15 |
 | | DDH over ristretto255 *(unreviewed)* | ACFGU18 Fig. 4 + ABDP15 in ristretto255 |
 | | Ring-LWE | ACFGU18 Fig. 4 as in [BMMS21](https://eprint.iacr.org/2021/046.pdf), Sec. 6 |
@@ -147,6 +151,8 @@ explains the families, and
 | | Damgård-DDH (MDDH), Paillier (DCR), LWE, FullySec-LWE | [ABMPSW20](https://eprint.iacr.org/2020/788.pdf) (SCN '20), Figs. 2–4 |
 | | Ring-LWE | BMMS21, Sec. 6 (identity-based MCFE) |
 | | FH-Multi-IPE *(pairing)* | [AGT21b](https://doi.org/10.1007/978-3-030-90453-1_8) (TCC '21), Sec. 6.2 |
+| | KP-AB, attribute-based *(pairing, known-insecure)* | NPP22, Sec. 5.2 (see [Known Issues](#known-issues--security-notice)) |
+| | KP-AB with an attribute set per client *(pairing, known-insecure)* | NPP22, Sec. 5.4 (see [Known Issues](#known-issues--security-notice)) |
 | **Decentralized** | dMCFE-DDH, dMCFE-LWE, dMCFE-Paillier | ABMPSW20, App. D, Fig. 14 (DMCFE from MCFE) |
 | | dMCFE-Ring-LWE | BMMS21, Sec. 6 ([ABKW19](https://eprint.iacr.org/2019/020.pdf) + GDSum) |
 | | dMCFE-FH-Multi-IPE *(pairing)* | [NPS24](https://doi.org/10.62056/andkp2fgx) (IACR CiC '24), Fig. 1 |
@@ -170,7 +176,9 @@ Every registered scheme carries a review status, declared with the scheme in
 the registry [`pyfe4ai/core/registry.py`](pyfe4ai/core/registry.py) and
 available at runtime as `pyfe4ai.get_scheme_status("family/variant")`.
 Instantiating a key generator or crypto object of a known-insecure scheme
-emits a `pyfe4ai.FESecurityWarning`.
+emits a `pyfe4ai.FESecurityWarning` that names the issue, and
+`security_profile="standard"` refuses such a scheme (`FEValidationError`, like
+the other refusals of the profile).
 
 - **reviewed**: checked against the cited construction; no defect known.
   *faithful* = the published construction as written; *adapted* = the
@@ -180,19 +188,23 @@ emits a `pyfe4ai.FESecurityWarning`.
   defect known.
 - **unreviewed**: not yet checked against its paper; no defect is known,
   but none was looked for systematically either.
-- **known-insecure**: a concrete privacy defect is known; the scheme computes
-  correct results but provides no meaningful privacy. Use it only for
-  functionality or performance experiments.
+- **known-insecure**: a concrete privacy defect is known (the Known Issues
+  below say what leaks); the scheme computes correct results but does not give
+  the privacy it claims. Use it only for functionality or performance
+  experiments.
 
-Currently 34 reviewed, 5 experimental and 3 unreviewed out of 42 registered
-schemes; none is known to be insecure. Experimental: the threshold layers of
+Currently 36 reviewed, 5 experimental, 3 unreviewed and 2 known-insecure out
+of 46 registered schemes. Experimental: the threshold layers of
 `mife/lwe_threshold`, `mcfe/lwe_threshold`, `mcfe/ring_lwe_threshold` and
 `mcfe/fh_multi_ipe_pairing_threshold`, and the carry mask of
 `mcfe/ddh_decentralized`. Unreviewed: the DDH schemes over ristretto255
 (`*/ddh_ristretto255`, selected with `group="ristretto255"`), new code.
+Known-insecure: `mcfe/kp_ab_pairing` (NPP22 Sec. 5.2) and
+`mcfe/kp_ab_pairing_per_client`, the version in which each client has an
+attribute set of its own (Sec. 5.4); see Known Issues.
 
 <details>
-<summary><strong>Status, construction and deviations of every scheme</strong> (42 rows, rendered by <code>pyfe4ai.core.status.markdown_table()</code>; a test keeps it in sync)</summary>
+<summary><strong>Status, construction and deviations of every scheme</strong> (46 rows, rendered by <code>pyfe4ai.core.status.markdown_table()</code>; a test keeps it in sync)</summary>
 
 | Scheme | Status | Fidelity | Construction | Notes |
 |---|---|---|---|---|
@@ -207,6 +219,8 @@ schemes; none is known to be insecure. Experimental: the threshold layers of
 | `sife/ddh_dynamic` | reviewed | adapted | ABDP15 Construction 1, variable length | vectors of length <= eta handled as zero padding (prefix keys, truncated ciphertexts) |
 | `sife/fh_ipe_pairing` | reviewed | adapted | KLMMRW18 Sec. 3 | vectors padded to (x, 1, 0) / (y, 0, 1), so eta = 1 and zero vectors are safe; keys in G1, ciphertexts in G2; generic bilinear group model; the encryption key is master-secret equivalent |
 | `sife/part_fh_ipe_pairing` | reviewed | adapted | Gay20 Fig. 8 (CPA, k = 1) | M is a random full-rank public matrix (subspace_dim < eta, default 1), published with V^T M in the clear; keys leak M^T y, which for small eta - subspace_dim often determines a bounded y; public Enc needs bounded t; Enc' is run by the key generator; no QANIZK |
+| `sife/cp_ab_pairing` | reviewed | adapted | ACGU20 Sec. 3.1 Fig. 1 + App. B.2 (read-once MSP) | selective (SEL-SIM, one challenge ciphertext); ciphertexts malleable, not authenticated; a = (1, a2) for the paper's (a, 1); rows of attributes outside the policy are omitted; a repeated attribute takes copies (max_copies); the Decode of App. B.2 with its sign corrected |
+| `sife/kp_ab_pairing` | reviewed | faithful | NPP22 Sec. 4 Fig. 1 (selective version) | selective version (the paper proves the adaptive one, Thm. 7, and gives no proof of this one); ciphertexts malleable, not authenticated; attributes hashed to Z_q; [y]_2 is computed by the decryptor, not sent in the key |
 | `mife/ddh` | reviewed | adapted | ACFGU18 Fig. 4 + ABDP15 (DDH) | ACFGU18 instantiates Fig. 4 with ALS16; here the selectively secure ABDP15 IPFE in every slot |
 | `mife/ddh_ristretto255` | unreviewed | unknown | ACFGU18 Fig. 4 + ABDP15 (DDH) in ristretto255 | ristretto255 (RFC 9496, about 126-bit security: Pollard rho in a group of order 2^252) instead of a 3072-bit Z_p^* subgroup; group arithmetic in Rust (curve25519-dalek) with the native extension, else in pure Python and not constant-time; new code, not yet reviewed |
 | `mife/lwe` | reviewed | adapted | ACFGU18 Fig. 4 + ABDP15 (LWE) | ACFGU18 instantiates Fig. 4 with ALS16; here the selectively secure ABDP15 IPFE (same two-step decryption; full-version proof, see sife/lwe), with parameters for dimension n * eta (footnote 14); the slot challenges of the ACFGU18 reduction differ by up to 4X, so standard reads the 128-bit table at sigma / (1 + 4X sqrt(eta)); slots share A, expanded from a public seed (SHAKE-128); pk noise exact (FACCT) under standard |
@@ -235,6 +249,8 @@ schemes; none is known to be insecure. Experimental: the threshold layers of
 | `mcfe/ring_lwe_threshold` | experimental | ad-hoc | BMMS21 identity-based MCFE + replicated / Shamir sharing + smudging | MCFE layer as published; the threshold layer (statistical flooding, derandomised noise, enlarged q, clients' HMAC tags on ciphertexts, replicated key sharing for t < s, where Shamir shares let partials reveal the decryption noise modulo small integers) is our own; the opt-in sharing='replicated-seeded' expands all key pieces but one from secret 256-bit seeds and hides the key shares only computationally (SHAKE-256 keyed by the seeds as a PRF); full replicated sharing stays the default for t < s; by default binary ciphertexts (format 2: ct0 cut to the batch length and every value strictly below q, tags over the parameters' digest and the bytes, binary partials and key shares), an RNS modulus (q a product of at least three NTT primes, each above s) and split key shares (sk_y once per weights, the label terms per round); ct_format='json', ring_modulus='prime' and key_shares='full' select the formats of earlier versions |
 | `mcfe/ring_lwe_decentralized` | reviewed | adapted | BMMS21 Sec. 6 identity-based DMCFE (ABKW19 + GDSum) | GDSum realised as pairwise PRF zero-sum masks (its full specification is only in the ePrint version); pairwise secrets sampled in-process |
 | `mcfe/paillier_decentralized` | reviewed | adapted | ABMPSW20 Fig. 14 (MCFE1 = Fig. 3) | MCFE2 = ABMPSW20 Fig. 3 (DCR); the zero-sum MCFE2 keys (pairwise masks) are sampled in-process |
+| `mcfe/kp_ab_pairing` | known-insecure | faithful | NPP22 Sec. 5.2 Fig. 3 | see [Known Issues](#known-issues--security-notice) |
+| `mcfe/kp_ab_pairing_per_client` | known-insecure | adapted | NPP22 Sec. 5.4 | see [Known Issues](#known-issues--security-notice) |
 | `quadratic/quad` | reviewed | adapted | Gay20 Fig. 4 over Fig. 8 (CPA) | signed inputs (discrete log in [-n m B^3, n m B^3]); CPA variant (no QANIZK); asymmetric pairing (default BLS12-381) |
 | `quadratic/sgp` | reviewed | adapted | DSGPP18 Fig. 2 | public key pk = (g1^s, g2^t) as in the paper; signed inputs with one bound B for x, y and F (discrete log in [-n^2 B^3, n^2 B^3]); generic bilinear group model |
 | `quadratic/miqfe` | reviewed | adapted | AGT22 Sec. 5 (MIFE for quadratic functions) | cross-user terms only (Def. 2.9); per-user encryption keys made of master ciphertexts; building blocks TAO20 FH-IPFE, Fig. 9 and Fig. 1 as in the paper; PRF = HMAC-SHA512; pos-security (every user contributes); k = mddh_k >= 2 |
@@ -270,7 +286,7 @@ an `FEWarning`. Give each configuration its own `cache_dir` to keep both (see
 | Dense LWE (`mcfe/lwe`, `fullysec_lwe`, `lwe_threshold`, `lwe_decentralized`) | `lwe_n = "auto"` from a lattice-estimator table for the LWE of the scheme's proof |
 | LWE with a public matrix (`sife/lwe`, `mife/lwe`) | `lwe_n = "auto"`, read at the error width of the LWE problem the proof reduces to; `matrix_mode` trades memory for time |
 | Pairings: FH-IPE, FH-MCFE family, quadratic FE | BLS12-381: about **120–126-bit** after the exTNFS attacks, below the target; a `FESecurityWarning` says so |
-| Refused (`FEValidationError`) | `sife/fullysec_lwe`, `mife/fullysec_lwe` (ALS16), `mife/lwe_threshold`, `mcfe/paillier_decentralized`: no parameter set that is both secure and usable |
+| Refused (`FEValidationError`) | `sife/fullysec_lwe`, `mife/fullysec_lwe` (ALS16), `mife/lwe_threshold`, `mcfe/paillier_decentralized`: no parameter set that is both secure and usable; and every *known-insecure* scheme (`mcfe/kp_ab_pairing`, `mcfe/kp_ab_pairing_per_client`): `standard` is for security |
 
 The statistical parameter `stat_param` (rounding and leftover-hash slack,
 flooding, masks) is 128 under `standard`; lower explicit values are refused.
@@ -319,13 +335,18 @@ ciphertext formats, several threads and the other families.
 
 ## Known Issues / Security Notice
 
-No registered scheme is currently known to be insecure (should one be found,
-the [Scheme Status](#scheme-status) table marks it *known-insecure* and its
-key generator emits a `pyfe4ai.FESecurityWarning`). The following
-limitations remain:
+Two registered schemes are known to be insecure, `mcfe/kp_ab_pairing` and
+`mcfe/kp_ab_pairing_per_client` (first rows below; the
+[Scheme Status](#scheme-status) table marks them *known-insecure*, their key
+generators and crypto objects emit a `pyfe4ai.FESecurityWarning`, and
+`security_profile="standard"` refuses them). The ML adapter's policy-gated
+aggregation runs on `mcfe/kp_ab_pairing`, so it is for experiments only.
+The following limitations remain as well:
 
 | Issue | Affected | In short |
 |---|---|---|
+| A corrupted client opens every functional key | `mcfe/kp_ab_pairing`, `mcfe/kp_ab_pairing_per_client` (*known-insecure*) | one corrupted client opens `k_{i,ipfe}` of every functional key with the rows of `Z_q` of its encryption key, so two keys whose policy the attributes do not satisfy give an inner product, an honest client's input among them, so the policy does not hold against a decryptor that colludes with one client; the proof of NPP22 Thm. 14 misses it; for functionality and performance experiments only |
+| Two rounds and two keys leak the difference of the rounds' inner products | `mcfe/kp_ab_pairing_per_client` (*known-insecure*) | the fifth coordinate of NPP22 Sec. 5.4 does not depend on the tag, so Thm. 25 as stated fails; for functionality and performance experiments only |
 | Toy default parameters | all schemes | not secure; pass `security_profile="standard"` (pairings stay at about 120–126 bits) |
 | No side-channel hardening | all schemes | CPython and big-integer arithmetic are not constant-time, nor is the pure-Python ristretto255 fallback |
 | No labels in multi-input FE | all MIFE schemes, quadratic `miqfe` | several inputs per client under one key reveal their differences; use MCFE for federated learning |
@@ -341,6 +362,8 @@ limitations remain:
 
 | Issue | Affected schemes | Consequence |
 |---|---|---|
+| A corrupted client opens every functional key | `mcfe/kp_ab_pairing`, `mcfe/kp_ab_pairing_per_client` | The encryption key of client `i` in NPP22 Sec. 5.2 Fig. 3 holds the first two rows of its basis `H_i` (times `p_i`) as vectors of `Z_q`, which it needs to raise the hashed points to `c_{i,ipfe}`. Applied to the `G2` coordinates of `k_{i,ipfe}` of any functional key (a multi-exponentiation, no pairing, no policy), the same rows give `[p_i <S, y>]_2` and `[p_i <U, y>]_2`. A key of weight on client `i` alone then gives `[p_i]_2`, and any key `y`, whose policy the round's attributes do not satisfy, gives `[p_i <x, y>]_T` from the ciphertexts and so `<x, y>`: the input of an honest client for `y = e_h`. Both keys are refused by the scheme (`FEKeyError`) and admissible under Def. 9, so the notion of Def. 12 fails with one corrupted client; the proof of Thm. 14 (App. B.4, G4 to G5) changes the corrupted client's rows and checks only the decryptions. `sife/kp_ab_pairing` has no such rows and is not affected. Kept for experiments and as the record of the attack (`test_a_corrupted_client_opens_every_key_and_reads_an_honest_input`). |
+| Two rounds and two keys leak the difference of the rounds' inner products | `mcfe/kp_ab_pairing_per_client` | In NPP22 Sec. 5.4 each client encrypts for an attribute set of its own, which opens a mix-and-match attack on keys of different policies; the paper adds a fifth coordinate `d_i` to `k_i,ipfe` with `sum theta_i d_i = 0`. That obstacle depends on the key and the client, not on the tag. Two keys of one `y` that open neither of two rounds (two tags: two labels, or two elements of one array), where the set of each client satisfies one of the keys in both rounds, therefore give the difference of the two rounds' inner products `<x - x', y>`. Remark 10 and the game of Fig. 2 allow the adversary to encrypt under a second tag, and Def. 9 calls it admissible (neither key opens either round), so Theorem 25 (App. B.5, whose proof is only sketched) fails as stated. `mcfe/kp_ab_pairing`, with one attribute set per tag, is not affected. The scheme is kept for functionality and performance experiments and as the record of the attack (`test_two_tags_and_two_keys_read_the_difference_of_two_rounds`). |
 | No labels in multi-input FE | all MIFE schemes and quadratic `miqfe` | By definition, the holder of a functional key may combine any ciphertext of each slot. Encrypting several inputs per client under one key epoch -- e.g. a gradient element by element -- therefore reveals the differences between that client's values. The ML adapter refuses MIFE for gradient aggregation; use MCFE (labelled ciphertexts) for federated learning. |
 | Constructions of our own | tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE, tMCFE-FH-Multi-IPE; the dMCFE-DDH carry mask | The threshold layers (noise flooding, replicated or Shamir key sharing, sharing in the exponent) and the carry mask of `mcfe/ddh_decentralized` are our own and have no published security proof; see the module docstrings. |
 | Honest-but-curious decryption servers | all threshold schemes (tMIFE, tMCFE) | Fewer than `t` servers learn nothing beyond the result, but partial decryptions carry no proof of correctness: one server that deviates changes the result without notice. `combine_decrypt` accepts partial decryptions for several enrolled sets (a list of `{sid: partial}` mappings) and raises `FESchemeError` if they disagree; this detects one faulty server (not which one) if every server is left out of some set, e.g. the `t + 1` subsets of size `t` of `t + 1` servers. tMCFE-DDH and tMCFE-FH-Multi-IPE servers decrypt only ciphertexts under the label they are asked for (`share_decrypt(..., label)`). tMCFE-Ring-LWE key shares and partial decryptions carry a `sharing_id`: store and transmit it with them. A combiner refuses partials of two sharings of one key (`MixedSharingsError`), which would otherwise decode to a wrong value inside the decoding bound; partials without an id combine only with each other, so a storage or transport layer that drops the id everywhere would let two sharings be mixed unnoticed. |
@@ -348,7 +371,7 @@ limitations remain:
 | Rounded Gaussian by default outside the exact-default schemes | ALS16 (`fullysec_lwe`), the DCR schemes, and under `toy` ABDP15 SIFE / MIFE LWE (and the keys of tMIFE-LWE) | The proofs sample `D_{Z,sigma}`; these schemes follow the library-wide sampler, which by default rounds a continuous Gaussian: in double precision up to `2^40` (shared Box-Muller radii, ties to even, nothing beyond 8.57 sigma: 2^-25..2^-4 from i.i.d. `D_{Z,sigma}` per key or ciphertext per the October 2026 crypto review) and with MPFR at `bits(sigma) + 320` bits beyond. `sampler="facct"`, `gaussian_sampler("facct")`, `set_gaussian_sampler("facct")` or `PYFE4AI_GAUSSIAN_SAMPLER=facct` select the exact sampler for them (about 2^-185 per sample). The Ring-LWE MIFE / MCFE family, the dense-LWE MCFE keys `t` and SIFE FullySec Ring-LWE sample exactly by default and record it in their public parameters; for them the process-wide choice and the environment variable do not apply, and `standard` refuses `"rounded"`. ABDP15 (`sife/lwe`, `mife/lwe`; `mife/lwe_threshold` is refused under `standard`) does the same for its public keys' noise under `standard`, and under `toy` (also the keys of `mife/lwe_threshold`) follows its config's `gaussian_sampler`, else the library-wide choice; its public parameters record the sampler either way. The threshold flooding always uses the MPFR rounded sampler. Neither sampler is constant-time. |
 | Toy default parameters | all | `sec_param` is a modulus bit length (default 128), not a security level; LWE dimensions default to 32–64 and the Ring-LWE dimension to 32; the statistical parameter `stat_param` defaults to 64. All far below any real security level (a key column of SIFE-LWE at its defaults falls to plain LLL in minutes). Pass `security_profile="standard"` for 128-bit-oriented parameters -- except for pairings (BLS12-381, about 120–126-bit) and the refused ALS16, tMIFE-LWE and dMCFE-Paillier schemes; see [Security Profiles](#security-profiles). |
 | Parameter cache | key generators that cache parameters (most; not MCFE `lwe`, `fullysec_lwe`, `lwe_threshold`, the FH-MCFE family, MIFE `fh_ipe_pairing` and quadratic `quad` and `miqfe`) | Public parameters are written to and re-loaded from `<cache>/authority/...`, where `<cache>` is the `cache_dir` entry of the key generator's config, else `PYFE4AI_CACHE_DIR`, else the per-user cache directory (`~/Library/Caches/pyfe4ai` on macOS, `$XDG_CACHE_HOME/pyfe4ai` or `~/.cache/pyfe4ai` on Linux, `%LOCALAPPDATA%\pyfe4ai\Cache` on Windows). A cached file is used only if it matches the configuration; discrete-log groups are checked for primality, size, safe-prime structure, generator order and (at RFC 3526 sizes) for being the RFC prime; DCR moduli for size, compositeness and small factors (their factors are never stored); all other cached values are re-derived on load or expanded from a stored seed (LWE and Ring-LWE parameters and public matrices, the Paillier base, the Damgard `h`); under `standard` the lattice schemes re-check their moduli against the 128-bit tables. There is one record per scheme type (`authority/SIFE/param.json`, `authority/MCFE_RING_LWE/param.json`, ...; RNS moduli in `param-rns.json`): a key generator whose configuration does not match the cached record (other dimensions, bounds or profile -- e.g. when several examples or configurations run one after another) regenerates it with new parameters and seeds, with an `FEWarning` ("the parameter record ... does not match this configuration ...: regenerated ..."); an unreadable file is regenerated the same way, and files are written atomically. Keys and ciphertexts already made keep working with the public parameters they were made with, but setting up the earlier configuration again draws new parameters: give each configuration its own `cache_dir` to keep both. The DDH crypto objects keep their discrete-log tables under `<cache>/crypto/`. No check can tell whether someone knows the factors of a DCR modulus, so under `standard` the Paillier moduli and the dMCFE `N2` are generated for every key generator, never loaded or stored; under `toy` a planted modulus with known factors is still used: use a cache directory that nobody else can write to. |
-| The ML adapter plays every party | `pyfe4ai.ml` | `FESchemeWrapper` runs the key generator, so it holds the master key and acts as clients, authority and decryptor in one trust domain; use it for experiments, not as a deployment. For `mcfe/ring_lwe_threshold` it also runs the decryption servers (`partial_decrypt_gradients`, `combine_partial_decryptions` show a deployment's messages, and a `PreparedAggregation` holds the servers' label key shares), so there the threshold protects nothing. By default `aggregate_gradients` needs a ciphertext and a non-zero weight for every enrolled client (`allow_partial=True` relaxes this), a client encrypts at most once per label and a label is aggregated with one weight vector; these checks are per wrapper object, and they do not stop very unequal weights (e.g. `(W, 1)` with `W` above twice the largest gradient entry), which separate two clients' gradients in one aggregate -- as with any inner-product FE, the weights are the key holder's choice. A pickled or copied wrapper (`multiprocessing`, Ray) carries the master key and every client's key: ship a worker its client's own crypto object (the scheme class built from `wrapper.pp` and `wrapper.kg.get_private_keys(nid)`), not the wrapper. |
+| The ML adapter plays every party | `pyfe4ai.ml` | `FESchemeWrapper` runs the key generator, so it holds the master key and acts as clients, authority and decryptor in one trust domain; use it for experiments, not as a deployment. For `mcfe/ring_lwe_threshold` it also runs the decryption servers (`partial_decrypt_gradients`, `combine_partial_decryptions` show a deployment's messages, and a `PreparedAggregation` holds the servers' label key shares), so there the threshold protects nothing. By default `aggregate_gradients` needs a ciphertext and a non-zero weight for every enrolled client (`allow_partial=True` relaxes this), a client encrypts at most once per label and a label is aggregated with one weight vector; these checks are per wrapper object, and they do not stop very unequal weights (e.g. `(W, 1)` with `W` above twice the largest gradient entry), which separate two clients' gradients in one aggregate -- as with any inner-product FE, the weights are the key holder's choice; nor do they bind keys already issued: a key of `mcfe/kp_ab_pairing` (and of any MCFE scheme whose keys are not bound to a label) opens every round, so two rounds with two weight vectors that differ in one client's weight isolate that client. A pickled or copied wrapper (`multiprocessing`, Ray) carries the master key and every client's key: ship a worker its client's own crypto object (the scheme class built from `wrapper.pp` and `wrapper.kg.get_private_keys(nid)`), not the wrapper. |
 
 </details>
 
@@ -365,6 +388,12 @@ group, BLS12-381 from the Rust extension by default; their constructions
 assume SXDH or a generic asymmetric bilinear group, so symmetric groups
 (`SS512`, `SS1024`) are rejected with `FEValidationError`. Up to v0.3.0 the
 default was `MNT224`, whose keys and ciphertexts BLS12-381 cannot read.
+The attribute-based schemes (`sife/cp_ab_pairing`, `sife/kp_ab_pairing`,
+`mcfe/kp_ab_pairing`, `mcfe/kp_ab_pairing_per_client`) run over the same groups.
+On BLS12-381 their tag hash is RFC 9380 `hash_to_curve` under a domain
+separation tag; a charm group has no such tag, and there the tag is hashed with
+a prefix as one string. Prefer BLS12-381 for ciphertexts from parties you do not
+trust ([Security & status](https://spire-studio.github.io/pyfe4ai/docs/security.html)).
 
 Other curves (`pairing_group_param`, e.g. `MNT224` or `BN254`) need
 `charm-crypto-framework`, which is built from source and needs GMP, OpenSSL
@@ -504,7 +533,7 @@ preparation and will be added here once published):
   title   = {{PyFE4AI}: Python-based Functional Encryption
              for {AI} Security and Privacy},
   year    = {2026},
-  version = {0.4.1},
+  version = {0.5.0},
   license = {Apache-2.0},
   url     = {https://github.com/spire-studio/pyfe4ai}
 }

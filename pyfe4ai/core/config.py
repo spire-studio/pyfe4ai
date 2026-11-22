@@ -12,7 +12,10 @@ security profile is applied (:func:`resolve`): unknown profiles, schemes the
 Each config class declares the options of its scheme (:class:`Option`: what
 it holds, its default, the values it accepts), so ``config.ring_n`` reads an
 option with its default, and the page *Configuration options* of the
-documentation is rendered from these declarations (:func:`options_rst`).
+documentation is rendered from these declarations (:func:`options_rst`). A
+key that no scheme declares is refused, so that a misspelt option does not
+quietly become its default; an option of another scheme draws a warning, and
+is refused under ``standard`` (:func:`check_options`).
 
 The rules that combine the options of the threshold schemes -- the key
 sharing for ``t < s``, the flooding accounting, the key-share layout -- are
@@ -41,7 +44,7 @@ from pyfe4ai.core.profiles import STANDARD
 from pyfe4ai.core.profiles import STANDARD_DCR_PRIME_BITS
 from pyfe4ai.core.profiles import STANDARD_STAT_PARAM
 from pyfe4ai.core.profiles import TOY
-from pyfe4ai.core.exceptions import FESecurityWarning, FEValidationError, warn_at_caller
+from pyfe4ai.core.exceptions import FEConfigError, FESecurityWarning, FEValidationError, FEWarning, warn_at_caller
 from pyfe4ai.core.registry import SCHEMES, get_scheme
 
 # ---------------------------------------------------------------------------
@@ -251,7 +254,11 @@ def resolve(config: dict, scheme: tuple | None) -> dict:
 
     Raises:
         FEValidationError: For an unknown profile, a scheme the profile does
-            not support, or an explicit value weaker than the profile's.
+            not support or refuses (``refused`` in the registry, which also
+            holds for a known-insecure scheme: the ``toy`` profile builds it,
+            with a :class:`~pyfe4ai.core.exceptions.FESecurityWarning` from
+            the key generator, and ``standard`` does not), or an explicit
+            value weaker than the profile's.
 
     Warns:
         FESecurityWarning: For a pairing scheme under ``standard``
@@ -765,6 +772,41 @@ class SIFEPartFHIPEPairingConfig(SchemeConfig):
                          allowed="a positive int with ``k coeff_bound <= bound``")
 
 
+class SIFECPABPairingConfig(SchemeConfig):
+    """Config of :class:`~pyfe4ai.schemes.sife.cp_ab_pairing.SIFECPABPairingKeyGenerator`."""
+
+    SCHEME = ("sife", "cp_ab_pairing")
+    sec_param = PairingIPEConfig.sec_param
+    pairing_group_param = PAIRING_GROUP_PARAM
+    eta = ETA(default=5)
+    bound_x = BOUND_X(default=16)
+    bound_y = BOUND_Y(default=16)
+    universe = Option("the attribute labels of the setup (the labels of every policy and every key)", default=None,
+                      allowed="required: at least one label, each a ``str`` (see :mod:`pyfe4ai.policy.attributes`)")
+    max_copies = Option("copies of each label that a policy may use (a repeated attribute takes copies)", default=4,
+                        allowed="a positive int")
+    max_columns = Option("columns of a policy's span program (1 for ``or``, one per child of ``and``, ``t`` for a "
+                         "threshold gate; a gate nested in another adds one less than that); each column takes one "
+                         "entry of the public parameters", default=16, allowed="a positive int")
+    max_rows = Option("rows of a policy's span program (the limit on the policy's size)", default=64,
+                      allowed="a positive int")
+
+
+class SIFEKPABPairingConfig(SchemeConfig):
+    """Config of :class:`~pyfe4ai.schemes.sife.kp_ab_pairing.SIFEKPABPairingKeyGenerator`."""
+
+    SCHEME = ("sife", "kp_ab_pairing")
+    sec_param = PairingIPEConfig.sec_param
+    pairing_group_param = PAIRING_GROUP_PARAM
+    eta = ETA(default=5)
+    bound_x = BOUND_X(default=16)
+    bound_y = BOUND_Y(default=16)
+    max_rows = Option("rows of a policy's span program (the limit on the policy's size)", default=64,
+                      allowed="a positive int")
+    max_attributes = Option("labels that a ciphertext may carry (the limit on the size of a set of attributes)",
+                            default=64, allowed="a positive int")
+
+
 # ---------------------------------------------------------------------------
 # MIFE
 
@@ -995,6 +1037,28 @@ class DecentralizedMCFEPaillierConfig(MCFEPaillierConfig):
     n = SchemeConfig.n(allowed="an int >= 2")
 
 
+class MCFEKPABPairingConfig(SchemeConfig):
+    """Config of :class:`~pyfe4ai.schemes.mcfe.kp_ab_pairing.MCFEKPABPairingKeyGenerator`."""
+
+    SCHEME = ("mcfe", "kp_ab_pairing")
+    sec_param = PairingIPEConfig.sec_param
+    pairing_group_param = PAIRING_GROUP_PARAM
+    n = SchemeConfig.n(allowed="required: a positive int (``FEConfigError`` without it)")
+    eta = ETA(allowed="1 (each client encrypts one scalar under a tag)")
+    bound_x = BOUND_X(default=16)
+    bound_y = BOUND_Y(default=16)
+    max_rows = Option("rows of a policy's span program (the limit on the policy's size)", default=64,
+                      allowed="a positive int")
+    max_attributes = Option("labels that a ciphertext may carry (the limit on the size of a set of attributes)",
+                            default=64, allowed="a positive int")
+
+
+class MCFEKPABPairingPerClientConfig(MCFEKPABPairingConfig):
+    """Config of :class:`~pyfe4ai.schemes.mcfe.kp_ab_pairing_per_client.MCFEKPABPairingPerClientKeyGenerator`."""
+
+    SCHEME = ("mcfe", "kp_ab_pairing_per_client")
+
+
 # ---------------------------------------------------------------------------
 # quadratic FE
 
@@ -1032,6 +1096,61 @@ class QuadraticMIQFEConfig(SchemeConfig):
     bound_x = BOUND_X(default=8)
     bound_c = Option("bound on the coefficients of the quadratic function", default=8, allowed="a positive int")
     mddh_k = Option("``k`` of the bilateral MDDH assumption", default=2, allowed="an int >= 2")
+
+
+# ---------------------------------------------------------------------------
+# option names
+
+
+#: Keys of versions <= 0.2.0 that the key generators of those versions read and
+#: these ignore.
+LEGACY_OPTIONS = frozenset({"bound_u", "label_modulus", "u_bound"})
+
+#: The name of every option of a key generator or a crypto object of any scheme.
+_ALL_OPTIONS = frozenset(
+    name for klass in (*_CONFIGS.values(), CryptoConfig) for name in (*klass.OPTIONS, *getattr(klass, "CRYPTO", ()))
+)
+
+
+def check_options(config: dict, scheme: tuple | None, subclass: bool = False) -> None:
+    """Check the names of the options of a key generator's *config*.
+
+    A misspelt option would otherwise leave its default in place without a
+    word, and for ``security_profile`` that default is ``toy``. A config may
+    be shared between schemes, or with the scheme's crypto objects, so a name
+    that some scheme declares stays accepted, except under ``standard``: that
+    profile has no floor under every setting, and ``m=4`` on a threshold
+    scheme would leave ``t`` at its default.
+
+    Args:
+        config: The key generator's configuration.
+        scheme: ``(family, variant)`` of the key generator, or ``None`` if it
+            is not a registered scheme: its options are its own, and not
+            checked.
+        subclass: The key generator extends the one of *scheme* and may read
+            options of its own, which it has no way to declare, so that a
+            name unknown here is only warned of.
+
+    Raises:
+        FEConfigError: For a key that no scheme declares, or an option of
+            another scheme under ``standard``.
+
+    Warns:
+        FEWarning: For an option of another scheme, or a key of
+            :data:`LEGACY_OPTIONS`: this key generator ignores it.
+    """
+    if scheme is None:
+        return
+    klass = config_class(scheme)
+    shared = config.get("security_profile") != STANDARD
+    for key in config:
+        if key in klass.OPTIONS or key in klass.CRYPTO:
+            continue
+        if subclass or key in LEGACY_OPTIONS or (shared and key in _ALL_OPTIONS):
+            warn_at_caller("{}/{} has no option {!r}".format(scheme[0], scheme[1], key), FEWarning)
+        else:
+            raise FEConfigError("{}/{} has no option {!r}; its options are {}".format(
+                scheme[0], scheme[1], key, ", ".join(sorted(klass.OPTIONS))))
 
 
 # ---------------------------------------------------------------------------
@@ -1116,7 +1235,17 @@ COMBINATIONS = (
     Combination("``mcfe/damgard``", "``mddh_k < 1``", "``FEValidationError``"),
     Combination("``sife/part_fh_ipe_pairing``", "``subspace_dim`` not in ``1 .. eta - 1``; "
                 "``bound < subspace_dim * coeff_bound`` (at a public encryption)", "``FEValidationError``"),
-    Combination("pairing and quadratic schemes", "a discrete-log bound above ``2^48`` (e.g. "
+    Combination("``sife/cp_ab_pairing``", "no ``universe``; ``eta * bound_x * bound_y`` above ``2^48``",
+                "``FEConfigError`` (no ``universe``); ``FEValidationError`` (the bound)"),
+    Combination("``sife/kp_ab_pairing``", "``eta * bound_x * bound_y`` above ``2^48``", "``FEValidationError``"),
+    Combination("``mcfe/kp_ab_pairing`` and ``mcfe/kp_ab_pairing_per_client``",
+                "no ``n``; ``eta`` other than 1; ``n * bound_x * bound_y`` above ``2^48``",
+                "``FEConfigError`` (no ``n``); ``FEValidationError`` (the others)"),
+    Combination("a known-insecure scheme (``mcfe/kp_ab_pairing``, ``mcfe/kp_ab_pairing_per_client``)",
+                "``security_profile = 'toy'`` "
+                "(``standard`` refuses it, see above)", "built, with a ``FESecurityWarning`` from the key generator "
+                "and the crypto objects"),
+    Combination("the other pairing and quadratic schemes", "a discrete-log bound above ``2^48`` (e.g. "
                 "``eta bound_x bound_y``, ``n m bound^3``)", "``ValueError`` at decryption (quadratic "
                 "schemes: ``None`` and a warning)"),
 )
@@ -1179,7 +1308,13 @@ def options_rst() -> str:
         "",
         "A key generator takes its configuration as a mapping of options; it is converted into the config "
         "class of its scheme (:mod:`pyfe4ai.core.config`) and completed by its security profile before the key "
-        "generator is built. Crypto objects take their config as given. Options not listed are ignored.",
+        "generator is built. Crypto objects take their config as given. A key generator refuses a key that no "
+        "scheme declares (``FEConfigError``), so that a misspelt ``security_profile`` does not give the ``toy`` "
+        "profile. It ignores, with a ``FEWarning`` that names it, an option of another scheme and a key of versions "
+        "<= 0.2.0 (" + ", ".join("``{}``".format(key) for key in sorted(LEGACY_OPTIONS)) + "). Under ``standard`` an "
+        "option of another scheme is refused too: ``m=4`` on a threshold scheme would leave ``t`` at its default. A "
+        "subclass of a key generator may read options of its own, so a key that its scheme does not declare only "
+        "draws the warning: there a misspelt ``security_profile`` does leave the ``toy`` profile.",
         "",
     ]
     lines += _heading("Server and client ids", "-")
@@ -1213,21 +1348,30 @@ def options_rst() -> str:
     ]
     lines += _heading("Security profiles", "-")
     rows = []
+    refused_ids = {s.key for s in SCHEMES if s.refused}
     for kind in sorted({k for k in SCHEME_KIND.values()}):
-        schemes = ", ".join("``{}/{}``".format(*s) for s, k in SCHEME_KIND.items() if k == kind)
+        members = [s for s, k in SCHEME_KIND.items() if k == kind]
         if all(s.refused for s in SCHEMES if s.kind == kind) or (kind not in STANDARD_MINIMA and kind != "pairing"):
             standard = "refused"
-        elif kind == "pairing":
-            standard = "``pairing_group_param = '{}'`` only, with a ``FESecurityWarning``".format(STANDARD_PAIRING_GROUP)
+            listed = members
         else:
-            standard = "; ".join(["``{}`` >= ``{}``".format(k, v) for k, v in STANDARD_MINIMA[kind].items()]
-                                 + ["``{} = {!r}``".format(k, v) for k, v in STANDARD_PRESETS.get(kind, {}).items()]
-                                 ) or "nothing to set"
-        rows.append((kind, schemes, standard))
+            # a scheme that ``standard`` refuses does not meet the minima of its kind: it is not in the row, but in the
+            # list of refused schemes below the table
+            listed = [s for s in members if s not in refused_ids]
+            if kind == "pairing":
+                standard = "``pairing_group_param = '{}'`` only, with a ``FESecurityWarning``".format(
+                    STANDARD_PAIRING_GROUP)
+            else:
+                standard = "; ".join(["``{}`` >= ``{}``".format(k, v) for k, v in STANDARD_MINIMA[kind].items()]
+                                     + ["``{} = {!r}``".format(k, v)
+                                        for k, v in STANDARD_PRESETS.get(kind, {}).items()]) or "nothing to set"
+        rows.append((kind, ", ".join("``{}/{}``".format(*s) for s in listed), standard))
     lines += [
         "``security_profile = 'toy'`` (the default) uses the config as given. ``'standard'`` sets the minima "
         "below where the config has no value and refuses weaker ones (``FEValidationError``); see "
-        ":mod:`pyfe4ai.core.profiles`.",
+        ":mod:`pyfe4ai.core.profiles`. A scheme that ``standard`` refuses outright is not in the row of its kind, "
+        "which holds the schemes that it accepts, but in the list below the table (a kind of which every scheme "
+        "is refused is shown whole, as ``refused``).",
         "",
     ]
     lines += _table(rows, ("kind", "schemes", "under ``standard``"))

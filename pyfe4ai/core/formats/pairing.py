@@ -1,7 +1,11 @@
 """
 The serialized objects of the pairing schemes: function-hiding IPFE
 (:mod:`pyfe4ai.schemes.sife.fh_ipe_pairing`), partially function-hiding IPFE
-(:mod:`pyfe4ai.schemes.sife.part_fh_ipe_pairing`), the function-hiding MIFE
+(:mod:`pyfe4ai.schemes.sife.part_fh_ipe_pairing`), ciphertext-policy
+attribute-based IPFE (:mod:`pyfe4ai.schemes.sife.cp_ab_pairing`), key-policy
+attribute-based IPFE (:mod:`pyfe4ai.schemes.sife.kp_ab_pairing` and its multi-client versions
+:mod:`pyfe4ai.schemes.mcfe.kp_ab_pairing` and :mod:`pyfe4ai.schemes.mcfe.kp_ab_pairing_per_client`), the function-hiding
+MIFE
 (:mod:`pyfe4ai.schemes.mife.fh_ipe_pairing`,
 :mod:`pyfe4ai.schemes.mife.fh_multi_ipe_pairing`), the function-hiding MCFE
 (:mod:`pyfe4ai.schemes.mcfe.fh_multi_ipe_pairing` and its threshold and
@@ -103,6 +107,291 @@ class PartFHIPECiphertext(Record):
     """Ciphertext of SIFE partially FH-IPE (``Enc`` and ``Enc'``)."""
 
     ct = Field("``eta + 4`` G1 elements")
+
+
+# ---------------------------------------------------------------------------
+# SIFE ciphertext-policy attribute-based IPFE (ACGU20)
+
+
+class CPABRecord(Record):
+    """Parameter record of the attribute-based IPFE (the configuration only)."""
+
+    sec_param = Field("int")
+    eta = Field("int")
+    bound_x = Field("decimal string")
+    bound_y = Field("decimal string")
+    universe = Field("the attribute universe, :meth:`~pyfe4ai.policy.attributes.Universe.encoding`")
+    max_columns = Field("int, the columns a policy's span program may have")
+    max_rows = Field("int, the rows a policy's span program may have")
+    pairing_group_param = Field("the pairing group")
+    policy_compiler = Field("version marker, :data:`~pyfe4ai.policy.encoding.POLICY_COMPILER`")
+
+
+class CPABParameters(Record):
+    """Public parameters of the attribute-based IPFE (the public key included).
+
+    ``w_a`` and ``w_b`` have ``size + max_columns`` entries, ``size`` the slots
+    of the universe: index ``i < size`` is the slot
+    :meth:`~pyfe4ai.policy.attributes.Universe.index`, index ``size + k`` is
+    column ``k`` of a policy's span program.
+    """
+
+    eta = Field("int")
+    bound_x = Field("decimal string")
+    bound_y = Field("decimal string")
+    universe = Field("the attribute universe, :meth:`~pyfe4ai.policy.attributes.Universe.encoding`")
+    max_columns = Field("int, the columns a policy's span program may have")
+    max_rows = Field("int, the rows a policy's span program may have")
+    pairing_group_param = Field("the pairing group")
+    policy_compiler = Field("version marker, :data:`~pyfe4ai.policy.encoding.POLICY_COMPILER`")
+    universe_digest = Field(":meth:`~pyfe4ai.policy.attributes.Universe.digest` of ``universe``")
+    g1 = Field("G1")
+    g2 = Field("G2")
+    a = Field("two G1 elements, ``[a]_1``")
+    b = Field("two G2 elements, ``[b]_2``")
+    ua = Field("``eta`` G1 elements, ``[U^T a]_1``")
+    w_a = Field("pairs of G1 elements, ``[W_i^T a]_1``")
+    w_b = Field("pairs of G2 elements, ``[W_i b]_2``")
+    pp_binding = Field(":func:`~pyfe4ai.schemes.common.ac_binding.pp_digest` of the other fields")
+
+
+class CPABFunctionalKey(Record):
+    """Functional key of the attribute-based IPFE."""
+
+    attributes = Field("the sorted attribute labels of the key")
+    y = Field("``eta`` decimal strings, the weights")
+    k1 = Field("two G2 elements")
+    k0 = Field("two G2 elements")
+    k_attr = Field("``{\"label#copy\": two G2 elements}``, every copy of every label of the key")
+    pp_binding = Field("``pp_binding`` of the public parameters")
+
+
+class CPABCiphertext(Record):
+    """Ciphertext of the attribute-based IPFE."""
+
+    policy = Field("the policy, :func:`~pyfe4ai.policy.encoding.canonical_encoding`")
+    policy_digest = Field(":func:`~pyfe4ai.policy.encoding.policy_digest` of the policy")
+    policy_compiler = Field("version marker, :data:`~pyfe4ai.policy.encoding.POLICY_COMPILER`")
+    c1 = Field("two G1 elements")
+    c2 = Field("one pair of G1 elements per row of the policy's span program")
+    c3 = Field("``eta`` G1 elements")
+    pp_binding = Field("``pp_binding`` of the public parameters")
+
+
+# ---------------------------------------------------------------------------
+# SIFE key-policy attribute-based IPFE (NPP22 Sec. 4 Fig. 1)
+
+
+class KPABRecord(Record):
+    """Parameter record of the key-policy attribute-based IPFE (the configuration only)."""
+
+    sec_param = Field("int")
+    eta = Field("int")
+    bound_x = Field("decimal string")
+    bound_y = Field("decimal string")
+    max_rows = Field("int, the rows a policy's span program may have")
+    max_attributes = Field("int, the attributes a ciphertext may carry")
+    pairing_group_param = Field("the pairing group")
+    policy_compiler = Field("version marker, :data:`~pyfe4ai.policy.encoding.POLICY_COMPILER`")
+    attr_hash = Field("version marker, :data:`~pyfe4ai.policy.attributes.ATTR_HASH`")
+
+
+class KPABParameters(Record):
+    """Public parameters of the key-policy attribute-based IPFE (the public key included).
+
+    ``h_mask`` is the combination ``h1 + mu h2`` of two vectors of the basis ``H`` of ``G1^4`` and ``h3`` the third;
+    ``f`` holds the first three vectors of the basis ``F`` of ``G1^8``. The dual bases ``F*``, ``H*`` stay in the
+    master key.
+    """
+
+    eta = Field("int")
+    bound_x = Field("decimal string")
+    bound_y = Field("decimal string")
+    max_rows = Field("int, the rows a policy's span program may have")
+    max_attributes = Field("int, the attributes a ciphertext may carry")
+    pairing_group_param = Field("the pairing group")
+    policy_compiler = Field("version marker, :data:`~pyfe4ai.policy.encoding.POLICY_COMPILER`")
+    attr_hash = Field("version marker, :data:`~pyfe4ai.policy.attributes.ATTR_HASH`")
+    g1 = Field("G1")
+    g2 = Field("G2")
+    h_mask = Field("four G1 elements, ``h1 + mu h2``")
+    h3 = Field("four G1 elements, ``h3``")
+    f = Field("three vectors of eight G1 elements, ``f1, f2, f3``")
+    t = Field("``eta`` G1 elements, ``[s_i + mu u_i]_1``")
+    pp_binding = Field(":func:`~pyfe4ai.schemes.common.ac_binding.pp_digest` of the other fields")
+
+
+class KPABFunctionalKey(Record):
+    """Functional key of the key-policy attribute-based IPFE: for a policy and a weight vector."""
+
+    policy = Field("the policy, :func:`~pyfe4ai.policy.encoding.canonical_encoding`")
+    policy_digest = Field(":func:`~pyfe4ai.policy.encoding.policy_digest` of the policy")
+    policy_compiler = Field("version marker, :data:`~pyfe4ai.policy.encoding.POLICY_COMPILER`")
+    y = Field("``eta`` decimal strings, the weights")
+    k_rows = Field("one vector of eight G2 elements per row of the policy's span program")
+    k_ipfe = Field("four G2 elements")
+    pp_binding = Field("``pp_binding`` of the public parameters")
+
+
+class KPABCiphertext(Record):
+    """Ciphertext of the key-policy attribute-based IPFE: for a set of attributes."""
+
+    attributes = Field("the attribute labels, sorted, each once")
+    attr_hash = Field("version marker, :data:`~pyfe4ai.policy.attributes.ATTR_HASH`")
+    policy_compiler = Field("version marker, :data:`~pyfe4ai.policy.encoding.POLICY_COMPILER`")
+    c_attr = Field("one vector of eight G1 elements per attribute")
+    t = Field("``eta`` G1 elements")
+    c_ipfe = Field("four G1 elements")
+    pp_binding = Field("``pp_binding`` of the public parameters")
+
+
+# ---------------------------------------------------------------------------
+# MCFE key-policy attribute-based IPFE (NPP22 Sec. 5.2 Fig. 3)
+
+
+class MCKPABRecord(Record):
+    """Parameter record of the multi-client key-policy attribute-based IPFE (the configuration only)."""
+
+    sec_param = Field("int")
+    n = Field("int, the number of clients")
+    lst_nid = Field("the client ids")
+    bound_x = Field("decimal string")
+    bound_y = Field("decimal string")
+    max_rows = Field("int, the rows a policy's span program may have")
+    max_attributes = Field("int, the attributes a ciphertext may carry")
+    pairing_group_param = Field("the pairing group")
+    policy_compiler = Field("version marker, :data:`~pyfe4ai.policy.encoding.POLICY_COMPILER`")
+    attr_hash = Field("version marker, :data:`~pyfe4ai.policy.attributes.ATTR_HASH`")
+    tag_hash = Field("version marker, :data:`~pyfe4ai.schemes.common.kp_ab.TAG_HASH`")
+
+
+class MCKPABParameters(Record):
+    """Public parameters of the multi-client key-policy attribute-based IPFE: the configuration and the generators.
+
+    The scheme is a private-key one: the bases ``F``, ``H_i`` are in the encryption keys of the clients and their
+    dual bases in the master key.
+    """
+
+    n = Field("int, the number of clients")
+    lst_nid = Field("the client ids, in the order of the shares ``p_i`` and of the vectors ``S``, ``U``")
+    eta = Field("int, fixed to 1: each client encrypts one scalar under a tag")
+    bound_x = Field("decimal string")
+    bound_y = Field("decimal string")
+    max_rows = Field("int, the rows a policy's span program may have")
+    max_attributes = Field("int, the attributes a ciphertext may carry")
+    pairing_group_param = Field("the pairing group")
+    policy_compiler = Field("version marker, :data:`~pyfe4ai.policy.encoding.POLICY_COMPILER`")
+    attr_hash = Field("version marker, :data:`~pyfe4ai.policy.attributes.ATTR_HASH`")
+    tag_hash = Field("version marker, :data:`~pyfe4ai.schemes.common.kp_ab.TAG_HASH`")
+    g1 = Field("G1")
+    g2 = Field("G2")
+    pp_binding = Field(":func:`~pyfe4ai.schemes.common.ac_binding.pp_digest` of the other fields")
+
+
+class MCKPABClientKey(Record):
+    """Encryption key ``ek_i`` of a client of the multi-client key-policy attribute-based IPFE: secret, and nothing
+    of another client in it.
+
+    ``p_h1`` and ``p_h2`` are the first two rows of the basis ``H_i`` times the client's share ``p_i`` of 1: vectors
+    of ``Z_q``, not of group elements.
+    """
+
+    nid = Field("the client")
+    s = Field("decimal string, ``s_i``")
+    u = Field("decimal string, ``u_i``")
+    p_h1 = Field("four decimal strings, ``p_i H_i^(1)``")
+    p_h2 = Field("four decimal strings, ``p_i H_i^(2)``")
+    h3 = Field("four G1 elements, ``h_i,3``")
+    f = Field("three vectors of eight G1 elements, ``f1, f2, f3``")
+    pp_binding = Field("``pp_binding`` of the public parameters")
+
+
+class MCKPABFunctionalKey(Record):
+    """Functional key of the multi-client key-policy attribute-based IPFE: for a policy and a weight vector.
+
+    The dicts are keyed by the client ids as they are (a ``str`` or an ``int``), like the key of the function-hiding
+    MCFE: JSON turns an integer key into a string, so an application that moves a key through JSON uses string ids.
+    """
+
+    policy = Field("the policy, :func:`~pyfe4ai.policy.encoding.canonical_encoding`")
+    policy_digest = Field(":func:`~pyfe4ai.policy.encoding.policy_digest` of the policy")
+    policy_compiler = Field("version marker, :data:`~pyfe4ai.policy.encoding.POLICY_COMPILER`")
+    y = Field("``{client: decimal string}``, the weight of each client")
+    k_rows = Field("``{client: one vector of eight G2 elements per row of the policy's span program}``")
+    k_ipfe = Field("``{client: four G2 elements}``")
+    pp_binding = Field("``pp_binding`` of the public parameters")
+
+
+class MCKPABCiphertext(Record):
+    """Ciphertext of a client of the multi-client key-policy attribute-based IPFE: for a tag and a set of
+    attributes."""
+
+    nid = Field("the client")
+    label = Field("the tag, :func:`~pyfe4ai.schemes.mcfe.labels.encode_label` of the label")
+    attributes = Field("the attribute labels, sorted, each once")
+    attributes_digest = Field(":func:`~pyfe4ai.policy.attributes.attribute_set_digest` of ``attributes``")
+    policy_compiler = Field("version marker, :data:`~pyfe4ai.policy.encoding.POLICY_COMPILER`")
+    attr_hash = Field("version marker, :data:`~pyfe4ai.policy.attributes.ATTR_HASH`")
+    tag_hash = Field("version marker, :data:`~pyfe4ai.schemes.common.kp_ab.TAG_HASH`")
+    c_attr = Field("one vector of eight G1 elements per attribute")
+    t = Field("G1")
+    c_ipfe = Field("four G1 elements")
+    pp_binding = Field("``pp_binding`` of the public parameters")
+
+
+# ---------------------------------------------------------------------------
+# MCFE key-policy attribute-based IPFE with an attribute set for each client (NPP22 Sec. 5.4)
+#
+# The configuration record (MCKPABRecord) and the public parameters (MCKPABParameters) are those of the scheme of Sec.
+# 5.2, with another ``pp_binding`` domain. The bases H_i have a fifth dimension, which the three records below show.
+
+
+class PCKPABClientKey(MCKPABClientKey):
+    """Encryption key ``ek_i`` of a client of the multi-client key-policy attribute-based IPFE with an attribute set
+    for each client: secret, and nothing of another client in it.
+
+    As :class:`MCKPABClientKey`, with the bases ``H_i`` of dimension five, and ``theta_h5``, the fifth basis vector
+    ``h_i,5`` times the client's secret ``theta_i`` (the paper's ``theta_i h_i,5``). ``theta_i`` itself is in the
+    master key only.
+    """
+
+    ORDER = ("nid", "s", "u", "p_h1", "p_h2", "h3", "theta_h5", "f", "pp_binding")
+
+    p_h1 = Field("five decimal strings, ``p_i H_i^(1)``")
+    p_h2 = Field("five decimal strings, ``p_i H_i^(2)``")
+    h3 = Field("five G1 elements, ``h_i,3``")
+    theta_h5 = Field("five G1 elements, ``theta_i h_i,5``")
+
+
+class PCKPABFunctionalKey(MCKPABFunctionalKey):
+    """Functional key of the multi-client key-policy attribute-based IPFE with an attribute set for each client.
+
+    As :class:`MCKPABFunctionalKey`, with five elements in ``k_ipfe``: the fifth coordinate holds a ``d_i`` of its
+    own, and the ``d_i`` of a key satisfy ``sum_i theta_i d_i = 0``. The rows of a client are all of the policy; the
+    ones a decryption reads are those of the attributes of that client.
+    """
+
+    k_ipfe = Field("``{client: five G2 elements}``")
+
+
+class PCKPABCiphertext(Record):
+    """Ciphertext of a client of the multi-client key-policy attribute-based IPFE with an attribute set for each
+    client: for a tag and the client's own set of attributes.
+
+    As :class:`MCKPABCiphertext` without ``attributes_digest``: the set of a client is not hashed with the tag and
+    the other clients do not check it against theirs. ``c_ipfe`` has five elements.
+    """
+
+    nid = Field("the client")
+    label = Field("the tag, :func:`~pyfe4ai.schemes.mcfe.labels.encode_label` of the label")
+    attributes = Field("the attribute labels of this client, sorted, each once")
+    policy_compiler = Field("version marker, :data:`~pyfe4ai.policy.encoding.POLICY_COMPILER`")
+    attr_hash = Field("version marker, :data:`~pyfe4ai.policy.attributes.ATTR_HASH`")
+    tag_hash = Field("version marker, :data:`~pyfe4ai.schemes.common.kp_ab.TAG_HASH`")
+    c_attr = Field("one vector of eight G1 elements per attribute")
+    t = Field("G1")
+    c_ipfe = Field("five G1 elements")
+    pp_binding = Field("``pp_binding`` of the public parameters")
 
 
 # ---------------------------------------------------------------------------

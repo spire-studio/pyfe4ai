@@ -85,13 +85,20 @@ class SchemeStatus:
         checked against its paper; no defect is known, but none was looked for
         systematically either. ``"known-insecure"``: a concrete privacy defect is
         known (see ``issue``); the scheme computes correct results but must only
-        be used for functionality or performance experiments.
+        be used for functionality or performance experiments: its key
+        generators and crypto objects emit a
+        :class:`~pyfe4ai.core.exceptions.FESecurityWarning`, and the
+        ``standard`` security profile refuses it (its ``refused`` is derived
+        from the issue, and the refusal is that of the other refused schemes,
+        ``FEValidationError``).
 
     ``fidelity``
         ``"faithful"``: the published construction as written.
         ``"adapted"``: the published construction with documented deviations or
         extensions (see ``note``). ``"ad-hoc"``: a composition with no published
-        construction behind it. ``"unknown"``: not assessed (unreviewed schemes).
+        construction behind it. ``"unknown"``: not assessed (the three
+        ``ddh_ristretto255`` schemes); a scheme that is unreviewed can have any
+        other fidelity.
 
     ``module`` is the scheme's module, ``reference`` the construction it
     implements. All schemes additionally share the caveats of the README
@@ -137,11 +144,12 @@ PAIRING_GROUP = "pairing"
 ML_SERVERS = "ml_servers"
 BINARY_CT = "binary_ct"
 RNS = "rns"
+ACCESS_CONTROL = "access_control"
 #: The capabilities a scheme may have, with what they mean. ``labels``,
 #: ``threshold``, ``decentralized`` and ``pairing`` follow from the id and the
 #: kind; the others are declared per scheme.
 CAPABILITIES = {
-    LABELS: "ciphertexts and functional keys are bound to a label (the MCFE family)",
+    LABELS: "ciphertexts are bound to a label (the MCFE family); the scheme states whether its functional keys are too",
     THRESHOLD: "functional keys are shared among s servers; t partial decryptions decrypt "
     "(share_decrypt, combine_decrypt)",
     DECENTRALIZED: "the clients derive shares of each functional key, which the decryptor combines "
@@ -151,6 +159,9 @@ CAPABILITIES = {
     "prepare_aggregation)",
     BINARY_CT: "binary ciphertexts (crypto option ct_format='binary', or the public parameters' format)",
     RNS: "an RNS modulus, a product of NTT primes (key generator option ring_modulus='rns')",
+    ACCESS_CONTROL: "the ciphertext or the key carries an access policy or an attribute set (from "
+    "pyfe4ai.policy); decryption succeeds only if the attributes satisfy the policy, within the security "
+    "proof of the scheme (see its note)",
 }
 
 _REFUSED_TMIFE_LWE = (
@@ -182,6 +193,7 @@ _WORDS = {
     "ddh": "DDH", "lwe": "LWE", "ring": "Ring", "fullysec": "FullySec", "ristretto255": "Ristretto255",
     "dynamic": "Dynamic", "fh": "FH", "ipe": "IPE", "multi": "Multi", "part": "Part", "pairing": "Pairing",
     "paillier": "Paillier", "damgard": "Damgard", "quad": "Quad", "sgp": "SGP", "miqfe": "MIQFE",
+    "cp": "CP", "kp": "KP", "ab": "AB", "per": "Per", "client": "Client",
 }
 _MODIFIERS = ("threshold", "decentralized")
 
@@ -221,7 +233,8 @@ class Scheme:
     status: SchemeStatus
     #: See :data:`CAPABILITIES`.
     capabilities: frozenset
-    #: Why the ``standard`` profile refuses the scheme; empty if it does not.
+    #: Why the ``standard`` profile refuses the scheme; empty if it does not. A known-insecure scheme is refused, and
+    #: its reason is derived from its issue (``_scheme``).
     refused: str = ""
     #: The group of a scheme that instantiates another variant of its family
     #: in a group of its own (the ML adapter's ``group`` option), such as
@@ -286,6 +299,14 @@ def _scheme(scheme_id: str, kind: str, status: str, fidelity: str, reference: st
             issue: str = "", module: str | None = None, capabilities: Iterable[str] = (), refused: str = "",
             group: str | None = None, instance_of: str | None = None) -> Scheme:
     family, variant = scheme_id.split("/")
+    if status == KNOWN_INSECURE:
+        # the standard profile is for security: it refuses a scheme that is known to be insecure, for the reason that
+        # makes it so, which is derived here (one mechanism: the refusal, and the tables that read ``refused``)
+        if not issue:
+            raise ValueError("{}: a known-insecure scheme needs its issue".format(scheme_id))
+        if refused:
+            raise ValueError("{}: the refusal of a known-insecure scheme is derived from its issue".format(scheme_id))
+        refused = "known to be insecure: " + issue
     module = _S + (module or "{}.{}".format(family, variant))
     caps = set(capabilities)
     if family == "mcfe":
@@ -392,6 +413,20 @@ SCHEMES: tuple[Scheme, ...] = (
         "published with V^T M in the clear; keys leak M^T y, which for small "
         "eta - subspace_dim often determines a bounded y; public Enc needs bounded "
         "t; Enc' is run by the key generator; no QANIZK",
+    ),
+    _scheme(
+        "sife/cp_ab_pairing", PAIRING, REVIEWED, ADAPTED, "ACGU20 Sec. 3.1 Fig. 1 + App. B.2 (read-once MSP)",
+        note="selective (SEL-SIM, one challenge ciphertext); ciphertexts malleable, not authenticated; "
+        "a = (1, a2) for the paper's (a, 1); rows of attributes outside the policy are omitted; a repeated "
+        "attribute takes copies (max_copies); the Decode of App. B.2 with its sign corrected",
+        capabilities=(ACCESS_CONTROL,),
+    ),
+    _scheme(
+        "sife/kp_ab_pairing", PAIRING, REVIEWED, FAITHFUL, "NPP22 Sec. 4 Fig. 1 (selective version)",
+        note="selective version (the paper proves the adaptive one, Thm. 7, and gives no proof of this one); "
+        "ciphertexts malleable, not authenticated; attributes hashed to Z_q; "
+        "[y]_2 is computed by the decryptor, not sent in the key",
+        capabilities=(ACCESS_CONTROL,),
     ),
     # --- multi-input --------------------------------------------------------
     _scheme(
@@ -565,6 +600,32 @@ SCHEMES: tuple[Scheme, ...] = (
         note=_FIG14_NOTE,
         refused=_REFUSED_DMCFE_PAILLIER,
     ),
+    _scheme(
+        "mcfe/kp_ab_pairing", PAIRING, KNOWN_INSECURE, FAITHFUL, "NPP22 Sec. 5.2 Fig. 3",
+        note="random oracle (tags hash to G1); one attribute set per tag, shared by all clients; one ciphertext "
+        "per client and tag; every client must encrypt, no all-or-nothing layer (Remark 10); ciphertexts not "
+        "authenticated; a key covers every tag; the proof of Thm. 14 misses the attack of the issue (App. B.4, "
+        "G4 to G5); kept for functionality and performance experiments and as the record of the attack",
+        issue="one corrupted client opens the k*_i,ipfe of every functional key with the rows p_i H_i^(1), "
+        "p_i H_i^(2) of its encryption key, which are vectors of Z_q (a multi-exponentiation in G2: no pairing and no "
+        "policy), so two keys whose policy the attributes do not satisfy, one of them with weight on that client "
+        "only, give the inner product of the other, an honest client's input for a weight on that client alone, and "
+        "the policy no longer controls what a decryptor colluding with one client reads",
+        capabilities=(ACCESS_CONTROL,),
+    ),
+    _scheme(
+        "mcfe/kp_ab_pairing_per_client", PAIRING, KNOWN_INSECURE, ADAPTED, "NPP22 Sec. 5.4",
+        note="each client has its own attribute set and the tag alone is hashed; a fifth dimension of H_i; the msk "
+        "also holds h*_{i,5}, which the paper's list omits; App. B.5 states Thm. 25 and only sketches its proof, and "
+        "the theorem fails (see the issue); kept for functionality and performance experiments and as the record "
+        "of the attack",
+        issue="the fifth coordinate of NPP22 Sec. 5.4 does not depend on the tag, so two keys of one y that open "
+        "neither of two tags (two rounds, or two elements of one array), where the set of each client satisfies one "
+        "of the keys under both tags, give the difference of the two inner products, and Thm. 25 as stated fails; "
+        "and, as in mcfe/kp_ab_pairing, one corrupted client opens the k*_i,ipfe of every key with the rows of Z_q "
+        "of its encryption key, without the policy",
+        capabilities=(ACCESS_CONTROL,),
+    ),
     # --- quadratic ----------------------------------------------------------
     _scheme(
         "quadratic/quad", PAIRING, REVIEWED, ADAPTED, "Gay20 Fig. 4 over Fig. 8 (CPA)",
@@ -688,6 +749,8 @@ def create(scheme: str | tuple[str, str], config: Mapping | None = None, **optio
     Raises:
         FEValidationError: For an unknown scheme, a config that is not a
             mapping, or a config the key generator refuses.
+        FEConfigError: For an option that no scheme has, or an option of
+            another scheme under the ``standard`` profile.
     """
     entry = get_scheme(scheme)
     if options:

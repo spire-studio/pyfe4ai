@@ -11,9 +11,11 @@ from pathlib import Path
 import gmpy2 as gp
 import pytest
 
+import pyfe4ai
 from pyfe4ai.core import config as configs
 from pyfe4ai.core import profiles
-from pyfe4ai.core.exceptions import FEValidationError
+from pyfe4ai.core.exceptions import FEConfigError, FEValidationError, FEWarning
+from pyfe4ai.core.registry import get_scheme
 from pyfe4ai.core.status import SCHEME_STATUS
 from pyfe4ai.primitives.pairing.pairing_backend import pairing_available
 from tests.pairing_group import GROUP, GROUP_MARKS
@@ -27,7 +29,8 @@ MINIMAL = {
     ("sife", "ddh"): {}, ("sife", "ddh_ristretto255"): {}, ("sife", "lwe"): {}, ("sife", "paillier"): {},
     ("sife", "damgard"): {}, ("sife", "ring_lwe"): {}, ("sife", "fullysec_ring_lwe"): {},
     ("sife", "fullysec_lwe"): {}, ("sife", "ddh_dynamic"): {}, ("sife", "fh_ipe_pairing"): {},
-    ("sife", "part_fh_ipe_pairing"): {},
+    ("sife", "part_fh_ipe_pairing"): {}, ("sife", "cp_ab_pairing"): {"universe": ["org:A", "role:auditor"]},
+    ("sife", "kp_ab_pairing"): {},
     ("mife", "ddh"): {"n": 2}, ("mife", "ddh_ristretto255"): {"n": 2}, ("mife", "lwe"): {"n": 2},
     ("mife", "paillier"): {"n": 2}, ("mife", "damgard"): {"n": 2}, ("mife", "ring_lwe"): {"n": 2},
     ("mife", "fullysec_lwe"): {"n": 2}, ("mife", "fh_ipe_pairing"): {"n": 2},
@@ -36,6 +39,7 @@ MINIMAL = {
     ("mcfe", "ddh"): {"n": 2}, ("mcfe", "ddh_ristretto255"): {"n": 2}, ("mcfe", "lwe"): {"n": 2},
     ("mcfe", "paillier"): {"n": 2}, ("mcfe", "damgard"): {"n": 2}, ("mcfe", "ring_lwe"): {"n": 2},
     ("mcfe", "fullysec_lwe"): {"n": 2}, ("mcfe", "fh_multi_ipe_pairing"): {"n": 2},
+    ("mcfe", "kp_ab_pairing"): {"n": 2}, ("mcfe", "kp_ab_pairing_per_client"): {"n": 2},
     ("mcfe", "fh_multi_ipe_pairing_threshold"): {"n": 2, "lst_sid": _SIDS2},
     ("mcfe", "fh_multi_ipe_pairing_decentralized"): {"n": 2}, ("mcfe", "ddh_threshold"): {"n": 2},
     ("mcfe", "ddh_decentralized"): {"n": 2}, ("mcfe", "lwe_threshold"): {"n": 2},
@@ -187,7 +191,8 @@ def test_key_generators_read_declared_options_only(scheme, monkeypatch):
 
 _ATTRIBUTE_DEFAULTS = {"eta", "bound_x", "bound_y", "bound", "bit_length", "ring_modulus", "label_hash", "t",
                        "flooding_accounting", "ct_format", "matrix_mode", "mddh_k", "m", "sec_level",
-                       "subspace_dim", "coeff_bound", "bound_c", "sec_param", "group", "stat_param"}
+                       "subspace_dim", "coeff_bound", "bound_c", "sec_param", "group", "stat_param", "max_copies",
+                       "max_columns", "max_rows"}
 
 
 @pytest.mark.parametrize("scheme", SCHEMES, ids="/".join)
@@ -295,3 +300,74 @@ def test_key_generators_read_no_option_as_an_attribute(scheme, monkeypatch):
     kg = generator(scheme)(dict(MINIMAL[scheme]))
     kg.setup()
     assert not reads, reads
+
+
+# ---------------------------------------------------------------------------
+# option names
+
+
+@pytest.mark.parametrize("scheme", sorted(configs.config_classes()), ids="/".join)
+def test_a_name_no_scheme_has_is_refused(scheme):
+    with pytest.raises(FEConfigError, match="security_prfile"):
+        get_scheme(scheme).key_generator({"security_prfile": "standard"})
+
+
+def test_the_refusal_lists_the_options_of_the_scheme():
+    with pytest.raises(FEConfigError) as caught:
+        pyfe4ai.create("sife/ddh_ristretto255", eta=2, etaa=3)
+    assert "'etaa'" in str(caught.value) and "security_profile" in str(caught.value)
+
+
+def test_an_option_of_another_scheme_is_ignored_with_a_warning():
+    with pytest.warns(FEWarning, match="ring_n"):
+        kg, _ = pyfe4ai.create("sife/ddh_ristretto255", eta=2, ring_n=1024)
+    assert kg.eta == 2 and not hasattr(kg, "ring_n")
+
+
+@pytest.mark.parametrize("key", sorted(configs.LEGACY_OPTIONS))
+def test_a_key_of_an_old_version_is_ignored_with_a_warning(key):
+    with pytest.warns(FEWarning, match=key):
+        pyfe4ai.create("mcfe/lwe", {"n": 2, key: 3})
+
+
+def test_the_options_of_the_scheme_and_of_its_crypto_objects_draw_no_warning(recwarn):
+    pyfe4ai.create("sife/ddh_ristretto255", eta=2, sec_param=128, group="ristretto255", dlog_bound=100)
+    assert not [w for w in recwarn if issubclass(w.category, FEWarning)]
+
+
+def test_the_standard_profile_refuses_an_option_of_another_scheme():
+    with pytest.raises(FEConfigError, match="ring_n"):
+        pyfe4ai.create("sife/ddh_ristretto255", eta=2, ring_n=1024, security_profile="standard")
+
+
+def test_the_standard_profile_ignores_a_key_of_an_old_version_with_a_warning():
+    with pytest.warns(FEWarning, match="label_modulus"):
+        pyfe4ai.create("sife/ddh_ristretto255", eta=2, label_modulus=8, security_profile="standard")
+
+
+class _Audited(get_scheme(("sife", "ddh_ristretto255")).key_generator):
+    """A key generator that extends a scheme, with an option of its own."""
+
+    def __init__(self, config, **kwargs):
+        self.audit_log = config.get("audit_log")
+        super().__init__(config, **kwargs)
+
+
+def test_a_subclass_reads_its_own_option_with_a_warning():
+    with pytest.warns(FEWarning, match="audit_log"):
+        assert _Audited({"eta": 2, "audit_log": "yes"}).audit_log == "yes"
+
+
+def test_a_subclass_is_warned_of_a_misspelt_option():
+    with pytest.warns(FEWarning, match="security_prfile"):
+        _Audited({"eta": 2, "security_prfile": "standard"})
+
+
+def test_a_subclass_keeps_the_rules_of_the_profile():
+    with pytest.warns(FEWarning, match="audit_log"):
+        assert _Audited({"eta": 2, "audit_log": "yes", "security_profile": "standard"}).security_profile == "standard"
+
+
+def test_a_key_generator_outside_the_registry_keeps_its_own_options(recwarn):
+    configs.check_options({"an_option_of_its_own": 1}, None)
+    assert not [w for w in recwarn if issubclass(w.category, FEWarning)]

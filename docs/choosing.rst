@@ -111,7 +111,9 @@ the schemes by how the security profiles size them
        extension makes it the fastest choice for large vectors and
        gradients; post-quantum assumption
    * - ``pairing``
-     - the function-hiding and quadratic schemes
+     - the function-hiding and quadratic schemes and the attribute-based
+       ones (``sife/cp_ab_pairing``, ``sife/kp_ab_pairing``,
+       ``mcfe/kp_ab_pairing``, ``mcfe/kp_ab_pairing_per_client``)
      - BLS12-381, about 120 to 126-bit security (below the 128-bit target);
        needs the Rust extension (or charm-crypto for other curves)
 
@@ -121,8 +123,8 @@ Capabilities
 Each scheme lists its capabilities
 (:data:`~pyfe4ai.core.registry.CAPABILITIES`):
 
-* ``labels`` -- ciphertexts and functional keys are bound to a label (the
-  MCFE family);
+* ``labels`` -- ciphertexts are bound to a label (the MCFE family); the
+  scheme states whether its functional keys are too;
 * ``threshold`` -- the functional key is shared among ``s`` servers, and
   ``t`` partial decryptions decrypt (``share_decrypt``,
   ``combine_decrypt``);
@@ -135,7 +137,16 @@ Each scheme lists its capabilities
 * ``binary_ct`` -- binary ciphertexts (``ct_format="binary"``, about a third
   of the JSON size);
 * ``rns`` -- an RNS modulus, a product of NTT primes
-  (``ring_modulus="rns"``).
+  (``ring_modulus="rns"``);
+* ``access_control`` -- the ciphertext or the key carries an access policy
+  or an attribute set (:mod:`pyfe4ai.policy`), and decryption succeeds only
+  if the attributes satisfy the policy, within the security proof of the
+  scheme. In ``sife/cp_ab_pairing`` the ciphertext carries the policy
+  (``encrypt(..., policy=...)``) and the key the attributes; in the
+  key-policy schemes (``sife/kp_ab_pairing``, ``mcfe/kp_ab_pairing``,
+  ``mcfe/kp_ab_pairing_per_client``) the key carries the policy
+  (``credentials={"fusion_weight": y, "policy": ...}``) and the ciphertext the
+  attributes (``encrypt(..., attributes=...)``).
 
 Review status
 -------------
@@ -146,7 +157,20 @@ Every scheme carries a review status (the full table is on
 its security argument is the project's own (the threshold layers of
 tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE and tMCFE-FH-Multi-IPE, and the carry
 mask of dMCFE-DDH); *unreviewed* -- not yet checked (the three
-``ddh_ristretto255`` schemes). No scheme is currently *known-insecure*.
+``ddh_ristretto255`` schemes); *known-insecure* -- a
+concrete privacy defect is known. Two schemes are: ``mcfe/kp_ab_pairing``
+(NPP22 Sec. 5.2), where one corrupted client opens every functional key with
+the rows of ``Z_q`` of its encryption key, so two keys whose policy the
+attributes do not satisfy give an inner product, an honest client's input
+among them; and ``mcfe/kp_ab_pairing_per_client``, the version in which each
+client has an attribute set of its own (Sec. 5.4), which has that defect and
+another: its fifth coordinate does not depend on the tag, so two keys of one
+``y`` that open neither of two rounds, where the set of each client satisfies
+one of the keys in both rounds, give the difference of the two rounds' inner
+products. Both warn when built and the ``standard`` profile refuses them; the
+ML adapter takes ``mcfe/kp_ab_pairing`` (for experiments) and not the
+per-client variant. They are for functionality and performance experiments
+and as the record of the attacks.
 
 Which scheme for which task
 ---------------------------
@@ -188,6 +212,132 @@ Which scheme for which task
      - the ``lwe`` and ``ring_lwe`` variants (the decentralized
        ``lwe_decentralized`` derives its keys under a DCR modulus, which is
        not post-quantum)
+   * - Decrypt only for keys whose attributes satisfy an access policy
+       chosen at encryption
+     - ``sife/cp_ab_pairing`` (selective security for one
+       challenge ciphertext, and ciphertexts are malleable, so authenticate
+       them where tampering matters; policies of ``and``, ``or`` and
+       threshold gates over attribute labels, see :doc:`api/policy`)
+   * - Give a key a policy that decides which ciphertexts it opens, for one
+       encryptor and without a secret encryption key
+     - ``sife/kp_ab_pairing`` (selective version; any label,
+       no universe)
+   * - Release the sum of small vectors or statistics only for a key whose
+       policy the clients' attributes satisfy
+     - no secure choice: ``mcfe/kp_ab_pairing`` (one set of attributes for all
+       clients of a label; through :mod:`pyfe4ai.ml` with ``attributes=`` and
+       ``policy=``, see :doc:`api/ml`) does this, but it is *known-insecure*:
+       a decryptor that colludes with one client reads what the policy
+       withholds (:doc:`security`). For experiments only.
+
+``mcfe/kp_ab_pairing`` is known-insecure (above), and is for aggregates of up
+to about 10^3 elements, not for the gradients of a large model. Every element is a ciphertext of its
+own, and the aggregator pairs several group elements per client and element.
+With 10 clients, 10^3 elements and ciphertexts for three attributes the
+aggregation takes about 50 s on one thread and about 8 s on eight, and a
+client uploads about 2.4 KB per element as JSON. The Ring-LWE MCFE
+(``mcfe/ring_lwe``, 10^4 elements, three clients, ``standard`` profile, native
+backend, one thread, binary ciphertexts) takes the client 17.95 ms and the
+aggregator 6.24 ms, at 24.6 B per element (``benchmarks/PERFORMANCE.md``):
+use ``mcfe/ring_lwe`` when there is no policy to enforce.
+
+Attribute-based schemes
+-----------------------
+
+Four schemes tie a decryption to an access policy: ``sife/cp_ab_pairing``
+(Abdalla, Catalano, Gay and Ursu, ACGU20) and the three of Nguyen, Phan and
+Pointcheval (NPP22). They differ in three things, and in how far their papers'
+proofs go (:doc:`security`).
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 20 20 20 20
+
+   * -
+     - ``sife/cp_ab_pairing``
+     - ``sife/kp_ab_pairing``
+     - ``mcfe/kp_ab_pairing``
+     - ``mcfe/kp_ab_pairing_per_client``
+   * - Where the policy sits
+     - the ciphertext (CP); the key holds the attributes
+     - the key (KP); the ciphertext holds the attributes
+     - the key (KP)
+     - the key (KP)
+   * - Attribute labels
+     - a *small universe*: the labels, and the copies of each, are fixed at
+       setup (``universe``, ``max_copies``) and the public parameters grow
+       with them; a label outside it is refused
+     - a *large universe*: any label of up to 1024 characters, hashed to
+       ``Z_q``; no universe, only ``max_attributes`` per ciphertext and
+       ``max_rows`` per policy
+     - as ``sife/kp_ab_pairing``
+     - as ``sife/kp_ab_pairing``
+   * - Who encrypts, with what key
+     - one party, *public-key*: the public parameters are enough
+     - one party, *public-key*: the public parameters are enough
+     - ``n`` clients, *private-key*: each holds a secret encryption key and
+       encrypts one scalar per tag, and a decryption needs all ``n``
+     - as ``mcfe/kp_ab_pairing``, each client for a set of attributes of its own
+   * - Proof in the paper
+     - selective (ACGU20 Thm. 3.2)
+     - adaptive for the version with the boxed components (NPP22 Thm. 7);
+       this is the selective one, without a proof of its own
+     - adaptive, random-oracle model (NPP22 Thm. 14, Cor. 15); fails with one
+       corrupted client, which the proof misses
+     - Thm. 25 fails as stated, and the attack of Sec. 5.2 applies
+   * - Status
+     - reviewed
+     - reviewed
+     - known-insecure
+     - known-insecure
+
+*Ciphertext-policy or key-policy.* Take ``sife/cp_ab_pairing`` when the party
+that encrypts decides who may read, and each reader's key states what it holds
+(a role, an organisation). Take a key-policy scheme when the party that issues
+keys decides what each key may open, and the data is described by the
+attributes of its ciphertext (a purpose, a region): a key for
+``and(purpose:research, region:EU)`` opens only ciphertexts made for both
+labels.
+
+*Identity equality.* A policy of one leaf, such as ``id:alice``, gives the
+functionality of identity-based IPFE: ``<x, y>`` when the identities match and
+nothing otherwise. With ``sife/cp_ab_pairing`` the ciphertext is under the
+policy ``id:alice`` and the key for the attributes ``["id:alice"]`` opens it;
+with ``sife/kp_ab_pairing`` the ciphertext is for the attributes
+``["id:alice"]`` and the key for the policy ``id:alice`` opens it. A key for
+another identity (in the ciphertext-policy scheme also one for no attribute)
+is refused with :class:`~pyfe4ai.core.exceptions.FEKeyError`. This is the
+general scheme with a policy of one leaf, and the identity is a label like any
+other (one of the ``universe`` in ``sife/cp_ab_pairing``). It is *not* the
+encoding that ACGU20 gives in its App. C.1 (Identity-Based Inner-Product
+Functional Encryption), which the library does not implement: that is a
+function encoding of its own (``EncCt(x, id)``, ``EncKey(y, id')``), not a
+monotone span program.
+
+*Small or large universe.* ``sife/cp_ab_pairing`` suits a vocabulary of labels
+that is fixed and small: every label and copy adds a pair of G1 and a pair of
+G2 elements to the public parameters, and a pair of G2 elements to each key
+that holds the label. The key-policy schemes take any label, with no
+registration: a ciphertext holds eight G1 elements per attribute and a key
+eight G2 elements per row of its policy (in the MCFE schemes a key holds them
+for every client, and a ciphertext is that of one client).
+
+*Public or private key.* With ``sife/cp_ab_pairing`` and ``sife/kp_ab_pairing``
+anyone who holds the public parameters encrypts, so a data owner needs no
+secret. ``mcfe/kp_ab_pairing`` is the multi-client scheme: every client holds a
+secret key, the sum over the clients is released by a key whose policy the
+clients' attributes satisfy, and one client missing, also one of weight 0,
+means no result. It is *known-insecure*: one corrupted client opens every key,
+so the policy does not hold against a decryptor that colludes with a client.
+The ML adapter aggregates through it with a policy (:doc:`api/ml`), for
+experiments. ``mcfe/kp_ab_pairing_per_client`` lets the clients hold
+different sets, and is *known-insecure* too. Neither is a choice for
+protecting data.
+
+The two single-input schemes are *reviewed* (checked against their papers) and
+the two multi-client ones are *known-insecure*. Ciphertexts are malleable and carry their policy or
+attributes in the clear, and none is constant-time: :doc:`security` lists what
+each paper proves and what it does not.
 
 The registered schemes
 ----------------------

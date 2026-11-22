@@ -6,10 +6,15 @@
 //! k = k1 + lambda k2 (|k1|, |k2| ~ 2^128; arkworks' `GLVConfig`), whose 128
 //! doublings are shared by all terms; arkworks' Pippenger (`VariableBaseMSM`,
 //! which does not use the endomorphism) from `PIPPENGER_MIN` terms on. One
-//! exponentiation is the one-term case (arkworks multiplies in G2 by plain
-//! double-and-add over 255 bits). One base to many exponents: a table of the
-//! multiples d 2^(w j) P of the base, so that each power is ~2 * 129 / w
-//! additions without doublings (w by the number of exponents).
+//! exponentiation in G1 is the one-term case; in G2 it is `g2_pow` below
+//! (arkworks multiplies there by plain double-and-add over 255 bits). One
+//! base to many exponents: a table of the multiples d 2^(w j) P of the base,
+//! so that each power is ~2 * 129 / w additions without doublings (w by the
+//! number of exponents).
+//!
+//! One power in G2: since [U] P = -psi(P) on the subgroup, for the untwisted
+//! Frobenius map psi and U as below, with k = k0 + k1 U + k2 U^2 + k3 U^3 the
+//! power is a four-term Straus product over 64-bit digits (`g2_pow`).
 //!
 //! GT: since p = u (mod r) for the curve parameter u, the Frobenius map is
 //! f -> f^u on GT; with U = |u| = -u and k = k0 + k1 U + k2 U^2 + k3 U^3
@@ -22,11 +27,11 @@
 //! identities hold there only); the elements of `pairing.rs` are, by
 //! construction and by the checks on deserialisation. Not constant-time.
 
-use ark_bls12_381::{Fq12, Fr};
+use ark_bls12_381::{Fq, Fq12, Fq2, Fr, G2Affine, G2Projective};
 use ark_ec::scalar_mul::glv::GLVConfig;
 use ark_ec::short_weierstrass::{Affine, Projective};
 use ark_ec::{AdditiveGroup, CurveGroup, VariableBaseMSM};
-use ark_ff::{BigInteger, CyclotomicMultSubgroup, Field, One, PrimeField, Zero};
+use ark_ff::{BigInt, BigInteger, CyclotomicMultSubgroup, Field, MontFp, One, PrimeField, Zero};
 
 /// |u|, u = -0xd201000000010000 the BLS12-381 parameter.
 const U: u64 = 0xd201000000010000;
@@ -134,6 +139,54 @@ pub fn curve_msm<C: GLVConfig>(points: &[Projective<C>], scalars: &[C::ScalarFie
     let mut terms = Vec::with_capacity(2 * points.len());
     for (i, k) in scalars.iter().enumerate() {
         glv_terms(k, &tab[i * half..(i + 1) * half], &tab_endo[i * half..(i + 1) * half], &mut terms);
+    }
+    straus_curve(&terms)
+}
+
+/// The constants of psi on the twist: x -> c x^p with c = (0, C1), y -> Y y^p.
+const PSI_X_C1: Fq = MontFp!(
+    "4002409555221667392624310435006688643935503118305586438271171395842971157480381377015405980053539358417135540939437"
+);
+const PSI_Y: Fq2 = Fq2::new(
+    MontFp!("2973677408986561043442465346520108879172042883009249989176415018091420807192182638567116318576472649347015917690530"),
+    MontFp!("1028732146235106349975324479215795277384839936929757896155643118032610843298655225875571310552543014690878354869257"),
+);
+
+/// -psi(P): [U] P for P in the subgroup.
+fn times_u(p: &G2Affine) -> G2Affine {
+    let mut r = *p;
+    r.x.frobenius_map_in_place(1);
+    r.y.frobenius_map_in_place(1);
+    let x = r.x;
+    r.x.c0 = -PSI_X_C1 * x.c1;
+    r.x.c1 = PSI_X_C1 * x.c0;
+    r.y *= PSI_Y;
+    -r
+}
+
+/// [k] P for P in G2: odd multiples of P and of [U] P, [U^2] P, [U^3] P, and the digits of k in base U.
+pub fn g2_pow(p: &G2Projective, k: &Fr) -> G2Projective {
+    if p.is_zero() || k.is_zero() {
+        return G2Projective::zero();
+    }
+    let half = 1 << (CURVE_W - 2);
+    let (double, mut cur) = (p.double(), *p);
+    let mut odd = Vec::with_capacity(half);
+    for _ in 0..half {
+        odd.push(cur);
+        cur += double;
+    }
+    let t0 = G2Projective::normalize_batch(&odd);
+    let t1: Vec<G2Affine> = t0.iter().map(times_u).collect();
+    let t2: Vec<G2Affine> = t1.iter().map(times_u).collect();
+    let t3: Vec<G2Affine> = t2.iter().map(times_u).collect();
+    let mut terms = Vec::with_capacity(4);
+    for (digit, table) in base_u_digits(k).iter().zip([&t0, &t1, &t2, &t3]) {
+        // digit + 15 < 2^64 keeps the working value in one limb; the wNAF can end at bit 64
+        let digits = wnaf(&BigInt::<1>([*digit]), CURVE_W);
+        if !digits.is_empty() {
+            terms.push(CurveTerm { digits, table });
+        }
     }
     straus_curve(&terms)
 }

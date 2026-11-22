@@ -27,7 +27,15 @@ Responsible reporting of security issues is appreciated, especially for:
   (`pyfe4ai.get_scheme_status(family, variant)`, README *Scheme Status*):
   four threshold layers and the dMCFE-DDH carry mask are our own constructions
   (*experimental*, no published proof), and the DDH schemes over ristretto255
-  are not yet reviewed.
+  are not yet reviewed. The attribute-based `sife/cp_ab_pairing` and
+  `sife/kp_ab_pairing` were checked against their papers (*reviewed*, which is
+  not a security audit). Two schemes are *known-insecure*:
+  `mcfe/kp_ab_pairing` (NPP22 Sec. 5.2, checked against the paper; the
+  construction fails with one corrupted client) and
+  `mcfe/kp_ab_pairing_per_client` (the version in which each client has an
+  attribute set of its own, Sec. 5.4). Their key generators and crypto objects
+  emit a `FESecurityWarning`, and `security_profile="standard"` refuses them, as
+  it refuses every known-insecure scheme (see Known Issues).
 - **Network and parties.** The library adds no defence against active network
   attackers and assumes authenticated channels between parties.
 - **Threshold schemes.** Decryption servers are honest-but-curious: partial
@@ -47,10 +55,11 @@ Responsible reporting of security issues is appreciated, especially for:
   the pairing-based schemes (BLS12-381, see below) and refuses the ALS16
   schemes (`sife/fullysec_lwe`, `mife/fullysec_lwe`), `mife/lwe_threshold`
   and `mcfe/paillier_decentralized`, which have no parameter set that is both
-  secure and usable. Parameter records cached in the parameter cache
-  directory (the per-user cache directory, or `PYFE4AI_CACHE_DIR`) are
-  checked or re-derived on load, but a DCR modulus with known factors cannot
-  be detected under `toy`: use a cache directory nobody else can write to.
+  secure and usable, and every known-insecure scheme. Parameter records cached
+  in the parameter cache directory (the per-user cache directory, or
+  `PYFE4AI_CACHE_DIR`) are checked or re-derived on load, but a DCR modulus
+  with known factors cannot be detected under `toy`: use a cache directory
+  nobody else can write to.
 - **Sampling and randomness.** The lattice MIFE / MCFE schemes sample exact
   discrete Gaussians (FACCT) by default; ALS16, the DCR schemes and ABDP15
   under `toy` follow the library-wide sampler, which rounds a continuous
@@ -75,6 +84,49 @@ limitations.
   attacks on its 381-bit field (Barbulescu and Duquesne, J. Cryptol. 2019).
   Under `standard` their key generators emit a `FESecurityWarning` saying so.
   No strict 128-bit pairing curve is offered.
+- **`mcfe/kp_ab_pairing` is known-insecure: a corrupted client opens every
+  functional key.** In NPP22 Sec. 5.2 Fig. 3 the encryption key of client `i`
+  holds the first two rows of its basis `H_i` (times `p_i`) as vectors of
+  `Z_q`. Applied to the `G2` coordinates of `k_{i,ipfe}` of any functional key,
+  without a pairing and without the policy, they give `[p_i <S, y>]_2` and
+  `[p_i <U, y>]_2`. With a key of weight on that client only, which gives
+  `[p_i]_2`, the client then computes `<x, y>` of any other key from the
+  ciphertexts of a round, also when the round's attributes do not satisfy the
+  key's policy: an honest client's input for `y = e_h`. Both keys are
+  admissible under Def. 9, so the security notion of Def. 12 fails with one
+  corrupted client; the proof of Thm. 14 (App. B.4, step G4 to G5) misses this
+  opening. The policy therefore does not hold against a decryptor that
+  colludes with a client, and the ML adapter's policy-gated aggregation, which
+  runs on this scheme, is for experiments only. `mcfe/kp_ab_pairing_per_client`
+  has the same rows and is affected as well; `sife/kp_ab_pairing` (Sec. 4) is
+  not. The test `test_a_corrupted_client_opens_every_key_and_reads_an_honest_input`
+  reproduces it. A key-side mask of the first two coordinates stops this
+  computation, but no proof of a masked construction is known, and the library
+  does not implement one.
+- **`mcfe/kp_ab_pairing_per_client` is known-insecure.** In the construction of
+  NPP22 Sec. 5.4 (Nguyen, Phan and Pointcheval, ePrint 2022/215, revision of
+  2022-09-18) each client encrypts for an attribute set of its own, and the
+  paper adds a fifth coordinate to the vectors `c_{i,ipfe}` and `k_{i,ipfe}`
+  against a mix-and-match attack on keys of different policies. The product of
+  the two fifth coordinates, `theta_i d_{K,i}`, depends on the client and the
+  key but not on the tag. So two keys of one `y` that open neither of two rounds
+  (two tags: two labels, or two elements of one array), where the attribute set
+  of each client satisfies one of the keys in both rounds, give the difference
+  of the two rounds' inner products, `<x - x', y>`. The adversary encrypts
+  under the challenge tag and under a second tag, which the paper's game
+  allows, and is admissible under its Def. 9 since neither key opens either
+  round, so Thm. 25 (App. B.5) as stated fails. The attack reads the difference
+  of two inner products for each pair of keys of one `y`: with pairs for several
+  `y` (the unit vectors) it gives `x - x'` coordinate by coordinate, and the
+  `x_i` themselves when one round is known. `mcfe/kp_ab_pairing` (Sec. 5.2,
+  one attribute set per tag) is not affected by this attack (it has the one
+  above). The scheme is kept for
+  functionality and performance experiments and as the record of the attack;
+  the test `test_two_tags_and_two_keys_read_the_difference_of_two_rounds`
+  reproduces it, and the security page of the documentation states it in full.
+  The fixed-tag MIFE variant of NPP22 (Remark 16) is not provided: it has one
+  ciphertext per slot, so this attack does not reach it, but its proof rests on
+  the same Thm. 25.
 - **Experimental threshold layers** (tMIFE-LWE, tMCFE-LWE, tMCFE-Ring-LWE,
   tMCFE-FH-Multi-IPE) and the dMCFE-DDH carry mask have no published security
   proof; see their module docstrings.
@@ -120,10 +172,11 @@ limitations.
 ## Supported Versions
 
 Security fixes go into `main` and the next release; only the latest release
-(currently v0.4.1) is supported. v0.3.0 and earlier are affected by the
+(currently v0.5.0) is supported. v0.3.0 and earlier are affected by the
 Lagrange-multiplier leak of the threshold LWE layers described above, and
 v0.2.0 and earlier contain schemes that were found insecure; upgrade to
-v0.4.1 and re-key as the upgrade notes in `CHANGELOG.md` describe.
+v0.5.0 (the fixes are in v0.4.0 and later) and re-key as the upgrade notes in
+`CHANGELOG.md` describe.
 
 ## Reporting a Vulnerability
 

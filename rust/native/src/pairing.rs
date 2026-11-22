@@ -8,17 +8,23 @@
 //! serialization is the arkworks compressed form, deserialization checks
 //! the encoding and subgroup membership. Random elements are g^r for scalars
 //! from 64 OS-random bytes reduced mod r. Exponentiations and products of
-//! powers (`bls_msm`, `bls_pow_many`) use the methods of `msm.rs`. Not
+//! powers (`bls_msm`, `bls_pow_many`) use the methods of `msm.rs`. Batches
+//! (`bls_deserialize_many`, `bls_serialize_many`, `bls_msm_many`) and
+//! `bls_multi_pair` take a number of threads, and give the same result on any
+//! number of them. `bls_prepare_g2` stores the lines of fixed G2 points, and
+//! `bls_multi_pair_prepared` takes one product of pairings per row of G1 points
+//! over those lines, with the same results as `bls_multi_pair`. Not
 //! constant-time in general.
 
 use crate::dlog::{self, TableCache};
 use crate::msm;
-use ark_bls12_381::{Bls12_381, Fq12, Fr, G1Projective, G2Projective};
-use ark_ec::pairing::{Pairing, PairingOutput};
-use ark_ec::{CurveGroup, PrimeGroup};
-use ark_ff::{BigInteger, Field, One, PrimeField, Zero};
+use ark_bls12_381::{Bls12_381, Config, Fq12, Fq12Config, Fq2, Fr, G1Affine, G1Projective, G2Affine, G2Projective};
+use ark_ec::bls12::{Bls12Config, G2Prepared};
+use ark_ec::pairing::{MillerLoopOutput, Pairing, PairingOutput};
+use ark_ec::{AffineRepr, CurveGroup, PrimeGroup};
+use ark_ff::{BigInteger, BitIteratorBE, CyclotomicMultSubgroup, Field, Fp12Config, One, PrimeField, Zero};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
-use pyfe4ai_core::osrand;
+use pyfe4ai_core::{osrand, parallel_for};
 use pyo3::basic::CompareOp;
 use pyo3::exceptions::{PyOSError, PyTypeError, PyValueError, PyZeroDivisionError};
 use pyo3::prelude::*;
@@ -27,7 +33,7 @@ use pyo3::types::{PyBytes, PyInt};
 use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
 use std::hash::{BuildHasher, Hash, Hasher};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// charm's type codes.
 pub const ZR: u8 = 0;
@@ -36,6 +42,23 @@ pub const G2: u8 = 2;
 pub const GT: u8 = 3;
 
 type Gt = PairingOutput<Bls12_381>;
+
+/// From this many items on a batch uses threads: below, starting them costs about as much as the work.
+const PARALLEL_MIN: usize = 16;
+
+/// [f(i) for i in 0..count], on up to `threads` threads.
+fn map_threads<T: Send, F: Fn(usize) -> T + Sync>(count: usize, threads: usize, f: F) -> Vec<T> {
+    let outs: Vec<Mutex<Option<T>>> = (0..count).map(|_| Mutex::new(None)).collect();
+    parallel_for(count, threads, |i| {
+        *outs[i].lock().unwrap() = Some(f(i));
+    });
+    outs.into_iter().map(|out| out.into_inner().unwrap().expect("parallel_for visits every index")).collect()
+}
+
+/// [f(i) for i in 0..count], on up to `threads` threads for a batch of at least `PARALLEL_MIN` items.
+fn map_parallel<T: Send, F: Fn(usize) -> T + Sync>(count: usize, threads: usize, f: F) -> Vec<T> {
+    map_threads(count, if count < PARALLEL_MIN { 1 } else { threads }, f)
+}
 
 // GT (576 bytes) dominates; boxing it would cost an allocation per element
 #[allow(clippy::large_enum_variant)]
@@ -137,7 +160,7 @@ fn gt_generator() -> Gt {
 fn group_pow(v: &Val, e: &Fr) -> Val {
     match v {
         Val::G1(p) => Val::G1(msm::curve_msm(&[*p], &[*e])),
-        Val::G2(p) => Val::G2(msm::curve_msm(&[*p], &[*e])),
+        Val::G2(p) => Val::G2(msm::g2_pow(p, e)),
         Val::Gt(t) => Val::Gt(PairingOutput(msm::gt_msm(&[t.0], &[*e]))),
         Val::Zr(_) => unreachable!("ZR is not a group here"),
     }
@@ -441,22 +464,66 @@ fn bls_deserialize(t: u8, data: &[u8]) -> PyResult<Elem> {
 /// Elements from (type, encoding) pairs, each checked as by bls_deserialize;
 /// equal pairs are decoded once. Raises ValueError at the first invalid one.
 #[pyfunction]
-fn bls_deserialize_many(py: Python<'_>, items: Vec<(u8, Vec<u8>)>) -> PyResult<Vec<Elem>> {
-    let vals: Vec<PyResult<Val>> = py.detach(|| {
-        let mut seen: HashMap<(u8, &[u8]), Val> = HashMap::new();
-        items
+#[pyo3(signature = (items, threads=1))]
+fn bls_deserialize_many(py: Python<'_>, items: Vec<(u8, Vec<u8>)>, threads: usize) -> PyResult<Vec<Elem>> {
+    let (decoded, slots) = py.detach(|| {
+        let mut first: HashMap<(u8, &[u8]), usize> = HashMap::new();
+        let mut distinct: Vec<(u8, &[u8])> = Vec::new();
+        let slots: Vec<usize> = items
             .iter()
             .map(|(t, data)| {
-                if let Some(v) = seen.get(&(*t, data.as_slice())) {
-                    return Ok(*v);
-                }
-                let v = deserialize_val(*t, data)?;
-                seen.insert((*t, data.as_slice()), v);
-                Ok(v)
+                *first.entry((*t, data.as_slice())).or_insert_with(|| {
+                    distinct.push((*t, data.as_slice()));
+                    distinct.len() - 1
+                })
             })
-            .collect()
+            .collect();
+        (map_parallel(distinct.len(), threads, |i| deserialize_val(distinct[i].0, distinct[i].1)), slots)
     });
-    vals.into_iter().map(|v| v.map(elem)).collect()
+    slots
+        .into_iter()
+        .map(|slot| match &decoded[slot] {
+            Ok(v) => Ok(elem(*v)),
+            Err(e) => Err(e.clone_ref(py)),
+        })
+        .collect()
+}
+
+/// [serialize_val(v) for v in vals], with one inversion per group instead of one per point.
+fn serialize_vals(vals: &[Val], threads: usize) -> Vec<Vec<u8>> {
+    let g1: Vec<_> = vals.iter().filter_map(|v| if let Val::G1(p) = v { Some(*p) } else { None }).collect();
+    let g2: Vec<_> = vals.iter().filter_map(|v| if let Val::G2(p) = v { Some(*p) } else { None }).collect();
+    let (g1, g2) = (G1Projective::normalize_batch(&g1), G2Projective::normalize_batch(&g2));
+    // each point's place in its group, in the order of vals
+    let (mut in_g1, mut in_g2) = (0..g1.len(), 0..g2.len());
+    let places: Vec<usize> = vals
+        .iter()
+        .map(|v| match v {
+            Val::G1(_) => in_g1.next().expect("one place per G1 point"),
+            Val::G2(_) => in_g2.next().expect("one place per G2 point"),
+            _ => 0,
+        })
+        .collect();
+    map_parallel(vals.len(), threads, |i| {
+        let mut out = Vec::new();
+        match &vals[i] {
+            Val::G1(_) => g1[places[i]].serialize_compressed(&mut out),
+            Val::G2(_) => g2[places[i]].serialize_compressed(&mut out),
+            other => return serialize_val(other),
+        }
+        .expect("serialization into a vector");
+        out
+    })
+}
+
+/// [x.to_bytes() for x in elements].
+#[pyfunction]
+#[pyo3(signature = (elements, threads=1))]
+fn bls_serialize_many<'py>(py: Python<'py>, elements: Vec<Bound<'py, Elem>>, threads: usize)
+    -> Vec<Bound<'py, PyBytes>> {
+    let vals: Vec<Val> = elements.iter().map(|e| e.get().v).collect();
+    let raw = py.detach(|| serialize_vals(&vals, threads));
+    raw.iter().map(|data| PyBytes::new(py, data)).collect()
 }
 
 /// The bases of a product of powers: elements of one group (G1, G2 or GT).
@@ -472,21 +539,25 @@ fn group_bases(bases: &[Bound<'_, Elem>]) -> PyResult<Vec<Val>> {
     }
 }
 
-/// prod_i bases[i] ** scalars[i] for bases of one group (G1, G2 or GT) and
-/// scalars ints or ZR elements: one multi-scalar multiplication.
-#[pyfunction]
-fn bls_msm(py: Python<'_>, bases: Vec<Bound<'_, Elem>>, scalars: &Bound<'_, PyAny>) -> PyResult<Elem> {
-    let vals = group_bases(&bases)?;
+/// The bases and the scalars of a product of powers, of equal length.
+fn msm_terms(bases: &[Bound<'_, Elem>], scalars: &Bound<'_, PyAny>) -> PyResult<(Vec<Val>, Vec<Fr>)> {
+    let vals = group_bases(bases)?;
     let ks = frs_from_seq(scalars)?;
     if ks.len() != vals.len() {
         return Err(PyValueError::new_err("msm takes as many scalars as bases"));
     }
+    Ok((vals, ks))
+}
+
+/// prod_i vals[i] ** ks[i] for the terms of `msm_terms`.
+fn msm_vals(vals: &[Val], ks: &[Fr]) -> Val {
     // group_bases checked that every base is of the group of the first
-    Ok(elem(py.detach(|| match vals[0] {
+    match vals[0] {
         Val::G1(_) => {
             let ps: Vec<_> = vals.iter().filter_map(|v| if let Val::G1(p) = v { Some(*p) } else { None }).collect();
             Val::G1(msm::curve_msm(&ps, &ks))
         }
+        Val::G2(p) if vals.len() == 1 => Val::G2(msm::g2_pow(&p, &ks[0])),
         Val::G2(_) => {
             let ps: Vec<_> = vals.iter().filter_map(|v| if let Val::G2(p) = v { Some(*p) } else { None }).collect();
             Val::G2(msm::curve_msm(&ps, &ks))
@@ -496,7 +567,28 @@ fn bls_msm(py: Python<'_>, bases: Vec<Bound<'_, Elem>>, scalars: &Bound<'_, PyAn
             Val::Gt(PairingOutput(msm::gt_msm(&fs, &ks)))
         }
         Val::Zr(_) => unreachable!("group_bases rejects ZR"),
-    })))
+    }
+}
+
+/// prod_i bases[i] ** scalars[i] for bases of one group (G1, G2 or GT) and
+/// scalars ints or ZR elements: one multi-scalar multiplication.
+#[pyfunction]
+fn bls_msm(py: Python<'_>, bases: Vec<Bound<'_, Elem>>, scalars: &Bound<'_, PyAny>) -> PyResult<Elem> {
+    let (vals, ks) = msm_terms(&bases, scalars)?;
+    Ok(elem(py.detach(|| msm_vals(&vals, &ks))))
+}
+
+/// [bls_msm(b, k) for b, k in zip(bases, scalars)].
+#[pyfunction]
+#[pyo3(signature = (bases, scalars, threads=1))]
+fn bls_msm_many(py: Python<'_>, bases: Vec<Vec<Bound<'_, Elem>>>, scalars: Vec<Bound<'_, PyAny>>, threads: usize)
+    -> PyResult<Vec<Elem>> {
+    if bases.len() != scalars.len() {
+        return Err(PyValueError::new_err("msm_many takes as many rows of scalars as rows of bases"));
+    }
+    let rows = bases.iter().zip(&scalars).map(|(b, k)| msm_terms(b, k)).collect::<PyResult<Vec<_>>>()?;
+    let out = py.detach(|| map_parallel(rows.len(), threads, |i| msm_vals(&rows[i].0, &rows[i].1)));
+    Ok(out.into_iter().map(elem).collect())
 }
 
 /// [base ** k for k in scalars] for base in G1, G2 or GT (one table for the base).
@@ -526,10 +618,27 @@ fn bls_pair(py: Python<'_>, a: &Bound<'_, Elem>, b: &Bound<'_, Elem>) -> PyResul
     Ok(elem(Val::Gt(py.detach(|| Bls12_381::pairing(p, q)))))
 }
 
+/// prod_i e(ps_i, qs_i): the Miller loops of a chunk of the pairs on each thread, their product, and one final
+/// exponentiation.
+fn multi_pairing(ps: &[G1Projective], qs: &[G2Projective], threads: usize) -> Gt {
+    let (ps, qs) = (G1Projective::normalize_batch(ps), G2Projective::normalize_batch(qs));
+    if threads < 2 || ps.len() < PARALLEL_MIN {
+        return Bls12_381::multi_pairing(ps, qs);
+    }
+    let size = ps.len().div_ceil(threads);
+    let loops = map_threads(ps.len().div_ceil(size), threads, |i| {
+        let (p, q) = (ps.chunks(size).nth(i).expect("a chunk"), qs.chunks(size).nth(i).expect("a chunk"));
+        Bls12_381::multi_miller_loop(p.iter().copied(), q.iter().copied()).0
+    });
+    let product = loops.into_iter().fold(Fq12::one(), |acc, part| acc * part);
+    Bls12_381::final_exponentiation(MillerLoopOutput(product)).expect("the Miller loop of curve points is nonzero")
+}
+
 /// prod_i e(a_i, b_i): one Miller loop product and one final exponentiation.
 /// Each pair is a G1 and a G2 element in either order, as for pair().
 #[pyfunction]
-fn bls_multi_pair(py: Python<'_>, a: Vec<Bound<'_, Elem>>, b: Vec<Bound<'_, Elem>>) -> PyResult<Elem> {
+#[pyo3(signature = (a, b, threads=1))]
+fn bls_multi_pair(py: Python<'_>, a: Vec<Bound<'_, Elem>>, b: Vec<Bound<'_, Elem>>, threads: usize) -> PyResult<Elem> {
     if a.len() != b.len() {
         return Err(PyValueError::new_err("multi_pair takes as many left as right elements"));
     }
@@ -544,9 +653,174 @@ fn bls_multi_pair(py: Python<'_>, a: Vec<Bound<'_, Elem>>, b: Vec<Bound<'_, Elem
             _ => return Err(PyValueError::new_err("multi_pair() takes pairs of a G1 and a G2 element")),
         }
     }
-    Ok(elem(Val::Gt(py.detach(|| {
-        Bls12_381::multi_pairing(G1Projective::normalize_batch(&ps), G2Projective::normalize_batch(&qs))
-    }))))
+    Ok(elem(Val::Gt(py.detach(|| multi_pairing(&ps, &qs, threads)))))
+}
+
+// ------------------------------------------- products of pairings over prepared G2 points
+
+/// f *= 1 + c1 v + c4 v w: ark-ff's `mul_by_014` with c0 = 1.
+#[inline]
+fn mul_by_unit_line(f: &mut Fq12, c1: &Fq2, c4: &Fq2) {
+    let mut aa = f.c0;
+    let mut t = f.c0;
+    t.mul_by_1(c1);
+    aa += &t;
+    let mut bb = f.c1;
+    bb.mul_by_1(c4);
+    let mut o = *c1;
+    o += c4;
+    f.c1 += &f.c0;
+    let mut t = f.c1;
+    t.mul_by_1(&o);
+    f.c1 += &t;
+    f.c1 -= &aa;
+    f.c1 -= &bb;
+    f.c0 = bb;
+    Fq12Config::mul_fp6_by_nonresidue_in_place(&mut f.c0);
+    f.c0 += &aa;
+}
+
+/// The lines of the Miller loop of a G2 point, in the order of the loop.
+enum Lines {
+    /// The identity of G2 has none, and contributes nothing to a product.
+    Identity,
+    /// (c0, c1, c2) of every line, as in arkworks' `G2Prepared`.
+    Full(Vec<(Fq2, Fq2, Fq2)>),
+    /// (c1 / c0, c2 / c0): each line differs from the full one by a constant of Fq2, which the final exponentiation
+    /// removes.
+    Unit(Vec<(Fq2, Fq2)>),
+}
+
+impl Lines {
+    /// The lines of q: `Unit` if `normalise` is set and no line has c0 = 0, a point with such a line stays `Full`.
+    fn of(q: G2Affine, normalise: bool) -> Lines {
+        let prepared = G2Prepared::<Config>::from(q);
+        if prepared.infinity {
+            return Lines::Identity;
+        }
+        let lines = prepared.ell_coeffs;
+        if !normalise || lines.iter().any(|c| c.0.is_zero()) {
+            return Lines::Full(lines);
+        }
+        let mut inverses: Vec<Fq2> = lines.iter().map(|c| c.0).collect();
+        ark_ff::batch_inversion(&mut inverses);
+        Lines::Unit(lines.iter().zip(&inverses).map(|(c, i)| (c.1 * i, c.2 * i)).collect())
+    }
+
+    /// f *= line number `at`, evaluated at p, which is not the identity.
+    #[inline]
+    fn multiply(&self, f: &mut Fq12, at: usize, p: &G1Affine) {
+        match self {
+            Lines::Identity => {}
+            Lines::Full(lines) => {
+                let (c0, mut c1, mut c2) = lines[at];
+                c1.mul_assign_by_fp(&p.x);
+                c2.mul_assign_by_fp(&p.y);
+                f.mul_by_014(&c0, &c1, &c2);
+            }
+            Lines::Unit(lines) => {
+                let (mut c1, mut c2) = lines[at];
+                c1.mul_assign_by_fp(&p.x);
+                c2.mul_assign_by_fp(&p.y);
+                mul_by_unit_line(f, &c1, &c2);
+            }
+        }
+    }
+}
+
+/// prod_i e(ps[i], q_i) for the G2 points q_i of `lines`: one Miller loop over the pairs and one final exponentiation.
+/// The identity of G1 is left out, as in arkworks' `multi_miller_loop`: its coordinates (0, 0) are not a curve point.
+fn prepared_product(ps: &[G1Affine], lines: &[Lines]) -> Gt {
+    let pairs: Vec<(&G1Affine, &Lines)> = ps.iter().zip(lines).filter(|(p, _)| !p.is_zero()).collect();
+    let mut f = Fq12::one();
+    let mut at = 0;
+    let mut multiply = |f: &mut Fq12| {
+        for (p, q) in &pairs {
+            q.multiply(f, at, p);
+        }
+        at += 1;
+    };
+    for bit in BitIteratorBE::without_leading_zeros(<Config as Bls12Config>::X).skip(1) {
+        f.square_in_place();
+        multiply(&mut f);
+        if bit {
+            multiply(&mut f);
+        }
+    }
+    f.cyclotomic_inverse_in_place(); // x is negative
+    Bls12_381::final_exponentiation(MillerLoopOutput(f)).expect("the Miller loop of curve points is nonzero")
+}
+
+/// The lines of the Miller loops of some G2 points, in their order. A prepared point is as sensitive as the key
+/// element it comes from, not a public value: there is no `__repr__` to print it.
+#[pyclass(frozen, module = "pyfe4ai._rust_native", name = "PreparedG2")]
+pub struct PreparedG2 {
+    lines: Vec<Lines>,
+}
+
+/// The lines of `points` (at least one, all in G2) for `bls_multi_pair_prepared`. `normalise` has one flag per point,
+/// whether to store its lines scaled to c0 = 1; without it, all of them are.
+#[pyfunction]
+#[pyo3(signature = (points, threads=1, normalise=None))]
+fn bls_prepare_g2(py: Python<'_>, points: Vec<Bound<'_, Elem>>, threads: usize, normalise: Option<Vec<bool>>)
+    -> PyResult<PreparedG2> {
+    if points.is_empty() {
+        return Err(PyValueError::new_err("prepare_g2 needs at least one point"));
+    }
+    let normalise = normalise.unwrap_or_else(|| vec![true; points.len()]);
+    if normalise.len() != points.len() {
+        return Err(PyValueError::new_err(format!(
+            "prepare_g2: normalise has {} flags for {} points", normalise.len(), points.len()
+        )));
+    }
+    let mut qs = Vec::with_capacity(points.len());
+    for (at, point) in points.iter().enumerate() {
+        match point.get().v {
+            Val::G2(q) => qs.push(q),
+            _ => return Err(PyValueError::new_err(format!("prepare_g2: position {at}: expected a G2 element"))),
+        }
+    }
+    let lines = py.detach(|| {
+        let qs = G2Projective::normalize_batch(&qs);
+        map_parallel(qs.len(), threads, |i| Lines::of(qs[i], normalise[i]))
+    });
+    Ok(PreparedG2 { lines })
+}
+
+/// [prod_i e(row[i], q_i) for row in rows] for the G2 points q_i of `prepared`: one G1 element per point in every row,
+/// one final exponentiation per row. The rows are normalised in one batch, and take up to `threads` threads however
+/// few they are: a row costs at least a final exponentiation, far more than starting a thread.
+#[pyfunction]
+#[pyo3(signature = (rows, prepared, threads=1))]
+fn bls_multi_pair_prepared(py: Python<'_>, rows: Vec<Vec<Bound<'_, Elem>>>, prepared: &Bound<'_, PreparedG2>,
+                           threads: usize) -> PyResult<Vec<Elem>> {
+    let lines = prepared.get().lines.as_slice();
+    // the lengths first: the room for the elements is reserved from them, and a malformed input of many rows must
+    // not reach that
+    for (r, row) in rows.iter().enumerate() {
+        if row.len() != lines.len() {
+            return Err(PyValueError::new_err(format!(
+                "multi_pair_prepared: row {r} has {} elements, expected {}", row.len(), lines.len()
+            )));
+        }
+    }
+    let mut ps = Vec::with_capacity(rows.len() * lines.len());
+    for (r, row) in rows.iter().enumerate() {
+        for (at, x) in row.iter().enumerate() {
+            match x.get().v {
+                Val::G1(p) => ps.push(p),
+                _ => return Err(PyValueError::new_err(format!(
+                    "multi_pair_prepared: row {r}, position {at}: expected a G1 element"
+                ))),
+            }
+        }
+    }
+    let count = rows.len();
+    let out = py.detach(|| {
+        let ps = G1Projective::normalize_batch(&ps);
+        map_threads(count, threads, |r| prepared_product(&ps[r * lines.len()..(r + 1) * lines.len()], lines))
+    });
+    Ok(out.into_iter().map(|t| elem(Val::Gt(t))).collect())
 }
 
 // ----------------------------------------------------------- dlog in GT
@@ -681,12 +955,15 @@ fn bls_hash(t: u8, msg: &[u8], dst: &[u8]) -> PyResult<Elem> {
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Elem>()?;
+    m.add_class::<PreparedG2>()?;
     for f in [
         wrap_pyfunction!(bls_random, m)?, wrap_pyfunction!(bls_init, m)?, wrap_pyfunction!(bls_generator, m)?,
         wrap_pyfunction!(bls_order, m)?, wrap_pyfunction!(bls_deserialize, m)?, wrap_pyfunction!(bls_pair, m)?,
         wrap_pyfunction!(bls_multi_pair, m)?, wrap_pyfunction!(bls_gt_dlog, m)?, wrap_pyfunction!(bls_hash, m)?,
-        wrap_pyfunction!(bls_deserialize_many, m)?, wrap_pyfunction!(bls_msm, m)?, wrap_pyfunction!(bls_pow_many, m)?,
-        wrap_pyfunction!(bls_gt_dlog_cache, m)?,
+        wrap_pyfunction!(bls_deserialize_many, m)?, wrap_pyfunction!(bls_serialize_many, m)?,
+        wrap_pyfunction!(bls_msm, m)?, wrap_pyfunction!(bls_msm_many, m)?, wrap_pyfunction!(bls_pow_many, m)?,
+        wrap_pyfunction!(bls_gt_dlog_cache, m)?, wrap_pyfunction!(bls_prepare_g2, m)?,
+        wrap_pyfunction!(bls_multi_pair_prepared, m)?,
     ] {
         m.add_function(f)?;
     }

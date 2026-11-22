@@ -465,9 +465,13 @@ class Bls12381Kernels:
     """The BLS12-381 functions of the extension (arkworks): ``order()``,
     ``random(kind)``, ``init(kind[, value])``, ``generator(kind)``,
     ``deserialize(kind, raw)``, ``deserialize_many(items)``,
-    ``hash(kind, msg, dst)``, ``pair``, ``multi_pair``, ``msm``,
-    ``pow_many``, ``gt_dlog`` and the element type ``Element``. Like the
-    extension module, not picklable."""
+    ``serialize_many(elements)``, ``hash(kind, msg, dst)``, ``pair``,
+    ``multi_pair``, ``prepare_g2(points)``,
+    ``multi_pair_prepared(rows, prepared)``, ``msm``,
+    ``msm_many(bases, scalars)``, ``pow_many``, ``gt_dlog`` and the element
+    type ``Element``. The batches, ``multi_pair``, ``prepare_g2`` and
+    ``multi_pair_prepared`` use :func:`~pyfe4ai.backend.get_threads` threads.
+    Like the extension module, not picklable."""
 
     def __init__(self, ext) -> None:
         self._ext = ext  # holds the module: a group holding these is not picklable, as before
@@ -476,14 +480,30 @@ class Bls12381Kernels:
         self.init = ext.bls_init
         self.generator = ext.bls_generator
         self.deserialize = ext.bls_deserialize
-        self.deserialize_many = ext.bls_deserialize_many
         self.hash = ext.bls_hash
         self.pair = ext.bls_pair
-        self.multi_pair = ext.bls_multi_pair
         self.msm = ext.bls_msm
         self.pow_many = ext.bls_pow_many
         self.gt_dlog = ext.bls_gt_dlog
         self.Element = ext.Bls12381Element
+
+    def deserialize_many(self, items) -> list:
+        return self._ext.bls_deserialize_many(items, _b._threads)
+
+    def serialize_many(self, elements) -> list:
+        return self._ext.bls_serialize_many(elements, _b._threads)
+
+    def msm_many(self, bases, scalars) -> list:
+        return self._ext.bls_msm_many(bases, scalars, _b._threads)
+
+    def multi_pair(self, lhs, rhs):
+        return self._ext.bls_multi_pair(lhs, rhs, _b._threads)
+
+    def prepare_g2(self, points):
+        return self._ext.bls_prepare_g2(points, _b._threads)
+
+    def multi_pair_prepared(self, rows, prepared) -> list:
+        return self._ext.bls_multi_pair_prepared(rows, prepared, _b._threads)
 
 
 _bls_kernels = None

@@ -20,6 +20,7 @@ import pytest
 import pyfe4ai
 from pyfe4ai.core.base import PRIVATE_KEY_NOT_A_DICT
 from pyfe4ai.core.exceptions import FEKeyError
+from tests.scheme_config import of_scheme
 
 NIDS = ["c0", "c1"]
 #: name -> what stands for the key
@@ -50,9 +51,9 @@ def _cwd(tmp_path, monkeypatch):
 @pytest.mark.parametrize("scheme", sorted(CALLS))
 def test_an_encryption_key_that_is_not_a_dict(scheme, key):
     family = scheme.split("/")[0]
-    kg, crypto = pyfe4ai.create(scheme, {"eta": 1, "n": 2, "lst_nid": NIDS, "ring_n": 16, "lwe_n": 16, "bound_x": 6,
-                                         "bound_y": 6, "bound_u": 2, "label_modulus": 8, "s": 2, "t": 2,
-                                         "lst_sid": ["s0", "s1"], "sec_param": 64})
+    kg, crypto = pyfe4ai.create(scheme, of_scheme(scheme, {
+        "eta": 1, "n": 2, "lst_nid": NIDS, "ring_n": 16, "lwe_n": 16, "bound_x": 6, "bound_y": 6, "s": 2, "t": 2,
+        "lst_sid": ["s0", "s1"], "sec_param": 64}))
     kg.setup()
     pp = kg.get_public_parameters()
     sk = kg.get_private_keys() if family == "sife" else kg.get_private_keys("c0")

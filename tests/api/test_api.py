@@ -60,19 +60,28 @@ def test_unknown_schemes(bad):
 
 def test_list_schemes():
     ids = pyfe4ai.list_schemes()
-    assert ids == [s.id for s in registry.SCHEMES] and len(ids) == 42
+    assert ids == [s.id for s in registry.SCHEMES] and len(ids) == 46
     assert pyfe4ai.list_schemes("quadratic") == ["quadratic/quad", "quadratic/sgp", "quadratic/miqfe"]
     assert pyfe4ai.list_schemes("mcfe", capabilities="threshold") == [
         "mcfe/fh_multi_ipe_pairing_threshold", "mcfe/ddh_threshold", "mcfe/lwe_threshold", "mcfe/ring_lwe_threshold"]
     assert pyfe4ai.list_schemes(capabilities=["threshold", "ml_servers"]) == ["mcfe/ring_lwe_threshold"]
-    assert pyfe4ai.list_schemes(status="unreviewed") == [
-        "sife/ddh_ristretto255", "mife/ddh_ristretto255", "mcfe/ddh_ristretto255"]
+    # `in`, not `==`: each attribute-based scheme that is added joins these lists
+    unreviewed = pyfe4ai.list_schemes(status="unreviewed")
+    assert {"sife/ddh_ristretto255", "mife/ddh_ristretto255", "mcfe/ddh_ristretto255"} <= set(unreviewed)
+    attribute_based = {"sife/cp_ab_pairing", "sife/kp_ab_pairing"}
+    assert not ({"sife/ddh", "sife/lwe", "mcfe/kp_ab_pairing"} | attribute_based) & set(unreviewed)
+    assert attribute_based <= set(pyfe4ai.list_schemes(status="reviewed"))
+    access_control = pyfe4ai.list_schemes(capabilities="access_control")
+    assert {"sife/cp_ab_pairing", "sife/kp_ab_pairing", "mcfe/kp_ab_pairing",
+            "mcfe/kp_ab_pairing_per_client"} <= set(access_control)
+    assert {"mcfe/kp_ab_pairing", "mcfe/kp_ab_pairing_per_client"} <= set(pyfe4ai.list_schemes(status="known-insecure"))
+    assert "sife/ddh" not in access_control
     assert pyfe4ai.list_schemes(kind="lwe_matrix") == ["sife/fullysec_lwe", "mife/fullysec_lwe"]
     for kwargs in ({"family": "tmcfe"}, {"capabilities": "thresold"}, {"status": "ok"}, {"kind": "lattice"}):
         with pytest.raises(exceptions.FEValidationError, match="unknown"):
             pyfe4ai.list_schemes(**kwargs)
     assert set(pyfe4ai.CAPABILITIES) == {"labels", "threshold", "decentralized", "pairing", "ml_servers",
-                                          "binary_ct", "rns"}
+                                          "binary_ct", "rns", "access_control"}
 
 
 def test_get_scheme():

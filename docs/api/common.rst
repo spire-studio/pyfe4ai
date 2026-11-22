@@ -25,6 +25,34 @@ ABDP15 LWE Base
    :members:
    :undoc-members:
 
+Access-Control Binding
+----------------------
+
+.. automodule:: pyfe4ai.schemes.common.ac_binding
+   :members:
+   :undoc-members:
+
+Access-Control Record Codec
+---------------------------
+
+.. automodule:: pyfe4ai.schemes.common.ac_codec
+   :members:
+   :undoc-members:
+
+Decoded Group Elements
+----------------------
+
+.. automodule:: pyfe4ai.schemes.common.ac_decoded
+   :members:
+   :undoc-members:
+
+Key-Policy Attribute-Based Components
+-------------------------------------
+
+.. automodule:: pyfe4ai.schemes.common.kp_ab
+   :members:
+   :undoc-members:
+
 Threshold Schemes
 -----------------
 

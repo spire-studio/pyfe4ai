@@ -184,6 +184,7 @@ class SIFEPartFHIPEPairingKeyGenerator(IPFEAbsKeyGenerator, ParameterCacheMixin)
     """Key generator for partially function-hiding inner-product encryption over pairings."""
 
     _scheme_type = CryptoCONST.TYPE_SIFE_PART_FH_IPE
+    _config_only_record = True  # the record holds the configuration only (see ParameterCacheMixin)
     def __init__(self, config: dict, **kwargs) -> None:
         """Initialise the SIFE partially FH-IPE key generator.
 

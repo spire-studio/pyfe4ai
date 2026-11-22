@@ -729,6 +729,7 @@ html:not(.js) .cpanel + .cpanel { border-top: 1px solid rgba(130, 158, 205, 0.16
 .status-bar .seg.rev { background: var(--teal); }
 .status-bar .seg.exp { background: var(--amber); }
 .status-bar .seg.unr { background: color-mix(in srgb, var(--slate) 60%, transparent); }
+.status-bar .seg.ins { background: var(--red); }
 .status-list { display: grid; gap: 10px; margin: 0; }
 .status-list div { display: grid; grid-template-columns: 9.2em minmax(0, 1fr); gap: 10px; font-size: 14px; }
 .status-list dt { display: flex; align-items: center; align-self: start; gap: 8px; color: var(--ink); font-weight: 600; }
