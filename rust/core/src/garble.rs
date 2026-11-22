@@ -396,7 +396,19 @@ impl Drop for Garbling {
 
 /// Garble the circuit (CIRC v1 bytes) for the data bits x (n bits, packed)
 /// with the randomness of `seed` (32 bytes) and the instance salt (56 bytes).
+///
+/// Runs with the processor's data-independent-timing mode set where it has one
+/// (`dit::Guard`; aarch64 with FEAT_DIT): measured without it, the shape of the
+/// garbling's time distribution depended on the seed. The result is the same.
 pub fn garble(circuit: &[u8], mode: Mode, salt: &[u8], x: &[u8], seed: &[u8]) -> Result<Garbling, String> {
+    let _dit = crate::dit::Guard::new();
+    garble_unguarded(circuit, mode, salt, x, seed)
+}
+
+/// [`garble`] without its `dit::Guard`, for the timing harness only (`GARBLE_DIT=0` of the `ct_dudect` example),
+/// which compares the garbling with and without DIT; the library calls [`garble`].
+#[doc(hidden)]
+pub fn garble_unguarded(circuit: &[u8], mode: Mode, salt: &[u8], x: &[u8], seed: &[u8]) -> Result<Garbling, String> {
     let c = Circuit::parse(circuit)?;
     let mut hg = GateHash::new(salt)?;
     if seed.len() != SEED_LEN {
@@ -654,6 +666,28 @@ mod tests {
         let enc = c.encode();
         let g = garble(&enc, mode, salt, &pack_bits(x), seed).unwrap();
         evaluate(&enc, mode, salt, &g.tables, &g.decode, &key_active(&g, w), &g.data_active).unwrap()
+    }
+
+    #[test]
+    fn the_garbling_is_the_same_with_and_without_dit() {
+        let mut rng = Rng(23);
+        for mode in [Mode::Labels, Mode::Hardwired] {
+            for _ in 0..8 {
+                let c = random_circuit(&mut rng, 6, 10, 80, 4, mode);
+                let enc = c.encode();
+                let salt = rng.bytes(SALT_LEN);
+                let seed = rng.bytes(SEED_LEN);
+                let x = pack_bits(&rng.bits(10));
+                let a = garble(&enc, mode, &salt, &x, &seed).unwrap();
+                assert!(!crate::dit::is_set(), "garble() restores DIT");
+                let b = garble_unguarded(&enc, mode, &salt, &x, &seed).unwrap();
+                assert_eq!(a.delta, b.delta);
+                assert_eq!(a.key0, b.key0);
+                assert_eq!(a.data_active, b.data_active);
+                assert_eq!(a.tables, b.tables);
+                assert_eq!(a.decode, b.decode);
+            }
+        }
     }
 
     #[test]
