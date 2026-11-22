@@ -135,6 +135,18 @@ compatibility).
   number of candidates and the order of the decisions, neither of which
   depends on the values returned. Cost: 1 to 15 % per sample (the most at
   small widths, where one candidate in four had `y = 0`).
+- **The native garbling of `bcfe/gc_ristretto255` sets the processor's
+  data-independent-timing mode** (PSTATE.DIT, on aarch64 processors with
+  FEAT_DIT such as Apple silicon; `rust/core/src/dit.rs`) for its thread and
+  puts the previous value back afterwards; on other processors nothing
+  changes. Measured without it on an Apple M4 Max, the shape of the
+  garbling's time distribution depended on the secret seed (its means within
+  the control); with it, the same tests were clean (`docs/security.rst`,
+  *Side channels*). The mechanism was not found, and DIT does not make
+  branches or memory accesses constant-time. The garbled output is the same
+  byte for byte. Cost on that machine: the garbling 8 to 9 % slower, the
+  encryption of a slot 1.6 to 2.5 %; on an Apple M2 Max the garbling's time
+  did not change measurably.
 
 ### Changed
 
@@ -162,12 +174,13 @@ compatibility).
   `docs/security.rst` gains "Trust assumptions in brief" and "Side channels"
   (the native paths checked, how, and what was not checked): no checked
   path's mean time differed by its secret values beyond the control (the
-  exact Gaussian sampler after the change under *Security*), but the shape of
-  the time distribution of the native garbling of `bcfe/gc_ristretto255`
-  depends on its seed, which is secret (the means within the control): the
-  mechanism was not found, and whether this can be exploited was not
-  evaluated. The label KEM of `bcfe/gc_ristretto255` was timed from Python
-  (`tools/ct_bcfe.py`).
+  exact Gaussian sampler after the change under *Security*), but without the
+  processor's data-independent-timing mode the shape of the time
+  distribution of the native garbling of `bcfe/gc_ristretto255` depended on
+  its seed, which is secret (the means within the control; the garbling now
+  sets that mode, see *Security*): the mechanism was not found, and whether
+  this could be exploited was not evaluated. The label KEM of
+  `bcfe/gc_ristretto255` was timed from Python (`tools/ct_bcfe.py`).
 - README Known Issues and `SECURITY.md` state the conditions of the 0.6 and
   0.7 experimental parts: `bcfe/gc_ristretto255` assumes an honest
   encryptor, the threshold key issuance needs mutually authenticated,
@@ -195,8 +208,10 @@ compatibility).
   buffer for both classes, or a single secret value; both classes prepared
   alike and leaving the same cache state; judged by effect size against a
   constant-time control), with the FACCT replay targets (`facct_values`:
-  one sample's decisions, other values); `tools/ct_bcfe.py` times the bcfe
-  label KEM of the native extension from Python.
+  one sample's decisions, other values) and the garbling targets
+  (`GARBLE_DIT=0` times the garbling without the library's DIT);
+  `tools/ct_bcfe.py` times the bcfe label KEM of the native extension from
+  Python.
 
 ## [0.5.0] — unreleased
 
