@@ -5,7 +5,7 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/) (pre-1.0: minor bumps may break
 compatibility).
 
-## [0.5.0] — unreleased
+## [0.5.0] — 2026-11-22
 
 **Highlights.** Attribute-based inner-product functional encryption over
 pairings: `sife/cp_ab_pairing` and `sife/kp_ab_pairing`, reviewed against their

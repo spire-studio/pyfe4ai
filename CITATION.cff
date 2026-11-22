@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it using the metadata from this file."
 title: "PyFE4AI: Python-based Functional Encryption for AI Security and Privacy"
 version: "0.5.0"
-# date-released: set when the tag v0.5.0 is made
+date-released: "2026-11-22"
 type: software
 authors:
   - name: "Spire Studio"
